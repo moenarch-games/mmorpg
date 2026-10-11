@@ -4,6 +4,8 @@ Server-authoritative MMORPG foundation that scales by distributing **zone owners
 
 The native Rust client now connects to the standalone zone host and renders server-authoritative multiplayer movement through wgpu. The GitHub Pages demo runs the same Rust zone simulation in the page as a local single-player WASM host; in a development setup, browser tabs can instead join a zone host together over WebTransport. The in-memory control plane and fenced runtime establish tested contracts; they are not yet a production distributed fleet. See the [architecture capability map](docs/ARCHITECTURE.md#scope-and-current-state) for implemented behavior and deployment prerequisites.
 
+Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decisions/atlas.md). The atlas distinguishes implemented behavior from agreed but unimplemented design.
+
 ## Authority map
 
 | Concern | Authority |
