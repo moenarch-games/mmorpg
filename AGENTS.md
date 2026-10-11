@@ -7,6 +7,8 @@ Rust workspace + native wgpu client + non-authoritative browser demo (`web/`).
 
 Read this entire file, `README.md` and `.conventions/index.md` for every task. Authority, distributed-world invariants, determinism and completion requirements below apply to every scope.
 
+Decision Atlas: `docs/decisions/atlas.md` is the canonical product-intent map. Its semantic leaf entries are only Decisions and Questions. Retrieve relevant entries before making consequential product choices; follow Decisions, and ask the owner one unanswered Question at a time only when it materially affects the task. Preserve answered/superseded entries through linked append-only Decisions rather than rewriting history.
+
 Use the existing `coding-tooling inspect` task lookup (coding-tooling #272) to select declared links and focused commands from `.coding-tooling.json`:
 
 ```sh
