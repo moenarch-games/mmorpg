@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "operation": "size-evidence",
   "status": "passed",
-  "durationMs": 61,
+  "durationMs": 62,
   "data": {
     "schemaVersion": "coding-tooling/size-evidence/v1",
     "metric": "raw-artifact-bytes",
@@ -10,7 +10,7 @@
       {
         "id": "mmorpg-core-release-rlib",
         "kind": "native",
-        "identity": "4b9dc9c1ee19d20ce56b5cc3776744a54c4ab4a862656ad7b4ed4b4d0888da02",
+        "identity": "c2f618ce7b2acfd6e15636808cc4fb250000656e8e01cc2eef4714c23d30e4a7",
         "inputs": {
           "id": "mmorpg-core-release-rlib",
           "kind": "native",
@@ -67,11 +67,11 @@
             },
             {
               "path": "web/bun.lock",
-              "sha256": "b8318a37fb9835420c2b91182701558e3a8b91a450215d92c052d046b1c1bb8a"
+              "sha256": "d356f7a390f3c7fabd2d02cb28d5d1fa990db443d2b40f92b4904e52f93d8f0a"
             },
             {
               "path": "web/package.json",
-              "sha256": "1e0484205bd738f512bb868a1f736381f0215cd595106b74fb39791a4926067a"
+              "sha256": "6fdb02ff87a5aff49f652b3d29d7bafa76a4597777eb6da8cc2de4ce50acb987"
             },
             {
               "path": "web/scripts/native-size.ts",
@@ -84,7 +84,7 @@
           {
             "path": "target/x86_64-unknown-linux-gnu/release/libmmorpg_core.rlib",
             "bytes": 3128246,
-            "sha256": "194dd6bf2ac1d0c86710ee1b380a46e21641b33ffd07c1a42970a4e0fb99cbde"
+            "sha256": "a96d72ce2170065e8f46cfe2f7ceb4bb844f0a8734c89901a477f958ccd76819"
           }
         ],
         "comparison": {

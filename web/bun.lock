@@ -15,7 +15,7 @@
         "@types/node": "26.6.3",
         "@types/three": "0.185.4",
         "bun-types": "1.4.2",
-        "coding-tooling": "github:moritzbrantner/coding-tooling#122ad55cbc5fd82233f2aa4af17278554db5cc78",
+        "coding-tooling": "github:moritzbrantner/coding-tooling#04745bf9e9a005962f32c3669f79f9ec0b69defd",
         "typescript": "5.9.3",
         "undici-types": "8.9.0",
         "vite": "7.3.6",
@@ -151,7 +151,7 @@
 
     "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
-    "coding-tooling": ["coding-tooling@github:moritzbrantner/coding-tooling#122ad55", { "bin": { "coding-tooling": "./src/router.ts" } }, "moritzbrantner-coding-tooling-122ad55", "sha512-geJZavgHz0KF3+xUk6cj8ye5dSRZJgVWOvxAIYB3pGMsMAUf6qJUmk4Q2McPaFbWqN63QsgjksK9oqJL6m0saQ=="],
+    "coding-tooling": ["coding-tooling@github:moritzbrantner/coding-tooling#04745bf", { "bin": { "coding-tooling": "./src/router.ts", "daq": "./src/daq-cli.ts" } }, "moritzbrantner-coding-tooling-04745bf", "sha512-GFG94IFGXD1GfAitw+5CLxpzAm/nbqiHFjqGxqtzh1/qWOcBnLzqeXbvUQm0YlNHWQLTxPXvtHSb53gSXQpI0A=="],
 
     "esbuild": ["esbuild@0.28.2", "", { "optionalDependencies": { "@esbuild/aix-ppc64": "0.28.2", "@esbuild/android-arm": "0.28.2", "@esbuild/android-arm64": "0.28.2", "@esbuild/android-x64": "0.28.2", "@esbuild/darwin-arm64": "0.28.2", "@esbuild/darwin-x64": "0.28.2", "@esbuild/freebsd-arm64": "0.28.2", "@esbuild/freebsd-x64": "0.28.2", "@esbuild/linux-arm": "0.28.2", "@esbuild/linux-arm64": "0.28.2", "@esbuild/linux-ia32": "0.28.2", "@esbuild/linux-loong64": "0.28.2", "@esbuild/linux-mips64el": "0.28.2", "@esbuild/linux-ppc64": "0.28.2", "@esbuild/linux-riscv64": "0.28.2", "@esbuild/linux-s390x": "0.28.2", "@esbuild/linux-x64": "0.28.2", "@esbuild/netbsd-arm64": "0.28.2", "@esbuild/netbsd-x64": "0.28.2", "@esbuild/openbsd-arm64": "0.28.2", "@esbuild/openbsd-x64": "0.28.2", "@esbuild/openharmony-arm64": "0.28.2", "@esbuild/sunos-x64": "0.28.2", "@esbuild/win32-arm64": "0.28.2", "@esbuild/win32-ia32": "0.28.2", "@esbuild/win32-x64": "0.28.2" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA=="],
 
