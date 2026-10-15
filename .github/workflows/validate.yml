@@ -36,7 +36,7 @@ jobs:
               docs_only=true
               for file in "${files[@]}"; do
                 case "$file" in
-                  *.md) ;;
+                  docs/*.md|README.md|AGENTS.md|CLAUDE.md|ROADMAP.md|DESIGN.md|SCENARIO_EXPERIMENTS.md) ;;
                   *) docs_only=false; break ;;
                 esac
               done
