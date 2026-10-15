@@ -197,6 +197,39 @@ For an online client, buffer delay comes from observed server ticks and jitter; 
 
 Authored assets need an immutable manifest connecting render assets and server collision content to the same revision, with coordinate/scale compatibility checks. Asset streaming, LOD, animation and effects stay client-owned. Missing or incompatible content should stop entry into the zone rather than silently render a different physical world.
 
+## Rendering and asset provider adoption
+
+This is a **source-backed integration snapshot**, not a second product decision or a
+claim of visual production readiness. Dependency manifests and actual call sites
+determine current usage; [3D Lab](https://github.com/moritzbrantner/3d-lab)
+owns its reusable rendering contracts, while this repository owns whether a
+capability is adopted in the playable game.
+
+| Capability | Actual provider and role | Evidence and remaining gap |
+| --- | --- | --- |
+| Browser scene rendering | **Active:** Three.js `0.185.1` through commit-pinned `@moritzbrantner/three-d-renderer` (a Three.js adapter, not a separate GPU engine). | [Web dependencies](../web/package.json), [renderer creation](../web/src/main.ts), [game presentation](../web/src/world/world-view.ts). The ordinary scene works; this is not evidence of game-ready rigged humanoids. |
+| Native scene rendering | **Active:** `wgpu`/`winit`; consumes pinned 3D Lab `three-d-core` and `three-d-camera`, **not** the browser renderer. | [Native dependencies](../crates/mmorpg-client/Cargo.toml), [GPU implementation](../crates/mmorpg-client/src/graphics.rs), [native smoke](NATIVE_CLIENT.md). Units still use box-built models; native imported skinning remains [3D Lab #115](https://github.com/moritzbrantner/3d-lab/issues/115). |
+| Character appearance and motion | **Active but provisional:** [game-owned procedural poses](../web/src/world/character-animation.ts), [model selection](../web/src/world/unit-nodes.ts), and [rigid asset-tooling archer OBJ](../web/src/world/archer-asset.ts). | Ranger's packaged mesh does not deform with clips; other humanoids remain primitive-built. No normal-gameplay, production-approved animated GLB is integrated. [MMORPG #39](https://github.com/moritzbrantner/mmorpg/issues/39) / [#51](https://github.com/moritzbrantner/mmorpg/issues/51). |
+| Offline asset processing | **Used for bounded authoring:** asset-tooling recipes produce saved [grass](SCATTER_AUTHORING.md) and [relief](RELIEF_AUTHORING.md) inputs; runtime scenery still belongs to `mmorpg-scenery`. | These recipes are not a complete approved humanoid or environment bundle. Source selection and promotion belong to [Asset Tooling #108](https://github.com/moritzbrantner/asset-tooling/issues/108), [#109](https://github.com/moritzbrantner/asset-tooling/issues/109) and [#118](https://github.com/moritzbrantner/asset-tooling/issues/118). |
+| Skinned GLB and named-clip rendering | **Available in newer 3D Lab; not adopted here.** The [MMORPG pinned revision](https://github.com/moritzbrantner/3d-lab/blob/f484db8a3d2a7a555fa463eddf9c28790b240ce0/package.json) exports no `./imported-character` entrypoint. Newer [3D Lab code](https://github.com/moritzbrantner/3d-lab/blob/main/packages/renderer/imported-character.js) provides it. | [3D Lab #87](https://github.com/moritzbrantner/3d-lab/issues/87) validated a real skinned **Fox fixture**, not an approved MMORPG humanoid. Consumer uptake, clip-state mapping, game-camera appearance, multiple poses, and browser smoke are unproved here and belong to [#51](https://github.com/moritzbrantner/mmorpg/issues/51). |
+| Direct Three.js imported-character path | **External reference, not a game integration.** [3D Lab's Chromium comparison](https://github.com/moritzbrantner/3d-lab/blob/main/docs/specs/imported-character-acceptance.md) uses `GLTFLoader`, `SkinnedMesh` and `AnimationMixer` as independent reference behavior. | Before replacing or bypassing the pinned renderer, compare the same approved humanoid and clips through both paths. A new consumer implementation needs an explicit repository-local ownership decision, not a silent second renderer. |
+
+**Adoption gate:** demonstrate one license-approved, deforming humanoid in the real
+Greyhaven browser game at gameplay camera size, with accepted locomotion/clip
+transitions, shared immutable assets across multiple characters, and focused
+browser evidence. Compare visual quality, correctness and resource cost to the
+external reference. Preserve server-authoritative placement, combat and physics.
+Native parity is independently tracked; no browser acceptance silently proves
+it. An accepted 3D Lab fixture or newer source revision is *not* evidence that
+this pinned MMORPG consumer has adopted it.
+
+Keep this status with the affected implementation change; cite the actual
+manifest, import or call site and executable evidence. Do not create another
+manually synchronized dependency registry or expand the [Decision Atlas](https://github.com/moritzbrantner/mmorpg/pull/150)
+with transient implementation status. Existing presentation [#27](https://github.com/moritzbrantner/mmorpg/issues/27),
+humanoid [#39](https://github.com/moritzbrantner/mmorpg/issues/39), and first-skinned-character
+[#51](https://github.com/moritzbrantner/mmorpg/issues/51) issues own delivery.
+
 ## Handoff transaction
 
 A transfer ID is independent of connection and session identity. The metadata registry permits one unfinished transfer per entity and binds its source and destination grants by authority identity. Renewal is safe; stale epochs and transfer-ID collisions fail closed. Committing a transfer releases the entity's reservation, and retrying an old commit cannot release a newer reservation.
