@@ -26,6 +26,8 @@ The native Rust client now connects to the standalone zone host and renders serv
 
 The MMO repository composes those foundations. It should not grow substitutes for them.
 
+The [rendering and asset adoption record](docs/ARCHITECTURE.md#rendering-and-asset-provider-adoption) distinguishes active external components, in-house foundations, and unintegrated character capabilities with source-backed evidence.
+
 ## Distributed shape
 
 ```text
