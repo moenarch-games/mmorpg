@@ -65,7 +65,7 @@ done
 # Only an explicit IPv4 interface address enables LAN access; never expose
 # the dev web server on all interfaces by accident.
 if [[ -n "$lan_address" ]]; then
-  if [[ ! "$lan_address" =~ ^([0-9]{1,3}\\.){3}[0-9]{1,3}$ ]]; then
+  if [[ ! "$lan_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
     printf 'Expected a LAN IPv4 address, got: %s\n' "$lan_address" >&2
     exit 2
   fi
