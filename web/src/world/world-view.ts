@@ -161,6 +161,7 @@ export class WorldView {
   readonly #intents: { intent: Intent; onSent: ((sequence: number | null) => void) | undefined }[] = [];
   readonly #secondaryClick = new SecondaryClick();
   readonly #primaryClick = new PointerClick(0);
+  #lastLinkConnected = true;
   #presentationTime: number | null = null;
   #lastEnvironment: RendererEnvironment | null = null;
   #lastInstanceBatches: RendererInstanceBatch[] = [];
@@ -173,6 +174,7 @@ export class WorldView {
   #anchors = new Map<string, Anchor>();
   /** The unit nodes of the last frame, for debug readouts. */
   #lastUnitNodes: readonly RendererSceneNode[] = [];
+  #lastEffectNodes: readonly RendererSceneNode[] = [];
   /** The projected units of the last frame, for debug readouts. */
   #lastProjectedUnits: readonly ProjectedUnit[] = [];
   #sceneryFrame: SceneryFrame | null = null;
@@ -299,6 +301,7 @@ export class WorldView {
     this.#lastWork = null;
     this.#presentationTime = null;
     this.#lastUnitNodes = [];
+    this.#lastEffectNodes = [];
     this.#pendingNpc = null;
     this.#frameRate.reset();
     this.#sky.show(true);
@@ -328,6 +331,7 @@ export class WorldView {
     this.#lastWork = null;
     this.#presentationTime = null;
     this.#lastUnitNodes = [];
+    this.#lastEffectNodes = [];
     this.#classHud.reset();
     this.#effects.clear();
     this.#bags.reset();
@@ -440,6 +444,12 @@ export class WorldView {
       source.sendCommand(command);
     }
     const receivedProjections = source.advance(deltaSeconds);
+    const connected = source.linkState() === "connected";
+    if (connected !== this.#lastLinkConnected) {
+      this.#effects.clear();
+      this.#animators.clear();
+      this.#lastLinkConnected = connected;
+    }
     for (const received of receivedProjections) {
       this.#bags.update(received);
       this.#character.update(received);
@@ -473,9 +483,9 @@ export class WorldView {
     const resolveAnchor = (entity: EntityRef): Anchor | null => this.#anchors.get(entityKey(entity)) ?? null;
     for (const received of receivedProjections) {
       this.#classHud.receive(received, now);
-      this.#effects.spawn(received, this.#seconds, resolveAnchor);
+      if (connected) { this.#effects.spawn(received, this.#seconds, resolveAnchor); }
     }
-    this.#effects.sync(projection, this.#seconds, resolveAnchor);
+    if (connected) { this.#effects.sync(projection, this.#seconds, resolveAnchor); }
     this.#orbit.update(deltaSeconds, !animate);
     const { unitsPerMetre, playerHalfExtents } = scenery.scenery;
     const unitContext: UnitContext = {
@@ -486,7 +496,8 @@ export class WorldView {
       catalog,
       viewerTarget: projection.viewer.target,
       // Reduced motion stops every cosmetic animation: no action poses and no spell visuals.
-      viewerAction: animate ? this.#effects.viewerAction(projection, this.#seconds) : null,
+      viewerAction: animate && connected ? this.#effects.viewerAction(projection, this.#seconds) : null,
+      actionFor: (entity) => animate && connected ? this.#effects.actionFor(entity, this.#seconds) : null,
     };
     const nodes: RendererSceneNode[] = [];
     const units: RendererSceneNode[] = [];
@@ -503,7 +514,8 @@ export class WorldView {
       visible.add(id);
       projected.push(projectedUnit(entity, placement, catalog));
       const locomotion = this.#animators.locomotion(entity, placement, unitsPerMetre, deltaSeconds, !animate);
-      units.push(...model.nodes({ id, entity, placement, locomotion, context: unitContext }));
+      const deathProgress = this.#animators.deathProgress(entity, deltaSeconds, !animate);
+      units.push(...model.nodes({ id, entity, placement, locomotion, context: unitContext, ...(deathProgress === null ? {} : { deathProgress }) }));
       anchors.set(entityKey({ kind: entity.kind, id: entity.entityId }), {
         x: placement.x,
         feetY: placement.feetY,
@@ -542,9 +554,8 @@ export class WorldView {
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate });
     this.#lastSceneryNodes = frame.nodes;
     nodes.push(...frame.nodes, ...units);
-    if (animate) {
-      nodes.push(...allEffectNodes(this.#effects.active(this.#seconds), this.#seconds, resolveAnchor));
-    }
+    this.#lastEffectNodes = animate ? allEffectNodes(this.#effects.active(this.#seconds), this.#seconds, resolveAnchor) : [];
+    nodes.push(...this.#lastEffectNodes);
     this.#lastUnitNodes = units;
     this.#lastProjectedUnits = projected;
     const camera: RendererCamera = {
@@ -705,6 +716,7 @@ export class WorldView {
       },
       presentationFrame: () => ({
         environment: this.#lastEnvironment,
+        effectNodes: structuredClone(this.#lastEffectNodes),
         work: this.#lastWork,
         vertexColoredNodes: this.#lastSceneryNodes.filter((node) => node.geometry.kind === "mesh" && node.geometry.colors?.length).length,
         emissiveNodes: this.#lastSceneryNodes.filter((node) => node.emissive !== undefined).length,
@@ -731,6 +743,8 @@ export class WorldView {
       },
       /** Node IDs the last frame drew for one unit, e.g. `unit-creature-108`. */
       unitNodeIds: (identity: string) => unitNodeIds(this.#lastUnitNodes, identity),
+      /** Copies of actual submitted geometry transforms, never a simulation control. */
+      unitNodes: (identity: string) => structuredClone(this.#lastUnitNodes.filter((node) => node.id.startsWith(`${identity}-`))),
       /** The units of the last projection (kind, id, creature family, position in metres). */
       projectedUnits: () => this.#lastProjectedUnits,
       /** The projected animal (wolf, boar, vermin) nearest to a point in metres, or null. */

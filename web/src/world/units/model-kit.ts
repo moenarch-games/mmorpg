@@ -109,3 +109,18 @@ export function targetRingNode(id: string, placement: UnitPlacement, halfFootpri
     transform: { translation: [placement.x, placement.feetY + 0.02, placement.z] },
   };
 }
+
+/** Fall existing player meshes about their centre; geometry remains shared. */
+export function fallingNodes(nodes: RendererSceneNode[], placement: UnitPlacement, halfHeight: number, progress: number): RendererSceneNode[] {
+  const amount = Math.min(1, Math.max(0, Number.isFinite(progress) ? progress : 1));
+  const t = amount * amount * (3 - 2 * amount);
+  const rotation = qMul(qMul(qAxis(1, placement.yawRadians), qAxis(0, -Math.PI / 2 * t)), qAxis(1, -placement.yawRadians));
+  const centreY = halfHeight + (0.18 - halfHeight) * t;
+  return nodes.map((node) => {
+    if (!node.transform) { return node; }
+    const transform = node.transform;
+    const [x, y, z] = transform.translation;
+    const offset = qRotate(rotation, [x - placement.x, y - placement.feetY - halfHeight, z - placement.z]);
+    return { ...node, transform: { ...transform, translation: [placement.x + offset[0], placement.feetY + centreY + offset[1], placement.z + offset[2]], rotationQuaternion: qMul(rotation, transform.rotationQuaternion ?? IDENTITY_Q) } };
+  });
+}
