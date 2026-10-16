@@ -263,6 +263,29 @@ impl NativeApplication {
                     .latest()
                     .is_some_and(|snapshot| snapshot.viewer.class.is_some())
         });
+        // Observe the adapter contract for this actual window using the same
+        // default compatible-surface request as WindowRenderer::new.
+        let instance = wgpu::Instance::default();
+        let surface = instance
+            .create_surface(Arc::clone(application.driver.app.window.as_ref().unwrap()))
+            .unwrap();
+        let adapter = application
+            .driver
+            .app
+            .runtime
+            .block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                compatible_surface: Some(&surface),
+                ..Default::default()
+            }))
+            .unwrap();
+        let info = adapter.get_info();
+        eprintln!("native acceptance window-compatible GPU adapter: {info:?}");
+        assert_ne!(
+            info.device_type,
+            wgpu::DeviceType::Cpu,
+            "actual native acceptance requires a hardware GPU adapter"
+        );
+        drop(surface);
         application
             .driver
             .app

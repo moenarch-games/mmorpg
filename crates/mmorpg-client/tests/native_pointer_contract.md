@@ -33,7 +33,9 @@ seam; private inspection is confined to the existing App and test fixtures.
 The test checks the native **window title** for visible identity, actual role
 context, reward choices and refusal feedback, and requires successful surface
 frames after authoritative selection. It does not call an isolated adapter draw
-as its feature proof. Existing native smoke separately reads back GPU pixels.
+as its feature proof. Existing native smoke separately reads back GPU pixels. The test also logs and
+rejects CPU adapters for a same-options compatible-surface request on the actual
+window; this metadata probe is separate from the App surface frames.
 Native controls in this executable contract are Enter for selected-NPC context,
 1 for its displayed first quest/buy action, 2 for a merchant's displayed first
 bag-slot sale, Right for the next displayed reward choice, and Escape to cancel
@@ -130,3 +132,17 @@ an explicit environment/harness evidence gap. XTest keyboard delivery is also
 unrun beyond the baseline's first missing click and remains fail-closed in this
 contract. Do not call either unverified OS path passed. If its helper/inputs are
 changed later, independently reverify that the same keyboard journey is exercised.
+
+The independent isolated-X11 run subsequently **resolved pointer delivery**:
+Xvfb used an OS-selected display, Wayland was unset, and the NVIDIA Vulkan ICD
+was selected explicitly. The actual window-compatible adapter request logged
+`NVIDIA GeForce RTX 3060 Ti`, `DiscreteGpu`, Vulkan, driver `595.91.07`.
+The real application connected/chose Warden, received the canonical fixture,
+and received OS pointer press/release through its ordinary winit handler
+(frame 30). It then failed at the expected baseline behavior:
+`exact clicked identity must be confirmed by zone`; the real host observed no
+`SelectTarget` command. This is a qualified baseline behavioral red. The
+isolated Xvfb was stopped after the run. Later NPC/keyboard/reconnect assertions
+remain authored and unrun because the baseline stops at this first missing click.
+The raw logs, exact runner/environment and source snapshots are retained under
+`/tmp/mmorpg28-independent/` and summarized on the owning issue/PR.
