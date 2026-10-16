@@ -39,15 +39,17 @@ export const CLICK_SLOP_PIXELS = 4;
 export type PointerSample = { type: string; pointerId: number; button: number; clientX: number; clientY: number };
 
 /**
- * Tells a right click from a right drag: a secondary-button press that ends
- * with `pointerup` within `CLICK_SLOP_PIXELS` of where it started is a click
- * (toggle auto-attack). Anything else stays a drag.
+ * Tells a click from a camera drag: a matching-button press that ends
+ * with `pointerup` within `CLICK_SLOP_PIXELS` of where it started is a click.
+ * Anything else stays a drag or cancellation.
  */
-export class SecondaryClick {
+export class PointerClick {
   #press: { pointerId: number; x: number; y: number } | null = null;
 
+  constructor(readonly button: 0 | 2) {}
+
   down(event: PointerSample): void {
-    this.#press = event.button === 2 ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY } : null;
+    this.#press = event.button === this.button ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY } : null;
   }
 
   move(event: PointerSample): void {
@@ -59,14 +61,20 @@ export class SecondaryClick {
 
   /** Whether this pointer event ends a press as a click; any end forgets the press. */
   end(event: PointerSample): boolean {
+    this.move(event);
     if (this.#press?.pointerId !== event.pointerId) {
       return false;
     }
     this.#press = null;
-    return event.type === "pointerup";
+    return event.type === "pointerup" && event.button === this.button;
   }
 
   reset(): void {
     this.#press = null;
   }
+}
+
+/** Existing secondary-button attack gesture, sharing the camera's click/drag threshold. */
+export class SecondaryClick extends PointerClick {
+  constructor() { super(2); }
 }

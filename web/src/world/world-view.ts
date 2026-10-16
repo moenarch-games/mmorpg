@@ -7,7 +7,7 @@ import type {
   ThreeSceneRenderer,
 } from "@moritzbrantner/three-d-renderer";
 import type { WorldCommand } from "../command-wire";
-import { entityKey } from "../entity-ref";
+import { entityKey, sameEntity } from "../entity-ref";
 import type { EntityRef } from "../entity-ref";
 import type { EntityState, ZoneSnapshot } from "../replication";
 import { DebugOverlay, FrameRate } from "./debug-overlay";
@@ -38,7 +38,8 @@ import { ChatFrame, type ChatElements } from "./units/chat-frame";
 import { nearestAnimal, projectedUnit, type ProjectedUnit } from "./units/projected-units";
 import { ProgressionHud } from "./units/progression-hud";
 import { SpellEffects, allEffectNodes, type Anchor } from "./units/spell-effects";
-import { SecondaryClick, attackToggle } from "./units/targeting";
+import { PointerClick, SecondaryClick, attackToggle } from "./units/targeting";
+import { WorldPicking } from "./units/world-picking";
 import type { ContentCatalog } from "./catalog";
 import type { ZoneWorld } from "./world-source";
 
@@ -157,6 +158,10 @@ export class WorldView {
   readonly #chat: ChatFrame;
   readonly #intents: { intent: Intent; onSent: ((sequence: number | null) => void) | undefined }[] = [];
   readonly #secondaryClick = new SecondaryClick();
+  readonly #primaryClick = new PointerClick(0);
+  readonly #picking = new WorldPicking();
+  #lastSceneryNodes: readonly RendererSceneNode[] = [];
+  #pendingNpc: { target: EntityRef; sequence: number } | null = null;
   #scene: SceneryScene | null = null;
   #catalog: ContentCatalog | null = null;
   /** Where each visible unit stood in the last frame (metres), for spell effects. */
@@ -241,6 +246,7 @@ export class WorldView {
 
   /** Builds the static scene and the minimap image once per loaded world. */
   load(world: ZoneWorld): void {
+    this.#picking.reset();
     const started = performance.now();
     this.#catalog = world.catalog;
     this.#bags.load(world.catalog);
@@ -282,6 +288,9 @@ export class WorldView {
     this.#framePending = true;
     this.#lastSelf = null;
     this.#lastProjection = null;
+    this.#lastSceneryNodes = [];
+    this.#lastUnitNodes = [];
+    this.#pendingNpc = null;
     this.#frameRate.reset();
     this.#sky.show(true);
   }
@@ -303,6 +312,9 @@ export class WorldView {
   }
 
   leave(): void {
+    this.#pendingNpc = null;
+    this.#lastSceneryNodes = [];
+    this.#lastUnitNodes = [];
     this.#classHud.reset();
     this.#effects.clear();
     this.#bags.reset();
@@ -428,6 +440,21 @@ export class WorldView {
       throw new Error("The world source has no projection for the joined player.");
     }
     this.#lastProjection = projection;
+    const pendingNpc = this.#pendingNpc;
+    if (pendingNpc && projection.acknowledgedSequence >= pendingNpc.sequence) {
+      this.#pendingNpc = null;
+      if (sameEntity(projection.viewer.target, pendingNpc.target)) {
+        if (catalog.vendors.has(pendingNpc.target.id)) {
+          if (!this.#vendor.open) {
+            this.#vendor.toggle();
+          }
+        } else if ([...catalog.quests.values()].some((quest) => quest.giver === pendingNpc.target.id || quest.ender === pendingNpc.target.id)) {
+          if (!this.#quests.dialogOpen) {
+            this.#quests.toggleDialog();
+          }
+        }
+      }
+    }
     const animate = this.#animate;
     this.#seconds += deltaSeconds;
     const resolveAnchor = (entity: EntityRef): Anchor | null => this.#anchors.get(entityKey(entity)) ?? null;
@@ -500,6 +527,7 @@ export class WorldView {
     this.#camera.lookAt(...view.target);
     this.#camera.updateMatrixWorld(true);
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate });
+    this.#lastSceneryNodes = frame.nodes;
     nodes.push(...frame.nodes, ...units);
     if (animate) {
       nodes.push(...allEffectNodes(this.#effects.active(this.#seconds), this.#seconds, resolveAnchor));
@@ -573,11 +601,18 @@ export class WorldView {
     const mode = event.button === 2 ? "turn" : "orbit";
     this.#drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, mode };
     this.#secondaryClick.down(event);
+    this.#primaryClick.down(event);
     this.#elements.canvas.dataset.drag = mode;
+  }
+
+  /** Losing focus retires the gesture without selecting or toggling attack. */
+  cancelPointer(): void {
+    this.#endDrag();
   }
 
   pointerMove(event: PointerEvent): void {
     this.#secondaryClick.move(event);
+    this.#primaryClick.move(event);
     const drag = this.#drag;
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
@@ -588,6 +623,32 @@ export class WorldView {
   }
 
   pointerEnd(event: PointerEvent): void {
+    if (this.#drag?.pointerId !== event.pointerId) {
+      return;
+    }
+    // Explicit release can precede the browser's queued lostpointercapture event.
+    // Inspect ownership now, before a later pointerup can turn it into a click.
+    if (event.type === "pointerup" && !this.#elements.canvas.hasPointerCapture(event.pointerId)) {
+      this.#endDrag();
+      return;
+    }
+    if (this.#primaryClick.end(event)) {
+      const rect = this.#elements.canvas.getBoundingClientRect();
+      const point = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        1 - ((event.clientY - rect.top) / rect.height) * 2,
+      );
+      const target = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes);
+      this.#pendingNpc = null;
+      if (target) {
+        this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === target.kind && entity.entityId === target.id)
+          ? { kind: "select-target", target } : null, (sequence) => {
+          if (target.kind === "npc" && sequence !== null) {
+            this.#pendingNpc = { target, sequence };
+          }
+        });
+      }
+    }
     // A right click that never became a turn drag toggles auto-attack.
     if (this.#secondaryClick.end(event)) {
       this.queueIntent(attackToggle);
@@ -598,6 +659,7 @@ export class WorldView {
   }
 
   #endDrag(): void {
+    this.#primaryClick.reset();
     this.#secondaryClick.reset();
     const drag = this.#drag;
     if (drag && this.#elements.canvas.hasPointerCapture(drag.pointerId)) {

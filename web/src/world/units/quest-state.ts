@@ -75,8 +75,8 @@ function isQuestNpc(catalog: ContentCatalog, npc: number): boolean {
 }
 
 /**
- * The quest NPC to talk to: the selected NPC when it gives or ends a quest, otherwise the nearest
- * projected one. Reach compares XZ only; the zone checks it again.
+ * An explicitly selected NPC is the only possible addressee, even if it has no quests.
+ * Without an NPC selection, Talk retains nearest-quest-giver access. The zone checks reach.
  */
 export function dialogNpc(snapshot: ZoneSnapshot, catalog: ContentCatalog): QuestNpc | null {
   const viewer = snapshot.entities[0];
@@ -84,8 +84,12 @@ export function dialogNpc(snapshot: ZoneSnapshot, catalog: ContentCatalog): Ques
     return null;
   }
   let chosen: { npc: number; distance: number } | null = null;
+  const selected = snapshot.viewer.target;
   for (const entity of snapshot.entities) {
     if (entity.kind !== "npc" || !isQuestNpc(catalog, entity.entityId)) {
+      continue;
+    }
+    if (selected?.kind === "npc" && selected.id !== entity.entityId) {
       continue;
     }
     const distance = Math.hypot(entity.position[0] - viewer.position[0], entity.position[2] - viewer.position[2]);
