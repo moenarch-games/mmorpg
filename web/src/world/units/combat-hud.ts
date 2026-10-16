@@ -36,6 +36,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "invalid-quest": "That quest is not available here.",
   "quest-log-full": "Your quest log is full.",
   "quest-incomplete": "That quest is not complete yet.",
+  "line-of-sight": "Target not in line of sight.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana" } as const;
