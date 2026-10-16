@@ -41,11 +41,7 @@ struct Uniforms {
     sun: [f32; 4],
     fog: [f32; 4],
     settings: [f32; 4],
-    zenith: [f32; 4],
-    upper: [f32; 4],
-    horizon: [f32; 4],
-    sky_ground: [f32; 4],
-    clouds: [f32; 4],
+    background: [f32; 4],
 }
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -401,11 +397,6 @@ impl FrameRenderer {
         let e = &frame.environment;
         let d = std::array::from_fn::<_, 3, _>(|i| view.target[i] - view.eye[i]);
         let distance = d.iter().map(|v| v * v).sum::<f32>().sqrt();
-        let horizontal = d[0].hypot(d[2]).max(f32::EPSILON);
-        let horizon =
-            ((0.5 + d[1] / horizontal / (2. * 25_f32.to_radians().tan())).clamp(-0.5, 1.5) * 1000.)
-                .round()
-                / 1000.;
         let u = Uniforms {
             camera: camera.view_projection_matrix().elements,
             eye: [view.eye[0], view.eye[1], view.eye[2], 0.],
@@ -420,32 +411,8 @@ impl FrameRenderer {
             ],
             sun: color(e.sun.color, 0.),
             fog: color(e.fog.color, e.fog.near),
-            settings: [e.fog.far, viewport[0] as f32, viewport[1] as f32, horizon],
-            zenith: [
-                e.sky_stops.zenith[0],
-                e.sky_stops.zenith[1],
-                e.sky_stops.zenith[2],
-                0.,
-            ],
-            upper: [
-                e.sky_stops.upper[0],
-                e.sky_stops.upper[1],
-                e.sky_stops.upper[2],
-                0.,
-            ],
-            horizon: [
-                e.sky_stops.horizon[0],
-                e.sky_stops.horizon[1],
-                e.sky_stops.horizon[2],
-                0.,
-            ],
-            sky_ground: [
-                e.sky_stops.ground[0],
-                e.sky_stops.ground[1],
-                e.sky_stops.ground[2],
-                0.,
-            ],
-            clouds: [e.cloud_offset, 0., 0., 0.],
+            settings: [e.fog.far, 0., 0., 0.],
+            background: color(e.background, 1.),
         };
         queue.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
         let mut draws = Vec::new();

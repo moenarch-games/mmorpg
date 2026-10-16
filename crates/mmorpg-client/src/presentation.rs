@@ -91,6 +91,7 @@ pub struct Presentation {
     reduced_motion: bool,
     origin: Instant,
     last_draw: Instant,
+    camera_framed: bool,
 }
 
 impl Presentation {
@@ -123,11 +124,13 @@ impl Presentation {
             reduced_motion: false,
             origin: now,
             last_draw: now,
+            camera_framed: false,
         })
     }
 
     /// Start a new connection epoch without blending with obsolete samples.
     pub fn reset(&mut self, now: Instant) {
+        self.camera_framed = false;
         self.picked_bodies.clear();
         self.picked_draws.clear();
         self.animators.clear();
@@ -628,6 +631,63 @@ impl Presentation {
         self.players(now)
             .get(&self.player_id)
             .map_or([0.0, 0.5, 0.0], |pose| pose.position)
+    }
+
+    /// Frame the first actual viewer once per session, then preserve user orbit.
+    /// Only scenery-backed structural colliders participate in startup framing.
+    pub fn camera_view(
+        &mut self,
+        camera: &mut crate::camera::OrbitCamera,
+        world: &crate::world::WorldScene,
+        now: Instant,
+    ) -> crate::camera::CameraView {
+        let viewer = self.players(now).get(&self.player_id).copied();
+        let focus = viewer.map_or([0.0, 0.5, 0.0], |pose| pose.position);
+        let ground = |x, z| world.surface_y(x, z);
+        if !self.camera_framed
+            && let Some(viewer) = viewer
+        {
+            self.camera_framed = true;
+            let colliders: Vec<_> = self
+                .scenery
+                .props
+                .iter()
+                .filter_map(|prop| {
+                    let id = prop.collider?;
+                    self.content
+                        .definition()
+                        .colliders()
+                        .iter()
+                        .find(|c| c.id == id)
+                })
+                .collect();
+            let mut clear = false;
+            for step in [0, 2, -2, 1, -1, 3, -3, 4] {
+                camera.look_along(viewer.yaw + step as f32 * std::f32::consts::FRAC_PI_4);
+                let view = camera.view_above_ground(focus, ground);
+                let blocked = [0.35, 0.6, 0.8, 1.0].into_iter().any(|t| {
+                    colliders.iter().any(|c| {
+                        (0..3).all(|axis| {
+                            let point =
+                                view.target[axis] + (view.eye[axis] - view.target[axis]) * t;
+                            let centre = c.position[axis] as f32 / 100.0;
+                            let half = c.half_extents[axis] as f32 / 100.0;
+                            let low = centre - half - if axis == 1 { 0.0 } else { 0.4 };
+                            let high = centre + half + 0.4;
+                            point >= low && point <= high
+                        })
+                    })
+                });
+                if !blocked {
+                    clear = true;
+                    break;
+                }
+            }
+            if !clear {
+                camera.look_along(viewer.yaw);
+            }
+        }
+        camera.view_above_ground(focus, ground)
     }
 
     #[must_use]

@@ -2,7 +2,7 @@ struct Environment {
     camera: mat4x4<f32>, eye: vec4<f32>, direction: vec4<f32>,
     sky: vec4<f32>, ground: vec4<f32>, sun_direction: vec4<f32>, sun: vec4<f32>,
     fog: vec4<f32>, settings: vec4<f32>,
-    zenith: vec4<f32>, upper: vec4<f32>, horizon: vec4<f32>, sky_ground: vec4<f32>, clouds: vec4<f32>,
+    background: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> environment: Environment;
 struct Output {
@@ -53,23 +53,7 @@ struct Output {
     let points=array<vec2<f32>,3>(vec2<f32>(-1.0,-1.0),vec2<f32>(3.0,-1.0),vec2<f32>(-1.0,3.0));
     return vec4<f32>(points[index],1.0,1.0);
 }
-fn linear_channel(c:f32)->f32{if c<=0.04045{return c/12.92;}return pow((c+0.055)/1.055,2.4);}
-fn cloud(p:vec2<f32>,centre:vec2<f32>,radii:vec2<f32>,opacity:f32)->f32{return opacity*(1.0-clamp(length((p-centre)/radii)/0.7,0.0,1.0));}
-@fragment fn sky_fragment(@builtin(position) pixel:vec4<f32>)->@location(0) vec4<f32>{
-    let h=environment.settings.w;let y=pixel.y/environment.settings.z;
-    let upper=max(0.0,h*0.62);let horizon=max(upper,h-0.005);let ground=max(horizon,h+0.015);
-    var c=environment.sky_ground.rgb;
-    if y<upper{c=mix(environment.zenith.rgb,environment.upper.rgb,clamp(y/max(upper,0.00001),0.0,1.0));}
-    else if y<horizon{c=mix(environment.upper.rgb,environment.horizon.rgb,clamp((y-upper)/max(horizon-upper,0.00001),0.0,1.0));}
-    else if y<ground{c=mix(environment.horizon.rgb,environment.sky_ground.rgb,clamp((y-horizon)/max(ground-horizon,0.00001),0.0,1.0));}
-    let height=environment.settings.z*0.42;
-    let p=vec2<f32>(((pixel.x-environment.clouds.x)%1400.0+1400.0)%1400.0,pixel.y-environment.settings.z*(h-0.48));
-    var transmittance=1.0;
-    transmittance*=1.0-cloud(p,vec2<f32>(168.0,height*0.62),vec2<f32>(160.0,34.0),0.55);
-    transmittance*=1.0-cloud(p,vec2<f32>(252.0,height*0.55),vec2<f32>(120.0,26.0),0.45);
-    transmittance*=1.0-cloud(p,vec2<f32>(658.0,height*0.75),vec2<f32>(220.0,40.0),0.45);
-    transmittance*=1.0-cloud(p,vec2<f32>(994.0,height*0.48),vec2<f32>(140.0,30.0),0.50);
-    transmittance*=1.0-cloud(p,vec2<f32>(1232.0,height*0.70),vec2<f32>(190.0,36.0),0.40);
-    if p.y>=0.0&&p.y<=height{c=mix(c,vec3<f32>(1.0),(1.0-transmittance)*0.75);}
-    return vec4<f32>(linear_channel(c.r),linear_channel(c.g),linear_channel(c.b),1.0);
+// The current browser renderer consumes an opaque environment background.
+@fragment fn sky_fragment()->@location(0) vec4<f32>{
+    return environment.background;
 }

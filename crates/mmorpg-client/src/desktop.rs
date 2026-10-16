@@ -612,7 +612,9 @@ impl ApplicationHandler for App {
                         return;
                     }
                 }
-                let view = self.camera.view(self.presentation.camera_target(now));
+                let view = self
+                    .presentation
+                    .camera_view(&mut self.camera, &self.world, now);
                 let frame = self.presentation.frame(&self.world, now, view);
                 if let Some(renderer) = &mut self.renderer
                     && let Err(error) = renderer.render(

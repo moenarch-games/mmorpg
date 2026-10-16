@@ -63,6 +63,7 @@ pub struct WorldScene {
     pub props: Vec<SceneBox>,
     /// Additional caller-authored presentation geometry, rendered and picked with the world.
     pub additional_draws: Vec<SceneDraw>,
+    grid: mmorpg_scenery::TerrainGrid,
     groups: Vec<batching::Group>,
     water_draws: Vec<SceneDraw>,
     animated: Vec<props::Animated>,
@@ -143,6 +144,7 @@ impl WorldScene {
         }
         Self {
             additional_draws: Vec::new(),
+            grid,
             groups,
             water_draws,
             animated,
@@ -151,6 +153,12 @@ impl WorldScene {
             props,
         }
     }
+    /// Height of the rendered four-metre terrain triangles, in metres.
+    #[must_use]
+    pub fn surface_y(&self, x: f32, z: f32) -> f32 {
+        terrain::surface(&self.grid, f64::from(x), f64::from(z)) as f32
+    }
+
     /// Presented world at a cosmetic clock and camera position. Geometry is never copied.
     #[must_use]
     pub fn frame(&self, seconds: f64, animate: bool, eye: [f32; 3]) -> WorldFrame {
