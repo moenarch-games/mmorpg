@@ -899,7 +899,7 @@ dependencies = [
 [[package]]
 name = "input-bindings-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/input-bindings.git?rev=d5fcb81bb1eefde9e2f69d404a4d7e429fb2f12c#d5fcb81bb1eefde9e2f69d404a4d7e429fb2f12c"
+source = "git+https://github.com/moritzbrantner/input-bindings.git?rev=abe258b478c26a27f5139264273c63a7079368b4#abe258b478c26a27f5139264273c63a7079368b4"
 dependencies = [
  "serde",
 ]
