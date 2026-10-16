@@ -28,7 +28,8 @@ flowchart TD
     Protocol --> Core
     Directory --> Core
     Core --> Physics[physics-engine: integration and collision]
-    Client --> Renderer[3d-lab: graphics]
+    Client --> NativeRenderer[Native: wgpu/winit, external tobj asset import]
+    Client --> BrowserRenderer[Browser: Three.js through pinned renderer adapter]
     Client --> Scenery[mmorpg-scenery: presentation scenery]
     Scenery --> Core
 ```
