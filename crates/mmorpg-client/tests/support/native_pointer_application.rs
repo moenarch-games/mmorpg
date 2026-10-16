@@ -211,13 +211,13 @@ impl NativeApplication {
             window: None,
             renderer: None,
             world: WorldScene::new(&scenery),
-            presentation: Presentation::new(
-                player_id,
-                scenery,
-                Arc::clone(&content),
-                Instant::now(),
-            )
-            .unwrap(),
+            presentation: {
+                let mut presentation =
+                    Presentation::new(player_id, scenery, Arc::clone(&content), Instant::now())
+                        .unwrap();
+                presentation.set_default_appearance(PlayerClass::Warden);
+                presentation
+            },
             title: String::new(),
             connection_epoch: None,
             input,
@@ -522,10 +522,11 @@ impl NativeApplication {
         );
         self.pump(Duration::from_millis(150));
     }
-    fn point(&self, entity: EntityRef) -> PhysicalPosition<f64> {
+    fn point(&mut self, entity: EntityRef) -> PhysicalPosition<f64> {
         use three_d_camera::PerspectiveCamera;
         use three_d_core::Vec3;
-        let app = &self.driver.app;
+        let canonical = self.snapshot();
+        let app = &mut self.driver.app;
         let now = Instant::now();
         let pose = app
             .presentation
@@ -535,13 +536,15 @@ impl NativeApplication {
                 panic!(
                     "fixture entity {entity:?} absent; projection={:?}; canonical={:?}",
                     app.presentation.latest(),
-                    self.snapshot()
+                    canonical
                 )
             })
             .pose
             .position;
         // Independent projection of the displayed torso, not production picking.
-        let view = app.camera.view(app.presentation.camera_target(now));
+        let view = app
+            .presentation
+            .camera_view(&mut app.camera, &app.world, now);
         let size = app.window.as_ref().unwrap().inner_size();
         let camera = PerspectiveCamera::new(
             Vec3::new(view.eye[0], view.eye[1], view.eye[2]),
@@ -764,42 +767,54 @@ fn native_pointer_application_contract() {
         app.setup([0, 1_500], &[(220, [0, 2_100])]);
         let original = app.driver.app.world.clone();
         let point = app.point(front);
-        if kind == 2 {
-            use mmorpg_client::world::MeshVertex;
-            let base = app.driver.app.world.terrain.vertices.len() as u32;
-            for position in [[-10.0, -5.0, 18.0], [10.0, -5.0, 18.0], [0.0, 15.0, 18.0]] {
-                app.driver.app.world.terrain.vertices.push(MeshVertex {
-                    position,
-                    normal: [0.0, 0.0, -1.0],
-                    color: [0.3; 3],
-                });
-            }
-            app.driver
-                .app
-                .world
-                .terrain
-                .indices
-                .extend_from_slice(&[base, base + 2, base + 1]);
+        use mmorpg_client::world::{DrawMaterial, SceneDraw};
+        let (mesh, size, at) = if kind == 2 {
+            (
+                three_d_core::Mesh::new(
+                    vec![
+                        three_d_core::Vec3::new(-10.0, -5.0, 18.0),
+                        three_d_core::Vec3::new(10.0, -5.0, 18.0),
+                        three_d_core::Vec3::new(0.0, 15.0, 18.0),
+                    ],
+                    vec![0, 2, 1],
+                )
+                .unwrap(),
+                [1.0; 3],
+                [0.0; 3],
+            )
         } else {
-            app.driver
-                .app
-                .world
-                .props
-                .push(mmorpg_client::presentation::SceneBox {
-                    position: if roof {
-                        [0.0, 3.0, 20.0]
-                    } else {
-                        [0.0, 2.0, 18.0]
-                    },
-                    size: if roof {
-                        [10.0, 0.5, 12.0]
-                    } else {
-                        [10.0, 8.0, 0.5]
-                    },
-                    color: [0.3; 3],
-                    yaw: 0.0,
-                });
-        }
+            (
+                three_d_core::Mesh::unit_cube(),
+                if roof {
+                    [10.0, 0.5, 12.0]
+                } else {
+                    [10.0, 8.0, 0.5]
+                },
+                if roof {
+                    [0.0, 3.0, 20.0]
+                } else {
+                    [0.0, 2.0, 18.0]
+                },
+            )
+        };
+        app.driver.app.world.additional_draws.push(SceneDraw {
+            id: format!("acceptance-occluder-{kind}"),
+            resource_key: format!("acceptance-occluder-{kind}"),
+            mesh: Arc::new(mesh),
+            model: three_d_animation::Mat4 {
+                elements: [
+                    size[0], 0.0, 0.0, 0.0, 0.0, size[1], 0.0, 0.0, 0.0, 0.0, size[2], 0.0, at[0],
+                    at[1], at[2], 1.0,
+                ],
+            },
+            material: DrawMaterial {
+                color: [0.3; 3],
+                emissive: [0.0; 3],
+                opacity: 1.0,
+                unlit: false,
+                double_sided: false,
+            },
+        });
         let window = Arc::clone(app.driver.app.window.as_ref().unwrap());
         // Retire the configured surface before creating another for this window.
         drop(app.driver.app.renderer.take());

@@ -120,3 +120,40 @@ actor or applying a gallery-only view is not an acceptance repair. Image mismatc
 diagnostics report byte count without dumping whole buffers. Original failed
 captures/logs remain evidence. Pointer occluder and new-path health-bar fixture
 translations remain required in a subsequent independent acceptance turn.
+
+### Final adapter fixture translations
+
+`native_session_camera` additionally verifies `surface_y` against barycentric
+interior points of both actual 4m terrain-grid triangles in the steepest and
+highest cells. This is independent of the sampler formula. No-viewer frames
+must leave startup initialization pending. Default class appearance is the
+published entry selection: Warden ironcrest helm, Ranger cap, Arcanist hood.
+`Presentation::set_default_appearance(PlayerClass)` supplies that existing
+cosmetic input in actual App startup and gallery; generic `new` and explicit
+`set_headwear(None)` retain their meanings.
+
+The actual-window pointer fixture now supplies its same wall, roof and triangle
+through `WorldScene.additional_draws`, with identical positions, dimensions and
+triangle winding; the projection of pointer coordinates uses the same grounded
+session camera as App. Existing occlusion assertions remain unchanged. The
+existing `projected_health_bars_change_gpu_pixels` test now renders actual
+`unit_draws` through `offscreen_frame_pixels`; its pixel-change assertion is
+unchanged.
+
+`cargo test -p mmorpg-client --test native_presentation_resources --locked`
+checks dynamic Barrier radius geometry with Weak resource handles: old unused
+radius resources retire, authoritative aura removal retires expired resources,
+and session reset releases remaining resources. An accepted ability event alone
+is not a continuously active Barrier; the fixture supplies/removes the actual
+Absorb aura.
+
+The explicit GPU test `empty_frame_renders_submitted_background_without_hidden_css_sky`
+checks the whole empty frame against its submitted sRGB color (one output-byte
+quantization allowance), verifies changing background changes real pixels, and
+verifies inactive CSS sky/cloud values do not replace it. The named region
+captures reuse the actual browser DEBUG_VIEWPOINTS; eye clearance is applied if
+needed. Every world/prop camera is printed as `GALLERY_CAMERA` JSON for exact
+public reproduction. Well/barrel cameras approach the actual subject instead
+of sitting behind nearby architecture. Required postimplementation GPU captures
+and actual paired image review remain obligations; passing compilation is not
+visual evidence.

@@ -583,10 +583,10 @@ mod tests {
                 let mut presentation =
                     Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
                 presentation.push(projection, now).unwrap();
-                let view = OrbitCamera::default().view(presentation.camera_target(now));
-                let pixels = offscreen_pixels(&world, &presentation.scene(now, view), &[], view)
-                    .await
-                    .unwrap();
+                let view = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
+                let frame = world.frame(0.0, false, view.eye);
+                let units = presentation.unit_draws(now, view);
+                let pixels = offscreen_frame_pixels(&frame, &units, view).await.unwrap();
                 save_smoke_frame(if damaged { "damaged.ppm" } else { "full.ppm" }, &pixels);
                 frames.push(pixels);
             }

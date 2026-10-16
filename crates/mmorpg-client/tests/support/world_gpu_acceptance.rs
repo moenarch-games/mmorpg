@@ -135,14 +135,19 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
         let world = WorldScene::new(&mmorpg_scenery::greyhaven_vale_scenery());
         for (name, eye, target) in [
             ("outpost", [5.0, 8.5, 31.0], [-14.0, 3.0, 4.0]),
-            ("woods", [-95.0, 12.0, -20.0], [-85.0, 1.0, -40.0]),
-            ("farm", [90.0, 18.0, 20.0], [90.0, 1.0, 0.0]),
-            ("lake", [0.0, 15.0, 125.0], [0.0, 0.0, 100.0]),
-            ("hollow", [0.0, 15.0, -150.0], [0.0, 2.0, -175.0]),
+            ("woods", [-46.0, 7.0, 14.0], [-78.0, 3.0, -2.0]),
+            ("farm", [46.0, 12.0, 16.0], [72.0, 3.0, 40.0]),
+            ("lake", [30.0, 9.0, -34.0], [56.0, 0.0, -56.0]),
+            ("hollow", [6.0, 14.0, -64.0], [0.0, 3.0, -98.0]),
         ] {
             for (phase, seconds) in [("day", 0.0), ("night", 600.0)] {
-                let view = CameraView { eye, target };
-                let frame = world.frame(seconds, true, eye);
+                let mut view = CameraView { eye, target };
+                view.eye[1] = view.eye[1].max(world.surface_y(eye[0], eye[2]) + 0.35);
+                eprintln!(
+                    "GALLERY_CAMERA {{\"name\":\"{name}-{phase}\",\"eye\":{:?},\"target\":{:?}}}",
+                    view.eye, view.target
+                );
+                let frame = world.frame(seconds, true, view.eye);
                 let pixels = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
                 save(&format!("{name}-{phase}"), &pixels);
             }
@@ -155,10 +160,23 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
             let base = scenery.height_at(prop.position[0], prop.position[2]) as f32 / 100.0;
             let half = prop.half_extents.map(|v| v as f32 / 100.0);
             let distance = half.into_iter().fold(2.0_f32, f32::max) * 3.0 + 4.0;
-            let view = CameraView {
+            let mut view = CameraView {
                 eye: [x + distance, base + half[1] + distance * 0.7, z + distance],
                 target: [x, base + half[1], z],
             };
+            if matches!(
+                kind,
+                mmorpg_scenery::PropKind::Well | mmorpg_scenery::PropKind::Barrel
+            ) {
+                view.eye = [x + 1.6, base + half[1] + 1.5, z + 2.5];
+            }
+            view.eye[1] = view.eye[1].max(world.surface_y(view.eye[0], view.eye[2]) + 0.35);
+            eprintln!(
+                "GALLERY_CAMERA {{\"name\":\"prop-{}\",\"eye\":{:?},\"target\":{:?}}}",
+                kind.name(),
+                view.eye,
+                view.target
+            );
             let frame = world.frame(0.0, false, view.eye);
             let pixels = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
             save(&format!("prop-{}", kind.name()), &pixels);
@@ -178,6 +196,8 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
                 let mut presentation =
                     Presentation::new(1, mmorpg_scenery::greyhaven_vale_scenery(), content, now)
                         .unwrap();
+                presentation
+                    .set_default_appearance(mmorpg_core::PlayerClass::from_code(class).unwrap());
                 presentation.push(projection, now).unwrap();
                 let view = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
                 let frame = world.frame(0.0, false, view.eye);
@@ -280,5 +300,40 @@ fn current_creature_and_npc_model_images_reach_native_gpu() {
                 .unwrap();
             save(&format!("model-{}", name.replace(':', "-")), &pixels);
         }
+    });
+}
+
+#[test]
+#[ignore = "requires actual GPU; submitted background contract for #182"]
+fn empty_frame_renders_submitted_background_without_hidden_css_sky() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let world = WorldScene::new(&mmorpg_scenery::greyhaven_vale_scenery());
+        let view = CameraView {
+            eye: [0.0, 4.0, 9.0],
+            target: [0.0, 1.0, 0.0],
+        };
+        let mut frame = world.frame(0.0, false, view.eye);
+        frame.draws.clear();
+        frame.environment.background = [0.2, 0.4, 0.6];
+        let before = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
+        for pixel in before.chunks_exact(4) {
+            for (actual, expected) in pixel.iter().take(3).zip([51_u8, 102, 153]) {
+                assert!(
+                    actual.abs_diff(expected) <= 1,
+                    "submitted sRGB background pixel {pixel:?}"
+                );
+            }
+        }
+        frame.environment.background = [0.6, 0.2, 0.4];
+        let after = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
+        changed(&before, &after, "submitted background");
+        frame.environment.sky_stops.zenith = [1.0, 0.0, 0.0];
+        frame.environment.sky_stops.upper = [0.0, 1.0, 0.0];
+        frame.environment.cloud_offset += 100.0;
+        let inactive = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
+        assert!(
+            after == inactive,
+            "inactive CSS sky changed actual submitted background"
+        );
     });
 }
