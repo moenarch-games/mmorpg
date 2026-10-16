@@ -50,6 +50,7 @@ pub fn run(
         presentation,
         title: String::new(),
         connection_epoch: None,
+        last_refusal: None,
         input,
         updates,
         keys: HashSet::new(),
@@ -84,6 +85,7 @@ struct App {
     /// The window title last set, so it changes only when its text does.
     title: String,
     connection_epoch: Option<u32>,
+    last_refusal: Option<(u32, mmorpg_client::session::RefusalReceipt)>,
     input: watch::Sender<PlayerInput>,
     updates: watch::Receiver<NetworkUpdate>,
     keys: HashSet<KeyCode>,
@@ -592,6 +594,7 @@ impl ApplicationHandler for App {
                     NetworkUpdate::Snapshot {
                         connection_epoch,
                         snapshot,
+                        refusal,
                     } => {
                         if self.connection_epoch != Some(connection_epoch) {
                             self.presentation.reset(now);
@@ -605,6 +608,13 @@ impl ApplicationHandler for App {
                             return;
                         }
                         self.follow_projection();
+                        if let Some(refusal) = refusal {
+                            let receipt = (connection_epoch, refusal);
+                            if self.last_refusal != Some(receipt) {
+                                self.last_refusal = Some(receipt);
+                                self.npc_context.feedback = format!("refused: {:?}", refusal.code);
+                            }
+                        }
                         // Dying lets go of held movement; living again resumes it.
                         self.update_movement();
                         self.show_title(now);
