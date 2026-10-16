@@ -588,6 +588,9 @@ impl WindowRenderer {
         hud: &[HudRect],
         view: CameraView,
     ) -> Result<(), ClientError> {
+        // Presentation has already sampled this candidate frame's body geometry.
+        // Until that frame is presented, no view may be paired with those bodies.
+        self.last_view = None;
         if self.suspended {
             return Ok(());
         }
