@@ -97,7 +97,7 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 - "Per level" amounts scale with the caster's levels above 1, like the player damage curve; weapon damage is one draw from the player's melee range. Ability damage has no miss or critical roll.
 - Rage comes from auto-attack hits dealt and from every creature hit taken (swing or ability), even a fully absorbed one; death drains it.
 - Durations, cooldowns, the global cooldown and the five-second rule count the tick they start in; damage and heal over time pulse every period from there.
-- A cast completes against its target without a second range check; a target that died ends it as interrupted. A creature's cast at a player who dies or leaves ends silently.
+- A cast completes against its target without a second range check; a target that died ends it as interrupted. Targeted ranged abilities need line of sight at use and again at completion: a deterministic `physics-engine` ray between body centres must not hit static content colliders (units never block), otherwise the new `LineOfSight` error refuses it at no cost. A creature's Muck Bolt neither starts nor lands without line of sight (a broken line fizzles as interrupted). A creature's cast at a player who dies or leaves ends silently.
 - Invalid or repeated class choices report the new `InvalidClass` error.
 - Class-specific health and damage, Ranger Auto Shot, Garrick's abilities, the action bar and cast bars are out of this step (8b and later).
 
