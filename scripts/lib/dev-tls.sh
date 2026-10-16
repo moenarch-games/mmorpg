@@ -9,10 +9,11 @@
 # Whether CERT and KEY form a reusable development pair: valid for at least
 # another day, expiring within 14 days, an ECDSA P-256 key, and matching.
 dev_certificate_is_valid() {
-  local certificate=$1 key=$2
+  local certificate=$1 key=$2 lan_address=${3:-}
   [[ -f "$certificate" && -f "$key" ]] \
     && openssl x509 -checkend 86400 -noout -in "$certificate" >/dev/null 2>&1 \
     && ! openssl x509 -checkend 1209600 -noout -in "$certificate" >/dev/null 2>&1 \
+    && { [[ -z "$lan_address" ]] || openssl x509 -in "$certificate" -checkip "$lan_address" -noout >/dev/null 2>&1; } \
     && openssl pkey -in "$key" -noout -text 2>/dev/null | grep -q 'prime256v1' \
     && cmp -s \
       <(openssl x509 -in "$certificate" -pubkey -noout | openssl pkey -pubin -outform DER) \
@@ -22,7 +23,11 @@ dev_certificate_is_valid() {
 # Writes a new pair into DIR/cert.pem and DIR/key.pem, replacing both only
 # after the new pair was generated.
 generate_dev_certificate() {
-  local directory=$1 temporary
+  local directory=$1 lan_address=${2:-} temporary
+  local subject_alt_name='DNS:localhost,IP:127.0.0.1'
+  if [[ -n "$lan_address" ]]; then
+    subject_alt_name+=",IP:$lan_address"
+  fi
   temporary="$(mktemp -d "$directory/.new.XXXXXX")"
   if ! (
     umask 077
@@ -31,7 +36,7 @@ generate_dev_certificate() {
       -out "$temporary/cert.pem" \
       -sha256 -days 10 -nodes \
       -subj /CN=localhost \
-      -addext subjectAltName=DNS:localhost,IP:127.0.0.1 \
+      -addext "subjectAltName=$subject_alt_name" \
       >/dev/null 2>&1
   ) || ! mv -f -- "$temporary/cert.pem" "$directory/cert.pem" \
     || ! mv -f -- "$temporary/key.pem" "$directory/key.pem"; then
@@ -43,10 +48,10 @@ generate_dev_certificate() {
 
 # Reuses a valid pair in DIR or generates a new one, and keeps the key private.
 ensure_dev_certificate() {
-  local directory=$1
+  local directory=$1 lan_address=${2:-}
   mkdir -p "$directory"
-  if ! dev_certificate_is_valid "$directory/cert.pem" "$directory/key.pem"; then
-    generate_dev_certificate "$directory"
+  if ! dev_certificate_is_valid "$directory/cert.pem" "$directory/key.pem" "$lan_address"; then
+    generate_dev_certificate "$directory" "$lan_address"
   fi
   chmod 600 "$directory/key.pem"
 }
