@@ -18,6 +18,9 @@ pub struct SceneRenderer {
     queue: wgpu::Queue,
     frame: frame::FrameRenderer,
     depth: wgpu::TextureView,
+    multisampled: Option<wgpu::TextureView>,
+    samples: u32,
+    format: wgpu::TextureFormat,
     width: u32,
     height: u32,
 }
@@ -34,13 +37,31 @@ impl SceneRenderer {
                 ..Default::default()
             })
             .await?;
-        let frame = frame::FrameRenderer::new(&device, format);
-        let depth = depth_texture(&device, width, height);
+        let x4 = wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X4;
+        let samples = if adapter
+            .get_texture_format_features(format)
+            .flags
+            .contains(x4)
+            && adapter
+                .get_texture_format_features(DEPTH_FORMAT)
+                .flags
+                .contains(x4)
+        {
+            4
+        } else {
+            1
+        };
+        let frame = frame::FrameRenderer::new(&device, format, samples);
+        let depth = depth_texture(&device, width, height, samples);
+        let multisampled = color_texture(&device, width, height, format, samples);
         Ok(Self {
             device,
             queue,
             frame,
             depth,
+            multisampled,
+            samples,
+            format,
             width,
             height,
         })
@@ -56,7 +77,8 @@ impl SceneRenderer {
             &self.device,
             &self.queue,
             frame::Target {
-                view: target,
+                view: self.multisampled.as_ref().unwrap_or(target),
+                resolve: self.multisampled.as_ref().map(|_| target),
                 depth: &self.depth,
                 viewport: [self.width, self.height],
             },
@@ -66,7 +88,12 @@ impl SceneRenderer {
         )
     }
 }
-fn depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
+fn depth_texture(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    samples: u32,
+) -> wgpu::TextureView {
     device
         .create_texture(&wgpu::TextureDescriptor {
             label: Some("depth"),
@@ -76,13 +103,40 @@ fn depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Textur
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         })
         .create_view(&Default::default())
+}
+
+fn color_texture(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+    samples: u32,
+) -> Option<wgpu::TextureView> {
+    (samples > 1).then(|| {
+        device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("antialiased world"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: samples,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&Default::default())
+    })
 }
 
 fn scene_camera(view: CameraView, viewport: [u32; 2]) -> Result<PerspectiveCamera, ClientError> {
@@ -120,6 +174,14 @@ impl WindowRenderer {
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or("surface has no compatible format")?;
         config.present_mode = wgpu::PresentMode::AutoVsync;
+        if let Some(format) = surface
+            .get_capabilities(&adapter)
+            .formats
+            .into_iter()
+            .find(|f| f.is_srgb())
+        {
+            config.format = format;
+        }
         let renderer =
             SceneRenderer::new(&adapter, config.format, config.width, config.height).await?;
         surface.configure(&renderer.device, &config);
@@ -164,8 +226,19 @@ impl WindowRenderer {
         self.config.height = height.min(limit);
         self.renderer.width = self.config.width;
         self.renderer.height = self.config.height;
-        self.renderer.depth =
-            depth_texture(&self.renderer.device, self.config.width, self.config.height);
+        self.renderer.depth = depth_texture(
+            &self.renderer.device,
+            self.config.width,
+            self.config.height,
+            self.renderer.samples,
+        );
+        self.renderer.multisampled = color_texture(
+            &self.renderer.device,
+            self.config.width,
+            self.config.height,
+            self.renderer.format,
+            self.renderer.samples,
+        );
         self.surface.configure(&self.renderer.device, &self.config);
     }
     pub fn render(

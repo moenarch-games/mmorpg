@@ -2,7 +2,7 @@
 use super::{ClientError, DEPTH_FORMAT, scene_camera};
 use crate::{
     camera::CameraView,
-    hud::HudRect,
+    hud::{HudRect, MAX_HUD_RECTS},
     world::{SceneDraw, WorldFrame},
 };
 use bytemuck::{Pod, Zeroable};
@@ -92,7 +92,7 @@ impl GpuMesh {
                 vertices.push(Vertex {
                     position: [p.x, p.y, p.z],
                     normal: [n.x, n.y, n.z],
-                    color: c,
+                    color: c.map(linear),
                 });
             }
             indices.extend_from_slice(mesh.indices());
@@ -113,7 +113,7 @@ impl GpuMesh {
                     vertices.push(Vertex {
                         position: [p.x, p.y, p.z],
                         normal: [n.x, n.y, n.z],
-                        color: c,
+                        color: c.map(linear),
                     });
                 }
             }
@@ -156,6 +156,7 @@ impl Instance {
 
 pub(super) struct Target<'a> {
     pub view: &'a wgpu::TextureView,
+    pub resolve: Option<&'a wgpu::TextureView>,
     pub depth: &'a wgpu::TextureView,
     pub viewport: [u32; 2],
 }
@@ -164,6 +165,7 @@ pub(super) struct FrameRenderer {
     pipelines: Vec<wgpu::RenderPipeline>,
     sky_pipeline: wgpu::RenderPipeline,
     hud_pipeline: wgpu::RenderPipeline,
+    hud_buffer: wgpu::Buffer,
     uniforms: wgpu::Buffer,
     binding: wgpu::BindGroup,
     instances: wgpu::Buffer,
@@ -171,7 +173,7 @@ pub(super) struct FrameRenderer {
     meshes: BTreeMap<String, GpuMesh>,
 }
 impl FrameRenderer {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, samples: u32) -> Self {
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("world environment"),
             size: mem::size_of::<Uniforms>() as u64,
@@ -254,7 +256,10 @@ impl FrameRenderer {
                         stencil: Default::default(),
                         bias: Default::default(),
                     }),
-                    multisample: Default::default(),
+                    multisample: wgpu::MultisampleState {
+                        count: samples,
+                        ..Default::default()
+                    },
                     fragment: Some(wgpu::FragmentState {
                         module: &shader,
                         entry_point: Some("fs_main"),
@@ -291,7 +296,10 @@ impl FrameRenderer {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: Default::default(),
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("sky_fragment"),
@@ -337,7 +345,10 @@ impl FrameRenderer {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: Default::default(),
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &hud_shader,
                 entry_point: Some("fs_main"),
@@ -355,6 +366,12 @@ impl FrameRenderer {
             pipelines,
             sky_pipeline,
             hud_pipeline,
+            hud_buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("combat HUD"),
+                size: (MAX_HUD_RECTS * mem::size_of::<HudInstance>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
             uniforms,
             binding,
             instances: instance_buffer(device, 1),
@@ -371,8 +388,12 @@ impl FrameRenderer {
         hud: &[HudRect],
         view: CameraView,
     ) -> Result<(), ClientError> {
+        if hud.len() > MAX_HUD_RECTS {
+            return Err("too many combat HUD rectangles".into());
+        }
         let Target {
             view: target,
+            resolve,
             depth,
             viewport,
         } = target;
@@ -494,13 +515,9 @@ impl FrameRenderer {
                 color: r.color,
             })
             .collect();
-        let hud_buffer = (!hud_instances.is_empty()).then(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("combat HUD"),
-                contents: bytemuck::cast_slice(&hud_instances),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
+        if !hud_instances.is_empty() {
+            queue.write_buffer(&self.hud_buffer, 0, bytemuck::cast_slice(&hud_instances));
+        }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("presented world"),
         });
@@ -510,7 +527,7 @@ impl FrameRenderer {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: target,
                     depth_slice: None,
-                    resolve_target: None,
+                    resolve_target: resolve,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: f64::from(linear(e.background[0])),
@@ -555,9 +572,9 @@ impl FrameRenderer {
                 pass.draw_indexed(0..mesh.count, 0, u32::try_from(start)?..u32::try_from(end)?);
                 start = end;
             }
-            if let Some(buffer) = &hud_buffer {
+            if !hud_instances.is_empty() {
                 pass.set_pipeline(&self.hud_pipeline);
-                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.set_vertex_buffer(0, self.hud_buffer.slice(..));
                 pass.draw(0..6, 0..u32::try_from(hud_instances.len())?);
             }
         }

@@ -20,7 +20,7 @@ struct Output {
     let world=mat4x4<f32>(m0,m1,m2,m3)*vec4<f32>(position,1.0);
     out.position=environment.camera*world;out.world=world.xyz;
     out.normal=mat3x3<f32>(n0.xyz,n1.xyz,n2.xyz)*normal;
-    // Vertex colors are already shader-linear; only material hex colors were decoded from sRGB.
+    // Material and vertex colors were decoded from sRGB once during CPU upload.
     out.color=vec4<f32>(color.rgb*vertex_color,color.a);out.emissive=emissive;return out;
 }
 @fragment fn fs_main(input:Output,@builtin(front_facing) front:bool)->@location(0) vec4<f32>{
