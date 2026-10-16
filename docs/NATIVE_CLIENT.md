@@ -44,6 +44,16 @@ Run this command in another terminal for a second player after the launcher is r
 cargo run --locked -p mmorpg-client -- --certificate target/dev-tls/cert.pem
 ```
 
+To join the same host **from another computer on the LAN**, use the host's actual IPv4 address and transfer only the **public** `target/dev-tls/cert.pem` to that client (never `key.pem`):
+
+```sh
+cargo run --locked -p mmorpg-client -- \
+  --url https://192.168.1.20:4433/game/matches/zone-1 \
+  --certificate ./cert.pem
+```
+
+Replace `192.168.1.20` with the server machine's LAN address. The zone host already binds its WebTransport port for incoming peers; allow inbound **UDP 4433** from the LAN in the host firewall. Keep the launcher running (closing the host's local window stops its server). For friends who want to join in a browser without installing Rust, run `./scripts/dev-browser-online.sh --lan 192.168.1.20` **instead**; it serves an HTTPS game page and the same authoritative server. See [LAN browser hosting](../README.md#play-together-on-a-local-network) for TLS and firewall setup.
+
 Controls:
 
 | Input | Action |
