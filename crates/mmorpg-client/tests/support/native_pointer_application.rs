@@ -211,15 +211,16 @@ impl NativeApplication {
             window: None,
             renderer: None,
             world: WorldScene::new(&scenery),
-            presentation: Presentation::new(
-                player_id,
-                scenery,
-                Arc::clone(&content),
-                Instant::now(),
-            )
-            .unwrap(),
+            presentation: {
+                let mut presentation =
+                    Presentation::new(player_id, scenery, Arc::clone(&content), Instant::now())
+                        .unwrap();
+                presentation.set_default_appearance(PlayerClass::Warden);
+                presentation
+            },
             title: String::new(),
             connection_epoch: None,
+            last_refusal: None,
             input,
             updates,
             keys: HashSet::new(),
@@ -520,12 +521,17 @@ impl NativeApplication {
                     })
             },
         );
+        // Startup framing is exercised before setup(). This authored selection
+        // fixture then applies an explicit user camera, after reset has framed
+        // the first valid snapshot, preserving its original +Z composition.
+        self.driver.app.camera = OrbitCamera::default();
         self.pump(Duration::from_millis(150));
     }
-    fn point(&self, entity: EntityRef) -> PhysicalPosition<f64> {
+    fn point(&mut self, entity: EntityRef) -> PhysicalPosition<f64> {
         use three_d_camera::PerspectiveCamera;
         use three_d_core::Vec3;
-        let app = &self.driver.app;
+        let canonical = self.snapshot();
+        let app = &mut self.driver.app;
         let now = Instant::now();
         let pose = app
             .presentation
@@ -535,13 +541,15 @@ impl NativeApplication {
                 panic!(
                     "fixture entity {entity:?} absent; projection={:?}; canonical={:?}",
                     app.presentation.latest(),
-                    self.snapshot()
+                    canonical
                 )
             })
             .pose
             .position;
         // Independent projection of the displayed torso, not production picking.
-        let view = app.camera.view(app.presentation.camera_target(now));
+        let view = app
+            .presentation
+            .camera_view(&mut app.camera, &app.world, now);
         let size = app.window.as_ref().unwrap().inner_size();
         let camera = PerspectiveCamera::new(
             Vec3::new(view.eye[0], view.eye[1], view.eye[2]),
@@ -565,7 +573,7 @@ impl NativeApplication {
         let y = (1.0 - clip[1] / clip[3]) * 0.5 * size.height as f32;
         assert!(
             x > 0.0 && x < size.width as f32 && y > 0.0 && y < size.height as f32,
-            "fixture target must be visible inside the window"
+            "fixture target {entity:?} must be visible: world={pose:?}, view={view:?}, pixel=({x},{y}), window={size:?}"
         );
         PhysicalPosition::new(f64::from(x), f64::from(y))
     }
@@ -677,6 +685,21 @@ impl NativeApplication {
 #[ignore = "requires X11, libXtst and an actual wgpu adapter; run explicitly for #28"]
 fn native_pointer_application_contract() {
     let mut app = NativeApplication::new();
+    // Real redraw/session initialization must adopt the same unobstructed view
+    // as the gallery, rather than leaving native yaw zero inside the keep.
+    assert_ne!(
+        app.driver.app.camera.facing(),
+        0,
+        "actual App did not frame the first session view"
+    );
+    app.driver.app.camera.orbit(100.0, 0.0);
+    let user_heading = app.driver.app.camera.facing();
+    app.pump(Duration::from_millis(100));
+    assert_eq!(
+        app.driver.app.camera.facing(),
+        user_heading,
+        "App reset user orbit on later frames"
+    );
     let front = EntityRef::Creature(CreatureId::new(220));
     let second = EntityRef::Creature(CreatureId::new(221));
     app.setup([0, 1_500], &[(220, [-180, 2_100]), (221, [180, 2_300])]);
@@ -749,42 +772,54 @@ fn native_pointer_application_contract() {
         app.setup([0, 1_500], &[(220, [0, 2_100])]);
         let original = app.driver.app.world.clone();
         let point = app.point(front);
-        if kind == 2 {
-            use mmorpg_client::world::MeshVertex;
-            let base = app.driver.app.world.terrain.vertices.len() as u32;
-            for position in [[-10.0, -5.0, 18.0], [10.0, -5.0, 18.0], [0.0, 15.0, 18.0]] {
-                app.driver.app.world.terrain.vertices.push(MeshVertex {
-                    position,
-                    normal: [0.0, 0.0, -1.0],
-                    color: [0.3; 3],
-                });
-            }
-            app.driver
-                .app
-                .world
-                .terrain
-                .indices
-                .extend_from_slice(&[base, base + 2, base + 1]);
+        use mmorpg_client::world::{DrawMaterial, SceneDraw};
+        let (mesh, size, at) = if kind == 2 {
+            (
+                three_d_core::Mesh::new(
+                    vec![
+                        three_d_core::Vec3::new(-10.0, -5.0, 18.0),
+                        three_d_core::Vec3::new(10.0, -5.0, 18.0),
+                        three_d_core::Vec3::new(0.0, 15.0, 18.0),
+                    ],
+                    vec![0, 2, 1],
+                )
+                .unwrap(),
+                [1.0; 3],
+                [0.0; 3],
+            )
         } else {
-            app.driver
-                .app
-                .world
-                .props
-                .push(mmorpg_client::presentation::SceneBox {
-                    position: if roof {
-                        [0.0, 3.0, 20.0]
-                    } else {
-                        [0.0, 2.0, 18.0]
-                    },
-                    size: if roof {
-                        [10.0, 0.5, 12.0]
-                    } else {
-                        [10.0, 8.0, 0.5]
-                    },
-                    color: [0.3; 3],
-                    yaw: 0.0,
-                });
-        }
+            (
+                three_d_core::Mesh::unit_cube(),
+                if roof {
+                    [10.0, 0.5, 12.0]
+                } else {
+                    [10.0, 8.0, 0.5]
+                },
+                if roof {
+                    [0.0, 3.0, 20.0]
+                } else {
+                    [0.0, 2.0, 18.0]
+                },
+            )
+        };
+        app.driver.app.world.additional_draws.push(SceneDraw {
+            id: format!("acceptance-occluder-{kind}"),
+            resource_key: format!("acceptance-occluder-{kind}"),
+            mesh: Arc::new(mesh),
+            model: three_d_animation::Mat4 {
+                elements: [
+                    size[0], 0.0, 0.0, 0.0, 0.0, size[1], 0.0, 0.0, 0.0, 0.0, size[2], 0.0, at[0],
+                    at[1], at[2], 1.0,
+                ],
+            },
+            material: DrawMaterial {
+                color: [0.3; 3],
+                emissive: [0.0; 3],
+                opacity: 1.0,
+                unlit: false,
+                double_sided: false,
+            },
+        });
         let window = Arc::clone(app.driver.app.window.as_ref().unwrap());
         // Retire the configured surface before creating another for this window.
         drop(app.driver.app.renderer.take());
@@ -864,6 +899,40 @@ fn native_pointer_application_contract() {
     player.inventory_changed_at = ready.tick;
     player.quests_changed_at = ready.tick;
     app.restore(ready);
+    app.until(
+        "Tanner restored self sheets reach actual application context",
+        |app| {
+            let context = &app.driver.app.npc_context;
+            context
+                .inventory
+                .as_ref()
+                .is_some_and(|inventory| inventory.count(mmorpg_core::ItemId::new(10)) == 5)
+                && context.quests.as_ref().is_some_and(|quests| {
+                    quests.completed == 1
+                        && quests.entries.iter().any(|entry| {
+                            entry.quest == mmorpg_core::QuestId::new(2) && entry.progress[0] == 5
+                        })
+                })
+        },
+    );
+    eprintln!(
+        "TANNER_BOUNDARY title={:?} expected={:?} canonicalQuests={:?} receivedQuests={:?} contextQuests={:?} inventoryRevision={:?}",
+        app.driver.app.title,
+        [9, 6].map(
+            |id| mmorpg_core::item_template(mmorpg_core::ItemId::new(id))
+                .unwrap()
+                .name
+        ),
+        app.snapshot().players[0].quests,
+        app.driver.app.presentation.latest().unwrap().quests,
+        app.driver.app.npc_context.quests,
+        app.driver
+            .app
+            .presentation
+            .latest()
+            .unwrap()
+            .inventory_revision
+    );
     for item in [9, 6] {
         assert!(
             app.driver.app.title.contains(
@@ -937,7 +1006,25 @@ fn native_pointer_application_contract() {
         app.role(npc, 800);
         let before = app.snapshot().players[0].clone();
         app.key("1");
-        app.pump(Duration::from_millis(500));
+        eprintln!(
+            "RANGE_BOUNDARY npc={npc} title={:?} feedback={:?} canonicalTarget={:?} latestAck={:?} events={:?}",
+            app.driver.app.title,
+            app.driver.app.npc_context.feedback,
+            app.snapshot().players[0].combat.target,
+            app.driver
+                .app
+                .presentation
+                .latest()
+                .map(|p| p.acknowledged_sequence),
+            app.driver.app.presentation.latest().map(|p| &p.events)
+        );
+        app.until(
+            "range refusal reaches visible selected NPC context",
+            |app| {
+                let title = app.driver.app.title.to_lowercase();
+                title.contains("range") || title.contains("reach") || title.contains("far")
+            },
+        );
         let after = app.snapshot().players[0].clone();
         assert_eq!(
             (

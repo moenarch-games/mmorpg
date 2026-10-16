@@ -35,7 +35,7 @@ impl Default for OrbitCamera {
     fn default() -> Self {
         Self {
             yaw: 0.0,
-            pitch: 0.42,
+            pitch: 0.36,
             distance: 9.0,
         }
     }
@@ -56,6 +56,28 @@ impl OrbitCamera {
             self.distance = (self.distance * ZOOM_STEP.powf(lines))
                 .clamp(MIN_DISTANCE_METRES, MAX_DISTANCE_METRES);
         }
+    }
+
+    /// Adopt a presentation heading without changing user pitch or zoom.
+    pub fn look_along(&mut self, heading: f32) {
+        if heading.is_finite() {
+            self.yaw = heading.rem_euclid(std::f32::consts::TAU);
+        }
+    }
+
+    /// Raise the eye above the actual rendered terrain, preserving the target.
+    #[must_use]
+    pub fn view_above_ground(
+        &self,
+        focus: [f32; 3],
+        ground_at: impl Fn(f32, f32) -> f32,
+    ) -> CameraView {
+        let mut view = self.view(focus);
+        let floor = ground_at(view.eye[0], view.eye[2]) + 0.35;
+        if floor.is_finite() && view.eye[1] < floor {
+            view.eye[1] = floor;
+        }
+        view
     }
 
     /// The heading a character takes while moving under this camera.

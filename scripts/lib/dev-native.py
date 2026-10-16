@@ -19,6 +19,11 @@ POLL_SECONDS = 0.25
 LAUNCHER_INPUTS = (
     "scripts/dev-native.sh", "scripts/lib/dev-native.py", "scripts/lib/dev-tls.sh",
 )
+NATIVE_ASSET_INPUTS = (
+    "web/assets/medieval-character-kit/archer.obj",
+    "web/assets/medieval-character-kit/manifest.json",
+    "web/assets/medieval-character-kit/materials.json",
+)
 
 
 class LaunchError(Exception):
@@ -113,7 +118,7 @@ def update_source():
 def inputs():
     paths = [ROOT / name for name in (
         "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
-        *LAUNCHER_INPUTS,
+        *LAUNCHER_INPUTS, *NATIVE_ASSET_INPUTS,
     )]
     for directory in (ROOT / "crates", ROOT / ".cargo"):
         for current, directories, files in os.walk(directory):

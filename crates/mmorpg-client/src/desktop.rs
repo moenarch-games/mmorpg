@@ -40,14 +40,17 @@ pub fn run(
     class: PlayerClass,
 ) -> Result<(), ClientError> {
     let event_loop = EventLoop::new()?;
+    let mut presentation = Presentation::new(player_id, scenery, content, Instant::now())?;
+    presentation.set_default_appearance(class);
     let mut app = App {
         runtime,
         window: None,
         renderer: None,
         world,
-        presentation: Presentation::new(player_id, scenery, content, Instant::now())?,
+        presentation,
         title: String::new(),
         connection_epoch: None,
+        last_refusal: None,
         input,
         updates,
         keys: HashSet::new(),
@@ -82,6 +85,7 @@ struct App {
     /// The window title last set, so it changes only when its text does.
     title: String,
     connection_epoch: Option<u32>,
+    last_refusal: Option<(u32, mmorpg_client::session::RefusalReceipt)>,
     input: watch::Sender<PlayerInput>,
     updates: watch::Receiver<NetworkUpdate>,
     keys: HashSet<KeyCode>,
@@ -154,10 +158,7 @@ impl App {
             return;
         }
         let Some(cursor) = self.cursor else { return };
-        let result = self
-            .renderer
-            .as_ref()
-            .map(|r| r.pick([cursor.x, cursor.y], self.presentation.picked_bodies()));
+        let result = self.renderer.as_ref().map(|r| r.pick([cursor.x, cursor.y]));
         let target = match result {
             Some(Ok(target)) => target,
             Some(Err(error)) => {
@@ -593,6 +594,7 @@ impl ApplicationHandler for App {
                     NetworkUpdate::Snapshot {
                         connection_epoch,
                         snapshot,
+                        refusal,
                     } => {
                         if self.connection_epoch != Some(connection_epoch) {
                             self.presentation.reset(now);
@@ -606,6 +608,13 @@ impl ApplicationHandler for App {
                             return;
                         }
                         self.follow_projection();
+                        if let Some(refusal) = refusal {
+                            let receipt = (connection_epoch, refusal);
+                            if self.last_refusal != Some(receipt) {
+                                self.last_refusal = Some(receipt);
+                                self.npc_context.feedback = format!("refused: {:?}", refusal.code);
+                            }
+                        }
                         // Dying lets go of held movement; living again resumes it.
                         self.update_movement();
                         self.show_title(now);
@@ -615,12 +624,16 @@ impl ApplicationHandler for App {
                         return;
                     }
                 }
-                let view = self.camera.view(self.presentation.camera_target(now));
+                let view = self
+                    .presentation
+                    .camera_view(&mut self.camera, &self.world, now);
+                let frame = self.presentation.frame(&self.world, now, view);
                 if let Some(renderer) = &mut self.renderer
                     && let Err(error) = renderer.render(
-                        &self.presentation.scene(now, view),
+                        &frame,
                         &self.hud.as_ref().map(CombatHud::rects).unwrap_or_default(),
                         view,
+                        self.presentation.picked_draws(),
                     )
                 {
                     self.fail(event_loop, error);

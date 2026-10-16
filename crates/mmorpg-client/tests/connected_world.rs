@@ -758,6 +758,7 @@ async fn verify_automatic_resume(session: ClientSession) -> Result<(), ClientErr
             if let NetworkUpdate::Snapshot {
                 connection_epoch,
                 snapshot,
+                ..
             } = &*receiver.borrow_and_update()
             {
                 assert_eq!(*connection_epoch, epoch + 1);
@@ -903,6 +904,7 @@ async fn next_snapshot(
             NetworkUpdate::Snapshot {
                 connection_epoch,
                 snapshot,
+                ..
             } => return Ok((*connection_epoch, Arc::clone(snapshot))),
             NetworkUpdate::Failed(error) => return Err(error.clone().into()),
             NetworkUpdate::Waiting | NetworkUpdate::Reconnecting => {}
