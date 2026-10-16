@@ -25,7 +25,11 @@ fn save(name: &str, pixels: &[u8]) {
 fn changed(a: &[u8], b: &[u8], label: &str) {
     assert_eq!(a.len(), 640 * 360 * 4);
     assert_eq!(a.len(), b.len());
-    assert_ne!(a, b, "actual native GPU ignored submitted {label}");
+    assert!(
+        a != b,
+        "actual native GPU ignored submitted {label}; both frames have {} bytes",
+        a.len()
+    );
 }
 
 #[test]
@@ -175,7 +179,7 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
                     Presentation::new(1, mmorpg_scenery::greyhaven_vale_scenery(), content, now)
                         .unwrap();
                 presentation.push(projection, now).unwrap();
-                let view = OrbitCamera::default().view(presentation.camera_target(now));
+                let view = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
                 let frame = world.frame(0.0, false, view.eye);
                 let units = presentation.unit_draws(now, view);
                 let pixels = offscreen_frame_pixels(&frame, &units, view).await.unwrap();

@@ -677,6 +677,21 @@ impl NativeApplication {
 #[ignore = "requires X11, libXtst and an actual wgpu adapter; run explicitly for #28"]
 fn native_pointer_application_contract() {
     let mut app = NativeApplication::new();
+    // Real redraw/session initialization must adopt the same unobstructed view
+    // as the gallery, rather than leaving native yaw zero inside the keep.
+    assert_ne!(
+        app.driver.app.camera.facing(),
+        0,
+        "actual App did not frame the first session view"
+    );
+    app.driver.app.camera.orbit(100.0, 0.0);
+    let user_heading = app.driver.app.camera.facing();
+    app.pump(Duration::from_millis(100));
+    assert_eq!(
+        app.driver.app.camera.facing(),
+        user_heading,
+        "App reset user orbit on later frames"
+    );
     let front = EntityRef::Creature(CreatureId::new(220));
     let second = EntityRef::Creature(CreatureId::new(221));
     app.setup([0, 1_500], &[(220, [-180, 2_100]), (221, [180, 2_300])]);

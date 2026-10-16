@@ -99,3 +99,24 @@ Remaining adapter acceptance concerns: preserve projected health bars on the new
 render path; retire dynamic effect geometry on expiry/reset (for example changing
 Barrier bubble radii) rather than retaining every sampled mesh indefinitely.
 These require proportionate behavioral regression evidence, not new size budgets.
+
+
+### Actual session camera acceptance
+
+`cargo test -p mmorpg-client --test native_session_camera --locked` compares
+first-session heading priority, published default pitch 0.36, actual spawn,
+rendered-terrain eye clearance, repeated projections and session reset against
+an independent browser-policy oracle. Expected production seams are
+`Presentation::camera_view(&mut OrbitCamera, &WorldScene, Instant) -> CameraView`
+and `WorldScene::surface_y(x: f32, z: f32) -> f32` (the existing rendered terrain
+triangle interpolation). The real App render and six-look GPU gallery must use
+this same session-lifecycle method. The existing actual-window pointer contract
+also checks initial App framing and preservation of later user orbit. Bare
+`OrbitCamera::default().view` math tests remain useful but do not establish
+session initialization parity.
+
+The six default-spawn class/sex GPU frames must still differ; relocating the
+actor or applying a gallery-only view is not an acceptance repair. Image mismatch
+diagnostics report byte count without dumping whole buffers. Original failed
+captures/logs remain evidence. Pointer occluder and new-path health-bar fixture
+translations remain required in a subsequent independent acceptance turn.
