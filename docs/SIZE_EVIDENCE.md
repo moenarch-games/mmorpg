@@ -167,3 +167,14 @@ dependency updates present. The combined identity changes all four Cargo/web
 manifest and lockfile hashes against #28; archive bytes and SHA-256 remain
 unchanged. The [combined observation](../.performance/observations/game-server-167-combined-incomparable.json)
 retains the unavailable comparison against the merged #166 baseline.
+
+
+The #178 browser bootstrap scripts change only the declared `web/package.json`
+input hash. The [original CI observation](../.performance/observations/browser-bootstrap-178-incomparable.json)
+retains the incomparable result from PR #179 head `ac089f9`, run 38956117145.
+The explicit local capture passed and retains the previous **3,128,246 bytes**
+and exact archive SHA-256 `a96d72ce2170065e8f46cfe2f7ceb4bb844f0a8734c89901a477f958ccd76819`;
+all other declared input fields are unchanged. The hosted observation has the
+same byte count but a different archive hash; it is retained as observed, not
+relabeled as the local archive. Neither the 3 MiB absolute nor 64 KiB growth
+limit changes, and ordinary verification still cannot update the baseline.
