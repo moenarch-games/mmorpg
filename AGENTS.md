@@ -63,7 +63,8 @@ python3 scripts/smoke-browser-online.py  # two Chromium pages join one real zone
 - `game-server` owns reusable transport/session/tick/reconnect/replay/recovery behavior. Keep MMO adapters thin.
 - `mmorpg-control-plane` owns placement, leases, fencing and handoff metadata. It must not mutate zone gameplay state.
 - `mmorpg-scenery` owns presentation scenery and relief derived from core colliders. Network hosts never depend on it (`mmorpg-game-server/tests/dependency_boundary.rs`), `mmorpg-wasm`'s local zone host never reads it, and it never feeds back into gameplay.
-- Rendering comes from pinned `3d-lab`; input, settings, assets and social systems belong to `input-bindings`, `settings`, `asset-tooling` and `social-service`. Compose them; do not grow substitutes here.
+- Use mature external rendering and asset-import providers until internal tools demonstrate equivalent capability on the game’s actual acceptance scenarios. Existing working `3d-lab` mesh/camera contracts may remain, but missing internal capabilities must not automatically become prerequisites for playable-game fixes. Compare correctness, visual quality and resource use before adopting or expanding an internal provider. Keep one implementation owner per capability; do not grow a competing generic engine/parser here.
+- Input, settings, asset authoring/provenance and social systems retain their `input-bindings`, `settings`, `asset-tooling` and `social-service` boundaries. A declared internal ownership map is not proof of runtime adoption or capability.
 
 ## Distributed-world invariants
 
@@ -114,7 +115,7 @@ General engineering rules (git and merging, commits, testing, ADRs, docs, depend
 
 ## Shared foundations
 
-- Shared foundations (`game-server`, `physics-engine`, `3d-lab`, …) are checked out beside this repo under `~/privat/`. Fix defects there and bump the pin here (DEP-003).
+- Shared foundations (`game-server`, `physics-engine`, `3d-lab`, …) are checked out beside this repo under `~/privat/`. Fix defects there and bump the pin here (DEP-003). For rendering/asset-import gaps, apply the owner’s external-provider adoption rule above before starting upstream work; extending an unproven internal tool is not the default way to unblock the game.
 
 ## Done means
 

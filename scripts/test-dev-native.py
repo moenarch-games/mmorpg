@@ -209,6 +209,43 @@ class LauncherAcceptance(unittest.TestCase):
         time.sleep(1.5); self.assertEqual(len(self.events('build')),count)
         self.stop()
 
+    def test_embedded_assets_restart_and_generated_web_outputs_are_ignored(self):
+        """Fake Cargo proves watch classification; actual native smoke proves compilation.
+
+        Missing include_bytes!/include_str! inputs may fail a real build. Simulate
+        that failure and recover after restoration, without promising a missing
+        asset can produce a valid native executable.
+        """
+        assets = [f"web/assets/medieval-character-kit/{name}"
+                  for name in ['archer.obj', 'manifest.json', 'materials.json']]
+        originals = {}
+        for name in assets:
+            path = self.repo/name; path.parent.mkdir(parents=True, exist_ok=True)
+            originals[name] = (ROOT/name).read_bytes(); path.write_bytes(originals[name])
+        self.running('--no-update')
+        for name in assets:
+            count = len(self.events('client'))
+            (self.repo/name).write_bytes(originals[name]+b'\n')
+            self.wait(lambda: len(self.events('client')) > count, 'embedded asset edit must restart: '+name)
+            failures = self.output.read_text().count('FIXTURE BUILD FAILED')
+            (self.control/'fail-build').touch()
+            (self.repo/name).unlink()
+            self.wait(lambda: self.output.read_text().count('FIXTURE BUILD FAILED') > failures,
+                      'embedded asset deletion must rebuild and report failure: '+name)
+            self.assertIsNone(self.process.poll(), 'missing asset must remain recoverable')
+            count = len(self.events('client'))
+            (self.control/'fail-build').unlink()
+            (self.repo/name).write_bytes(originals[name])
+            self.wait(lambda: len(self.events('client')) > count, 'restored embedded asset must restart: '+name)
+        builds = len(self.events('build')); clients = len(self.events('client'))
+        for name in ['web/dist/bundle.js', 'web/dist/style.css',
+                     'web/src/generated/mmorpg-wasm/mmorpg_wasm.js', 'web/node_modules/example/index.js']:
+            self.edit(name, 'generated output')
+        time.sleep(1.5)
+        self.assertEqual(len(self.events('build')), builds)
+        self.assertEqual(len(self.events('client')), clients)
+        self.stop()
+
     def test_no_watch_and_window_close_cleanup(self):
         self.running('--no-update','--no-watch'); self.edit(INPUTS[0]); time.sleep(1.2)
         self.assertEqual(len(self.events('build')),1)

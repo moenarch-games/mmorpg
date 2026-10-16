@@ -45,6 +45,15 @@ pub struct PlayerInput {
     pub class_choice: Option<(u8, u8)>,
 }
 
+/// Latest received refusal, retained across coalesced GUI updates in one epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RefusalReceipt {
+    pub tick: u64,
+    pub acknowledged_sequence: u32,
+    pub code: mmorpg_core::ErrorCode,
+    pub target: Option<EntityRef>,
+}
+
 #[derive(Clone)]
 pub enum NetworkUpdate {
     Waiting,
@@ -54,6 +63,7 @@ pub enum NetworkUpdate {
     Snapshot {
         connection_epoch: u32,
         snapshot: Arc<ZoneSnapshot>,
+        refusal: Option<RefusalReceipt>,
     },
     Failed(String),
 }
@@ -296,9 +306,35 @@ fn publish(
     session: &ClientSession,
     snapshot: ZoneSnapshot,
 ) {
+    let connection_epoch = session.connection_epoch();
+    let refusal = snapshot
+        .events
+        .iter()
+        .rev()
+        .find_map(|event| {
+            if let mmorpg_core::ZoneEvent::Error { code, target } = event {
+                Some(RefusalReceipt {
+                    tick: snapshot.tick,
+                    acknowledged_sequence: snapshot.acknowledged_sequence,
+                    code: *code,
+                    target: *target,
+                })
+            } else {
+                None
+            }
+        })
+        .or_else(|| match &*updates.borrow() {
+            NetworkUpdate::Snapshot {
+                connection_epoch: previous,
+                refusal,
+                ..
+            } if *previous == connection_epoch => *refusal,
+            _ => None,
+        });
     updates.send_replace(NetworkUpdate::Snapshot {
-        connection_epoch: session.connection_epoch(),
+        connection_epoch,
         snapshot: Arc::new(snapshot),
+        refusal,
     });
 }
 
@@ -627,3 +663,8 @@ mod tests {
         );
     }
 }
+
+// Independent received-feedback boundary acceptance; no runtime behavior added.
+#[cfg(test)]
+#[path = "../tests/support/session_receipt_acceptance.rs"]
+mod session_receipt_acceptance;

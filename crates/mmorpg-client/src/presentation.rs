@@ -8,6 +8,13 @@
 //! by disposition (hostile red-ish, neutral yellow-ish) and shaded by family,
 //! NPCs green-ish; corpses lie flat, and the viewer's target stands on a
 //! marker. Names come from the zone content.
+mod animation;
+mod archer;
+mod creatures;
+mod effects;
+mod kit;
+mod player;
+
 use crate::{
     ClientError,
     camera::CameraView,
@@ -76,6 +83,15 @@ pub struct Presentation {
     /// Time of the previous `scene` call.
     last_scene: Instant,
     picked_bodies: Vec<(EntityRef, SceneBox)>,
+    picked_draws: Vec<(EntityRef, crate::world::SceneDraw)>,
+    resources: kit::Resources,
+    animators: BTreeMap<EntityRef, animation::Animator>,
+    effects: effects::Effects,
+    headwear: Option<player::Hat>,
+    reduced_motion: bool,
+    origin: Instant,
+    last_draw: Instant,
+    camera_framed: bool,
 }
 
 impl Presentation {
@@ -90,6 +106,7 @@ impl Presentation {
         if content.revision() != scenery.content_revision {
             return Err("scenery and zone content revisions differ".into());
         }
+        archer::validate()?;
         Ok(Self {
             player_id,
             scenery,
@@ -99,12 +116,29 @@ impl Presentation {
             gaits: BTreeMap::new(),
             last_scene: now,
             picked_bodies: Vec::new(),
+            picked_draws: Vec::new(),
+            resources: kit::Resources::default(),
+            animators: BTreeMap::new(),
+            effects: effects::Effects::default(),
+            headwear: None,
+            reduced_motion: false,
+            origin: now,
+            last_draw: now,
+            camera_framed: false,
         })
     }
 
     /// Start a new connection epoch without blending with obsolete samples.
     pub fn reset(&mut self, now: Instant) {
+        self.camera_framed = false;
         self.picked_bodies.clear();
+        self.picked_draws.clear();
+        self.animators.clear();
+        self.gaits.clear();
+        self.effects.clear();
+        self.resources = kit::Resources::default();
+        self.last_draw = now;
+        self.last_scene = now;
         self.history.clear();
         self.latest_received = now;
     }
@@ -138,6 +172,12 @@ impl Presentation {
                 self.history.clear();
             }
         }
+        let anchors = self.snapshot_anchors(&snapshot);
+        self.effects.push(
+            &snapshot,
+            now.saturating_duration_since(self.origin).as_secs_f64(),
+            &anchors,
+        );
         self.latest_received = now;
         self.history.push_back(snapshot);
         if self.history.len() > 32 {
@@ -304,6 +344,288 @@ impl Presentation {
         boxes
     }
 
+    /// The same starter class appearance selected by browser character creation.
+    /// Later explicit headwear customization, including none, takes precedence.
+    pub fn set_default_appearance(&mut self, class: mmorpg_core::PlayerClass) {
+        use mmorpg_core::PlayerClass;
+        self.headwear = Some(match class {
+            PlayerClass::Warden => player::Hat::Helm,
+            PlayerClass::Ranger => player::Hat::Cap,
+            PlayerClass::Arcanist => player::Hat::Hood,
+        });
+    }
+
+    /// Current headwear is local presentation customization; unknown package styles fail closed.
+    pub fn set_headwear(&mut self, headwear: Option<&str>) -> Result<(), ClientError> {
+        self.headwear = match headwear {
+            None => None,
+            Some("ironcrest-helm") => Some(player::Hat::Helm),
+            Some("ranger-cap") => Some(player::Hat::Cap),
+            Some("wayfarer-hood") => Some(player::Hat::Hood),
+            Some(_) => return Err("unknown headwear style".into()),
+        };
+        Ok(())
+    }
+
+    pub fn set_reduced_motion(&mut self, reduced: bool) {
+        self.reduced_motion = reduced;
+    }
+
+    /// Actual submitted unit bodies, excluding health bars, target markers and effects.
+    #[must_use]
+    pub fn picked_draws(&self) -> &[(EntityRef, crate::world::SceneDraw)] {
+        &self.picked_draws
+    }
+
+    fn snapshot_anchors(&self, snapshot: &ZoneSnapshot) -> BTreeMap<EntityRef, effects::Anchor> {
+        snapshot
+            .entities
+            .iter()
+            .map(|e| {
+                let (_, half) = self.unit_look(e.entity(), e);
+                let p = self.rendered(e.position);
+                (
+                    e.entity(),
+                    effects::Anchor {
+                        feet: [f64::from(p[0]), f64::from(p[1] - half[1]), f64::from(p[2])],
+                        centre: f64::from(p[1]),
+                        yaw: f64::from(e.facing) / 65536. * std::f64::consts::TAU,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// The same CPU geometry/material/model payload consumed by rendering and picking.
+    #[must_use]
+    pub fn unit_draws(&mut self, now: Instant, view: CameraView) -> Vec<crate::world::SceneDraw> {
+        use kit::*;
+        let Some(snapshot) = self.latest().cloned() else {
+            self.picked_draws.clear();
+            return Vec::new();
+        };
+        let dt = now
+            .saturating_duration_since(self.last_draw)
+            .as_secs_f64()
+            .min(0.25);
+        self.last_draw = self.last_draw.max(now);
+        let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
+        let units = self.units(now);
+        self.animators.retain(|e, _| units.contains_key(e));
+        self.picked_draws.clear();
+        let mut draws = Vec::new();
+        let mut anchors = BTreeMap::new();
+        let action = if self.reduced_motion {
+            None
+        } else {
+            self.effects.action(&snapshot, seconds)
+        };
+        for (entity, unit) in units {
+            let (_, half) = self.unit_look(entity, &unit.record);
+            let feet = [
+                f64::from(unit.pose.position[0]),
+                f64::from(unit.pose.position[1] - half[1]),
+                f64::from(unit.pose.position[2]),
+            ];
+            let yaw = f64::from(unit.pose.yaw);
+            let root = Frame {
+                p: feet,
+                q: qa(1, yaw),
+            };
+            anchors.insert(
+                entity,
+                effects::Anchor {
+                    feet,
+                    centre: f64::from(unit.pose.position[1]),
+                    yaw,
+                },
+            );
+            let v = unit.record.velocity.map(|v| f64::from(v) * 0.3);
+            let loc = self.animators.entry(entity).or_default().update(
+                [feet[0], feet[2]],
+                yaw,
+                v,
+                dt,
+                self.reduced_motion,
+            );
+            let name = match entity.kind() {
+                EntityKind::Player => "player",
+                EntityKind::Creature => "creature",
+                EntityKind::Npc => "npc",
+            };
+            let id = format!("unit-{name}-{}", unit.record.id);
+            let body = match entity {
+                EntityRef::Player(id_num) => {
+                    let other = id_num != self.player_id;
+                    let choice = snapshot.viewer.class;
+                    let look = player::Look::new(
+                        choice.map_or(0, |c| c.class.code()),
+                        choice.is_none_or(|c| c.sex.code() == 0),
+                        self.headwear,
+                        other,
+                    );
+                    let base = animation::pose(loc, look.stance);
+                    let posed = animation::action(base, if other { None } else { action });
+                    let bow_turn = posed.twist - base.twist;
+                    player::nodes(&mut self.resources, &id, root, look, posed, bow_turn)
+                }
+                _ => {
+                    let template = (entity.kind() == EntityKind::Creature)
+                        .then(|| {
+                            self.content
+                                .creature_template(CreatureTemplateId::new(unit.record.appearance))
+                        })
+                        .flatten();
+                    let family = template.map(|t| t.family);
+                    let role = match entity {
+                        EntityRef::Npc(id) => self.content.npc(id).map(|n| n.role),
+                        _ => None,
+                    };
+                    let accent = family.map_or(0x4f9d5d, |f| creatures::accent(&unit.record, f));
+                    if let Some(
+                        f @ (CreatureFamily::Wolf | CreatureFamily::Boar | CreatureFamily::Vermin),
+                    ) = family
+                    {
+                        creatures::animal(
+                            &mut self.resources,
+                            &id,
+                            root,
+                            half.map(f64::from),
+                            f,
+                            accent,
+                            loc,
+                            unit.record.flags.dead,
+                        )
+                    } else if family.is_some() || role.is_some() {
+                        creatures::humanoid(
+                            &mut self.resources,
+                            &id,
+                            root,
+                            half.map(f64::from),
+                            family,
+                            role,
+                            template.is_some_and(|t| t.elite),
+                            accent,
+                            loc,
+                            unit.record.flags.dead,
+                        )
+                    } else {
+                        let half = half.map(f64::from);
+                        let c = if unit.record.flags.dead {
+                            shade(accent, 0.45)
+                        } else {
+                            accent
+                        };
+                        let mut body = vec![self.resources.primitive(
+                            format!("{id}-body"),
+                            Primitive::Box(if unit.record.flags.dead {
+                                [half[0] * 2., 0.16, half[1] * 2.]
+                            } else {
+                                half.map(|v| v * 2.)
+                            }),
+                            c,
+                            offset(
+                                root,
+                                [
+                                    0.,
+                                    if unit.record.flags.dead {
+                                        0.08
+                                    } else {
+                                        half[1]
+                                    },
+                                    0.,
+                                ],
+                            ),
+                        )];
+                        if !unit.record.flags.dead {
+                            body.push(self.resources.primitive(
+                                format!("{id}-nose"),
+                                Primitive::Box([0.12, 0.12, 0.12]),
+                                0xead9b5,
+                                offset(root, [0., half[1] * 1.4, half[2] + 0.06]),
+                            ));
+                        }
+                        body
+                    }
+                }
+            };
+            self.picked_draws
+                .extend(body.iter().cloned().map(|d| (entity, d)));
+            draws.extend(body);
+            if !unit.record.flags.dead && entity.kind() != EntityKind::Npc {
+                let yaw = (view.target[0] - view.eye[0]).atan2(view.target[2] - view.eye[2]);
+                let mut bars = Vec::new();
+                append_health_bar(
+                    &mut bars,
+                    [
+                        unit.pose.position[0],
+                        unit.pose.position[1] + half[1] + 0.3,
+                        unit.pose.position[2],
+                    ],
+                    unit.record.health_percent,
+                    yaw,
+                );
+                for (index, bar) in bars.into_iter().enumerate() {
+                    let mut draw = self.resources.draw(
+                        format!("{id}-health-{index}"),
+                        "box",
+                        0xffffff,
+                        Frame {
+                            p: bar.position.map(f64::from),
+                            q: qa(1, f64::from(bar.yaw)),
+                        },
+                        bar.size.map(|s| f64::from(s) * 0.5),
+                    );
+                    draw.material.color = bar.color.map(|v| {
+                        if v <= 0.0031308 {
+                            v * 12.92
+                        } else {
+                            1.055 * v.powf(1. / 2.4) - 0.055
+                        }
+                    });
+                    draw.material.unlit = true;
+                    draws.push(draw);
+                }
+            }
+            if entity.kind() != EntityKind::Player && snapshot.viewer.target == Some(entity) {
+                let mut ring = self.resources.primitive(
+                    format!("{id}-target-ring"),
+                    Primitive::Post(f64::from(half[0].max(half[2])) + 0.35, 0.04),
+                    0xf2d15f,
+                    Frame {
+                        p: [feet[0], feet[1] + 0.02, feet[2]],
+                        q: IQ,
+                    },
+                );
+                ring.material.opacity = 0.85;
+                ring.material.unlit = true;
+                draws.push(ring);
+            }
+        }
+        if !self.reduced_motion {
+            draws.extend(self.effects.nodes(&mut self.resources, seconds, &anchors));
+        }
+        self.resources.retire_unused();
+        draws
+    }
+
+    /// Sample the static world and units with one presentation clock.
+    #[must_use]
+    pub fn frame(
+        &mut self,
+        world: &crate::world::WorldScene,
+        now: Instant,
+        view: CameraView,
+    ) -> crate::world::WorldFrame {
+        let mut frame = world.frame(
+            now.saturating_duration_since(self.origin).as_secs_f64(),
+            !self.reduced_motion,
+            view.eye,
+        );
+        frame.draws.extend(self.unit_draws(now, view));
+        frame
+    }
+
     /// Body geometry from the last rendered scene, with MMO identity retained.
     #[must_use]
     pub fn picked_bodies(&self) -> &[(EntityRef, SceneBox)] {
@@ -320,6 +642,63 @@ impl Presentation {
         self.players(now)
             .get(&self.player_id)
             .map_or([0.0, 0.5, 0.0], |pose| pose.position)
+    }
+
+    /// Frame the first actual viewer once per session, then preserve user orbit.
+    /// Only scenery-backed structural colliders participate in startup framing.
+    pub fn camera_view(
+        &mut self,
+        camera: &mut crate::camera::OrbitCamera,
+        world: &crate::world::WorldScene,
+        now: Instant,
+    ) -> crate::camera::CameraView {
+        let viewer = self.players(now).get(&self.player_id).copied();
+        let focus = viewer.map_or([0.0, 0.5, 0.0], |pose| pose.position);
+        let ground = |x, z| world.surface_y(x, z);
+        if !self.camera_framed
+            && let Some(viewer) = viewer
+        {
+            self.camera_framed = true;
+            let colliders: Vec<_> = self
+                .scenery
+                .props
+                .iter()
+                .filter_map(|prop| {
+                    let id = prop.collider?;
+                    self.content
+                        .definition()
+                        .colliders()
+                        .iter()
+                        .find(|c| c.id == id)
+                })
+                .collect();
+            let mut clear = false;
+            for step in [0, 2, -2, 1, -1, 3, -3, 4] {
+                camera.look_along(viewer.yaw + step as f32 * std::f32::consts::FRAC_PI_4);
+                let view = camera.view_above_ground(focus, ground);
+                let blocked = [0.35, 0.6, 0.8, 1.0].into_iter().any(|t| {
+                    colliders.iter().any(|c| {
+                        (0..3).all(|axis| {
+                            let point =
+                                view.target[axis] + (view.eye[axis] - view.target[axis]) * t;
+                            let centre = c.position[axis] as f32 / 100.0;
+                            let half = c.half_extents[axis] as f32 / 100.0;
+                            let low = centre - half - if axis == 1 { 0.0 } else { 0.4 };
+                            let high = centre + half + 0.4;
+                            point >= low && point <= high
+                        })
+                    })
+                });
+                if !blocked {
+                    clear = true;
+                    break;
+                }
+            }
+            if !clear {
+                camera.look_along(viewer.yaw);
+            }
+        }
+        camera.view_above_ground(focus, ground)
     }
 
     #[must_use]
