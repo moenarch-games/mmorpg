@@ -170,6 +170,9 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
             ) {
                 view.eye = [x + 1.6, base + half[1] + 1.5, z + 2.5];
             }
+            if kind == mmorpg_scenery::PropKind::Barrel {
+                view.eye = [x + 0.4, base + 1.5, z - 1.6];
+            }
             view.eye[1] = view.eye[1].max(world.surface_y(view.eye[0], view.eye[2]) + 0.35);
             eprintln!(
                 "GALLERY_CAMERA {{\"name\":\"prop-{}\",\"eye\":{:?},\"target\":{:?}}}",
