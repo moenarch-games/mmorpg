@@ -863,6 +863,16 @@ kbd {
   .topbar .eyebrow { display: none; }
 }
 .quest-tracker { white-space: pre-line; }
+.quest-line { display: block; transition: color .4s ease, background-color .4s ease; }
+/* A confirmed objective change glows briefly in place; nothing moves or takes input. */
+.quest-line[data-changed=true] { color: var(--gold-bright); background: rgb(255 216 74 / 14%); border-radius: .2rem; }
+.quest-notice { margin: .25rem 0 0; padding: .2rem .5rem; color: var(--gold-bright); background: rgb(0 0 0 / 35%); border-radius: .3rem; pointer-events: none; }
+.quest-marker[data-fresh=true] { animation: quest-ready-pulse 1s ease-in-out infinite; }
+@keyframes quest-ready-pulse { 50% { filter: drop-shadow(0 0 6px #ffd84a); } }
+@media (prefers-reduced-motion: reduce) {
+  .quest-line { transition: none; }
+  .quest-marker[data-fresh=true] { animation: none; filter: drop-shadow(0 0 6px #ffd84a); }
+}
 /* Markers follow NPC heads on screen; they never take pointer input. */
 .quest-markers { position: fixed; z-index: 2; inset: 0; overflow: hidden; pointer-events: none; }
 .quest-marker {

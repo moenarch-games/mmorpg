@@ -161,4 +161,42 @@ describe("quest state", () => {
     expect(state.busy).toBe(false);
     expect(state.accept(near, 1)).not.toBeNull();
   });
+
+  test("confirmed progress highlights its objective once; hydration, repeats and stale sheets do not", () => {
+    const state = new QuestState();
+    const bag = Array(16).fill(null);
+    const wolves = (tick: number, count: number) =>
+      projection(tick, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [count, 0, 0] }] }) });
+    // The first sheet after a reset (initial load, refetch, reconnect) only synchronizes.
+    state.update(wolves(10, 3), catalog);
+    expect([state.highlighted(1, 0), state.notice]).toEqual([false, ""]);
+    state.update(wolves(11, 4), catalog);
+    expect(state.highlighted(1, 0)).toBe(true);
+    expect(state.notice).toBe("");
+    // A repeated sheet keeps the cue without renewing it; an older one is ignored.
+    state.update(wolves(12, 4), catalog);
+    state.update(wolves(9, 2), catalog);
+    expect(state.sheet?.entries[0]?.progress[0]).toBe(4);
+    state.update(wolves(11 + 90, 4), catalog);
+    expect(state.highlighted(1, 0)).toBe(true);
+    state.update(wolves(12 + 90, 4), catalog);
+    expect(state.highlighted(1, 0)).toBe(false);
+    state.reset();
+    state.update(wolves(200, 5), catalog);
+    expect([state.highlighted(1, 0), state.notice]).toEqual([false, ""]);
+  });
+
+  test("a confirmed completion shows a short notice and freshens the right turn-in marker", () => {
+    const state = new QuestState();
+    const bag = Array(16).fill(null);
+    state.update(projection(1, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [5, 0, 0] }], markers: [{ npc: MARSHAL, marker: "in-progress" }] }) }), catalog);
+    expect(state.freshlyReady(MARSHAL)).toBe(false);
+    state.update(projection(2, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [6, 0, 0] }], markers: [{ npc: MARSHAL, marker: "complete" }] }) }), catalog);
+    expect(state.notice).toBe("Trouble in the Woods ready — return to Marshal Elden Greywatch");
+    expect(state.freshlyReady(MARSHAL)).toBe(true);
+    expect(state.freshlyReady(TANNER)).toBe(false);
+    // The cue expires on its own; dismissal never gates the turn-in.
+    state.update(projection(200, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [6, 0, 0] }], markers: [{ npc: MARSHAL, marker: "complete" }] }) }), catalog);
+    expect([state.notice, state.freshlyReady(MARSHAL)]).toEqual(["", false]);
+  });
 });
