@@ -1,4 +1,5 @@
-//! First symptom reproduction for #182, not the complete parity contract.
+//! #182 appearance acceptance on the frame actually consumed by the renderer.
+//! Historical SceneBox baseline red is recorded on the issue.
 //! Uses real core class selection and the native scene submitted to the GPU.
 use mmorpg_client::{camera::OrbitCamera, presentation::Presentation};
 use mmorpg_core::{ZoneCommand, ZoneId, ZoneSimulation, greyhaven_vale};
@@ -23,7 +24,7 @@ fn current_pages_class_and_sex_choices_have_distinct_native_appearance() {
                 Presentation::new(1, greyhaven_vale_scenery(), Arc::clone(&content), now).unwrap();
             presentation.push(projection, now).unwrap();
             let view = OrbitCamera::default().view(presentation.camera_target(now));
-            scenes.push(((class, sex), presentation.scene(now, view)));
+            scenes.push(((class, sex), presentation.unit_draws(now, view)));
         }
     }
     let mut collapsed = Vec::new();

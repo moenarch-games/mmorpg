@@ -1182,6 +1182,8 @@ dependencies = [
  "mmorpg-game-server",
  "mmorpg-protocol",
  "mmorpg-scenery",
+ "mmorpg-wasm",
+ "serde_json",
  "tempfile",
  "three-d-animation",
  "three-d-camera",

@@ -24,6 +24,8 @@ three-d-projective = { git = "https://github.com/moritzbrantner/3d-lab.git", rev
 input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "d5fcb81bb1eefde9e2f69d404a4d7e429fb2f12c" }
 
 [dev-dependencies]
+mmorpg-wasm = { path = "../mmorpg-wasm" }
+serde_json = "=1.0.151"
 tempfile = "=3.27.0"
 mmorpg-game-server = { path = "../mmorpg-game-server" }
 wtransport = { version = "=0.7.2", default-features = false, features = ["ring", "self-signed", "quinn"] }

@@ -894,3 +894,7 @@ mod tests {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/world_gpu_acceptance.rs"]
+mod world_gpu_acceptance;
