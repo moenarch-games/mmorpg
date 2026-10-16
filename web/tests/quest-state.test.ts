@@ -65,6 +65,15 @@ describe("quest presentation", () => {
     ]);
   });
 
+  test("an explicitly selected non-quest or missing NPC never redirects Talk to a nearby quest giver", () => {
+    for (const id of [3, 6, 999]) {
+      const snapshot = projection(1, { viewer: { ...HEALTHY_VIEWER, target: { kind: "npc", id } } }, [
+        npc(MARSHAL, 100, 0), npc(3, 200, 0), npc(6, 300, 0),
+      ]);
+      expect(dialogNpc(snapshot, catalog)).toBeNull();
+    }
+  });
+
   test("talking prefers the selected quest NPC, then the nearest, and hints reach", () => {
     const entities = [npc(MARSHAL, 300, 0), npc(TANNER, 100, 400), npc(3, 50, 0)];
     expect(dialogNpc(projection(1, {}, entities), catalog)).toEqual({ npc: MARSHAL, name: "Marshal Elden Greywatch", inReach: true });
