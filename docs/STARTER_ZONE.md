@@ -142,7 +142,7 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 - Markers rank `?` (a quest ending here is complete) over `!` (a quest starting here is available) over grey `?` (a quest ending here is active). They are computed from the log, the bag and the content for every quest giver and ender and sent with the sheet, not per entity record.
 - Quest XP uses the same level-up path as kill XP; the reward choice is one unit of the chosen item and must be valid when choices exist (0 otherwise). A turn-in that cannot place the item or credit the copper changes nothing.
 - Garrick Redbrand is the chain's boss as authored in revision 3; his own ability kit is not part of this step.
-- Browser: Talk (T) opens the dialog of the selected or nearest projected quest NPC (quests offered, ready with the reward choice, or in progress), Quests (L) the log with Abandon, the HUD tracks every active objective, and `!`/`?` markers float over NPCs on screen. The native client decodes the quest sheet but does not present it yet.
+- Browser: Talk (T) opens the dialog of the selected or nearest projected quest NPC (quests offered, ready with the reward choice, or in progress), Quests (L) the log with Abandon, the HUD tracks every active objective, and `!`/`?` markers float over NPCs on screen. Progress the zone confirms between two received sheets briefly highlights its tracker line, a small non-blocking notice reports a completed objective or quest, and the ender's `?` pulses when it becomes ready (#164); the first sheet after a reset or reconnect only synchronizes, so nothing is announced twice. The native client decodes the quest sheet but does not present it yet.
 
 ### Player-scoped projection
 
