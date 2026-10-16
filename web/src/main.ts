@@ -1084,6 +1084,12 @@ function runAction(action: GameAction): void {
   }
 }
 controls.attach({ window, document });
+window.addEventListener("blur", () => worldView.cancelPointer());
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    worldView.cancelPointer();
+  }
+});
 window.addEventListener("resize", resize);
 window.addEventListener("storage", (event) => {
   if (event.key !== characterRosterStorageKey() || !rosterStorageHealthy || creationDraft) {

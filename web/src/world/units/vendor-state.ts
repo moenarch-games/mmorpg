@@ -9,15 +9,19 @@ export const VENDOR_REACH_UNITS = 500;
 /** The nearest projected vendor NPC and whether it looks within reach. */
 export type NearbyVendor = { npc: number; name: string; inReach: boolean; offers: readonly VendorOffer[] };
 
-/** Chooses from received NPC positions and the catalog's vendor stock; the zone checks reach itself. */
+/** Honors explicit NPC selection; otherwise chooses the nearest vendor. The zone checks reach. */
 export function nearestVendor(snapshot: ZoneSnapshot, catalog: ContentCatalog): NearbyVendor | null {
   const viewer = snapshot.entities[0];
   if (!viewer) {
     return null;
   }
   let nearest: { npc: number; distance: number } | null = null;
+  const selected = snapshot.viewer.target;
   for (const entity of snapshot.entities) {
     if (entity.kind !== "npc" || !catalog.vendors.has(entity.entityId)) {
+      continue;
+    }
+    if (selected?.kind === "npc" && selected.id !== entity.entityId) {
       continue;
     }
     const distance = Math.hypot(entity.position[0] - viewer.position[0], entity.position[2] - viewer.position[2]);

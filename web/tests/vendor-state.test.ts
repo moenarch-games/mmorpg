@@ -39,6 +39,13 @@ test("the nearest projected catalog vendor is offered, with reach measured in XZ
   expect(nearestVendor(projection(0, { entities: [playerEntity(1, [0, 90, 0]), npc(6, [10, 0, 0])] }), catalog)).toBeNull();
 });
 
+test("an explicitly selected non-vendor or missing NPC never redirects trade to nearby Bram", () => {
+  for (const id of [1, 6, 999]) {
+    const snapshot = projection(1, { viewer: { ...HEALTHY_VIEWER, target: { kind: "npc", id } } });
+    expect(nearestVendor(snapshot, catalog)).toBeNull();
+  }
+});
+
 test("buying and selling send intent and wait for the sheet without predicting copper or items", () => {
   const bags = new BagState();
   const vendor = new VendorState();

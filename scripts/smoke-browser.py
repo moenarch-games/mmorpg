@@ -147,6 +147,221 @@ class BrowserAcceptance(unittest.TestCase):
           requestAnimationFrame(next);
         })""", count)
 
+    def click_world_setup(self):
+        """Keep the real zone deterministic while physical pointer events drive the page."""
+        self.open("?debug")
+        self.page.evaluate("""() => {
+          const source = window.__valeDebug.worldSource();
+          window.__clickAdvance = source.advance;
+          window.__clickQueue = [];
+          window.__clickQuestEntries = [];
+          source.advance = () => window.__clickQueue.splice(0);
+          window.__clickStep = ticks => {
+            for (let i = 0; i < ticks; i++) {
+              const projections = window.__clickAdvance.call(source, 1 / 30);
+              for (const projection of projections) {
+                if (projection.quests) window.__clickQuestEntries = projection.quests.entries;
+              }
+              window.__clickQueue.push(...projections);
+            }
+          };
+        }""")
+        self.enter_world(ticking=False)
+        self.click_world_step()
+
+    def click_world_step(self, ticks=3):
+        self.frames(2)
+        self.page.evaluate("ticks => window.__clickStep(ticks)", ticks)
+        self.frames(3)
+
+    def click_world_walk_to_woods(self):
+        # The existing real-zone combat smoke route; no target or attack commands.
+        self.page.evaluate("""() => {
+          const source = window.__valeDebug.worldSource();
+          const moves = new Map([[0,[1,0]],[36,[1,49152]],[121,[1,32768]],
+            [131,[1,49152]],[375,[1,32768]],[395,[0,32768]]]);
+          for (let tick = 0; tick < 400; tick++) {
+            const move = moves.get(tick);
+            if (move) source.sendCommand({kind:'move',forward:move[0],strafe:0,facing:move[1]});
+            window.__clickAdvance.call(source, 1 / 30);
+          }
+        }""")
+        self.click_world_step()
+
+    def click_world_target(self):
+        return self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.target")
+
+    def aim_at_world_unit(self, kind, identity):
+        """Aim the existing screenshot camera at an actual rendered unit's body.
+
+        This only changes the camera; it neither chooses a target nor changes the zone.
+        """
+        point = self.page.evaluate("""([kind, id]) => {
+          const debug = window.__valeDebug;
+          const unit = debug.projectedUnits().find(unit => unit.kind === kind && unit.id === id);
+          if (!unit) throw Error(`Missing projected ${kind} ${id}`);
+          // NPC torsos occupy roughly 0.94–1.50 m above their feet. Aim at
+          // solid chest geometry, above the central gap between their legs.
+          const y = debug.reliefAt(unit.x * 100, unit.z * 100) / 100 + (kind === 'npc' ? 1.2 : 0.5);
+          debug.flyToPose([unit.x, y + 1, unit.z + 5], [unit.x, y, unit.z]);
+          return {x: unit.x, y, z: unit.z};
+        }""", [kind, identity])
+        self.frames(4)
+        self.assertTrue(self.page.evaluate("([kind,id]) => window.__valeDebug.unitNodeIds(`unit-${kind}-${id}`).length > 0", [kind, identity]))
+        box = self.page.locator("#world").bounding_box()
+        return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, point
+
+    def test_world_click_specific_creature_drag_empty_ground_and_alternatives(self):
+        self.click_world_setup()
+        self.click_world_walk_to_woods()
+        creature = self.page.evaluate("window.__valeDebug.projectedUnits().find(unit => unit.kind === 'creature' && unit.family === 'wolf')")
+        self.assertIsNotNone(creature, "The real Greyhaven projection must include a wolf")
+        x, y, _ = self.aim_at_world_unit("creature", creature["id"])
+        self.page.screenshot(path=str(ARTIFACTS / "world-click-wolf-before.png"))
+        self.page.mouse.click(x, y)
+        self.click_world_step()
+        expected = {"kind": "creature", "id": creature["id"]}
+        self.assertEqual(self.click_world_target(), expected, "Clicking the rendered wolf must select its exact authoritative identity")
+        expect(self.page.locator("[data-part=target-name]")).to_contain_text("Timber Wolf")
+        self.assertFalse(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"))
+        self.page.screenshot(path=str(ARTIFACTS / "world-click-wolf.png"))
+        self.page.evaluate("window.__valeDebug.follow()")
+        self.frames(4)
+        before = self.world_view()
+        self.page.mouse.move(x, y)
+        self.page.mouse.down()
+        self.page.mouse.move(x + 100, y + 20, steps=8)
+        self.page.mouse.up()
+        self.click_world_step()
+        self.assertEqual(self.click_world_target(), expected, "Camera drag must not retarget")
+        self.frames(4)
+        self.assertNotEqual(self.world_view(), before, "Camera drag still draws a changed view")
+        # Aim at empty sky, then click the centre, which cannot denote a unit.
+        self.page.evaluate("window.__valeDebug.flyToPose([0, 40, 0], [0, 80, -5])")
+        self.frames(3)
+        self.page.mouse.click(x, y)
+        self.click_world_step()
+        self.assertFalse(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"))
+        expect(self.page.get_by_role("complementary", name="Quest dialog", exact=True)).to_be_hidden()
+        expect(self.page.get_by_role("complementary", name="Vendor", exact=True)).to_be_hidden()
+        self.page.locator("#world").focus()
+        self.page.keyboard.press("Tab")
+        self.click_world_step()
+        self.assertEqual(self.click_world_target()["kind"], "creature", "Tab remains an alternative")
+        self.page.mouse.click(x, y, button="right")
+        self.click_world_step()
+        self.assertTrue(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"), "Right click still toggles attack")
+
+    def test_world_click_distinct_npcs_context_reach_and_no_fabricated_dialogue(self):
+        self.click_world_setup()
+        for identity, name, context in [
+            (1, "Marshal Elden Greywatch", "quest"),
+            (2, "Tanner Hilda Brook", "quest"),
+            (3, "Innkeeper Bram Tolliver", "vendor"),
+            (6, "Greyhaven Guard", None),
+        ]:
+            with self.subTest(npc=identity):
+                # Close panels through their existing controls before the next world click.
+                for label in ["Close quest dialog", "Close vendor"]:
+                    close = self.page.get_by_role("button", name=label, exact=True)
+                    if close.is_visible():
+                        close.click()
+                x, y, _ = self.aim_at_world_unit("npc", identity)
+                self.page.mouse.click(x, y)
+                self.click_world_step()
+                self.assertEqual(self.click_world_target(), {"kind": "npc", "id": identity})
+                expect(self.page.locator("[data-part=target-name]")).to_contain_text(name)
+                self.assertFalse(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"))
+                if context == "quest":
+                    # The existing semantic Talk action may reveal the clicked NPC's context.
+                    self.page.locator("#world").focus()
+                    dialog = self.page.get_by_role("complementary", name="Quest dialog", exact=True)
+                    if not dialog.is_visible():
+                        self.page.keyboard.press("t")
+                    expect(dialog).to_be_visible()
+                    expect(dialog.get_by_role("heading", name=name, exact=True)).to_be_visible()
+                    if identity == 1:
+                        expect(self.page.locator("#quest-dialog-status")).to_contain_text("Move within 5 m")
+                        expect(self.page.get_by_role("button", name="Accept: Trouble in the Woods")).to_be_disabled()
+                    self.assertEqual(self.page.evaluate("window.__clickQuestEntries"), [], "Selecting or talking must not accept a quest")
+                elif context == "vendor":
+                    panel = self.page.get_by_role("complementary", name="Vendor", exact=True)
+                    if not panel.is_visible():
+                        self.page.locator("#world").focus()
+                        self.page.keyboard.press("v")
+                    expect(panel).to_be_visible()
+                    expect(panel.get_by_role("heading", name=name, exact=True)).to_be_visible()
+                    expect(self.page.locator("#vendor-status")).to_contain_text("Move within 5 m")
+                    for buy in panel.get_by_role("button", name=re.compile("^Buy ")).all():
+                        expect(buy).to_be_disabled()
+                else:
+                    self.page.locator("#world").focus()
+                    self.page.keyboard.press("t")
+                    self.frames(3)
+                    # A guard has no authored quest. Talk may show a refusal/empty context,
+                    # but must never silently open a nearby Marshal/Tanner's quest.
+                    self.assertEqual(self.page.locator("#quest-dialog-quests .quest-card").count(), 0)
+                    expect(self.page.get_by_role("heading", name="Marshal Elden Greywatch", exact=True)).to_be_hidden()
+                self.page.screenshot(path=str(ARTIFACTS / f"world-click-npc-{identity}.png"))
+
+    def test_world_click_cancel_and_capture_loss_never_select_or_attack(self):
+        self.click_world_setup()
+        for cancellation in ["pointercancel", "lostpointercapture"]:
+            with self.subTest(cancellation=cancellation):
+                x, y, _ = self.aim_at_world_unit("npc", 1)
+                canvas = self.page.locator("#world")
+                canvas.evaluate("el => el.addEventListener('pointerdown', e => window.__clickPointerId = e.pointerId, {once:true})")
+                self.page.mouse.move(x, y)
+                self.page.mouse.down()
+                if cancellation == "pointercancel":
+                    canvas.evaluate("el => el.dispatchEvent(new PointerEvent('pointercancel', {pointerId:window.__clickPointerId, bubbles:true}))")
+                else:
+                    canvas.evaluate("el => el.releasePointerCapture(window.__clickPointerId)")
+                    self.page.mouse.move(x + 1, y)
+                self.page.mouse.up()
+                self.click_world_step()
+                self.assertIsNone(self.click_world_target(), "A cancelled gesture cannot become selection")
+                self.assertFalse(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"))
+                expect(self.page.get_by_role("complementary", name="Quest dialog", exact=True)).to_be_hidden()
+
+    def test_world_click_solid_palisade_does_not_select_hidden_guard(self):
+        self.click_world_setup()
+        _, _, point = self.aim_at_world_unit("npc", 6)
+        # North guard stands inside the north wall. View him from outside it,
+        # below the wall top: his projected centre exists but is not visible.
+        self.page.evaluate("p => window.__valeDebug.flyToPose([p.x, p.y, p.z - 8], [p.x,p.y,p.z])", point)
+        self.frames(4)
+        self.page.screenshot(path=str(ARTIFACTS / "world-click-solid-occluder.png"))
+        box = self.page.locator("#world").bounding_box()
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        self.click_world_step()
+        self.assertIsNone(self.click_world_target(), "A solid wall must block clicking the guard behind it")
+        expect(self.page.get_by_role("complementary", name="Quest dialog", exact=True)).to_be_hidden()
+
+    def test_world_click_overlapping_creatures_selects_front_visible_body(self):
+        self.click_world_setup()
+        self.click_world_walk_to_woods()
+        # Use two real projected wolves. Put the camera on the line through their
+        # body centres so the nearer body covers the farther body's centre pixel.
+        pair = self.page.evaluate("""() => {
+          const d = window.__valeDebug;
+          const wolves = d.projectedUnits().filter(u => u.kind === 'creature' && u.family === 'wolf');
+          if (wolves.length < 2) throw Error('Need two real Greyhaven wolves');
+          const [front, back] = wolves;
+          const centre = u => [u.x, d.reliefAt(u.x * 100, u.z * 100) / 100 + 0.5, u.z];
+          const a = centre(front), b = centre(back);
+          const distance = Math.hypot(...a.map((v,i) => v-b[i]));
+          const eye = a.map((v,i) => v + (v-b[i]) / distance * 4);
+          d.flyToPose(eye, a);
+          return [front.id, back.id];
+        }""")
+        self.frames(4)
+        box = self.page.locator("#world").bounding_box()
+        self.page.screenshot(path=str(ARTIFACTS / "world-click-overlap-before.png"))
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        self.click_world_step()
+        self.assertEqual(self.click_world_target(), {"kind": "creature", "id": pair[0]}, "Overlapping projection centres must choose the nearer visible body")
+
     def test_rotation_mouse_keyboard_reset_and_rendered_pixels(self):
         self.open()
         surface = self.page.get_by_role("slider", name="Character rotation")
