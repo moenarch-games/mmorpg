@@ -30,12 +30,33 @@ describe("shared renderer adoption", () => {
     }
   });
 
-  test("repeated vegetation and rocks submit real instance batches, preserving exported placement", () => {
+  test("repeated seeded vegetation and rocks share variant geometry without changing placed shapes", () => {
     const fixture = fixtureScenery();
+    const vertices = (scene: ReturnType<typeof buildSceneryScene>) => {
+      const result: string[] = [];
+      const add = (geometry: RendererInstanceBatch["geometry"], placement: RendererInstanceBatch["instances"][number]) => {
+        if (geometry.kind !== "mesh") { throw new Error("Expected procedural indexed mesh"); }
+        const matrix = new THREE.Matrix4();
+        if (placement.modelMatrix) { matrix.fromArray(placement.modelMatrix); }
+        else { matrix.compose(new THREE.Vector3(...placement.transform.translation),
+          new THREE.Quaternion(...(placement.transform.rotationQuaternion ?? [0, 0, 0, 1])),
+          new THREE.Vector3(...(placement.transform.scale ?? [1, 1, 1]))); }
+        for (const point of geometry.positions) {
+          const transformed = new THREE.Vector3(...point).applyMatrix4(matrix);
+          result.push([transformed.x, transformed.y, transformed.z].map((value) => value.toFixed(6)).join(","));
+        }
+      };
+      for (const { node } of scene.batches) { if (!node.id.startsWith("static-all")) { add(node.geometry, node); } }
+      for (const { batch } of scene.instanceBatches) { for (const instance of batch.instances) { add(batch.geometry, instance); } }
+      return result.sort();
+    };
     for (const kind of ["tree-oak", "tree-pine", "grass-tuft", "rock-small"] as const) {
       const original = fixture.props.find((prop) => prop.kind === kind)!;
       expect(original).toBeDefined();
-      const props = [0, 1, 2].map((index) => ({ ...original, position: [index * 300, 0, 0] as const, yaw: 0, scale: 1 }));
+      // Enough actual locations for bounded seeded variants to recur; do not require all props to look identical.
+      const props = Array.from({ length: 64 }, (_, index) => ({ ...original,
+        position: [(index % 8) * 300, 0, Math.floor(index / 8) * 300] as const,
+        yaw: original.yaw, scale: original.scale }));
       const scenery = { ...fixture, props };
       const before = structuredClone(scenery);
       const scene = buildSceneryScene(scenery, ENVIRONMENT);
@@ -43,15 +64,18 @@ describe("shared renderer adoption", () => {
       const repeated = frame.instanceBatches.filter((batch) => batch.instances.length >= 3);
       expect(repeated.length, kind).toBeGreaterThan(0);
       expect(repeated.every((batch) => batch.geometry.kind === "mesh" && batch.geometry.positions.length > 0)).toBe(true);
-      for (const batch of repeated) {
-        const xs = batch.instances.map((instance) => instance.modelMatrix?.[12] ?? instance.transform.translation[0]).sort((a, b) => a - b);
-        expect(xs[1]! - xs[0]!).toBeCloseTo(3, 6);
-        expect(xs[2]! - xs[1]!).toBeCloseTo(3, 6);
+      const resources = new Set(frame.instanceBatches.map((batch) => batch.geometry.kind === "mesh" ? batch.geometry.resourceKey : null));
+      expect(resources.size, kind).toBeLessThan(props.length);
+      if (kind === "rock-small" || kind === "grass-tuft") {
+        expect(resources.size).toBeGreaterThan(1);
+        expect(resources.size).toBeLessThanOrEqual(kind === "rock-small" ? 7 : 4);
       }
+      // Simple independent assembly is the oracle for the optimized multi-prop batching path:
+      // every seeded shape at its actual position appears exactly once, with all local transforms intact.
+      const reference = props.flatMap((prop) => vertices(buildSceneryScene({ ...fixture, props: [prop] }, ENVIRONMENT))).sort();
+      expect(vertices(scene), kind).toEqual(reference);
       const next = new SceneryFrame(scene, "acceptance").nodes([1, 5, 8], { seconds: 1, animate: true });
-      for (const batch of repeated) {
-        expect(next.instanceBatches.find((other) => other.id === batch.id)!.geometry).toBe(batch.geometry);
-      }
+      for (const batch of repeated) { expect(next.instanceBatches.find((other) => other.id === batch.id)!.geometry).toBe(batch.geometry); }
       expect(scenery).toEqual(before);
       expect(new SceneryFrame(scene, "acceptance").nodes([10000, 5, 10000], { seconds: 0, animate: false })
         .instanceBatches.filter((batch) => batch.visible !== false).length).toBeLessThan(frame.instanceBatches.length);
