@@ -28,12 +28,22 @@ Start a local host and connect one native client with one command:
 ./scripts/dev-native.sh
 ```
 
-The launcher builds the native packages, reuses a valid disposable certificate under `target/dev-tls/` (or creates one valid for 10 days), starts zone `1` at `https://localhost:4433`, waits for `/readyz`, and opens the client. Closing the window or pressing Ctrl-C stops the host. It owns that host process, so do not use it while another local zone host is bound to ports `4433` or `8080`.
+The launcher requires Python 3, Cargo, Git, curl and OpenSSL. It fetches `origin`'s default branch and fast-forwards to the latest merged revision before building. A checkout that already includes that revision keeps its local edits and commits. If updating would require integrating local changes or a divergent branch, it stops with an explanation; it never stashes, resets, forces or changes dependency pins. `--no-update` explicitly uses the current checkout without fetching, including offline work.
+
+It builds from its own checkout regardless of the calling directory, reuses a valid disposable certificate under `target/dev-tls/` (or creates one valid for 10 days), starts zone `1` at `https://localhost:4433`, waits for `/readyz`, and opens the client. It watches workspace source, shaders, embedded scenery assets, Cargo manifests/lockfile, toolchain and `.cargo` configuration. An edit stops the owned host/client processes, rebuilds, then restarts them; edits during a build cause another build before launch. Failed builds remain visible and watching resumes after the next edit. Generated targets, logs and certificates do not trigger rebuilds. **Restarting resets the disposable zone and its development session.**
+
+Closing the window or pressing Ctrl-C stops the owned host and its workers. `--no-watch` keeps a single interactive launch. It owns that host process, so do not use it while another local zone host is bound to ports `4433` or `8080`.
 
 To exercise the exact launcher without leaving a window open:
 
 ```sh
 ./scripts/dev-native.sh --smoke
+```
+
+`--smoke` always runs once and cleans up. Add `--no-update` to verify the local checkout without fetching newer source:
+
+```sh
+./scripts/dev-native.sh --no-update --smoke
 ```
 
 Browser tabs can join a local zone host too: `./scripts/dev-browser-online.sh` starts the host with the same certificate and ports and serves the page in [browser online mode](../README.md#browser-online-mode), which follows the session and resume rules below. Run it instead of this launcher, not beside it.
