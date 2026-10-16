@@ -151,6 +151,28 @@ The launcher reuses or creates the ECDSA P-256 development certificate under `ta
 
 `python3 scripts/smoke-browser-online.py` proves it end to end with the production bundle: it starts a real host with a disposable certificate on OS-selected ports, opens two Chromium pages in online mode, runs one character and checks the other page sees it move in its own decoded projections, then closes the running page and checks its unit disappears after the host's one-second grace.
 
+### Play together on a local network
+
+On the **host computer**, use its actual LAN IPv4 address (for example `192.168.1.20`):
+
+```sh
+./scripts/dev-browser-online.sh --lan 192.168.1.20
+```
+
+The launcher runs **one** authoritative Greyhaven zone host (UDP 4433) and serves the browser game over HTTPS on that LAN interface (TCP 5173). The printed link names the correct LAN WebTransport endpoint and its pinned development certificate hash. Other computers on the same network open **that link** in a Chromium-based browser; they do not need the Rust toolchain or a copy of the game source. Each player selects **Enter World** to join the same zone. `--check` also works with `--lan` to verify server readiness and the HTTPS page before playing.
+
+The page uses a self-signed **development** HTTPS certificate. On each device, trust the host's certificate `target/dev-tls/cert.pem` for this locally controlled server (or explicitly accept the browser's certificate warning where supported) before using the shared link. Never distribute `key.pem`. The launcher includes the LAN IP in the short-lived certificate's subject alternative names, regenerating the pair if the IP changes. Open firewall access for **TCP 5173** (HTTPS page) and **UDP 4433** (WebTransport) only to trusted LAN peers; do **not** forward the ports to the internet. The server has anonymous sessions and no public authentication or production durability.
+
+You can also connect a **native client from another LAN computer** to this host (or to one running `./scripts/dev-native.sh`) by copying **only** the public certificate `cert.pem` to that computer and supplying its LAN endpoint:
+
+```sh
+cargo run --locked -p mmorpg-client -- \
+  --url https://192.168.1.20:4433/game/matches/zone-1 \
+  --certificate ./cert.pem
+```
+
+For a host-only check without a browser, the native zone host is already available as `mmorpg-zone-host`; no separate LAN gameplay server is needed. The ordinary `./scripts/dev-browser-online.sh` (without `--lan`) stays bound to loopback and uses HTTP for local development. The GitHub Pages demo remains local single-player.
+
 ## Scaling model
 
 The first scaling unit is the zone:
