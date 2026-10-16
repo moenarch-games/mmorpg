@@ -4,6 +4,9 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "paths": {
+      "three": ["./node_modules/@types/three"]
+    },
     "strict": true,
     "noEmit": true,
     "lib": [

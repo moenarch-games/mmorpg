@@ -144,7 +144,8 @@ export function yawRollQuaternion(yaw: number, roll: number): Quaternion {
   return [sy * sz, sy * wz, wy * sz, wy * wz];
 }
 
-type AnimatedNode = Omit<RendererSceneNode, "transform" | "modelMatrix">;
+// Animated props use the default lit material; retain that branch of the renderer contract.
+type AnimatedNode = Omit<Extract<RendererSceneNode, { unlit?: false }>, "transform" | "modelMatrix">;
 
 function meshNode(mesh: AnimatedMesh, prefix: string): AnimatedNode {
   return {

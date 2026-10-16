@@ -20,7 +20,7 @@ Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decis
 | Native graphics | `mmorpg-client`: wgpu/winit adapter over pinned `3d-lab` mesh/camera models |
 | Browser graphics | pinned `3d-lab` browser renderer |
 | Browser zone host (single-player demo) | `mmorpg-wasm`: thin wasm-bindgen adapter over `mmorpg-core` and `mmorpg-protocol` |
-| Runtime input semantics | `input-bindings` (browser client; native client and binding editor pending, [#41](https://github.com/moritzbrantner/mmorpg/issues/41)) |
+| Runtime input semantics | `input-bindings` (browser and native action runtime; binding editor pending, [#41](https://github.com/moritzbrantner/mmorpg/issues/41)) |
 | User-facing settings | `settings` (future client slice) |
 | Asset normalization/provenance | `asset-tooling` (future content slice) |
 | Social systems | `social-service` where its existing authority fits |
@@ -180,7 +180,7 @@ Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative du
 
 - `physics-engine`: `16833b766629c354a6a5925b991eeb74208a242d`
 - `game-server`: `a3851dab9c1fb25dd31b465fb554ca475769caab`
-- `3d-lab` (`three-d-core`, `three-d-camera` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `f484db8a3d2a7a555fa463eddf9c28790b240ce0`
+- `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `df52c324a5692d04d2016d8a29f5bc4368e4aac0`
 - reusable validation workflow: `45042e56be120b438096e774027637cac0280075`
 
 ## Validation
