@@ -898,6 +898,40 @@ fn native_pointer_application_contract() {
     player.inventory_changed_at = ready.tick;
     player.quests_changed_at = ready.tick;
     app.restore(ready);
+    app.until(
+        "Tanner restored self sheets reach actual application context",
+        |app| {
+            let context = &app.driver.app.npc_context;
+            context
+                .inventory
+                .as_ref()
+                .is_some_and(|inventory| inventory.count(mmorpg_core::ItemId::new(10)) == 5)
+                && context.quests.as_ref().is_some_and(|quests| {
+                    quests.completed == 1
+                        && quests.entries.iter().any(|entry| {
+                            entry.quest == mmorpg_core::QuestId::new(2) && entry.progress[0] == 5
+                        })
+                })
+        },
+    );
+    eprintln!(
+        "TANNER_BOUNDARY title={:?} expected={:?} canonicalQuests={:?} receivedQuests={:?} contextQuests={:?} inventoryRevision={:?}",
+        app.driver.app.title,
+        [9, 6].map(
+            |id| mmorpg_core::item_template(mmorpg_core::ItemId::new(id))
+                .unwrap()
+                .name
+        ),
+        app.snapshot().players[0].quests,
+        app.driver.app.presentation.latest().unwrap().quests,
+        app.driver.app.npc_context.quests,
+        app.driver
+            .app
+            .presentation
+            .latest()
+            .unwrap()
+            .inventory_revision
+    );
     for item in [9, 6] {
         assert!(
             app.driver.app.title.contains(
@@ -971,7 +1005,25 @@ fn native_pointer_application_contract() {
         app.role(npc, 800);
         let before = app.snapshot().players[0].clone();
         app.key("1");
-        app.pump(Duration::from_millis(500));
+        eprintln!(
+            "RANGE_BOUNDARY npc={npc} title={:?} feedback={:?} canonicalTarget={:?} latestAck={:?} events={:?}",
+            app.driver.app.title,
+            app.driver.app.npc_context.feedback,
+            app.snapshot().players[0].combat.target,
+            app.driver
+                .app
+                .presentation
+                .latest()
+                .map(|p| p.acknowledged_sequence),
+            app.driver.app.presentation.latest().map(|p| &p.events)
+        );
+        app.until(
+            "range refusal reaches visible selected NPC context",
+            |app| {
+                let title = app.driver.app.title.to_lowercase();
+                title.contains("range") || title.contains("reach") || title.contains("far")
+            },
+        );
         let after = app.snapshot().players[0].clone();
         assert_eq!(
             (
