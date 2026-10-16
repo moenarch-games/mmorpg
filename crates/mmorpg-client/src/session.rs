@@ -627,3 +627,8 @@ mod tests {
         );
     }
 }
+
+// Independent received-feedback boundary acceptance; no runtime behavior added.
+#[cfg(test)]
+#[path = "../tests/support/session_receipt_acceptance.rs"]
+mod session_receipt_acceptance;

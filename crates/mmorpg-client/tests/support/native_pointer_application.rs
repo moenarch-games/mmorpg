@@ -220,6 +220,7 @@ impl NativeApplication {
             },
             title: String::new(),
             connection_epoch: None,
+            last_refusal: None,
             input,
             updates,
             keys: HashSet::new(),

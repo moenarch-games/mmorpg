@@ -169,3 +169,20 @@ pipeline. advance results, latestProjection and interpolated sample are replaced
 the submitted fixture is actually the one the real App renders. This is visual
 fixture evidence, not gameplay/network validation. Served asset identity is
 verified against the frozen published reference before capture.
+
+### Bounded retained interaction refusal
+
+The actual-window range feedback regression is narrowed to one latest received
+server refusal per connection epoch. `session::RefusalReceipt` contains tick,
+acknowledged_sequence, code and target; `NetworkUpdate::Snapshot.refusal` carries
+it beside unchanged newest state/events. App applies each `(epoch, receipt)`
+only once; a newer error replaces it and a new epoch clears it. This is neither
+an event queue nor a promise to recover dropped network datagrams.
+
+`cargo test -p mmorpg-client --lib actual_transport_refusal_survives_two_publications_before_gui_consumption --locked -- --nocapture`
+uses a real TLS/WebTransport host and ClientSession: the real decoded OutOfRange
+is published, then a quiet snapshot before GUI consumption. It checks retained
+refusal, unchanged quiet event vector, stable same-receipt identity, replacement
+and actual reconnect epoch clearing. Existing actual-window range assertions
+remain the end-to-end exactly-once UI acceptance; no broad chat/transient-event
+or self-sheet retention project is introduced.
