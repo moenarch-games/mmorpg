@@ -2,7 +2,7 @@
 //! follow the browser world; immutable resources are shared across frames.
 //! Legacy blockout fields remain available during renderer migration.
 mod batching;
-mod geometry;
+pub(crate) mod geometry;
 mod props;
 mod terrain;
 pub use crate::environment::Environment;
