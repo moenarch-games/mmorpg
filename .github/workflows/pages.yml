@@ -102,8 +102,13 @@ jobs:
         run: |
           python3 -m pip install playwright==1.57.0
           python3 -m playwright install --with-deps chromium
-      - name: Exercise production browser demo
-        if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'browser-evidence')
+      # Verify the deployed bundle with real Chromium and the real WASM local host.
+      # The complete 26-test suite remains available for browser-visible PRs and manual runs.
+      - name: Smoke-test production browser demo
+        if: github.event_name == 'push'
+        run: python3 scripts/smoke-browser.py BrowserAcceptance.test_enter_world_move_jump_orbit_and_leave
+      - name: Run full browser acceptance suite
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'browser-evidence'))
         run: python3 scripts/smoke-browser.py
       - name: Retain browser screenshots and evidence
         if: always() && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'browser-evidence'))
