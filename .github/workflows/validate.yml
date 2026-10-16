@@ -20,6 +20,7 @@ jobs:
       contents: read
     outputs:
       docs_only: ${{ steps.detect.outputs.docs_only }}
+      rust_changed: ${{ steps.detect.outputs.rust_changed }}
       full_validation: ${{ steps.detect.outputs.full_validation }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -31,12 +32,13 @@ jobs:
         shell: bash
         env:
           FULL_VALIDATION: ${{ inputs.full_validation == true || contains(github.event.pull_request.labels.*.name, 'full-validation') }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           printf 'full_validation=%s\n' "$FULL_VALIDATION" >> "$GITHUB_OUTPUT"
           docs_only=false
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" && -n "$PR_BASE" && -n "$PR_HEAD" ]] &&
+          rust_changed=true
+          if [[ -n "$PR_BASE" && -n "$PR_HEAD" ]] &&
             git cat-file -e "$PR_BASE^{commit}" &&
             git cat-file -e "$PR_HEAD^{commit}" &&
             git diff --no-renames --name-only -z "$PR_BASE" "$PR_HEAD" > "$RUNNER_TEMP/changed-files";
@@ -44,15 +46,20 @@ jobs:
             mapfile -d '' -t files < "$RUNNER_TEMP/changed-files"
             if (( ${#files[@]} > 0 )); then
               docs_only=true
+              rust_changed=false
               for file in "${files[@]}"; do
                 case "$file" in
                   docs/*.md|README.md|AGENTS.md|CLAUDE.md|ROADMAP.md|DESIGN.md|SCENARIO_EXPERIMENTS.md) ;;
-                  *) docs_only=false; break ;;
+                  *) docs_only=false ;;
+                esac
+                case "$file" in
+                  Cargo.toml|Cargo.lock|rust-toolchain*|.cargo/*|crates/*|web/assets/*) rust_changed=true ;;
                 esac
               done
             fi
           fi
           printf 'docs_only=%s\n' "$docs_only" >> "$GITHUB_OUTPUT"
+          printf 'rust_changed=%s\n' "$rust_changed" >> "$GITHUB_OUTPUT"
 
   rust:
     needs: scope
@@ -65,10 +72,10 @@ jobs:
       node_version: ""
       install_command: ${{ needs.scope.outputs.docs_only != 'true' && needs.scope.outputs.full_validation == 'true' && 'cd web && bun install --frozen-lockfile' || '' }}
       cache_bun: false
-      cache_cargo: ${{ needs.scope.outputs.docs_only != 'true' }}
-      format_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo fmt --all -- --check' || '' }}
+      cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
+      format_command: ${{ needs.scope.outputs.rust_changed == 'true' && 'cargo fmt --all -- --check' || '' }}
       lint_command: ${{ needs.scope.outputs.docs_only != 'true' && needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && bun run --cwd web typecheck:size && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
       test_command: ${{ needs.scope.outputs.docs_only != 'true' && needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo test --workspace --all-features --locked && mkdir -p artifacts && bun run --cwd web size:budget > artifacts/native-size.json && bun run --cwd web test:size-evidence' || '' }}
-      build_command: ${{ needs.scope.outputs.docs_only != 'true' && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'cargo check --workspace --locked') || '' }}
+      build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'cargo check --workspace --locked') || '' }}
       artifact_paths: artifacts/native-size.json
       upload_artifacts_on: ${{ needs.scope.outputs.docs_only != 'true' && needs.scope.outputs.full_validation == 'true' && 'always' || 'never' }}
