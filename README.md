@@ -110,6 +110,8 @@ Start the complete local native development environment with:
 ./scripts/dev-native.sh
 ```
 
+The launcher fetches the latest merged source and fast-forwards safely before building, then watches local Rust, shader, scenery and build-input edits and restarts the host and client. Each restart resets the disposable zone. Local edits and commits are preserved; an update that needs manual integration stops with an explanation. Use `--no-update` to work offline or intentionally run your current checkout, and `--no-watch` for a single interactive launch. Requires Python 3 in addition to Cargo, Git, curl and OpenSSL; see [native development](docs/NATIVE_CLIENT.md#interactive-play).
+
 ## Browser tech demo
 
 `web/` is the GitHub Pages client. It runs the shared Rust zone simulation in the page as a **local single-player zone host** ([ADR 0002](docs/adr/0002-browser-embeds-zone-simulation.md)): the `mmorpg-wasm` crate compiles `mmorpg-core` and `mmorpg-protocol` to WebAssembly and builds the same `ZoneSimulation` and content revision as `mmorpg-zone-host` (zone 1, Greyhaven Vale). There is one implementation of the movement and combat rules; the browser owns none.
