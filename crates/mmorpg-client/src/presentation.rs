@@ -133,6 +133,7 @@ impl Presentation {
         self.animators.clear();
         self.gaits.clear();
         self.effects.clear();
+        self.resources = kit::Resources::default();
         self.last_draw = now;
         self.last_scene = now;
         self.history.clear();
@@ -383,7 +384,7 @@ impl Presentation {
 
     /// The same CPU geometry/material/model payload consumed by rendering and picking.
     #[must_use]
-    pub fn unit_draws(&mut self, now: Instant, _view: CameraView) -> Vec<crate::world::SceneDraw> {
+    pub fn unit_draws(&mut self, now: Instant, view: CameraView) -> Vec<crate::world::SceneDraw> {
         use kit::*;
         let Some(snapshot) = self.latest().cloned() else {
             self.picked_draws.clear();
@@ -537,6 +538,41 @@ impl Presentation {
             self.picked_draws
                 .extend(body.iter().cloned().map(|d| (entity, d)));
             draws.extend(body);
+            if !unit.record.flags.dead && entity.kind() != EntityKind::Npc {
+                let yaw = (view.target[0] - view.eye[0]).atan2(view.target[2] - view.eye[2]);
+                let mut bars = Vec::new();
+                append_health_bar(
+                    &mut bars,
+                    [
+                        unit.pose.position[0],
+                        unit.pose.position[1] + half[1] + 0.3,
+                        unit.pose.position[2],
+                    ],
+                    unit.record.health_percent,
+                    yaw,
+                );
+                for (index, bar) in bars.into_iter().enumerate() {
+                    let mut draw = self.resources.draw(
+                        format!("{id}-health-{index}"),
+                        "box",
+                        0xffffff,
+                        Frame {
+                            p: bar.position.map(f64::from),
+                            q: qa(1, f64::from(bar.yaw)),
+                        },
+                        bar.size.map(|s| f64::from(s) * 0.5),
+                    );
+                    draw.material.color = bar.color.map(|v| {
+                        if v <= 0.0031308 {
+                            v * 12.92
+                        } else {
+                            1.055 * v.powf(1. / 2.4) - 0.055
+                        }
+                    });
+                    draw.material.unlit = true;
+                    draws.push(draw);
+                }
+            }
             if entity.kind() != EntityKind::Player && snapshot.viewer.target == Some(entity) {
                 let mut ring = self.resources.primitive(
                     format!("{id}-target-ring"),
@@ -555,7 +591,25 @@ impl Presentation {
         if !self.reduced_motion {
             draws.extend(self.effects.nodes(&mut self.resources, seconds, &anchors));
         }
+        self.resources.retire_unused();
         draws
+    }
+
+    /// Sample the static world and units with one presentation clock.
+    #[must_use]
+    pub fn frame(
+        &mut self,
+        world: &crate::world::WorldScene,
+        now: Instant,
+        view: CameraView,
+    ) -> crate::world::WorldFrame {
+        let mut frame = world.frame(
+            now.saturating_duration_since(self.origin).as_secs_f64(),
+            !self.reduced_motion,
+            view.eye,
+        );
+        frame.draws.extend(self.unit_draws(now, view));
+        frame
     }
 
     /// Body geometry from the last rendered scene, with MMO identity retained.

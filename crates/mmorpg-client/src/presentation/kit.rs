@@ -111,6 +111,9 @@ pub(super) struct Resources {
     meshes: BTreeMap<String, Arc<three_d_core::Mesh>>,
 }
 impl Resources {
+    pub fn retire_unused(&mut self) {
+        self.meshes.retain(|_, mesh| Arc::strong_count(mesh) > 1);
+    }
     pub fn mesh(&mut self, key: &str, build: impl FnOnce() -> Geometry) -> Arc<three_d_core::Mesh> {
         Arc::clone(
             self.meshes

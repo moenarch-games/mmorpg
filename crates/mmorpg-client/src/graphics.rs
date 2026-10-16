@@ -1,150 +1,32 @@
-//! Native GPU adapter for shared 3d-lab geometry/camera models. Two pipelines
-//! share one camera binding: indexed vertex-coloured meshes (terrain, water)
-//! and lit instanced boxes (static props uploaded once, units every frame). A
-//! third draws the flat combat HUD rectangles over the world.
+//! Native wgpu adapter. The same submitted mesh frames drive presentation and picking.
+mod frame;
 use crate::{
     ClientError,
     camera::CameraView,
-    hud::{HudRect, MAX_HUD_RECTS},
-    presentation::{MAX_SCENE_BOXES, SceneBox},
-    world::{Mesh as WorldMesh, WorldScene},
+    hud::HudRect,
+    world::{SceneDraw, WorldFrame, WorldScene},
 };
-use bytemuck::{Pod, Zeroable};
-use std::{mem, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use three_d_camera::PerspectiveCamera;
-use three_d_core::{Mesh, Vec3};
-use wgpu::util::DeviceExt;
+use three_d_core::Vec3;
 use winit::window::Window;
-
-const MAX_DYNAMIC_INSTANCES: usize = MAX_SCENE_BOXES;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-/// Sees across the 240 m vale to the mountains 200 m out.
-const FAR_PLANE_METRES: f32 = 600.0;
-const SKY: wgpu::Color = wgpu::Color {
-    r: 0.46,
-    g: 0.62,
-    b: 0.82,
-    a: 1.0,
-};
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    normal: [f32; 3],
-}
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Instance {
-    position: [f32; 3],
-    size: [f32; 3],
-    color: [f32; 3],
-    yaw: f32,
-}
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct ColoredVertex {
-    position: [f32; 3],
-    normal: [f32; 3],
-    color: [f32; 3],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct HudInstance {
-    min: [f32; 2],
-    max: [f32; 2],
-    color: [f32; 3],
-}
-
-impl From<&HudRect> for HudInstance {
-    fn from(rect: &HudRect) -> Self {
-        Self {
-            min: rect.min,
-            max: rect.max,
-            color: rect.color,
-        }
-    }
-}
-
-impl From<&SceneBox> for Instance {
-    fn from(item: &SceneBox) -> Self {
-        Self {
-            position: item.position,
-            size: item.size,
-            color: item.color,
-            yaw: item.yaw,
-        }
-    }
-}
-
-struct GpuMesh {
-    vertices: wgpu::Buffer,
-    indices: wgpu::Buffer,
-    index_count: u32,
-}
-
-impl GpuMesh {
-    fn upload(
-        device: &wgpu::Device,
-        label: &str,
-        mesh: &WorldMesh,
-    ) -> Result<Option<Self>, ClientError> {
-        if mesh.indices.is_empty() {
-            return Ok(None);
-        }
-        let vertices: Vec<_> = mesh
-            .vertices
-            .iter()
-            .map(|vertex| ColoredVertex {
-                position: vertex.position,
-                normal: vertex.normal,
-                color: vertex.color,
-            })
-            .collect();
-        Ok(Some(Self {
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(label),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(label),
-                contents: bytemuck::cast_slice(&mesh.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
-            index_count: u32::try_from(mesh.indices.len())?,
-        }))
-    }
-}
+const FAR_PLANE_METRES: f32 = 1400.;
 
 pub struct SceneRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    box_pipeline: wgpu::RenderPipeline,
-    mesh_pipeline: wgpu::RenderPipeline,
-    hud_pipeline: wgpu::RenderPipeline,
-    hud_instances: wgpu::Buffer,
-    cube: wgpu::Buffer,
-    cube_vertex_count: u32,
-    static_instances: wgpu::Buffer,
-    static_count: u32,
-    dynamic_instances: wgpu::Buffer,
-    meshes: Vec<GpuMesh>,
-    camera: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
+    frame: frame::FrameRenderer,
     depth: wgpu::TextureView,
     width: u32,
     height: u32,
 }
-
 impl SceneRenderer {
     async fn new(
         adapter: &wgpu::Adapter,
         format: wgpu::TextureFormat,
         width: u32,
         height: u32,
-        world: &WorldScene,
     ) -> Result<Self, ClientError> {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -152,324 +34,38 @@ impl SceneRenderer {
                 ..Default::default()
             })
             .await?;
-        let mesh = Mesh::unit_cube();
-        let mut vertices = Vec::new();
-        for (triangle, indices) in mesh.indices().as_chunks::<3>().0.iter().enumerate() {
-            let normal = mesh
-                .triangle_normal(triangle)
-                .ok_or("cube triangle has no normal")?;
-            for index in indices {
-                let vertex = mesh.vertices()[*index as usize];
-                vertices.push(Vertex {
-                    position: [vertex.x, vertex.y, vertex.z],
-                    normal: [normal.x, normal.y, normal.z],
-                });
-            }
-        }
-        let cube_vertex_count = u32::try_from(vertices.len())?;
-        let cube = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("shared cube mesh"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        // Zero-sized buffers are invalid: an empty world keeps one unused slot.
-        let mut static_boxes: Vec<Instance> = world.props.iter().map(Instance::from).collect();
-        let static_count = u32::try_from(static_boxes.len())?;
-        if static_boxes.is_empty() {
-            static_boxes.push(Instance::zeroed());
-        }
-        let static_instances = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("static prop instances"),
-            contents: bytemuck::cast_slice(&static_boxes),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let dynamic_instances = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("bounded unit instances"),
-            size: (MAX_DYNAMIC_INSTANCES * mem::size_of::<Instance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut meshes = Vec::new();
-        for (label, mesh) in [
-            ("terrain mesh", &world.terrain),
-            ("water mesh", &world.water),
-        ] {
-            meshes.extend(GpuMesh::upload(&device, label, mesh)?);
-        }
-        let camera = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("camera"),
-            size: 64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("camera layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("scene layout"),
-            bind_group_layouts: &[Some(&camera_layout)],
-            immediate_size: 0,
-        });
-        let box_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("box shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("scene.wgsl").into()),
-        });
-        let mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("mesh shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("mesh.wgsl").into()),
-        });
-        const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
-        const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
-            2 => Float32x3,
-            3 => Float32x3,
-            4 => Float32x3,
-            5 => Float32
-        ];
-        const COLORED_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3];
-        let pipeline = |label: &str,
-                        shader: &wgpu::ShaderModule,
-                        buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
-                        cull_mode: Option<wgpu::Face>| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&layout),
-                vertex: wgpu::VertexState {
-                    module: shader,
-                    entry_point: Some("vs_main"),
-                    compilation_options: Default::default(),
-                    buffers,
-                },
-                primitive: wgpu::PrimitiveState {
-                    cull_mode,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::Less),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Default::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: shader,
-                    entry_point: Some("fs_main"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        };
-        let box_pipeline = pipeline(
-            "box pipeline",
-            &box_shader,
-            &[
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: mem::size_of::<Vertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &VERTEX_ATTRIBUTES,
-                }),
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: mem::size_of::<Instance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &INSTANCE_ATTRIBUTES,
-                }),
-            ],
-            Some(wgpu::Face::Back),
-        );
-        // Terrain is only seen from above, but culling is off so winding never hides it.
-        let mesh_pipeline = pipeline(
-            "mesh pipeline",
-            &mesh_shader,
-            &[Some(wgpu::VertexBufferLayout {
-                array_stride: mem::size_of::<ColoredVertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &COLORED_ATTRIBUTES,
-            })],
-            None,
-        );
-        let hud_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("hud layout"),
-            bind_group_layouts: &[],
-            immediate_size: 0,
-        });
-        let hud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("hud shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("hud.wgsl").into()),
-        });
-        const HUD_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-            wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x3];
-        // Drawn last over everything: no depth test, no depth write.
-        let hud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("hud pipeline"),
-            layout: Some(&hud_layout),
-            vertex: wgpu::VertexState {
-                module: &hud_shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: mem::size_of::<HudInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &HUD_ATTRIBUTES,
-                })],
-            },
-            primitive: Default::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &hud_shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
-        let hud_instances = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("bounded hud rectangles"),
-            size: (MAX_HUD_RECTS * mem::size_of::<HudInstance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("camera binding"),
-            layout: &camera_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera.as_entire_binding(),
-            }],
-        });
+        let frame = frame::FrameRenderer::new(&device, format);
         let depth = depth_texture(&device, width, height);
         Ok(Self {
             device,
             queue,
-            box_pipeline,
-            mesh_pipeline,
-            hud_pipeline,
-            hud_instances,
-            cube,
-            cube_vertex_count,
-            static_instances,
-            static_count,
-            dynamic_instances,
-            meshes,
-            camera,
-            camera_bind_group,
+            frame,
             depth,
             width,
             height,
         })
     }
-
     fn render(
-        &self,
+        &mut self,
         target: &wgpu::TextureView,
-        scene: &[SceneBox],
+        frame: &WorldFrame,
         hud: &[HudRect],
         view: CameraView,
     ) -> Result<(), ClientError> {
-        if scene.len() > MAX_DYNAMIC_INSTANCES {
-            return Err("scene exceeds instance capacity".into());
-        }
-        if hud.len() > MAX_HUD_RECTS {
-            return Err("HUD exceeds rectangle capacity".into());
-        }
-        let hud_instances: Vec<_> = hud.iter().map(HudInstance::from).collect();
-        let instances: Vec<_> = scene.iter().map(Instance::from).collect();
-        let camera = scene_camera(view, [self.width, self.height])?;
-        self.queue.write_buffer(
-            &self.camera,
-            0,
-            bytemuck::cast_slice(&camera.view_projection_matrix().elements),
-        );
-        if !instances.is_empty() {
-            self.queue
-                .write_buffer(&self.dynamic_instances, 0, bytemuck::cast_slice(&instances));
-        }
-        if !hud_instances.is_empty() {
-            self.queue
-                .write_buffer(&self.hud_instances, 0, bytemuck::cast_slice(&hud_instances));
-        }
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("scene frame"),
-            });
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("opaque world"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(SKY),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Discard,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            pass.set_pipeline(&self.mesh_pipeline);
-            for mesh in &self.meshes {
-                pass.set_vertex_buffer(0, mesh.vertices.slice(..));
-                pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-            }
-            pass.set_pipeline(&self.box_pipeline);
-            pass.set_vertex_buffer(0, self.cube.slice(..));
-            pass.set_vertex_buffer(1, self.static_instances.slice(..));
-            pass.draw(0..self.cube_vertex_count, 0..self.static_count);
-            pass.set_vertex_buffer(1, self.dynamic_instances.slice(..));
-            pass.draw(0..self.cube_vertex_count, 0..u32::try_from(scene.len())?);
-            if !hud_instances.is_empty() {
-                pass.set_pipeline(&self.hud_pipeline);
-                pass.set_vertex_buffer(0, self.hud_instances.slice(..));
-                pass.draw(0..6, 0..u32::try_from(hud_instances.len())?);
-            }
-        }
-        self.queue.submit([encoder.finish()]);
-        Ok(())
+        self.frame.render(
+            &self.device,
+            &self.queue,
+            frame::Target {
+                view: target,
+                depth: &self.depth,
+                viewport: [self.width, self.height],
+            },
+            frame,
+            hud,
+            view,
+        )
     }
 }
-
 fn depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
     device
         .create_texture(&wgpu::TextureDescriptor {
@@ -496,7 +92,7 @@ fn scene_camera(view: CameraView, viewport: [u32; 2]) -> Result<PerspectiveCamer
         Vec3::new(0.0, 1.0, 0.0),
         50_f32.to_radians(),
         viewport[0] as f32 / viewport[1] as f32,
-        0.1,
+        0.2,
         FAR_PLANE_METRES,
     )?)
 }
@@ -509,9 +105,8 @@ pub struct WindowRenderer {
     picking: crate::picking::WorldPicking,
     last_view: Option<CameraView>,
 }
-
 impl WindowRenderer {
-    pub async fn new(window: Arc<Window>, world: &WorldScene) -> Result<Self, ClientError> {
+    pub async fn new(window: Arc<Window>, _world: &WorldScene) -> Result<Self, ClientError> {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window)?;
@@ -526,34 +121,27 @@ impl WindowRenderer {
             .ok_or("surface has no compatible format")?;
         config.present_mode = wgpu::PresentMode::AutoVsync;
         let renderer =
-            SceneRenderer::new(&adapter, config.format, config.width, config.height, world).await?;
+            SceneRenderer::new(&adapter, config.format, config.width, config.height).await?;
         surface.configure(&renderer.device, &config);
         Ok(Self {
             surface,
             config,
             renderer,
             suspended: false,
-            picking: crate::picking::WorldPicking::new(world)?,
+            picking: crate::picking::WorldPicking::default(),
             last_view: None,
         })
     }
-
-    /// Queries exactly the camera/viewport and static geometry uploaded for the visible frame.
-    pub fn pick(
-        &self,
-        pixel: [f64; 2],
-        bodies: &[(mmorpg_core::EntityRef, SceneBox)],
-    ) -> Result<Option<mmorpg_core::EntityRef>, ClientError> {
+    /// Pick only the actual last successfully presented frame and viewport.
+    pub fn pick(&self, pixel: [f64; 2]) -> Result<Option<mmorpg_core::EntityRef>, ClientError> {
         let Some(view) = self.last_view else {
             return Ok(None);
         };
         if self.suspended {
             return Ok(None);
         }
-        let viewport = [self.config.width, self.config.height];
-        // Outside/retired viewport coordinates are an ordinary miss. Camera or
-        // geometry errors still reach the application's observed failure path.
         use three_d_projective::picking::{PickError, PickRay};
+        let viewport = [self.config.width, self.config.height];
         let ray = match PickRay::from_viewport(
             scene_camera(view, viewport)?.view_projection_matrix(),
             viewport,
@@ -561,11 +149,10 @@ impl WindowRenderer {
         ) {
             Ok(ray) => ray,
             Err(PickError::InvalidViewport | PickError::InvalidViewportPoint) => return Ok(None),
-            Err(error) => return Err(error.into()),
+            Err(e) => return Err(e.into()),
         };
-        self.picking.select(ray, bodies)
+        self.picking.select_frame(ray)
     }
-
     pub fn resize(&mut self, width: u32, height: u32) {
         self.last_view = None;
         self.suspended = width == 0 || height == 0;
@@ -581,22 +168,20 @@ impl WindowRenderer {
             depth_texture(&self.renderer.device, self.config.width, self.config.height);
         self.surface.configure(&self.renderer.device, &self.config);
     }
-
     pub fn render(
         &mut self,
-        scene: &[SceneBox],
+        frame: &WorldFrame,
         hud: &[HudRect],
         view: CameraView,
+        bodies: &[(mmorpg_core::EntityRef, SceneDraw)],
     ) -> Result<(), ClientError> {
-        // Presentation has already sampled this candidate frame's body geometry.
-        // Until that frame is presented, no view may be paired with those bodies.
         self.last_view = None;
         if self.suspended {
             return Ok(());
         }
-        let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+        let target = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(f)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
                 return Ok(());
             }
@@ -612,42 +197,38 @@ impl WindowRenderer {
             }
         };
         self.renderer.render(
-            &frame.texture.create_view(&Default::default()),
-            scene,
+            &target.texture.create_view(&Default::default()),
+            frame,
             hud,
             view,
         )?;
-        self.renderer.queue.present(frame);
+        self.renderer.queue.present(target);
+        self.picking.present(frame, bodies);
         self.last_view = Some(view);
         Ok(())
     }
 }
-
-/// Explicit GPU smoke check. Readback proves a frame was rendered, rather than
-/// accepting successful command submission as graphics evidence.
+/// Explicit native GPU smoke over the production frame adapter.
 pub async fn render_offscreen(
     world: &WorldScene,
-    scene: &[SceneBox],
+    units: &[SceneDraw],
     hud: &[HudRect],
     view: CameraView,
 ) -> Result<usize, ClientError> {
-    let bytes = offscreen_pixels(world, scene, hud, view).await?;
+    let mut frame = world.frame(0., true, view.eye);
+    frame.draws.extend_from_slice(units);
+    let bytes = readback(&frame, hud, view).await?;
     let mut colors = std::collections::BTreeMap::<[u8; 3], usize>::new();
-    for pixel in bytes.as_chunks::<4>().0 {
-        *colors.entry([pixel[0], pixel[1], pixel[2]]).or_default() += 1;
+    for p in bytes.chunks_exact(4) {
+        *colors.entry([p[0], p[1], p[2]]).or_default() += 1;
     }
-    let count = colors.len();
-    let dominant = colors.values().copied().max().unwrap_or(0);
-    let pixels = bytes.len() / 4;
-    if count < 3 || dominant * 4 > pixels * 3 {
+    if colors.len() < 3 || colors.values().copied().max().unwrap_or(0) * 4 > bytes.len() / 4 * 3 {
         return Err("GPU frame did not contain visible scene geometry".into());
     }
-    Ok(count)
+    Ok(colors.len())
 }
-
-async fn offscreen_pixels(
-    world: &WorldScene,
-    scene: &[SceneBox],
+async fn readback(
+    frame: &WorldFrame,
     hud: &[HudRect],
     view: CameraView,
 ) -> Result<Vec<u8>, ClientError> {
@@ -655,16 +236,10 @@ async fn offscreen_pixels(
     const HEIGHT: u32 = 360;
     let instance = wgpu::Instance::default();
     let adapter = instance.request_adapter(&Default::default()).await?;
-    let renderer = SceneRenderer::new(
-        &adapter,
-        wgpu::TextureFormat::Rgba8UnormSrgb,
-        WIDTH,
-        HEIGHT,
-        world,
-    )
-    .await?;
+    let mut renderer =
+        SceneRenderer::new(&adapter, wgpu::TextureFormat::Rgba8UnormSrgb, WIDTH, HEIGHT).await?;
     let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("smoke target"),
+        label: Some("native smoke"),
         size: wgpu::Extent3d {
             width: WIDTH,
             height: HEIGHT,
@@ -677,9 +252,9 @@ async fn offscreen_pixels(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    renderer.render(&texture.create_view(&Default::default()), scene, hud, view)?;
+    renderer.render(&texture.create_view(&Default::default()), frame, hud, view)?;
     let buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("smoke readback"),
+        label: Some("native readback"),
         size: u64::from(WIDTH * HEIGHT * 4),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
@@ -703,23 +278,86 @@ async fn offscreen_pixels(
     );
     renderer.queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-    buffer
-        .slice(..)
-        .map_async(wgpu::MapMode::Read, move |result| {
-            let _ = sender.send(result);
-        });
+    buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+        let _ = sender.send(r);
+    });
     renderer.device.poll(wgpu::PollType::Wait {
         submission_index: None,
         timeout: Some(Duration::from_secs(10)),
     })?;
     receiver.recv_timeout(Duration::from_secs(10))??;
-    let bytes = buffer.slice(..).get_mapped_range()?;
-    let pixels = bytes.to_vec();
-    drop(bytes);
+    let mapped = buffer.slice(..).get_mapped_range()?;
+    let pixels = mapped.to_vec();
+    drop(mapped);
     buffer.unmap();
     Ok(pixels)
 }
-
+#[cfg(test)]
+async fn offscreen_frame_pixels(
+    frame: &WorldFrame,
+    units: &[SceneDraw],
+    view: CameraView,
+) -> Result<Vec<u8>, ClientError> {
+    let mut frame = frame.clone();
+    frame.draws.extend_from_slice(units);
+    readback(&frame, &[], view).await
+}
+// Compatibility for the existing explicit GPU regression fixtures. The live
+// application submits SceneDraws directly; these boxes use that same adapter.
+#[cfg(test)]
+async fn offscreen_pixels(
+    world: &WorldScene,
+    boxes: &[crate::presentation::SceneBox],
+    hud: &[HudRect],
+    view: CameraView,
+) -> Result<Vec<u8>, ClientError> {
+    let mut frame = world.frame(0., false, view.eye);
+    let cube = Arc::new(three_d_core::Mesh::unit_cube());
+    for (i, b) in boxes.iter().enumerate() {
+        let (s, c) = b.yaw.sin_cos();
+        let [x, y, z] = b.size;
+        let [tx, ty, tz] = b.position;
+        frame.draws.push(SceneDraw {
+            id: format!("compatibility-box-{i}"),
+            resource_key: "compatibility-cube".into(),
+            mesh: Arc::clone(&cube),
+            model: three_d_animation::Mat4 {
+                elements: [
+                    c * x,
+                    0.,
+                    -s * x,
+                    0.,
+                    0.,
+                    y,
+                    0.,
+                    0.,
+                    s * z,
+                    0.,
+                    c * z,
+                    0.,
+                    tx,
+                    ty,
+                    tz,
+                    1.,
+                ],
+            },
+            material: crate::world::DrawMaterial {
+                color: b.color.map(|v| {
+                    if v <= 0.0031308 {
+                        v * 12.92
+                    } else {
+                        1.055 * v.powf(1. / 2.4) - 0.055
+                    }
+                }),
+                opacity: 1.,
+                unlit: false,
+                emissive: [0.; 3],
+                double_sided: false,
+            },
+        });
+    }
+    readback(&frame, hud, view).await
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -154,10 +154,7 @@ impl App {
             return;
         }
         let Some(cursor) = self.cursor else { return };
-        let result = self
-            .renderer
-            .as_ref()
-            .map(|r| r.pick([cursor.x, cursor.y], self.presentation.picked_bodies()));
+        let result = self.renderer.as_ref().map(|r| r.pick([cursor.x, cursor.y]));
         let target = match result {
             Some(Ok(target)) => target,
             Some(Err(error)) => {
@@ -616,11 +613,13 @@ impl ApplicationHandler for App {
                     }
                 }
                 let view = self.camera.view(self.presentation.camera_target(now));
+                let frame = self.presentation.frame(&self.world, now, view);
                 if let Some(renderer) = &mut self.renderer
                     && let Err(error) = renderer.render(
-                        &self.presentation.scene(now, view),
+                        &frame,
                         &self.hud.as_ref().map(CombatHud::rects).unwrap_or_default(),
                         view,
+                        self.presentation.picked_draws(),
                     )
                 {
                     self.fail(event_loop, error);

@@ -61,6 +61,8 @@ pub struct WorldScene {
     pub terrain: Mesh,
     pub water: Mesh,
     pub props: Vec<SceneBox>,
+    /// Additional caller-authored presentation geometry, rendered and picked with the world.
+    pub additional_draws: Vec<SceneDraw>,
     groups: Vec<batching::Group>,
     water_draws: Vec<SceneDraw>,
     animated: Vec<props::Animated>,
@@ -140,6 +142,7 @@ impl WorldScene {
             draw.id = draw.id.replacen("native-scenery", &prefix, 1);
         }
         Self {
+            additional_draws: Vec::new(),
             groups,
             water_draws,
             animated,
@@ -206,6 +209,7 @@ impl WorldScene {
                 draws.push(draw);
             }
         }
+        draws.extend(self.additional_draws.iter().cloned());
         WorldFrame {
             draws,
             environment: Environment::at(seconds, animate),

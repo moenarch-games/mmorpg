@@ -2,6 +2,8 @@
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Environment {
+    /// CSS-equivalent cloud drift in screen pixels; frozen by reduced motion.
+    pub cloud_offset: f32,
     pub background: [f32; 3],
     pub sky: Hemisphere,
     pub sun: Sun,
@@ -70,6 +72,11 @@ impl Environment {
         let blend = |day, night, twilight| mix(mix(night, day, daylight), twilight, dusk * 0.55);
         let horizon = blend(0xcfe0ea, 0x38475e, 0xe4a176);
         Self {
+            cloud_offset: if animate && seconds.is_finite() {
+                (seconds.rem_euclid(480.0) / 480.0 * 1400.0) as f32
+            } else {
+                0.0
+            },
             background: rgb(horizon),
             sky: Hemisphere {
                 sky_color: rgb(mix(0x8fa4c9, 0x78a9dd, daylight)),
