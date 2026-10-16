@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { RendererGeometry, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
+import type { RendererGeometry, RendererSceneNode, RendererInstanceBatch } from "@moritzbrantner/three-d-renderer";
 import type { EntityRef } from "../../entity-ref";
 
 /**
@@ -32,6 +32,7 @@ export class WorldPicking {
     camera: THREE.PerspectiveCamera,
     scenery: readonly RendererSceneNode[],
     units: readonly RendererSceneNode[],
+    instanceBatches: readonly RendererInstanceBatch[] = [],
   ): EntityRef | null {
     this.#raycaster.setFromCamera(point, camera);
     this.#raycaster.near = camera.near;
@@ -43,6 +44,7 @@ export class WorldPicking {
         if (node.visible === false || node.opacity === 0 || node.id.endsWith("-target-ring")) {
           continue;
         }
+        this.#material.side = node.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
         this.#place(node);
         const intersections: THREE.Intersection[] = [];
         this.#mesh.raycast(this.#raycaster, intersections);
@@ -56,6 +58,23 @@ export class WorldPicking {
           target = identity && (kind === "creature" || kind === "npc")
             ? { kind, id: Number(identity[2]) }
             : null;
+        }
+      }
+    }
+    for (const batch of instanceBatches) {
+      if (batch.visible === false || batch.opacity === 0) {
+        continue;
+      }
+      for (const instance of batch.instances) {
+        this.#material.side = batch.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
+        this.#place({ id: batch.id, geometry: batch.geometry, color: batch.color, ...instance });
+        const hits: THREE.Intersection[] = [];
+        this.#mesh.raycast(this.#raycaster, hits);
+        for (const hit of hits) {
+          if (hit.distance < this.#raycaster.far) {
+            this.#raycaster.far = hit.distance;
+            target = null;
+          }
         }
       }
     }

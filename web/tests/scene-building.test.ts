@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { IndexedMeshGeometry } from "@moritzbrantner/three-d-renderer";
 import { ENVIRONMENT } from "../src/world/environment";
 import { CULL_DISTANCE_METRES, SceneBatcher, batchVisible } from "../src/world/mesh-batching";
 import { BOX, MeshBuilder, compose, scale, translate } from "../src/world/mesh-builder";
@@ -7,6 +8,7 @@ import { SceneryFrame, buildSceneryScene, type SceneryScene } from "../src/world
 import { groundBiomes, terrainSurfaceY, toneVariant } from "../src/world/terrain-mesh";
 import { bandFootprint, expectValidMesh, triangleNormals } from "./support/geometry";
 import { fixtureScenery } from "./support/scenery-fixture";
+import { propMeshes } from "./support/scenery-geometry";
 
 describe("static batching", () => {
   test("groups parts by chunk, colour and cull class under stable IDs and resource keys", () => {
@@ -82,12 +84,36 @@ describe("the static scene", () => {
     for (const batch of scene.batches) {
       expectValidMesh(batch.node.geometry, batch.node.id);
     }
+    for (const { batch } of scene.instanceBatches) {
+      expect(batch.geometry.kind).toBe("mesh");
+      if (batch.geometry.kind === "mesh") {
+        expectValidMesh(batch.geometry, batch.id);
+      }
+      expect(batch.instances.length).toBeGreaterThan(0);
+    }
+    for (const kind of PROP_KINDS) {
+      const prop = scenery.props.find((candidate) => candidate.kind === kind)!;
+      // Animated props are independently checked below; every remaining kind must draw geometry.
+      const single = build([prop]);
+      expect(propMeshes(single).length + single.animated.sails.length + single.animated.flames.length + single.animated.reeds.length, kind)
+        .toBeGreaterThan(0);
+    }
     for (const node of scene.water) {
       expect(node.opacity).toBeLessThan(1);
     }
     const { sails, flames, reeds } = scene.animated;
     expect([sails.length, flames.length, reeds.length > 0]).toEqual([1, 1, true]);
-    expect(scene.stats.staticNodes).toBe(scene.batches.length);
+    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.instanceBatches.length);
+    // Vertex/triangle observations describe immutable uploaded geometry, not expanded instance copies.
+    const geometries = new Map<string, IndexedMeshGeometry>();
+    for (const geometry of [...scene.batches.map(({ node }) => node.geometry), ...scene.instanceBatches.map(({ batch }) => batch.geometry)]) {
+      if (geometry.kind !== "mesh") { throw new Error("Expected procedural mesh"); }
+      const previous = geometries.get(geometry.resourceKey);
+      if (previous) { expect(geometry).toEqual(previous); }
+      geometries.set(geometry.resourceKey, geometry);
+    }
+    expect(scene.stats.staticVertices).toBe([...geometries.values()].reduce((sum, geometry) => sum + geometry.positions.length, 0));
+    expect(scene.stats.staticTriangles).toBe([...geometries.values()].reduce((sum, geometry) => sum + geometry.indices.length / 3, 0));
   });
 
   test("presentation edits receive new resource keys without changing gameplay revision", () => {
@@ -97,15 +123,21 @@ describe("the static scene", () => {
     const keys = new Set(first.batches.map((batch) => batch.node.geometry.resourceKey));
     expect(second.batches.every((batch) => !keys.has(batch.node.geometry.resourceKey))).toBe(true);
     expect(second.water.every((node) => node.geometry.resourceKey?.includes("fedcba9876543210"))).toBe(true);
+    const instanceKeys = new Set(first.instanceBatches.map(({ batch }) => batch.geometry.kind === "mesh" ? batch.geometry.resourceKey : null));
+    expect(second.instanceBatches.every(({ batch }) => batch.geometry.kind === "mesh" && !instanceKeys.has(batch.geometry.resourceKey))).toBe(true);
   });
 
   test("terrain faces point up and the same scenery always builds the same scene", () => {
     const first = build();
     const second = build();
     expect(second.batches.map((batch) => batch.node)).toEqual(first.batches.map((batch) => batch.node));
+    expect(second.instanceBatches).toEqual(first.instanceBatches);
     const terrain = first.batches.filter((batch) => batch.node.id.startsWith("static-all-terrain"));
-    expect(terrain.length).toBeGreaterThan(1);
+    expect(terrain.length).toBeGreaterThan(0);
+    const colors = terrain.flatMap((batch) => batch.node.geometry.colors ?? []);
+    expect(new Set(colors.map((color) => color.join(","))).size).toBeGreaterThan(1);
     for (const batch of terrain) {
+      expect(batch.node.geometry.colors!.length).toBe(batch.node.geometry.positions.length);
       expect(triangleNormals(batch.node.geometry).every((normal) => normal[1] > 0)).toBe(true);
     }
   });
@@ -116,11 +148,12 @@ describe("the static scene", () => {
       const prop = scenery.props.find((candidate) => candidate.kind === kind)!;
       const { unitsPerMetre } = scenery;
       const surface = terrainSurfaceY(scenery.terrain, unitsPerMetre, prop.position[0] / unitsPerMetre, prop.position[2] / unitsPerMetre);
-      const positions = (feetMetres: number) => build([{
+      const positions = (feetMetres: number) => propMeshes(build([{
         ...prop,
         position: [prop.position[0], Math.round(feetMetres * unitsPerMetre), prop.position[2]],
-      }]).batches.filter((batch) => !batch.node.id.startsWith("static-all")).flatMap((batch) => batch.node.geometry.positions);
+      }])).flatMap((mesh) => mesh.positions);
       const floating = positions(surface + 0.4);
+      expect(floating.length, kind).toBeGreaterThan(0);
       expect(positions(surface - 0.4), kind).toEqual(floating);
       const lowest = Math.min(...floating.map(([, y]) => y));
       // Trunks and blades reach a little into the ground; nothing hovers above it.
@@ -148,14 +181,36 @@ describe("the static scene", () => {
       const margin = 0.35;
       const [cx, , cz] = collider.center.map((value) => value / 100);
       const [hx, , hz] = collider.halfExtents.map((value) => value / 100);
-      const footprint = scene.batches
-        .filter((candidate) => !candidate.node.id.startsWith("static-all"))
-        .flatMap((batch) => bandFootprint(batch.node.geometry, 0.3, 1.8));
+      const footprint = propMeshes(scene).flatMap((mesh) => bandFootprint(mesh, 0.3, 1.8));
       expect(footprint.length, kind).toBeGreaterThan(0);
       for (const [x, z] of footprint) {
         expect(Math.abs(x - cx!), `${kind} x`).toBeLessThanOrEqual(hx! + margin);
         expect(Math.abs(z - cz!), `${kind} z`).toBeLessThanOrEqual(hz! + margin);
       }
+    }
+  });
+
+  test("repeated props add transforms rather than duplicate geometry or ordinary prop copies", () => {
+    for (const kind of ["tree-oak", "tree-pine", "grass-tuft", "rock-small"] as const) {
+      const prop = scenery.props.find((candidate) => candidate.kind === kind)!;
+      const single = build([{ ...prop, position: [0, 0, 0] }]);
+      // Identical copies intentionally share a location: varying shape seeds are not part of this resource test.
+      const repeated = build(Array.from({ length: 5 }, () => ({ ...prop, position: [0, 0, 0] as const })));
+      expect(single.instanceBatches.length, kind).toBeGreaterThan(0);
+      expect(repeated.instanceBatches.length, kind).toBe(single.instanceBatches.length);
+      expect(repeated.stats.staticNodes, kind).toBe(single.stats.staticNodes);
+      expect(repeated.stats.staticVertices, kind).toBe(single.stats.staticVertices);
+      expect(repeated.stats.staticTriangles, kind).toBe(single.stats.staticTriangles);
+      const ordinaryProps = (scene: SceneryScene) => scene.batches.filter((batch) => !batch.node.id.startsWith("static-all"));
+      expect(ordinaryProps(single), kind).toHaveLength(0);
+      expect(ordinaryProps(repeated), kind).toHaveLength(0);
+      for (const { batch } of repeated.instanceBatches) {
+        const original = single.instanceBatches.find((candidate) => candidate.batch.id === batch.id)!.batch;
+        expect(batch.geometry, kind).toEqual(original.geometry);
+        expect(batch.instances.length, kind).toBe(original.instances.length * 5);
+      }
+      const vertices = (scene: SceneryScene) => propMeshes(scene).reduce((sum, mesh) => sum + mesh.positions.length, 0);
+      expect(vertices(repeated), kind).toBe(vertices(single) * 5);
     }
   });
 

@@ -1,5 +1,5 @@
-import type { IndexedMeshGeometry, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
-import { MeshBuilder } from "./mesh-builder";
+import type { IndexedMeshGeometry, RendererSceneNode, RendererInstanceBatch, RendererInstance, Matrix4Values } from "@moritzbrantner/three-d-renderer";
+import { MeshBuilder, applyPoint, type Affine, type Shape } from "./mesh-builder";
 import type { Color } from "./scenery";
 
 /**
@@ -9,8 +9,8 @@ import type { Color } from "./scenery";
  * resource key; the renderer frustum-culls it by its bounding sphere and
  * `cullBatches` hides far detail through `visible`.
  *
- * This is the seam for instancing (3d-lab #82): a batch key maps one-to-one
- * to what would become an instanced draw of a shared model.
+ * Repeated vegetation and rocks use shared immutable geometry and affine
+ * instance matrices, partitioned by the same spatial chunks and distance classes.
  */
 export type CullClass = "always" | "far" | "mid" | "near";
 
@@ -34,6 +34,8 @@ export const CHUNK_METRES: Readonly<Record<CullClass, number>> = {
   near: 40,
 };
 
+export type InstanceBatch = { batch: RendererInstanceBatch; cull: CullClass; center: readonly [number, number]; radius: number };
+
 export type StaticBatch = {
   node: RendererSceneNode & { geometry: IndexedMeshGeometry };
   cull: CullClass;
@@ -51,6 +53,8 @@ export function chunkOf(x: number, z: number, cull: CullClass): string {
 
 export class SceneBatcher {
   readonly #prefix: string;
+  readonly #instances = new Map<string, { batch: RendererInstanceBatch; instances: RendererInstance[]; cull: CullClass; minX: number; maxX: number; minZ: number; maxZ: number }>();
+  readonly #geometries = new Map<string, IndexedMeshGeometry>();
   readonly #buckets = new Map<string, Bucket>();
 
   /** `prefix` makes resource keys unique per scenery source and content revision. */
@@ -81,6 +85,44 @@ export class SceneBatcher {
     return bucket.builder;
   }
 
+  /** Immutable unit geometry is shared across spatial batches; only matrices carry placement. */
+  instance(color: Color, shape: Shape, frame: Affine, x: number, z: number, cull: CullClass): void {
+    const payload = JSON.stringify(shape);
+    let geometry = this.#geometries.get(payload);
+    if (!geometry) {
+      geometry = { kind: "mesh", resourceKey: `${this.#prefix}:instance-geometry:${this.#geometries.size}`, ...shape };
+      this.#geometries.set(payload, geometry);
+    }
+    // Shared models tolerate a coarser cell than colour-merged geometry. Keep the
+    // same distance policy and measure from the exact transformed vertex bounds.
+    const size = CHUNK_METRES[cull] * 2;
+    const key = `${size}m${Math.floor(x / size)}_${Math.floor(z / size)}:${cull}:${geometry.resourceKey}`;
+    let bucket = this.#instances.get(key);
+    if (!bucket) {
+      const instances: RendererInstance[] = [];
+      bucket = { instances, batch: { id: `instances:${key}`, geometry, color: "#ffffff", revision: this.#prefix, instances }, cull,
+        minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+      this.#instances.set(key, bucket);
+    }
+    const { m, t } = frame;
+    const modelMatrix: Matrix4Values = [m[0]!, m[3]!, m[6]!, 0, m[1]!, m[4]!, m[7]!, 0, m[2]!, m[5]!, m[8]!, 0, ...t, 1];
+    // The arrays are created during scene construction and never mutated after publication.
+    bucket.instances.push({ modelMatrix, color });
+    for (const point of shape.positions) {
+      const [px, , pz] = applyPoint(frame, point);
+      bucket.minX = Math.min(bucket.minX, px);
+      bucket.maxX = Math.max(bucket.maxX, px);
+      bucket.minZ = Math.min(bucket.minZ, pz);
+      bucket.maxZ = Math.max(bucket.maxZ, pz);
+    }
+  }
+
+  instanceBatches(): InstanceBatch[] {
+    return [...this.#instances.values()].map(({ batch, cull, minX, maxX, minZ, maxZ }) => ({
+      batch, cull, center: [(minX + maxX) / 2, (minZ + maxZ) / 2], radius: Math.hypot(maxX - minX, maxZ - minZ) / 2,
+    }));
+  }
+
   /** Non-empty batches in a stable order with stable IDs and resource keys. */
   batches(): StaticBatch[] {
     return [...this.#buckets.values()]
@@ -104,7 +146,7 @@ export class SceneBatcher {
         return {
           node: {
             id: `static-${name}`,
-            geometry: { kind: "mesh", resourceKey: `${this.#prefix}:${name}`, positions, normals, indices },
+            geometry: { kind: "mesh", resourceKey: `${this.#prefix}:${name}`, positions, normals, indices, ...(bucket.builder.colors.length ? { colors: bucket.builder.colors } : {}) },
             color: bucket.color,
             transform: { translation: [0, 0, 0] },
           },
@@ -117,7 +159,7 @@ export class SceneBatcher {
 }
 
 /** Whether a batch is within its class's distance of the camera eye (XZ, metres). */
-export function batchVisible(batch: StaticBatch, eyeX: number, eyeZ: number): boolean {
+export function batchVisible(batch: Pick<StaticBatch, "center" | "radius" | "cull">, eyeX: number, eyeZ: number): boolean {
   const distance = Math.hypot(batch.center[0] - eyeX, batch.center[1] - eyeZ) - batch.radius;
   return distance <= CULL_DISTANCE_METRES[batch.cull];
 }

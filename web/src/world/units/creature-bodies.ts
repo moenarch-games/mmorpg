@@ -94,6 +94,7 @@ export function creatureBodyNodes(
       id: `${id}-target-ring`,
       geometry: { kind: "cylinder", radius: Math.max(halfX, halfZ) + 0.35, height: 0.04 },
       color: TARGET_RING,
+      unlit: true,
       opacity: 0.85,
       transform: { translation: [x, feetY + 0.02, z] },
     });
