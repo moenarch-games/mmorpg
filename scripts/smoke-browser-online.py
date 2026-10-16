@@ -296,19 +296,34 @@ class OnlineAcceptance(unittest.TestCase):
         actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'stop-attack'})")
         before_resume = self.projection(watcher)
         watcher_id = before_resume["viewerId"]
-        # Close the real transport; production source performs its real token/epoch resume.
-        # No offline emulation or fake welcome/projection enters this boundary.
-        watcher.evaluate("""() => {
-          window.__resumeBefore = window.__valeDebug.presentationFrame().effectNodes;
+        # A normal accepted Firebolt supplies a live effect immediately before interruption.
+        actor.keyboard.press("Digit1")
+        self.wait_for(watcher, """() => {
+          const d = window.__valeDebug, effects = d.presentationFrame().effectNodes;
+          if (!effects.length) return false;
+          window.__resumeBefore = effects.map(e => e.id);
+          window.__resumeDuring = [];
+          const observe = () => {
+            if (d.worldSource().linkState() === 'reconnecting') {
+              window.__resumeDuring.push(d.presentationFrame().effectNodes.map(e => e.id));
+            }
+            if (window.__actualTransports.length < 2 || d.worldSource().linkState() !== 'connected') requestAnimationFrame(observe);
+          };
+          requestAnimationFrame(observe);
           window.__actualTransports.at(-1).close({closeCode:0,reason:'acceptance path interruption'});
-        }""")
+          return true;
+        }""", timeout_ms=10_000)
         self.wait_for(watcher, "window.__actualTransports.length === 2 && window.__valeDebug.worldSource().linkState() === 'connected'", timeout_ms=15_000)
         self.wait_for(watcher, "tick => window.__valeDebug.projection().tick > tick", before_resume["tick"])
         self.assertEqual(self.projection(watcher)["viewerId"], watcher_id, "Real resume retains the same player")
         self.assertEqual(watcher.evaluate("window.__transportKinds"), [False, True], "Second connection uses the real reconnect route")
-        # After the finite cosmetic lifetime, a stopped actor's pre-resume effects stay absent.
-        self.wait_for(watcher, "window.__valeDebug.presentationFrame().effectNodes.length === 0", timeout_ms=5_000)
-        resume = {"beforeTick":before_resume["tick"], "after":self.projection(watcher), "transportKinds":watcher.evaluate("window.__transportKinds"), "effects":watcher.evaluate("window.__valeDebug.presentationFrame().effectNodes")}
+        cleanup = watcher.evaluate("""() => ({before:window.__resumeBefore, during:window.__resumeDuring,
+          after:window.__valeDebug.presentationFrame().effectNodes.map(e => e.id)})""")
+        self.assertTrue(cleanup["before"], "Actual transient geometry was active at interruption")
+        self.assertTrue(cleanup["during"], "Observed a real reconnecting frame")
+        self.assertTrue(all(not set(ids).intersection(cleanup["before"]) for ids in cleanup["during"]), "Reconnecting frames clear prior effect identities")
+        self.assertFalse(set(cleanup["after"]).intersection(cleanup["before"]), "Resume does not replay prior effects; new authoritative effects are allowed")
+        resume = {"beforeTick":before_resume["tick"], "after":self.projection(watcher), "transportKinds":watcher.evaluate("window.__transportKinds"), "cleanup":cleanup}
         self.evidence["realReconnect"] = resume
         watcher.screenshot(path=str(ARTIFACTS / "remote-procedural-resumed.png"))
         actor.close()
