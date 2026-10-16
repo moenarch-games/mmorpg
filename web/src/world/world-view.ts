@@ -2,6 +2,8 @@ import * as THREE from "three";
 import type {
   Matrix4Values,
   RendererCamera,
+  RendererEnvironment,
+  RendererInstanceBatch,
   RendererSceneNode,
   RendererWorkObservations,
   ThreeSceneRenderer,
@@ -11,7 +13,7 @@ import { entityKey, sameEntity } from "../entity-ref";
 import type { EntityRef } from "../entity-ref";
 import type { EntityState, ZoneSnapshot } from "../replication";
 import { DebugOverlay, FrameRate } from "./debug-overlay";
-import { ENVIRONMENT } from "./environment";
+import { ENVIRONMENT, DAY_SECONDS, environmentAt } from "./environment";
 import { Minimap, buildMinimapLayers, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
 import { MovementOutbox, type MovementInput } from "./movement-outbox";
 import {
@@ -159,6 +161,9 @@ export class WorldView {
   readonly #intents: { intent: Intent; onSent: ((sequence: number | null) => void) | undefined }[] = [];
   readonly #secondaryClick = new SecondaryClick();
   readonly #primaryClick = new PointerClick(0);
+  #presentationTime: number | null = null;
+  #lastEnvironment: RendererEnvironment | null = null;
+  #lastInstanceBatches: RendererInstanceBatch[] = [];
   readonly #picking = new WorldPicking();
   #lastSceneryNodes: readonly RendererSceneNode[] = [];
   #pendingNpc: { target: EntityRef; sequence: number } | null = null;
@@ -289,6 +294,10 @@ export class WorldView {
     this.#lastSelf = null;
     this.#lastProjection = null;
     this.#lastSceneryNodes = [];
+    this.#lastInstanceBatches = [];
+    this.#lastEnvironment = null;
+    this.#lastWork = null;
+    this.#presentationTime = null;
     this.#lastUnitNodes = [];
     this.#pendingNpc = null;
     this.#frameRate.reset();
@@ -314,6 +323,10 @@ export class WorldView {
   leave(): void {
     this.#pendingNpc = null;
     this.#lastSceneryNodes = [];
+    this.#lastInstanceBatches = [];
+    this.#lastEnvironment = null;
+    this.#lastWork = null;
+    this.#presentationTime = null;
     this.#lastUnitNodes = [];
     this.#classHud.reset();
     this.#effects.clear();
@@ -538,15 +551,19 @@ export class WorldView {
       viewMatrix: [...this.#camera.matrixWorldInverse.elements] as Matrix4Values,
       projectionMatrix: webGpuProjection(this.#camera),
     };
-    this.#lastWork = this.#renderer.render({ camera, nodes });
+    const seconds = this.#presentationTime ?? (animate ? this.#seconds : 0);
+    const environment = environmentAt(ENVIRONMENT, seconds / DAY_SECONDS);
+    this.#lastEnvironment = environment;
+    this.#lastInstanceBatches = frame.instanceBatches;
+    this.#lastWork = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
-    this.#sky.update(this.#horizon(view.eye, view.target), this.#seconds, animate);
+    this.#sky.update(this.#horizon(view.eye, view.target), seconds, true);
     this.#minimap?.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, others);
     this.#frameRate.sample(now);
     this.#overlay.update({
       fps: this.#frameRate.fps,
       frameMs: this.#frameRate.frameMs,
-      nodes: nodes.length,
+      nodes: nodes.length + frame.instanceBatches.length,
       staticNodes: scene.stats.staticNodes,
       visibleStaticNodes: frame.visibleBatches,
       staticVertices: scene.stats.staticVertices,
@@ -638,7 +655,7 @@ export class WorldView {
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         1 - ((event.clientY - rect.top) / rect.height) * 2,
       );
-      const target = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes);
+      const target = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches);
       this.#pendingNpc = null;
       if (target) {
         this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === target.kind && entity.entityId === target.id)
@@ -680,6 +697,18 @@ export class WorldView {
   /** Debug-only hooks for screenshots and measurements; the simulation never sees them. */
   debugApi() {
     return {
+      setPresentationTime: (seconds: number | null) => {
+        if (seconds !== null && !Number.isFinite(seconds)) {
+          throw new Error("Presentation time must be finite");
+        }
+        this.#presentationTime = seconds;
+      },
+      presentationFrame: () => ({
+        environment: this.#lastEnvironment,
+        work: this.#lastWork,
+        vertexColoredNodes: this.#lastSceneryNodes.filter((node) => node.geometry.kind === "mesh" && node.geometry.colors?.length).length,
+        emissiveNodes: this.#lastSceneryNodes.filter((node) => node.emissive !== undefined).length,
+      }),
       viewpoints: Object.keys(DEBUG_VIEWPOINTS),
       flyTo: (name: string) => {
         const viewpoint = DEBUG_VIEWPOINTS[name];

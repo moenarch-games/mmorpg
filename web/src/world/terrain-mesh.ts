@@ -1,17 +1,11 @@
 import type { RendererSceneNode } from "@moritzbrantner/three-d-renderer";
-import { hazeMix, mergeNearColors, mixColor, quantizeColor, shadeColor, type EnvironmentStyle } from "./environment";
+import { mixColor, shadeColor, type EnvironmentStyle } from "./environment";
 import type { SceneBatcher } from "./mesh-batching";
 import { MeshBuilder, hash01, type Vec3 } from "./mesh-builder";
 import type { Color, Scenery, TerrainGrid } from "./scenery";
 
-/**
- * Terrain from the exported relief grids: a few dozen large indexed meshes,
- * one per colour after near-identical tones merge, with smooth normals from
- * the height field. Each triangle takes the biome most of its corners share,
- * which turns the 4 m sample grid's staircase edges into diagonals. Roads and
- * the lake bed are drawn as smooth surfaces on top instead of grid cells, so
- * their vertices take the surrounding ground's biome here. The far ring samples the same relief every
- * 20 m around the terrain grid and blends toward the sky haze by distance.
+/** Shared relief grids with smooth normals and per-vertex biome/tone colours.
+ * The renderer owns distance fog; terrain colours never bake in daytime haze.
  */
 type Grid = TerrainGrid;
 
@@ -132,25 +126,20 @@ type TerrainOptions = {
   grid: Grid;
   unitsPerMetre: number;
   biomes: readonly number[];
-  /** Colour of a triangle from its corners' biomes and its distance from the vale centre. */
-  colorOf: (corners: readonly [number, number, number], distanceMetres: number) => Color;
+  /** Colour at one biome/tone sample. */
+  colorOf: (tone: number) => Color;
   /** Whether cell (column, row) is drawn. */
   includeCell: (column: number, row: number) => boolean;
   vertexY: (x: number, z: number, height: number) => number;
-  meshFor: (color: Color) => MeshBuilder;
+  mesh: MeshBuilder;
 };
 
 function appendGrid(options: TerrainOptions): void {
   const { grid, unitsPerMetre } = options;
   const metres = (units: number) => units / unitsPerMetre;
-  // Per-colour vertex maps so meshes share vertices within a colour.
-  const local = new Map<MeshBuilder, Map<number, number>>();
-  const vertex = (mesh: MeshBuilder, sample: number): number => {
-    let map = local.get(mesh);
-    if (!map) {
-      map = new Map();
-      local.set(mesh, map);
-    }
+  const mesh = options.mesh;
+  const map = new Map<number, number>();
+  const vertex = (sample: number): number => {
     const existing = map.get(sample);
     if (existing !== undefined) {
       return existing;
@@ -163,10 +152,13 @@ function appendGrid(options: TerrainOptions): void {
     const index = mesh.positions.length;
     mesh.positions.push([x, options.vertexY(x, z, height), z]);
     mesh.normals.push(gridNormal(grid, unitsPerMetre, column, row));
+    const tone = options.biomes[sample] ?? 0;
+    const color = options.colorOf(tone);
+    const rgb = Number.parseInt(color.slice(1), 16);
+    mesh.colors.push([((rgb >> 16) & 255) / 255, ((rgb >> 8) & 255) / 255, (rgb & 255) / 255]);
     map.set(sample, index);
     return index;
   };
-  const triangles: { corners: readonly [number, number, number]; color: Color }[] = [];
   for (let row = 0; row + 1 < grid.rows; row += 1) {
     for (let column = 0; column + 1 < grid.columns; column += 1) {
       if (!options.includeCell(column, row)) {
@@ -176,26 +168,11 @@ function appendGrid(options: TerrainOptions): void {
       const s10 = s00 + 1;
       const s01 = s00 + grid.columns;
       const s11 = s01 + 1;
-      const b = (sample: number) => options.biomes[sample] ?? 0;
-      const centre = (samples: number[]) => {
-        const [x, z] = samples.reduce(([sx, sz], sample) => [
-          sx + metres(grid.originXz[0] + (sample % grid.columns) * grid.step),
-          sz + metres(grid.originXz[1] + Math.floor(sample / grid.columns) * grid.step),
-        ], [0, 0]);
-        return Math.hypot(x / samples.length, z / samples.length);
-      };
       // Counter-clockwise seen from above, so faces point up.
-      for (const corners of [[s00, s01, s10], [s10, s01, s11]] as const) {
-        const [a, bSample, c] = corners;
-        triangles.push({ corners, color: options.colorOf([b(a), b(bSample), b(c)], centre([a, bSample, c])) });
-      }
+      mesh.indices.push(vertex(s00), vertex(s01), vertex(s10), vertex(s10), vertex(s01), vertex(s11));
     }
   }
-  const palette = mergeNearColors(triangles.map((triangle) => triangle.color), MERGE_DISTANCE);
-  for (const { corners: [a, b, c], color } of triangles) {
-    const mesh = options.meshFor(palette.get(color) ?? color);
-    mesh.indices.push(vertex(mesh, a), vertex(mesh, b), vertex(mesh, c));
-  }
+
 }
 
 /** Biomes whose ground varies in tone: grass variants, forest floor and the hollow's dirt. */
@@ -203,16 +180,6 @@ const TONED_BIOMES: ReadonlySet<string> = new Set(["meadow", "hub", "woods", "ho
 /** Tone keys pack a biome ID and a tone variant: `biome * TONES + variant`. */
 const TONES = 4;
 const PLAIN_TONE = 1;
-/** Terrain colour channels round to multiples of this. */
-const TONE_STEP = 8;
-/**
- * Rarer terrain colours within this sRGB distance of a more common one take
- * its colour. Every colour is a scene-wide mesh that is never culled, so this
- * bounds the draw calls: the vale's blends of biome tones, tone variants and
- * haze bands come to about 36 terrain and far-ring meshes instead of over 100.
- */
-const MERGE_DISTANCE = 12;
-
 /** Smooth seeded value noise in [0, 1) over `cell`-metre squares; presentation only. */
 function valueNoise(x: number, z: number, cell: number, seed: number): number {
   const gx = x / cell;
@@ -242,30 +209,10 @@ function toneColor(base: Color, variant: number): Color {
   }
 }
 
-/**
- * Terrain colour of a triangle: the average of its corners' tones (the
- * style's tone for a biome name, else the exported base colour, varied per
- * tone variant), so biome edges get a soft transition band instead of a
- * saw-tooth, then hazed by distance.
- */
-function biomeColor(scenery: Scenery, style: EnvironmentStyle): (corners: readonly [number, number, number], distance: number) => Color {
+/** Vertex colours interpolate biome boundaries without splitting the relief mesh. */
+function biomeColor(scenery: Scenery, style: EnvironmentStyle): (tone: number) => Color {
   const byId = new Map(scenery.biomes.map((biome) => [biome.id, style.biomeColors[biome.name] ?? biome.color]));
-  const cache = new Map<string, Color>();
-  const tone = (key: number) => toneColor(byId.get(Math.floor(key / TONES)) ?? "#808080", key % TONES);
-  return (corners, distance) => {
-    const mix = hazeMix(style, distance);
-    const sorted = [...corners].sort((a, b) => a - b);
-    const key = `${sorted.join(",")}:${mix}`;
-    let color = cache.get(key);
-    if (!color) {
-      const [a, b, c] = sorted.map(tone) as [Color, Color, Color];
-      const blended = mixColor(mixColor(a, b, 0.5), c, 1 / 3);
-      // Near-identical blends share one mesh.
-      color = quantizeColor(mixColor(blended, style.haze.color, mix), TONE_STEP);
-      cache.set(key, color);
-    }
-    return color;
-  };
+  return (key) => toneColor(byId.get(Math.floor(key / TONES)) ?? "#808080", key % TONES);
 }
 
 /** Tone keys per sample: ground biome and, for toned biomes, a tone variant. */
@@ -280,7 +227,7 @@ function toneKeys(grid: Grid, biomes: readonly number[], names: ReadonlyMap<numb
   });
 }
 
-/** Adds the terrain grid and the far ring to `batcher` as scene-wide meshes. */
+/** Adds the terrain grid and far ring as two vertex-coloured scene-wide meshes. */
 export function appendTerrain(batcher: SceneBatcher, scenery: Scenery, style: EnvironmentStyle): void {
   const names = new Map(scenery.biomes.map((biome) => [biome.id, biome.name]));
   const colorOf = biomeColor(scenery, style);
@@ -292,7 +239,7 @@ export function appendTerrain(batcher: SceneBatcher, scenery: Scenery, style: En
     colorOf,
     includeCell: () => true,
     vertexY: (_x, _z, height) => height,
-    meshFor: (color) => batcher.global("terrain", color),
+    mesh: batcher.global("terrain", "#ffffff"),
   });
   // The far ring: every far cell that reaches the terrain grid's edge or beyond.
   const innerMetres = Math.min(
@@ -312,7 +259,7 @@ export function appendTerrain(batcher: SceneBatcher, scenery: Scenery, style: En
     colorOf,
     includeCell: (column, row) => Math.max(reach(column, row), reach(column + 1, row), reach(column, row + 1), reach(column + 1, row + 1)) >= innerMetres,
     vertexY: (x, z, height) => (Math.max(Math.abs(x), Math.abs(z)) < innerMetres ? height - FAR_OVERLAP_SINK_METRES : height),
-    meshFor: (color) => batcher.global("far", color),
+    mesh: batcher.global("far", "#ffffff"),
   });
 }
 

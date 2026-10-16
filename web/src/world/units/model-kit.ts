@@ -104,6 +104,7 @@ export function targetRingNode(id: string, placement: UnitPlacement, halfFootpri
     id: `${id}-target-ring`,
     geometry: { kind: "cylinder", radius: halfFootprintMetres + 0.35, height: 0.04 },
     color: TARGET_RING,
+    unlit: true,
     opacity: 0.85,
     transform: { translation: [placement.x, placement.feetY + 0.02, placement.z] },
   };
