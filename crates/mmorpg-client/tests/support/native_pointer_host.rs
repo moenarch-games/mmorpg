@@ -59,6 +59,7 @@ impl LocalHost {
                 certificate_pem: certificate.clone(),
                 private_key_pem: key,
                 route_prefix: BrowserRoutePrefix::new("/game").unwrap(),
+                allowed_origins: None,
                 drain_grace: Duration::from_millis(10),
             },
             receiver,
