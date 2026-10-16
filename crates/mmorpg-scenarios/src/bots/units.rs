@@ -280,6 +280,7 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::InvalidQuest => "invalid_quest",
         ErrorCode::QuestLogFull => "quest_log_full",
         ErrorCode::QuestIncomplete => "quest_incomplete",
+        ErrorCode::LineOfSight => "line_of_sight",
     }
 }
 
@@ -313,6 +314,7 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "invalid_quest" => ErrorCode::InvalidQuest,
         "quest_log_full" => ErrorCode::QuestLogFull,
         "quest_incomplete" => ErrorCode::QuestIncomplete,
+        "line_of_sight" => ErrorCode::LineOfSight,
         _ => return None,
     })
 }
@@ -426,6 +428,7 @@ mod tests {
             ErrorCode::InvalidQuest,
             ErrorCode::QuestLogFull,
             ErrorCode::QuestIncomplete,
+            ErrorCode::LineOfSight,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));
