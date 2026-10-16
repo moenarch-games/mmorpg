@@ -171,8 +171,8 @@ class OnlineAcceptance(unittest.TestCase):
             except Exception as error:  # Keep cleaning up; the first failure is already reported.
                 print(f"cleanup failed: {error}")
 
-    def open_player(self, name: str):
-        context = self.browser.new_context(viewport={"width": 1280, "height": 800}, reduced_motion="reduce")
+    def open_player(self, name: str, *, animated=False, class_label=None):
+        context = self.browser.new_context(viewport={"width": 1280, "height": 800}, reduced_motion="no-preference" if animated else "reduce")
         page = context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -182,6 +182,11 @@ class OnlineAcceptance(unittest.TestCase):
         expect(page.get_by_role("checkbox", name=re.compile("Play online"))).to_be_checked()
         expect(page.locator("#enter-world-note")).to_contain_text("Join 127.0.0.1:")
         page.screenshot(path=str(ARTIFACTS / f"{name}-selection.png"))
+        if class_label:
+            page.get_by_role("button", name="Create character", exact=True).click()
+            page.get_by_label("Name").fill(name)
+            page.get_by_role("radio", name=re.compile(f"^{class_label}")).check()
+            page.get_by_role("button", name="Create character", exact=True).filter(visible=True).click()
         enter.click()
         expect(page.locator("#character-select")).to_be_hidden(timeout=15_000)
         expect(page.locator("#world-mode")).to_contain_text("online")
@@ -225,6 +230,62 @@ class OnlineAcceptance(unittest.TestCase):
         (ARTIFACTS / "online-evidence.json").write_text(json.dumps(self.evidence, indent=2))
         for player in self.players:
             self.assertEqual(player["errors"], [], f"{player['name']} raised an uncaught error")
+
+    def test_remote_procedural_attack_cast_impact_and_departure(self):
+        """Two real sessions observe ordinary attacks, accepted casts and confirmed impacts.
+
+        Both travel the existing Greyhaven route via ordinary movement commands.
+        The watcher never attacks: no fake projection, teleport or client resolver.
+        """
+        actor = self.open_player("ActorMage", animated=True, class_label="Arcanist")
+        watcher = self.open_player("Observer", animated=True)
+        actor_id = self.projection(actor)["viewerId"]
+        for page in (actor, watcher):
+            page.evaluate("""() => {
+              window.__actionSamples = [];
+              const record = () => {
+                const d = window.__valeDebug, p = d.worldSource().latestProjection();
+                if (p) window.__actionSamples.push({
+                  tick: Number(p.tick), viewerId: p.viewerId, health: p.viewer.health,
+                  inCombat: p.viewer.inCombat, events: p.events.map(e => ({...e})),
+                  nodes: d.unitNodes(`unit-player-${window.__observedActor ?? p.viewerId}`),
+                  effects: d.presentationFrame().effectNodes,
+                  combatText: [...document.querySelectorAll('.combat-text-entry')].map(e => e.textContent),
+                });
+                if (window.__actionSamples.length > 2000) window.__actionSamples.shift();
+                requestAnimationFrame(record);
+              };
+              requestAnimationFrame(record);
+            }""")
+        watcher.evaluate("id => window.__observedActor = id", actor_id)
+        start = self.projection(actor)["tick"]
+        moves = [(0, 1, 0), (36, 1, 49152), (121, 1, 32768), (131, 1, 49152), (375, 1, 32768), (395, 0, 32768)]
+        for offset, forward, facing in moves:
+            self.wait_for(actor, "tick => window.__valeDebug.projection().tick >= tick", start + offset, timeout_ms=20_000)
+            for page in (actor, watcher):
+                page.evaluate("([forward,facing]) => window.__valeDebug.worldSource().sendCommand({kind:'move',forward,strafe:0,facing})", [forward, facing])
+        self.wait_for(actor, "tick => window.__valeDebug.projection().tick >= tick", start + 405)
+        for page in (actor, watcher):
+            self.wait_for(page, "window.__valeDebug.projectedUnits().some(e => e.kind === 'creature' && e.id === 108)")
+        actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'select-target',target:{kind:'creature',id:108}})")
+        # Digit1 is the ordinary production ability binding; the host resolves it.
+        actor.keyboard.press("Digit1")
+        self.wait_for(watcher, """id => window.__actionSamples.some(s => s.events.some(e => e.kind === 'cast-started' && e.source.kind === 'player' && e.source.id === id))""", actor_id)
+        self.wait_for(watcher, """id => window.__actionSamples.some(s => s.events.some(e => e.kind === 'damage-observed' && e.source.kind === 'player' && e.source.id === id && e.amount > 0))""", actor_id)
+        actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'start-attack'})")
+        self.wait_for(watcher, """id => window.__actionSamples.some(s => s.events.some(e => e.kind === 'attack-performed' && e.source.kind === 'player' && e.source.id === id))""", actor_id, timeout_ms=20_000)
+        samples = watcher.evaluate("window.__actionSamples")
+        relevant = [sample for sample in samples if any(event.get("source") == {"kind": "player", "id": actor_id} for event in sample["events"])]
+        self.assertTrue(relevant)
+        self.assertTrue(any(sample["effects"] for sample in relevant), "Real observer frames draw confirmed effects")
+        self.assertGreater(len({json.dumps(sample["nodes"], sort_keys=True) for sample in relevant}), 1, "Remote model actually plays through changing nodes")
+        for sample in relevant:
+            self.assertFalse(any(event["kind"] == "damage-dealt" and event.get("source", {}).get("id") == actor_id for event in sample["events"]), "Watcher is not credited with another actor's damage")
+        watcher.screenshot(path=str(ARTIFACTS / "remote-procedural-action.png"))
+        actor.close()
+        self.wait_for(watcher, "id => !window.__valeDebug.projection().entities.some(e => e.kind === 'player' && e.id === id)", actor_id)
+        self.wait_for(watcher, "id => window.__valeDebug.unitNodes(`unit-player-${id}`).length === 0", actor_id)
+        self.evidence.update({"actorId": actor_id, "remoteActionSamples": relevant, "departedActorNodes": watcher.evaluate("id => window.__valeDebug.unitNodes(`unit-player-${id}`)", actor_id)})
 
     def test_two_pages_share_one_zone_host(self):
         runner = self.open_player("runner")

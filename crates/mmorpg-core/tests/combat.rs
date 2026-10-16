@@ -513,6 +513,16 @@ fn leashed_creatures_evade_and_ignore_damage() {
         "{:?}",
         session.events.last()
     );
+    assert!(
+        !session
+            .zone
+            .snapshot_for_player(1)
+            .unwrap()
+            .events
+            .iter()
+            .any(|event| matches!(event, ZoneEvent::AttackPerformed { source: PLAYER, .. })),
+        "evade is not a performed ordinary swing"
+    );
     let flags = session
         .zone
         .snapshot_for_player(1)
