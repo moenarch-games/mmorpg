@@ -202,7 +202,7 @@ pub(super) fn animal(
         accent,
         offset(body, at(spec.collar.1, 1.)),
     );
-    let tail = child(body, at(spec.tail.1, 1.), tilt(lift - 0.4, sway, 0.));
+    let tail = child(body, at(spec.tail.1, 1.), tilt(lift - 0.4, 0., sway));
     p.bx(
         "tail",
         size(spec.tail.0),
