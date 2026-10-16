@@ -172,4 +172,5 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "invalid-quest": null,
   "quest-log-full": null,
   "quest-incomplete": null,
+  "line-of-sight": null,
 };

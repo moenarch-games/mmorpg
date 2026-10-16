@@ -112,6 +112,7 @@ const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::InvalidQuest => 26,
         ErrorCode::QuestLogFull => 27,
         ErrorCode::QuestIncomplete => 28,
+        ErrorCode::LineOfSight => 29,
     }
 }
 
@@ -145,6 +146,7 @@ fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         26 => ErrorCode::InvalidQuest,
         27 => ErrorCode::QuestLogFull,
         28 => ErrorCode::QuestIncomplete,
+        29 => ErrorCode::LineOfSight,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -641,12 +643,13 @@ mod tests {
             ErrorCode::InvalidQuest,
             ErrorCode::QuestLogFull,
             ErrorCode::QuestIncomplete,
+            ErrorCode::LineOfSight,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 29, u16::MAX] {
+        for unknown in [0, 30, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"
