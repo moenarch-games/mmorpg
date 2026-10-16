@@ -1,25 +1,16 @@
+import type { RendererEnvironment } from "@moritzbrantner/three-d-renderer";
 import type { Color } from "./scenery";
 
-/**
- * The look of the vale in one place: material palette, terrain tones, the
- * CSS sky behind the transparent canvas, the haze ramp that fakes aerial
- * perspective on distant mountains, and water.
- *
- * The pinned 3d-lab renderer has a fixed hemisphere + directional light and
- * no fog, sky or sun control; 3d-lab #84 adds them. Until then this object is
- * the seam: `fog` and `sun` describe what the scene *would* use, and only
- * the CSS sky and the baked haze colours act on them. When the renderer gains
- * those controls, pass them through instead of baking haze into colours.
- */
+/** Palette and renderer environment for the cosmetic twenty-minute day. */
 export type EnvironmentStyle = {
   palette: typeof PALETTE;
   /** Terrain colours by `mmorpg-scenery` biome name; unknown biomes keep their exported base colour. */
   biomeColors: Readonly<Record<string, Color>>;
   sky: SkyStops;
-  /** Distant mountains blend toward `haze` by distance band (metres from the vale centre). */
+  /** Legacy palette metadata; the renderer now applies aerial perspective through `fog`. */
   haze: { color: Color; bands: readonly { from: number; mix: number }[] };
   water: { color: Color; opacity: number; bedColor: Color; shoreColor: Color };
-  /** Not yet applied: the renderer has no fog or sun control before 3d-lab #84. */
+  /** Camera-distance fog and directional light defaults at noon. */
   fog: { color: Color; nearMetres: number; farMetres: number };
   sun: { direction: readonly [number, number, number]; color: Color };
 };
@@ -184,21 +175,43 @@ export function hazeMix(style: EnvironmentStyle, distanceMetres: number): number
 /** A 20-minute day in real seconds. */
 export const DAY_SECONDS = 20 * 60;
 
-/**
- * Sky stops for a time of day in [0, 1). The cycle only drifts between a
- * clear midday and a warm, slightly deeper afternoon: the scene lighting is
- * fixed until 3d-lab #84, so night or dusk would contradict the lit world.
- * The horizon stays close to the haze colour the far mountains are baked in.
- */
-export function skyAt(style: EnvironmentStyle, dayFraction: number): SkyStops {
+/** A periodic presentation clock; zero is noon, half a cycle is midnight. */
+function cycle(dayFraction: number): { daylight: number; dusk: number; angle: number } {
   const fraction = Number.isFinite(dayFraction) ? dayFraction - Math.floor(dayFraction) : 0;
-  // 0 at midday, 1 in the late afternoon, smoothly periodic.
-  const warmth = (1 - Math.cos(fraction * 2 * Math.PI)) / 2;
-  const { sky } = style;
+  const angle = fraction * 2 * Math.PI;
+  const elevation = Math.cos(angle);
+  const amount = Math.min(1, Math.max(0, (elevation + 0.15) / 0.8));
+  const daylight = amount * amount * (3 - 2 * amount);
+  return { daylight, dusk: (1 - elevation * elevation) ** 3, angle };
+}
+
+/** Sky, distance fog and lights share the same smooth cosmetic cycle. */
+export function skyAt(style: EnvironmentStyle, dayFraction: number): SkyStops {
+  const { daylight, dusk } = cycle(dayFraction);
+  const blend = (day: Color, night: Color, twilight: Color) => mixColor(mixColor(night, day, daylight), twilight, dusk * 0.55);
   return {
-    zenith: mixColor(sky.zenith, "#3a64ad", warmth * 0.6),
-    upper: mixColor(sky.upper, "#9bb2d6", warmth * 0.5),
-    horizon: mixColor(sky.horizon, "#e9dcc6", warmth * 0.45),
-    ground: sky.ground,
+    zenith: blend(style.sky.zenith, "#10223f", "#554f78"),
+    upper: blend(style.sky.upper, "#1a3553", "#986f89"),
+    horizon: blend(style.sky.horizon, "#38475e", "#e4a176"),
+    ground: blend(style.sky.ground, "#26394a", "#8e7774"),
+  };
+}
+
+export function environmentAt(style: EnvironmentStyle, dayFraction: number): RendererEnvironment {
+  const { daylight, dusk, angle } = cycle(dayFraction);
+  const sky = skyAt(style, dayFraction);
+  return {
+    background: sky.horizon,
+    sky: {
+      skyColor: mixColor("#8fa4c9", style.sky.upper, daylight),
+      groundColor: mixColor("#56657b", style.sky.ground, daylight),
+      intensity: 0.9 + daylight * 0.8,
+    },
+    sun: {
+      direction: [Math.sin(angle) * 18 + 10 * Math.cos(angle), 6 + 12 * Math.cos(angle) ** 2, 8],
+      color: mixColor(mixColor("#9cb8eb", style.sun.color, daylight), "#ffc08a", dusk * 0.7),
+      intensity: 0.35 + daylight * 1.85,
+    },
+    fog: { color: mixColor(sky.horizon, style.fog.color, daylight), near: style.fog.nearMetres, far: style.fog.farMetres },
   };
 }

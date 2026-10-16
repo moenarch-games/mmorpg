@@ -16,6 +16,7 @@ import type { Prop } from "../src/world/scenery";
 import { buildSceneryScene } from "../src/world/scenery-nodes";
 import { terrainSurfaceY } from "../src/world/terrain-mesh";
 import { localZoneModule } from "./support/local-zone-module";
+import { propMeshes } from "./support/scenery-geometry";
 import { immediate, worldSourceContract } from "./support/world-source-contract";
 
 // Builds crates/mmorpg-wasm for wasm32 and runs wasm-bindgen, like `bun run build`.
@@ -421,9 +422,9 @@ describe("WASM local zone host", () => {
     // Woodland relief has detail the 4 m grid cannot follow: trees, grass and flowers.
     expect([...worst.keys()]).toEqual(expect.arrayContaining(["tree-oak", "grass-tuft"]));
     for (const { prop } of worst.values()) {
-      const lowest = Math.min(...buildSceneryScene({ ...vale, props: [prop] }).batches
-        .filter((batch) => !batch.node.id.startsWith("static-all"))
-        .flatMap((batch) => batch.node.geometry.positions.map(([, y]) => y)));
+      const positions = propMeshes(buildSceneryScene({ ...vale, props: [prop] })).flatMap((mesh) => mesh.positions);
+      expect(positions.length, prop.kind).toBeGreaterThan(0);
+      const lowest = Math.min(...positions.map(([, y]) => y));
       expect(lowest, prop.kind).toBeLessThanOrEqual(surfaceAt(prop) + 0.02);
     }
   });

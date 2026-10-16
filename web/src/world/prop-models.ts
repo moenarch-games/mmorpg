@@ -129,7 +129,12 @@ function propFrame(context: ModelContext, prop: Prop, extraYaw = 0): Affine {
 function putter(context: ModelContext, prop: Prop, frame: Affine, defaultCull: CullClass): Put {
   const x = prop.position[0] / context.unitsPerMetre;
   const z = prop.position[2] / context.unitsPerMetre;
+  const instanced = prop.kind.startsWith("tree-") || prop.kind.startsWith("rock-") || prop.kind === "grass-tuft";
   return (color, shape, local, cull) => {
+    if (instanced) {
+      context.batcher.instance(color, shape, compose(frame, local), x, z, cull ?? defaultCull);
+      return;
+    }
     context.batcher.builder(color, x, z, cull ?? defaultCull).add(shape, compose(frame, local));
   };
 }
@@ -814,14 +819,19 @@ function grassTuft(context: ModelContext, prop: Prop): void {
   const [hx, hy] = half(prop, context.unitsPerMetre);
   const seed = seedOf(prop);
   const color = seed > 0.5 ? palette.grass : palette.grassDark;
+  // A small seeded family of whole tufts shares immutable unit geometry.
+  // Authored dimensions and yaw live in the instance transform rather than baked vertices.
+  const variant = Math.floor(seed * 4);
+  const tuft = new MeshBuilder();
   const blades = 4;
   for (let blade = 0; blade < blades; blade += 1) {
-    const angle = (blade / blades) * 2 * Math.PI + seed * 6;
-    const lean = 0.2 + hash01(seed * 1e6, blade) * 0.35;
-    const height = hy * 3.4 * (0.7 + hash01(seed * 1e6, blade, 1) * 0.6);
-    const spread = hx * (0.3 + hash01(seed * 1e6, blade, 2) * 0.5);
-    put(color, BLADE, compose(translate(Math.sin(angle) * spread, -0.02, Math.cos(angle) * spread), rotateY(angle), rotateX(-lean), scale(hx * 0.34, height, hx * 0.34)));
+    const angle = (blade / blades) * 2 * Math.PI + variant * 1.5;
+    const lean = 0.2 + hash01(variant, blade) * 0.35;
+    const height = 3.4 * (0.7 + hash01(variant, blade, 1) * 0.6);
+    const spread = 0.3 + hash01(variant, blade, 2) * 0.5;
+    tuft.add(BLADE, compose(translate(Math.sin(angle) * spread, 0, Math.cos(angle) * spread), rotateY(angle), rotateX(-lean), scale(0.34, height, 0.34)));
   }
+  put(color, tuft.data(), compose(translate(0, -0.02, 0), scale(hx, hy, hx)));
 }
 
 function flowers(context: ModelContext, prop: Prop): void {

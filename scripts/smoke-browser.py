@@ -1476,6 +1476,34 @@ class BrowserAcceptance(unittest.TestCase):
             self.frames(3)
             self.page.screenshot(path=str(ARTIFACTS / f"class-kit-warden-{width}x{height}.png"))
 
+    def test_complete_world_environment_instancing_and_night_readability(self):
+        """Observe actual submitted renderer frames; cosmetic time never changes the real WASM zone."""
+        self.open("?debug")
+        self.enter_world()
+        self.page.evaluate("window.__valeDebug.flyTo('hub')")
+        before = self.page.evaluate("window.__valeDebug.projection().entities[0]")
+        observations = []
+        views = []
+        for seconds in [0, 300, 600, 900]:
+            self.page.evaluate("seconds => window.__valeDebug.setPresentationTime(seconds)", seconds)
+            self.frames(4)
+            frame = self.page.evaluate("window.__valeDebug.presentationFrame()")
+            self.assertGreater(frame["work"]["instanceBatchCount"], 0)
+            self.assertGreater(frame["work"]["instanceCount"], frame["work"]["instanceBatchCount"])
+            self.assertGreater(frame["vertexColoredNodes"], 0)
+            self.assertGreater(frame["emissiveNodes"], 0)
+            self.assertGreater(frame["environment"]["fog"]["far"], frame["environment"]["fog"]["near"])
+            self.assertGreater(self.canvas_colours()["distinct"], 100, "Night must remain a readable rendered landscape")
+            expect(self.page.get_by_role("complementary", name="Minimap")).to_be_visible()
+            views.append(self.world_view())
+            observations.append(frame)
+            self.page.screenshot(path=str(ARTIFACTS / f"world-day-{seconds}.png"))
+        self.assertLess(observations[2]["environment"]["sun"]["intensity"], observations[0]["environment"]["sun"]["intensity"])
+        self.assertLess(observations[2]["environment"]["sky"]["intensity"], observations[0]["environment"]["sky"]["intensity"])
+        self.assertNotEqual(views[0], views[2])
+        self.assertEqual(self.page.evaluate("window.__valeDebug.projection().entities[0]"), before)
+        (ARTIFACTS / "world-presentation-frames.json").write_text(json.dumps(observations, indent=2))
+
     def test_arcanist_action_bar_cast_bar_and_combat_text(self):
         """A level-1 Arcanist targets a wolf and casts Firebolt with key 1: mana is spent, the cast bar
         fills, damage text floats up and the target frame shows the wolf."""
