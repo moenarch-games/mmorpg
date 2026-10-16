@@ -473,3 +473,8 @@ mod tests {
         );
     }
 }
+
+// Independent #28 application acceptance; no runtime behavior is added here.
+#[cfg(all(test, target_os = "linux"))]
+#[path = "../tests/support/native_pointer_application.rs"]
+mod native_pointer_application;
