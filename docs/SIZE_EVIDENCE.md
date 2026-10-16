@@ -145,3 +145,11 @@ only the three declared input hashes and resulting identity change. Core source,
 its dependency closure, target, profile, features and toolchains are unchanged.
 The 3 MiB absolute and 64 KiB growth limits remain unchanged. CI must still
 pass the ordinary comparison and existing adversarial acceptance command.
+
+The #166 development-only `coding-tooling` update changes the declared web
+manifest and lockfile inputs. The retained
+[CI observation](../.performance/observations/coding-tooling-166-incomparable.json)
+reports an incomparable baseline, with no size-limit failure. The explicit
+recapture has the same **3,128,246 bytes** and archive SHA-256 as the #28
+baseline; only those two input hashes and the resulting identity change.
+The 3 MiB absolute and 64 KiB growth limits remain unchanged.
