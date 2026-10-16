@@ -20,7 +20,7 @@ Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decis
 | Native graphics | `mmorpg-client`: wgpu/winit adapter over pinned `3d-lab` mesh/camera models |
 | Browser graphics | pinned `3d-lab` browser renderer |
 | Browser zone host (single-player demo) | `mmorpg-wasm`: thin wasm-bindgen adapter over `mmorpg-core` and `mmorpg-protocol` |
-| Runtime input semantics | `input-bindings` (browser client; native client and binding editor pending, [#41](https://github.com/moritzbrantner/mmorpg/issues/41)) |
+| Runtime input semantics | `input-bindings` (browser and native action runtime; binding editor pending, [#41](https://github.com/moritzbrantner/mmorpg/issues/41)) |
 | User-facing settings | `settings` (future client slice) |
 | Asset normalization/provenance | `asset-tooling` (future content slice) |
 | Social systems | `social-service` where its existing authority fits |
@@ -94,7 +94,7 @@ The control-plane implementation in this slice is a **reference model**, not yet
 
 ## Native multiplayer client
 
-The native client uses **wgpu 30.0.1 + winit 0.30.13**, shared Rust world geometry, and the existing WebTransport protocol. W/S run and backpedal, A/D or Q/E strafe relative to a third-person orbit camera (drag to orbit, wheel to zoom), Space jumps, Tab selects the nearest creature, F toggles auto-attack, 1–4 use the class abilities (`--class warden|ranger|arcanist` and `--sex female|male`, a male Warden by default), Escape cancels a cast and R releases a dead spirit; the client only sends intent and the GPU renders interpolated player-visible snapshots of players, creatures and NPCs with their facing. The window title shows health, resource, cast progress and target. Multiple client processes can join the same zone.
+The native client uses **wgpu 30.0.1 + winit 0.30.13**, shared Rust world geometry, and the existing WebTransport protocol. W/S run and backpedal, A/D or Q/E strafe relative to a third-person orbit camera (drag to orbit, wheel to zoom), Space jumps, left click selects the specific visible creature or NPC without attacking, Tab cycles attackable creatures and N cycles NPCs, F toggles auto-attack, 1–4 use the class abilities (`--class warden|ranger|arcanist` and `--sex female|male`, a male Warden by default), Escape cancels a cast and R releases a dead spirit; the client only sends intent and the GPU renders interpolated player-visible snapshots of players, creatures and NPCs with their facing. The window title shows health, resource, cast progress and target. Enter opens the selected NPC’s existing quest/vendor context: Up/Down browses every quest, stock offer and bag slot, 1 accepts/turns in or buys, 2 sells, Left/Right chooses a quest reward, H pages authored dialogue/objectives, and Escape closes the context or cancels an armed click. The zone validates range, quest state and transactions. Multiple client processes can join the same zone.
 
 ```sh
 python3 scripts/smoke-native.py --window
@@ -180,7 +180,7 @@ Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative du
 
 - `physics-engine`: `16833b766629c354a6a5925b991eeb74208a242d`
 - `game-server`: `a3851dab9c1fb25dd31b465fb554ca475769caab`
-- `3d-lab` (`three-d-core`, `three-d-camera` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `f484db8a3d2a7a555fa463eddf9c28790b240ce0`
+- `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `df52c324a5692d04d2016d8a29f5bc4368e4aac0`
 - reusable validation workflow: `45042e56be120b438096e774027637cac0280075`
 
 ## Validation

@@ -75,6 +75,7 @@ pub struct Presentation {
     gaits: BTreeMap<EntityRef, Gait>,
     /// Time of the previous `scene` call.
     last_scene: Instant,
+    picked_bodies: Vec<(EntityRef, SceneBox)>,
 }
 
 impl Presentation {
@@ -97,11 +98,13 @@ impl Presentation {
             latest_received: now,
             gaits: BTreeMap::new(),
             last_scene: now,
+            picked_bodies: Vec::new(),
         })
     }
 
     /// Start a new connection epoch without blending with obsolete samples.
     pub fn reset(&mut self, now: Instant) {
+        self.picked_bodies.clear();
         self.history.clear();
         self.latest_received = now;
     }
@@ -245,6 +248,7 @@ impl Presentation {
         let units = self.units(now);
         self.gaits.retain(|entity, _| units.contains_key(entity));
         let mut boxes = Vec::new();
+        self.picked_bodies.clear();
         for (entity, unit) in units {
             let (color, half) = self.unit_look(entity, &unit.record);
             let size = half.map(|value| value * 2.0);
@@ -269,6 +273,7 @@ impl Presentation {
             });
             *state = state.step(speed, dt);
             let gait = *state;
+            let start = boxes.len();
             append_unit(
                 &mut boxes,
                 self.unit_model(entity, &unit.record),
@@ -281,6 +286,8 @@ impl Presentation {
                 gait,
                 corpse,
             );
+            self.picked_bodies
+                .extend(boxes[start..].iter().map(|part| (entity, *part)));
             if !unit.record.flags.dead && entity.kind() != EntityKind::Npc {
                 append_health_bar(
                     &mut boxes,
@@ -295,6 +302,17 @@ impl Presentation {
             }
         }
         boxes
+    }
+
+    /// Body geometry from the last rendered scene, with MMO identity retained.
+    #[must_use]
+    pub fn picked_bodies(&self) -> &[(EntityRef, SceneBox)] {
+        &self.picked_bodies
+    }
+
+    #[must_use]
+    pub fn content(&self) -> &ZoneContent {
+        &self.content
     }
 
     #[must_use]

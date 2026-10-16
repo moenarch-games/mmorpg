@@ -131,3 +131,17 @@ size change. `mmorpg-core` itself is untouched: the recaptured baseline is
 `Cargo.lock` input hash differs from the previous identity; target, profile,
 features, toolchain and the other inputs are unchanged. The explicit capture
 passed the unchanged 3 MiB absolute limit.
+
+The #28 native pointer change intentionally advances the shared Rust/browser
+`3d-lab` pin. Its `Cargo.lock`, `web/bun.lock` and `web/package.json` changes
+alter declared build inputs, so the old baseline comparison is incomparable.
+[The original CI report](../.performance/observations/native-pointer-28-incomparable.json)
+retains that unavailable result from PR #169 head
+`2e93fb6bade114aa41116321fe0f74ff3bde8a92` (run 38878740294, job
+116900073110). It reports **3,128,246 bytes**, with no size-limit failure.
+The explicit local recapture has the same size and archive SHA-256 as the old
+baseline, `a96d72ce2170065e8f46cfe2f7ceb4bb844f0a8734c89901a477f958ccd76819`;
+only the three declared input hashes and resulting identity change. Core source,
+its dependency closure, target, profile, features and toolchains are unchanged.
+The 3 MiB absolute and 64 KiB growth limits remain unchanged. CI must still
+pass the ordinary comparison and existing adversarial acceptance command.
