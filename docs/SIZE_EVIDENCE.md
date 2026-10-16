@@ -145,3 +145,11 @@ only the three declared input hashes and resulting identity change. Core source,
 its dependency closure, target, profile, features and toolchains are unchanged.
 The 3 MiB absolute and 64 KiB growth limits remain unchanged. CI must still
 pass the ordinary comparison and existing adversarial acceptance command.
+
+The #167 `game-server` update changes the declared Cargo manifest and lockfile
+inputs, making the previous comparison incomparable. The retained
+[observation](../.performance/observations/game-server-167-incomparable.json)
+records that result. The explicit recapture remains **3,128,246 bytes**, with
+the same archive SHA-256 as the #28 baseline. Only those two input hashes and
+the resulting identity change; the 3 MiB absolute and 64 KiB growth limits
+remain unchanged.

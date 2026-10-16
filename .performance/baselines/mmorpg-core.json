@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "operation": "size-evidence",
   "status": "passed",
-  "durationMs": 59,
+  "durationMs": 63,
   "data": {
     "schemaVersion": "coding-tooling/size-evidence/v1",
     "metric": "raw-artifact-bytes",
@@ -10,7 +10,7 @@
       {
         "id": "mmorpg-core-release-rlib",
         "kind": "native",
-        "identity": "9969244a6b67dff0fea360a96da64bba86f152c33ad908bf6f89b7d3fca32ac3",
+        "identity": "cf72292695116d6bf287341079e0b9388b307543248a55284de0c383a3e90562",
         "inputs": {
           "id": "mmorpg-core-release-rlib",
           "kind": "native",
@@ -51,11 +51,11 @@
           "buildInputHashes": [
             {
               "path": "Cargo.lock",
-              "sha256": "b349e90a797f3850b4e3abab76f9da4f7fe2dd5032c797fdc79d47f9018283bc"
+              "sha256": "857671738eb7f063c25b3c9b6103ec7b6f5efbd9cf1a8293ba0d3df634717e62"
             },
             {
               "path": "Cargo.toml",
-              "sha256": "a763ebb98598fd31ca11302986186164a3d4e6a7a2d3e54682bbd5527122cbe5"
+              "sha256": "7cfb749e0ef28c80b1ff83aa6d2f96241532e7d17db7e37443789c3c98e6c396"
             },
             {
               "path": "crates/mmorpg-core/Cargo.toml",
