@@ -748,6 +748,8 @@ fn native_pointer_application_contract() {
                 });
         }
         let window = Arc::clone(app.driver.app.window.as_ref().unwrap());
+        // Retire the configured surface before creating another for this window.
+        drop(app.driver.app.renderer.take());
         app.driver.app.renderer = Some(
             app.driver
                 .app
@@ -759,6 +761,8 @@ fn native_pointer_application_contract() {
         app.no_selection_command(|app| app.pointer(point, None));
         app.driver.app.world = original;
         let window = Arc::clone(app.driver.app.window.as_ref().unwrap());
+        // Retire the configured surface before creating another for this window.
+        drop(app.driver.app.renderer.take());
         app.driver.app.renderer = Some(
             app.driver
                 .app
