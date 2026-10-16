@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import type { RendererInstanceBatch, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import * as environment from "../src/world/environment";
+import { CULL_DISTANCE_METRES } from "../src/world/mesh-batching";
 import { buildSceneryScene, SceneryFrame } from "../src/world/scenery-nodes";
 import { WorldPicking } from "../src/world/units/world-picking";
 import { fixtureScenery } from "./support/scenery-fixture";
@@ -78,7 +79,57 @@ describe("shared renderer adoption", () => {
       for (const batch of repeated) { expect(next.instanceBatches.find((other) => other.id === batch.id)!.geometry).toBe(batch.geometry); }
       expect(scenery).toEqual(before);
       expect(new SceneryFrame(scene, "acceptance").nodes([10000, 5, 10000], { seconds: 0, animate: false })
-        .instanceBatches.filter((batch) => batch.visible !== false).length).toBeLessThan(frame.instanceBatches.length);
+        .instanceBatches.filter((batch) => batch.visible !== false).length).toBe(scene.instanceBatches.filter((batch) => batch.cull === "always").length);
+    }
+  });
+
+  test("original always/far/mid/near scenery classes retain distance policy at their exact bounds", () => {
+    const fixture = fixtureScenery();
+    const cases = [
+      { kind: "tree-oak", collidable: false, cull: "always" },
+      { kind: "tree-pine", collidable: true, cull: "far" },
+      { kind: "rock-small", collidable: false, cull: "mid" },
+      { kind: "rock-large", collidable: true, cull: "always" },
+      { kind: "grass-tuft", collidable: false, cull: "near" },
+    ] as const;
+    for (const item of cases) {
+      const original = fixture.props.find((prop) => prop.kind === item.kind)!;
+      const prop = { ...original, collider: item.collidable
+        ? { id: 1, center: original.position, halfExtents: original.halfExtents } : null };
+      const scene = buildSceneryScene({ ...fixture, props: [prop] }, ENVIRONMENT);
+      expect(scene.instanceBatches.length, item.kind).toBeGreaterThan(0);
+      const frames = new SceneryFrame(scene, "acceptance");
+      for (const group of scene.instanceBatches) {
+        expect(group.cull, item.kind).toBe(item.cull);
+        const geometry = group.batch.geometry;
+        if (geometry.kind !== "mesh") { throw new Error("Expected procedural mesh"); }
+        const points = group.batch.instances.flatMap((instance) => {
+          const matrix = new THREE.Matrix4();
+          if (instance.modelMatrix) { matrix.fromArray(instance.modelMatrix); }
+          else {
+            matrix.compose(new THREE.Vector3(...instance.transform.translation),
+              new THREE.Quaternion(...(instance.transform.rotationQuaternion ?? [0, 0, 0, 1])),
+              new THREE.Vector3(...(instance.transform.scale ?? [1, 1, 1])));
+          }
+          return geometry.positions.map((point) => new THREE.Vector3(...point).applyMatrix4(matrix));
+        });
+        const minX = Math.min(...points.map((point) => point.x));
+        const maxX = Math.max(...points.map((point) => point.x));
+        const minZ = Math.min(...points.map((point) => point.z));
+        const maxZ = Math.max(...points.map((point) => point.z));
+        expect(group.center[0]).toBeCloseTo((minX + maxX) / 2, 8);
+        expect(group.center[1]).toBeCloseTo((minZ + maxZ) / 2, 8);
+        expect(group.radius).toBeCloseTo(Math.hypot(maxX - minX, maxZ - minZ) / 2, 8);
+        const visibleAt = (x: number) => frames.nodes([x, 5, group.center[1]], { seconds: 0, animate: false })
+          .instanceBatches.find((batch) => batch.id === group.batch.id)!.visible !== false;
+        if (item.cull === "always") {
+          expect(visibleAt(group.center[0] + 1000000), item.kind).toBe(true);
+        } else {
+          const edge = group.center[0] + group.radius + CULL_DISTANCE_METRES[item.cull];
+          expect(visibleAt(edge - 0.01), item.kind).toBe(true);
+          expect(visibleAt(edge + 0.01), item.kind).toBe(false);
+        }
+      }
     }
   });
 
