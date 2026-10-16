@@ -233,6 +233,9 @@ impl NativeApplication {
             abilities: class_kit(PlayerClass::Warden),
             controls: NativeControls::new(),
             hud: None,
+            world_controls: WorldControls::new(),
+            npc_context: NpcContext::default(),
+            pointer_origin: None,
         };
         let event_loop = EventLoop::builder()
             .with_x11()

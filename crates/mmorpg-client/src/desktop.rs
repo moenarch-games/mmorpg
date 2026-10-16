@@ -5,10 +5,12 @@ use mmorpg_client::{
     controls::{ControlAction, NativeControls},
     graphics::WindowRenderer,
     hud::{CombatHud, class_kit},
+    interaction::NpcContext,
     presentation::Presentation,
     world::WorldScene,
+    world_controls::{WorldAction, WorldControls},
 };
-use mmorpg_core::{PlayerClass, ZoneContent};
+use mmorpg_core::{EntityKind, EntityRef, PlayerClass, ZoneContent};
 use mmorpg_scenery::Scenery;
 use std::{
     collections::HashSet,
@@ -59,6 +61,9 @@ pub fn run(
         abilities: class_kit(class),
         controls: NativeControls::new(),
         hud: None,
+        world_controls: WorldControls::new(),
+        npc_context: NpcContext::default(),
+        pointer_origin: None,
     };
     event_loop.run_app(&mut app)?;
     match app.error {
@@ -94,6 +99,10 @@ struct App {
     controls: NativeControls,
     /// The combat HUD of the latest projection.
     hud: Option<CombatHud>,
+    world_controls: WorldControls,
+    npc_context: NpcContext,
+    /// A left press remains a click only within five physical pixels.
+    pointer_origin: Option<PhysicalPosition<f64>>,
 }
 
 const FORWARD_KEYS: [KeyCode; 2] = [KeyCode::KeyW, KeyCode::ArrowUp];
@@ -126,9 +135,145 @@ fn held_movement(keys: &HashSet<KeyCode>, dead: bool) -> HeldMovement {
 
 /// Browser-style pixel scrolling: this many pixels count as one wheel line.
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
-const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast or closes";
+const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter interact · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast or closes";
 
 impl App {
+    fn retire_pointer(&mut self) {
+        self.pointer_origin = None;
+        self.orbit_buttons.clear();
+        self.world_controls.reset();
+    }
+
+    fn connected(&self) -> bool {
+        matches!(*self.updates.borrow(), NetworkUpdate::Snapshot { .. })
+            && !self.presentation.is_stalled(Instant::now())
+    }
+
+    fn select_pointer(&mut self, event_loop: &ActiveEventLoop) {
+        if !self.connected() {
+            return;
+        }
+        let Some(cursor) = self.cursor else { return };
+        let result = self
+            .renderer
+            .as_ref()
+            .map(|r| r.pick([cursor.x, cursor.y], self.presentation.picked_bodies()));
+        let target = match result {
+            Some(Ok(target)) => target,
+            Some(Err(error)) => {
+                self.fail(event_loop, error);
+                return;
+            }
+            None => None,
+        };
+        if let Some(target) = target {
+            // Only a current visible creature/NPC can become a requested target.
+            if self.presentation.latest().is_some_and(|s| {
+                s.entities.iter().any(|e| {
+                    e.entity() == target && matches!(e.kind, EntityKind::Creature | EntityKind::Npc)
+                })
+            }) {
+                self.npc_context.close();
+                self.world_controls.set_interaction(false);
+                self.input.send_modify(|input| {
+                    input.target = Some(target);
+                    input.selections = input.selections.wrapping_add(1);
+                });
+            }
+        }
+    }
+
+    fn world_action(&mut self, action: WorldAction) -> bool {
+        match action {
+            WorldAction::Cancel => {
+                if self.npc_context.npc.is_some() || !self.orbit_buttons.is_empty() {
+                    self.npc_context.close();
+                    self.world_controls.set_interaction(false);
+                    self.retire_pointer();
+                    return true;
+                }
+                return false;
+            }
+            WorldAction::Interact if self.connected() => {
+                if let Some(EntityRef::Npc(npc)) =
+                    self.presentation.latest().and_then(|s| s.viewer.target)
+                {
+                    self.npc_context.open(npc);
+                    self.world_controls.set_interaction(true);
+                    // A context owns the number keys until closed.
+                    self.controls.focus_lost();
+                    self.keys.clear();
+                    self.update_movement();
+                }
+            }
+            WorldAction::NextNpc if self.connected() => {
+                if let Some(snapshot) = self.presentation.latest() {
+                    let mut npcs: Vec<_> = snapshot
+                        .entities
+                        .iter()
+                        .filter(|e| e.kind == EntityKind::Npc)
+                        .map(|e| e.entity())
+                        .collect();
+                    npcs.sort_unstable();
+                    let index = snapshot
+                        .viewer
+                        .target
+                        .and_then(|t| npcs.iter().position(|e| *e == t))
+                        .map_or(0, |i| i + 1);
+                    if !npcs.is_empty() {
+                        let target = npcs[index % npcs.len()];
+                        self.input.send_modify(|i| {
+                            i.target = Some(target);
+                            i.selections = i.selections.wrapping_add(1);
+                        });
+                        self.npc_context.close();
+                        self.world_controls.set_interaction(false);
+                    }
+                }
+            }
+            WorldAction::Primary | WorldAction::Sell if self.connected() => {
+                let selected = self.presentation.latest().and_then(|s| s.viewer.target);
+                if self.npc_context.npc.map(EntityRef::Npc) == selected
+                    && let Some(command) = self
+                        .npc_context
+                        .action(self.presentation.content(), action == WorldAction::Sell)
+                {
+                    self.npc_context.feedback = "request sent".into();
+                    self.input.send_modify(|input| {
+                        input.interaction = Some(command);
+                        input.interactions = input.interactions.wrapping_add(1);
+                    });
+                }
+            }
+            WorldAction::Details => self.npc_context.next_detail(self.presentation.content()),
+            WorldAction::Previous
+            | WorldAction::Next
+            | WorldAction::RewardPrevious
+            | WorldAction::RewardNext => {
+                let delta = if matches!(action, WorldAction::Previous | WorldAction::RewardPrevious)
+                {
+                    -1
+                } else {
+                    1
+                };
+                self.npc_context.navigate(
+                    self.presentation.content(),
+                    delta,
+                    matches!(
+                        action,
+                        WorldAction::RewardPrevious | WorldAction::RewardNext
+                    ),
+                );
+            }
+            WorldAction::Select
+            | WorldAction::Interact
+            | WorldAction::NextNpc
+            | WorldAction::Primary
+            | WorldAction::Sell => {}
+        }
+        true
+    }
+
     fn stop(&self) {
         self.input.send_if_modified(|input| {
             let moving = input.forward != 0 || input.strafe != 0;
@@ -238,6 +383,15 @@ impl App {
         self.controls
             .set_casting(latest.is_some_and(|latest| latest.viewer.cast.is_some()));
         self.hud = latest.map(CombatHud::from_projection);
+        if let Some(snapshot) = latest {
+            self.npc_context.observe(snapshot);
+            if self.npc_context.npc.is_some()
+                && self.npc_context.npc.map(EntityRef::Npc) != snapshot.viewer.target
+            {
+                self.npc_context.close();
+                self.world_controls.set_interaction(false);
+            }
+        }
     }
 
     /// Shows the connection state or the player's health and target.
@@ -245,9 +399,16 @@ impl App {
         let title = if self.presentation.is_stalled(now) {
             "MMORPG — connection stalled".to_owned()
         } else {
-            match self.presentation.status() {
-                Some(status) => format!("MMORPG — {status} — {CONTROL_HINTS}"),
-                None => format!("MMORPG — {CONTROL_HINTS}"),
+            if self.npc_context.npc.is_some() {
+                format!(
+                    "MMORPG — {}",
+                    self.npc_context.text(self.presentation.content())
+                )
+            } else {
+                match self.presentation.status() {
+                    Some(status) => format!("MMORPG — {status} — {CONTROL_HINTS}"),
+                    None => format!("MMORPG — {CONTROL_HINTS}"),
+                }
             }
         };
         if title != self.title
@@ -306,28 +467,51 @@ impl ApplicationHandler for App {
             WindowEvent::Focused(false) => {
                 self.controls.focus_lost();
                 self.keys.clear();
-                self.orbit_buttons.clear();
+                self.retire_pointer();
                 self.update_movement();
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 if matches!(button, MouseButton::Left | MouseButton::Right) {
-                    match state {
-                        ElementState::Pressed => self.orbit_buttons.insert(button),
-                        ElementState::Released => self.orbit_buttons.remove(&button),
-                    };
+                    if state == ElementState::Pressed {
+                        self.orbit_buttons.insert(button);
+                        if button == MouseButton::Left {
+                            self.world_controls.pointer(true);
+                            self.pointer_origin = self.cursor;
+                        }
+                    } else {
+                        if button == MouseButton::Left {
+                            let click = self.world_controls.pointer(false)
+                                && self.pointer_origin.take().is_some();
+                            if click {
+                                self.select_pointer(event_loop);
+                            }
+                        }
+                        self.orbit_buttons.remove(&button);
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(previous) = self.cursor.replace(position)
                     && !self.orbit_buttons.is_empty()
                 {
-                    self.camera
-                        .orbit(position.x - previous.x, position.y - previous.y);
-                    // A held movement key keeps the character facing the camera.
-                    self.update_movement();
+                    if self.pointer_origin.is_some_and(|start| {
+                        (position.x - start.x).hypot(position.y - start.y) > 5.0
+                    }) {
+                        self.pointer_origin = None;
+                    }
+                    if self.pointer_origin.is_none()
+                        || self.orbit_buttons.contains(&MouseButton::Right)
+                    {
+                        self.camera
+                            .orbit(position.x - previous.x, position.y - previous.y);
+                        self.update_movement();
+                    }
                 }
             }
-            WindowEvent::CursorLeft { .. } => self.cursor = None,
+            WindowEvent::CursorLeft { .. } => {
+                self.cursor = None;
+                self.retire_pointer();
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 let lines = match delta {
                     MouseScrollDelta::LineDelta(_, lines) => f64::from(lines),
@@ -337,6 +521,26 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    let context_was_open = self.npc_context.npc.is_some();
+                    let mut cancel_handled = false;
+                    for action in self.world_controls.key(
+                        code,
+                        event.state == ElementState::Pressed,
+                        event.repeat,
+                    ) {
+                        let handled = self.world_action(action);
+                        cancel_handled |= action == WorldAction::Cancel && handled;
+                    }
+                    self.show_title(Instant::now());
+                    if context_was_open || cancel_handled {
+                        if event.state == ElementState::Released {
+                            self.controls.key_up(code);
+                            self.keys.remove(&code);
+                            self.update_movement();
+                        }
+                        return;
+                    }
+
                     if event.state == ElementState::Pressed {
                         let actions = self.controls.key_down(code, event.repeat);
                         // Escape cancels a cast through the controls, otherwise a
@@ -378,6 +582,9 @@ impl ApplicationHandler for App {
                 match update {
                     NetworkUpdate::Waiting => {}
                     NetworkUpdate::Reconnecting => {
+                        self.retire_pointer();
+                        self.npc_context.close();
+                        self.world_controls.set_interaction(false);
                         if let Some(window) = &self.window {
                             window.set_title("MMORPG — reconnecting to world");
                         }
@@ -389,6 +596,9 @@ impl ApplicationHandler for App {
                     } => {
                         if self.connection_epoch != Some(connection_epoch) {
                             self.presentation.reset(now);
+                            self.npc_context = NpcContext::default();
+                            self.world_controls.set_interaction(false);
+                            self.retire_pointer();
                             self.connection_epoch = Some(connection_epoch);
                         }
                         if let Err(error) = self.presentation.push((*snapshot).clone(), now) {

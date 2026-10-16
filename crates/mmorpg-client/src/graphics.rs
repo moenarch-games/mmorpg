@@ -403,15 +403,7 @@ impl SceneRenderer {
         }
         let hud_instances: Vec<_> = hud.iter().map(HudInstance::from).collect();
         let instances: Vec<_> = scene.iter().map(Instance::from).collect();
-        let camera = PerspectiveCamera::new(
-            Vec3::new(view.eye[0], view.eye[1], view.eye[2]),
-            Vec3::new(view.target[0], view.target[1], view.target[2]),
-            Vec3::new(0.0, 1.0, 0.0),
-            50_f32.to_radians(),
-            self.width as f32 / self.height as f32,
-            0.1,
-            FAR_PLANE_METRES,
-        )?;
+        let camera = scene_camera(view, [self.width, self.height])?;
         self.queue.write_buffer(
             &self.camera,
             0,
@@ -497,11 +489,25 @@ fn depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Textur
         .create_view(&Default::default())
 }
 
+fn scene_camera(view: CameraView, viewport: [u32; 2]) -> Result<PerspectiveCamera, ClientError> {
+    Ok(PerspectiveCamera::new(
+        Vec3::new(view.eye[0], view.eye[1], view.eye[2]),
+        Vec3::new(view.target[0], view.target[1], view.target[2]),
+        Vec3::new(0.0, 1.0, 0.0),
+        50_f32.to_radians(),
+        viewport[0] as f32 / viewport[1] as f32,
+        0.1,
+        FAR_PLANE_METRES,
+    )?)
+}
+
 pub struct WindowRenderer {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     renderer: SceneRenderer,
     suspended: bool,
+    picking: crate::picking::WorldPicking,
+    last_view: Option<CameraView>,
 }
 
 impl WindowRenderer {
@@ -527,10 +533,41 @@ impl WindowRenderer {
             config,
             renderer,
             suspended: false,
+            picking: crate::picking::WorldPicking::new(world)?,
+            last_view: None,
         })
     }
 
+    /// Queries exactly the camera/viewport and static geometry uploaded for the visible frame.
+    pub fn pick(
+        &self,
+        pixel: [f64; 2],
+        bodies: &[(mmorpg_core::EntityRef, SceneBox)],
+    ) -> Result<Option<mmorpg_core::EntityRef>, ClientError> {
+        let Some(view) = self.last_view else {
+            return Ok(None);
+        };
+        if self.suspended {
+            return Ok(None);
+        }
+        let viewport = [self.config.width, self.config.height];
+        // Outside/retired viewport coordinates are an ordinary miss. Camera or
+        // geometry errors still reach the application's observed failure path.
+        use three_d_projective::picking::{PickError, PickRay};
+        let ray = match PickRay::from_viewport(
+            scene_camera(view, viewport)?.view_projection_matrix(),
+            viewport,
+            pixel,
+        ) {
+            Ok(ray) => ray,
+            Err(PickError::InvalidViewport | PickError::InvalidViewportPoint) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        self.picking.select(ray, bodies)
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
+        self.last_view = None;
         self.suspended = width == 0 || height == 0;
         if self.suspended {
             return;
@@ -578,6 +615,7 @@ impl WindowRenderer {
             view,
         )?;
         self.renderer.queue.present(frame);
+        self.last_view = Some(view);
         Ok(())
     }
 }

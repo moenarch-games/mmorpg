@@ -3,7 +3,7 @@ use crate::{
     ClientError,
     network::{ClientSession, SessionError},
 };
-use mmorpg_core::{EntityRef, TICK_HZ, ZoneSnapshot};
+use mmorpg_core::{EntityRef, TICK_HZ, ZoneCommand, ZoneSnapshot};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -36,6 +36,9 @@ pub struct PlayerInput {
     pub ability: u8,
     pub ability_uses: u32,
     pub cancels: u32,
+    /// Latest intentional NPC action, delivered once and retired on reconnect.
+    pub interaction: Option<ZoneCommand>,
+    pub interactions: u32,
     /// The class and sex wire values to choose. The session resends the
     /// choice under fresh sequences until a projection confirms a class, so
     /// a lost datagram cannot leave the character classless.
@@ -66,6 +69,7 @@ struct Outgoing {
     release: bool,
     cancel: bool,
     ability: Option<u8>,
+    interaction: Option<ZoneCommand>,
     jump: bool,
     movement: Option<(i8, i8, u16)>,
 }
@@ -90,6 +94,9 @@ impl Outgoing {
         if let Some(ability) = self.ability {
             session.send_use_ability(ability)?;
         }
+        if let Some(command) = self.interaction {
+            session.send_command(command)?;
+        }
         if self.jump {
             session.send_jump()?;
         }
@@ -110,6 +117,7 @@ struct Presses {
     releases: u32,
     ability_uses: u32,
     cancels: u32,
+    interactions: u32,
 }
 
 impl Presses {
@@ -121,6 +129,7 @@ impl Presses {
             releases: input.releases,
             ability_uses: input.ability_uses,
             cancels: input.cancels,
+            interactions: input.interactions,
         }
     }
 }
@@ -183,6 +192,9 @@ impl Outbox {
             release: pressed.releases != handled.releases,
             cancel: pressed.cancels != handled.cancels,
             ability: (pressed.ability_uses != handled.ability_uses).then_some(input.ability),
+            interaction: (pressed.interactions != handled.interactions)
+                .then_some(input.interaction)
+                .flatten(),
             jump: pressed.jumps != handled.jumps,
             movement,
         }

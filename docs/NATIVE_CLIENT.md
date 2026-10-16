@@ -55,9 +55,15 @@ Controls:
 | F | Start auto-attacking the target, or stop |
 | R | Release your spirit while dead |
 | 1–4 | Use action-bar slot 1–4 (the class's four abilities) |
-| Left or right mouse drag | Orbit the camera around your character |
+| Left click | Select that visible creature or NPC, without attacking |
+| N / Enter | Cycle visible NPCs / open the selected person’s context |
+| Context: Up / Down | Browse every quest, stock offer and bag slot |
+| Context: 1 / 2 | Accept/complete the displayed quest or buy one displayed item / sell one from the displayed bag slot |
+| Context: Left / Right | Choose a quest reward |
+| Quest context: H | Page through the authored dialogue and named objectives |
+| Left or right mouse drag | Orbit the camera around your character (five-pixel click threshold) |
 | Mouse wheel | Zoom the camera |
-| Escape | Cancel a running cast or channel, otherwise close |
+| Escape | Close person context or cancel an armed click; otherwise cancel a cast/channel or close |
 
 The third-person camera orbits your gold avatar; other players are blue. Players and humanoids show their facing through a dark face plate. While a movement key is held, your character turns to face the camera's direction, so W always runs away from the camera; releasing the keys leaves the character facing where it last moved. Running and strafing move at 6.3 m/s, backpedalling is slower. Losing focus clears held movement, and so does dying: while dead the client sends no held movement or jumps, and held keys take effect again once a projection shows you alive. Movement is sent on change and retransmitted at 20 Hz so a lost key-release datagram is corrected; each Space, Tab, F, R, 1–4 or cast-cancelling Escape press sends one command and is never replayed after a reconnect. `--class warden|ranger|arcanist` and `--sex female|male` (a male Warden by default) choose the character; the session sends `ChooseClass` with every heartbeat, under fresh sequences, until a projection shows a class (so a lost datagram cannot leave the character classless, also across reconnects), keys 1–4 use the class's four abilities at the current selection, and Escape cancels a running cast instead of closing the window. Keys 1–4 and the cast-cancelling Escape resolve through the shared `input-bindings-core` runtime (`controls.rs`): the same semantic actions, contexts and default keys as the browser (`ability.slot1`–`4` in `gameplay`, `combat.cancelCast` in a non-blocking `casting` layer pushed while the latest projection shows a cast), one use per press, no OS key repeat, and focus loss releases every held action. Holding Escape never closes the window; only a fresh press with no cast does. A minimal combat HUD (`hud.rs`) above the bottom edge shows the projected class resource bar, the cast bar (a channel drains) and the four slots with their cooldown or global cooldown, read only from the received projection and the ability catalog. The title shows the class resource and cast progress.
 
@@ -117,3 +123,5 @@ through the shared command transport. It owns no eligibility or settlement rules
 A real two-client acceptance test refuses a non-owner, credits the owner once,
 resumes the session and refuses a duplicate without changing copper or the bag.
 This API does not add a native loot-window control.
+
+Native world selection queries the last drawn model parts and the uploaded terrain, water and prop geometry through pinned `3d-lab::three_d_projective::picking`. The client retains EntityRef ownership; health bars and target markers are not selectable bodies. NPC context uses existing content and received quest/bag sheets, advertises navigation in the window title, and sends existing quest/vendor commands only after a deliberate action. The zone validates state, reach and settlement; refusals remain visible in the context. Focus/leave/cancel retires armed clicks through the shared input runtime; reconnect retires one-shot interactions along with the existing combat presses.
