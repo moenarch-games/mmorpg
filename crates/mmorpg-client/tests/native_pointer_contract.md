@@ -20,9 +20,11 @@ python3 ~/.local/share/coding-agent/disk-maintenance.py run -- cargo test -p mmo
 `support/native_pointer_application.rs` is included only in desktop binary tests.
 It creates the **real App, real winit event loop/window, real WindowRenderer GPU
 surface, real ClientSession/run_session and real TLS/WebTransport zone host**.
-Pointer motion, button presses/releases and keys originate in XTest OS events
-and arrive through winit's ordinary application handler. Focus/leave retirement
-also injects explicit winit lifecycle events into that same handler. Neither
+Pointer motion, button presses/releases and focus/leave events are explicit
+winit `WindowEvent`s dispatched into the same live `App::window_event` with the
+real `ActiveEventLoop`. This exercises application interpretation, not OS pointer
+routing or physical hardware. Keyboard input originates in XTest OS events;
+an assertion requires those key events actually arrive through winit. Neither
 source claims physical mouse/keyboard hardware coverage. There is no alternate
 picking implementation, fake projection result, fake NPC transaction, or local
 quest/vendor rule. The public winit/application boundary is the exercised input
@@ -38,6 +40,15 @@ bag-slot sale, Right for the next displayed reward choice, and Escape to cancel
 the context/armed pointer. Equivalent discoverable bindings/feedback locations
 are routine UI choices, but changing this contract's inputs/observations requires
 independent re-verification of the same journey; do not silently weaken it.
+
+For the additional OS pointer qualification, run the **same** complete contract
+under a controlled X11 display with `MMORPG_NATIVE_POINTER_OS=1`. That mode uses
+XTest pointer/key events and asserts their ordinary-winit delivery; it never
+falls back to direct dispatch. All scenarios/outcome assertions are identical.
+The default handler mode is useful integrated evidence, but does not discharge
+that remaining actual OS-pointer proof on its own. On the current `:0` Wayland /
+XWayland session, OS pointer delivery remained unavailable after bounded checks;
+provisioning an isolated X11 display is a harness option, not missing GPU evidence.
 
 ## Fixture transparency
 
@@ -58,8 +69,8 @@ session stall/reconnect path; the real host continues ticking and owns resume.
 
 | Obligation | Independent application case or preserved evidence |
 | --- | --- |
-| Exact visible creature, second identity, no implicit attack | Select farther creature 221 then 220 by rendered torso coordinates; actual host confirms exact EntityRef, native title names it, GPU frames advance, auto-attack remains false. |
-| Camera drag, overlapping bodies, empty ground | Real XTest drag changes camera without selecting; collinear humanoid fixture selects front 220 over rear 221; empty sky cannot invent a target/nearest substitute. |
+| Exact visible creature, second identity, no implicit attack | Dispatch actual winit cursor/button events at farther creature 221 then 220 by rendered torso coordinates; actual host confirms exact EntityRef, native title names it, GPU frames advance, auto-attack remains false. |
+| Camera drag, overlapping bodies, empty ground | Real-handler winit drag changes camera without selecting; collinear humanoid fixture selects front 220 over rear 221; empty sky cannot invent a target/nearest substitute. |
 | Solid scenery, roof and terrain occlusion | Upload each real rendered occluder in front of a body; clicking its former torso issues no selection. Upstream geometry tests are complementary, never sufficient alone. |
 | Cancel, focus loss and cursor leave | Press then injected Focused(false)/CursorLeft then real release cannot select; Escape while context/press is armed cancels without selecting or closing the world. |
 | Keyboard alternatives | Real XTest Tab plus NPC Enter/action/reward keys; delivered ability/cancel alternatives remain covered by existing controls/application regressions below. |
@@ -97,3 +108,25 @@ Pages. Because intentional 3d-lab adoption also changes the browser dependency,
 verify the existing published browser click journey after the merged Pages
 artifact is deployed; record that compatibility result separately from native
 acceptance and keep #28 open if its required publication evidence remains pending.
+
+## Initial evidence and input-source correction
+
+The first compile found two acceptance-author API typos (not production failures).
+The first runtime setup omitted the ability catalog and correctly received core
+class refusal; the independent fixture was corrected to preserve every catalog.
+A fixed setup sleep then read a stale pre-relocation projection; it was replaced
+with an assertion/wait for the actual fixture projection. Both raw logs and
+source inputs were preserved before corrections.
+
+A subsequent experiment used XTest for pointer events. Explicit ordinary-winit
+event counters exposed that this desktop did **not** deliver its press/release
+requests to the application, even after bounded X11 focus/raise, window-coordinate
+targeting and delivery waits. The earlier XTest-click timeout is therefore
+**unqualified input evidence, not a product failure**. Pointer acceptance was
+independently restored to the original actual-WindowEvent handler seam before
+implementation; all target coordinates, lifecycle scenarios, real host/GPU and
+expected authoritative/UI outcomes remain unchanged. OS pointer routing remains
+an explicit environment/harness evidence gap. XTest keyboard delivery is also
+unrun beyond the baseline's first missing click and remains fail-closed in this
+contract. Do not call either unverified OS path passed. If its helper/inputs are
+changed later, independently reverify that the same keyboard journey is exercised.

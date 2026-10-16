@@ -1,9 +1,9 @@
 //! Independent #28 contract, authored on 28ce451 before implementation.
 //! Included as a desktop child module so events go through the SAME App,
 //! WindowRenderer, watch input and run_session used by the executable.
-//! XTest supplies OS pointer/key events to the actual winit window.
-//! Focus/leave retirement additionally dispatches explicit WindowEvents;
-//! neither source is a claim of physical hardware coverage.
+//! Pointer/focus/leave WindowEvents dispatch through the actual live App handler.
+//! Keyboard events use XTest; its delivered-event assertion fails closed.
+//! Direct dispatch is not a claim of OS-pointer or hardware coverage.
 //! See native_pointer_contract.md for fixtures, controls and remaining evidence.
 use super::*;
 use game_server::{GameSimulation, SimulationError, SimulationSnapshot, SnapshotScope};
@@ -328,52 +328,76 @@ impl NativeApplication {
         );
         self.pump(Duration::from_millis(80));
     }
-    fn move_pointer(&mut self, point: PhysicalPosition<f64>) {
-        let origin = self
-            .driver
-            .app
-            .window
-            .as_ref()
-            .unwrap()
-            .inner_position()
-            .unwrap();
+    fn os_move_pointer(&mut self, point: PhysicalPosition<f64>) {
+        let window = u64::from(self.driver.app.window.as_ref().unwrap().id());
         self.os_input(&[
             "move".into(),
-            (point.x + f64::from(origin.x)).round().to_string(),
-            (point.y + f64::from(origin.y)).round().to_string(),
+            window.to_string(),
+            point.x.round().to_string(),
+            point.y.round().to_string(),
         ]);
     }
-    fn pointer(&mut self, point: PhysicalPosition<f64>, end: Option<WindowEvent>) {
+    fn os_pointer(&mut self, point: PhysicalPosition<f64>, end: Option<WindowEvent>) {
         let before = (
             self.driver.os_pointer_presses,
             self.driver.os_pointer_releases,
         );
-        self.driver.app.window.as_ref().unwrap().focus_window();
-        self.move_pointer(point);
+        let window = u64::from(self.driver.app.window.as_ref().unwrap().id());
+        self.os_input(&["focus".into(), window.to_string()]);
+        self.os_move_pointer(point);
         self.os_input(&["press".into()]);
         if let Some(event) = end {
             match event {
-                WindowEvent::CursorMoved { position, .. } => self.move_pointer(position),
+                WindowEvent::CursorMoved { position, .. } => self.os_move_pointer(position),
                 event => self.dispatch([event]),
             }
         }
         self.os_input(&["release".into()]);
-        assert!(
-            self.driver.os_pointer_presses > before.0 && self.driver.os_pointer_releases > before.1,
-            "XTest pointer events must actually arrive through the ordinary winit handler"
+        self.until(
+            "OS pointer events arrive through ordinary winit handler",
+            |app| {
+                app.driver.os_pointer_presses > before.0
+                    && app.driver.os_pointer_releases > before.1
+            },
         );
-        eprintln!(
-            "native acceptance OS pointer delivered through winit: presses={}, releases={}",
-            self.driver.os_pointer_presses, self.driver.os_pointer_releases
+    }
+    fn pointer(&mut self, point: PhysicalPosition<f64>, end: Option<WindowEvent>) {
+        if std::env::var("MMORPG_NATIVE_POINTER_OS").as_deref() == Ok("1") {
+            self.os_pointer(point, end);
+            return;
+        }
+        let device_id = DeviceId::dummy();
+        self.dispatch([
+            WindowEvent::CursorMoved {
+                device_id,
+                position: point,
+            },
+            WindowEvent::MouseInput {
+                device_id,
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+            },
+        ]);
+        if let Some(event) = end {
+            self.dispatch([event]);
+        }
+        self.dispatch([WindowEvent::MouseInput {
+            device_id,
+            state: ElementState::Released,
+            button: MouseButton::Left,
+        }]);
+        self.until(
+            "pointer WindowEvents dispatched through actual App handler",
+            |app| app.driver.pending.is_empty(),
         );
     }
     fn key(&mut self, keysym: &str) {
         let before = self.driver.os_keys;
         self.os_input(&["key".into(), keysym.into()]);
         self.pump(Duration::from_millis(200));
-        assert!(
-            self.driver.os_keys > before,
-            "XTest keyboard event must actually arrive through winit"
+        self.until(
+            "XTest keyboard event actually arrives through winit",
+            |app| app.driver.os_keys > before,
         );
     }
     fn snapshot(&self) -> CanonicalZoneSnapshot {
