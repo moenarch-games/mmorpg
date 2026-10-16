@@ -18,7 +18,7 @@ unpublished #27 remote/ordinary action observations do not.
 | Obligation | Independent evidence |
 | --- | --- |
 | Six class/sex appearances | `native_presentation_parity`: real core choices → actual submitted unit draws; historical SceneBox baseline collapses all 15 pairs |
-| All current class/sex/headwear combinations and neutral remote look | `native_world_frame_parity` + current Pages `unitModel`/`characterLook` generators; invalid headwear rejected |
+| All current class/sex/headwear combinations and neutral remote look | `native_unit_frame_parity` + current Pages `unitModel`/`characterLook` generators; invalid headwear rejected |
 | Every current creature template, elite appearance, NPC role | Same frame comparison with actual catalog/spawn identities; hostile/neutral, tapped, selected and initial corpse cases; GPU gallery images |
 | All 34 current prop kinds, not terrain-only success | `native_world_reference`: each prop-kind world differs from an equivalent prop-free world; actual draw comparison; all-kind GPU views |
 | Authored grass/relief, structures, terrain, roads/shore/water/far ring | Actual shared scenery export through current Pages generators; prop/region frames, material and placement comparisons; existing world/geometry tests; paired region images |
@@ -29,7 +29,7 @@ unpublished #27 remote/ordinary action observations do not.
 | Walk/jump/turn and reduced motion | Animated/frozen unit input cases against current Pages `UnitAnimators` and actual native submitted draws |
 | Published viewer sword/bow/staff ability poses, casting/channeling/interruption/release and spell visuals | Abilities 1–12, cast/channel/interrupted/released and barrier-aura fixtures through actual Pages `SpellEffects.spawn/sync/viewerAction`; projected native events/cast/aura and reduced motion |
 | Real renderer consumes the inspected frame | Explicit GPU mesh/material/transform/environment/lighting/fog/opacity/emissive/vertex-color mutations must change actual readback pixels |
-| Selection, health bars, occlusion, camera, focus, reconnect/session retirement | Retain `native_pointer_contract.md` real-window application journey, `presentation.rs` health/interpolation/reset tests, `connected_world.rs`, native controls tests, and existing GPU health-bar test; independently review migrated picking consumes the actual presented geometry/transforms/sidedness/visibility, including instances |
+| Selection, health bars, occlusion, camera, focus, reconnect/session retirement | Retain `crates/mmorpg-client/tests/native_pointer_contract.md` real-window application journey, `presentation.rs` health/interpolation/reset tests, `connected_world.rs`, native controls tests, and existing GPU health-bar test; independently review migrated picking consumes the actual presented geometry/transforms/sidedness/visibility, including instances |
 | Source/build identity and local edits | Reuse #180 launcher acceptance `scripts/test-dev-native.py` plus actual launcher smoke; preserve executable/source identity in completion evidence |
 
 `native_world_reference` runs the independent current-browser generators, not a
@@ -53,7 +53,8 @@ Use an isolated `CARGO_TARGET_DIR`; never overwrite a running user's executable.
 
 ```sh
 cargo test -p mmorpg-client --test native_world_reference --locked -- --nocapture
-cargo test -p mmorpg-client --test native_presentation_parity --test native_world_frame_parity --locked
+cargo test -p mmorpg-client --test native_draw_identity --test native_world_frame_parity --locked
+cargo test -p mmorpg-client --test native_presentation_parity --test native_unit_frame_parity --locked
 MMORPG_SMOKE_FRAME_DIR=/tmp/mmorpg182-final-frames cargo test -p mmorpg-client --lib world_gpu_acceptance --locked -- --ignored --nocapture --test-threads=1
 ```
 
@@ -71,3 +72,11 @@ passing full acceptance claim. The independent reference inventory is green.
 Root retained actual legacy native hub/relief frames and actual public Pages hub
 at eye `[5,8.5,31]`, target `[-14,3,4]`; those exhibit the reported gap. Full
 post-implementation paired review and real-window verification remain required.
+
+Instance draw comparison normalizes only the exporter/native cache-identity envelope
+inside the explicitly recognized `instances:<chunk>:<cull>:scenery:...` or
+`instances:<chunk>:<cull>:native-scenery:...` grammar. Chunk, cull class, geometry
+ordinal and instance ordinal remain exact, and canonical duplicates fail closed
+on both sides. Unit/static/animated IDs, actual resource keys and asset identity
+are unchanged. World and unit differentials are separate required binaries so
+world implementation can be tested without temporary unit API stubs.
