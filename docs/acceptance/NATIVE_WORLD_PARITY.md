@@ -157,3 +157,15 @@ public reproduction. Well/barrel cameras approach the actual subject instead
 of sitting behind nearby architecture. Required postimplementation GPU captures
 and actual paired image review remain obligations; passing compilation is not
 visual evidence.
+
+Creature/NPC matched-gallery viewer input uses the actual entry's default Warden
+headwear through `set_default_appearance`, matching the public App. The subject
+records, geometry/material assertions, selected/tapped/dead flags, +250-unit X
+separation and camera remain unchanged; the independent CPU oracle's explicit
+None cases remain required. Public captures inject these exact declared decoded
+projection records through the existing debug world-source seam, freeze the
+source and presentation clock, and retain the production WorldView/model/renderer
+pipeline. Both advance results and latestProjection are replaced together so
+the submitted fixture is actually the one the real App renders. This is visual
+fixture evidence, not gameplay/network validation. Served asset identity is
+verified against the frozen published reference before capture.

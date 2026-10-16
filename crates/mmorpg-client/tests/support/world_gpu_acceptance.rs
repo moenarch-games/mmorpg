@@ -288,6 +288,7 @@ fn current_creature_and_npc_model_images_reach_native_gpu() {
             let mut presentation =
                 Presentation::new(1, mmorpg_scenery::greyhaven_vale_scenery(), content, now)
                     .unwrap();
+            presentation.set_default_appearance(mmorpg_core::PlayerClass::Warden);
             presentation.set_reduced_motion(true);
             presentation.push(projection, now).unwrap();
             let view = CameraView {
