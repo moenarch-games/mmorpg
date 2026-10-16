@@ -23,7 +23,7 @@ three-d-core = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "df
 three-d-camera = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "df52c324a5692d04d2016d8a29f5bc4368e4aac0" }
 three-d-animation = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "df52c324a5692d04d2016d8a29f5bc4368e4aac0" }
 three-d-projective = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "df52c324a5692d04d2016d8a29f5bc4368e4aac0" }
-input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "d5fcb81bb1eefde9e2f69d404a4d7e429fb2f12c" }
+input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "abe258b478c26a27f5139264273c63a7079368b4" }
 
 [dev-dependencies]
 mmorpg-wasm = { path = "../mmorpg-wasm" }
