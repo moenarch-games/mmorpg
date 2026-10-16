@@ -4,6 +4,7 @@ t=0 hunter move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=0
 t=1 hunter p1 e1 ack1 (-1550,90,1271) sees[]
 t=1 hunter start_attack -> applied seq=2 epoch=1
 t=2 expect hunter event error:no_target ok events[error:no_target]
+t=2 expect hunter progression ok level=1 xp=0/100
 t=2 hunter p1 e1 ack2 (-1550,90,1292) sees[] events[error:no_target]
 t=36 hunter move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=49152
 t=37 hunter p1 e1 ack3 (-1571,90,2006) sees[]
@@ -65,6 +66,8 @@ t=931 hunter p1 e1 ack11 (-8459,90,1355) sees[] hp23/50 target=creature:108 in_c
 t=1000 hunter p1 e1 ack11 (-8459,90,-94) sees[] hp23/50 target=creature:108 in_combat
 t=1038 expect hunter unit creature:106 targets_viewer within t=931..=1040 ok L1 hp100% (-9304,45,-1358) [in_combat,hostile,attackable,targets_viewer]
 t=1038 hunter p1 e1 ack11 (-8459,90,-892) sees[] hp23/50 target=creature:108 in_combat
+t=1040 expect hunter progression ok level=1 xp=50/100
+t=1040 hunter p1 e1 ack11 (-8459,90,-934) sees[] hp23/50 target=creature:108 in_combat
 t=1040 hunter move -> applied seq=12 epoch=1 forward=0 strafe=0 facing=32768
 t=1040 hunter select_target -> applied seq=13 epoch=1 entity=creature:106
 t=1040 hunter start_attack -> applied seq=14 epoch=1
@@ -100,16 +103,16 @@ t=1501 expect hunter target creature:106 ok target=creature:106
 t=1501 hunter p1 e1 ack17 (-8459,90,-934) sees[] hp0/50 dead target=creature:106 in_combat events[error:you_are_dead]
 t=1600 expect hunter position hunter ok [-8459, 90, -934]
 t=1600 hunter p1 e1 ack17 (-8459,90,-934) sees[] hp0/50 dead target=creature:106 in_combat
-t=1600 hunter move -> applied seq=18 epoch=1 forward=0 strafe=0 facing=0
-t=1601 hunter p1 e1 ack18 (-8459,90,-934) sees[] hp0/50 dead target=creature:106 in_combat
-t=1649 hunter p1 e1 ack18 (-8459,90,-934) sees[] hp0/50 dead target=creature:106
-t=1700 hunter p1 e1 ack18 (-8459,90,-934) sees[] hp0/50 dead target=creature:106
-t=1700 hunter release_spirit -> applied seq=19 epoch=1
+t=1649 hunter p1 e1 ack17 (-8459,90,-934) sees[] hp0/50 dead target=creature:106
+t=1700 hunter p1 e1 ack17 (-8459,90,-934) sees[] hp0/50 dead target=creature:106
+t=1700 hunter release_spirit -> applied seq=18 epoch=1
 t=1701 expect hunter position hunter ok [-2000, 90, 4150]
 t=1701 expect hunter unit bot:hunter alive ok L1 hp50% (-2000,90,4150) []
 t=1701 expect hunter health ok health=25/50
 t=1701 expect hunter area hunter ok hunter in Greyhaven Outpost
 t=1701 expect hunter unit creature:106 absent ok absent
-t=1701 hunter p1 e1 ack19 (-2000,90,4150) sees[] hp25/50 target=creature:106
-t=1800 hunter p1 e1 ack19 (-2000,90,4150) sees[] hp25/50 target=creature:106
-PASS vale-wolf-hunt ticks=1800 steps=20 expectations=24 failures=0
+t=1701 expect hunter progression ok level=1 xp=50/100
+t=1701 hunter p1 e1 ack18 (-2000,90,4150) sees[] hp25/50 target=creature:106
+t=1800 expect hunter position hunter ok [-2000, 90, 4150]
+t=1800 hunter p1 e1 ack18 (-2000,90,4150) sees[] hp25/50 target=creature:106
+PASS vale-wolf-hunt ticks=1800 steps=19 expectations=28 failures=0

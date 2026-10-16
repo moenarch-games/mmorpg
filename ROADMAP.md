@@ -10,18 +10,21 @@ Design contract and step plan: [docs/STARTER_ZONE.md](docs/STARTER_ZONE.md). Eac
 - [x] Movement v3: facing, camera-relative movement, jump.
 - [x] Greyhaven Vale content, shared presentation scenery, projection budget.
 - [x] Browser demo runs the shared simulation as a local WASM zone host.
+- Replace placeholder characters with provenance-backed humanoid assets and start consuming the shared environment-asset pipeline ([#39](https://github.com/moritzbrantner/mmorpg/issues/39); upstream [asset-tooling#104](https://github.com/moritzbrantner/asset-tooling/issues/104), [#105](https://github.com/moritzbrantner/asset-tooling/issues/105), [#106](https://github.com/moritzbrantner/asset-tooling/issues/106)).
+- Adopt shared `input-bindings` and `settings` foundations for gameplay controls, binding UI and precise player/device preferences ([#41](https://github.com/moritzbrantner/mmorpg/issues/41); upstream [input-bindings#53](https://github.com/moritzbrantner/input-bindings/issues/53), [settings#20](https://github.com/moritzbrantner/settings/issues/20)).
 - [x] Units, combat and creature AI: core, protocol and minimal presentation (step 7a).
 - Combat presentation in the browser: target frame, nameplates, combat text (step 7b).
 - Classes and abilities.
 - Progression, loot, inventory, equipment and vendors.
-- Quests and the Redbrand Hollow chain.
-- Starter-zone workload evidence.
+- [x] Quests and the Redbrand Hollow chain ([#25](https://github.com/moritzbrantner/mmorpg/issues/25)): core rules, the nine-quest Greyhaven chain, snapshot v14/command v9 and the browser dialog, log, tracker and markers.
+- [x] Starter-zone combat workload evidence ([#26](https://github.com/moritzbrantner/mmorpg/issues/26)): fixed idle/distributed/crowded scripts, replay/recovery parity and deterministic work/byte ceilings.
 - World presentation: relief, vegetation, water, sky, animated models, effects.
   - [x] Part A (browser): biome terrain and far ranges, procedural props and vegetation in static batches, lake, CSS sky, animated humanoids with class gear, camera polish, minimap, F3 statistics.
   - Part B: creature and NPC models, spell effects, selection circles, and fog, instancing, vertex colours and lighting once 3d-lab #82 and #84 are pinned.
 - Native client parity.
-- Browser online mode against a local zone host.
-- Durable character record for demo saves.
+- [x] Browser online mode against a local zone host.
+- Durable character record behind core command/query APIs ([#30](https://github.com/moritzbrantner/mmorpg/issues/30)), consumed by the composed save/load flow below.
+- Persist character progression together with versioned zone/world checkpoints so the demo can save, close, load and continue ([#40](https://github.com/moritzbrantner/mmorpg/issues/40)).
 - Zone chat and emotes.
 
 ## Foundation — distributed world authority
@@ -71,6 +74,7 @@ Design contract and step plan: [docs/STARTER_ZONE.md](docs/STARTER_ZONE.md). Eac
 - [x] Keep player-scoped projection authoritative in core.
 - [x] Measure visibility work and snapshot bytes with deterministic sparse, dense and vale-spawn workloads.
 - [x] Cap player projections by deterministic relevance priority within a measured single-datagram byte budget.
+- Feed representative Greyhaven sparse/crowded workloads back into `physics-engine`, ratchet retained/delta-only maintenance there, and consume the proven revision back here ([physics-engine#190](https://github.com/moritzbrantner/physics-engine/issues/190)).
 - Benchmark physics work independently in collision-heavy and crowded workloads.
 - Add dynamic zone subdivision or instancing only when workload evidence shows the static-zone model is insufficient.
 
@@ -78,8 +82,9 @@ Design contract and step plan: [docs/STARTER_ZONE.md](docs/STARTER_ZONE.md). Eac
 
 - Separate account/character identity from zone-local connection/player IDs.
 - Add command/query interfaces for durable character state.
-- Add versioned checkpoint persistence for zone/world state where needed.
+- Add versioned checkpoint persistence for zone/world state and a durable save-slot bundle that composes character and world records ([#40](https://github.com/moritzbrantner/mmorpg/issues/40)).
 - Keep persistence asynchronous to the hot simulation loop.
+- Require each gameplay slice to classify new authoritative state as ephemeral, character-durable, world-durable, or static content so recovery completeness is continuously exercised.
 - Do not introduce event sourcing unless replay/audit requirements justify it beyond existing game-server replay/recovery.
 
 ## Physics and gameplay
@@ -89,7 +94,7 @@ Design contract and step plan: [docs/STARTER_ZONE.md](docs/STARTER_ZONE.md). Eac
 - [x] Verify grounded/wall contact and airborne recovery continuation.
 - [x] Load a shared revisioned outpost into the host and native renderer.
 - [x] Replace it with the Greyhaven Vale content revision: colliders, clear spawn plaza, road corridors and named areas.
-- Add authored mesh/material/animation assets through the existing content foundations.
+- Replace block/placeholder character presentation with provenance-backed humanoid mesh/material/animation assets through `asset-tooling`, while physics bodies remain authoritative ([#39](https://github.com/moritzbrantner/mmorpg/issues/39)).
 - Introduce durable character identity before live cross-zone gameplay.
 - Add server-owned interaction/ability rules with replay-complete cooldown, resource and target state.
 - Measure collision-heavy and crowded-zone workloads before changing capacity.
@@ -104,12 +109,12 @@ Design contract and step plan: [docs/STARTER_ZONE.md](docs/STARTER_ZONE.md). Eac
 - [x] Resume native sessions with retained player identity, increasing sequences and presentation reset.
 - Add account authentication and live zone routing; current sessions are anonymous.
 - [x] Share immutable collision geometry and player dimensions between the server and native client.
-- Extend this contract to authored visual assets and their provenance.
+- Extend this contract to authored visual assets and their provenance through `asset-tooling` ([#39](https://github.com/moritzbrantner/mmorpg/issues/39)).
 - Consume pinned `3d-lab` procedural skeletal animation for two-bone IK, foot placement/locking, pelvis correction and surface-normal alignment against client-visible shared collision geometry; it remains presentation over server-owned movement and physics truth.
 - Add bounded motion warping for interactions and attacks only from server-owned target/cue data; warped presentation must not change authoritative transforms, hits, cooldowns, recovery, zone handoff or replay state.
 - Add optional shared-physics prediction and acknowledgement-based reconciliation.
-- Reuse `input-bindings` for bindings and `settings` for user configuration.
-- Reuse `asset-tooling` for processed authored assets and provenance.
+- Reuse `input-bindings` for semantic actions/profiles and `settings` for the unified settings surface ([#41](https://github.com/moritzbrantner/mmorpg/issues/41)).
+- Keep server-authoritative interest/projection limits out of ordinary client preferences; expose only safe client-side camera/presentation tuning or explicit diagnostics.
 - Integrate social functionality with `social-service` only at the boundary that service actually owns.
 
 ## Desktop delivery

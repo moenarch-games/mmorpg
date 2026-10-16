@@ -1,0 +1,574 @@
+# Classes and abilities through the hosted runtime. A Warden, a Ranger and an
+# Arcanist choose their classes in the hub, are refused abilities they cannot
+# use yet, and walk in a column along the vale-wolf-hunt route (each bot five
+# ticks behind the one ahead, so all three keep to the clear trunk-grid
+# lines) into Wolfrun Woods. Timber Wolf 108 engages the Warden at the front.
+# The Warden auto-attacks and builds rage, the Ranger opens with Aimed Shot
+# and the Arcanist casts Firebolt; the global cooldown, the Aimed Shot
+# cooldown, an overlapping cast, a movement interrupt and a cancelled cast are
+# refused or reported as events. Every command step is applied.
+name = "class-abilities"
+zone = 1
+ticks = 900
+digest_interval = 100
+
+[[bots]]
+name = "warden"
+
+[[bots]]
+name = "ranger"
+
+[[bots]]
+name = "arcanist"
+
+[[steps]]
+tick = 0
+bot = "warden"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "ranger"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "arcanist"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "warden"
+action = "choose_class"
+class = "warden"
+sex = "male"
+
+[[steps]]
+tick = 0
+bot = "ranger"
+action = "choose_class"
+class = "ranger"
+sex = "female"
+
+[[steps]]
+tick = 0
+bot = "arcanist"
+action = "choose_class"
+class = "arcanist"
+sex = "female"
+
+# A second choice is refused.
+[[steps]]
+tick = 0
+bot = "arcanist"
+action = "choose_class"
+class = "warden"
+sex = "male"
+
+# South (+Z) onto the Wolfrun Trail's hub segment, side by side.
+[[steps]]
+tick = 0
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+[[steps]]
+tick = 0
+bot = "ranger"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+[[steps]]
+tick = 0
+bot = "arcanist"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+# Shield Bash is a level-2 ability; Heroic Strike needs 15 rage first.
+[[steps]]
+tick = 1
+bot = "warden"
+action = "use_ability"
+ability = 2
+
+[[steps]]
+tick = 1
+bot = "warden"
+action = "use_ability"
+ability = 1
+
+# Firebolt needs a target; Frost Nova belongs to level 2.
+[[steps]]
+tick = 1
+bot = "arcanist"
+action = "use_ability"
+ability = 9
+
+[[steps]]
+tick = 1
+bot = "arcanist"
+action = "use_ability"
+ability = 10
+
+# Another class's ability is never learned.
+[[steps]]
+tick = 1
+bot = "ranger"
+action = "use_ability"
+ability = 1
+
+# West along the trail, through the west gate.
+[[steps]]
+tick = 36
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 36
+bot = "ranger"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 36
+bot = "arcanist"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+# Outside the palisade, step north onto the trunk-grid line z = 1800 …
+[[steps]]
+tick = 121
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 126
+bot = "ranger"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 131
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 131
+bot = "arcanist"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+# … and follow it west into Wolfrun Woods.
+[[steps]]
+tick = 136
+bot = "ranger"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 141
+bot = "arcanist"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+# North along the trunk-grid line x = -8450 toward the den clearing.
+[[steps]]
+tick = 375
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 380
+bot = "ranger"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 380
+bot = "warden"
+action = "select_target"
+entity = "creature:108"
+
+[[steps]]
+tick = 380
+bot = "warden"
+action = "start_attack"
+
+[[steps]]
+tick = 385
+bot = "arcanist"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 385
+bot = "ranger"
+action = "select_target"
+entity = "creature:108"
+
+[[steps]]
+tick = 385
+bot = "arcanist"
+action = "select_target"
+entity = "creature:108"
+
+# The wolf engages the Warden: everyone stands.
+[[steps]]
+tick = 395
+bot = "warden"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 395
+bot = "ranger"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 395
+bot = "arcanist"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+# The Arcanist starts Firebolt and is interrupted by stepping, then starts
+# it again and cancels it. Interrupted casts cost nothing.
+[[steps]]
+tick = 396
+bot = "arcanist"
+action = "use_ability"
+ability = 9
+
+[[steps]]
+tick = 400
+bot = "arcanist"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 401
+bot = "arcanist"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 441
+bot = "arcanist"
+action = "use_ability"
+ability = 9
+
+[[steps]]
+tick = 450
+bot = "arcanist"
+action = "cancel_cast"
+
+# Rage comes from swings dealt and taken: too little at first, then a Heroic
+# Strike, and the global cooldown holds the next one.
+[[steps]]
+tick = 470
+bot = "warden"
+action = "use_ability"
+ability = 1
+
+[[steps]]
+tick = 500
+bot = "warden"
+action = "use_ability"
+ability = 1
+
+# Firebolt for real; a second cast on top is refused.
+[[steps]]
+tick = 500
+bot = "arcanist"
+action = "use_ability"
+ability = 9
+
+[[steps]]
+tick = 501
+bot = "warden"
+action = "use_ability"
+ability = 1
+
+[[steps]]
+tick = 510
+bot = "arcanist"
+action = "use_ability"
+ability = 9
+
+# Aimed Shot once the Warden holds threat: the global cooldown, then the
+# shot's own cooldown, hold the next ones.
+[[steps]]
+tick = 520
+bot = "ranger"
+action = "use_ability"
+ability = 5
+
+[[steps]]
+tick = 521
+bot = "ranger"
+action = "use_ability"
+ability = 5
+
+[[steps]]
+tick = 570
+bot = "ranger"
+action = "use_ability"
+ability = 5
+
+# Class choices: each resource starts at its class's start value, and a
+# second choice is refused.
+[[expect]]
+kind = "event"
+bot = "arcanist"
+event = "error:invalid_class"
+tick = 1
+
+[[expect]]
+kind = "resource"
+bot = "warden"
+resource = 0
+tick = 1
+
+[[expect]]
+kind = "resource"
+bot = "ranger"
+resource = 100
+tick = 1
+
+[[expect]]
+kind = "resource"
+bot = "arcanist"
+resource = 110
+tick = 1
+
+# Validation order: learned before resource, resource before target.
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "error:not_learned"
+tick = 2
+
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "error:not_enough_resource"
+tick = 2
+
+[[expect]]
+kind = "event"
+bot = "ranger"
+event = "error:not_learned"
+tick = 2
+
+[[expect]]
+kind = "event"
+bot = "arcanist"
+event = "error:invalid_target"
+tick = 2
+
+[[expect]]
+kind = "event"
+bot = "arcanist"
+event = "error:not_learned"
+tick = 2
+
+# Stepping interrupts a cast; so does cancelling it. Neither costs mana.
+[[expect]]
+kind = "event"
+bot = "arcanist"
+event = "cast_started"
+tick = 397
+
+[[expect]]
+kind = "event"
+bot = "arcanist"
+event = "interrupted"
+tick = 401
+
+[[expect]]
+kind = "event"
+bot = "arcanist"
+event = "interrupted"
+tick = 451
+
+[[expect]]
+kind = "resource"
+bot = "arcanist"
+resource = 110
+tick = 451
+
+# Rage from two swings dealt and two hits taken pays for Heroic Strike.
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "error:not_enough_resource"
+tick = 471
+
+[[expect]]
+kind = "resource"
+bot = "warden"
+resource = 20
+tick = 500
+
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "ability_used"
+tick = 501
+
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "damage_dealt"
+entity = "creature:108"
+tick = 501
+
+[[expect]]
+kind = "resource"
+bot = "warden"
+resource = 5
+tick = 501
+
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "error:not_ready"
+tick = 502
+
+[[expect]]
+kind = "event"
+bot = "arcanist"
+event = "error:already_casting"
+tick = 511
+
+# Aimed Shot: 30 focus, then the global cooldown and its own cooldown.
+[[expect]]
+kind = "event"
+bot = "ranger"
+event = "ability_used"
+entity = "creature:108"
+tick = 521
+
+[[expect]]
+kind = "resource"
+bot = "ranger"
+resource = 70
+tick = 521
+
+[[expect]]
+kind = "event"
+bot = "ranger"
+event = "error:not_ready"
+tick = 522
+
+[[expect]]
+kind = "event"
+bot = "ranger"
+event = "error:not_ready"
+tick = 571
+
+# Firebolt completes 60 ticks after it started, pays 25 mana and kills.
+[[expect]]
+kind = "event"
+bot = "arcanist"
+event = "ability_used"
+entity = "creature:108"
+tick = 560
+
+[[expect]]
+kind = "event"
+bot = "arcanist"
+event = "died"
+entity = "creature:108"
+tick = 560
+
+[[expect]]
+kind = "resource"
+bot = "arcanist"
+resource = 85
+tick = 560
+
+[[expect]]
+kind = "unit"
+bot = "warden"
+entity = "creature:108"
+state = "dead"
+tick = 560
+
+# Focus regenerates 5 per second back to full.
+[[expect]]
+kind = "resource"
+bot = "ranger"
+resource = 100
+by_tick = 700
+
+# The five-second rule holds mana for 150 ticks after spending; then 5 % of
+# 110 returns every second out of combat.
+[[expect]]
+kind = "resource"
+bot = "arcanist"
+resource = 85
+tick = 738
+
+[[expect]]
+kind = "resource"
+bot = "arcanist"
+resource = 91
+tick = 739
+
+# Out of combat, rage decays by 2 per second.
+[[expect]]
+kind = "resource"
+bot = "warden"
+resource = 15
+tick = 731
+
+[[expect]]
+kind = "resource"
+bot = "warden"
+resource = 13
+tick = 732

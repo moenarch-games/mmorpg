@@ -119,6 +119,21 @@ impl LocalZoneHost {
         Ok(player_id)
     }
 
+    /// Spawns a new player and chooses its class (0 Warden, 1 Ranger,
+    /// 2 Arcanist) and sex (0 female, 1 male) as its first command, under
+    /// sequence 1, so the client's own commands start at sequence 2. The
+    /// zone refuses an invalid choice with an event in the next tick.
+    pub fn join_as(&mut self, class: u8, sex: u8) -> Result<PlayerId, LocalZoneError> {
+        let player_id = self.join()?;
+        let choice =
+            mmorpg_protocol::encode_command(mmorpg_core::ZoneCommand::ChooseClass { class, sex });
+        if let Err(error) = self.submit(player_id, 1, &choice) {
+            self.leave(player_id);
+            return Err(error);
+        }
+        Ok(player_id)
+    }
+
     /// Removes the player's unit from the zone immediately.
     pub fn leave(&mut self, player_id: PlayerId) -> bool {
         self.last_sequences.remove(&player_id);
@@ -204,6 +219,30 @@ mod tests {
             .find(|entity| entity.kind == EntityKind::Player && entity.id == player_id)
             .unwrap()
             .position
+    }
+
+    #[test]
+    fn joining_with_a_class_spends_sequence_one_on_the_choice() {
+        let mut host = LocalZoneHost::new().unwrap();
+        let player = host.join_as(2, 0).unwrap();
+        assert_eq!(
+            host.submit(player, 1, &run(EAST)).unwrap(),
+            SubmitOutcome::IgnoredStale
+        );
+        host.tick().unwrap();
+        let snapshot = decode_snapshot(&host.projection(player).unwrap()).unwrap();
+        assert_eq!(snapshot.acknowledged_sequence, 1);
+        assert_eq!(
+            snapshot.viewer.class.map(|choice| choice.class),
+            Some(mmorpg_core::PlayerClass::Arcanist)
+        );
+        assert_eq!(snapshot.entities[0].appearance, 5);
+        // An invalid choice is a gameplay refusal, not a join failure.
+        let other = host.join_as(9, 9).unwrap();
+        host.tick().unwrap();
+        let snapshot = decode_snapshot(&host.projection(other).unwrap()).unwrap();
+        assert_eq!(snapshot.viewer.class, None);
+        assert_eq!(snapshot.events.len(), 1);
     }
 
     #[test]

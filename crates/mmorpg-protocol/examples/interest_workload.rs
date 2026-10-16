@@ -51,6 +51,7 @@ fn measure(name: &str) -> Result<(), Box<dyn Error>> {
             _ => return Err("unknown workload".into()),
         };
         canonical.players.push(CanonicalPlayerSnapshot {
+            copper: 0,
             player_id: u32::try_from(index)? + 1,
             position,
             velocity: [0; 3],
@@ -60,7 +61,15 @@ fn measure(name: &str) -> Result<(), Box<dyn Error>> {
             jump_pending: false,
             last_sequence: 0,
             spawn_slot: u16::try_from(index)?,
+            inventory: mmorpg_core::Inventory::default(),
+            inventory_revision: 1,
+            inventory_changed_at: 0,
+            equipment: mmorpg_core::Equipment::default(),
             combat: CanonicalPlayerCombat::default(),
+            chat_ready_at: 0,
+            chat: Vec::new(),
+            quests: mmorpg_core::QuestLog::default(),
+            quests_changed_at: 0,
         });
     }
     let mut zone = ZoneSimulation::from_snapshot(canonical, Arc::clone(empty.content()))?;

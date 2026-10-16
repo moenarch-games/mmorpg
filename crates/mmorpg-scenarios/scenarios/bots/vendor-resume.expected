@@ -1,0 +1,44 @@
+scenario vendor-resume zone=1 bots=1 ticks=175 grace=30
+t=0 alice join -> joined player=1 epoch=1
+t=1 alice p1 e1 ack0 (-1550,90,1250) sees[]
+t=1 alice sell_item -> applied seq=1 epoch=1 npc=3 bag_slot=0 quantity=1
+t=2 expect alice event error:out_of_range ok events[error:out_of_range]
+t=2 expect alice copper ok copper=0
+t=2 alice p1 e1 ack1 (-1550,90,1250) sees[] events[error:out_of_range]
+t=2 alice move -> applied seq=2 epoch=1 forward=1 strafe=0 facing=16384
+t=3 alice p1 e1 ack2 (-1529,90,1250) sees[]
+t=25 alice p1 e1 ack2 (-1067,90,1250) sees[]
+t=50 alice p1 e1 ack2 (-542,90,1250) sees[]
+t=75 alice p1 e1 ack2 (-17,90,1250) sees[]
+t=100 alice p1 e1 ack2 (508,90,1250) sees[]
+t=125 alice p1 e1 ack2 (1033,90,1250) sees[]
+t=147 alice move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=32768
+t=148 alice p1 e1 ack3 (1495,90,1229) sees[]
+t=150 alice p1 e1 ack3 (1495,90,1187) sees[]
+t=152 alice move -> applied seq=4 epoch=1 forward=0 strafe=0 facing=32768
+t=153 expect alice position alice ok [1495, 90, 1145]
+t=153 alice p1 e1 ack4 (1495,90,1145) sees[]
+t=154 alice sell_item -> applied seq=5 epoch=1 npc=3 bag_slot=0 quantity=3
+t=155 expect alice copper ok copper=3
+t=155 expect alice inventory ok revision=2 sheet=true slot=0 item=0 quantity=0
+t=155 alice p1 e1 ack5 (1495,90,1145) sees[]
+t=155 alice buy_item -> applied seq=6 epoch=1 npc=3 offer=0 quantity=1
+t=156 expect alice event error:not_enough_money ok events[error:not_enough_money]
+t=156 alice p1 e1 ack6 (1495,90,1145) sees[] events[error:not_enough_money]
+t=156 alice buy_item -> applied seq=7 epoch=1 npc=6 offer=0 quantity=1
+t=157 expect alice event error:invalid_vendor ok events[error:invalid_vendor]
+t=157 alice p1 e1 ack7 (1495,90,1145) sees[] events[error:invalid_vendor]
+t=157 alice sell_item -> applied seq=8 epoch=1 npc=3 bag_slot=1 quantity=1
+t=158 expect alice copper ok copper=5
+t=158 alice p1 e1 ack8 (1495,90,1145) sees[]
+t=159 alice disconnect -> disconnected player=1
+t=160 alice p1 offline
+t=161 alice reconnect -> resumed player=1 epoch=2 identity=kept
+t=162 expect alice identity ok player=1 epoch=2
+t=162 alice p1 e2 ack8 (1495,90,1145) sees[]
+t=165 alice buy_item -> applied seq=9 epoch=2 npc=3 offer=0 quantity=1
+t=166 expect alice copper ok copper=0
+t=166 expect alice inventory ok revision=4 sheet=true slot=0 item=2 quantity=1
+t=166 alice p1 e2 ack9 (1495,90,1145) sees[]
+t=175 alice p1 e2 ack9 (1495,90,1145) sees[]
+PASS vendor-resume ticks=175 steps=12 expectations=11 failures=0

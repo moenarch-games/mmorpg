@@ -1,20 +1,21 @@
-import type { Matrix4Values, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
+import type { Matrix4Values, RendererSceneNode, RendererInstanceBatch } from "@moritzbrantner/three-d-renderer";
 import { ENVIRONMENT, type EnvironmentStyle } from "./environment";
-import { SceneBatcher, batchVisible, type StaticBatch } from "./mesh-batching";
+import { SceneBatcher, batchVisible, type InstanceBatch, type StaticBatch } from "./mesh-batching";
 import type { Vec3 } from "./mesh-builder";
 import { appendPropModels, type AnimatedMesh, type AnimatedParts, type ModelContext } from "./prop-models";
-import type { Prop, PropKind, Scenery } from "./scenery";
+import type { Color, Prop, PropKind, Scenery } from "./scenery";
 import { appendLakeBeds, appendPatches, appendRoads, appendTerrain, terrainSurfaceY, waterNodes } from "./terrain-mesh";
 
 /**
  * The static world of one scenery value, built once per content revision:
- * terrain and far-ring meshes per colour, road ribbons, the lake, and every
- * prop's procedural model merged into batches per (40 m chunk, colour, cull
- * class). A few animated parts (windmill sails, campfire flames, reeds) stay
+ * vertex-coloured terrain and far-ring meshes, road ribbons, the lake, and
+ * procedural props. Vegetation and rocks share instance geometry; other static
+ * parts merge by spatial chunk, colour and cull class. A few animated parts (windmill sails, campfire flames, reeds) stay
  * separate nodes whose transforms change every frame.
  */
 export type SceneryScene = {
   batches: readonly StaticBatch[];
+  instanceBatches: readonly InstanceBatch[];
   water: readonly RendererSceneNode[];
   animated: AnimatedParts;
   stats: SceneryStats;
@@ -23,8 +24,11 @@ export type SceneryScene = {
 };
 
 export type SceneryStats = {
+  /** Ordinary and instanced static draw groups, including currently hidden ones. */
   staticNodes: number;
+  /** Vertices stored across unique immutable geometries (instance copies are transforms). */
   staticVertices: number;
+  /** Triangles stored across the same unique geometries, before instance expansion. */
   staticTriangles: number;
   props: Partial<Record<PropKind, number>>;
 };
@@ -32,7 +36,7 @@ export type SceneryStats = {
 const HUB_KINDS: ReadonlySet<PropKind> = new Set(["keep", "inn", "smithy", "house", "well", "waystone"]);
 
 function resourcePrefix(scenery: Scenery): string {
-  return `scenery:${scenery.source}:${scenery.contentRevision}`;
+  return `scenery:${scenery.source}:${scenery.contentRevision}:${scenery.presentationFingerprint}`;
 }
 
 /** Centroid of the samples of a named biome, in metres. */
@@ -114,15 +118,20 @@ export function buildSceneryScene(scenery: Scenery, style: EnvironmentStyle = EN
     animated,
   };
   const { byKind } = appendPropModels(context, scenery.props);
-  const batches = batcher.batches();
+  const emissive = new Set<Color>([style.palette.rune, style.palette.lampGlow, style.palette.windowLit, style.palette.fire, style.palette.fireCore]);
+  const batches = batcher.batches().map((batch): StaticBatch => typeof batch.node.color === "string" && emissive.has(batch.node.color)
+    ? { ...batch, node: { ...batch.node, unlit: false, emissive: batch.node.color } } : batch);
+  const instanceBatches = batcher.instanceBatches();
+  const geometries = new Set([...batches.map((batch) => batch.node.geometry), ...instanceBatches.map((batch) => batch.batch.geometry)]);
   return {
     batches,
+    instanceBatches,
     water: waterNodes(scenery, style, prefix),
     animated,
     stats: {
-      staticNodes: batches.length,
-      staticVertices: batches.reduce((sum, batch) => sum + batch.node.geometry.positions.length, 0),
-      staticTriangles: batches.reduce((sum, batch) => sum + batch.node.geometry.indices.length / 3, 0),
+      staticNodes: batches.length + instanceBatches.length,
+      staticVertices: [...geometries].reduce((sum, geometry) => sum + (geometry.kind === "mesh" ? geometry.positions.length : 0), 0),
+      staticTriangles: [...geometries].reduce((sum, geometry) => sum + (geometry.kind === "mesh" ? geometry.indices.length / 3 : 0), 0),
       props: byKind,
     },
     surfaceY,
@@ -144,7 +153,8 @@ export function yawRollQuaternion(yaw: number, roll: number): Quaternion {
   return [sy * sz, sy * wz, wy * sz, wy * wz];
 }
 
-type AnimatedNode = Omit<RendererSceneNode, "transform" | "modelMatrix">;
+// Animated props use the default lit material; retain that branch of the renderer contract.
+type AnimatedNode = Omit<Extract<RendererSceneNode, { unlit?: false }>, "transform" | "modelMatrix">;
 
 function meshNode(mesh: AnimatedMesh, prefix: string): AnimatedNode {
   return {
@@ -172,7 +182,7 @@ export class SceneryFrame {
     this.#animated = [...sails, ...flames, ...reeds].map((part) => part.mesh.map((mesh) => meshNode(mesh, prefix)));
   }
 
-  nodes(eye: Vec3, motion: SceneryMotion): { nodes: RendererSceneNode[]; visibleBatches: number } {
+  nodes(eye: Vec3, motion: SceneryMotion): { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[]; visibleBatches: number } {
     const nodes: RendererSceneNode[] = [];
     let visibleBatches = 0;
     this.#scene.batches.forEach((batch, index) => {
@@ -208,7 +218,12 @@ export class SceneryFrame {
         nodes.push({ ...node, modelMatrix });
       }
     }
-    return { nodes, visibleBatches };
+    const instanceBatches = this.#scene.instanceBatches.map((batch) => {
+      const visible = batchVisible(batch, eye[0], eye[2]);
+      visibleBatches += visible ? 1 : 0;
+      return { ...batch.batch, visible };
+    });
+    return { nodes, instanceBatches, visibleBatches };
   }
 }
 

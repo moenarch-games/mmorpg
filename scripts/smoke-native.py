@@ -66,6 +66,18 @@ def main():
                     time.sleep(0.05)
                 command = [str(binaries / f"mmorpg-client{suffix}"), "--url", f"https://localhost:{port}/game/matches/zone-1", "--certificate", str(certificate)]
                 subprocess.run([*command, "--smoke"], cwd=root, check=True, timeout=30)
+                subprocess.run([
+                    "cargo", "test", "--locked", "-p", "mmorpg-client", "--lib",
+                    "projected_health_bars_change_gpu_pixels", "--", "--ignored", "--nocapture",
+                ], cwd=root, check=True, timeout=120)
+                subprocess.run([
+                    "cargo", "test", "--locked", "-p", "mmorpg-client", "--lib",
+                    "the_projected_combat_hud_changes_gpu_pixels", "--", "--ignored", "--nocapture",
+                ], cwd=root, check=True, timeout=120)
+                subprocess.run([
+                    "cargo", "test", "--locked", "-p", "mmorpg-client", "--lib",
+                    "authored_outpost_relief_approaches_render_on_the_native_gpu", "--", "--ignored", "--nocapture",
+                ], cwd=root, check=True, timeout=120)
                 if args.window:
                     subprocess.run([*command, "--frames", "120"], cwd=root, check=True, timeout=30)
             except BaseException:

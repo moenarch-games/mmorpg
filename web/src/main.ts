@@ -41,11 +41,18 @@ import {
 import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
 import { loadLocalWorld } from "./world/wasm-runtime";
+import { webTransportConnector } from "./session/webtransport";
+import { onlineChoice, type ZoneServer } from "./world/online-config";
+import { OnlineZoneSource } from "./world/online-zone-source";
+import type { LinkState, ZoneWorld } from "./world/world-source";
 import { characterLook } from "./world/humanoid";
 import { WorldView, webGpuProjection } from "./world/world-view";
 import { attackToggle, nextTabTarget } from "./world/units/targeting";
+import { GameControls, type GameAction } from "./input/game-controls";
+import { cancelCast, useAbilitySlot } from "./world/units/abilities";
 import "./character-selection-layout.css";
 import "./character-creation.css";
+import "./class-hud.css";
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -60,6 +67,12 @@ const characterSelect = requireElement<HTMLElement>("#character-select");
 const enterWorldButton = requireElement<HTMLButtonElement>("#enter-world");
 const enterWorldLabel = requireElement<HTMLElement>("#enter-world-label");
 const enterWorldNote = requireElement<HTMLElement>("#enter-world-note");
+const onlineToggle = requireElement<HTMLElement>("#online-toggle");
+const playOnlineInput = requireElement<HTMLInputElement>("#play-online");
+const onlineServerLabel = requireElement<HTMLElement>("#online-server");
+const selectionNote = requireElement<HTMLElement>("#selection-note");
+const worldMode = requireElement<HTMLElement>("#world-mode");
+const connectionStatus = requireElement<HTMLElement>("#connection-status");
 const saveCharacterButton = requireElement<HTMLButtonElement>("#save-character");
 const loadCharacterButton = requireElement<HTMLButtonElement>("#load-character");
 const saveStatus = requireElement<HTMLElement>("#save-status");
@@ -101,7 +114,6 @@ type RotationQuaternion = [number, number, number, number];
 type LocalPoint = (x: number, y: number, z: number) => [number, number, number];
 
 let lastTime = performance.now();
-const keys = new Set<string>();
 let rosterStorageHealthy = true;
 let characters: CharacterPreview[] = [PREVIEW_CHARACTER, ...loadCreatedRoster()];
 let entryState: EntryState = initialEntryState(PREVIEW_CHARACTER);
@@ -115,12 +127,23 @@ const turntable = installCharacterTurntable(previewSurface, {
   reset: requireElement<HTMLButtonElement>("#reset-rotation"),
 }, () => entryState.phase === "character-selection");
 
-// The world: the shared Rust zone simulation, hosted locally through WASM.
-// Presentation reads only decoded player-scoped projections from `world.source`.
+// The world: the shared Rust zone simulation, hosted locally through WASM, or a
+// zone host reached over WebTransport when the page is configured for one
+// (`?server=…&certHash=…`). Both share the WASM module's scenery, and
+// presentation reads only decoded player-scoped projections from a source.
+const online = onlineChoice(window.location.search, {
+  server: import.meta.env.VITE_ZONE_SERVER,
+  certificateHash: import.meta.env.VITE_ZONE_CERT_HASH,
+});
 let world: LocalWorld | null = null;
+let onlineWorld: ZoneWorld | null = null;
+/** The world the player is in; null on the selection screen. */
+let activeWorld: ZoneWorld | null = null;
 let worldLoadError: string | null = null;
 /** Why the last entry failed or the world was left after an error; cleared by the next entry. */
 let worldFailure: string | null = null;
+/** The world a join is in flight for; selection stays put until it settles. */
+let joining: ZoneWorld | null = null;
 let jumps = 0;
 
 function loadCreatedRoster(): CharacterPreview[] {
@@ -177,13 +200,87 @@ const worldView = new WorldView(renderer, camera, {
   },
   overlay: requireElement<HTMLElement>("#debug-overlay"),
   areaName: requireElement<HTMLElement>("#area-name"),
-  objective: requireElement<HTMLElement>("#objective"),
   unitStatus: requireElement<HTMLElement>("#unit-status"),
   combatFeedback: requireElement<HTMLElement>("#combat-feedback"),
+  classHud: requireElement<HTMLElement>("#class-hud"),
+  experienceBar: requireElement<HTMLProgressElement>("#experience-bar"),
+  experienceStatus: requireElement<HTMLElement>("#experience-status"),
+  progressionFeedback: requireElement<HTMLElement>("#progression-feedback"),
+  loot: {
+    panel: requireElement<HTMLElement>("#loot-panel"),
+    toggle: requireElement<HTMLButtonElement>("#loot-toggle"),
+    close: requireElement<HTMLButtonElement>("#loot-close"),
+    title: requireElement<HTMLElement>("#loot-title"),
+    rewards: requireElement<HTMLElement>("#loot-rewards"),
+    claim: requireElement<HTMLButtonElement>("#loot-claim"),
+    feedback: requireElement<HTMLElement>("#loot-feedback"),
+    copper: requireElement<HTMLElement>("#copper-status"),
+  },
+  bags: {
+    panel: requireElement<HTMLElement>("#bags-panel"),
+    toggle: requireElement<HTMLButtonElement>("#bags-toggle"),
+    close: requireElement<HTMLButtonElement>("#bags-close"),
+    slots: requireElement<HTMLElement>("#bag-slots"),
+    quantity: requireElement<HTMLInputElement>("#bag-quantity"),
+    selection: requireElement<HTMLElement>("#bag-selection"),
+    status: requireElement<HTMLElement>("#bag-status"),
+    feedback: requireElement<HTMLElement>("#bag-feedback"),
+    equip: requireElement<HTMLButtonElement>("#bag-equip"),
+  },
+  character: {
+    panel: requireElement<HTMLElement>("#character-panel"),
+    toggle: requireElement<HTMLButtonElement>("#character-toggle"),
+    close: requireElement<HTMLButtonElement>("#character-close"),
+    status: requireElement<HTMLElement>("#character-status"),
+    slots: requireElement<HTMLElement>("#equipment-slots"),
+    stats: requireElement<HTMLElement>("#character-stats"),
+    feedback: requireElement<HTMLElement>("#character-feedback"),
+  },
+  vendor: {
+    panel: requireElement<HTMLElement>("#vendor-panel"),
+    toggle: requireElement<HTMLButtonElement>("#vendor-toggle"),
+    close: requireElement<HTMLButtonElement>("#vendor-close"),
+    title: requireElement<HTMLElement>("#vendor-title"),
+    status: requireElement<HTMLElement>("#vendor-status"),
+    offers: requireElement<HTMLElement>("#vendor-offers"),
+    sales: requireElement<HTMLElement>("#vendor-sales"),
+    feedback: requireElement<HTMLElement>("#vendor-feedback"),
+  },
+  quests: {
+    dialog: requireElement<HTMLElement>("#quest-dialog"),
+    dialogToggle: requireElement<HTMLButtonElement>("#quest-dialog-toggle"),
+    dialogClose: requireElement<HTMLButtonElement>("#quest-dialog-close"),
+    dialogTitle: requireElement<HTMLElement>("#quest-dialog-title"),
+    dialogStatus: requireElement<HTMLElement>("#quest-dialog-status"),
+    dialogQuests: requireElement<HTMLElement>("#quest-dialog-quests"),
+    dialogFeedback: requireElement<HTMLElement>("#quest-dialog-feedback"),
+    log: requireElement<HTMLElement>("#quest-log"),
+    logToggle: requireElement<HTMLButtonElement>("#quest-log-toggle"),
+    logClose: requireElement<HTMLButtonElement>("#quest-log-close"),
+    logQuests: requireElement<HTMLElement>("#quest-log-quests"),
+    logFeedback: requireElement<HTMLElement>("#quest-log-feedback"),
+    tracker: requireElement<HTMLElement>("#objective"),
+    markers: requireElement<HTMLElement>("#quest-markers"),
+  },
+  chat: {
+    frame: requireElement<HTMLElement>("#chat"),
+    log: requireElement<HTMLElement>("#chat-log"),
+    form: requireElement<HTMLFormElement>("#chat-form"),
+    input: requireElement<HTMLInputElement>("#chat-input"),
+  },
 });
-// Debug-only hooks (camera viewpoints, stats) for screenshots; `?debug` enables them.
+const controls = new GameControls({
+  screen: () =>
+    entryState.phase === "world"
+      ? { phase: "world", panelOpen: worldView.panelOpen, casting: Boolean(activeWorld?.source.latestProjection()?.viewer.cast) }
+      // A pending join is modal like creation: Escape cancels it.
+      : { phase: "selection", creating: creationDraft !== null || joining !== null },
+  onAction: (action) => runAction(action),
+});
+
+// Debug-only camera and public-source hooks for deterministic acceptance; `?debug` enables them.
 if (new URLSearchParams(window.location.search).has("debug")) {
-  Object.assign(window, { __valeDebug: worldView.debugApi() });
+  Object.assign(window, { __valeDebug: { ...worldView.debugApi(), worldSource: () => (activeWorld ?? chosenWorld())?.source ?? null } });
 }
 
 const selectionStageNodes: RendererSceneNode[] = [
@@ -508,15 +605,62 @@ function renderRoster(): void {
   createCharacterButton.title = createCharacterButton.disabled ? "All character slots are full." : "";
 }
 
+/** The zone host "Enter World" joins, when online play is chosen. */
+function chosenServer(): ZoneServer | null {
+  return online.kind === "online" && playOnlineInput.checked ? online.server : null;
+}
+
+/** The world "Enter World" joins; null while loading or when online play is misconfigured. */
+function chosenWorld(): ZoneWorld | null {
+  if (online.kind === "invalid") {
+    return null;
+  }
+  return chosenServer() ? onlineWorld : world;
+}
+
+function entryNote(character: CharacterPreview): string {
+  const server = chosenServer();
+  if (online.kind === "invalid") {
+    return `Online play is misconfigured: ${online.message}`;
+  }
+  if (!world) {
+    return worldLoadError ? `The zone simulation could not load: ${worldLoadError}` : "Loading the zone simulation…";
+  }
+  if (joining) {
+    return server ? `Connecting to ${server.label}…` : `Joining with ${character.name}…`;
+  }
+  return worldFailure ?? (server ? `Join ${server.label} with ${character.name}` : `Start ${character.name} in Greyhaven Outpost`);
+}
+
 function updateEntryButton(): void {
-  const character = selectedCharacter();
-  enterWorldButton.disabled = world === null;
-  enterWorldLabel.textContent = "Enter World";
-  enterWorldNote.textContent = world
-    ? worldFailure ?? `Start ${character.name} in Greyhaven Outpost`
-    : worldLoadError
-      ? `The zone simulation could not load: ${worldLoadError}`
-      : "Loading the zone simulation…";
+  const server = chosenServer();
+  enterWorldButton.disabled = chosenWorld() === null || joining !== null;
+  enterWorldLabel.textContent = joining ? "Entering…" : "Enter World";
+  enterWorldNote.textContent = entryNote(selectedCharacter());
+  playOnlineInput.disabled = joining !== null;
+  selectionNote.textContent = server
+    ? `Online: the zone host at ${server.label} runs this world for every page that joins it. World progress is not saved; returning to characters leaves the zone.`
+    : "Single-player demo: the shared Rust zone simulation runs in this browser. World progress is not saved yet; returning to characters leaves the zone.";
+}
+
+/** A zone host world over WebTransport, drawn with the scenery the page loaded. */
+function createOnlineWorld(local: LocalWorld, server: ZoneServer): ZoneWorld {
+  return {
+    ...local,
+    source: new OnlineZoneSource({
+      route: server.route,
+      // Projections must come from the content revision this scenery shows.
+      contentRevision: local.scenery.scenery.contentRevision,
+      connector: webTransportConnector(server.certificateHash),
+    }),
+  };
+}
+
+function showLinkState(state: LinkState): void {
+  const text = state === "reconnecting" ? "Reconnecting…" : "";
+  if (connectionStatus.textContent !== text) {
+    connectionStatus.textContent = text;
+  }
 }
 
 function refreshSelectionPresentation(): void {
@@ -533,7 +677,7 @@ function refreshSelectionPresentation(): void {
 }
 
 function selectCharacter(characterId: string): void {
-  if (creationDraft) {
+  if (creationDraft || joining) {
     return;
   }
   const character = characters.find((candidate) => candidate.id === characterId);
@@ -573,6 +717,9 @@ function syncCreationDraft(): void {
 }
 
 function openCharacterCreation(): void {
+  if (joining) {
+    return;
+  }
   if (characters.length >= MAX_CHARACTER_SLOTS) {
     rosterStatus.textContent = `All ${MAX_CHARACTER_SLOTS} character slots are full.`;
     return;
@@ -702,7 +849,7 @@ function renderSelection() {
 }
 
 function worldInput() {
-  return { keys, jumps };
+  return { held: controls.heldIntent(), jumps };
 }
 
 function errorMessage(error: unknown): string {
@@ -714,9 +861,10 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const deltaSeconds = frameDeltaSeconds(now, lastTime);
   lastTime = now;
-  if (entryState.phase === "world" && world) {
+  if (entryState.phase === "world" && activeWorld) {
     try {
-      worldView.frame(world, worldInput(), characterLook(selectedCharacter(), characterAppearance.hat), deltaSeconds, now);
+      worldView.frame(activeWorld, worldInput(), characterLook(selectedCharacter(), characterAppearance.hat), deltaSeconds, now);
+      showLinkState(activeWorld.source.linkState());
     } catch (error) {
       // Fail closed and visibly: leave the world and say why on the selection screen.
       console.error(error);
@@ -727,26 +875,37 @@ function frame(now: number) {
   renderSelection();
 }
 
-function enterWorld() {
-  if (creationDraft || !world || entryState.phase === "world") {
+/** Joins the chosen world, then switches the page to it. Never rejects: failures are shown on the selection screen. */
+async function enterWorld(): Promise<void> {
+  const target = chosenWorld();
+  if (creationDraft || !target || entryState.phase === "world" || joining) {
     return;
   }
+  const server = chosenServer();
   const next = enterPreviewWorld(entryState, selectedCharacter());
   // Join before switching the page: a refused join leaves the source unjoined, so
   // the page stays on selection, says why, and entry can be retried.
+  joining = target;
+  worldFailure = null;
+  updateEntryButton();
   try {
-    world.source.join();
+    const character = selectedCharacter();
+    await target.source.join({ classId: character.classId, sex: character.sex });
   } catch (error) {
     console.error(error);
     worldFailure = `Could not enter the world: ${errorMessage(error)}`;
-    updateEntryButton();
     return;
+  } finally {
+    joining = null;
+    updateEntryButton();
   }
-  worldFailure = null;
+  activeWorld = target;
+  worldMode.textContent = server ? `Greyhaven Vale · online · ${server.label}` : "Greyhaven Vale · local zone host";
+  showLinkState("connected");
   turntable.cancel();
   entryState = next;
-  keys.clear();
-  worldView.enter(worldInput());
+  controls.retire("enteredWorld");
+  worldView.enter(worldInput(), target.source.latestProjection());
   characterSelect.hidden = true;
   for (const element of worldUi) {
     element.hidden = false;
@@ -760,15 +919,17 @@ function returnToCharacters(failure: string | null = null) {
   turntable.cancel();
   const character = selectedCharacter();
   try {
-    // Leaving removes the unit from the local zone; the next entry spawns a new one.
-    world?.source.leave();
+    // Leaving removes the unit (a zone host after its reconnect grace); the next entry spawns a new one.
+    activeWorld?.source.leave();
   } catch (error) {
     console.error(error);
     failure ??= `Could not leave the world cleanly: ${errorMessage(error)}`;
   }
+  activeWorld = null;
+  showLinkState("connected");
   worldFailure = failure;
   entryState = initialEntryState(character);
-  keys.clear();
+  controls.retire("leftWorld");
   worldView.leave();
   characterSelect.hidden = false;
   for (const element of worldUi) {
@@ -803,7 +964,7 @@ for (const button of hatButtons) {
 }
 saveCharacterButton.addEventListener("click", saveCurrentCharacter);
 loadCharacterButton.addEventListener("click", loadSavedCharacter);
-enterWorldButton.addEventListener("click", enterWorld);
+enterWorldButton.addEventListener("click", () => void enterWorld());
 returnButton.addEventListener("click", () => returnToCharacters());
 createCharacterButton.addEventListener("click", openCharacterCreation);
 for (const button of cancelCreationButtons) {
@@ -842,72 +1003,94 @@ canvas.addEventListener("wheel", (event) => {
   worldView.wheel(event);
 }, { passive: false });
 
-window.addEventListener("keydown", (event) => {
-  if (event.altKey || event.ctrlKey || event.metaKey) {
-    return;
-  }
-  // Native controls and the turntable own their keyboard input.
-  if (event.target instanceof HTMLElement &&
-      event.target.closest("button, input, select, textarea, summary, a, [contenteditable=true], [role=slider]")) {
-    return;
-  }
-  if (entryState.phase === "character-selection") {
-    if (creationDraft) {
-      if (event.code === "Escape" && !event.repeat) {
-        event.preventDefault();
-        cancelCharacterCreation();
-      }
+// One input path: keyboard and gamepad resolve to semantic actions through input-bindings.
+// Movement is sampled from held actions each frame; one-shot actions are intents the zone decides.
+function runAction(action: GameAction): void {
+  switch (action) {
+    case "move.forward":
+    case "move.back":
+    case "move.strafeLeft":
+    case "move.strafeRight":
       return;
-    }
-    if (event.code === "Enter" && !event.repeat) {
-      event.preventDefault();
-      enterWorld();
-    }
-    return;
-  }
-  if (event.code === "Escape" && !event.repeat) {
-    event.preventDefault();
-    returnToCharacters();
-    return;
-  }
-  if (event.code === "F3") {
-    event.preventDefault();
-    if (!event.repeat) {
-      worldView.toggleOverlay();
-    }
-    return;
-  }
-  keys.add(event.code);
-  if (event.code === "Space" && !event.repeat) {
-    // The outbox sends one Jump per counted press; the zone decides whether it lifts off.
-    jumps += 1;
-  }
-  // Targeting and attacking are intents; the zone decides what happens.
-  if (!event.repeat) {
-    if (event.code === "Tab") {
+    case "move.jump":
+      // The outbox sends one Jump per counted press; the zone decides whether it lifts off.
+      jumps += 1;
+      return;
+    case "target.next":
       worldView.queueIntent((projection) => {
         const target = nextTabTarget(projection);
         return target ? { kind: "select-target", target } : null;
       });
-    } else if (event.code === "KeyF") {
+      return;
+    case "combat.toggleAutoAttack":
       worldView.queueIntent(attackToggle);
-    } else if (event.code === "KeyR") {
-      worldView.queueIntent((projection) => (projection.viewer.dead ? { kind: "release-spirit" } : null));
+      return;
+    case "ability.slot1":
+    case "ability.slot2":
+    case "ability.slot3":
+    case "ability.slot4": {
+      const slot = Number(action.slice(-1));
+      const catalog = world?.catalog;
+      worldView.queueIntent((projection) => (catalog ? useAbilitySlot(slot, projection, catalog) : null));
+      return;
     }
+    case "combat.cancelCast":
+      worldView.queueIntent(cancelCast);
+      return;
+    case "player.releaseSpirit":
+      worldView.queueIntent((projection) => (projection.viewer.dead ? { kind: "release-spirit" } : null));
+      return;
+    case "ui.toggleBags":
+      worldView.toggleBags();
+      return;
+    case "ui.toggleCharacter":
+      worldView.toggleCharacter();
+      return;
+    case "ui.toggleVendor":
+      worldView.toggleVendor();
+      return;
+    case "ui.talk":
+      worldView.toggleQuestDialog();
+      return;
+    case "ui.toggleQuestLog":
+      worldView.toggleQuestLog();
+      return;
+    case "ui.openChat":
+      worldView.openChat();
+      return;
+    case "ui.closePanel":
+      if (!worldView.closeLoot() && !worldView.closeVendor() && !worldView.closeQuestDialog()
+        && !worldView.closeQuestLog() && !worldView.closeCharacter()) {
+        worldView.closeBags();
+      }
+      return;
+    case "ui.leaveWorld":
+      returnToCharacters();
+      return;
+    case "ui.toggleDebug":
+      worldView.toggleOverlay();
+      return;
+    case "ui.enterWorld":
+      void enterWorld();
+      return;
+    case "ui.cancelCreation":
+      if (joining) {
+        // Cancelling rejects the pending join, which says so under Enter World.
+        joining.source.leave();
+      } else {
+        cancelCharacterCreation();
+      }
+      return;
   }
-  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Tab"].includes(event.code)) {
-    event.preventDefault();
-  }
-});
-window.addEventListener("keyup", (event) => keys.delete(event.code));
-window.addEventListener("blur", () => keys.clear());
-window.addEventListener("resize", resize);
-document.addEventListener("focusin", () => keys.clear());
+}
+controls.attach({ window, document });
+window.addEventListener("blur", () => worldView.cancelPointer());
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
-    keys.clear();
+    worldView.cancelPointer();
   }
 });
+window.addEventListener("resize", resize);
 window.addEventListener("storage", (event) => {
   if (event.key !== characterRosterStorageKey() || !rosterStorageHealthy || creationDraft) {
     return;
@@ -931,9 +1114,19 @@ new ResizeObserver(layoutPreview).observe(previewSurface);
 
 resize();
 requestAnimationFrame(frame);
+if (online.kind === "online") {
+  onlineToggle.hidden = false;
+  playOnlineInput.checked = online.preferred;
+  onlineServerLabel.textContent = online.server.label;
+}
+playOnlineInput.addEventListener("change", () => {
+  worldFailure = null;
+  updateEntryButton();
+});
 void loadLocalWorld().then((loaded) => {
   worldView.load(loaded);
   world = loaded;
+  onlineWorld = online.kind === "online" ? createOnlineWorld(loaded, online.server) : null;
   updateEntryButton();
 }, (error: unknown) => {
   worldLoadError = errorMessage(error);

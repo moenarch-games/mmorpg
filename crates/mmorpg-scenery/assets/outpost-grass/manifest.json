@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "producer": {
+    "repository": "https://github.com/moritzbrantner/asset-tooling",
+    "commit": "1e79d74ee0a62cd29706ed3254a0293c91d996ba",
+    "operation": "instances.filter.exclusion-mask@1"
+  },
+  "consumerAdapter": {
+    "source": "web/scripts/grass-package.ts",
+    "sha256": "a1800bcd85c7b96064611cb259ee20f0c8d503c473e20a0cd942b68eae87ac4d",
+    "dependencies": {
+      "web/scripts/asset-operation-api.ts": "1b5093ed9ea2a09b278259b746d96dc8f431a08cfbb71afcdc50b182fb488cbd",
+      "web/scripts/asset-source-checkout.ts": "10cf14bd62e5766697b057043bb31b7021b0db4539e180b68eddb6a2c18d3780"
+    }
+  },
+  "sourceFiles": {
+    "source.json": {
+      "sha256": "eef2de0c5a84590c721405b89eddd81e4c3de4222021ad401dd8131a6242bc5c",
+      "byteLength": 933
+    },
+    "accepted.instances.json": {
+      "sha256": "619ebd35fb7230483b725465fa89d6970ed21c8780b8cb8ec264c73aa979be9c",
+      "byteLength": 15015
+    },
+    "transforms.json": {
+      "sha256": "dac39e372ebea38a70e94f68a9b55fb0d01c74c698688a2830405352995245f1",
+      "byteLength": 16572
+    },
+    "exclusion.txt": {
+      "sha256": "8adc20bae05cd2929b8adeb032e7e8e44124de13a397d68cf0349215e8d67ff9",
+      "byteLength": 4824
+    }
+  },
+  "build": {
+    "schemaVersion": 1,
+    "operation": {
+      "id": "instances.filter.exclusion-mask",
+      "version": "1"
+    },
+    "implementation": {
+      "algorithm": "nearest-endpoint-q8-exclusion-subset-v1",
+      "id": "builtin.instances.filter.exclusion-mask",
+      "randomness": "none",
+      "tool": {
+        "name": "asset-tooling",
+        "sourceFingerprint": {
+          "algorithm": "sha256-tree-v1",
+          "sha256": "508cdf73eeb6ada31722b26324000fb9cee58f1cf83e13055672e876488e4f01"
+        },
+        "version": "0.1.0"
+      },
+      "version": "1"
+    },
+    "parameters": {
+      "maskBounds": {
+        "depthMicro": 66000001,
+        "widthMicro": 70000001
+      },
+      "maxCoverage": 127
+    },
+    "inputs": {
+      "source": {
+        "schemaVersion": 1,
+        "kind": "instance-set",
+        "mediaType": "application/vnd.asset-tooling.instance-set+json",
+        "sha256": "619ebd35fb7230483b725465fa89d6970ed21c8780b8cb8ec264c73aa979be9c",
+        "byteLength": 15015,
+        "metadata": {
+          "purpose": "accepted-greyhaven-outpost-grass"
+        }
+      },
+      "mask": {
+        "schemaVersion": 1,
+        "kind": "image",
+        "mediaType": "application/vnd.moritzbrantner.rgba8+json",
+        "sha256": "2b017599dc83dc66b0c833a0f93aa81e23831fbd35007d3e645d1517fbbc1b26",
+        "byteLength": 25476,
+        "metadata": {
+          "channelColorSpace": "linear",
+          "meaning": "exclusion",
+          "sampling": "data",
+          "sourceTextSha256": "8adc20bae05cd2929b8adeb032e7e8e44124de13a397d68cf0349215e8d67ff9"
+        }
+      }
+    }
+  },
+  "result": {
+    "outputs": {
+      "output": {
+        "schemaVersion": 1,
+        "kind": "instance-set",
+        "mediaType": "application/vnd.asset-tooling.instance-set+json",
+        "sha256": "2eb87f3f2eccc31973e2b1dab083e9c2f2c5006a93c7aeefa9c45aed12a69c57",
+        "byteLength": 3763,
+        "metadata": {
+          "coordinateQuantization": "1e-6-unit",
+          "coordinateSystem": "right-handed-y-up",
+          "count": 55,
+          "depthMicro": 66000001,
+          "generator": "instances.filter.exclusion-mask@1",
+          "maskMeaning": "linear-unorm8-exclusion",
+          "parameters": {
+            "maskBounds": {
+              "depthMicro": 66000001,
+              "widthMicro": 70000001
+            },
+            "maxCoverage": 127
+          },
+          "sampling": "nearest-endpoints",
+          "schemaVersion": 1,
+          "sourceInstanceSetSha256": "619ebd35fb7230483b725465fa89d6970ed21c8780b8cb8ec264c73aa979be9c",
+          "sourceMaskSha256": "2b017599dc83dc66b0c833a0f93aa81e23831fbd35007d3e645d1517fbbc1b26",
+          "widthMicro": 70000001
+        }
+      }
+    },
+    "observations": {
+      "candidatesGenerated": 0,
+      "coordinateQuantization": "1e-6-unit",
+      "coordinateSystem": "right-handed-y-up",
+      "excludedCount": 63,
+      "idsRenumbered": 0,
+      "imageX": "positive-x",
+      "imageY": "positive-z",
+      "keptCount": 55,
+      "maskBounds": {
+        "depthMicro": 66000001,
+        "maxX": 35000000,
+        "maxZ": 33000000,
+        "minX": -35000000,
+        "minZ": -33000000,
+        "widthMicro": 70000001
+      },
+      "maskHeight": 67,
+      "maskWidth": 71,
+      "parameters": {
+        "maskBounds": {
+          "depthMicro": 66000001,
+          "widthMicro": 70000001
+        },
+        "maxCoverage": 127
+      },
+      "positionsChanged": 0,
+      "randomness": "none",
+      "sampling": "nearest-endpoints",
+      "sourceCount": 118
+    }
+  },
+  "outputs": {
+    "selected.instances.json": {
+      "sha256": "2eb87f3f2eccc31973e2b1dab083e9c2f2c5006a93c7aeefa9c45aed12a69c57",
+      "byteLength": 3763
+    },
+    "selected.transforms.json": {
+      "sha256": "9f4270752f45ce089a803321cdea7d00b435e4cd0f95fad80f6c3165aefd6a63",
+      "byteLength": 7720
+    },
+    "exclusion.rgba8.json": {
+      "sha256": "2b017599dc83dc66b0c833a0f93aa81e23831fbd35007d3e645d1517fbbc1b26",
+      "byteLength": 25476
+    },
+    "accepted.props.rs": {
+      "sha256": "43cc8613d3a71afbc740f1f4d169e692e932e7afedbf593582bd51df21d63f0b",
+      "byteLength": 8340
+    },
+    "selected.props.rs": {
+      "sha256": "2f92342b5cba4f7a758007fd00e8272a5c8543e1e805f2845d85de06fd374c19",
+      "byteLength": 3880
+    }
+  },
+  "evidence": {
+    "repeatedFilterMatches": true,
+    "coldReplayMatches": true,
+    "sourceCount": 118,
+    "keptCount": 55,
+    "candidatesGenerated": 0
+  }
+}

@@ -73,6 +73,20 @@ pub enum Action {
     StartAttack,
     StopAttack,
     ReleaseSpirit,
+    MoveItem,
+    EquipItem,
+    UnequipItem,
+    BuyItem,
+    SellItem,
+    Chat,
+    Emote,
+    Loot,
+    ChooseClass,
+    UseAbility,
+    CancelCast,
+    AcceptQuest,
+    CompleteQuest,
+    AbandonQuest,
     Disconnect,
     Reconnect,
 }
@@ -87,6 +101,20 @@ impl Action {
             Self::StartAttack => "start_attack",
             Self::StopAttack => "stop_attack",
             Self::ReleaseSpirit => "release_spirit",
+            Self::MoveItem => "move_item",
+            Self::EquipItem => "equip_item",
+            Self::UnequipItem => "unequip_item",
+            Self::BuyItem => "buy_item",
+            Self::SellItem => "sell_item",
+            Self::Chat => "chat",
+            Self::Emote => "emote",
+            Self::Loot => "loot",
+            Self::ChooseClass => "choose_class",
+            Self::UseAbility => "use_ability",
+            Self::CancelCast => "cancel_cast",
+            Self::AcceptQuest => "accept_quest",
+            Self::CompleteQuest => "complete_quest",
+            Self::AbandonQuest => "abandon_quest",
             Self::Disconnect => "disconnect",
             Self::Reconnect => "reconnect",
         }
@@ -100,7 +128,21 @@ impl Action {
             | Self::SelectTarget
             | Self::StartAttack
             | Self::StopAttack
-            | Self::ReleaseSpirit => "applied",
+            | Self::ReleaseSpirit
+            | Self::MoveItem
+            | Self::EquipItem
+            | Self::UnequipItem
+            | Self::BuyItem
+            | Self::SellItem
+            | Self::Chat
+            | Self::Emote
+            | Self::Loot
+            | Self::ChooseClass
+            | Self::UseAbility
+            | Self::CancelCast
+            | Self::AcceptQuest
+            | Self::CompleteQuest
+            | Self::AbandonQuest => "applied",
             Self::Disconnect => "disconnected",
             Self::Reconnect => "resumed",
         }
@@ -114,7 +156,21 @@ impl Action {
             | Self::SelectTarget
             | Self::StartAttack
             | Self::StopAttack
-            | Self::ReleaseSpirit => true,
+            | Self::ReleaseSpirit
+            | Self::MoveItem
+            | Self::EquipItem
+            | Self::UnequipItem
+            | Self::BuyItem
+            | Self::SellItem
+            | Self::Chat
+            | Self::Emote
+            | Self::Loot
+            | Self::ChooseClass
+            | Self::UseAbility
+            | Self::CancelCast
+            | Self::AcceptQuest
+            | Self::CompleteQuest
+            | Self::AbandonQuest => true,
             Self::Join | Self::Disconnect | Self::Reconnect => false,
         }
     }
@@ -132,8 +188,43 @@ pub struct Step {
     pub strafe: Option<i8>,
     /// Move heading: 65 536 steps per turn, 0 faces +Z, 16 384 faces +X.
     pub facing: Option<u16>,
-    /// The unit a `select_target` step selects, or `none` to clear.
+    /// The unit a `select_target` step selects (`none` clears), or the
+    /// optional target of a `use_ability` step (omitted or `none`: the
+    /// current selection).
     pub entity: Option<UnitSpec>,
+    /// `choose_class`: `warden`, `ranger` or `arcanist`, passed through as
+    /// its wire value; any other name is sent as an invalid value.
+    pub class: Option<String>,
+    /// `choose_class`: `female` or `male`.
+    pub sex: Option<String>,
+    /// `use_ability`: the global ability ID, passed through unchanged.
+    pub ability: Option<u8>,
+    pub creature: Option<u32>,
+    pub died_at: Option<u64>,
+    pub source_slot: Option<u8>,
+    pub destination_slot: Option<u8>,
+    pub quantity: Option<u16>,
+    /// `equip_item` and `sell_item`: the bag slot, passed through unchanged.
+    pub bag_slot: Option<u8>,
+    /// `buy_item` and `sell_item`: the vendor's NPC ID; `accept_quest` and
+    /// `complete_quest`: the quest's giver or ender. Passed through unchanged.
+    pub npc: Option<u32>,
+    /// `accept_quest`, `complete_quest` and `abandon_quest`: the quest ID,
+    /// passed through unchanged.
+    pub quest: Option<u8>,
+    /// `complete_quest`: the reward choice index, passed through unchanged.
+    pub choice: Option<u8>,
+    /// `buy_item`: the offer index in the vendor's stock, passed through unchanged.
+    pub offer: Option<u8>,
+    /// `chat`: `say` or `yell`.
+    pub channel: Option<String>,
+    /// `chat`: the line; the runner refuses text core would refuse.
+    pub text: Option<String>,
+    /// `emote`: `wave`, `bow`, `cheer`, `laugh` or `point`.
+    pub emote: Option<String>,
+    /// `unequip_item`: the equipment slot (0 main hand … 5 feet), passed
+    /// through unchanged.
+    pub equipment_slot: Option<u8>,
     /// Command sequence override (commands only); defaults to the bot's next sequence.
     pub seq: Option<u32>,
     /// Connection epoch override; defaults to the bot's current epoch.
@@ -153,9 +244,18 @@ pub enum ExpectKind {
     VisibleCount,
     Area,
     Health,
+    Progression,
+    Inventory,
+    Equipment,
+    Copper,
+    Loot,
     Target,
     Event,
     Unit,
+    Resource,
+    Chat,
+    Quest,
+    Marker,
 }
 
 impl ExpectKind {
@@ -169,16 +269,25 @@ impl ExpectKind {
             Self::VisibleCount => "visible_count",
             Self::Area => "area",
             Self::Health => "health",
+            Self::Progression => "progression",
+            Self::Inventory => "inventory",
+            Self::Equipment => "equipment",
+            Self::Copper => "copper",
+            Self::Loot => "loot",
             Self::Target => "target",
             Self::Event => "event",
             Self::Unit => "unit",
+            Self::Resource => "resource",
+            Self::Chat => "chat",
+            Self::Quest => "quest",
+            Self::Marker => "marker",
         }
     }
 
     /// Kinds that may wait for a condition within a window (`by_tick`).
     const fn allows_window(self) -> bool {
         match self {
-            Self::Sees | Self::Event | Self::Unit => true,
+            Self::Sees | Self::Event | Self::Unit | Self::Resource | Self::Chat => true,
             Self::NotSees
             | Self::Position
             | Self::Acknowledged
@@ -186,7 +295,14 @@ impl ExpectKind {
             | Self::VisibleCount
             | Self::Area
             | Self::Health
-            | Self::Target => false,
+            | Self::Progression
+            | Self::Inventory
+            | Self::Equipment
+            | Self::Copper
+            | Self::Loot
+            | Self::Target
+            | Self::Quest
+            | Self::Marker => false,
         }
     }
 }
@@ -209,12 +325,40 @@ pub struct Expectation {
     pub area: Option<String>,
     /// The bot's own exact health (`health` expectations).
     pub health: Option<u32>,
+    pub level: Option<u8>,
+    pub experience: Option<u32>,
+    pub copper: Option<u32>,
+    pub creature: Option<u32>,
+    pub died_at: Option<u64>,
+    pub inventory_revision: Option<u64>,
+    pub sheet: Option<bool>,
+    pub slot: Option<u8>,
+    pub item: Option<u16>,
+    pub quantity: Option<u16>,
+    /// The equipment slot an `equipment` expectation checks in the sheet.
+    pub equipment_slot: Option<u8>,
     /// The unit a `target`, `event` or `unit` expectation is about.
     pub entity: Option<UnitSpec>,
     /// The feedback event kind of an `event` expectation.
     pub event: Option<EventSpec>,
     /// The visible state of a `unit` expectation.
     pub state: Option<UnitState>,
+    /// The bot's exact class resource (`resource` expectations).
+    pub resource: Option<u16>,
+    /// `chat`: the line heard from bot `target`, or `count` lines in total.
+    pub text: Option<String>,
+    /// `chat`: the emote heard from bot `target`.
+    pub emote: Option<String>,
+    /// `quest`: the quest ID checked in the bot's latest quest sheet.
+    pub quest: Option<u8>,
+    /// `quest`: `active`, `completed` or `absent`.
+    pub quest_state: Option<String>,
+    /// `quest`: the progress of every objective slot of an active quest.
+    pub progress: Option<[u8; mmorpg_core::MAX_QUEST_OBJECTIVES]>,
+    /// `marker`: the NPC whose marker the bot's latest quest sheet shows.
+    pub npc: Option<u32>,
+    /// `marker`: `available`, `in_progress`, `complete` or `none`.
+    pub marker: Option<String>,
 }
 
 /// Parses and validates a scenario at the file trust boundary.
@@ -276,10 +420,90 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
                 "{at}: forward, strafe and facing are required for move and only for move"
             ));
         }
-        if step.entity.is_some() != (step.action == Action::SelectTarget) {
+        let is_inventory_move = step.action == Action::MoveItem;
+        if [step.source_slot.is_some(), step.destination_slot.is_some()]
+            .iter()
+            .any(|&present| present != is_inventory_move)
+        {
             return Err(format!(
-                "{at}: entity is required for select_target and only for select_target"
+                "{at}: source_slot and destination_slot are required only for move_item"
             ));
+        }
+        let trades = matches!(step.action, Action::BuyItem | Action::SellItem);
+        if step.quantity.is_some() != (is_inventory_move || trades) {
+            return Err(format!(
+                "{at}: quantity is required only for move_item, buy_item and sell_item"
+            ));
+        }
+        let at_npc = matches!(step.action, Action::AcceptQuest | Action::CompleteQuest);
+        if step.npc.is_some() != (trades || at_npc) {
+            return Err(format!(
+                "{at}: npc is required only for buy_item, sell_item, accept_quest and complete_quest"
+            ));
+        }
+        if step.quest.is_some() != (at_npc || step.action == Action::AbandonQuest) {
+            return Err(format!(
+                "{at}: quest is required only for accept_quest, complete_quest and abandon_quest"
+            ));
+        }
+        if step.choice.is_some() != (step.action == Action::CompleteQuest) {
+            return Err(format!("{at}: choice is required only for complete_quest"));
+        }
+        if step.offer.is_some() != (step.action == Action::BuyItem) {
+            return Err(format!("{at}: offer is required only for buy_item"));
+        }
+        let is_chat = step.action == Action::Chat;
+        if step.channel.is_some() != is_chat || step.text.is_some() != is_chat {
+            return Err(format!("{at}: channel and text are required only for chat"));
+        }
+        if is_chat {
+            chat_channel(step.channel.as_deref().unwrap_or_default())
+                .ok_or_else(|| format!("{at}: channel must be say or yell"))?;
+            mmorpg_core::ChatText::new(step.text.as_deref().unwrap_or_default())
+                .map_err(|error| format!("{at}: {error}"))?;
+        }
+        if step.emote.is_some() != (step.action == Action::Emote) {
+            return Err(format!("{at}: emote is required only for emote"));
+        }
+        if let Some(name) = &step.emote {
+            emote_named(name).ok_or_else(|| format!("{at}: unknown emote {name:?}"))?;
+        }
+        if [step.creature.is_some(), step.died_at.is_some()]
+            .iter()
+            .any(|&present| present != (step.action == Action::Loot))
+        {
+            return Err(format!(
+                "{at}: creature and died_at are required only for loot"
+            ));
+        }
+        let targets = matches!(step.action, Action::SelectTarget | Action::UseAbility);
+        if (step.entity.is_some() && !targets)
+            || (step.entity.is_none() && step.action == Action::SelectTarget)
+        {
+            return Err(format!(
+                "{at}: entity is required for select_target and allowed only for it and use_ability"
+            ));
+        }
+        if [step.class.is_some(), step.sex.is_some()]
+            .iter()
+            .any(|&present| present != (step.action == Action::ChooseClass))
+        {
+            return Err(format!(
+                "{at}: class and sex are required only for choose_class"
+            ));
+        }
+        if step.bag_slot.is_some() != matches!(step.action, Action::EquipItem | Action::SellItem) {
+            return Err(format!(
+                "{at}: bag_slot is required only for equip_item and sell_item"
+            ));
+        }
+        if step.equipment_slot.is_some() != (step.action == Action::UnequipItem) {
+            return Err(format!(
+                "{at}: equipment_slot is required only for unequip_item"
+            ));
+        }
+        if step.ability.is_some() != (step.action == Action::UseAbility) {
+            return Err(format!("{at}: ability is required only for use_ability"));
         }
         if let Some(entity) = &step.entity {
             known_unit(entity).map_err(|error| format!("{at}: {error}"))?;
@@ -302,7 +526,7 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
             (None, Some(tick)) if expectation.kind.allows_window() => tick,
             _ => {
                 return Err(format!(
-                    "{at}: exactly one of tick/by_tick is required (by_tick only for sees, event and unit)"
+                    "{at}: exactly one of tick/by_tick is required (by_tick only for sees, event, unit and resource)"
                 ));
             }
         };
@@ -324,6 +548,52 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
             ExpectKind::VisibleCount => expectation.count.is_some(),
             ExpectKind::Area => expectation.area.is_some(),
             ExpectKind::Health => expectation.health.is_some(),
+            ExpectKind::Progression => {
+                expectation.level.is_some() && expectation.experience.is_some()
+            }
+            ExpectKind::Inventory => {
+                let slot_fields = [
+                    expectation.slot.is_some(),
+                    expectation.item.is_some(),
+                    expectation.quantity.is_some(),
+                ];
+                if slot_fields
+                    .iter()
+                    .any(|&present| present != expectation.slot.is_some())
+                    || expectation.slot.is_some_and(|slot| slot >= 16)
+                    || (expectation.sheet != Some(true) && expectation.slot.is_some())
+                {
+                    return Err(format!(
+                        "{at}: inventory slot/item/quantity must be supplied together for a present sheet, slot below 16"
+                    ));
+                }
+                expectation.inventory_revision.is_some() && expectation.sheet.is_some()
+            }
+            ExpectKind::Equipment => {
+                expectation.equipment_slot.is_some_and(|slot| slot < 6)
+                    && expectation.item.is_some()
+            }
+            ExpectKind::Copper => expectation.copper.is_some(),
+            ExpectKind::Chat => {
+                let known_emote = expectation
+                    .emote
+                    .as_deref()
+                    .is_none_or(|name| emote_named(name).is_some());
+                let fields = [
+                    expectation.text.is_some(),
+                    expectation.emote.is_some(),
+                    expectation.count.is_some(),
+                ];
+                // Exactly one of text, emote or count; a heard line also names its speaker.
+                known_emote
+                    && fields.iter().filter(|&&set| set).count() == 1
+                    && (expectation.count.is_some() || expectation.target.is_some())
+            }
+            ExpectKind::Loot => {
+                expectation.sheet.is_some()
+                    && (expectation.sheet == Some(false)
+                        || expectation.creature.is_some() && expectation.died_at.is_some())
+            }
             ExpectKind::Target => expectation.entity.is_some(),
             ExpectKind::Event => expectation.event.is_some(),
             ExpectKind::Unit => {
@@ -332,6 +602,20 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
                         .entity
                         .as_ref()
                         .is_some_and(|entity| *entity != UnitSpec::None)
+            }
+            ExpectKind::Resource => expectation.resource.is_some(),
+            ExpectKind::Quest => {
+                let state = expectation.quest_state.as_deref();
+                expectation.quest.is_some()
+                    && matches!(state, Some("active" | "completed" | "absent"))
+                    && (expectation.progress.is_none() || state == Some("active"))
+            }
+            ExpectKind::Marker => {
+                expectation.npc.is_some()
+                    && matches!(
+                        expectation.marker.as_deref(),
+                        Some("available" | "in_progress" | "complete" | "none")
+                    )
             }
         };
         if !required {
@@ -356,6 +640,8 @@ struct Bot {
     previous_sees: Vec<String>,
     /// Digest of the bot's own combat state, empty while unhurt and idle.
     previous_status: String,
+    /// The latest quest sheet the bot received; sheets are periodic.
+    quests: Option<mmorpg_core::QuestSheet>,
 }
 
 impl Bot {
@@ -398,6 +684,7 @@ pub fn run(scenario: &BotScenario) -> Result<Report, String> {
             view: None,
             previous_sees: Vec::new(),
             previous_status: String::new(),
+            quests: None,
         })
         .collect();
     let mut runner = Runner {
@@ -513,7 +800,21 @@ impl Runner<'_> {
             | Action::SelectTarget
             | Action::StartAttack
             | Action::StopAttack
-            | Action::ReleaseSpirit => self.submit(index, step)?,
+            | Action::ReleaseSpirit
+            | Action::MoveItem
+            | Action::EquipItem
+            | Action::UnequipItem
+            | Action::BuyItem
+            | Action::SellItem
+            | Action::Chat
+            | Action::Emote
+            | Action::Loot
+            | Action::ChooseClass
+            | Action::UseAbility
+            | Action::CancelCast
+            | Action::AcceptQuest
+            | Action::CompleteQuest
+            | Action::AbandonQuest => self.submit(index, step)?,
             Action::Disconnect => self.disconnect(index)?,
             Action::Reconnect => self.reconnect(index)?,
         };
@@ -607,6 +908,151 @@ impl Runner<'_> {
             Action::StartAttack => (ZoneCommand::StartAttack, String::new()),
             Action::StopAttack => (ZoneCommand::StopAttack, String::new()),
             Action::ReleaseSpirit => (ZoneCommand::ReleaseSpirit, String::new()),
+            Action::Loot => {
+                let creature = step.creature.ok_or("loot creature is required")?;
+                let died_at = step.died_at.ok_or("loot died_at is required")?;
+                (
+                    ZoneCommand::Loot(mmorpg_core::LootClaim {
+                        creature: mmorpg_core::CreatureId::new(creature),
+                        died_at,
+                    }),
+                    format!(" creature={creature} died_at={died_at}"),
+                )
+            }
+            Action::MoveItem => {
+                let source = step
+                    .source_slot
+                    .ok_or("move_item source_slot is required")?;
+                let destination = step
+                    .destination_slot
+                    .ok_or("move_item destination_slot is required")?;
+                let quantity = step.quantity.ok_or("move_item quantity is required")?;
+                (
+                    ZoneCommand::MoveItem {
+                        source,
+                        destination,
+                        quantity,
+                    },
+                    format!(
+                        " source_slot={source} destination_slot={destination} quantity={quantity}"
+                    ),
+                )
+            }
+            Action::EquipItem => {
+                let bag_slot = step.bag_slot.ok_or("equip_item bag_slot is required")?;
+                (
+                    ZoneCommand::EquipItem { bag_slot },
+                    format!(" bag_slot={bag_slot}"),
+                )
+            }
+            Action::Chat => {
+                let channel = step.channel.as_deref().unwrap_or_default();
+                let text = step.text.as_deref().unwrap_or_default();
+                (
+                    ZoneCommand::Chat {
+                        channel: chat_channel(channel).ok_or("chat channel is invalid")?,
+                        text: mmorpg_core::ChatText::new(text)
+                            .map_err(|error| error.to_string())?,
+                    },
+                    format!(" channel={channel} text={text:?}"),
+                )
+            }
+            Action::Emote => {
+                let name = step.emote.as_deref().unwrap_or_default();
+                (
+                    ZoneCommand::Emote(emote_named(name).ok_or("emote is invalid")?),
+                    format!(" emote={name}"),
+                )
+            }
+            Action::AcceptQuest => {
+                let npc = step.npc.ok_or("accept_quest npc is required")?;
+                let quest = step.quest.ok_or("accept_quest quest is required")?;
+                (
+                    ZoneCommand::AcceptQuest {
+                        npc: mmorpg_core::NpcId::new(npc),
+                        quest,
+                    },
+                    format!(" npc={npc} quest={quest}"),
+                )
+            }
+            Action::CompleteQuest => {
+                let npc = step.npc.ok_or("complete_quest npc is required")?;
+                let quest = step.quest.ok_or("complete_quest quest is required")?;
+                let choice = step.choice.ok_or("complete_quest choice is required")?;
+                (
+                    ZoneCommand::CompleteQuest {
+                        npc: mmorpg_core::NpcId::new(npc),
+                        quest,
+                        choice,
+                    },
+                    format!(" npc={npc} quest={quest} choice={choice}"),
+                )
+            }
+            Action::AbandonQuest => {
+                let quest = step.quest.ok_or("abandon_quest quest is required")?;
+                (
+                    ZoneCommand::AbandonQuest { quest },
+                    format!(" quest={quest}"),
+                )
+            }
+            Action::BuyItem => {
+                let npc = step.npc.ok_or("buy_item npc is required")?;
+                let offer = step.offer.ok_or("buy_item offer is required")?;
+                let quantity = step.quantity.ok_or("buy_item quantity is required")?;
+                (
+                    ZoneCommand::BuyItem {
+                        npc: mmorpg_core::NpcId::new(npc),
+                        offer,
+                        quantity,
+                    },
+                    format!(" npc={npc} offer={offer} quantity={quantity}"),
+                )
+            }
+            Action::SellItem => {
+                let npc = step.npc.ok_or("sell_item npc is required")?;
+                let bag_slot = step.bag_slot.ok_or("sell_item bag_slot is required")?;
+                let quantity = step.quantity.ok_or("sell_item quantity is required")?;
+                (
+                    ZoneCommand::SellItem {
+                        npc: mmorpg_core::NpcId::new(npc),
+                        bag_slot,
+                        quantity,
+                    },
+                    format!(" npc={npc} bag_slot={bag_slot} quantity={quantity}"),
+                )
+            }
+            Action::UnequipItem => {
+                let equipment_slot = step
+                    .equipment_slot
+                    .ok_or("unequip_item equipment_slot is required")?;
+                (
+                    ZoneCommand::UnequipItem { equipment_slot },
+                    format!(" equipment_slot={equipment_slot}"),
+                )
+            }
+            Action::ChooseClass => {
+                let class = step.class.as_deref().unwrap_or_default();
+                let sex = step.sex.as_deref().unwrap_or_default();
+                (
+                    ZoneCommand::ChooseClass {
+                        class: class_code(class),
+                        sex: sex_code(sex),
+                    },
+                    format!(" class={class} sex={sex}"),
+                )
+            }
+            Action::UseAbility => {
+                let ability = step.ability.ok_or("use_ability ability is required")?;
+                let entity = step.entity.as_ref().unwrap_or(&UnitSpec::None);
+                match entity.resolve(|name| self.player_of(name)) {
+                    Ok(target) => (
+                        ZoneCommand::UseAbility { ability, target },
+                        format!(" ability={ability} entity={entity}"),
+                    ),
+                    Err(_) => return Ok(("rejected:unknown_entity".into(), String::new())),
+                }
+            }
+            Action::CancelCast => (ZoneCommand::CancelCast, String::new()),
             Action::Join | Action::Disconnect | Action::Reconnect => {
                 return Err(format!("{} is not a command", step.action.name()));
             }
@@ -717,6 +1163,9 @@ impl Runner<'_> {
                         || !snapshot.events.is_empty();
                     bot.previous_sees = sees;
                     bot.previous_status = status;
+                    if let Some(quests) = &snapshot.quests {
+                        bot.quests = Some(quests.clone());
+                    }
                     bot.view = Some(snapshot);
                 }
                 Err(error) => {
@@ -787,6 +1236,18 @@ impl Runner<'_> {
         }
         if me.in_combat {
             parts.push("in_combat".into());
+        }
+        if let Some(resource) = me.resource {
+            parts.push(format!(
+                "{}{}/{}",
+                resource.kind.name(),
+                resource.value,
+                resource.max
+            ));
+        }
+        // Cast progress changes every tick; the digest names the ability.
+        if let Some(cast) = me.cast {
+            parts.push(format!("casting{}", cast.ability.get()));
         }
         parts.join(" ")
     }
@@ -982,10 +1443,215 @@ impl Runner<'_> {
                     None => Err(format!("{target_name} in no named area")),
                 }
             }
+            ExpectKind::Resource => {
+                let shown = view.viewer.resource.map_or_else(
+                    || "resource=none".to_owned(),
+                    |resource| {
+                        format!(
+                            "{}={}/{}",
+                            resource.kind.name(),
+                            resource.value,
+                            resource.max
+                        )
+                    },
+                );
+                if view.viewer.resource.map(|resource| resource.value) == expectation.resource {
+                    Ok(shown)
+                } else {
+                    Err(format!("got {shown}"))
+                }
+            }
+            ExpectKind::Chat => {
+                let heard: Vec<String> = view
+                    .chat
+                    .iter()
+                    .map(|line| {
+                        let speaker = self.player_name(line.speaker);
+                        match line.message {
+                            mmorpg_core::ChatMessage::Say(text) => {
+                                format!("{speaker} says {:?}", text.as_str())
+                            }
+                            mmorpg_core::ChatMessage::Yell(text) => {
+                                format!("{speaker} yells {:?}", text.as_str())
+                            }
+                            mmorpg_core::ChatMessage::Emote(emote) => {
+                                format!("{speaker} emotes {}", emote_name(emote))
+                            }
+                        }
+                    })
+                    .collect();
+                let shown = format!("chat[{}]", heard.join(", "));
+                let from = |speaker: &String, line: &mmorpg_core::ChatLine| {
+                    Some(line.speaker) == self.player_of(speaker)
+                };
+                let matched = match (
+                    &expectation.text,
+                    &expectation.emote,
+                    &expectation.target,
+                    expectation.count,
+                ) {
+                    (Some(text), None, Some(speaker), _) => view.chat.iter().any(|line| {
+                        from(speaker, line)
+                            && matches!(
+                                line.message,
+                                mmorpg_core::ChatMessage::Say(heard)
+                                    | mmorpg_core::ChatMessage::Yell(heard)
+                                    if heard.as_str() == text
+                            )
+                    }),
+                    (None, Some(name), Some(speaker), _) => view.chat.iter().any(|line| {
+                        from(speaker, line)
+                            && emote_named(name).is_some_and(|emote| {
+                                line.message == mmorpg_core::ChatMessage::Emote(emote)
+                            })
+                    }),
+                    (None, None, _, Some(count)) => view.chat.len() == count,
+                    _ => false,
+                };
+                if matched {
+                    Ok(shown)
+                } else {
+                    Err(format!("got {shown}"))
+                }
+            }
             ExpectKind::Health => {
                 let me = &view.viewer;
                 let shown = format!("health={}/{}", me.health, me.max_health);
                 if Some(me.health) == expectation.health {
+                    Ok(shown)
+                } else {
+                    Err(format!("got {shown}"))
+                }
+            }
+            ExpectKind::Progression => {
+                let shown = format!(
+                    "level={} xp={}/{}",
+                    view.viewer.level, view.viewer.experience, view.viewer.experience_to_next_level
+                );
+                if Some(view.viewer.level) == expectation.level
+                    && Some(view.viewer.experience) == expectation.experience
+                {
+                    Ok(shown)
+                } else {
+                    Err(format!("got {shown}"))
+                }
+            }
+            ExpectKind::Quest => {
+                let sheet = bot.quests.as_ref().ok_or("no quest sheet received")?;
+                let quest = mmorpg_core::QuestId::new(expectation.quest.unwrap_or_default());
+                let entry = sheet.entries.iter().find(|entry| entry.quest == quest);
+                let completed = quest.bit().is_some_and(|bit| sheet.completed & bit != 0);
+                let (state, progress) = match (entry, completed) {
+                    (Some(entry), _) => ("active", Some(entry.progress)),
+                    (None, true) => ("completed", None),
+                    (None, false) => ("absent", None),
+                };
+                let shown = progress.map_or_else(
+                    || format!("quest={} {state}", quest.get()),
+                    |progress| format!("quest={} {state} progress={progress:?}", quest.get()),
+                );
+                if Some(state) == expectation.quest_state.as_deref()
+                    && expectation
+                        .progress
+                        .is_none_or(|expected| Some(expected) == progress)
+                {
+                    Ok(shown)
+                } else {
+                    Err(format!("got {shown}"))
+                }
+            }
+            ExpectKind::Marker => {
+                let sheet = bot.quests.as_ref().ok_or("no quest sheet received")?;
+                let npc = expectation.npc.unwrap_or_default();
+                let marker = sheet
+                    .markers
+                    .iter()
+                    .find(|marker| marker.npc.get() == npc)
+                    .map_or("none", |marker| match marker.marker {
+                        mmorpg_core::QuestMarker::Available => "available",
+                        mmorpg_core::QuestMarker::InProgress => "in_progress",
+                        mmorpg_core::QuestMarker::Complete => "complete",
+                    });
+                let shown = format!("npc={npc} marker={marker}");
+                if Some(marker) == expectation.marker.as_deref() {
+                    Ok(shown)
+                } else {
+                    Err(format!("got {shown}"))
+                }
+            }
+            ExpectKind::Copper => {
+                let shown = format!("copper={}", view.viewer.copper);
+                if Some(view.viewer.copper) == expectation.copper {
+                    Ok(shown)
+                } else {
+                    Err(format!("got {shown}"))
+                }
+            }
+            ExpectKind::Loot => {
+                let shown = view.loot.map_or_else(
+                    || "sheet=false".to_owned(),
+                    |loot| {
+                        format!(
+                            "sheet=true creature={} died_at={} copper={}",
+                            loot.claim.creature.get(),
+                            loot.claim.died_at,
+                            loot.rewards.money
+                        )
+                    },
+                );
+                let matches = Some(view.loot.is_some()) == expectation.sheet
+                    && view.loot.is_none_or(|loot| {
+                        Some(loot.claim.creature.get()) == expectation.creature
+                            && Some(loot.claim.died_at) == expectation.died_at
+                    });
+                if matches {
+                    Ok(shown)
+                } else {
+                    Err(format!("got {shown}"))
+                }
+            }
+            ExpectKind::Inventory => {
+                let shown = format!(
+                    "revision={} sheet={}",
+                    view.inventory_revision,
+                    view.inventory.is_some()
+                );
+                if Some(view.inventory_revision) != expectation.inventory_revision
+                    || Some(view.inventory.is_some()) != expectation.sheet
+                {
+                    return Err(format!("got {shown}"));
+                }
+                if let Some(slot) = expectation.slot {
+                    let bag = view.inventory.as_ref().ok_or("inventory sheet is absent")?;
+                    let stack = bag.slots()[usize::from(slot)];
+                    let (item, quantity) =
+                        stack.map_or((0, 0), |stack| (stack.item().get(), stack.quantity()));
+                    let shown = format!("{shown} slot={slot} item={item} quantity={quantity}");
+                    if Some(item) != expectation.item || Some(quantity) != expectation.quantity {
+                        Err(format!("got {shown}"))
+                    } else {
+                        Ok(shown)
+                    }
+                } else {
+                    Ok(shown)
+                }
+            }
+            ExpectKind::Equipment => {
+                let slot = expectation
+                    .equipment_slot
+                    .ok_or("equipment expectation needs a slot")?;
+                let equipment = view.equipment.ok_or("equipment sheet is absent")?;
+                let item = equipment.slots()[usize::from(slot)].map_or(0, mmorpg_core::ItemId::get);
+                let totals = equipment.totals();
+                let shown = format!(
+                    "revision={} slot={slot} item={item} stats={}/{}/{}/{}",
+                    view.inventory_revision,
+                    totals.stamina,
+                    totals.strength,
+                    totals.agility,
+                    totals.intellect
+                );
+                if Some(item) == expectation.item {
                     Ok(shown)
                 } else {
                     Err(format!("got {shown}"))
@@ -1075,6 +1741,49 @@ fn player_of_entity(entity: &EntitySnapshot) -> Option<PlayerId> {
     }
 }
 
+/// The wire value of a class name; unknown names map to an invalid value
+/// so the zone, not the runner, refuses them.
+fn chat_channel(name: &str) -> Option<mmorpg_core::ChatChannel> {
+    match name {
+        "say" => Some(mmorpg_core::ChatChannel::Say),
+        "yell" => Some(mmorpg_core::ChatChannel::Yell),
+        _ => None,
+    }
+}
+
+fn emote_named(name: &str) -> Option<mmorpg_core::Emote> {
+    mmorpg_core::Emote::ALL
+        .into_iter()
+        .find(|&emote| emote_name(emote) == name)
+}
+
+fn emote_name(emote: mmorpg_core::Emote) -> &'static str {
+    match emote {
+        mmorpg_core::Emote::Wave => "wave",
+        mmorpg_core::Emote::Bow => "bow",
+        mmorpg_core::Emote::Cheer => "cheer",
+        mmorpg_core::Emote::Laugh => "laugh",
+        mmorpg_core::Emote::Point => "point",
+    }
+}
+
+fn class_code(name: &str) -> u8 {
+    match name {
+        "warden" => 0,
+        "ranger" => 1,
+        "arcanist" => 2,
+        _ => u8::MAX,
+    }
+}
+
+fn sex_code(name: &str) -> u8 {
+    match name {
+        "female" => 0,
+        "male" => 1,
+        _ => u8::MAX,
+    }
+}
+
 fn visible_player(view: &ZoneSnapshot, player_id: PlayerId) -> Option<&EntitySnapshot> {
     view.entities
         .iter()
@@ -1098,6 +1807,12 @@ fn describe(expectation: &Expectation) -> String {
         ExpectKind::VisibleCount => format!("{bot} visible_count"),
         ExpectKind::Area => format!("{bot} area {target}"),
         ExpectKind::Health => format!("{bot} health"),
+        ExpectKind::Progression => format!("{bot} progression"),
+        ExpectKind::Inventory => format!("{bot} inventory"),
+        ExpectKind::Equipment => format!("{bot} equipment"),
+        ExpectKind::Copper => format!("{bot} copper"),
+        ExpectKind::Chat => format!("{bot} chat"),
+        ExpectKind::Loot => format!("{bot} loot"),
         ExpectKind::Target => format!("{bot} target {}", unit_text(expectation)),
         ExpectKind::Event => {
             let event = expectation
@@ -1113,6 +1828,9 @@ fn describe(expectation: &Expectation) -> String {
             let state = expectation.state.map_or("", UnitState::name);
             format!("{bot} unit {} {state}{by}", unit_text(expectation))
         }
+        ExpectKind::Resource => format!("{bot} resource{by}"),
+        ExpectKind::Quest => format!("{bot} quest {}", expectation.quest.unwrap_or_default()),
+        ExpectKind::Marker => format!("{bot} marker npc:{}", expectation.npc.unwrap_or_default()),
     }
 }
 

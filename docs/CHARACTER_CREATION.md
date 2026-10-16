@@ -12,7 +12,7 @@ From **Choose your character**, select **Create character** and provide:
 
 The 3D preview updates before creation and remains rotatable. Class changes update the starter equipment and main-hand presentation: Warden uses a sword, Ranger a bow, and Arcanist a staff. Sex changes the presentation frame only; it does not change gameplay statistics.
 
-Created characters start at level 1 in Greyhaven Outpost. The original Aelric Stormward preview remains a built-in level-18 character. Level, class and sex are presentation for now: **Enter World** spawns a new unit in the local WASM zone host, whose rules do not read them yet.
+Created characters start at level 1 in Greyhaven Outpost. The original Aelric Stormward preview remains a built-in level-18 character. **Enter World** spawns a new level-1 unit in the local WASM zone host and chooses the character's class and sex with `ChooseClass` as its first command, so the zone grants that class's resource and abilities. The preview's level stays presentation.
 
 ## Local identity and persistence
 
@@ -24,4 +24,4 @@ Roster parsing fails closed for unsupported schemas, malformed records, duplicat
 
 ## Authority boundary
 
-This is local browser-demo state. It does not add account creation, durable multiplayer character records, class combat mechanics, inventory authority, or server-side character persistence. Those remain future server-owned boundaries (the durable character record is issue #30). The feature does not change `mmorpg-core`, `physics-engine`, `game-server`, or control-plane authority.
+This is local browser-demo state. It does not add account creation, durable multiplayer character records, inventory authority, or server-side character persistence. Those remain future server-owned boundaries (#30 owns the durable character record; #40 composes it with zone/world checkpoints for demo save/load). The feature does not change `mmorpg-core`, `physics-engine`, `game-server`, or control-plane authority.

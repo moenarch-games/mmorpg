@@ -16,11 +16,20 @@ use std::sync::{Arc, LazyLock};
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, ZoneAreas};
 
+pub mod quests;
 pub mod units;
 
 /// Content revision of this zone. Revision 1 was the former test outpost;
-/// revision 2 had no creatures or NPCs.
-pub const REVISION: u64 = 3;
+/// revision 2 had no creatures or NPCs; revision 6 binds the ability catalog
+/// (Mirefin Lurkers cast Muck Bolt, Redbrand Bandits use Crude Bandage);
+/// revision 7 binds item catalog 2 (equipment) and loot catalog 2;
+/// revision 8 binds vendor catalog 1 (Innkeeper Bram Tolliver's stock);
+/// revision 9 binds quest catalog 1 (the Greyhaven chain), item catalog 3
+/// (the Wolf Pelt) and vendor catalog 2.
+pub const REVISION: u64 = 9;
+/// Revision 3's simulation seed, retained when revision 4 adds bag content.
+/// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
+pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
 /// Gravity in units per tick squared.
 pub const GRAVITY: [i32; 3] = [0, -1, 0];
 /// The inner faces of the boundary walls enclose this square.
@@ -489,16 +498,38 @@ pub fn greyhaven_vale_definition() -> ZoneDefinition {
 }
 
 static CONTENT: LazyLock<Arc<ZoneContent>> = LazyLock::new(|| {
+    let content = ZoneContent::new(
+        greyhaven_vale_definition(),
+        areas().clone(),
+        units::creature_templates(),
+        units::creature_spawns(),
+        units::npcs(),
+        units::GRAVEYARD,
+    )
+    .expect("built-in Greyhaven Vale unit content is valid")
+    .with_rng_seed(RNG_SEED);
+    let tables = content
+        .creature_templates()
+        .iter()
+        .map(|template| {
+            (
+                template.id,
+                crate::loot_table(template.id)
+                    .expect("each Greyhaven template has an authored loot table")
+                    .clone(),
+            )
+        })
+        .collect();
     Arc::new(
-        ZoneContent::new(
-            greyhaven_vale_definition(),
-            areas().clone(),
-            units::creature_templates(),
-            units::creature_spawns(),
-            units::npcs(),
-            units::GRAVEYARD,
-        )
-        .expect("built-in Greyhaven Vale unit content is valid"),
+        content
+            .with_loot_tables(crate::LOOT_CATALOG_REVISION, tables)
+            .expect("built-in Greyhaven Vale loot content is valid")
+            .with_creature_abilities(crate::ABILITY_CATALOG_REVISION, units::creature_abilities())
+            .expect("built-in Greyhaven Vale ability content is valid")
+            .with_vendors(crate::VENDOR_CATALOG_REVISION, units::vendors())
+            .expect("built-in Greyhaven Vale vendor content is valid")
+            .with_quests(crate::QUEST_CATALOG_REVISION, quests::quests())
+            .expect("built-in Greyhaven Vale quest content is valid"),
     )
 });
 

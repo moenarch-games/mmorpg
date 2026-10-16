@@ -9,6 +9,7 @@ on:
       - "crates/mmorpg-core/**"
       - "crates/mmorpg-protocol/**"
       - "crates/mmorpg-wasm/**"
+      - "crates/mmorpg-scenery/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
@@ -23,6 +24,7 @@ on:
       - "crates/mmorpg-core/**"
       - "crates/mmorpg-protocol/**"
       - "crates/mmorpg-wasm/**"
+      - "crates/mmorpg-scenery/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
@@ -73,8 +75,24 @@ jobs:
       - name: Install web dependencies
         working-directory: web
         run: bun install --frozen-lockfile
+      - name: Check out the pinned saved-mask producer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: moritzbrantner/asset-tooling
+          ref: 1e79d74ee0a62cd29706ed3254a0293c91d996ba
+          path: artifacts/asset-tooling-mask-source
+          persist-credentials: false
+      - name: Reproduce the accepted Greyhaven grass package
+        run: bun web/scripts/package-grass.ts artifacts/asset-tooling-mask-source --check
+      - name: Reproduce the authored Greyhaven relief package
+        run: bun web/scripts/package-relief.ts artifacts/asset-tooling-mask-source --check
+      - name: Typecheck the asset authoring adapter
+        working-directory: web
+        run: bunx --no-install tsc --noEmit -p tsconfig.assets.json
       - name: Test browser contracts and the WASM local zone host
         working-directory: web
+        env:
+          ASSET_TOOLING_MASK_SOURCE: ${{ github.workspace }}/artifacts/asset-tooling-mask-source
         run: bun test
       - name: Build tech demo with the WASM local zone host
         working-directory: web

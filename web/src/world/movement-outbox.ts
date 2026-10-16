@@ -23,7 +23,9 @@ type SentMove = { forward: Axis; strafe: Axis; facing: number };
  * Decides which commands the current input needs, mirroring the native
  * client's outbox: a jump when the press counter advanced, then a move when
  * forward/strafe changed, a facing change is due, or the resend interval
- * elapsed. It performs no I/O.
+ * elapsed. While the player is dead it sends no held movement: the intent
+ * is zero at the last sent facing and presses are dropped, so nothing held
+ * through death moves the released spirit. It performs no I/O.
  */
 export class MovementOutbox {
   #sent: SentMove | null = null;
@@ -41,11 +43,15 @@ export class MovementOutbox {
     this.#sentAt = Number.NEGATIVE_INFINITY;
   }
 
-  update(input: MovementInput, nowMs: number): WorldCommand[] {
+  /** Commands for the current input; `dead` comes from the latest projection. */
+  update(held: MovementInput, nowMs: number, dead = false): WorldCommand[] {
     const commands: WorldCommand[] = [];
+    const input = dead ? { forward: 0 as const, strafe: 0 as const, facing: this.#sent?.facing ?? held.facing, jumps: held.jumps } : held;
     if (input.jumps !== this.#jumps) {
       this.#jumps = input.jumps;
-      commands.push({ kind: "jump" });
+      if (!dead) {
+        commands.push({ kind: "jump" });
+      }
     }
     const sent = this.#sent;
     const elapsed = nowMs - this.#sentAt;

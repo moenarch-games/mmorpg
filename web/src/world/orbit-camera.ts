@@ -113,27 +113,10 @@ export class OrbitCamera {
   }
 }
 
-const FORWARD_KEYS = ["KeyW", "ArrowUp"];
-const BACKWARD_KEYS = ["KeyS", "ArrowDown"];
-const LEFT_KEYS = ["KeyA", "KeyQ", "ArrowLeft"];
-const RIGHT_KEYS = ["KeyD", "KeyE", "ArrowRight"];
-
+/** Held movement as semantic axes: run/backpedal, strafe, and whether any movement is held. */
 export type HeldIntent = { forward: Axis; strafe: Axis; steering: boolean };
 
-/** W/S run and backpedal, A/D (or Q/E) strafe; any held movement key steers by the camera. */
-export function heldIntent(keys: ReadonlySet<string>): HeldIntent {
-  const held = (codes: readonly string[]) => codes.some((code) => keys.has(code));
-  const axis = (positive: boolean, negative: boolean): Axis => (positive === negative ? 0 : positive ? 1 : -1);
-  const forward = held(FORWARD_KEYS);
-  const backward = held(BACKWARD_KEYS);
-  const left = held(LEFT_KEYS);
-  const right = held(RIGHT_KEYS);
-  return {
-    forward: axis(forward, backward),
-    strafe: axis(right, left),
-    steering: forward || backward || left || right,
-  };
-}
+export const IDLE_INTENT: HeldIntent = { forward: 0, strafe: 0, steering: false };
 
 /**
  * What a mouse drag does: `orbit` (left button) looks around freely and the
@@ -143,18 +126,17 @@ export function heldIntent(keys: ReadonlySet<string>): HeldIntent {
 export type DragMode = "none" | "orbit" | "turn";
 
 /**
- * Movement intent from the held keys under the orbit camera. Without a drag,
- * the character faces the camera's heading while any movement key is held
+ * Movement intent from the held movement actions under the orbit camera. Without a drag,
+ * the character faces the camera's heading while any movement is held
  * and keeps `lastFacing` otherwise, so orbiting while idle never turns it.
  */
 export function movementInput(
-  keys: ReadonlySet<string>,
+  held: HeldIntent,
   cameraFacing: number,
   lastFacing: number,
   jumps: number,
   drag: DragMode = "none",
 ): MovementInput {
-  const held = heldIntent(keys);
   const facing = drag === "turn" ? cameraFacing : drag === "orbit" ? lastFacing : held.steering ? cameraFacing : lastFacing;
   return { forward: held.forward, strafe: held.strafe, facing, jumps };
 }

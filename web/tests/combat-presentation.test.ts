@@ -3,6 +3,7 @@ import type { EntityState, ZoneEvent, ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
 import { placeUnit } from "../src/world/unit-nodes";
 import { bodyHalfHeightUnits, creatureBodyNodes, disposition } from "../src/world/units/creature-bodies";
+import { abilitySlots, cancelCast, useAbilitySlot } from "../src/world/units/abilities";
 import { CombatHud, FEEDBACK_MS, combatStatus, eventText, unitName } from "../src/world/units/combat-hud";
 import { CLICK_SLOP_PIXELS, SecondaryClick, attackToggle, nextTabTarget } from "../src/world/units/targeting";
 import { catalogJson } from "./support/catalog";
@@ -32,12 +33,23 @@ describe("content catalog", () => {
     expect(catalog.creatureTemplates.get(2)?.behaviour).toBe("neutral");
     expect(catalog.npcs.get(6)?.role).toBe("guard");
     expect(catalog.areas.get(1)).toBe("Greyhaven Outpost");
+    expect(catalog.itemCatalogRevision).toBe(3n);
+    expect([...catalog.items.values()].slice(0, 2)).toEqual([
+      { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
+      { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2 },
+    ]);
+    expect(catalog.quests.get(2)).toEqual({
+      id: 2, name: "Pelts for the Tanner", text: "Bring me five wolf pelts.", giver: 2, ender: 2, prerequisite: 1,
+      objectives: [{ kind: "collect", target: 10, source: 1, count: 5 }], experience: 200, copper: 15, choices: [9, 2],
+    });
+    expect(catalog.quests.get(1)?.objectives).toEqual([{ kind: "kill", target: 1, count: 6 }]);
+    expect([...catalog.vendors.values()]).toEqual([{ npc: 3, offers: [{ item: 2, price: 9 }] }]);
     const broken = (mutate: (json: Record<string, unknown>) => void) => {
       const json = catalogJson();
       mutate(json);
       return () => decodeCatalog(JSON.stringify(json));
     };
-    expect(broken((json) => { json.version = 2; })).toThrow("unsupported format");
+    expect(broken((json) => { json.version = 1; })).toThrow("unsupported format");
     expect(broken((json) => { json.contentFingerprint = "XYZ"; })).toThrow("fingerprint");
     expect(broken((json) => { json.extra = true; })).toThrow("exactly");
     expect(broken((json) => { (json.npcs as Record<string, unknown>[])[0]!.role = "wizard"; })).toThrow("role");
@@ -46,7 +58,62 @@ describe("content catalog", () => {
       templates[1]!.id = 1;
     })).toThrow("unique");
     expect(broken((json) => { (json.creatureTemplates as Record<string, unknown>[])[0]!.halfExtents = [40, 45]; })).toThrow("three");
+    expect(broken((json) => { json.itemCatalogRevision = "1"; })).toThrow("item catalog revision");
+    expect(broken((json) => { (json.items as Record<string, unknown>[])[1]!.slot = "ring"; })).toThrow("slot");
+    expect(broken((json) => { (json.items as Record<string, unknown>[])[1]!.stats = { stamina: 0 }; })).toThrow("stats");
+    expect(broken((json) => {
+      (json.items as Record<string, unknown>[])[1]!.stats = { stamina: 256, strength: 0, agility: 0, intellect: 0 };
+    })).toThrow("stamina");
+    expect(broken((json) => { (json.items as Record<string, unknown>[])[0]!.maxStack = 0; })).toThrow("stack limit");
+    expect(broken((json) => { (json.items as Record<string, unknown>[])[1]!.id = 1; })).toThrow("unique");
+    expect(broken((json) => { (json.items as Record<string, unknown>[])[0]!.id = 0; })).toThrow("item 0 id");
+    expect(broken((json) => { json.vendorCatalogRevision = "1"; })).toThrow("vendor catalog revision");
+    const quests = (json: Record<string, unknown>) => json.quests as Record<string, unknown>[];
+    expect(broken((json) => { json.questCatalogRevision = "2"; })).toThrow("quest catalog revision");
+    expect(broken((json) => { json.questCatalogRevision = "0"; })).toThrow("without a quest catalog");
+    expect(broken((json) => { quests(json)[0]!.giver = 3; })).toThrow("quest giver");
+    expect(broken((json) => { quests(json)[0]!.id = 33; })).toThrow("quest 0 id");
+    expect(broken((json) => { quests(json)[1]!.id = 1; })).toThrow("unique");
+    expect(broken((json) => { quests(json)[0]!.objectives = []; })).toThrow("needs an objective");
+    expect(broken((json) => { quests(json)[0]!.objectives = [{ kind: "fish", target: 1, source: null, count: 1 }]; })).toThrow("kind");
+    expect(broken((json) => { quests(json)[0]!.objectives = [{ kind: "kill", target: 1, source: 1, count: 1 }]; })).toThrow("source");
+    expect(broken((json) => { quests(json)[1]!.objectives = [{ kind: "collect", target: 99, source: 1, count: 1 }]; })).toThrow("unknown item");
+    expect(broken((json) => { quests(json)[1]!.choices = [99]; })).toThrow("unknown item");
+    expect(broken((json) => { quests(json)[0]!.text = ""; })).toThrow("text");
+    expect(broken((json) => { json.vendorCatalogRevision = "0"; })).toThrow("without a vendor catalog");
+    const vendors = (json: Record<string, unknown>) => json.vendors as { npc: number; offers: { item: number; price: number }[] }[];
+    expect(broken((json) => { vendors(json)[0]!.npc = 6; })).toThrow("vendor npc");
+    expect(broken((json) => { vendors(json)[0]!.offers = []; })).toThrow("at least one");
+    expect(broken((json) => { vendors(json)[0]!.offers[0]!.item = 99; })).toThrow("unknown item");
+    expect(broken((json) => { vendors(json)[0]!.offers[0]!.price = 0; })).toThrow("price");
+    expect(broken((json) => { (json.items as Record<string, unknown>[])[0]!.sellPrice = -1; })).toThrow("sale value");
     expect(() => decodeCatalog("{")).toThrow("not JSON");
+  });
+});
+
+describe("ability input and HUD text", () => {
+  const caster = (cast: ZoneSnapshot["viewer"]["cast"] = null) => view([], {
+    classChoice: { classId: "warden", sex: "male" },
+    resource: { kind: "rage", value: 20, max: 100 },
+    cast,
+  });
+
+  test("slots 1–4 name the class abilities in catalog order; Escape cancels only a cast", () => {
+    expect(abilitySlots(caster(), catalog).map((ability) => ability.id)).toEqual([1, 2]);
+    expect(useAbilitySlot(2, caster(), catalog)).toEqual({ kind: "use-ability", ability: 2, target: null });
+    expect(useAbilitySlot(3, caster(), catalog)).toBeNull();
+    expect(useAbilitySlot(1, view([]), catalog)).toBeNull();
+    expect(cancelCast(caster())).toBeNull();
+    expect(cancelCast(caster({ ability: 9, elapsed: 3, total: 60, channel: false }))).toEqual({ kind: "cancel-cast" });
+  });
+
+  test("the status line shows the resource and cast progress", () => {
+    expect(combatStatus(caster({ ability: 9, elapsed: 3, total: 60, channel: false }), catalog))
+      .toBe("Health 50/50 · Rage 20/100 · Level 1 · Casting Firebolt 3/60");
+    const snapshot = caster();
+    const bolt = { kind: "cast-started", source: WOLF, target: { kind: "player", id: 1 }, ability: 13, ticks: 45 } as const;
+    expect(eventText(bolt, snapshot, catalog)).toBe("A creature begins Muck Bolt.");
+    expect(eventText({ kind: "error", code: "not-ready", target: null }, snapshot, catalog)).toBe("That ability is not ready yet.");
   });
 });
 

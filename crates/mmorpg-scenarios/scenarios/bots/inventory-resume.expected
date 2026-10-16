@@ -1,0 +1,36 @@
+scenario inventory-resume zone=1 bots=2 ticks=22 grace=30
+t=0 alice join -> joined player=1 epoch=1
+t=0 bob join -> joined player=2 epoch=1
+t=0 alice move_item -> applied seq=1 epoch=1 source_slot=0 destination_slot=15 quantity=2
+t=1 expect alice inventory ok revision=2 sheet=true slot=15 item=1 quantity=2
+t=1 expect alice inventory ok revision=2 sheet=true slot=0 item=1 quantity=1
+t=1 alice p1 e1 ack1 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=1 alice move_item -> applied seq=2 epoch=1 source_slot=15 destination_slot=1 quantity=1
+t=2 expect alice event error:invalid_inventory_move ok events[error:invalid_inventory_move]
+t=2 expect alice inventory ok revision=2 sheet=false
+t=2 alice p1 e1 ack2 (-1550,90,1250) sees[bob] events[error:invalid_inventory_move] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=2 alice move_item -> ignored_stale seq=1 epoch=1 source_slot=15 destination_slot=0 quantity=2
+t=3 expect alice inventory ok revision=2 sheet=false
+t=3 alice p1 e1 ack2 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=3 alice disconnect -> disconnected player=1
+t=4 alice p1 offline | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=5 alice reconnect -> resumed player=1 epoch=2 identity=kept
+t=6 expect alice identity ok player=1 epoch=2
+t=6 expect alice inventory ok revision=2 sheet=false
+t=6 alice p1 e2 ack2 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=10 expect alice inventory ok revision=2 sheet=true slot=15 item=1 quantity=2
+t=10 expect bob inventory ok revision=1 sheet=true slot=0 item=1 quantity=3
+t=10 alice p1 e2 ack2 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=10 alice move_item -> rejected:stale_connection seq=3 epoch=1 source_slot=15 destination_slot=0 quantity=2
+t=10 alice move_item -> applied seq=3 epoch=2 source_slot=15 destination_slot=0 quantity=2
+t=11 expect alice inventory ok revision=3 sheet=true slot=0 item=1 quantity=3
+t=11 expect alice inventory ok revision=3 sheet=true slot=15 item=0 quantity=0
+t=11 alice p1 e2 ack3 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=11 alice move_item -> ignored_stale seq=3 epoch=2 source_slot=0 destination_slot=15 quantity=3
+t=12 expect alice acknowledged ok ack=3
+t=12 alice p1 e2 ack3 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=20 expect alice inventory ok revision=3 sheet=true slot=0 item=1 quantity=3
+t=20 expect bob inventory ok revision=1 sheet=true slot=0 item=1 quantity=3
+t=20 alice p1 e2 ack3 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=22 alice p1 e2 ack3 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+PASS inventory-resume ticks=22 steps=10 expectations=14 failures=0

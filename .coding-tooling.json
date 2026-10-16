@@ -3,15 +3,143 @@
   "profile": "repository-foundation-v1",
   "tiers": {
     "fast": ["format:check", "lint", "build", "test:unit"],
-    "full": ["format:check", "lint", "build", "test:unit"]
+    "full": ["format:check", "lint", "build", "test:unit"],
+    "performance": ["size:budget"]
   },
+  "optionalCapabilities": ["size:budget"],
   "requiredCapabilities": ["format:check", "lint", "build", "test:unit"],
   "capabilityCommands": {
     ".": {
       "format:check": ["cargo", "fmt", "--all", "--", "--check"],
       "lint": ["cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--locked", "--", "-D", "warnings"],
       "build": ["cargo", "build", "--workspace", "--all-features", "--locked"],
-      "test:unit": ["cargo", "test", "--workspace", "--all-features", "--locked"]
+      "test:unit": ["cargo", "test", "--workspace", "--all-features", "--locked"],
+      "size:budget": ["bun", "run", "--cwd", "web", "size:budget"]
     }
+  },
+  "taskKnowledge": {
+    "schemaVersion": 1,
+    "alwaysInstructions": ["README.md", ".conventions/index.md"],
+    "completion": {
+      "tier": "full"
+    },
+    "scopes": [
+      {
+        "id": "native-size-evidence",
+        "paths": [".performance/**", "web/scripts/native-size*", "web/tsconfig.size.json"],
+        "instructions": ["docs/SIZE_EVIDENCE.md"],
+        "conventionRefs": ["BENCH-010", "RUST-006", "REP-012"],
+        "capabilities": ["size:budget"],
+        "owners": ["moritzbrantner/mmorpg", "moritzbrantner/coding-tooling"],
+        "components": ["."]
+      },
+      {
+        "id": "browser-presentation",
+        "paths": ["web/src/main.ts", "web/src/styles.css", "web/src/character-*", "web/src/world/**", "web/tests/**"],
+        "instructions": ["docs/adr/0002-browser-embeds-zone-simulation.md", "docs/AVATAR_ASSETS.md", "docs/CHARACTER_CREATION.md"],
+        "conventionRefs": ["TS-004", "TS-006", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"],
+        "examples": [
+          {
+            "path": "web/src/world/world-view.ts"
+          },
+          {
+            "path": "web/tests/scene-building.test.ts"
+          }
+        ]
+      },
+      {
+        "id": "browser-wire",
+        "paths": ["web/src/command-wire.ts", "web/src/replication.ts", "web/src/entity-ref.ts", "web/src/world/local-zone-source.ts", "web/src/world/world-source.ts", "web/src/world/wasm-runtime.ts", "web/src/world/movement-outbox.ts", "web/tests/command-wire.test.ts", "web/tests/replication.test.mjs", "web/tests/local-zone-wasm.test.ts"],
+        "instructions": ["docs/PROTOCOL.md", "docs/adr/0002-browser-embeds-zone-simulation.md"],
+        "conventionRefs": ["REL-009", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"],
+        "components": ["."]
+      },
+      {
+        "id": "browser-toolchain",
+        "paths": ["web/package.json", "web/scripts/**", "web/tsconfig.json", "web/vite.config.*", "web/bun.lock", ".github/workflows/pages.yml"],
+        "instructions": ["docs/adr/0002-browser-embeds-zone-simulation.md"],
+        "conventionRefs": ["REP-003", "REP-016"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"],
+        "components": ["web", "."]
+      },
+      {
+        "id": "native-core",
+        "paths": ["crates/mmorpg-core/**"],
+        "instructions": ["docs/ARCHITECTURE.md", "docs/INTEREST_WORKLOADS.md", "docs/PHYSICS_WORKLOADS.md", "docs/SCENARIOS.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg", "moritzbrantner/physics-engine"]
+      },
+      {
+        "id": "native-protocol",
+        "paths": ["crates/mmorpg-protocol/**"],
+        "instructions": ["docs/PROTOCOL.md", "docs/INTEREST_WORKLOADS.md", "docs/SCENARIOS.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"]
+      },
+      {
+        "id": "native-control-plane",
+        "paths": ["crates/mmorpg-control-plane/**"],
+        "instructions": ["docs/ARCHITECTURE.md", "docs/SCENARIOS.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"]
+      },
+      {
+        "id": "native-game-server",
+        "paths": ["crates/mmorpg-game-server/**"],
+        "instructions": ["docs/ARCHITECTURE.md", "docs/PROTOCOL.md", "docs/SCENARIOS.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"]
+      },
+      {
+        "id": "native-scenarios",
+        "paths": ["crates/mmorpg-scenarios/**"],
+        "instructions": ["docs/SCENARIOS.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"]
+      },
+      {
+        "id": "native-client",
+        "paths": ["crates/mmorpg-client/**"],
+        "instructions": ["docs/NATIVE_CLIENT.md", "docs/PROTOCOL.md", "docs/adr/0001-native-client.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"]
+      },
+      {
+        "id": "native-scenery",
+        "paths": ["crates/mmorpg-scenery/**"],
+        "instructions": ["docs/ARCHITECTURE.md", "docs/adr/0002-browser-embeds-zone-simulation.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"]
+      },
+      {
+        "id": "native-wasm",
+        "paths": ["crates/mmorpg-wasm/**"],
+        "instructions": ["docs/PROTOCOL.md", "docs/adr/0002-browser-embeds-zone-simulation.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"]
+      },
+      {
+        "id": "repository",
+        "paths": ["AGENTS.md", "CLAUDE.md", "README.md", ".coding-tooling.json", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "scripts/**", ".github/workflows/validate.yml", "docs/**", "ROADMAP.md"],
+        "instructions": ["docs/ARCHITECTURE.md", "docs/PROTOCOL.md", "docs/INTEREST_WORKLOADS.md", "docs/NATIVE_CLIENT.md", "docs/SCENARIOS.md", "docs/adr"],
+        "conventionRefs": ["AGENT-004", "REP-012"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"],
+        "components": ["."]
+      }
+    ]
   }
 }

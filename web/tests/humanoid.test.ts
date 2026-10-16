@@ -54,6 +54,24 @@ describe("humanoid model", () => {
     expect(parts(warden)).not.toContain("u-bow-grip");
   });
 
+  test("the existing Arcanist staff orb and core emit light without changing their mesh identity", () => {
+    const nodes = humanoidNodes("u", placement, arcanist, poseFor(rest, humanoidStance(arcanist)));
+    const moving = humanoidNodes("u", placement, arcanist, poseFor(running, humanoidStance(arcanist)));
+    for (const id of ["u-staff-orb", "u-staff-orb-core"]) {
+      const node = nodes.find((part) => part.id === id)!;
+      expect(node).toBeDefined();
+      expect(node.emissive).toBe(node.color);
+      expect(node.geometry.kind).toBe("mesh");
+      if (node.geometry.kind === "mesh") {
+        expect(node.geometry.resourceKey).toBe("humanoid:blob");
+      }
+      expect(moving.find((part) => part.id === id)!.geometry).toEqual(node.geometry);
+    }
+    expect(nodes.find((part) => part.id === "u-staff")!.emissive).toBeUndefined();
+    expect(nodes.find((part) => part.id === "u-staff-orb")!.transform!.scale).toEqual([0.075, 0.075, 0.075]);
+    expect(nodes.find((part) => part.id === "u-staff-orb-core")!.transform!.scale).toEqual([0.04, 0.04, 0.04]);
+  });
+
   test("stands on its feet at about 1.8 m and female builds are slighter", () => {
     const male = humanoidNodes("m", { ...placement, feetY: 0 }, warden, poseFor(rest, "sword-and-shield"));
     const female = humanoidNodes("f", { ...placement, feetY: 0 }, characterLook({ classId: "warden", sex: "female" }, "ironcrest-helm"), poseFor(rest, "sword-and-shield"));

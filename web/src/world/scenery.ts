@@ -1,6 +1,6 @@
 /**
  * Presentation scenery from the WASM `scenery()` export (format
- * `mmorpg.scenery` v2), which maps the Rust `mmorpg-scenery` value the native
+ * `mmorpg.scenery` v3), which maps the Rust `mmorpg-scenery` value the native
  * client draws: a terrain grid and a coarse far ring of the same relief,
  * props as compact records (kind, feet anchor, yaw, scale, body box) with the
  * exact collider box of every structure, roads, water and named areas. The
@@ -57,6 +57,8 @@ export type Area = { id: number; name: string; minXz: XZ; maxXz: XZ };
 export type Scenery = {
   source: string;
   contentRevision: bigint;
+  /** Core-independent presentation identity supplied by shared scenery. */
+  presentationFingerprint: string;
   unitsPerMetre: number;
   playerHalfExtents: XYZ;
   terrain: TerrainGrid;
@@ -85,7 +87,7 @@ export type SceneryProvider = {
 };
 
 const FORMAT = "mmorpg.scenery";
-const VERSION = 2;
+const VERSION = 3;
 const MAX_TERRAIN_SAMPLES = 1 << 20;
 const MAX_PROPS = 1 << 16;
 const MAX_AREAS = 64;
@@ -268,7 +270,7 @@ export function decodeScenery(json: string): Scenery {
     fail("not JSON");
   }
   const root = object(parsed, [
-    "format", "version", "source", "contentRevision", "unitsPerMetre", "playerHalfExtents",
+    "format", "version", "source", "contentRevision", "presentationFingerprint", "unitsPerMetre", "playerHalfExtents",
     "terrain", "farTerrain", "biomes", "propKinds", "props", "structures", "roads", "water", "areas",
   ], "export");
   if (root.format !== FORMAT || root.version !== VERSION) {
@@ -280,6 +282,9 @@ export function decodeScenery(json: string): Scenery {
   const contentRevision = BigInt(root.contentRevision);
   if (contentRevision > 0xffff_ffff_ffff_ffffn) {
     fail("content revision exceeds u64");
+  }
+  if (typeof root.presentationFingerprint !== "string" || !/^[0-9a-f]{16}$/.test(root.presentationFingerprint)) {
+    fail("presentation fingerprint must be a canonical hexadecimal u64");
   }
   const biomes = list(root.biomes, "biomes", 256).map((value, index) => {
     const biome = object(value, ["id", "name", "color"], `biome ${index}`);
@@ -307,6 +312,7 @@ export function decodeScenery(json: string): Scenery {
   return {
     source: text(root.source, "source"),
     contentRevision,
+    presentationFingerprint: root.presentationFingerprint,
     unitsPerMetre: int(root.unitsPerMetre, "units per metre", 1),
     playerHalfExtents: xyz(root.playerHalfExtents, "player half extents", 1),
     terrain: decodeTerrain(root.terrain, biomeIds),

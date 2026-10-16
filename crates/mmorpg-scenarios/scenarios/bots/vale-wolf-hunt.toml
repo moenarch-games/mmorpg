@@ -4,8 +4,9 @@
 # hunter targets and auto-attacks it to death, and the corpse refuses further
 # attacks. Wounded, the hunter walks on until Timber Wolf 106 engages, stops
 # attacking and dies. The wolf, left without threat, evades home, and the
-# released spirit returns to the graveyard with half health. Refused intents
-# are gameplay events; every command step is applied.
+# released spirit returns to the graveyard with half health and stands there:
+# movement sent while dead holds no intent. Refused intents are gameplay
+# events; every command step is applied.
 name = "vale-wolf-hunt"
 zone = 1
 ticks = 1800
@@ -132,7 +133,8 @@ tick = 1200
 bot = "hunter"
 action = "stop_attack"
 
-# The dead can neither attack nor move.
+# The dead can neither attack nor move: the walk is accepted but holds
+# nothing, so the released spirit stands at the graveyard.
 [[steps]]
 tick = 1500
 bot = "hunter"
@@ -143,15 +145,6 @@ tick = 1500
 bot = "hunter"
 action = "move"
 forward = 1
-strafe = 0
-facing = 0
-
-# Let go of the held movement intent before returning to life.
-[[steps]]
-tick = 1600
-bot = "hunter"
-action = "move"
-forward = 0
 strafe = 0
 facing = 0
 
@@ -295,6 +288,12 @@ tick = 1701
 position = [-2000, 90, 4150]
 
 [[expect]]
+kind = "position"
+bot = "hunter"
+tick = 1800
+position = [-2000, 90, 4150]
+
+[[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "bot:hunter"
@@ -318,4 +317,26 @@ kind = "unit"
 bot = "hunter"
 entity = "creature:106"
 state = "absent"
+tick = 1701
+
+# XP is durable self-state: death, reconnect and release cannot erase a reward.
+[[expect]]
+kind = "progression"
+bot = "hunter"
+level = 1
+experience = 0
+tick = 2
+
+[[expect]]
+kind = "progression"
+bot = "hunter"
+level = 1
+experience = 50
+tick = 1040
+
+[[expect]]
+kind = "progression"
+bot = "hunter"
+level = 1
+experience = 50
 tick = 1701

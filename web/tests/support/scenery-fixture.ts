@@ -76,9 +76,10 @@ export function fixtureExport(patch: Record<string, unknown> = {}): Record<strin
   });
   return {
     format: "mmorpg.scenery",
-    version: 2,
+    version: 3,
     source: "fixture",
     contentRevision: "7",
+    presentationFingerprint: "0123456789abcdef",
     unitsPerMetre: 100,
     playerHalfExtents: [30, 90, 30],
     terrain: { originXz: [-1_600, -1_600], step: 400, columns, rows: columns, heights, biomes },

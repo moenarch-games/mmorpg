@@ -1,0 +1,955 @@
+{
+  "schemaVersion": 1,
+  "coordinateSystem": "right-handed-y-up",
+  "coordinateQuantization": "1e-6-unit",
+  "bounds": {
+    "widthMicro": 70000001,
+    "depthMicro": 66000001
+  },
+  "instances": [
+    {
+      "id": "outpost-grass-000",
+      "positionMicro": [
+        -33430000,
+        0,
+        -26420000
+      ]
+    },
+    {
+      "id": "outpost-grass-001",
+      "positionMicro": [
+        -2550000,
+        0,
+        -25950000
+      ]
+    },
+    {
+      "id": "outpost-grass-002",
+      "positionMicro": [
+        -5770000,
+        0,
+        -15120000
+      ]
+    },
+    {
+      "id": "outpost-grass-003",
+      "positionMicro": [
+        5540000,
+        0,
+        9200000
+      ]
+    },
+    {
+      "id": "outpost-grass-004",
+      "positionMicro": [
+        16280000,
+        0,
+        9500000
+      ]
+    },
+    {
+      "id": "outpost-grass-005",
+      "positionMicro": [
+        22840000,
+        0,
+        -11860000
+      ]
+    },
+    {
+      "id": "outpost-grass-006",
+      "positionMicro": [
+        -3760000,
+        0,
+        11510000
+      ]
+    },
+    {
+      "id": "outpost-grass-007",
+      "positionMicro": [
+        -21550000,
+        0,
+        12020000
+      ]
+    },
+    {
+      "id": "outpost-grass-008",
+      "positionMicro": [
+        33830000,
+        0,
+        2500000
+      ]
+    },
+    {
+      "id": "outpost-grass-009",
+      "positionMicro": [
+        -16750000,
+        0,
+        2800000
+      ]
+    },
+    {
+      "id": "outpost-grass-010",
+      "positionMicro": [
+        -23660000,
+        0,
+        -28070000
+      ]
+    },
+    {
+      "id": "outpost-grass-011",
+      "positionMicro": [
+        -14870000,
+        0,
+        -28060000
+      ]
+    },
+    {
+      "id": "outpost-grass-012",
+      "positionMicro": [
+        21900000,
+        0,
+        -31000000
+      ]
+    },
+    {
+      "id": "outpost-grass-013",
+      "positionMicro": [
+        11520000,
+        0,
+        22740000
+      ]
+    },
+    {
+      "id": "outpost-grass-014",
+      "positionMicro": [
+        8010000,
+        0,
+        -32200000
+      ]
+    },
+    {
+      "id": "outpost-grass-015",
+      "positionMicro": [
+        9090000,
+        0,
+        14330000
+      ]
+    },
+    {
+      "id": "outpost-grass-016",
+      "positionMicro": [
+        -21170000,
+        0,
+        -11890000
+      ]
+    },
+    {
+      "id": "outpost-grass-017",
+      "positionMicro": [
+        25750000,
+        0,
+        23420000
+      ]
+    },
+    {
+      "id": "outpost-grass-018",
+      "positionMicro": [
+        -9670000,
+        0,
+        10900000
+      ]
+    },
+    {
+      "id": "outpost-grass-019",
+      "positionMicro": [
+        34490000,
+        0,
+        25030000
+      ]
+    },
+    {
+      "id": "outpost-grass-020",
+      "positionMicro": [
+        -26970000,
+        0,
+        9360000
+      ]
+    },
+    {
+      "id": "outpost-grass-021",
+      "positionMicro": [
+        -3530000,
+        0,
+        -19060000
+      ]
+    },
+    {
+      "id": "outpost-grass-022",
+      "positionMicro": [
+        6560000,
+        0,
+        -25590000
+      ]
+    },
+    {
+      "id": "outpost-grass-023",
+      "positionMicro": [
+        21440000,
+        0,
+        10820000
+      ]
+    },
+    {
+      "id": "outpost-grass-024",
+      "positionMicro": [
+        -17390000,
+        0,
+        12110000
+      ]
+    },
+    {
+      "id": "outpost-grass-025",
+      "positionMicro": [
+        1760000,
+        0,
+        -29110000
+      ]
+    },
+    {
+      "id": "outpost-grass-026",
+      "positionMicro": [
+        17920000,
+        0,
+        6570000
+      ]
+    },
+    {
+      "id": "outpost-grass-027",
+      "positionMicro": [
+        6830000,
+        0,
+        -20470000
+      ]
+    },
+    {
+      "id": "outpost-grass-028",
+      "positionMicro": [
+        13070000,
+        0,
+        32780000
+      ]
+    },
+    {
+      "id": "outpost-grass-029",
+      "positionMicro": [
+        11680000,
+        0,
+        -9590000
+      ]
+    },
+    {
+      "id": "outpost-grass-030",
+      "positionMicro": [
+        -11900000,
+        0,
+        -28440000
+      ]
+    },
+    {
+      "id": "outpost-grass-031",
+      "positionMicro": [
+        -22520000,
+        0,
+        5890000
+      ]
+    },
+    {
+      "id": "outpost-grass-032",
+      "positionMicro": [
+        -22620000,
+        0,
+        2170000
+      ]
+    },
+    {
+      "id": "outpost-grass-033",
+      "positionMicro": [
+        20550000,
+        0,
+        -25980000
+      ]
+    },
+    {
+      "id": "outpost-grass-034",
+      "positionMicro": [
+        24770000,
+        0,
+        -5020000
+      ]
+    },
+    {
+      "id": "outpost-grass-035",
+      "positionMicro": [
+        14580000,
+        0,
+        -13370000
+      ]
+    },
+    {
+      "id": "outpost-grass-036",
+      "positionMicro": [
+        -19750000,
+        0,
+        11850000
+      ]
+    },
+    {
+      "id": "outpost-grass-037",
+      "positionMicro": [
+        23890000,
+        0,
+        6540000
+      ]
+    },
+    {
+      "id": "outpost-grass-038",
+      "positionMicro": [
+        24030000,
+        0,
+        -7170000
+      ]
+    },
+    {
+      "id": "outpost-grass-039",
+      "positionMicro": [
+        14070000,
+        0,
+        31090000
+      ]
+    },
+    {
+      "id": "outpost-grass-040",
+      "positionMicro": [
+        -7070000,
+        0,
+        8980000
+      ]
+    },
+    {
+      "id": "outpost-grass-041",
+      "positionMicro": [
+        -34490000,
+        0,
+        -21620000
+      ]
+    },
+    {
+      "id": "outpost-grass-042",
+      "positionMicro": [
+        26540000,
+        0,
+        22200000
+      ]
+    },
+    {
+      "id": "outpost-grass-043",
+      "positionMicro": [
+        -29000000,
+        0,
+        25950000
+      ]
+    },
+    {
+      "id": "outpost-grass-044",
+      "positionMicro": [
+        -3540000,
+        0,
+        9850000
+      ]
+    },
+    {
+      "id": "outpost-grass-045",
+      "positionMicro": [
+        21830000,
+        0,
+        -2070000
+      ]
+    },
+    {
+      "id": "outpost-grass-046",
+      "positionMicro": [
+        -26410000,
+        0,
+        -22800000
+      ]
+    },
+    {
+      "id": "outpost-grass-047",
+      "positionMicro": [
+        15820000,
+        0,
+        14190000
+      ]
+    },
+    {
+      "id": "outpost-grass-048",
+      "positionMicro": [
+        -33330000,
+        0,
+        -21990000
+      ]
+    },
+    {
+      "id": "outpost-grass-049",
+      "positionMicro": [
+        -21320000,
+        0,
+        3760000
+      ]
+    },
+    {
+      "id": "outpost-grass-050",
+      "positionMicro": [
+        -32390000,
+        0,
+        32530000
+      ]
+    },
+    {
+      "id": "outpost-grass-051",
+      "positionMicro": [
+        32940000,
+        0,
+        23440000
+      ]
+    },
+    {
+      "id": "outpost-grass-052",
+      "positionMicro": [
+        -23280000,
+        0,
+        19510000
+      ]
+    },
+    {
+      "id": "outpost-grass-053",
+      "positionMicro": [
+        2680000,
+        0,
+        -18840000
+      ]
+    },
+    {
+      "id": "outpost-grass-054",
+      "positionMicro": [
+        -18470000,
+        0,
+        -28810000
+      ]
+    },
+    {
+      "id": "outpost-grass-055",
+      "positionMicro": [
+        -22810000,
+        0,
+        -12610000
+      ]
+    },
+    {
+      "id": "outpost-grass-056",
+      "positionMicro": [
+        -29510000,
+        0,
+        -25230000
+      ]
+    },
+    {
+      "id": "outpost-grass-057",
+      "positionMicro": [
+        -17800000,
+        0,
+        -12410000
+      ]
+    },
+    {
+      "id": "outpost-grass-058",
+      "positionMicro": [
+        32940000,
+        0,
+        -10300000
+      ]
+    },
+    {
+      "id": "outpost-grass-059",
+      "positionMicro": [
+        -22220000,
+        0,
+        -2280000
+      ]
+    },
+    {
+      "id": "outpost-grass-060",
+      "positionMicro": [
+        -12260000,
+        0,
+        12370000
+      ]
+    },
+    {
+      "id": "outpost-grass-061",
+      "positionMicro": [
+        -16360000,
+        0,
+        9350000
+      ]
+    },
+    {
+      "id": "outpost-grass-062",
+      "positionMicro": [
+        -28310000,
+        0,
+        3740000
+      ]
+    },
+    {
+      "id": "outpost-grass-063",
+      "positionMicro": [
+        -26340000,
+        0,
+        -13160000
+      ]
+    },
+    {
+      "id": "outpost-grass-064",
+      "positionMicro": [
+        32650000,
+        0,
+        -31600000
+      ]
+    },
+    {
+      "id": "outpost-grass-065",
+      "positionMicro": [
+        34840000,
+        0,
+        -26050000
+      ]
+    },
+    {
+      "id": "outpost-grass-066",
+      "positionMicro": [
+        31290000,
+        0,
+        -6420000
+      ]
+    },
+    {
+      "id": "outpost-grass-067",
+      "positionMicro": [
+        13320000,
+        0,
+        8650000
+      ]
+    },
+    {
+      "id": "outpost-grass-068",
+      "positionMicro": [
+        -4280000,
+        0,
+        28860000
+      ]
+    },
+    {
+      "id": "outpost-grass-069",
+      "positionMicro": [
+        27940000,
+        0,
+        -24820000
+      ]
+    },
+    {
+      "id": "outpost-grass-070",
+      "positionMicro": [
+        -28100000,
+        0,
+        19420000
+      ]
+    },
+    {
+      "id": "outpost-grass-071",
+      "positionMicro": [
+        -27160000,
+        0,
+        19810000
+      ]
+    },
+    {
+      "id": "outpost-grass-072",
+      "positionMicro": [
+        17530000,
+        0,
+        23100000
+      ]
+    },
+    {
+      "id": "outpost-grass-073",
+      "positionMicro": [
+        15780000,
+        0,
+        10420000
+      ]
+    },
+    {
+      "id": "outpost-grass-074",
+      "positionMicro": [
+        -22540000,
+        0,
+        23110000
+      ]
+    },
+    {
+      "id": "outpost-grass-075",
+      "positionMicro": [
+        33710000,
+        0,
+        26360000
+      ]
+    },
+    {
+      "id": "outpost-grass-076",
+      "positionMicro": [
+        7520000,
+        0,
+        18970000
+      ]
+    },
+    {
+      "id": "outpost-grass-077",
+      "positionMicro": [
+        -34740000,
+        0,
+        2820000
+      ]
+    },
+    {
+      "id": "outpost-grass-078",
+      "positionMicro": [
+        -2210000,
+        0,
+        22690000
+      ]
+    },
+    {
+      "id": "outpost-grass-079",
+      "positionMicro": [
+        -24500000,
+        0,
+        7570000
+      ]
+    },
+    {
+      "id": "outpost-grass-080",
+      "positionMicro": [
+        28700000,
+        0,
+        -6690000
+      ]
+    },
+    {
+      "id": "outpost-grass-081",
+      "positionMicro": [
+        16570000,
+        0,
+        -10360000
+      ]
+    },
+    {
+      "id": "outpost-grass-082",
+      "positionMicro": [
+        16580000,
+        0,
+        10720000
+      ]
+    },
+    {
+      "id": "outpost-grass-083",
+      "positionMicro": [
+        -27200000,
+        0,
+        20130000
+      ]
+    },
+    {
+      "id": "outpost-grass-084",
+      "positionMicro": [
+        4810000,
+        0,
+        -17620000
+      ]
+    },
+    {
+      "id": "outpost-grass-085",
+      "positionMicro": [
+        -11810000,
+        0,
+        27010000
+      ]
+    },
+    {
+      "id": "outpost-grass-086",
+      "positionMicro": [
+        21080000,
+        0,
+        -7600000
+      ]
+    },
+    {
+      "id": "outpost-grass-087",
+      "positionMicro": [
+        6920000,
+        0,
+        26170000
+      ]
+    },
+    {
+      "id": "outpost-grass-088",
+      "positionMicro": [
+        -30870000,
+        0,
+        27150000
+      ]
+    },
+    {
+      "id": "outpost-grass-089",
+      "positionMicro": [
+        -13830000,
+        0,
+        -32750000
+      ]
+    },
+    {
+      "id": "outpost-grass-090",
+      "positionMicro": [
+        -34220000,
+        0,
+        17380000
+      ]
+    },
+    {
+      "id": "outpost-grass-091",
+      "positionMicro": [
+        -18860000,
+        0,
+        2410000
+      ]
+    },
+    {
+      "id": "outpost-grass-092",
+      "positionMicro": [
+        -9250000,
+        0,
+        28620000
+      ]
+    },
+    {
+      "id": "outpost-grass-093",
+      "positionMicro": [
+        -19140000,
+        0,
+        -12640000
+      ]
+    },
+    {
+      "id": "outpost-grass-094",
+      "positionMicro": [
+        14880000,
+        0,
+        22200000
+      ]
+    },
+    {
+      "id": "outpost-grass-095",
+      "positionMicro": [
+        20420000,
+        0,
+        -2860000
+      ]
+    },
+    {
+      "id": "outpost-grass-096",
+      "positionMicro": [
+        22350000,
+        0,
+        -32890000
+      ]
+    },
+    {
+      "id": "outpost-grass-097",
+      "positionMicro": [
+        -19350000,
+        0,
+        27700000
+      ]
+    },
+    {
+      "id": "outpost-grass-098",
+      "positionMicro": [
+        -8810000,
+        0,
+        -9390000
+      ]
+    },
+    {
+      "id": "outpost-grass-099",
+      "positionMicro": [
+        -7060000,
+        0,
+        -15170000
+      ]
+    },
+    {
+      "id": "outpost-grass-100",
+      "positionMicro": [
+        -19170000,
+        0,
+        8350000
+      ]
+    },
+    {
+      "id": "outpost-grass-101",
+      "positionMicro": [
+        -11660000,
+        0,
+        21550000
+      ]
+    },
+    {
+      "id": "outpost-grass-102",
+      "positionMicro": [
+        -25500000,
+        0,
+        31460000
+      ]
+    },
+    {
+      "id": "outpost-grass-103",
+      "positionMicro": [
+        17640000,
+        0,
+        -5040000
+      ]
+    },
+    {
+      "id": "outpost-grass-104",
+      "positionMicro": [
+        25890000,
+        0,
+        30680000
+      ]
+    },
+    {
+      "id": "outpost-grass-105",
+      "positionMicro": [
+        -29350000,
+        0,
+        26630000
+      ]
+    },
+    {
+      "id": "outpost-grass-106",
+      "positionMicro": [
+        -23880000,
+        0,
+        12670000
+      ]
+    },
+    {
+      "id": "outpost-grass-107",
+      "positionMicro": [
+        -14780000,
+        0,
+        -28820000
+      ]
+    },
+    {
+      "id": "outpost-grass-108",
+      "positionMicro": [
+        12810000,
+        0,
+        -14140000
+      ]
+    },
+    {
+      "id": "outpost-grass-109",
+      "positionMicro": [
+        -28900000,
+        0,
+        1900000
+      ]
+    },
+    {
+      "id": "outpost-grass-110",
+      "positionMicro": [
+        6500000,
+        0,
+        21060000
+      ]
+    },
+    {
+      "id": "outpost-grass-111",
+      "positionMicro": [
+        -20140000,
+        0,
+        27230000
+      ]
+    },
+    {
+      "id": "outpost-grass-112",
+      "positionMicro": [
+        29510000,
+        0,
+        -21140000
+      ]
+    },
+    {
+      "id": "outpost-grass-113",
+      "positionMicro": [
+        -11490000,
+        0,
+        -31490000
+      ]
+    },
+    {
+      "id": "outpost-grass-114",
+      "positionMicro": [
+        32650000,
+        0,
+        12620000
+      ]
+    },
+    {
+      "id": "outpost-grass-115",
+      "positionMicro": [
+        -3630000,
+        0,
+        -19490000
+      ]
+    },
+    {
+      "id": "outpost-grass-116",
+      "positionMicro": [
+        -30700000,
+        0,
+        -26880000
+      ]
+    },
+    {
+      "id": "outpost-grass-117",
+      "positionMicro": [
+        16160000,
+        0,
+        13840000
+      ]
+    }
+  ]
+}

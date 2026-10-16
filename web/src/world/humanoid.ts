@@ -122,10 +122,10 @@ function shape(name: ShapeName): Shape {
   return mesh;
 }
 
-type Part = { name: string; shape: ShapeName; color: Color; frame: Frame; scale: Vec3 };
+type Part = { name: string; shape: ShapeName; color: Color; frame: Frame; scale: Vec3; emissive?: Color };
 
-function part(parts: Part[], name: string, shapeName: ShapeName, color: Color, frame: Frame, scale: Vec3): void {
-  parts.push({ name, shape: shapeName, color, frame, scale });
+function part(parts: Part[], name: string, shapeName: ShapeName, color: Color, frame: Frame, scale: Vec3, emissive?: Color): void {
+  parts.push({ name, shape: shapeName, color, frame, scale, ...(emissive === undefined ? {} : { emissive }) });
 }
 
 /**
@@ -262,6 +262,7 @@ function renderParts(id: string, parts: Part[]): RendererSceneNode[] {
     id: `${id}-${entry.name}`,
     geometry: { kind: "mesh", resourceKey: `humanoid:${entry.shape}`, ...shape(entry.shape) },
     color: entry.color,
+    ...(entry.emissive === undefined ? {} : { emissive: entry.emissive }),
     transform: { translation: entry.frame.p, rotationQuaternion: entry.frame.q, scale: entry.scale },
   }));
 }
@@ -361,8 +362,8 @@ function gear(
       const staff: Frame = { p: right.p, q: qMul(root.q, euler(0.12, 0, -0.05)) };
       part(parts, "staff", "post", visuals.weaponColor, child(staff, [0, -0.8, 0]), [0.024, 1.85, 0.024]);
       part(parts, "staff-fitting", "post", "#c7b66d", child(staff, [0, 0.95, 0]), [0.034, 0.07, 0.034]);
-      part(parts, "staff-orb", "blob", GLOW, child(staff, [0, 1.12, 0]), [0.075, 0.075, 0.075]);
-      part(parts, "staff-orb-core", "blob", "#ffffff", child(staff, [0, 1.12, 0]), [0.04, 0.04, 0.04]);
+      part(parts, "staff-orb", "blob", GLOW, child(staff, [0, 1.12, 0]), [0.075, 0.075, 0.075], GLOW);
+      part(parts, "staff-orb-core", "blob", "#ffffff", child(staff, [0, 1.12, 0]), [0.04, 0.04, 0.04], "#ffffff");
       return;
     }
   }

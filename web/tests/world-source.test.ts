@@ -8,19 +8,22 @@ import {
   MAX_DISTANCE_METRES,
   MIN_DISTANCE_METRES,
   ORBIT_RADIANS_PER_PIXEL,
+  IDLE_INTENT,
   OrbitCamera,
-  heldIntent,
   movementInput,
+  type HeldIntent,
 } from "../src/world/orbit-camera";
 import { FakeWorldSource } from "./support/fake-world-source";
 import { encodeTestSnapshot } from "./support/snapshot-encoder";
 import { playerEntity, testSnapshot } from "./support/snapshots";
-import { worldSourceContract } from "./support/world-source-contract";
+import { immediate, worldSourceContract } from "./support/world-source-contract";
 
 /** Records what `LocalZoneSource` asks of the WASM zone; returns well-formed projections. */
 class RecordingZone implements LocalZoneHandle {
   readonly submitted: { player: number; sequence: number; bytes: string }[] = [];
   readonly left: number[] = [];
+  /** `[player, class, sex]` of every join; the zone submits the choice as sequence 1. */
+  readonly joins: [number, number, number][] = [];
   ticks = 0;
   viewerOverride: number | null = null;
   /** While set, projections are truncated bytes the strict decoder rejects. */
@@ -28,10 +31,11 @@ class RecordingZone implements LocalZoneHandle {
   #nextPlayer = 1;
   #players = new Set<number>();
 
-  join(): number {
+  join(classId: number, sex: number): number {
     const player = this.#nextPlayer;
     this.#nextPlayer += 1;
     this.#players.add(player);
+    this.joins.push([player, classId, sex]);
     return player;
   }
 
@@ -61,41 +65,43 @@ class RecordingZone implements LocalZoneHandle {
   }
 }
 
-worldSourceContract("FakeWorldSource", () => new FakeWorldSource(), () => {
+worldSourceContract("FakeWorldSource", () => immediate(new FakeWorldSource()), () => {
   const source = new FakeWorldSource();
   source.refuseJoins = true;
-  return { source, repair: () => { source.refuseJoins = false; } };
+  return { ...immediate(source), repair: () => { source.refuseJoins = false; } };
 });
-worldSourceContract("LocalZoneSource over a recording zone", () => new LocalZoneSource(new RecordingZone()), () => {
+worldSourceContract("LocalZoneSource over a recording zone", () => immediate(new LocalZoneSource(new RecordingZone())), () => {
   const zone = new RecordingZone();
   zone.corruptProjections = true;
-  return { source: new LocalZoneSource(zone), repair: () => { zone.corruptProjections = false; } };
+  return { ...immediate(new LocalZoneSource(zone)), repair: () => { zone.corruptProjections = false; } };
 });
 
 describe("LocalZoneSource", () => {
-  test("sends encoded commands with strictly increasing sequences per player", () => {
+  test("sends encoded commands with strictly increasing sequences per player", async () => {
     const zone = new RecordingZone();
     const source = new LocalZoneSource(zone);
-    const first = source.join();
+    const first = await source.join({ classId: "arcanist", sex: "female" });
     source.sendCommand({ kind: "move", forward: 1, strafe: -1, facing: 16_384 });
     source.sendCommand({ kind: "jump" });
     source.leave();
-    const second = source.join();
+    const second = await source.join();
     source.sendCommand({ kind: "jump" });
+    // Joining spent sequence 1 on the class choice; the default is a male Warden.
+    expect(zone.joins).toEqual([[first, 2, 0], [second, 0, 1]]);
     expect(zone.submitted).toEqual([
-      { player: first, sequence: 1, bytes: "020101ff4000" },
-      { player: first, sequence: 2, bytes: Buffer.from(encodeCommand({ kind: "jump" })).toString("hex") },
-      { player: second, sequence: 1, bytes: "0202" },
+      { player: first, sequence: 2, bytes: "090101ff4000" },
+      { player: first, sequence: 3, bytes: Buffer.from(encodeCommand({ kind: "jump" })).toString("hex") },
+      { player: second, sequence: 2, bytes: "0902" },
     ]);
     expect(zone.left).toEqual([first]);
   });
 
-  test("runs fixed ticks from a bounded accumulator only while joined", () => {
+  test("runs fixed ticks from a bounded accumulator only while joined", async () => {
     const zone = new RecordingZone();
     const source = new LocalZoneSource(zone);
     source.advance(1);
     expect(zone.ticks).toBe(0);
-    source.join();
+    await source.join();
     source.advance(0.5 / 30);
     expect(zone.ticks).toBe(0);
     source.advance(0.5 / 30 + 1e-9);
@@ -105,10 +111,10 @@ describe("LocalZoneSource", () => {
     expect(source.latestProjection()?.tick).toBe(BigInt(1 + MAX_CATCH_UP_TICKS));
   });
 
-  test("samples interpolate one tick behind the latest projection", () => {
+  test("samples interpolate one tick behind the latest projection", async () => {
     const zone = new RecordingZone();
     const source = new LocalZoneSource(zone);
-    source.join();
+    await source.join();
     source.advance(2 / 30 + 1e-9);
     expect(zone.ticks).toBe(2);
     expect(source.sample()[0]?.position[0]).toBeCloseTo(21, 3);
@@ -116,25 +122,25 @@ describe("LocalZoneSource", () => {
     expect(source.sample()[0]?.position[0]).toBeCloseTo(31.5, 3);
   });
 
-  test("a projection addressed to another player is rejected", () => {
+  test("a projection addressed to another player is rejected", async () => {
     const zone = new RecordingZone();
     zone.viewerOverride = 99;
-    expect(() => new LocalZoneSource(zone).join()).toThrow("another player");
+    await expect(new LocalZoneSource(zone).join()).rejects.toThrow("another player");
   });
 
-  test("a rejected first projection removes the unit it just added from the zone", () => {
+  test("a rejected first projection removes the unit it just added from the zone", async () => {
     for (const [fault, message] of [["corrupt", "Truncated snapshot"], ["misaddressed", "another player"]] as const) {
       const zone = new RecordingZone();
       if (fault === "corrupt") zone.corruptProjections = true;
       else zone.viewerOverride = 99;
       const source = new LocalZoneSource(zone);
-      expect(() => source.join()).toThrow(message);
+      await expect(source.join()).rejects.toThrow(message);
       expect(zone.left).toEqual([1]);
       zone.corruptProjections = false;
       zone.viewerOverride = null;
-      expect(source.join()).toBe(2);
+      expect(await source.join()).toBe(2);
       source.sendCommand({ kind: "jump" });
-      expect(zone.submitted).toEqual([{ player: 2, sequence: 1, bytes: "0202" }]);
+      expect(zone.submitted).toEqual([{ player: 2, sequence: 2, bytes: "0902" }]);
     }
   });
 });
@@ -171,6 +177,23 @@ describe("movement outbox", () => {
     ]);
   });
 
+  test("the dead send no held movement or jumps; living again resumes the held keys", () => {
+    const outbox = new MovementOutbox(input());
+    outbox.update(input({ forward: 1, strafe: -1, facing: 300 }), 0);
+    // Death lets go at once, at the facing last sent, whatever is held or pressed.
+    expect(outbox.update(input({ forward: 1, strafe: -1, facing: 900, jumps: 1 }), 1, true)).toEqual([
+      { kind: "move", forward: 0, strafe: 0, facing: 300 },
+    ]);
+    expect(outbox.update(input({ forward: 1, facing: 900, jumps: 2 }), 2, true)).toEqual([]);
+    expect(outbox.update(input({ forward: 1, facing: 900, jumps: 2 }), 1 + RESEND_INTERVAL_MS, true)).toEqual([
+      { kind: "move", forward: 0, strafe: 0, facing: 300 },
+    ]);
+    // Presses made while dead are never replayed after release.
+    expect(outbox.update(input({ forward: 1, facing: 900, jumps: 2 }), 1 + RESEND_INTERVAL_MS + 1)).toEqual([
+      { kind: "move", forward: 1, strafe: 0, facing: 900 },
+    ]);
+  });
+
   test("a new session drops earlier presses and resends intent", () => {
     const outbox = new MovementOutbox(input());
     outbox.update(input({ forward: 1 }), 0);
@@ -179,47 +202,44 @@ describe("movement outbox", () => {
   });
 });
 
-describe("camera-relative input", () => {
-  test("WASD maps to forward/backpedal and strafe; opposite keys cancel", () => {
-    expect(heldIntent(new Set())).toEqual({ forward: 0, strafe: 0, steering: false });
-    expect(heldIntent(new Set(["KeyW", "KeyD"]))).toEqual({ forward: 1, strafe: 1, steering: true });
-    expect(heldIntent(new Set(["KeyS", "KeyA"]))).toEqual({ forward: -1, strafe: -1, steering: true });
-    expect(heldIntent(new Set(["KeyW", "KeyS"]))).toEqual({ forward: 0, strafe: 0, steering: true });
-    expect(heldIntent(new Set(["Space", "KeyX"]))).toEqual({ forward: 0, strafe: 0, steering: false });
-  });
+/** Held movement as the semantic controls report it. */
+function held(forward: HeldIntent["forward"], strafe: HeldIntent["strafe"]): HeldIntent {
+  return { forward, strafe, steering: forward !== 0 || strafe !== 0 };
+}
 
-  test("while a movement key is held the character adopts the camera heading", () => {
+describe("camera-relative input", () => {
+  test("while movement is held the character adopts the camera heading", () => {
     const camera = new OrbitCamera();
     camera.orbit(Math.PI / 2 / ORBIT_RADIANS_PER_PIXEL, 0);
     const heading = camera.facing();
     expect(heading).not.toBe(0);
-    expect(movementInput(new Set(["KeyW"]), heading, 0, 2)).toEqual({ forward: 1, strafe: 0, facing: heading, jumps: 2 });
-    expect(movementInput(new Set(["KeyA"]), heading, 0, 0)).toEqual({ forward: 0, strafe: -1, facing: heading, jumps: 0 });
-    // Opposite keys cancel the run but still steer.
-    expect(movementInput(new Set(["KeyW", "KeyS"]), heading, 0, 0).facing).toBe(heading);
+    expect(movementInput(held(1, 0), heading, 0, 2)).toEqual({ forward: 1, strafe: 0, facing: heading, jumps: 2 });
+    expect(movementInput(held(0, -1), heading, 0, 0)).toEqual({ forward: 0, strafe: -1, facing: heading, jumps: 0 });
+    // Opposite movement cancels the run but still steers.
+    expect(movementInput({ forward: 0, strafe: 0, steering: true }, heading, 0, 0).facing).toBe(heading);
   });
 
   test("while idle the character keeps its last facing, whatever the camera does", () => {
-    expect(movementInput(new Set(), 49_152, 16_384, 0)).toEqual({ forward: 0, strafe: 0, facing: 16_384, jumps: 0 });
-    // Jumping and other keys do not steer.
-    expect(movementInput(new Set(["Space", "KeyX"]), 49_152, 16_384, 1).facing).toBe(16_384);
+    expect(movementInput(IDLE_INTENT, 49_152, 16_384, 0)).toEqual({ forward: 0, strafe: 0, facing: 16_384, jumps: 0 });
+    // Jumping alone does not steer.
+    expect(movementInput(IDLE_INTENT, 49_152, 16_384, 1).facing).toBe(16_384);
   });
 
   test("orbiting while idle sends no new facing; the next step runs along the new view", () => {
     const camera = new OrbitCamera();
-    const outbox = new MovementOutbox(movementInput(new Set(), camera.facing(), 0, 0));
-    expect(outbox.update(movementInput(new Set(), camera.facing(), 0, 0), 0)).toEqual([
+    const outbox = new MovementOutbox(movementInput(IDLE_INTENT, camera.facing(), 0, 0));
+    expect(outbox.update(movementInput(IDLE_INTENT, camera.facing(), 0, 0), 0)).toEqual([
       { kind: "move", forward: 0, strafe: 0, facing: 0 },
     ]);
     camera.orbit(-Math.PI / 2 / ORBIT_RADIANS_PER_PIXEL, 0);
     const heading = camera.facing();
-    expect(outbox.update(movementInput(new Set(), heading, 0, 0), RESEND_INTERVAL_MS)).toEqual([
+    expect(outbox.update(movementInput(IDLE_INTENT, heading, 0, 0), RESEND_INTERVAL_MS)).toEqual([
       { kind: "move", forward: 0, strafe: 0, facing: 0 },
     ]);
-    const running = movementInput(new Set(["KeyW"]), heading, 0, 0);
+    const running = movementInput(held(1, 0), heading, 0, 0);
     expect(outbox.update(running, RESEND_INTERVAL_MS + 1)).toEqual([{ kind: "move", forward: 1, strafe: 0, facing: heading }]);
     // Stopping keeps the heading the character last ran along.
-    expect(movementInput(new Set(), 0, running.facing, 0).facing).toBe(heading);
+    expect(movementInput(IDLE_INTENT, 0, running.facing, 0).facing).toBe(heading);
   });
 
   test("the default orbit view looks over the shoulder toward +Z", () => {
@@ -291,9 +311,9 @@ describe("camera-relative input", () => {
     camera.orbit(Math.PI / 2 / ORBIT_RADIANS_PER_PIXEL, 0);
     const heading = camera.facing();
     // Right drag: the character adopts the view even while standing.
-    expect(movementInput(new Set(), heading, 16_384, 0, "turn").facing).toBe(heading);
+    expect(movementInput(IDLE_INTENT, heading, 16_384, 0, "turn").facing).toBe(heading);
     // Left drag: running keeps the character's own heading.
-    expect(movementInput(new Set(["KeyW"]), heading, 16_384, 0, "orbit")).toEqual({ forward: 1, strafe: 0, facing: 16_384, jumps: 0 });
+    expect(movementInput(held(1, 0), heading, 16_384, 0, "orbit")).toEqual({ forward: 1, strafe: 0, facing: 16_384, jumps: 0 });
     camera.lookAlong(Math.PI);
     expect(camera.facing()).toBe(32_768);
     expect(camera.heading).toBeCloseTo(Math.PI, 12);

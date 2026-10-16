@@ -3,7 +3,7 @@ use crate::{
     ClientError,
     network::{ClientSession, SessionError},
 };
-use mmorpg_core::{EntityRef, TICK_HZ, ZoneSnapshot};
+use mmorpg_core::{EntityRef, TICK_HZ, ZoneCommand, ZoneSnapshot};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -16,8 +16,9 @@ const FACING_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / TICK_HZ a
 
 /// Latest local input published by the window: held movement plus counted
 /// discrete presses. Each counter (`jumps`, `selections`, `attack_requests`,
-/// `releases`) makes the session send one command when it advances, so
-/// coalesced watch updates can merge presses but never replay them.
+/// `releases`, `ability_uses`, `cancels`) makes the session send one command
+/// when it advances, so coalesced watch updates can merge presses but never
+/// replay them.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PlayerInput {
     pub forward: i8,
@@ -31,6 +32,17 @@ pub struct PlayerInput {
     pub attack: bool,
     pub attack_requests: u32,
     pub releases: u32,
+    /// The latest requested ability ID.
+    pub ability: u8,
+    pub ability_uses: u32,
+    pub cancels: u32,
+    /// Latest intentional NPC action, delivered once and retired on reconnect.
+    pub interaction: Option<ZoneCommand>,
+    pub interactions: u32,
+    /// The class and sex wire values to choose. The session resends the
+    /// choice under fresh sequences until a projection confirms a class, so
+    /// a lost datagram cannot leave the character classless.
+    pub class_choice: Option<(u8, u8)>,
 }
 
 #[derive(Clone)]
@@ -47,18 +59,26 @@ pub enum NetworkUpdate {
 }
 
 /// Commands to send for one input observation, in order: a selection, an
-/// attack start or stop, a spirit release, a jump, then a move.
+/// attack start or stop, a spirit release, a cast cancellation, an ability,
+/// a jump, then a move.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Outgoing {
+    choose: Option<(u8, u8)>,
     select: Option<Option<EntityRef>>,
     attack: Option<bool>,
     release: bool,
+    cancel: bool,
+    ability: Option<u8>,
+    interaction: Option<ZoneCommand>,
     jump: bool,
     movement: Option<(i8, i8, u16)>,
 }
 
 impl Outgoing {
     fn deliver(self, session: &mut ClientSession) -> Result<(), SessionError> {
+        if let Some((class, sex)) = self.choose {
+            session.send_choose_class(class, sex)?;
+        }
         if let Some(target) = self.select {
             session.send_select_target(target)?;
         }
@@ -67,6 +87,15 @@ impl Outgoing {
         }
         if self.release {
             session.send_release_spirit()?;
+        }
+        if self.cancel {
+            session.send_cancel_cast()?;
+        }
+        if let Some(ability) = self.ability {
+            session.send_use_ability(ability)?;
+        }
+        if let Some(command) = self.interaction {
+            session.send_command(command)?;
         }
         if self.jump {
             session.send_jump()?;
@@ -86,6 +115,9 @@ struct Presses {
     selections: u32,
     attack_requests: u32,
     releases: u32,
+    ability_uses: u32,
+    cancels: u32,
+    interactions: u32,
 }
 
 impl Presses {
@@ -95,6 +127,9 @@ impl Presses {
             selections: input.selections,
             attack_requests: input.attack_requests,
             releases: input.releases,
+            ability_uses: input.ability_uses,
+            cancels: input.cancels,
+            interactions: input.interactions,
         }
     }
 }
@@ -107,6 +142,8 @@ struct Outbox {
     sent: Option<(i8, i8, u16)>,
     sent_at: Instant,
     presses: Presses,
+    /// A projection showed the character with a class.
+    class_confirmed: bool,
 }
 
 impl Outbox {
@@ -115,7 +152,14 @@ impl Outbox {
             sent: None,
             sent_at: now,
             presses: Presses::of(input),
+            class_confirmed: false,
         }
+    }
+
+    /// Reads a received projection: once it shows a class, the choice is
+    /// never sent again, also after a reconnect (the zone keeps it).
+    fn observe(&mut self, snapshot: &ZoneSnapshot) {
+        self.class_confirmed |= snapshot.viewer.class.is_some();
     }
 
     fn movement(&mut self, input: PlayerInput, now: Instant) -> (i8, i8, u16) {
@@ -141,18 +185,27 @@ impl Outbox {
             facing_changed && now.saturating_duration_since(self.sent_at) >= FACING_INTERVAL;
         let movement = (intent_changed || facing_due).then(|| self.movement(input, now));
         Outgoing {
+            // The heartbeat alone retries the class choice.
+            choose: None,
             select: (pressed.selections != handled.selections).then_some(input.target),
             attack: (pressed.attack_requests != handled.attack_requests).then_some(input.attack),
             release: pressed.releases != handled.releases,
+            cancel: pressed.cancels != handled.cancels,
+            ability: (pressed.ability_uses != handled.ability_uses).then_some(input.ability),
+            interaction: (pressed.interactions != handled.interactions)
+                .then_some(input.interaction)
+                .flatten(),
             jump: pressed.jumps != handled.jumps,
             movement,
         }
     }
 
-    /// Periodic resend of the current intent; pending presses are left to
-    /// [`Outbox::changes`], so none is ever sent twice.
+    /// Periodic resend of the current intent and of an unconfirmed class
+    /// choice; pending presses are left to [`Outbox::changes`], so none is
+    /// ever sent twice.
     fn heartbeat(&mut self, input: PlayerInput, now: Instant) -> Outgoing {
         Outgoing {
+            choose: input.class_choice.filter(|_| !self.class_confirmed),
             movement: Some(self.movement(input, now)),
             ..Outgoing::default()
         }
@@ -202,6 +255,7 @@ pub async fn run_session(
             snapshot = session.receive_snapshot() => match snapshot {
                 Ok(snapshot) => {
                     if last_tick.is_none_or(|tick| snapshot.tick > tick) {
+                        outbox.observe(&snapshot);
                         last_tick = Some(snapshot.tick);
                         last_snapshot = Instant::now();
                         publish(updates, &session, snapshot);
@@ -226,6 +280,7 @@ pub async fn run_session(
                 _ = &mut shutdown => return Ok(()),
                 snapshot = session.reconnect() => snapshot?,
             };
+            outbox.observe(&snapshot);
             last_tick = Some(snapshot.tick);
             last_snapshot = Instant::now();
             publish(updates, &session, snapshot);
@@ -426,6 +481,90 @@ mod tests {
             outbox.changes(held(1, 0, 600, 0), start + 5 * TICK),
             only_move(1, 0, 600)
         );
+    }
+
+    #[test]
+    fn the_class_choice_repeats_with_every_heartbeat_until_a_projection_confirms_it() {
+        use mmorpg_core::{ClassChoice, PlayerClass, Sex, ZoneId};
+        let now = Instant::now();
+        let input = PlayerInput {
+            class_choice: Some((2, 0)),
+            ..PlayerInput::default()
+        };
+        let mut outbox = Outbox::new(input, now);
+        let expected = Outgoing {
+            choose: Some((2, 0)),
+            ..only_move(0, 0, 0)
+        };
+        // A lost datagram is retried: each heartbeat sends it again, and
+        // input changes never carry it.
+        assert_eq!(outbox.heartbeat(input, now), expected);
+        assert_eq!(outbox.heartbeat(input, now + TICK), expected);
+        assert_eq!(
+            outbox
+                .changes(PlayerInput { jumps: 1, ..input }, now)
+                .choose,
+            None
+        );
+        let mut snapshot = mmorpg_core::ZoneSnapshot {
+            content_revision: 6,
+            acknowledged_sequence: 1,
+            viewer_id: 1,
+            schema_version: mmorpg_core::SNAPSHOT_SCHEMA_VERSION,
+            zone_id: ZoneId::new(1),
+            tick: 1,
+            viewer: mmorpg_core::ViewerState::default(),
+            cooldowns: Vec::new(),
+            auras: Vec::new(),
+            target_of_target: None,
+            target_detail: mmorpg_core::TargetDetail::default(),
+            inventory_revision: 1,
+            inventory: None,
+            equipment: None,
+            loot: None,
+            events: Vec::new(),
+            chat: Vec::new(),
+            entities: Vec::new(),
+            quests: None,
+        };
+        outbox.observe(&snapshot);
+        assert_eq!(
+            outbox.heartbeat(input, now + 2 * TICK),
+            expected,
+            "still classless"
+        );
+        snapshot.viewer.class = Some(ClassChoice {
+            class: PlayerClass::Arcanist,
+            sex: Sex::Female,
+        });
+        outbox.observe(&snapshot);
+        assert_eq!(outbox.heartbeat(input, now + 3 * TICK), only_move(0, 0, 0));
+        // A reconnect keeps the confirmation: the zone keeps the class.
+        outbox.resume(input);
+        assert_eq!(outbox.heartbeat(input, now + 4 * TICK), only_move(0, 0, 0));
+    }
+
+    #[test]
+    fn ability_uses_and_cast_cancels_are_sent_once_per_press() {
+        let now = Instant::now();
+        let mut outbox = sent(PlayerInput::default(), now);
+        let input = PlayerInput {
+            ability: 9,
+            ability_uses: 3,
+            cancels: 1,
+            ..PlayerInput::default()
+        };
+        assert_eq!(
+            outbox.changes(input, now),
+            Outgoing {
+                cancel: true,
+                ability: Some(9),
+                ..Outgoing::default()
+            },
+            "merged presses send the latest ability once"
+        );
+        assert_eq!(outbox.changes(input, now), Outgoing::default());
+        assert_eq!(outbox.heartbeat(input, now + TICK), only_move(0, 0, 0));
     }
 
     #[test]

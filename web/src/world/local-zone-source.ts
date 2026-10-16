@@ -1,11 +1,12 @@
 import { encodeCommand, type WorldCommand } from "../command-wire";
 import { FixedTickClock } from "../demo-clock";
 import { decodeSnapshot, SnapshotBuffer, type EntityState, type ZoneSnapshot } from "../replication";
-import type { WorldSource } from "./world-source";
+import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "./world-source";
 
 /** The subset of the wasm-bindgen `LocalZone` this source drives. */
 export type LocalZoneHandle = {
-  join(): number;
+  /** Spawns a player and submits its class choice as command sequence 1. */
+  join(classId: number, sex: number): number;
   leave(player: number): boolean;
   submit(player: number, sequence: number, command: Uint8Array): boolean;
   tick(): bigint;
@@ -32,11 +33,13 @@ export class LocalZoneSource implements WorldSource {
     this.#zone = zone;
   }
 
-  join(): number {
+  // Async only for the contract: a local join completes before it returns its promise.
+  async join(character: JoinCharacter = DEFAULT_JOIN_CHARACTER): Promise<number> {
     if (this.#player !== null) {
       throw new Error("Already in the world; leave before joining again.");
     }
-    const player = this.#zone.join();
+    const choice = classChoiceCodes(character);
+    const player = this.#zone.join(choice.classId, choice.sex);
     this.#clock.reset();
     this.#history.reset();
     this.#latest = null;
@@ -48,7 +51,8 @@ export class LocalZoneSource implements WorldSource {
       throw error;
     }
     this.#player = player;
-    this.#sequence = 0;
+    // The class choice was sequence 1.
+    this.#sequence = 1;
     return player;
   }
 
@@ -64,7 +68,7 @@ export class LocalZoneSource implements WorldSource {
     this.#zone.leave(player);
   }
 
-  sendCommand(command: WorldCommand): void {
+  sendCommand(command: WorldCommand): number {
     const player = this.#requirePlayer();
     if (this.#sequence >= MAX_SEQUENCE) {
       throw new Error("Command sequences are exhausted for this player.");
@@ -74,22 +78,29 @@ export class LocalZoneSource implements WorldSource {
     if (!this.#zone.submit(player, this.#sequence, payload)) {
       throw new Error(`The local zone ignored fresh sequence ${this.#sequence}.`);
     }
+    return this.#sequence;
   }
 
-  advance(deltaSeconds: number): void {
+  advance(deltaSeconds: number): readonly ZoneSnapshot[] {
     const player = this.#player;
     const due = this.#clock.advance(deltaSeconds);
     if (player === null) {
-      return;
+      return [];
     }
+    const received: ZoneSnapshot[] = [];
     for (let tick = 0; tick < due; tick += 1) {
       this.#zone.tick();
-      this.#publish(player);
+      received.push(this.#publish(player));
     }
+    return received;
   }
 
   latestProjection(): ZoneSnapshot | null {
     return this.#latest;
+  }
+
+  linkState(): LinkState {
+    return "connected";
   }
 
   sample(): readonly EntityState[] {
@@ -109,12 +120,13 @@ export class LocalZoneSource implements WorldSource {
     return this.#player;
   }
 
-  #publish(player: number): void {
+  #publish(player: number): ZoneSnapshot {
     const snapshot = decodeSnapshot(this.#zone.projection(player));
     if (snapshot.viewerId !== player) {
       throw new Error("The local zone addressed a projection to another player.");
     }
     this.#latest = snapshot;
     this.#history.push(snapshot);
+    return snapshot;
   }
 }

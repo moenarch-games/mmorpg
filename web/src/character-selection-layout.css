@@ -55,6 +55,10 @@
 .preview-surface:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: -3px; }
 .turntable-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: .5rem; }
 .turntable-controls button,
+#bags-toggle,
+#character-toggle,
+#vendor-toggle,
+#quest-log-toggle,
 #return-to-characters {
   min-height: 2.75rem;
   padding: .5rem .7rem;
@@ -67,14 +71,22 @@
   cursor: pointer;
 }
 .turntable-controls button:hover,
+#bags-toggle:hover,
+#character-toggle:hover,
+#vendor-toggle:hover,
+#quest-log-toggle:hover,
 #return-to-characters:hover { background: #30453d; }
 .turntable-controls button:focus-visible,
+#bags-toggle:focus-visible,
+#character-toggle:focus-visible,
+#vendor-toggle:focus-visible,
+#quest-log-toggle:focus-visible,
 #return-to-characters:focus-visible,
 .appearance-storage summary:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
 .turntable-hint { text-align: center; font-size: .75rem; color: #c1cec6; line-height: 1.5; }
 .appearance-storage { margin-top: .8rem; font-size: .75rem; color: #aabbb1; }
 .appearance-storage summary { cursor: pointer; padding: .4rem 0; }
-.world-toolbar { display: flex; align-items: center; gap: .8rem; }
+.world-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
 .preview-loading { margin: auto; text-align: center; }
 .selection-note { font-size: .7rem; color: #a3b1a7; }
 
@@ -98,5 +110,10 @@
 @media (max-width: 600px) {
   .selection-sidebar { grid-template-columns: minmax(0, 1fr); }
   .equipment-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .world-toolbar { flex-direction: column; gap: .3rem; align-items: end; }
+  /* Rows of buttons beside the minimap; a single column would reach the unit frames. */
+  .world-toolbar { gap: .3rem; align-items: stretch; }
+}
+@media (max-width: 640px) {
+  .world-toolbar { gap: .3rem; }
+  .world-toolbar :is(#bags-toggle, #character-toggle, #vendor-toggle, #quest-log-toggle, #return-to-characters) { min-height: 2.3rem; padding: .3rem .35rem; font-size: .72rem; }
 }

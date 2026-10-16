@@ -1,0 +1,45 @@
+# Command wire v9 golden fixture, verified by mmorpg-protocol and web tests.
+090101000000 move 1 0 0
+090101014000 move 1 1 16384
+0901ffff8000 move -1 -1 32768
+09010001abcd move 0 1 43981
+09010000ffff move 0 0 65535
+0902 jump
+0903020000006c select_target 2 108
+090301ee6b2800 select_target 1 4000000000
+09030300000005 select_target 3 5
+09030000000000 select_target 0 0
+0904 start_attack
+0905 stop_attack
+0906 release_spirit
+0907000f0002 move_item 0 15 2
+09070f00ffff move_item 15 0 65535
+0907ff000000 move_item 255 0 0
+0908000000010000000000000063 loot 1 99
+0908ffffffffffffffffffffffff loot 4294967295 18446744073709551615
+0909010000000000 use_ability 1 0 0
+090909020000006c use_ability 9 2 108
+0909ff01ee6b2800 use_ability 255 1 4000000000
+090a cancel_cast
+090b0001 choose_class 0 1
+090b0200 choose_class 2 0
+090bff07 choose_class 255 7
+090c00 equip_item 0
+090c0f equip_item 15
+090cff equip_item 255
+090d00 unequip_item 0
+090d05 unequip_item 5
+090dff unequip_item 255
+090e00000003000001 buy_item 3 0 1
+090effffffffffffff buy_item 4294967295 255 65535
+090f00000003000003 sell_item 3 0 3
+090f00000000ff0000 sell_item 0 255 0
+091000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
+091001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
+091101 emote 1
+091105 emote 5
+09120000000101 accept_quest 1 1
+0912ffffffffff accept_quest 4294967295 255
+0913000000020201 complete_quest 2 2 1
+09130000000000ff complete_quest 0 0 255
+091403 abandon_quest 3

@@ -7,16 +7,27 @@
     "build": "bun install --frozen-lockfile && bun scripts/build-wasm.ts && tsc --noEmit && vite build",
     "build:wasm": "bun scripts/build-wasm.ts",
     "dev": "bun install --frozen-lockfile && bun scripts/build-wasm.ts && vite",
-    "test": "bun test"
+    "test": "bun test",
+    "size:budget": "bun scripts/native-size.ts",
+    "size:baseline:capture": "bun scripts/native-size.ts --capture",
+    "test:size-evidence": "bun scripts/native-size.acceptance.ts",
+    "typecheck:size": "tsc --noEmit -p tsconfig.size.json"
   },
   "dependencies": {
-    "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#f484db8a3d2a7a555fa463eddf9c28790b240ce0",
+    "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#fdbdd74d8d9a3baf196b1b38f82959a82030689f",
+    "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#a51ef8a07791e6aa5031ac19178af84cadbfd613",
+    "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#2f97db985002e70d1692352fe823c39dd01ad6c4",
+    "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#df52c324a5692d04d2016d8a29f5bc4368e4aac0",
     "three": "0.185.1"
   },
   "devDependencies": {
+    "@types/node": "26.6.3",
+    "@types/three": "0.185.4",
+    "bun-types": "1.4.2",
+    "coding-tooling": "github:moritzbrantner/coding-tooling#9520016793319fb0b003218277129fa464b5bde8",
     "typescript": "5.9.3",
-    "vite": "7.3.6",
-    "@types/three": "0.185.4"
+    "undici-types": "8.9.0",
+    "vite": "7.3.6"
   },
   "packageManager": "bun@1.4.2"
 }

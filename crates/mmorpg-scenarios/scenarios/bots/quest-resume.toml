@@ -1,0 +1,179 @@
+# Accepting, refusing, abandoning and re-accepting Trouble in the Woods at
+# Marshal Elden Greywatch (NPC 1) pass through real sessions: quests need
+# the giver within 5 m and an unlocked quest, the Marshal's marker follows
+# the log, and the log survives a connection resume.
+name = "quest-resume"
+zone = 1
+ticks = 60
+reconnect_grace_ticks = 30
+digest_interval = 20
+
+[[bots]]
+name = "alice"
+
+[[steps]]
+tick = 0
+bot = "alice"
+action = "join"
+
+# From spawn slot 0 the Marshal stands about 7 m away.
+[[steps]]
+tick = 1
+bot = "alice"
+action = "accept_quest"
+npc = 1
+quest = 1
+
+# Run west along the plaza's northern edge to 3.5 m from the Marshal.
+[[steps]]
+tick = 2
+bot = "alice"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 32
+bot = "alice"
+action = "move"
+forward = 0
+strafe = 0
+facing = 49152
+
+# Pelts for the Tanner needs Trouble in the Woods turned in, and the
+# Tanner gives it, not the Marshal.
+[[steps]]
+tick = 34
+bot = "alice"
+action = "accept_quest"
+npc = 1
+quest = 2
+
+[[steps]]
+tick = 35
+bot = "alice"
+action = "accept_quest"
+npc = 1
+quest = 1
+
+# No wolf has died yet.
+[[steps]]
+tick = 36
+bot = "alice"
+action = "complete_quest"
+npc = 1
+quest = 1
+choice = 0
+
+[[steps]]
+tick = 37
+bot = "alice"
+action = "abandon_quest"
+quest = 1
+
+[[steps]]
+tick = 38
+bot = "alice"
+action = "accept_quest"
+npc = 1
+quest = 1
+
+[[steps]]
+tick = 40
+bot = "alice"
+action = "disconnect"
+
+[[steps]]
+tick = 42
+bot = "alice"
+action = "reconnect"
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 2
+event = "error:out_of_range"
+
+# Quest sheets arrive on change ticks and every ten ticks.
+[[expect]]
+kind = "marker"
+bot = "alice"
+tick = 10
+npc = 1
+marker = "available"
+
+[[expect]]
+kind = "marker"
+bot = "alice"
+tick = 10
+npc = 2
+marker = "none"
+
+[[expect]]
+kind = "position"
+bot = "alice"
+tick = 33
+position = [-2180, 90, 1250]
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 35
+event = "error:invalid_quest"
+
+[[expect]]
+kind = "quest"
+bot = "alice"
+tick = 36
+quest = 1
+quest_state = "active"
+progress = [0, 0, 0]
+
+[[expect]]
+kind = "marker"
+bot = "alice"
+tick = 36
+npc = 1
+marker = "in_progress"
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 37
+event = "error:quest_incomplete"
+
+[[expect]]
+kind = "quest"
+bot = "alice"
+tick = 38
+quest = 1
+quest_state = "absent"
+
+[[expect]]
+kind = "marker"
+bot = "alice"
+tick = 38
+npc = 1
+marker = "available"
+
+[[expect]]
+kind = "quest"
+bot = "alice"
+tick = 39
+quest = 1
+quest_state = "active"
+progress = [0, 0, 0]
+
+[[expect]]
+kind = "identity"
+bot = "alice"
+tick = 43
+
+[[expect]]
+kind = "quest"
+bot = "alice"
+tick = 50
+quest = 1
+quest_state = "active"
+progress = [0, 0, 0]

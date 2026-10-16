@@ -1,0 +1,42 @@
+scenario quest-resume zone=1 bots=1 ticks=60 grace=30
+t=0 alice join -> joined player=1 epoch=1
+t=1 alice p1 e1 ack0 (-1550,90,1250) sees[]
+t=1 alice accept_quest -> applied seq=1 epoch=1 npc=1 quest=1
+t=2 expect alice event error:out_of_range ok events[error:out_of_range]
+t=2 alice p1 e1 ack1 (-1550,90,1250) sees[] events[error:out_of_range]
+t=2 alice move -> applied seq=2 epoch=1 forward=1 strafe=0 facing=49152
+t=3 alice p1 e1 ack2 (-1571,90,1250) sees[]
+t=10 expect alice marker npc:1 ok npc=1 marker=available
+t=10 expect alice marker npc:2 ok npc=2 marker=none
+t=10 alice p1 e1 ack2 (-1718,90,1250) sees[]
+t=20 alice p1 e1 ack2 (-1928,90,1250) sees[]
+t=32 alice move -> applied seq=3 epoch=1 forward=0 strafe=0 facing=49152
+t=33 expect alice position alice ok [-2180, 90, 1250]
+t=33 alice p1 e1 ack3 (-2180,90,1250) sees[]
+t=34 alice accept_quest -> applied seq=4 epoch=1 npc=1 quest=2
+t=35 expect alice event error:invalid_quest ok events[error:invalid_quest]
+t=35 alice p1 e1 ack4 (-2180,90,1250) sees[] events[error:invalid_quest]
+t=35 alice accept_quest -> applied seq=5 epoch=1 npc=1 quest=1
+t=36 expect alice quest 1 ok quest=1 active progress=[0, 0, 0]
+t=36 expect alice marker npc:1 ok npc=1 marker=in_progress
+t=36 alice p1 e1 ack5 (-2180,90,1250) sees[]
+t=36 alice complete_quest -> applied seq=6 epoch=1 npc=1 quest=1 choice=0
+t=37 expect alice event error:quest_incomplete ok events[error:quest_incomplete]
+t=37 alice p1 e1 ack6 (-2180,90,1250) sees[] events[error:quest_incomplete]
+t=37 alice abandon_quest -> applied seq=7 epoch=1 quest=1
+t=38 expect alice quest 1 ok quest=1 absent
+t=38 expect alice marker npc:1 ok npc=1 marker=available
+t=38 alice p1 e1 ack7 (-2180,90,1250) sees[]
+t=38 alice accept_quest -> applied seq=8 epoch=1 npc=1 quest=1
+t=39 expect alice quest 1 ok quest=1 active progress=[0, 0, 0]
+t=39 alice p1 e1 ack8 (-2180,90,1250) sees[]
+t=40 alice p1 e1 ack8 (-2180,90,1250) sees[]
+t=40 alice disconnect -> disconnected player=1
+t=41 alice p1 offline
+t=42 alice reconnect -> resumed player=1 epoch=2 identity=kept
+t=43 expect alice identity ok player=1 epoch=2
+t=43 alice p1 e2 ack8 (-2180,90,1250) sees[]
+t=50 expect alice quest 1 ok quest=1 active progress=[0, 0, 0]
+t=50 alice p1 e2 ack8 (-2180,90,1250) sees[]
+t=60 alice p1 e2 ack8 (-2180,90,1250) sees[]
+PASS quest-resume ticks=60 steps=11 expectations=13 failures=0

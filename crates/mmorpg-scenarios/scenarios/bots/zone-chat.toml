@@ -1,0 +1,130 @@
+# Say and yell lines travel through real sessions: /say reaches 20 m and
+# /yell 60 m around the speaker, speakers hear themselves, and a speaker
+# may speak once per second.
+name = "zone-chat"
+zone = 1
+ticks = 210
+reconnect_grace_ticks = 30
+digest_interval = 30
+
+[[bots]]
+name = "alice"
+
+[[bots]]
+name = "bob"
+
+[[bots]]
+name = "carol"
+
+[[steps]]
+tick = 0
+bot = "alice"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "bob"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "carol"
+action = "join"
+
+# Carol runs about 30 m east along the plaza: beyond /say, within /yell.
+[[steps]]
+tick = 1
+bot = "carol"
+action = "move"
+forward = 1
+strafe = 0
+facing = 16384
+
+[[steps]]
+tick = 144
+bot = "carol"
+action = "move"
+forward = 0
+strafe = 0
+facing = 16384
+
+[[steps]]
+tick = 160
+bot = "alice"
+action = "chat"
+channel = "say"
+text = "Hail, Greyhaven!"
+
+[[steps]]
+tick = 161
+bot = "alice"
+action = "chat"
+channel = "say"
+text = "Too soon"
+
+[[steps]]
+tick = 180
+bot = "bob"
+action = "chat"
+channel = "yell"
+text = "Wolves at the gate!"
+
+[[steps]]
+tick = 195
+bot = "alice"
+action = "chat"
+channel = "say"
+text = "Coming!"
+
+[[expect]]
+kind = "chat"
+bot = "alice"
+tick = 161
+target = "alice"
+text = "Hail, Greyhaven!"
+
+[[expect]]
+kind = "chat"
+bot = "bob"
+tick = 161
+target = "alice"
+text = "Hail, Greyhaven!"
+
+[[expect]]
+kind = "chat"
+bot = "carol"
+tick = 161
+count = 0
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 162
+event = "error:chat_throttled"
+
+[[expect]]
+kind = "chat"
+bot = "bob"
+tick = 162
+count = 0
+
+[[expect]]
+kind = "chat"
+bot = "carol"
+tick = 181
+target = "bob"
+text = "Wolves at the gate!"
+
+[[expect]]
+kind = "chat"
+bot = "alice"
+tick = 181
+target = "bob"
+text = "Wolves at the gate!"
+
+[[expect]]
+kind = "chat"
+bot = "bob"
+tick = 196
+target = "alice"
+text = "Coming!"

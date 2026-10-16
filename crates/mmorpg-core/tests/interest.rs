@@ -32,6 +32,7 @@ fn zone_at(positions: &[[i32; 3]]) -> ZoneSimulation {
         .iter()
         .enumerate()
         .map(|(slot, &position)| CanonicalPlayerSnapshot {
+            copper: 0,
             // Reverse IDs deliberately: spatial traversal must not change wire order.
             player_id: u32::try_from(positions.len() - slot).unwrap(),
             position,
@@ -42,7 +43,15 @@ fn zone_at(positions: &[[i32; 3]]) -> ZoneSimulation {
             jump_pending: false,
             last_sequence: 3,
             spawn_slot: u16::try_from(slot).unwrap(),
+            inventory: mmorpg_core::Inventory::default(),
+            inventory_revision: 1,
+            inventory_changed_at: 0,
+            equipment: mmorpg_core::Equipment::default(),
             combat: CanonicalPlayerCombat::default(),
+            chat_ready_at: 0,
+            chat: Vec::new(),
+            quests: mmorpg_core::QuestLog::default(),
+            quests_changed_at: 0,
         })
         .collect();
     ZoneSimulation::from_snapshot(canonical, Arc::clone(empty.content())).unwrap()

@@ -6,7 +6,7 @@ import { fixtureExport, fixtureScenery } from "./support/scenery-fixture";
 
 const decode = (patch: Record<string, unknown> = {}) => fixtureScenery(patch);
 
-describe("scenery export boundary (format v2)", () => {
+describe("scenery export boundary (format v3)", () => {
   test("decodes terrain, the far ring, prop records, structures, roads and areas", () => {
     const scenery = decode();
     expect(scenery.contentRevision).toBe(7n);
@@ -43,6 +43,10 @@ describe("scenery export boundary (format v2)", () => {
     for (const patch of [
       { format: "other" },
       { version: 1 },
+      { version: 2 },
+      { presentationFingerprint: 1 },
+      { presentationFingerprint: "0123456789ABCDEf" },
+      { presentationFingerprint: "123456789abcdef" },
       { contentRevision: 7 },
       { contentRevision: "07" },
       { extra: true },

@@ -1,0 +1,208 @@
+# Bag moves pass through real sessions; loss recovery is periodic self state.
+name = "inventory-resume"
+zone = 1
+ticks = 22
+reconnect_grace_ticks = 30
+digest_interval = 10
+
+[[bots]]
+name = "alice"
+
+[[bots]]
+name = "bob"
+
+[[steps]]
+tick = 0
+bot = "alice"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "bob"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "alice"
+action = "move_item"
+source_slot = 0
+destination_slot = 15
+quantity = 2
+seq = 1
+
+[[steps]]
+tick = 1
+bot = "alice"
+action = "move_item"
+source_slot = 15
+destination_slot = 1
+quantity = 1
+seq = 2
+
+[[steps]]
+tick = 2
+bot = "alice"
+action = "move_item"
+source_slot = 15
+destination_slot = 0
+quantity = 2
+seq = 1
+expect = "ignored_stale"
+
+[[steps]]
+tick = 3
+bot = "alice"
+action = "disconnect"
+
+[[steps]]
+tick = 5
+bot = "alice"
+action = "reconnect"
+
+[[steps]]
+tick = 10
+bot = "alice"
+action = "move_item"
+source_slot = 15
+destination_slot = 0
+quantity = 2
+seq = 3
+connection_epoch = 1
+expect = "rejected:stale_connection"
+
+[[steps]]
+tick = 10
+bot = "alice"
+action = "move_item"
+source_slot = 15
+destination_slot = 0
+quantity = 2
+seq = 3
+
+[[steps]]
+tick = 11
+bot = "alice"
+action = "move_item"
+source_slot = 0
+destination_slot = 15
+quantity = 3
+seq = 3
+expect = "ignored_stale"
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 1
+inventory_revision = 2
+sheet = true
+slot = 15
+item = 1
+quantity = 2
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 1
+inventory_revision = 2
+sheet = true
+slot = 0
+item = 1
+quantity = 1
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 2
+event = "error:invalid_inventory_move"
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 2
+inventory_revision = 2
+sheet = false
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 3
+inventory_revision = 2
+sheet = false
+
+[[expect]]
+kind = "identity"
+bot = "alice"
+tick = 6
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 6
+inventory_revision = 2
+sheet = false
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 10
+inventory_revision = 2
+sheet = true
+slot = 15
+item = 1
+quantity = 2
+
+[[expect]]
+kind = "inventory"
+bot = "bob"
+tick = 10
+inventory_revision = 1
+sheet = true
+slot = 0
+item = 1
+quantity = 3
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 11
+inventory_revision = 3
+sheet = true
+slot = 0
+item = 1
+quantity = 3
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 11
+inventory_revision = 3
+sheet = true
+slot = 15
+item = 0
+quantity = 0
+
+[[expect]]
+kind = "acknowledged"
+bot = "alice"
+tick = 12
+sequence = 3
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 20
+inventory_revision = 3
+sheet = true
+slot = 0
+item = 1
+quantity = 3
+
+[[expect]]
+kind = "inventory"
+bot = "bob"
+tick = 20
+inventory_revision = 1
+sheet = true
+slot = 0
+item = 1
+quantity = 3

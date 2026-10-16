@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "producer": {
+    "repository": "https://github.com/moritzbrantner/asset-tooling",
+    "commit": "1e79d74ee0a62cd29706ed3254a0293c91d996ba",
+    "operation": "instances.filter.exclusion-mask@1"
+  },
+  "acceptedFrom": {
+    "repository": "https://github.com/moritzbrantner/mmorpg",
+    "commit": "166a003c067208234d3a484e1841a0ff49c74ef3",
+    "sceneryHash": "bfbc77572f3af7fd",
+    "sceneryExportSha256": "38f48e743b5632ca88705b095ddd6867eb84030cb6c52f0131d55ef9d565de86",
+    "contentRevision": "4",
+    "contentFingerprint": "5738a86de795e940"
+  },
+  "family": "grass-tuft",
+  "worldOriginUnits": [
+    0,
+    2000
+  ],
+  "unitsPerMetre": 100,
+  "mask": {
+    "columns": 71,
+    "rows": 67,
+    "bounds": {
+      "widthMicro": 70000001,
+      "depthMicro": 66000001
+    },
+    "keep": ".",
+    "exclude": "X",
+    "maxCoverage": 127
+  },
+  "clearingUnits": [
+    -2800,
+    800,
+    -1800,
+    1600
+  ]
+}

@@ -12,3 +12,6 @@
 0204 start_attack
 0205 stop_attack
 0206 release_spirit
+0207000f0002 move_item 0 15 2
+02070f00ffff move_item 15 0 65535
+0207ff000000 move_item 255 0 0

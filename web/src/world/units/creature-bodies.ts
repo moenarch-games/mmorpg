@@ -46,19 +46,24 @@ export function bodyHalfHeightUnits(entity: EntityState, catalog: ContentCatalog
   return playerHalfHeight;
 }
 
-function shade(color: Color, factor: number): Color {
+export function shade(color: Color, factor: number): Color {
   const value = Number.parseInt(color.slice(1), 16);
   const channel = (shift: number) => Math.round(((value >> shift) & 0xff) * factor);
   return `#${[16, 8, 0].map((shift) => channel(shift).toString(16).padStart(2, "0")).join("")}`;
 }
 
-function bodyColor(entity: EntityState, catalog: ContentCatalog): Color {
+/** The disposition colour of a creature, before the corpse shade: tapped grey, else hostile or neutral by family. */
+export function stateColor(entity: EntityState, catalog: ContentCatalog): Color {
   if (entity.kind === "npc") {
     return catalog.npcs.get(entity.entityId)?.role === "guard" ? GUARD : FRIENDLY;
   }
   const family = catalog.creatureTemplates.get(entity.appearance)?.family ?? "wolf";
-  const base = entity.flags.tappedByOther ? TAPPED : disposition(entity) === "hostile" ? HOSTILE[family] : NEUTRAL[family];
-  return entity.flags.dead ? shade(base, CORPSE_SHADE) : base;
+  return entity.flags.tappedByOther ? TAPPED : disposition(entity) === "hostile" ? HOSTILE[family] : NEUTRAL[family];
+}
+
+function bodyColor(entity: EntityState, catalog: ContentCatalog): Color {
+  const base = stateColor(entity, catalog);
+  return entity.kind === "creature" && entity.flags.dead ? shade(base, CORPSE_SHADE) : base;
 }
 
 /**
@@ -89,6 +94,7 @@ export function creatureBodyNodes(
       id: `${id}-target-ring`,
       geometry: { kind: "cylinder", radius: Math.max(halfX, halfZ) + 0.35, height: 0.04 },
       color: TARGET_RING,
+      unlit: true,
       opacity: 0.85,
       transform: { translation: [x, feetY + 0.02, z] },
     });

@@ -1,0 +1,124 @@
+# Equipping and unequipping pass through real sessions; the equipment sheet
+# shares the bag's revision and survives a connection resume.
+name = "equipment-resume"
+zone = 1
+ticks = 22
+reconnect_grace_ticks = 30
+digest_interval = 10
+
+[[bots]]
+name = "alice"
+
+[[steps]]
+tick = 0
+bot = "alice"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "alice"
+action = "equip_item"
+bag_slot = 1
+
+[[steps]]
+tick = 1
+bot = "alice"
+action = "equip_item"
+bag_slot = 0
+
+[[steps]]
+tick = 3
+bot = "alice"
+action = "disconnect"
+
+[[steps]]
+tick = 5
+bot = "alice"
+action = "reconnect"
+
+[[steps]]
+tick = 10
+bot = "alice"
+action = "unequip_item"
+equipment_slot = 0
+
+[[steps]]
+tick = 11
+bot = "alice"
+action = "unequip_item"
+equipment_slot = 0
+
+[[expect]]
+kind = "equipment"
+bot = "alice"
+tick = 1
+equipment_slot = 0
+item = 2
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 1
+inventory_revision = 2
+sheet = true
+slot = 1
+item = 0
+quantity = 0
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 2
+event = "error:not_equippable"
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 2
+inventory_revision = 2
+sheet = false
+
+[[expect]]
+kind = "identity"
+bot = "alice"
+tick = 6
+
+[[expect]]
+kind = "equipment"
+bot = "alice"
+tick = 10
+equipment_slot = 0
+item = 2
+
+[[expect]]
+kind = "equipment"
+bot = "alice"
+tick = 11
+equipment_slot = 0
+item = 0
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 11
+inventory_revision = 3
+sheet = true
+slot = 1
+item = 2
+quantity = 1
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 12
+event = "error:invalid_inventory_move"
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 20
+inventory_revision = 3
+sheet = true
+slot = 1
+item = 2
+quantity = 1

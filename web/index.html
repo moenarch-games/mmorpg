@@ -125,15 +125,20 @@
 
           <footer id="selection-actions" class="selection-actions">
             <div class="world-destination"><small>Destination</small><strong id="character-location">Greyhaven Outpost</strong></div>
+            <label id="online-toggle" class="online-toggle" hidden>
+              <input id="play-online" type="checkbox" />
+              <span>Play online <small id="online-server"></small></span>
+            </label>
             <button id="enter-world" class="enter-world" type="button" disabled><span id="enter-world-label">Enter World</span><small id="enter-world-note">Loading the zone simulation…</small></button>
-            <p class="selection-note">Single-player demo: the shared Rust zone simulation runs in this browser. World progress is not saved yet; returning to characters leaves the zone.</p>
+            <p id="selection-note" class="selection-note">Single-player demo: the shared Rust zone simulation runs in this browser. World progress is not saved yet; returning to characters leaves the zone.</p>
           </footer>
         </div>
       </section>
 
       <header class="topbar" data-world-ui hidden>
-        <p class="eyebrow">Greyhaven Vale · local zone host</p>
-        <div class="world-toolbar"><button id="return-to-characters" type="button">Characters</button></div>
+        <p id="world-mode" class="eyebrow">Greyhaven Vale · local zone host</p>
+        <p id="connection-status" class="connection-status" role="status" aria-live="polite"></p>
+        <div class="world-toolbar"><button id="loot-toggle" type="button" aria-controls="loot-panel" aria-expanded="false">Loot</button><button id="bags-toggle" type="button" aria-controls="bags-panel" aria-expanded="false">Bags (B)</button><button id="character-toggle" type="button" aria-controls="character-panel" aria-expanded="false">Character (C)</button><button id="vendor-toggle" type="button" aria-controls="vendor-panel" aria-expanded="false">Vendor (V)</button><button id="quest-log-toggle" type="button" aria-controls="quest-log" aria-expanded="false">Quests (L)</button><button id="return-to-characters" type="button">Characters</button></div>
       </header>
       <aside id="minimap" class="minimap" data-world-ui aria-label="Minimap" hidden>
         <h1 id="area-name" class="minimap-zone">Greyhaven Vale</h1>
@@ -144,12 +149,89 @@
           <button id="minimap-zoom-out" class="minimap-button minimap-zoom-out" type="button" aria-label="Zoom minimap out" title="Zoom out">−</button>
         </div>
       </aside>
+      <aside id="bags-panel" class="bags-panel" aria-label="Bags" hidden>
+        <div class="bags-heading"><h2>Bags</h2><button id="bags-close" type="button" aria-label="Close bags">Close</button></div>
+        <p id="bag-status" aria-live="polite"></p>
+        <div id="bag-slots" class="bag-slots" role="group" aria-label="Inventory slots"></div>
+        <p id="bag-selection"></p>
+        <label class="bag-quantity">Quantity <input id="bag-quantity" type="number" min="1" max="65535" step="1" value="1" disabled /></label>
+        <button id="bag-equip" type="button" hidden>Equip</button>
+        <p id="bag-feedback" aria-live="polite"></p>
+      </aside>
+      <aside id="character-panel" class="character-panel" aria-label="Character" hidden>
+        <div class="bags-heading"><h2>Character</h2><button id="character-close" type="button" aria-label="Close character">Close</button></div>
+        <p id="character-status" aria-live="polite"></p>
+        <ul id="equipment-slots" class="equipment-slots" aria-label="Equipment slots"></ul>
+        <dl id="character-stats" class="character-stats" aria-label="Character stats"></dl>
+        <p id="character-feedback" aria-live="polite"></p>
+      </aside>
+      <aside id="vendor-panel" class="vendor-panel" aria-label="Vendor" hidden>
+        <div class="bags-heading"><h2 id="vendor-title">Vendor</h2><button id="vendor-close" type="button" aria-label="Close vendor">Close</button></div>
+        <p id="vendor-status" aria-live="polite"></p>
+        <h3>Buy</h3>
+        <ul id="vendor-offers" class="vendor-list" aria-label="Vendor offers"></ul>
+        <h3>Sell</h3>
+        <ul id="vendor-sales" class="vendor-list" aria-label="Your items"></ul>
+        <p id="vendor-feedback" aria-live="polite"></p>
+      </aside>
+      <aside id="quest-dialog" class="quest-panel quest-dialog" aria-label="Quest dialog" hidden>
+        <div class="bags-heading"><h2 id="quest-dialog-title">Quests</h2><button id="quest-dialog-close" type="button" aria-label="Close quest dialog">Close</button></div>
+        <p id="quest-dialog-status" aria-live="polite"></p>
+        <ul id="quest-dialog-quests" class="quest-list" aria-label="Quests here"></ul>
+        <p id="quest-dialog-feedback" class="quest-feedback" aria-live="polite"></p>
+      </aside>
+      <aside id="quest-log" class="quest-panel quest-log" aria-label="Quest log" hidden>
+        <div class="bags-heading"><h2>Quest log</h2><span class="quest-log-actions"><button id="quest-dialog-toggle" type="button" aria-controls="quest-dialog" aria-expanded="false">Talk (T)</button><button id="quest-log-close" type="button" aria-label="Close quest log">Close</button></span></div>
+        <ul id="quest-log-quests" class="quest-list" aria-label="Active quests"></ul>
+        <p id="quest-log-feedback" class="quest-feedback" aria-live="polite"></p>
+      </aside>
+      <div id="quest-markers" class="quest-markers" data-world-ui aria-label="Quest markers" hidden></div>
+      <section id="chat" class="chat-frame" data-world-ui aria-label="Chat" hidden>
+        <ol id="chat-log" class="chat-log" role="log" aria-live="polite" aria-label="Chat messages"></ol>
+        <form id="chat-form" class="chat-form"><label class="visually-hidden" for="chat-input">Chat message</label><input id="chat-input" type="text" autocomplete="off" spellcheck="false" placeholder="Enter to chat · /y to yell" /></form>
+      </section>
+      <aside id="loot-panel" class="loot-panel" aria-label="Corpse loot" hidden>
+        <div class="bags-heading"><h2 id="loot-title">Corpse loot</h2><button id="loot-close" type="button" aria-label="Close loot">Close</button></div>
+        <p id="loot-rewards" aria-live="polite"></p>
+        <button id="loot-claim" type="button" disabled>Claim rewards</button>
+        <p id="loot-feedback" aria-live="polite"></p>
+      </aside>
+      <section id="class-hud" class="class-hud" data-world-ui aria-label="Class abilities and unit frames" hidden>
+        <div class="unit-frames">
+          <div class="unit-frame player-frame" aria-label="Player">
+            <div class="aura-row buffs" data-part="player-buffs" aria-label="Your beneficial effects"></div>
+            <p class="frame-name" data-part="player-name"></p>
+            <div class="frame-bar health" role="progressbar" aria-label="Health" aria-valuemin="0"><span class="fill" data-part="player-health"></span><span class="frame-text" data-part="player-health-text"></span></div>
+            <div class="frame-bar resource" role="progressbar" aria-label="Resource" aria-valuemin="0"><span class="fill" data-part="player-resource"></span><span class="frame-text" data-part="player-resource-text"></span></div>
+            <div class="aura-row debuffs" data-part="player-debuffs" aria-label="Your harmful effects"></div>
+          </div>
+          <div class="unit-frame target-frame" data-part="target" aria-label="Target" hidden>
+            <div class="aura-row buffs" data-part="target-buffs" aria-label="Target beneficial effects"></div>
+            <p class="frame-name" data-part="target-name"></p>
+            <div class="frame-bar health" role="progressbar" aria-label="Target health" aria-valuemin="0" aria-valuemax="100"><span class="fill" data-part="target-health"></span><span class="frame-text" data-part="target-health-text"></span></div>
+            <div class="cast-bar target-cast" data-part="target-cast" hidden><span class="fill" data-part="target-cast-fill"></span><span class="cast-name" data-part="target-cast-name"></span></div>
+            <div class="aura-row debuffs" data-part="target-debuffs" aria-label="Target harmful effects"></div>
+          </div>
+        </div>
+        <div class="combat-text" data-part="combat-text" aria-hidden="true"></div>
+        <div class="action-dock">
+          <div class="cast-bar player-cast" data-part="cast" role="progressbar" aria-label="Casting" hidden><span class="fill" data-part="cast-fill"></span><span class="cast-name" data-part="cast-name"></span><span class="cast-time" data-part="cast-time"></span></div>
+          <div class="action-bar-wrap">
+            <div class="ability-tooltip" data-part="tooltip" role="tooltip" hidden></div>
+            <div class="action-bar" data-part="action-bar" role="group" aria-label="Abilities"></div>
+          </div>
+        </div>
+      </section>
       <section id="debug-overlay" class="debug-overlay" aria-label="Debug statistics" hidden></section>
       <section class="hud" data-world-ui aria-label="Controls" hidden>
-        <p><kbd>WASD</kbd> move · <kbd>Space</kbd> jump · <kbd>Tab</kbd> target · <kbd>F</kbd> or right-click attack · left-drag look · right-drag turn · wheel zoom · <kbd>F3</kbd> stats · <kbd>Esc</kbd> characters</p>
-        <p id="objective">Explore Greyhaven Vale. Quests are not in this build yet.</p>
+        <p><kbd>WASD</kbd> move · <kbd>Space</kbd> jump · <kbd>Tab</kbd> target · <kbd>1</kbd>–<kbd>4</kbd> abilities · <kbd>Esc</kbd> cancels a cast · <kbd>F</kbd> or right-click attack · left-drag look · right-drag turn · wheel zoom · <kbd>B</kbd> bags · <kbd>C</kbd> character · <kbd>V</kbd> vendor · <kbd>T</kbd> talk · <kbd>L</kbd> quests · <kbd>Enter</kbd> chat · <kbd>F3</kbd> stats · <kbd>Esc</kbd> characters</p>
+        <p id="objective" class="quest-tracker" aria-label="Quest objectives" aria-live="polite">No active quests.</p>
         <p id="unit-status" aria-live="polite"></p>
         <p id="combat-feedback" aria-live="polite"></p>
+        <p id="copper-status">Copper: 0</p>
+        <p id="experience-status"></p>
+        <progress id="experience-bar" max="1" value="0" aria-labelledby="experience-status"></progress>
+        <p id="progression-feedback" aria-live="polite"></p>
       </section>
     </main>
     <script type="module" src="/src/main.ts"></script>

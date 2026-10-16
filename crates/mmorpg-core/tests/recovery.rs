@@ -60,6 +60,62 @@ fn recovery_refuses_changed_content_of_the_same_revision() {
     );
 }
 
+/// Dead units cannot move. A checkpoint from an earlier build may still hold
+/// a dead player's movement or jump intent; recovery lets go of it, as death
+/// does, so the restored spirit stands.
+#[test]
+fn recovery_lets_a_dead_player_go_of_legacy_movement_intent() {
+    let content = wandering_wolf(arena::wolf(30, [1, 2]));
+    let mut dead = checkpoint(&content);
+    dead.players[0].combat.health = 0;
+    let holding = |forward: i8, strafe: i8, jump_pending: bool| {
+        let mut state = dead.clone();
+        state.players[0].forward = forward;
+        state.players[0].strafe = strafe;
+        state.players[0].jump_pending = jump_pending;
+        state
+    };
+    for (forward, strafe, jump) in [(1, 0, false), (0, -1, false), (-1, 1, false), (0, 0, true)] {
+        let zone = restore(holding(forward, strafe, jump), &content).unwrap();
+        let player = &zone.snapshot().unwrap().players[0];
+        assert_eq!(
+            (player.forward, player.strafe, player.jump_pending),
+            (0, 0, false),
+            "{forward} {strafe} {jump}"
+        );
+    }
+    // The living keep both.
+    let mut alive = holding(1, -1, true);
+    alive.players[0].combat.health = 1;
+    let player = restore(alive, &content)
+        .unwrap()
+        .snapshot()
+        .unwrap()
+        .players
+        .remove(0);
+    assert_eq!(
+        (player.forward, player.strafe, player.jump_pending),
+        (1, -1, true)
+    );
+}
+
+#[test]
+fn an_authored_rng_seed_is_bound_to_recovery_identity() {
+    let content = wandering_wolf(arena::wolf(30, [1, 2]));
+    let retuned = Arc::new(
+        content
+            .as_ref()
+            .clone()
+            .with_rng_seed(content.rng_seed() ^ 1),
+    );
+    assert_eq!(content.revision(), retuned.revision());
+    assert_ne!(content.fingerprint(), retuned.fingerprint());
+    assert_eq!(
+        restore(checkpoint(&content), &retuned).err().unwrap(),
+        "snapshot content identity does not match the supplied zone content"
+    );
+}
+
 #[test]
 fn recovery_refuses_wander_destinations_beyond_the_wander_radius() {
     let content = wandering_wolf(arena::wolf(30, [1, 2]));

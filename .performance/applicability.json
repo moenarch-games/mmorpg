@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "components": [
+    {
+      "component": ".",
+      "scenarios": [
+        {
+          "family": "size-budget",
+          "capability": "size:budget",
+          "path": ".performance/size.json",
+          "tools": [
+            "bun",
+            "cargo",
+            "rustc"
+          ],
+          "platforms": [
+            "linux"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -351,7 +351,7 @@ fn assist_death_release_spirit_and_evade() {
     assert!(view.viewer.dead && !view.viewer.in_combat);
     assert!(!view.entities[0].flags.in_combat);
 
-    session.send(arena::stand(NORTHWARD));
+    // The walk sent while dead held nothing, so the spirit needs no stop first.
     session.send(ZoneCommand::ReleaseSpirit);
     session.tick();
     let view = session.zone.snapshot_for_player(1).unwrap();
@@ -374,6 +374,82 @@ fn assist_death_release_spirit_and_evade() {
     assert_eq!(session.health(), 27);
     session.ticks(30);
     assert_eq!(session.health(), 29);
+    let position = session.zone.snapshot_for_player(1).unwrap().entities[0].position;
+    assert_eq!(
+        [position[0], position[2]],
+        GRAVEYARD,
+        "the released spirit stands"
+    );
+}
+
+/// A player that dies while running lets go of its held movement: the
+/// intent clears at death, `Move` and `Jump` hold nothing while dead, and the
+/// released spirit stands at the graveyard until it is told to move again.
+/// A checkpoint of the dead player continues exactly.
+#[test]
+fn held_movement_does_not_survive_death() {
+    let content = arena::arena(
+        vec![arena::wolf(400, [20, 30])],
+        vec![arena::spawn(1, WOLF, [0, 2_000])],
+        vec![],
+    );
+    let mut session = Session::new(Arc::clone(&content));
+    session.send(arena::walk(NORTHWARD));
+    session.send(ZoneCommand::Jump);
+    let died = session.until(600, |session| session.health() == 0);
+    let player = &session.zone.snapshot().unwrap().players[0];
+    assert_eq!(
+        (player.forward, player.strafe, player.jump_pending),
+        (0, 0, false),
+        "death at tick {died} lets go of the held walk"
+    );
+
+    // Accepted and sequenced, but a dead unit holds no movement or jump.
+    session.send(ZoneCommand::Move {
+        forward: 1,
+        strafe: -1,
+        facing: WEST,
+    });
+    session.send(ZoneCommand::Jump);
+    let player = &session.zone.snapshot().unwrap().players[0];
+    assert_eq!(
+        (
+            player.forward,
+            player.strafe,
+            player.jump_pending,
+            player.facing
+        ),
+        (0, 0, false, NORTHWARD)
+    );
+    assert_eq!(player.last_sequence, session.sequence);
+
+    // Recovery of the dead player reproduces the release and what follows.
+    let checkpoint = session.zone.snapshot().unwrap();
+    let mut recovered = ZoneSimulation::from_snapshot(checkpoint, content).unwrap();
+    session.send(ZoneCommand::ReleaseSpirit);
+    recovered
+        .apply_command(1, session.sequence, ZoneCommand::ReleaseSpirit)
+        .unwrap();
+    for _ in 0..90 {
+        session.tick();
+        recovered.advance_tick().unwrap();
+        assert_eq!(
+            recovered.snapshot().unwrap(),
+            session.zone.snapshot().unwrap()
+        );
+    }
+    let position = session.zone.snapshot_for_player(1).unwrap().entities[0].position;
+    assert_eq!(
+        [position[0], position[2]],
+        GRAVEYARD,
+        "the released spirit stands"
+    );
+
+    // A fresh move walks again.
+    session.send(arena::walk(NORTHWARD));
+    session.ticks(10);
+    let position = session.zone.snapshot_for_player(1).unwrap().entities[0].position;
+    assert_eq!(position[2], GRAVEYARD[1] + 10 * 21);
 }
 
 /// A chase beyond 40 m from the spawn point makes the creature evade; it

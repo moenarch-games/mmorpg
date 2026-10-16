@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "producer": {
+    "repository": "https://github.com/moritzbrantner/asset-tooling",
+    "commit": "1e79d74ee0a62cd29706ed3254a0293c91d996ba",
+    "operation": "image.height.mask-flatten@1"
+  },
+  "grid": {
+    "originXzUnits": [
+      -3500,
+      -1300
+    ],
+    "stepUnits": 50,
+    "columns": 141,
+    "rows": 133,
+    "heightOffset": 128,
+    "unitsPerHeightByte": 1
+  },
+  "consumerAdapter": {
+    "source": "web/scripts/relief-package.ts",
+    "sha256": "afcc7f272f3735a84576ba7ed6d245e3c16ecac2fe967bf9728a3c55fb290137",
+    "dependencies": {
+      "web/scripts/asset-operation-api.ts": "1b5093ed9ea2a09b278259b746d96dc8f431a08cfbb71afcdc50b182fb488cbd",
+      "web/scripts/asset-source-checkout.ts": "10cf14bd62e5766697b057043bb31b7021b0db4539e180b68eddb6a2c18d3780"
+    }
+  },
+  "sourceFiles": {
+    "source.json": {
+      "sha256": "3445a80b6dbb3683e4688ae693d4e7a5e339dd498e603de4934b35938ea4ed5a",
+      "byteLength": 1140
+    },
+    "source.heights.json": {
+      "sha256": "acd3b83933bf0c318e104139404544ff5773f89f001917e9531c9d37c04a27b2",
+      "byteLength": 42679
+    },
+    "flatten.txt": {
+      "sha256": "52ec7f4f823fe356842ee727fa3d9497d9f8c82fd7506167c0ff2624e6b8aa09",
+      "byteLength": 18886
+    }
+  },
+  "build": {
+    "schemaVersion": 1,
+    "operation": {
+      "id": "image.height.mask-flatten",
+      "version": "1"
+    },
+    "implementation": {
+      "algorithm": "q8-same-grid-masked-target-height-v1",
+      "heightEncoding": "q8-opaque-grayscale",
+      "id": "builtin.image.height.mask-flatten",
+      "randomness": "none",
+      "sampleAssociation": "same-row-column-no-resampling",
+      "tool": {
+        "name": "asset-tooling",
+        "sourceFingerprint": {
+          "algorithm": "sha256-tree-v1",
+          "sha256": "508cdf73eeb6ada31722b26324000fb9cee58f1cf83e13055672e876488e4f01"
+        },
+        "version": "0.1.0"
+      },
+      "version": "1"
+    },
+    "parameters": {
+      "channel": "scalar",
+      "targetHeight": 128
+    },
+    "inputs": {
+      "source": {
+        "schemaVersion": 1,
+        "kind": "image",
+        "mediaType": "application/vnd.moritzbrantner.rgba8+json",
+        "sha256": "aed658c0dbf2b634513ae7a5f16d8771b0a2e079c91253b42a9939c004bb15bd",
+        "byteLength": 100122,
+        "metadata": {
+          "channelColorSpace": "linear",
+          "field": "height",
+          "heightOffset": 128,
+          "sampling": "data",
+          "sourceHeightSha256": "acd3b83933bf0c318e104139404544ff5773f89f001917e9531c9d37c04a27b2",
+          "unitsPerHeightByte": 1
+        }
+      },
+      "mask": {
+        "schemaVersion": 1,
+        "kind": "image",
+        "mediaType": "application/vnd.moritzbrantner.rgba8+json",
+        "sha256": "9aa8ecc3520424f15f73bce34aa35cac02804fb1570fb9a3459c98f600aeb21b",
+        "byteLength": 100122,
+        "metadata": {
+          "channelColorSpace": "linear",
+          "field": "flatten-coverage",
+          "sampling": "data",
+          "sourceTextSha256": "52ec7f4f823fe356842ee727fa3d9497d9f8c82fd7506167c0ff2624e6b8aa09"
+        }
+      }
+    }
+  },
+  "result": {
+    "outputs": {
+      "output": {
+        "schemaVersion": 1,
+        "kind": "image",
+        "mediaType": "application/vnd.moritzbrantner.rgba8+json",
+        "sha256": "a38bb729c3ae9ebba516342bf7b62ea92dd71dc0837678de614d763e6603396c",
+        "byteLength": 100122,
+        "metadata": {
+          "alphaMode": "straight",
+          "colorSpace": "srgb",
+          "field": "height",
+          "generator": "image.height.mask-flatten@1",
+          "height": 133,
+          "heightEncoding": "luma8",
+          "maskSha256": "9aa8ecc3520424f15f73bce34aa35cac02804fb1570fb9a3459c98f600aeb21b",
+          "pixelFormat": "rgba8",
+          "sourceSha256": "aed658c0dbf2b634513ae7a5f16d8771b0a2e079c91253b42a9939c004bb15bd",
+          "terrainTransform": "mask-flatten",
+          "width": 141
+        }
+      }
+    },
+    "observations": {
+      "algorithm": "q8-same-grid-masked-target-height-v1",
+      "height": 133,
+      "maskSamples": {
+        "changed": 4517,
+        "full": 12213,
+        "partial": 3870,
+        "zero": 2670
+      },
+      "parameters": {
+        "channel": "scalar",
+        "targetHeight": 128
+      },
+      "randomness": "none",
+      "sampleAssociation": "same-row-column-no-resampling",
+      "width": 141
+    }
+  },
+  "outputs": {
+    "source.rgba8.json": {
+      "sha256": "aed658c0dbf2b634513ae7a5f16d8771b0a2e079c91253b42a9939c004bb15bd",
+      "byteLength": 100122
+    },
+    "flatten.rgba8.json": {
+      "sha256": "9aa8ecc3520424f15f73bce34aa35cac02804fb1570fb9a3459c98f600aeb21b",
+      "byteLength": 100122
+    },
+    "flattened.rgba8.json": {
+      "sha256": "a38bb729c3ae9ebba516342bf7b62ea92dd71dc0837678de614d763e6603396c",
+      "byteLength": 100122
+    },
+    "flattened.heights.json": {
+      "sha256": "1f8ed6b6ad59b109d82dd1d503a0915f32af61199491f21c30418c6c1f1b9fb1",
+      "byteLength": 41375
+    },
+    "source.heights.rs": {
+      "sha256": "ceeed88bc604521fcf52b96e66594e62bf76b8fc9395cdb5c2e9a53ae46a5d84",
+      "byteLength": 62466
+    },
+    "flattened.heights.rs": {
+      "sha256": "9fbe7818f4854dbe711bc8d7ab90d6e727bb30b2c247fda1e5af11e11783dc29",
+      "byteLength": 61162
+    }
+  },
+  "evidence": {
+    "repeatedFilterMatches": true,
+    "coldReplayMatches": true,
+    "sampleCount": 18753
+  }
+}

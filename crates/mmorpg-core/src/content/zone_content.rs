@@ -1,7 +1,7 @@
 //! The complete immutable content of one zone and its identity.
 //!
 //! A zone's content is its physical definition plus its named areas, creature
-//! templates, creature spawns, NPCs and graveyard. [`ZoneContent::new`]
+//! templates, creature spawns, NPCs, graveyard and optional loot rules. [`ZoneContent::new`]
 //! validates the tables once and computes a fingerprint over a canonical byte
 //! encoding of all of them. Canonical snapshots record the revision and
 //! fingerprint instead of embedding the content, and recovery refuses content
@@ -12,10 +12,11 @@ use super::units::{
     MAX_CREATURE_TEMPLATES, MAX_NPCS, MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc,
 };
 use super::{MAX_CONTENT_COORDINATE_UNITS, ZoneDefinition};
+use crate::ability::{AbilityId, AbilityUser, ability_by_id};
 use crate::unit::{CORPSE_TICKS, MAX_SWING_DAMAGE, MAX_UNIT_LEVEL};
 use crate::{
-    CreatureId, CreatureTemplateId, MAX_PLAYERS_PER_ZONE, NpcId, PLAYER_HALF_EXTENTS_UNITS,
-    ZoneAreas, ZoneError,
+    CreatureId, CreatureTemplateId, LootOutcome, LootTable, MAX_PLAYERS_PER_ZONE, NpcId, NpcRole,
+    PLAYER_HALF_EXTENTS_UNITS, VendorStock, ZoneAreas, ZoneError,
 };
 
 /// Immutable, validated zone content, shared between zones through `Arc`.
@@ -28,6 +29,15 @@ pub struct ZoneContent {
     npcs: Vec<Npc>,
     graveyard: [i32; 2],
     fingerprint: u64,
+    rng_seed: u64,
+    loot_revision: u64,
+    loot_tables: Vec<(CreatureTemplateId, LootTable)>,
+    ability_revision: u64,
+    creature_abilities: Vec<(CreatureTemplateId, AbilityId)>,
+    vendor_revision: u64,
+    vendors: Vec<(NpcId, VendorStock)>,
+    quest_revision: u64,
+    quests: Vec<crate::Quest>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -115,7 +125,17 @@ impl ZoneContent {
             npcs,
             graveyard,
             fingerprint: 0,
+            rng_seed: 0,
+            loot_revision: 0,
+            loot_tables: Vec::new(),
+            ability_revision: 0,
+            creature_abilities: Vec::new(),
+            vendor_revision: 0,
+            vendors: Vec::new(),
+            quest_revision: 0,
+            quests: Vec::new(),
         };
+        content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
         Ok(content)
     }
@@ -133,7 +153,17 @@ impl ZoneContent {
             npcs: Vec::new(),
             graveyard: [feet[0], feet[2]],
             fingerprint: 0,
+            rng_seed: 0,
+            loot_revision: 0,
+            loot_tables: Vec::new(),
+            ability_revision: 0,
+            creature_abilities: Vec::new(),
+            vendor_revision: 0,
+            vendors: Vec::new(),
+            quest_revision: 0,
+            quests: Vec::new(),
         };
+        content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
         content
     }
@@ -207,7 +237,370 @@ impl ZoneContent {
         self.graveyard
     }
 
+    /// An authored RNG seed is part of recovery identity, while economy-only
+    /// content changes may intentionally preserve the existing random stream.
+    #[must_use]
+    pub fn with_rng_seed(mut self, seed: u64) -> Self {
+        self.rng_seed = seed;
+        self.fingerprint = self.compute_fingerprint();
+        self
+    }
+
+    #[must_use]
+    pub const fn rng_seed(&self) -> u64 {
+        self.rng_seed
+    }
+
+    /// Binds validated loot rules to recovery identity without changing the
+    /// simulation seed. Missing templates have no loot table. Revision zero
+    /// is reserved for content that has never bound a loot catalog.
+    pub fn with_loot_tables(
+        mut self,
+        revision: u64,
+        mut tables: Vec<(CreatureTemplateId, LootTable)>,
+    ) -> Result<Self, ZoneError> {
+        if revision == 0 {
+            return Err(ZoneError::new("loot catalog revision must be nonzero"));
+        }
+        if tables.len() > MAX_CREATURE_TEMPLATES {
+            return Err(ZoneError::new("zone loot content capacity reached"));
+        }
+        tables.sort_by_key(|(template, _)| *template);
+        if tables.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            return Err(ZoneError::new("duplicate loot template id"));
+        }
+        if tables
+            .iter()
+            .any(|(template, _)| self.creature_template(*template).is_none())
+        {
+            return Err(ZoneError::new("loot table names an unknown template"));
+        }
+        self.loot_revision = revision;
+        self.loot_tables = tables;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn loot_revision(&self) -> u64 {
+        self.loot_revision
+    }
+
+    /// Ordered by creature template ID; outcome order remains authored.
+    #[must_use]
+    pub fn loot_tables(&self) -> &[(CreatureTemplateId, LootTable)] {
+        &self.loot_tables
+    }
+
+    #[must_use]
+    pub fn loot_table(&self, template: CreatureTemplateId) -> Option<&LootTable> {
+        self.loot_tables
+            .binary_search_by_key(&template, |(template, _)| *template)
+            .ok()
+            .map(|index| &self.loot_tables[index].1)
+    }
+
+    /// Binds the ability catalog and each creature template's ability to
+    /// recovery identity without changing the simulation seed. Templates
+    /// without a binding use no ability. Revision zero is reserved for
+    /// content that has never bound the ability catalog; its fingerprint
+    /// omits the catalog, so its zones refuse classes and abilities.
+    pub fn with_creature_abilities(
+        mut self,
+        revision: u64,
+        mut bindings: Vec<(CreatureTemplateId, AbilityId)>,
+    ) -> Result<Self, ZoneError> {
+        if revision == 0 {
+            return Err(ZoneError::new("ability catalog revision must be nonzero"));
+        }
+        if bindings.len() > MAX_CREATURE_TEMPLATES {
+            return Err(ZoneError::new("zone ability content capacity reached"));
+        }
+        bindings.sort_by_key(|(template, _)| *template);
+        if bindings.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            return Err(ZoneError::new("duplicate creature ability template id"));
+        }
+        if bindings
+            .iter()
+            .any(|(template, _)| self.creature_template(*template).is_none())
+        {
+            return Err(ZoneError::new("creature ability names an unknown template"));
+        }
+        if bindings.iter().any(|(_, ability)| {
+            ability_by_id(*ability).is_none_or(|ability| ability.user != AbilityUser::Creature)
+        }) {
+            return Err(ZoneError::new("creature ability names no creature ability"));
+        }
+        self.ability_revision = revision;
+        self.creature_abilities = bindings;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn ability_revision(&self) -> u64 {
+        self.ability_revision
+    }
+
+    /// Ordered by creature template ID.
+    #[must_use]
+    pub fn creature_abilities(&self) -> &[(CreatureTemplateId, AbilityId)] {
+        &self.creature_abilities
+    }
+
+    /// The ability creatures of `template` use, if content binds one.
+    #[must_use]
+    pub fn creature_ability(&self, template: CreatureTemplateId) -> Option<AbilityId> {
+        self.creature_abilities
+            .binary_search_by_key(&template, |(template, _)| *template)
+            .ok()
+            .map(|index| self.creature_abilities[index].1)
+    }
+
+    /// Binds vendor stock to NPCs with the `Vendor` role and the vendor
+    /// rules (sale values) to recovery identity, without changing the
+    /// simulation seed. Revision zero is reserved for content without
+    /// vendors; its fingerprint omits them, so its zones refuse every trade.
+    pub fn with_vendors(
+        mut self,
+        revision: u64,
+        mut vendors: Vec<(NpcId, VendorStock)>,
+    ) -> Result<Self, ZoneError> {
+        if revision == 0 {
+            return Err(ZoneError::new("vendor catalog revision must be nonzero"));
+        }
+        if vendors.len() > MAX_NPCS {
+            return Err(ZoneError::new("zone vendor content capacity reached"));
+        }
+        vendors.sort_by_key(|(npc, _)| *npc);
+        if vendors.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            return Err(ZoneError::new("duplicate vendor npc id"));
+        }
+        if vendors
+            .iter()
+            .any(|(npc, _)| self.npc(*npc).is_none_or(|npc| npc.role != NpcRole::Vendor))
+        {
+            return Err(ZoneError::new("vendor stock names no vendor npc"));
+        }
+        self.vendor_revision = revision;
+        self.vendors = vendors;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn vendor_revision(&self) -> u64 {
+        self.vendor_revision
+    }
+
+    /// Ordered by NPC ID.
+    #[must_use]
+    pub fn vendors(&self) -> &[(NpcId, VendorStock)] {
+        &self.vendors
+    }
+
+    /// The stock `npc` sells, if content binds one.
+    #[must_use]
+    pub fn vendor_stock(&self, npc: NpcId) -> Option<&VendorStock> {
+        self.vendors
+            .binary_search_by_key(&npc, |(npc, _)| *npc)
+            .ok()
+            .map(|index| &self.vendors[index].1)
+    }
+
+    /// Binds quests, validated against this content, and the quest rules to
+    /// recovery identity without changing the simulation seed. Revision zero
+    /// is reserved for content without quests; its zones refuse every quest.
+    pub fn with_quests(
+        mut self,
+        revision: u64,
+        quests: Vec<crate::Quest>,
+    ) -> Result<Self, ZoneError> {
+        if revision == 0 {
+            return Err(ZoneError::new("quest catalog revision must be nonzero"));
+        }
+        let quests = crate::quest::validate_quests(&self, quests)
+            .map_err(|error| ZoneError::new(error.to_string()))?;
+        self.quest_revision = revision;
+        self.quests = quests;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn quest_revision(&self) -> u64 {
+        self.quest_revision
+    }
+
+    /// Ordered by quest ID.
+    #[must_use]
+    pub fn quests(&self) -> &[crate::Quest] {
+        &self.quests
+    }
+
+    #[must_use]
+    pub fn quest(&self, id: crate::QuestId) -> Option<&crate::Quest> {
+        self.quests
+            .binary_search_by_key(&id, |quest| quest.id)
+            .ok()
+            .map(|index| &self.quests[index])
+    }
+
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_vendor_fingerprint();
+        if self.quest_revision == 0 {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v6");
+        hash.u64(fingerprint);
+        hash.u64(self.quest_revision);
+        hash.len(self.quests.len());
+        for quest in &self.quests {
+            hash.u8(quest.id.get());
+            hash.text(&quest.name);
+            hash.text(&quest.text);
+            hash.u32(quest.giver.get());
+            hash.u32(quest.ender.get());
+            hash.u8(quest.prerequisite.map_or(0, crate::QuestId::get));
+            hash.len(quest.objectives.len());
+            for objective in &quest.objectives {
+                hash.u8(objective.code());
+                match *objective {
+                    crate::QuestObjective::Kill { template, count } => {
+                        hash.u16(template.get());
+                        hash.u8(count);
+                    }
+                    crate::QuestObjective::Collect {
+                        item,
+                        count,
+                        source,
+                    } => {
+                        hash.u16(item.get());
+                        hash.u8(count);
+                        hash.u16(source.get());
+                    }
+                    crate::QuestObjective::Talk { npc } => hash.u32(npc.get()),
+                    crate::QuestObjective::Explore { area } => hash.u16(area.get()),
+                }
+            }
+            hash.u32(quest.rewards.experience);
+            hash.u32(quest.rewards.copper);
+            hash.len(quest.rewards.choices.len());
+            for item in &quest.rewards.choices {
+                hash.u16(item.get());
+            }
+        }
+        hash.finish()
+    }
+
+    fn compute_vendor_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_ability_fingerprint();
+        if self.vendor_revision == 0 {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v5");
+        hash.u64(fingerprint);
+        hash.u64(self.vendor_revision);
+        for item in crate::ITEM_CATALOG {
+            hash.u16(item.id.get());
+            hash.u32(crate::sell_price(item.id));
+        }
+        hash.len(self.vendors.len());
+        for (npc, stock) in &self.vendors {
+            hash.u32(npc.get());
+            hash.len(stock.offers().len());
+            for offer in stock.offers() {
+                hash.u16(offer.item.get());
+                hash.u32(offer.price);
+            }
+        }
+        hash.finish()
+    }
+
+    fn compute_ability_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_loot_fingerprint();
+        if self.ability_revision == 0 {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v4");
+        hash.u64(fingerprint);
+        hash.u64(self.ability_revision);
+        hash.bytes(&crate::ability::catalog_bytes());
+        hash.len(self.creature_abilities.len());
+        for (template, ability) in &self.creature_abilities {
+            hash.u16(template.get());
+            hash.u8(ability.get());
+        }
+        hash.finish()
+    }
+
+    fn compute_loot_fingerprint(&self) -> u64 {
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v2");
+        hash.u64(self.compute_simulation_fingerprint());
+        hash.u64(self.rng_seed);
+        hash.u64(crate::ITEM_CATALOG_REVISION);
+        hash.len(crate::ITEM_CATALOG.len());
+        for item in crate::ITEM_CATALOG {
+            hash.u16(item.id.get());
+            hash.text(item.name);
+            hash.u16(item.max_stack);
+            let stats = item.stats;
+            hash.bytes(&[
+                item.slot.map_or(0, |slot| 1 + slot.index()),
+                stats.stamina,
+                stats.strength,
+                stats.agility,
+                stats.intellect,
+            ]);
+        }
+        for slot in crate::Inventory::starter().slots() {
+            hash.u16(slot.map_or(0, |stack| stack.item().get()));
+            hash.u16(slot.map_or(0, |stack| stack.quantity()));
+        }
+        let base_fingerprint = hash.finish();
+        if self.loot_revision == 0 {
+            return base_fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v3");
+        hash.u64(base_fingerprint);
+        hash.u64(self.loot_revision);
+        hash.len(self.loot_tables.len());
+        for (template, table) in &self.loot_tables {
+            hash.u16(template.get());
+            for bound in table.money_range() {
+                hash.u32(bound);
+            }
+            hash.len(table.outcomes().len());
+            for outcome in table.outcomes() {
+                match *outcome {
+                    LootOutcome::Nothing { weight } => {
+                        hash.u8(0);
+                        hash.u16(weight);
+                    }
+                    LootOutcome::Item {
+                        weight,
+                        item,
+                        quantity,
+                    } => {
+                        hash.u8(1);
+                        hash.u16(weight);
+                        hash.u16(item.get());
+                        hash.u16(quantity[0]);
+                        hash.u16(quantity[1]);
+                    }
+                }
+            }
+        }
+        hash.finish()
+    }
+
+    // Preserve the pre-inventory default seed for unchanged physical/unit content.
+    fn compute_simulation_fingerprint(&self) -> u64 {
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/v1");
         let definition = &self.definition;

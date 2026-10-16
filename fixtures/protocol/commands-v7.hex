@@ -1,0 +1,38 @@
+# Command wire v7 golden fixture, verified by mmorpg-protocol and web tests.
+070101000000 move 1 0 0
+070101014000 move 1 1 16384
+0701ffff8000 move -1 -1 32768
+07010001abcd move 0 1 43981
+07010000ffff move 0 0 65535
+0702 jump
+0703020000006c select_target 2 108
+070301ee6b2800 select_target 1 4000000000
+07030300000005 select_target 3 5
+07030000000000 select_target 0 0
+0704 start_attack
+0705 stop_attack
+0706 release_spirit
+0707000f0002 move_item 0 15 2
+07070f00ffff move_item 15 0 65535
+0707ff000000 move_item 255 0 0
+0708000000010000000000000063 loot 1 99
+0708ffffffffffffffffffffffff loot 4294967295 18446744073709551615
+0709010000000000 use_ability 1 0 0
+070909020000006c use_ability 9 2 108
+0709ff01ee6b2800 use_ability 255 1 4000000000
+070a cancel_cast
+070b0001 choose_class 0 1
+070b0200 choose_class 2 0
+070bff07 choose_class 255 7
+070c00 equip_item 0
+070c0f equip_item 15
+070cff equip_item 255
+070d00 unequip_item 0
+070d05 unequip_item 5
+070dff unequip_item 255
+070e00000003000001 buy_item 3 0 1
+070effffffffffffff buy_item 4294967295 255 65535
+070f00000003000003 sell_item 3 0 3
+070f00000000ff0000 sell_item 0 255 0
+071000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
+071001084772c3bcc39f6521 chat yell 4772c3bcc39f6521

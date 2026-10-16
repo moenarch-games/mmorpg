@@ -3,3 +3,4 @@
 /web/dist/
 /web/src/generated/
 /artifacts/
+__pycache__/

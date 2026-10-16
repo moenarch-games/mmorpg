@@ -7,19 +7,58 @@ on:
       - main
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      docs_only: ${{ steps.detect.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify PR changes
+        id: detect
+        shell: bash
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          docs_only=false
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" && -n "$PR_BASE" && -n "$PR_HEAD" ]] &&
+            git cat-file -e "$PR_BASE^{commit}" &&
+            git cat-file -e "$PR_HEAD^{commit}" &&
+            git diff --no-renames --name-only -z "$PR_BASE" "$PR_HEAD" > "$RUNNER_TEMP/changed-files";
+          then
+            mapfile -d '' -t files < "$RUNNER_TEMP/changed-files"
+            if (( ${#files[@]} > 0 )); then
+              docs_only=true
+              for file in "${files[@]}"; do
+                case "$file" in
+                  docs/*.md|README.md|AGENTS.md|CLAUDE.md|ROADMAP.md|DESIGN.md|SCENARIO_EXPERIMENTS.md) ;;
+                  *) docs_only=false; break ;;
+                esac
+              done
+            fi
+          fi
+          printf 'docs_only=%s\n' "$docs_only" >> "$GITHUB_OUTPUT"
+
   rust:
+    needs: scope
     permissions:
       contents: read
       packages: read
     uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@45042e56be120b438096e774027637cac0280075
     with:
-      bun_version: ""
+      bun_version: ${{ needs.scope.outputs.docs_only != 'true' && '1.4.2' || '' }}
       node_version: ""
-      install_command: ""
+      install_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cd web && bun install --frozen-lockfile' || '' }}
       cache_bun: false
-      cache_cargo: true
-      format_command: cargo fmt --all -- --check
-      lint_command: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-      test_command: cargo test --workspace --all-features --locked
-      build_command: cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked
-      artifact_paths: ""
+      cache_cargo: ${{ needs.scope.outputs.docs_only != 'true' }}
+      format_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo fmt --all -- --check' || '' }}
+      lint_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && bun run --cwd web typecheck:size && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
+      test_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo test --workspace --all-features --locked && mkdir -p artifacts && bun run --cwd web size:budget > artifacts/native-size.json && bun run --cwd web test:size-evidence' || '' }}
+      build_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || '' }}
+      artifact_paths: artifacts/native-size.json
+      upload_artifacts_on: ${{ needs.scope.outputs.docs_only == 'true' && 'never' || 'always' }}

@@ -8,6 +8,7 @@
 //! health live in state that every projection repeats.
 
 use crate::EntityRef;
+use crate::ability::AbilityId;
 
 /// At most this many events per player and tick.
 pub const MAX_EVENTS_PER_PLAYER: usize = 16;
@@ -33,6 +34,48 @@ pub enum ErrorCode {
     /// More discrete intents arrived between two ticks than a player may
     /// queue; the excess was dropped.
     TooManyIntents,
+    /// Invalid bag slot, quantity, source or partial swap.
+    InvalidInventoryMove,
+    /// The complete requested quantity cannot fit the destination stack.
+    InventoryFull,
+    /// The corpse death is stale, absent or expired.
+    InvalidLoot,
+    /// The viewer did not tap this death.
+    NotLootOwner,
+    /// No rewards remain.
+    EmptyLoot,
+    /// Crediting rewards would overflow the copper balance.
+    MoneyOverflow,
+    /// Abilities need a chosen class.
+    NoClass,
+    /// The class has not learned this ability (or it is not a class ability).
+    NotLearned,
+    /// The global cooldown or the ability's cooldown is running.
+    NotReady,
+    /// The resource does not cover the ability's cost.
+    NotEnoughResource,
+    /// Stunned units cannot act.
+    Stunned,
+    /// A cast or channel is already in progress.
+    AlreadyCasting,
+    /// The class choice is unknown or the class was already chosen.
+    InvalidClass,
+    /// The bag item has no equipment slot.
+    NotEquippable,
+    /// The NPC is not a vendor, or the vendor has no such offer.
+    InvalidVendor,
+    /// The copper balance does not cover the purchase.
+    NotEnoughMoney,
+    /// The speaker spoke within the last second.
+    ChatThrottled,
+    /// The quest is unknown, not offered or ended by this NPC, not
+    /// available (already active, turned in or locked by its
+    /// prerequisite), not in the log, or the reward choice is invalid.
+    InvalidQuest,
+    /// The quest log already holds ten quests.
+    QuestLogFull,
+    /// Not every objective of the quest is complete.
+    QuestIncomplete,
 }
 
 /// One feedback event addressed to a player.
@@ -72,17 +115,79 @@ pub enum ZoneEvent {
         code: ErrorCode,
         target: Option<EntityRef>,
     },
+    /// `source` began casting or channelling `ability` for `ticks` ticks.
+    CastStarted {
+        source: EntityRef,
+        target: Option<EntityRef>,
+        ability: AbilityId,
+        ticks: u16,
+    },
+    /// `source` resolved `ability`, at `target` unless it is self-centred.
+    AbilityUsed {
+        source: EntityRef,
+        target: Option<EntityRef>,
+        ability: AbilityId,
+    },
+    /// `ability` of `source` healed `target` by `amount` effective health.
+    Healed {
+        source: EntityRef,
+        target: EntityRef,
+        ability: AbilityId,
+        amount: u16,
+    },
+    /// `source` put the aura of `ability` on `target` for `ticks` ticks.
+    AuraApplied {
+        source: EntityRef,
+        target: EntityRef,
+        ability: AbilityId,
+        ticks: u16,
+    },
+    /// The aura of `ability` that `source` put on `target` ended.
+    AuraRemoved {
+        source: EntityRef,
+        target: EntityRef,
+        ability: AbilityId,
+    },
+    /// `target`'s cast or channel of `ability` stopped early, by `source`
+    /// when another unit interrupted it.
+    Interrupted {
+        source: Option<EntityRef>,
+        target: EntityRef,
+        ability: AbilityId,
+    },
+    /// A shield on `target` absorbed `amount` of `source`'s damage.
+    Absorbed {
+        source: EntityRef,
+        target: EntityRef,
+        amount: u16,
+    },
+    /// Objective `objective` (its index) of `quest` reached `count`.
+    QuestProgress {
+        quest: crate::QuestId,
+        objective: u8,
+        count: u8,
+    },
+    /// The player turned `quest` in.
+    QuestCompleted { quest: crate::QuestId },
 }
 
 impl ZoneEvent {
-    /// Overflow keeps higher priorities: deaths, then damage taken, errors,
-    /// damage dealt, and finally misses and evades.
+    /// Overflow keeps higher priorities: deaths, then damage taken, errors
+    /// and turn-ins, damage dealt and quest progress, ability feedback, and
+    /// finally misses and evades.
     const fn priority(self) -> u8 {
         match self {
-            Self::Died { .. } => 4,
-            Self::DamageTaken { .. } => 3,
-            Self::Error { .. } => 2,
-            Self::DamageDealt { .. } => 1,
+            Self::Died { .. } => 5,
+            Self::DamageTaken { .. } => 4,
+            Self::Error { .. } | Self::QuestCompleted { .. } => 3,
+            Self::DamageDealt { .. } | Self::QuestProgress { .. } => 2,
+            Self::CastStarted { .. }
+            | Self::AbilityUsed { .. }
+            | Self::Healed { .. }
+            | Self::AuraApplied { .. }
+            | Self::AuraRemoved { .. }
+            | Self::Interrupted { .. }
+            | Self::Absorbed { .. } => 1,
             Self::Miss { .. } | Self::Evade { .. } => 0,
         }
     }

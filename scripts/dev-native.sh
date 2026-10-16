@@ -40,44 +40,10 @@ for command in cargo curl openssl; do
   fi
 done
 
-mkdir -p "$DEV_TLS_DIR" "$(dirname -- "$HOST_LOG_PATH")"
-
-certificate_is_valid() {
-  [[ -f "$CERTIFICATE_PATH" && -f "$PRIVATE_KEY_PATH" ]] \
-    && openssl x509 -checkend 86400 -noout -in "$CERTIFICATE_PATH" >/dev/null 2>&1 \
-    && cmp -s \
-      <(openssl x509 -in "$CERTIFICATE_PATH" -pubkey -noout | openssl pkey -pubin -outform DER) \
-      <(openssl pkey -in "$PRIVATE_KEY_PATH" -pubout -outform DER)
-}
-
-generate_certificate() {
-  local temporary_tls_dir
-  temporary_tls_dir="$(mktemp -d "$DEV_TLS_DIR/.new.XXXXXX")"
-
-  if ! openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
-    -keyout "$temporary_tls_dir/key.pem" \
-    -out "$temporary_tls_dir/cert.pem" \
-    -sha256 -days 10 -nodes \
-    -subj /CN=localhost \
-    -addext subjectAltName=DNS:localhost,IP:127.0.0.1 \
-    >/dev/null 2>&1; then
-    rm -rf -- "$temporary_tls_dir"
-    return 1
-  fi
-
-  if ! mv -f -- "$temporary_tls_dir/cert.pem" "$CERTIFICATE_PATH" \
-    || ! mv -f -- "$temporary_tls_dir/key.pem" "$PRIVATE_KEY_PATH"; then
-    rm -rf -- "$temporary_tls_dir"
-    return 1
-  fi
-  rmdir -- "$temporary_tls_dir"
-}
-
-if ! certificate_is_valid; then
-  umask 077
-  generate_certificate
-fi
-chmod 600 "$PRIVATE_KEY_PATH"
+# shellcheck source-path=SCRIPTDIR source=lib/dev-tls.sh
+source "$ROOT_DIR/scripts/lib/dev-tls.sh"
+mkdir -p "$(dirname -- "$HOST_LOG_PATH")"
+ensure_dev_certificate "$DEV_TLS_DIR"
 
 cargo build --locked -p mmorpg-client -p mmorpg-game-server
 

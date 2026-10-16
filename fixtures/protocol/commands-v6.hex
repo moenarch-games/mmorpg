@@ -1,0 +1,36 @@
+# Command wire v6 golden fixture, verified by mmorpg-protocol and web tests.
+060101000000 move 1 0 0
+060101014000 move 1 1 16384
+0601ffff8000 move -1 -1 32768
+06010001abcd move 0 1 43981
+06010000ffff move 0 0 65535
+0602 jump
+0603020000006c select_target 2 108
+060301ee6b2800 select_target 1 4000000000
+06030300000005 select_target 3 5
+06030000000000 select_target 0 0
+0604 start_attack
+0605 stop_attack
+0606 release_spirit
+0607000f0002 move_item 0 15 2
+06070f00ffff move_item 15 0 65535
+0607ff000000 move_item 255 0 0
+0608000000010000000000000063 loot 1 99
+0608ffffffffffffffffffffffff loot 4294967295 18446744073709551615
+0609010000000000 use_ability 1 0 0
+060909020000006c use_ability 9 2 108
+0609ff01ee6b2800 use_ability 255 1 4000000000
+060a cancel_cast
+060b0001 choose_class 0 1
+060b0200 choose_class 2 0
+060bff07 choose_class 255 7
+060c00 equip_item 0
+060c0f equip_item 15
+060cff equip_item 255
+060d00 unequip_item 0
+060d05 unequip_item 5
+060dff unequip_item 255
+060e00000003000001 buy_item 3 0 1
+060effffffffffffff buy_item 4294967295 255 65535
+060f00000003000003 sell_item 3 0 3
+060f00000000ff0000 sell_item 0 255 0

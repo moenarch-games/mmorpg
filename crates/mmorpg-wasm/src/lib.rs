@@ -47,9 +47,11 @@ impl LocalZone {
         })
     }
 
-    /// Spawns a new player and returns its ID. IDs are never reused.
-    pub fn join(&mut self) -> Result<u32, JsError> {
-        self.host.join().map_err(js_error)
+    /// Spawns a new player with its class (0 Warden, 1 Ranger, 2 Arcanist)
+    /// and sex (0 female, 1 male) and returns its ID. The class choice is the
+    /// player's command sequence 1. IDs are never reused.
+    pub fn join(&mut self, class: u8, sex: u8) -> Result<u32, JsError> {
+        self.host.join_as(class, sex).map_err(js_error)
     }
 
     /// Removes the player's unit. Returns whether it was present.
@@ -57,7 +59,7 @@ impl LocalZone {
         self.host.leave(player)
     }
 
-    /// Applies one command-wire-v2 payload. Returns `true` when applied and
+    /// Applies one command-wire-v4 payload. Returns `true` when applied and
     /// `false` when the sequence is stale; throws for malformed bytes.
     pub fn submit(&mut self, player: u32, sequence: u32, command: &[u8]) -> Result<bool, JsError> {
         self.host

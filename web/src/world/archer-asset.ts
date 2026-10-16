@@ -69,9 +69,13 @@ export const ARCHER_MESHES = lowerArcherObj(archerObj);
 const neutral = materials.palettes.find((palette) => palette.id === "neutral")!;
 const materialColors = new Map(neutral.materials.map((material) => [material.id, `#${material.baseColorSrgb8.slice(0, 3).map((channel) => channel.toString(16).padStart(2, "0")).join("")}`]));
 
-/** Asset geometry is presentation only; the projected player still determines placement. */
-export function archerNodes(id: string, placement: UnitPlacement, look: HumanoidLook, bob: number): RendererSceneNode[] {
-  const halfYaw = placement.yawRadians / 2;
+/**
+ * Asset geometry is presentation only; the projected player still determines placement. The
+ * asset is one rigid mesh, so an action pose reaches it only as `turn`: extra yaw in radians
+ * that turns the whole archer side-on, like the humanoid torso twist.
+ */
+export function archerNodes(id: string, placement: UnitPlacement, look: HumanoidLook, bob: number, turn = 0): RendererSceneNode[] {
+  const halfYaw = (placement.yawRadians + turn) / 2;
   const rotationQuaternion: [number, number, number, number] = [0, Math.sin(halfYaw), 0, Math.cos(halfYaw)];
   return ARCHER_MESHES.map(({ name, geometry }) => {
     const role = materials.bindings.archer[name as keyof typeof materials.bindings.archer];

@@ -1,0 +1,28 @@
+scenario equipment-resume zone=1 bots=1 ticks=22 grace=30
+t=0 alice join -> joined player=1 epoch=1
+t=0 alice equip_item -> applied seq=1 epoch=1 bag_slot=1
+t=1 expect alice equipment ok revision=2 slot=0 item=2 stats=0/2/2/0
+t=1 expect alice inventory ok revision=2 sheet=true slot=1 item=0 quantity=0
+t=1 alice p1 e1 ack1 (-1550,90,1250) sees[]
+t=1 alice equip_item -> applied seq=2 epoch=1 bag_slot=0
+t=2 expect alice event error:not_equippable ok events[error:not_equippable]
+t=2 expect alice inventory ok revision=2 sheet=false
+t=2 alice p1 e1 ack2 (-1550,90,1250) sees[] events[error:not_equippable]
+t=3 alice disconnect -> disconnected player=1
+t=4 alice p1 offline
+t=5 alice reconnect -> resumed player=1 epoch=2 identity=kept
+t=6 expect alice identity ok player=1 epoch=2
+t=6 alice p1 e2 ack2 (-1550,90,1250) sees[]
+t=10 expect alice equipment ok revision=2 slot=0 item=2 stats=0/2/2/0
+t=10 alice p1 e2 ack2 (-1550,90,1250) sees[]
+t=10 alice unequip_item -> applied seq=3 epoch=2 equipment_slot=0
+t=11 expect alice equipment ok revision=3 slot=0 item=0 stats=0/0/0/0
+t=11 expect alice inventory ok revision=3 sheet=true slot=1 item=2 quantity=1
+t=11 alice p1 e2 ack3 (-1550,90,1250) sees[]
+t=11 alice unequip_item -> applied seq=4 epoch=2 equipment_slot=0
+t=12 expect alice event error:invalid_inventory_move ok events[error:invalid_inventory_move]
+t=12 alice p1 e2 ack4 (-1550,90,1250) sees[] events[error:invalid_inventory_move]
+t=20 expect alice inventory ok revision=3 sheet=true slot=1 item=2 quantity=1
+t=20 alice p1 e2 ack4 (-1550,90,1250) sees[]
+t=22 alice p1 e2 ack4 (-1550,90,1250) sees[]
+PASS equipment-resume ticks=22 steps=7 expectations=10 failures=0

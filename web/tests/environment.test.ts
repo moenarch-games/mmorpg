@@ -45,7 +45,7 @@ describe("environment style", () => {
     expect(hazeMix(ENVIRONMENT, 0)).toBe(0);
   });
 
-  test("the sky cycle is periodic, subtle and starts at the style's midday", () => {
+  test("the sky cycle is periodic and starts at the style's midday", () => {
     expect(skyAt(ENVIRONMENT, 0)).toEqual(ENVIRONMENT.sky);
     expect(skyAt(ENVIRONMENT, 1)).toEqual(ENVIRONMENT.sky);
     expect(skyAt(ENVIRONMENT, 0.25)).toEqual(skyAt(ENVIRONMENT, 1.25));
@@ -54,7 +54,6 @@ describe("environment style", () => {
       for (const color of Object.values(stops)) {
         expect(color).toMatch(HEX);
       }
-      expect(stops.ground).toBe(ENVIRONMENT.sky.ground);
     }
     expect(skyAt(ENVIRONMENT, 0.5).zenith).not.toBe(ENVIRONMENT.sky.zenith);
     expect(DAY_SECONDS).toBe(1_200);

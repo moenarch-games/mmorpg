@@ -77,6 +77,13 @@ pub(crate) struct PlayerState {
     pub(crate) last_sequence: u32,
     pub(crate) spawn_slot: u16,
     pub(crate) level: u8,
+    pub(crate) experience: u32,
+    pub(crate) copper: u32,
+    pub(crate) inventory: crate::Inventory,
+    pub(crate) inventory_revision: u64,
+    pub(crate) inventory_changed_at: u64,
+    /// Equipped items; they share the bag's revision and sheet.
+    pub(crate) equipment: crate::Equipment,
     /// Zero means dead.
     pub(crate) health: u32,
     pub(crate) target: Option<EntityRef>,
@@ -95,10 +102,28 @@ pub(crate) struct PlayerState {
     pub(crate) intents_dropped: bool,
     /// Events of the current tick.
     pub(crate) events: Vec<ZoneEvent>,
+    /// The one-time class choice; `None` keeps the class-agnostic baseline.
+    pub(crate) class: Option<crate::ClassChoice>,
+    /// The class resource and its regeneration timers (zero without a class).
+    pub(crate) resource: crate::class::ResourceClock,
+    pub(crate) global_cooldown: u16,
+    /// Running cooldowns ordered by ability.
+    pub(crate) cooldowns: Vec<crate::Cooldown>,
+    pub(crate) cast: Option<crate::CastState>,
+    /// Auras in slot order.
+    pub(crate) auras: Vec<crate::Aura>,
+    /// The first tick the player may speak again.
+    pub(crate) chat_ready_at: u64,
+    /// Chat lines heard this tick.
+    pub(crate) chat: Vec<crate::ChatLine>,
+    /// Active and turned-in quests.
+    pub(crate) quests: crate::QuestLog,
+    /// The tick the quest log last changed; its sheet is sent then.
+    pub(crate) quests_changed_at: u64,
 }
 
 impl PlayerState {
-    pub(crate) fn new(spawn_slot: u16) -> Self {
+    pub(crate) fn new(spawn_slot: u16, tick: u64) -> Self {
         Self {
             facing: 0,
             forward: Axis::Zero,
@@ -107,6 +132,12 @@ impl PlayerState {
             last_sequence: 0,
             spawn_slot,
             level: PLAYER_START_LEVEL,
+            experience: 0,
+            copper: 0,
+            inventory: crate::Inventory::starter(),
+            inventory_revision: 1,
+            inventory_changed_at: tick,
+            equipment: crate::Equipment::default(),
             health: player_max_health(PLAYER_START_LEVEL),
             target: None,
             auto_attack: false,
@@ -117,12 +148,51 @@ impl PlayerState {
             intents: Vec::new(),
             intents_dropped: false,
             events: Vec::new(),
+            class: None,
+            resource: crate::class::ResourceClock::default(),
+            global_cooldown: 0,
+            cooldowns: Vec::new(),
+            cast: None,
+            auras: Vec::new(),
+            chat_ready_at: 0,
+            chat: Vec::new(),
+            quests: crate::QuestLog::default(),
+            quests_changed_at: tick,
         }
     }
 
     pub(crate) const fn is_alive(&self) -> bool {
         self.health > 0
     }
+
+    /// Level health plus the equipped stamina's bonus.
+    pub(crate) fn max_health(&self) -> u32 {
+        player_max_health(self.level) + self.equipment.totals().bonus_health()
+    }
+
+    /// The class damage bonus of the equipped primary stat.
+    pub(crate) fn damage_bonus(&self) -> u16 {
+        self.equipment
+            .totals()
+            .damage_bonus(self.class.map(|choice| choice.class))
+    }
+
+    /// The melee range with the equipment bonus on both ends.
+    pub(crate) fn melee_damage(&self) -> [u16; 2] {
+        let [low, high] = crate::unit::player_damage(self.level);
+        let bonus = self.damage_bonus();
+        [low + bonus, high + bonus]
+    }
+}
+
+/// Diagnostic work for the latest attempted tick. Creation and recovery start
+/// at zero. These counters never enter canonical state or player projections.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ZoneTickWork {
+    /// Living creatures whose AI decision was evaluated, including idle units.
+    pub creature_ai_evaluations: usize,
+    /// The engine's own report, present only after a successful physics step.
+    pub physics: Option<physics_engine::StepStats>,
 }
 
 pub struct ZoneSimulation {
@@ -131,10 +201,12 @@ pub struct ZoneSimulation {
     pub(crate) world: World,
     pub(crate) content: Arc<ZoneContent>,
     pub(crate) rng: ZoneRng,
+    pub(crate) loot_rng: ZoneRng,
     pub(crate) players: BTreeMap<PlayerId, PlayerState>,
     pub(crate) creatures: BTreeMap<CreatureId, CreatureState>,
     pub(crate) interest: InterestIndex,
     pub(crate) interest_work: InterestMaintenanceStats,
+    pub(crate) tick_work: ZoneTickWork,
 }
 
 impl ZoneSimulation {
@@ -211,12 +283,14 @@ impl ZoneSimulation {
             zone_id,
             tick: 0,
             world,
-            rng: ZoneRng::seeded(content.fingerprint(), zone_id),
+            rng: ZoneRng::seeded(content.rng_seed(), zone_id),
+            loot_rng: ZoneRng::seeded(content.rng_seed() ^ 0x6c6f_6f74_2f76_3031, zone_id),
             content,
             players: BTreeMap::new(),
             creatures: BTreeMap::new(),
             interest,
             interest_work: InterestMaintenanceStats::default(),
+            tick_work: ZoneTickWork::default(),
         })
     }
 
@@ -252,6 +326,11 @@ impl ZoneSimulation {
         self.interest_work
     }
 
+    #[must_use]
+    pub const fn tick_work(&self) -> ZoneTickWork {
+        self.tick_work
+    }
+
     pub fn add_player(&mut self, player_id: PlayerId) -> Result<(), ZoneError> {
         if self.players.contains_key(&player_id) {
             return Err(ZoneError::new("player already exists in zone"));
@@ -276,7 +355,8 @@ impl ZoneSimulation {
 
         self.interest.insert(entity, position.x, position.z);
         self.interest_work.bucket_inserts += 1;
-        self.players.insert(player_id, PlayerState::new(spawn_slot));
+        self.players
+            .insert(player_id, PlayerState::new(spawn_slot, self.tick));
         Ok(())
     }
 
@@ -291,8 +371,20 @@ impl ZoneSimulation {
         if self.interest.remove(entity) {
             self.interest_work.bucket_removes += 1;
         }
+        self.forget_caster(entity);
         for creature in self.creatures.values_mut() {
             creature.forget(entity);
+            // A cast at a departed player resolves against nobody.
+            if creature
+                .cast
+                .is_some_and(|cast| cast.target == Some(entity))
+            {
+                creature.cast = None;
+            }
+            if creature.tapped_by == Some(player_id) {
+                creature.tapped_by = None;
+                creature.loot = None;
+            }
         }
         for player in self.players.values_mut() {
             if player.target == Some(entity) {
@@ -308,7 +400,9 @@ impl ZoneSimulation {
     /// the tick. A malformed or stale command changes nothing. A well-formed
     /// intent beyond [`MAX_PENDING_INTENTS`] is a gameplay outcome, not an
     /// error: it consumes its sequence, is dropped, and the next tick reports
-    /// it with an `Error` event.
+    /// it with an `Error` event. Dead units cannot move: while dead, `Move`
+    /// and `Jump` consume their sequence and hold no intent, so nothing held
+    /// before or during death moves the released spirit.
     pub fn apply_command(
         &mut self,
         player_id: PlayerId,
@@ -324,6 +418,7 @@ impl ZoneSimulation {
         }
 
         // Validate completely before mutating: a malformed command changes nothing.
+        let alive = player.is_alive();
         let intent = match command {
             ZoneCommand::Move {
                 forward,
@@ -332,20 +427,70 @@ impl ZoneSimulation {
             } => {
                 let forward = Axis::new(forward)?;
                 let strafe = Axis::new(strafe)?;
-                player.forward = forward;
-                player.strafe = strafe;
-                player.facing = facing;
+                if alive {
+                    player.forward = forward;
+                    player.strafe = strafe;
+                    player.facing = facing;
+                }
                 None
             }
             // Resolved during the next tick against the pre-step world.
             ZoneCommand::Jump => {
-                player.jump_pending = true;
+                player.jump_pending = alive;
                 None
             }
             ZoneCommand::SelectTarget(target) => Some(PlayerIntent::SelectTarget(target)),
             ZoneCommand::StartAttack => Some(PlayerIntent::StartAttack),
+            ZoneCommand::Loot(claim) => Some(PlayerIntent::Loot(claim)),
             ZoneCommand::StopAttack => Some(PlayerIntent::StopAttack),
             ZoneCommand::ReleaseSpirit => Some(PlayerIntent::ReleaseSpirit),
+            ZoneCommand::MoveItem {
+                source,
+                destination,
+                quantity,
+            } => Some(PlayerIntent::MoveItem {
+                source,
+                destination,
+                quantity,
+            }),
+            ZoneCommand::UseAbility { ability, target } => {
+                Some(PlayerIntent::UseAbility { ability, target })
+            }
+            ZoneCommand::CancelCast => Some(PlayerIntent::CancelCast),
+            ZoneCommand::ChooseClass { class, sex } => {
+                Some(PlayerIntent::ChooseClass { class, sex })
+            }
+            ZoneCommand::EquipItem { bag_slot } => Some(PlayerIntent::EquipItem { bag_slot }),
+            ZoneCommand::UnequipItem { equipment_slot } => {
+                Some(PlayerIntent::UnequipItem { equipment_slot })
+            }
+            ZoneCommand::BuyItem {
+                npc,
+                offer,
+                quantity,
+            } => Some(PlayerIntent::BuyItem {
+                npc,
+                offer,
+                quantity,
+            }),
+            ZoneCommand::SellItem {
+                npc,
+                bag_slot,
+                quantity,
+            } => Some(PlayerIntent::SellItem {
+                npc,
+                bag_slot,
+                quantity,
+            }),
+            ZoneCommand::Chat { channel, text } => Some(PlayerIntent::Chat(channel.message(text))),
+            ZoneCommand::Emote(emote) => Some(PlayerIntent::Chat(crate::ChatMessage::Emote(emote))),
+            ZoneCommand::AcceptQuest { npc, quest } => {
+                Some(PlayerIntent::AcceptQuest { npc, quest })
+            }
+            ZoneCommand::CompleteQuest { npc, quest, choice } => {
+                Some(PlayerIntent::CompleteQuest { npc, quest, choice })
+            }
+            ZoneCommand::AbandonQuest { quest } => Some(PlayerIntent::AbandonQuest { quest }),
         };
         if let Some(intent) = intent {
             if player.intents.len() < MAX_PENDING_INTENTS {
@@ -360,16 +505,25 @@ impl ZoneSimulation {
 
     /// Advances one tick in a fixed order:
     ///
-    /// 1. every player's pending intents, in `(player id, sequence)` order;
+    /// 1. every player's pending intents, in `(player id, sequence)` order,
+    ///    including class choices and ability use (instant abilities resolve
+    ///    here, casts and channels start here);
     /// 2. creature AI decisions in creature-ID order (aggro, assist, chase,
-    ///    wander, leash and evade), which set creature velocities;
-    /// 3. player movement velocities and grounded jumps (dead players stand still);
+    ///    wander, leash, evade and creature ability casts), which set
+    ///    creature velocities; roots and stuns stop them, snares slow them;
+    /// 3. player movement velocities and grounded jumps (dead and stunned
+    ///    players stand still); movement or a jump interrupts a cast;
     /// 4. one physics step;
     /// 5. interest index maintenance from the new positions;
-    /// 6. combat in `EntityRef` order (players, then creatures): swing
-    ///    timers, range checks after movement, damage, threat, deaths, tapping;
-    /// 7. regeneration, corpse despawns and respawns in ID order;
-    /// 8. the tick counter.
+    /// 6. combat: global cooldowns, cooldowns and casts or channels (players,
+    ///    then creatures), aura pulses and expiry in `(EntityRef, aura slot)`
+    ///    order, then swings in `EntityRef` order: swing timers, range checks
+    ///    after movement, damage, threat, deaths, tapping;
+    /// 7. health and class-resource regeneration, corpse despawns and
+    ///    respawns in ID order;
+    /// 8. talk and explore quest objectives of living players in player-ID
+    ///    order;
+    /// 9. the tick counter.
     ///
     /// Events of the previous tick are cleared first, so each player's queue
     /// holds exactly this tick's events until the next tick starts.
@@ -378,27 +532,48 @@ impl ZoneSimulation {
             .tick
             .checked_add(1)
             .ok_or_else(|| ZoneError::new("zone tick overflow"))?;
+        self.tick_work = ZoneTickWork::default();
         for player in self.players.values_mut() {
             player.events.clear();
+            player.chat.clear();
         }
         self.consume_intents()?;
         self.decide_creatures()?;
         self.drive_players()?;
-        self.world.step(1).map_err(physics_error)?;
+        self.tick_work.physics = Some(self.world.step(1).map_err(physics_error)?.stats);
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
         for player in self.players.values_mut() {
             player.jump_pending = false;
         }
         self.update_interest()?;
+        self.advance_casts(now)?;
+        self.advance_auras(now)?;
         self.resolve_combat(now)?;
         self.update_timers(now)?;
+        self.advance_quest_objectives(now)?;
         self.tick = now;
         Ok(())
     }
 
     /// Step 3: horizontal controller velocity from intent, vertical velocity
-    /// from physics or a grounded jump.
+    /// from physics or a grounded jump. Stunned players stand still, roots
+    /// and snares scale the controller velocity, and a non-zero movement
+    /// intent or a jump interrupts a cast or channel.
     fn drive_players(&mut self) -> Result<(), ZoneError> {
+        let moving: Vec<_> = self
+            .players
+            .iter()
+            .filter(|(_, state)| {
+                state.cast.is_some()
+                    && (state.forward != Axis::Zero
+                        || state.strafe != Axis::Zero
+                        || state.jump_pending)
+            })
+            .map(|(&player_id, _)| player_id)
+            .collect();
+        for player_id in moving {
+            self.interrupt_cast(EntityRef::Player(player_id), None, None);
+        }
         for (&player_id, state) in &self.players {
             let body_id = body_id(EntityRef::Player(player_id));
             let body = self
@@ -408,14 +583,20 @@ impl ZoneSimulation {
             // Setting velocities never moves bodies, so every grounded probe in
             // this pass observes the same pre-step positions regardless of order.
             let alive = state.is_alive();
+            let stunned = crate::aura::has_kind(&state.auras, crate::AuraKind::Stun);
             let vertical_velocity =
-                if alive && state.jump_pending && is_grounded(&self.world, body)? {
+                if alive && !stunned && state.jump_pending && is_grounded(&self.world, body)? {
                     JUMP_VELOCITY_UNITS_PER_TICK
                 } else {
                     body.velocity().y
                 };
             let mut velocity = if alive {
-                movement_velocity(state)?
+                let free = movement_velocity(state)?;
+                let [x, z] = crate::aura::scale_velocity(
+                    [free.x, free.z],
+                    crate::aura::speed_percent(&state.auras),
+                );
+                Vec3i::new(x, 0, z)
             } else {
                 Vec3i::ZERO
             };

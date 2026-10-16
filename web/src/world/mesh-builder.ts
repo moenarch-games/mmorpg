@@ -94,6 +94,7 @@ function normalize([x, y, z]: Vec3): Vec3 {
 
 /** Accumulates transformed shapes into one indexed mesh. */
 export class MeshBuilder {
+  readonly colors: Vec3[] = [];
   readonly positions: Vec3[] = [];
   readonly normals: Vec3[] = [];
   readonly indices: number[] = [];

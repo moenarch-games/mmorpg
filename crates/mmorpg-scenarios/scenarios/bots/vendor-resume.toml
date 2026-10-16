@@ -1,0 +1,175 @@
+# Selling to and buying from Innkeeper Bram Tolliver (NPC 3) pass through
+# real sessions: trades need reach and copper, settle bag and copper
+# together, and survive a connection resume.
+name = "vendor-resume"
+zone = 1
+ticks = 175
+reconnect_grace_ticks = 30
+digest_interval = 25
+
+[[bots]]
+name = "alice"
+
+[[steps]]
+tick = 0
+bot = "alice"
+action = "join"
+
+# From the spawn plaza the vendor is about 30 m away.
+[[steps]]
+tick = 1
+bot = "alice"
+action = "sell_item"
+npc = 3
+bag_slot = 0
+quantity = 1
+
+# Run east along the plaza, then a few steps north to the inn's counter.
+[[steps]]
+tick = 2
+bot = "alice"
+action = "move"
+forward = 1
+strafe = 0
+facing = 16384
+
+[[steps]]
+tick = 147
+bot = "alice"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 152
+bot = "alice"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 154
+bot = "alice"
+action = "sell_item"
+npc = 3
+bag_slot = 0
+quantity = 3
+
+# Three copper do not cover the five-copper Worn Dagger.
+[[steps]]
+tick = 155
+bot = "alice"
+action = "buy_item"
+npc = 3
+offer = 0
+quantity = 1
+
+# A guard sells nothing.
+[[steps]]
+tick = 156
+bot = "alice"
+action = "buy_item"
+npc = 6
+offer = 0
+quantity = 1
+
+[[steps]]
+tick = 157
+bot = "alice"
+action = "sell_item"
+npc = 3
+bag_slot = 1
+quantity = 1
+
+[[steps]]
+tick = 159
+bot = "alice"
+action = "disconnect"
+
+[[steps]]
+tick = 161
+bot = "alice"
+action = "reconnect"
+
+[[steps]]
+tick = 165
+bot = "alice"
+action = "buy_item"
+npc = 3
+offer = 0
+quantity = 1
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 2
+event = "error:out_of_range"
+
+[[expect]]
+kind = "copper"
+bot = "alice"
+tick = 2
+copper = 0
+
+[[expect]]
+kind = "position"
+bot = "alice"
+tick = 153
+position = [1495, 90, 1145]
+
+[[expect]]
+kind = "copper"
+bot = "alice"
+tick = 155
+copper = 3
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 155
+inventory_revision = 2
+sheet = true
+slot = 0
+item = 0
+quantity = 0
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 156
+event = "error:not_enough_money"
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 157
+event = "error:invalid_vendor"
+
+[[expect]]
+kind = "copper"
+bot = "alice"
+tick = 158
+copper = 5
+
+[[expect]]
+kind = "identity"
+bot = "alice"
+tick = 162
+
+[[expect]]
+kind = "copper"
+bot = "alice"
+tick = 166
+copper = 0
+
+[[expect]]
+kind = "inventory"
+bot = "alice"
+tick = 166
+inventory_revision = 4
+sheet = true
+slot = 0
+item = 2
+quantity = 1

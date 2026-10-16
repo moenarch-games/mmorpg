@@ -1,8 +1,9 @@
 //! The zone's deterministic random stream (SplitMix64).
 //!
 //! The 64-bit state is canonical: checkpoints store it, and recovery resumes
-//! the same stream. A zone seeds it from its content fingerprint and zone ID,
-//! so different zones or content never share a stream by accident. Draws
+//! the same stream. A zone seeds it from its declared content RNG seed and zone ID,
+//! so different zones retain separate streams; content may explicitly retain
+//! a seed when an economy-only revision must preserve simulation behavior. Draws
 //! happen only at fixed points of the tick order, in unit order.
 
 use crate::ZoneId;
@@ -25,9 +26,9 @@ impl ZoneRng {
 
     /// The initial stream of a zone.
     #[must_use]
-    pub const fn seeded(content_fingerprint: u64, zone_id: ZoneId) -> Self {
+    pub const fn seeded(content_seed: u64, zone_id: ZoneId) -> Self {
         Self {
-            state: mix(content_fingerprint ^ mix(zone_id.get() as u64)),
+            state: mix(content_seed ^ mix(zone_id.get() as u64)),
         }
     }
 

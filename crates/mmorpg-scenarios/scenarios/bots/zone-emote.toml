@@ -1,0 +1,118 @@
+# Emotes travel through real sessions like /say lines: they reach 20 m around
+# the speaker, speakers see their own emote, and an emote shares the speaker's
+# once-per-second limit with chat, across a reconnect.
+name = "zone-emote"
+zone = 1
+ticks = 210
+reconnect_grace_ticks = 30
+digest_interval = 30
+
+[[bots]]
+name = "alice"
+
+[[bots]]
+name = "bob"
+
+[[bots]]
+name = "carol"
+
+[[steps]]
+tick = 0
+bot = "alice"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "bob"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "carol"
+action = "join"
+
+# Carol runs about 30 m east along the plaza: beyond /say range.
+[[steps]]
+tick = 1
+bot = "carol"
+action = "move"
+forward = 1
+strafe = 0
+facing = 16384
+
+[[steps]]
+tick = 144
+bot = "carol"
+action = "move"
+forward = 0
+strafe = 0
+facing = 16384
+
+[[steps]]
+tick = 160
+bot = "alice"
+action = "emote"
+emote = "wave"
+
+# A line one tick later shares the emote's rate limit.
+[[steps]]
+tick = 161
+bot = "alice"
+action = "chat"
+channel = "say"
+text = "Too soon"
+
+[[steps]]
+tick = 170
+bot = "bob"
+action = "disconnect"
+
+[[steps]]
+tick = 175
+bot = "bob"
+action = "reconnect"
+
+[[steps]]
+tick = 180
+bot = "bob"
+action = "emote"
+emote = "bow"
+
+[[expect]]
+kind = "chat"
+bot = "alice"
+tick = 161
+target = "alice"
+emote = "wave"
+
+[[expect]]
+kind = "chat"
+bot = "bob"
+tick = 161
+target = "alice"
+emote = "wave"
+
+[[expect]]
+kind = "chat"
+bot = "carol"
+tick = 161
+count = 0
+
+[[expect]]
+kind = "event"
+bot = "alice"
+tick = 162
+event = "error:chat_throttled"
+
+[[expect]]
+kind = "chat"
+bot = "bob"
+tick = 162
+count = 0
+
+[[expect]]
+kind = "chat"
+bot = "alice"
+tick = 181
+target = "bob"
+emote = "bow"

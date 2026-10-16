@@ -175,6 +175,69 @@ export function poseFor(state: LocomotionState, stance: Stance): Pose {
   };
 }
 
+/** Joint values of a four-legged body: leg swings in radians (positive reaches forward), offsets in metres. */
+export type QuadrupedPose = {
+  /** Body height offset; the body dips at each footfall. */
+  bob: number;
+  /** Nose-up (+) body pitch. */
+  pitch: number;
+  breathe: number;
+  headPitch: number;
+  /** Tail sway in radians, positive toward +X. */
+  tailSway: number;
+  /** Tail raise in radians. */
+  tailLift: number;
+  frontLeft: number;
+  frontRight: number;
+  backLeft: number;
+  backRight: number;
+};
+
+/** Inclusive bounds every quadruped pose value stays within. */
+export const QUADRUPED_LIMITS = {
+  bob: [-0.05, 0],
+  pitch: [-0.12, 0.12],
+  breathe: [0, 0.04],
+  headPitch: [-0.3, 0.3],
+  tailSway: [-0.6, 0.6],
+  tailLift: [0, 0.8],
+  legSwing: [-0.9, 0.9],
+} as const satisfies Record<string, readonly [number, number]>;
+
+/** Short legs cycle faster than a person: gait cycles per stride cycle of the shared animator. */
+export const QUADRUPED_GAIT_RATE = 2.2;
+
+/**
+ * The trot of a four-legged body: diagonal leg pairs (front left with back
+ * right, front right with back left) swing against each other, their phase
+ * advancing with distance travelled and their reach growing with horizontal
+ * speed. At rest the legs hang still and the body breathes. Pure, finite and
+ * within `QUADRUPED_LIMITS`.
+ */
+export function quadrupedPoseFor(state: LocomotionState): QuadrupedPose {
+  const speed = Math.hypot(finite(state.forward), finite(state.right));
+  const move = unit(state.moveWeight);
+  const idle = 1 - move;
+  const run = unit(speed / RUN_SPEED);
+  const phase = finite(state.stridePhase) * QUADRUPED_GAIT_RATE;
+  const time = finite(state.time);
+  const reach = (0.3 + 0.45 * run) * move;
+  const diagonal = reach * Math.sin(phase);
+  const breathe = (0.02 + 0.015 * Math.sin(time * 2.1)) * idle;
+  return {
+    bob: clamp(-(0.012 + 0.03 * run) * move * (1 - Math.cos(2 * phase)) / 2, QUADRUPED_LIMITS.bob),
+    pitch: clamp(0.05 * run * move * Math.sin(2 * phase), QUADRUPED_LIMITS.pitch),
+    breathe: clamp(breathe, QUADRUPED_LIMITS.breathe),
+    headPitch: clamp(-0.12 * run * move + 0.05 * idle * Math.sin(time * 0.7), QUADRUPED_LIMITS.headPitch),
+    tailSway: clamp(0.3 * idle * Math.sin(time * 1.7) + 0.2 * move * Math.sin(phase), QUADRUPED_LIMITS.tailSway),
+    tailLift: clamp(0.15 + 0.45 * run * move, QUADRUPED_LIMITS.tailLift),
+    frontLeft: clamp(diagonal, QUADRUPED_LIMITS.legSwing),
+    backRight: clamp(diagonal, QUADRUPED_LIMITS.legSwing),
+    frontRight: clamp(-diagonal, QUADRUPED_LIMITS.legSwing),
+    backLeft: clamp(-diagonal, QUADRUPED_LIMITS.legSwing),
+  };
+}
+
 function boundLeg(leg: LegPose): LegPose {
   return {
     swing: clamp(leg.swing, POSE_LIMITS.legSwing),

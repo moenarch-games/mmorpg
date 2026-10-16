@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node", "bun-types"], "preserveSymlinks": true },
+  "include": ["scripts/native-size.ts", "scripts/native-size.acceptance.ts"]
+}

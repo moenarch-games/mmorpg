@@ -63,6 +63,12 @@ pub(crate) struct CreatureState {
     pub(crate) combat_timer: u16,
     /// The first player who damaged it since it last reset.
     pub(crate) tapped_by: Option<crate::PlayerId>,
+    pub(crate) loot: Option<crate::LootRewards>,
+    /// Ticks until its content-bound ability may be used again.
+    pub(crate) ability_timer: u16,
+    pub(crate) cast: Option<crate::CastState>,
+    /// Auras in slot order.
+    pub(crate) auras: Vec<crate::Aura>,
 }
 
 impl CreatureState {
@@ -101,6 +107,14 @@ impl CreatureState {
     /// Removes a unit from the threat table (death, leaving the zone).
     pub(crate) fn forget(&mut self, entity: EntityRef) {
         self.threat.retain(|entry| entry.entity != entity);
+    }
+
+    /// Back to rest: no cast, auras or pending ability timer. Death, the
+    /// start of an evade and its end all reset this way.
+    pub(crate) fn reset_abilities(&mut self) {
+        self.cast = None;
+        self.auras.clear();
+        self.ability_timer = 0;
     }
 }
 
@@ -182,6 +196,10 @@ impl ZoneSimulation {
                 swing_timer: 0,
                 combat_timer: 0,
                 tapped_by: None,
+                loot: None,
+                ability_timer: 0,
+                cast: None,
+                auras: Vec::new(),
             },
         );
         Ok(())

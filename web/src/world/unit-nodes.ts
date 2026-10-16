@@ -4,14 +4,17 @@ import type { ContentCatalog } from "./catalog";
 import { UnitAnimator, poseFor, type LocomotionState } from "./character-animation";
 import { archerNodes } from "./archer-asset";
 import { OTHER_PLAYER_LOOK, humanoidHeadwearNodes, humanoidNodes, humanoidStance, type HumanoidLook, type UnitPlacement } from "./humanoid";
-import { PLACEHOLDER_BODY_MODEL } from "./units/creature-bodies";
+import { applyActionPose } from "./action-pose";
+import type { ViewerAction } from "./units/spell-effects";
+import { CREATURE_MODEL } from "./units/creature-models";
 
 /**
  * Unit rendering by projected entity. A registry maps each entity kind to a
  * model, and the model reads the whole projected entity, so it can pick a
  * body by appearance (template ID) and stand on its own half height. Players
- * are animated humanoids (Rangers use the packaged archer mesh); creatures and NPCs are placeholder bodies
- * (`units/creature-bodies.ts`) until they get models of their own.
+ * are animated humanoids (Rangers use the packaged archer mesh); creatures and NPCs get a
+ * procedural model by family or role (`units/creature-models.ts`), falling back to the
+ * placeholder box of `units/creature-bodies.ts` for unknown templates.
  */
 export type { UnitPlacement } from "./humanoid";
 
@@ -30,6 +33,8 @@ export type UnitContext = {
   catalog: ContentCatalog;
   /** The viewer's current target, which its model marks. */
   viewerTarget: EntityRef | null;
+  /** The viewer's cast, draw or swing, which its humanoid plays over its locomotion. */
+  viewerAction?: ViewerAction | null;
 };
 
 /** Everything a unit model draws from in one frame. */
@@ -82,18 +87,21 @@ export const PLAYER_MODEL: UnitModel = {
   halfHeightUnits: (_entity, context) => context.playerHalfHeightUnits,
   nodes: ({ id, entity, placement, locomotion, context }) => {
     const look = entity.entityId === context.viewerId ? context.viewerLook : OTHER_PLAYER_LOOK;
+    const action = entity.entityId === context.viewerId ? context.viewerAction ?? null : null;
     if (look.visuals.weapon === "bow") {
-      const pose = poseFor(locomotion, "bow");
-      return [...archerNodes(id, placement, look, pose.bob), ...humanoidHeadwearNodes(id, placement, look, pose)];
+      const base = poseFor(locomotion, "bow");
+      const pose = applyActionPose(base, action);
+      // The rigid archer mesh cannot bend its arms; the draw pose turns it side-on instead.
+      return [...archerNodes(id, placement, look, pose.bob, pose.twist - base.twist), ...humanoidHeadwearNodes(id, placement, look, pose)];
     }
-    return humanoidNodes(id, placement, look, poseFor(locomotion, humanoidStance(look)));
+    return humanoidNodes(id, placement, look, applyActionPose(poseFor(locomotion, humanoidStance(look)), action));
   },
 };
 
 export const UNIT_MODELS: UnitModels = {
   player: PLAYER_MODEL,
-  creature: PLACEHOLDER_BODY_MODEL,
-  npc: PLACEHOLDER_BODY_MODEL,
+  creature: CREATURE_MODEL,
+  npc: CREATURE_MODEL,
 };
 
 /** The model that draws a projected entity. */
@@ -108,6 +116,12 @@ export function placeWithModel(model: UnitModel, entity: EntityState, context: U
 
 export function unitIdentity(entity: Pick<EntityState, "kind" | "entityId">): string {
   return `unit-${entity.kind}-${entity.entityId}`;
+}
+
+/** The IDs of the nodes one unit drew, given its `unitIdentity` (IDs are `<identity>-<part>`). */
+export function unitNodeIds(nodes: readonly { id: string }[], identity: string): string[] {
+  const prefix = `${identity}-`;
+  return nodes.filter((node) => node.id.startsWith(prefix)).map((node) => node.id);
 }
 
 /** Animation state per visible unit, dropped when the unit leaves the projection. */

@@ -301,7 +301,44 @@ impl ClientSession {
         self.send_command(ZoneCommand::ReleaseSpirit)
     }
 
-    fn send_command(&mut self, command: ZoneCommand) -> Result<(), SessionError> {
+    /// Chooses the class and sex once; the zone refuses a repeat with an event.
+    pub fn send_choose_class(&mut self, class: u8, sex: u8) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::ChooseClass { class, sex })
+    }
+
+    /// Uses a class ability at the current selection; the zone validates it.
+    pub fn send_use_ability(&mut self, ability: u8) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::UseAbility {
+            ability,
+            target: None,
+        })
+    }
+
+    /// Stops the character's own cast or channel.
+    pub fn send_cancel_cast(&mut self) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::CancelCast)
+    }
+
+    /// Claims all remaining rewards from the projected corpse death.
+    pub fn send_loot(&mut self, claim: mmorpg_core::LootClaim) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::Loot(claim))
+    }
+
+    /// Queues a move within the player's own authoritative bag.
+    pub fn send_move_item(
+        &mut self,
+        source: u8,
+        destination: u8,
+        quantity: u16,
+    ) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::MoveItem {
+            source,
+            destination,
+            quantity,
+        })
+    }
+
+    pub(crate) fn send_command(&mut self, command: ZoneCommand) -> Result<(), SessionError> {
         let sequence = self
             .sequence
             .checked_add(1)

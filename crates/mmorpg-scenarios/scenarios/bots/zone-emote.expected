@@ -1,0 +1,33 @@
+scenario zone-emote zone=1 bots=3 ticks=210 grace=30
+t=0 alice join -> joined player=1 epoch=1
+t=0 bob join -> joined player=2 epoch=1
+t=0 carol join -> joined player=3 epoch=1
+t=1 alice p1 e1 ack0 (-1550,90,1250) sees[bob,carol] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack0 (-1350,90,1250) sees[bob,alice]
+t=1 carol move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=16384
+t=2 alice p1 e1 ack0 (-1550,90,1250) sees[bob,carol] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack1 (-1329,90,1250) sees[bob,alice]
+t=30 alice p1 e1 ack0 (-1550,90,1250) sees[bob,carol] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack1 (-741,90,1250) sees[bob,alice]
+t=60 alice p1 e1 ack0 (-1550,90,1250) sees[bob,carol] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack1 (-111,90,1250) sees[bob,alice]
+t=90 alice p1 e1 ack0 (-1550,90,1250) sees[bob,carol] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack1 (519,90,1250) sees[bob,alice]
+t=120 alice p1 e1 ack0 (-1550,90,1250) sees[bob,carol] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack1 (1149,90,1250) sees[bob,alice]
+t=144 carol move -> applied seq=2 epoch=1 forward=0 strafe=0 facing=16384
+t=145 alice p1 e1 ack0 (-1550,90,1250) sees[bob,carol] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack2 (1653,90,1250) sees[bob,alice]
+t=150 alice p1 e1 ack0 (-1550,90,1250) sees[bob,carol] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack2 (1653,90,1250) sees[bob,alice]
+t=160 alice emote -> applied seq=1 epoch=1 emote=wave
+t=161 expect alice chat ok chat[alice emotes wave]
+t=161 expect bob chat ok chat[alice emotes wave]
+t=161 expect carol chat ok chat[]
+t=161 alice p1 e1 ack1 (-1550,90,1250) sees[bob,carol] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack2 (1653,90,1250) sees[bob,alice]
+t=161 alice chat -> applied seq=2 epoch=1 channel=say text="Too soon"
+t=162 expect alice event error:chat_throttled ok events[error:chat_throttled]
+t=162 expect bob chat ok chat[]
+t=162 alice p1 e1 ack2 (-1550,90,1250) sees[bob,carol] events[error:chat_throttled] | bob p2 e1 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack2 (1653,90,1250) sees[bob,alice]
+t=170 bob disconnect -> disconnected player=2
+t=171 alice p1 e1 ack2 (-1550,90,1250) sees[bob,carol] | bob p2 offline | carol p3 e1 ack2 (1653,90,1250) sees[bob,alice]
+t=175 bob reconnect -> resumed player=2 epoch=2 identity=kept
+t=176 alice p1 e1 ack2 (-1550,90,1250) sees[bob,carol] | bob p2 e2 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack2 (1653,90,1250) sees[bob,alice]
+t=180 alice p1 e1 ack2 (-1550,90,1250) sees[bob,carol] | bob p2 e2 ack0 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack2 (1653,90,1250) sees[bob,alice]
+t=180 bob emote -> applied seq=1 epoch=2 emote=bow
+t=181 expect alice chat ok chat[bob emotes bow]
+t=181 alice p1 e1 ack2 (-1550,90,1250) sees[bob,carol] | bob p2 e2 ack1 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack2 (1653,90,1250) sees[bob,alice]
+t=210 alice p1 e1 ack2 (-1550,90,1250) sees[bob,carol] | bob p2 e2 ack1 (-1450,90,1250) sees[alice,carol] | carol p3 e1 ack2 (1653,90,1250) sees[bob,alice]
+PASS zone-emote ticks=210 steps=10 expectations=6 failures=0

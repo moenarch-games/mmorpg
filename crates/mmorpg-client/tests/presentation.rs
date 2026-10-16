@@ -1,7 +1,10 @@
-use mmorpg_client::presentation::Presentation;
+use mmorpg_client::{
+    camera::OrbitCamera,
+    presentation::{MAX_SCENE_BOXES, Presentation},
+};
 use mmorpg_core::{
     CreatureId, EntityFlags, EntityKind, EntityRef, EntitySnapshot, NpcId, SNAPSHOT_SCHEMA_VERSION,
-    ViewerState, ZoneId, ZoneSnapshot, greyhaven_vale,
+    TargetDetail, ViewerState, ZoneId, ZoneSnapshot, greyhaven_vale,
 };
 use mmorpg_scenery::greyhaven_vale_scenery;
 use std::{
@@ -15,20 +18,31 @@ fn snapshot(tick: u64, position: [i32; 3]) -> ZoneSnapshot {
 
 fn facing_snapshot(tick: u64, position: [i32; 3], facing: u16) -> ZoneSnapshot {
     ZoneSnapshot {
+        loot: None,
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         zone_id: ZoneId::new(1),
         tick,
         content_revision: greyhaven_vale::REVISION,
         acknowledged_sequence: 1,
         viewer_id: 1,
+        inventory_revision: 1,
+        inventory: None,
+        equipment: None,
+        quests: None,
         viewer: ViewerState {
+            experience: 0,
+            experience_to_next_level: 100,
             health: 50,
             max_health: 50,
             level: 1,
             ..ViewerState::default()
         },
         target_of_target: None,
+        target_detail: TargetDetail::default(),
+        cooldowns: Vec::new(),
+        auras: Vec::new(),
         events: Vec::new(),
+        chat: Vec::new(),
         entities: vec![EntitySnapshot {
             kind: EntityKind::Player,
             id: 1,
@@ -86,23 +100,36 @@ fn units_render_on_the_shared_relief_with_entity_dimensions() {
     presentation
         .push(facing_snapshot(1, [x, 90, z], 16_384), now)
         .unwrap();
-    let scene = presentation.scene(now);
-    // Each player renders a body and a facing marker; scenery is static.
-    let [body, nose] = scene[..] else {
-        panic!("one body and one nose: {scene:?}");
-    };
-    let lifted = 0.9 + relief as f32 / 100.0;
-    assert_eq!(body.position, [x as f32 / 100.0, lifted, z as f32 / 100.0]);
-    assert_eq!(presentation.camera_target(now), body.position);
-    assert_eq!(body.size, [0.6, 1.8, 0.6]);
-    assert!(
-        (body.yaw - FRAC_PI_2).abs() < 1e-6,
-        "a quarter turn faces +X"
+    let scene = presentation.scene(
+        now,
+        OrbitCamera::default().view(presentation.camera_target(now)),
     );
-    assert_eq!(nose.yaw, body.yaw);
-    assert!(nose.position[0] > body.position[0] + body.size[0] / 2.0);
-    assert!((nose.position[2] - body.position[2]).abs() < 1e-5);
-    assert!(nose.position[1] > body.position[1], "at head height");
+    // One 16-box humanoid and two health-bar boxes; scenery is static.
+    assert_eq!(scene.len(), 18);
+    let model = &scene[..16];
+    let centre = [
+        x as f32 / 100.0,
+        0.9 + relief as f32 / 100.0,
+        z as f32 / 100.0,
+    ];
+    let feet = model
+        .iter()
+        .map(|item| item.position[1] - item.size[1] / 2.0)
+        .fold(f32::MAX, f32::min);
+    assert!(
+        (feet - (centre[1] - 0.9)).abs() < 1e-4,
+        "feet rest on the relief"
+    );
+    assert!(model.iter().all(|item| (item.yaw - FRAC_PI_2).abs() < 1e-6));
+    assert_eq!(presentation.camera_target(now), centre);
+    // A quarter turn faces +X: the dark face plate sits in front of the head.
+    let face = model
+        .iter()
+        .find(|item| item.color == [0.2, 0.15, 0.13])
+        .expect("a face plate");
+    assert!(face.position[0] > centre[0] + 0.1);
+    assert!((face.position[2] - centre[2]).abs() < 1e-4);
+    assert!(face.position[1] > centre[1], "at head height");
 }
 
 #[test]
@@ -217,49 +244,58 @@ fn creatures_and_npcs_render_by_size_disposition_and_state() {
         },
     ]);
     presentation.push(snapshot, now).unwrap();
-    let scene = presentation.scene(now);
-    // Player: body + nose; wolf: target marker + body + nose; boar: body +
-    // nose; corpse: one flat body; NPC: body + nose.
-    assert_eq!(scene.len(), 2 + 3 + 2 + 1 + 2);
-    let at = |x: f32, z: f32| {
-        scene
-            .iter()
-            .filter(|item| {
-                (item.position[0] - x).abs() < 1e-4 && (item.position[2] - z).abs() < 1e-4
-            })
-            .collect::<Vec<_>>()
-    };
-    let wolf_boxes = at(0.0, -18.0);
-    let marker = wolf_boxes[0];
-    assert!(marker.size[1] < 0.05, "the target marker is flat");
-    let wolf_body = wolf_boxes[1];
-    assert_eq!(
-        wolf_body.size,
-        [0.8, 0.9, 0.8],
-        "the template's collision box"
+    let scene = presentation.scene(
+        now,
+        OrbitCamera::default().view(presentation.camera_target(now)),
     );
+    // Units sort by kind then id: the player (humanoid + two bar boxes), the
+    // targeted wolf (marker + 10-box quadruped + bars), the wolf corpse (10
+    // flat boxes), the boar (11 boxes + bars) and the guard (humanoid, no bars).
+    assert_eq!(scene.len(), 18 + 13 + 10 + 13 + 16);
+    let wolf_boxes = &scene[18..31];
+    assert!(wolf_boxes[0].size[1] < 0.05, "the target marker is flat");
+    let wolf_torso = wolf_boxes[5];
     assert!(
-        wolf_body.color[0] > wolf_body.color[1] + 0.3,
+        wolf_torso.color[0] > wolf_torso.color[1] + 0.3,
         "hostile is red-ish"
     );
-    let boar_body = at(3.0, -20.0)[0];
-    assert_eq!(boar_body.size, [0.9, 0.9, 0.9]);
+    let corpse = &scene[31..41];
     assert!(
-        boar_body.color[0] > 0.6 && boar_body.color[1] > 0.5,
+        corpse.iter().all(|item| item.size[1] < 0.2),
+        "a corpse lies flat"
+    );
+    let boar_torso = scene[41 + 4];
+    assert!(
+        boar_torso.color[0] > 0.6 && boar_torso.color[1] > 0.5,
         "neutral is yellow-ish"
     );
-    let corpse = at(-3.0, -20.0)[0];
-    assert!(corpse.size[1] < 0.2, "a corpse lies flat");
-    let guard = at(0.0, -26.0)[0];
-    assert_eq!(guard.size, [0.6, 1.8, 0.6]);
+    let guard = &scene[54..70];
     assert!(
-        guard.color[1] > guard.color[0] + 0.2,
+        guard.iter().any(|item| item.color[1] > item.color[0] + 0.2),
         "friendly is green-ish"
     );
 
     assert_eq!(
         presentation.status().unwrap(),
         "HP 38/50 · in combat · target Timber Wolf (L2, 43%) · attacking"
+    );
+    let mut caster = presentation.latest().unwrap().clone();
+    caster.tick += 1;
+    caster.viewer.resource = Some(mmorpg_core::ResourceView {
+        kind: mmorpg_core::ResourceKind::Mana,
+        value: 85,
+        max: 110,
+    });
+    caster.viewer.cast = Some(mmorpg_core::CastView {
+        ability: mmorpg_core::AbilityId::new(9),
+        elapsed: 20,
+        total: 60,
+        channel: false,
+    });
+    presentation.push(caster, now).unwrap();
+    assert_eq!(
+        presentation.status().unwrap(),
+        "HP 38/50 · mana 85/110 · casting Firebolt 20/60 · in combat · target Timber Wolf (L2, 43%) · attacking"
     );
     assert_eq!(
         presentation.unit_name(EntityRef::Npc(NpcId::new(6))),
@@ -277,4 +313,91 @@ fn scenery_and_content_of_different_revisions_are_refused() {
     let mut scenery = greyhaven_vale_scenery();
     scenery.content_revision += 1;
     assert!(Presentation::new(1, scenery, greyhaven_vale::content(), Instant::now()).is_err());
+}
+
+#[test]
+fn health_bars_use_projected_percent_and_face_the_camera_above_the_body() {
+    let now = Instant::now();
+    for (percent, expected_width) in [(100, 1.0), (43, 0.43), (0, 0.0)] {
+        let mut presentation = presentation(now);
+        let mut sample = snapshot(1, [0, 90, 0]);
+        sample.entities[0].health_percent = percent;
+        // Exact viewer health must not override the entity's quantized record.
+        sample.viewer.health = 1;
+        presentation.push(sample, now).unwrap();
+        let mut camera = OrbitCamera::default();
+        camera.orbit(150.0, 0.0);
+        let view = camera.view(presentation.camera_target(now));
+        let scene = presentation.scene(now, view);
+        let body = scene[5];
+        let background = scene[16];
+        assert!(background.position[1] > body.position[1] + body.size[1] / 2.0);
+        let yaw = (view.target[0] - view.eye[0]).atan2(view.target[2] - view.eye[2]);
+        assert!((background.yaw - yaw).abs() < 1e-5);
+        if percent == 0 {
+            assert_eq!(scene.len(), 17, "zero health has no fill geometry");
+        } else {
+            assert_eq!(scene.len(), 18);
+            let fill = scene[17];
+            assert!((fill.size[0] - expected_width).abs() < 1e-5);
+            assert_eq!(fill.yaw, background.yaw);
+            let dx = fill.position[0] - background.position[0];
+            let dz = fill.position[2] - background.position[2];
+            let local_x = dx * yaw.cos() - dz * yaw.sin();
+            let local_z = dx * yaw.sin() + dz * yaw.cos();
+            assert!((local_x + expected_width / 2.0 - 0.5).abs() < 1e-5);
+            assert!(local_z < 0.0, "the fill sits on the eye side");
+        }
+    }
+}
+
+#[test]
+fn old_packets_cannot_restore_health_and_reset_discards_bars() {
+    let now = Instant::now();
+    let mut presentation = presentation(now);
+    presentation.push(snapshot(10, [0, 90, 0]), now).unwrap();
+    let mut damaged = snapshot(12, [0, 90, 0]);
+    damaged.entities[0].health_percent = 20;
+    presentation.push(damaged, now).unwrap();
+    assert!(!presentation.push(snapshot(11, [0, 90, 0]), now).unwrap());
+    let sampled = now + Duration::from_secs(1);
+    let view = OrbitCamera::default().view(presentation.camera_target(sampled));
+    assert!((presentation.scene(sampled, view)[17].size[0] - 0.2).abs() < 1e-5);
+    presentation.reset(sampled);
+    assert!(presentation.scene(sampled, view).is_empty());
+    presentation.push(snapshot(1, [0, 90, 0]), sampled).unwrap();
+    assert_eq!(presentation.scene(sampled, view)[17].size[0], 1.0);
+    let mut dead = snapshot(2, [0, 90, 0]);
+    dead.entities[0].flags.dead = true;
+    dead.entities[0].health_percent = 0;
+    presentation.push(dead, sampled).unwrap();
+    assert_eq!(
+        presentation
+            .scene(sampled + Duration::from_secs(1), view)
+            .len(),
+        16,
+        "a dead player stands as before, without a health bar"
+    );
+}
+
+#[test]
+fn maximum_projection_fits_the_instance_budget_and_larger_input_is_refused() {
+    let now = Instant::now();
+    let mut presentation = presentation(now);
+    let mut sample = snapshot(1, [0, 90, 0]);
+    for id in 2..=u32::try_from(mmorpg_core::MAX_VISIBLE_ENTITIES).unwrap() {
+        let mut player = sample.entities[0].clone();
+        player.id = id;
+        sample.entities.push(player);
+    }
+    sample.viewer.target = Some(EntityRef::Player(2));
+    presentation.push(sample.clone(), now).unwrap();
+    let view = OrbitCamera::default().view(presentation.camera_target(now));
+    assert_eq!(presentation.scene(now, view).len(), MAX_SCENE_BOXES);
+    sample.tick += 1;
+    let mut extra = sample.entities[0].clone();
+    extra.id = 100;
+    sample.entities.push(extra);
+    assert!(presentation.push(sample, now).is_err());
+    assert_eq!(presentation.latest().unwrap().tick, 1);
 }

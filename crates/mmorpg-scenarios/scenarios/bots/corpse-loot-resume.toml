@@ -1,0 +1,259 @@
+# Kill the existing Greyhaven den wolf through the hosted runtime, then
+# reject a stale death, settle once, reject same-tick duplicates and verify
+# rewards remain consumed across reconnect and stale connection fencing.
+name = "corpse-loot-resume"
+zone = 1
+ticks = 925
+digest_interval = 100
+
+[[bots]]
+name = "hunter"
+
+[[steps]]
+tick = 0
+bot = "hunter"
+action = "join"
+
+# South (+Z) onto the Wolfrun Trail's hub segment.
+[[steps]]
+tick = 0
+bot = "hunter"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+# Attacking without a target is refused with an event, not a session error.
+[[steps]]
+tick = 1
+bot = "hunter"
+action = "start_attack"
+
+# West along the trail, through the west gate.
+[[steps]]
+tick = 36
+bot = "hunter"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+# Outside the palisade, step north onto the trunk-grid line z = 1800 …
+[[steps]]
+tick = 121
+bot = "hunter"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+# … and follow it west into Wolfrun Woods.
+[[steps]]
+tick = 131
+bot = "hunter"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+# North along the trunk-grid line x = -8450 toward the den clearing.
+[[steps]]
+tick = 375
+bot = "hunter"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+# Select the den wolf while approaching; it is still beyond melee reach.
+[[steps]]
+tick = 380
+bot = "hunter"
+action = "select_target"
+entity = "creature:108"
+
+[[steps]]
+tick = 380
+bot = "hunter"
+action = "start_attack"
+
+# The wolf engaged at tick 394: stand and let it come.
+[[steps]]
+tick = 395
+bot = "hunter"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+
+[[steps]]
+tick = 913
+bot = "hunter"
+action = "loot"
+creature = 108
+died_at = 913
+
+[[steps]]
+tick = 914
+bot = "hunter"
+action = "loot"
+creature = 108
+died_at = 912
+
+[[steps]]
+tick = 914
+bot = "hunter"
+action = "loot"
+creature = 108
+died_at = 912
+
+[[steps]]
+tick = 914
+bot = "hunter"
+action = "loot"
+creature = 108
+died_at = 912
+seq = 11
+expect = "ignored_stale"
+
+[[steps]]
+tick = 916
+bot = "hunter"
+action = "disconnect"
+
+
+[[steps]]
+tick = 918
+bot = "hunter"
+action = "reconnect"
+
+
+[[steps]]
+tick = 918
+bot = "hunter"
+action = "loot"
+creature = 108
+died_at = 912
+
+[[steps]]
+tick = 919
+bot = "hunter"
+action = "loot"
+creature = 108
+died_at = 912
+connection_epoch = 1
+expect = "rejected:stale_connection"
+
+[[steps]]
+tick = 921
+bot = "hunter"
+action = "loot"
+creature = 108
+died_at = 18446744073709551615
+
+[[expect]]
+kind = "loot"
+bot = "hunter"
+tick = 912
+sheet = true
+creature = 108
+died_at = 912
+
+[[expect]]
+kind = "copper"
+bot = "hunter"
+tick = 912
+copper = 0
+
+[[expect]]
+kind = "event"
+bot = "hunter"
+tick = 914
+event = "error:invalid_loot"
+entity = "creature:108"
+
+[[expect]]
+kind = "loot"
+bot = "hunter"
+tick = 914
+sheet = true
+creature = 108
+died_at = 912
+
+[[expect]]
+kind = "loot"
+bot = "hunter"
+tick = 915
+sheet = false
+
+[[expect]]
+kind = "copper"
+bot = "hunter"
+tick = 915
+copper = 2
+
+[[expect]]
+kind = "event"
+bot = "hunter"
+tick = 915
+event = "error:empty_loot"
+entity = "creature:108"
+
+[[expect]]
+kind = "inventory"
+bot = "hunter"
+tick = 915
+inventory_revision = 2
+sheet = true
+slot = 0
+item = 1
+quantity = 5
+
+[[expect]]
+kind = "identity"
+bot = "hunter"
+tick = 919
+
+
+[[expect]]
+kind = "copper"
+bot = "hunter"
+tick = 919
+copper = 2
+
+[[expect]]
+kind = "loot"
+bot = "hunter"
+tick = 919
+sheet = false
+
+[[expect]]
+kind = "event"
+bot = "hunter"
+tick = 919
+event = "error:empty_loot"
+entity = "creature:108"
+
+[[expect]]
+kind = "inventory"
+bot = "hunter"
+tick = 920
+inventory_revision = 2
+sheet = true
+slot = 0
+item = 1
+quantity = 5
+
+[[expect]]
+kind = "event"
+bot = "hunter"
+tick = 922
+event = "error:invalid_loot"
+entity = "creature:108"
+
+[[expect]]
+kind = "copper"
+bot = "hunter"
+tick = 925
+copper = 2

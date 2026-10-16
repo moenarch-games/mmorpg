@@ -22,11 +22,15 @@
 //! 140 m, which clients draw as a coarse far ring. Clients render a unit at
 //! its physics position plus the relief height at its XZ; the offset never
 //! feeds back into gameplay.
+//! The Outpost uses a saved authored heightfield; surrounding relief retains
+//! the original analytic function. Both clients sample the same scenery owner.
 //!
-//! Everything is derived with integer arithmetic and fixed seeds, so every
+//! Everything uses integer arithmetic, fixed seeds and saved inputs, so every
 //! platform builds identical scenery ([`Scenery::stable_hash`]).
 
 mod geometry;
+mod outpost_grass;
+mod outpost_relief;
 
 use std::collections::BTreeMap;
 
@@ -34,6 +38,7 @@ pub use geometry::Rect;
 use geometry::{Ellipse, Rng, polyline_distance, splitmix64, value_noise};
 use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_PLAZA, ids};
 use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, greyhaven_vale_definition, trig};
+pub use outpost_grass::outpost_grass_placements;
 
 /// Half the side of the square the terrain grid covers (±200 m).
 pub const TERRAIN_EXTENT_UNITS: i32 = 20_000;
@@ -397,6 +402,7 @@ pub struct Scenery {
     pub water: Vec<Water>,
     farmland: Vec<Rect>,
     relief: Relief,
+    authored_outpost_relief: bool,
 }
 
 /// The visual of a Greyhaven Vale collider, or `None` for the ground and
@@ -519,6 +525,14 @@ const FARMLAND: Rect = Rect {
 /// Builds the Greyhaven Vale scenery from the core content revision.
 #[must_use]
 pub fn greyhaven_vale_scenery() -> Scenery {
+    let mut scenery = unmasked_greyhaven_vale_scenery();
+    outpost_grass::apply(&mut scenery.props);
+    // Apply after procedural placement, preserving every accepted prop/RNG draw.
+    scenery.authored_outpost_relief = true;
+    scenery
+}
+
+fn unmasked_greyhaven_vale_scenery() -> Scenery {
     let definition = greyhaven_vale_definition();
     let structures: Vec<_> = definition
         .colliders()
@@ -561,6 +575,7 @@ pub fn greyhaven_vale_scenery() -> Scenery {
         water,
         farmland: vec![FARMLAND],
         relief,
+        authored_outpost_relief: false,
     };
     let blockers = Blockers::new(structures.iter().map(|(collider, _)| *collider));
     let mut placer = Placer {
@@ -579,6 +594,11 @@ impl Scenery {
     /// flat ground (y = 0).
     #[must_use]
     pub fn height_at(&self, x: i32, z: i32) -> i32 {
+        if self.authored_outpost_relief
+            && let Some(height) = outpost_relief::height_at(x, z)
+        {
+            return height;
+        }
         self.relief.height_at(x, z)
     }
 

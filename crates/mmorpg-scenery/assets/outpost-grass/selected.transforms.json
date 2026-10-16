@@ -1,0 +1,552 @@
+[
+  {
+    "id": "outpost-grass-001",
+    "yaw": 49822,
+    "scalePermille": 766,
+    "halfExtents": [
+      15,
+      11,
+      15
+    ]
+  },
+  {
+    "id": "outpost-grass-002",
+    "yaw": 57545,
+    "scalePermille": 1157,
+    "halfExtents": [
+      23,
+      17,
+      23
+    ]
+  },
+  {
+    "id": "outpost-grass-004",
+    "yaw": 24454,
+    "scalePermille": 822,
+    "halfExtents": [
+      16,
+      12,
+      16
+    ]
+  },
+  {
+    "id": "outpost-grass-008",
+    "yaw": 26617,
+    "scalePermille": 948,
+    "halfExtents": [
+      18,
+      14,
+      18
+    ]
+  },
+  {
+    "id": "outpost-grass-010",
+    "yaw": 30835,
+    "scalePermille": 857,
+    "halfExtents": [
+      17,
+      12,
+      17
+    ]
+  },
+  {
+    "id": "outpost-grass-011",
+    "yaw": 28199,
+    "scalePermille": 713,
+    "halfExtents": [
+      14,
+      10,
+      14
+    ]
+  },
+  {
+    "id": "outpost-grass-013",
+    "yaw": 11598,
+    "scalePermille": 845,
+    "halfExtents": [
+      16,
+      12,
+      16
+    ]
+  },
+  {
+    "id": "outpost-grass-014",
+    "yaw": 13366,
+    "scalePermille": 834,
+    "halfExtents": [
+      16,
+      12,
+      16
+    ]
+  },
+  {
+    "id": "outpost-grass-017",
+    "yaw": 48747,
+    "scalePermille": 837,
+    "halfExtents": [
+      16,
+      12,
+      16
+    ]
+  },
+  {
+    "id": "outpost-grass-018",
+    "yaw": 6059,
+    "scalePermille": 785,
+    "halfExtents": [
+      15,
+      11,
+      15
+    ]
+  },
+  {
+    "id": "outpost-grass-019",
+    "yaw": 34089,
+    "scalePermille": 1096,
+    "halfExtents": [
+      21,
+      16,
+      21
+    ]
+  },
+  {
+    "id": "outpost-grass-020",
+    "yaw": 60142,
+    "scalePermille": 1179,
+    "halfExtents": [
+      23,
+      17,
+      23
+    ]
+  },
+  {
+    "id": "outpost-grass-021",
+    "yaw": 14047,
+    "scalePermille": 932,
+    "halfExtents": [
+      18,
+      13,
+      18
+    ]
+  },
+  {
+    "id": "outpost-grass-023",
+    "yaw": 21294,
+    "scalePermille": 870,
+    "halfExtents": [
+      17,
+      13,
+      17
+    ]
+  },
+  {
+    "id": "outpost-grass-024",
+    "yaw": 21802,
+    "scalePermille": 1122,
+    "halfExtents": [
+      22,
+      16,
+      22
+    ]
+  },
+  {
+    "id": "outpost-grass-026",
+    "yaw": 40569,
+    "scalePermille": 1059,
+    "halfExtents": [
+      21,
+      15,
+      21
+    ]
+  },
+  {
+    "id": "outpost-grass-028",
+    "yaw": 61528,
+    "scalePermille": 1181,
+    "halfExtents": [
+      23,
+      17,
+      23
+    ]
+  },
+  {
+    "id": "outpost-grass-029",
+    "yaw": 64367,
+    "scalePermille": 1154,
+    "halfExtents": [
+      23,
+      17,
+      23
+    ]
+  },
+  {
+    "id": "outpost-grass-030",
+    "yaw": 61474,
+    "scalePermille": 1299,
+    "halfExtents": [
+      25,
+      19,
+      25
+    ]
+  },
+  {
+    "id": "outpost-grass-031",
+    "yaw": 4257,
+    "scalePermille": 734,
+    "halfExtents": [
+      14,
+      11,
+      14
+    ]
+  },
+  {
+    "id": "outpost-grass-034",
+    "yaw": 60370,
+    "scalePermille": 852,
+    "halfExtents": [
+      17,
+      12,
+      17
+    ]
+  },
+  {
+    "id": "outpost-grass-035",
+    "yaw": 52315,
+    "scalePermille": 1193,
+    "halfExtents": [
+      23,
+      17,
+      23
+    ]
+  },
+  {
+    "id": "outpost-grass-037",
+    "yaw": 55926,
+    "scalePermille": 1114,
+    "halfExtents": [
+      22,
+      16,
+      22
+    ]
+  },
+  {
+    "id": "outpost-grass-038",
+    "yaw": 30070,
+    "scalePermille": 882,
+    "halfExtents": [
+      17,
+      13,
+      17
+    ]
+  },
+  {
+    "id": "outpost-grass-041",
+    "yaw": 30488,
+    "scalePermille": 889,
+    "halfExtents": [
+      17,
+      13,
+      17
+    ]
+  },
+  {
+    "id": "outpost-grass-042",
+    "yaw": 42861,
+    "scalePermille": 744,
+    "halfExtents": [
+      14,
+      11,
+      14
+    ]
+  },
+  {
+    "id": "outpost-grass-049",
+    "yaw": 55247,
+    "scalePermille": 978,
+    "halfExtents": [
+      19,
+      14,
+      19
+    ]
+  },
+  {
+    "id": "outpost-grass-050",
+    "yaw": 57819,
+    "scalePermille": 837,
+    "halfExtents": [
+      16,
+      12,
+      16
+    ]
+  },
+  {
+    "id": "outpost-grass-053",
+    "yaw": 40937,
+    "scalePermille": 1080,
+    "halfExtents": [
+      21,
+      16,
+      21
+    ]
+  },
+  {
+    "id": "outpost-grass-056",
+    "yaw": 5480,
+    "scalePermille": 927,
+    "halfExtents": [
+      18,
+      13,
+      18
+    ]
+  },
+  {
+    "id": "outpost-grass-060",
+    "yaw": 19883,
+    "scalePermille": 821,
+    "halfExtents": [
+      16,
+      12,
+      16
+    ]
+  },
+  {
+    "id": "outpost-grass-062",
+    "yaw": 35322,
+    "scalePermille": 1284,
+    "halfExtents": [
+      25,
+      19,
+      25
+    ]
+  },
+  {
+    "id": "outpost-grass-064",
+    "yaw": 13804,
+    "scalePermille": 1116,
+    "halfExtents": [
+      22,
+      16,
+      22
+    ]
+  },
+  {
+    "id": "outpost-grass-065",
+    "yaw": 52978,
+    "scalePermille": 884,
+    "halfExtents": [
+      17,
+      13,
+      17
+    ]
+  },
+  {
+    "id": "outpost-grass-069",
+    "yaw": 31975,
+    "scalePermille": 1192,
+    "halfExtents": [
+      23,
+      17,
+      23
+    ]
+  },
+  {
+    "id": "outpost-grass-072",
+    "yaw": 16143,
+    "scalePermille": 1164,
+    "halfExtents": [
+      23,
+      17,
+      23
+    ]
+  },
+  {
+    "id": "outpost-grass-073",
+    "yaw": 33243,
+    "scalePermille": 1053,
+    "halfExtents": [
+      21,
+      15,
+      21
+    ]
+  },
+  {
+    "id": "outpost-grass-075",
+    "yaw": 17901,
+    "scalePermille": 1039,
+    "halfExtents": [
+      20,
+      15,
+      20
+    ]
+  },
+  {
+    "id": "outpost-grass-077",
+    "yaw": 19141,
+    "scalePermille": 1194,
+    "halfExtents": [
+      23,
+      17,
+      23
+    ]
+  },
+  {
+    "id": "outpost-grass-079",
+    "yaw": 19339,
+    "scalePermille": 840,
+    "halfExtents": [
+      16,
+      12,
+      16
+    ]
+  },
+  {
+    "id": "outpost-grass-080",
+    "yaw": 6914,
+    "scalePermille": 1228,
+    "halfExtents": [
+      24,
+      18,
+      24
+    ]
+  },
+  {
+    "id": "outpost-grass-081",
+    "yaw": 30551,
+    "scalePermille": 776,
+    "halfExtents": [
+      15,
+      11,
+      15
+    ]
+  },
+  {
+    "id": "outpost-grass-082",
+    "yaw": 43587,
+    "scalePermille": 1048,
+    "halfExtents": [
+      20,
+      15,
+      20
+    ]
+  },
+  {
+    "id": "outpost-grass-084",
+    "yaw": 62562,
+    "scalePermille": 968,
+    "halfExtents": [
+      19,
+      14,
+      19
+    ]
+  },
+  {
+    "id": "outpost-grass-085",
+    "yaw": 53892,
+    "scalePermille": 1025,
+    "halfExtents": [
+      20,
+      15,
+      20
+    ]
+  },
+  {
+    "id": "outpost-grass-086",
+    "yaw": 20513,
+    "scalePermille": 1206,
+    "halfExtents": [
+      24,
+      18,
+      24
+    ]
+  },
+  {
+    "id": "outpost-grass-087",
+    "yaw": 61316,
+    "scalePermille": 994,
+    "halfExtents": [
+      19,
+      14,
+      19
+    ]
+  },
+  {
+    "id": "outpost-grass-089",
+    "yaw": 7344,
+    "scalePermille": 761,
+    "halfExtents": [
+      15,
+      11,
+      15
+    ]
+  },
+  {
+    "id": "outpost-grass-090",
+    "yaw": 65503,
+    "scalePermille": 886,
+    "halfExtents": [
+      17,
+      13,
+      17
+    ]
+  },
+  {
+    "id": "outpost-grass-095",
+    "yaw": 46804,
+    "scalePermille": 1024,
+    "halfExtents": [
+      20,
+      15,
+      20
+    ]
+  },
+  {
+    "id": "outpost-grass-096",
+    "yaw": 23336,
+    "scalePermille": 996,
+    "halfExtents": [
+      19,
+      14,
+      19
+    ]
+  },
+  {
+    "id": "outpost-grass-100",
+    "yaw": 7149,
+    "scalePermille": 795,
+    "halfExtents": [
+      15,
+      11,
+      15
+    ]
+  },
+  {
+    "id": "outpost-grass-103",
+    "yaw": 15660,
+    "scalePermille": 1170,
+    "halfExtents": [
+      23,
+      17,
+      23
+    ]
+  },
+  {
+    "id": "outpost-grass-112",
+    "yaw": 9333,
+    "scalePermille": 859,
+    "halfExtents": [
+      17,
+      12,
+      17
+    ]
+  },
+  {
+    "id": "outpost-grass-115",
+    "yaw": 58533,
+    "scalePermille": 938,
+    "halfExtents": [
+      18,
+      14,
+      18
+    ]
+  }
+]

@@ -13,7 +13,10 @@ Earlier builds offered **Save game**, **Load game**, **Export save** and **Impor
 for a TypeScript-owned position and waystone flag. Those rules no longer exist, so the
 controls are gone rather than claiming to persist state they cannot restore. Durable
 progress (class, level, experience, inventory, quests, position) belongs to a character
-record behind core command/query APIs: issue #30. Until then:
+record behind core command/query APIs: issue #30. Issue #40 composes that record with
+versioned zone/world checkpoints in an atomic save-slot bundle and restores the
+matching character and world. A character record alone does not re-enable world
+progress saves. Until the composed save/load flow exists:
 
 - the local character roster (`mmorpg.offline-roster.v1`) persists, see
   [character creation](CHARACTER_CREATION.md);

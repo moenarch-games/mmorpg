@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "producer": {
+    "repository": "https://github.com/moritzbrantner/asset-tooling",
+    "commit": "1e79d74ee0a62cd29706ed3254a0293c91d996ba",
+    "operation": "image.height.mask-flatten@1"
+  },
+  "capturedFrom": {
+    "repository": "https://github.com/moritzbrantner/mmorpg",
+    "commit": "6265e1c842aad9d2034bfe7946dec4582158b9e6",
+    "query": "mmorpg-wasm reliefAt(x,z)",
+    "sceneryExportSha256": "6472e7ef87e8725b1ac763cc1dd5fe0d1387345df3e7aa65440466461f372cf9",
+    "sceneryChecksum": "1de3341c933449f6",
+    "exportFingerprint": "bf866c8b4e7f837d",
+    "contentRevision": "4",
+    "contentFingerprint": "5738a86de795e940",
+    "heightSamplesSha256": "acd3b83933bf0c318e104139404544ff5773f89f001917e9531c9d37c04a27b2"
+  },
+  "grid": {
+    "originXzUnits": [
+      -3500,
+      -1300
+    ],
+    "stepUnits": 50,
+    "columns": 141,
+    "rows": 133,
+    "heightOffset": 128,
+    "unitsPerHeightByte": 1
+  },
+  "flatten": {
+    "targetHeight": 128,
+    "channel": "scalar",
+    "glyphCoverage": {
+      ".": 0,
+      "1": 64,
+      "2": 128,
+      "3": 192,
+      "X": 255
+    },
+    "borderSamples": 2
+  }
+}

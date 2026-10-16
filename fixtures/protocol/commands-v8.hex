@@ -1,0 +1,40 @@
+# Command wire v8 golden fixture, verified by mmorpg-protocol and web tests.
+080101000000 move 1 0 0
+080101014000 move 1 1 16384
+0801ffff8000 move -1 -1 32768
+08010001abcd move 0 1 43981
+08010000ffff move 0 0 65535
+0802 jump
+0803020000006c select_target 2 108
+080301ee6b2800 select_target 1 4000000000
+08030300000005 select_target 3 5
+08030000000000 select_target 0 0
+0804 start_attack
+0805 stop_attack
+0806 release_spirit
+0807000f0002 move_item 0 15 2
+08070f00ffff move_item 15 0 65535
+0807ff000000 move_item 255 0 0
+0808000000010000000000000063 loot 1 99
+0808ffffffffffffffffffffffff loot 4294967295 18446744073709551615
+0809010000000000 use_ability 1 0 0
+080909020000006c use_ability 9 2 108
+0809ff01ee6b2800 use_ability 255 1 4000000000
+080a cancel_cast
+080b0001 choose_class 0 1
+080b0200 choose_class 2 0
+080bff07 choose_class 255 7
+080c00 equip_item 0
+080c0f equip_item 15
+080cff equip_item 255
+080d00 unequip_item 0
+080d05 unequip_item 5
+080dff unequip_item 255
+080e00000003000001 buy_item 3 0 1
+080effffffffffffff buy_item 4294967295 255 65535
+080f00000003000003 sell_item 3 0 3
+080f00000000ff0000 sell_item 0 255 0
+081000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
+081001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
+081101 emote 1
+081105 emote 5
