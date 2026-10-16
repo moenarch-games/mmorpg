@@ -22,7 +22,7 @@ function flagByte(flags: readonly boolean[]): number {
 }
 
 /**
- * Test-only player-visible snapshot v14 encoder (docs/PROTOCOL.md); Rust owns the real one.
+ * Test-only player-visible snapshot v15 encoder (docs/PROTOCOL.md); Rust owns the real one.
  * Like it, positions must fit i16 and velocities saturate to i8.
  */
 export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
@@ -52,9 +52,9 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(value === null ? 0 : entityKindCode(value.kind));
     u32(value?.id ?? 0);
   };
-  u8(14);
+  u8(15);
   u8(2);
-  u16(14);
+  u16(15);
   u32(snapshot.zoneId);
   u64(snapshot.tick);
   u64(snapshot.contentRevision);
@@ -254,6 +254,20 @@ function encodeEvent(
     case "absorbed":
       u8(13);
       u8(0);
+      entity(event.source);
+      entity(event.target);
+      u16(event.amount);
+      return;
+    case "attack-performed":
+      u8(16);
+      u8(0);
+      entity(event.source);
+      entity(event.target);
+      u16(0);
+      return;
+    case "damage-observed":
+      u8(17);
+      u8(event.critical ? 1 : 0);
       entity(event.source);
       entity(event.target);
       u16(event.amount);

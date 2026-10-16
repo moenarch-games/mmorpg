@@ -9,6 +9,23 @@ fn observation_records_round_trip_without_reinterpreting_previous_snapshot_versi
     let mut zone = ZoneSimulation::new(ZoneId::new(1));
     zone.add_player(1).unwrap();
     let mut view = zone.snapshot_for_player(1).unwrap();
+    view.content_revision = 1;
+    view.inventory = None;
+    view.equipment = None;
+    view.quests = None;
+    view.entities[0].position = [0, 90, 0];
+    let mut other = view.entities[0].clone();
+    other.id = 2;
+    other.position = [100, 90, 0];
+    view.entities.push(other);
+    let mut creature = view.entities[0].clone();
+    creature.kind = mmorpg_core::EntityKind::Creature;
+    creature.id = 101;
+    creature.appearance = 1;
+    creature.position = [200, 45, 0];
+    creature.flags.hostile = true;
+    creature.flags.attackable = true;
+    view.entities.push(creature);
     let source = EntityRef::Player(2);
     let target = EntityRef::Creature(CreatureId::new(101));
     view.events = vec![
@@ -64,7 +81,7 @@ fn full_cosmetic_section_keeps_critical_feedback_and_required_entities_under_wir
     let mut zone = ZoneSimulation::new(ZoneId::new(1));
     zone.add_player(1).unwrap();
     let mut view = zone.snapshot_for_player(1).unwrap();
-    let source = EntityRef::Player(2);
+    let source = EntityRef::Player(mmorpg_core::MAX_VISIBLE_ENTITIES as u32);
     let target = EntityRef::Creature(CreatureId::new(101));
     let critical = ZoneEvent::Died {
         entity: EntityRef::Player(1),
@@ -90,4 +107,17 @@ fn full_cosmetic_section_keeps_critical_feedback_and_required_entities_under_wir
     assert!(decoded.events.contains(&critical));
     assert_eq!(decoded.entities[0], view.entities[0]);
     assert_eq!(decoded.entities[1], target_record);
+    assert!(
+        !decoded
+            .entities
+            .iter()
+            .any(|entity| entity.entity() == source)
+    );
+    assert!(
+        !decoded.events.iter().any(|event| matches!(
+            event,
+            ZoneEvent::AttackPerformed { .. } | ZoneEvent::DamageObserved { .. }
+        )),
+        "nonparticipant observations must not name actors omitted by packing"
+    );
 }

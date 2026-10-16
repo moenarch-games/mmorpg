@@ -11,7 +11,7 @@ const WOLF: EntityRef = EntityRef::Creature(CreatureId::new(1));
 
 fn arena() -> ZoneSimulation {
     let content = arena::arena(
-        vec![arena::wolf(10_000, [0, 0])],
+        vec![arena::wolf(10_000, [1, 1])],
         vec![arena::spawn(1, arena::WOLF, [-180, 0])],
         vec![],
     );
@@ -21,6 +21,8 @@ fn arena() -> ZoneSimulation {
     }
     let mut state = zone.snapshot().unwrap();
     state.players[0].position = [0, 90, 0];
+    state.players[0].combat.level = 6;
+    state.players[0].combat.health = mmorpg_core::unit::player_max_health(6);
     state.players[1].position = [500, 90, 0];
     state.players[2].position = [INTEREST_RADIUS_UNITS + 5_000, 90, 0];
     ZoneSimulation::from_snapshot(state, content).unwrap()
@@ -222,8 +224,8 @@ fn observers_see_existing_creature_casts_without_acquiring_player_feedback() {
     use mmorpg_core::ability::ids;
     use support::classes;
     for (template, ability) in [
-        (classes::lurker(500, [0, 0]), ids::MUCK_BOLT),
-        (classes::bandit(500, [0, 0]), ids::CRUDE_BANDAGE),
+        (classes::lurker(500, [1, 1]), ids::MUCK_BOLT),
+        (classes::bandit(500, [1, 1]), ids::CRUDE_BANDAGE),
     ] {
         let template_id = template.id;
         let content = classes::arena(
@@ -241,7 +243,7 @@ fn observers_see_existing_creature_casts_without_acquiring_player_feedback() {
         let mut zone = ZoneSimulation::from_snapshot(state, content).unwrap();
         let mut started = false;
         let mut resolved = false;
-        for _ in 0..100 {
+        for _ in 0..150 {
             zone.advance_tick().unwrap();
             let own = zone.snapshot_for_player(1).unwrap();
             let other = zone.snapshot_for_player(2).unwrap();
@@ -326,7 +328,7 @@ fn visible_remote_player_ability_has_start_resolution_and_neutral_impact() {
     use mmorpg_core::ability::ids;
     use support::classes;
     let content = classes::arena(
-        vec![arena::wolf(500, [0, 0])],
+        vec![arena::wolf(500, [1, 1])],
         vec![arena::spawn(1, arena::WOLF, [-200, 0])],
     );
     let mut zone = ZoneSimulation::with_content(ZoneId::new(5), content).unwrap();
@@ -369,4 +371,49 @@ fn visible_remote_player_ability_has_start_resolution_and_neutral_impact() {
         )));
     }
     assert!(started && used && impact);
+}
+#[test]
+fn observation_does_not_name_actors_omitted_by_projection_entity_cap() {
+    let content = arena::arena(
+        vec![arena::wolf(1000, [1, 1])],
+        vec![arena::spawn(1, arena::WOLF, [-180, 0])],
+        vec![],
+    );
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(5), Arc::clone(&content)).unwrap();
+    for id in 1..=70 {
+        zone.add_player(id).unwrap();
+    }
+    let mut state = zone.snapshot().unwrap();
+    state.players[0].position = [0, 90, 0];
+    for (index, player) in state.players.iter_mut().enumerate().skip(1) {
+        player.position = [
+            -4000 + (index as i32 % 8) * 100,
+            90,
+            (index as i32 / 8) * 100,
+        ];
+    }
+    zone = ZoneSimulation::from_snapshot(state, content).unwrap();
+    fight(&mut zone);
+    zone.advance_tick().unwrap();
+    let own = zone.snapshot_for_player(1).unwrap();
+    assert!(own.events.contains(&ZoneEvent::AttackPerformed {
+        source: PLAYER,
+        target: WOLF
+    }));
+    let observer = zone.snapshot_for_player(2).unwrap();
+    assert_eq!(observer.entities.len(), mmorpg_core::MAX_VISIBLE_ENTITIES);
+    assert!(
+        !observer
+            .entities
+            .iter()
+            .any(|entity| entity.entity() == PLAYER)
+    );
+    assert!(
+        !observer.events.iter().any(|event| matches!(
+            event,
+            ZoneEvent::AttackPerformed { source: PLAYER, .. }
+                | ZoneEvent::DamageObserved { source: PLAYER, .. }
+        )),
+        "radius visibility alone is insufficient after projection truncation"
+    );
 }
