@@ -344,6 +344,17 @@ impl Presentation {
         boxes
     }
 
+    /// The same starter class appearance selected by browser character creation.
+    /// Later explicit headwear customization, including none, takes precedence.
+    pub fn set_default_appearance(&mut self, class: mmorpg_core::PlayerClass) {
+        use mmorpg_core::PlayerClass;
+        self.headwear = Some(match class {
+            PlayerClass::Warden => player::Hat::Helm,
+            PlayerClass::Ranger => player::Hat::Cap,
+            PlayerClass::Arcanist => player::Hat::Hood,
+        });
+    }
+
     /// Current headwear is local presentation customization; unknown package styles fail closed.
     pub fn set_headwear(&mut self, headwear: Option<&str>) -> Result<(), ClientError> {
         self.headwear = match headwear {

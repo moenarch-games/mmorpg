@@ -40,12 +40,14 @@ pub fn run(
     class: PlayerClass,
 ) -> Result<(), ClientError> {
     let event_loop = EventLoop::new()?;
+    let mut presentation = Presentation::new(player_id, scenery, content, Instant::now())?;
+    presentation.set_default_appearance(class);
     let mut app = App {
         runtime,
         window: None,
         renderer: None,
         world,
-        presentation: Presentation::new(player_id, scenery, content, Instant::now())?,
+        presentation,
         title: String::new(),
         connection_epoch: None,
         input,
