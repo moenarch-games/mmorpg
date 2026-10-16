@@ -1247,7 +1247,7 @@ mod tests {
             (TARGET_CAST, 0, "cast state is inconsistent"),
             (TARGET_AURAS + 4, 0, "aura record is inconsistent"),
             (EVENTS, 17, "snapshot exceeds the per-player event capacity"),
-            (EVENTS + 1, 16, "unknown event kind"),
+            (EVENTS + 1, 255, "unknown event kind"),
             (EVENTS + 2, 2, "event flags are invalid"),
             (
                 EVENTS + 1 + 2 * EVENT_RECORD_BYTES + 1,
@@ -1271,7 +1271,7 @@ mod tests {
             ),
             (
                 EVENTS + 1 + 7 * EVENT_RECORD_BYTES,
-                16,
+                255,
                 "unknown event kind",
             ),
             (

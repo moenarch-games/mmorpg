@@ -1589,6 +1589,115 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "procedural-player-corpse.png"))
         (ARTIFACTS / "procedural-actions-life.json").write_text(json.dumps({"events": events, "frames": frames}, indent=2))
 
+    def prepare_paused_action_world(self):
+        self.open("?debug")
+        self.page.emulate_media(reduced_motion="no-preference")
+        self.create_and_select("CreatureWitness", "Arcanist")
+        self.page.evaluate("""() => {
+          const source = window.__valeDebug.worldSource();
+          window.__classAdvance = source.advance;
+          source.advance = () => [];
+        }""")
+        self.enter_world(ticking=False)
+        self.page.evaluate("""() => {
+          const source = window.__valeDebug.worldSource();
+          window.__classQueue = [];
+          source.advance = () => window.__classQueue.splice(0);
+          window.__classStep = ticks => {
+            for (let tick = 0; tick < ticks; tick++) window.__classQueue.push(...window.__classAdvance.call(source, 1 / 30));
+          };
+        }""")
+
+    def action_route(self, points):
+        """Steer actual movement toward clear authored waypoints, never change coordinates directly."""
+        result = self.page.evaluate("""points => {
+          const source = window.__valeDebug.worldSource(), route = [];
+          const advance = () => window.__classQueue.push(...window.__classAdvance.call(source, 1 / 30));
+          for (const [x,z] of points) {
+            let arrived = false, stalled = 0;
+            for (let count = 0; count < 1500; count++) {
+              const p = source.latestProjection(), at = p.entities[0].position;
+              if (p.viewer.dead) throw Error('Died on action route');
+              const dx = x-at[0], dz = z-at[2];
+              if (Math.hypot(dx,dz) < 25) {
+                source.sendCommand({kind:'move',forward:0,strafe:0,facing:0}); advance();
+                route.push({goal:[x,z],at:[...source.latestProjection().entities[0].position],tick:Number(source.latestProjection().tick)});
+                arrived = true; break;
+              }
+              const facing = (Math.round(Math.atan2(dx,dz)*65536/(2*Math.PI))+65536)%65536;
+              source.sendCommand({kind:'move',forward:1,strafe:0,facing}); advance();
+              const next = source.latestProjection().entities[0].position;
+              stalled = next[0] === at[0] && next[2] === at[2] ? stalled+1 : 0;
+              if (stalled > 60) throw Error('Stalled on action route');
+            }
+            if (!arrived) throw Error('Action route exceeded tick bound');
+          }
+          return route;
+        }""", points)
+        self.frames(3)
+        return result
+
+    def creature_action_frame(self, identity):
+        return self.page.evaluate("""id => {
+          const d = window.__valeDebug, p = d.worldSource().latestProjection();
+          return {tick:Number(p.tick), health:p.viewer.health, nodes:d.unitNodes(`unit-creature-${id}`),
+            target:p.entities.find(e => e.kind === 'creature' && e.entityId === id)?.healthPercent,
+            events:p.events.filter(e => (e.source?.kind === 'creature' && e.source.id === id) || e.kind === 'error'),
+            effects:d.presentationFrame().effectNodes};
+        }""", identity)
+
+    def test_real_greyhaven_muck_bolt_model_playback(self):
+        self.prepare_paused_action_world()
+        route = self.action_route([[0,1250],[0,-4000],[2500,-4800]])
+        before = self.creature_action_frame(300)
+        self.assertTrue(before["nodes"])
+        self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'select-target',target:{kind:'creature',id:300}})")
+        route += self.action_route([[3200,-4900],[3500,-5000]])
+        casting = self.creature_action_frame(300)
+        self.assertNotEqual(casting["nodes"], before["nodes"], "The actual Mirefin caster model changes during Muck Bolt")
+        frames = [casting]
+        for _ in range(70):
+            self.step(1)
+            frames.append(self.creature_action_frame(300))
+            if any(e["kind"] == "ability-used" and e.get("ability") == 13 for e in frames[-1]["events"]):
+                break
+        self.assertTrue(any(any(e["kind"] == "ability-used" and e.get("ability") == 13 for e in f["events"]) for f in frames))
+        self.assertGreater(frames[-1]["health"], 0)
+        self.assertGreater(len({json.dumps(f["nodes"], sort_keys=True) for f in frames}), 1, "Cast releases through changing actual nodes")
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-muck-bolt.png"))
+        (ARTIFACTS / "procedural-muck-bolt.json").write_text(json.dumps({"route":route,"before":before,"frames":frames}, indent=2))
+
+    def test_real_greyhaven_crude_bandage_model_playback(self):
+        self.prepare_paused_action_world()
+        route = self.action_route([[0,1250],[0,-4000],[0,-5400],[1500,-5400]])
+        self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'select-target',target:{kind:'creature',id:401}})")
+        self.step(1)
+        for _ in range(4):
+            self.page.keyboard.press("Digit1")
+            self.step(61)
+        self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'start-attack'})")
+        frames = []
+        for _ in range(240):
+            self.step(1)
+            frames.append(self.creature_action_frame(401))
+            if frames[-1]["target"] < 50:
+                self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'stop-attack'})")
+                break
+        self.assertLess(frames[-1]["target"], 50, "Real damage reaches the existing bandage threshold")
+        for _ in range(120):
+            self.step(1)
+            frames.append(self.creature_action_frame(401))
+            if any(e["kind"] == "healed" and e.get("ability") == 14 for e in frames[-1]["events"]):
+                break
+        starts = [f for f in frames if any(e["kind"] == "cast-started" and e.get("ability") == 14 for e in f["events"])]
+        healed = [f for f in frames if any(e["kind"] == "healed" and e.get("ability") == 14 for e in f["events"])]
+        self.assertTrue(starts and healed, "Actual bandit begins and resolves its own bandage")
+        self.assertGreater(healed[-1]["target"], starts[0]["target"])
+        self.assertGreater(len({json.dumps(f["nodes"], sort_keys=True) for f in frames if f["tick"] >= starts[0]["tick"]}), 1)
+        self.assertGreater(healed[-1]["health"], 0)
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-bandage.png"))
+        (ARTIFACTS / "procedural-bandage.json").write_text(json.dumps({"route":route,"frames":frames}, indent=2))
+
     def test_complete_world_environment_instancing_and_night_readability(self):
         """Observe actual submitted renderer frames; cosmetic time never changes the real WASM zone."""
         self.open("?debug")

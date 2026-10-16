@@ -572,3 +572,32 @@ kind = "resource"
 bot = "warden"
 resource = 13
 tick = 732
+
+# #27: a visible recipient observes other actors without receiving their damage credit.
+[[expect]]
+kind = "event"
+bot = "ranger"
+event = "attack_performed"
+entity = "bot:warden"
+by_tick = 450
+
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "cast_started"
+entity = "bot:arcanist"
+tick = 397
+
+[[expect]]
+kind = "event"
+bot = "ranger"
+event = "damage_observed"
+entity = "bot:warden"
+tick = 501
+
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "ability_used"
+entity = "bot:ranger"
+tick = 521

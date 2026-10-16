@@ -208,7 +208,7 @@ describe("Rust/browser snapshot contract", () => {
       [TARGET_CAST, 0, "cast state"],
       [TARGET_AURAS + 4, 0, "aura record"],
       [EVENTS, 17, "event capacity"],
-      [EVENTS + 1, 16, "event kind"],
+      [EVENTS + 1, 255, "event kind"],
       [EVENTS + 1 + 14 * 14 + 1, 0, "Quest id"],
       [EVENTS + 1 + 14 * 14 + 12, 3, "Malformed"],
       [EVENTS + 1 + 14 * 14 + 13, 0, "Malformed"],

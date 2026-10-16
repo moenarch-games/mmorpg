@@ -173,6 +173,17 @@ class OnlineAcceptance(unittest.TestCase):
 
     def open_player(self, name: str, *, animated=False, class_label=None):
         context = self.browser.new_context(viewport={"width": 1280, "height": 800}, reduced_motion="no-preference" if animated else "reduce")
+        context.add_init_script("""(() => {
+          const Original = window.WebTransport;
+          window.__actualTransports = [];
+          window.__transportKinds = [];
+          window.WebTransport = new Proxy(Original, {construct(Target, args) {
+            const transport = Reflect.construct(Target, args, Target);
+            window.__actualTransports.push(transport);
+            window.__transportKinds.push(new URL(args[0]).pathname.includes('/reconnect/'));
+            return transport;
+          }});
+        })();""")
         page = context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -282,6 +293,24 @@ class OnlineAcceptance(unittest.TestCase):
         for sample in relevant:
             self.assertFalse(any(event["kind"] == "damage-dealt" and event.get("source", {}).get("id") == actor_id for event in sample["events"]), "Watcher is not credited with another actor's damage")
         watcher.screenshot(path=str(ARTIFACTS / "remote-procedural-action.png"))
+        actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'stop-attack'})")
+        before_resume = self.projection(watcher)
+        watcher_id = before_resume["viewerId"]
+        # Close the real transport; production source performs its real token/epoch resume.
+        # No offline emulation or fake welcome/projection enters this boundary.
+        watcher.evaluate("""() => {
+          window.__resumeBefore = window.__valeDebug.presentationFrame().effectNodes;
+          window.__actualTransports.at(-1).close({closeCode:0,reason:'acceptance path interruption'});
+        }""")
+        self.wait_for(watcher, "window.__actualTransports.length === 2 && window.__valeDebug.worldSource().linkState() === 'connected'", timeout_ms=15_000)
+        self.wait_for(watcher, "tick => window.__valeDebug.projection().tick > tick", before_resume["tick"])
+        self.assertEqual(self.projection(watcher)["viewerId"], watcher_id, "Real resume retains the same player")
+        self.assertEqual(watcher.evaluate("window.__transportKinds"), [False, True], "Second connection uses the real reconnect route")
+        # After the finite cosmetic lifetime, a stopped actor's pre-resume effects stay absent.
+        self.wait_for(watcher, "window.__valeDebug.presentationFrame().effectNodes.length === 0", timeout_ms=5_000)
+        resume = {"beforeTick":before_resume["tick"], "after":self.projection(watcher), "transportKinds":watcher.evaluate("window.__transportKinds"), "effects":watcher.evaluate("window.__valeDebug.presentationFrame().effectNodes")}
+        self.evidence["realReconnect"] = resume
+        watcher.screenshot(path=str(ARTIFACTS / "remote-procedural-resumed.png"))
         actor.close()
         self.wait_for(watcher, "id => !window.__valeDebug.projection().entities.some(e => e.kind === 'player' && e.id === id)", actor_id)
         self.wait_for(watcher, "id => window.__valeDebug.unitNodes(`unit-player-${id}`).length === 0", actor_id)

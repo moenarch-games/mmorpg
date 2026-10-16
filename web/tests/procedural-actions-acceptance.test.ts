@@ -137,6 +137,25 @@ describe("truthful per-actor procedural actions", () => {
   });
 });
 
+describe("projected own casts and lossy remote casts", () => {
+  test("paused authoritative own channel stays at projected progress while a stale remote cast expires", () => {
+    const effects = new SpellEffects();
+    const view = snapshot([{ kind: "cast-started", source: other, target: wolf, ability: 9, ticks: 60 }]);
+    view.viewer = { ...view.viewer, cast: { ability: 12, elapsed: 30, total: 180, channel: true }, target: wolf };
+    effects.spawn(view, 0, anchor);
+    effects.sync(view, 0, anchor);
+    effects.active(50);
+    effects.sync(view, 50, anchor);
+    expect(effects.viewerAction(view, 50)).toEqual({ pose: "cast", progress: 1 / 6, hold: true });
+    expect(effects.actionFor(other, 50)).toBeNull();
+    expect(effects.active(50).some(effect => effect.visual === "shards")).toBe(true);
+    const stopped = snapshot([], 11n);
+    effects.spawn(stopped, 50.1, anchor);
+    effects.sync(stopped, 50.1, anchor);
+    expect(effects.active(50.1).some(effect => effect.visual === "shards")).toBe(false);
+  });
+});
+
 describe("confirmed target impacts and participant semantics", () => {
   test("observed positive damage produces bounded changing target-local impact, without crediting the viewer", () => {
     const effects = new SpellEffects();
