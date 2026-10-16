@@ -146,6 +146,14 @@ its dependency closure, target, profile, features and toolchains are unchanged.
 The 3 MiB absolute and 64 KiB growth limits remain unchanged. CI must still
 pass the ordinary comparison and existing adversarial acceptance command.
 
+The #166 development-only `coding-tooling` update changes the declared web
+manifest and lockfile inputs. The retained
+[CI observation](../.performance/observations/coding-tooling-166-incomparable.json)
+reports an incomparable baseline, with no size-limit failure. The explicit
+recapture has the same **3,128,246 bytes** and archive SHA-256 as the #28
+baseline; only those two input hashes and the resulting identity change.
+The 3 MiB absolute and 64 KiB growth limits remain unchanged.
+
 The #167 `game-server` update changes the declared Cargo manifest and lockfile
 inputs, making the previous comparison incomparable. The retained
 [observation](../.performance/observations/game-server-167-incomparable.json)
@@ -153,3 +161,9 @@ records that result. The explicit recapture remains **3,128,246 bytes**, with
 the same archive SHA-256 as the #28 baseline. Only those two input hashes and
 the resulting identity change; the 3 MiB absolute and 64 KiB growth limits
 remain unchanged.
+
+After merging #166 into #167, the baseline was explicitly recaptured with both
+dependency updates present. The combined identity changes all four Cargo/web
+manifest and lockfile hashes against #28; archive bytes and SHA-256 remain
+unchanged. The [combined observation](../.performance/observations/game-server-167-combined-incomparable.json)
+retains the unavailable comparison against the merged #166 baseline.
