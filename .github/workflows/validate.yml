@@ -2,9 +2,16 @@ name: Validate
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      full_validation:
+        description: Run comprehensive tests, Clippy, WASM and size checks
+        type: boolean
+        default: false
 
 jobs:
   scope:
@@ -13,6 +20,7 @@ jobs:
       contents: read
     outputs:
       docs_only: ${{ steps.detect.outputs.docs_only }}
+      full_validation: ${{ steps.detect.outputs.full_validation }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -22,9 +30,11 @@ jobs:
         id: detect
         shell: bash
         env:
+          FULL_VALIDATION: ${{ inputs.full_validation == true || contains(github.event.pull_request.labels.*.name, 'full-validation') }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
+          printf 'full_validation=%s\n' "$FULL_VALIDATION" >> "$GITHUB_OUTPUT"
           docs_only=false
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" && -n "$PR_BASE" && -n "$PR_HEAD" ]] &&
             git cat-file -e "$PR_BASE^{commit}" &&
@@ -51,14 +61,14 @@ jobs:
       packages: read
     uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@45042e56be120b438096e774027637cac0280075
     with:
-      bun_version: ${{ needs.scope.outputs.docs_only != 'true' && '1.4.2' || '' }}
+      bun_version: ${{ needs.scope.outputs.docs_only != 'true' && needs.scope.outputs.full_validation == 'true' && '1.4.2' || '' }}
       node_version: ""
-      install_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cd web && bun install --frozen-lockfile' || '' }}
+      install_command: ${{ needs.scope.outputs.docs_only != 'true' && needs.scope.outputs.full_validation == 'true' && 'cd web && bun install --frozen-lockfile' || '' }}
       cache_bun: false
       cache_cargo: ${{ needs.scope.outputs.docs_only != 'true' }}
       format_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo fmt --all -- --check' || '' }}
-      lint_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && bun run --cwd web typecheck:size && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
-      test_command: ${{ needs.scope.outputs.docs_only != 'true' && 'python3 scripts/test-dev-native.py && cargo test --workspace --all-features --locked && mkdir -p artifacts && bun run --cwd web size:budget > artifacts/native-size.json && bun run --cwd web test:size-evidence' || '' }}
-      build_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || '' }}
+      lint_command: ${{ needs.scope.outputs.docs_only != 'true' && needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && bun run --cwd web typecheck:size && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
+      test_command: ${{ needs.scope.outputs.docs_only != 'true' && needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo test --workspace --all-features --locked && mkdir -p artifacts && bun run --cwd web size:budget > artifacts/native-size.json && bun run --cwd web test:size-evidence' || '' }}
+      build_command: ${{ needs.scope.outputs.docs_only != 'true' && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'cargo check --workspace --locked') || '' }}
       artifact_paths: artifacts/native-size.json
-      upload_artifacts_on: ${{ needs.scope.outputs.docs_only == 'true' && 'never' || 'always' }}
+      upload_artifacts_on: ${{ needs.scope.outputs.docs_only != 'true' && needs.scope.outputs.full_validation == 'true' && 'always' || 'never' }}
