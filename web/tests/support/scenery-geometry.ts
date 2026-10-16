@@ -33,4 +33,3 @@ export function propMeshes(scene: SceneryScene) {
   });
   return [...ordinary, ...instanced];
 }
-
