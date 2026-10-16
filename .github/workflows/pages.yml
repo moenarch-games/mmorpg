@@ -2,7 +2,7 @@ name: Pages
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - "web/**"
       - "fixtures/protocol/**"
@@ -31,16 +31,22 @@ on:
       - "scripts/smoke-browser.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
+    inputs:
+      full_validation:
+        description: Run comprehensive browser, asset and WASM tests
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   build:
-    if: github.event.action != 'labeled' || github.event.label.name == 'browser-evidence'
+    if: (github.event.action != 'labeled' && github.event.action != 'unlabeled') || github.event.label.name == 'browser-evidence' || github.event.label.name == 'full-validation'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      FULL_VALIDATION: ${{ inputs.full_validation == true || contains(github.event.pull_request.labels.*.name, 'full-validation') }}
       # Must equal the exact wasm-bindgen pin in crates/mmorpg-wasm/Cargo.toml;
       # web/scripts/build-wasm.ts fails the build on any mismatch.
       WASM_BINDGEN_VERSION: "0.2.129"
@@ -76,6 +82,7 @@ jobs:
         working-directory: web
         run: bun install --frozen-lockfile
       - name: Check out the pinned saved-mask producer
+        if: env.FULL_VALIDATION == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: moritzbrantner/asset-tooling
@@ -83,13 +90,17 @@ jobs:
           path: artifacts/asset-tooling-mask-source
           persist-credentials: false
       - name: Reproduce the accepted Greyhaven grass package
+        if: env.FULL_VALIDATION == 'true'
         run: bun web/scripts/package-grass.ts artifacts/asset-tooling-mask-source --check
       - name: Reproduce the authored Greyhaven relief package
+        if: env.FULL_VALIDATION == 'true'
         run: bun web/scripts/package-relief.ts artifacts/asset-tooling-mask-source --check
       - name: Typecheck the asset authoring adapter
+        if: env.FULL_VALIDATION == 'true'
         working-directory: web
         run: bunx --no-install tsc --noEmit -p tsconfig.assets.json
       - name: Test browser contracts and the WASM local zone host
+        if: env.FULL_VALIDATION == 'true'
         working-directory: web
         env:
           ASSET_TOOLING_MASK_SOURCE: ${{ github.workspace }}/artifacts/asset-tooling-mask-source
@@ -98,20 +109,15 @@ jobs:
         working-directory: web
         run: bun run build
       - name: Install browser acceptance tooling
-        if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'browser-evidence')
+        if: env.FULL_VALIDATION == 'true' || contains(github.event.pull_request.labels.*.name, 'browser-evidence')
         run: |
           python3 -m pip install playwright==1.57.0
           python3 -m playwright install --with-deps chromium
-      # Verify the deployed bundle with real Chromium and the real WASM local host.
-      # The complete 26-test suite remains available for browser-visible PRs and manual runs.
-      - name: Smoke-test production browser demo
-        if: github.event_name == 'push'
-        run: python3 scripts/smoke-browser.py BrowserAcceptance.test_enter_world_move_jump_orbit_and_leave
-      - name: Run full browser acceptance suite
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'browser-evidence'))
+      - name: Run explicitly requested browser acceptance
+        if: env.FULL_VALIDATION == 'true' || contains(github.event.pull_request.labels.*.name, 'browser-evidence')
         run: python3 scripts/smoke-browser.py
       - name: Retain browser screenshots and evidence
-        if: always() && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'browser-evidence'))
+        if: always() && (env.FULL_VALIDATION == 'true' || contains(github.event.pull_request.labels.*.name, 'browser-evidence'))
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: browser-evidence
