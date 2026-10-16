@@ -1,4 +1,4 @@
-//! Normalize the checked-in asset-tooling OBJ with the pinned format loader.
+//! Normalize the checked-in asset-tooling OBJ with the external precision-preserving OBJ parser.
 use super::{kit::*, player::Look};
 use crate::{
     ClientError,
@@ -60,46 +60,75 @@ fn load() -> Result<Package, ClientError> {
         }
         colors.insert(id.to_owned(), c);
     }
-    let asset = three_d_formats::load_obj(OBJ)?;
+    let options = tobj::LoadOptions {
+        triangulate: true,
+        single_index: true,
+        ignore_points: true,
+        ignore_lines: true,
+        ..Default::default()
+    };
+    let (models, materials_result) =
+        tobj::load_obj_buf(&mut std::io::Cursor::new(OBJ), &options, |_| {
+            Err(tobj::LoadError::OpenFileFailed)
+        })?;
+    if !materials_result?.is_empty() {
+        return Err("unsupported archer OBJ materials".into());
+    }
     let mut parts = Vec::new();
     let mut triangles = 0;
     let mut source_vertices = 0_u64;
 
-    for part in asset.meshes() {
-        let name = part.name().ok_or("archer part has no name")?.to_owned();
+    for part in models {
+        let name = part.name;
         let role = materials["bindings"]["archer"][&name]
             .as_str()
             .ok_or("archer material binding missing")?
             .to_owned();
+        if !colors.contains_key(&role) {
+            return Err("archer palette material missing".into());
+        }
+        let mesh = part.mesh;
+        if mesh.material_id.is_some()
+            || !mesh.positions.len().is_multiple_of(3)
+            || !mesh.indices.len().is_multiple_of(3)
+            || !mesh.normals.is_empty()
+            || !mesh.texcoords.is_empty()
+            || !mesh.vertex_color.is_empty()
+        {
+            return Err("unsupported archer OBJ attributes".into());
+        }
+        source_vertices += (mesh.positions.len() / 3) as u64;
         let mut g = Geometry::default();
-        for primitive in part.primitives() {
-            let mesh = primitive.mesh();
-            source_vertices += mesh.vertices().len() as u64;
-            for tri in mesh.indices().chunks_exact(3) {
-                triangles += 1;
-                let p: Vec<_> = tri
-                    .iter()
-                    .map(|i| {
-                        let p = mesh.vertices()[*i as usize];
-                        [f64::from(p.x), f64::from(p.y), f64::from(p.z)]
-                    })
-                    .collect();
-                let u = std::array::from_fn::<_, 3, _>(|i| p[1][i] - p[0][i]);
-                let v = std::array::from_fn::<_, 3, _>(|i| p[2][i] - p[0][i]);
-                let cross = [
-                    u[1] * v[2] - u[2] * v[1],
-                    u[2] * v[0] - u[0] * v[2],
-                    u[0] * v[1] - u[1] * v[0],
-                ];
-                if cross == [0.; 3] {
-                    return Err("degenerate archer triangle".into());
-                }
-                let n = norm(cross);
-                for p in p {
-                    g.indices.push(g.p.len() as u32);
-                    g.p.push(p.map(|x| x * 0.001));
-                    g.n.push(n);
-                }
+        for tri in mesh.indices.chunks_exact(3) {
+            triangles += 1;
+            let p: Vec<[f64; 3]> = tri
+                .iter()
+                .map(|index| {
+                    let start = *index as usize * 3;
+                    mesh.positions
+                        .get(start..start + 3)
+                        .and_then(|p| p.try_into().ok())
+                        .ok_or("archer triangle index outside vertices")
+                })
+                .collect::<Result<_, _>>()?;
+            if !p.iter().flatten().all(|v| v.is_finite()) {
+                return Err("nonfinite archer coordinates".into());
+            }
+            let u = std::array::from_fn::<_, 3, _>(|i| p[1][i] - p[0][i]);
+            let v = std::array::from_fn::<_, 3, _>(|i| p[2][i] - p[0][i]);
+            let cross = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
+            if cross == [0.; 3] {
+                return Err("degenerate archer triangle".into());
+            }
+            let n = norm(cross);
+            for point in p {
+                g.indices.push(g.p.len() as u32);
+                g.p.push(point.map(|v| v * 0.001));
+                g.n.push(n);
             }
         }
         parts.push((name, Arc::new(g.mesh()), role));
