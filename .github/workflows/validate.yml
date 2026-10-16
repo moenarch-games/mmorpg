@@ -58,7 +58,7 @@ jobs:
       cache_cargo: ${{ needs.scope.outputs.docs_only != 'true' }}
       format_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo fmt --all -- --check' || '' }}
       lint_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && bun run --cwd web typecheck:size && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
-      test_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo test --workspace --all-features --locked && mkdir -p artifacts && bun run --cwd web size:budget > artifacts/native-size.json && bun run --cwd web test:size-evidence' || '' }}
+      test_command: ${{ needs.scope.outputs.docs_only != 'true' && 'python3 scripts/test-dev-native.py && cargo test --workspace --all-features --locked && mkdir -p artifacts && bun run --cwd web size:budget > artifacts/native-size.json && bun run --cwd web test:size-evidence' || '' }}
       build_command: ${{ needs.scope.outputs.docs_only != 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || '' }}
       artifact_paths: artifacts/native-size.json
       upload_artifacts_on: ${{ needs.scope.outputs.docs_only == 'true' && 'never' || 'always' }}
