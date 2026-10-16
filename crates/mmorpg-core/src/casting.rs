@@ -507,6 +507,15 @@ impl ZoneSimulation {
                 }
             }
         }
+        if matches!(
+            event,
+            ZoneEvent::CastStarted { .. }
+                | ZoneEvent::AbilityUsed { .. }
+                | ZoneEvent::Interrupted { .. }
+        ) {
+            let refs: Vec<_> = units.iter().flatten().copied().collect();
+            self.notify_observers(&refs, &recipients, event);
+        }
         for player_id in recipients {
             self.notify(player_id, event);
         }

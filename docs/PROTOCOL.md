@@ -71,9 +71,9 @@ An entity reference is 5 bytes: kind (`u8`) then ID (`u32`). Kind 1 is a player 
 
 | Offset | Width | Field |
 | --- | --- | --- |
-| 0 | 1 | Wire version: 14 |
+| 0 | 1 | Wire version: 15 |
 | 1 | 1 | Scope: 1 canonical, 2 player-visible |
-| 2 | 2 | Core schema version: 14 |
+| 2 | 2 | Core schema version: 15 |
 | 4 | 4 | Zone ID |
 | 8 | 8 | Simulation tick |
 
@@ -140,13 +140,14 @@ The events are the viewer's feedback from the tick the snapshot describes (see [
 
 | Offset | Width | Field |
 | --- | --- | --- |
-| 0 | 1 | Kind: 1 damage dealt, 2 damage taken, 3 miss, 4 died, 5 evade, 6 error, 7 cast started, 8 ability used, 9 healed, 10 aura applied, 11 aura removed, 12 interrupted, 13 absorbed, 14 quest progress, 15 quest completed |
+| 0 | 1 | Kind: 1 damage dealt, 2 damage taken, 3 miss, 4 died, 5 evade, 6 error, 7 cast started, 8 ability used, 9 healed, 10 aura applied, 11 aura removed, 12 interrupted, 13 absorbed, 14 quest progress, 15 quest completed, 16 ordinary attack performed, 17 neutral damage observed |
 | 1 | 1 | Flags: bit 0 critical, allowed only for damage; for kinds 7–12 the ability ID instead (a catalog ability); for kinds 14 and 15 the quest ID (1–32); otherwise 0 |
 | 2 | 5 | Source (entity reference) |
 | 7 | 5 | Target (entity reference) |
 | 12 | 2 | Amount |
 
-- Damage dealt and damage taken carry both units and the damage in `amount`.
+- Damage dealt and damage taken carry both units and the damage in `amount`; they remain participant-relative feedback.
+- Attack performed carries both units, flags 0 and amount 0. It identifies a real ordinary swing roll, including misses and full absorption; waiting, refused, evaded or out-of-range attempts do not produce it. Damage observed carries both units, effective positive health damage and the critical bit, exclusively for non-participant witnesses. Neither event grants the viewer damage credit or combat state.
 - Miss and evade carry both units and amount 0: a missed swing between the viewer and a unit, or the viewer's swing ignored by an evading creature.
 - Died carries the dead unit as target, its killer as source (or none) and amount 0.
 - Error carries no source, the unit the refused intent concerned as target (or none) and the error code in `amount`: 1 no target, 2 out of range, 3 target dead, 4 not attackable, 5 you are dead, 6 not dead, 7 invalid target, 8 too many intents (a full queue dropped an intent), 9 invalid inventory move, 10 inventory full, 11 invalid loot (unknown/non-corpse, expired or wrong death tick), 12 not loot owner, 13 empty loot, 14 money overflow, 15 no class, 16 not learned, 17 not ready (global or ability cooldown), 18 not enough resource, 19 stunned, 20 already casting, 21 invalid class (unknown or repeated choice), 22 not equippable (the bag item has no equipment slot), 23 invalid vendor (not a bound vendor NPC, or no such offer), 24 not enough money, 25 chat throttled (the speaker spoke within the last second), 26 invalid quest (unknown, not given or ended by that NPC, unavailable, not active, or an invalid reward choice), 27 quest log full (ten active quests), 28 quest incomplete.
@@ -156,7 +157,9 @@ The events are the viewer's feedback from the tick the snapshot describes (see [
 - Absorbed carries the attacker, the shielded unit and the absorbed damage; its flags are 0.
 - Quest progress carries no units, the quest in the flag byte and in `amount` the objective slot (high byte, 0–2) and its new progress (low byte, at least 1): a credited kill, a looted quest item, a talk or an explore. Quest completed carries no units, the quest in the flag byte and amount 0.
 
-A unit's ability events reach the players among its source and target; events between creatures only (a bandit's bandage) reach the players engaged with them. When the queue overflows, deaths outrank damage taken, then errors and quest completions, then damage dealt and quest progress, then ability events (kinds 7–13), then misses and evades.
+A unit's ability events reach the players among its source and target; events between creatures only (a bandit's bandage) reach the players engaged with them. When the queue overflows, deaths outrank damage taken, then errors and quest completions, then damage dealt and quest progress, then ability events (kinds 7–13), then misses, evades and the new attack/damage observations.
+
+Visible bystanders additionally receive cast-start, ability-resolution and interruption observations. Delivery uses the existing spatial interest index and requires every named identity to pass visibility. Observation cues are filtered again against the capped projection and the actual packed entity prefix; participant feedback remains unchanged. Packing plans a conservative entity prefix using the original event section, then removes cosmetics naming omitted actors. Freed bytes do not expand that prefix.
 
 Events are cosmetic: a lost datagram may lose them. Health/XP, copper, complete loot presence/state and inventory revision repeat in every projection; the periodic complete sheet recovers lost bag and quest changes.
 
@@ -205,7 +208,7 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 6, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v14.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every kind, two chat lines (a say and a yell with non-ASCII text) and an emote. Rust encoding and browser decoding both verify these exact bytes. `player-loot-v14.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The v8–v13 fixtures remain as rejection evidence.
+The shared fixture is `fixtures/protocol/player-snapshot-v15.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text) and an emote. Rust encoding and browser decoding both verify these exact bytes. `player-loot-v15.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The v8–v14 fixtures remain as rejection evidence. `presentation-observation-v15.hex` covers the two new neutral observation records.
 
 ## Canonical scope
 
@@ -384,3 +387,9 @@ Version 12 and earlier snapshots/checkpoints, version 7 and earlier commands and
 Version 14 adds the quest part to the self sheet, a quest item to loot sheets and canonical corpse rewards, quest events 14 and 15, error codes 26–28, pending intent codes 15–17 and each player's quest log to canonical records. The projection's fixed part is unchanged (105 bytes), so `MAX_WIRE_ENTITIES` stays 46; with every section full the viewer and its target still fit (1,003 of 1,077 bytes). Command version 9 adds tags 18–20 and rejects v8. Item catalog revision 3 adds the Wolf Pelt (item 10, stacks to 10), vendor catalog revision 2 prices it, quest catalog revision 1 is the Greyhaven chain, and Greyhaven revision 9 binds all three (fingerprint `2630ca15716973f3`) and keeps the existing AI/combat seed; quest drops draw nothing from the loot stream. The WASM `catalog()` export is format v6: `questCatalogRevision` and `quests` (`[{id, name, text, giver, ender, prerequisite, objectives: [{kind, target, source, count}], experience, copper, choices}]`; objective order is the progress slot, choice order the reward index) list the quests.
 
 Version 13 and earlier snapshots/checkpoints, version 8 and earlier commands and old recovery bundles fail closed. Historical fixtures remain rejection evidence. This change provides no automatic migration; arrange an explicit migration or fresh development recovery state before upgrading a standalone host.
+
+## Procedural action observations: snapshot v15, command v9 unchanged
+
+Wire and core schema version 15 apply to both canonical and player-visible snapshots. They add event tags 16 and 17 within the existing 14-byte event record, without changing section layouts, entity sizes, content revision, gameplay/RNG, commands or the datagram budget. Ordinary attack occurrences are distinct from generic damage: periodic damage, ranged abilities and channel pulses never imply a new melee swing. Cast and action observations support per-actor presentation; damage observations support target-local impacts without participant HUD attribution. Queue priority and conservative packet filtering keep critical participant feedback and required viewer/target entities.
+
+Version 14 and earlier snapshots/checkpoints and recovery bundles fail closed. Existing command version 9 remains compatible. No automatic checkpoint migration is provided; use an explicit migration or fresh development state when upgrading a host.

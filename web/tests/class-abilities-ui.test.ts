@@ -375,7 +375,7 @@ describe("caster poses", () => {
     const effects = new SpellEffects();
     const cast: CastState = { ability: 9, elapsed: 59, total: 60, channel: false };
     effects.spawn(snapshot({}, { cast }), 0, () => null);
-    effects.spawn(snapshot({ events: [{ kind: "ability-used", source: me, target: wolf, ability: 9 }] }), 1, () => null);
+    effects.spawn(snapshot({ tick: 6n, events: [{ kind: "ability-used", source: me, target: wolf, ability: 9 }] }), 1, () => null);
     const released = effects.viewerAction(snapshot(), 1)!;
     expect(released).toMatchObject({ pose: "cast", progress: 0.5, hold: false });
     expect(actionWeight(released)).toBeCloseTo(1);

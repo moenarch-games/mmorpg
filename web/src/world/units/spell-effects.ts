@@ -1,5 +1,5 @@
 import type { RendererSceneNode } from "@moritzbrantner/three-d-renderer";
-import { sameEntity, type EntityRef } from "../../entity-ref";
+import { entityKey, sameEntity, type EntityRef } from "../../entity-ref";
 import type { ZoneSnapshot } from "../../replication";
 import { ABILITY_PRESENTATION, presentationOf, type CasterPose, type SpellVisual } from "./ability-presentation";
 
@@ -16,7 +16,8 @@ type Quaternion = [number, number, number, number];
 
 export type SpellEffect = {
   id: number;
-  visual: SpellVisual;
+  visual: SpellVisual | "impact";
+  critical?: boolean;
   ability: number;
   source: EntityRef;
   target: EntityRef | null;
@@ -42,96 +43,158 @@ const accentOf = (ability: number): `#${string}` => ABILITY_PRESENTATION.get(abi
 export type ViewerAction = { pose: CasterPose; progress: number; hold: boolean };
 
 /** The live effects of one session. */
+type ActorAction = { pose: CasterPose; startedAt: number; duration: number; hold: boolean; ability: number; release: boolean; projectedProgress?: number };
+
 export class SpellEffects {
   #effects: SpellEffect[] = [];
   #nextId = 1;
-  #action: { pose: CasterPose; startedAt: number; release: boolean } | null = null;
-  /** The ability the viewer was casting in the last received projection. */
-  #casting: number | null = null;
+  readonly #actions = new Map<string, ActorAction>();
+  readonly #casts = new Map<string, ActorAction>();
+  #lastTick: bigint | null = null;
+  #session = "";
+  readonly #dead = new Set<string>();
 
   clear(): void {
     this.#effects = [];
-    this.#action = null;
-    this.#casting = null;
+    this.#actions.clear();
+    this.#casts.clear();
+    this.#dead.clear();
+    this.#lastTick = null;
+    this.#session = "";
   }
 
-  /** Starts the effects that one received projection's events call for. */
+  /** Consume each authoritative projection once; identities never share animation state. */
   spawn(snapshot: ZoneSnapshot, now: number, resolve: ResolveAnchor): void {
-    const viewer: EntityRef = { kind: "player", id: snapshot.viewerId };
+    const session = `${snapshot.zoneId}:${snapshot.viewerId}:${snapshot.contentRevision}`;
+    if (this.#session !== session || (this.#lastTick !== null && snapshot.tick < this.#lastTick)) {
+      this.clear();
+      this.#session = session;
+    }
+    if (snapshot.tick === this.#lastTick) { return; }
+    this.#lastTick = snapshot.tick;
+    const visible = new Set(snapshot.entities.map((entity) => entityKey({ kind: entity.kind, id: entity.entityId })));
+    this.#dead.clear();
+    for (const entity of snapshot.entities) {
+      if (entity.flags.dead) { this.#dead.add(entityKey({ kind: entity.kind, id: entity.entityId })); }
+    }
+    for (const actions of [this.#actions, this.#casts]) {
+      for (const key of actions.keys()) {
+        if (!visible.has(key) || this.#dead.has(key)) { actions.delete(key); }
+      }
+    }
+    this.#effects = this.#effects.filter((effect) => visible.has(entityKey(effect.source)) && (!effect.target || visible.has(entityKey(effect.target))));
+    const currentCast = snapshot.viewer.cast;
+    const currentPose = currentCast ? presentationOf(currentCast.ability)?.pose : null;
+    if (currentCast && currentPose && !snapshot.viewer.dead) {
+      this.#casts.set(entityKey({ kind: "player", id: snapshot.viewerId }), {
+        pose: currentPose, ability: currentCast.ability, startedAt: now, duration: currentCast.total / 30,
+        hold: true, release: false, projectedProgress: currentCast.total > 0 ? currentCast.elapsed / currentCast.total : 1,
+      });
+    }
     for (const event of snapshot.events) {
-      if (event.kind === "ability-used") {
+      if (event.kind === "attack-performed") {
+        this.#actions.set(entityKey(event.source), { pose: "swing", startedAt: now, duration: ACTION_SECONDS, hold: false, ability: 0, release: false });
+      } else if (event.kind === "cast-started") {
+        const pose = presentationOf(event.ability)?.pose;
+        if (pose) {
+          this.#casts.set(entityKey(event.source), { pose, startedAt: now, duration: event.ticks / 30, hold: true, ability: event.ability, release: false });
+        }
+        if (event.ability === BLIZZARD_ABILITY) { this.#startShards(event.source, event.target, event.ability, now, resolve); }
+      } else if (event.kind === "ability-used") {
         const presentation = presentationOf(event.ability);
-        if (sameEntity(event.source, viewer) && presentation?.pose) {
-          // A finished cast releases its held pose; an instant ability swells and releases.
-          this.#action = { pose: presentation.pose, startedAt: now, release: this.#casting === event.ability };
+        const key = entityKey(event.source);
+        const release = this.#casts.get(key)?.ability === event.ability;
+        if (release) { this.#casts.delete(key); }
+        if (presentation?.pose) {
+          this.#actions.set(key, { pose: presentation.pose, startedAt: now, duration: ACTION_SECONDS, hold: false, ability: event.ability, release });
         }
         const visual = presentation?.visual;
         if (visual === "projectile" || visual === "arrow" || visual === "ring" || visual === "swing") {
           this.#add({ visual, ability: event.ability, source: event.source, target: event.target, ground: null, duration: EFFECT_SECONDS[visual] }, now);
         }
-      } else if (event.kind === "cast-started" && event.ability === BLIZZARD_ABILITY) {
-        this.#startShards(event.source, event.target, event.ability, now, resolve);
+      } else if (event.kind === "interrupted") {
+        const key = entityKey(event.target);
+        if (this.#casts.get(key)?.ability === event.ability) { this.#casts.delete(key); }
+        if (this.#actions.get(key)?.ability === event.ability) { this.#actions.delete(key); }
+      } else if (event.kind === "damage-dealt" || event.kind === "damage-taken" || event.kind === "damage-observed") {
+        if (event.amount > 0) {
+          this.#add({ visual: "impact", ability: 0, source: event.source, target: event.target, ground: null, duration: 0.32, critical: event.critical }, now);
+        }
+      } else if (event.kind === "died") {
+        this.#dead.add(entityKey(event.entity));
       }
     }
-    this.#casting = snapshot.viewer.cast?.ability ?? null;
+    // Death wins even when the same projection also contains an accepted attempt.
+    for (const key of this.#dead) { this.#actions.delete(key); this.#casts.delete(key); }
   }
 
-  /** Starts and ends the effects bound to the viewer's channel and auras. */
+  /** Only the viewer's continuously projected cast/auras may reconstruct bound effects. */
   sync(snapshot: ZoneSnapshot, now: number, resolve: ResolveAnchor): void {
     const viewer: EntityRef = { kind: "player", id: snapshot.viewerId };
-    const channel = snapshot.viewer.cast;
-    const channelling = channel !== null && channel.channel && channel.ability === BLIZZARD_ABILITY;
-    const barrier = snapshot.auras.some((aura) => aura.ability === BARRIER_ABILITY && aura.kind === "absorb");
+    const key = entityKey(viewer);
+    const cast = snapshot.viewer.cast;
+    const pose = cast ? presentationOf(cast.ability)?.pose : null;
+    if (!snapshot.viewer.dead && cast && pose) {
+      this.#casts.set(key, { pose, ability: cast.ability, startedAt: now - cast.elapsed / 30, duration: cast.total / 30, hold: true, release: false, projectedProgress: cast.total > 0 ? cast.elapsed / cast.total : 1 });
+    } else { this.#casts.delete(key); }
+    const barrier = !snapshot.viewer.dead && snapshot.auras.some((aura) => aura.ability === BARRIER_ABILITY && aura.kind === "absorb");
     this.#effects = this.#effects.filter((effect) => {
-      if (effect.duration !== null) {
-        return true;
-      }
-      return effect.visual === "shards" ? channelling : barrier;
+      if (effect.duration !== null) { return true; }
+      if (effect.visual === "shards") { return this.#casts.get(entityKey(effect.source))?.ability === BLIZZARD_ABILITY; }
+      return sameEntity(effect.source, viewer) && barrier;
     });
-    if (channelling && !this.#effects.some((effect) => effect.visual === "shards")) {
+    if (cast?.channel && cast.ability === BLIZZARD_ABILITY && !snapshot.viewer.dead) {
       this.#startShards(viewer, snapshot.viewer.target, BLIZZARD_ABILITY, now, resolve);
     }
-    if (barrier && !this.#effects.some((effect) => effect.visual === "bubble")) {
+    if (barrier && !this.#effects.some((effect) => effect.visual === "bubble" && sameEntity(effect.source, viewer))) {
       this.#add({ visual: "bubble", ability: BARRIER_ABILITY, source: viewer, target: null, ground: null, duration: null }, now);
     }
   }
 
-  /** Drops expired timed effects and returns the rest. */
   active(now: number): readonly SpellEffect[] {
-    this.#effects = this.#effects.filter((effect) => effect.duration === null || now - effect.startedAt < effect.duration);
+    for (const actions of [this.#actions, this.#casts]) {
+      for (const [key, action] of actions) {
+        if (action.projectedProgress === undefined && now - action.startedAt >= action.duration) { actions.delete(key); }
+      }
+    }
+    this.#effects = this.#effects.filter((effect) => effect.duration === null
+      ? this.#casts.get(entityKey(effect.source))?.ability === effect.ability || effect.visual === "bubble"
+      : now - effect.startedAt < effect.duration);
     return this.#effects;
   }
 
-  /** The viewer's current cast, draw or swing pose with its progress 0–1, or null at rest. */
-  viewerAction(snapshot: ZoneSnapshot, now: number): ViewerAction | null {
-    const cast = snapshot.viewer.cast;
-    const pose = cast ? presentationOf(cast.ability)?.pose : null;
-    if (cast && pose) {
-      return { pose, progress: cast.total > 0 ? Math.min(1, cast.elapsed / cast.total) : 1, hold: true };
-    }
-    const action = this.#action;
-    if (action && now - action.startedAt < ACTION_SECONDS) {
-      const elapsed = (now - action.startedAt) / ACTION_SECONDS;
-      // The release starts at the peak of the swell, where a held cast pose ends.
-      return { pose: action.pose, progress: action.release ? 0.5 + elapsed / 2 : elapsed, hold: false };
+  actionFor(entity: EntityRef, now: number): ViewerAction | null {
+    const key = entityKey(entity);
+    if (entity.kind === "npc" || this.#dead.has(key)) { return null; }
+    for (const actions of [this.#actions, this.#casts]) {
+      const action = actions.get(key);
+      if (!action) { continue; }
+      const elapsed = now - action.startedAt;
+      if (action.projectedProgress !== undefined) { return { pose: action.pose, hold: true, progress: Math.min(1, action.projectedProgress) }; }
+      if (elapsed >= action.duration) { actions.delete(key); continue; }
+      const progress = Math.min(1, Math.max(0, elapsed / Math.max(0.001, action.duration)));
+      return { pose: action.pose, hold: action.hold, progress: action.release ? 0.5 + progress / 2 : progress };
     }
     return null;
   }
 
+  viewerAction(snapshot: ZoneSnapshot, now: number): ViewerAction | null {
+    if (snapshot.viewer.dead) { return null; }
+    const cast = snapshot.viewer.cast;
+    const pose = cast ? presentationOf(cast.ability)?.pose : null;
+    if (cast && pose) { return { pose, progress: cast.total > 0 ? Math.min(1, cast.elapsed / cast.total) : 1, hold: true }; }
+    return this.actionFor({ kind: "player", id: snapshot.viewerId }, now);
+  }
+
   #startShards(source: EntityRef, target: EntityRef | null, ability: number, now: number, resolve: ResolveAnchor): void {
     const point = target ? resolve(target) : null;
-    if (!point || this.#effects.some((effect) => effect.visual === "shards")) {
-      return;
-    }
+    if (!point || this.#effects.some((effect) => effect.visual === "shards" && sameEntity(effect.source, source))) { return; }
     this.#add({ visual: "shards", ability, source, target, ground: [point.x, point.feetY, point.z], duration: null }, now);
   }
 
   #add(effect: Omit<SpellEffect, "id" | "startedAt">, now: number): void {
-    this.#effects.push({ ...effect, id: this.#nextId, startedAt: now });
-    this.#nextId += 1;
-    if (this.#effects.length > MAX_EFFECTS) {
-      this.#effects.splice(0, this.#effects.length - MAX_EFFECTS);
-    }
+    this.#effects.push({ ...effect, id: this.#nextId++, startedAt: now });
+    if (this.#effects.length > MAX_EFFECTS) { this.#effects.splice(0, this.#effects.length - MAX_EFFECTS); }
   }
 }
 
@@ -179,6 +242,17 @@ export function effectNodes(effect: SpellEffect, now: number, resolve: ResolveAn
   const source = resolve(effect.source);
   const target = effect.target ? resolve(effect.target) : null;
   switch (effect.visual) {
+    case "impact": {
+      if (!target) { return []; }
+      const glow = effect.critical ? "#ffe6a3" : "#ffb376";
+      const nodes: RendererSceneNode[] = [{ id: `${prefix}-flash`, geometry: { kind: "sphere", radius: 0.08 + 0.2 * t }, color: glow, unlit: true, opacity: 0.85 * (1 - t), transform: { translation: [target.x, target.centreY, target.z] } }];
+      for (let index = 0; index < 6; index += 1) {
+        const angle = index / 6 * Math.PI * 2;
+        const radius = 0.12 + 0.85 * t;
+        nodes.push({ id: `${prefix}-spark-${index}`, geometry: { kind: "box", size: [0.06, 0.06, 0.18] }, color: glow, unlit: true, opacity: 0.9 * (1 - t), transform: { translation: [target.x + Math.cos(angle) * radius, target.centreY + Math.sin(angle) * radius, target.z + Math.sin(angle * 2) * radius * 0.3], rotationQuaternion: yawQuaternion(angle) } });
+      }
+      return nodes;
+    }
     case "projectile": {
       if (!source || !target) {
         return [];

@@ -81,6 +81,18 @@ pub enum ErrorCode {
 /// One feedback event addressed to a player.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ZoneEvent {
+    /// An ordinary attack actually rolled, independently of its hit outcome.
+    AttackPerformed {
+        source: EntityRef,
+        target: EntityRef,
+    },
+    /// Positive health damage witnessed by a non-participant. Never damage credit.
+    DamageObserved {
+        source: EntityRef,
+        target: EntityRef,
+        amount: u16,
+        critical: bool,
+    },
     /// The player's attack hit `target`.
     DamageDealt {
         source: EntityRef,
@@ -172,6 +184,25 @@ pub enum ZoneEvent {
 }
 
 impl ZoneEvent {
+    /// Identity-bearing presentation cues may only name units present in the
+    /// recipient's actual projection. Participant feedback retains its semantics.
+    pub fn observation_refs(self, viewer: crate::PlayerId) -> Option<[Option<EntityRef>; 2]> {
+        let own = EntityRef::Player(viewer);
+        match self {
+            Self::AttackPerformed { source, target }
+            | Self::DamageObserved { source, target, .. } => Some([Some(source), Some(target)]),
+            Self::CastStarted { source, target, .. } | Self::AbilityUsed { source, target, .. }
+                if source != own && target != Some(own) =>
+            {
+                Some([Some(source), target])
+            }
+            Self::Interrupted { source, target, .. } if source != Some(own) && target != own => {
+                Some([source, Some(target)])
+            }
+            _ => None,
+        }
+    }
+
     /// Overflow keeps higher priorities: deaths, then damage taken, errors
     /// and turn-ins, damage dealt and quest progress, ability feedback, and
     /// finally misses and evades.
@@ -188,7 +219,10 @@ impl ZoneEvent {
             | Self::AuraRemoved { .. }
             | Self::Interrupted { .. }
             | Self::Absorbed { .. } => 1,
-            Self::Miss { .. } | Self::Evade { .. } => 0,
+            Self::Miss { .. }
+            | Self::Evade { .. }
+            | Self::AttackPerformed { .. }
+            | Self::DamageObserved { .. } => 0,
         }
     }
 }

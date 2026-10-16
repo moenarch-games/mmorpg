@@ -12,11 +12,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // a ceiling requires a deliberate workload/behavior/performance review.
     // Content revision 6 raised the spread fights' pair checks, contacts and
     // projection candidates: lurkers stop to cast Muck Bolt and bandits to
-    // cast Crude Bandage, which moves bodies differently.
+    // cast Crude Bandage, which moves bodies differently. Snapshot v15 raised
+    // the spread 32-player fight's bytes by 35,693 for the 14-byte
+    // AttackPerformed/DamageObserved records visible bystanders now receive.
     let ceilings: [[usize; 7]; FIXTURES.len()] = [
         [21_240, 120_960, 170_837, 4, 27_222, 190_080, 3_204_720],
         [21_240, 118_080, 255_546, 20, 24_540, 70_336, 981_271],
-        [21_240, 126_720, 365_288, 41, 32_010, 366_813, 5_406_543],
+        [21_240, 126_720, 365_288, 41, 32_010, 366_813, 5_442_236],
         [20_106, 137_106, 462_299, 68, 39_928, 1_938_628, 24_499_402],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {

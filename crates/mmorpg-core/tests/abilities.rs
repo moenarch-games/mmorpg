@@ -293,7 +293,7 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
     // The stunned wolf neither swung nor moved during the stun.
     let wolf_hits = fight.since(
         bashed + 1,
-        |event| matches!(event, ZoneEvent::DamageTaken { source, .. } if *source == TARGET),
+        |event| matches!(event, ZoneEvent::DamageTaken { source, .. } | ZoneEvent::AttackPerformed { source, .. } if *source == TARGET),
     );
     assert!(
         wolf_hits.iter().all(|(at, _)| *at > bashed + 59),
@@ -509,6 +509,29 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
         "the shield took the hits"
     );
     assert_eq!(fight.view().auras[0].amount, 54);
+    for (tick, event) in fight.since(shielded, |event| {
+        matches!(event, ZoneEvent::Absorbed { .. })
+    }) {
+        let ZoneEvent::Absorbed { source, target, .. } = event else {
+            unreachable!()
+        };
+        assert!(
+            fight
+                .events
+                .contains(&(tick, ZoneEvent::AttackPerformed { source, target })),
+            "fully absorbed ordinary hit still has attempt motion"
+        );
+        assert!(
+            !fight
+                .since(tick, |event| matches!(
+                    event,
+                    ZoneEvent::DamageTaken { .. } | ZoneEvent::DamageObserved { .. }
+                ))
+                .iter()
+                .any(|(at, _)| *at == tick),
+            "no health damage was confirmed"
+        );
+    }
 
     // Damage after the first 30 ticks breaks the root.
     assert!(fight.zone.current_tick() - rooted >= 30);
@@ -594,8 +617,15 @@ fn a_lurker_casts_muck_bolt_until_a_shield_bash_interrupts_it() {
             ticks: 45,
         }
     )));
-    // The bolt lands 45 ticks later for 5–8 damage.
-    fight.ticks(44);
+    // Presentation must not invent ordinary attacks while this creature is casting.
+    assert!(!fight.since(first, |event| matches!(event, ZoneEvent::AttackPerformed { source, .. } if *source == TARGET)).iter().any(|(tick, _)| *tick == first));
+    for _ in 0..43 {
+        let events = fight.tick();
+        assert!(!events.iter().any(
+            |event| matches!(event, ZoneEvent::AttackPerformed { source, .. } if *source == TARGET)
+        ));
+    }
+    fight.tick();
     let landed = fight.since(
         first + 44,
         |event| matches!(event, ZoneEvent::DamageTaken { source, .. } if *source == TARGET),

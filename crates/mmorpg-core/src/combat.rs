@@ -238,6 +238,63 @@ impl ZoneSimulation {
         }
     }
 
+    /// Observation-only delivery. Every named identity must pass the existing
+    /// interest policy; participants keep their original feedback and priorities.
+    pub(crate) fn notify_observers(
+        &mut self,
+        refs: &[EntityRef],
+        excluded: &BTreeSet<PlayerId>,
+        event: ZoneEvent,
+    ) {
+        let Some([x, _, z]) = refs
+            .first()
+            .and_then(|entity| self.unit_position(*entity).ok())
+        else {
+            return;
+        };
+        let (candidates, _) = self.interest.candidates(x, z);
+        let recipients: Vec<_> = candidates
+            .into_iter()
+            .filter_map(|entity| match entity {
+                EntityRef::Player(id)
+                    if !excluded.contains(&id)
+                        && refs
+                            .iter()
+                            .all(|entity| self.visible_to(id, *entity).unwrap_or(false)) =>
+                {
+                    Some(id)
+                }
+                _ => None,
+            })
+            .collect();
+        for id in recipients {
+            self.notify(id, event);
+        }
+    }
+
+    fn observe_damage(&mut self, source: EntityRef, target: EntityRef, dealt: u32, critical: bool) {
+        if dealt == 0 {
+            return;
+        }
+        let participants = [source, target]
+            .into_iter()
+            .filter_map(|entity| match entity {
+                EntityRef::Player(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        self.notify_observers(
+            &[source, target],
+            &participants,
+            ZoneEvent::DamageObserved {
+                source,
+                target,
+                amount: u16::try_from(dealt).unwrap_or(u16::MAX),
+                critical,
+            },
+        );
+    }
+
     /// Whether `target` exists and is within the viewer's interest radius:
     /// a player, a living creature or corpse, or an NPC.
     pub(crate) fn visible_to(
@@ -392,6 +449,11 @@ impl ZoneSimulation {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
         }
+        self.notify_observers(
+            &[source, target],
+            &BTreeSet::new(),
+            ZoneEvent::AttackPerformed { source, target },
+        );
         let swing = roll_swing(&mut self.rng, damage);
         match swing {
             Swing::Miss => {
@@ -472,6 +534,7 @@ impl ZoneSimulation {
                 critical,
             },
         );
+        self.observe_damage(source, target, dealt, critical);
         if dead {
             return self.creature_dies(creature_id, source, now);
         }
@@ -529,6 +592,7 @@ impl ZoneSimulation {
                 critical,
             },
         );
+        self.observe_damage(source, target, dealt, critical);
         if dead {
             return self.player_dies(player_id, source);
         }
@@ -577,6 +641,11 @@ impl ZoneSimulation {
         if distance_squared([from.x, from.z], [to.x, to.z]) > reach * reach {
             return Ok(());
         }
+        self.notify_observers(
+            &[source, target],
+            &BTreeSet::new(),
+            ZoneEvent::AttackPerformed { source, target },
+        );
         let swing = roll_swing(&mut self.rng, template.damage_at(level));
         if let Some(creature) = self.creatures.get_mut(&creature_id) {
             creature.swing_timer = template.swing_ticks;

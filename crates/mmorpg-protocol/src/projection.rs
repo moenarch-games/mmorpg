@@ -4,6 +4,8 @@
 //! cast and auras, sheets, events, then entities by relevance until the
 //! budget is used).
 
+use std::collections::BTreeSet;
+
 use mmorpg_core::{
     AbilityId, AuraKind, AuraView, CastView, ClassChoice, Cooldown, EntityFlags, EntityKind,
     EntitySnapshot, GLOBAL_COOLDOWN_TICKS, MAX_AURAS, MAX_CHAT_PER_TICK, MAX_COOLDOWNS,
@@ -198,23 +200,53 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
         crate::loot::encode_claim(&mut payload, view.claim);
         crate::loot::encode_rewards(&mut payload, view.rewards);
     }
-    payload.push(event_count);
-    for event in &snapshot.events {
-        encode_event(&mut payload, event);
-    }
-    payload.push(encode_u8_count(
+    let mut chat_payload = Vec::new();
+    chat_payload.push(encode_u8_count(
         snapshot.chat.len(),
         MAX_CHAT_PER_TICK,
         "player projection has too many chat lines",
     )?);
     for line in &snapshot.chat {
-        crate::chat::encode_line(&mut payload, line);
+        crate::chat::encode_line(&mut chat_payload, line);
     }
+    // Plan a conservative entity prefix once, before removing cosmetic records.
+    // Freed event bytes do not grow that prefix and cannot cause a packing cycle.
+    let reserved =
+        payload.len() + 1 + usize::from(event_count) * EVENT_RECORD_BYTES + chat_payload.len() + 2;
+    let planned = (MAX_PLAYER_PROJECTION_BYTES.saturating_sub(reserved) / ENTITY_RECORD_BYTES)
+        .min(MAX_WIRE_ENTITIES)
+        .min(snapshot.entities.len());
+    let visible: BTreeSet<_> = snapshot.entities[..planned]
+        .iter()
+        .map(EntitySnapshot::entity)
+        .collect();
+    let events: Vec<_> = snapshot
+        .events
+        .iter()
+        .filter(|event| {
+            event
+                .observation_refs(snapshot.viewer_id)
+                .is_none_or(|refs| {
+                    refs.into_iter()
+                        .flatten()
+                        .all(|entity| visible.contains(&entity))
+                })
+        })
+        .collect();
+    payload.push(encode_u8_count(
+        events.len(),
+        MAX_EVENTS_PER_PLAYER,
+        "too many projection events",
+    )?);
+    for event in events {
+        encode_event(&mut payload, event);
+    }
+    payload.extend_from_slice(&chat_payload);
 
     let count_offset = payload.len();
     payload.extend_from_slice(&0_u16.to_be_bytes());
     let mut packed_entities = 0_u16;
-    for entity in snapshot.entities.iter().take(MAX_WIRE_ENTITIES) {
+    for entity in snapshot.entities.iter().take(planned) {
         if payload.len() + ENTITY_RECORD_BYTES > MAX_PLAYER_PROJECTION_BYTES {
             break;
         }
@@ -1000,7 +1032,7 @@ mod tests {
 
     fn fixture_bytes() -> Vec<u8> {
         hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v14.hex"
+            "../../../fixtures/protocol/player-snapshot-v15.hex"
         ))
     }
 
@@ -1068,7 +1100,7 @@ mod tests {
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
         // The previous version's fixture is rejected, never reinterpreted.
         let legacy = hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v13.hex"
+            "../../../fixtures/protocol/player-snapshot-v14.hex"
         ));
         assert_eq!(
             decode_snapshot(&legacy).unwrap_err().to_string(),
@@ -1107,7 +1139,7 @@ mod tests {
         // A dead target has no target detail.
         snapshot.target_detail = TargetDetail::default();
         let expected = hex(include_str!(
-            "../../../fixtures/protocol/player-loot-v14.hex"
+            "../../../fixtures/protocol/player-loot-v15.hex"
         ));
         if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
             let bytes = encode_snapshot(&snapshot).unwrap();
@@ -1215,7 +1247,7 @@ mod tests {
             (TARGET_CAST, 0, "cast state is inconsistent"),
             (TARGET_AURAS + 4, 0, "aura record is inconsistent"),
             (EVENTS, 17, "snapshot exceeds the per-player event capacity"),
-            (EVENTS + 1, 16, "unknown event kind"),
+            (EVENTS + 1, 255, "unknown event kind"),
             (EVENTS + 2, 2, "event flags are invalid"),
             (
                 EVENTS + 1 + 2 * EVENT_RECORD_BYTES + 1,
@@ -1239,7 +1271,7 @@ mod tests {
             ),
             (
                 EVENTS + 1 + 7 * EVENT_RECORD_BYTES,
-                16,
+                255,
                 "unknown event kind",
             ),
             (

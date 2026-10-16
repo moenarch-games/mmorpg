@@ -205,11 +205,24 @@ impl ZoneSimulation {
             (left.0, left.1, left.2).cmp(&(right.0, right.1, right.2))
         });
         relevant.truncate(MAX_VISIBLE_ENTITIES);
-        let entities = relevant
+        let entities: Vec<EntitySnapshot> = relevant
             .into_iter()
             .map(|(_, _, _, entity)| entity)
             .collect();
 
+        let projected: BTreeSet<_> = entities.iter().map(EntitySnapshot::entity).collect();
+        let events = viewer
+            .events
+            .iter()
+            .copied()
+            .filter(|event| {
+                event.observation_refs(player_id).is_none_or(|refs| {
+                    refs.into_iter()
+                        .flatten()
+                        .all(|entity| projected.contains(&entity))
+                })
+            })
+            .collect();
         let max_health = viewer.max_health();
         let sheet = self.tick == viewer.inventory_changed_at
             || self.tick == viewer.quests_changed_at
@@ -266,7 +279,7 @@ impl ZoneSimulation {
                     Some(EntityRef::Creature(id)) => self.loot_view_for(player_id, id)?,
                     _ => None,
                 },
-                events: viewer.events.clone(),
+                events,
                 chat: viewer.chat.clone(),
                 entities,
             },

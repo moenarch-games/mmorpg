@@ -74,6 +74,8 @@ impl UnitSpec {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(try_from = "String")]
 pub enum EventSpec {
+    AttackPerformed,
+    DamageObserved,
     DamageDealt,
     DamageTaken,
     Miss,
@@ -92,7 +94,9 @@ pub enum EventSpec {
 }
 
 /// Event kinds without a payload, with their scenario names.
-const PLAIN_EVENTS: [(EventSpec, &str); 14] = [
+const PLAIN_EVENTS: [(EventSpec, &str); 16] = [
+    (EventSpec::AttackPerformed, "attack_performed"),
+    (EventSpec::DamageObserved, "damage_observed"),
     (EventSpec::DamageDealt, "damage_dealt"),
     (EventSpec::DamageTaken, "damage_taken"),
     (EventSpec::Miss, "miss"),
@@ -144,7 +148,9 @@ impl EventSpec {
     /// `unit` is given, concerns that unit.
     pub fn matches(self, event: &ZoneEvent, viewer: EntityRef, unit: Option<EntityRef>) -> bool {
         let kind = match (self, event) {
-            (Self::DamageDealt, ZoneEvent::DamageDealt { .. })
+            (Self::AttackPerformed, ZoneEvent::AttackPerformed { .. })
+            | (Self::DamageObserved, ZoneEvent::DamageObserved { .. })
+            | (Self::DamageDealt, ZoneEvent::DamageDealt { .. })
             | (Self::DamageTaken, ZoneEvent::DamageTaken { .. })
             | (Self::Miss, ZoneEvent::Miss { .. })
             | (Self::Died, ZoneEvent::Died { .. })
@@ -180,7 +186,9 @@ pub fn concerned_unit(event: &ZoneEvent, viewer: EntityRef) -> Option<EntityRef>
     match *event {
         ZoneEvent::DamageDealt { target, .. } | ZoneEvent::Evade { target, .. } => Some(target),
         ZoneEvent::DamageTaken { source, .. } => Some(source),
-        ZoneEvent::Miss { source, target }
+        ZoneEvent::AttackPerformed { source, target }
+        | ZoneEvent::DamageObserved { source, target, .. }
+        | ZoneEvent::Miss { source, target }
         | ZoneEvent::Healed { source, target, .. }
         | ZoneEvent::Absorbed { source, target, .. } => other(source, Some(target)),
         ZoneEvent::CastStarted { source, target, .. }
@@ -325,6 +333,20 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
             critical: crit,
             ..
         } => format!("taken:{}:{amount}{}", name(source), critical(crit)),
+        ZoneEvent::AttackPerformed { source, target } => {
+            format!("attack:{}>{}", name(source), name(target))
+        }
+        ZoneEvent::DamageObserved {
+            source,
+            target,
+            amount,
+            critical: crit,
+        } => format!(
+            "observed:{}>{}:{amount}{}",
+            name(source),
+            name(target),
+            critical(crit)
+        ),
         ZoneEvent::Miss { source, target } => format!("miss:{}>{}", name(source), name(target)),
         ZoneEvent::Died { entity, .. } => format!("died:{}", name(entity)),
         ZoneEvent::Evade { target, .. } => format!("evade:{}", name(target)),

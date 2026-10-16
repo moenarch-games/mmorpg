@@ -6,6 +6,8 @@ import { archerNodes } from "./archer-asset";
 import { OTHER_PLAYER_LOOK, humanoidHeadwearNodes, humanoidNodes, humanoidStance, type HumanoidLook, type UnitPlacement } from "./humanoid";
 import { applyActionPose } from "./action-pose";
 import type { ViewerAction } from "./units/spell-effects";
+import { REST } from "./units/humanoid-body";
+import { fallingNodes } from "./units/model-kit";
 import { CREATURE_MODEL } from "./units/creature-models";
 
 /**
@@ -35,6 +37,7 @@ export type UnitContext = {
   viewerTarget: EntityRef | null;
   /** The viewer's cast, draw or swing, which its humanoid plays over its locomotion. */
   viewerAction?: ViewerAction | null;
+  actionFor?: (entity: EntityRef) => ViewerAction | null;
 };
 
 /** Everything a unit model draws from in one frame. */
@@ -44,6 +47,7 @@ export type UnitFrame = {
   placement: UnitPlacement;
   locomotion: LocomotionState;
   context: UnitContext;
+  deathProgress?: number;
 };
 
 export type UnitModel = {
@@ -85,16 +89,23 @@ export function placeUnit(
 /** Players: the viewer's own unit wears the local character's look, others the shared one. */
 export const PLAYER_MODEL: UnitModel = {
   halfHeightUnits: (_entity, context) => context.playerHalfHeightUnits,
-  nodes: ({ id, entity, placement, locomotion, context }) => {
+  nodes: ({ id, entity, placement, locomotion, context, deathProgress }) => {
     const look = entity.entityId === context.viewerId ? context.viewerLook : OTHER_PLAYER_LOOK;
-    const action = entity.entityId === context.viewerId ? context.viewerAction ?? null : null;
+    let action: ViewerAction | null = null;
+    if (!entity.flags.dead) {
+      action = entity.entityId === context.viewerId && context.viewerAction !== undefined
+        ? context.viewerAction : context.actionFor?.({ kind: entity.kind, id: entity.entityId }) ?? null;
+    }
+    const motion = entity.flags.dead ? REST : locomotion;
+    const finish = (nodes: RendererSceneNode[]) => entity.flags.dead
+      ? fallingNodes(nodes, placement, context.playerHalfHeightUnits / context.unitsPerMetre, deathProgress ?? 1) : nodes;
     if (look.visuals.weapon === "bow") {
-      const base = poseFor(locomotion, "bow");
+      const base = poseFor(motion, "bow");
       const pose = applyActionPose(base, action);
       // The rigid archer mesh cannot bend its arms; the draw pose turns it side-on instead.
-      return [...archerNodes(id, placement, look, pose.bob, pose.twist - base.twist), ...humanoidHeadwearNodes(id, placement, look, pose)];
+      return finish([...archerNodes(id, placement, look, pose.bob, pose.twist - base.twist), ...humanoidHeadwearNodes(id, placement, look, pose)]);
     }
-    return humanoidNodes(id, placement, look, applyActionPose(poseFor(locomotion, humanoidStance(look)), action));
+    return finish(humanoidNodes(id, placement, look, applyActionPose(poseFor(motion, humanoidStance(look)), action)));
   },
 };
 
@@ -127,6 +138,21 @@ export function unitNodeIds(nodes: readonly { id: string }[], identity: string):
 /** Animation state per visible unit, dropped when the unit leaves the projection. */
 export class UnitAnimators {
   readonly #animators = new Map<string, UnitAnimator>();
+  readonly #deaths = new Map<string, number | null>();
+
+  /** Only a witnessed life transition falls; initial corpse hydration is settled. */
+  deathProgress(entity: EntityState, deltaSeconds: number, instant: boolean): number | null {
+    const key = unitIdentity(entity);
+    if (!entity.flags.dead) { this.#deaths.set(key, null); return null; }
+    const previous = this.#deaths.get(key);
+    let progress = 1;
+    if (!instant && this.#deaths.has(key)) {
+      progress = previous === null ? 0 : Math.min(1, (previous ?? 1) + Math.max(0, deltaSeconds) / 0.45);
+    }
+    this.#deaths.set(key, progress);
+    return progress;
+  }
+
 
   /** Locomotion for this frame; `instant` snaps blends (reduced motion). */
   locomotion(entity: EntityState, placement: UnitPlacement, unitsPerMetre: number, deltaSeconds: number, instant: boolean): LocomotionState {
@@ -147,6 +173,7 @@ export class UnitAnimators {
 
   /** Forgets units that are no longer visible. */
   retain(identities: ReadonlySet<string>): void {
+    for (const key of this.#deaths.keys()) { if (!identities.has(key)) { this.#deaths.delete(key); } }
     for (const identity of this.#animators.keys()) {
       if (!identities.has(identity)) {
         this.#animators.delete(identity);
@@ -156,5 +183,6 @@ export class UnitAnimators {
 
   clear(): void {
     this.#animators.clear();
+    this.#deaths.clear();
   }
 }

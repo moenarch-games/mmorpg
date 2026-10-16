@@ -252,7 +252,27 @@ pub fn measure(fixture: Fixture) -> Result<Report, Box<dyn Error>> {
             let decoded = decode_snapshot(&packed.payload)?;
             assert_eq!(decoded.tick, u64::try_from(tick)? + 1);
             assert_eq!(decoded.viewer_id, player.player_id);
-            assert_eq!(decoded.events, projection.snapshot.events);
+            // v15 packing drops cosmetic observations that name an entity
+            // outside the packed prefix; every other event is retained.
+            let packed_ids: Vec<_> = decoded
+                .entities
+                .iter()
+                .map(|entity| entity.entity())
+                .collect();
+            let expected_events: Vec<_> = projection
+                .snapshot
+                .events
+                .iter()
+                .filter(|event| {
+                    event.observation_refs(player.player_id).is_none_or(|refs| {
+                        refs.into_iter()
+                            .flatten()
+                            .all(|entity| packed_ids.contains(&entity))
+                    })
+                })
+                .cloned()
+                .collect();
+            assert_eq!(decoded.events, expected_events);
             assert_eq!(
                 decoded.entities,
                 projection.snapshot.entities[..packed.packed_entities]

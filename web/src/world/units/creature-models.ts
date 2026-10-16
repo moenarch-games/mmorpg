@@ -2,6 +2,7 @@ import type { RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import { sameEntity } from "../../entity-ref";
 import type { EntityKind, EntityState } from "../../replication";
 import type { ContentCatalog, CreatureFamily, NpcRole } from "../catalog";
+import { applyActionPose, actionWeight } from "../action-pose";
 import { poseFor, quadrupedPoseFor, type QuadrupedPose } from "../character-animation";
 import type { UnitFrame, UnitModel, UnitPlacement } from "../unit-nodes";
 import { PLACEHOLDER_BODY_MODEL, bodyHalfHeightUnits, stateColor } from "./creature-bodies";
@@ -124,12 +125,14 @@ export function animalParts(
   accent: Color,
   pose: QuadrupedPose,
   dead: boolean,
+  deathProgress = 1,
 ): Part[] {
   const spec = ANIMALS[family];
   const [hx, hy, hz] = halfMetres;
   const height = hy * 2;
   const pivotY = spec.legs.hipY * height;
-  const root = rootFrame(placement, hy, dead ? { rotation: tilt(0, Math.PI / 2), lift: spec.lift * hx } : null);
+  const t = Math.min(1, Math.max(0, deathProgress));
+  const root = rootFrame(placement, hy, dead ? { rotation: tilt(0, Math.PI / 2 * t), lift: hy + (spec.lift * hx - hy) * t } : null);
   const body = child(root, [0, pivotY + pose.bob, 0], tilt(pose.pitch));
   const parts: Part[] = [];
   const at = ([x, y, z]: Pt, mirror = 1): [number, number, number] => [x * mirror * hx, y * height - pivotY, z * hz];
@@ -251,17 +254,24 @@ export function creatureModelParts(frame: UnitFrame): Part[] | null {
   const half = unitHalfMetres(entity, context.catalog, context.unitsPerMetre, context.playerHalfHeightUnits);
   const dead = entity.flags.dead;
   const accent = stateColor(entity, context.catalog);
+  const action = !dead && entity.kind === "creature" ? context.actionFor?.({ kind: entity.kind, id: entity.entityId }) ?? null : null;
+  const progress = frame.deathProgress ?? 1;
   switch (choice) {
     case "wolf":
     case "boar":
     case "vermin":
-      return animalParts(choice, placement, half, accent, dead ? corpsePose() : quadrupedPoseFor(locomotion), dead);
+      {
+        const pose = dead ? corpsePose() : quadrupedPoseFor(locomotion);
+        const weight = action ? actionWeight(action) : 0;
+        const attackPose = { ...pose, pitch: pose.pitch + weight * 0.22, headPitch: pose.headPitch - weight * 0.45, frontLeft: pose.frontLeft + weight * 0.4, frontRight: pose.frontRight + weight * 0.4 };
+        return animalParts(choice, placement, half, accent, attackPose, dead, progress);
+      }
     case "marauder":
     case "mirefin":
     case "redbrand": {
       const elite = context.catalog.creatureTemplates.get(entity.appearance)?.elite ?? false;
       const spec = creatureHumanoidSpec(choice, elite, accent);
-      return humanoidParts(placement, half, spec, poseFor(locomotion, spec.stance), dead);
+      return humanoidParts(placement, half, spec, applyActionPose(poseFor(locomotion, spec.stance), action), dead, progress);
     }
     default: {
       const spec = NPC_SPECS[choice]();

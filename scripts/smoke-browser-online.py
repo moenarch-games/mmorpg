@@ -171,8 +171,20 @@ class OnlineAcceptance(unittest.TestCase):
             except Exception as error:  # Keep cleaning up; the first failure is already reported.
                 print(f"cleanup failed: {error}")
 
-    def open_player(self, name: str):
-        context = self.browser.new_context(viewport={"width": 1280, "height": 800}, reduced_motion="reduce")
+    def open_player(self, name: str, *, animated=False, class_label=None):
+        context = self.browser.new_context(viewport={"width": 1280, "height": 800}, reduced_motion="no-preference" if animated else "reduce")
+        context.add_init_script("""(() => {
+          const Original = window.WebTransport;
+          window.__acceptanceNodes = identity => window.__valeDebug.unitNodes(identity).map(({id,transform}) => ({id,transform}));
+          window.__actualTransports = [];
+          window.__transportKinds = [];
+          window.WebTransport = new Proxy(Original, {construct(Target, args) {
+            const transport = Reflect.construct(Target, args, Target);
+            window.__actualTransports.push(transport);
+            window.__transportKinds.push(new URL(args[0]).pathname.includes('/reconnect/'));
+            return transport;
+          }});
+        })();""")
         page = context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -182,6 +194,11 @@ class OnlineAcceptance(unittest.TestCase):
         expect(page.get_by_role("checkbox", name=re.compile("Play online"))).to_be_checked()
         expect(page.locator("#enter-world-note")).to_contain_text("Join 127.0.0.1:")
         page.screenshot(path=str(ARTIFACTS / f"{name}-selection.png"))
+        if class_label:
+            page.get_by_role("button", name="Create character", exact=True).click()
+            page.get_by_label("Name").fill(name)
+            page.get_by_role("radio", name=re.compile(f"^{class_label}")).check()
+            page.get_by_role("button", name="Create character", exact=True).filter(visible=True).click()
         enter.click()
         expect(page.locator("#character-select")).to_be_hidden(timeout=15_000)
         expect(page.locator("#world-mode")).to_contain_text("online")
@@ -218,13 +235,190 @@ class OnlineAcceptance(unittest.TestCase):
         for player in self.players:
             if not player["page"].is_closed():
                 player["page"].screenshot(path=str(ARTIFACTS / f"{player['name']}.png"))
-            evidence.append({"page": player["name"], "pageErrors": player["errors"]})
+            evidence.append({"page": player["name"], "pageErrors": player["errors"], "projection":self.projection(player["page"]) if not player["page"].is_closed() else None, "actionSamples":player["page"].evaluate("window.__actionSamples ?? []") if not player["page"].is_closed() else []})
             player["context"].close()
         self.evidence["pages"] = evidence
         self.evidence["route"] = self.route
         (ARTIFACTS / "online-evidence.json").write_text(json.dumps(self.evidence, indent=2))
         for player in self.players:
             self.assertEqual(player["errors"], [], f"{player['name']} raised an uncaught error")
+
+    def face_online_waypoint(self, page, x, z):
+        """Right-drag turns the real controller; held input remains owned by production."""
+        box = page.locator("#world").bounding_box()
+        cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        # Align once: subsequent gestures track the camera yaw changed by our pointer.
+        if not hasattr(self, "route_camera_yaw"):
+            self.route_camera_yaw = {}
+        if page not in self.route_camera_yaw:
+            tick = self.projection(page)["tick"]
+            page.keyboard.down("KeyW")
+            self.wait_for(page, "tick => window.__valeDebug.projection().tick >= tick", tick + 3)
+            page.keyboard.up("KeyW")
+            page.mouse.move(cx, cy)
+            page.mouse.down(button="right")
+            page.mouse.move(cx, cy + 8)
+            tick = self.projection(page)["tick"]
+            self.wait_for(page, "tick => window.__valeDebug.projection().tick >= tick", tick + 12)
+            self.route_camera_yaw[page] = self.projection(page)["entities"][0]["facing"]
+            page.mouse.up(button="right")
+        unit = self.projection(page)["entities"][0]
+        page.mouse.move(cx, cy)
+        page.mouse.down(button="right")
+        page.mouse.move(cx, cy + 8)
+        import math
+        desired = round(math.atan2(x-unit["position"][0], z-unit["position"][2])*65536/(2*math.pi)) % 65536
+        delta = (desired-self.route_camera_yaw[page]+32768) % 65536-32768
+        page.mouse.move(cx-delta*(2*math.pi/65536)/0.006, cy+8, steps=4)
+        self.route_camera_yaw[page] = desired
+        self.frames(page, 2)
+        page.mouse.up(button="right")
+
+    def walk_online_waypoints(self, pages, points):
+        route = []
+        self.evidence["routeDiagnostics"] = diagnostics = []
+        for x, z in points:
+            pending = list(pages)
+            deadline = time.monotonic() + 25
+            try:
+                while pending:
+                    legs = []
+                    for page in list(pending):
+                        projection = self.projection(page)
+                        unit = projection["entities"][0]
+                        at = unit["position"]
+                        distance = ((at[0]-x)**2 + (at[2]-z)**2)**0.5
+                        diagnostics.append({"goal":[x,z], "player":projection["viewerId"],
+                                            "tick":projection["tick"], "at":at,
+                                            "facing":unit["facing"], "distance":distance})
+                        if distance < 100:
+                            pending.remove(page)
+                            route.append({"goal":[x,z],"player":projection["viewerId"],"at":at})
+                            continue
+                        self.face_online_waypoint(page, x, z)
+                        # Stop short, then re-aim from the actual authoritative position.
+                        ticks = max(1, min(60, int((distance-70)/21)))
+                        legs.append((page, ticks))
+                    moving = []
+                    starts = {}
+                    for page, ticks in legs:
+                        start = self.projection(page)
+                        starts[page] = start
+                        page.keyboard.down("KeyW")
+                        moving.append((page, start["tick"] + ticks))
+                    while moving:
+                        for page, until in list(moving):
+                            projection = self.projection(page)
+                            at = projection["entities"][0]["position"]
+                            if projection["tick"] >= until or (at[0]-x)**2+(at[2]-z)**2 < 100**2:
+                                page.keyboard.up("KeyW")
+                                start = starts[page]
+                                diagnostics.append({"goal":[x,z], "player":projection["viewerId"],
+                                                    "startTick":start["tick"], "endTick":projection["tick"],
+                                                    "startAt":start["entities"][0]["position"], "endAt":at,
+                                                    "facing":projection["entities"][0]["facing"],
+                                                    "requestedTicks":until-start["tick"]})
+                                moving.remove((page, until))
+                        if time.monotonic() > deadline:
+                            self.fail(f"Held-input route did not reach {(x,z)}: {diagnostics[-4:]}")
+                        time.sleep(0.02)
+                    if time.monotonic() > deadline:
+                        self.fail(f"Held-input route did not reach {(x,z)}: {diagnostics[-4:]}")
+            finally:
+                for page in pages:
+                    page.keyboard.up("KeyW")
+        return route
+
+    def test_remote_procedural_attack_cast_impact_and_departure(self):
+        """Two real sessions observe ordinary attacks, accepted casts and confirmed impacts.
+
+        Both travel the existing Greyhaven route via ordinary movement commands.
+        The watcher never attacks: no fake projection, teleport or client resolver.
+        """
+        actor = self.open_player("ActorMage", animated=True, class_label="Arcanist")
+        watcher = self.open_player("Observer", animated=True)
+        actor_id = self.projection(actor)["viewerId"]
+        for page in (actor, watcher):
+            page.evaluate("""() => {
+              window.__actionSamples = [];
+              const source = window.__valeDebug.worldSource();
+              const advance = source.advance.bind(source);
+              const observed = [];
+              source.advance = (...args) => {
+                const projections = advance(...args);
+                observed.push(...projections);
+                return projections;
+              };
+              const record = () => {
+                const d = window.__valeDebug, p = d.worldSource().latestProjection();
+                if (p) window.__actionSamples.push({
+                  tick: Number(p.tick), viewerId: p.viewerId, health: p.viewer.health,
+                  inCombat: p.viewer.inCombat, events: observed.splice(0).flatMap(snapshot => snapshot.events.map(e => ({...e}))),
+                  nodes: window.__acceptanceNodes(`unit-player-${window.__observedActor ?? p.viewerId}`),
+                  effects: d.presentationFrame().effectNodes,
+                  combatText: [...document.querySelectorAll('.combat-text-entry')].map(e => e.textContent),
+                });
+                if (window.__actionSamples.length > 256) window.__actionSamples.shift();
+                requestAnimationFrame(record);
+              };
+              requestAnimationFrame(record);
+            }""")
+        watcher.evaluate("id => window.__observedActor = id", actor_id)
+        self.evidence["normalInputRoute"] = self.walk_online_waypoints((actor, watcher), [(-1550,2000),(-3350,2000),(-3350,1800),(-8450,1800),(-8450,1376)])
+        for page in (actor, watcher):
+            self.wait_for(page, "window.__valeDebug.projectedUnits().some(e => e.kind === 'creature' && e.id === 108)")
+        actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'select-target',target:{kind:'creature',id:108}})")
+        # Digit1 is the ordinary production ability binding; the host resolves it.
+        actor.keyboard.press("Digit1")
+        self.wait_for(watcher, """id => window.__actionSamples.some(s => s.events.some(e => e.kind === 'cast-started' && e.source.kind === 'player' && e.source.id === id))""", actor_id)
+        self.wait_for(watcher, """id => window.__actionSamples.some(s => s.events.some(e => e.kind === 'damage-observed' && e.source.kind === 'player' && e.source.id === id && e.amount > 0))""", actor_id)
+        actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'start-attack'})")
+        self.wait_for(watcher, """id => window.__actionSamples.some(s => s.events.some(e => e.kind === 'attack-performed' && e.source.kind === 'player' && e.source.id === id))""", actor_id, timeout_ms=20_000)
+        samples = watcher.evaluate("window.__actionSamples")
+        relevant = [sample for sample in samples if any(event.get("source") == {"kind": "player", "id": actor_id} for event in sample["events"])]
+        self.assertTrue(relevant)
+        self.assertTrue(any(sample["effects"] for sample in relevant), "Real observer frames draw confirmed effects")
+        self.assertGreater(len({json.dumps(sample["nodes"], sort_keys=True) for sample in relevant}), 1, "Remote model actually plays through changing nodes")
+        for sample in relevant:
+            self.assertFalse(any(event["kind"] == "damage-dealt" and event.get("source", {}).get("id") == actor_id for event in sample["events"]), "Watcher is not credited with another actor's damage")
+        watcher.screenshot(path=str(ARTIFACTS / "remote-procedural-action.png"))
+        actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'stop-attack'})")
+        before_resume = self.projection(watcher)
+        watcher_id = before_resume["viewerId"]
+        # A normal accepted Firebolt supplies a live effect immediately before interruption.
+        actor.keyboard.press("Digit1")
+        self.wait_for(watcher, """() => {
+          const d = window.__valeDebug, effects = d.presentationFrame().effectNodes;
+          if (!effects.length) return false;
+          window.__resumeBefore = effects.map(e => e.id);
+          window.__resumeDuring = [];
+          const observe = () => {
+            if (d.worldSource().linkState() === 'reconnecting') {
+              window.__resumeDuring.push(d.presentationFrame().effectNodes.map(e => e.id));
+            }
+            if (window.__actualTransports.length < 2 || d.worldSource().linkState() !== 'connected') requestAnimationFrame(observe);
+          };
+          requestAnimationFrame(observe);
+          window.__actualTransports.at(-1).close({closeCode:0,reason:'acceptance path interruption'});
+          return true;
+        }""", timeout_ms=10_000)
+        self.wait_for(watcher, "window.__actualTransports.length === 2 && window.__valeDebug.worldSource().linkState() === 'connected'", timeout_ms=15_000)
+        self.wait_for(watcher, "tick => window.__valeDebug.projection().tick > tick", before_resume["tick"])
+        self.assertEqual(self.projection(watcher)["viewerId"], watcher_id, "Real resume retains the same player")
+        self.assertEqual(watcher.evaluate("window.__transportKinds"), [False, True], "Second connection uses the real reconnect route")
+        cleanup = watcher.evaluate("""() => ({before:window.__resumeBefore, during:window.__resumeDuring,
+          after:window.__valeDebug.presentationFrame().effectNodes.map(e => e.id)})""")
+        self.assertTrue(cleanup["before"], "Actual transient geometry was active at interruption")
+        self.assertTrue(cleanup["during"], "Observed a real reconnecting frame")
+        self.assertTrue(all(not set(ids).intersection(cleanup["before"]) for ids in cleanup["during"]), "Reconnecting frames clear prior effect identities")
+        self.assertFalse(set(cleanup["after"]).intersection(cleanup["before"]), "Resume does not replay prior effects; new authoritative effects are allowed")
+        resume = {"beforeTick":before_resume["tick"], "after":self.projection(watcher), "transportKinds":watcher.evaluate("window.__transportKinds"), "cleanup":cleanup}
+        self.evidence["realReconnect"] = resume
+        watcher.screenshot(path=str(ARTIFACTS / "remote-procedural-resumed.png"))
+        actor.close()
+        self.wait_for(watcher, "id => !window.__valeDebug.projection().entities.some(e => e.kind === 'player' && e.id === id)", actor_id)
+        self.wait_for(watcher, "id => window.__valeDebug.unitNodes(`unit-player-${id}`).length === 0", actor_id)
+        self.evidence.update({"actorId": actor_id, "remoteActionSamples": relevant, "departedActorNodes": watcher.evaluate("id => window.__valeDebug.unitNodes(`unit-player-${id}`)", actor_id)})
 
     def test_two_pages_share_one_zone_host(self):
         runner = self.open_player("runner")

@@ -72,6 +72,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         self.context.add_init_script("""(() => {
           window.__calls = {reads: 0, writes: 0, draws: 0};
+          // Pose evidence needs actual submitted identities/transforms, not repeated immutable mesh buffers.
+          window.__acceptanceNodes = identity => window.__valeDebug.unitNodes(identity).map(({id,transform}) => ({id,transform}));
           for (const [name, counter] of [['getItem', 'reads'], ['setItem', 'writes']]) {
             const original = Storage.prototype[name];
             Storage.prototype[name] = function(...args) { window.__calls[counter]++; return original.apply(this, args); };
@@ -1475,6 +1477,255 @@ class BrowserAcceptance(unittest.TestCase):
             self.page.set_viewport_size({"width": width, "height": height})
             self.frames(3)
             self.page.screenshot(path=str(ARTIFACTS / f"class-kit-warden-{width}x{height}.png"))
+
+    def aim_action_unit(self, kind, identity):
+        """Elevated side view for action proof; legacy click-test camera defaults stay intact."""
+        _, _, point = self.aim_at_world_unit(kind, identity)
+        self.page.evaluate("p => window.__valeDebug.flyToPose([p.x+3,p.y+4,p.z+5],[p.x,p.y,p.z])", point)
+        self.frames(3)
+
+    def capture_action_frame(self):
+        """Read-only actual last-rendered nodes; never inject projections, poses or outcomes."""
+        return self.page.evaluate("""() => {
+          const d = window.__valeDebug;
+          const p = d.worldSource().latestProjection();
+          return {
+            tick: Number(p.tick), health: p.viewer.health, dead: p.viewer.dead,
+            viewer: window.__acceptanceNodes(`unit-player-${p.viewerId}`),
+            target: p.viewer.target ? window.__acceptanceNodes(`unit-${p.viewer.target.kind}-${p.viewer.target.id}`) : [],
+            effects: d.presentationFrame().effectNodes,
+            events: p.events.map(e => e.kind),
+          };
+        }""")
+
+    def test_procedural_actions_and_confirmed_impacts_through_real_wasm(self):
+        """Normal Greyhaven commands must animate actual model nodes, then land richer target feedback."""
+        self.open("?debug")
+        self.page.emulate_media(reduced_motion="no-preference")
+        self.create_and_select("ActionMage", "Arcanist")
+        self.enter_beside_wolf()
+        self.aim_action_unit("creature", 108)
+        rest = self.capture_action_frame()
+        self.assertTrue(rest["viewer"] and rest["target"])
+        self.page.keyboard.press("Digit1")
+        self.step(3)
+        cast = self.capture_action_frame()
+        self.assertNotEqual(cast["viewer"], rest["viewer"], "The real Arcanist model raises into its cast")
+        expect(self.page.locator("[data-part=cast]")).to_be_visible()
+        # Preserve each actual received outcome, advancing the authoritative WASM one tick at a time.
+        self.assertTrue(self.advance_action_until("damage-dealt", 65, 1), "Firebolt resolves with authoritative damage")
+        landed = self.capture_action_frame()
+        self.assertGreater(len(landed["effects"]), 2, "Confirmed target impact adds richer feedback to the baseline bolt")
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-actions-impact.png"))
+        self.page.wait_for_function("window.__valeDebug.presentationFrame().effectNodes.length === 0", timeout=5_000)
+        settled = self.capture_action_frame()
+        self.assertEqual(settled["tick"], landed["tick"], "Expiry uses presentation time, without advancing gameplay")
+        self.assertEqual(settled["effects"], [], "Transient effects expire without another simulation tick")
+        (ARTIFACTS / "procedural-actions-local.json").write_text(json.dumps({"rest": rest, "cast": cast, "landed": landed, "settled": settled}, indent=2))
+
+    def test_ordinary_actions_creature_death_and_player_death_through_real_wasm(self):
+        self.open("?debug")
+        self.page.emulate_media(reduced_motion="no-preference")
+        self.enter_beside_wolf()
+        self.page.evaluate("""() => {
+          window.__lifeFrames = [];
+          const record = () => {
+            const d = window.__valeDebug, p = d.worldSource().latestProjection();
+            if (p) {
+              const target = p.entities.find(e => e.kind === 'creature' && e.entityId === 108);
+              window.__lifeFrames.push({
+                tick: Number(p.tick), playerDead: p.viewer.dead, targetDead: target?.flags.dead ?? false,
+                player: window.__acceptanceNodes(`unit-player-${p.viewerId}`), target: window.__acceptanceNodes('unit-creature-108'),
+              });
+            }
+            if (window.__lifeFrames.length > 64) window.__lifeFrames.shift();
+            requestAnimationFrame(record);
+          };
+          requestAnimationFrame(record);
+          window.__actualCombatEvents = [];
+          const advance = window.__classAdvance;
+          window.__classAdvance = function(...args) {
+            const received = advance.apply(this, args);
+            for (const projection of received) window.__actualCombatEvents.push(...projection.events.map(e => ({...e})));
+            return received;
+          };
+        }""")
+        self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'start-attack'})")
+        # Pause only presentation between outcomes. All commands and simulation ticks are real.
+        # Sample the first accepted ordinary actions before progressing to the deaths.
+        self.advance_action_until("ordinary-attempt", 100)
+        self.frames(8)
+        ordinary_frames = self.page.evaluate("window.__lifeFrames")
+        self.assertGreater(len({json.dumps(f["player"], sort_keys=True) for f in ordinary_frames}), 1, "Real ordinary player action plays through submitted transforms")
+        self.page.evaluate("window.__lifeFrames = []")
+        dead = self.advance_action_until("target-dead", 100)
+        self.assertTrue(dead, "Ordinary combat kills the actual selected wolf")
+        events = self.page.evaluate("window.__actualCombatEvents")
+        self.assertTrue(any(e["kind"] == "attack-performed" and e["source"]["kind"] == "player" for e in events))
+        self.assertTrue(any(e["kind"] == "attack-performed" and e["source"]["kind"] == "creature" for e in events))
+        self.page.wait_for_function("""() => {
+          const frames = window.__lifeFrames.filter(f => f.targetDead && f.target.length);
+          return frames.length >= 8 && frames.slice(-5).every(f => JSON.stringify(f.target) === JSON.stringify(frames.at(-1).target));
+        }""", timeout=5_000)
+        frames = self.page.evaluate("window.__lifeFrames")
+        corpses = [frame["target"] for frame in frames if frame["targetDead"]]
+        self.assertGreater(len({json.dumps(nodes, sort_keys=True) for nodes in corpses}), 1, "Real corpse transitions before settling")
+        wolf_frames = frames
+        self.aim_action_unit("creature", 108)
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-wolf-corpse.png"))
+        self.page.evaluate("window.__valeDebug.follow(); window.__lifeFrames = []")
+        # Stop attacking and approach the neighbouring living wolves using actual movement.
+        self.page.evaluate("""() => {
+          const s = window.__valeDebug.worldSource();
+          s.sendCommand({kind:'stop-attack'});
+          s.sendCommand({kind:'move',forward:1,strafe:0,facing:32768});
+        }""")
+        self.page.evaluate("window.__classStep(35)")
+        self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'move',forward:0,strafe:0,facing:32768})")
+        self.advance_action_until("player-dead", 300)
+        self.assertTrue(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.dead"), "Real creature attacks kill the player without injected health")
+        self.page.wait_for_function("""() => {
+          const frames = window.__lifeFrames.filter(f => f.playerDead && f.player.length);
+          return frames.length >= 8 && frames.slice(-5).every(f => JSON.stringify(f.player) === JSON.stringify(frames.at(-1).player));
+        }""", timeout=5_000)
+        frames = self.page.evaluate("window.__lifeFrames")
+        fallen = [frame["player"] for frame in frames if frame["playerDead"]]
+        self.assertGreater(len({json.dumps(nodes, sort_keys=True) for nodes in fallen}), 1, "Player death plays through before a stable corpse")
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-player-corpse.png"))
+        (ARTIFACTS / "procedural-actions-life.json").write_text(json.dumps({"events": events, "ordinaryFrames":ordinary_frames, "wolfFrames":wolf_frames, "playerFrames":frames}, indent=2))
+
+    def advance_action_until(self, outcome, limit, group_ticks=10):
+        """Progress actual zone ticks in the original ten-tick groups; render only required phases."""
+        reached = self.page.evaluate("""({outcome,limit,groupTicks}) => {
+          const s = window.__valeDebug.worldSource();
+          for (let group = 0; group < limit; group++) {
+            window.__classStep(groupTicks);
+            const p = s.latestProjection();
+            let done = false;
+            if (outcome === 'target-dead') done = p.entities.some(e => e.kind === 'creature' && e.entityId === 108 && e.flags.dead);
+            else if (outcome === 'player-dead') done = p.viewer.dead;
+            else if (outcome === 'target-below-half') done = p.entities.some(e => e.kind === 'creature' && e.entityId === 401 && e.healthPercent < 50);
+            else if (outcome === 'ordinary-attempt') done = window.__actualCombatEvents.some(e => e.kind === 'attack-performed' && e.source.kind === 'player');
+            else if (outcome === 'damage-dealt') done = p.events.some(e => e.kind === 'damage-dealt');
+            else done = p.events.some(e => e.kind === 'ability-used' && e.ability === Number(outcome));
+            if (done) return true;
+          }
+          return false;
+        }""", {"outcome":outcome,"limit":limit,"groupTicks":group_ticks})
+        self.frames(3)
+        return reached
+
+    def prepare_paused_action_world(self):
+        self.open("?debug")
+        self.page.emulate_media(reduced_motion="no-preference")
+        self.create_and_select("CreatureWitness", "Arcanist")
+        self.page.evaluate("""() => {
+          const source = window.__valeDebug.worldSource();
+          window.__classAdvance = source.advance;
+          source.advance = () => [];
+        }""")
+        self.enter_world(ticking=False)
+        self.page.evaluate("""() => {
+          const source = window.__valeDebug.worldSource();
+          window.__classQueue = [];
+          source.advance = () => window.__classQueue.splice(0);
+          window.__classStep = ticks => {
+            for (let tick = 0; tick < ticks; tick++) window.__classQueue.push(...window.__classAdvance.call(source, 1 / 30));
+          };
+        }""")
+
+    def action_route(self, points):
+        """Steer actual movement toward clear authored waypoints, never change coordinates directly."""
+        result = self.page.evaluate("""points => {
+          const source = window.__valeDebug.worldSource(), route = [];
+          const advance = () => window.__classQueue.push(...window.__classAdvance.call(source, 1 / 30));
+          for (const [x,z] of points) {
+            let arrived = false, stalled = 0;
+            for (let count = 0; count < 1500; count++) {
+              const p = source.latestProjection(), at = p.entities[0].position;
+              if (p.viewer.dead) throw Error('Died on action route');
+              const dx = x-at[0], dz = z-at[2];
+              if (Math.hypot(dx,dz) < 25) {
+                source.sendCommand({kind:'move',forward:0,strafe:0,facing:0}); advance();
+                route.push({goal:[x,z],at:[...source.latestProjection().entities[0].position],tick:Number(source.latestProjection().tick)});
+                arrived = true; break;
+              }
+              const facing = (Math.round(Math.atan2(dx,dz)*65536/(2*Math.PI))+65536)%65536;
+              source.sendCommand({kind:'move',forward:1,strafe:0,facing}); advance();
+              const next = source.latestProjection().entities[0].position;
+              stalled = next[0] === at[0] && next[2] === at[2] ? stalled+1 : 0;
+              if (stalled > 60) throw Error('Stalled on action route');
+            }
+            if (!arrived) throw Error('Action route exceeded tick bound');
+          }
+          return route;
+        }""", points)
+        self.frames(3)
+        return result
+
+    def creature_action_frame(self, identity):
+        return self.page.evaluate("""id => {
+          const d = window.__valeDebug, p = d.worldSource().latestProjection();
+          return {tick:Number(p.tick), health:p.viewer.health, nodes:window.__acceptanceNodes(`unit-creature-${id}`),
+            target:p.entities.find(e => e.kind === 'creature' && e.entityId === id)?.healthPercent,
+            events:p.events.filter(e => (e.source?.kind === 'creature' && e.source.id === id) || e.kind === 'error'),
+            effects:d.presentationFrame().effectNodes};
+        }""", identity)
+
+    def test_real_greyhaven_muck_bolt_model_playback(self):
+        self.prepare_paused_action_world()
+        route = self.action_route([[0,1250],[0,-4000],[2500,-4800]])
+        self.aim_action_unit("creature", 300)
+        before = self.creature_action_frame(300)
+        self.assertTrue(before["nodes"])
+        self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'select-target',target:{kind:'creature',id:300}})")
+        route += self.action_route([[3200,-4900],[3500,-5000]])
+        casting = self.creature_action_frame(300)
+        self.assertNotEqual(casting["nodes"], before["nodes"], "The actual Mirefin caster model changes during Muck Bolt")
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-muck-bolt-cast.png"))
+        frames = [casting]
+        self.frames(4)
+        frames.append(self.creature_action_frame(300))
+        self.assertTrue(self.advance_action_until("13", 70, 1))
+        frames.append(self.creature_action_frame(300))
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-muck-bolt-release.png"))
+        self.frames(8)
+        frames.append(self.creature_action_frame(300))
+        self.assertTrue(any(any(e["kind"] == "ability-used" and e.get("ability") == 13 for e in f["events"]) for f in frames))
+        self.assertGreater(frames[-1]["health"], 0)
+        self.assertGreater(len({json.dumps(f["nodes"], sort_keys=True) for f in frames}), 1, "Cast releases through changing actual nodes")
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-muck-bolt.png"))
+        (ARTIFACTS / "procedural-muck-bolt.json").write_text(json.dumps({"route":route,"before":before,"frames":frames}, indent=2))
+
+    def test_real_greyhaven_crude_bandage_model_playback(self):
+        self.prepare_paused_action_world()
+        route = self.action_route([[0,1250],[0,-4000],[0,-5400],[1500,-5400]])
+        self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'select-target',target:{kind:'creature',id:401}})")
+        self.step(1)
+        for _ in range(4):
+            self.page.keyboard.press("Digit1")
+            self.step(61)
+        self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'start-attack'})")
+        self.assertTrue(self.advance_action_until("target-below-half", 240, 1))
+        frames = [self.creature_action_frame(401)]
+        self.assertLess(frames[-1]["target"], 50, "Real damage reaches the existing bandage threshold")
+        self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'stop-attack'})")
+        self.aim_action_unit("creature", 401)
+        self.step(1)
+        frames.append(self.creature_action_frame(401))
+        self.frames(4)
+        frames.append(self.creature_action_frame(401))
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-bandage-cast.png"))
+        self.assertTrue(self.advance_action_until("14", 120, 1))
+        frames.append(self.creature_action_frame(401))
+        starts = [f for f in frames if any(e["kind"] == "cast-started" and e.get("ability") == 14 for e in f["events"])]
+        healed = [f for f in frames if any(e["kind"] == "healed" and e.get("ability") == 14 for e in f["events"])]
+        self.assertTrue(starts and healed, "Actual bandit begins and resolves its own bandage")
+        self.assertGreater(healed[-1]["target"], starts[0]["target"])
+        self.assertGreater(len({json.dumps(f["nodes"], sort_keys=True) for f in frames if f["tick"] >= starts[0]["tick"]}), 1)
+        self.assertGreater(healed[-1]["health"], 0)
+        self.page.screenshot(path=str(ARTIFACTS / "procedural-bandage.png"))
+        (ARTIFACTS / "procedural-bandage.json").write_text(json.dumps({"route":route,"frames":frames}, indent=2))
 
     def test_complete_world_environment_instancing_and_night_readability(self):
         """Observe actual submitted renderer frames; cosmetic time never changes the real WASM zone."""

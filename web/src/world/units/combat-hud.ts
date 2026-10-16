@@ -105,6 +105,9 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
   const isViewer = (entity: EntityRef) => entity.kind === "player" && entity.id === snapshot.viewerId;
   const critical = (isCritical: boolean) => (isCritical ? " (critical)" : "");
   switch (event.kind) {
+    case "attack-performed":
+    case "damage-observed":
+      return "";
     case "damage-dealt":
       return `You hit ${name(event.target)} for ${event.amount}${critical(event.critical)}.`;
     case "damage-taken":

@@ -69,13 +69,15 @@ export function humanoidParts(
   spec: HumanoidSpec,
   pose: Pose,
   dead: boolean,
+  deathProgress = 1,
 ): Part[] {
   const [halfX, halfY, halfZ] = halfMetres;
   const sx = halfX / DESIGN_HALF_WIDTH;
   const sy = halfY * 2 / DESIGN_HEIGHT;
   const sz = halfZ / DESIGN_HALF_WIDTH;
   const resting = dead ? poseFor(REST, spec.stance) : pose;
-  const root = rootFrame(placement, halfY, dead ? { rotation: tilt(-Math.PI / 2), lift: LYING_LIFT * sz } : null);
+  const t = Math.min(1, Math.max(0, deathProgress));
+  const root = rootFrame(placement, halfY, dead ? { rotation: tilt(-Math.PI / 2 * t), lift: halfY + (LYING_LIFT * sz - halfY) * t } : null);
   const parts: Part[] = [];
   const { trousers, boots, skin, tunic } = spec;
   const add = (name: string, primitive: Primitive, color: Color, frame: Frame) => addPart(parts, name, primitive, color, frame);

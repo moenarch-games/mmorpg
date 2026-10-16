@@ -57,8 +57,8 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [10, { range: "self", description: "A burst of frost around you that damages and roots nearby creatures.", glyph: FLAKE, accent: "#8fd8ff", visual: "ring", pose: "cast" }],
   [11, { range: "self", description: "A shield of arcane force that absorbs damage.", glyph: ORB, accent: "#b69cff", visual: "bubble", pose: "cast" }],
   [12, { range: RANGED, description: "Channel a storm of ice shards onto the area around your target.", glyph: SHARDS, accent: "#a8e4ff", visual: "shards", pose: "cast" }],
-  [13, { range: { units: 2_000 }, description: "A bolt of muck flung at its target.", glyph: SPLAT, accent: "#7d9a4a", visual: "projectile", pose: null }],
-  [14, { range: "self", description: "Binds wounds when badly hurt.", glyph: BANDAGE, accent: "#e7dcc0", visual: null, pose: null }],
+  [13, { range: { units: 2_000 }, description: "A bolt of muck flung at its target.", glyph: SPLAT, accent: "#7d9a4a", visual: "projectile", pose: "cast" }],
+  [14, { range: "self", description: "Binds wounds when badly hurt.", glyph: BANDAGE, accent: "#e7dcc0", visual: null, pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

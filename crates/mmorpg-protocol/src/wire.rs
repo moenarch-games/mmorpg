@@ -35,6 +35,8 @@ const INTERRUPTED: u8 = 12;
 const ABSORBED: u8 = 13;
 const QUEST_PROGRESS: u8 = 14;
 const QUEST_COMPLETED: u8 = 15;
+const ATTACK_PERFORMED: u8 = 16;
+const DAMAGE_OBSERVED: u8 = 17;
 const CRITICAL_FLAG: u8 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -198,6 +200,21 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             Some(target),
             amount,
         ),
+        ZoneEvent::AttackPerformed { source, target } => {
+            (ATTACK_PERFORMED, 0, Some(source), Some(target), 0)
+        }
+        ZoneEvent::DamageObserved {
+            source,
+            target,
+            amount,
+            critical,
+        } => (
+            DAMAGE_OBSERVED,
+            u8::from(critical),
+            Some(source),
+            Some(target),
+            amount,
+        ),
         ZoneEvent::Miss { source, target } => (MISS, 0, Some(source), Some(target), 0),
         ZoneEvent::Died { entity, killer } => (DIED, 0, killer, Some(entity), 0),
         ZoneEvent::Evade { source, target } => (EVADE, 0, Some(source), Some(target), 0),
@@ -282,11 +299,18 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
     };
     let pair = || source.zip(target).ok_or_else(invalid);
     Ok(match kind {
-        DAMAGE_DEALT | DAMAGE_TAKEN => {
+        DAMAGE_DEALT | DAMAGE_TAKEN | DAMAGE_OBSERVED => {
             let critical = damage(true)?;
             let (source, target) = pair()?;
             if kind == DAMAGE_DEALT {
                 ZoneEvent::DamageDealt {
+                    source,
+                    target,
+                    amount,
+                    critical,
+                }
+            } else if kind == DAMAGE_OBSERVED {
+                ZoneEvent::DamageObserved {
                     source,
                     target,
                     amount,
@@ -301,7 +325,7 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                 }
             }
         }
-        MISS | EVADE => {
+        MISS | EVADE | ATTACK_PERFORMED => {
             damage(false)?;
             let (source, target) = pair()?;
             if amount != 0 {
@@ -309,6 +333,8 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
             }
             if kind == MISS {
                 ZoneEvent::Miss { source, target }
+            } else if kind == ATTACK_PERFORMED {
+                ZoneEvent::AttackPerformed { source, target }
             } else {
                 ZoneEvent::Evade { source, target }
             }
