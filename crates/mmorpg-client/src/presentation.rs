@@ -14,6 +14,7 @@ mod creatures;
 mod effects;
 mod kit;
 mod player;
+mod skinned;
 
 use crate::{
     ClientError,
@@ -86,6 +87,9 @@ pub struct Presentation {
     picked_draws: Vec<(EntityRef, crate::world::SceneDraw)>,
     resources: kit::Resources,
     animators: BTreeMap<EntityRef, animation::Animator>,
+    /// Imported-model clip clocks per visible unit, and the last tick whose cues they consumed.
+    playbacks: BTreeMap<EntityRef, skinned::Playback>,
+    cue_tick: u64,
     effects: effects::Effects,
     headwear: Option<player::Hat>,
     reduced_motion: bool,
@@ -119,6 +123,8 @@ impl Presentation {
             picked_draws: Vec::new(),
             resources: kit::Resources::default(),
             animators: BTreeMap::new(),
+            playbacks: BTreeMap::new(),
+            cue_tick: 0,
             effects: effects::Effects::default(),
             headwear: None,
             reduced_motion: false,
@@ -396,6 +402,29 @@ impl Presentation {
             .collect()
     }
 
+    /// The imported Quaternius model presenting `entity`, if one exists yet for its kind.
+    fn imported_asset(
+        &self,
+        entity: EntityRef,
+        record: &EntitySnapshot,
+    ) -> Option<&'static skinned::Asset> {
+        match entity {
+            EntityRef::Player(_) => Some(skinned::knight()),
+            EntityRef::Creature(_) => {
+                match self
+                    .content
+                    .creature_template(CreatureTemplateId::new(record.appearance))?
+                    .family
+                {
+                    CreatureFamily::Wolf => Some(skinned::wolf()),
+                    CreatureFamily::Vermin => Some(skinned::rat()),
+                    _ => None,
+                }
+            }
+            EntityRef::Npc(_) => None,
+        }
+    }
+
     /// The same CPU geometry/material/model payload consumed by rendering and picking.
     #[must_use]
     pub fn unit_draws(&mut self, now: Instant, view: CameraView) -> Vec<crate::world::SceneDraw> {
@@ -412,6 +441,7 @@ impl Presentation {
         let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
         let units = self.units(now);
         self.animators.retain(|e, _| units.contains_key(e));
+        self.playbacks.retain(|e, _| units.contains_key(e));
         self.picked_draws.clear();
         let mut draws = Vec::new();
         let mut anchors = BTreeMap::new();
@@ -420,6 +450,24 @@ impl Presentation {
         } else {
             self.effects.action(&snapshot, seconds)
         };
+        if snapshot.tick != self.cue_tick && !self.reduced_motion {
+            self.cue_tick = snapshot.tick;
+            for event in &snapshot.events {
+                let (mmorpg_core::ZoneEvent::AttackPerformed { source, .. }
+                | mmorpg_core::ZoneEvent::AbilityUsed { source, .. }) = *event
+                else {
+                    continue;
+                };
+                if let Some(unit) = units.get(&source)
+                    && let Some(asset) = self.imported_asset(source, &unit.record)
+                {
+                    self.playbacks
+                        .entry(source)
+                        .or_default()
+                        .attack(asset, seconds);
+                }
+            }
+        }
         for (entity, unit) in units {
             let (_, half) = self.unit_look(entity, &unit.record);
             let feet = [
@@ -454,7 +502,28 @@ impl Presentation {
                 EntityKind::Npc => "npc",
             };
             let id = format!("unit-{name}-{}", unit.record.id);
+            let imported = self.imported_asset(entity, &unit.record);
             let body = match entity {
+                _ if imported.is_some() => {
+                    let asset = imported.expect("checked above");
+                    let dead = unit.record.flags.dead;
+                    let (clip, time) = self.playbacks.entry(entity).or_default().advance(
+                        asset,
+                        loc.forward.hypot(loc.right),
+                        dead,
+                        seconds,
+                        dt,
+                        self.reduced_motion,
+                    );
+                    asset.model.draws(
+                        &id,
+                        root,
+                        f64::from(half[1]) * 2.,
+                        clip,
+                        time,
+                        dead.then_some(0.6),
+                    )
+                }
                 EntityRef::Player(id_num) => {
                     let other = id_num != self.player_id;
                     let choice = snapshot.viewer.class;
