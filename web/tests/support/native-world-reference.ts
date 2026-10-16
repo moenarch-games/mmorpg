@@ -15,6 +15,12 @@ import { HAT_OPTIONS } from "../../src/character-customization";
 const input = JSON.parse(await Bun.stdin.text());
 const scenery = decodeScenery(JSON.stringify(input.scenery));
 const catalog = decodeCatalog(JSON.stringify(input.catalog));
+function reliefAt(entity: EntityState): number {
+  const key = `${entity.position[0]},${entity.position[2]}`;
+  const units = input.reliefSamples[key];
+  if (typeof units !== "number" || !Number.isFinite(units)) { throw new Error(`Missing shared WASM relief sample ${key}`); }
+  return units;
+}
 const resources: Record<string, unknown> = {};
 const resourceObjects = new WeakMap<object, string>();
 const sceneCache = new Map<string, ReturnType<typeof buildSceneryScene>>();
@@ -107,7 +113,7 @@ for (const request of input.requests) {
     const resolve = (ref: {kind:string;id:number}) => {
       const entity = request.entities.find((entity:EntityState) => entity.kind === ref.kind && entity.entityId === ref.id);
       if (!entity) { return null; }
-      const model = unitModel(entity); const place = placeWithModel(model, entity, context, request.relief ?? 0);
+      const model = unitModel(entity); const place = placeWithModel(model, entity, context, reliefAt(entity));
       return { x: place.x, feetY: place.feetY, centreY: place.feetY + model.halfHeightUnits(entity,context)/scenery.unitsPerMetre, z: place.z, yaw: place.yawRadians };
     };
     const snapshot = testSnapshot({zoneId:1n,tick:1n,contentRevision:1n,acknowledgedSequence:0,viewerId:1,
@@ -123,7 +129,7 @@ for (const request of input.requests) {
     const draws = [];
     for (const entity of request.entities as EntityState[]) {
       const model = unitModel(entity);
-      const placement = placeWithModel(model, entity, context, request.relief ?? 0);
+      const placement = placeWithModel(model, entity, context, reliefAt(entity));
       const locomotion = animators.locomotion(entity, placement, scenery.unitsPerMetre, request.delta ?? 0, !request.animate);
       draws.push(...model.nodes({ id: unitIdentity(entity), entity, placement, locomotion, context }).map((node) => draw(node)));
     }
@@ -131,4 +137,4 @@ for (const request of input.requests) {
     scenes.push({ name: request.name, draws });
   }
 }
-console.log(JSON.stringify({ resources, scenes }));
+console.log(JSON.stringify({ resources, scenes, reliefSamples: input.reliefSamples }));

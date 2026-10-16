@@ -80,3 +80,22 @@ ordinal and instance ordinal remain exact, and canonical duplicates fail closed
 on both sides. Unit/static/animated IDs, actual resource keys and asset identity
 are unchanged. World and unit differentials are separate required binaries so
 world implementation can be tested without temporary unit API stubs.
+
+The unit reference must query shared relief **per entity position**, for both body
+placement and spell anchors, exactly as production `WorldView` calls
+`scenery.reliefAt`. The Rust fixture bridge samples the public WASM export's
+backing `mmorpg_wasm::scenery::relief_at(x,z)`; missing samples fail rather than
+falling back to zero. This corrects an oracle translation defect without changing
+model/material/transform/identity expectations or adding a native-only offset.
+
+`scripts/test-dev-native.py` additionally exercises edits, missing-input build
+failure and restoration for the actual embedded OBJ/manifest/material paths.
+Generated `web/dist`, WASM binding and dependency outputs must not trigger loops.
+Its fake Cargo proves watch-input classification and recovery only; actual
+locked native build and launcher smoke remain separately required.
+
+Remaining adapter acceptance concerns: preserve projected health bars on the new
+`unit_draws` path and migrate the existing GPU health-change proof to that actual
+render path; retire dynamic effect geometry on expiry/reset (for example changing
+Barrier bubble radii) rather than retaining every sampled mesh indefinitely.
+These require proportionate behavioral regression evidence, not new size budgets.

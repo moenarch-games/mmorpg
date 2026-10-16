@@ -173,8 +173,19 @@ fn entity(kind: &str, id: u64, appearance: u64, dead: bool) -> Value {
 
 fn export(cases: &[Value]) -> Value {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // Exactly the shared WASM reliefAt backing function used by the real browser.
+    let mut relief_samples = std::collections::BTreeMap::new();
+    for case in cases {
+        if let Some(entities) = case["entities"].as_array() {
+            for entity in entities {
+                let x: i32 = entity["position"][0].as_i64().unwrap().try_into().unwrap();
+                let z: i32 = entity["position"][2].as_i64().unwrap().try_into().unwrap();
+                relief_samples.insert(format!("{x},{z}"), mmorpg_wasm::scenery::relief_at(x, z));
+            }
+        }
+    }
     let input = json!({"scenery":serde_json::from_str::<Value>(mmorpg_wasm::scenery::hosted_scenery_json()).unwrap(),
-        "catalog":serde_json::from_str::<Value>(mmorpg_wasm::catalog::hosted_catalog_json()).unwrap(),"requests":cases});
+        "catalog":serde_json::from_str::<Value>(mmorpg_wasm::catalog::hosted_catalog_json()).unwrap(),"reliefSamples":relief_samples,"requests":cases});
     let started = Instant::now();
     let mut child = Command::new("bun")
         .arg("tests/support/native-world-reference.ts")

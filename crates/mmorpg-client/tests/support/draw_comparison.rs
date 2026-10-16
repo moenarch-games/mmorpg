@@ -11,8 +11,8 @@ pub fn close(actual: f32, expected: f64, label: &str) {
 pub fn vector(actual: &[f32], expected: &Value, label: &str) {
     let values = expected.as_array().unwrap();
     assert_eq!(actual.len(), values.len(), "{label}");
-    for (a, b) in actual.iter().zip(values) {
-        close(*a, b.as_f64().unwrap(), label);
+    for (index, (a, b)) in actual.iter().zip(values).enumerate() {
+        close(*a, b.as_f64().unwrap(), &format!("{label}[{index}]"));
     }
 }
 fn digest(mesh: &three_d_core::Mesh) -> String {
@@ -71,7 +71,11 @@ pub fn compare_draws(actual: &[SceneDraw], expected: &Value, resources: &Value) 
             .get(&canonical)
             .unwrap_or_else(|| panic!("missing actual submitted draw {id} (canonical {canonical})"))
             .1;
-        vector(&actual.model.elements, &draw["model"], id);
+        vector(
+            &actual.model.elements,
+            &draw["model"],
+            &format!("{id}.model"),
+        );
         let material = &draw["material"];
         vector(&actual.material.color, &material["color"], id);
         vector(&actual.material.emissive, &material["emissive"], id);

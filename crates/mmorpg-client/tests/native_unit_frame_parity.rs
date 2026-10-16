@@ -121,6 +121,10 @@ fn native_unit_draws_match_current_pages_models_and_appearance_inputs() {
         }
         presentation.push(projection, now).unwrap();
         let view = OrbitCamera::default().view(presentation.camera_target(now));
+        eprintln!(
+            "unit reference {} sampleSeconds={} delta={} animate={}",
+            request["name"], request["sampleSeconds"], request["delta"], request["animate"]
+        );
         compare_draws(
             &presentation.unit_draws(
                 now + std::time::Duration::from_secs_f64(
