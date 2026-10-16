@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "operation": "size-evidence",
+  "status": "unavailable",
+  "durationMs": 64,
+  "data": {
+    "schemaVersion": "coding-tooling/size-evidence/v1",
+    "metric": "raw-artifact-bytes",
+    "targets": [
+      {
+        "id": "mmorpg-core-release-rlib",
+        "kind": "native",
+        "identity": "9969244a6b67dff0fea360a96da64bba86f152c33ad908bf6f89b7d3fca32ac3",
+        "inputs": {
+          "id": "mmorpg-core-release-rlib",
+          "kind": "native",
+          "entrypoint": "target/x86_64-unknown-linux-gnu/release/libmmorpg_core.rlib",
+          "artifacts": [
+            {
+              "path": "target/x86_64-unknown-linux-gnu/release/libmmorpg_core.rlib",
+              "extensions": []
+            }
+          ],
+          "target": "x86_64-unknown-linux-gnu",
+          "profile": "release",
+          "features": [],
+          "minification": "not-applicable",
+          "toolchains": [
+            [
+              "rustc",
+              "-vV"
+            ],
+            [
+              "cargo",
+              "--version"
+            ]
+          ],
+          "buildInputs": [
+            "Cargo.lock",
+            "Cargo.toml",
+            "crates/mmorpg-core/Cargo.toml",
+            "rust-toolchain.toml",
+            "web/bun.lock",
+            "web/package.json",
+            "web/scripts/native-size.ts"
+          ],
+          "toolVersions": [
+            "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+            "cargo 1.98.1 (797e8a9bc 2026-08-05)"
+          ],
+          "buildInputHashes": [
+            {
+              "path": "Cargo.lock",
+              "sha256": "b349e90a797f3850b4e3abab76f9da4f7fe2dd5032c797fdc79d47f9018283bc"
+            },
+            {
+              "path": "Cargo.toml",
+              "sha256": "a763ebb98598fd31ca11302986186164a3d4e6a7a2d3e54682bbd5527122cbe5"
+            },
+            {
+              "path": "crates/mmorpg-core/Cargo.toml",
+              "sha256": "3f8bbd15d8b28e5a5e4756875745ab9f50190335cba1e8a45bfdeea9cb04805b"
+            },
+            {
+              "path": "rust-toolchain.toml",
+              "sha256": "04ab0c8ee214f246c7c53bdfba7ba80a93dad65da5b8455edf17c5ec226d5b20"
+            },
+            {
+              "path": "web/bun.lock",
+              "sha256": "412d2462abf9dc2e6b0e49e262fb6b3dac0241179baadfc8bf446c44c0d7a3da"
+            },
+            {
+              "path": "web/package.json",
+              "sha256": "a2d70614dd4364f285b02a7b08c2245ec1be616b0bbef8b39d2fd5f891b65605"
+            },
+            {
+              "path": "web/scripts/native-size.ts",
+              "sha256": "0ab8be6f144bc85f2de5756d691719c2ed10511edb8c9eb042798d8b5bc5664f"
+            }
+          ]
+        },
+        "bytes": 3128246,
+        "artifacts": [
+          {
+            "path": "target/x86_64-unknown-linux-gnu/release/libmmorpg_core.rlib",
+            "bytes": 3128246,
+            "sha256": "9e24a0670b2fb579eaaf0cbdb6dac9f87f5c635beca9791da5d6eb53e7d2b9f0"
+          }
+        ],
+        "comparison": {
+          "state": "incomparable",
+          "reason": "Baseline target identity or selection differs."
+        },
+        "failures": []
+      }
+    ]
+  },
+  "diagnostics": []
+}
