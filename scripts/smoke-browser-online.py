@@ -175,6 +175,7 @@ class OnlineAcceptance(unittest.TestCase):
         context = self.browser.new_context(viewport={"width": 1280, "height": 800}, reduced_motion="no-preference" if animated else "reduce")
         context.add_init_script("""(() => {
           const Original = window.WebTransport;
+          window.__acceptanceNodes = identity => window.__valeDebug.unitNodes(identity).map(({id,transform}) => ({id,transform}));
           window.__actualTransports = [];
           window.__transportKinds = [];
           window.WebTransport = new Proxy(Original, {construct(Target, args) {
@@ -234,13 +235,99 @@ class OnlineAcceptance(unittest.TestCase):
         for player in self.players:
             if not player["page"].is_closed():
                 player["page"].screenshot(path=str(ARTIFACTS / f"{player['name']}.png"))
-            evidence.append({"page": player["name"], "pageErrors": player["errors"]})
+            evidence.append({"page": player["name"], "pageErrors": player["errors"], "projection":self.projection(player["page"]) if not player["page"].is_closed() else None, "actionSamples":player["page"].evaluate("window.__actionSamples ?? []") if not player["page"].is_closed() else []})
             player["context"].close()
         self.evidence["pages"] = evidence
         self.evidence["route"] = self.route
         (ARTIFACTS / "online-evidence.json").write_text(json.dumps(self.evidence, indent=2))
         for player in self.players:
             self.assertEqual(player["errors"], [], f"{player['name']} raised an uncaught error")
+
+    def face_online_waypoint(self, page, x, z):
+        """Right-drag turns the real controller; held input remains owned by production."""
+        box = page.locator("#world").bounding_box()
+        cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        # Align once: subsequent gestures track the camera yaw changed by our pointer.
+        if not hasattr(self, "route_camera_yaw"):
+            self.route_camera_yaw = {}
+        if page not in self.route_camera_yaw:
+            tick = self.projection(page)["tick"]
+            page.keyboard.down("KeyW")
+            self.wait_for(page, "tick => window.__valeDebug.projection().tick >= tick", tick + 3)
+            page.keyboard.up("KeyW")
+            page.mouse.move(cx, cy)
+            page.mouse.down(button="right")
+            page.mouse.move(cx, cy + 8)
+            tick = self.projection(page)["tick"]
+            self.wait_for(page, "tick => window.__valeDebug.projection().tick >= tick", tick + 12)
+            self.route_camera_yaw[page] = self.projection(page)["entities"][0]["facing"]
+            page.mouse.up(button="right")
+        unit = self.projection(page)["entities"][0]
+        page.mouse.move(cx, cy)
+        page.mouse.down(button="right")
+        page.mouse.move(cx, cy + 8)
+        import math
+        desired = round(math.atan2(x-unit["position"][0], z-unit["position"][2])*65536/(2*math.pi)) % 65536
+        delta = (desired-self.route_camera_yaw[page]+32768) % 65536-32768
+        page.mouse.move(cx-delta*(2*math.pi/65536)/0.006, cy+8, steps=4)
+        self.route_camera_yaw[page] = desired
+        self.frames(page, 2)
+        page.mouse.up(button="right")
+
+    def walk_online_waypoints(self, pages, points):
+        route = []
+        self.evidence["routeDiagnostics"] = diagnostics = []
+        for x, z in points:
+            pending = list(pages)
+            deadline = time.monotonic() + 25
+            try:
+                while pending:
+                    legs = []
+                    for page in list(pending):
+                        projection = self.projection(page)
+                        unit = projection["entities"][0]
+                        at = unit["position"]
+                        distance = ((at[0]-x)**2 + (at[2]-z)**2)**0.5
+                        diagnostics.append({"goal":[x,z], "player":projection["viewerId"],
+                                            "tick":projection["tick"], "at":at,
+                                            "facing":unit["facing"], "distance":distance})
+                        if distance < 100:
+                            pending.remove(page)
+                            route.append({"goal":[x,z],"player":projection["viewerId"],"at":at})
+                            continue
+                        self.face_online_waypoint(page, x, z)
+                        # Stop short, then re-aim from the actual authoritative position.
+                        ticks = max(1, min(60, int((distance-70)/21)))
+                        legs.append((page, ticks))
+                    moving = []
+                    starts = {}
+                    for page, ticks in legs:
+                        start = self.projection(page)
+                        starts[page] = start
+                        page.keyboard.down("KeyW")
+                        moving.append((page, start["tick"] + ticks))
+                    while moving:
+                        for page, until in list(moving):
+                            projection = self.projection(page)
+                            at = projection["entities"][0]["position"]
+                            if projection["tick"] >= until or (at[0]-x)**2+(at[2]-z)**2 < 100**2:
+                                page.keyboard.up("KeyW")
+                                start = starts[page]
+                                diagnostics.append({"goal":[x,z], "player":projection["viewerId"],
+                                                    "startTick":start["tick"], "endTick":projection["tick"],
+                                                    "startAt":start["entities"][0]["position"], "endAt":at,
+                                                    "facing":projection["entities"][0]["facing"],
+                                                    "requestedTicks":until-start["tick"]})
+                                moving.remove((page, until))
+                        if time.monotonic() > deadline:
+                            self.fail(f"Held-input route did not reach {(x,z)}: {diagnostics[-4:]}")
+                        time.sleep(0.02)
+                    if time.monotonic() > deadline:
+                        self.fail(f"Held-input route did not reach {(x,z)}: {diagnostics[-4:]}")
+            finally:
+                for page in pages:
+                    page.keyboard.up("KeyW")
+        return route
 
     def test_remote_procedural_attack_cast_impact_and_departure(self):
         """Two real sessions observe ordinary attacks, accepted casts and confirmed impacts.
@@ -254,28 +341,30 @@ class OnlineAcceptance(unittest.TestCase):
         for page in (actor, watcher):
             page.evaluate("""() => {
               window.__actionSamples = [];
+              const source = window.__valeDebug.worldSource();
+              const advance = source.advance.bind(source);
+              const observed = [];
+              source.advance = (...args) => {
+                const projections = advance(...args);
+                observed.push(...projections);
+                return projections;
+              };
               const record = () => {
                 const d = window.__valeDebug, p = d.worldSource().latestProjection();
                 if (p) window.__actionSamples.push({
                   tick: Number(p.tick), viewerId: p.viewerId, health: p.viewer.health,
-                  inCombat: p.viewer.inCombat, events: p.events.map(e => ({...e})),
-                  nodes: d.unitNodes(`unit-player-${window.__observedActor ?? p.viewerId}`),
+                  inCombat: p.viewer.inCombat, events: observed.splice(0).flatMap(snapshot => snapshot.events.map(e => ({...e}))),
+                  nodes: window.__acceptanceNodes(`unit-player-${window.__observedActor ?? p.viewerId}`),
                   effects: d.presentationFrame().effectNodes,
                   combatText: [...document.querySelectorAll('.combat-text-entry')].map(e => e.textContent),
                 });
-                if (window.__actionSamples.length > 2000) window.__actionSamples.shift();
+                if (window.__actionSamples.length > 256) window.__actionSamples.shift();
                 requestAnimationFrame(record);
               };
               requestAnimationFrame(record);
             }""")
         watcher.evaluate("id => window.__observedActor = id", actor_id)
-        start = self.projection(actor)["tick"]
-        moves = [(0, 1, 0), (36, 1, 49152), (121, 1, 32768), (131, 1, 49152), (375, 1, 32768), (395, 0, 32768)]
-        for offset, forward, facing in moves:
-            self.wait_for(actor, "tick => window.__valeDebug.projection().tick >= tick", start + offset, timeout_ms=20_000)
-            for page in (actor, watcher):
-                page.evaluate("([forward,facing]) => window.__valeDebug.worldSource().sendCommand({kind:'move',forward,strafe:0,facing})", [forward, facing])
-        self.wait_for(actor, "tick => window.__valeDebug.projection().tick >= tick", start + 405)
+        self.evidence["normalInputRoute"] = self.walk_online_waypoints((actor, watcher), [(-1550,2000),(-3350,2000),(-3350,1800),(-8450,1800),(-8450,1376)])
         for page in (actor, watcher):
             self.wait_for(page, "window.__valeDebug.projectedUnits().some(e => e.kind === 'creature' && e.id === 108)")
         actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'select-target',target:{kind:'creature',id:108}})")
