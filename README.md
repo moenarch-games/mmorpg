@@ -143,6 +143,30 @@ The same page can join a real zone host instead of its local zone, over WebTrans
 
 The launcher reuses or creates the ECDSA P-256 development certificate under `target/dev-tls/` (valid for 10 days; WebTransport certificate hashes allow at most 14), starts `mmorpg-zone-host` for zone 1 on UDP port 4433 (status on TCP port 8080) and Vite on `127.0.0.1:5173`, and prints a URL to open in two tabs of a Chromium-based browser. Ctrl-C stops both processes, `--check` verifies the setup and exits, and `MMORPG_DEV_TRANSPORT_PORT`, `MMORPG_DEV_STATUS_PORT` and `MMORPG_DEV_WEB_PORT` override the ports. It shares the certificate and ports with `./scripts/dev-native.sh`, so run one of them at a time; a native client can join the launcher's zone with the [second-player command](docs/NATIVE_CLIENT.md#interactive-play).
 
+### Play together on a local network
+
+On the **host computer**, use its actual LAN IPv4 address (for example `192.168.1.20`):
+
+```sh
+./scripts/dev-browser-online.sh --lan 192.168.1.20
+```
+
+The launcher runs **one** authoritative Greyhaven zone host (UDP 4433) and serves the browser game over HTTPS on that LAN interface (TCP 5173). The printed link names the correct LAN WebTransport endpoint and its pinned development certificate hash. Other computers on the same network open **that link** in a Chromium-based browser; they do not need the Rust toolchain or a copy of the game source. Each player selects **Enter World** to join the same zone. `--check` also works with `--lan` to verify server readiness and the HTTPS page before playing.
+
+The page uses a self-signed **development** HTTPS certificate. On each device, trust the host's certificate `target/dev-tls/cert.pem` for this locally controlled server (or explicitly accept the browser's certificate warning where supported) before using the shared link. Never distribute `key.pem`. The launcher includes the LAN IP in the short-lived certificate's subject alternative names, regenerating the pair if the IP changes. Open firewall access for **TCP 5173** (HTTPS page) and **UDP 4433** (WebTransport) only to trusted LAN peers; do **not** forward the ports to the internet. The server has anonymous sessions and no public authentication or production durability.
+
+You can also connect a **native client from another LAN computer** to this host (or to one running `./scripts/dev-native.sh`) by copying **only** the public certificate `cert.pem` to that computer and supplying its LAN endpoint:
+
+```sh
+cargo run --locked -p mmorpg-client -- \
+  --url https://192.168.1.20:4433/game/matches/zone-1 \
+  --certificate ./cert.pem
+```
+
+For a host-only check without a browser, the native zone host is already available as `mmorpg-zone-host`; no separate LAN gameplay server is needed. The ordinary `./scripts/dev-browser-online.sh` (without `--lan`) stays bound to loopback and uses HTTP for local development. The GitHub Pages demo remains local single-player.
+
+
+
 - **Selecting a host.** `?server=https://<host>:<port>/game/matches/zone-<id>&certHash=<base64 SHA-256 of the DER certificate>` joins that host; without `certHash` the host needs a publicly trusted certificate. A build with `VITE_ZONE_SERVER` and `VITE_ZONE_CERT_HASH` offers the same through a **Play online** checkbox on the character screen, unchecked by default; the default remains the local WASM zone. The address must be a canonical admission route: credentials, queries, fragments and resume routes are refused, and an invalid address disables entry with the reason instead of falling back to the local zone.
 - **Session.** `OnlineZoneSource` (`web/src/world/online-zone-source.ts`) reads the welcome (player, tick rate, connection epoch, reconnect token), sends command frames with strictly increasing sequences, reassembles and verifies snapshot frames and fragments per connection (`web/src/session/`, a port of the pinned `SnapshotReassembler`), and decodes projections with the same decoder as the local zone. Movement is held intent the page resends every 50 ms, like the native client; a jump or any other discrete intent is resent byte for byte until a projection acknowledges it, and no later command overtakes it meanwhile, so the host's stale-sequence rule cannot drop it unseen.
 - **Fail closed.** Every projection must carry the page's zone, player and the content revision of the scenery the page loaded. A mismatch or a malformed frame leaves the world with the reason under **Enter World** rather than drawing a different world.
