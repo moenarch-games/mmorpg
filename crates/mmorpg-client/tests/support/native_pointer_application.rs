@@ -520,6 +520,10 @@ impl NativeApplication {
                     })
             },
         );
+        // Startup framing is exercised before setup(). This authored selection
+        // fixture then applies an explicit user camera, after reset has framed
+        // the first valid snapshot, preserving its original +Z composition.
+        self.driver.app.camera = OrbitCamera::default();
         self.pump(Duration::from_millis(150));
     }
     fn point(&mut self, entity: EntityRef) -> PhysicalPosition<f64> {
@@ -568,7 +572,7 @@ impl NativeApplication {
         let y = (1.0 - clip[1] / clip[3]) * 0.5 * size.height as f32;
         assert!(
             x > 0.0 && x < size.width as f32 && y > 0.0 && y < size.height as f32,
-            "fixture target must be visible inside the window"
+            "fixture target {entity:?} must be visible: world={pose:?}, view={view:?}, pixel=({x},{y}), window={size:?}"
         );
         PhysicalPosition::new(f64::from(x), f64::from(y))
     }
