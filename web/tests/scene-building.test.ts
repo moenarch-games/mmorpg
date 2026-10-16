@@ -135,7 +135,17 @@ describe("the static scene", () => {
     }
     const { sails, flames, reeds } = scene.animated;
     expect([sails.length, flames.length, reeds.length > 0]).toEqual([1, 1, true]);
-    expect(scene.stats.staticNodes).toBe(scene.batches.length);
+    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.instanceBatches.length);
+    // Vertex/triangle observations describe immutable uploaded geometry, not expanded instance copies.
+    const geometries = new Map<string, IndexedMeshGeometry>();
+    for (const geometry of [...scene.batches.map(({ node }) => node.geometry), ...scene.instanceBatches.map(({ batch }) => batch.geometry)]) {
+      if (geometry.kind !== "mesh") { throw new Error("Expected procedural mesh"); }
+      const previous = geometries.get(geometry.resourceKey);
+      if (previous) { expect(geometry).toEqual(previous); }
+      geometries.set(geometry.resourceKey, geometry);
+    }
+    expect(scene.stats.staticVertices).toBe([...geometries.values()].reduce((sum, geometry) => sum + geometry.positions.length, 0));
+    expect(scene.stats.staticTriangles).toBe([...geometries.values()].reduce((sum, geometry) => sum + geometry.indices.length / 3, 0));
   });
 
   test("presentation edits receive new resource keys without changing gameplay revision", () => {
@@ -220,6 +230,9 @@ describe("the static scene", () => {
       const repeated = build(Array.from({ length: 5 }, () => ({ ...prop, position: [0, 0, 0] as const })));
       expect(single.instanceBatches.length, kind).toBeGreaterThan(0);
       expect(repeated.instanceBatches.length, kind).toBe(single.instanceBatches.length);
+      expect(repeated.stats.staticNodes, kind).toBe(single.stats.staticNodes);
+      expect(repeated.stats.staticVertices, kind).toBe(single.stats.staticVertices);
+      expect(repeated.stats.staticTriangles, kind).toBe(single.stats.staticTriangles);
       const ordinaryProps = (scene: SceneryScene) => scene.batches.filter((batch) => !batch.node.id.startsWith("static-all"));
       expect(ordinaryProps(single), kind).toHaveLength(0);
       expect(ordinaryProps(repeated), kind).toHaveLength(0);
