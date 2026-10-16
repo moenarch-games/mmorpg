@@ -200,7 +200,9 @@ class BrowserAcceptance(unittest.TestCase):
           const debug = window.__valeDebug;
           const unit = debug.projectedUnits().find(unit => unit.kind === kind && unit.id === id);
           if (!unit) throw Error(`Missing projected ${kind} ${id}`);
-          const y = debug.reliefAt(unit.x * 100, unit.z * 100) / 100 + (kind === 'npc' ? 0.9 : 0.5);
+          // NPC torsos occupy roughly 0.94–1.50 m above their feet. Aim at
+          // solid chest geometry, above the central gap between their legs.
+          const y = debug.reliefAt(unit.x * 100, unit.z * 100) / 100 + (kind === 'npc' ? 1.2 : 0.5);
           debug.flyToPose([unit.x, y + 1, unit.z + 5], [unit.x, y, unit.z]);
           return {x: unit.x, y, z: unit.z};
         }""", [kind, identity])
