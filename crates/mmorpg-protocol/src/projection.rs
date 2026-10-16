@@ -4,6 +4,8 @@
 //! cast and auras, sheets, events, then entities by relevance until the
 //! budget is used).
 
+use std::collections::BTreeSet;
+
 use mmorpg_core::{
     AbilityId, AuraKind, AuraView, CastView, ClassChoice, Cooldown, EntityFlags, EntityKind,
     EntitySnapshot, GLOBAL_COOLDOWN_TICKS, MAX_AURAS, MAX_CHAT_PER_TICK, MAX_COOLDOWNS,
@@ -198,23 +200,53 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
         crate::loot::encode_claim(&mut payload, view.claim);
         crate::loot::encode_rewards(&mut payload, view.rewards);
     }
-    payload.push(event_count);
-    for event in &snapshot.events {
-        encode_event(&mut payload, event);
-    }
-    payload.push(encode_u8_count(
+    let mut chat_payload = Vec::new();
+    chat_payload.push(encode_u8_count(
         snapshot.chat.len(),
         MAX_CHAT_PER_TICK,
         "player projection has too many chat lines",
     )?);
     for line in &snapshot.chat {
-        crate::chat::encode_line(&mut payload, line);
+        crate::chat::encode_line(&mut chat_payload, line);
     }
+    // Plan a conservative entity prefix once, before removing cosmetic records.
+    // Freed event bytes do not grow that prefix and cannot cause a packing cycle.
+    let reserved =
+        payload.len() + 1 + usize::from(event_count) * EVENT_RECORD_BYTES + chat_payload.len() + 2;
+    let planned = (MAX_PLAYER_PROJECTION_BYTES.saturating_sub(reserved) / ENTITY_RECORD_BYTES)
+        .min(MAX_WIRE_ENTITIES)
+        .min(snapshot.entities.len());
+    let visible: BTreeSet<_> = snapshot.entities[..planned]
+        .iter()
+        .map(EntitySnapshot::entity)
+        .collect();
+    let events: Vec<_> = snapshot
+        .events
+        .iter()
+        .filter(|event| {
+            event
+                .observation_refs(snapshot.viewer_id)
+                .is_none_or(|refs| {
+                    refs.into_iter()
+                        .flatten()
+                        .all(|entity| visible.contains(&entity))
+                })
+        })
+        .collect();
+    payload.push(encode_u8_count(
+        events.len(),
+        MAX_EVENTS_PER_PLAYER,
+        "too many projection events",
+    )?);
+    for event in events {
+        encode_event(&mut payload, event);
+    }
+    payload.extend_from_slice(&chat_payload);
 
     let count_offset = payload.len();
     payload.extend_from_slice(&0_u16.to_be_bytes());
     let mut packed_entities = 0_u16;
-    for entity in snapshot.entities.iter().take(MAX_WIRE_ENTITIES) {
+    for entity in snapshot.entities.iter().take(planned) {
         if payload.len() + ENTITY_RECORD_BYTES > MAX_PLAYER_PROJECTION_BYTES {
             break;
         }

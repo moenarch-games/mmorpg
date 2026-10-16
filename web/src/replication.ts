@@ -103,7 +103,8 @@ export type ErrorCode =
 
 /** Feedback the viewer received in the projection's tick; cosmetic and lossy. */
 export type ZoneEvent =
-  | { kind: "damage-dealt" | "damage-taken"; source: EntityRef; target: EntityRef; amount: number; critical: boolean }
+  | { kind: "attack-performed"; source: EntityRef; target: EntityRef }
+  | { kind: "damage-dealt" | "damage-taken" | "damage-observed"; source: EntityRef; target: EntityRef; amount: number; critical: boolean }
   | { kind: "miss" | "evade"; source: EntityRef; target: EntityRef }
   | { kind: "died"; entity: EntityRef; killer: EntityRef | null }
   | { kind: "error"; code: ErrorCode; target: EntityRef | null }
@@ -224,8 +225,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 14;
-const SCHEMA_VERSION = 14;
+const WIRE_VERSION = 15;
+const SCHEMA_VERSION = 15;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -409,17 +410,19 @@ function decodeEvent(reader: Reader): ZoneEvent {
   };
   switch (kind) {
     case 1:
-    case 2: {
+    case 2:
+    case 17: {
       const isCritical = critical(true);
       const [from, to] = pair();
-      return { kind: kind === 1 ? "damage-dealt" : "damage-taken", source: from, target: to, amount, critical: isCritical };
+      return { kind: ({ 1: "damage-dealt", 2: "damage-taken", 17: "damage-observed" } as const)[kind], source: from, target: to, amount, critical: isCritical };
     }
     case 3:
-    case 5: {
+    case 5:
+    case 16: {
       critical(false);
       const [from, to] = pair();
       noAmount();
-      return { kind: kind === 3 ? "miss" : "evade", source: from, target: to };
+      return { kind: ({ 3: "miss", 5: "evade", 16: "attack-performed" } as const)[kind], source: from, target: to };
     }
     case 4: {
       critical(false);
