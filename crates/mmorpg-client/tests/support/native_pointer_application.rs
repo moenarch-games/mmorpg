@@ -321,12 +321,31 @@ impl NativeApplication {
         while !predicate(self) && Instant::now() < deadline {
             self.pump(Duration::from_millis(20));
         }
-        let commands = self.zone.0.lock().unwrap().commands.clone();
-        assert!(
-            predicate(self),
-            "{message}; title={:?}; commands={commands:?}",
-            self.driver.app.title
-        );
+        if !predicate(self) {
+            let canonical = self.snapshot();
+            let canonical_player = canonical.players.first().map(|player| player.position);
+            let projected_player = self
+                .driver
+                .app
+                .presentation
+                .latest()
+                .and_then(|projection| {
+                    projection
+                        .entities
+                        .iter()
+                        .find(|entity| {
+                            entity.kind == mmorpg_core::EntityKind::Player
+                                && entity.id == projection.viewer_id
+                        })
+                        .map(|entity| (projection.tick, entity.position))
+                });
+            let commands = self.zone.0.lock().unwrap().commands.clone();
+            let tail = &commands[commands.len().saturating_sub(12)..];
+            panic!(
+                "{message}; title={:?}; canonical_player_at_tick{}={canonical_player:?}; projected_player={projected_player:?}; last_commands={tail:?}",
+                self.driver.app.title, canonical.tick
+            );
+        }
         eprintln!(
             "native acceptance reached: {message}; frames={}; title={:?}",
             self.driver.app.rendered, self.driver.app.title
@@ -473,7 +492,9 @@ impl NativeApplication {
         self.driver.app.camera = OrbitCamera::default();
         self.driver.app.presentation.reset(Instant::now());
         self.until(
-            "canonical fixture reaches actual application projection",
+            &format!(
+                "canonical fixture reaches actual application projection at requested feet {feet:?}"
+            ),
             |app| {
                 app.driver
                     .app
@@ -624,7 +645,21 @@ impl NativeApplication {
     }
     fn role(&mut self, npc: u32, distance: i32) {
         let position = self.content.npc(NpcId::new(npc)).unwrap().position;
-        self.setup([position[0], position[1] - distance], &[]);
+        // The keep/inn and south palisade overlap these NPCs' south approaches.
+        // Keep the exact 2.5 m / 8 m distances on a proven clear side instead.
+        let north_approach = matches!(npc, 1 | 3 | 6);
+        let offset = if north_approach { distance } else { -distance };
+        self.setup([position[0], position[1] + offset], &[]);
+        if north_approach {
+            let rendered = self.driver.app.rendered;
+            self.driver
+                .app
+                .camera
+                .orbit(f64::from(std::f32::consts::PI / 0.006), 0.0);
+            self.until("approach camera renders toward the actual NPC", |app| {
+                app.driver.app.rendered > rendered
+            });
+        }
         self.select(EntityRef::Npc(NpcId::new(npc)));
         assert_eq!(
             self.role_action_count(),
