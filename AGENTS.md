@@ -39,7 +39,7 @@ python3 scripts/smoke-native.py      # offscreen end-to-end: host + client + GPU
 python3 scripts/smoke-browser.py     # real Chromium against the built web/dist (needs Playwright)
 ```
 
-`bun test` and `bun run build` first compile `mmorpg-wasm` for `wasm32-unknown-unknown` (listed in `rust-toolchain.toml`) and run the `wasm-bindgen` CLI, whose version must equal the crate's exact `wasm-bindgen` pin: `cargo install wasm-bindgen-cli --version =0.2.129 --locked`. Generated bindings land in the ignored `web/src/generated/`.
+`bun run build` and `bun run dev` first sync browser dependencies with `bun install --frozen-lockfile`. They and `bun test` compile `mmorpg-wasm` for `wasm32-unknown-unknown` (listed in `rust-toolchain.toml`) and run the `wasm-bindgen` CLI, whose version must equal the crate's exact `wasm-bindgen` pin: `cargo install wasm-bindgen-cli --version =0.2.129 --locked`. Generated bindings land in the ignored `web/src/generated/`.
 
 ## Authority
 
