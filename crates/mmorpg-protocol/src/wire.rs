@@ -694,6 +694,44 @@ pub(crate) fn take<const N: usize>(
     Ok(array)
 }
 
+/// A door-state list: count (`u8`), then door ID and open flag per door (#158).
+pub(crate) fn encode_doors(
+    payload: &mut Vec<u8>,
+    doors: &[mmorpg_core::DoorView],
+) -> Result<(), ProtocolError> {
+    payload.push(encode_u8_count(
+        doors.len(),
+        mmorpg_core::MAX_DOORS,
+        "too many doors",
+    )?);
+    for door in doors {
+        payload.push(door.door.get());
+        payload.push(u8::from(door.open));
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_doors(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::DoorView>, ProtocolError> {
+    let count = decode_u8_count(payload, offset, mmorpg_core::MAX_DOORS, "too many doors")?;
+    let mut doors: Vec<mmorpg_core::DoorView> = Vec::with_capacity(count);
+    for _ in 0..count {
+        let door = mmorpg_core::DoorId::new(read_u8(payload, offset)?);
+        let open = match read_u8(payload, offset)? {
+            0 => false,
+            1 => true,
+            _ => return Err(ProtocolError::new("door state must be 0 or 1")),
+        };
+        if doors.last().is_some_and(|last| last.door >= door) {
+            return Err(ProtocolError::new("doors must be in ascending ID order"));
+        }
+        doors.push(mmorpg_core::DoorView { door, open });
+    }
+    Ok(doors)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -793,42 +831,4 @@ mod tests {
             );
         }
     }
-}
-
-/// A door-state list: count (`u8`), then door ID and open flag per door (#158).
-pub(crate) fn encode_doors(
-    payload: &mut Vec<u8>,
-    doors: &[mmorpg_core::DoorView],
-) -> Result<(), ProtocolError> {
-    payload.push(encode_u8_count(
-        doors.len(),
-        mmorpg_core::MAX_DOORS,
-        "too many doors",
-    )?);
-    for door in doors {
-        payload.push(door.door.get());
-        payload.push(u8::from(door.open));
-    }
-    Ok(())
-}
-
-pub(crate) fn decode_doors(
-    payload: &[u8],
-    offset: &mut usize,
-) -> Result<Vec<mmorpg_core::DoorView>, ProtocolError> {
-    let count = decode_u8_count(payload, offset, mmorpg_core::MAX_DOORS, "too many doors")?;
-    let mut doors: Vec<mmorpg_core::DoorView> = Vec::with_capacity(count);
-    for _ in 0..count {
-        let door = mmorpg_core::DoorId::new(read_u8(payload, offset)?);
-        let open = match read_u8(payload, offset)? {
-            0 => false,
-            1 => true,
-            _ => return Err(ProtocolError::new("door state must be 0 or 1")),
-        };
-        if doors.last().is_some_and(|last| last.door >= door) {
-            return Err(ProtocolError::new("doors must be in ascending ID order"));
-        }
-        doors.push(mmorpg_core::DoorView { door, open });
-    }
-    Ok(doors)
 }
