@@ -73,7 +73,12 @@ class BrowserAcceptance(unittest.TestCase):
         self.context.add_init_script("""(() => {
           window.__calls = {reads: 0, writes: 0, draws: 0};
           // Pose evidence needs actual submitted identities/transforms, not repeated immutable mesh buffers.
-          window.__acceptanceNodes = identity => window.__valeDebug.unitNodes(identity).map(({id,transform}) => ({id,transform}));
+          // An imported Quaternius model contributes its actual clip, clip time, root and bone world positions.
+          window.__acceptanceNodes = identity => {
+            const nodes = window.__valeDebug.unitNodes(identity).map(({id,transform}) => ({id,transform}));
+            const model = window.__valeDebug.unitModelPose(identity);
+            return model ? [...nodes, {id: `${identity}-model`, model}] : nodes;
+          };
           for (const [name, counter] of [['getItem', 'reads'], ['setItem', 'writes']]) {
             const original = Storage.prototype[name];
             Storage.prototype[name] = function(...args) { window.__calls[counter]++; return original.apply(this, args); };
@@ -1592,10 +1597,7 @@ class BrowserAcceptance(unittest.TestCase):
         events = self.page.evaluate("window.__actualCombatEvents")
         self.assertTrue(any(e["kind"] == "attack-performed" and e["source"]["kind"] == "player" for e in events))
         self.assertTrue(any(e["kind"] == "attack-performed" and e["source"]["kind"] == "creature" for e in events))
-        self.page.wait_for_function("""() => {
-          const frames = window.__lifeFrames.filter(f => f.targetDead && f.target.length);
-          return frames.length >= 8 && frames.slice(-5).every(f => JSON.stringify(f.target) === JSON.stringify(frames.at(-1).target));
-        }""", timeout=5_000)
+        self.wait_for_settled_corpse("target", "targetDead")
         frames = self.page.evaluate("window.__lifeFrames")
         corpses = [frame["target"] for frame in frames if frame["targetDead"]]
         self.assertGreater(len({json.dumps(nodes, sort_keys=True) for nodes in corpses}), 1, "Real corpse transitions before settling")
@@ -1613,15 +1615,23 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'move',forward:0,strafe:0,facing:32768})")
         self.advance_action_until("player-dead", 300)
         self.assertTrue(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.dead"), "Real creature attacks kill the player without injected health")
-        self.page.wait_for_function("""() => {
-          const frames = window.__lifeFrames.filter(f => f.playerDead && f.player.length);
-          return frames.length >= 8 && frames.slice(-5).every(f => JSON.stringify(f.player) === JSON.stringify(frames.at(-1).player));
-        }""", timeout=5_000)
+        self.wait_for_settled_corpse("player", "playerDead")
         frames = self.page.evaluate("window.__lifeFrames")
         fallen = [frame["player"] for frame in frames if frame["playerDead"]]
         self.assertGreater(len({json.dumps(nodes, sort_keys=True) for nodes in fallen}), 1, "Player death plays through before a stable corpse")
         self.page.screenshot(path=str(ARTIFACTS / "procedural-player-corpse.png"))
         (ARTIFACTS / "procedural-actions-life.json").write_text(json.dumps({"events": events, "ordinaryFrames":ordinary_frames, "wolfFrames":wolf_frames, "playerFrames":frames}, indent=2))
+
+    def wait_for_settled_corpse(self, who, dead, max_frames=240):
+        """The death clip advances by at most 0.05 s per rendered frame, so bound the wait in frames, not wall time."""
+        for _ in range(max_frames // 4):
+            if self.page.evaluate("""([who, dead]) => {
+              const frames = window.__lifeFrames.filter(f => f[dead] && f[who].length);
+              return frames.length >= 8 && frames.slice(-5).every(f => JSON.stringify(f[who]) === JSON.stringify(frames.at(-1)[who]));
+            }""", [who, dead]):
+                return
+            self.frames(4)
+        self.fail(f"The {who} corpse did not settle within {max_frames} frames")
 
     def advance_action_until(self, outcome, limit, group_ticks=10):
         """Progress actual zone ticks in the original ten-tick groups; render only required phases."""

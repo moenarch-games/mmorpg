@@ -252,6 +252,29 @@ export class QuaterniusUnits {
     return this.#instances.has(id);
   }
 
+  /**
+   * Debug read of a drawn unit's actual pose: its clip and clip time, dead tint, root transform, the
+   * world-space extent of its posed skeleton and its head joint (metres, rounded to 0.1 mm); null
+   * when no model is drawn.
+   */
+  pose(id: string): { clip: string; time: number; dead: boolean; root: number[]; skeleton: number[]; head: number[] | null } | null {
+    const instance = this.#instances.get(id);
+    if (!instance) { return null; }
+    const round = (value: number) => Math.round(value * 1e4) / 1e4;
+    instance.root.updateMatrixWorld(true);
+    const extent = new THREE.Box3();
+    instance.root.traverse((object) => {
+      if (object instanceof THREE.Bone) { extent.expandByPoint(object.getWorldPosition(point)); }
+    });
+    const head = instance.head ? instance.head.getWorldPosition(point).toArray().map(round) : null;
+    const { position, rotation, scale } = instance.root;
+    return {
+      clip: instance.clip, time: round(instance.action?.time ?? 0), dead: instance.dead === true,
+      root: [position.x, position.y, position.z, rotation.y, scale.x].map(round),
+      skeleton: extent.isEmpty() ? [] : [...extent.min.toArray(), ...extent.max.toArray()].map(round), head,
+    };
+  }
+
   /** The posed head centre (metres, world) and radius of a drawn unit, for explicit headwear. */
   head(id: string): { centre: [number, number, number]; radius: number } | null {
     const instance = this.#instances.get(id);
