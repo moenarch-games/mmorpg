@@ -18,7 +18,7 @@ Created characters start at level 1 in Greyhaven Outpost. The original Aelric St
 
 Created characters receive stable local IDs such as `local-1`. The browser stores only the created roster in the versioned `mmorpg.offline-roster.v1` record; the built-in character is not duplicated into storage.
 
-Each character ID owns its own appearance-only save key and its unsaved in-memory appearance edits. Switching characters keeps the previous character's edits for this page session. World progress is not saved; see [save/load](SAVE_LOAD.md). A character ID that still has an appearance save or a legacy offline checkpoint is never reissued to a new character.
+Each character ID owns its own appearance-only save key and its unsaved in-memory appearance edits. Switching characters keeps the previous character's edits for this page session. Played progress is kept in the character's durable record; see [save/load](SAVE_LOAD.md). A character ID that still has a stored character entry, an appearance save or a legacy offline checkpoint is never reissued to a new character.
 
 Roster parsing fails closed for unsupported schemas, malformed records, duplicate IDs, duplicate names (including the built-in character), invalid class/sex values, excessive slots, and oversized data. If roster storage is unavailable or corrupt, the existing bytes are not silently replaced; newly created characters remain session-only.
 

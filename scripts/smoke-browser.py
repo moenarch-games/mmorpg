@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "artifacts" / "browser"
 ROSTER_KEY = "mmorpg.offline-roster.v1"
 # The retired offline checkpoint key; nothing may write it any more.
+CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
 LEGACY_CHECKPOINT_PREFIX = "mmorpg.offline-demo.v1."
 
 
@@ -447,7 +448,6 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertNotRegex(self.page.locator("body").text_content(), re.compile(r"saved (facing|position)", re.IGNORECASE),
                             "No text may claim world state is saved; the demo cannot persist it")
         self.page.locator('[data-hat-style="ironcrest-helm"]').click()
-        writes = self.page.evaluate("window.__calls.writes")
         self.enter_world()
         expect(self.page.locator("#area-name")).to_have_text("Greyhaven Outpost")
         expect(self.page.locator("#objective")).to_contain_text("No active quests")
@@ -484,15 +484,16 @@ class BrowserAcceptance(unittest.TestCase):
         self.frames(4)
         self.assertNotEqual(self.world_view(), moved, "Orbit and zoom must change the view")
         self.page.screenshot(path=str(ARTIFACTS / "world-orbit.png"))
-        self.assertEqual(self.page.evaluate("window.__calls.writes"), writes, "Playing never writes browser storage")
 
-        # Leaving removes the unit from the local zone; re-entry spawns a fresh character at the spawn.
+        # Leaving commits and releases the durable character; re-entry resumes it where it left.
         self.page.get_by_role("button", name="Characters", exact=True).click()
         expect(self.page.locator("#character-select")).to_be_visible()
+        self.assertEqual(self.page.evaluate("prefix => Object.keys(localStorage).filter(key => key.startsWith(prefix)).length",
+                                            CHARACTER_ENTRY_PREFIX), 1, "Leaving stores the played character")
         expect(self.enter_button()).to_be_enabled()
         self.enter_world()
-        self.assertTrue(self.wait_for_view(spawn, timeout_frames=20),
-                        "Re-entering must show a new character alone at the spawn with a reset camera")
+        self.assertTrue(self.wait_for_view(moved, timeout_frames=20),
+                        "Re-entering must resume the character where it left, with a reset camera")
         self.page.locator("#world").focus()
         self.page.keyboard.press("Escape")
         expect(self.page.locator("#character-select")).to_be_visible()
