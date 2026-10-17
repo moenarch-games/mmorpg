@@ -92,6 +92,14 @@
         "owners": ["moritzbrantner/mmorpg"]
       },
       {
+        "id": "native-characters",
+        "paths": ["crates/mmorpg-characters/**"],
+        "instructions": ["docs/ARCHITECTURE.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moritzbrantner/mmorpg"]
+      },
+      {
         "id": "native-game-server",
         "paths": ["crates/mmorpg-game-server/**"],
         "instructions": ["docs/ARCHITECTURE.md", "docs/PROTOCOL.md", "docs/SCENARIOS.md"],
