@@ -9,10 +9,12 @@ pub mod chat;
 pub mod minimap;
 pub mod overlay;
 mod panels;
+pub mod world_labels;
 
 use crate::{
     hud::{CombatHud, CooldownKind},
     interaction::NpcContext,
+    roster::{Headwear, MAX_CHARACTERS, Roster},
 };
 use chat::{LineKind, Logs};
 use egui::{Align2, Color32, RichText, Vec2};
@@ -40,8 +42,8 @@ pub enum UiIntent {
     Talk,
     /// Close the NPC context.
     CloseContext,
-    /// The chosen class and sex to enter the world with.
-    ChooseCharacter(PlayerClass, Sex),
+    /// The chosen class, sex and local headwear to enter the world with.
+    ChooseCharacter(PlayerClass, Sex, Headwear),
 }
 
 /// The latest self sheets: an omitted newer sheet is pending, never empty.
@@ -86,6 +88,42 @@ pub struct UiFrame<'a> {
     pub connection: Option<&'a str>,
     /// The character still needs a class and sex.
     pub choosing: bool,
+    /// Nameplate anchors of the presented units.
+    pub labels: &'a [world_labels::UnitLabel],
+    /// World point to screen point, as the last presented frame.
+    pub project: world_labels::Project<'a>,
+    /// The camera eye in world metres.
+    pub eye: [f32; 3],
+}
+
+/// The character being previewed on the turntable while choosing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CharacterPreview {
+    pub choice: mmorpg_core::ClassChoice,
+    pub headwear: Headwear,
+    /// Turntable rotation away from facing the camera.
+    pub degrees: f32,
+}
+
+/// The browser's turntable step (`TURN_STEP_DEGREES`).
+const TURN_STEP_DEGREES: f32 = 15.0;
+
+/// The local character roster window (#183): pick, create, re-hat or delete
+/// a locally kept character, previewed on a turntable.
+struct RosterWindow {
+    roster: Roster,
+    /// Why the roster could not be loaded or saved; loading failures keep the
+    /// file untouched and the roster in memory.
+    problem: Option<String>,
+    /// `None` shows the creation form.
+    selected: Option<usize>,
+    name: String,
+    class: PlayerClass,
+    sex: Sex,
+    headwear: Headwear,
+    degrees: f32,
+    confirm_delete: bool,
+    name_focused: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -112,8 +150,10 @@ pub struct GameUi {
     selected_quest: Option<mmorpg_core::QuestId>,
     zoom: usize,
     refusal: Option<(String, Instant)>,
-    choose_class: PlayerClass,
-    choose_sex: Sex,
+    roster: RosterWindow,
+    /// The entered local character's name, shown in the player frame.
+    pub character_name: Option<String>,
+    floating: world_labels::FloatingTexts,
     dismissed_loot: Option<LootClaim>,
 }
 
@@ -138,14 +178,63 @@ impl GameUi {
             selected_quest: None,
             zoom: 1,
             refusal: None,
-            choose_class: PlayerClass::Warden,
-            choose_sex: Sex::Male,
+            roster: RosterWindow {
+                roster: Roster::default(),
+                problem: None,
+                selected: None,
+                name: String::new(),
+                class: PlayerClass::Warden,
+                sex: Sex::Male,
+                headwear: Headwear::for_class(PlayerClass::Warden),
+                degrees: 0.0,
+                confirm_delete: false,
+                name_focused: false,
+            },
+            character_name: None,
+            floating: world_labels::FloatingTexts::default(),
             dismissed_loot: None,
+        }
+    }
+
+    /// Uses the loaded local roster, or shows why it could not be loaded and
+    /// keeps new characters in memory only.
+    pub fn set_roster(&mut self, roster: Result<Roster, String>) {
+        let window = &mut self.roster;
+        match roster {
+            Ok(roster) => {
+                window.selected = (!roster.characters.is_empty()).then_some(0);
+                window.roster = roster;
+                window.problem = None;
+            }
+            Err(problem) => {
+                window.roster = Roster::default();
+                window.selected = None;
+                window.problem = Some(format!("{problem} New characters are not saved."));
+            }
+        }
+    }
+
+    /// The character previewed on the turntable while choosing.
+    #[must_use]
+    pub fn preview(&self) -> CharacterPreview {
+        let window = &self.roster;
+        let (class, sex, headwear) = match window
+            .selected
+            .and_then(|index| window.roster.characters.get(index))
+        {
+            Some(character) => (character.class, character.sex, character.headwear),
+            None => (window.class, window.sex, window.headwear),
+        };
+        CharacterPreview {
+            choice: mmorpg_core::ClassChoice { class, sex },
+            headwear,
+            degrees: window.degrees,
         }
     }
 
     /// A new connection epoch: sheets and pending interface choices restart.
     pub fn reset(&mut self) {
+        self.floating.clear();
         self.sheets = Sheets::default();
         self.selected_bag = None;
         self.refusal = None;
@@ -172,12 +261,13 @@ impl GameUi {
         if snapshot.loot.is_none() {
             self.dismissed_loot = None;
         }
+        self.floating.observe(snapshot, now);
     }
 
-    /// Whether the chat field owns the keyboard.
+    /// Whether a text field (chat or a new character's name) owns the keyboard.
     #[must_use]
     pub fn chat_focused(&self) -> bool {
-        self.chat_focused || self.chat_focus_requested
+        self.chat_focused || self.chat_focus_requested || self.roster.name_focused
     }
 
     pub fn open_chat(&mut self) {
@@ -225,10 +315,23 @@ impl GameUi {
         }
         if frame.choosing {
             self.character_selection(ctx, &mut intents);
+        } else {
+            self.roster.name_focused = false;
         }
         let Some(snapshot) = frame.snapshot else {
             return intents;
         };
+        world_labels::paint(
+            ctx,
+            snapshot,
+            frame.labels,
+            frame.project,
+            frame.eye,
+            frame.names,
+            self.sheets.quests.as_ref(),
+            &mut self.floating,
+            now,
+        );
         self.unit_frames(ctx, frame, snapshot, &mut intents);
         self.action_bar(ctx, frame, snapshot, &mut intents);
         self.minimap_and_tracker(ctx, frame, snapshot);
@@ -259,38 +362,174 @@ impl GameUi {
     }
 
     fn character_selection(&mut self, ctx: &egui::Context, intents: &mut Vec<UiIntent>) {
-        egui::Window::new("Choose your character")
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        let window = &mut self.roster;
+        let mut entered = None;
+        egui::Window::new("Characters")
+            .anchor(Align2::LEFT_CENTER, Vec2::new(24.0, 0.0))
             .resizable(false)
             .collapsible(false)
             .show(ctx, |ui| {
-                ui.label("Class");
-                ui.horizontal(|ui| {
-                    for class in PlayerClass::ALL {
-                        ui.selectable_value(&mut self.choose_class, class, class_title(class));
+                ui.set_width(300.0);
+                if let Some(problem) = &window.problem {
+                    ui.colored_label(Color32::from_rgb(255, 150, 90), problem);
+                }
+                for (index, character) in window.roster.characters.iter().enumerate() {
+                    let text = format!(
+                        "{} · level 1 {}",
+                        character.name,
+                        class_title(character.class)
+                    );
+                    if ui
+                        .selectable_label(window.selected == Some(index), text)
+                        .clicked()
+                    {
+                        window.selected = Some(index);
+                        window.confirm_delete = false;
                     }
-                });
-                ui.label(match self.choose_class {
-                    PlayerClass::Warden => "A shielded melee fighter who builds rage.",
-                    PlayerClass::Ranger => "A ranged archer who spends focus.",
-                    PlayerClass::Arcanist => "A spellcaster who spends mana.",
-                });
-                ui.label("Body");
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.choose_sex, Sex::Female, "Female");
-                    ui.selectable_value(&mut self.choose_sex, Sex::Male, "Male");
-                });
-                ui.separator();
+                }
+                let full = window.roster.characters.len() >= MAX_CHARACTERS;
                 if ui
-                    .add(egui::Button::new(RichText::new("Enter world").strong()))
+                    .add_enabled(
+                        !full,
+                        egui::Button::selectable(
+                            window.selected.is_none(),
+                            "+ Create a new character",
+                        ),
+                    )
                     .clicked()
                 {
-                    intents.push(UiIntent::ChooseCharacter(
-                        self.choose_class,
-                        self.choose_sex,
-                    ));
+                    window.selected = None;
+                }
+                ui.small(format!(
+                    "{} / {MAX_CHARACTERS} local characters",
+                    window.roster.characters.len()
+                ));
+                ui.separator();
+                window.name_focused = false;
+                match window.selected {
+                    Some(index) if index < window.roster.characters.len() => {
+                        let character = window.roster.characters[index].clone();
+                        ui.label(RichText::new(&character.name).strong().size(18.0));
+                        ui.label(format!(
+                            "Human {} {} · Greyhaven Outpost",
+                            sex_title(character.sex),
+                            class_title(character.class)
+                        ));
+                        ui.label("Headwear");
+                        ui.horizontal(|ui| {
+                            for hat in Headwear::ALL {
+                                if ui
+                                    .selectable_label(character.headwear == hat, hat.title())
+                                    .clicked()
+                                    && hat != character.headwear
+                                    && let Err(problem) = window.roster.set_headwear(index, hat)
+                                {
+                                    window.problem = Some(problem);
+                                }
+                            }
+                        });
+                        turntable(ui, &mut window.degrees);
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(egui::Button::new(RichText::new("Enter world").strong()))
+                                .clicked()
+                            {
+                                entered = Some(character.clone());
+                            }
+                            let delete = if window.confirm_delete {
+                                "Confirm delete"
+                            } else {
+                                "Delete"
+                            };
+                            if ui.button(delete).clicked() {
+                                if window.confirm_delete {
+                                    match window.roster.delete(index) {
+                                        Ok(()) => {
+                                            window.selected =
+                                                (!window.roster.characters.is_empty()).then_some(0);
+                                        }
+                                        Err(problem) => window.problem = Some(problem),
+                                    }
+                                    window.confirm_delete = false;
+                                } else {
+                                    window.confirm_delete = true;
+                                }
+                            }
+                        });
+                    }
+                    _ => {
+                        window.selected = None;
+                        ui.label("Name");
+                        let edit = ui.add(
+                            egui::TextEdit::singleline(&mut window.name)
+                                .hint_text("2–24 letters")
+                                .char_limit(48)
+                                .desired_width(f32::INFINITY),
+                        );
+                        window.name_focused = edit.has_focus();
+                        ui.label("Class");
+                        ui.horizontal(|ui| {
+                            for class in PlayerClass::ALL {
+                                if ui
+                                    .selectable_value(&mut window.class, class, class_title(class))
+                                    .clicked()
+                                {
+                                    window.headwear = Headwear::for_class(class);
+                                }
+                            }
+                        });
+                        ui.small(match window.class {
+                            PlayerClass::Warden => "A shielded melee fighter who builds rage.",
+                            PlayerClass::Ranger => "A ranged archer who spends focus.",
+                            PlayerClass::Arcanist => "A spellcaster who spends mana.",
+                        });
+                        ui.label("Body");
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut window.sex, Sex::Female, "Female");
+                            ui.selectable_value(&mut window.sex, Sex::Male, "Male");
+                        });
+                        ui.label("Headwear");
+                        ui.horizontal(|ui| {
+                            for hat in Headwear::ALL {
+                                ui.selectable_value(&mut window.headwear, hat, hat.title());
+                            }
+                        });
+                        turntable(ui, &mut window.degrees);
+                        ui.separator();
+                        if ui
+                            .add_enabled(
+                                !full,
+                                egui::Button::new(RichText::new("Create character").strong()),
+                            )
+                            .clicked()
+                        {
+                            match window.roster.create(
+                                &window.name,
+                                window.class,
+                                window.sex,
+                                window.headwear,
+                            ) {
+                                Ok(index) => {
+                                    window.selected = Some(index);
+                                    window.name.clear();
+                                    window.problem = None;
+                                }
+                                Err(problem) => window.problem = Some(problem),
+                            }
+                        }
+                    }
                 }
             });
+        if let Some(character) = entered {
+            self.roster.name_focused = false;
+            self.character_name = Some(character.name.clone());
+            intents.push(UiIntent::ChooseCharacter(
+                character.class,
+                character.sex,
+                character.headwear,
+            ));
+        }
     }
 
     fn unit_frames(
@@ -307,8 +546,9 @@ impl GameUi {
                 panel_frame().show(ui, |ui| {
                     ui.set_width(230.0);
                     let class = viewer.class.map_or("Adventurer", |c| class_title(c.class));
+                    let name = self.character_name.as_deref().unwrap_or("You");
                     ui.label(
-                        RichText::new(format!("You · level {} {class}", viewer.level)).strong(),
+                        RichText::new(format!("{name} · level {} {class}", viewer.level)).strong(),
                     );
                     bar(
                         ui,
@@ -552,6 +792,34 @@ fn class_title(class: PlayerClass) -> &'static str {
         PlayerClass::Ranger => "Ranger",
         PlayerClass::Arcanist => "Arcanist",
     }
+}
+
+const fn sex_title(sex: Sex) -> &'static str {
+    match sex {
+        Sex::Female => "female",
+        Sex::Male => "male",
+    }
+}
+
+/// Turntable controls, as the browser's left/right/front buttons.
+fn turntable(ui: &mut egui::Ui, degrees: &mut f32) {
+    ui.horizontal(|ui| {
+        ui.label("Turn");
+        if ui.button("<").on_hover_text("Turn left").clicked() {
+            *degrees = (*degrees - TURN_STEP_DEGREES).rem_euclid(360.0);
+        }
+        ui.add(
+            egui::Slider::new(degrees, 0.0..=359.0)
+                .suffix("°")
+                .show_value(false),
+        );
+        if ui.button(">").on_hover_text("Turn right").clicked() {
+            *degrees = (*degrees + TURN_STEP_DEGREES).rem_euclid(360.0);
+        }
+        if ui.button("Front").clicked() {
+            *degrees = 0.0;
+        }
+    });
 }
 
 fn fraction(value: u32, max: u32) -> f32 {
