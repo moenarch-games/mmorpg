@@ -1,4 +1,4 @@
-/** Player-visible protocol v17 only. Canonical recovery state never enters rendering. */
+/** Player-visible protocol v18 only. Canonical recovery state never enters rendering. */
 import { entityKindFromCode, sameEntity, type EntityKind, type EntityRef } from "./entity-ref";
 
 export type { EntityKind, EntityRef } from "./entity-ref";
@@ -66,7 +66,13 @@ export type ViewerState = {
   globalCooldown: number;
   /** Inclusive melee damage range, the equipment bonus included. */
   damage: { min: number; max: number };
+  /** The shield guard (#156): the held lane, whether the zone blocks in it now, break recovery ticks. */
+  guard: GuardState;
 };
+
+export type GuardState = { raised: StrikeHeight | null; protecting: boolean; broken: number };
+/** Ticks a broken guard recovers (mirrors `GUARD_BREAK_TICKS`). */
+export const GUARD_BREAK_TICKS = 45;
 
 /** The sums of the equipped items' attributes. */
 export type StatTotals = { stamina: number; strength: number; agility: number; intellect: number };
@@ -121,6 +127,10 @@ export type ZoneEvent =
   | { kind: "ability-used"; source: EntityRef; target: EntityRef | null; ability: number }
   /** `source` swept a directed strike toward `aim`; `target` is the creature it struck, null a whiff. */
   | { kind: "strike-swept"; source: EntityRef; target: EntityRef | null; ability: number; aim: StrikeAim }
+  /** `target`'s guard fully blocked `source`'s blow of `amount` in `lane` (#156). */
+  | { kind: "blocked"; source: EntityRef; target: EntityRef; lane: StrikeHeight; amount: number }
+  /** `source`'s blow overpowered `target`'s guard in `lane`; it recovers for `ticks` ticks. */
+  | { kind: "guard-broken"; source: EntityRef; target: EntityRef; lane: StrikeHeight; ticks: number }
   | { kind: "healed"; source: EntityRef; target: EntityRef; ability: number; amount: number }
   | { kind: "aura-applied"; source: EntityRef; target: EntityRef; ability: number; ticks: number }
   | { kind: "aura-removed"; source: EntityRef; target: EntityRef; ability: number }
@@ -236,21 +246,21 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 17;
-const SCHEMA_VERSION = 17;
+const WIRE_VERSION = 18;
+const SCHEMA_VERSION = 18;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
 /**
- * Common prefix 16, revision 8, acknowledged sequence 4, viewer 4, self 27, self abilities 20 (class,
- * resource, global cooldown, cast, melee damage range, two list counts), target 12 (target-of-target,
+ * Common prefix 16, revision 8, acknowledged sequence 4, viewer 4, self 27, self abilities 24 (class,
+ * resource, global cooldown, cast, melee damage range, guard, two list counts), target 12 (target-of-target,
  * its cast, aura count), sheet revision 8/presence 1, loot presence 1, event, chat and entity counts.
  * The sheet (bag, equipment, stat totals, quests) and the corpse sheet follow their presence bytes.
  */
-const FIXED_BYTES = 105;
+const FIXED_BYTES = 109;
 const ENTITY_BYTES = 21;
 const MAX_EVENTS = 16;
-/** (1 077 − 105) / 21: records that fit without events, sheets, cooldowns or auras. */
+/** (1 077 − 109) / 21: records that fit without events, sheets, cooldowns or auras. */
 const MAX_ENTITIES = 46;
 const MAX_COOLDOWNS = 4;
 const MAX_AURAS = 8;
@@ -471,6 +481,17 @@ function decodeEvent(reader: Reader): ZoneEvent {
         throw new Error("Malformed event record");
       }
       return { kind: "strike-swept", source, target, ability, aim: { side, height } };
+    }
+    case 19:
+    case 20: {
+      const lane = STRIKE_HEIGHTS[flags];
+      const [from, to] = pair();
+      if (lane === undefined) {
+        throw new Error("Unknown guard lane");
+      }
+      return kind === 19
+        ? { kind: "blocked", source: from, target: to, lane, amount }
+        : { kind: "guard-broken", source: from, target: to, lane, ticks: amount };
     }
     case 9:
     case 10:
@@ -721,6 +742,14 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   if (damage.min > damage.max) {
     throw new Error("Inverted viewer damage range");
   }
+  const laneCode = reader.u8();
+  const [protecting = false] = reader.flags(1);
+  const guard: GuardState = { raised: laneCode === 0 ? null : STRIKE_HEIGHTS[laneCode - 1] ?? null, protecting, broken: reader.u16() };
+  if ((laneCode !== 0 && guard.raised === null) || guard.broken > GUARD_BREAK_TICKS
+    || (dead && (guard.raised !== null || guard.broken !== 0 || protecting))
+    || (protecting && (guard.raised === null || guard.broken > 0 || classChoice?.classId !== "warden"))) {
+    throw new Error("Inconsistent viewer guard state");
+  }
   const cooldownCount = reader.u8();
   if (cooldownCount > MAX_COOLDOWNS) {
     throw new Error("Snapshot has too many cooldowns");
@@ -868,7 +897,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     zoneId, tick, contentRevision, acknowledgedSequence, viewerId,
     viewer: {
       copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, autoAttacking, target,
-      classChoice, resource, cast, globalCooldown, damage,
+      classChoice, resource, cast, globalCooldown, damage, guard,
     },
     cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, events,
     chat, entities,

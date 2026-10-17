@@ -4,7 +4,7 @@ import { encodeCommand, STRIKE_HEIGHTS, STRIKE_SIDES, type Axis, type WorldComma
 import { entityKindFromCode } from "../src/entity-ref";
 import { EMOTES } from "../src/replication";
 
-const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v10.hex", import.meta.url), "utf8");
+const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v11.hex", import.meta.url), "utf8");
 
 function axis(raw: string | undefined): Axis {
   const value = Number(raw);
@@ -52,6 +52,8 @@ function command(fields: readonly string[]): WorldCommand {
         facing: Number(second),
         aim: { side: STRIKE_SIDES[Number(third)]!, height: STRIKE_HEIGHTS[Number(fourth)]! },
       };
+    case "guard":
+      return { kind: "guard", lane: Number(first) === 0 ? null : STRIKE_HEIGHTS[Number(first) - 1]! };
     case "choose_class":
       return { kind: "choose-class", classId: Number(first), sex: Number(second) };
     case "equip_item":
@@ -95,7 +97,7 @@ describe("Rust/browser command contract", () => {
     const commands = fixtureCommands();
     const kinds = new Set(commands.map(({ command }) => command.kind));
     expect([...kinds].sort()).toEqual([
-      "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "complete-quest", "directed-strike", "emote", "equip-item", "jump",
+      "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "complete-quest", "directed-strike", "emote", "equip-item", "guard", "jump",
       "loot", "move", "move-item", "release-spirit", "select-target", "sell-item", "start-attack", "stop-attack", "unequip-item",
       "use-ability",
     ]);

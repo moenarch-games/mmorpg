@@ -12,6 +12,7 @@ export function playerEntity(entityId: number, position: Vector3, velocity: Vect
 export const HEALTHY_VIEWER: ViewerState = {
   copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, autoAttacking: false, target: null,
   classChoice: null, resource: null, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
+  guard: { raised: null, protecting: false, broken: 0 },
 };
 
 /** Nothing equipped. */

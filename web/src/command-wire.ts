@@ -1,10 +1,10 @@
 /**
- * Command wire version 10, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
- * `fixtures/protocol/commands-v10.hex` holds both encoders to the same bytes.
+ * Command wire version 11, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
+ * `fixtures/protocol/commands-v11.hex` holds both encoders to the same bytes.
  * The session supplies player identity and sequence separately.
  */
 import { entityKindCode, isU32, type EntityRef } from "./entity-ref";
-import { chatTextError, EMOTES, STRIKE_HEIGHTS, STRIKE_SIDES, type EmoteName, type StrikeAim } from "./replication";
+import { chatTextError, EMOTES, STRIKE_HEIGHTS, STRIKE_SIDES, type EmoteName, type StrikeAim, type StrikeHeight } from "./replication";
 
 export type Axis = -1 | 0 | 1;
 
@@ -24,6 +24,8 @@ export type WorldCommand =
   | { kind: "use-ability"; ability: number; target: EntityRef | null }
   /** Heroic Strike's directed mode: turn to `facing` (u16 yaw) and sweep toward `aim`. */
   | { kind: "directed-strike"; ability: number; facing: number; aim: StrikeAim }
+  /** Holds the shield guard in `lane`, or lowers it with `null` (#156); the zone decides what it blocks. */
+  | { kind: "guard"; lane: StrikeHeight | null }
   | { kind: "cancel-cast" }
   /** Class 0 Warden, 1 Ranger, 2 Arcanist; sex 0 female, 1 male. The zone refuses invalid values. */
   | { kind: "choose-class"; classId: number; sex: number }
@@ -44,7 +46,7 @@ export type WorldCommand =
   | { kind: "complete-quest"; npc: number; quest: number; choice: number }
   | { kind: "abandon-quest"; quest: number };
 
-const COMMAND_WIRE_VERSION = 10;
+const COMMAND_WIRE_VERSION = 11;
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
 const SELECT_TARGET_TAG = 3;
@@ -66,6 +68,7 @@ const ACCEPT_QUEST_TAG = 18;
 const COMPLETE_QUEST_TAG = 19;
 const ABANDON_QUEST_TAG = 20;
 const DIRECTED_STRIKE_TAG = 21;
+const GUARD_TAG = 22;
 const YAW_STEPS = 65_536;
 
 function isAxis(value: number): value is Axis {
@@ -172,6 +175,14 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       view.setUint8(5, side);
       view.setUint8(6, height);
       return payload;
+    }
+    case "guard": {
+      // 0 lowered, otherwise 1 + the height code.
+      const height = command.lane === null ? -1 : STRIKE_HEIGHTS.indexOf(command.lane);
+      if (command.lane !== null && height < 0) {
+        throw new Error("Guards need a known lane.");
+      }
+      return Uint8Array.of(COMMAND_WIRE_VERSION, GUARD_TAG, height + 1);
     }
     case "cancel-cast":
       return Uint8Array.of(COMMAND_WIRE_VERSION, CANCEL_CAST_TAG);
