@@ -5,7 +5,7 @@ import { createSceneryProvider, type SceneryContent, type SceneryProvider } from
 
 /** The initialised wasm-bindgen module surface the local world needs. */
 export type LocalZoneModule = SceneryContent & {
-  LocalZone: new () => LocalZoneHandle & { contentRevision(): bigint };
+  LocalZone: { new (): LocalZoneHandle & { contentRevision(): bigint }; fromCheckpoint(checkpoint: Uint8Array): LocalZoneHandle };
   /** The versioned content catalog export. */
   catalog(): string;
 };
@@ -13,9 +13,9 @@ export type LocalZoneModule = SceneryContent & {
 export type LocalWorld = { source: LocalZoneSource; scenery: SceneryProvider; catalog: ContentCatalog };
 
 /**
- * One local zone per page plus the scenery and content catalog of the same
- * content revision. Mismatched content stops entry instead of drawing or
- * naming a different world.
+ * The page's local zone source (resuming the browser's saved world on entry)
+ * plus the scenery and content catalog of the same content revision.
+ * Mismatched content stops entry instead of drawing or naming a different world.
  */
 export function createLocalWorld(module: LocalZoneModule, characters: LocalCharacters): LocalWorld {
   const zone = new module.LocalZone();
@@ -27,5 +27,7 @@ export function createLocalWorld(module: LocalZoneModule, characters: LocalChara
       throw new Error(`${name} content revision ${found} does not match zone revision ${revision}.`);
     }
   }
-  return { source: new LocalZoneSource(zone, characters), scenery, catalog };
+  const createZone = (checkpoint: Uint8Array | undefined) =>
+    checkpoint ? module.LocalZone.fromCheckpoint(checkpoint) : new module.LocalZone();
+  return { source: new LocalZoneSource(createZone, characters), scenery, catalog };
 }

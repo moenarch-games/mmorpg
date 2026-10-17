@@ -8,11 +8,17 @@
  * browser drops it when the tab closes, which is how a crashed or closed tab
  * hands the character back; the next tab's newer epoch then supersedes the
  * lease the old one left behind.
+ *
+ * The browser also keeps one saved local world (#40, Atlas 3.3.7): the zone's
+ * checkpoint without players. A Web Lock keeps it to one tab at a time, so two
+ * tabs never advance diverging copies of the same world.
  */
 
 const ENTRY_PREFIX = "mmorpg.character.v1.";
 const EPOCH_KEY = "mmorpg.local-zone-epoch.v1";
 const LOCK_PREFIX = "mmorpg.character.";
+const WORLD_KEY = "mmorpg.local-world.v1";
+const WORLD_LOCK = "mmorpg.local-world";
 
 export type EntryStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -57,7 +63,7 @@ export class LocalCharacters {
   readonly entries: CharacterEntries;
   readonly #storage: EntryStorage;
   readonly #locks: ExclusiveLocks | undefined;
-  /** Characters this page released whose lock the browser has not dropped yet. */
+  /** Locks this page released that the browser has not dropped yet. */
   readonly #releasing = new Map<string, Promise<void>>();
 
   constructor(storage: EntryStorage, locks: ExclusiveLocks | undefined) {
@@ -77,20 +83,39 @@ export class LocalCharacters {
     return next;
   }
 
+  /** The saved local world (Atlas 3.3.7: one per browser), if any. */
+  loadWorld(): Uint8Array | undefined {
+    const stored = this.#storage.getItem(WORLD_KEY);
+    return stored === null ? undefined : decodeBase64(stored);
+  }
+
+  saveWorld(checkpoint: Uint8Array): void {
+    this.#storage.setItem(WORLD_KEY, encodeBase64(checkpoint));
+  }
+
   /**
    * Holds the character for this tab until the returned release is called.
    * Rejects while another tab plays it. A character this page just released
    * is held again once the browser has let go of it.
    */
-  async hold(characterId: string): Promise<() => void> {
+  hold(characterId: string): Promise<() => void> {
+    return this.#hold(`${LOCK_PREFIX}${characterId}`, "This character is already in play in another tab.");
+  }
+
+  /** Holds the browser's one local world for this tab; rejects while another tab plays in it. */
+  holdWorld(): Promise<() => void> {
+    return this.#hold(WORLD_LOCK, "The local world is already open in another tab.");
+  }
+
+  async #hold(name: string, busy: string): Promise<() => void> {
     const locks = this.#locks;
     if (!locks) {
       throw new Error("This browser cannot keep a character to one tab (Web Locks are unavailable).");
     }
-    await this.#releasing.get(characterId);
+    await this.#releasing.get(name);
     let settled: Promise<unknown> = Promise.resolve();
     const release = await new Promise<(() => void) | null>((resolve, reject) => {
-      settled = locks.request(`${LOCK_PREFIX}${characterId}`, { ifAvailable: true }, (lock) => {
+      settled = locks.request(name, { ifAvailable: true }, (lock) => {
         if (!lock) {
           resolve(null);
           return undefined;
@@ -100,15 +125,15 @@ export class LocalCharacters {
       settled.catch(reject);
     });
     if (!release) {
-      throw new Error("This character is already in play in another tab.");
+      throw new Error(busy);
     }
     return () => {
       const released = settled.then(() => undefined, () => undefined).finally(() => {
-        if (this.#releasing.get(characterId) === released) {
-          this.#releasing.delete(characterId);
+        if (this.#releasing.get(name) === released) {
+          this.#releasing.delete(name);
         }
       });
-      this.#releasing.set(characterId, released);
+      this.#releasing.set(name, released);
       release();
     };
   }

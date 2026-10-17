@@ -15,7 +15,12 @@ export type LocalZoneHandle = {
   submit(player: number, sequence: number, command: Uint8Array): boolean;
   tick(): bigint;
   projection(player: number): Uint8Array;
+  /** The world without its players, to save. */
+  checkpoint(): Uint8Array;
 };
+
+/** A local zone resumed from a saved world checkpoint, or a fresh one without it; throws for an unusable checkpoint. */
+export type LocalZoneFactory = (checkpoint: Uint8Array | undefined) => LocalZoneHandle;
 
 const MAX_SEQUENCE = 0xffff_ffff;
 /** Ticks between commits of the played character (5 s). */
@@ -29,24 +34,57 @@ export const SAVE_INTERVAL_TICKS = 150;
  *
  * The played character is durable: entry holds it for this tab and leases it
  * from the page's character storage, progress is committed every few seconds
- * and on `persist()`, and leaving commits and releases it.
+ * and on `persist()`, and leaving commits and releases it. So is the world
+ * (#40): entry holds the browser's one local world for this tab and resumes
+ * it from its saved checkpoint, which is saved with every commit. A saved
+ * world this build cannot resume (another version or content) is replaced by
+ * a fresh one, and `worldNotice` says so.
  */
 export class LocalZoneSource implements WorldSource {
-  readonly #zone: LocalZoneHandle;
+  readonly #createZone: LocalZoneFactory;
+  #zone: LocalZoneHandle | null = null;
   readonly #characters: LocalCharacters;
+  /** Why the saved world was replaced at the last entry, if it was. */
+  worldNotice: string | null = null;
   readonly #clock = new FixedTickClock();
   readonly #history = new SnapshotBuffer();
   #player: number | null = null;
   #release: (() => void) | null = null;
+  #releaseWorld: (() => void) | null = null;
+  /** The zone this page left and the checkpoint it saved then. */
+  #idle: { zone: LocalZoneHandle; saved: Uint8Array } | null = null;
   #joining = false;
   #cancelled = false;
   #sequence = 0;
   #ticksSinceSave = 0;
   #latest: ZoneSnapshot | null = null;
 
-  constructor(zone: LocalZoneHandle, characters: LocalCharacters) {
-    this.#zone = zone;
+  constructor(createZone: LocalZoneFactory, characters: LocalCharacters) {
+    this.#createZone = createZone;
     this.#characters = characters;
+  }
+
+  /**
+   * The saved world, or a fresh one when it cannot be resumed. The zone this
+   * page left is reused while the saved world is still the one it saved, so its
+   * session player IDs keep increasing.
+   */
+  #openWorld(): LocalZoneHandle {
+    const saved = this.#characters.loadWorld();
+    const idle = this.#idle;
+    this.#idle = null;
+    if (idle && saved && sameBytes(saved, idle.saved)) {
+      return idle.zone;
+    }
+    if (saved) {
+      try {
+        return this.#createZone(saved);
+      } catch (error) {
+        console.warn("The saved local world cannot be resumed; starting a fresh one.", error);
+        this.worldNotice = "The saved world is from another version and was reset.";
+      }
+    }
+    return this.#createZone(undefined);
   }
 
   async join(character: JoinCharacter = DEFAULT_JOIN_CHARACTER): Promise<number> {
@@ -55,19 +93,34 @@ export class LocalZoneSource implements WorldSource {
     }
     this.#joining = true;
     this.#cancelled = false;
+    this.worldNotice = null;
     try {
-      const release = await this.#characters.hold(character.id);
+      const releaseWorld = await this.#characters.holdWorld();
+      let release: () => void;
+      try {
+        release = await this.#characters.hold(character.id);
+      } catch (error) {
+        releaseWorld();
+        throw error;
+      }
+      const releaseBoth = () => {
+        release();
+        releaseWorld();
+      };
+      let zone: LocalZoneHandle;
       let player: number;
       try {
         if (this.#cancelled) {
           throw new Error("Entry was cancelled.");
         }
+        zone = this.#openWorld();
         const choice = classChoiceCodes(character);
-        player = this.#zone.enter(this.#characters.entries, character.id, choice.classId, choice.sex, this.#characters.nextZoneEpoch());
+        player = zone.enter(this.#characters.entries, character.id, choice.classId, choice.sex, this.#characters.nextZoneEpoch());
       } catch (error) {
-        release();
+        releaseBoth();
         throw error;
       }
+      this.#zone = zone;
       this.#clock.reset();
       this.#history.reset();
       this.#latest = null;
@@ -76,14 +129,16 @@ export class LocalZoneSource implements WorldSource {
       } catch (error) {
         // Entry is all or nothing: a rejected first projection hands the character back.
         try {
-          this.#zone.exit(this.#characters.entries, player);
+          zone.exit(this.#characters.entries, player);
         } finally {
-          release();
+          this.#zone = null;
+          releaseBoth();
         }
         throw error;
       }
       this.#player = player;
       this.#release = release;
+      this.#releaseWorld = releaseWorld;
       this.#sequence = 0;
       this.#ticksSinceSave = 0;
       return player;
@@ -92,10 +147,12 @@ export class LocalZoneSource implements WorldSource {
     }
   }
 
-  /** Commits the played character now, e.g. before the page goes away. */
+  /** Commits the played character and saves the world now, e.g. before the page goes away. */
   persist(): void {
-    if (this.#player !== null) {
-      this.#zone.save(this.#characters.entries, this.#player);
+    const zone = this.#zone;
+    if (this.#player !== null && zone) {
+      zone.save(this.#characters.entries, this.#player);
+      this.#characters.saveWorld(zone.checkpoint());
       this.#ticksSinceSave = 0;
     }
   }
@@ -107,15 +164,25 @@ export class LocalZoneSource implements WorldSource {
       return;
     }
     const release = this.#release;
+    const releaseWorld = this.#releaseWorld;
+    const zone = this.#zone;
     this.#player = null;
     this.#release = null;
+    this.#releaseWorld = null;
+    this.#zone = null;
     this.#latest = null;
     this.#history.reset();
     this.#clock.reset();
     try {
-      this.#zone.exit(this.#characters.entries, player);
+      if (zone) {
+        zone.exit(this.#characters.entries, player);
+        const saved = zone.checkpoint();
+        this.#characters.saveWorld(saved);
+        this.#idle = { zone, saved };
+      }
     } finally {
       release?.();
+      releaseWorld?.();
     }
   }
 
@@ -126,7 +193,7 @@ export class LocalZoneSource implements WorldSource {
     }
     const payload = encodeCommand(command);
     this.#sequence += 1;
-    if (!this.#zone.submit(player, this.#sequence, payload)) {
+    if (!this.#requireZone().submit(player, this.#sequence, payload)) {
       throw new Error(`The local zone ignored fresh sequence ${this.#sequence}.`);
     }
     return this.#sequence;
@@ -140,7 +207,7 @@ export class LocalZoneSource implements WorldSource {
     }
     const received: ZoneSnapshot[] = [];
     for (let tick = 0; tick < due; tick += 1) {
-      this.#zone.tick();
+      this.#requireZone().tick();
       received.push(this.#publish(player));
       this.#ticksSinceSave += 1;
       if (this.#ticksSinceSave >= SAVE_INTERVAL_TICKS) {
@@ -168,6 +235,13 @@ export class LocalZoneSource implements WorldSource {
     return this.#history.sample(renderTick, this.#clock.fraction);
   }
 
+  #requireZone(): LocalZoneHandle {
+    if (!this.#zone) {
+      throw new Error("Join the world before using the local zone.");
+    }
+    return this.#zone;
+  }
+
   #requirePlayer(): number {
     if (this.#player === null) {
       throw new Error("Join the world before sending commands.");
@@ -176,7 +250,7 @@ export class LocalZoneSource implements WorldSource {
   }
 
   #publish(player: number): ZoneSnapshot {
-    const snapshot = decodeSnapshot(this.#zone.projection(player));
+    const snapshot = decodeSnapshot(this.#requireZone().projection(player));
     if (snapshot.viewerId !== player) {
       throw new Error("The local zone addressed a projection to another player.");
     }
@@ -184,4 +258,8 @@ export class LocalZoneSource implements WorldSource {
     this.#history.push(snapshot);
     return snapshot;
   }
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }

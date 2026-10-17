@@ -1024,7 +1024,10 @@ async function enterWorld(): Promise<void> {
     updateEntryButton();
   }
   activeWorld = target;
-  worldMode.textContent = server ? `Greyhaven Vale · online · ${server.label}` : "Greyhaven Vale · local zone host";
+  const worldNotice = world && target === world ? world.source.worldNotice : null;
+  worldMode.textContent = server
+    ? `Greyhaven Vale · online · ${server.label}`
+    : `Greyhaven Vale · local zone host${worldNotice ? ` · ${worldNotice}` : ""}`;
   showLinkState("connected");
   turntable.cancel();
   entryState = next;
