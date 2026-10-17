@@ -1,4 +1,4 @@
-/** Player-visible protocol v20 only. Canonical recovery state never enters rendering. */
+/** Player-visible protocol v21 only. Canonical recovery state never enters rendering. */
 import { entityKindFromCode, sameEntity, type EntityKind, type EntityRef } from "./entity-ref";
 
 export type { EntityKind, EntityRef } from "./entity-ref";
@@ -258,8 +258,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 20;
-const SCHEMA_VERSION = 20;
+const WIRE_VERSION = 21;
+const SCHEMA_VERSION = 21;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;

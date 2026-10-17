@@ -1084,7 +1084,7 @@ mod tests {
 
     fn fixture_bytes() -> Vec<u8> {
         hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v20.hex"
+            "../../../fixtures/protocol/player-snapshot-v21.hex"
         ))
     }
 
@@ -1194,7 +1194,7 @@ mod tests {
         // A dead target has no target detail.
         snapshot.target_detail = TargetDetail::default();
         let expected = hex(include_str!(
-            "../../../fixtures/protocol/player-loot-v20.hex"
+            "../../../fixtures/protocol/player-loot-v21.hex"
         ));
         if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
             let bytes = encode_snapshot(&snapshot).unwrap();
