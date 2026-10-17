@@ -250,6 +250,14 @@ fn encode_player(
     payload.push(u8::from(landing.airborne));
     payload.extend_from_slice(&landing.recovery.to_be_bytes());
     payload.push(u8::from(landing.attacked_airborne));
+    match combat.combo {
+        None => payload.extend_from_slice(&[0; 7]),
+        Some(combo) => {
+            payload.push(1);
+            payload.extend_from_slice(&combo.target.get().to_be_bytes());
+            payload.extend_from_slice(&combo.elapsed.to_be_bytes());
+        }
+    }
     payload.extend_from_slice(&player.chat_ready_at.to_be_bytes());
     payload.push(encode_u8_count(
         player.chat.len(),
@@ -632,6 +640,19 @@ fn decode_player(
         recovery: u16::from_be_bytes(take(payload, offset)?),
         attacked_airborne: read_bool(payload, offset)?,
     };
+    let has_combo = read_bool(payload, offset)?;
+    let combo_target = CreatureId::new(u32::from_be_bytes(take(payload, offset)?));
+    let combo_elapsed = u16::from_be_bytes(take(payload, offset)?);
+    let combo = if has_combo {
+        Some(mmorpg_core::ComboOpening {
+            target: combo_target,
+            elapsed: combo_elapsed,
+        })
+    } else if combo_target.get() != 0 || combo_elapsed != 0 {
+        return Err(ProtocolError::new("absent combo has nonzero fields"));
+    } else {
+        None
+    };
     let chat_ready_at = u64::from_be_bytes(take(payload, offset)?);
     let chat_count = decode_u8_count(
         payload,
@@ -678,6 +699,7 @@ fn decode_player(
             events,
             abilities,
             landing,
+            combo,
         },
     })
 }
@@ -876,6 +898,10 @@ mod tests {
                             recovery: 7,
                             attacked_airborne: false,
                         },
+                        combo: Some(mmorpg_core::ComboOpening {
+                            target: CreatureId::new(1),
+                            elapsed: 3,
+                        }),
                     },
                     quests: mmorpg_core::QuestLog::default(),
                     quests_changed_at: 0,

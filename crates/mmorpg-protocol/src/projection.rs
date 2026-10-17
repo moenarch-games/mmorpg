@@ -34,9 +34,9 @@ const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
 pub const CAST_RECORD_BYTES: usize = 1 + 1 + 2 + 2;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
 /// range, the guard (lane code, protecting flag, break ticks), the melee
-/// stance code, then the cooldown and aura counts.
+/// stance and combo phase codes, then the cooldown and aura counts.
 const SELF_ABILITY_BYTES: usize =
-    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 1;
+    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 1 + 1;
 /// Four `u16` stat totals: stamina, strength, agility and intellect.
 const STAT_TOTALS_BYTES: usize = 4 * 2;
 /// The self sheet's fixed part: bag, equipment and stat totals; the quest
@@ -64,7 +64,7 @@ pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// facing, level, health percent and flags.
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 6 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events, sheets, cooldowns or auras:
-/// (1,077 − 110) / 21 = 46.
+/// (1,077 − 111) / 21 = 46.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -73,7 +73,7 @@ const MAX_CHAT_SECTION_BYTES: usize = MAX_CHAT_PER_TICK * crate::chat::MAX_CHAT_
 // With every list full, both sheets (a full quest log and eight markers),
 // a full event section and four 80-byte chat lines, the viewer and its
 // target always fit:
-// 110 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + 2 × 21 = 1,008 ≤ 1,077 bytes.
+// 111 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + 2 × 21 = 1,009 ≤ 1,077 bytes.
 const _: () = assert!(
     PLAYER_SNAPSHOT_FIXED_BYTES
         + MAX_ABILITY_LIST_BYTES
@@ -163,6 +163,7 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     payload.push(u8::from(viewer.guard.protecting));
     payload.extend_from_slice(&viewer.guard.broken.to_be_bytes());
     payload.push(viewer.stance.map_or(0, mmorpg_core::MeleeStance::code));
+    payload.push(viewer.combo.map_or(0, mmorpg_core::ComboPhase::code));
     payload.push(encode_u8_count(
         snapshot.cooldowns.len(),
         MAX_COOLDOWNS,
@@ -465,6 +466,14 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
                 .ok_or_else(|| ProtocolError::new("viewer melee stance is invalid"))?,
         ),
     };
+    let combo = match read_u8(payload, &mut offset)? {
+        0 => None,
+        code => Some(
+            mmorpg_core::ComboPhase::from_code(code)
+                .filter(|_| warden && !dead)
+                .ok_or_else(|| ProtocolError::new("viewer combo phase is invalid"))?,
+        ),
+    };
     let cooldown_count = decode_u8_count(
         payload,
         &mut offset,
@@ -646,6 +655,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
             damage,
             guard,
             stance,
+            combo,
         },
         cooldowns,
         auras,
@@ -813,8 +823,9 @@ mod tests {
                     protecting: false,
                     broken: 30,
                 },
-                // Only a Warden has a melee stance.
+                // Only a Warden has a melee stance or combo.
                 stance: None,
+                combo: None,
             },
             cooldowns: vec![
                 Cooldown {
@@ -1073,7 +1084,7 @@ mod tests {
 
     fn fixture_bytes() -> Vec<u8> {
         hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v19.hex"
+            "../../../fixtures/protocol/player-snapshot-v20.hex"
         ))
     }
 
@@ -1083,7 +1094,8 @@ mod tests {
     const DAMAGE: usize = CAST + CAST_RECORD_BYTES;
     const GUARD: usize = DAMAGE + 4;
     const STANCE: usize = GUARD + 4;
-    const COOLDOWNS: usize = STANCE + 1;
+    const COMBO: usize = STANCE + 1;
+    const COOLDOWNS: usize = COMBO + 1;
     const AURAS: usize = COOLDOWNS + 1 + 2 * COOLDOWN_RECORD_BYTES;
     const TARGET_OF_TARGET: usize = AURAS + 1 + AURA_RECORD_BYTES;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
@@ -1182,7 +1194,7 @@ mod tests {
         // A dead target has no target detail.
         snapshot.target_detail = TargetDetail::default();
         let expected = hex(include_str!(
-            "../../../fixtures/protocol/player-loot-v19.hex"
+            "../../../fixtures/protocol/player-loot-v20.hex"
         ));
         if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
             let bytes = encode_snapshot(&snapshot).unwrap();
@@ -1373,6 +1385,7 @@ mod tests {
             (31, 9, "player projection must start with the viewer"),
             // The fixture's Arcanist has no melee stance.
             (STANCE, 2, "viewer melee stance is invalid"),
+            (COMBO, 2, "viewer combo phase is invalid"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -1539,7 +1552,7 @@ mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (110, 14, 21)
+            (111, 14, 21)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 46);
         let viewer_id = u32::MAX;
@@ -1614,6 +1627,7 @@ mod tests {
                 damage: [u16::MAX; 2],
                 guard: GuardView::default(),
                 stance: None,
+                combo: None,
             },
             cooldowns: Vec::new(),
             auras: Vec::new(),
@@ -1624,7 +1638,7 @@ mod tests {
             quests: None,
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 110 − 16 × 14) / 21 = 35 records fit beside a full event section.
+        // (1,077 − 111 − 16 × 14) / 21 = 35 records fit beside a full event section.
         assert_eq!(packed.packed_entities, 35);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
@@ -1677,7 +1691,7 @@ mod tests {
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
             // With a full quest part the sheet is 84 + 70 = 154 bytes:
-            // (1,077 − 110 − 154) / 21 = 38 and (1,077 − 110 − 154 − 224) / 21 = 28.
+            // (1,077 − 111 − 154) / 21 = 38 and (1,077 − 111 − 154 − 224) / 21 = 28.
             if events == 0 {
                 assert_eq!(packed.packed_entities, 38);
             }
@@ -1685,8 +1699,8 @@ mod tests {
                 assert_eq!(packed.packed_entities, 28);
             }
         }
-        // Whole records only: 110 + 154 + 16 × 14 + 28 × 21 = 1,076 is the largest.
-        assert_eq!(maximum_bytes, 1_076);
+        // Whole records only: 111 + 154 + 16 × 14 + 28 × 21 = 1,077 is the largest.
+        assert_eq!(maximum_bytes, 1_077);
         // Four full chat lines still leave room for the viewer, its target and more.
         let mut chatty = quiet.clone();
         chatty.events = vec![event; MAX_EVENTS_PER_PLAYER];
@@ -1700,7 +1714,7 @@ mod tests {
             MAX_CHAT_PER_TICK
         ];
         let packed = pack_snapshot(&chatty).unwrap();
-        // (1,077 − 110 − 224 − 4 × 84) / 21 = 19 records.
+        // (1,077 − 111 − 224 − 4 × 84) / 21 = 19 records.
         assert_eq!(packed.packed_entities, 19);
         assert_eq!(decode_snapshot(&packed.payload).unwrap().chat, chatty.chat);
         for item in [
@@ -1743,14 +1757,14 @@ mod tests {
                 assert_eq!(decoded.viewer.copper, u32::MAX);
                 assert_eq!(decoded.inventory, with_loot.inventory);
                 assert_eq!(decoded.entities[1].entity(), target);
-                // (1,077 − 110 − 154 − 26 − 224) / 21 = 26.
+                // (1,077 − 111 − 154 − 26 − 224) / 21 = 26.
                 if events == 16 && item.is_some() {
                     assert_eq!(packed.packed_entities, 26);
                 }
             }
         }
-        // With a corpse sheet, whole records reach 1,076 bytes.
-        assert_eq!(maximum_bytes, 1_076);
+        // With a corpse sheet, whole records reach 1,077 bytes.
+        assert_eq!(maximum_bytes, 1_077);
         // Full cooldown and aura lists for the viewer and its target, both
         // sheets and every event still leave the viewer and its target.
         let aura = |ability: u8| {
@@ -1803,7 +1817,7 @@ mod tests {
             auras: full_auras,
         };
         let packed = pack_snapshot(&loaded).unwrap();
-        // (1,077 − 110 − 108 − 154 − 16 × 14) / 21 = 22 records.
+        // (1,077 − 111 − 108 − 154 − 16 × 14) / 21 = 22 records.
         assert_eq!(packed.packed_entities, 22);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         let decoded = decode_snapshot(&packed.payload).unwrap();

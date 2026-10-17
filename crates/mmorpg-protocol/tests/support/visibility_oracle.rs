@@ -93,6 +93,7 @@ pub fn exhaustive_projection(
             },
             // Only Wardens have a melee stance.
             stance: None,
+            combo: None,
         },
         cooldowns: Vec::new(),
         auras: Vec::new(),
