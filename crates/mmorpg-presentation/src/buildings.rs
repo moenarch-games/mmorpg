@@ -29,8 +29,6 @@ pub const SWING_SECONDS: f64 = 0.4;
 /// The descriptor's hinge mount in the inn frame, metres; the leaf opens inward about +Y.
 const HINGE: [f64; 3] = [-0.6, 0., 4.53];
 const OPEN_ANGLE: f64 = std::f64::consts::FRAC_PI_2;
-/// The descriptor's leaf bounds in the hinge frame, metres.
-const LEAF: ([f64; 3], [f64; 3]) = ([0.01, 0.02, -0.113_3], [1.188, 2.19, 0.113_3]);
 
 /// One drawn inn entry this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -112,34 +110,6 @@ impl Inn {
             ry(self.angle),
         ])
     }
-
-    /// The distance along the ray (metres, zone frame) at which it enters the door leaf in its
-    /// presented swing, if it does.
-    #[must_use]
-    pub fn pick_door(&self, origin: [f64; 3], direction: [f64; 3]) -> Option<f64> {
-        let leaf = self.leaf();
-        // Into the hinge frame: rotation is orthonormal, so its transpose inverts it.
-        let local = |v: [f64; 3]| -> [f64; 3] {
-            std::array::from_fn(|c| (0..3).map(|r| leaf.m[r * 3 + c] * v[r]).sum())
-        };
-        let o = local(std::array::from_fn(|i| origin[i] - leaf.t[i]));
-        let d = local(direction);
-        let (mut near, mut far) = (0_f64, f64::INFINITY);
-        for axis in 0..3 {
-            let (min, max) = (LEAF.0[axis], LEAF.1[axis]);
-            if d[axis].abs() < 1e-12 {
-                if o[axis] < min || o[axis] > max {
-                    return None;
-                }
-                continue;
-            }
-            let (a, b) = ((min - o[axis]) / d[axis], (max - o[axis]) / d[axis]);
-            near = near.max(a.min(b));
-            far = far.min(a.max(b));
-        }
-        let length = direction.iter().map(|v| v * v).sum::<f64>().sqrt();
-        (near <= far).then_some(near * length)
-    }
 }
 
 #[cfg(test)]
@@ -166,17 +136,5 @@ mod tests {
                 .iter()
                 .all(|part| part.visible)
         );
-    }
-
-    #[test]
-    fn a_ray_picks_the_leaf_where_it_hangs() {
-        let mut inn = inn();
-        inn.frame(false, None, 0., false);
-        let y = inn.origin[1] + 1.;
-        // Closed: the leaf spans x 14.4–15.6 at z 4.53.
-        assert!(inn.pick_door([15., y, 8.], [0., 0., -1.]).is_some());
-        inn.frame(true, None, 0., true);
-        assert!(inn.pick_door([15., y, 8.], [0., 0., -1.]).is_none());
-        assert!(inn.pick_door([12., y, 4.], [1., 0., 0.]).is_some());
     }
 }

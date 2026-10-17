@@ -357,6 +357,69 @@ impl UnitPresenter {
     }
 }
 
+/// The walk-in inn's presented door and interior look (#158), shared with the native client;
+/// the page picks the door against the drawn leaf mesh.
+#[wasm_bindgen]
+pub struct InnPresenter(mmorpg_presentation::buildings::Inn);
+
+#[wasm_bindgen]
+impl InnPresenter {
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self(mmorpg_presentation::buildings::Inn::new(
+            scenery::hosted_scenery(),
+        ))
+    }
+
+    /// The asset-tooling bundle entries to draw, in [`Self::frame`] order.
+    #[must_use]
+    pub fn entries() -> Vec<String> {
+        mmorpg_presentation::buildings::INN_ENTRIES
+            .iter()
+            .map(|&key| key.to_owned())
+            .collect()
+    }
+
+    /// Per entry 16 column-major model floats then 1 (shown) or 0 (hidden). `viewer` holds the
+    /// viewer's feet in metres, or is empty without one.
+    pub fn frame(
+        &mut self,
+        open: bool,
+        viewer: &[f64],
+        dt: f64,
+        #[wasm_bindgen(js_name = reducedMotion)] reduced_motion: bool,
+    ) -> Vec<f32> {
+        let viewer = (viewer.len() == 3).then(|| [viewer[0], viewer[1], viewer[2]]);
+        self.0
+            .frame(open, viewer, dt, reduced_motion)
+            .iter()
+            .flat_map(|part| {
+                part.model
+                    .into_iter()
+                    .chain([if part.visible { 1. } else { 0. }])
+            })
+            .collect()
+    }
+
+    /// The content door the zone would let feet at `(x, z)` units use, or 0.
+    #[wasm_bindgen(js_name = reachableDoor)]
+    #[must_use]
+    pub fn reachable_door(x: i32, z: i32) -> u8 {
+        host::hosted_content()
+            .doors()
+            .iter()
+            .find(|door| door.within_reach([x, 0, z]))
+            .map_or(0, |door| door.id.get())
+    }
+}
+
+impl Default for InnPresenter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn js_error(error: host::LocalZoneError) -> JsError {
     JsError::new(&error.to_string())
 }

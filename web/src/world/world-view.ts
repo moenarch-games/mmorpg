@@ -26,6 +26,7 @@ import {
   type Vec3,
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
+import { InnBuilding, INN_DOOR } from "./inn-building";
 import { SkyLayer } from "./sky";
 import { SharedUnits, type ImportedModelKind, type ViewerLook } from "./unit-presenter";
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
@@ -156,6 +157,9 @@ export class WorldView {
   readonly #sky: SkyLayer;
   /** Imported unit models (Atlas 6.3.6/6.3.7), skinned once loaded; the shared presenter picks their clips. */
   readonly #models = new QuaterniusUnits((kind) => this.#restClip(kind));
+  /** The walk-in inn (#158), drawn from its asset-tooling bundle once loaded. */
+  #inn: InnBuilding | null = null;
+  #reachableDoor: (x: number, z: number) => number = () => 0;
   #restClip: (kind: ImportedModelKind) => string = () => { throw new Error("No world is loaded."); };
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][]][] = [];
@@ -295,6 +299,9 @@ export class WorldView {
     this.#reliefAt = world.scenery.reliefAt;
     this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
+    this.#inn = new InnBuilding(world.scenery.inn.presenter(), world.scenery.inn.entries());
+    this.#inn.load();
+    this.#reachableDoor = world.scenery.inn.reachableDoor;
     this.#units = null;
     this.#sceneryFrame = new SceneryFrame(this.#scene);
     this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
@@ -425,7 +432,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? [])] });
     }
   }
 
@@ -487,6 +494,22 @@ export class WorldView {
   /** Talks to the selected or nearest quest giver: the NPC dialog. */
   toggleQuestDialog(): void {
     this.#quests.toggleDialog();
+  }
+
+  /**
+   * Interact (T / gamepad Start): talk to a selected NPC; without one, swing the door in reach
+   * (#158); otherwise open the quest dialog, which says whom to approach.
+   */
+  interact(): void {
+    const projection = this.#lastProjection;
+    // The viewer leads every projection; positions are in units.
+    const at = projection?.entities[0]?.position;
+    const door = at && projection.viewer.target?.kind !== "npc" ? this.#reachableDoor(at[0], at[2]) : 0;
+    if (door === 0) {
+      this.toggleQuestDialog();
+      return;
+    }
+    this.queueIntent((latest) => doorToggle(latest, door));
   }
 
   toggleQuestLog(): void {
@@ -621,7 +644,7 @@ export class WorldView {
     const projected: ProjectedUnit[] = [];
     const others: MinimapUnit[] = [];
     const anchors = new Map<string, { x: number; feetY: number; z: number }>();
-    let self: { focus: Vec3; x: number; z: number; facing: number } | null = null;
+    let self: { focus: Vec3; x: number; feetY: number; z: number; facing: number } | null = null;
     const entities = new Map(sampled.map((entity) => [entityKey({ kind: entity.kind, id: entity.entityId }), entity]));
     for (const unit of presented.units) {
       const entity = entities.get(entityKey(unit.entity));
@@ -630,7 +653,7 @@ export class WorldView {
       anchors.set(entityKey(unit.entity), placement);
       projected.push(projectedUnit(entity, placement, catalog));
       if (entity.kind === "player" && entity.entityId === projection.viewerId) {
-        self = { focus: [unit.feet[0], unit.centreY, unit.feet[2]], x: unit.feet[0], z: unit.feet[2], facing: unit.yaw };
+        self = { focus: [unit.feet[0], unit.centreY, unit.feet[2]], x: unit.feet[0], feetY: unit.feet[1], z: unit.feet[2], facing: unit.yaw };
         this.#showArea(scenery.areaAt(entity.position[0], entity.position[2])?.name ?? ZONE_NAME);
       } else {
         others.push(this.#minimapUnit(entity, unitsPerMetre));
@@ -652,6 +675,8 @@ export class WorldView {
     this.#character.update(projection);
     this.#loot.update(projection);
     this.#lastSelf = { x: self.x, z: self.z, facing: self.facing };
+    const innOpen = projection.doors.some((door) => door.door === INN_DOOR && door.open);
+    this.#inn?.update(innOpen, [self.x, self.feetY, self.z], deltaSeconds, !animate);
     if (this.#framePending) {
       this.#framePending = false;
       this.#frameFirstView(self.focus, self.facing, scene.surfaceY);
@@ -678,8 +703,9 @@ export class WorldView {
     this.#lastInstanceBatches = frame.instanceBatches;
     this.#lastCamera = camera;
     const models = this.#models.roots();
-    if (models.changed) {
-      this.#renderer.renderImportedRoots({ camera, roots: models.roots });
+    const inn = this.#inn?.roots() ?? { roots: [], changed: false };
+    if (models.changed || inn.changed) {
+      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots] });
     }
     this.#lastWork = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
@@ -811,8 +837,13 @@ export class WorldView {
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         1 - ((event.clientY - rect.top) / rect.height) * 2,
       );
-      const target = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables());
+      const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), this.#inn?.pickables());
       this.#pendingNpc = null;
+      // A click on the door leaf asks the zone to swing it; the zone checks reach (#158).
+      if (picked?.kind === "door") {
+        this.queueIntent((projection) => doorToggle(projection, picked.id));
+      }
+      const target = picked?.kind === "door" ? null : picked;
       if (target) {
         this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === target.kind && entity.entityId === target.id)
           ? { kind: "select-target", target } : null, (sequence) => {
@@ -896,6 +927,8 @@ export class WorldView {
       unitModelPose: (identity: string) => this.#models.pose(identity),
       /** Copies of actual submitted geometry transforms, never a simulation control. */
       unitNodes: (identity: string) => structuredClone(this.#lastUnitNodes.filter((node) => node.id.startsWith(`${identity}-`))),
+      /** The walk-in inn (#158): whether its bundle loaded and which entries the last frame showed. */
+      inn: () => this.#inn?.observe() ?? null,
       /** The units of the last projection (kind, id, creature family, position in metres). */
       projectedUnits: () => this.#lastProjectedUnits,
       /** The projected animal (wolf, boar, vermin) nearest to a point in metres, or null. */
@@ -918,4 +951,9 @@ export class WorldView {
       },
     };
   }
+}
+
+/** The `use-door` that flips `door` from its latest projected state. */
+function doorToggle(projection: ZoneSnapshot, door: number): WorldCommand {
+  return { kind: "use-door", door, open: !projection.doors.some((view) => view.door === door && view.open) };
 }

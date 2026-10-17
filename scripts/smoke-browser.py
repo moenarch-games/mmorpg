@@ -1142,8 +1142,9 @@ class BrowserAcceptance(unittest.TestCase):
         expect(pane).to_be_hidden()
         expect(self.page.locator("#character-select")).to_be_hidden()
 
-    def test_vendor_window_sells_and_buys_at_bram_tolliver(self):
-        """Walk the vendor-resume scenario's route to the inn, sell the starter bag and buy the dagger back."""
+    def test_inn_journey_door_interior_and_vendor_at_bram_tolliver(self):
+        """The inn journey (#158): walk to the inn, open its door with interact, walk in to Bram
+        behind his bar, trade, walk out and close the door by clicking its leaf."""
         self.open("?debug")
         self.page.evaluate("""() => {
           const source = window.__valeDebug.worldSource();
@@ -1156,24 +1157,63 @@ class BrowserAcceptance(unittest.TestCase):
         expect(panel).to_be_visible()
         expect(self.page.locator("#vendor-status")).to_contain_text("Move within 5 m of Innkeeper Bram Tolliver")
         self.page.screenshot(path=str(ARTIFACTS / "vendor-out-of-reach.png"))
+        self.page.keyboard.press("Escape")
         self.page.evaluate("""() => {
           const source = window.__valeDebug.worldSource();
-          const moves = new Map([[0,[1,16384]],[145,[1,32768]],[150,[0,32768]]]);
-          for (let tick = 0; tick < 155; tick++) {
-            const move = moves.get(tick);
-            if (move) source.sendCommand({kind:'move',forward:move[0],strafe:0,facing:move[1]});
-            window.__vendorAdvance.call(source, 1 / 30);
-          }
           window.__vendorQueue = [];
           source.advance = () => window.__vendorQueue.splice(0);
           window.__vendorStep = ticks => {
             for (let tick = 0; tick < ticks; tick++) window.__vendorQueue.push(...window.__vendorAdvance.call(source, 1 / 30));
+          };
+          // Held moves keyed by tick, then the remaining ticks run; the vendor-resume scenario's route.
+          window.__vendorWalk = (moves, ticks) => {
+            for (let tick = 0; tick < ticks; tick++) {
+              const move = moves[tick];
+              if (move) source.sendCommand({kind:'move',forward:move[0],strafe:0,facing:move[1]});
+              window.__vendorStep(1);
+            }
           };
         }""")
         def step(ticks=2):
             self.frames(2)
             self.page.evaluate("ticks => window.__vendorStep(ticks)", ticks)
             self.frames(3)
+        def walk(moves, ticks):
+            self.page.evaluate("([moves, ticks]) => window.__vendorWalk(moves, ticks)", [{str(tick): move for tick, move in moves.items()}, ticks])
+            self.frames(4)
+        def door_open():
+            return self.page.evaluate("window.__valeDebug.worldSource().latestProjection().doors")[0]["open"]
+        # East along the plaza, then north to the closed front door.
+        walk({0: [1, 16384], 145: [1, 32768], 176: [0, 32768]}, 178)
+        self.assertFalse(door_open(), "The door is closed at zone start")
+        for _ in range(60):
+            if self.page.evaluate("window.__valeDebug.inn()?.loaded"):
+                break
+            self.frames(5)
+        inn = self.page.evaluate("window.__valeDebug.inn()")
+        self.assertEqual(sorted(inn["shown"]), sorted(["greyhaven.inn.shell", "greyhaven.inn.furniture", "greyhaven.inn.ceiling", "greyhaven.inn.roof", "greyhaven.inn.door"]))
+        self.page.screenshot(path=str(ARTIFACTS / "inn-outside-closed.png"))
+        # Interact (T) with no NPC selected swings the door in reach.
+        self.page.locator("#world").focus()
+        self.page.keyboard.press("t")
+        step()
+        self.assertTrue(door_open(), "Interact opened the inn door")
+        self.frames(30)
+        self.page.screenshot(path=str(ARTIFACTS / "inn-outside-open.png"))
+        # Through the doorway, along the room and up to the bar.
+        walk({0: [1, 32768], 29: [1, 16384], 49: [1, 32768], 57: [0, 32768]}, 60)
+        inside = self.page.evaluate("window.__valeDebug.inn()")["shown"]
+        self.assertNotIn("greyhaven.inn.roof", inside, "The roof hides while the character is inside")
+        self.assertNotIn("greyhaven.inn.ceiling", inside)
+        self.page.screenshot(path=str(ARTIFACTS / "inn-inside.png"))
+        # From above with the roof hidden: Bram behind his bar, the player at the stools.
+        self.page.evaluate("window.__valeDebug.flyToPose([15, 14, 0.01], [15, 0, 0])")
+        self.frames(6)
+        self.page.screenshot(path=str(ARTIFACTS / "inn-topdown.png"))
+        self.page.evaluate("window.__valeDebug.follow()")
+        self.page.locator("#world").focus()
+        self.page.keyboard.press("v")
+        expect(panel).to_be_visible()
         step()
         expect(self.page.get_by_role("heading", name="Innkeeper Bram Tolliver")).to_be_visible()
         expect(self.page.locator("#vendor-status")).to_have_text("Copper: 0")
@@ -1216,6 +1256,20 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.keyboard.press("Escape")
         expect(panel).to_be_hidden()
         expect(self.page.locator("#character-select")).to_be_hidden()
+        self.page.set_viewport_size({"width": 1440, "height": 900})
+        # Back out through the doorway, then close the door by clicking its swung leaf.
+        walk({0: [1, 0], 8: [1, 49152], 28: [1, 0], 60: [0, 0]}, 62)
+        self.assertGreater(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().entities[0].position[2]"), 480, "Outside again")
+        relief = self.page.evaluate("window.__valeDebug.reliefAt(1500, 0)") / 100
+        self.page.evaluate("([y]) => window.__valeDebug.flyToPose([15.6, y + 1.3, 7.5], [14.4, y + 1.1, 3.9])", [relief])
+        self.frames(6)
+        box = self.page.locator("#world").bounding_box()
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        step()
+        self.assertFalse(door_open(), "Clicking the leaf closed the inn door")
+        self.page.evaluate("window.__valeDebug.follow()")
+        self.frames(30)
+        self.page.screenshot(path=str(ARTIFACTS / "inn-closed-again.png"))
 
     def test_quest_dialog_log_tracker_and_marker_at_the_marshal(self):
         """Walk the quest-resume scenario's route to the Marshal, accept, track and abandon Trouble in the Woods."""

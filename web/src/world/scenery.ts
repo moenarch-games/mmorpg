@@ -78,10 +78,21 @@ export type SceneryContent = StaticSceneContent & {
   scenery(): string;
   /** The shared unit presenter (#184) of one joined player. */
   UnitPresenter: new (player: number) => UnitPresenterHandle;
+  /** The shared walk-in inn presenter (#158): door swing and interior look. */
+  InnPresenter: (new () => InnPresenterHandle) & {
+    entries(): string[];
+    reachableDoor(x: number, z: number): number;
+  };
   /** The rest clip an imported unit model is measured in. */
   importedRestClip(kind: string): string | undefined;
   areaAt(x: number, z: number): number | undefined;
   reliefAt(x: number, z: number): number;
+};
+
+/** The WASM inn presenter (`mmorpg_presentation::buildings::Inn`). */
+export type InnPresenterHandle = {
+  /** Per entry 16 column-major model floats then 1 shown / 0 hidden; `viewer` is feet in metres or empty. */
+  frame(open: boolean, viewer: Float64Array, dt: number, reducedMotion: boolean): Float32Array;
 };
 
 export type SceneryProvider = {
@@ -90,6 +101,8 @@ export type SceneryProvider = {
   readonly staticScene: StaticSceneContent;
   /** A fresh shared unit presenter for `player`. */
   unitPresenter(player: number): UnitPresenterHandle;
+  /** The walk-in inn's bundle entries, its presenter, and the door feet at `(x, z)` units reach (0 none). */
+  readonly inn: { entries(): readonly string[]; presenter(): InnPresenterHandle; reachableDoor(x: number, z: number): number };
   importedRestClip(kind: string): string;
   /** The named core area at `(x, z)` in units, if any. */
   areaAt(x: number, z: number): Area | null;
@@ -351,6 +364,11 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     scenery,
     staticScene: content,
     unitPresenter: (player) => new content.UnitPresenter(player),
+    inn: {
+      entries: () => content.InnPresenter.entries(),
+      presenter: () => new content.InnPresenter(),
+      reachableDoor: (x, z) => content.InnPresenter.reachableDoor(Math.round(x), Math.round(z)),
+    },
     importedRestClip(kind) {
       const clip = content.importedRestClip(kind);
       if (clip === undefined) {

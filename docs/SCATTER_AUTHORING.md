@@ -112,9 +112,10 @@ bounded scene-work evidence under `artifacts/browser/outpost-grass-*`.
 
 The authoring captures and adoption checksums above describe revision 4. Corpse
 loot activation (revision 5), class abilities (revision 6), equipment
-(revision 7), the vendor (revision 8) and quests (revision 9) change only live
-content identity metadata: Greyhaven revision 9, fingerprint `2630ca15716973f3`,
-snapshot v14/command v9. Live scenery hash is `90683364fa48a752` and complete
-browser export fingerprint is `3d83424fd061c312`.
+(revision 7), the vendor (revision 8), quests (revision 9) and the walk-in inn
+(revision 10, its footprint unchanged for relief) change only live content
+identity metadata: Greyhaven revision 10, fingerprint `ec8982ff4ec66ff7`,
+snapshot v22/command v12. Live scenery hash is `e1eae974cd9dfacd` and complete
+browser export fingerprint is `158b68e979983ee8`.
 All authored masks, placements, heights and source revision-4 provenance remain
 unchanged; none of these identity changes requires recapturing geometry.

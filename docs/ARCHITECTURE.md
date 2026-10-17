@@ -163,6 +163,8 @@ Greyhaven Vale (`mmorpg_core::greyhaven_vale`, content revision 7) is the starte
 
 Collider IDs are grouped by structure in `greyhaven_vale::ids` so presentation can derive its visuals from the collider table without core knowing about visuals.
 
+The inn (#158, `greyhaven_vale::inn`, revision 10) is walk-in: its walls and furniture are the asset-tooling bundle descriptor's colliders placed at (15, 0, 0) m, and its front door is a content `Door` (`mmorpg_core::door`): one static body the zone moves between its closed and open leaf boxes on `UseDoor`, in canonical state and every projection. NPC services need a head-height sight line, so Innkeeper Bram Tolliver serves across his bar but never through a wall. Scenery keeps a synthetic inn footprint for relief and the minimap; `mmorpg_presentation::buildings` draws the bundle in both clients.
+
 ## Presentation scenery
 
 `mmorpg-scenery` (`greyhaven_vale_scenery()`) turns that content into a deterministic `Scenery` value for clients:
@@ -402,7 +404,7 @@ without simulating moves or grants. A bounded source advance returns each decode
 projection in tick order (at most four local catch-up ticks), so intermediate
 sheets and refusals reach the bag cache before drawing the newest frame. Catalog format v2 adds item catalog revision
 and ID/name/stack-limit records; v1 exports fail closed at that presentation
-boundary. Catalog format v3 adds classes and abilities, v4 each item's equipment slot and stats, v5 sale values and vendor stock, and v6 quests; the browser now requires v6. Current gameplay uses snapshot/command v18/v11 and content revision 9; only content identity changes scenery metadata. Quest rules, the log and markers are core's (`mmorpg_core::quest`, tick steps 1 and 8); see [STARTER_ZONE.md](STARTER_ZONE.md#quests).
+boundary. Catalog format v3 adds classes and abilities, v4 each item's equipment slot and stats, v5 sale values and vendor stock, and v6 quests; the browser now requires v6. Current gameplay uses snapshot/command v22/v12 and content revision 10; only content identity changes scenery metadata. Quest rules, the log and markers are core's (`mmorpg_core::quest`, tick steps 1 and 8); see [STARTER_ZONE.md](STARTER_ZONE.md#quests).
 
 Corpse reward authority lives in `mmorpg-core`'s `corpse_loot` module. Immutable
 bound content owns reward rules; a domain-separated canonical RNG generates
