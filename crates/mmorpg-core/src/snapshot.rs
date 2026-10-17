@@ -856,7 +856,7 @@ fn validate_cast(cast: CastState) -> Result<(), ZoneError> {
     }
 }
 
-fn validate_player_abilities(
+pub(crate) fn validate_player_abilities(
     abilities: &CanonicalPlayerAbilities,
     level: u8,
     alive: bool,

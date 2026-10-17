@@ -19,7 +19,7 @@ pub(crate) const MARKER_BYTES: usize = 2 + 1;
 pub(crate) const MAX_QUEST_SHEET_BYTES: usize =
     4 + 1 + MAX_QUEST_LOG * QUEST_ENTRY_BYTES + 1 + MAX_QUEST_NPCS * MARKER_BYTES;
 
-fn encode_entries(
+pub(crate) fn encode_entries(
     payload: &mut Vec<u8>,
     completed: u32,
     entries: &[QuestEntry],
@@ -38,7 +38,7 @@ fn encode_entries(
 }
 
 /// Entries with in-range IDs in strictly ascending order.
-fn decode_entries(
+pub(crate) fn decode_entries(
     payload: &[u8],
     offset: &mut usize,
 ) -> Result<(u32, Vec<QuestEntry>), ProtocolError> {
