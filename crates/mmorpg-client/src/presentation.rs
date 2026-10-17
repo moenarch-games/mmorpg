@@ -14,6 +14,7 @@ mod creatures;
 mod effects;
 mod kit;
 mod player;
+mod skinned;
 
 use crate::{
     ClientError,
@@ -86,6 +87,9 @@ pub struct Presentation {
     picked_draws: Vec<(EntityRef, crate::world::SceneDraw)>,
     resources: kit::Resources,
     animators: BTreeMap<EntityRef, animation::Animator>,
+    /// Imported-model clip clocks per visible unit, and the last tick whose cues they consumed.
+    playbacks: BTreeMap<EntityRef, skinned::Playback>,
+    cue_tick: u64,
     effects: effects::Effects,
     headwear: Option<player::Hat>,
     reduced_motion: bool,
@@ -119,6 +123,8 @@ impl Presentation {
             picked_draws: Vec::new(),
             resources: kit::Resources::default(),
             animators: BTreeMap::new(),
+            playbacks: BTreeMap::new(),
+            cue_tick: 0,
             effects: effects::Effects::default(),
             headwear: None,
             reduced_motion: false,
@@ -396,6 +402,69 @@ impl Presentation {
             .collect()
     }
 
+    /// The imported Quaternius model presenting `entity`, if its kind has one yet. Players pick
+    /// by class and sex; creatures and NPCs alternate male and female models by stable ID.
+    fn imported_asset(
+        &self,
+        entity: EntityRef,
+        record: &EntitySnapshot,
+        snapshot: &ZoneSnapshot,
+    ) -> Option<&'static skinned::Asset> {
+        use skinned::Kind as K;
+        let female = |id: u32| id % 2 == 1;
+        let kind = match entity {
+            EntityRef::Player(id) => {
+                // The viewer's sheet wins; other players' records carry their class and sex.
+                let choice = (id == self.player_id)
+                    .then_some(snapshot.viewer.class)
+                    .flatten()
+                    .or_else(|| mmorpg_core::ClassChoice::from_appearance(record.appearance));
+                let (class, female) = choice.map_or((0, false), |c| {
+                    (c.class.code(), c.sex == mmorpg_core::Sex::Female)
+                });
+                match (class, female) {
+                    (1, false) => K::Elf,
+                    (1, true) => K::NinjaFemale,
+                    (2, false) => K::Wizard,
+                    (2, true) => K::Witch,
+                    (_, false) => K::KnightMale,
+                    (_, true) => K::KnightFemale,
+                }
+            }
+            EntityRef::Creature(id) => {
+                let family = self
+                    .content
+                    .creature_template(CreatureTemplateId::new(record.appearance))?
+                    .family;
+                let f = female(id.get());
+                match family {
+                    CreatureFamily::Wolf => K::Wolf,
+                    CreatureFamily::Vermin => K::Rat,
+                    CreatureFamily::Boar => K::Pig,
+                    CreatureFamily::Marauder if f => K::VikingFemale,
+                    CreatureFamily::Marauder => K::VikingMale,
+                    CreatureFamily::Mirefin if f => K::GoblinFemale,
+                    CreatureFamily::Mirefin => K::GoblinMale,
+                    CreatureFamily::Redbrand if f => K::PirateFemale,
+                    CreatureFamily::Redbrand => K::PirateMale,
+                }
+            }
+            EntityRef::Npc(id) => {
+                let f = female(id.get());
+                match self.content.npc(id)?.role {
+                    NpcRole::Guard if f => K::SoldierFemale,
+                    NpcRole::Guard => K::SoldierMale,
+                    NpcRole::Vendor if f => K::WorkerFemale,
+                    NpcRole::Vendor => K::WorkerMale,
+                    NpcRole::SpiritHealer => K::Wizard,
+                    NpcRole::QuestGiver if f => K::CasualFemale,
+                    NpcRole::QuestGiver => K::CasualMale,
+                }
+            }
+        };
+        Some(kind.asset())
+    }
+
     /// The same CPU geometry/material/model payload consumed by rendering and picking.
     #[must_use]
     pub fn unit_draws(&mut self, now: Instant, view: CameraView) -> Vec<crate::world::SceneDraw> {
@@ -412,6 +481,7 @@ impl Presentation {
         let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
         let units = self.units(now);
         self.animators.retain(|e, _| units.contains_key(e));
+        self.playbacks.retain(|e, _| units.contains_key(e));
         self.picked_draws.clear();
         let mut draws = Vec::new();
         let mut anchors = BTreeMap::new();
@@ -420,6 +490,24 @@ impl Presentation {
         } else {
             self.effects.action(&snapshot, seconds)
         };
+        if snapshot.tick != self.cue_tick && !self.reduced_motion {
+            self.cue_tick = snapshot.tick;
+            for event in &snapshot.events {
+                let (mmorpg_core::ZoneEvent::AttackPerformed { source, .. }
+                | mmorpg_core::ZoneEvent::AbilityUsed { source, .. }) = *event
+                else {
+                    continue;
+                };
+                if let Some(unit) = units.get(&source)
+                    && let Some(asset) = self.imported_asset(source, &unit.record, &snapshot)
+                {
+                    self.playbacks
+                        .entry(source)
+                        .or_default()
+                        .attack(asset, seconds);
+                }
+            }
+        }
         for (entity, unit) in units {
             let (_, half) = self.unit_look(entity, &unit.record);
             let feet = [
@@ -454,7 +542,56 @@ impl Presentation {
                 EntityKind::Npc => "npc",
             };
             let id = format!("unit-{name}-{}", unit.record.id);
+            let imported = self.imported_asset(entity, &unit.record, &snapshot);
             let body = match entity {
+                _ if imported.is_some() => {
+                    let asset = imported.expect("checked above");
+                    let dead = unit.record.flags.dead;
+                    let (clip, time) = self.playbacks.entry(entity).or_default().advance(
+                        asset,
+                        loc.forward.hypot(loc.right),
+                        dead,
+                        seconds,
+                        dt,
+                        self.reduced_motion,
+                    );
+                    let height = f64::from(half[1]) * 2.;
+                    let mut body =
+                        asset
+                            .model
+                            .draws(&id, root, height, clip, time, dead.then_some(0.6));
+                    if let EntityRef::Player(id_num) = entity
+                        && id_num == self.player_id
+                        && !dead
+                        && let Some((centre, radius)) = asset.model.head(clip, time)
+                    {
+                        let m = asset.model.placement(root, height).elements;
+                        let p = std::array::from_fn(|r| {
+                            f64::from(
+                                m[r] * centre[0]
+                                    + m[4 + r] * centre[1]
+                                    + m[8 + r] * centre[2]
+                                    + m[12 + r],
+                            )
+                        });
+                        let scale = f64::from(m[0].hypot(m[1]).hypot(m[2]));
+                        let choice = snapshot.viewer.class;
+                        let look = player::Look::new(
+                            choice.map_or(0, |c| c.class.code()),
+                            choice.is_none_or(|c| c.sex.code() == 0),
+                            self.headwear,
+                            false,
+                        );
+                        body.extend(player::headwear(
+                            &mut self.resources,
+                            &id,
+                            look,
+                            Frame { p, q: root.q },
+                            f64::from(radius) * scale,
+                        ));
+                    }
+                    body
+                }
                 EntityRef::Player(id_num) => {
                     let other = id_num != self.player_id;
                     let choice = snapshot.viewer.class;
