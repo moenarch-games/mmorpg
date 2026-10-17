@@ -915,7 +915,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
       throw new Error("Inconsistent corpse loot sheet");
     }
   }
-  return {
+  const snapshot: ZoneSnapshot = {
     zoneId, tick, contentRevision, acknowledgedSequence, viewerId,
     viewer: {
       copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, autoAttacking, target,
@@ -924,6 +924,16 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, events,
     chat, entities,
   };
+  PROJECTION_BYTES.set(snapshot, payload.slice());
+  return snapshot;
+}
+
+/** The wire bytes each decoded projection came from, for the shared unit presenter (#184). */
+const PROJECTION_BYTES = new WeakMap<ZoneSnapshot, Uint8Array>();
+
+/** The bytes `snapshot` was decoded from; undefined for a projection not decoded here. */
+export function projectionBytes(snapshot: ZoneSnapshot): Uint8Array | undefined {
+  return PROJECTION_BYTES.get(snapshot);
 }
 
 /** The projection's record of `entity`, if it is visible. */

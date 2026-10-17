@@ -1683,6 +1683,8 @@ version = "0.1.0"
 dependencies = [
  "mmorpg-core",
  "mmorpg-scenery",
+ "serde_json",
+ "tobj",
 ]
 
 [[package]]

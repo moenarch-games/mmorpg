@@ -1,7 +1,6 @@
 import type { EntityState } from "../replication";
 import { mixColor, shadeColor, type EnvironmentStyle } from "./environment";
 import type { Color, Prop, Scenery, TerrainGrid } from "./scenery";
-import { disposition as unitDisposition } from "./units/creature-bodies";
 
 const OVERLAY_BIOMES: ReadonlySet<string> = new Set(["road", "lake bed", "shore", "plaza", "farmland"]);
 
@@ -224,7 +223,10 @@ export const DOT_COLORS: Readonly<Record<Disposition, Color>> = {
  * (hostile or neutral creatures by their flags, friendly NPCs).
  */
 export function dispositionOf(entity: EntityState): Disposition {
-  return entity.kind === "player" ? "player" : unitDisposition(entity);
+  if (entity.kind !== "creature") {
+    return entity.kind === "player" ? "player" : "friendly";
+  }
+  return entity.flags.hostile ? "hostile" : "neutral";
 }
 
 export type MinimapElements = {

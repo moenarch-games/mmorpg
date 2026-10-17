@@ -1,15 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { AuraState, CastState, ViewerState, ZoneEvent } from "../src/replication";
 import type { AbilityRecord, type ContentCatalog } from "../src/world/catalog";
-import { applyActionPose, actionWeight } from "../src/world/action-pose";
-import { POSE_LIMITS, poseFor, type LocomotionState } from "../src/world/character-animation";
 import { auraPolarity, undescribedAbilities } from "../src/world/units/ability-presentation";
 import { cooldownSeconds, formatRemaining, slotState, sweepDegrees, targetDistanceUnits, tooltipText } from "../src/world/units/ability-state";
 import { auraLabel, auraTimer, sortAuras } from "../src/world/units/aura-display";
 import { errorText } from "../src/world/units/combat-hud";
 import { castBarView } from "../src/world/units/cast-bar";
 import { combatTexts, damageIsPeriodic, viewerInterrupted } from "../src/world/units/combat-text";
-import { SpellEffects, effectNodes, type Anchor } from "../src/world/units/spell-effects";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
 
 const ABILITIES: AbilityRecord[] = [
@@ -225,161 +222,6 @@ describe("combat text", () => {
       { kind: "miss", source: wolf, target: me },
     ];
     expect(combatTexts(snapshot({ events }))).toEqual([{ kind: "taken", text: "-6" }, { kind: "miss", text: "Miss" }]);
-  });
-});
-
-describe("spell effects", () => {
-  const anchors = new Map<string, Anchor>([
-    ["player:1", { x: 0, feetY: 0, centreY: 0.9, z: 0, yaw: 0 }],
-    ["creature:108", { x: 10, feetY: 0, centreY: 0.5, z: 0, yaw: 0 }],
-  ]);
-  const resolve = (entity: { kind: string; id: number }) => anchors.get(`${entity.kind}:${entity.id}`) ?? null;
-  const used = (ability: number): ZoneEvent => ({ kind: "ability-used", source: me, target: wolf, ability });
-
-  test("an ability event starts a timed effect that expires on its own", () => {
-    const effects = new SpellEffects();
-    effects.spawn(snapshot({ events: [used(9)] }), 10, resolve);
-    expect(effects.active(10).map((effect) => effect.visual)).toEqual(["projectile"]);
-    expect(effects.active(10.39)).toHaveLength(1);
-    expect(effects.active(10.4)).toHaveLength(0);
-  });
-
-  test("each visual maps from its ability and unmapped abilities spawn nothing", () => {
-    const effects = new SpellEffects();
-    effects.spawn(snapshot({ events: [used(5), used(10), used(1), used(4), used(3), used(8)] }), 0, resolve);
-    expect(effects.active(0).map((effect) => effect.visual)).toEqual(["arrow", "ring", "swing", "swing"]);
-  });
-
-  test("the projectile flies from caster to target", () => {
-    const effects = new SpellEffects();
-    effects.spawn(snapshot({ events: [used(9)] }), 0, resolve);
-    const [effect] = effects.active(0) as [ReturnType<SpellEffects["active"]>[number]];
-    const at = (now: number) => effectNodes(effect, now, resolve).find((node) => node.id.endsWith("-core"))!.transform!.translation;
-    expect(at(0)[0]).toBeCloseTo(0);
-    expect(at(0.2)[0]).toBeCloseTo(5);
-    expect(at(0.4)[0]).toBeCloseTo(10);
-  });
-
-  test("the ring expands to the nova radius", () => {
-    const effects = new SpellEffects();
-    effects.spawn(snapshot({ events: [used(10)] }), 0, resolve);
-    const [effect] = effects.active(0) as [ReturnType<SpellEffects["active"]>[number]];
-    const radius = (now: number) => {
-      const node = effectNodes(effect, now, resolve)[0]!;
-      return Math.hypot(node.transform!.translation[0], node.transform!.translation[2]);
-    };
-    expect(radius(0.1)).toBeLessThan(radius(0.5));
-    expect(radius(0.65)).toBeCloseTo(8);
-  });
-
-  test("the barrier bubble lasts exactly while the aura does", () => {
-    const effects = new SpellEffects();
-    const aura: AuraState = { ability: 11, kind: "absorb", remaining: 600, amount: 40 };
-    effects.sync(snapshot({ auras: [aura] }), 0, resolve);
-    expect(effects.active(100).map((effect) => effect.visual)).toEqual(["bubble"]);
-    effects.sync(snapshot({ auras: [{ ...aura, remaining: 30 }] }), 1, resolve);
-    expect(effects.active(100)).toHaveLength(1);
-    effects.sync(snapshot({ auras: [] }), 2, resolve);
-    expect(effects.active(100)).toHaveLength(0);
-  });
-
-  test("Blizzard shards fall at the fixed target point for the channel and stop with it", () => {
-    const effects = new SpellEffects();
-    const channel: CastState = { ability: 12, elapsed: 30, total: 180, channel: true };
-    effects.spawn(snapshot({ events: [{ kind: "cast-started", source: me, target: wolf, ability: 12, ticks: 180 }] }, { cast: channel }), 0, resolve);
-    effects.sync(snapshot({}, { cast: channel }), 0, resolve);
-    const [effect] = effects.active(50) as [ReturnType<SpellEffects["active"]>[number]];
-    expect(effect.visual).toBe("shards");
-    expect(effect.ground).toEqual([10, 0, 0]);
-    anchors.set("creature:108", { x: 50, feetY: 0, centreY: 0.5, z: 0, yaw: 0 });
-    const shard = effectNodes(effect, 1, resolve)[0]!;
-    expect(Math.abs(shard.transform!.translation[0] - 10)).toBeLessThanOrEqual(6);
-    anchors.set("creature:108", { x: 10, feetY: 0, centreY: 0.5, z: 0, yaw: 0 });
-    effects.sync(snapshot({}), 3, resolve);
-    expect(effects.active(50)).toHaveLength(0);
-  });
-
-  test("a channel seen without its start event still gets shards once", () => {
-    const effects = new SpellEffects();
-    const channel: CastState = { ability: 12, elapsed: 60, total: 180, channel: true };
-    effects.sync(snapshot({}, { cast: channel }), 0, resolve);
-    effects.sync(snapshot({}, { cast: channel }), 0.1, resolve);
-    expect(effects.active(1).map((effect) => effect.visual)).toEqual(["shards"]);
-  });
-
-  test("effects start only from events the viewer received and cap in number", () => {
-    const effects = new SpellEffects();
-    effects.spawn(snapshot({ events: Array.from({ length: 16 }, () => used(9)) }), 0, resolve);
-    effects.spawn(snapshot({ events: Array.from({ length: 16 }, () => used(9)) }), 0, resolve);
-    expect(effects.active(0).length).toBeLessThanOrEqual(24);
-    effects.clear();
-    expect(effects.active(0)).toHaveLength(0);
-  });
-
-  test("an effect whose unit left the projection draws nothing", () => {
-    const effects = new SpellEffects();
-    effects.spawn(snapshot({ events: [used(9)] }), 0, () => null);
-    const [effect] = effects.active(0) as [ReturnType<SpellEffects["active"]>[number]];
-    expect(effectNodes(effect, 0.1, () => null)).toEqual([]);
-  });
-});
-
-describe("caster poses", () => {
-  const still: LocomotionState = { forward: 0, right: 0, vertical: 0, moveWeight: 0, airWeight: 0, turnRate: 0, stridePhase: 0, shufflePhase: 0, time: 0 };
-
-  test("a cast pose raises the arms and stays within the pose limits", () => {
-    const base = poseFor(still, "staff");
-    const posed = applyActionPose(base, { pose: "cast", progress: 0.5, hold: true });
-    expect(posed.rightArm.swing).toBeGreaterThan(base.rightArm.swing);
-    expect(posed.leftArm.swing).toBeGreaterThan(base.leftArm.swing);
-  });
-
-  test("every pose at every progress stays within the limits", () => {
-    const base = poseFor(still, "sword-and-shield");
-    for (const pose of ["cast", "draw", "swing"] as const) {
-      for (const hold of [true, false]) {
-        for (let step = 0; step <= 20; step += 1) {
-          const posed = applyActionPose(base, { pose, progress: step / 20, hold });
-          for (const arm of [posed.leftArm, posed.rightArm]) {
-            expect(arm.swing).toBeGreaterThanOrEqual(POSE_LIMITS.armSwing[0]);
-            expect(arm.swing).toBeLessThanOrEqual(POSE_LIMITS.armSwing[1]);
-            expect(arm.elbow).toBeGreaterThanOrEqual(POSE_LIMITS.elbow[0]);
-            expect(arm.elbow).toBeLessThanOrEqual(POSE_LIMITS.elbow[1]);
-          }
-          expect(posed.twist).toBeGreaterThanOrEqual(POSE_LIMITS.twist[0]);
-          expect(posed.twist).toBeLessThanOrEqual(POSE_LIMITS.twist[1]);
-        }
-      }
-    }
-  });
-
-  test("no action leaves the pose alone; an instant action swells and releases", () => {
-    const base = poseFor(still, "bow");
-    expect(applyActionPose(base, null)).toBe(base);
-    expect(actionWeight({ pose: "swing", progress: 0, hold: false })).toBeCloseTo(0);
-    expect(actionWeight({ pose: "swing", progress: 0.5, hold: false })).toBeCloseTo(1);
-    expect(actionWeight({ pose: "swing", progress: 1, hold: false })).toBeCloseTo(0);
-    expect(actionWeight({ pose: "cast", progress: 0.5, hold: true })).toBe(1);
-  });
-
-  test("the viewer action follows the cast, then a finished instant ability for a moment", () => {
-    const effects = new SpellEffects();
-    const cast: CastState = { ability: 9, elapsed: 30, total: 60, channel: false };
-    expect(effects.viewerAction(snapshot({}, { cast }), 0)).toEqual({ pose: "cast", progress: 0.5, hold: true });
-    effects.spawn(snapshot({ events: [{ kind: "ability-used", source: me, target: wolf, ability: 1 }] }), 5, () => null);
-    expect(effects.viewerAction(snapshot(), 5.1)).toMatchObject({ pose: "swing", hold: false });
-    expect(effects.viewerAction(snapshot(), 5.5)).toBeNull();
-  });
-
-  test("a finished cast releases its held pose instead of replaying the swell", () => {
-    const effects = new SpellEffects();
-    const cast: CastState = { ability: 9, elapsed: 59, total: 60, channel: false };
-    effects.spawn(snapshot({}, { cast }), 0, () => null);
-    effects.spawn(snapshot({ tick: 6n, events: [{ kind: "ability-used", source: me, target: wolf, ability: 9 }] }), 1, () => null);
-    const released = effects.viewerAction(snapshot(), 1)!;
-    expect(released).toMatchObject({ pose: "cast", progress: 0.5, hold: false });
-    expect(actionWeight(released)).toBeCloseTo(1);
-    expect(actionWeight(effects.viewerAction(snapshot(), 1.29)!)).toBeLessThan(0.1);
   });
 });
 

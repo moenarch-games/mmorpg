@@ -46,7 +46,6 @@ import { webTransportConnector } from "./session/webtransport";
 import { onlineChoice, type ZoneServer } from "./world/online-config";
 import { OnlineZoneSource } from "./world/online-zone-source";
 import type { LinkState, ZoneWorld } from "./world/world-source";
-import { characterLook } from "./world/humanoid";
 import { WorldView, webGpuProjection } from "./world/world-view";
 import { attackToggle, nextTabTarget } from "./world/units/targeting";
 import { GameControls, type GameAction, type HeldAction, type HoldPhase } from "./input/game-controls";
@@ -54,6 +53,7 @@ import { actionBindingLabels } from "./input/binding-labels";
 import type { Profile } from "@moritzbrantner/input-bindings";
 import { cancelCast, useAbilitySlot } from "./world/units/abilities";
 import { padGuardLane } from "./world/units/shield-guard";
+import type { ViewerLook } from "./world/unit-presenter";
 import { Preferences, type ClientPreferences } from "./settings/preferences";
 import { SettingsPanel } from "./settings/settings-panel";
 import { defaultBindingProfile, loadBindingProfile, saveBindingProfile } from "./settings/binding-profiles";
@@ -970,6 +970,12 @@ function renderSelection() {
   });
 }
 
+/** The viewer's own look for the shared unit presenter: class, sex and headwear. */
+function viewerLook(): ViewerLook {
+  const character = selectedCharacter();
+  return { classId: character.classId, sex: character.sex, headwear: characterAppearance.hat };
+}
+
 function worldInput() {
   const pads = typeof navigator.getGamepads === "function" ? navigator.getGamepads() : [];
   return { held: controls.heldIntent(), jumps, padGuard: padGuardLane(pads) };
@@ -989,7 +995,7 @@ function frame(now: number) {
     // Settings pauses the browser-local zone; an online zone keeps running with input blocked.
     const paused = settingsOpen && activeWorld !== onlineWorld;
     try {
-      worldView.frame(activeWorld, worldInput(), characterLook(selectedCharacter(), characterAppearance.hat), paused ? 0 : deltaSeconds, now);
+      worldView.frame(activeWorld, worldInput(), viewerLook(), paused ? 0 : deltaSeconds, now);
       showLinkState(activeWorld.source.linkState());
     } catch (error) {
       // Fail closed and visibly: leave the world and say why on the selection screen.

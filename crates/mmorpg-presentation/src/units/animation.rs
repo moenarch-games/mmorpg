@@ -1,20 +1,20 @@
 //! Cosmetic locomotion and published viewer ability poses.
 use std::f64::consts::{PI, TAU};
 #[derive(Clone, Copy, Default)]
-pub(super) struct Leg {
+pub struct Leg {
     pub swing: f64,
     pub spread: f64,
     pub knee: f64,
     pub foot: f64,
 }
 #[derive(Clone, Copy, Default)]
-pub(super) struct Arm {
+pub struct Arm {
     pub swing: f64,
     pub spread: f64,
     pub elbow: f64,
 }
 #[derive(Clone, Copy, Default)]
-pub(super) struct Pose {
+pub struct Pose {
     pub bob: f64,
     pub lean: f64,
     pub twist: f64,
@@ -26,7 +26,7 @@ pub(super) struct Pose {
     pub arms: [Arm; 2],
 }
 #[derive(Clone, Copy, Default)]
-pub(super) struct Locomotion {
+pub struct Locomotion {
     pub forward: f64,
     pub right: f64,
     pub vertical: f64,
@@ -37,14 +37,14 @@ pub(super) struct Locomotion {
     pub shuffle: f64,
     pub time: f64,
 }
-#[derive(Clone, Copy)]
-pub(super) enum Stance {
+#[derive(Clone, Copy, Debug)]
+pub enum Stance {
     Sword,
     Bow,
     Staff,
 }
 #[derive(Default)]
-pub(super) struct Animator {
+pub struct Animator {
     last: Option<([f64; 2], f64)>,
     state: Locomotion,
 }
@@ -95,7 +95,7 @@ impl Animator {
         *s
     }
 }
-pub(super) fn pose(s: Locomotion, stance: Stance) -> Pose {
+pub fn pose(s: Locomotion, stance: Stance) -> Pose {
     let speed = s.forward.hypot(s.right);
     let mov = s.movement;
     let air = s.air;
@@ -190,13 +190,48 @@ pub(super) fn pose(s: Locomotion, stance: Stance) -> Pose {
         arms,
     }
 }
+/// Whether a body stands, or lies dead with its fall `progress` (0 just died, 1 at rest).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Life {
+    Alive,
+    Dead { progress: f64 },
+}
+
+impl Life {
+    #[must_use]
+    pub const fn dead(self) -> bool {
+        matches!(self, Self::Dead { .. })
+    }
+
+    /// Fall progress, 1 when alive or settled.
+    #[must_use]
+    pub fn fall(self) -> f64 {
+        match self {
+            Self::Alive => 1.,
+            Self::Dead { progress } => progress.clamp(0., 1.),
+        }
+    }
+}
+
+/// How strongly an action's pose applies: a cast ramps in and stays; an instant ability swells
+/// and releases.
+#[must_use]
+pub fn weight(a: Action) -> f64 {
+    let t = a.progress.clamp(0., 1.);
+    if a.hold {
+        (t * 5.).min(1.)
+    } else {
+        (PI * t).sin()
+    }
+}
+
 #[derive(Clone, Copy)]
-pub(super) struct Action {
+pub struct Action {
     pub stance: Stance,
     pub progress: f64,
     pub hold: bool,
 }
-pub(super) fn action(mut p: Pose, a: Option<Action>) -> Pose {
+pub fn action(mut p: Pose, a: Option<Action>) -> Pose {
     let Some(a) = a else { return p };
     let t = a.progress.clamp(0., 1.);
     let w = if a.hold {

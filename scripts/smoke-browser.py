@@ -76,7 +76,7 @@ class BrowserAcceptance(unittest.TestCase):
           // Pose evidence needs actual submitted identities/transforms, not repeated immutable mesh buffers.
           // An imported Quaternius model contributes its actual clip, clip time, root and bone world positions.
           window.__acceptanceNodes = identity => {
-            const nodes = window.__valeDebug.unitNodes(identity).map(({id,transform}) => ({id,transform}));
+            const nodes = window.__valeDebug.unitNodes(identity).map(({id,transform,modelMatrix}) => ({id,transform,modelMatrix}));
             const model = window.__valeDebug.unitModelPose(identity);
             return model ? [...nodes, {id: `${identity}-model`, model}] : nodes;
           };

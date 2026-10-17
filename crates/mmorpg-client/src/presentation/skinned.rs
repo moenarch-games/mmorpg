@@ -1,8 +1,11 @@
 //! Imported Quaternius glTF units: material colours baked into vertex colours, clips sampled and
 //! skinned on the CPU, then submitted as ordinary scene draws so rendering and picking agree.
 //! Presentation only; the authoritative body box still comes from content.
-use super::kit::{Frame, model};
 use crate::world::{DrawMaterial, SceneDraw};
+use mmorpg_presentation::units::{
+    imported::Kind,
+    kit::{Frame, model},
+};
 use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock},
@@ -378,7 +381,9 @@ impl Model {
     /// Model-to-world placement: scaled to `height` metres, lowest rest point on `root`.
     pub fn placement(&self, root: Frame, height: f64) -> three_d_animation::Mat4 {
         let scale = height / f64::from(self.height);
-        let mut placement = model(root, [scale; 3]);
+        let mut placement = three_d_animation::Mat4 {
+            elements: model(root, [scale; 3]),
+        };
         let offset = [-self.centre[0], -self.floor, -self.centre[1]].map(f64::from);
         let m = &mut placement.elements;
         for r in 0..3 {
@@ -388,8 +393,11 @@ impl Model {
         placement
     }
 
-    pub fn duration(&self, clip: &str) -> f32 {
-        self.clips.get(clip).map_or(0., |c| c.duration)
+    /// Every clip with its length in seconds.
+    pub fn clip_durations(&self) -> impl Iterator<Item = (String, f32)> + '_ {
+        self.clips
+            .iter()
+            .map(|(name, clip)| (name.clone(), clip.duration))
     }
 
     fn globals(&self, clip: &str, time: f32) -> Vec<M4> {
@@ -528,30 +536,8 @@ impl Model {
     }
 }
 
-/// Clip names for one model's presentation states.
-pub(super) struct Clips {
-    pub idle: &'static str,
-    pub walk: &'static str,
-    pub run: &'static str,
-    pub attack: &'static str,
-    pub death: &'static str,
-    /// A standing raised shield, for a model that carries one (#156).
-    pub guard: Option<&'static str>,
-}
-
 pub(super) struct Asset {
     pub model: Model,
-    pub clips: Clips,
-}
-
-/// Every imported unit model: asset-tooling's Ranger humanoid for players (Atlas 6.3.7) and
-/// the bundled Quaternius CC0 animals (Atlas 6.3.6; see `assets/quaternius/PROVENANCE.md`).
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) enum Kind {
-    Ranger,
-    Wolf,
-    Rat,
-    Pig,
 }
 
 macro_rules! bundled {
@@ -769,130 +755,28 @@ impl Equipment {
     }
 }
 
-impl Kind {
-    const ALL: [Self; 4] = [Self::Ranger, Self::Wolf, Self::Rat, Self::Pig];
-
-    fn source(self) -> (std::borrow::Cow<'static, [u8]>, Clips) {
-        match self {
-            Self::Ranger => (
-                bundle_glb(ranger_bundle::CHARACTER, ranger_bundle::FILES).into(),
-                Clips {
-                    idle: "Idle_Loop",
-                    walk: "Walk_Loop",
-                    run: "Jog_Fwd_Loop",
-                    attack: "Sword_Attack",
-                    death: "Death01",
-                    guard: Some("Idle_Shield_Loop"),
-                },
-            ),
-            Self::Wolf => (
-                bundled!("Wolf.glb").into(),
-                Clips {
-                    idle: "Idle",
-                    walk: "Walk",
-                    run: "Gallop",
-                    attack: "Attack",
-                    death: "Death",
-                    guard: None,
-                },
-            ),
-            Self::Rat => (
-                bundled!("Rat.glb").into(),
-                Clips {
-                    idle: "Rat_Idle",
-                    walk: "Rat_Walk",
-                    run: "Rat_Run",
-                    attack: "Rat_Attack",
-                    death: "Rat_Death",
-                    guard: None,
-                },
-            ),
-            // The farm pig has no attack clip; its jump reads as a charge.
-            Self::Pig => (
-                bundled!("Pig.glb").into(),
-                Clips {
-                    idle: "Idle",
-                    walk: "Walk",
-                    run: "Run",
-                    attack: "Jump",
-                    death: "Death",
-                    guard: None,
-                },
-            ),
-        }
-    }
-
-    /// The parsed model, imported once per process on first use.
-    pub fn asset(self) -> &'static Asset {
-        static ASSETS: OnceLock<Vec<OnceLock<Asset>>> = OnceLock::new();
-        let slots = ASSETS.get_or_init(|| Self::ALL.iter().map(|_| OnceLock::new()).collect());
-        let index = Self::ALL
-            .iter()
-            .position(|kind| *kind == self)
-            .expect("every kind is listed");
-        slots[index].get_or_init(|| {
-            let (bytes, clips) = self.source();
-            Asset {
-                model: Model::parse(&bytes, clips.idle)
-                    .expect("an imported unit model is valid glTF"),
-                clips,
-            }
-        })
+/// The model file of an imported unit kind: asset-tooling's Ranger humanoid for players
+/// (Atlas 6.3.7) and the bundled Quaternius CC0 animals (Atlas 6.3.6; see
+/// `assets/quaternius/PROVENANCE.md`).
+fn source(kind: Kind) -> std::borrow::Cow<'static, [u8]> {
+    match kind {
+        Kind::Ranger => bundle_glb(ranger_bundle::CHARACTER, ranger_bundle::FILES).into(),
+        Kind::Wolf => bundled!("Wolf.glb").into(),
+        Kind::Rat => bundled!("Rat.glb").into(),
+        Kind::Pig => bundled!("Pig.glb").into(),
     }
 }
 
-/// Per-unit clip choice and clock. Presentation-owned and cosmetic.
-#[derive(Default)]
-pub(super) struct Playback {
-    clip: &'static str,
-    time: f32,
-    attack_until: f64,
-}
-
-impl Playback {
-    /// Starts an observed attack clip at `now`.
-    pub fn attack(&mut self, asset: &Asset, now: f64) {
-        self.attack_until = now + f64::from(asset.model.duration(asset.clips.attack).max(0.3));
-    }
-
-    /// Advances and returns the clip and time to pose this frame.
-    pub fn advance(
-        &mut self,
-        asset: &Asset,
-        speed: f64,
-        dead: bool,
-        now: f64,
-        dt: f64,
-        reduced: bool,
-        guarding: bool,
-    ) -> (&'static str, f32) {
-        let c = &asset.clips;
-        let (clip, rate, once) = if dead {
-            (c.death, 1., true)
-        } else if now < self.attack_until && !reduced {
-            (c.attack, 1., true)
-        } else if speed > 3.2 {
-            (c.run, (speed / 5.).clamp(0.7, 1.5), false)
-        } else if speed > 0.25 {
-            (c.walk, (speed / 1.8).clamp(0.6, 1.6), false)
-        } else {
-            // A standing raised guard holds the shield up; walking keeps the walk.
-            (c.guard.filter(|_| guarding).unwrap_or(c.idle), 1., false)
-        };
-        if clip != self.clip {
-            self.clip = clip;
-            self.time = 0.;
-        } else if !reduced {
-            self.time += (dt * rate) as f32;
-        }
-        let duration = asset.model.duration(clip);
-        let time = if duration <= 0. {
-            0.
-        } else if once {
-            self.time.min(duration)
-        } else {
-            self.time % duration
-        };
-        (clip, time)
-    }
+/// The parsed model of `kind`, imported once per process on first use.
+pub(super) fn asset(kind: Kind) -> &'static Asset {
+    static ASSETS: OnceLock<Vec<OnceLock<Asset>>> = OnceLock::new();
+    let slots = ASSETS.get_or_init(|| Kind::ALL.iter().map(|_| OnceLock::new()).collect());
+    let index = Kind::ALL
+        .iter()
+        .position(|candidate| *candidate == kind)
+        .expect("every kind is listed");
+    slots[index].get_or_init(|| Asset {
+        model: Model::parse(&source(kind), kind.clips().idle)
+            .expect("an imported unit model is valid glTF"),
+    })
 }

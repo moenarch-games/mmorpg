@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { EntityState, ZoneEvent, ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
-import { placeUnit } from "../src/world/unit-nodes";
-import { bodyHalfHeightUnits, creatureBodyNodes, disposition } from "../src/world/units/creature-bodies";
 import { abilitySlots, cancelCast, useAbilitySlot } from "../src/world/units/abilities";
 import { CombatHud, FEEDBACK_MS, combatStatus, eventText, unitName } from "../src/world/units/combat-hud";
 import { CLICK_SLOP_PIXELS, SecondaryClick, attackToggle, nextTabTarget } from "../src/world/units/targeting";
@@ -230,39 +228,5 @@ describe("combat HUD lines", () => {
     expect(feedback.textContent).toBe("");
     hud.update(tick(7n, [missed]), catalog, 5_000);
     expect([status.textContent, feedback.textContent]).toEqual(["Health 50/50 · Level 1", "You miss Timber Wolf."]);
-  });
-});
-
-describe("placeholder bodies", () => {
-  test("colour by disposition, size by template, lie flat when dead and ring the target", () => {
-    const wolf = creature(108, 300, 400);
-    const boar = { ...creature(120, 0, 0, { hostile: false }), appearance: 2 };
-    const guard: EntityState = { ...playerEntity(6, [0, 90, 0]), kind: "npc", appearance: 6, level: 10 };
-    expect([wolf, boar, guard].map(disposition)).toEqual(["hostile", "neutral", "friendly"]);
-    expect(bodyHalfHeightUnits(wolf, catalog, 90)).toBe(45);
-    expect(bodyHalfHeightUnits(guard, catalog, 90)).toBe(90);
-
-    const placement = placeUnit(wolf, 45, 0, 100);
-    const nodes = creatureBodyNodes(wolf, placement, catalog, true);
-    expect(nodes.map((node) => node.id)).toEqual([
-      "unit-creature-108-target-ring", "unit-creature-108-body", "unit-creature-108-nose",
-    ]);
-    const body = nodes[1]!;
-    expect(body.geometry).toEqual({ kind: "box", size: [0.8, 0.9, 0.8] });
-    expect(body.transform?.translation).toEqual([3, 0.45, 4]);
-    const hostileColour = body.color;
-    const neutralColour = creatureBodyNodes(boar, placeUnit(boar, 45, 0, 100), catalog, false)[0]!.color;
-    const guardColour = creatureBodyNodes(guard, placeUnit(guard, 90, 0, 100), catalog, false)[0]!.color;
-    const red = (color: typeof hostileColour) => Number.parseInt(String(color).slice(1, 3), 16);
-    const green = (color: typeof hostileColour) => Number.parseInt(String(color).slice(3, 5), 16);
-    expect(red(hostileColour)).toBeGreaterThan(green(hostileColour) + 40);
-    expect(green(guardColour)).toBeGreaterThan(red(guardColour) + 40);
-    expect(red(neutralColour)).toBeGreaterThan(150);
-    expect(green(neutralColour)).toBeGreaterThan(120);
-
-    const corpse = creatureBodyNodes(creature(108, 300, 400, { dead: true }), placement, catalog, false);
-    expect(corpse.map((node) => node.id)).toEqual(["unit-creature-108-body"]);
-    expect(corpse[0]!.geometry).toEqual({ kind: "box", size: [0.8, 0.16, 0.9] });
-    expect(creatureBodyNodes(playerEntity(7, [0, 90, 0]), placement, catalog, true)).toEqual([]);
   });
 });

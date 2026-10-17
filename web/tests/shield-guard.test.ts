@@ -5,7 +5,6 @@ import { actionBindingLabels } from "../src/input/binding-labels";
 import { decodeSnapshot, type ZoneEvent } from "../src/replication";
 import { combatTexts } from "../src/world/units/combat-text";
 import { GUARD_LANE_THRESHOLD_PX, ShieldGuardHold, canGuard, guardDisplay, laneFromOffset, padGuardLane } from "../src/world/units/shield-guard";
-import { SWEEP_HEIGHT_METRES, SpellEffects, allEffectNodes, type Anchor } from "../src/world/units/spell-effects";
 import { encodeTestSnapshot } from "./support/snapshot-encoder";
 import { playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -72,22 +71,6 @@ describe("shield guard presentation", () => {
     expect(combatTexts(decoded)).toEqual([{ kind: "block", text: "Block middle" }, { kind: "guard-break", text: "Guard broken!" }]);
   });
 
-  test("a protecting guard shows a raised shield and a block flashes at the lane", () => {
-    const anchor: Anchor = { x: 0, feetY: 0, centreY: 0.9, z: 0, yaw: 0 };
-    const resolve = () => anchor;
-    const effects = new SpellEffects();
-    const state = snapshot([{ kind: "blocked", source: WOLF, target: VIEWER, lane: "high", amount: 2 }], { raised: "high", protecting: true, broken: 0 });
-    effects.spawn(state, 0, resolve);
-    effects.sync(state, 0, resolve);
-    const active = effects.active(0.1);
-    expect(active.map((effect) => effect.visual).sort()).toEqual(["block", "guard"]);
-    for (const node of allEffectNodes(active, 0.1, resolve)) {
-      expect(node.transform.translation?.[1]).toBeCloseTo(SWEEP_HEIGHT_METRES.high);
-    }
-    // Lowering the guard in the zone removes the raised shield.
-    effects.sync(snapshot([]), 1, resolve);
-    expect(effects.active(1).some((effect) => effect.visual === "guard")).toBe(false);
-  });
 });
 
 describe("pad shield guard", () => {

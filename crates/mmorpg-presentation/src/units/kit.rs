@@ -1,24 +1,23 @@
 //! Unit joint frames and shared geometry; contains no gameplay or GPU state.
-use crate::world::{DrawMaterial, SceneDraw, geometry::*};
+use crate::{Draw, Material, geometry::*};
 use std::{
     collections::BTreeMap,
     f64::consts::{PI, TAU},
     sync::Arc,
 };
-use three_d_animation::Mat4;
-pub(super) type Q = [f64; 4];
-pub(super) const IQ: Q = [0., 0., 0., 1.];
-#[derive(Clone, Copy)]
-pub(super) struct Frame {
+pub type Q = [f64; 4];
+pub const IQ: Q = [0., 0., 0., 1.];
+#[derive(Clone, Copy, Debug)]
+pub struct Frame {
     pub p: V,
     pub q: Q,
 }
-pub(super) fn qa(axis: usize, a: f64) -> Q {
+pub fn qa(axis: usize, a: f64) -> Q {
     let mut q = [0., 0., 0., (a / 2.).cos()];
     q[axis] = (a / 2.).sin();
     q
 }
-pub(super) fn qm(a: Q, b: Q) -> Q {
+pub fn qm(a: Q, b: Q) -> Q {
     let [x, y, z, w] = a;
     let [u, v, t, s] = b;
     [
@@ -28,7 +27,7 @@ pub(super) fn qm(a: Q, b: Q) -> Q {
         w * s - x * u - y * v - z * t,
     ]
 }
-pub(super) fn qr(q: Q, v: V) -> V {
+pub fn qr(q: Q, v: V) -> V {
     let [x, y, z, w] = q;
     let [a, b, c] = v;
     let (cx, cy, cz) = (y * c - z * b, z * a - x * c, x * b - y * a);
@@ -38,20 +37,20 @@ pub(super) fn qr(q: Q, v: V) -> V {
         c + 2. * (w * cz + x * cy - y * cx),
     ]
 }
-pub(super) fn child(f: Frame, p: V, q: Q) -> Frame {
+pub fn child(f: Frame, p: V, q: Q) -> Frame {
     let d = qr(f.q, p);
     Frame {
         p: std::array::from_fn(|i| f.p[i] + d[i]),
         q: qm(f.q, q),
     }
 }
-pub(super) fn offset(f: Frame, p: V) -> Frame {
+pub fn offset(f: Frame, p: V) -> Frame {
     child(f, p, IQ)
 }
-pub(super) fn tilt(pitch: f64, roll: f64, yaw: f64) -> Q {
+pub fn tilt(pitch: f64, roll: f64, yaw: f64) -> Q {
     qm(qm(qa(1, yaw), qa(0, pitch)), qa(2, roll))
 }
-pub(super) fn model(f: Frame, s: V) -> Mat4 {
+pub fn model(f: Frame, s: V) -> [f32; 16] {
     let len = f.q.iter().map(|v| v * v).sum::<f64>().sqrt();
     let [x, y, z, w] = f.q.map(|v| v / len);
     let a = Affine {
@@ -70,8 +69,8 @@ pub(super) fn model(f: Frame, s: V) -> Mat4 {
     };
     let a = compose(&[a, scale(s[0], s[1], s[2])]);
     let m = a.m;
-    Mat4 {
-        elements: [
+    {
+        [
             m[0] as f32,
             m[3] as f32,
             m[6] as f32,
@@ -88,18 +87,18 @@ pub(super) fn model(f: Frame, s: V) -> Mat4 {
             a.t[1] as f32,
             a.t[2] as f32,
             1.,
-        ],
+        ]
     }
 }
-pub(super) fn rgb(c: u32) -> [f32; 3] {
+pub fn rgb(c: u32) -> [f32; 3] {
     [16, 8, 0].map(|s| ((c >> s) & 255) as f32 / 255.)
 }
-pub(super) fn shade(c: u32, f: f64) -> u32 {
+pub fn shade(c: u32, f: f64) -> u32 {
     [16, 8, 0].into_iter().fold(0, |o, s| {
         o | (((f64::from((c >> s) & 255) * f).round().clamp(0., 255.) as u32) << s)
     })
 }
-pub(super) fn mix(c: u32, d: u32, t: f64) -> u32 {
+pub fn mix(c: u32, d: u32, t: f64) -> u32 {
     [16, 8, 0].into_iter().fold(0, |o, s| {
         let a = f64::from((c >> s) & 255);
         let b = f64::from((d >> s) & 255);
@@ -107,21 +106,21 @@ pub(super) fn mix(c: u32, d: u32, t: f64) -> u32 {
     })
 }
 #[derive(Default)]
-pub(super) struct Resources {
-    meshes: BTreeMap<String, Arc<three_d_core::Mesh>>,
+pub struct Resources {
+    meshes: BTreeMap<String, Arc<Geometry>>,
 }
 impl Resources {
     pub fn retire_unused(&mut self) {
         self.meshes.retain(|_, mesh| Arc::strong_count(mesh) > 1);
     }
-    pub fn mesh(&mut self, key: &str, build: impl FnOnce() -> Geometry) -> Arc<three_d_core::Mesh> {
+    pub fn mesh(&mut self, key: &str, build: impl FnOnce() -> Geometry) -> Arc<Geometry> {
         Arc::clone(
             self.meshes
                 .entry(key.into())
-                .or_insert_with(|| Arc::new(build().mesh())),
+                .or_insert_with(|| Arc::new(build())),
         )
     }
-    pub fn draw(&mut self, id: String, shape: &str, c: u32, f: Frame, s: V) -> SceneDraw {
+    pub fn draw(&mut self, id: String, shape: &str, c: u32, f: Frame, s: V) -> Draw {
         let key = format!("humanoid:{shape}");
         let mesh = self.mesh(&key, || match shape {
             "limb" => {
@@ -151,12 +150,12 @@ impl Resources {
                 0.5,
             ),
         });
-        SceneDraw {
+        Draw {
             id,
             resource_key: key,
-            mesh,
+            geometry: mesh,
             model: model(f, s),
-            material: DrawMaterial {
+            material: Material {
                 color: rgb(c),
                 emissive: [0.; 3],
                 opacity: 1.,
@@ -165,7 +164,7 @@ impl Resources {
             },
         }
     }
-    pub fn primitive(&mut self, id: String, shape: Primitive, c: u32, f: Frame) -> SceneDraw {
+    pub fn primitive(&mut self, id: String, shape: Primitive, c: u32, f: Frame) -> Draw {
         let key = format!("unit-primitive:{shape:?}");
         let mesh = self.mesh(&key, || match shape {
             Primitive::Box(size) => {
@@ -186,12 +185,12 @@ impl Resources {
                 g
             }
         });
-        SceneDraw {
+        Draw {
             id,
             resource_key: key,
-            mesh,
+            geometry: mesh,
             model: model(f, [1.; 3]),
-            material: DrawMaterial {
+            material: Material {
                 color: rgb(c),
                 emissive: [0.; 3],
                 opacity: 1.,
@@ -202,7 +201,7 @@ impl Resources {
     }
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Primitive {
+pub enum Primitive {
     Box(V),
     Ball(f64),
     Post(f64, f64),
@@ -234,7 +233,7 @@ fn sphere(r: f64) -> Geometry {
     }
     g
 }
-pub(super) fn root(p: V, yaw: f64, pivot: f64, lay: Option<(Q, f64)>) -> Frame {
+pub fn root(p: V, yaw: f64, pivot: f64, lay: Option<(Q, f64)>) -> Frame {
     let base = Frame { p, q: qa(1, yaw) };
     if let Some((q, lift)) = lay {
         let [x, y, z] = qr(q, [0., pivot, 0.]);

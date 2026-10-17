@@ -19,24 +19,3 @@ fn pages_reference_inventory_covers_current_world_scope() {
         );
     }
 }
-
-#[test]
-fn reference_uses_shared_wasm_relief_at_every_entity_position() {
-    let (cases, output) = reference::shared();
-    let mut nonflat = false;
-    for case in cases {
-        if let Some(entities) = case["entities"].as_array() {
-            for entity in entities {
-                let x: i32 = entity["position"][0].as_i64().unwrap().try_into().unwrap();
-                let z: i32 = entity["position"][2].as_i64().unwrap().try_into().unwrap();
-                let expected = mmorpg_wasm::scenery::relief_at(x, z);
-                assert_eq!(output["reliefSamples"][format!("{x},{z}")], expected);
-                nonflat |= expected != 0;
-            }
-        }
-    }
-    assert!(
-        nonflat,
-        "oracle must exercise actual nonflat shared relief, not assume zero"
-    );
-}

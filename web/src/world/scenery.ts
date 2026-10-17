@@ -1,4 +1,5 @@
 import type { StaticSceneContent } from "./scenery-nodes";
+import type { UnitPresenterHandle } from "./unit-presenter";
 /**
  * Presentation scenery from the WASM `scenery()` export (format
  * `mmorpg.scenery` v3), which maps the Rust `mmorpg-scenery` value the native
@@ -75,6 +76,10 @@ export type Scenery = {
 /** What the WASM module exposes about static zone content. */
 export type SceneryContent = StaticSceneContent & {
   scenery(): string;
+  /** The shared unit presenter (#184) of one joined player. */
+  UnitPresenter: new (player: number) => UnitPresenterHandle;
+  /** The rest clip an imported unit model is measured in. */
+  importedRestClip(kind: string): string | undefined;
   areaAt(x: number, z: number): number | undefined;
   reliefAt(x: number, z: number): number;
 };
@@ -83,6 +88,9 @@ export type SceneryProvider = {
   readonly scenery: Scenery;
   /** The shared static world both clients draw (#184), straight from the WASM owner. */
   readonly staticScene: StaticSceneContent;
+  /** A fresh shared unit presenter for `player`. */
+  unitPresenter(player: number): UnitPresenterHandle;
+  importedRestClip(kind: string): string;
   /** The named core area at `(x, z)` in units, if any. */
   areaAt(x: number, z: number): Area | null;
   /** Presentation relief at `(x, z)` in units; units are drawn raised by it. */
@@ -342,6 +350,14 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
   return {
     scenery,
     staticScene: content,
+    unitPresenter: (player) => new content.UnitPresenter(player),
+    importedRestClip(kind) {
+      const clip = content.importedRestClip(kind);
+      if (clip === undefined) {
+        throw new Error(`No imported unit model ${kind}.`);
+      }
+      return clip;
+    },
     areaAt(x, z) {
       const id = content.areaAt(Math.round(x), Math.round(z));
       if (id === undefined) {

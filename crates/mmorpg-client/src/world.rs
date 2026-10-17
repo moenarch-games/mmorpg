@@ -71,10 +71,10 @@ pub struct WorldScene {
 
 /// Lowers shared draws, uploading each distinct resource's mesh once.
 #[derive(Default)]
-struct Lowering(BTreeMap<String, Arc<three_d_core::Mesh>>);
+pub(crate) struct Lowering(BTreeMap<String, Arc<three_d_core::Mesh>>);
 
 impl Lowering {
-    fn draw(&mut self, draw: &mmorpg_presentation::Draw) -> SceneDraw {
+    pub(crate) fn draw(&mut self, draw: &mmorpg_presentation::Draw) -> SceneDraw {
         use geometry::ToMesh;
         let mesh = self
             .0
@@ -89,6 +89,16 @@ impl Lowering {
             },
             material: material(&draw.material),
         }
+    }
+
+    /// Drops meshes whose resources no longer appear in `draws`; per-frame
+    /// unit and effect geometry would otherwise accumulate.
+    pub(crate) fn retain_used(&mut self, draws: &[SceneDraw]) {
+        let used: std::collections::BTreeSet<_> = draws
+            .iter()
+            .map(|draw| draw.resource_key.as_str())
+            .collect();
+        self.0.retain(|key, _| used.contains(key.as_str()));
     }
 }
 
