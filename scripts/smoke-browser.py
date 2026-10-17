@@ -656,43 +656,70 @@ class BrowserAcceptance(unittest.TestCase):
 
     # Wolf 107, the nearest Wolfrun Woods spawn to the hub, stands at (-62, -18) m (units.rs).
     NEAREST_ANIMAL_SPAWN = (-62.0, -18.0)
+    # The hub spawn is (-15.5, 12.5) m. A building south of it (z ≈ 7.3) and the palisade west of
+    # it (x ≈ -31.4) block the straight line to the animal spawn, so the route leaves north, heads
+    # west past the palisade and then turns to the woods.
+    ROUTE_TO_ANIMAL_SPAWN = ((-15.5, 19.0), (-40.0, 19.0), NEAREST_ANIMAL_SPAWN)
 
     def self_position(self):
         me = self.debug_stats()["self"]
         return me["x"], me["z"]
 
-    def walk_until_animal_projected(self, max_steps=40):
+    def walk_until_animal_projected(self, max_legs=40, ticks_per_leg=15):
         """The authoritative player starts on the hub grid, outside the interest radius of the woods, so
-        a creature is only projected once the player walks toward the nearest animal spawn. Returns the
-        nearest projected animal; fails with a clear message when none appears within the bounded walk."""
-        goal_x, goal_z = self.NEAREST_ANIMAL_SPAWN
-        key = None
-        for _ in range(max_steps):
-            x, z = self.self_position()
-            animal = self.page.evaluate("([x, z]) => window.__valeDebug.nearestAnimal(x, z)", [x, z])
-            if animal:
-                return animal
-            if key is None:
-                # W/S/A/D move relative to the camera heading: probe each and keep the one that closes the distance.
-                best = None
-                for candidate in ("KeyW", "KeyS", "KeyA", "KeyD"):
-                    before = self.self_position()
-                    self.page.keyboard.down(candidate)
-                    self.frames(10)
-                    self.page.keyboard.up(candidate)
-                    self.frames(2)
-                    after = self.self_position()
-                    gain = math.hypot(goal_x - before[0], goal_z - before[1]) - math.hypot(goal_x - after[0], goal_z - after[1])
-                    if best is None or gain > best[0]:
-                        best = (gain, candidate)
-                key = best[1]
-                continue
-            self.page.keyboard.down(key)
-            self.frames(12)
-            self.page.keyboard.up(key)
-            self.frames(2)
+        a creature is only projected once the player walks toward the nearest animal spawn.
+
+        The zone's frame ticking pauses while the walk issues real move commands and advances real WASM
+        ticks, re-aiming at the next route waypoint from the projected player position every tick, so
+        the walk depends on neither frame timing nor the camera. Returns the nearest projected animal;
+        on failure reports each leg's issued input, tick, position and progress."""
+        self.page.evaluate("""route => {
+          const source = window.__valeDebug.worldSource();
+          window.__walk = {advance: source.advance, queue: [], route};
+          source.advance = () => window.__walk.queue.splice(0);
+        }""", [list(point) for point in self.ROUTE_TO_ANIMAL_SPAWN])
+        log = []
+        try:
+            for _ in range(max_legs):
+                leg = self.page.evaluate("""ticks => {
+                  const source = window.__valeDebug.worldSource();
+                  const {advance, queue, route} = window.__walk;
+                  const selfAt = projection => {
+                    const me = projection.entities.find(e => e.kind === 'player' && e.entityId === projection.viewerId);
+                    return [me.position[0] / 100, me.position[2] / 100];
+                  };
+                  let latest = source.latestProjection();
+                  const start = selfAt(latest);
+                  let facing = null;
+                  for (let i = 0; i < ticks; i++) {
+                    const [x, z] = selfAt(latest);
+                    // Drop reached waypoints; the last one, the spawn itself, stays the heading.
+                    while (route.length > 1 && Math.hypot(route[0][0] - x, route[0][1] - z) < 1) route.shift();
+                    // Core yaw: 65536 steps per turn, facing direction (sin, cos) in (x, z).
+                    facing = Math.round(Math.atan2(route[0][0] - x, route[0][1] - z) / (2 * Math.PI) * 65536) & 0xffff;
+                    source.sendCommand({kind: 'move', forward: 1, strafe: 0, facing});
+                    const projections = advance.call(source, 1 / 30);
+                    queue.push(...projections);
+                    if (projections.length) latest = projections[projections.length - 1];
+                  }
+                  return {tick: Number(latest.tick), facing, waypoint: route[0], start, end: selfAt(latest)};
+                }""", ticks_per_leg)
+                self.frames(3)
+                (sx, sz), (x, z) = leg["start"], leg["end"]
+                moved = math.hypot(x - sx, z - sz)
+                remaining = math.hypot(self.NEAREST_ANIMAL_SPAWN[0] - x, self.NEAREST_ANIMAL_SPAWN[1] - z)
+                log.append(f"tick {leg['tick']}: move forward facing {leg['facing']} toward {leg['waypoint']},"
+                           f" player ({sx:.2f}, {sz:.2f}) -> ({x:.2f}, {z:.2f}), moved {moved:.2f} m, {remaining:.2f} m from the spawn")
+                animal = self.page.evaluate("([x, z]) => window.__valeDebug.nearestAnimal(x, z)", list(self.self_position()))
+                if animal:
+                    return animal
+                if moved < 0.5:
+                    log.append("stalled: the player made no progress over the last leg")
+                    break
+        finally:
+            self.page.evaluate("() => { window.__valeDebug.worldSource().advance = window.__walk.advance; }")
         units = self.page.evaluate("window.__valeDebug.projectedUnits()")
-        self.fail(f"No wolf, boar or rat was projected after walking toward {self.NEAREST_ANIMAL_SPAWN}; player at {self.self_position()}, projected: {units}")
+        self.fail(f"No wolf, boar or rat was projected walking toward {self.NEAREST_ANIMAL_SPAWN}; projected: {units}\n" + "\n".join(log))
 
     def test_creature_and_npc_models_render_over_the_placeholder_boxes(self):
         """Debug viewpoints beside a projected wolf/boar/rat and a gate guard show the low-poly models,
