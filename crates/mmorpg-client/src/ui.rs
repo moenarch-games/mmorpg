@@ -616,6 +616,22 @@ impl GameUi {
                     if let Some(stance) = viewer.stance {
                         ui.colored_label(Color32::from_rgb(230, 200, 120), stance_text(stance));
                     }
+                    // The sword → Shield Bash follow-up (#157).
+                    match viewer.combo {
+                        Some(mmorpg_core::ComboPhase::Open) => {
+                            ui.colored_label(
+                                Color32::from_rgb(255, 210, 90),
+                                "Combo: Shield Bash now",
+                            );
+                        }
+                        Some(mmorpg_core::ComboPhase::Impact) => {
+                            ui.colored_label(
+                                Color32::from_rgb(200, 180, 120),
+                                "Combo: slash landing, Shield Bash follows",
+                            );
+                        }
+                        None => {}
+                    }
                     auras(ui, &snapshot.auras);
                 });
             });

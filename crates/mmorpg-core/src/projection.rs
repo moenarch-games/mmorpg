@@ -133,6 +133,8 @@ pub struct ViewerState {
     pub guard: GuardView,
     /// A living Warden's melee stance toward its target (#155).
     pub stance: Option<crate::MeleeStance>,
+    /// A pending sword → Shield Bash follow-up (#157).
+    pub combo: Option<crate::ComboPhase>,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -279,6 +281,7 @@ impl ZoneSimulation {
                         broken: viewer.guard.broken,
                     },
                     stance: self.melee_stance(player_id, viewer.target)?,
+                    combo: Self::combo_phase(viewer),
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),

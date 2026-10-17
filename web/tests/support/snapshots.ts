@@ -14,6 +14,7 @@ export const HEALTHY_VIEWER: ViewerState = {
   classChoice: null, resource: null, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
   guard: { raised: null, protecting: false, broken: 0 },
   stance: null,
+  combo: null,
 };
 
 /** Nothing equipped. */

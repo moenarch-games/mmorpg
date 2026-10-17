@@ -70,7 +70,20 @@ impl ZoneSimulation {
         target: Option<EntityRef>,
         now: u64,
     ) -> Result<Refusal, ZoneError> {
-        let ability = match self.ready_ability(player_id, ability, false) {
+        // A Shield Bash in an open combo window follows up on the struck
+        // creature and may ignore the slash's global cooldown (#157); any
+        // other ability use ends a pending combo.
+        let combo = self
+            .players
+            .get(&player_id)
+            .and_then(|player| player.combo)
+            .filter(|combo| combo.is_open() && ability == crate::ability::ids::SHIELD_BASH.get());
+        self.update_player(player_id, |player| player.combo = None);
+        let target = match combo {
+            Some(combo) => Some(EntityRef::Creature(combo.target)),
+            None => target,
+        };
+        let ability = match self.ready_ability(player_id, ability, false, combo.is_some()) {
             None => return Ok(None),
             Some(Err(code)) => return Ok(Some((code, None))),
             Some(Ok(ability)) => ability,
@@ -154,6 +167,7 @@ impl ZoneSimulation {
         player_id: PlayerId,
         ability: u8,
         directed: bool,
+        waive_global_cooldown: bool,
     ) -> Option<Result<&'static Ability, ErrorCode>> {
         let player = self.players.get(&player_id)?;
         let Some(choice) = player.class else {
@@ -174,7 +188,7 @@ impl ZoneSimulation {
         if player.cast.is_some() {
             return Some(Err(ErrorCode::AlreadyCasting));
         }
-        if player.global_cooldown > 0
+        if (player.global_cooldown > 0 && !waive_global_cooldown)
             || player
                 .cooldowns
                 .iter()

@@ -141,6 +141,8 @@ pub struct CanonicalPlayerCombat {
     pub abilities: CanonicalPlayerAbilities,
     /// Airborne state and landing recovery (#155).
     pub landing: crate::LandingState,
+    /// A pending sword → Shield Bash follow-up (#157).
+    pub combo: Option<crate::ComboOpening>,
 }
 
 /// Class, resource and ability state of a player; all zero and empty until
@@ -191,6 +193,7 @@ impl Default for CanonicalPlayerCombat {
             events: Vec::new(),
             abilities: CanonicalPlayerAbilities::default(),
             landing: crate::LandingState::default(),
+            combo: None,
         }
     }
 }
@@ -312,6 +315,7 @@ impl ZoneSimulation {
                             guard: state.guard,
                         },
                         landing: state.landing,
+                        combo: state.combo,
                     },
                     chat_ready_at: state.chat_ready_at,
                     chat: state.chat.clone(),
@@ -482,6 +486,12 @@ impl ZoneSimulation {
             ));
         }
         validate_player_abilities(&combat.abilities, combat.level, combat.health > 0)?;
+        if combat
+            .combo
+            .is_some_and(|combo| !combo.is_valid() || combat.health == 0)
+        {
+            return Err(ZoneError::new("player combo state is out of range"));
+        }
         if !combat.landing.is_valid() {
             return Err(ZoneError::new("player landing state is out of range"));
         }
@@ -508,6 +518,7 @@ impl ZoneSimulation {
                 jump_pending,
                 guard,
                 landing: combat.landing,
+                combo: combat.combo,
                 last_sequence: player.last_sequence,
                 spawn_slot: player.spawn_slot,
                 copper: player.copper,
@@ -691,6 +702,13 @@ impl ZoneSimulation {
             cast.and_then(|cast| cast.target).is_none_or(exists)
                 && auras.iter().all(|aura| exists(aura.caster))
         };
+        if self.players.values().any(|player| {
+            player
+                .combo
+                .is_some_and(|combo| !self.creatures.contains_key(&combo.target))
+        }) {
+            return Err(ZoneError::new("a combo follows up on an unknown creature"));
+        }
         // Players cast at creatures and creatures at players.
         let player_targets = self
             .players

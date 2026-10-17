@@ -173,6 +173,8 @@ describe("combat HUD text", () => {
     expect(combatStatus(view([], { health: 0, dead: true }), catalog)).toContain("Press R to release");
     // A Warden's movement-dependent melee stance (#155) follows the level.
     expect(combatStatus(view([], { stance: "charging" }), catalog)).toBe("Health 50/50 · Level 1 · Charging: +20% melee damage");
+    // An open sword → Shield Bash follow-up (#157) is announced.
+    expect(combatStatus(view([], { combo: "open" }), catalog)).toBe("Health 50/50 · Level 1 · Combo: Shield Bash now");
     expect(unitName({ kind: "npc", id: 5 }, view([]), catalog)).toBe("Brother Aldous");
     expect(unitName({ kind: "player", id: 7 }, view([]), catalog)).toBe("you");
   });

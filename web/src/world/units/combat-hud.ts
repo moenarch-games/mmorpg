@@ -83,6 +83,9 @@ export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): s
   if (viewer.stance) {
     parts.push(STANCE_TEXT[viewer.stance]);
   }
+  if (viewer.combo) {
+    parts.push(viewer.combo === "open" ? "Combo: Shield Bash now" : "Combo: slash landing, Shield Bash follows");
+  }
   if (viewer.cast) {
     const verb = viewer.cast.channel ? "Channelling" : "Casting";
     parts.push(`${verb} ${abilityName(viewer.cast.ability, catalog)} ${viewer.cast.elapsed}/${viewer.cast.total}`);

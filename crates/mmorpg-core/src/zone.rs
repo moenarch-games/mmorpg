@@ -78,6 +78,8 @@ pub(crate) struct PlayerState {
     pub(crate) guard: crate::GuardState,
     /// Airborne state and landing recovery; Warden melee waits it out (#155).
     pub(crate) landing: crate::LandingState,
+    /// A confirmed slash's pending Shield Bash follow-up (#157).
+    pub(crate) combo: Option<crate::ComboOpening>,
     pub(crate) last_sequence: u32,
     pub(crate) spawn_slot: u16,
     pub(crate) level: u8,
@@ -135,6 +137,7 @@ impl PlayerState {
             jump_pending: false,
             guard: crate::GuardState::default(),
             landing: crate::LandingState::default(),
+            combo: None,
             last_sequence: 0,
             spawn_slot,
             level: PLAYER_START_LEVEL,
@@ -573,6 +576,7 @@ impl ZoneSimulation {
         self.advance_auras(now)?;
         self.resolve_combat(now)?;
         self.update_timers(now)?;
+        self.advance_combos();
         self.advance_quest_objectives(now)?;
         self.tick = now;
         Ok(())

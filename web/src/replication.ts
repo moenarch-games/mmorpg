@@ -1,4 +1,4 @@
-/** Player-visible protocol v19 only. Canonical recovery state never enters rendering. */
+/** Player-visible protocol v20 only. Canonical recovery state never enters rendering. */
 import { entityKindFromCode, sameEntity, type EntityKind, type EntityRef } from "./entity-ref";
 
 export type { EntityKind, EntityRef } from "./entity-ref";
@@ -70,7 +70,13 @@ export type ViewerState = {
   guard: GuardState;
   /** A living Warden's movement-dependent melee stance (#155); null for other players. */
   stance: MeleeStance | null;
+  /** A pending sword → Shield Bash follow-up (#157): the slash still landing, or the window open. */
+  combo: ComboPhase | null;
 };
+
+/** Wire order of combo phase codes 1–2 (`ComboPhase::code`). */
+export const COMBO_PHASES = ["impact", "open"] as const;
+export type ComboPhase = (typeof COMBO_PHASES)[number];
 
 /** Wire order of melee stance codes 1–5 (`MeleeStance::code`). */
 export const MELEE_STANCES = ["planted", "charging", "moving", "airborne", "landing"] as const;
@@ -252,18 +258,18 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 19;
-const SCHEMA_VERSION = 19;
+const WIRE_VERSION = 20;
+const SCHEMA_VERSION = 20;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
 /**
- * Common prefix 16, revision 8, acknowledged sequence 4, viewer 4, self 27, self abilities 25 (class,
- * resource, global cooldown, cast, melee damage range, guard, melee stance, two list counts), target 12 (target-of-target,
+ * Common prefix 16, revision 8, acknowledged sequence 4, viewer 4, self 27, self abilities 26 (class,
+ * resource, global cooldown, cast, melee damage range, guard, melee stance, combo phase, two list counts), target 12 (target-of-target,
  * its cast, aura count), sheet revision 8/presence 1, loot presence 1, event, chat and entity counts.
  * The sheet (bag, equipment, stat totals, quests) and the corpse sheet follow their presence bytes.
  */
-const FIXED_BYTES = 110;
+const FIXED_BYTES = 111;
 const ENTITY_BYTES = 21;
 const MAX_EVENTS = 16;
 /** (1 077 − 109) / 21: records that fit without events, sheets, cooldowns or auras. */
@@ -761,6 +767,11 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   if ((stanceCode !== 0 && stance === null) || (stance !== null && (dead || classChoice?.classId !== "warden"))) {
     throw new Error("Invalid viewer melee stance");
   }
+  const comboCode = reader.u8();
+  const combo = comboCode === 0 ? null : COMBO_PHASES[comboCode - 1] ?? null;
+  if ((comboCode !== 0 && combo === null) || (combo !== null && (dead || classChoice?.classId !== "warden"))) {
+    throw new Error("Invalid viewer combo phase");
+  }
   const cooldownCount = reader.u8();
   if (cooldownCount > MAX_COOLDOWNS) {
     throw new Error("Snapshot has too many cooldowns");
@@ -908,7 +919,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     zoneId, tick, contentRevision, acknowledgedSequence, viewerId,
     viewer: {
       copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, autoAttacking, target,
-      classChoice, resource, cast, globalCooldown, damage, guard, stance,
+      classChoice, resource, cast, globalCooldown, damage, guard, stance, combo,
     },
     cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, events,
     chat, entities,
