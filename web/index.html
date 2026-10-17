@@ -130,6 +130,7 @@
               <span>Play online <small id="online-server"></small></span>
             </label>
             <button id="enter-world" class="enter-world" type="button" disabled><span id="enter-world-label">Enter World</span><small id="enter-world-note">Loading the zone simulation…</small></button>
+            <button id="selection-settings" class="selection-settings" type="button" aria-haspopup="dialog">Settings</button>
             <p id="selection-note" class="selection-note">Single-player demo: the shared Rust zone simulation runs in this browser. World progress is not saved yet; returning to characters leaves the zone.</p>
           </footer>
         </div>
@@ -138,7 +139,7 @@
       <header class="topbar" data-world-ui hidden>
         <p id="world-mode" class="eyebrow">Greyhaven Vale · local zone host</p>
         <p id="connection-status" class="connection-status" role="status" aria-live="polite"></p>
-        <div class="world-toolbar"><button id="loot-toggle" type="button" aria-controls="loot-panel" aria-expanded="false">Loot</button><button id="bags-toggle" type="button" aria-controls="bags-panel" aria-expanded="false">Bags (B)</button><button id="character-toggle" type="button" aria-controls="character-panel" aria-expanded="false">Character (C)</button><button id="vendor-toggle" type="button" aria-controls="vendor-panel" aria-expanded="false">Vendor (V)</button><button id="quest-log-toggle" type="button" aria-controls="quest-log" aria-expanded="false">Quests (L)</button><button id="return-to-characters" type="button">Characters</button></div>
+        <div class="world-toolbar"><button id="loot-toggle" type="button" aria-controls="loot-panel" aria-expanded="false">Loot</button><button id="bags-toggle" type="button" aria-controls="bags-panel" aria-expanded="false">Bags (B)</button><button id="character-toggle" type="button" aria-controls="character-panel" aria-expanded="false">Character (C)</button><button id="vendor-toggle" type="button" aria-controls="vendor-panel" aria-expanded="false">Vendor (V)</button><button id="quest-log-toggle" type="button" aria-controls="quest-log" aria-expanded="false">Quests (L)</button><button id="world-settings" type="button" aria-haspopup="dialog">Settings</button><button id="return-to-characters" type="button">Characters</button></div>
       </header>
       <aside id="minimap" class="minimap" data-world-ui aria-label="Minimap" hidden>
         <h1 id="area-name" class="minimap-zone">Greyhaven Vale</h1>
@@ -233,6 +234,20 @@
         <progress id="experience-bar" max="1" value="0" aria-labelledby="experience-status"></progress>
         <p id="progression-feedback" aria-live="polite"></p>
       </section>
+      <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+        <header class="settings-header">
+          <h2 id="settings-title">Settings</h2>
+          <button id="settings-close" type="button">Close</button>
+        </header>
+        <div class="settings-body">
+          <nav id="settings-categories" class="settings-categories" aria-label="Settings categories"></nav>
+          <section id="settings-content" class="settings-content"></section>
+        </div>
+        <footer class="settings-footer">
+          <p id="settings-status" class="settings-status" role="status"></p>
+          <button id="settings-reset-all" type="button">Reset all settings</button>
+        </footer>
+      </dialog>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

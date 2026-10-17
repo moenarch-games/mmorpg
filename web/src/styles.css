@@ -353,7 +353,7 @@ button { font: inherit; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sky-clouds { animation: none; }
+  :root:not([data-motion="full"]) .sky-clouds { animation: none; }
 }
 
 #world[data-drag="orbit"] { cursor: grabbing; }

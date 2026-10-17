@@ -144,6 +144,10 @@ export class WorldView {
   readonly #camera: THREE.PerspectiveCamera;
   readonly #elements: WorldViewElements;
   readonly #reducedMotion: MediaQueryList;
+  /** The player's motion preference; `system` follows `prefers-reduced-motion`. */
+  #motion: "system" | "reduce" | "full" = "system";
+  /** Look-drag multiplier from Settings; 1 is the default sensitivity. */
+  #lookSensitivity = 1;
   readonly #overlay: DebugOverlay;
   readonly #frameRate = new FrameRate();
   readonly #sky: SkyLayer;
@@ -248,7 +252,19 @@ export class WorldView {
   }
 
   get #animate(): boolean {
-    return !this.#reducedMotion.matches;
+    return this.#motion === "system" ? !this.#reducedMotion.matches : this.#motion === "full";
+  }
+
+  /** Applies the Settings motion preference (presentation only). */
+  setMotionPreference(motion: "system" | "reduce" | "full"): void {
+    this.#motion = motion;
+  }
+
+  /** Applies the Settings look sensitivity to later camera drags. */
+  setLookSensitivity(multiplier: number): void {
+    if (Number.isFinite(multiplier) && multiplier > 0) {
+      this.#lookSensitivity = multiplier;
+    }
   }
 
   /** Builds the static scene and the minimap image once per loaded world. */
@@ -645,7 +661,8 @@ export class WorldView {
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
     }
-    this.#orbit.orbit(event.clientX - drag.x, event.clientY - drag.y);
+    const sensitivity = this.#lookSensitivity;
+    this.#orbit.orbit((event.clientX - drag.x) * sensitivity, (event.clientY - drag.y) * sensitivity);
     drag.x = event.clientX;
     drag.y = event.clientY;
   }
