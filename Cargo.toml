@@ -26,7 +26,7 @@ mmorpg-control-plane = { path = "crates/mmorpg-control-plane" }
 mmorpg-protocol = { path = "crates/mmorpg-protocol" }
 mmorpg-game-server = { path = "crates/mmorpg-game-server" }
 mmorpg-scenery = { path = "crates/mmorpg-scenery" }
-tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
