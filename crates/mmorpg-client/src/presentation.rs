@@ -629,7 +629,7 @@ impl Presentation {
                             &id,
                             look,
                             Frame { p, q: root.q },
-                            radius,
+                            headwear_radius(radius, height),
                         ));
                     }
                     body
@@ -1106,3 +1106,13 @@ fn yaw_radians(steps: f32) -> f32 {
 fn metres(value: [i32; 3]) -> [f32; 3] {
     value.map(|component| component as f32 / UNITS_PER_METRE as f32)
 }
+
+/// Explicit headwear scales to the skull, not to the head joint's whole
+/// vertex extent: imported Quaternius heads carry their own hats, horns,
+/// ears and hair, which made helms balloon to several head widths.
+fn headwear_radius(head_extent: f64, height: f64) -> f64 {
+    head_extent.min(SKULL_RADIUS_PER_HEIGHT * height)
+}
+
+/// About the skull radius of the bundled chibi-proportioned characters.
+const SKULL_RADIUS_PER_HEIGHT: f64 = 0.12;
