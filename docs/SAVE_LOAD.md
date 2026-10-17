@@ -21,8 +21,15 @@ next page's newer epoch supersedes its lease, so the old page can never write ag
 Corrupt or other-version entries fail closed instead of being replaced. When the browser
 denies storage, characters follow the same rules for the visit only.
 
-The world itself (creatures, corpses, the zone tick) is not saved: issue #40 composes
-character records with versioned zone/world checkpoints in an atomic save-slot bundle.
+The world is saved too (#40, Atlas 3.3.8): with every character commit the page stores
+the local zone's canonical checkpoint **without players** under `mmorpg.local-world.v1`,
+and entering resumes it, so creatures, corpses, respawn timers, the RNG and the zone tick
+continue across reloads. There is one saved world per browser (Atlas 3.3.7), held by one
+tab at a time through a Web Lock; a second tab is told the world is open elsewhere. A
+saved world this build cannot resume (another version or content, or corrupt bytes) is
+replaced by a fresh one and the world label says so. The world and the character records
+are separate saves, not one atomic bundle; production journals and checkpoints follow
+after #30 and game-server#54.
 Earlier builds offered **Save game**, **Load game**, **Export save** and **Import save**
 for a TypeScript-owned position and waystone flag; those controls are gone.
 

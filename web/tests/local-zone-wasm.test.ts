@@ -310,9 +310,22 @@ describe("WASM local zone host", () => {
     await reloaded.join({ id: "local-1", classId: "ranger", sex: "male" });
     expect(self(reloaded).position).toEqual(moved);
     expect(reloaded.latestProjection()?.viewer.classChoice).toEqual({ classId: "warden", sex: "female" });
+    // The browser's one world resumed too, at the tick the first page saved.
+    expect(reloaded.latestProjection()!.tick).toBeGreaterThanOrEqual(20n);
     // The superseded page is fenced: its next commit fails closed.
     expect(() => first.persist()).toThrow("no longer current");
     reloaded.leave();
+  });
+
+  test("an unusable saved world is replaced by a fresh one, and the source says so", async () => {
+    const storage = new MemoryStorage();
+    storage.setItem("mmorpg.local-world.v1", btoa("not a checkpoint"));
+    const { source } = createLocalWorld(wasm, testCharacters(storage));
+    await source.join({ id: "local-1", classId: "warden", sex: "male" });
+    expect(source.worldNotice).toContain("reset");
+    expect(source.latestProjection()!.tick).toBe(0n);
+    source.leave();
+    expect(storage.getItem("mmorpg.local-world.v1")).not.toBe(btoa("not a checkpoint"));
   });
 
   test("camera-relative movement moves the decoded viewer in the expected direction", async () => {
@@ -612,11 +625,12 @@ function refusingWasmSource() {
     enter: (entries, characterId, classId, sex, zoneEpoch) => zone.enter(entries, characterId, classId, sex, zoneEpoch),
     save: (entries, player) => zone.save(entries, player),
     exit: (entries, player) => zone.exit(entries, player),
+    checkpoint: () => zone.checkpoint(),
     submit: (player, sequence, command) => zone.submit(player, sequence, command),
     tick: () => zone.tick(),
     projection: (player) => (corrupt ? zone.projection(player).subarray(1) : zone.projection(player)),
   };
-  return { ...immediate(new LocalZoneSource(handle, testCharacters())), repair: () => { corrupt = false; } };
+  return { ...immediate(new LocalZoneSource(() => handle, testCharacters())), repair: () => { corrupt = false; } };
 }
 
 worldSourceContract("LocalZoneSource over the WASM zone", () => immediate(createLocalWorld(wasm, testCharacters()).source), refusingWasmSource);

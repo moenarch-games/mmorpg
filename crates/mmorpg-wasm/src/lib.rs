@@ -107,6 +107,20 @@ impl LocalZone {
         })
     }
 
+    /// The saved world of [`LocalZone::checkpoint`], resumed at its tick
+    /// without players; throws for bytes of another version or content.
+    #[wasm_bindgen(js_name = fromCheckpoint)]
+    pub fn from_checkpoint(bytes: &[u8]) -> Result<LocalZone, JsError> {
+        Ok(Self {
+            host: LocalZoneHost::from_world_checkpoint(bytes).map_err(js_error)?,
+        })
+    }
+
+    /// The world without its players, to save beside the character records.
+    pub fn checkpoint(&self) -> Result<Vec<u8>, JsError> {
+        self.host.world_checkpoint().map_err(js_error)
+    }
+
     /// Enters the stored character `character` and returns its player ID.
     /// The page plays zone 1 at `zone_epoch`, which must exceed the epoch of
     /// any earlier page. A never-stored character is created with its class
