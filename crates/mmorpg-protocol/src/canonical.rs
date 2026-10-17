@@ -38,6 +38,7 @@ const CHAT_INTENT: u8 = 14;
 const ACCEPT_QUEST_INTENT: u8 = 15;
 const COMPLETE_QUEST_INTENT: u8 = 16;
 const ABANDON_QUEST_INTENT: u8 = 17;
+const DIRECTED_STRIKE_INTENT: u8 = 18;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -143,6 +144,16 @@ fn encode_player(
             PlayerIntent::UseAbility { ability, target } => {
                 payload.extend_from_slice(&[USE_ABILITY_INTENT, ability]);
                 encode_entity_ref(payload, target);
+                continue;
+            }
+            PlayerIntent::DirectedStrike {
+                ability,
+                facing,
+                aim,
+            } => {
+                payload.extend_from_slice(&[DIRECTED_STRIKE_INTENT, ability]);
+                payload.extend_from_slice(&facing.to_be_bytes());
+                payload.extend_from_slice(&crate::wire::encode_aim(aim));
                 continue;
             }
             PlayerIntent::CancelCast => (CANCEL_CAST_INTENT, None),
@@ -468,6 +479,15 @@ fn decode_player(
             intents.push(PlayerIntent::UseAbility {
                 ability,
                 target: decode_entity_ref(payload, offset)?,
+            });
+            continue;
+        }
+        if code == DIRECTED_STRIKE_INTENT {
+            let [ability, high, low, side, height] = take(payload, offset)?;
+            intents.push(PlayerIntent::DirectedStrike {
+                ability,
+                facing: u16::from_be_bytes([high, low]),
+                aim: crate::wire::decode_aim([side, height])?,
             });
             continue;
         }
@@ -984,6 +1004,14 @@ mod tests {
                 ability: u8::MAX,
                 target: None,
             },
+            PlayerIntent::DirectedStrike {
+                ability: 1,
+                facing: 0xabcd,
+                aim: mmorpg_core::StrikeAim::new(
+                    mmorpg_core::StrikeSide::Right,
+                    mmorpg_core::StrikeHeight::Low,
+                ),
+            },
             PlayerIntent::CancelCast,
             PlayerIntent::ChooseClass {
                 class: u8::MAX,
@@ -1061,15 +1089,17 @@ mod tests {
         );
         // Structural checks: a class code beyond the six choices, a point
         // flag without a point and an aura without a caster.
-        // The intent count follows the player's timers; the six intents
-        // occupy 7 + 7 + 6 + 3 + 2 + 2 bytes, then the dropped flag and two events.
+        // The intent count follows the player's timers; the seven intents
+        // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes, then the dropped flag and two events.
         let intents = 16 + 32 + 2 + 158;
-        let player_abilities = intents + 1 + (7 + 7 + 6 + 3 + 2 + 2) + 1 + 1 + 2 * EVENT_BYTES;
+        let player_abilities = intents + 1 + (7 + 7 + 6 + 6 + 3 + 2 + 2) + 1 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
         let cast = player_abilities + 1 + 8 + 1 + 2 * 3;
         let aura = cast + 17 + 1;
         for (offset, value, message) in [
             (player_abilities, 7, "unknown class choice"),
+            // The directed strike's side code.
+            (intents + 1 + 7 + 7 + 4, 3, "unknown strike aim"),
             (cast + 8, 2, "boolean field must be 0 or 1"),
             (aura + 1, 0, "an absent entity must have ID 0"),
         ] {
@@ -1241,7 +1271,7 @@ mod tests {
         let mut cases = vec![
             (auto_attack, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
-            (intents + 1, 18, "malformed pending intent"),
+            (intents + 1, 19, "malformed pending intent"),
         ];
         // The third intent (StartAttack) carries no target.
         cases.push((intents + 1 + 2 * 6 + 1, 2, "malformed pending intent"));

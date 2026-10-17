@@ -840,9 +840,14 @@ mod tests {
                     code: ErrorCode::OutOfRange,
                     target: Some(WOLF),
                 },
-                ZoneEvent::Error {
-                    code: ErrorCode::NotEnoughResource,
-                    target: None,
+                ZoneEvent::StrikeSwept {
+                    source: VIEWER,
+                    target: Some(WOLF),
+                    ability: AbilityId::new(1),
+                    aim: mmorpg_core::StrikeAim::new(
+                        mmorpg_core::StrikeSide::Left,
+                        mmorpg_core::StrikeHeight::High,
+                    ),
                 },
                 ZoneEvent::CastStarted {
                     source: WOLF,
@@ -1032,7 +1037,7 @@ mod tests {
 
     fn fixture_bytes() -> Vec<u8> {
         hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v16.hex"
+            "../../../fixtures/protocol/player-snapshot-v17.hex"
         ))
     }
 
@@ -1100,7 +1105,7 @@ mod tests {
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
         // The previous version's fixture is rejected, never reinterpreted.
         let legacy = hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v15.hex"
+            "../../../fixtures/protocol/player-snapshot-v16.hex"
         ));
         assert_eq!(
             decode_snapshot(&legacy).unwrap_err().to_string(),
@@ -1139,7 +1144,7 @@ mod tests {
         // A dead target has no target detail.
         snapshot.target_detail = TargetDetail::default();
         let expected = hex(include_str!(
-            "../../../fixtures/protocol/player-loot-v16.hex"
+            "../../../fixtures/protocol/player-loot-v17.hex"
         ));
         if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
             let bytes = encode_snapshot(&snapshot).unwrap();
@@ -1255,9 +1260,14 @@ mod tests {
                 "event flags are invalid",
             ),
             (
-                EVENTS + 1 + 6 * EVENT_RECORD_BYTES + 13,
+                EVENTS + 1 + 5 * EVENT_RECORD_BYTES + 13,
                 99,
                 "unknown error code",
+            ),
+            (
+                EVENTS + 1 + 6 * EVENT_RECORD_BYTES + 13,
+                3,
+                "unknown strike aim",
             ),
             (
                 EVENTS + 1 + 7 * EVENT_RECORD_BYTES + 1,
