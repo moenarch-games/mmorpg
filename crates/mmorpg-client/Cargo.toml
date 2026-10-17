@@ -27,9 +27,7 @@ three-d-core = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "df
 three-d-camera = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "df52c324a5692d04d2016d8a29f5bc4368e4aac0" }
 three-d-animation = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "df52c324a5692d04d2016d8a29f5bc4368e4aac0" }
 three-d-projective = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "df52c324a5692d04d2016d8a29f5bc4368e4aac0" }
-# gilrs with libudev loaded at runtime (dlopen) instead of linked at build time,
-# so the client builds without libudev development headers; API-identical to gilrs 0.11.
-gilrs = { package = "gilrs-azul", version = "=0.11.3" }
+gilrs = "=0.11.2"
 input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "abe258b478c26a27f5139264273c63a7079368b4" }
 
 [dev-dependencies]
