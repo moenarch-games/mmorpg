@@ -264,6 +264,7 @@ const worldView = new WorldView(renderer, camera, {
     logQuests: requireElement<HTMLElement>("#quest-log-quests"),
     logFeedback: requireElement<HTMLElement>("#quest-log-feedback"),
     tracker: requireElement<HTMLElement>("#objective"),
+    notice: requireElement<HTMLElement>("#quest-notice"),
     markers: requireElement<HTMLElement>("#quest-markers"),
   },
   chat: {

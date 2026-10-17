@@ -83,7 +83,7 @@ The workspace provides:
 - deterministic creature AI (wander, aggro through the interest index, family assist, chase, leash and evade) with a canonical zone RNG, and recovery continuation proven tick by tick mid-chase, mid-swing, after a death and during an evade;
 - the Greyhaven Vale starter-zone content revision (hub, woods, farm, lake and hollow colliders, a validated spawn plaza, open road corridors, named areas, 59 creature spawns of seven templates, nine NPCs and a graveyard), hosted by the zone host and the browser's WASM local host, and rendered by both clients from presentation-only `mmorpg-scenery` (props, relief terrain, water) plus creature and NPC bodies (procedural models in the browser, low-poly box-built models in the native client);
 - quests: the nine-quest Greyhaven chain from the hub's quest givers to Garrick Redbrand and back, with kill, collect (quest-only Wolf Pelt drops), talk and explore objectives, prerequisites, a ten-quest log, XP/copper rewards with one item choice and per-player `!`/`?` NPC markers, all in core and recovered exactly; a scripted Warden completes the first three quests on the hosted content;
-- strict Rust/browser snapshot v15 and command v9 compatibility tests (self, target, event and chat sections, compact priority-ordered unit records, facing, viewer identity, golden command bytes) and bounded client interpolation;
+- strict Rust/browser snapshot v16 and command v9 compatibility tests (self, target, event and chat sections, compact priority-ordered unit records, facing, viewer identity, golden command bytes) and bounded client interpolation;
 - player projections capped by deterministic relevance priority and packed by section priority into a measured single-datagram byte budget;
 - native session resume with preserved player identity, command sequencing and connection-epoch resets;
 - a development [browser online mode](#browser-online-mode) in which browser tabs join a zone host over WebTransport with the native client's session semantics (the Pages build stays offline);
@@ -232,7 +232,7 @@ bun test
 bun run build
 ```
 
-Committed Rust and Bun lockfiles make local and CI resolution reproduce the same dependency graphs. Rust and browser tests both consume `fixtures/protocol/player-snapshot-v15.hex`, `fixtures/protocol/commands-v9.hex` and the `game-server` session frames in `fixtures/protocol/session-frames-v3.hex`.
+Committed Rust and Bun lockfiles make local and CI resolution reproduce the same dependency graphs. Rust and browser tests both consume `fixtures/protocol/player-snapshot-v16.hex`, `fixtures/protocol/commands-v9.hex` and the `game-server` session frames in `fixtures/protocol/session-frames-v3.hex`.
 
 The browser's online mode has its own end-to-end check against a real zone host (needs cargo, OpenSSL, a built `web/dist` and Playwright Chromium, like `scripts/smoke-browser.py`):
 
