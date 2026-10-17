@@ -210,8 +210,6 @@ Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative du
 
 ## Validation
 
-The maintained `mmorpg-core` release library has an opt-in [native size budget and reviewed baseline](docs/SIZE_EVIDENCE.md). Run `bun run --cwd web size:budget` on Linux x64 after installing the locked web development dependencies. Archive bytes remain separate from runtime performance evidence.
-
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
