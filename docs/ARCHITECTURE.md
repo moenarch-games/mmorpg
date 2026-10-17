@@ -10,6 +10,7 @@ The scaling unit is an authoritative zone. Each zone runs one deterministic phys
 | Physics | Pinned engine, shared Greyhaven Vale content (colliders, spawn plaza, areas, road corridors, creature and NPC bodies), validated static and unit content, gravity, velocity-preserving recovery | Authored content pipeline, character controller, pathfinding around obstacles, workload limits |
 | Ownership | Expiring fenced directory; heartbeat-gated host placement; `FencedZoneRuntime` checks every reference-runtime operation | Durable linearizable directory, host-incarnation/local permits, lease-aware network serving |
 | Handoff | Idempotent metadata, renewal-safe identity, one active transfer per entity | Frozen state export, staged import, activation/retirement, crash reconciliation |
+| Partitioning | `LogicalZone` reference model (#146): contiguous column strips per host, boundaries that move around interaction islands, coalescing instead of splitting an island, read-only ghosts, one tick barrier, fixed-timestep time dilation, zone-level command sequences across migration, declared timer clock domains | Partition-local `ZoneSimulation` hosting, ghost replication transport, island reporting from core, live entity migration |
 | Transport | Shared sessions, reconnect, WebTransport, multi-zone host, graceful recovery | Authentication, durable character binding, fleet routing |
 | Graphics | Native wgpu/winit and browser Three.js presentation of Greyhaven scenery, class/sex looks, normalized Ranger asset, procedural creature/NPC models, terrain/roads/water and instanced props; cosmetic lighting/fog/day-night and viewer ability poses/effects; native live WebTransport and bounded interpolation; browser WASM local host or development WebTransport host; targeting/ability intents and projected combat status | Remaining native interface parity (#183: roster persistence/preview, combat text, nameplates, gamepad, settings), shared presentation generation (#184), nameplates (#22 step 7b), other authored avatars, richer effects and prediction/reconciliation |
 | Persistence | Canonical snapshot of physics, units, creature AI, RNG and events that references its content by revision and fingerprint; shared graceful runtime recovery | Durable checkpoints, content availability for checkpoints, PostgreSQL character backend and zone-host character admission (#30), fenced persistence writes |
@@ -320,6 +321,18 @@ The live protocol still needs to implement this ordering:
 Acceptance and activation are distinct. Allowing the destination to tick immediately while the source still ticks duplicates authority. Retries must bind transfer ID to payload identity as well as both epochs. Recovery must reconcile staged/frozen state with durable transfer status before either entity resumes.
 
 The current registry stores metadata only: `Accepted` does not prove a payload was durably imported and `Committed` does not itself retire an entity. Orphaned transfers intentionally retain their reservation. Automatic expiry or unilateral rollback could duplicate a player; an explicit fenced cancellation/reconciliation protocol is required before live use. Terminal records also need a durable retention/deduplication policy before an unbounded production workload.
+
+## Logical-zone partitioning
+
+`mmorpg-control-plane::LogicalZone` is the in-memory reference contract for distributing one busy logical zone over several hosts (#146, Atlas 1.1.2 and 1.3). It decides only which partition owns which entity; the zone reports entity columns and interaction edges and keeps every gameplay outcome.
+
+- **Identity.** Zone ID, content revision and the simulation timeline belong to the logical zone and never change with the layout. Command sequence numbers are tracked per logical zone, so an entity that migrates keeps its identity and stale or duplicate sequences still fail closed.
+- **Layout.** Partitions are contiguous column strips, one per distinct live host. Every layout change advances a layout epoch; `PartitionRef` tokens from an older layout fail closed. `repartition` rebalances by load; dropping hosts merges strips and adding hosts splits them.
+- **Interaction islands.** A cut never falls inside a connected island. When new interactions straddle a cut, the cut moves to the nearest valid column; if none exists, the two strips coalesce and the left host keeps them. An island larger than a host's capacity stays on one machine and is reported as a capacity condition. Neighbours may read entities within a margin as ghosts, but `authorize_mutation` admits only the owner.
+- **Tick barrier and overload.** Every partition reports tick N before tick N+1 starts, and topology changes wait for the barrier. Each tick advances simulation time by exactly the fixed timestep; the barrier takes as long as the slowest partition, so overload slows the whole zone (time dilation) instead of lengthening the timestep.
+- **Clock domains.** `ZoneTimer` declares its domain: gameplay timers use `SimulationTick` and slow with the zone; real-world commitments use a caller-supplied `RealWorldInstant`.
+
+The model does not host partition-local simulations or move entity state between machines.
 
 ## Persistence and operations
 
