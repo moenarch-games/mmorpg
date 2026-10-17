@@ -1,10 +1,15 @@
 import * as THREE from "three";
-import { adaptImportedCharacterBundle } from "@moritzbrantner/three-d-renderer/imported-character";
+import {
+  adaptImportedCharacterBundle,
+  adaptImportedItemBundle,
+  readBundleAttachment,
+  type ImportedItemAsset,
+} from "@moritzbrantner/three-d-renderer/imported-character";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EntityRef } from "../../entity-ref";
 import type { UnitPlacement } from "../humanoid";
-import { ClipPlayback, QUATERNIUS_MODELS, type QuaterniusKind } from "./quaternius";
+import { ClipPlayback, QUATERNIUS_MODELS, type Loadout, type QuaterniusKind } from "./quaternius";
 
 /**
  * Animated imported units as real three.js skinned meshes drawn through the renderer's
@@ -31,7 +36,7 @@ type Posable = { model: THREE.Object3D; pose(clip: string, time: number): void; 
 type Asset = {
   /** Clip durations in seconds by name. */
   clips: Map<string, number>;
-  instantiate(): Posable;
+  instantiate(loadout: Loadout): Posable;
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
   floor: number;
   height: number;
@@ -42,6 +47,7 @@ type Asset = {
 
 type Instance = {
   kind: QuaterniusKind;
+  loadout: Loadout;
   root: THREE.Group;
   posable: Posable;
   playback: ClipPlayback;
@@ -68,6 +74,10 @@ export type QuaterniusUnit = {
   dead: boolean;
   /** The unit's current #27 action cue; a new non-held cue starts the attack clip. */
   action: { progress: number; hold: boolean } | null;
+  /** What the model carries (players only). */
+  loadout: Loadout;
+  /** A held shield guard: a standing unit raises its shield (#156). */
+  guarding: boolean;
 };
 
 const point = new THREE.Vector3();
@@ -145,6 +155,32 @@ async function loadAnimal(loader: GLTFLoader, kind: Exclude<QuaterniusKind, "Ran
   return { clips, instantiate, ...measure(probe, QUATERNIUS_MODELS[kind].clips.idle) };
 }
 
+/** A humanoid-sockets descriptor socket as a column-major matrix in its joint's frame. */
+type Socket = { joint: string; matrix: number[] };
+
+function socketsOf(descriptor: unknown): Map<string, Socket> {
+  const sockets = new Map<string, Socket>();
+  const list = (descriptor as { sockets?: unknown[] } | null)?.sockets;
+  if (!Array.isArray(list)) {
+    throw new Error("The Ranger bundle's humanoid-sockets descriptor has no sockets.");
+  }
+  for (const entry of list as { id: string; joint: string; translation: number[]; rotation: number[] }[]) {
+    const [x = 0, y = 0, z = 0] = entry.translation;
+    const [qx = 0, qy = 0, qz = 0, qw = 1] = entry.rotation;
+    const matrix = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(qx, qy, qz, qw), new THREE.Vector3(1, 1, 1));
+    sockets.set(entry.id, { joint: entry.joint, matrix: matrix.toArray() });
+  }
+  return sockets;
+}
+
+/** Which bundle item goes to which socket, per loadout: consumer data for 3d-lab's attach. */
+const LOADOUT_ITEMS = {
+  "sword-and-shield": [
+    { key: "equipment.sword.arming", socket: "hand_r.weapon" },
+    { key: "equipment.shield.heater", socket: "hand_l.shield" },
+  ],
+} as const;
+
 async function loadRanger(): Promise<Asset> {
   const read = async (path: string) => {
     const response = await fetch(new URL(path, new URL(RANGER_BUNDLE, window.location.href)));
@@ -155,13 +191,36 @@ async function loadRanger(): Promise<Asset> {
   };
   const manifest: unknown = JSON.parse(new TextDecoder().decode(await read("manifest.json")));
   const character = await adaptImportedCharacterBundle({ manifest, key: "humanoid.ranger.male", readResource: read });
-  const instantiate = (): Posable => {
+  const sockets = socketsOf(await readBundleAttachment({ manifest, key: "humanoid.ranger.male", name: "humanoid-sockets", readResource: read }));
+  const items = new Map<string, ImportedItemAsset>();
+  for (const { key } of LOADOUT_ITEMS["sword-and-shield"]) {
+    items.set(key, await adaptImportedItemBundle({ manifest, key, readResource: read }));
+  }
+  const instantiate = (loadout: Loadout): Posable => {
     const instance = character.createInstance();
+    const carried: { dispose(): void }[] = [];
+    for (const { key, socket } of loadout ? LOADOUT_ITEMS[loadout] : []) {
+      const item = items.get(key);
+      const place = sockets.get(socket);
+      if (!item || !place) {
+        throw new Error(`The Ranger bundle has no ${key} for socket ${socket}.`);
+      }
+      const held = item.createInstance();
+      instance.attach(held, { joint: place.joint, socket: place.matrix });
+      carried.push(held);
+    }
     // The runtime's clip clock holds a one-shot clip at its end like the animals.
-    return { model: instance.root, pose: (clip, time) => instance.seek(clip, time), dispose: () => instance.dispose() };
+    return {
+      model: instance.root,
+      pose: (clip, time) => instance.seek(clip, time),
+      dispose: () => {
+        instance.dispose();
+        for (const held of carried) { held.dispose(); }
+      },
+    };
   };
   const clips = new Map(character.clips.map((clip) => [clip.name, clip.duration]));
-  const probe = instantiate();
+  const probe = instantiate(null);
   const measured = measure(probe, QUATERNIUS_MODELS.Ranger.clips.idle);
   probe.dispose();
   return { clips, instantiate, ...measured };
@@ -201,7 +260,7 @@ export class QuaterniusUnits {
       if (typeof asset !== "object") { continue; }
       seen.add(unit.id);
       let instance = this.#instances.get(unit.id);
-      if (instance && instance.kind !== unit.kind) {
+      if (instance && (instance.kind !== unit.kind || instance.loadout !== unit.loadout)) {
         this.#drop(unit.id, instance);
         instance = undefined;
       }
@@ -214,7 +273,7 @@ export class QuaterniusUnits {
   }
 
   #create(unit: QuaterniusUnit, asset: Asset): Instance {
-    const posable = asset.instantiate();
+    const posable = asset.instantiate(unit.loadout);
     const { model } = posable;
     const materials: Instance["materials"] = [];
     model.traverse((object) => {
@@ -234,7 +293,7 @@ export class QuaterniusUnits {
     root.name = `${unit.id}-model`;
     root.add(model);
     const instance: Instance = {
-      kind: unit.kind, root, posable, playback: new ClipPlayback(),
+      kind: unit.kind, loadout: unit.loadout, root, posable, playback: new ClipPlayback(),
       clip: "", time: 0, materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity, cue: null,
     };
     this.#instances.set(unit.id, instance);
@@ -250,7 +309,7 @@ export class QuaterniusUnits {
       instance.playback.attack(duration(clips.attack), seconds);
     }
     instance.cue = cue ? { progress: cue.progress } : null;
-    const { clip, time } = instance.playback.advance(clips, duration, unit.speed, unit.dead, seconds, deltaSeconds, !animate);
+    const { clip, time } = instance.playback.advance(clips, duration, unit.speed, unit.dead, seconds, deltaSeconds, !animate, unit.guarding);
     instance.clip = clip;
     instance.time = Math.min(time, Math.max(0, duration(clip) - 1e-4));
     instance.posable.pose(clip, instance.time);

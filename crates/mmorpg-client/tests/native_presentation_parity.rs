@@ -1,7 +1,8 @@
 //! Player appearance on the frame actually consumed by the renderer, with real
 //! core class selection and the native scene submitted to the GPU. While the
 //! Ranger humanoid is the only character bundle, every class and sex is drawn
-//! with it (Atlas 6.3.7 pauses #182's per-class and per-sex look).
+//! with it (Atlas 6.3.7 pauses #182's per-class and per-sex look); only a
+//! Warden carries the bundle's sword and shield (#156).
 use mmorpg_client::{camera::OrbitCamera, presentation::Presentation};
 use mmorpg_core::{ZoneCommand, ZoneId, ZoneSimulation, greyhaven_vale};
 use mmorpg_scenery::greyhaven_vale_scenery;
@@ -28,12 +29,30 @@ fn every_class_and_sex_is_drawn_as_the_ranger_humanoid() {
             scenes.push(((class, sex), presentation.unit_draws(now, view)));
         }
     }
-    let (_, first) = &scenes[0];
-    assert!(!first.is_empty(), "the player is drawn");
-    for (choice, scene) in &scenes[1..] {
+    let scene = |class: u8, sex: u8| {
+        &scenes
+            .iter()
+            .find(|(choice, _)| *choice == (class, sex))
+            .expect("every choice is drawn")
+            .1
+    };
+    let warden = scene(0, 0);
+    let ranger = scene(1, 0);
+    assert!(!ranger.is_empty(), "the player is drawn");
+    // Sexes share one look; the Ranger and Arcanist carry nothing.
+    for class in 0..3 {
         assert_eq!(
-            scene, first,
-            "class and sex {choice:?} share the Ranger humanoid"
+            scene(class, 0),
+            scene(class, 1),
+            "class {class}'s sexes share the Ranger"
         );
     }
+    assert_eq!(scene(2, 0), ranger, "the Arcanist looks like the Ranger");
+    // The Warden draws the same body plus its sword and shield.
+    assert!(
+        warden.len() > ranger.len(),
+        "the Warden carries a sword and a shield"
+    );
+    assert!(warden.iter().any(|draw| draw.id.contains("-item-0-")));
+    assert!(warden.iter().any(|draw| draw.id.contains("-item-1-")));
 }
