@@ -50,9 +50,13 @@ import { WorldView, webGpuProjection } from "./world/world-view";
 import { attackToggle, nextTabTarget } from "./world/units/targeting";
 import { GameControls, type GameAction } from "./input/game-controls";
 import { cancelCast, useAbilitySlot } from "./world/units/abilities";
+import { Preferences, type ClientPreferences } from "./settings/preferences";
+import { SettingsPanel } from "./settings/settings-panel";
+import { defaultBindingProfile, loadBindingProfile, saveBindingProfile } from "./settings/binding-profiles";
 import "./character-selection-layout.css";
 import "./character-creation.css";
 import "./class-hud.css";
+import "./settings/settings.css";
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -270,14 +274,107 @@ const worldView = new WorldView(renderer, camera, {
     input: requireElement<HTMLInputElement>("#chat-input"),
   },
 });
+/** Whether the Settings modal is open: it blocks game keys and pauses only the local zone (#41 Q8). */
+let settingsOpen = false;
 const controls = new GameControls({
   screen: () =>
     entryState.phase === "world"
-      ? { phase: "world", panelOpen: worldView.panelOpen, casting: Boolean(activeWorld?.source.latestProjection()?.viewer.cast) }
+      ? { phase: "world", panelOpen: worldView.panelOpen, casting: Boolean(activeWorld?.source.latestProjection()?.viewer.cast), settingsOpen }
       // A pending join is modal like creation: Escape cancels it.
-      : { phase: "selection", creating: creationDraft !== null || joining !== null },
+      : { phase: "selection", creating: creationDraft !== null || joining !== null, settingsOpen },
   onAction: (action) => runAction(action),
 });
+
+function browserStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+// Client preferences live in the shared settings session; the client only applies them.
+function applyPreferences(preferences: ClientPreferences): void {
+  camera.fov = preferences.fieldOfViewDegrees;
+  camera.updateProjectionMatrix();
+  worldView.setLookSensitivity(preferences.lookSensitivity);
+  worldView.setMotionPreference(preferences.reduceMotion);
+  if (preferences.reduceMotion === "system") {
+    delete document.documentElement.dataset.motion;
+  } else {
+    document.documentElement.dataset.motion = preferences.reduceMotion;
+  }
+}
+const preferences = Preferences.open(browserStorage());
+preferences.then((loaded) => loaded.subscribe(applyPreferences), (error: unknown) => console.error(error));
+
+// Each character's bindings are its own input-bindings profile, swapped in when the selection changes.
+let boundCharacterId: string | null = null;
+let boundProfile = defaultBindingProfile("");
+function syncBindingProfile(): void {
+  const characterId = selectedCharacterId();
+  if (characterId === boundCharacterId) {
+    return;
+  }
+  boundCharacterId = characterId;
+  const storage = browserStorage();
+  const loaded = storage ? loadBindingProfile(storage, characterId) : { profile: defaultBindingProfile(characterId), problem: null };
+  if (loaded.problem) {
+    console.warn(`Key bindings for ${characterId}: ${loaded.problem}`);
+  }
+  boundProfile = loaded.profile;
+  controls.setProfile(boundProfile);
+}
+
+const settingsPanel = new SettingsPanel({
+  dialog: requireElement<HTMLDialogElement>("#settings-dialog"),
+  close: requireElement<HTMLButtonElement>("#settings-close"),
+  categories: requireElement<HTMLElement>("#settings-categories"),
+  content: requireElement<HTMLElement>("#settings-content"),
+  status: requireElement<HTMLElement>("#settings-status"),
+  resetAll: requireElement<HTMLButtonElement>("#settings-reset-all"),
+}, {
+  preferences,
+  bindings: () => {
+    syncBindingProfile();
+    const characterId = selectedCharacterId();
+    return {
+      characterId,
+      characterName: selectedCharacter().name,
+      profile: boundProfile,
+      save: (profile) => {
+        const storage = browserStorage();
+        if (!storage) {
+          return "Browser storage is unavailable; the binding change was not saved.";
+        }
+        try {
+          saveBindingProfile(storage, characterId, profile);
+        } catch (error) {
+          return `The binding change was not saved: ${errorMessage(error)}`;
+        }
+        // Only a durably saved profile becomes the running mapping.
+        if (characterId === boundCharacterId) {
+          boundProfile = profile;
+          controls.setProfile(profile);
+        }
+        return null;
+      },
+    };
+  },
+  onOpenChange: (open) => {
+    settingsOpen = open;
+    // Opening or closing Settings never leaves movement, a drag or an action held.
+    controls.retire(open ? "settingsOpened" : "settingsClosed");
+    worldView.cancelPointer();
+    lastTime = performance.now();
+  },
+});
+for (const button of [requireElement<HTMLButtonElement>("#world-settings"), requireElement<HTMLButtonElement>("#selection-settings")]) {
+  button.addEventListener("click", (event) => {
+    // A mouse-opened Settings returns focus to the world so game keys keep working afterwards.
+    settingsPanel.show(entryState.phase === "world" && event.detail > 0 ? canvas : undefined);
+  });
+}
 
 // Debug-only camera and public-source hooks for deterministic acceptance; `?debug` enables them.
 if (new URLSearchParams(window.location.search).has("debug")) {
@@ -862,9 +959,12 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const deltaSeconds = frameDeltaSeconds(now, lastTime);
   lastTime = now;
+  syncBindingProfile();
   if (entryState.phase === "world" && activeWorld) {
+    // Settings pauses the browser-local zone; an online zone keeps running with input blocked.
+    const paused = settingsOpen && activeWorld !== onlineWorld;
     try {
-      worldView.frame(activeWorld, worldInput(), characterLook(selectedCharacter(), characterAppearance.hat), deltaSeconds, now);
+      worldView.frame(activeWorld, worldInput(), characterLook(selectedCharacter(), characterAppearance.hat), paused ? 0 : deltaSeconds, now);
       showLinkState(activeWorld.source.linkState());
     } catch (error) {
       // Fail closed and visibly: leave the world and say why on the selection screen.
@@ -1085,6 +1185,19 @@ function runAction(action: GameAction): void {
   }
 }
 controls.attach({ window, document });
+// A mouse click leaves focus on a HUD or panel button (or a panel moves it to its close button),
+// which would then own Space, Tab and Enter: Space re-pressed the button instead of jumping.
+// After a mouse click in the world, focus on a button returns to the world; text fields (chat,
+// quantities) keep it, and keyboard activation (detail 0) keeps normal keyboard navigation.
+document.addEventListener("click", (event) => {
+  if (entryState.phase !== "world" || event.detail === 0 || settingsPanel.open) {
+    return;
+  }
+  const active = document.activeElement;
+  if (active instanceof Element && active.closest("button, summary, a") && !active.closest("dialog")) {
+    canvas.focus({ preventScroll: true });
+  }
+});
 window.addEventListener("blur", () => worldView.cancelPointer());
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {

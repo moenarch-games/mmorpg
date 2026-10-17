@@ -1,4 +1,4 @@
-import type { ActionRegistry, Binding, ContextLayer, InputStroke } from "@moritzbrantner/input-bindings";
+import type { ActionRegistry, Binding, ContextLayer, InputStroke, Profile } from "@moritzbrantner/input-bindings";
 import { InputRuntimeController, SemanticControlState } from "@moritzbrantner/input-bindings-runtime";
 import {
   attachGamepadRuntime,
@@ -48,26 +48,33 @@ export type GameAction = (typeof GAME_ACTIONS)[number];
  *   instead of leaving; bags, the character pane, loot, the vendor or the quest dialog and log open as a non-blocking overlay
  *   that claims Escape first but
  *   lets movement fall through to gameplay.
+ * - `settings`: the Settings modal blocks every lower context on either screen, so no game key
+ *   resolves (or suppresses a browser default) while it is open; the dialog owns its keys.
  */
-export type GameContext = "selection" | "creation" | "world" | "gameplay" | "casting" | "panels";
+export type GameContext = "selection" | "creation" | "world" | "gameplay" | "casting" | "panels" | "settings";
 
 export type ControlScreen =
-  | { phase: "selection"; creating: boolean }
-  | { phase: "world"; panelOpen: boolean; casting?: boolean };
+  | { phase: "selection"; creating: boolean; settingsOpen?: boolean }
+  | { phase: "world"; panelOpen: boolean; casting?: boolean; settingsOpen?: boolean };
 
 export function contextStack(screen: ControlScreen): ContextLayer[] {
+  const settings: ContextLayer[] = screen.settingsOpen ? [{ id: "settings", blocksLower: true }] : [];
   if (screen.phase === "selection") {
     return screen.creating
-      ? [{ id: "selection" }, { id: "creation", blocksLower: true }]
-      : [{ id: "selection" }];
+      ? [{ id: "selection" }, { id: "creation", blocksLower: true }, ...settings]
+      : [{ id: "selection" }, ...settings];
   }
   return [
     { id: "world" },
     { id: "gameplay" },
     ...(screen.casting ? [{ id: "casting" }] : []),
     ...(screen.panelOpen ? [{ id: "panels" }] : []),
+    ...settings,
   ];
 }
+
+/** The catalog version stored with each portable binding profile. */
+export const GAME_ACTION_REGISTRY_VERSION = 1;
 
 const key = (code: string): InputStroke => ({ key: { kind: "physical", value: code } });
 const stick = (axis: number, direction: "positive" | "negative"): InputStroke => ({
@@ -218,6 +225,15 @@ export class GameControls {
       detachKeyboard();
       this.#state.clear();
     };
+  }
+
+  /**
+   * Installs a validated binding profile (e.g. the selected character's) for the next input;
+   * held actions are retired so a swap never strands movement under the old mapping.
+   */
+  setProfile(profile: Profile | undefined): void {
+    this.#controller.updateProfile(profile);
+    this.retire("profileChanged");
   }
 
   /** Releases every held action, e.g. when the screen or overlay context changes. */
