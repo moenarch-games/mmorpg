@@ -1,9 +1,10 @@
-/** #182 independent reference: invoke current Pages generators, never native code. */
+/** #182 reference: the Pages presentation path. Static scenery comes through the shared WASM export (#184); units use the Pages generators. */
 import * as THREE from "three";
 import type { RendererInstance, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import { ENVIRONMENT, DAY_SECONDS, environmentAt, skyAt } from "../../src/world/environment";
 import { decodeScenery } from "../../src/world/scenery";
 import { SceneryFrame, buildSceneryScene } from "../../src/world/scenery-nodes";
+import { localZoneModule } from "./local-zone-module";
 import { decodeCatalog } from "../../src/world/catalog";
 import { characterLook } from "../../src/world/humanoid";
 import { UnitAnimators, placeWithModel, unitIdentity, unitModel, type UnitContext } from "../../src/world/unit-nodes";
@@ -23,7 +24,8 @@ function reliefAt(entity: EntityState): number {
 }
 const resources: Record<string, unknown> = {};
 const resourceObjects = new WeakMap<object, string>();
-const sceneCache = new Map<string, ReturnType<typeof buildSceneryScene>>();
+const wasm = await localZoneModule();
+const staticScene = buildSceneryScene(scenery, wasm);
 const encoder = new TextEncoder();
 function digest(positions: readonly (readonly number[])[], indices: readonly number[], normals?: readonly (readonly number[])[], colors?: readonly (readonly number[])[]): string {
   let hash = 14695981039346656037n;
@@ -92,11 +94,7 @@ function draw(node: RendererSceneNode, id = node.id) {
 const scenes: unknown[] = [];
 for (const request of input.requests) {
   if (request.kind === "world") {
-    const selected = request.propKind ? { ...scenery, props: scenery.props.filter((prop) => prop.kind === request.propKind) } : scenery;
-    const sceneKey = request.propKind ?? "all";
-    let scene = sceneCache.get(sceneKey);
-    if (!scene) { scene = buildSceneryScene(selected, ENVIRONMENT); sceneCache.set(sceneKey, scene); }
-    const frame = new SceneryFrame(scene, "parity-animated").nodes(request.eye, { seconds: request.seconds, animate: request.animate });
+    const frame = new SceneryFrame(staticScene).nodes(request.eye, { seconds: request.seconds, animate: request.animate });
     const draws = frame.nodes.filter((node) => node.visible !== false).map((node) => draw(node));
     for (const batch of frame.instanceBatches) {
       if (batch.visible === false) { continue; }

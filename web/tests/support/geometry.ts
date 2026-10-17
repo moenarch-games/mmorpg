@@ -29,39 +29,6 @@ export function expectValidMesh(mesh: IndexedMesh, label = "mesh"): void {
   }
 }
 
-/** Clips a convex polygon to the side of the plane y = `limit` that `inside` keeps. */
-function clipAtHeight(polygon: readonly Point[], limit: number, inside: (y: number) => boolean): Point[] {
-  const clipped: Point[] = [];
-  polygon.forEach((current, index) => {
-    const previous = polygon[(index + polygon.length - 1) % polygon.length]!;
-    if (inside(current[1]) !== inside(previous[1])) {
-      const t = (limit - previous[1]) / (current[1] - previous[1]);
-      clipped.push([previous[0] + (current[0] - previous[0]) * t, limit, previous[2] + (current[2] - previous[2]) * t]);
-    }
-    if (inside(current[1])) {
-      clipped.push(current);
-    }
-  });
-  return clipped;
-}
-
-/**
- * XZ corners of every triangle clipped to the band `low` ≤ y ≤ `high`. A
- * wall face that spans the band has no vertex inside it, but its clipped
- * corners still mark where it stands.
- */
-export function bandFootprint(mesh: IndexedMesh, low: number, high: number): [number, number][] {
-  const points: [number, number][] = [];
-  for (let index = 0; index < mesh.indices.length; index += 3) {
-    const triangle = [0, 1, 2].map((offset) => mesh.positions[mesh.indices[index + offset]!]!);
-    const inBand = clipAtHeight(clipAtHeight(triangle, low, (y) => y >= low), high, (y) => y <= high);
-    for (const [x, , z] of inBand) {
-      points.push([x, z]);
-    }
-  }
-  return points;
-}
-
 /** Geometric (right-handed) normal of each triangle, unnormalised. */
 export function triangleNormals(mesh: IndexedMesh): Point[] {
   const normals: Point[] = [];

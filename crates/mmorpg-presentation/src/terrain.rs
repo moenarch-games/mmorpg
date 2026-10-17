@@ -1,18 +1,18 @@
-//! Browser-compatible terrain triangulation, overlays, shore and water.
-use super::{SceneDraw, batching::*, geometry::*};
+//! Terrain triangulation, overlays, roads, lake beds and water.
+use super::{Draw, batching::*, geometry::*};
 use mmorpg_scenery::{Biome, Scenery, TerrainGrid};
 use std::f64::consts::TAU;
 use std::{collections::BTreeMap, sync::Arc};
-pub(super) fn metres(v: i32) -> f64 {
+pub fn metres(v: i32) -> f64 {
     f64::from(v) / 100.
 }
-pub(super) fn height(g: &TerrainGrid, c: isize, r: isize) -> f64 {
+pub fn height(g: &TerrainGrid, c: isize, r: isize) -> f64 {
     metres(
         g.heights[r.clamp(0, g.rows as isize - 1) as usize * g.columns
             + c.clamp(0, g.columns as isize - 1) as usize],
     )
 }
-pub(super) fn surface(g: &TerrainGrid, x: f64, z: f64) -> f64 {
+pub fn surface(g: &TerrainGrid, x: f64, z: f64) -> f64 {
     let step = metres(g.step);
     let gx = (x - metres(g.origin[0])) / step;
     let gz = (z - metres(g.origin[1])) / step;
@@ -27,7 +27,7 @@ pub(super) fn surface(g: &TerrainGrid, x: f64, z: f64) -> f64 {
         h(1, 1) + (h(0, 1) - h(1, 1)) * (1. - fx) + (h(1, 0) - h(1, 1)) * (1. - fz)
     }
 }
-pub(super) fn biome_color(b: Biome) -> u32 {
+pub fn biome_color(b: Biome) -> u32 {
     match b.name() {
         "meadow" => 0x6a9a42,
         "hub" => 0x739a48,
@@ -177,7 +177,7 @@ fn grid(out: &mut Geometry, g: &TerrainGrid, far: bool, inner: f64) {
         }
     }
 }
-pub(super) fn bounds(g: &TerrainGrid, name: &str) -> Option<([f64; 2], [f64; 2])> {
+pub fn bounds(g: &TerrainGrid, name: &str) -> Option<([f64; 2], [f64; 2])> {
     let mut lo = [f64::INFINITY; 2];
     let mut hi = [f64::NEG_INFINITY; 2];
     for (i, b) in g.biomes.iter().enumerate() {
@@ -264,7 +264,7 @@ fn ellipse(m: &mut Geometry, c: [f64; 2], r: [f64; 2], y: f64, n: u32) {
             .extend([base, base + 1 + i, base + 1 + (i + 1) % n]);
     }
 }
-pub(super) fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<SceneDraw> {
+pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
     grid(b.global("terrain", 0xffffff), g, false, 0.);
     let inner = [
         -g.origin[0],
@@ -337,10 +337,10 @@ pub(super) fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<SceneD
         ellipse(&mut mesh, c, r, metres(w.surface), 64);
         let mut mat = material(0x3f86a0, false);
         mat.opacity = 0.72;
-        water.push(SceneDraw {
+        water.push(Draw {
             id: format!("water-{i}"),
-            resource_key: format!("native-scenery:water:{i}"),
-            mesh: Arc::new(mesh.mesh()),
+            resource_key: format!("scenery:water:{i}"),
+            geometry: Arc::new(mesh),
             model: matrix(ID),
             material: mat,
         });

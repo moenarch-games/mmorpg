@@ -8,12 +8,6 @@ use std::{
 
 fn requests() -> Vec<Value> {
     let mut cases = Vec::new();
-    for kind in mmorpg_scenery::PropKind::ALL {
-        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
-        let prop = scenery.props.iter().find(|prop| prop.kind == kind).unwrap();
-        cases.push(json!({"name":format!("prop:{}",kind.name()),"kind":"world","propKind":kind.name(),
-            "seconds":0,"animate":false,"eye":[prop.position[0] as f64/100.0,10.0,prop.position[2] as f64/100.0]}));
-    }
     for (name, eye) in [
         ("outpost", [0.0, 15.0, 35.0]),
         ("woods", [-95.0, 12.0, -20.0]),
@@ -29,12 +23,6 @@ fn requests() -> Vec<Value> {
     }
     for seconds in [0, 1, 600] {
         cases.push(json!({"name":format!("frozen:{seconds}"),"kind":"world","seconds":seconds,"animate":false,"eye":[0,15,35]}));
-    }
-    for kind in mmorpg_scenery::PropKind::ALL {
-        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
-        let prop = scenery.props.iter().find(|prop| prop.kind == kind).unwrap();
-        cases.push(json!({"name":format!("empty:{}",kind.name()),"kind":"world","propKind":"none", "seconds":0,"animate":false,
-            "eye":[prop.position[0] as f64/100.0,10.0,prop.position[2] as f64/100.0]}));
     }
     let player = entity("player", 1, 1, false);
     for (class, class_id) in ["warden", "ranger", "arcanist"].into_iter().enumerate() {

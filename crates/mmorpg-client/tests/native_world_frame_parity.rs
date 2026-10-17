@@ -1,8 +1,6 @@
 //! World-only differential; unit presentation remains a separate required binary.
 #[path = "support/draw_comparison.rs"]
 mod comparison;
-#[path = "support/draw_identity.rs"]
-mod identity;
 #[path = "support/world_reference.rs"]
 mod reference;
 use comparison::{close, compare_draws, vector};
@@ -27,11 +25,7 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
         }
         let name = request["name"].as_str().unwrap();
         eprintln!("world reference {name}");
-        let mut scenery = mmorpg_scenery::greyhaven_vale_scenery();
-        if let Some(kind) = request["propKind"].as_str() {
-            scenery.props.retain(|p| p.kind.name() == kind);
-        }
-        let world = WorldScene::new(&scenery);
+        let world = WorldScene::new(&mmorpg_scenery::greyhaven_vale_scenery());
         let eye = std::array::from_fn(|i| request["eye"][i].as_f64().unwrap() as f32);
         let frame = world.frame(
             request["seconds"].as_f64().unwrap(),

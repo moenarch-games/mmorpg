@@ -26,6 +26,7 @@
 pub mod catalog;
 pub mod host;
 pub mod scenery;
+pub mod static_scene;
 
 use mmorpg_characters::{CharacterStore, EntryBackend, EntryChange, LeaseHolder, StoreError};
 use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex};
@@ -227,6 +228,41 @@ pub fn area_at(x: i32, z: i32) -> Option<u16> {
 #[wasm_bindgen(js_name = reliefAt)]
 pub fn relief_at(x: i32, z: i32) -> i32 {
     scenery::relief_at(x, z)
+}
+
+/// The JSON layout of the shared static world both clients draw (#184).
+#[wasm_bindgen(js_name = staticScene)]
+pub fn static_scene() -> String {
+    static_scene::layout().to_owned()
+}
+
+/// Positions, normals and optional colours of every static-scene geometry.
+#[wasm_bindgen(js_name = staticSceneVertices)]
+pub fn static_scene_vertices() -> Vec<f32> {
+    static_scene::vertices().to_vec()
+}
+
+#[wasm_bindgen(js_name = staticSceneIndices)]
+pub fn static_scene_indices() -> Vec<u32> {
+    static_scene::indices().to_vec()
+}
+
+/// Column-major model matrices of every static-scene draw, 16 floats each.
+#[wasm_bindgen(js_name = staticSceneModels)]
+pub fn static_scene_models() -> Vec<f32> {
+    static_scene::models().to_vec()
+}
+
+/// Animated-part model matrices at a cosmetic clock, 16 floats per part.
+#[wasm_bindgen(js_name = staticSceneMotion)]
+pub fn static_scene_motion(seconds: f64, animate: bool) -> Vec<f32> {
+    static_scene::motion(seconds, animate)
+}
+
+/// Rendered terrain height in metres at `(x, z)` metres.
+#[wasm_bindgen(js_name = surfaceY)]
+pub fn surface_y(x: f64, z: f64) -> f64 {
+    static_scene::surface_y(x, z)
 }
 
 fn js_error(error: host::LocalZoneError) -> JsError {

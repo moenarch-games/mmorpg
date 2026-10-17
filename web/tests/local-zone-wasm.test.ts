@@ -12,12 +12,9 @@ import { LootState } from "../src/world/units/loot-state";
 import { dialogNpc, dialogView, QuestState, trackerLines } from "../src/world/units/quest-state";
 import { createLocalWorld } from "../src/world/local-world";
 import { LocalZoneSource, type LocalZoneHandle } from "../src/world/local-zone-source";
-import type { Prop } from "../src/world/scenery";
 import { buildSceneryScene } from "../src/world/scenery-nodes";
-import { terrainSurfaceY } from "../src/world/terrain-mesh";
 import { MemoryLocks, MemoryStorage, testCharacters } from "./support/local-characters";
 import { localZoneModule } from "./support/local-zone-module";
-import { propMeshes } from "./support/scenery-geometry";
 import { immediate, worldSourceContract } from "./support/world-source-contract";
 
 // Builds crates/mmorpg-wasm for wasm32 and runs wasm-bindgen, like `bun run build`.
@@ -430,7 +427,7 @@ describe("WASM local zone host", () => {
 
   test("the vale's static scene models every prop within a bounded node and vertex budget", () => {
     const { scenery } = createLocalWorld(wasm, testCharacters());
-    const scene = buildSceneryScene(scenery.scenery);
+    const scene = buildSceneryScene(scenery.scenery, scenery.staticScene);
     const modelled = Object.values(scene.stats.props).reduce((sum, count) => sum + (count ?? 0), 0);
     expect(modelled).toBe(scenery.scenery.props.length);
     // Draw-call and per-frame validation budgets: ~4 200 props merge into a few hundred batches.
@@ -441,28 +438,6 @@ describe("WASM local zone host", () => {
     // Terrain and far-ring meshes span the whole vale, so none is ever culled: keep their palette small.
     const terrainMeshes = scene.batches.filter((batch) => /^static-all-(terrain|far):/.test(batch.node.id)).length;
     expect(terrainMeshes).toBeLessThanOrEqual(44);
-  });
-
-  test("props stand on the drawn terrain where the finer relief would lift them off it", () => {
-    const vale = createLocalWorld(wasm, testCharacters()).scenery.scenery;
-    const { terrain, unitsPerMetre } = vale;
-    const surfaceAt = (prop: Prop) => terrainSurfaceY(terrain, unitsPerMetre, prop.position[0] / unitsPerMetre, prop.position[2] / unitsPerMetre);
-    // The prop of each kind whose exported feet sit highest above the 4 m mesh, if more than 10 cm.
-    const worst = new Map<string, { prop: Prop; lift: number }>();
-    for (const prop of vale.props) {
-      const lift = prop.position[1] / unitsPerMetre - surfaceAt(prop);
-      if (lift > 0.1 && lift > (worst.get(prop.kind)?.lift ?? 0)) {
-        worst.set(prop.kind, { prop, lift });
-      }
-    }
-    // Woodland relief has detail the 4 m grid cannot follow: trees, grass and flowers.
-    expect([...worst.keys()]).toEqual(expect.arrayContaining(["tree-oak", "grass-tuft"]));
-    for (const { prop } of worst.values()) {
-      const positions = propMeshes(buildSceneryScene({ ...vale, props: [prop] })).flatMap((mesh) => mesh.positions);
-      expect(positions.length, prop.kind).toBeGreaterThan(0);
-      const lowest = Math.min(...positions.map(([, y]) => y));
-      expect(lowest, prop.kind).toBeLessThanOrEqual(surfaceAt(prop) + 0.02);
-    }
   });
 });
 

@@ -1,5 +1,5 @@
-//! Greyhaven prop compositions. Local frames and palette follow prop-models.ts.
-use super::{SceneDraw, batching::*, geometry::*, terrain::*};
+//! Greyhaven prop compositions: one low-poly model per scenery prop kind.
+use super::{Animated, Draw, Motion, batching::*, geometry::*, terrain::*};
 use mmorpg_scenery::{Prop, PropKind, Scenery, TerrainGrid, TreeVariant};
 use std::{
     collections::BTreeMap,
@@ -83,17 +83,6 @@ impl Model {
     fn cylinder(&mut self, c: u32, sides: usize, top: f64, a: Affine) {
         self.put(c, frustum(sides, top, true, true, 0.), a);
     }
-}
-#[derive(Clone, Debug)]
-pub(super) enum Motion {
-    Sail { hub: V, yaw: f64 },
-    Flame { base: V, seed: f64 },
-    Reed { phase: f64, ground_y: f64 },
-}
-#[derive(Clone, Debug)]
-pub(super) struct Animated {
-    pub draws: Vec<SceneDraw>,
-    pub motion: Motion,
 }
 fn half(p: &Prop) -> V {
     p.half_extents.map(metres)
@@ -399,10 +388,10 @@ fn animated(m: Model, name: impl Fn(usize) -> String, motion: Motion) -> Animate
             .enumerate()
             .map(|(i, (c, g))| {
                 let id = name(i);
-                SceneDraw {
-                    resource_key: format!("native-scenery:{id}"),
+                Draw {
+                    resource_key: format!("scenery:{id}"),
                     id,
-                    mesh: Arc::new(g.mesh()),
+                    geometry: Arc::new(g),
                     model: matrix(ID),
                     material: material(c, false),
                 }
@@ -648,10 +637,10 @@ fn campfire(m: &mut Model, p: &Prop, index: usize, f: Affine) -> Animated {
         (format!("campfire-{index}-core"), CORE, core),
     ]
     .into_iter()
-    .map(|(id, c, g)| SceneDraw {
-        resource_key: format!("native-scenery:{id}"),
+    .map(|(id, c, g)| Draw {
+        resource_key: format!("scenery:{id}"),
         id,
-        mesh: Arc::new(g.mesh()),
+        geometry: Arc::new(g),
         model: matrix(ID),
         material: material(c, false),
     })
@@ -693,7 +682,7 @@ fn sails(index: usize, hub: V, yaw: f64) -> Animated {
         Motion::Sail { hub, yaw },
     )
 }
-pub(super) fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
+pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut animations = Vec::new();
     let mut reeds = BTreeMap::<usize, Model>::new();
     let mut windmills = 0;

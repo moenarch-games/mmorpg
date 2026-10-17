@@ -25,7 +25,7 @@ import {
   type HeldIntent,
   type Vec3,
 } from "./orbit-camera";
-import { SceneryFrame, buildSceneryScene, sceneryResourcePrefix, type SceneryScene } from "./scenery-nodes";
+import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
 import { SkyLayer } from "./sky";
 import { UnitAnimators, placeWithModel, unitIdentity, unitModel, unitNodeIds, type UnitContext, type UnitLook } from "./unit-nodes";
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
@@ -295,8 +295,8 @@ export class WorldView {
     const scenery = world.scenery.scenery;
     this.#presentationFingerprint = scenery.presentationFingerprint;
     this.#reliefAt = world.scenery.reliefAt;
-    this.#scene = buildSceneryScene(scenery, ENVIRONMENT);
-    this.#sceneryFrame = new SceneryFrame(this.#scene, `${sceneryResourcePrefix(scenery)}:animated`);
+    this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
+    this.#sceneryFrame = new SceneryFrame(this.#scene);
     this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
     this.#occluders = occluders(world);
     this.#buildMs = performance.now() - started;

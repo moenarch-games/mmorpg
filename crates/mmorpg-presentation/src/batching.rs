@@ -1,10 +1,10 @@
 //! Spatial batching and immutable resources for Greyhaven's procedural world.
 use super::geometry::*;
-use super::{DrawMaterial, SceneDraw};
+use super::{Draw, Group, Material};
 use std::{collections::BTreeMap, sync::Arc};
-use three_d_animation::Mat4;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Cull {
+/// Distance class of a static group.
+pub enum Cull {
     Always,
     Far,
     Mid,
@@ -27,7 +27,9 @@ impl Cull {
             Self::Near => 40.,
         }
     }
-    fn reach(self) -> f64 {
+    /// Camera distance (metres, to the group's bounding circle) beyond which the class is hidden.
+    #[must_use]
+    pub fn reach(self) -> f64 {
         match self {
             Self::Always => f64::INFINITY,
             Self::Far => 420.,
@@ -36,48 +38,31 @@ impl Cull {
         }
     }
 }
-#[derive(Clone, Debug)]
-pub(super) struct Group {
-    pub draws: Vec<SceneDraw>,
-    pub cull: Cull,
-    pub min: [f64; 2],
-    pub max: [f64; 2],
-}
-impl Group {
-    pub fn visible(&self, eye: [f32; 3]) -> bool {
-        let c = [
-            (self.min[0] + self.max[0]) / 2.,
-            (self.min[1] + self.max[1]) / 2.,
-        ];
-        let r = (self.max[0] - self.min[0]).hypot(self.max[1] - self.min[1]) / 2.;
-        (c[0] - f64::from(eye[0])).hypot(c[1] - f64::from(eye[2])) - r <= self.cull.reach()
-    }
-}
 #[derive(Default)]
-pub(super) struct Batcher {
+pub struct Batcher {
     buckets: BTreeMap<String, (u32, Cull, Geometry)>,
-    geometries: Vec<(Geometry, Arc<three_d_core::Mesh>)>,
+    geometries: Vec<Arc<Geometry>>,
     instances: Vec<(String, Cull, usize, Vec<(Affine, u32)>)>,
 }
-pub(super) fn rgb(c: u32) -> [f32; 3] {
+pub fn rgb(c: u32) -> [f32; 3] {
     [16, 8, 0].map(|shift| ((c >> shift) & 255) as f32 / 255.)
 }
-pub(super) fn shade(c: u32, f: f64) -> u32 {
+pub fn shade(c: u32, f: f64) -> u32 {
     [16, 8, 0].into_iter().fold(0, |out, s| {
         out | ((((f64::from((c >> s) & 255) * f).clamp(0., 255.) + 0.5).floor() as u32) << s)
     })
 }
-pub(super) fn mix(a: u32, b: u32, t: f64) -> u32 {
+pub fn mix(a: u32, b: u32, t: f64) -> u32 {
     [16, 8, 0].into_iter().fold(0, |out, s| {
         let x = f64::from((a >> s) & 255);
         let y = f64::from((b >> s) & 255);
         out | (((x + (y - x) * t.clamp(0., 1.)).round() as u32) << s)
     })
 }
-pub(super) fn matrix(a: Affine) -> Mat4 {
+pub fn matrix(a: Affine) -> [f32; 16] {
     let m = a.m;
-    Mat4 {
-        elements: [
+    {
+        [
             m[0] as f32,
             m[3] as f32,
             m[6] as f32,
@@ -94,11 +79,11 @@ pub(super) fn matrix(a: Affine) -> Mat4 {
             a.t[1] as f32,
             a.t[2] as f32,
             1.,
-        ],
+        ]
     }
 }
-pub(super) fn material(c: u32, glow: bool) -> DrawMaterial {
-    DrawMaterial {
+pub fn material(c: u32, glow: bool) -> Material {
+    Material {
         color: rgb(c),
         emissive: if glow { rgb(c) } else { [0.; 3] },
         opacity: 1.,
@@ -106,7 +91,7 @@ pub(super) fn material(c: u32, glow: bool) -> DrawMaterial {
         double_sided: false,
     }
 }
-pub(super) fn emissive(c: u32) -> bool {
+pub fn emissive(c: u32) -> bool {
     [0x7fe6ff, 0xffd98a, 0xf2c46a, 0xff8a2a, 0xffe27a].contains(&c)
 }
 impl Batcher {
@@ -136,16 +121,16 @@ impl Batcher {
             self.bucket(chunk, c, cull).add(s, a);
             return;
         }
-        let index = if let Some(i) = self.geometries.iter().position(|(g, _)| g == s) {
+        let index = if let Some(i) = self.geometries.iter().position(|g| **g == *s) {
             i
         } else {
             let i = self.geometries.len();
-            self.geometries.push((s.clone(), Arc::new(s.mesh())));
+            self.geometries.push(Arc::new(s.clone()));
             i
         };
         let size = cull.size() * 2.;
         let key = format!(
-            "{size}m{}_{}:{}:native-scenery:instance-geometry:{index}",
+            "{size}m{}_{}:{}:scenery:instance-geometry:{index}",
             (x / size).floor(),
             (z / size).floor(),
             cull.name()
@@ -167,22 +152,23 @@ impl Batcher {
             }
             let (min, max) = bounds(g.p.iter().copied());
             let id = format!("static-{name}");
-            let draw = SceneDraw {
+            let draw = Draw {
                 id,
-                resource_key: format!("native-scenery:{name}"),
-                mesh: Arc::new(g.mesh()),
+                resource_key: format!("scenery:{name}"),
+                geometry: Arc::new(g),
                 model: matrix(ID),
                 material: material(c, emissive(c)),
             };
             groups.push(Group {
                 draws: vec![draw],
                 cull,
+                instanced: false,
                 min,
                 max,
             });
         }
         for (key, cull, index, instances) in self.instances {
-            let (g, mesh) = &self.geometries[index];
+            let g = &self.geometries[index];
             let (min, max) = bounds(
                 instances
                     .iter()
@@ -191,10 +177,10 @@ impl Batcher {
             let draws = instances
                 .into_iter()
                 .enumerate()
-                .map(|(i, (a, c))| SceneDraw {
+                .map(|(i, (a, c))| Draw {
                     id: format!("instances:{key}:{i}"),
-                    resource_key: format!("native-scenery:instance-geometry:{index}"),
-                    mesh: Arc::clone(mesh),
+                    resource_key: format!("scenery:instance-geometry:{index}"),
+                    geometry: Arc::clone(g),
                     model: matrix(a),
                     material: material(c, false),
                 })
@@ -202,6 +188,7 @@ impl Batcher {
             groups.push(Group {
                 draws,
                 cull,
+                instanced: true,
                 min,
                 max,
             });

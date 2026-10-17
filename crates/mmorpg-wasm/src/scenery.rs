@@ -549,6 +549,11 @@ mod tests {
     #[test]
     fn the_local_zone_host_never_reads_presentation_scenery() {
         let host = include_str!("host.rs");
-        assert!(!host.contains("mmorpg_scenery") && !host.contains("crate::scenery"));
+        assert!(
+            !host.contains("mmorpg_scenery")
+                && !host.contains("crate::scenery")
+                && !host.contains("mmorpg_presentation")
+                && !host.contains("crate::static_scene")
+        );
     }
 }

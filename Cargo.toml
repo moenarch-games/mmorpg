@@ -8,6 +8,7 @@ members = [
   "crates/mmorpg-client",
   "crates/mmorpg-scenarios",
   "crates/mmorpg-scenery",
+  "crates/mmorpg-presentation",
   "crates/mmorpg-wasm",
 ]
 resolver = "3"
@@ -28,6 +29,7 @@ mmorpg-characters = { path = "crates/mmorpg-characters" }
 mmorpg-protocol = { path = "crates/mmorpg-protocol" }
 mmorpg-game-server = { path = "crates/mmorpg-game-server" }
 mmorpg-scenery = { path = "crates/mmorpg-scenery" }
+mmorpg-presentation = { path = "crates/mmorpg-presentation" }
 tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 
 [workspace.lints.rust]

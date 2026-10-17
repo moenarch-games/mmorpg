@@ -1634,6 +1634,7 @@ dependencies = [
  "input-bindings-core",
  "mmorpg-core",
  "mmorpg-game-server",
+ "mmorpg-presentation",
  "mmorpg-protocol",
  "mmorpg-scenery",
  "mmorpg-wasm",
@@ -1677,6 +1678,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmorpg-presentation"
+version = "0.1.0"
+dependencies = [
+ "mmorpg-core",
+ "mmorpg-scenery",
+]
+
+[[package]]
 name = "mmorpg-protocol"
 version = "0.1.0"
 dependencies = [
@@ -1712,6 +1721,7 @@ dependencies = [
  "mmorpg-characters",
  "mmorpg-core",
  "mmorpg-game-server",
+ "mmorpg-presentation",
  "mmorpg-protocol",
  "mmorpg-scenery",
  "serde",
