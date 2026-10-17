@@ -4,7 +4,7 @@
 # connection resume.
 name = "vendor-resume"
 zone = 1
-ticks = 235
+ticks = 280
 reconnect_grace_ticks = 30
 digest_interval = 25
 
@@ -65,7 +65,7 @@ action = "use_door"
 door = 1
 open = true
 
-# Through the open doorway to Innkeeper Bram Tolliver.
+# Through the open doorway into the inn.
 [[steps]]
 tick = 183
 bot = "alice"
@@ -82,8 +82,33 @@ forward = 0
 strafe = 0
 facing = 32768
 
+# Along the room, then up to the bar where Bram serves across the counter.
 [[steps]]
-tick = 214
+tick = 213
+bot = "alice"
+action = "move"
+forward = 1
+strafe = 0
+facing = 16384
+
+[[steps]]
+tick = 233
+bot = "alice"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 241
+bot = "alice"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 259
 bot = "alice"
 action = "sell_item"
 npc = 3
@@ -92,7 +117,7 @@ quantity = 3
 
 # Three copper do not cover the five-copper Worn Dagger.
 [[steps]]
-tick = 215
+tick = 260
 bot = "alice"
 action = "buy_item"
 npc = 3
@@ -101,7 +126,7 @@ quantity = 1
 
 # A guard sells nothing.
 [[steps]]
-tick = 216
+tick = 261
 bot = "alice"
 action = "buy_item"
 npc = 6
@@ -109,7 +134,7 @@ offer = 0
 quantity = 1
 
 [[steps]]
-tick = 217
+tick = 262
 bot = "alice"
 action = "sell_item"
 npc = 3
@@ -117,17 +142,17 @@ bag_slot = 1
 quantity = 1
 
 [[steps]]
-tick = 219
+tick = 264
 bot = "alice"
 action = "disconnect"
 
 [[steps]]
-tick = 221
+tick = 266
 bot = "alice"
 action = "reconnect"
 
 [[steps]]
-tick = 225
+tick = 270
 bot = "alice"
 action = "buy_item"
 npc = 3
@@ -155,25 +180,25 @@ event = "error:out_of_range"
 [[expect]]
 kind = "position"
 bot = "alice"
-tick = 213
-position = [1495, 90, -10]
+tick = 258
+position = [1915, 90, -178]
 
 [[expect]]
 kind = "area"
 bot = "alice"
-tick = 213
+tick = 258
 area = "Greyhaven Outpost"
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 215
+tick = 260
 copper = 3
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
-tick = 215
+tick = 260
 inventory_revision = 2
 sheet = true
 slot = 0
@@ -183,36 +208,36 @@ quantity = 0
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 216
+tick = 261
 event = "error:not_enough_money"
 
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 217
+tick = 262
 event = "error:invalid_vendor"
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 218
+tick = 263
 copper = 5
 
 [[expect]]
 kind = "identity"
 bot = "alice"
-tick = 222
+tick = 267
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 226
+tick = 271
 copper = 0
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
-tick = 226
+tick = 271
 inventory_revision = 4
 sheet = true
 slot = 0

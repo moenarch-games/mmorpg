@@ -12,7 +12,7 @@ use mmorpg_core::{
 /// Pins every content table of revision 10, including the bound ability, item,
 /// loot, vendor and quest catalogs and the inn door. Changing creatures, NPCs,
 /// colliders or areas requires a new revision and a new recorded value.
-const FINGERPRINT: u64 = 0xf797_b281_8c57_8935;
+const FINGERPRINT: u64 = 0xec89_82ff_4ec6_6ff7;
 
 #[test]
 fn the_content_identity_is_pinned() {

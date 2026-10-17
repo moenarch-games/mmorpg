@@ -72,7 +72,9 @@ pub use creature::{
     CREATURE_RUN_SPEED_UNITS_PER_TICK, CREATURE_WALK_SPEED_UNITS_PER_TICK, EVADE_TIMEOUT_TICKS,
     LEASH_RADIUS_UNITS, MAX_THREAT_ENTRIES, WANDER_WAIT_TICKS, WANDER_WALK_TIMEOUT_TICKS,
 };
-pub use door::{DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView, MAX_DOORS};
+pub use door::{
+    DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView, MAX_DOORS, NPC_SIGHT_HEIGHT_UNITS,
+};
 pub use entity::{CreatureId, CreatureTemplateId, EntityKind, EntityRef, NpcId};
 pub use equipment::{
     EQUIPMENT_SLOTS, Equipment, EquipmentSlot, HEALTH_PER_STAMINA, ItemStats, MAX_EQUIPPED_STAMINA,

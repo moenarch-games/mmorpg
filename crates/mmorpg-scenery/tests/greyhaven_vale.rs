@@ -95,7 +95,7 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
     }
     assert_eq!(
         greyhaven_vale::content().fingerprint(),
-        0xf797_b281_8c57_8935
+        0xec89_82ff_4ec6_6ff7
     );
     assert_eq!(scenery.content_revision, 10);
 }

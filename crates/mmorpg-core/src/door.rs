@@ -11,6 +11,8 @@ use crate::{EntityRef, ErrorCode, PlayerId, ZoneError, ZoneSimulation};
 
 /// A player reaches a door within this horizontal distance of its closed leaf's centre (2.5 m).
 pub const DOOR_REACH_UNITS: i32 = 250;
+/// NPC service sight lines run between heads, this far above the feet (1.6 m).
+pub const NPC_SIGHT_HEIGHT_UNITS: i32 = 160;
 /// Doors a zone's content may author.
 pub const MAX_DOORS: usize = 16;
 
@@ -126,8 +128,9 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    /// Whether no content collider or closed door lies between the player's body centre and
-    /// `npc`'s: NPC services are never reached through walls (#158).
+    /// Whether no content collider or closed door lies on the sight line between the player's
+    /// and `npc`'s heads ([`NPC_SIGHT_HEIGHT_UNITS`] above their feet): NPC services are never
+    /// reached through walls, but a bar counter between them does not block it (#158).
     pub(crate) fn npc_in_sight(
         &self,
         player_id: PlayerId,
@@ -136,11 +139,15 @@ impl ZoneSimulation {
         let Some(feet) = self.content.npc(npc).map(|npc| npc.position) else {
             return Ok(false);
         };
-        let from = self.player_position(player_id)?;
-        let to = [feet[0], crate::PLAYER_HALF_EXTENTS_UNITS[1], feet[1]];
+        let centre = self.player_position(player_id)?;
+        let eye = centre.y - crate::PLAYER_HALF_EXTENTS_UNITS[1] + NPC_SIGHT_HEIGHT_UNITS;
         let ray = physics_engine::Ray::new(
-            physics_engine::Vec3i::new(from.x, from.y, from.z),
-            physics_engine::Vec3i::new(to[0] - from.x, to[1] - from.y, to[2] - from.z),
+            physics_engine::Vec3i::new(centre.x, eye, centre.z),
+            physics_engine::Vec3i::new(
+                feet[0] - centre.x,
+                NPC_SIGHT_HEIGHT_UNITS - eye,
+                feet[1] - centre.z,
+            ),
         );
         let hits = self
             .world

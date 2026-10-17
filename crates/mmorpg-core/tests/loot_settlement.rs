@@ -177,5 +177,5 @@ fn standalone_settlement_has_no_live_zone_or_content_effect() {
     .unwrap();
     assert_eq!(zone.snapshot().unwrap(), before);
     assert_eq!(zone.content().revision(), 10);
-    assert_eq!(zone.content().fingerprint(), 0xf797_b281_8c57_8935);
+    assert_eq!(zone.content().fingerprint(), 0xec89_82ff_4ec6_6ff7);
 }
