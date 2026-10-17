@@ -40,6 +40,7 @@ const COMPLETE_QUEST_INTENT: u8 = 16;
 const ABANDON_QUEST_INTENT: u8 = 17;
 const DIRECTED_STRIKE_INTENT: u8 = 18;
 const GUARD_INTENT: u8 = 19;
+const USE_DOOR_INTENT: u8 = 20;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -80,6 +81,7 @@ pub fn encode_canonical_snapshot(
     for creature in &snapshot.creatures {
         encode_creature(&mut payload, creature)?;
     }
+    crate::wire::encode_doors(&mut payload, &snapshot.doors)?;
     Ok(payload)
 }
 
@@ -160,6 +162,10 @@ fn encode_player(
             PlayerIntent::CancelCast => (CANCEL_CAST_INTENT, None),
             PlayerIntent::Guard(lane) => {
                 payload.extend_from_slice(&[GUARD_INTENT, crate::wire::encode_lane(lane)]);
+                continue;
+            }
+            PlayerIntent::UseDoor { door, open } => {
+                payload.extend_from_slice(&[USE_DOOR_INTENT, door.get(), u8::from(open)]);
                 continue;
             }
             PlayerIntent::ChooseClass { class, sex } => {
@@ -434,6 +440,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     for _ in 0..creature_count {
         creatures.push(decode_creature(payload, &mut offset)?);
     }
+    let doors = crate::wire::decode_doors(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         schema_version,
@@ -445,6 +452,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         loot_rng_state,
         players,
         creatures,
+        doors,
     })
 }
 
@@ -515,6 +523,18 @@ fn decode_player(
             intents.push(PlayerIntent::Guard(crate::wire::decode_lane(read_u8(
                 payload, offset,
             )?)?));
+            continue;
+        }
+        if code == USE_DOOR_INTENT {
+            let [door, open] = take(payload, offset)?;
+            intents.push(PlayerIntent::UseDoor {
+                door: mmorpg_core::DoorId::new(door),
+                open: match open {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(ProtocolError::new("door state must be 0 or 1")),
+                },
+            });
             continue;
         }
         if code == CHOOSE_CLASS_INTENT {
@@ -839,6 +859,10 @@ mod tests {
             content_revision: 3,
             content_fingerprint: 0x0123_4567_89ab_cdef,
             rng_state: u64::MAX,
+            doors: vec![mmorpg_core::DoorView {
+                door: mmorpg_core::DoorId::new(1),
+                open: true,
+            }],
             players: vec![
                 CanonicalPlayerSnapshot {
                     chat_ready_at: 0,
@@ -1337,7 +1361,7 @@ mod tests {
         let mut cases = vec![
             (auto_attack, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
-            (intents + 1, 20, "malformed pending intent"),
+            (intents + 1, 21, "malformed pending intent"),
         ];
         // The third intent (StartAttack) carries no target.
         cases.push((intents + 1 + 2 * 6 + 1, 2, "malformed pending intent"));

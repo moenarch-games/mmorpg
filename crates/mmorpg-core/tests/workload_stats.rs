@@ -23,6 +23,7 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
             + 6
             + content.npcs().len()
             + content.creature_spawns().len()
+            + content.doors().len()
             + 1
     );
     assert_eq!(

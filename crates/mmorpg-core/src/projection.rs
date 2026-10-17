@@ -174,6 +174,8 @@ pub struct ZoneSnapshot {
     /// Chat lines the viewer heard this tick, in delivery order.
     pub chat: Vec<crate::ChatLine>,
     pub entities: Vec<EntitySnapshot>,
+    /// Every content door's state, in door-ID order (#158).
+    pub doors: Vec<crate::DoorView>,
 }
 
 impl ZoneSimulation {
@@ -305,6 +307,7 @@ impl ZoneSimulation {
                 events,
                 chat: viewer.chat.clone(),
                 entities,
+                doors: self.door_views(),
             },
             stats,
         })

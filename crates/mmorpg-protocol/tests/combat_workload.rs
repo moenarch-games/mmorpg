@@ -15,11 +15,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // cast Crude Bandage, which moves bodies differently. Snapshot v15 raised
     // the spread 32-player fight's bytes by 35,693 for the 14-byte
     // AttackPerformed/DamageObserved records visible bystanders now receive.
+    // Content revision 10 replaced the inn block with the walk-in inn's 32 wall
+    // and furniture bodies and its door (+32 bodies × 360 ticks of visits) and
+    // raised the broad-phase pairs, and candidates slightly, near the inn (#158).
     let ceilings: [[usize; 7]; FIXTURES.len()] = [
-        [21_240, 120_960, 170_837, 4, 27_222, 190_080, 3_204_720],
-        [21_240, 118_080, 255_546, 20, 24_540, 70_336, 981_271],
-        [21_240, 126_720, 365_288, 41, 32_010, 366_813, 5_442_236],
-        [20_106, 137_106, 462_299, 68, 39_928, 1_938_628, 24_499_402],
+        [21_240, 132_480, 174_870, 4, 27_222, 190_080, 3_204_720],
+        [21_240, 129_600, 262_455, 20, 24_540, 70_367, 981_271],
+        [21_240, 138_240, 377_262, 41, 32_010, 367_679, 5_442_236],
+        [20_106, 148_626, 469_181, 68, 39_928, 1_938_628, 24_499_402],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -62,11 +65,11 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             // these fixtures never accept a quest) and the one-byte quest
             // item presence per corpse sheet. v18 adds the four-byte viewer
             // guard per projection. v19 adds the one-byte melee stance and
-            // v20 the one-byte combo phase per projection. Physics/work
-            // fences remain unchanged.
+            // v20 the one-byte combo phase per projection. v22 adds the
+            // door count and the inn door's two-byte record per projection.
             let ceiling = if index == 6 {
                 ceiling
-                    + (22 + 23 + 4 + 1 + 4 + 1 + 1) * fixture.players * TICKS
+                    + (22 + 23 + 4 + 1 + 4 + 1 + 1 + 3) * fixture.players * TICKS
                     + (64 + 20 + 9) * fixture.players * (TICKS / 10)
                     + 22 * report.loot_sheets
             } else {
@@ -87,8 +90,8 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert_eq!(report.ai_evaluations, 59 * TICKS);
         }
         if fixture.crowded {
-            // Whole 14-byte events and 21-byte records beside the 110-byte
-            // fixed part, a 93-byte self sheet and an 18-byte copper-only
+            // Whole 14-byte events and 21-byte records beside the fixed part
+            // and the door section, a 93-byte self sheet and an 18-byte copper-only
             // corpse sheet fill all 1,077 bytes.
             assert_eq!(report.max_projection_bytes, 1_077);
             assert!(report.candidates_tested > 1_000_000);

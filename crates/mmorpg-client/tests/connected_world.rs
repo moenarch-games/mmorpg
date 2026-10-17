@@ -625,6 +625,7 @@ async fn fragmented_projection_reaches_the_native_client() {
     let revision = greyhaven_vale_definition().revision();
     let player_id = 42;
     let snapshot = ZoneSnapshot {
+        doors: Vec::new(),
         loot: None,
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         zone_id,

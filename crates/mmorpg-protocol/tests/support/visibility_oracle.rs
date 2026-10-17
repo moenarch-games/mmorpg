@@ -53,6 +53,7 @@ pub fn exhaustive_projection(
         || canonical.tick == observer.quests_changed_at
         || canonical.tick.is_multiple_of(10);
     ZoneSnapshot {
+        doors: canonical.doors.clone(),
         loot: None,
         content_revision: canonical.content_revision,
         acknowledged_sequence: observer.last_sequence,

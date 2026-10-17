@@ -54,6 +54,10 @@ pub enum PlayerIntent {
     /// Holds or releases the shield guard (#156), in order with strikes so
     /// the last-pressed gesture wins.
     Guard(Option<crate::StrikeHeight>),
+    UseDoor {
+        door: crate::DoorId,
+        open: bool,
+    },
     CancelCast,
     ChooseClass {
         class: u8,
@@ -268,6 +272,8 @@ pub struct CanonicalZoneSnapshot {
     pub players: Vec<CanonicalPlayerSnapshot>,
     /// One record per content spawn, in creature-ID order.
     pub creatures: Vec<CanonicalCreatureSnapshot>,
+    /// One state per content door, in door-ID order (#158).
+    pub doors: Vec<crate::DoorView>,
 }
 
 impl ZoneSimulation {
@@ -387,6 +393,7 @@ impl ZoneSimulation {
             loot_rng_state: self.loot_rng.state(),
             players,
             creatures,
+            doors: self.door_views(),
         })
     }
 
@@ -425,6 +432,23 @@ impl ZoneSimulation {
         }
         for record in snapshot.creatures {
             zone.restore_creature(record)?;
+        }
+        let doors = zone.content.doors().to_vec();
+        if snapshot.doors.len() != doors.len()
+            || snapshot
+                .doors
+                .iter()
+                .zip(&doors)
+                .any(|(view, door)| view.door != door.id)
+        {
+            return Err(ZoneError::new(
+                "snapshot doors do not match the content doors",
+            ));
+        }
+        for (view, door) in snapshot.doors.iter().zip(&doors) {
+            if view.open {
+                zone.set_door(door, true)?;
+            }
         }
         zone.validate_references()?;
         zone.rebuild_interest()?;

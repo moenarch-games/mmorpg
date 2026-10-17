@@ -85,6 +85,7 @@ pub enum Action {
     UseAbility,
     CancelCast,
     Guard,
+    UseDoor,
     AcceptQuest,
     CompleteQuest,
     AbandonQuest,
@@ -114,6 +115,7 @@ impl Action {
             Self::UseAbility => "use_ability",
             Self::CancelCast => "cancel_cast",
             Self::Guard => "guard",
+            Self::UseDoor => "use_door",
             Self::AcceptQuest => "accept_quest",
             Self::CompleteQuest => "complete_quest",
             Self::AbandonQuest => "abandon_quest",
@@ -143,6 +145,7 @@ impl Action {
             | Self::UseAbility
             | Self::CancelCast
             | Self::Guard
+            | Self::UseDoor
             | Self::AcceptQuest
             | Self::CompleteQuest
             | Self::AbandonQuest => "applied",
@@ -172,6 +175,7 @@ impl Action {
             | Self::UseAbility
             | Self::CancelCast
             | Self::Guard
+            | Self::UseDoor
             | Self::AcceptQuest
             | Self::CompleteQuest
             | Self::AbandonQuest => true,
@@ -205,6 +209,9 @@ pub struct Step {
     pub ability: Option<u8>,
     /// `guard`: `high`, `middle`, `low`, or `none` to lower the guard.
     pub lane: Option<String>,
+    /// `use_door`: the door ID and whether to open (`true`) or close it.
+    pub door: Option<u8>,
+    pub open: Option<bool>,
     pub creature: Option<u32>,
     pub died_at: Option<u64>,
     pub source_slot: Option<u8>,
@@ -506,6 +513,14 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
         if step.equipment_slot.is_some() != (step.action == Action::UnequipItem) {
             return Err(format!(
                 "{at}: equipment_slot is required only for unequip_item"
+            ));
+        }
+        if [step.door.is_some(), step.open.is_some()]
+            .iter()
+            .any(|&present| present != (step.action == Action::UseDoor))
+        {
+            return Err(format!(
+                "{at}: door and open are required only for use_door"
             ));
         }
         if step.lane.is_some() != (step.action == Action::Guard) {
@@ -825,6 +840,7 @@ impl Runner<'_> {
             | Action::UseAbility
             | Action::CancelCast
             | Action::Guard
+            | Action::UseDoor
             | Action::AcceptQuest
             | Action::CompleteQuest
             | Action::AbandonQuest => self.submit(index, step)?,
@@ -1066,6 +1082,17 @@ impl Runner<'_> {
                 }
             }
             Action::CancelCast => (ZoneCommand::CancelCast, String::new()),
+            Action::UseDoor => {
+                let door = step.door.ok_or("use_door door is required")?;
+                let open = step.open.ok_or("use_door open is required")?;
+                (
+                    ZoneCommand::UseDoor {
+                        door: mmorpg_core::DoorId::new(door),
+                        open,
+                    },
+                    format!(" door={door} open={open}"),
+                )
+            }
             Action::Guard => {
                 let lane = step.lane.as_deref().ok_or("guard lane is required")?;
                 (

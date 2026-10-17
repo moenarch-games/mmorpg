@@ -220,6 +220,8 @@ pub struct ZoneSimulation {
     pub(crate) interest: InterestIndex,
     pub(crate) interest_work: InterestMaintenanceStats,
     pub(crate) tick_work: ZoneTickWork,
+    /// Open doors by ID; absent means closed (#158).
+    pub(crate) doors: BTreeMap<crate::DoorId, bool>,
 }
 
 impl ZoneSimulation {
@@ -276,6 +278,16 @@ impl ZoneSimulation {
         for body in world_limit_bodies() {
             world.add_body(body).map_err(physics_error)?;
         }
+        // Every door starts closed.
+        for door in content.doors() {
+            world
+                .add_body(RigidBody::fixed(
+                    physics_engine::BodyId(u64::from(door.body)),
+                    vector(door.closed.position),
+                    vector(door.closed.half_extents),
+                ))
+                .map_err(physics_error)?;
+        }
         let mut interest = InterestIndex::default();
         for npc in content.npcs() {
             let entity = EntityRef::Npc(npc.id);
@@ -304,6 +316,7 @@ impl ZoneSimulation {
             interest,
             interest_work: InterestMaintenanceStats::default(),
             tick_work: ZoneTickWork::default(),
+            doors: BTreeMap::new(),
         })
     }
 
@@ -454,6 +467,7 @@ impl ZoneSimulation {
             }
             // Queued so a guard pressed after a strike stays raised (5.2.37).
             ZoneCommand::Guard { lane } => Some(PlayerIntent::Guard(lane)),
+            ZoneCommand::UseDoor { door, open } => Some(PlayerIntent::UseDoor { door, open }),
             ZoneCommand::SelectTarget(target) => Some(PlayerIntent::SelectTarget(target)),
             ZoneCommand::StartAttack => Some(PlayerIntent::StartAttack),
             ZoneCommand::Loot(claim) => Some(PlayerIntent::Loot(claim)),

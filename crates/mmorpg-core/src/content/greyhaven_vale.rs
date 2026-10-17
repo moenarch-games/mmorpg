@@ -16,6 +16,7 @@ use std::sync::{Arc, LazyLock};
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, ZoneAreas};
 
+pub mod inn;
 pub mod quests;
 pub mod units;
 
@@ -25,8 +26,10 @@ pub mod units;
 /// revision 7 binds item catalog 2 (equipment) and loot catalog 2;
 /// revision 8 binds vendor catalog 1 (Innkeeper Bram Tolliver's stock);
 /// revision 9 binds quest catalog 1 (the Greyhaven chain), item catalog 3
-/// (the Wolf Pelt) and vendor catalog 2.
-pub const REVISION: u64 = 9;
+/// (the Wolf Pelt) and vendor catalog 2; revision 10 replaces the inn block
+/// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
+/// inside.
+pub const REVISION: u64 = 10;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -64,6 +67,7 @@ pub mod ids {
     pub const BOUNDARY_WALLS: RangeInclusive<u32> = 2..=5;
 
     pub const KEEP: u32 = 100;
+    /// The inn's footprint: a presentation anchor, not a collider (#158).
     pub const INN: u32 = 101;
     pub const SMITHY: u32 = 102;
     pub const HOUSES: RangeInclusive<u32> = 103..=106;
@@ -72,6 +76,10 @@ pub mod ids {
     pub const PALISADE: RangeInclusive<u32> = 110..=117;
     pub const GATE_POSTS: RangeInclusive<u32> = 120..=127;
     pub const GRAVESTONES: RangeInclusive<u32> = 130..=137;
+    /// The inn's front door leaf (#158).
+    pub const INN_DOOR: u32 = 149;
+    /// The inn's walls and furniture (#158).
+    pub const INN_PARTS: RangeInclusive<u32> = 150..=181;
 
     pub const BARN: u32 = 200;
     pub const FARMHOUSE: u32 = 201;
@@ -222,10 +230,9 @@ pub fn roads() -> &'static [Road] {
 type Footprint = (u32, [i32; 2], [i32; 2], i32);
 
 #[rustfmt::skip]
-static STRUCTURES: [Footprint; 63] = [
+static STRUCTURES: [Footprint; 62] = [
     // Greyhaven Outpost: keep, inn, smithy, houses, well and waystone.
     (ids::KEEP, [-2_600, -500], [-800, 700], 1_000),
-    (ids::INN, [800, -500], [2_200, 500], 600),
     (ids::SMITHY, [2_400, 100], [3_000, 800], 450),
     (103, [-2_800, 3_300], [-2_000, 3_900], 500),
     (104, [-1_500, 3_500], [-700, 4_100], 500),
@@ -485,6 +492,7 @@ fn colliders() -> Vec<StaticCollider> {
             .iter()
             .map(|&(id, min, max, height)| standing(id, min, max, height)),
     );
+    colliders.extend(inn::colliders(*ids::INN_PARTS.start()));
     colliders.extend(trees());
     colliders
 }
@@ -529,7 +537,9 @@ static CONTENT: LazyLock<Arc<ZoneContent>> = LazyLock::new(|| {
             .with_vendors(crate::VENDOR_CATALOG_REVISION, units::vendors())
             .expect("built-in Greyhaven Vale vendor content is valid")
             .with_quests(crate::QUEST_CATALOG_REVISION, quests::quests())
-            .expect("built-in Greyhaven Vale quest content is valid"),
+            .expect("built-in Greyhaven Vale quest content is valid")
+            .with_doors(vec![inn::door(ids::INN_DOOR)])
+            .expect("built-in Greyhaven Vale door content is valid"),
     )
 });
 

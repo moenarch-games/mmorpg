@@ -123,6 +123,7 @@ impl ZoneSimulation {
             | PlayerIntent::Loot(_)
             | PlayerIntent::AcceptQuest { .. }
             | PlayerIntent::CompleteQuest { .. }
+            | PlayerIntent::UseDoor { .. }
                 if !alive =>
             {
                 Some((ErrorCode::YouAreDead, None))
@@ -165,6 +166,7 @@ impl ZoneSimulation {
                     equipment.unequip(bag, equipment_slot)
                 })?,
             PlayerIntent::Loot(claim) => self.claim_loot(player_id, claim)?,
+            PlayerIntent::UseDoor { door, open } => self.use_door(player_id, door, open)?,
             PlayerIntent::Chat(message) => {
                 self.speak(player_id, message, now)?;
                 None
