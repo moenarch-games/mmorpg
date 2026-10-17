@@ -595,7 +595,7 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
         serde_json::from_slice(file(entry)).expect("the bundle glTF is JSON");
     let mut bin = Vec::new();
     let mut append = |bytes: &[u8]| {
-        while bin.len() % 4 != 0 {
+        while !bin.len().is_multiple_of(4) {
             bin.push(0);
         }
         let offset = bin.len();
@@ -654,12 +654,12 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
     {
         list.extend(views);
     }
-    while bin.len() % 4 != 0 {
+    while !bin.len().is_multiple_of(4) {
         bin.push(0);
     }
     json["buffers"] = serde_json::json!([{"byteLength": bin.len()}]);
     let mut text = serde_json::to_vec(&json).expect("JSON serializes");
-    while text.len() % 4 != 0 {
+    while !text.len().is_multiple_of(4) {
         text.push(b' ');
     }
     let length = 12 + 8 + text.len() + 8 + bin.len();
