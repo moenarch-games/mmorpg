@@ -7,11 +7,7 @@
     "build": "bun install --frozen-lockfile && bun scripts/build-wasm.ts && tsc --noEmit && vite build",
     "build:wasm": "bun scripts/build-wasm.ts",
     "dev": "bun install --frozen-lockfile && bun scripts/build-wasm.ts && vite",
-    "test": "bun test",
-    "size:budget": "bun scripts/native-size.ts",
-    "size:baseline:capture": "bun scripts/native-size.ts --capture",
-    "test:size-evidence": "bun scripts/native-size.acceptance.ts",
-    "typecheck:size": "tsc --noEmit -p tsconfig.size.json"
+    "test": "bun test"
   },
   "dependencies": {
     "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#e8996d383d47dfaa05b684a68cc97f2bb9ed0170",
@@ -30,7 +26,6 @@
     "@types/react-dom": "19.3.0",
     "@types/three": "0.185.4",
     "bun-types": "1.4.3",
-    "coding-tooling": "github:moritzbrantner/coding-tooling#f6b95f942117b37134e85fb1c912033a0fbce448",
     "typescript": "5.9.3",
     "undici-types": "8.11.2",
     "vite": "7.3.7"

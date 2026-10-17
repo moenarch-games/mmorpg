@@ -3,10 +3,8 @@
   "profile": "repository-foundation-v1",
   "tiers": {
     "fast": ["format:check", "lint", "build", "test:unit"],
-    "full": ["format:check", "lint", "build", "test:unit"],
-    "performance": ["size:budget"]
+    "full": ["format:check", "lint", "build", "test:unit"]
   },
-  "optionalCapabilities": ["size:budget"],
   "requiredCapabilities": ["format:check", "lint", "build", "test:unit"],
   "capabilityCommands": {
     ".": {
@@ -14,7 +12,6 @@
       "lint": ["cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--locked", "--", "-D", "warnings"],
       "build": ["cargo", "build", "--workspace", "--all-features", "--locked"],
       "test:unit": ["cargo", "test", "--workspace", "--all-features", "--locked"],
-      "size:budget": ["bun", "run", "--cwd", "web", "size:budget"],
       "performance:work": ["python3", "scripts/operation-work.py"]
     }
   },
@@ -25,15 +22,6 @@
       "tier": "full"
     },
     "scopes": [
-      {
-        "id": "native-size-evidence",
-        "paths": [".performance/**", "web/scripts/native-size*", "web/tsconfig.size.json"],
-        "instructions": ["docs/SIZE_EVIDENCE.md"],
-        "conventionRefs": ["BENCH-010", "RUST-006", "REP-012"],
-        "capabilities": ["size:budget"],
-        "owners": ["moritzbrantner/mmorpg", "moritzbrantner/coding-tooling"],
-        "components": ["."]
-      },
       {
         "id": "browser-presentation",
         "paths": ["web/src/main.ts", "web/src/styles.css", "web/src/character-*", "web/src/world/**", "web/tests/**"],

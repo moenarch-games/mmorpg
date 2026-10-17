@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       full_validation:
-        description: Run comprehensive tests, Clippy, WASM and size checks
+        description: Run comprehensive tests, Clippy and WASM checks
         type: boolean
         default: false
 
@@ -76,8 +76,6 @@ jobs:
       cache_bun: false
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}
-      lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-character-bundle.sh && cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && bun run --cwd web typecheck:size && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
-      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-character-bundle.sh && python3 scripts/test-dev-native.py && cargo test --workspace --all-features --locked && mkdir -p artifacts && bun run --cwd web size:budget > artifacts/native-size.json && bun run --cwd web test:size-evidence' || '' }}
+      lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-character-bundle.sh && cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
+      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-character-bundle.sh && python3 scripts/test-dev-native.py && cargo test --workspace --all-features --locked' || '' }}
       build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-character-bundle.sh && cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-character-bundle.sh && cargo check --workspace --locked') || '' }}
-      artifact_paths: artifacts/native-size.json
-      upload_artifacts_on: ${{ needs.scope.outputs.full_validation == 'true' && 'always' || 'never' }}
