@@ -1,0 +1,123 @@
+/* The Settings modal (#41 Q11/Q12): central dialog, world visible behind it, category sidebar
+   on desktop and a compact category row on narrow screens. */
+.settings-dialog {
+  width: min(72rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  background: rgb(10 15 18 / 96%);
+  color: #edf4ee;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 55%);
+}
+
+.settings-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.settings-dialog::backdrop { background: rgb(4 7 9 / 45%); }
+
+.settings-header,
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .8rem 1.1rem;
+}
+
+.settings-header { border-bottom: 1px solid rgb(255 255 255 / 8%); }
+.settings-footer { border-top: 1px solid rgb(255 255 255 / 8%); }
+.settings-header h2 { margin: 0; color: var(--gold-bright); font-size: 1.15rem; }
+
+.settings-header button,
+.settings-footer button,
+.settings-categories button,
+.settings-control button,
+.selection-settings {
+  padding: .4rem .8rem;
+  border: 1px solid var(--panel-border);
+  background: rgb(255 255 255 / 5%);
+  color: inherit;
+  cursor: pointer;
+}
+
+.settings-control button:disabled { opacity: .45; cursor: default; }
+
+.selection-settings { width: 100%; margin-top: .6rem; }
+
+.settings-body {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  min-height: 0;
+}
+
+.settings-categories {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  padding: 1rem;
+  border-right: 1px solid rgb(255 255 255 / 8%);
+}
+
+.settings-categories button { text-align: left; }
+.settings-categories button[aria-current="true"] { border-color: var(--gold); color: var(--gold-bright); }
+
+.settings-content {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.2rem;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr);
+  gap: .3rem 1rem;
+  align-items: center;
+}
+
+.settings-label { font-weight: 650; }
+
+.settings-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+}
+
+.settings-control input[type="number"] { width: 6rem; }
+.settings-control input[type="range"] { flex: 1 1 10rem; min-width: 8rem; }
+
+.settings-description {
+  grid-column: 2;
+  margin: 0;
+  color: #9aa9a0;
+  font-size: .85rem;
+}
+
+.settings-bindings h3 { margin: .5rem 0 .25rem; color: var(--gold-bright); font-size: 1rem; }
+.settings-bindings-host { margin-top: .8rem; padding: .8rem; background: #eef1ee; color: #1f2328; }
+/* The shared workbench brings its own light surface. */
+.settings-bindings-host .ib-workbench { color-scheme: light; }
+.settings-error { color: #b42318; }
+.settings-status { margin: 0; color: #c9d4cc; font-size: .85rem; }
+
+@media (max-width: 720px) {
+  .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .settings-categories {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: .6rem 1rem;
+    border-right: 0;
+    border-bottom: 1px solid rgb(255 255 255 / 8%);
+  }
+  .settings-row { grid-template-columns: minmax(0, 1fr); }
+  .settings-description { grid-column: 1; }
+}
+
+/* An explicit Reduce motion setting; the system preference keeps its own media rules. */
+:root[data-motion="reduce"] .sky-clouds,
+:root[data-motion="reduce"] .combat-text-entry { animation: none; }

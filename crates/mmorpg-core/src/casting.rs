@@ -20,8 +20,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::ability::{
-    Ability, AbilityEffect, AbilityId, AuraKind, CREATURE_ABILITY_JITTER_TICKS, CastTime,
-    GLOBAL_COOLDOWN_TICKS, ability_by_id, learned, scaled,
+    Ability, AbilityEffect, AbilityId, AbilityRange, AuraKind, CREATURE_ABILITY_JITTER_TICKS,
+    CastTime, GLOBAL_COOLDOWN_TICKS, ability_by_id, learned, scaled,
 };
 use crate::ai::distance_squared;
 use crate::aura::{apply_aura, has_kind, pulse_amount};
@@ -116,6 +116,11 @@ impl ZoneSimulation {
                 > i64::from(reach).pow(2)
             {
                 return Ok(Some((ErrorCode::OutOfRange, target)));
+            }
+            if matches!(ability.range, AbilityRange::Units(_))
+                && !self.line_of_sight(EntityRef::Player(player_id), entity)?
+            {
+                return Ok(Some((ErrorCode::LineOfSight, target)));
             }
             Some(entity)
         } else {
@@ -544,6 +549,24 @@ impl ZoneSimulation {
         }
     }
 
+    /// Whether no static content collider lies on the straight segment between the two units'
+    /// body centres. Physics owns the deterministic ray query; units never block each other.
+    pub(crate) fn line_of_sight(&self, from: EntityRef, to: EntityRef) -> Result<bool, ZoneError> {
+        let origin = self.unit_position(from)?;
+        let end = self.unit_position(to)?;
+        let ray = physics_engine::Ray::new(
+            physics_engine::Vec3i::new(origin[0], origin[1], origin[2]),
+            physics_engine::Vec3i::new(end[0] - origin[0], end[1] - origin[1], end[2] - origin[2]),
+        );
+        let hits = self
+            .world
+            .ray_cast(ray, 1)
+            .map_err(|error| ZoneError::new(format!("line-of-sight query failed: {error}")))?;
+        Ok(!hits
+            .iter()
+            .any(|hit| hit.body.0 < crate::entity::PLAYER_BODY_BASE))
+    }
+
     fn unit_distance_squared(&self, from: EntityRef, to: EntityRef) -> Result<i64, ZoneError> {
         let from = self.unit_position(from)?;
         let to = self.unit_position(to)?;
@@ -630,6 +653,19 @@ impl ZoneSimulation {
             );
             return Ok(());
         }
+        if let Some(target) = cast.target
+            && matches!(ability.range, AbilityRange::Units(_))
+            && !self.line_of_sight(source, target)?
+        {
+            self.notify(
+                player_id,
+                ZoneEvent::Error {
+                    code: ErrorCode::LineOfSight,
+                    target: Some(target),
+                },
+            );
+            return Ok(());
+        }
         let affordable = self
             .players
             .get(&player_id)
@@ -682,6 +718,18 @@ impl ZoneSimulation {
                     return Ok(());
                 }
                 self.restart_creature_ability(creature_id, ability);
+                if !self.line_of_sight(source, target)? {
+                    // The target stepped behind cover: the bolt fizzles.
+                    self.notify_units(
+                        [Some(source), Some(target)],
+                        ZoneEvent::Interrupted {
+                            source: None,
+                            target: source,
+                            ability: ability.id,
+                        },
+                    );
+                    return Ok(());
+                }
                 self.notify_units(
                     [Some(source), Some(target)],
                     ZoneEvent::AbilityUsed {
@@ -799,7 +847,9 @@ impl ZoneSimulation {
             }
             _ => {
                 let reach = ability.range.reach().unwrap_or(0);
-                if distance_squared(here, leader_at) > i64::from(reach).pow(2) {
+                if distance_squared(here, leader_at) > i64::from(reach).pow(2)
+                    || !self.line_of_sight(EntityRef::Creature(creature_id), leader)?
+                {
                     return Ok(false);
                 }
                 Some(leader)

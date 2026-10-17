@@ -122,13 +122,34 @@ export function dialogView(sheet: QuestSheet, catalog: ContentCatalog, npc: Ques
   };
 }
 
-/** One line per active quest objective for the HUD tracker. */
-export function trackerLines(sheet: QuestSheet, catalog: ContentCatalog): string[] {
+/** One tracker row: a quest heading (`objective` null) or one of its objectives. */
+export type TrackerRow = { text: string; quest: number; objective: number | null };
+
+/** The HUD tracker's rows: each active quest followed by its objectives. */
+export function trackerRows(sheet: QuestSheet, catalog: ContentCatalog): TrackerRow[] {
   return questViews(sheet, catalog).flatMap((view) => [
-    view.complete ? `${view.quest.name} — return to ${catalog.npcs.get(view.quest.ender)?.name ?? "the quest giver"}` : view.quest.name,
-    ...view.objectives.map((objective) => `  ${objective.done ? "✓" : "·"} ${objective.text}`),
+    {
+      text: view.complete ? `${view.quest.name} — return to ${catalog.npcs.get(view.quest.ender)?.name ?? "the quest giver"}` : view.quest.name,
+      quest: view.quest.id,
+      objective: null,
+    },
+    ...view.objectives.map((objective, index) => ({
+      text: `  ${objective.done ? "✓" : "·"} ${objective.text}`,
+      quest: view.quest.id,
+      objective: index,
+    })),
   ]);
 }
+
+/** One line per active quest objective for the HUD tracker. */
+export function trackerLines(sheet: QuestSheet, catalog: ContentCatalog): string[] {
+  return trackerRows(sheet, catalog).map((row) => row.text);
+}
+
+/** Ticks (3 s at 30 Hz) a confirmed objective change stays highlighted in the tracker. */
+export const HIGHLIGHT_TICKS = 90n;
+/** Ticks (4 s at 30 Hz) a completion notice and a newly ready turn-in marker stay shown. */
+export const NOTICE_TICKS = 120n;
 
 /** Ticks (3 s at 30 Hz) after which an unanswered quest request stops blocking new ones. */
 const PENDING_TICKS = 90n;
@@ -160,6 +181,14 @@ export class QuestState {
    * intent queue; an unanswered request lapses after `PENDING_TICKS`.
    */
   #pending: { npc: number | null; tick: bigint } | null = null;
+  /**
+   * Cues for progress the zone confirmed between two received sheets, keyed to the tick they
+   * expire. The first sheet after a reset only synchronizes state, so hydration, refetch and
+   * reconnect never announce progress again.
+   */
+  #highlights = new Map<string, bigint>();
+  #notice: { text: string; until: bigint } | null = null;
+  #ready = new Map<number, bigint>();
 
   get sheet(): QuestSheet | null { return this.#sheet; }
   get feedback(): string { return this.#feedback; }
@@ -172,6 +201,54 @@ export class QuestState {
     this.#dead = false;
     this.#feedback = "";
     this.#pending = null;
+    this.#highlights.clear();
+    this.#notice = null;
+    this.#ready.clear();
+  }
+
+  /** Whether the zone just confirmed progress on `quest`'s `objective`. */
+  highlighted(quest: number, objective: number): boolean {
+    return (this.#highlights.get(`${quest}:${objective}`) ?? -1n) >= this.#tick;
+  }
+
+  /** The current non-blocking completion notice, or "" once it has expired. */
+  get notice(): string {
+    return this.#notice !== null && this.#notice.until >= this.#tick ? this.#notice.text : "";
+  }
+
+  /** Whether `npc` just became ready to take a completed quest back. */
+  freshlyReady(npc: number): boolean {
+    return (this.#ready.get(npc) ?? -1n) >= this.#tick && this.marker(npc) === "complete";
+  }
+
+  /** Records cues for objectives that advanced between two received sheets. */
+  #confirm(before: QuestSheet, after: QuestSheet, catalog: ContentCatalog): void {
+    const previous = new Map(questViews(before, catalog).map((view) => [view.quest.id, view]));
+    for (const view of questViews(after, catalog)) {
+      const old = previous.get(view.quest.id);
+      if (!old) {
+        continue;
+      }
+      view.objectives.forEach((objective, index) => {
+        const was = old.objectives[index];
+        if (was && objective.current > was.current) {
+          this.#highlights.set(`${view.quest.id}:${index}`, this.#tick + HIGHLIGHT_TICKS);
+          if (objective.done && !was.done && !view.complete) {
+            this.#notice = { text: `Objective complete: ${objective.text.replace(/ \(done\)$/, "")}`, until: this.#tick + NOTICE_TICKS };
+          }
+        }
+      });
+      if (view.complete && !old.complete) {
+        const ender = catalog.npcs.get(view.quest.ender)?.name ?? "the quest giver";
+        this.#notice = { text: `${view.quest.name} ready — return to ${ender}`, until: this.#tick + NOTICE_TICKS };
+        this.#ready.set(view.quest.ender, this.#tick + NOTICE_TICKS);
+      }
+    }
+    for (const [key, until] of this.#highlights) {
+      if (until < this.#tick) {
+        this.#highlights.delete(key);
+      }
+    }
   }
 
   /** The viewer's marker over `npc`, if any. */
@@ -194,6 +271,7 @@ export class QuestState {
       const after = snapshot.quests;
       this.#sheet = after;
       if (before !== null) {
+        this.#confirm(before, after, catalog);
         const name = (quest: number) => catalog.quests.get(quest)?.name ?? "Quest";
         const active = (sheet: QuestSheet, quest: number) => sheet.entries.some((entry) => entry.quest === quest);
         const accepted = after.entries.find((entry) => !active(before, entry.quest));

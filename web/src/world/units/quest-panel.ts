@@ -1,7 +1,7 @@
 import type { WorldCommand } from "../../command-wire";
 import type { QuestMarkerKind, ZoneSnapshot } from "../../replication";
 import type { ContentCatalog, QuestRecord } from "../catalog";
-import { dialogNpc, dialogView, questViews, QuestState, trackerLines, type QuestNpc, type QuestView } from "./quest-state";
+import { dialogNpc, dialogView, questViews, QuestState, trackerRows, type QuestNpc, type QuestView } from "./quest-state";
 
 export type QuestElements = {
   /** The NPC dialog: quests offered, ready to turn in and in progress at one quest NPC. */
@@ -20,6 +20,8 @@ export type QuestElements = {
   logFeedback: HTMLElement;
   /** The always-visible objective tracker. */
   tracker: HTMLElement;
+  /** A small, non-interactive notice for confirmed objective and quest completion. */
+  notice: HTMLElement;
   /** Absolutely positioned `!` and `?` markers over quest NPCs. */
   markers: HTMLElement;
 };
@@ -87,6 +89,7 @@ export class QuestPanel {
   /** What had focus when the dialog opened, to return to on close if still visible. */
   #dialogReturn: HTMLElement | null = null;
   #logKey = "";
+  #trackerKey = "";
 
   constructor(elements: QuestElements, send: (command: WorldCommand) => void, onOpen: () => void) {
     this.#elements = elements;
@@ -120,6 +123,7 @@ export class QuestPanel {
     this.#choices.clear();
     this.#dialogKey = "";
     this.#logKey = "";
+    this.#trackerKey = "";
     for (const [panel, toggle] of [[this.#elements.dialog, this.#elements.dialogToggle], [this.#elements.log, this.#elements.logToggle]] as const) {
       panel.hidden = true;
       toggle.setAttribute("aria-expanded", "false");
@@ -227,6 +231,7 @@ export class QuestPanel {
       }
       setText(node, MARKER_TEXT[marker]);
       node.dataset.marker = marker;
+      node.dataset.fresh = String(this.#state.freshlyReady(point.npc));
       node.dataset.npc = String(point.npc);
       const name = this.#catalog?.npcs.get(point.npc)?.name ?? "NPC";
       node.setAttribute("aria-label", `${MARKER_LABEL[marker]}: ${name}`);
@@ -243,8 +248,10 @@ export class QuestPanel {
   #render(): void {
     const catalog = this.#catalog;
     const sheet = this.#state.sheet;
-    const lines = catalog && sheet ? trackerLines(sheet, catalog) : [];
-    setText(this.#elements.tracker, lines.length > 0 ? lines.join("\n") : "No active quests. Look for ! over quest givers and press T to talk.");
+    this.#renderTracker(catalog, sheet);
+    const notice = this.#state.notice;
+    setText(this.#elements.notice, notice);
+    this.#elements.notice.hidden = notice === "";
     setText(this.#elements.dialogFeedback, this.#state.feedback);
     setText(this.#elements.logFeedback, this.#state.feedback);
     if (!catalog || !sheet) {
@@ -258,6 +265,30 @@ export class QuestPanel {
     if (this.logOpen) {
       this.#renderLog(catalog, sheet);
     }
+  }
+
+  /** One row per quest and objective; objectives the zone just advanced are marked changed. */
+  #renderTracker(catalog: ContentCatalog | null, sheet: QuestState["sheet"]): void {
+    const rows = catalog && sheet ? trackerRows(sheet, catalog) : [];
+    const changed = rows.map((row) => row.objective !== null && this.#state.highlighted(row.quest, row.objective));
+    const key = JSON.stringify([rows, changed]);
+    if (key === this.#trackerKey) {
+      return;
+    }
+    this.#trackerKey = key;
+    if (rows.length === 0) {
+      this.#elements.tracker.replaceChildren("No active quests. Look for ! over quest givers and press T to talk.");
+      return;
+    }
+    this.#elements.tracker.replaceChildren(...rows.map((row, index) => {
+      const line = element("span", row.text, "quest-line");
+      line.dataset.quest = String(row.quest);
+      if (row.objective !== null) {
+        line.dataset.objective = String(row.objective);
+      }
+      line.dataset.changed = String(changed[index]);
+      return line;
+    }));
   }
 
   #renderDialog(catalog: ContentCatalog, sheet: NonNullable<QuestState["sheet"]>): void {

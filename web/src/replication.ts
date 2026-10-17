@@ -99,7 +99,8 @@ export type ErrorCode =
   | "chat-throttled"
   | "invalid-quest"
   | "quest-log-full"
-  | "quest-incomplete";
+  | "quest-incomplete"
+  | "line-of-sight";
 
 /** Feedback the viewer received in the projection's tick; cosmetic and lossy. */
 export type ZoneEvent =
@@ -225,8 +226,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 15;
-const SCHEMA_VERSION = 15;
+const WIRE_VERSION = 16;
+const SCHEMA_VERSION = 16;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -252,7 +253,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "invalid-loot", "not-loot-owner", "empty-loot", "money-overflow",
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
   "not-equippable", "invalid-vendor", "not-enough-money", "chat-throttled", "invalid-quest", "quest-log-full",
-  "quest-incomplete",
+  "quest-incomplete", "line-of-sight",
 ];
 const MAX_QUESTS = 32;
 const MAX_QUEST_LOG = 10;

@@ -58,6 +58,8 @@ pub enum ErrorCode {
     Stunned,
     /// A cast or channel is already in progress.
     AlreadyCasting,
+    /// Static world geometry blocks the straight line to the target.
+    LineOfSight,
     /// The class choice is unknown or the class was already chosen.
     InvalidClass,
     /// The bag item has no equipment slot.

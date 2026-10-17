@@ -7,6 +7,7 @@ import {
   type CharacterPreview,
 } from "./character-selection";
 import { storageKeyForCharacter } from "./character-customization";
+import { bindingProfileKey } from "./settings/binding-profiles";
 
 const ROSTER_SCHEMA_VERSION = 1;
 const ROSTER_KEY = "mmorpg.offline-roster.v1";
@@ -124,14 +125,15 @@ export function saveCreatedCharacters(
 }
 
 /**
- * True while a legacy game checkpoint or an appearance save still exists for `characterId`.
+ * True while a legacy game checkpoint, an appearance save or a key-binding profile still exists for `characterId`.
  * Such an identity must not be reissued to a new character, even when the roster
  * entry itself was lost or reset. Unreadable storage retains nothing.
  */
 export function hasRetainedCharacterSaves(storage: CharacterRosterStorage, characterId: string): boolean {
   try {
     return storage.getItem(legacyCheckpointKey(characterId)) !== null ||
-      storage.getItem(storageKeyForCharacter(characterId)) !== null;
+      storage.getItem(storageKeyForCharacter(characterId)) !== null ||
+      storage.getItem(bindingProfileKey(characterId)) !== null;
   } catch {
     return false;
   }
