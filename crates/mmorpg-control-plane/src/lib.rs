@@ -6,6 +6,14 @@ use std::fmt;
 
 use mmorpg_core::ZoneId;
 
+mod partition;
+
+pub use partition::{
+    CapacityCondition, InteractionIsland, LayoutChange, LogicalZone, LogicalZoneConfig,
+    LogicalZoneIdentity, Migration, Partition, PartitionError, PartitionLayout, PartitionRef,
+    RealWorldInstant, SimulationTick, TickProgress, TickRecord, ZoneTimer,
+};
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct HostId(String);
 

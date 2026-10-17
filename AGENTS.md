@@ -28,7 +28,7 @@ Lookup is read-only and does not replace the full completion gate or required na
 | `mmorpg-core` | Deterministic zone-local gameplay and interest/visibility policy |
 | `mmorpg-protocol` | Command/snapshot wire encoding |
 | `mmorpg-game-server` | Adapter from a zone simulation into `game-server` |
-| `mmorpg-control-plane` | Placement, leases, fencing, handoff metadata (in-memory reference model) |
+| `mmorpg-control-plane` | Placement, leases, fencing, handoff metadata and logical-zone partition maps (in-memory reference model) |
 | `mmorpg-characters` | Durable character records under exclusive fenced character leases; storage-backend neutral, WASM-compatible |
 | `mmorpg-scenery` | Presentation-only scenery derived from core content (props, roads, water, relief, terrain grid); clients only (native client, `mmorpg-wasm`'s scenery export), never network hosts |
 | `mmorpg-client` | Native wgpu/winit client |
