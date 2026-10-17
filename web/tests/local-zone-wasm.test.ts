@@ -67,7 +67,7 @@ describe("WASM local zone host", () => {
       run(source, 1);
     }
     const before = source.latestProjection()!;
-    expect(before.viewer).toMatchObject({ copper: 0, health: 23, experience: 50 });
+    expect(before.viewer).toMatchObject({ copper: 0, health: 31, experience: 50 });
     loot.update(before);
     const sheet = loot.sheet;
     if (sheet === null) {
@@ -283,7 +283,7 @@ describe("WASM local zone host", () => {
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, autoAttacking: false, target: null,
       classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
-      guard: { raised: null, protecting: false, broken: 0 },
+      guard: { raised: null, protecting: false, broken: 0 }, stance: null,
     });
     expect(() => zone.submit(player, 1, Uint8Array.of(1, 1, 0, 0, 0, 0))).toThrow();
     expect(zone.submit(player, 1, encodeCommand({ kind: "jump" }))).toBe(true);

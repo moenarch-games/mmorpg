@@ -31,6 +31,7 @@ mod projection;
 mod quest;
 pub mod rng;
 mod snapshot;
+mod stance;
 mod strike;
 pub mod trig;
 pub mod unit;
@@ -103,6 +104,7 @@ pub use snapshot::{
     CanonicalPlayerCombat, CanonicalPlayerSnapshot, CanonicalZoneSnapshot, CreatureAi,
     CreatureLife, PlayerIntent, ThreatEntry,
 };
+pub use stance::{LANDING_RECOVERY_TICKS, LandingState, MeleeStance, OVERHEAD_LANDING_TICKS};
 pub use strike::{STRIKE_ARC_HALF_WIDTH, StrikeAim, StrikeHeight, StrikeSide, has_directed_mode};
 pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_CATALOG_REVISION, VENDOR_REACH_UNITS, VendorOffer, VendorStock,
@@ -119,7 +121,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 18;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 19;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its

@@ -1620,7 +1620,7 @@ class BrowserAcceptance(unittest.TestCase):
         }""")
         self.page.evaluate("window.__classStep(35)")
         self.page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'move',forward:0,strafe:0,facing:32768})")
-        self.advance_action_until("player-dead", 300)
+        self.advance_action_until("player-dead", 600)
         self.assertTrue(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.dead"), "Real creature attacks kill the player without injected health")
         self.wait_for_settled_corpse("player", "playerDead")
         frames = self.page.evaluate("window.__lifeFrames")

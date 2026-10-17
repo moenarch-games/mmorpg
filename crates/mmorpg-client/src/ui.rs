@@ -613,6 +613,9 @@ impl GameUi {
                             ui.colored_label(Color32::from_rgb(255, 120, 90), "in combat");
                         }
                     });
+                    if let Some(stance) = viewer.stance {
+                        ui.colored_label(Color32::from_rgb(230, 200, 120), stance_text(stance));
+                    }
                     auras(ui, &snapshot.auras);
                 });
             });
@@ -854,6 +857,17 @@ fn fraction(value: u32, max: u32) -> f32 {
         0.0
     } else {
         (value as f32 / max as f32).clamp(0.0, 1.0)
+    }
+}
+
+/// The Warden's melee stance and what it does (#155).
+const fn stance_text(stance: mmorpg_core::MeleeStance) -> &'static str {
+    match stance {
+        mmorpg_core::MeleeStance::Planted => "Planted · braced, −10% damage taken",
+        mmorpg_core::MeleeStance::Charging => "Charging · +20% melee damage",
+        mmorpg_core::MeleeStance::Moving => "Moving · −15% melee damage",
+        mmorpg_core::MeleeStance::Airborne => "Airborne · +35% melee damage, +25% taken",
+        mmorpg_core::MeleeStance::Landing => "Landing · melee waits",
     }
 }
 

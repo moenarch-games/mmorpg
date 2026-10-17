@@ -91,6 +91,8 @@ pub fn exhaustive_projection(
                 protecting: false,
                 broken: combat.abilities.guard.broken,
             },
+            // Only Wardens have a melee stance.
+            stance: None,
         },
         cooldowns: Vec::new(),
         auras: Vec::new(),

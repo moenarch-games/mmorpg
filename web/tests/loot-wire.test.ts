@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { decodeSnapshot } from "../src/replication";
 
-const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v18.hex", import.meta.url), "utf8").trim(), "hex"));
+const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v19.hex", import.meta.url), "utf8").trim(), "hex"));
 
 describe("Rust/browser corpse loot contract", () => {
   test("reads the complete fenced sheet and repeated balance from Rust's golden bytes", () => {
@@ -21,10 +21,10 @@ describe("Rust/browser corpse loot contract", () => {
     for (let length = 0; length < bytes.length; length += 1) {
       expect(() => decodeSnapshot(bytes.subarray(0, length))).toThrow();
     }
-    // Header and self (59), self abilities with the damage range, guard, two cooldowns and one aura (36),
+    // Header and self (59), self abilities with the damage range, guard, stance, two cooldowns and one aura (37),
     // target section without detail auras (12), sheet revision, presence and sheet (93) with its
     // 16-byte quest part.
-    const presence = 59 + 36 + 12 + 93 + 16;
+    const presence = 59 + 37 + 12 + 93 + 16;
     for (const [offset, value] of [
       [presence, 2], [presence + 4, 109], [presence + 12, 100], [presence + 17, 2], [presence + 19, 9], [presence + 21, 0],
       [presence + 22, 2], [presence + 24, 11], [presence + 26, 0], [presence + 26, 2],

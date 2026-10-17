@@ -38,8 +38,24 @@ impl ZoneSimulation {
                 ),
                 None => continue,
             };
+            // Warden melee waits out a landing in the queue (#155).
+            let mut waiting = Vec::new();
             for intent in intents {
-                self.apply_intent(player_id, intent, self.tick + 1)?;
+                let waits = self
+                    .players
+                    .get(&player_id)
+                    .is_some_and(|player| crate::stance::waits_for_landing(player, &intent));
+                if waits {
+                    waiting.push(intent);
+                } else {
+                    self.apply_intent(player_id, intent, self.tick + 1)?;
+                }
+            }
+            if !waiting.is_empty() {
+                self.update_player(player_id, |player| {
+                    waiting.append(&mut player.intents);
+                    player.intents = waiting;
+                });
             }
             // The dropped intents followed every queued one.
             if dropped {
@@ -402,8 +418,11 @@ impl ZoneSimulation {
         let Some(player) = self.players.get(&player_id) else {
             return Ok(());
         };
-        // A stunned player's ready swing waits.
-        if player.swing_timer > 0 || crate::aura::has_kind(&player.auras, crate::AuraKind::Stun) {
+        // A stunned or landing player's ready swing waits.
+        if player.swing_timer > 0
+            || player.landing.recovery > 0
+            || crate::aura::has_kind(&player.auras, crate::AuraKind::Stun)
+        {
             return Ok(());
         }
         let (damage, error_ready) = (player.melee_damage(), player.error_cooldown == 0);
@@ -462,6 +481,18 @@ impl ZoneSimulation {
             ZoneEvent::AttackPerformed { source, target },
         );
         let swing = roll_swing(&mut self.rng, damage);
+        let swing = match swing {
+            Swing::Hit { amount, critical } => Swing::Hit {
+                amount: u16::try_from(self.stance_damage(
+                    player_id,
+                    Some(target),
+                    u32::from(amount),
+                )?)
+                .unwrap_or(u16::MAX),
+                critical,
+            },
+            Swing::Miss => Swing::Miss,
+        };
         match swing {
             Swing::Miss => {
                 let Some(creature) = self.creatures.get_mut(&creature_id) else {
@@ -700,7 +731,9 @@ impl ZoneSimulation {
                         );
                     }
                 }
-                self.creature_damages_player(creature_id, player_id, u32::from(amount), critical)
+                // A Warden's stance exposes or braces it (#155).
+                let amount = self.stance_exposure(player_id, u32::from(amount))?;
+                self.creature_damages_player(creature_id, player_id, amount, critical)
             }
         }
     }

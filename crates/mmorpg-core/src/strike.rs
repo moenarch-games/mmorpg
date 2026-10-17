@@ -177,6 +177,7 @@ impl ZoneSimulation {
         );
         if let (Some(creature_id), AbilityEffect::WeaponStrike { .. }) = (victim, ability.effect) {
             let amount = self.weapon_strike_amount(player_id, ability.effect);
+            let amount = self.stance_damage(player_id, target, amount)?;
             self.player_damages_creature(player_id, creature_id, amount, false, now)?;
         }
         Ok(None)

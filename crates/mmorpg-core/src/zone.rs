@@ -76,6 +76,8 @@ pub(crate) struct PlayerState {
     pub(crate) jump_pending: bool,
     /// The held shield guard and its break recovery (#156).
     pub(crate) guard: crate::GuardState,
+    /// Airborne state and landing recovery; Warden melee waits it out (#155).
+    pub(crate) landing: crate::LandingState,
     pub(crate) last_sequence: u32,
     pub(crate) spawn_slot: u16,
     pub(crate) level: u8,
@@ -132,6 +134,7 @@ impl PlayerState {
             strafe: Axis::Zero,
             jump_pending: false,
             guard: crate::GuardState::default(),
+            landing: crate::LandingState::default(),
             last_sequence: 0,
             spawn_slot,
             level: PLAYER_START_LEVEL,
@@ -560,6 +563,7 @@ impl ZoneSimulation {
         self.decide_creatures()?;
         self.drive_players()?;
         self.tick_work.physics = Some(self.world.step(1).map_err(physics_error)?.stats);
+        self.update_landings()?;
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
         for player in self.players.values_mut() {
             player.jump_pending = false;

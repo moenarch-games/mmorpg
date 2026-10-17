@@ -139,6 +139,8 @@ pub struct CanonicalPlayerCombat {
     /// Events of the current tick.
     pub events: Vec<ZoneEvent>,
     pub abilities: CanonicalPlayerAbilities,
+    /// Airborne state and landing recovery (#155).
+    pub landing: crate::LandingState,
 }
 
 /// Class, resource and ability state of a player; all zero and empty until
@@ -188,6 +190,7 @@ impl Default for CanonicalPlayerCombat {
             intents_dropped: false,
             events: Vec::new(),
             abilities: CanonicalPlayerAbilities::default(),
+            landing: crate::LandingState::default(),
         }
     }
 }
@@ -308,6 +311,7 @@ impl ZoneSimulation {
                             auras: state.auras.clone(),
                             guard: state.guard,
                         },
+                        landing: state.landing,
                     },
                     chat_ready_at: state.chat_ready_at,
                     chat: state.chat.clone(),
@@ -478,6 +482,9 @@ impl ZoneSimulation {
             ));
         }
         validate_player_abilities(&combat.abilities, combat.level, combat.health > 0)?;
+        if !combat.landing.is_valid() {
+            return Err(ZoneError::new("player landing state is out of range"));
+        }
         let guard = combat.abilities.guard;
         if guard.broken > crate::GUARD_BREAK_TICKS
             || (!alive && guard != crate::GuardState::default())
@@ -500,6 +507,7 @@ impl ZoneSimulation {
                 strafe,
                 jump_pending,
                 guard,
+                landing: combat.landing,
                 last_sequence: player.last_sequence,
                 spawn_slot: player.spawn_slot,
                 copper: player.copper,

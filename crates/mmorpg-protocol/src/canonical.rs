@@ -246,6 +246,10 @@ fn encode_player(
     encode_auras(payload, &abilities.auras)?;
     payload.push(crate::wire::encode_lane(abilities.guard.raised));
     payload.extend_from_slice(&abilities.guard.broken.to_be_bytes());
+    let landing = combat.landing;
+    payload.push(u8::from(landing.airborne));
+    payload.extend_from_slice(&landing.recovery.to_be_bytes());
+    payload.push(u8::from(landing.attacked_airborne));
     payload.extend_from_slice(&player.chat_ready_at.to_be_bytes());
     payload.push(encode_u8_count(
         player.chat.len(),
@@ -623,6 +627,11 @@ fn decode_player(
             broken: u16::from_be_bytes(take(payload, offset)?),
         },
     };
+    let landing = mmorpg_core::LandingState {
+        airborne: read_bool(payload, offset)?,
+        recovery: u16::from_be_bytes(take(payload, offset)?),
+        attacked_airborne: read_bool(payload, offset)?,
+    };
     let chat_ready_at = u64::from_be_bytes(take(payload, offset)?);
     let chat_count = decode_u8_count(
         payload,
@@ -668,6 +677,7 @@ fn decode_player(
             intents_dropped,
             events,
             abilities,
+            landing,
         },
     })
 }
@@ -861,6 +871,11 @@ mod tests {
                             },
                         ],
                         abilities: CanonicalPlayerAbilities::default(),
+                        landing: mmorpg_core::LandingState {
+                            airborne: false,
+                            recovery: 7,
+                            attacked_airborne: false,
+                        },
                     },
                     quests: mmorpg_core::QuestLog::default(),
                     quests_changed_at: 0,
