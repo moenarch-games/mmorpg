@@ -1,6 +1,6 @@
 /**
- * Command wire version 11, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
- * `fixtures/protocol/commands-v11.hex` holds both encoders to the same bytes.
+ * Command wire version 12, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
+ * `fixtures/protocol/commands-v12.hex` holds both encoders to the same bytes.
  * The session supplies player identity and sequence separately.
  */
 import { entityKindCode, isU32, type EntityRef } from "./entity-ref";
@@ -44,9 +44,11 @@ export type WorldCommand =
   | { kind: "accept-quest"; npc: number; quest: number }
   /** Turns `quest` in at its ender `npc`, taking reward `choice` (0 when it offers none). */
   | { kind: "complete-quest"; npc: number; quest: number; choice: number }
-  | { kind: "abandon-quest"; quest: number };
+  | { kind: "abandon-quest"; quest: number }
+  /** Opens (`open`) or closes content door `door` (#158); the zone checks reach and blockers. */
+  | { kind: "use-door"; door: number; open: boolean };
 
-const COMMAND_WIRE_VERSION = 11;
+const COMMAND_WIRE_VERSION = 12;
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
 const SELECT_TARGET_TAG = 3;
@@ -69,6 +71,7 @@ const COMPLETE_QUEST_TAG = 19;
 const ABANDON_QUEST_TAG = 20;
 const DIRECTED_STRIKE_TAG = 21;
 const GUARD_TAG = 22;
+const USE_DOOR_TAG = 23;
 const YAW_STEPS = 65_536;
 
 function isAxis(value: number): value is Axis {
@@ -243,6 +246,11 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
         throw new Error("Equipment slots must be u8.");
       }
       return Uint8Array.of(COMMAND_WIRE_VERSION, UNEQUIP_ITEM_TAG, command.equipmentSlot);
+    case "use-door":
+      if (!isU8(command.door)) {
+        throw new Error("Door IDs must be u8.");
+      }
+      return Uint8Array.of(COMMAND_WIRE_VERSION, USE_DOOR_TAG, command.door, command.open ? 1 : 0);
     case "start-attack":
       return Uint8Array.of(COMMAND_WIRE_VERSION, START_ATTACK_TAG);
     case "stop-attack":

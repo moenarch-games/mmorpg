@@ -4,7 +4,7 @@ import { encodeCommand, STRIKE_HEIGHTS, STRIKE_SIDES, type Axis, type WorldComma
 import { entityKindFromCode } from "../src/entity-ref";
 import { EMOTES } from "../src/replication";
 
-const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v11.hex", import.meta.url), "utf8");
+const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v12.hex", import.meta.url), "utf8");
 
 function axis(raw: string | undefined): Axis {
   const value = Number(raw);
@@ -74,6 +74,8 @@ function command(fields: readonly string[]): WorldCommand {
       return { kind: "complete-quest", npc: Number(first), quest: Number(second), choice: Number(third) };
     case "abandon_quest":
       return { kind: "abandon-quest", quest: Number(first) };
+    case "use_door":
+      return { kind: "use-door", door: Number(first), open: second === "1" };
     default:
       throw new Error(`Unknown fixture command ${name}`);
   }
@@ -99,7 +101,7 @@ describe("Rust/browser command contract", () => {
     expect([...kinds].sort()).toEqual([
       "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "complete-quest", "directed-strike", "emote", "equip-item", "guard", "jump",
       "loot", "move", "move-item", "release-spirit", "select-target", "sell-item", "start-attack", "stop-attack", "unequip-item",
-      "use-ability",
+      "use-ability", "use-door",
     ]);
     expect(commands.filter(({ command }) => command.kind === "move").length).toBeGreaterThanOrEqual(4);
     expect(commands.filter(({ command }) => command.kind === "select-target").length).toBe(4);

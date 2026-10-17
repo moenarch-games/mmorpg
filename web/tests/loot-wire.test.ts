@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { decodeSnapshot } from "../src/replication";
 
-const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v21.hex", import.meta.url), "utf8").trim(), "hex"));
+const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v22.hex", import.meta.url), "utf8").trim(), "hex"));
 
 describe("Rust/browser corpse loot contract", () => {
   test("reads the complete fenced sheet and repeated balance from Rust's golden bytes", () => {
@@ -36,8 +36,8 @@ describe("Rust/browser corpse loot contract", () => {
       invalid[offset] = value;
       expect(() => decodeSnapshot(invalid)).toThrow();
     }
-    // The 26-byte corpse sheet, 16 events, two chat lines and an emote, the entity count and the viewer.
-    const corpse = presence + 1 + 26 + 1 + 16 * 14 + 1 + 22 + 14 + 6 + 2 + 21;
+    // The 26-byte corpse sheet, two doors, 16 events, two chat lines and an emote, the entity count and the viewer.
+    const corpse = presence + 1 + 26 + 1 + 2 * 2 + 1 + 16 * 14 + 1 + 22 + 14 + 6 + 2 + 21;
     for (const flags of [0x05, 0x84, 0x95, 0x8d]) {
       const invalid = bytes.slice();
       invalid[corpse + 20] = flags;

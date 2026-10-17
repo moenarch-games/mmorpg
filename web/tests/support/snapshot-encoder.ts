@@ -1,7 +1,7 @@
 import { entityKindCode, type EntityRef } from "../../src/entity-ref";
 import { COMBO_PHASES, EMOTES, MELEE_STANCES, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type CastState, type ZoneEvent, type ZoneSnapshot } from "../../src/replication";
 
-const FIXED_BYTES = 111;
+const FIXED_BYTES = 112;
 /** Bag 64, equipment 12 and stat totals 8. */
 const SHEET_BYTES = 84;
 const AURA_KINDS = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
@@ -13,7 +13,7 @@ const ERROR_CODES = [
   "no-target", "out-of-range", "target-dead", "not-attackable", "you-are-dead", "not-dead", "invalid-target", "too-many-intents", "invalid-inventory-move", "inventory-full", "invalid-loot", "not-loot-owner", "empty-loot", "money-overflow",
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
   "not-equippable", "invalid-vendor", "not-enough-money", "chat-throttled", "invalid-quest", "quest-log-full",
-  "quest-incomplete", "line-of-sight",
+  "quest-incomplete", "line-of-sight", "door-blocked",
 ];
 const QUEST_MARKERS = ["available", "in-progress", "complete"];
 
@@ -22,7 +22,7 @@ function flagByte(flags: readonly boolean[]): number {
 }
 
 /**
- * Test-only player-visible snapshot v21 encoder (docs/PROTOCOL.md); Rust owns the real one.
+ * Test-only player-visible snapshot v22 encoder (docs/PROTOCOL.md); Rust owns the real one.
  * Like it, positions must fit i16 and velocities saturate to i8.
  */
 export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
@@ -40,7 +40,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   const chatText = (line: (typeof chat)[number]) =>
     line.channel === "emote" ? null : new TextEncoder().encode(line.text);
   const chatBytes = chat.reduce((total, line) => total + 6 + (chatText(line)?.length ?? 0), 0);
-  const size = FIXED_BYTES + lists + (snapshot.inventory === null ? 0 : SHEET_BYTES) + questBytes + lootBytes + EVENT_BYTES * snapshot.events.length + chatBytes + ENTITY_BYTES * snapshot.entities.length;
+  const size = FIXED_BYTES + lists + (snapshot.inventory === null ? 0 : SHEET_BYTES) + questBytes + lootBytes + 2 * (snapshot.doors ?? []).length + EVENT_BYTES * snapshot.events.length + chatBytes + ENTITY_BYTES * snapshot.entities.length;
   const bytes = new Uint8Array(size);
   const view = new DataView(bytes.buffer);
   let offset = 0;
@@ -52,9 +52,9 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(value === null ? 0 : entityKindCode(value.kind));
     u32(value?.id ?? 0);
   };
-  u8(21);
+  u8(22);
   u8(2);
-  u16(21);
+  u16(22);
   u32(snapshot.zoneId);
   u64(snapshot.tick);
   u64(snapshot.contentRevision);
@@ -154,6 +154,12 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
         u16(stack.quantity);
       }
     }
+  }
+  const doors = snapshot.doors ?? [];
+  u8(doors.length);
+  for (const door of doors) {
+    u8(door.door);
+    u8(door.open ? 1 : 0);
   }
   u8(snapshot.events.length);
   for (const event of snapshot.events) {
