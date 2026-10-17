@@ -27,8 +27,8 @@ def main():
     parser.add_argument("--window", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
-    # The client build embeds the asset-tooling Ranger bundle; fetching is idempotent.
-    subprocess.run([str(root / "scripts" / "fetch-character-bundle.sh")], cwd=root, check=True, timeout=600)
+    # The client build embeds the asset-tooling Ranger and inn bundles; fetching is idempotent.
+    subprocess.run([str(root / "scripts" / "fetch-bundles.sh")], cwd=root, check=True, timeout=600)
     subprocess.run(["cargo", "build", "--locked", "-p", "mmorpg-client", "-p", "mmorpg-game-server"], cwd=root, check=True, timeout=600)
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--locked", "--format-version", "1"], cwd=root, timeout=30))
     suffix = ".exe" if os.name == "nt" else ""
@@ -84,6 +84,11 @@ def main():
                     "cargo", "test", "--locked", "-p", "mmorpg-client", "--lib",
                     "the_egui_interface_paints_over_the_native_world", "--", "--ignored", "--nocapture",
                 ], cwd=root, check=True, timeout=120)
+                # The inn journey (#158) over its own disposable zone host: two clients, one door.
+                subprocess.run([
+                    "cargo", "test", "--locked", "-p", "mmorpg-client", "--test", "connected_world",
+                    "the_inn_journey", "--", "--nocapture",
+                ], cwd=root, check=True, timeout=300)
                 if args.window:
                     subprocess.run([*command, "--frames", "120"], cwd=root, check=True, timeout=30)
             except BaseException:

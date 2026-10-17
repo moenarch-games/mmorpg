@@ -95,6 +95,9 @@ pub struct Presentation {
     origin: Instant,
     last_draw: Instant,
     camera_framed: bool,
+    /// The walk-in inn's door swing and interior look (#158).
+    inn: mmorpg_presentation::buildings::Inn,
+    last_inn: Instant,
 }
 
 impl Presentation {
@@ -110,6 +113,7 @@ impl Presentation {
             return Err("scenery and zone content revisions differ".into());
         }
         mmorpg_presentation::units::archer::validate()?;
+        let inn = mmorpg_presentation::buildings::Inn::new(&scenery);
         let mut units_presenter =
             UnitPresenter::new(player_id, Arc::clone(&content), Arc::new(scenery.clone()));
         for kind in Kind::ALL {
@@ -134,6 +138,8 @@ impl Presentation {
             origin: now,
             last_draw: now,
             camera_framed: false,
+            inn,
+            last_inn: now,
         })
     }
 
@@ -554,7 +560,65 @@ impl Presentation {
             view.eye,
         );
         frame.draws.extend(self.unit_draws(now, view));
+        self.append_inn(&mut frame.draws, now);
         frame
+    }
+
+    /// The inn's bundle entries with the door at its eased swing; roof and ceiling are hidden
+    /// while the viewer stands inside (#158).
+    fn append_inn(&mut self, draws: &mut Vec<crate::world::SceneDraw>, now: Instant) {
+        let dt = now.saturating_duration_since(self.last_inn).as_secs_f64();
+        self.last_inn = self.last_inn.max(now);
+        let open = self.door_open(mmorpg_presentation::buildings::INN_DOOR);
+        let viewer = self
+            .players(now)
+            .get(&self.player_id)
+            .map(|pose| pose.position.map(f64::from));
+        let parts = self.inn.frame(open, viewer, dt, self.reduced_motion);
+        for (part, (_, entry)) in parts.iter().zip(skinned::inn_draws()) {
+            if !part.visible {
+                continue;
+            }
+            draws.extend(entry.iter().map(|draw| crate::world::SceneDraw {
+                model: three_d_animation::Mat4 {
+                    elements: part.model,
+                },
+                ..draw.clone()
+            }));
+        }
+    }
+
+    /// Whether the latest snapshot shows `door` open.
+    #[must_use]
+    pub fn door_open(&self, door: mmorpg_core::DoorId) -> bool {
+        self.latest()
+            .is_some_and(|s| s.doors.iter().any(|view| view.door == door && view.open))
+    }
+
+    /// The `UseDoor` toggling the nearest content door the viewer can reach, if any.
+    #[must_use]
+    pub fn reachable_door(&self) -> Option<mmorpg_core::ZoneCommand> {
+        let snapshot = self.latest()?;
+        let feet = snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Player(self.player_id))?
+            .position;
+        let door = self
+            .content
+            .doors()
+            .iter()
+            .find(|door| door.within_reach(feet))?;
+        Some(self.toggle_door(door.id))
+    }
+
+    /// The `UseDoor` that flips `door` from its latest presented state.
+    #[must_use]
+    pub fn toggle_door(&self, door: mmorpg_core::DoorId) -> mmorpg_core::ZoneCommand {
+        mmorpg_core::ZoneCommand::UseDoor {
+            door,
+            open: !self.door_open(door),
+        }
     }
 
     /// Body geometry from the last rendered scene, with MMO identity retained.

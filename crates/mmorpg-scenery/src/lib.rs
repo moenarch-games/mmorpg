@@ -534,10 +534,26 @@ pub fn greyhaven_vale_scenery() -> Scenery {
 
 fn unmasked_greyhaven_vale_scenery() -> Scenery {
     let definition = greyhaven_vale_definition();
+    // The walk-in inn (#158) collides through its walls and furniture; its footprint still
+    // anchors the building, its flattened ground and the decoration keep-out.
+    let inn = StaticCollider {
+        id: ids::INN,
+        position: [
+            greyhaven_vale::inn::ORIGIN[0],
+            greyhaven_vale::inn::FOOTPRINT_HALF_EXTENTS[1],
+            greyhaven_vale::inn::ORIGIN[2],
+        ],
+        half_extents: greyhaven_vale::inn::FOOTPRINT_HALF_EXTENTS,
+    };
+    // In its former collider order, right after the keep, so placement and hashes stay put.
     let structures: Vec<_> = definition
         .colliders()
         .iter()
         .filter_map(|collider| visual_kind(collider).map(|kind| (collider, kind)))
+        .flat_map(|structure| {
+            let inn = (structure.0.id == ids::KEEP).then_some((&inn, PropKind::Inn));
+            [Some(structure), inn].into_iter().flatten()
+        })
         .collect();
     let roads = greyhaven_vale::roads()
         .iter()

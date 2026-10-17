@@ -12,7 +12,7 @@ Low-poly animal models by [Quaternius](https://quaternius.com), released under
 
 Player characters are not bundled here: they come from asset-tooling's Ranger humanoid
 release (Universal Base Characters with the Modular Character Outfits Ranger outfit, CC0),
-which `scripts/fetch-character-bundle.sh` downloads (Atlas 6.3.7).
+which `scripts/fetch-bundles.sh` downloads (Atlas 6.3.7).
 
 The official downloads are Google Drive folders linked from each pack page, which
 rate-limit scripted access; the files above are byte-for-byte or repacked copies of

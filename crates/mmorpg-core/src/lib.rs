@@ -20,6 +20,7 @@ mod combo;
 mod content;
 mod corpse_loot;
 mod creature;
+mod door;
 mod entity;
 mod equipment;
 mod events;
@@ -70,6 +71,9 @@ pub use creature::{
     ARRIVAL_RADIUS_UNITS, ASSIST_RADIUS_UNITS, CREATURE_EVADE_SPEED_UNITS_PER_TICK,
     CREATURE_RUN_SPEED_UNITS_PER_TICK, CREATURE_WALK_SPEED_UNITS_PER_TICK, EVADE_TIMEOUT_TICKS,
     LEASH_RADIUS_UNITS, MAX_THREAT_ENTRIES, WANDER_WAIT_TICKS, WANDER_WALK_TIMEOUT_TICKS,
+};
+pub use door::{
+    DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView, MAX_DOORS, NPC_SIGHT_HEIGHT_UNITS,
 };
 pub use entity::{CreatureId, CreatureTemplateId, EntityKind, EntityRef, NpcId};
 pub use equipment::{
@@ -123,7 +127,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 21;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 22;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its
@@ -202,6 +206,13 @@ pub enum ZoneCommand {
     /// guard command, death or a directed strike.
     Guard {
         lane: Option<StrikeHeight>,
+    },
+    /// Opens (`open`) or closes a door (#158). Asking for the state it
+    /// already has changes nothing; reach and blocking bodies are checked in
+    /// the tick.
+    UseDoor {
+        door: DoorId,
+        open: bool,
     },
     /// Stops the player's own cast or channel.
     CancelCast,

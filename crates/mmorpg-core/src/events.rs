@@ -78,6 +78,8 @@ pub enum ErrorCode {
     QuestLogFull,
     /// Not every objective of the quest is complete.
     QuestIncomplete,
+    /// A unit stands where the door leaf would move (#158).
+    DoorBlocked,
 }
 
 /// One feedback event addressed to a player.

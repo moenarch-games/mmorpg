@@ -688,6 +688,10 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut windmills = 0;
     let mut fires = 0;
     for p in &s.props {
+        // The inn is asset-tooling's walk-in bundle (`crate::buildings`), not a procedural block.
+        if p.kind == PropKind::Inn {
+            continue;
+        }
         let [hx, hy, hz] = half(p);
         let mut m = Model::new(Cull::Always);
         let mut f = frame(p, g, 0.);
@@ -708,17 +712,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
         }
         match p.kind {
             PropKind::Keep => keep(&mut m, w, d, h),
-            PropKind::Inn => {
-                house(&mut m, w, d, h, RED, true);
-                let x = (w - 0.6).min(2.4);
-                m.box_at(TIMBER, [x, 3.1, d + 0.6], [0.06, 0.06, 0.6]);
-                m.box_at(LIGHT, [x, 2.55, d + 1.], [0.55, 0.38, 0.05]);
-                m.box_at(GLOW, [x, 2.55, d + 1.06], [0.2, 0.2, 0.03]);
-                m.box_at(IRON, [x, 2.98, d + 1.], [0.02, 0.06, 0.02]);
-                for x in [-2.2, -2.9] {
-                    m.cylinder(DARK, 8, 1., at(x, 0., d + 0.6, 0.32, 0.9, 0.32));
-                }
-            }
+            PropKind::Inn => unreachable!("the inn is drawn from its bundle"),
             PropKind::House | PropKind::Farmhouse => {
                 house(&mut m, w, d, h, THATCH, p.kind == PropKind::Farmhouse)
             }

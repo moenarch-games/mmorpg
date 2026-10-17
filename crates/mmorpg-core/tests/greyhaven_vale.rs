@@ -74,8 +74,11 @@ fn content_is_a_bounded_deterministic_revision() {
                 )
         );
         if !is_terrain(collider) {
-            // Structures stand on the ground and stay inside the playable square.
-            assert_eq!(collider.position[1], collider.half_extents[1]);
+            // Structures stand on the ground (the inn's lintel spans its doorway) and stay
+            // inside the playable square.
+            if !ids::INN_PARTS.contains(&collider.id) {
+                assert_eq!(collider.position[1], collider.half_extents[1]);
+            }
             assert!(PLAYABLE_BOUNDS.contains(min[0], min[1]), "{}", collider.id);
             assert!(
                 PLAYABLE_BOUNDS.contains(max[0] - 1, max[1] - 1),

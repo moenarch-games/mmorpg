@@ -1,4 +1,4 @@
-/** Player-visible protocol v21 only. Canonical recovery state never enters rendering. */
+/** Player-visible protocol v22 only. Canonical recovery state never enters rendering. */
 import { entityKindFromCode, sameEntity, type EntityKind, type EntityRef } from "./entity-ref";
 
 export type { EntityKind, EntityRef } from "./entity-ref";
@@ -118,7 +118,8 @@ export type ErrorCode =
   | "invalid-quest"
   | "quest-log-full"
   | "quest-incomplete"
-  | "line-of-sight";
+  | "line-of-sight"
+  | "door-blocked";
 
 /** A directed strike's sweep side and height (#154); the zone resolves what it covers. */
 export type StrikeSide = "left" | "centre" | "right";
@@ -155,6 +156,9 @@ export type ZoneEvent =
 
 /** Item catalog revision 3, validated against the core's immutable stack limits. */
 export type InventorySlot = { itemId: number; quantity: number } | null;
+
+/** A door as every player sees it. */
+export type DoorState = { door: number; open: boolean };
 
 export type LootView = {
   creatureId: number;
@@ -207,6 +211,8 @@ export type ZoneSnapshot = {
   quests: QuestSheet | null;
   /** Complete eligible selected corpse sheet; null means no current sheet. */
   loot: LootView | null;
+  /** Every content door's state in ID order, the same for every viewer (#158). */
+  doors: readonly DoorState[];
   events: readonly ZoneEvent[];
   /** Chat lines the viewer heard this tick, in delivery order; cosmetic and lossy like events. */
   chat: readonly ChatLine[];
@@ -258,22 +264,23 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 21;
-const SCHEMA_VERSION = 21;
+const WIRE_VERSION = 22;
+const SCHEMA_VERSION = 22;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
 /**
  * Common prefix 16, revision 8, acknowledged sequence 4, viewer 4, self 27, self abilities 26 (class,
  * resource, global cooldown, cast, melee damage range, guard, melee stance, combo phase, two list counts), target 12 (target-of-target,
- * its cast, aura count), sheet revision 8/presence 1, loot presence 1, event, chat and entity counts.
- * The sheet (bag, equipment, stat totals, quests) and the corpse sheet follow their presence bytes.
+ * its cast, aura count), sheet revision 8/presence 1, loot presence 1, door, event, chat and entity counts.
+ * The sheet (bag, equipment, stat totals, quests) and the corpse sheet follow their presence bytes;
+ * two bytes per door follow its count.
  */
-const FIXED_BYTES = 111;
+const FIXED_BYTES = 112;
 const ENTITY_BYTES = 21;
 const MAX_EVENTS = 16;
-/** (1 077 − 109) / 21: records that fit without events, sheets, cooldowns or auras. */
-const MAX_ENTITIES = 46;
+/** (1 077 − 112) / 21: records that fit without events, sheets, doors, cooldowns or auras. */
+const MAX_ENTITIES = 45;
 const MAX_COOLDOWNS = 4;
 const MAX_AURAS = 8;
 export const GLOBAL_COOLDOWN_TICKS = 45;
@@ -285,8 +292,10 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "invalid-loot", "not-loot-owner", "empty-loot", "money-overflow",
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
   "not-equippable", "invalid-vendor", "not-enough-money", "chat-throttled", "invalid-quest", "quest-log-full",
-  "quest-incomplete", "line-of-sight",
+  "quest-incomplete", "line-of-sight", "door-blocked",
 ];
+/** Doors a zone's content may author (`mmorpg_core::MAX_DOORS`). */
+const MAX_DOORS = 16;
 const MAX_QUESTS = 32;
 const MAX_QUEST_LOG = 10;
 const MAX_QUEST_OBJECTIVES = 3;
@@ -860,6 +869,19 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     }
     loot = { creatureId, diedAt, money, item, questItem };
   }
+  const doorCount = reader.u8();
+  if (doorCount > MAX_DOORS) {
+    throw new Error("Snapshot exceeds the door capacity");
+  }
+  const doors: DoorState[] = [];
+  for (let index = 0; index < doorCount; index += 1) {
+    const door = reader.u8();
+    const state = reader.u8();
+    if (state > 1 || (doors.length > 0 && doors[doors.length - 1]!.door >= door)) {
+      throw new Error("Invalid door section");
+    }
+    doors.push({ door, open: state === 1 });
+  }
   const eventCount = reader.u8();
   if (eventCount > MAX_EVENTS) {
     throw new Error("Snapshot exceeds the event capacity");
@@ -921,8 +943,8 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
       copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, autoAttacking, target,
       classChoice, resource, cast, globalCooldown, damage, guard, stance, combo,
     },
-    cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, events,
-    chat, entities,
+    cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors,
+    events, chat, entities,
   };
   PROJECTION_BYTES.set(snapshot, payload.slice());
   return snapshot;

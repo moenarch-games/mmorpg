@@ -38,6 +38,7 @@ pub struct ZoneContent {
     vendors: Vec<(NpcId, VendorStock)>,
     quest_revision: u64,
     quests: Vec<crate::Quest>,
+    doors: Vec<crate::Door>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -134,6 +135,7 @@ impl ZoneContent {
             vendors: Vec::new(),
             quest_revision: 0,
             quests: Vec::new(),
+            doors: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -162,6 +164,7 @@ impl ZoneContent {
             vendors: Vec::new(),
             quest_revision: 0,
             quests: Vec::new(),
+            doors: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -446,7 +449,83 @@ impl ZoneContent {
             .map(|index| &self.quests[index])
     }
 
+    /// Binds doors (#158): unique IDs, leaf bodies in the static collider namespace that no
+    /// content collider uses, and non-empty leaf boxes inside the content range.
+    pub fn with_doors(mut self, mut doors: Vec<crate::Door>) -> Result<Self, ZoneError> {
+        if doors.len() > crate::MAX_DOORS {
+            return Err(ZoneError::new("zone door content capacity reached"));
+        }
+        doors.sort_by_key(|door| door.id);
+        if doors
+            .windows(2)
+            .any(|pair| pair[0].id == pair[1].id || pair[0].body == pair[1].body)
+        {
+            return Err(ZoneError::new("duplicate door id or body"));
+        }
+        for door in &doors {
+            if u64::from(door.body) >= crate::entity::PLAYER_BODY_BASE
+                || self
+                    .definition
+                    .colliders()
+                    .iter()
+                    .any(|c| c.id == door.body)
+            {
+                return Err(ZoneError::new("door body collides with another body id"));
+            }
+            for leaf in [door.closed, door.open] {
+                if leaf.half_extents.iter().any(|half| *half <= 0)
+                    || (0..3).any(|axis| {
+                        (leaf.position[axis] - leaf.half_extents[axis]).abs()
+                            > super::MAX_CONTENT_COORDINATE_UNITS
+                            || (leaf.position[axis] + leaf.half_extents[axis]).abs()
+                                > super::MAX_CONTENT_COORDINATE_UNITS
+                    })
+                {
+                    return Err(ZoneError::new("door leaf box is empty or out of range"));
+                }
+            }
+        }
+        self.doors = doors;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Ordered by door ID.
+    #[must_use]
+    pub fn doors(&self) -> &[crate::Door] {
+        &self.doors
+    }
+
+    #[must_use]
+    pub fn door(&self, id: crate::DoorId) -> Option<&crate::Door> {
+        self.doors
+            .binary_search_by_key(&id, |door| door.id)
+            .ok()
+            .map(|index| &self.doors[index])
+    }
+
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_quest_fingerprint();
+        if self.doors.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v7");
+        hash.u64(fingerprint);
+        hash.len(self.doors.len());
+        for door in &self.doors {
+            hash.u8(door.id.get());
+            hash.u32(door.body);
+            for leaf in [door.closed, door.open] {
+                for value in leaf.position.iter().chain(&leaf.half_extents) {
+                    hash.i32(*value);
+                }
+            }
+        }
+        hash.finish()
+    }
+
+    fn compute_quest_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_vendor_fingerprint();
         if self.quest_revision == 0 {
             return fingerprint;

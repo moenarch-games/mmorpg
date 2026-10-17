@@ -1,9 +1,10 @@
-# Selling to and buying from Innkeeper Bram Tolliver (NPC 3) pass through
-# real sessions: trades need reach and copper, settle bag and copper
-# together, and survive a connection resume.
+# Selling to and buying from Innkeeper Bram Tolliver (NPC 3) inside the inn
+# pass through real sessions: the inn door opens only within reach, trades
+# need reach and copper, settle bag and copper together, and survive a
+# connection resume.
 name = "vendor-resume"
 zone = 1
-ticks = 175
+ticks = 280
 reconnect_grace_ticks = 30
 digest_interval = 25
 
@@ -24,9 +25,17 @@ npc = 3
 bag_slot = 0
 quantity = 1
 
-# Run east along the plaza, then a few steps north to the inn's counter.
+# The inn door is out of reach from the plaza.
 [[steps]]
-tick = 2
+tick = 3
+bot = "alice"
+action = "use_door"
+door = 1
+open = true
+
+# Run east along the plaza, then north to the inn's front door.
+[[steps]]
+tick = 4
 bot = "alice"
 action = "move"
 forward = 1
@@ -34,7 +43,7 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 147
+tick = 149
 bot = "alice"
 action = "move"
 forward = 1
@@ -42,7 +51,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 152
+tick = 180
 bot = "alice"
 action = "move"
 forward = 0
@@ -50,7 +59,56 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 154
+tick = 181
+bot = "alice"
+action = "use_door"
+door = 1
+open = true
+
+# Through the open doorway into the inn.
+[[steps]]
+tick = 183
+bot = "alice"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 212
+bot = "alice"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+# Along the room, then up to the bar where Bram serves across the counter.
+[[steps]]
+tick = 213
+bot = "alice"
+action = "move"
+forward = 1
+strafe = 0
+facing = 16384
+
+[[steps]]
+tick = 233
+bot = "alice"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 241
+bot = "alice"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 259
 bot = "alice"
 action = "sell_item"
 npc = 3
@@ -59,7 +117,7 @@ quantity = 3
 
 # Three copper do not cover the five-copper Worn Dagger.
 [[steps]]
-tick = 155
+tick = 260
 bot = "alice"
 action = "buy_item"
 npc = 3
@@ -68,7 +126,7 @@ quantity = 1
 
 # A guard sells nothing.
 [[steps]]
-tick = 156
+tick = 261
 bot = "alice"
 action = "buy_item"
 npc = 6
@@ -76,7 +134,7 @@ offer = 0
 quantity = 1
 
 [[steps]]
-tick = 157
+tick = 262
 bot = "alice"
 action = "sell_item"
 npc = 3
@@ -84,17 +142,17 @@ bag_slot = 1
 quantity = 1
 
 [[steps]]
-tick = 159
+tick = 264
 bot = "alice"
 action = "disconnect"
 
 [[steps]]
-tick = 161
+tick = 266
 bot = "alice"
 action = "reconnect"
 
 [[steps]]
-tick = 165
+tick = 270
 bot = "alice"
 action = "buy_item"
 npc = 3
@@ -114,21 +172,33 @@ tick = 2
 copper = 0
 
 [[expect]]
+kind = "event"
+bot = "alice"
+tick = 4
+event = "error:out_of_range"
+
+[[expect]]
 kind = "position"
 bot = "alice"
-tick = 153
-position = [1495, 90, 1145]
+tick = 258
+position = [1915, 90, -178]
+
+[[expect]]
+kind = "area"
+bot = "alice"
+tick = 258
+area = "Greyhaven Outpost"
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 155
+tick = 260
 copper = 3
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
-tick = 155
+tick = 260
 inventory_revision = 2
 sheet = true
 slot = 0
@@ -138,36 +208,36 @@ quantity = 0
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 156
+tick = 261
 event = "error:not_enough_money"
 
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 157
+tick = 262
 event = "error:invalid_vendor"
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 158
+tick = 263
 copper = 5
 
 [[expect]]
 kind = "identity"
 bot = "alice"
-tick = 162
+tick = 267
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 166
+tick = 271
 copper = 0
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
-tick = 166
+tick = 271
 inventory_revision = 4
 sheet = true
 slot = 0

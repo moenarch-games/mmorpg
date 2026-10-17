@@ -115,6 +115,7 @@ const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::InvalidQuest => 26,
         ErrorCode::QuestLogFull => 27,
         ErrorCode::QuestIncomplete => 28,
+        ErrorCode::DoorBlocked => 30,
         ErrorCode::LineOfSight => 29,
     }
 }
@@ -150,6 +151,7 @@ fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         27 => ErrorCode::QuestLogFull,
         28 => ErrorCode::QuestIncomplete,
         29 => ErrorCode::LineOfSight,
+        30 => ErrorCode::DoorBlocked,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -692,6 +694,44 @@ pub(crate) fn take<const N: usize>(
     Ok(array)
 }
 
+/// A door-state list: count (`u8`), then door ID and open flag per door (#158).
+pub(crate) fn encode_doors(
+    payload: &mut Vec<u8>,
+    doors: &[mmorpg_core::DoorView],
+) -> Result<(), ProtocolError> {
+    payload.push(encode_u8_count(
+        doors.len(),
+        mmorpg_core::MAX_DOORS,
+        "too many doors",
+    )?);
+    for door in doors {
+        payload.push(door.door.get());
+        payload.push(u8::from(door.open));
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_doors(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::DoorView>, ProtocolError> {
+    let count = decode_u8_count(payload, offset, mmorpg_core::MAX_DOORS, "too many doors")?;
+    let mut doors: Vec<mmorpg_core::DoorView> = Vec::with_capacity(count);
+    for _ in 0..count {
+        let door = mmorpg_core::DoorId::new(read_u8(payload, offset)?);
+        let open = match read_u8(payload, offset)? {
+            0 => false,
+            1 => true,
+            _ => return Err(ProtocolError::new("door state must be 0 or 1")),
+        };
+        if doors.last().is_some_and(|last| last.door >= door) {
+            return Err(ProtocolError::new("doors must be in ascending ID order"));
+        }
+        doors.push(mmorpg_core::DoorView { door, open });
+    }
+    Ok(doors)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -778,12 +818,13 @@ mod tests {
             ErrorCode::QuestLogFull,
             ErrorCode::QuestIncomplete,
             ErrorCode::LineOfSight,
+            ErrorCode::DoorBlocked,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 30, u16::MAX] {
+        for unknown in [0, 31, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

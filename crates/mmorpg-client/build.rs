@@ -1,14 +1,25 @@
-//! Embeds asset-tooling's Ranger humanoid bundle (Atlas 6.3.7): the character,
-//! the Warden's sword and shield entries with the resources the manifest
-//! declares, and the character's `humanoid-sockets` descriptor, from the
-//! unpacked bundle that `scripts/fetch-character-bundle.sh` places in
-//! `web/public/characters`. Acquisition stays in that script; the build only
-//! reads local files.
-use std::{env, fs, path::PathBuf};
+//! Embeds asset-tooling's bundles from the unpacked releases that
+//! `scripts/fetch-bundles.sh` places in `web/public`: the Ranger humanoid
+//! (Atlas 6.3.7) character, the Warden's sword and shield entries with the
+//! resources the manifest declares and the character's `humanoid-sockets`
+//! descriptor; and the Greyhaven inn's drawn entries (#158). Acquisition stays
+//! in that script; the build only reads local files.
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 const CHARACTER: &str = "humanoid.ranger.male";
 const SWORD: &str = "equipment.sword.arming";
 const SHIELD: &str = "equipment.shield.heater";
+/// The inn entries the clients draw (`mmorpg_presentation::buildings::INN_ENTRIES`).
+const INN: [&str; 5] = [
+    "greyhaven.inn.shell",
+    "greyhaven.inn.furniture",
+    "greyhaven.inn.ceiling",
+    "greyhaven.inn.roof",
+    "greyhaven.inn.door",
+];
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("cargo sets it"));
@@ -17,9 +28,7 @@ fn main() {
         println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
     }
     let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
-        panic!(
-            "the Ranger character bundle is missing ({error}); run scripts/fetch-character-bundle.sh"
-        )
+        panic!("the Ranger character bundle is missing ({error}); run scripts/fetch-bundles.sh")
     });
     let manifest: serde_json::Value =
         serde_json::from_str(&manifest).expect("the bundle manifest is JSON");
@@ -72,6 +81,45 @@ fn main() {
         .to_owned();
     code.push_str(&format!("pub const SOCKETS: &str = {sockets:?};\n"));
     files.push(sockets);
+    write("ranger_bundle.rs", &bundle, code, files);
+    inn(&manifest_dir.join("../../web/public/buildings/greyhaven.inn"));
+}
+
+/// The inn's drawn entries as `ENTRIES` (key, glTF path) and their `FILES`.
+fn inn(bundle: &Path) {
+    for watched in ["RELEASE", "manifest.json"] {
+        println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
+    }
+    let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
+        panic!("the Greyhaven inn bundle is missing ({error}); run scripts/fetch-bundles.sh")
+    });
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest).expect("the bundle manifest is JSON");
+    let mut code = String::from("pub const ENTRIES: &[(&str, &str)] = &[\n");
+    let mut files = Vec::new();
+    for key in INN {
+        let entry = manifest["assets"]
+            .as_array()
+            .and_then(|assets| assets.iter().find(|asset| asset["key"] == key))
+            .unwrap_or_else(|| panic!("the inn bundle declares {key}"));
+        let path = entry["path"].as_str().expect("the entry names its glTF");
+        code.push_str(&format!("    ({key:?}, {path:?}),\n"));
+        files.push(path.to_owned());
+        for resource in entry["resources"].as_array().into_iter().flatten() {
+            files.push(
+                resource["path"]
+                    .as_str()
+                    .expect("a resource path")
+                    .to_owned(),
+            );
+        }
+    }
+    code.push_str("];\n");
+    write("inn_bundle.rs", bundle, code, files);
+}
+
+/// Appends `FILES` (every bundle file, embedded) to `code` and writes it to `OUT_DIR/name`.
+fn write(name: &str, bundle: &Path, mut code: String, mut files: Vec<String>) {
     files.sort();
     files.dedup();
     code.push_str("pub const FILES: &[(&str, &[u8])] = &[\n");
@@ -86,6 +134,6 @@ fn main() {
         ));
     }
     code.push_str("];\n");
-    let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets it")).join("ranger_bundle.rs");
+    let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets it")).join(name);
     fs::write(out, code).expect("OUT_DIR is writable");
 }

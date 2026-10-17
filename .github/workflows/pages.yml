@@ -82,7 +82,7 @@ jobs:
         working-directory: web
         run: bun install --frozen-lockfile
       - name: Fetch the asset-tooling Ranger character bundle
-        run: scripts/fetch-character-bundle.sh
+        run: scripts/fetch-bundles.sh
       - name: Check out the pinned saved-mask producer
         if: env.FULL_VALIDATION == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

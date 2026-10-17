@@ -145,7 +145,8 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ui.toggleBags", "Toggle bags", "gameplay", [key("KeyB"), button(8)]),
     action("ui.toggleCharacter", "Toggle character pane", "gameplay", [key("KeyC")]),
     action("ui.toggleVendor", "Toggle vendor", "gameplay", [key("KeyV")]),
-    action("ui.talk", "Talk to a quest giver", "gameplay", [key("KeyT")]),
+    // Interact (#158): talk to the selected NPC, or open or close a door in reach.
+    action("ui.talk", "Interact: talk, or open or close a door", "gameplay", [key("KeyT"), button(9)]),
     action("ui.toggleQuestLog", "Toggle quest log", "gameplay", [key("KeyL")]),
     action("ui.openChat", "Chat", "gameplay", [key("Enter"), key("NumpadEnter")]),
     action("ui.closePanel", "Close panel", "panels", [key("Escape"), button(1)]),

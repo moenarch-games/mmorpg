@@ -118,6 +118,11 @@ const _: () = assert!(CREATURE_BODY_BASE - WORLD_LIMIT_BODY_BASE > u32::MAX as u
 const _: () = assert!(NPC_BODY_BASE - CREATURE_BODY_BASE > u32::MAX as u64);
 const _: () = assert!(NPC_BODY_BASE.checked_add(u32::MAX as u64).is_some());
 
+/// Whether `body` belongs to a player, creature or NPC (not content or a world limit).
+pub(crate) const fn is_unit_body(body: BodyId) -> bool {
+    (body.0 >= PLAYER_BODY_BASE && body.0 < WORLD_LIMIT_BODY_BASE) || body.0 >= CREATURE_BODY_BASE
+}
+
 /// The physics body of a unit. Namespaces never overlap across kinds.
 pub(crate) const fn body_id(entity: EntityRef) -> BodyId {
     match entity {

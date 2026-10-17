@@ -18,6 +18,7 @@ fn snapshot(tick: u64, position: [i32; 3]) -> ZoneSnapshot {
 
 fn facing_snapshot(tick: u64, position: [i32; 3], facing: u16) -> ZoneSnapshot {
     ZoneSnapshot {
+        doors: Vec::new(),
         loot: None,
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         zone_id: ZoneId::new(1),
@@ -400,4 +401,58 @@ fn maximum_projection_fits_the_instance_budget_and_larger_input_is_refused() {
     sample.entities.push(extra);
     assert!(presentation.push(sample, now).is_err());
     assert_eq!(presentation.latest().unwrap().tick, 1);
+}
+
+#[test]
+fn the_inn_draws_its_bundle_hides_the_roof_inside_and_swings_its_door() {
+    let now = Instant::now();
+    let mut presentation = presentation(now);
+    let world = mmorpg_client::world::WorldScene::new(&greyhaven_vale_scenery());
+    let inn_keys = |presentation: &mut Presentation, at: [i32; 3], open: bool, later: u64| {
+        let when = now + Duration::from_millis(later);
+        let mut state = snapshot(later + 1, at);
+        state.doors = vec![mmorpg_core::DoorView {
+            door: greyhaven_vale::inn::DOOR,
+            open,
+        }];
+        presentation.push(state, when).unwrap();
+        let view = OrbitCamera::default().view(presentation.camera_target(when));
+        presentation
+            .frame(&world, when, view)
+            .draws
+            .into_iter()
+            .filter(|draw| draw.id.starts_with("greyhaven.inn."))
+            .map(|draw| (draw.id, draw.model.elements))
+            .collect::<Vec<_>>()
+    };
+    let outside = inn_keys(&mut presentation, [1_500, 90, 900], false, 0);
+    for entry in ["shell", "furniture", "ceiling", "roof", "door"] {
+        let prefix = format!("greyhaven.inn.{entry}-");
+        assert!(
+            outside.iter().any(|(id, _)| id.starts_with(&prefix)),
+            "{entry} drawn"
+        );
+    }
+    let closed_leaf = outside
+        .iter()
+        .find(|(id, _)| id.starts_with("greyhaven.inn.door-"))
+        .unwrap()
+        .1;
+    // Inside with the door open: no roof or ceiling, and the leaf has swung.
+    let inside = inn_keys(&mut presentation, [1_500, 90, 0], true, 1_000);
+    assert!(
+        !inside
+            .iter()
+            .any(|(id, _)| id.starts_with("greyhaven.inn.roof-")
+                || id.starts_with("greyhaven.inn.ceiling-"))
+    );
+    let open_leaf = inside
+        .iter()
+        .find(|(id, _)| id.starts_with("greyhaven.inn.door-"))
+        .unwrap()
+        .1;
+    assert!(
+        open_leaf[0].abs() < 1e-3 && (closed_leaf[0] - 1.).abs() < 1e-3,
+        "a quarter turn"
+    );
 }

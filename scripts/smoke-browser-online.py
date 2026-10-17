@@ -420,6 +420,28 @@ class OnlineAcceptance(unittest.TestCase):
         self.wait_for(watcher, "id => window.__valeDebug.unitNodes(`unit-player-${id}`).length === 0", actor_id)
         self.evidence.update({"actorId": actor_id, "remoteActionSamples": relevant, "departedActorNodes": watcher.evaluate("id => window.__valeDebug.unitNodes(`unit-player-${id}`)", actor_id)})
 
+    def test_two_pages_see_the_same_inn_door(self):
+        """The inn door (#158) is zone state: one player opens and closes it, both pages see it."""
+        opener = self.open_player("door-opener")
+        watcher = self.open_player("door-watcher")
+        door = "() => window.__valeDebug.worldSource().latestProjection().doors.find(d => d.door === 1)?.open"
+        for page in (opener, watcher):
+            self.assertFalse(page.evaluate(door), "The door is closed at zone start")
+        spawn = self.projection(opener)["entities"][0]["position"]
+        # Short legs: each waypoint has its own deadline.
+        legs = [(x, spawn[2]) for x in range(spawn[0] + 1000, 1495, 1000)] + [(1495, spawn[2]), (1495, 560)]
+        self.route = self.walk_online_waypoints([opener], legs)
+        opener.locator("#world").focus()
+        opener.keyboard.press("t")
+        for page in (opener, watcher):
+            self.wait_for(page, f"{door} === true")
+        self.frames(watcher, 20)
+        watcher.screenshot(path=str(ARTIFACTS / "door-watcher-open.png"))
+        opener.keyboard.press("t")
+        for page in (opener, watcher):
+            self.wait_for(page, f"{door} === false")
+        self.evidence["doorOpenerAt"] = self.projection(opener)["entities"][0]["position"]
+
     def test_two_pages_share_one_zone_host(self):
         runner = self.open_player("runner")
         watcher = self.open_player("watcher")

@@ -338,7 +338,8 @@ impl ClientSession {
         })
     }
 
-    pub(crate) fn send_command(&mut self, command: ZoneCommand) -> Result<(), SessionError> {
+    /// Sends any zone command under the next sequence; the zone validates it.
+    pub fn send_command(&mut self, command: ZoneCommand) -> Result<(), SessionError> {
         let sequence = self
             .sequence
             .checked_add(1)

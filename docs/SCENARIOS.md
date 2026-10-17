@@ -174,8 +174,11 @@ unchanged; copper/loot expectations add explicit observations to this scenario.
 `quantity`; `sell_item` steps require `npc`, `bag_slot` and `quantity`. Both pass
 their values through unchanged and support the usual sequence/connection
 overrides; the zone refuses unknown vendors, offers, reach, copper and slots
-with feedback events. `vendor-resume` is refused out of reach on the spawn
-plaza, walks to Innkeeper Bram Tolliver, sells its Torn Fur, is refused for
+with feedback events. `use_door` steps require `door` (`u8`) and `open`
+(boolean); the zone checks reach and blockers. `vendor-resume` is refused out of
+reach on the spawn plaza (for the vendor and the inn door), walks to the inn,
+opens its door, walks in to Innkeeper Bram Tolliver behind his bar, sells its
+Torn Fur, is refused for
 lacking copper and at a guard, sells the Worn Dagger and buys it back after a
 connection resume, checking copper and the bag sheet at each step.
 

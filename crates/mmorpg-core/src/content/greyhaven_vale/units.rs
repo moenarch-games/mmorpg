@@ -163,7 +163,8 @@ type NpcRow = (u32, &'static str, NpcRole, u8, [i32; 2], u16);
 const NPCS: [NpcRow; 9] = [
     (1, "Marshal Elden Greywatch", NpcRole::QuestGiver, 10, [-2_200, 900], 0),
     (2, "Tanner Hilda Brook", NpcRole::QuestGiver, 5, [-2_400, 3_150], 32_768),
-    (3, "Innkeeper Bram Tolliver", NpcRole::Vendor, 5, [1_500, 700], 0),
+    // Inside the inn, behind its bar, facing the room (#158).
+    (3, "Innkeeper Bram Tolliver", NpcRole::Vendor, 5, [1_920, -380], 0),
     (4, "Farmer Osric Mill", NpcRole::QuestGiver, 4, [6_200, 4_150], 32_768),
     (5, "Brother Aldous", NpcRole::SpiritHealer, 10, [-1_650, 4_550], 49_152),
     // Guards stand inside the palisade beside the north, south, west and

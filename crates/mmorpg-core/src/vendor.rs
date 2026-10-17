@@ -230,7 +230,9 @@ impl ZoneSimulation {
             i128::from(from.x) - i128::from(feet[0]),
             i128::from(from.z) - i128::from(feet[1]),
         ];
-        if dx * dx + dz * dz > i128::from(VENDOR_REACH_UNITS).pow(2) {
+        if dx * dx + dz * dz > i128::from(VENDOR_REACH_UNITS).pow(2)
+            || !self.npc_in_sight(player_id, npc)?
+        {
             return refuse(ErrorCode::OutOfRange);
         }
         let player = self

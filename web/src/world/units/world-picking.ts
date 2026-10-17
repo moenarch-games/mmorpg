@@ -7,6 +7,9 @@ import type { EntityRef } from "../../entity-ref";
  * ray/mesh intersection; the result is only an identity for a zone selection intent.
  * Scenery and other players occlude units, while cosmetic target rings are not bodies.
  */
+/** What a click lands on first: a unit, a door leaf (#158), or nothing selectable. */
+export type Picked = EntityRef | { kind: "door"; id: number };
+
 export class WorldPicking {
   readonly #raycaster = new THREE.Raycaster();
   readonly #material = new THREE.MeshBasicMaterial();
@@ -34,11 +37,12 @@ export class WorldPicking {
     units: readonly RendererSceneNode[],
     instanceBatches: readonly RendererInstanceBatch[] = [],
     models: readonly { entity: EntityRef; object: THREE.Object3D }[] = [],
-  ): EntityRef | null {
+    buildings: readonly { door: number | null; object: THREE.Object3D }[] = [],
+  ): Picked | null {
     this.#raycaster.setFromCamera(point, camera);
     this.#raycaster.near = camera.near;
     this.#raycaster.far = camera.far;
-    let target: EntityRef | null = null;
+    let target: Picked | null = null;
     // Test bodies first, so subsequent scenery queries stop at the closest body.
     for (const nodes of [units, scenery]) {
       for (const node of nodes) {
@@ -71,6 +75,15 @@ export class WorldPicking {
         if (hit.distance < this.#raycaster.far) {
           this.#raycaster.far = hit.distance;
           target = entity.kind === "creature" || entity.kind === "npc" ? entity : null;
+        }
+      }
+    }
+    // Imported buildings occlude like scenery; their door leaf is itself a target.
+    for (const { door, object } of buildings) {
+      for (const hit of this.#raycaster.intersectObject(object, true)) {
+        if (hit.distance < this.#raycaster.far) {
+          this.#raycaster.far = hit.distance;
+          target = door === null ? null : { kind: "door", id: door };
         }
       }
     }

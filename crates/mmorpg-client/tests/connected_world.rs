@@ -486,6 +486,120 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
 /// negotiates: QUIC's initial MTU before path MTU discovery. Disabling
 /// discovery on both peers pins that floor, so an upgrade that shrinks it
 /// fails here rather than closing sessions in the field.
+/// Walks `session`'s player through `waypoints` (feet XZ, units) by steering toward each in
+/// turn, and returns the last snapshot once it stands within a step of the final one.
+async fn walk(
+    session: &mut ClientSession,
+    waypoints: &[[i32; 2]],
+) -> Result<ZoneSnapshot, ClientError> {
+    let player_id = session.player_id();
+    let mut snapshot = session.receive_snapshot().await?;
+    let deadline = snapshot.tick + 30 * u64::from(TICK_HZ);
+    for (index, goal) in waypoints.iter().enumerate() {
+        loop {
+            let at = own(&snapshot, player_id).position;
+            let [dx, dz] = [goal[0] - at[0], goal[1] - at[2]];
+            if f64::from(dx).hypot(f64::from(dz)) <= 15. {
+                if index + 1 == waypoints.len() {
+                    session.send_move(0, 0, 0)?;
+                }
+                break;
+            }
+            if snapshot.tick > deadline {
+                return Err(format!("never reached {goal:?}, stuck at {at:?}").into());
+            }
+            // Yaw 0 faces +Z and a quarter turn faces +X.
+            let turns = f64::from(dx).atan2(f64::from(dz)) / std::f64::consts::TAU;
+            session.send_move(1, 0, (turns.rem_euclid(1.) * 65_536.) as u16)?;
+            snapshot = session.receive_snapshot().await?;
+        }
+    }
+    // Let the stop settle before the caller acts on the position.
+    for _ in 0..4 {
+        snapshot = session.receive_snapshot().await?;
+    }
+    Ok(snapshot)
+}
+
+/// Snapshots until one from tick `from` on shows the inn door in state `open`, failing past
+/// tick `by` (a client that has not read for a while first drains its older queued snapshots).
+async fn door_reaches(
+    session: &ClientSession,
+    open: bool,
+    [from, by]: [u64; 2],
+) -> Result<ZoneSnapshot, ClientError> {
+    loop {
+        let snapshot = session.receive_snapshot().await?;
+        if snapshot.doors.iter().any(|door| door.open == open) && snapshot.tick >= from {
+            return Ok(snapshot);
+        }
+        if snapshot.tick > by {
+            return Err(format!("the inn door never became open={open}").into());
+        }
+    }
+}
+
+/// The inn journey over a real zone host (#158): walk to the inn, open its door, enter, trade
+/// with Bram across his bar, leave and close the door, while a second client sees every
+/// door state change.
+#[tokio::test]
+async fn the_inn_journey_crosses_real_transport_and_both_players_see_the_door() {
+    use mmorpg_core::{NpcId, ZoneCommand, greyhaven_vale::inn};
+    let zone_id = ZoneId::new(1);
+    let local = LocalHost::start(
+        mmorpg_game_server::build_zone_host([zone_id], 120).unwrap(),
+        zone_id,
+    );
+    let result = tokio::time::timeout(Duration::from_secs(60), async {
+        let revision = greyhaven_vale::REVISION;
+        let mut walker =
+            ClientSession::connect(&local.url, Some(&local.certificate), zone_id, revision).await?;
+        let watcher =
+            ClientSession::connect(&local.url, Some(&local.certificate), zone_id, revision).await?;
+        let start = walker.receive_snapshot().await?;
+        assert!(
+            start.doors.iter().all(|door| !door.open),
+            "closed at zone start"
+        );
+        let spawn = own(&start, walker.player_id()).position;
+        let door = |open| ZoneCommand::UseDoor {
+            door: inn::DOOR,
+            open,
+        };
+        let outside = [[1_495, spawn[2]], [1_495, 620]];
+        walk(&mut walker, &outside).await?;
+        walker.send_command(door(true))?;
+        let opened = door_reaches(&walker, true, [0, u64::MAX]).await?.tick;
+        door_reaches(&watcher, true, [opened, opened + 40]).await?;
+        let bar = walk(&mut walker, &[[1_495, -10], [1_915, -10], [1_915, -178]]).await?;
+        assert!(
+            own(&bar, walker.player_id()).position[2] < 0,
+            "inside the inn"
+        );
+        walker.send_command(ZoneCommand::SellItem {
+            npc: NpcId::new(3),
+            bag_slot: 0,
+            quantity: 1,
+        })?;
+        let mut sold = false;
+        for _ in 0..40 {
+            if walker.receive_snapshot().await?.viewer.copper > 0 {
+                sold = true;
+                break;
+            }
+        }
+        assert!(sold, "Bram buys across his bar");
+        walk(&mut walker, &[[1_915, -10], [1_495, -10], [1_495, 620]]).await?;
+        walker.send_command(door(false))?;
+        let closed = door_reaches(&walker, false, [0, u64::MAX]).await?.tick;
+        door_reaches(&watcher, false, [closed, closed + 40]).await?;
+        Ok::<(), ClientError>(())
+    })
+    .await;
+    local.stop().await;
+    result.unwrap().unwrap();
+}
+
 #[tokio::test]
 async fn datagram_budget_floor_matches_the_pinned_transport() {
     use wtransport::{ClientConfig, Endpoint, Identity, ServerConfig, config::QuicTransportConfig};
@@ -625,6 +739,7 @@ async fn fragmented_projection_reaches_the_native_client() {
     let revision = greyhaven_vale_definition().revision();
     let player_id = 42;
     let snapshot = ZoneSnapshot {
+        doors: Vec::new(),
         loot: None,
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         zone_id,

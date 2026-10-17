@@ -14,7 +14,33 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0x9068_3364_fa48_a752;
+const STABLE_HASH: u64 = 0xe1ea_e974_cd9d_facd;
+
+/// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
+/// (#158) stand for one building, anchored by its footprint.
+fn vale_colliders() -> &'static [StaticCollider] {
+    static COLLIDERS: std::sync::OnceLock<Vec<StaticCollider>> = std::sync::OnceLock::new();
+    COLLIDERS.get_or_init(inn_aware_colliders)
+}
+
+fn inn_aware_colliders() -> Vec<StaticCollider> {
+    let mut colliders: Vec<_> = greyhaven_vale_definition()
+        .colliders()
+        .iter()
+        .filter(|collider| !ids::INN_PARTS.contains(&collider.id))
+        .cloned()
+        .collect();
+    colliders.push(StaticCollider {
+        id: ids::INN,
+        position: [
+            greyhaven_vale::inn::ORIGIN[0],
+            greyhaven_vale::inn::FOOTPRINT_HALF_EXTENTS[1],
+            greyhaven_vale::inn::ORIGIN[2],
+        ],
+        half_extents: greyhaven_vale::inn::FOOTPRINT_HALF_EXTENTS,
+    });
+    colliders
+}
 
 fn is_terrain(collider: &StaticCollider) -> bool {
     collider.id == ids::GROUND || ids::BOUNDARY_WALLS.contains(&collider.id)
@@ -69,14 +95,13 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
     }
     assert_eq!(
         greyhaven_vale::content().fingerprint(),
-        0x2630_ca15_7169_73f3
+        0xec89_82ff_4ec6_6ff7
     );
-    assert_eq!(scenery.content_revision, 9);
+    assert_eq!(scenery.content_revision, 10);
 }
 
 #[test]
 fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
-    let definition = greyhaven_vale_definition();
     let scenery = greyhaven_vale_scenery();
     let mut visuals: BTreeMap<u32, Vec<PropKind>> = BTreeMap::new();
     for prop in &scenery.props {
@@ -84,12 +109,11 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
             visuals.entry(id).or_default().push(prop.kind);
         }
     }
-    let colliders: BTreeMap<_, _> = definition
-        .colliders()
+    let colliders: BTreeMap<_, _> = vale_colliders()
         .iter()
         .map(|collider| (collider.id, collider))
         .collect();
-    for collider in definition.colliders() {
+    for collider in vale_colliders() {
         let kinds = visuals.get(&collider.id);
         if is_terrain(collider) {
             assert!(visual_kind(collider).is_none());
@@ -121,10 +145,8 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
 
 #[test]
 fn no_prop_intersects_a_collider_it_does_not_visualise() {
-    let definition = greyhaven_vale_definition();
     let scenery = greyhaven_vale_scenery();
-    let structures: Vec<_> = definition
-        .colliders()
+    let structures: Vec<_> = vale_colliders()
         .iter()
         .filter(|collider| !is_terrain(collider))
         .collect();
@@ -147,7 +169,6 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
 
 #[test]
 fn walkable_water_has_no_colliders() {
-    let definition = greyhaven_vale_definition();
     let scenery = greyhaven_vale_scenery();
     let [lake] = &scenery.water[..] else {
         panic!("the vale has one lake");
@@ -157,7 +178,7 @@ fn walkable_water_has_no_colliders() {
         greyhaven_vale::area_at(lake.centre[0], lake.centre[1]).map(Area::id),
         Some(greyhaven_vale::STILLWATER_LAKE)
     );
-    for collider in definition.colliders().iter().filter(|c| !is_terrain(c)) {
+    for collider in vale_colliders().iter().filter(|c| !is_terrain(c)) {
         // The nearest footprint point to the centre is the clamped centre.
         let rect = footprint(collider);
         let nearest = [
@@ -174,10 +195,9 @@ fn walkable_water_has_no_colliders() {
 
 #[test]
 fn relief_is_flat_under_structures_roads_plaza_spawns_and_water() {
-    let definition = greyhaven_vale_definition();
     let scenery = greyhaven_vale_scenery();
     let flat = |x: i32, z: i32| scenery.height_at(x, z) == 0;
-    for collider in definition.colliders().iter().filter(|c| !is_terrain(c)) {
+    for collider in vale_colliders().iter().filter(|c| !is_terrain(c)) {
         let rect = footprint(collider);
         let xs = [rect.min[0], (rect.min[0] + rect.max[0]) / 2, rect.max[0]];
         let zs = [rect.min[1], (rect.min[1] + rect.max[1]) / 2, rect.max[1]];
@@ -376,7 +396,6 @@ fn terrain_biomes_name_every_vertex_colour() {
 
 #[test]
 fn prop_counts_stay_within_their_budgets() {
-    let definition = greyhaven_vale_definition();
     let scenery = greyhaven_vale_scenery();
     let mut counts: BTreeMap<PropKind, usize> = BTreeMap::new();
     let mut background_trees = 0;
@@ -398,8 +417,7 @@ fn prop_counts_stay_within_their_budgets() {
             );
         }
     }
-    let structures = definition
-        .colliders()
+    let structures = vale_colliders()
         .iter()
         .filter(|collider| !is_terrain(collider))
         .count();

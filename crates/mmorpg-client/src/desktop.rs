@@ -215,7 +215,7 @@ fn held_movement(keys: &HashSet<KeyCode>, pad: PadMovement, dead: bool) -> HeldM
 /// Pointer travel (physical pixels) from the middle lane before the guard moves high or low.
 const GUARD_LANE_THRESHOLD_PX: f64 = 24.;
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
-const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC or chats · B bags · C character · L quests · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump, X attack, RB target, d-pad abilities, LB NPC, Start talk, B back, hold LT to guard (right stick up/down aims), L3 character, RT quests";
+const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC, opens or closes a door in reach, or chats · click a door to open or close it · B bags · C character · L quests · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump, X attack, RB target, d-pad abilities, LB NPC, Start talk or door, B back, hold LT to guard (right stick up/down aims), L3 character, RT quests";
 
 impl App {
     fn retire_pointer(&mut self) {
@@ -235,13 +235,23 @@ impl App {
         }
         let Some(cursor) = self.cursor else { return };
         let result = self.renderer.as_ref().map(|r| r.pick([cursor.x, cursor.y]));
-        let target = match result {
-            Some(Ok(target)) => target,
+        let picked = match result {
+            Some(Ok(picked)) => picked,
             Some(Err(error)) => {
                 self.fail(event_loop, error);
                 return;
             }
             None => None,
+        };
+        // A click on the door leaf asks the zone to swing it; the zone checks reach (#158).
+        if let Some(mmorpg_client::picking::Picked::Door(door)) = picked {
+            let command = self.presentation.toggle_door(door);
+            self.send_interaction(command);
+            return;
+        }
+        let target = match picked {
+            Some(mmorpg_client::picking::Picked::Unit(target)) => Some(target),
+            _ => None,
         };
         if let Some(target) = target {
             // Only a current visible creature/NPC can become a requested target.
@@ -281,6 +291,10 @@ impl App {
                     self.controls.focus_lost();
                     self.keys.clear();
                     self.update_movement();
+                } else if let Some(command) = self.presentation.reachable_door() {
+                    // Without a selected NPC, interact swings the door in reach (#158).
+                    self.send_interaction(command);
+                    return true;
                 }
             }
             WorldAction::NextNpc if self.connected() => {
@@ -559,6 +573,13 @@ impl App {
             }
             PadAction::FocusPrevious | PadAction::FocusNext | PadAction::Activate => {}
         }
+    }
+
+    fn send_interaction(&mut self, command: mmorpg_core::ZoneCommand) {
+        self.input.send_modify(|input| {
+            input.interaction = Some(command);
+            input.interactions = input.interactions.wrapping_add(1);
+        });
     }
 
     /// Held keys, armed clicks and held semantic actions let go, e.g. when
@@ -861,7 +882,10 @@ impl ApplicationHandler for App {
                         event.repeat,
                     ) {
                         let handled = self.world_action(action);
-                        cancel_handled |= action == WorldAction::Cancel && handled;
+                        // A handled cancel or door use consumes the key (Enter does not chat).
+                        cancel_handled |=
+                            matches!(action, WorldAction::Cancel | WorldAction::Interact)
+                                && handled;
                     }
                     // Enter that opened a selected NPC's context does not also chat.
                     let context_opened = !context_was_open && self.npc_context.npc.is_some();

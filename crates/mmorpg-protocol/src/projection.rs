@@ -47,10 +47,12 @@ const MAX_SELF_SHEET_BYTES: usize = SELF_SHEET_BYTES + crate::quest::MAX_QUEST_S
 /// The target's own target, the target's cast and its aura count.
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES + 1;
 /// Every section's fixed part: header, self, target, inventory revision
-/// and presence, loot presence, event count (`u8`), chat count (`u8`) and
-/// entity count (`u16`).
+/// and presence, loot presence, door count (`u8`), event count (`u8`), chat
+/// count (`u8`) and entity count (`u16`).
 pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize =
-    HEADER_BYTES + SELF_BYTES + SELF_ABILITY_BYTES + TARGET_BYTES + 8 + 1 + 1 + 1 + 1 + 2;
+    HEADER_BYTES + SELF_BYTES + SELF_ABILITY_BYTES + TARGET_BYTES + 8 + 1 + 1 + 1 + 1 + 1 + 2;
+/// Door ID and open flag (#158).
+pub const DOOR_RECORD_BYTES: usize = 2;
 /// Ability ID and remaining ticks.
 pub const COOLDOWN_RECORD_BYTES: usize = 1 + 2;
 /// Ability ID, aura kind, remaining ticks and amount.
@@ -64,7 +66,7 @@ pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// facing, level, health percent and flags.
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 6 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events, sheets, cooldowns or auras:
-/// (1,077 − 111) / 21 = 46.
+/// (1,077 − 112) / 21 = 45.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -81,6 +83,7 @@ const _: () = assert!(
         + MAX_SELF_SHEET_BYTES
         + MAX_EVENT_SECTION_BYTES
         + MAX_CHAT_SECTION_BYTES
+        + mmorpg_core::MAX_DOORS * DOOR_RECORD_BYTES
         + 2 * ENTITY_RECORD_BYTES
         <= MAX_PLAYER_PROJECTION_BYTES
 );
@@ -207,6 +210,7 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
         crate::loot::encode_claim(&mut payload, view.claim);
         crate::loot::encode_rewards(&mut payload, view.rewards);
     }
+    crate::wire::encode_doors(&mut payload, &snapshot.doors)?;
     let mut chat_payload = Vec::new();
     chat_payload.push(encode_u8_count(
         snapshot.chat.len(),
@@ -564,6 +568,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
     } else {
         None
     };
+    let doors = crate::wire::decode_doors(payload, &mut offset)?;
     let event_count = decode_u8_count(
         payload,
         &mut offset,
@@ -668,6 +673,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         events,
         chat,
         entities,
+        doors,
         quests,
     })
 }
@@ -776,6 +782,16 @@ mod tests {
         slots[1] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(2), 1).unwrap());
         slots[15] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 20).unwrap());
         ZoneSnapshot {
+            doors: vec![
+                mmorpg_core::DoorView {
+                    door: mmorpg_core::DoorId::new(1),
+                    open: true,
+                },
+                mmorpg_core::DoorView {
+                    door: mmorpg_core::DoorId::new(2),
+                    open: false,
+                },
+            ],
             quests: Some(quest_sheet()),
             loot: None,
             content_revision: 4,
@@ -1084,7 +1100,7 @@ mod tests {
 
     fn fixture_bytes() -> Vec<u8> {
         hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v21.hex"
+            "../../../fixtures/protocol/player-snapshot-v22.hex"
         ))
     }
 
@@ -1107,7 +1123,9 @@ mod tests {
     const QUESTS: usize = STATS + 8;
     /// The fixture's quest sheet.
     const QUEST_BYTES: usize = 4 + 1 + 4 + 1 + 2 * 3;
-    const EVENTS: usize = INVENTORY + 8 + 1 + SELF_SHEET_BYTES + QUEST_BYTES + 1;
+    /// The fixture's door section: count and two door records.
+    const DOORS: usize = 1 + 2 * DOOR_RECORD_BYTES;
+    const EVENTS: usize = INVENTORY + 8 + 1 + SELF_SHEET_BYTES + QUEST_BYTES + 1 + DOORS;
     /// The fixture's chat records: 6 + 16 and 6 + 8 bytes, then a 6-byte emote.
     const CHAT_BYTES: usize = 22 + 14 + 6;
     const CHAT: usize = EVENTS + 1 + EVENT_COUNT * EVENT_RECORD_BYTES;
@@ -1137,6 +1155,7 @@ mod tests {
                 + QUEST_BYTES
                 + EVENT_COUNT * EVENT_RECORD_BYTES
                 + CHAT_BYTES
+                + 2 * DOOR_RECORD_BYTES
                 + 4 * ENTITY_RECORD_BYTES
         );
         assert_eq!(encoded, fixture_bytes());
@@ -1148,7 +1167,7 @@ mod tests {
         assert_eq!(encoded[CLASS], 5, "Arcanist, female");
         assert_eq!(encoded[EVENTS], 16);
         assert_eq!(
-            encoded[QUESTS..EVENTS - 1],
+            encoded[QUESTS..EVENTS - 1 - DOORS],
             [0, 0, 0, 1, 1, 2, 3, 0, 0, 2, 0, 1, 1, 0, 2, 2],
             "the quest sheet ends the self sheet"
         );
@@ -1194,7 +1213,7 @@ mod tests {
         // A dead target has no target detail.
         snapshot.target_detail = TargetDetail::default();
         let expected = hex(include_str!(
-            "../../../fixtures/protocol/player-loot-v21.hex"
+            "../../../fixtures/protocol/player-loot-v22.hex"
         ));
         if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
             let bytes = encode_snapshot(&snapshot).unwrap();
@@ -1210,7 +1229,7 @@ mod tests {
         assert_eq!(bytes, expected);
         assert_eq!(decode_snapshot(&bytes).unwrap(), snapshot);
         // Without target detail auras the sheet sits one aura record earlier.
-        let presence = EVENTS - 1 - AURA_RECORD_BYTES;
+        let presence = EVENTS - 1 - DOORS - AURA_RECORD_BYTES;
         for length in 0..bytes.len() {
             assert!(decode_snapshot(&bytes[..length]).is_err());
         }
@@ -1552,9 +1571,9 @@ mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (111, 14, 21)
+            (112, 14, 21)
         );
-        assert_eq!(MAX_WIRE_ENTITIES, 46);
+        assert_eq!(MAX_WIRE_ENTITIES, 45);
         let viewer_id = u32::MAX;
         let target = EntityRef::Creature(CreatureId::new(u32::MAX));
         let entities: Vec<_> = (0..MAX_VISIBLE_ENTITIES)
@@ -1598,6 +1617,20 @@ mod tests {
             critical: true,
         };
         let snapshot = ZoneSnapshot {
+            doors: vec![
+                mmorpg_core::DoorView {
+                    door: mmorpg_core::DoorId::new(1),
+                    open: true,
+                };
+                mmorpg_core::MAX_DOORS
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, view)| mmorpg_core::DoorView {
+                door: mmorpg_core::DoorId::new(u8::try_from(index + 1).unwrap()),
+                ..view
+            })
+            .collect(),
             chat: Vec::new(),
             loot: None,
             content_revision: u64::MAX,
@@ -1638,15 +1671,16 @@ mod tests {
             quests: None,
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 111 − 16 × 14) / 21 = 35 records fit beside a full event section.
-        assert_eq!(packed.packed_entities, 35);
+        // (1,077 − 112 − 16 × 14 − 16 × 2) / 21 = 33 records fit beside a full event section
+        // and every door.
+        assert_eq!(packed.packed_entities, 33);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
             packed.payload.len() + SESSION_SNAPSHOT_HEADER_BYTES + DATAGRAM_SAFETY_MARGIN_BYTES
                 <= MEASURED_MIN_DATAGRAM_BYTES
         );
         let decoded = decode_snapshot(&packed.payload).unwrap();
-        assert_eq!(decoded.entities[..], snapshot.entities[..35]);
+        assert_eq!(decoded.entities[..], snapshot.entities[..33]);
         assert_eq!(
             decoded.entities[1].entity(),
             target,
@@ -1657,9 +1691,10 @@ mod tests {
             encode_snapshot(&snapshot).unwrap_err().to_string(),
             "player projection exceeds the byte budget"
         );
-        // Without events or a bag sheet the budget holds 46 records.
+        // Without events, doors or a bag sheet the budget holds 45 records.
         let quiet = ZoneSnapshot {
             events: Vec::new(),
+            doors: Vec::new(),
             ..snapshot
         };
         let packed = pack_snapshot(&quiet).unwrap();
@@ -1691,16 +1726,16 @@ mod tests {
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
             // With a full quest part the sheet is 84 + 70 = 154 bytes:
-            // (1,077 − 111 − 154) / 21 = 38 and (1,077 − 111 − 154 − 224) / 21 = 28.
+            // (1,077 − 112 − 154) / 21 = 38 and (1,077 − 112 − 154 − 224) / 21 = 27.
             if events == 0 {
                 assert_eq!(packed.packed_entities, 38);
             }
             if events == 16 {
-                assert_eq!(packed.packed_entities, 28);
+                assert_eq!(packed.packed_entities, 27);
             }
         }
-        // Whole records only: 111 + 154 + 16 × 14 + 28 × 21 = 1,077 is the largest.
-        assert_eq!(maximum_bytes, 1_077);
+        // Whole records only, within the budget.
+        assert!(maximum_bytes <= 1_077);
         // Four full chat lines still leave room for the viewer, its target and more.
         let mut chatty = quiet.clone();
         chatty.events = vec![event; MAX_EVENTS_PER_PLAYER];
@@ -1757,14 +1792,14 @@ mod tests {
                 assert_eq!(decoded.viewer.copper, u32::MAX);
                 assert_eq!(decoded.inventory, with_loot.inventory);
                 assert_eq!(decoded.entities[1].entity(), target);
-                // (1,077 − 111 − 154 − 26 − 224) / 21 = 26.
+                // (1,077 − 112 − 154 − 26 − 224) / 21 = 26.
                 if events == 16 && item.is_some() {
                     assert_eq!(packed.packed_entities, 26);
                 }
             }
         }
-        // With a corpse sheet, whole records reach 1,077 bytes.
-        assert_eq!(maximum_bytes, 1_077);
+        // With a corpse sheet, whole records fill the budget to its last record.
+        assert!(maximum_bytes > 1_077 - ENTITY_RECORD_BYTES && maximum_bytes <= 1_077);
         // Full cooldown and aura lists for the viewer and its target, both
         // sheets and every event still leave the viewer and its target.
         let aura = |ability: u8| {

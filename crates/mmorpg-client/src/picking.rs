@@ -3,8 +3,18 @@ use crate::{
     ClientError,
     world::{SceneDraw, WorldFrame},
 };
-use mmorpg_core::EntityRef;
+use mmorpg_core::{DoorId, EntityRef};
 use three_d_projective::picking::{CullMode, PickRay};
+
+/// What a click lands on first.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Picked {
+    Unit(EntityRef),
+    Door(DoorId),
+}
+
+/// World draws with this id prefix are the inn's door leaf (#158).
+pub const DOOR_DRAW_PREFIX: &str = "greyhaven.inn.door";
 
 #[derive(Default)]
 pub struct WorldPicking {
@@ -29,12 +39,18 @@ impl WorldPicking {
             .cloned()
             .collect();
     }
-    pub fn select_frame(&self, ray: PickRay) -> Result<Option<EntityRef>, ClientError> {
+    pub fn select_frame(&self, ray: PickRay) -> Result<Option<Picked>, ClientError> {
         let mut nearest = f64::INFINITY;
         let mut selected = None;
         for draw in &self.world {
-            if let Some(hit) = ray.intersect_mesh(&draw.mesh, draw.model, cull(draw))? {
-                nearest = nearest.min(hit.distance);
+            if let Some(hit) = ray.intersect_mesh(&draw.mesh, draw.model, cull(draw))?
+                && hit.distance < nearest
+            {
+                nearest = hit.distance;
+                selected = draw
+                    .id
+                    .starts_with(DOOR_DRAW_PREFIX)
+                    .then_some(Picked::Door(mmorpg_presentation::buildings::INN_DOOR));
             }
         }
         for (entity, draw) in &self.bodies {
@@ -42,7 +58,7 @@ impl WorldPicking {
                 && hit.distance < nearest
             {
                 nearest = hit.distance;
-                selected = Some(*entity);
+                selected = Some(Picked::Unit(*entity));
             }
         }
         Ok(selected)

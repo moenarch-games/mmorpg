@@ -1185,7 +1185,7 @@ function runAction(action: GameAction): void {
       worldView.toggleVendor();
       return;
     case "ui.talk":
-      worldView.toggleQuestDialog();
+      worldView.interact();
       return;
     case "ui.toggleQuestLog":
       worldView.toggleQuestLog();

@@ -570,6 +570,7 @@ mod tests {
             None
         );
         let mut snapshot = mmorpg_core::ZoneSnapshot {
+            doors: Vec::new(),
             content_revision: 6,
             acknowledged_sequence: 1,
             viewer_id: 1,
