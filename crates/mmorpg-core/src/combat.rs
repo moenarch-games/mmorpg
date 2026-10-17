@@ -13,6 +13,7 @@ use crate::ai::{creature_reach, distance_squared};
 use crate::creature::Life;
 use crate::entity::body_id;
 use crate::events::push_event;
+use crate::guard::GuardOutcome;
 use crate::snapshot::{CreatureAi, PlayerIntent};
 use crate::unit::{
     COMBAT_LINGER_TICKS, CORPSE_TICKS, OUT_OF_RANGE_ERROR_INTERVAL_TICKS, PLAYER_REACH_UNITS,
@@ -378,6 +379,7 @@ impl ZoneSimulation {
         player.swing_timer = player.swing_timer.saturating_sub(1);
         player.combat_timer = player.combat_timer.saturating_sub(1);
         player.error_cooldown = player.error_cooldown.saturating_sub(1);
+        player.guard.broken = player.guard.broken.saturating_sub(1);
         if !player.is_alive() || !player.auto_attack {
             return Ok(());
         }
@@ -666,9 +668,52 @@ impl ZoneSimulation {
                 Ok(())
             }
             Swing::Hit { amount, critical } => {
+                match self.guard_outcome(source, player_id, amount)? {
+                    GuardOutcome::Unguarded => {}
+                    GuardOutcome::Blocked(lane) => {
+                        self.update_player(player_id, |player| {
+                            player.combat_timer = COMBAT_LINGER_TICKS;
+                        });
+                        self.guard_feedback(
+                            player_id,
+                            ZoneEvent::Blocked {
+                                source,
+                                target,
+                                lane,
+                                amount,
+                            },
+                        );
+                        return Ok(());
+                    }
+                    GuardOutcome::Broken(lane) => {
+                        self.update_player(player_id, |player| {
+                            player.guard.broken = crate::GUARD_BREAK_TICKS;
+                        });
+                        self.guard_feedback(
+                            player_id,
+                            ZoneEvent::GuardBroken {
+                                source,
+                                target,
+                                lane,
+                                ticks: crate::GUARD_BREAK_TICKS,
+                            },
+                        );
+                    }
+                }
                 self.creature_damages_player(creature_id, player_id, u32::from(amount), critical)
             }
         }
+    }
+
+    /// A guard outcome for the defender and the players who see both units.
+    fn guard_feedback(&mut self, player_id: PlayerId, event: ZoneEvent) {
+        let (ZoneEvent::Blocked { source, target, .. }
+        | ZoneEvent::GuardBroken { source, target, .. }) = event
+        else {
+            return;
+        };
+        self.notify(player_id, event);
+        self.notify_observers(&[source, target], &BTreeSet::from([player_id]), event);
     }
 
     /// The creature leaves a corpse without a physics body; its tap stays.
@@ -795,6 +840,7 @@ impl ZoneSimulation {
             player.forward = Axis::Zero;
             player.strafe = Axis::Zero;
             player.jump_pending = false;
+            player.guard = crate::GuardState::default();
         });
         self.notify(
             player_id,

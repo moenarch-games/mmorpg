@@ -21,6 +21,7 @@ mod creature;
 mod entity;
 mod equipment;
 mod events;
+mod guard;
 mod interest;
 mod inventory;
 mod loot;
@@ -68,6 +69,10 @@ pub use equipment::{
     PRIMARY_STAT_PER_DAMAGE, StatTotals,
 };
 pub use events::{ErrorCode, MAX_EVENTS_PER_PLAYER, ZoneEvent};
+pub use guard::{
+    GUARD_ARC_HALF_WIDTH, GUARD_ARC_OFFSET, GUARD_BREAK_IMPACT, GUARD_BREAK_TICKS,
+    GUARD_SPEED_PERCENT, GuardState, lane_of,
+};
 pub use interest::{InterestMaintenanceStats, InterestQueryStats, PlayerProjection};
 pub use inventory::{
     INVENTORY_RESEND_TICKS, INVENTORY_SLOTS, ITEM_CATALOG, ITEM_CATALOG_REVISION, Inventory,
@@ -79,8 +84,8 @@ pub use loot::{
 };
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
 pub use projection::{
-    AuraView, CastView, EntityFlags, EntitySnapshot, ResourceView, TargetDetail, ViewerState,
-    ZoneSnapshot,
+    AuraView, CastView, EntityFlags, EntitySnapshot, GuardView, ResourceView, TargetDetail,
+    ViewerState, ZoneSnapshot,
 };
 pub use quest::{
     MAX_QUEST_EXPERIENCE, MAX_QUEST_LOG, MAX_QUEST_NAME_BYTES, MAX_QUEST_NPCS,
@@ -109,7 +114,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 17;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 18;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its
@@ -182,6 +187,12 @@ pub enum ZoneCommand {
         ability: u8,
         facing: u16,
         aim: StrikeAim,
+    },
+    /// Holds the Warden's shield guard in a lane, or lowers it with `None`
+    /// (#156). Held state like movement: the zone keeps it until the next
+    /// guard command, death or a directed strike.
+    Guard {
+        lane: Option<StrikeHeight>,
     },
     /// Stops the player's own cast or channel.
     CancelCast,

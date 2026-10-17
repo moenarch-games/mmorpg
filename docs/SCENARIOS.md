@@ -211,3 +211,10 @@ creature, or the striker for a whiff; digests show it as
 `swept:<striker>:<ability>:<side><height>><struck or ->`. Bot steps do not send
 directed strikes yet; `crates/mmorpg-core/tests/directed_strike.rs` covers the
 coverage rules.
+
+The `blocked` and `guard_broken` events (the Warden's shield guard, #156)
+concern the attacker for the defender and digest as
+`blocked:<attacker>><defender>:<lane>:<amount>` and
+`guard_broken:<attacker>><defender>:<lane>:<ticks>`. Bots do not guard yet;
+`crates/mmorpg-core/tests/guard.rs` covers lanes, coverage, breaks, re-guard,
+slowed movement and replay.

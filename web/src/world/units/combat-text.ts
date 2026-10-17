@@ -5,7 +5,7 @@ import type { ZoneEvent, ZoneSnapshot } from "../../replication";
  * Floating combat text for the viewer's projection events. Events are cosmetic and lossy, so the
  * text only decorates what the self and target sections already show.
  */
-export type CombatTextKind = "damage" | "critical" | "periodic" | "taken" | "heal" | "absorb" | "interrupt" | "miss";
+export type CombatTextKind = "damage" | "critical" | "periodic" | "taken" | "heal" | "absorb" | "interrupt" | "miss" | "block" | "guard-break";
 
 export type CombatText = { kind: CombatTextKind; text: string };
 
@@ -51,6 +51,11 @@ function textFor(event: ZoneEvent, snapshot: ZoneSnapshot, periodic: boolean): C
         : null;
     case "absorbed":
       return { kind: "absorb", text: "Absorb" };
+    case "blocked":
+      // The viewer's own shield (#156); others' blocks read in the log.
+      return isViewer(event.target, snapshot) ? { kind: "block", text: `Block ${event.lane}` } : null;
+    case "guard-broken":
+      return isViewer(event.target, snapshot) ? { kind: "guard-break", text: "Guard broken!" } : null;
     case "strike-swept":
       // A hit shows its damage; a whiff of the viewer's own sweep says so.
       return event.target === null && isViewer(event.source, snapshot) ? { kind: "miss", text: "Whiff" } : null;

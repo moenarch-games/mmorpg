@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 use mmorpg_core::{
     AbilityId, AuraKind, AuraView, CastView, ClassChoice, Cooldown, EntityFlags, EntityKind,
-    EntitySnapshot, GLOBAL_COOLDOWN_TICKS, MAX_AURAS, MAX_CHAT_PER_TICK, MAX_COOLDOWNS,
+    EntitySnapshot, GLOBAL_COOLDOWN_TICKS, GuardView, MAX_AURAS, MAX_CHAT_PER_TICK, MAX_COOLDOWNS,
     MAX_EVENTS_PER_PLAYER, MAX_VISIBLE_ENTITIES, ResourceKind, ResourceView, TargetDetail,
     ViewerState, ZoneSnapshot, ability_by_id,
 };
@@ -33,8 +33,9 @@ const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
 /// means no cast.
 pub const CAST_RECORD_BYTES: usize = 1 + 1 + 2 + 2;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
-/// range, then the cooldown and aura counts.
-const SELF_ABILITY_BYTES: usize = 1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1;
+/// range, the guard (lane code, protecting flag, break ticks), then the
+/// cooldown and aura counts.
+const SELF_ABILITY_BYTES: usize = 1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1;
 /// Four `u16` stat totals: stamina, strength, agility and intellect.
 const STAT_TOTALS_BYTES: usize = 4 * 2;
 /// The self sheet's fixed part: bag, equipment and stat totals; the quest
@@ -62,7 +63,7 @@ pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// facing, level, health percent and flags.
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 6 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events, sheets, cooldowns or auras:
-/// (1,077 − 105) / 21 = 46.
+/// (1,077 − 109) / 21 = 46.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -71,7 +72,7 @@ const MAX_CHAT_SECTION_BYTES: usize = MAX_CHAT_PER_TICK * crate::chat::MAX_CHAT_
 // With every list full, both sheets (a full quest log and eight markers),
 // a full event section and four 80-byte chat lines, the viewer and its
 // target always fit:
-// 105 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + 2 × 21 = 1,003 ≤ 1,077 bytes.
+// 109 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + 2 × 21 = 1,007 ≤ 1,077 bytes.
 const _: () = assert!(
     PLAYER_SNAPSHOT_FIXED_BYTES
         + MAX_ABILITY_LIST_BYTES
@@ -157,6 +158,9 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     for value in viewer.damage {
         payload.extend_from_slice(&value.to_be_bytes());
     }
+    payload.push(crate::wire::encode_lane(viewer.guard.raised));
+    payload.push(u8::from(viewer.guard.protecting));
+    payload.extend_from_slice(&viewer.guard.broken.to_be_bytes());
     payload.push(encode_u8_count(
         snapshot.cooldowns.len(),
         MAX_COOLDOWNS,
@@ -439,6 +443,18 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
     if damage[0] > damage[1] {
         return Err(ProtocolError::new("viewer damage range is inverted"));
     }
+    let guard = GuardView {
+        raised: crate::wire::decode_lane(read_u8(payload, &mut offset)?)?,
+        protecting: read_bool(payload, &mut offset)?,
+        broken: u16::from_be_bytes(take(payload, &mut offset)?),
+    };
+    let warden = class.is_some_and(|choice| choice.class == mmorpg_core::PlayerClass::Warden);
+    if guard.broken > mmorpg_core::GUARD_BREAK_TICKS
+        || (dead && guard != GuardView::default())
+        || (guard.protecting && (guard.raised.is_none() || guard.broken > 0 || !warden))
+    {
+        return Err(ProtocolError::new("viewer guard state is inconsistent"));
+    }
     let cooldown_count = decode_u8_count(
         payload,
         &mut offset,
@@ -618,6 +634,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
             cast,
             global_cooldown,
             damage,
+            guard,
         },
         cooldowns,
         auras,
@@ -779,6 +796,12 @@ mod tests {
                 global_cooldown: 25,
                 // Level 4's 6–9 plus half of 6 intellect.
                 damage: [9, 12],
+                // A held guard recovering from a break.
+                guard: GuardView {
+                    raised: Some(mmorpg_core::StrikeHeight::High),
+                    protecting: false,
+                    broken: 30,
+                },
             },
             cooldowns: vec![
                 Cooldown {
@@ -1037,7 +1060,7 @@ mod tests {
 
     fn fixture_bytes() -> Vec<u8> {
         hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v17.hex"
+            "../../../fixtures/protocol/player-snapshot-v18.hex"
         ))
     }
 
@@ -1045,7 +1068,8 @@ mod tests {
     const CLASS: usize = 59;
     const CAST: usize = CLASS + 8;
     const DAMAGE: usize = CAST + CAST_RECORD_BYTES;
-    const COOLDOWNS: usize = DAMAGE + 4;
+    const GUARD: usize = DAMAGE + 4;
+    const COOLDOWNS: usize = GUARD + 4;
     const AURAS: usize = COOLDOWNS + 1 + 2 * COOLDOWN_RECORD_BYTES;
     const TARGET_OF_TARGET: usize = AURAS + 1 + AURA_RECORD_BYTES;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
@@ -1105,7 +1129,7 @@ mod tests {
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
         // The previous version's fixture is rejected, never reinterpreted.
         let legacy = hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v16.hex"
+            "../../../fixtures/protocol/player-snapshot-v17.hex"
         ));
         assert_eq!(
             decode_snapshot(&legacy).unwrap_err().to_string(),
@@ -1144,7 +1168,7 @@ mod tests {
         // A dead target has no target detail.
         snapshot.target_detail = TargetDetail::default();
         let expected = hex(include_str!(
-            "../../../fixtures/protocol/player-loot-v17.hex"
+            "../../../fixtures/protocol/player-loot-v18.hex"
         ));
         if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
             let bytes = encode_snapshot(&snapshot).unwrap();
@@ -1499,7 +1523,7 @@ mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (105, 14, 21)
+            (109, 14, 21)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 46);
         let viewer_id = u32::MAX;
@@ -1572,6 +1596,7 @@ mod tests {
                 cast: None,
                 global_cooldown: 0,
                 damage: [u16::MAX; 2],
+                guard: GuardView::default(),
             },
             cooldowns: Vec::new(),
             auras: Vec::new(),
@@ -1582,7 +1607,7 @@ mod tests {
             quests: None,
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 105 − 16 × 14) / 21 = 35 records fit beside a full event section.
+        // (1,077 − 109 − 16 × 14) / 21 = 35 records fit beside a full event section.
         assert_eq!(packed.packed_entities, 35);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
@@ -1635,7 +1660,7 @@ mod tests {
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
             // With a full quest part the sheet is 84 + 70 = 154 bytes:
-            // (1,077 − 105 − 154) / 21 = 38 and (1,077 − 105 − 154 − 224) / 21 = 28.
+            // (1,077 − 109 − 154) / 21 = 38 and (1,077 − 109 − 154 − 224) / 21 = 28.
             if events == 0 {
                 assert_eq!(packed.packed_entities, 38);
             }
@@ -1643,8 +1668,8 @@ mod tests {
                 assert_eq!(packed.packed_entities, 28);
             }
         }
-        // Whole records only: 105 + 154 + 16 × 14 + 28 × 21 = 1,071 is the largest.
-        assert_eq!(maximum_bytes, 1_071);
+        // Whole records only: 109 + 154 + 16 × 14 + 28 × 21 = 1,075 is the largest.
+        assert_eq!(maximum_bytes, 1_075);
         // Four full chat lines still leave room for the viewer, its target and more.
         let mut chatty = quiet.clone();
         chatty.events = vec![event; MAX_EVENTS_PER_PLAYER];
@@ -1658,7 +1683,7 @@ mod tests {
             MAX_CHAT_PER_TICK
         ];
         let packed = pack_snapshot(&chatty).unwrap();
-        // (1,077 − 105 − 224 − 4 × 84) / 21 = 19 records.
+        // (1,077 − 109 − 224 − 4 × 84) / 21 = 19 records.
         assert_eq!(packed.packed_entities, 19);
         assert_eq!(decode_snapshot(&packed.payload).unwrap().chat, chatty.chat);
         for item in [
@@ -1701,14 +1726,14 @@ mod tests {
                 assert_eq!(decoded.viewer.copper, u32::MAX);
                 assert_eq!(decoded.inventory, with_loot.inventory);
                 assert_eq!(decoded.entities[1].entity(), target);
-                // (1,077 − 105 − 154 − 26 − 224) / 21 = 27.
+                // (1,077 − 109 − 154 − 26 − 224) / 21 = 26.
                 if events == 16 && item.is_some() {
-                    assert_eq!(packed.packed_entities, 27);
+                    assert_eq!(packed.packed_entities, 26);
                 }
             }
         }
-        // With a corpse sheet, whole records reach 1,076 bytes.
-        assert_eq!(maximum_bytes, 1_076);
+        // With a corpse sheet, whole records reach 1,075 bytes.
+        assert_eq!(maximum_bytes, 1_075);
         // Full cooldown and aura lists for the viewer and its target, both
         // sheets and every event still leave the viewer and its target.
         let aura = |ability: u8| {
@@ -1761,8 +1786,8 @@ mod tests {
             auras: full_auras,
         };
         let packed = pack_snapshot(&loaded).unwrap();
-        // (1,077 − 105 − 108 − 154 − 16 × 14) / 21 = 23 records.
-        assert_eq!(packed.packed_entities, 23);
+        // (1,077 − 109 − 108 − 154 − 16 × 14) / 21 = 22 records.
+        assert_eq!(packed.packed_entities, 22);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         let decoded = decode_snapshot(&packed.payload).unwrap();
         assert_eq!(decoded.entities[1].entity(), target);

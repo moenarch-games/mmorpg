@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v17.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v18.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({
@@ -16,7 +16,8 @@ const WOLF = { kind: "creature", id: 108 };
 const CLASS = 59;
 const CAST = CLASS + 8;
 const DAMAGE = CAST + 6;
-const COOLDOWNS = DAMAGE + 4;
+const GUARD = DAMAGE + 4;
+const COOLDOWNS = GUARD + 4;
 const AURAS = COOLDOWNS + 1 + 2 * 3;
 const TARGET_OF_TARGET = AURAS + 1 + 6;
 const TARGET_CAST = TARGET_OF_TARGET + 5;
@@ -84,14 +85,14 @@ describe("Rust/browser snapshot contract", () => {
     }
   });
   test("decodes the same golden bytes as the Rust encoder", () => {
-    expect(fixture.length).toBe(105 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21);
+    expect(fixture.length).toBe(109 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21);
     expect(decodeSnapshot(fixture)).toEqual({
       zoneId: 42, tick: 99n, contentRevision: 4n, acknowledgedSequence: 81, viewerId: 7,
       viewer: {
         copper: 42, experience: 37, experienceToNextLevel: 400, health: 38, maxHealth: 110, level: 4, dead: false, inCombat: true,
         autoAttacking: true, target: WOLF, classChoice: { classId: "arcanist", sex: "female" },
         resource: { kind: "mana", value: 121, max: 176 }, cast: { ability: 9, elapsed: 20, total: 60, channel: false }, globalCooldown: 25,
-        damage: { min: 9, max: 12 },
+        damage: { min: 9, max: 12 }, guard: { raised: "high", protecting: false, broken: 30 },
       },
       cooldowns: [{ ability: 10, remaining: 412 }, { ability: 11, remaining: 700 }],
       auras: [{ ability: 11, kind: "absorb", remaining: 500, amount: 31 }],
@@ -197,6 +198,10 @@ describe("Rust/browser snapshot contract", () => {
       [CAST + 1, 1, "cast state"],
       [CAST + 1, 2, "Reserved"],
       [CAST + 3, 60, "cast state"],
+      [GUARD, 4, "guard state"],
+      [GUARD + 1, 1, "guard state"],
+      [GUARD + 1, 2, "Reserved"],
+      [GUARD + 3, 46, "guard state"],
       [COOLDOWNS, 5, "too many cooldowns"],
       [COOLDOWNS + 1, 11, "cooldown record"],
       [COOLDOWNS + 2, 9, "cooldown record"],

@@ -6,6 +6,7 @@ import { cooldownSeconds, resourceName, slotState, sweepDegrees, targetDistanceU
 import { auraLabel, auraTimer, sortAuras } from "./aura-display";
 import { castBarView } from "./cast-bar";
 import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
+import { guardDisplay } from "./shield-guard";
 import { COMBAT_TEXT_MS, INTERRUPT_FLASH_MS, combatTexts, viewerInterrupted } from "./combat-text";
 import { unitName } from "./combat-hud";
 
@@ -100,6 +101,7 @@ export class ClassHud {
   #directedLabels: readonly string[] = [];
   #tooltipIndex: number | null = null;
   readonly #aim: { root: HTMLElement; cells: HTMLElement[] };
+  readonly #guard: { root: HTMLElement; cells: HTMLElement[]; label: HTMLElement };
 
   constructor(root: HTMLElement, callbacks: ClassHudCallbacks) {
     this.#callbacks = callbacks;
@@ -131,6 +133,21 @@ export class ClassHud {
     aimRoot.append(...cells);
     root.append(aimRoot);
     this.#aim = { root: aimRoot, cells };
+    // The zone's guard (#156): high, middle and low lanes top to bottom, and its state in words.
+    const guardRoot = document.createElement("div");
+    guardRoot.className = "shield-guard";
+    guardRoot.dataset.part = "shield-guard";
+    guardRoot.setAttribute("role", "status");
+    guardRoot.hidden = true;
+    const guardCells = [...STRIKE_HEIGHTS].reverse().map((height) => {
+      const cell = document.createElement("span");
+      cell.dataset.lane = height;
+      return cell;
+    });
+    const guardLabel = document.createElement("em");
+    guardRoot.append(...guardCells, guardLabel);
+    root.append(guardRoot);
+    this.#guard = { root: guardRoot, cells: guardCells, label: guardLabel };
     // The HUD itself ignores pointers, so a tap anywhere outside the action bar (the world canvas,
     // other controls) dismisses a touch tooltip through the document.
     root.ownerDocument.addEventListener("pointerdown", (event) => {
@@ -225,7 +242,22 @@ export class ClassHud {
     this.#updatePlayer(snapshot, catalog);
     this.#updateTarget(snapshot, catalog);
     this.#updateCast(snapshot, catalog, now);
+    this.#updateGuard(snapshot);
     this.#expireText(now);
+  }
+
+  /** Shows the lane the zone holds and whether it protects, is suspended (airborne, stunned) or broken. */
+  #updateGuard(snapshot: ZoneSnapshot): void {
+    const shown = guardDisplay(snapshot.viewer.guard);
+    this.#guard.root.hidden = shown === null;
+    setData(this.#guard.root, "state", shown?.state ?? null);
+    for (const cell of this.#guard.cells) {
+      setData(cell, "on", cell.dataset.lane === shown?.lane ? "true" : null);
+    }
+    const words = shown === null ? "" : shown.state === "broken"
+      ? `Guard broken ${(snapshot.viewer.guard.broken / 30).toFixed(1)} s`
+      : shown.state === "protecting" ? `Guarding ${shown.lane}` : `Guard ${shown.lane} (not set)`;
+    setText(this.#guard.label, words);
   }
 
   #updateBar(snapshot: ZoneSnapshot, catalog: ContentCatalog): void {

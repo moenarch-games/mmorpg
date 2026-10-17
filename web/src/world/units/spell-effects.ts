@@ -1,6 +1,7 @@
 import type { RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import { entityKey, sameEntity, type EntityRef } from "../../entity-ref";
-import type { StrikeAim, ZoneSnapshot } from "../../replication";
+import type { StrikeAim, StrikeHeight, ZoneSnapshot } from "../../replication";
+import { guardDisplay, type GuardDisplay } from "./shield-guard";
 import { ABILITY_PRESENTATION, presentationOf, type CasterPose, type SpellVisual } from "./ability-presentation";
 
 /**
@@ -16,7 +17,7 @@ type Quaternion = [number, number, number, number];
 
 export type SpellEffect = {
   id: number;
-  visual: SpellVisual | "impact" | "sweep";
+  visual: SpellVisual | "impact" | "sweep" | "guard" | "block";
   critical?: boolean;
   ability: number;
   source: EntityRef;
@@ -28,9 +29,13 @@ export type SpellEffect = {
   duration: number | null;
   /** A directed strike's aim and whether the zone said it struck a creature. */
   sweep?: { aim: StrikeAim; hit: boolean };
+  /** The viewer's raised shield as the zone holds it (#156); bound, refreshed every projection. */
+  guard?: NonNullable<GuardDisplay>;
+  /** A blow met a guard in `lane`: blocked, or overpowering it. Source is the defender. */
+  block?: { lane: StrikeHeight; broken: boolean };
 };
 
-export const EFFECT_SECONDS = { projectile: 0.4, arrow: 0.22, ring: 0.65, swing: 0.28, sweep: 0.34 } as const;
+export const EFFECT_SECONDS = { projectile: 0.4, arrow: 0.22, ring: 0.65, swing: 0.28, sweep: 0.34, block: 0.45 } as const;
 const MAX_EFFECTS = 24;
 /** Frost Nova's radius (800 units) in metres; Blizzard's area (600 units). */
 const NOVA_RADIUS = 8;
@@ -118,6 +123,10 @@ export class SpellEffects {
         // The zone's outcome, not the input, drives the sweep: its aim, and hit or whiff.
         this.#actions.set(entityKey(event.source), { pose: "swing", startedAt: now, duration: EFFECT_SECONDS.sweep, hold: false, ability: event.ability, release: false });
         this.#add({ visual: "sweep", ability: event.ability, source: event.source, target: event.target, ground: null, duration: EFFECT_SECONDS.sweep, sweep: { aim: event.aim, hit: event.target !== null } }, now);
+      } else if (event.kind === "blocked" || event.kind === "guard-broken") {
+        // The defender's shield meets the blow at the zone's lane, facing the attacker.
+        const block = { lane: event.lane, broken: event.kind === "guard-broken" };
+        this.#add({ visual: "block", ability: 0, source: event.target, target: event.source, ground: null, duration: EFFECT_SECONDS.block, block }, now);
       } else if (event.kind === "interrupted") {
         const key = entityKey(event.target);
         if (this.#casts.get(key)?.ability === event.ability) { this.#casts.delete(key); }
@@ -145,12 +154,22 @@ export class SpellEffects {
     } else { this.#casts.delete(key); }
     const barrier = !snapshot.viewer.dead && snapshot.auras.some((aura) => aura.ability === BARRIER_ABILITY && aura.kind === "absorb");
     this.#effects = this.#effects.filter((effect) => {
-      if (effect.duration !== null) { return true; }
+      if (effect.duration !== null || effect.visual === "guard") { return true; }
       if (effect.visual === "shards") { return this.#casts.get(entityKey(effect.source))?.ability === BLIZZARD_ABILITY; }
       return sameEntity(effect.source, viewer) && barrier;
     });
     if (cast?.channel && cast.ability === BLIZZARD_ABILITY && !snapshot.viewer.dead) {
       this.#startShards(viewer, snapshot.viewer.target, BLIZZARD_ABILITY, now, resolve);
+    }
+    // The raised shield follows the zone's guard: its lane, and protecting, suspended or broken.
+    const shown = snapshot.viewer.dead ? null : guardDisplay(snapshot.viewer.guard);
+    const raised = this.#effects.find((effect) => effect.visual === "guard");
+    if (shown === null) {
+      this.#effects = this.#effects.filter((effect) => effect.visual !== "guard");
+    } else if (raised) {
+      raised.guard = shown;
+    } else {
+      this.#add({ visual: "guard", ability: 0, source: viewer, target: null, ground: null, duration: null, guard: shown }, now);
     }
     if (barrier && !this.#effects.some((effect) => effect.visual === "bubble" && sameEntity(effect.source, viewer))) {
       this.#add({ visual: "bubble", ability: BARRIER_ABILITY, source: viewer, target: null, ground: null, duration: null }, now);
@@ -164,7 +183,7 @@ export class SpellEffects {
       }
     }
     this.#effects = this.#effects.filter((effect) => effect.duration === null
-      ? this.#casts.get(entityKey(effect.source))?.ability === effect.ability || effect.visual === "bubble"
+      ? this.#casts.get(entityKey(effect.source))?.ability === effect.ability || effect.visual === "bubble" || effect.visual === "guard"
       : now - effect.startedAt < effect.duration);
     return this.#effects;
   }
@@ -241,6 +260,8 @@ export const SWEEP_HEIGHT_METRES = { low: 0.35, middle: 0.95, high: 1.65 } as co
 /** The aimed side turns the arc 45° from the facing (left is toward +yaw); it spans ±30°. */
 export const SWEEP_SIDE_RADIANS = { left: Math.PI / 4, centre: 0, right: -Math.PI / 4 } as const;
 const SWEEP_HALF_WIDTH = Math.PI / 6;
+/** The zone's guard coverage is centred 30° toward the shield (left) side of the facing. */
+const GUARD_SIDE_RADIANS = Math.PI / 6;
 const SWEEP_COUNT = 8;
 const RING_COUNT = 20;
 const SWING_COUNT = 6;
@@ -382,6 +403,46 @@ export function effectNodes(effect: SpellEffect, now: number, resolve: ResolveAn
           },
         };
       });
+    }
+    case "guard": {
+      const guard = effect.guard;
+      if (!source || !guard) {
+        return [];
+      }
+      // The shield covers the front and the shield (left) side: it sits 30° toward it.
+      const angle = source.yaw + GUARD_SIDE_RADIANS;
+      const tint = guard.state === "protecting" ? "#9cc8ff" : guard.state === "broken" ? "#ff6a4d" : "#9fb4c8";
+      return [{
+        id: `${prefix}-shield`,
+        geometry: { kind: "box" as const, size: [0.62, 0.5, 0.07] as [number, number, number] },
+        color: tint,
+        unlit: true,
+        opacity: guard.state === "protecting" ? 0.55 : 0.25,
+        transform: {
+          translation: [source.x + Math.sin(angle) * 0.55, source.feetY + SWEEP_HEIGHT_METRES[guard.lane], source.z + Math.cos(angle) * 0.55] as Vec3,
+          rotationQuaternion: yawQuaternion(angle),
+        },
+      }];
+    }
+    case "block": {
+      const block = effect.block;
+      if (!source || !target || !block) {
+        return [];
+      }
+      const angle = Math.atan2(target.x - source.x, target.z - source.z);
+      // A block flashes and holds; a broken guard flares red and drops away.
+      const drop = block.broken ? 0.5 * t * t : 0;
+      return [{
+        id: `${prefix}-plate`,
+        geometry: { kind: "box" as const, size: [0.7 + 0.25 * t, 0.55 + 0.2 * t, 0.06] as [number, number, number] },
+        color: block.broken ? "#ff5a3c" : "#e8f3ff",
+        unlit: true,
+        opacity: 0.9 * (1 - t),
+        transform: {
+          translation: [source.x + Math.sin(angle) * 0.7, source.feetY + SWEEP_HEIGHT_METRES[block.lane] - drop, source.z + Math.cos(angle) * 0.7] as Vec3,
+          rotationQuaternion: yawQuaternion(angle),
+        },
+      }];
     }
     case "swing": {
       if (!source) {

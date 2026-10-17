@@ -74,6 +74,8 @@ pub(crate) struct PlayerState {
     pub(crate) forward: Axis,
     pub(crate) strafe: Axis,
     pub(crate) jump_pending: bool,
+    /// The held shield guard and its break recovery (#156).
+    pub(crate) guard: crate::GuardState,
     pub(crate) last_sequence: u32,
     pub(crate) spawn_slot: u16,
     pub(crate) level: u8,
@@ -129,6 +131,7 @@ impl PlayerState {
             forward: Axis::Zero,
             strafe: Axis::Zero,
             jump_pending: false,
+            guard: crate::GuardState::default(),
             last_sequence: 0,
             spawn_slot,
             level: PLAYER_START_LEVEL,
@@ -439,6 +442,13 @@ impl ZoneSimulation {
                 player.jump_pending = alive;
                 None
             }
+            // Held like movement; the dead hold no guard.
+            ZoneCommand::Guard { lane } => {
+                if alive {
+                    player.guard.raised = lane;
+                }
+                None
+            }
             ZoneCommand::SelectTarget(target) => Some(PlayerIntent::SelectTarget(target)),
             ZoneCommand::StartAttack => Some(PlayerIntent::StartAttack),
             ZoneCommand::Loot(claim) => Some(PlayerIntent::Loot(claim)),
@@ -599,12 +609,16 @@ impl ZoneSimulation {
                 } else {
                     body.velocity().y
                 };
+            // A protecting guard slows movement (#156): ready and grounded.
+            let guarding =
+                crate::guard::guard_ready(state).is_some() && is_grounded(&self.world, body)?;
             let mut velocity = if alive {
                 let free = movement_velocity(state)?;
-                let [x, z] = crate::aura::scale_velocity(
-                    [free.x, free.z],
-                    crate::aura::speed_percent(&state.auras),
-                );
+                let mut percent = crate::aura::speed_percent(&state.auras);
+                if guarding {
+                    percent = percent * crate::GUARD_SPEED_PERCENT / 100;
+                }
+                let [x, z] = crate::aura::scale_velocity([free.x, free.z], percent);
                 Vec3i::new(x, 0, z)
             } else {
                 Vec3i::ZERO
@@ -773,7 +787,7 @@ fn movement_velocity(state: &PlayerState) -> Result<Vec3i, ZoneError> {
 /// A thin probe directly under the feet, inset by one unit horizontally so
 /// touching a wall is not ground. The physics query counts touching bodies;
 /// any body other than the player itself supports a jump.
-fn is_grounded(world: &World, body: &RigidBody) -> Result<bool, ZoneError> {
+pub(crate) fn is_grounded(world: &World, body: &RigidBody) -> Result<bool, ZoneError> {
     let position = body.position();
     let half_extents = body.half_extents();
     let probe_half_height = GROUND_PROBE_DEPTH_UNITS / 2;

@@ -84,6 +84,8 @@ pub enum EventSpec {
     CastStarted,
     AbilityUsed,
     StrikeSwept,
+    Blocked,
+    GuardBroken,
     Healed,
     AuraApplied,
     AuraRemoved,
@@ -95,7 +97,7 @@ pub enum EventSpec {
 }
 
 /// Event kinds without a payload, with their scenario names.
-const PLAIN_EVENTS: [(EventSpec, &str); 17] = [
+const PLAIN_EVENTS: [(EventSpec, &str); 19] = [
     (EventSpec::AttackPerformed, "attack_performed"),
     (EventSpec::DamageObserved, "damage_observed"),
     (EventSpec::DamageDealt, "damage_dealt"),
@@ -106,6 +108,8 @@ const PLAIN_EVENTS: [(EventSpec, &str); 17] = [
     (EventSpec::CastStarted, "cast_started"),
     (EventSpec::AbilityUsed, "ability_used"),
     (EventSpec::StrikeSwept, "strike_swept"),
+    (EventSpec::Blocked, "blocked"),
+    (EventSpec::GuardBroken, "guard_broken"),
     (EventSpec::Healed, "healed"),
     (EventSpec::AuraApplied, "aura_applied"),
     (EventSpec::AuraRemoved, "aura_removed"),
@@ -125,7 +129,7 @@ impl TryFrom<String> for EventSpec {
         match text.strip_prefix("error:").and_then(parse_error_code) {
             Some(code) => Ok(Self::Error(code)),
             None => Err(format!(
-                "event {text:?} must be damage_dealt, damage_taken, miss, died, evade, cast_started, ability_used, strike_swept, healed, aura_applied, aura_removed, interrupted, absorbed, quest_progress, quest_completed or error:<code>"
+                "event {text:?} must be damage_dealt, damage_taken, miss, died, evade, cast_started, ability_used, strike_swept, blocked, guard_broken, healed, aura_applied, aura_removed, interrupted, absorbed, quest_progress, quest_completed or error:<code>"
             )),
         }
     }
@@ -160,6 +164,8 @@ impl EventSpec {
             | (Self::CastStarted, ZoneEvent::CastStarted { .. })
             | (Self::AbilityUsed, ZoneEvent::AbilityUsed { .. })
             | (Self::StrikeSwept, ZoneEvent::StrikeSwept { .. })
+            | (Self::Blocked, ZoneEvent::Blocked { .. })
+            | (Self::GuardBroken, ZoneEvent::GuardBroken { .. })
             | (Self::Healed, ZoneEvent::Healed { .. })
             | (Self::AuraApplied, ZoneEvent::AuraApplied { .. })
             | (Self::AuraRemoved, ZoneEvent::AuraRemoved { .. })
@@ -193,7 +199,9 @@ pub fn concerned_unit(event: &ZoneEvent, viewer: EntityRef) -> Option<EntityRef>
         | ZoneEvent::DamageObserved { source, target, .. }
         | ZoneEvent::Miss { source, target }
         | ZoneEvent::Healed { source, target, .. }
-        | ZoneEvent::Absorbed { source, target, .. } => other(source, Some(target)),
+        | ZoneEvent::Absorbed { source, target, .. }
+        | ZoneEvent::Blocked { source, target, .. }
+        | ZoneEvent::GuardBroken { source, target, .. } => other(source, Some(target)),
         ZoneEvent::CastStarted { source, target, .. }
         | ZoneEvent::AbilityUsed { source, target, .. }
         | ZoneEvent::StrikeSwept { source, target, .. } => other(source, target),
@@ -375,6 +383,28 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
             aim.side.code(),
             aim.height.code(),
             target.map_or_else(|| "-".to_owned(), &name)
+        ),
+        ZoneEvent::Blocked {
+            source,
+            target,
+            lane,
+            amount,
+        } => format!(
+            "blocked:{}>{}:{}:{amount}",
+            name(source),
+            name(target),
+            lane.code()
+        ),
+        ZoneEvent::GuardBroken {
+            source,
+            target,
+            lane,
+            ticks,
+        } => format!(
+            "guard_broken:{}>{}:{}:{ticks}",
+            name(source),
+            name(target),
+            lane.code()
         ),
         ZoneEvent::Healed { target, amount, .. } => format!("healed:{}:{amount}", name(target)),
         ZoneEvent::AuraApplied {

@@ -157,6 +157,8 @@ pub struct CanonicalPlayerAbilities {
     pub cast: Option<CastState>,
     /// Auras in slot order.
     pub auras: Vec<Aura>,
+    /// The held shield guard and its break recovery (#156).
+    pub guard: crate::GuardState,
 }
 
 /// Ability state of a creature: its content-bound ability's timer, its cast
@@ -304,6 +306,7 @@ impl ZoneSimulation {
                             cooldowns: state.cooldowns.clone(),
                             cast: state.cast,
                             auras: state.auras.clone(),
+                            guard: state.guard,
                         },
                     },
                     chat_ready_at: state.chat_ready_at,
@@ -475,6 +478,12 @@ impl ZoneSimulation {
             ));
         }
         validate_player_abilities(&combat.abilities, combat.level, combat.health > 0)?;
+        let guard = combat.abilities.guard;
+        if guard.broken > crate::GUARD_BREAK_TICKS
+            || (!alive && guard != crate::GuardState::default())
+        {
+            return Err(ZoneError::new("player guard state is out of range"));
+        }
         self.world
             .add_body(RigidBody::dynamic(
                 body_id(EntityRef::Player(player.player_id)),
@@ -490,6 +499,7 @@ impl ZoneSimulation {
                 forward,
                 strafe,
                 jump_pending,
+                guard,
                 last_sequence: player.last_sequence,
                 spawn_slot: player.spawn_slot,
                 copper: player.copper,

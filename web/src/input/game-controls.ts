@@ -27,6 +27,7 @@ export const GAME_ACTIONS = [
   "ability.slot3",
   "ability.slot4",
   "combat.directedStrike",
+  "combat.guard",
   "combat.cancelCast",
   "player.releaseSpirit",
   "ui.toggleBags",
@@ -137,6 +138,8 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ability.slot4", "Ability 4", "gameplay", [key("Digit4"), button(14)]),
     // Hold, aim with the pointer, release (#154): the Warden's directed Heroic Strike.
     action("combat.directedStrike", "Directed Heroic Strike (hold, aim, release)", "gameplay", [key("KeyG")]),
+    // Hold to raise the Warden's shield; pointer up/down picks the high/middle/low lane (#156).
+    action("combat.guard", "Shield guard (hold, aim up/down)", "gameplay", [key("KeyZ")]),
     action("combat.cancelCast", "Cancel cast", "casting", [key("Escape"), button(1)]),
     action("player.releaseSpirit", "Release spirit", "gameplay", [key("KeyR"), button(3)]),
     action("ui.toggleBags", "Toggle bags", "gameplay", [key("KeyB"), button(8)]),
@@ -170,7 +173,7 @@ export type GameControlsTargets = {
 };
 
 /** Held actions report their whole lifecycle instead of a one-shot press. */
-export const HELD_ACTIONS = ["combat.directedStrike"] as const;
+export const HELD_ACTIONS = ["combat.directedStrike", "combat.guard"] as const;
 export type HeldAction = (typeof HELD_ACTIONS)[number];
 /**
  * `release` is a deliberate key release; `cancel` is any retirement (blur, hidden page, Settings,

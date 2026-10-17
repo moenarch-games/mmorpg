@@ -149,6 +149,14 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
       return `${capitalise(name(event.target))} ${isViewer(event.target) ? "are" : "is"} interrupted (${abilityName(event.ability, catalog)}).`;
     case "absorbed":
       return `A shield absorbs ${event.amount} damage.`;
+    case "blocked":
+      return isViewer(event.target)
+        ? `You block ${name(event.source)}'s ${event.lane} blow.`
+        : `${capitalise(name(event.target))} blocks ${name(event.source)}'s ${event.lane} blow.`;
+    case "guard-broken":
+      return isViewer(event.target)
+        ? `${capitalise(name(event.source))} breaks your ${event.lane} guard!`
+        : `${capitalise(name(event.source))} breaks ${name(event.target)}'s guard.`;
     case "quest-progress": {
       const quest = catalog.quests.get(event.quest);
       const objective = quest?.objectives[event.objective];

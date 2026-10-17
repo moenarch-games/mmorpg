@@ -261,6 +261,8 @@
 .ct-heal { color: #6ee07f; }
 .ct-absorb { color: #8ec5ff; font-size: 1.05rem; }
 .ct-interrupt { color: #ffb347; font-size: 1.1rem; }
+.ct-block { color: #cfe3ff; font-size: 1.1rem; }
+.ct-guard-break { color: #ff6a4d; font-size: 1.2rem; font-weight: 700; }
 .ct-miss { color: #c3cbd2; font-size: 1rem; }
 
 @keyframes combat-text-rise {
@@ -318,3 +320,28 @@
 .strike-aim[hidden] { display: none; }
 .strike-aim span { height: .9rem; border-radius: .2rem; background: rgb(255 255 255 / 14%); }
 .strike-aim span[data-on="true"] { background: #ffd36b; box-shadow: 0 0 .5rem rgb(255 211 107 / 80%); }
+
+/* The zone's shield guard (#156): one lit lane, steel while protecting, dim while suspended, red while broken. */
+.shield-guard {
+  position: absolute;
+  top: 46%;
+  left: calc(50% - 4.2rem);
+  display: grid;
+  grid-template-columns: 1.1rem;
+  gap: .18rem;
+  justify-items: center;
+  padding: .3rem;
+  border: 1px solid rgb(156 200 255 / 45%);
+  border-radius: .45rem;
+  background: rgb(9 14 20 / 55%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.shield-guard[hidden] { display: none; }
+.shield-guard span { width: 1.1rem; height: .7rem; border-radius: .2rem; background: rgb(255 255 255 / 14%); }
+.shield-guard[data-state="protecting"] span[data-on="true"] { background: #9cc8ff; box-shadow: 0 0 .5rem rgb(156 200 255 / 85%); }
+.shield-guard[data-state="suspended"] span[data-on="true"] { background: rgb(156 200 255 / 40%); }
+.shield-guard[data-state="broken"] { border-color: rgb(255 106 77 / 70%); }
+.shield-guard[data-state="broken"] span[data-on="true"] { background: #ff6a4d; box-shadow: 0 0 .5rem rgb(255 106 77 / 80%); }
+.shield-guard em { position: absolute; top: 100%; margin-top: .2rem; white-space: nowrap; font-size: .68rem; font-style: normal; color: #dbe7f5; text-shadow: 0 1px 2px #000; }
