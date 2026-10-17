@@ -3,6 +3,9 @@ use mmorpg_client::{
     ClientError,
     camera::{CameraView, OrbitCamera},
     controls::{ControlAction, NativeControls},
+    gamepad::{
+        PadAction, PadControls, PadMovement, PadState, camera_orbit, interface_key, read_pad,
+    },
     graphics::WindowRenderer,
     graphics::project_to_viewport,
     hud::{CombatHud, class_kit},
@@ -87,6 +90,11 @@ pub fn run(
         egui: None,
         choosing: character.is_none(),
         chat_focused: false,
+        gilrs: open_gamepads(),
+        pad: PadControls::new(),
+        pad_ui: Vec::new(),
+        focused: true,
+        last_pad_sample: Instant::now(),
     };
     event_loop.run_app(&mut app)?;
     match app.error {
@@ -134,6 +142,27 @@ struct App {
     choosing: bool,
     /// The chat field owned the keyboard after the last interface frame.
     chat_focused: bool,
+    /// Gamepad devices; `None` where the platform offers none.
+    gilrs: Option<gilrs::Gilrs>,
+    /// Gamepad actions and held movement through the shared input runtime.
+    pad: PadControls,
+    /// Pad focus navigation for the next interface pass.
+    pad_ui: Vec<egui::Event>,
+    /// Pads act only while the window has focus.
+    focused: bool,
+    last_pad_sample: Instant,
+}
+
+/// Opens the platform's gamepads; a platform without gamepad support keeps
+/// a dummy backend, and a failure leaves keyboard and mouse only.
+fn open_gamepads() -> Option<gilrs::Gilrs> {
+    match gilrs::Gilrs::new() {
+        Ok(gilrs) | Err(gilrs::Error::NotImplemented(gilrs)) => Some(gilrs),
+        Err(error) => {
+            eprintln!("gamepads unavailable: {error}");
+            None
+        }
+    }
 }
 
 const FORWARD_KEYS: [KeyCode; 2] = [KeyCode::KeyW, KeyCode::ArrowUp];
@@ -150,23 +179,34 @@ struct HeldMovement {
     steering: bool,
 }
 
-/// W/S run and backpedal, A/D or Q/E strafe. Dead units cannot move, so the
-/// dead hold no movement whatever keys are down.
-fn held_movement(keys: &HashSet<KeyCode>, dead: bool) -> HeldMovement {
-    let held = |group: &[KeyCode]| !dead && group.iter().any(|key| keys.contains(key));
+/// W/S run and backpedal, A/D or Q/E strafe, combined with the pad's left
+/// stick. Dead units cannot move, so the dead hold no movement whatever keys
+/// are down.
+fn held_movement(keys: &HashSet<KeyCode>, pad: PadMovement, dead: bool) -> HeldMovement {
+    if dead {
+        return HeldMovement {
+            forward: 0,
+            strafe: 0,
+            steering: false,
+        };
+    }
+    let held = |group: &[KeyCode]| group.iter().any(|key| keys.contains(key));
+    let forward = i8::from(held(&FORWARD_KEYS)) - i8::from(held(&BACKWARD_KEYS));
+    let strafe = i8::from(held(&RIGHT_KEYS)) - i8::from(held(&LEFT_KEYS));
     HeldMovement {
-        forward: i8::from(held(&FORWARD_KEYS)) - i8::from(held(&BACKWARD_KEYS)),
-        strafe: i8::from(held(&RIGHT_KEYS)) - i8::from(held(&LEFT_KEYS)),
+        forward: (forward + pad.forward).clamp(-1, 1),
+        strafe: (strafe + pad.strafe).clamp(-1, 1),
         steering: held(&FORWARD_KEYS)
             || held(&BACKWARD_KEYS)
             || held(&LEFT_KEYS)
-            || held(&RIGHT_KEYS),
+            || held(&RIGHT_KEYS)
+            || pad.steering,
     }
 }
 
 /// Browser-style pixel scrolling: this many pixels count as one wheel line.
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
-const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC or chats · B bags · C character · L quests · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits";
+const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC or chats · B bags · C character · L quests · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump, X attack, RB target, d-pad abilities, LB NPC, Start talk, B back";
 
 impl App {
     fn retire_pointer(&mut self) {
@@ -332,7 +372,7 @@ impl App {
             forward,
             strafe,
             steering,
-        } = held_movement(&self.keys, self.dead());
+        } = held_movement(&self.keys, self.pad.movement(), self.dead());
         let facing = steering.then(|| self.camera.facing());
         self.input.send_if_modified(|input| {
             let next = PlayerInput {
@@ -404,6 +444,74 @@ impl App {
             }
             ControlAction::TogglePanel(panel) => self.ui.toggle(panel),
             ControlAction::OpenChat => self.ui.open_chat(),
+        }
+    }
+
+    /// Samples connected pads once per frame: held movement, the analog
+    /// camera stick and one-shot actions. Pads act only while the window is
+    /// focused; a disconnect retires everything they held.
+    fn poll_pads(&mut self, now: Instant) {
+        let seconds = now
+            .saturating_duration_since(self.last_pad_sample)
+            .as_secs_f32();
+        self.last_pad_sample = now;
+        let Some(gilrs) = self.gilrs.as_mut() else {
+            return;
+        };
+        let mut disconnected = false;
+        while let Some(event) = gilrs.next_event() {
+            disconnected |= event.event == gilrs::EventType::Disconnected;
+        }
+        if disconnected {
+            self.pad.retire("gamepadDisconnected");
+        }
+        let pads: Vec<PadState> = if self.focused && !self.ui.chat_focused() {
+            gilrs.gamepads().map(|(_, pad)| read_pad(&pad)).collect()
+        } else {
+            Vec::new()
+        };
+        let snapshot = self.presentation.latest();
+        self.pad.set_panels(
+            self.choosing || self.npc_context.npc.is_some() || self.ui.windows_open(snapshot),
+        );
+        for action in self.pad.sample(&pads) {
+            self.pad_action(action);
+        }
+        let [dx, dy] = camera_orbit(&pads, seconds);
+        if dx != 0.0 || dy != 0.0 {
+            self.camera.orbit(dx, dy);
+        }
+        self.update_movement();
+    }
+
+    /// A pad press becomes the same intent as its key or interface control.
+    fn pad_action(&mut self, action: PadAction) {
+        // Focus moves, presses and Escape (which also drops the focus) are
+        // keys for the next interface pass.
+        self.pad_ui.extend(interface_key(action));
+        match action {
+            PadAction::Jump => self.jump(),
+            PadAction::TargetNext => self.combat_key(KeyCode::Tab),
+            PadAction::ToggleAutoAttack => self.combat_key(KeyCode::KeyF),
+            PadAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
+            PadAction::AbilitySlot(slot) => self.control(ControlAction::AbilitySlot(slot)),
+            PadAction::CancelCast => self.control(ControlAction::CancelCast),
+            PadAction::TogglePanel(panel) => self.control(ControlAction::TogglePanel(panel)),
+            PadAction::NextNpc => {
+                self.world_action(WorldAction::NextNpc);
+            }
+            PadAction::Talk => {
+                self.world_action(WorldAction::Interact);
+            }
+            PadAction::ClosePanel => {
+                if self.npc_context.npc.is_some() {
+                    self.npc_context.close();
+                    self.world_controls.set_interaction(false);
+                } else {
+                    self.ui.close_window(self.presentation.latest());
+                }
+            }
+            PadAction::FocusPrevious | PadAction::FocusNext | PadAction::Activate => {}
         }
     }
 
@@ -487,7 +595,8 @@ impl App {
             project: &project,
             eye: view.eye,
         };
-        let raw = egui.state.take_egui_input(window);
+        let mut raw = egui.state.take_egui_input(window);
+        raw.events.append(&mut self.pad_ui);
         let mut intents = Vec::new();
         let output = egui.context.run_pass(raw, |ctx| {
             intents = self.ui.show(ctx, &frame, &mut self.npc_context, now);
@@ -507,8 +616,9 @@ impl App {
     /// The HUD and the `casting` control layer follow the latest projection.
     fn follow_projection(&mut self, now: Instant) {
         let latest = self.presentation.latest();
-        self.controls
-            .set_casting(latest.is_some_and(|latest| latest.viewer.cast.is_some()));
+        let casting = latest.is_some_and(|latest| latest.viewer.cast.is_some());
+        self.controls.set_casting(casting);
+        self.pad.set_casting(casting);
         self.hud = latest.map(CombatHud::from_projection);
         if let Some(choice) = latest.and_then(|latest| latest.viewer.class) {
             // The zone keeps the class; the bar follows the projected kit.
@@ -623,7 +733,10 @@ impl ApplicationHandler for App {
                     renderer.resize(size.width, size.height);
                 }
             }
-            WindowEvent::Focused(false) => {
+            WindowEvent::Focused(focused) if focused => self.focused = true,
+            WindowEvent::Focused(_) => {
+                self.focused = false;
+                self.pad.retire("focusLost");
                 self.controls.focus_lost();
                 self.keys.clear();
                 self.retire_pointer();
@@ -795,6 +908,7 @@ impl ApplicationHandler for App {
                         return;
                     }
                 }
+                self.poll_pads(now);
                 // While choosing, the viewer turns on the turntable facing the camera.
                 let preview = self.choosing.then(|| {
                     let preview = self.ui.preview();
@@ -852,10 +966,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_pad_stick_combines_with_held_keys() {
+        let stick = PadMovement {
+            forward: 1,
+            strafe: -1,
+            steering: true,
+        };
+        let back: HashSet<_> = [KeyCode::KeyS].into_iter().collect();
+        assert_eq!(
+            held_movement(&back, stick, false),
+            HeldMovement {
+                forward: 0,
+                strafe: -1,
+                steering: true
+            }
+        );
+        assert_eq!(
+            held_movement(&HashSet::new(), stick, false),
+            HeldMovement {
+                forward: 1,
+                strafe: -1,
+                steering: true
+            }
+        );
+        assert!(!held_movement(&HashSet::new(), stick, true).steering);
+    }
+
+    #[test]
     fn the_dead_hold_no_movement() {
         let keys: HashSet<_> = [KeyCode::KeyW, KeyCode::KeyA].into_iter().collect();
         assert_eq!(
-            held_movement(&keys, false),
+            held_movement(&keys, PadMovement::default(), false),
             HeldMovement {
                 forward: 1,
                 strafe: -1,
@@ -863,7 +1004,7 @@ mod tests {
             }
         );
         assert_eq!(
-            held_movement(&keys, true),
+            held_movement(&keys, PadMovement::default(), true),
             HeldMovement {
                 forward: 0,
                 strafe: 0,
@@ -874,7 +1015,7 @@ mod tests {
             .into_iter()
             .collect();
         assert_eq!(
-            held_movement(&opposed, false),
+            held_movement(&opposed, PadMovement::default(), false),
             HeldMovement {
                 forward: 0,
                 strafe: 1,

@@ -295,6 +295,33 @@ impl GameUi {
         open
     }
 
+    /// Whether a closable window (bags, character, quest log or an
+    /// undismissed loot window) is open, so a gamepad navigates the interface.
+    #[must_use]
+    pub fn windows_open(&self, snapshot: Option<&ZoneSnapshot>) -> bool {
+        self.bags_open
+            || self.character_open
+            || self.quest_log_open
+            || snapshot
+                .and_then(|snapshot| snapshot.loot)
+                .is_some_and(|loot| self.dismissed_loot != Some(loot.claim))
+    }
+
+    /// The gamepad's close: open windows first, then an undismissed loot
+    /// window; returns whether anything closed.
+    pub fn close_window(&mut self, snapshot: Option<&ZoneSnapshot>) -> bool {
+        if self.close_panels() {
+            return true;
+        }
+        match snapshot.and_then(|snapshot| snapshot.loot) {
+            Some(loot) if self.dismissed_loot != Some(loot.claim) => {
+                self.dismissed_loot = Some(loot.claim);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Lays out one interface frame and returns the intents its controls produced.
     pub fn show(
         &mut self,
