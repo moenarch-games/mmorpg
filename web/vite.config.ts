@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 
 const certificate = process.env.MMORPG_DEV_WEB_HTTPS_CERT;
 const privateKey = process.env.MMORPG_DEV_WEB_HTTPS_KEY;
@@ -10,6 +10,8 @@ if (Boolean(certificate) !== Boolean(privateKey)) {
 export default defineConfig({
   base: "/mmorpg/",
   server: {
+    // Quaternius unit models are served from the repository's shared `assets/quaternius`.
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), "../assets/quaternius"] },
     https: certificate && privateKey
       ? { cert: readFileSync(certificate), key: readFileSync(privateKey) }
       : undefined,

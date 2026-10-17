@@ -42,6 +42,11 @@ import { ProgressionHud } from "./units/progression-hud";
 import { SpellEffects, allEffectNodes, type Anchor } from "./units/spell-effects";
 import { PointerClick, SecondaryClick, attackToggle } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
+import { quaterniusKind } from "./units/quaternius";
+import { QuaterniusUnits, type QuaterniusUnit } from "./units/quaternius-units";
+import { unitHalfMetres } from "./units/creature-models";
+import { targetRingNode } from "./units/model-kit";
+import { headwearAtNodes } from "./humanoid";
 import type { ContentCatalog } from "./catalog";
 import type { ZoneWorld } from "./world-source";
 
@@ -152,6 +157,9 @@ export class WorldView {
   readonly #frameRate = new FrameRate();
   readonly #sky: SkyLayer;
   readonly #animators = new UnitAnimators();
+  /** Animated Quaternius unit models (Atlas 6.3.6), drawn once loaded. */
+  readonly #models = new QuaterniusUnits();
+  #lastCamera: RendererCamera | null = null;
   readonly #combatHud: CombatHud;
   readonly #progressionHud: ProgressionHud;
   readonly #classHud: ClassHud;
@@ -294,6 +302,7 @@ export class WorldView {
     this.#endDrag();
     this.#outbox.reset(this.#input(input));
     this.#animators.clear();
+    this.#clearModels();
     this.#intents.length = 0;
     this.#combatHud.reset();
     this.#progressionHud.reset();
@@ -339,8 +348,18 @@ export class WorldView {
     this.#orbit.lookAlong(facing);
   }
 
+  /** Drops every imported unit model and takes them out of the shared renderer scene. */
+  #clearModels(): void {
+    this.#models.clear();
+    const { roots, changed } = this.#models.roots();
+    if (changed && this.#lastCamera) {
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots });
+    }
+  }
+
   leave(): void {
     this.#pendingNpc = null;
+    this.#clearModels();
     this.#lastSceneryNodes = [];
     this.#lastInstanceBatches = [];
     this.#lastEnvironment = null;
@@ -522,6 +541,8 @@ export class WorldView {
     const others: MinimapUnit[] = [];
     const anchors = new Map<string, Anchor>();
     let self: { focus: Vec3; x: number; z: number; facing: number } | null = null;
+    const imported: QuaterniusUnit[] = [];
+    const viewerClass = { id: projection.viewerId, classChoice: projection.viewer.classChoice };
     for (const entity of source.sample()) {
       const model = unitModel(entity);
       const placement = placeWithModel(model, entity, unitContext, scenery.reliefAt(entity.position[0], entity.position[2]));
@@ -531,7 +552,24 @@ export class WorldView {
       projected.push(projectedUnit(entity, placement, catalog));
       const locomotion = this.#animators.locomotion(entity, placement, unitsPerMetre, deltaSeconds, !animate);
       const deathProgress = this.#animators.deathProgress(entity, deltaSeconds, !animate);
-      units.push(...model.nodes({ id, entity, placement, locomotion, context: unitContext, ...(deathProgress === null ? {} : { deathProgress }) }));
+      const kind = quaterniusKind(entity, catalog, viewerClass);
+      if (kind && this.#models.ready(kind)) {
+        const ref = { kind: entity.kind, id: entity.entityId };
+        const action = isSelf ? unitContext.viewerAction : unitContext.actionFor?.(ref);
+        imported.push({
+          id, entity: ref, kind, placement,
+          heightMetres: (2 * model.halfHeightUnits(entity, unitContext)) / unitsPerMetre,
+          speed: Math.hypot(locomotion.forward, locomotion.right),
+          dead: entity.flags.dead,
+          action: action ?? null,
+        });
+        if (entity.kind !== "player" && sameEntity(ref, projection.viewer.target)) {
+          const [hx, , hz] = unitHalfMetres(entity, catalog, unitsPerMetre, playerHalfExtents[1]);
+          units.push(targetRingNode(id, placement, Math.max(hx, hz)));
+        }
+      } else {
+        units.push(...model.nodes({ id, entity, placement, locomotion, context: unitContext, ...(deathProgress === null ? {} : { deathProgress }) }));
+      }
       anchors.set(entityKey({ kind: entity.kind, id: entity.entityId }), {
         x: placement.x,
         feetY: placement.feetY,
@@ -548,6 +586,12 @@ export class WorldView {
       }
     }
     this.#animators.retain(visible);
+    this.#models.update(imported, this.#seconds, deltaSeconds, animate);
+    const viewerIdentity = unitIdentity({ kind: "player", entityId: projection.viewerId });
+    const head = projection.viewer.dead ? null : this.#models.head(viewerIdentity);
+    if (head) {
+      units.push(...headwearAtNodes(viewerIdentity, look, head.centre, self?.facing ?? 0, head.radius));
+    }
     this.#anchors = anchors;
     if (!self) {
       throw new Error("The projection is missing the viewer's own unit.");
@@ -582,6 +626,11 @@ export class WorldView {
     const environment = environmentAt(ENVIRONMENT, seconds / DAY_SECONDS);
     this.#lastEnvironment = environment;
     this.#lastInstanceBatches = frame.instanceBatches;
+    this.#lastCamera = camera;
+    const models = this.#models.roots();
+    if (models.changed) {
+      this.#renderer.renderImportedRoots({ camera, roots: models.roots });
+    }
     this.#lastWork = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
     this.#sky.update(this.#horizon(view.eye, view.target), seconds, true);
@@ -683,7 +732,7 @@ export class WorldView {
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         1 - ((event.clientY - rect.top) / rect.height) * 2,
       );
-      const target = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches);
+      const target = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables());
       this.#pendingNpc = null;
       if (target) {
         this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === target.kind && entity.entityId === target.id)
@@ -759,7 +808,11 @@ export class WorldView {
         return this.#reliefAt(x, z);
       },
       /** Node IDs the last frame drew for one unit, e.g. `unit-creature-108`. */
-      unitNodeIds: (identity: string) => unitNodeIds(this.#lastUnitNodes, identity),
+      /** Includes `<identity>-model` while the unit is drawn by its imported Quaternius model. */
+      unitNodeIds: (identity: string) => [
+        ...unitNodeIds(this.#lastUnitNodes, identity),
+        ...(this.#models.has(identity) ? [`${identity}-model`] : []),
+      ],
       /** Copies of actual submitted geometry transforms, never a simulation control. */
       unitNodes: (identity: string) => structuredClone(this.#lastUnitNodes.filter((node) => node.id.startsWith(`${identity}-`))),
       /** The units of the last projection (kind, id, creature family, position in metres). */

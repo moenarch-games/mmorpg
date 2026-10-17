@@ -284,6 +284,16 @@ export function humanoidHeadwearNodes(id: string, placement: UnitPlacement, look
   return renderParts(id, parts);
 }
 
+/** The chosen headwear on an imported model's posed head (centre in metres, facing `yaw`); none without a hat. */
+export function headwearAtNodes(id: string, look: HumanoidLook, centre: Vec3, yawRadians: number, radius: number): RendererSceneNode[] {
+  if (look.hat === null) {
+    return [];
+  }
+  const parts: Part[] = [];
+  hat(parts, look, { p: centre, q: qAxis(1, yawRadians) }, radius);
+  return renderParts(id, parts);
+}
+
 function hat(parts: Part[], look: HumanoidLook, head: Frame, radius: number): void {
   const hair = look.hair;
   switch (look.hat) {
