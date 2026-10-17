@@ -1193,7 +1193,8 @@ function runAction(action: GameAction): void {
   }
 }
 /**
- * The held directed Heroic Strike (#154): press starts aiming, a deliberate release in the open
+ * Held gestures. The shield guard (#156) is raised while its key is held and lowered by release or
+ * any retirement. The held directed Heroic Strike (#154): press starts aiming, a deliberate release in the open
  * world sends one strike, and every retirement (blur, Settings, profile or screen change) or an
  * open panel cancels it without a strike.
  */
@@ -1206,6 +1207,14 @@ function runHold(action: HeldAction, phase: HoldPhase): void {
         worldView.beginDirectedStrike();
       } else {
         worldView.releaseDirectedStrike();
+      }
+      return;
+    case "combat.guard":
+      // Release and every retirement lower the guard; only a press in the open world raises it.
+      if (phase === "press" && entryState.phase === "world" && !settingsOpen && !worldView.panelOpen) {
+        worldView.beginGuard();
+      } else {
+        worldView.endGuard();
       }
       return;
   }

@@ -32,6 +32,7 @@ import { BagsPanel, type BagsElements } from "./units/bags-panel";
 import { CharacterPane, type CharacterElements } from "./units/character-pane";
 import { useAbilitySlot } from "./units/abilities";
 import { DirectedStrikeAim, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
+import { ShieldGuardHold, canGuard, guardCommand } from "./units/shield-guard";
 import { ClassHud } from "./units/class-hud";
 import { CombatHud } from "./units/combat-hud";
 import { LootPanel, type LootElements } from "./units/loot-panel";
@@ -197,6 +198,8 @@ export class WorldView {
   #buildMs = 0;
   #orbit = new OrbitCamera();
   #drag: Drag | null = null;
+  /** A held shield guard whose lane follows the pointer (#156). */
+  readonly #guardHold = new ShieldGuardHold();
   /** A held directed Heroic Strike being aimed with the pointer (#154). */
   readonly #strikeAim = new DirectedStrikeAim();
   #movementFacing = 0;
@@ -309,6 +312,8 @@ export class WorldView {
     if (!projection || !this.#catalog || !canStrikeDirected(projection, this.#catalog)) {
       return;
     }
+    // The most recent press owns the pointer gesture (Atlas 5.2.37): the sword lowers a held guard.
+    this.endGuard();
     this.#strikeAim.begin();
     this.#classHud.showStrikeAim(this.#strikeAim.aim());
   }
@@ -333,9 +338,38 @@ export class WorldView {
     this.#classHud.showStrikeAim(null);
   }
 
+  /**
+   * The guard action was pressed (#156): a living Warden raises the shield in the middle lane, and
+   * pointer motion moves it. The press supersedes an unreleased strike preparation, which never fires.
+   */
+  beginGuard(): void {
+    const projection = this.#lastProjection;
+    if (!projection || !canGuard(projection)) {
+      return;
+    }
+    this.cancelDirectedStrike();
+    this.#guardHold.begin();
+    this.#sendGuardLane();
+  }
+
+  /** A deliberate release, any retirement or a superseding gesture lowers the guard the zone holds. */
+  endGuard(): void {
+    if (this.#guardHold.end()) {
+      this.queueIntent(() => guardCommand(null));
+    }
+  }
+
+  #sendGuardLane(): void {
+    const lane = this.#guardHold.pending();
+    if (lane !== undefined) {
+      this.queueIntent(() => guardCommand(lane));
+    }
+  }
+
   /** Starts a session: fresh camera, intent and animation state. */
   enter(input: WorldInput, projection: ZoneSnapshot | null): void {
     this.cancelDirectedStrike();
+    this.#guardHold.end();
     this.#orbit = new OrbitCamera();
     this.#movementFacing = this.#orbit.facing();
     this.#endDrag();
@@ -398,6 +432,7 @@ export class WorldView {
 
   leave(): void {
     this.cancelDirectedStrike();
+    this.#guardHold.end();
     this.#pendingNpc = null;
     this.#clearModels();
     this.#lastSceneryNodes = [];
@@ -538,6 +573,10 @@ export class WorldView {
       throw new Error("The world source has no projection for the joined player.");
     }
     this.#lastProjection = projection;
+    // Death already lowered the guard in the zone; a later life needs a new press.
+    if (projection.viewer.dead) {
+      this.#guardHold.end();
+    }
     const pendingNpc = this.#pendingNpc;
     if (pendingNpc && projection.acknowledgedSequence >= pendingNpc.sequence) {
       this.#pendingNpc = null;
@@ -743,6 +782,7 @@ export class WorldView {
   /** Losing focus retires the gesture without selecting or toggling attack. */
   cancelPointer(): void {
     this.cancelDirectedStrike();
+    this.endGuard();
     this.#endDrag();
   }
 
@@ -750,6 +790,11 @@ export class WorldView {
     this.#strikeAim.track(event.clientX, event.clientY);
     if (this.#strikeAim.active) {
       this.#classHud.showStrikeAim(this.#strikeAim.aim());
+    }
+    // A camera drag owns the pointer: it turns the Warden without moving the guard's lane.
+    this.#guardHold.track(event.clientY, this.#drag !== null);
+    if (this.#guardHold.active) {
+      this.#sendGuardLane();
     }
     this.#secondaryClick.move(event);
     this.#primaryClick.move(event);
