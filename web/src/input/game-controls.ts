@@ -138,8 +138,8 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ability.slot4", "Ability 4", "gameplay", [key("Digit4"), button(14)]),
     // Hold, aim with the pointer, release (#154): the Warden's directed Heroic Strike.
     action("combat.directedStrike", "Directed Heroic Strike (hold, aim, release)", "gameplay", [key("KeyG")]),
-    // Hold to raise the Warden's shield; pointer up/down picks the high/middle/low lane (#156).
-    action("combat.guard", "Shield guard (hold, aim up/down)", "gameplay", [key("KeyZ")]),
+    // Hold to raise the Warden's shield; pointer up/down (or the right stick, holding LT) picks the lane (#156).
+    action("combat.guard", "Shield guard (hold, aim up/down)", "gameplay", [key("KeyZ"), button(6)]),
     action("combat.cancelCast", "Cancel cast", "casting", [key("Escape"), button(1)]),
     action("player.releaseSpirit", "Release spirit", "gameplay", [key("KeyR"), button(3)]),
     action("ui.toggleBags", "Toggle bags", "gameplay", [key("KeyB"), button(8)]),

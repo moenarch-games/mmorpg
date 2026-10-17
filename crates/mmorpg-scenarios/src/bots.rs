@@ -84,6 +84,7 @@ pub enum Action {
     ChooseClass,
     UseAbility,
     CancelCast,
+    Guard,
     AcceptQuest,
     CompleteQuest,
     AbandonQuest,
@@ -112,6 +113,7 @@ impl Action {
             Self::ChooseClass => "choose_class",
             Self::UseAbility => "use_ability",
             Self::CancelCast => "cancel_cast",
+            Self::Guard => "guard",
             Self::AcceptQuest => "accept_quest",
             Self::CompleteQuest => "complete_quest",
             Self::AbandonQuest => "abandon_quest",
@@ -140,6 +142,7 @@ impl Action {
             | Self::ChooseClass
             | Self::UseAbility
             | Self::CancelCast
+            | Self::Guard
             | Self::AcceptQuest
             | Self::CompleteQuest
             | Self::AbandonQuest => "applied",
@@ -168,6 +171,7 @@ impl Action {
             | Self::ChooseClass
             | Self::UseAbility
             | Self::CancelCast
+            | Self::Guard
             | Self::AcceptQuest
             | Self::CompleteQuest
             | Self::AbandonQuest => true,
@@ -199,6 +203,8 @@ pub struct Step {
     pub sex: Option<String>,
     /// `use_ability`: the global ability ID, passed through unchanged.
     pub ability: Option<u8>,
+    /// `guard`: `high`, `middle`, `low`, or `none` to lower the guard.
+    pub lane: Option<String>,
     pub creature: Option<u32>,
     pub died_at: Option<u64>,
     pub source_slot: Option<u8>,
@@ -501,6 +507,12 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
             return Err(format!(
                 "{at}: equipment_slot is required only for unequip_item"
             ));
+        }
+        if step.lane.is_some() != (step.action == Action::Guard) {
+            return Err(format!("{at}: lane is required only for guard"));
+        }
+        if let Some(lane) = &step.lane {
+            guard_lane(lane).map_err(|error| format!("{at}: {error}"))?;
         }
         if step.ability.is_some() != (step.action == Action::UseAbility) {
             return Err(format!("{at}: ability is required only for use_ability"));
@@ -812,6 +824,7 @@ impl Runner<'_> {
             | Action::ChooseClass
             | Action::UseAbility
             | Action::CancelCast
+            | Action::Guard
             | Action::AcceptQuest
             | Action::CompleteQuest
             | Action::AbandonQuest => self.submit(index, step)?,
@@ -1053,6 +1066,15 @@ impl Runner<'_> {
                 }
             }
             Action::CancelCast => (ZoneCommand::CancelCast, String::new()),
+            Action::Guard => {
+                let lane = step.lane.as_deref().ok_or("guard lane is required")?;
+                (
+                    ZoneCommand::Guard {
+                        lane: guard_lane(lane)?,
+                    },
+                    format!(" lane={lane}"),
+                )
+            }
             Action::Join | Action::Disconnect | Action::Reconnect => {
                 return Err(format!("{} is not a command", step.action.name()));
             }
@@ -1849,4 +1871,17 @@ fn rejected(error: &RuntimeError) -> String {
         other => snake_kind(&format!("{other:?}")),
     };
     format!("rejected:{kind}")
+}
+
+/// A `guard` step's lane: a strike height, or `none` to lower the guard.
+fn guard_lane(lane: &str) -> Result<Option<mmorpg_core::StrikeHeight>, String> {
+    match lane {
+        "high" => Ok(Some(mmorpg_core::StrikeHeight::High)),
+        "middle" => Ok(Some(mmorpg_core::StrikeHeight::Middle)),
+        "low" => Ok(Some(mmorpg_core::StrikeHeight::Low)),
+        "none" => Ok(None),
+        other => Err(format!(
+            "guard lane {other:?} must be high, middle, low or none"
+        )),
+    }
 }

@@ -53,6 +53,7 @@ import { GameControls, type GameAction, type HeldAction, type HoldPhase } from "
 import { actionBindingLabels } from "./input/binding-labels";
 import type { Profile } from "@moritzbrantner/input-bindings";
 import { cancelCast, useAbilitySlot } from "./world/units/abilities";
+import { padGuardLane } from "./world/units/shield-guard";
 import { Preferences, type ClientPreferences } from "./settings/preferences";
 import { SettingsPanel } from "./settings/settings-panel";
 import { defaultBindingProfile, loadBindingProfile, saveBindingProfile } from "./settings/binding-profiles";
@@ -970,7 +971,8 @@ function renderSelection() {
 }
 
 function worldInput() {
-  return { held: controls.heldIntent(), jumps };
+  const pads = typeof navigator.getGamepads === "function" ? navigator.getGamepads() : [];
+  return { held: controls.heldIntent(), jumps, padGuard: padGuardLane(pads) };
 }
 
 function errorMessage(error: unknown): string {

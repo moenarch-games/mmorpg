@@ -11,7 +11,7 @@ import type {
 import type { WorldCommand } from "../command-wire";
 import { entityKey, sameEntity } from "../entity-ref";
 import type { EntityRef } from "../entity-ref";
-import type { EntityState, ZoneSnapshot } from "../replication";
+import type { EntityState, StrikeHeight, ZoneSnapshot } from "../replication";
 import { DebugOverlay, FrameRate } from "./debug-overlay";
 import { ENVIRONMENT, DAY_SECONDS, environmentAt } from "./environment";
 import { Minimap, buildMinimapLayers, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
@@ -144,7 +144,8 @@ function obstructed(boxes: readonly Box[], target: Vec3, eye: Vec3): boolean {
   return false;
 }
 
-export type WorldInput = { held: HeldIntent; jumps: number };
+/** `padGuard` is the lane a pad holding the guard trigger aims, or `null` (#156). */
+export type WorldInput = { held: HeldIntent; jumps: number; padGuard?: StrikeHeight | null };
 
 export class WorldView {
   readonly #renderer: ThreeSceneRenderer;
@@ -549,6 +550,10 @@ export class WorldView {
         const sequence = source.sendCommand(command);
         onSent?.(sequence);
       }
+    }
+    this.#guardHold.aimWithPad(input.padGuard ?? null);
+    if (this.#guardHold.active) {
+      this.#sendGuardLane();
     }
     for (const command of this.#outbox.update(this.#input(input), now, latest?.viewer.dead ?? false)) {
       source.sendCommand(command);

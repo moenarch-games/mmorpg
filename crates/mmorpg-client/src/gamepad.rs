@@ -6,8 +6,11 @@
 //! closes a panel or cancels a cast, X toggles auto-attack, Y releases the
 //! spirit, the right bumper cycles targets, the d-pad uses slots 1–4 and
 //! Select toggles bags. Native additions use otherwise unbound buttons: the
-//! left bumper cycles NPCs, Start talks to the selected NPC and the triggers
-//! toggle the character pane and the quest log. While an interface window is
+//! left bumper cycles NPCs, Start talks to the selected NPC, the left stick
+//! click toggles the character pane and the right trigger the quest log.
+//! Holding the left trigger raises the Warden's shield guard (#156, owner
+//! answer #156.Q1 A): the right stick's vertical deflection picks the lane
+//! (up high, centred middle, down low) and the camera stops tilting meanwhile. While an interface window is
 //! open, the non-blocking `panels` layer turns the d-pad and A into focus
 //! navigation and activation of the egui controls; movement still falls
 //! through to gameplay. B never leaves the world natively: the window has no
@@ -96,6 +99,7 @@ const MOVE_FORWARD: &str = "move.forward";
 const MOVE_BACK: &str = "move.back";
 const MOVE_LEFT: &str = "move.strafeLeft";
 const MOVE_RIGHT: &str = "move.strafeRight";
+const GUARD: &str = "combat.guard";
 
 fn button(index: u16) -> InputStroke {
     InputStroke::Device(DeviceStroke::GamepadButton {
@@ -194,7 +198,7 @@ fn catalog() -> Vec<Entry> {
         (
             "ui.toggleCharacter",
             GAMEPLAY,
-            vec![button(LT)],
+            vec![button(L3)],
             Some(PadAction::TogglePanel(Panel::Character)),
         ),
         (
@@ -203,6 +207,7 @@ fn catalog() -> Vec<Entry> {
             vec![button(RT)],
             Some(PadAction::TogglePanel(Panel::QuestLog)),
         ),
+        (GUARD, GAMEPLAY, vec![button(LT)], None),
         (
             "world.nextNpc",
             GAMEPLAY,
@@ -461,6 +466,12 @@ impl PadControls {
             .collect()
     }
 
+    /// Whether the pad holds the shield guard (left trigger).
+    #[must_use]
+    pub fn guarding(&self) -> bool {
+        self.state.is_held(GUARD)
+    }
+
     /// Movement held on the pad, as the keyboard's held movement.
     #[must_use]
     pub fn movement(&self) -> PadMovement {
@@ -499,6 +510,33 @@ pub fn interface_key(action: PadAction) -> Option<egui::Event> {
 const CAMERA_DEADZONE: f32 = 0.2;
 /// Full deflection orbits this many mouse-drag pixels per second.
 const CAMERA_PIXELS_PER_SECOND: f32 = 420.0;
+
+/// Right-stick deflection past which a held guard aims high or low.
+const GUARD_LANE_DEFLECTION: f32 = 0.5;
+
+/// The lane a held pad guard aims: the right stick's most deflected vertical
+/// reading, up high, down low, otherwise middle.
+#[must_use]
+pub fn guard_lane(pads: &[PadState]) -> mmorpg_core::StrikeHeight {
+    let y = pads
+        .iter()
+        .map(|pad| pad.axes[standard::RIGHT_Y])
+        .filter(|value| value.is_finite())
+        .fold(0.0_f32, |most, value| {
+            if value.abs() > most.abs() {
+                value
+            } else {
+                most
+            }
+        });
+    if y <= -GUARD_LANE_DEFLECTION {
+        mmorpg_core::StrikeHeight::High
+    } else if y >= GUARD_LANE_DEFLECTION {
+        mmorpg_core::StrikeHeight::Low
+    } else {
+        mmorpg_core::StrikeHeight::Middle
+    }
+}
 
 /// The right stick's analog camera orbit for `seconds`, in the mouse drag's
 /// pixel units: right turns the view right, down raises the eye.
@@ -653,6 +691,8 @@ mod tests {
             (standard::SELECT, PadAction::TogglePanel(Panel::Bags)),
             (standard::LB, PadAction::NextNpc),
             (standard::START, PadAction::Talk),
+            (standard::L3, PadAction::TogglePanel(Panel::Character)),
+            (standard::RT, PadAction::TogglePanel(Panel::QuestLog)),
         ] {
             assert_eq!(controls.sample(&[pressed(button)]), [action], "{button}");
             controls.sample(&[pad()]);
@@ -711,6 +751,25 @@ mod tests {
         assert_eq!(controls.movement(), PadMovement::default());
         assert!(controls.sample(&[]).is_empty());
         assert_eq!(controls.movement(), PadMovement::default());
+    }
+
+    #[test]
+    fn the_left_trigger_holds_the_guard_and_the_right_stick_aims_it() {
+        let mut controls = PadControls::new();
+        let mut held = pressed(standard::LT);
+        assert!(controls.sample(&[held]).is_empty());
+        assert!(controls.guarding());
+        assert_eq!(guard_lane(&[held]), mmorpg_core::StrikeHeight::Middle);
+        held.axes[standard::RIGHT_Y] = -0.8;
+        assert_eq!(guard_lane(&[held]), mmorpg_core::StrikeHeight::High);
+        held.axes[standard::RIGHT_Y] = 0.6;
+        assert_eq!(guard_lane(&[held]), mmorpg_core::StrikeHeight::Low);
+        controls.sample(&[pad()]);
+        assert!(!controls.guarding());
+        // Focus loss lowers a still-held guard.
+        controls.sample(&[pressed(standard::LT)]);
+        controls.retire("focusLost");
+        assert!(!controls.guarding());
     }
 
     #[test]
