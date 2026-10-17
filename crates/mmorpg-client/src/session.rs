@@ -43,6 +43,9 @@ pub struct PlayerInput {
     /// choice under fresh sequences until a projection confirms a class, so
     /// a lost datagram cannot leave the character classless.
     pub class_choice: Option<(u8, u8)>,
+    /// The held shield guard lane (#156); `None` once released. Held like
+    /// movement: the session sends each change and resends it after a reconnect.
+    pub guard: Option<mmorpg_core::StrikeHeight>,
 }
 
 /// Latest received refusal, retained across coalesced GUI updates in one epoch.
@@ -81,6 +84,7 @@ struct Outgoing {
     ability: Option<u8>,
     interaction: Option<ZoneCommand>,
     jump: bool,
+    guard: Option<Option<mmorpg_core::StrikeHeight>>,
     movement: Option<(i8, i8, u16)>,
 }
 
@@ -100,6 +104,9 @@ impl Outgoing {
         }
         if self.cancel {
             session.send_cancel_cast()?;
+        }
+        if let Some(lane) = self.guard {
+            session.send_command(ZoneCommand::Guard { lane })?;
         }
         if let Some(ability) = self.ability {
             session.send_use_ability(ability)?;
@@ -154,6 +161,8 @@ struct Outbox {
     presses: Presses,
     /// A projection showed the character with a class.
     class_confirmed: bool,
+    /// The guard lane last sent; `None` before any or after a resume.
+    sent_guard: Option<Option<mmorpg_core::StrikeHeight>>,
 }
 
 impl Outbox {
@@ -163,6 +172,7 @@ impl Outbox {
             sent_at: now,
             presses: Presses::of(input),
             class_confirmed: false,
+            sent_guard: Some(None),
         }
     }
 
@@ -170,6 +180,19 @@ impl Outbox {
     /// never sent again, also after a reconnect (the zone keeps it).
     fn observe(&mut self, snapshot: &ZoneSnapshot) {
         self.class_confirmed |= snapshot.viewer.class.is_some();
+    }
+
+    /// The guard lane to send when it differs from the last one sent.
+    /// After a resume only a held lane is resent; a released guard was already lowered.
+    fn guard(&mut self, input: PlayerInput) -> Option<Option<mmorpg_core::StrikeHeight>> {
+        let Some(sent) = self.sent_guard else {
+            self.sent_guard = Some(input.guard);
+            return input.guard.map(Some);
+        };
+        (sent != input.guard).then(|| {
+            self.sent_guard = Some(input.guard);
+            input.guard
+        })
     }
 
     fn movement(&mut self, input: PlayerInput, now: Instant) -> (i8, i8, u16) {
@@ -206,6 +229,7 @@ impl Outbox {
                 .then_some(input.interaction)
                 .flatten(),
             jump: pressed.jumps != handled.jumps,
+            guard: self.guard(input),
             movement,
         }
     }
@@ -216,6 +240,7 @@ impl Outbox {
     fn heartbeat(&mut self, input: PlayerInput, now: Instant) -> Outgoing {
         Outgoing {
             choose: input.class_choice.filter(|_| !self.class_confirmed),
+            guard: self.guard(input),
             movement: Some(self.movement(input, now)),
             ..Outgoing::default()
         }
@@ -225,6 +250,8 @@ impl Outbox {
     fn resume(&mut self, input: PlayerInput) {
         self.presses = Presses::of(input);
         self.sent = None;
+        // The next heartbeat re-raises a held guard on the resumed connection.
+        self.sent_guard = None;
     }
 }
 
@@ -601,6 +628,36 @@ mod tests {
         );
         assert_eq!(outbox.changes(input, now), Outgoing::default());
         assert_eq!(outbox.heartbeat(input, now + TICK), only_move(0, 0, 0));
+    }
+
+    #[test]
+    fn a_held_guard_lane_is_sent_on_change_and_again_after_a_resume() {
+        use mmorpg_core::StrikeHeight;
+        let now = Instant::now();
+        let mut outbox = sent(PlayerInput::default(), now);
+        let high = PlayerInput {
+            guard: Some(StrikeHeight::High),
+            ..PlayerInput::default()
+        };
+        assert_eq!(
+            outbox.changes(high, now),
+            Outgoing {
+                guard: Some(Some(StrikeHeight::High)),
+                ..Outgoing::default()
+            }
+        );
+        assert_eq!(outbox.changes(high, now), Outgoing::default());
+        assert_eq!(outbox.heartbeat(high, now + TICK), only_move(0, 0, 0));
+        // A reconnect re-raises the held lane with the next heartbeat.
+        outbox.resume(high);
+        assert_eq!(
+            outbox.heartbeat(high, now + 2 * TICK).guard,
+            Some(Some(StrikeHeight::High))
+        );
+        // Releasing lowers it once.
+        let released = PlayerInput::default();
+        assert_eq!(outbox.changes(released, now + 3 * TICK).guard, Some(None));
+        assert_eq!(outbox.changes(released, now + 3 * TICK).guard, None);
     }
 
     #[test]

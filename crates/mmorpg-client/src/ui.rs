@@ -616,6 +616,22 @@ impl GameUi {
                     if let Some(stance) = viewer.stance {
                         ui.colored_label(Color32::from_rgb(230, 200, 120), stance_text(stance));
                     }
+                    // The held shield guard (#156): its lane and whether it protects.
+                    if let Some(lane) = viewer.guard.raised {
+                        let lane = match lane {
+                            mmorpg_core::StrikeHeight::High => "high",
+                            mmorpg_core::StrikeHeight::Middle => "middle",
+                            mmorpg_core::StrikeHeight::Low => "low",
+                        };
+                        let (state, color) = if viewer.guard.broken > 0 {
+                            ("broken", Color32::from_rgb(230, 80, 70))
+                        } else if viewer.guard.protecting {
+                            ("protecting", Color32::from_rgb(200, 210, 225))
+                        } else {
+                            ("suspended", Color32::from_rgb(140, 145, 155))
+                        };
+                        ui.colored_label(color, format!("Guard {lane} · {state}"));
+                    }
                     // The sword → Shield Bash follow-up (#157).
                     match viewer.combo {
                         Some(mmorpg_core::ComboPhase::Open) => {

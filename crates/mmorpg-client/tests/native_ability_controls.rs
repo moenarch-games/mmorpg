@@ -255,7 +255,7 @@ fn unbound_keys_use_nothing() {
         KeyCode::Digit5,
         KeyCode::Digit9,
         KeyCode::Numpad1,
-        KeyCode::KeyZ,
+        KeyCode::KeyX,
         KeyCode::Backquote,
         KeyCode::F12,
     ] {
@@ -318,4 +318,16 @@ fn a_cast_starting_under_a_held_key_does_not_repeat_it() {
     assert_eq!(controls.key_down(KeyCode::Escape, true), NONE);
     controls.key_up(KeyCode::Escape);
     assert!(!controls.is_held(ControlAction::CancelCast));
+}
+
+#[test]
+fn z_holds_the_shield_guard() {
+    let mut controls = NativeControls::new();
+    assert_eq!(
+        controls.key_down(KeyCode::KeyZ, false),
+        [ControlAction::Guard]
+    );
+    assert!(controls.is_held(ControlAction::Guard));
+    controls.key_up(KeyCode::KeyZ);
+    assert!(!controls.is_held(ControlAction::Guard));
 }

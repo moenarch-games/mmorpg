@@ -74,6 +74,7 @@ pub fn run(
         camera: OrbitCamera::default(),
         orbit_buttons: HashSet::new(),
         cursor: None,
+        guard_offset: None,
         error: None,
         frames,
         rendered: 0,
@@ -121,6 +122,8 @@ struct App {
     /// Held mouse buttons that orbit the camera while the cursor moves.
     orbit_buttons: HashSet<MouseButton>,
     cursor: Option<PhysicalPosition<f64>>,
+    /// Vertical pointer travel since the guard key went down, while it is held (#156).
+    guard_offset: Option<f64>,
     error: Option<String>,
     frames: Option<u32>,
     rendered: u32,
@@ -205,6 +208,8 @@ fn held_movement(keys: &HashSet<KeyCode>, pad: PadMovement, dead: bool) -> HeldM
 }
 
 /// Browser-style pixel scrolling: this many pixels count as one wheel line.
+/// Pointer travel (physical pixels) from the middle lane before the guard moves high or low.
+const GUARD_LANE_THRESHOLD_PX: f64 = 24.;
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
 const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC or chats · B bags · C character · L quests · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump, X attack, RB target, d-pad abilities, LB NPC, Start talk, B back";
 
@@ -444,6 +449,36 @@ impl App {
             }
             ControlAction::TogglePanel(panel) => self.ui.toggle(panel),
             ControlAction::OpenChat => self.ui.open_chat(),
+            ControlAction::Guard => self.guard_offset = Some(0.),
+        }
+    }
+
+    /// The held guard lane follows the pointer's vertical travel since the
+    /// press, as in the browser: up guards high, down low; a release, focus
+    /// loss or a viewer that cannot guard lowers it. The zone decides whether
+    /// it protects.
+    fn update_guard(&mut self) {
+        let can_guard = self.presentation.latest().is_some_and(|latest| {
+            !latest.viewer.dead
+                && latest
+                    .viewer
+                    .class
+                    .is_some_and(|choice| choice.class == mmorpg_core::PlayerClass::Warden)
+        });
+        if !self.controls.is_held(ControlAction::Guard) || !can_guard {
+            self.guard_offset = None;
+        }
+        let lane = self.guard_offset.map(|offset| {
+            if offset <= -GUARD_LANE_THRESHOLD_PX {
+                mmorpg_core::StrikeHeight::High
+            } else if offset >= GUARD_LANE_THRESHOLD_PX {
+                mmorpg_core::StrikeHeight::Low
+            } else {
+                mmorpg_core::StrikeHeight::Middle
+            }
+        });
+        if self.input.borrow().guard != lane {
+            self.input.send_modify(|input| input.guard = lane);
         }
     }
 
@@ -615,6 +650,7 @@ impl App {
 
     /// The HUD and the `casting` control layer follow the latest projection.
     fn follow_projection(&mut self, now: Instant) {
+        self.update_guard();
         let latest = self.presentation.latest();
         let casting = latest.is_some_and(|latest| latest.viewer.cast.is_some());
         self.controls.set_casting(casting);
@@ -770,6 +806,12 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
+                if let (Some(previous), Some(offset)) = (self.cursor, self.guard_offset.as_mut())
+                    && self.orbit_buttons.is_empty()
+                {
+                    let limit = 2. * GUARD_LANE_THRESHOLD_PX;
+                    *offset = (*offset + position.y - previous.y).clamp(-limit, limit);
+                }
                 if let Some(previous) = self.cursor.replace(position)
                     && !self.orbit_buttons.is_empty()
                 {

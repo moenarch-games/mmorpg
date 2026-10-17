@@ -25,6 +25,8 @@ pub enum ControlAction {
     TogglePanel(Panel),
     /// Move keyboard focus to the chat field.
     OpenChat,
+    /// Hold the Warden's shield guard; pointer motion picks the lane (#156).
+    Guard,
 }
 
 /// A toggled interface window, as in the browser's `ui.toggle*` actions.
@@ -37,7 +39,7 @@ pub enum Panel {
 
 impl ControlAction {
     /// Every control action in catalog order.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::AbilitySlot(1),
         Self::AbilitySlot(2),
         Self::AbilitySlot(3),
@@ -47,6 +49,7 @@ impl ControlAction {
         Self::TogglePanel(Panel::Character),
         Self::TogglePanel(Panel::QuestLog),
         Self::OpenChat,
+        Self::Guard,
     ];
 
     /// The shared semantic id. A slot outside 1–4 is no control action and has
@@ -64,6 +67,7 @@ impl ControlAction {
             Self::TogglePanel(Panel::Character) => "ui.toggleCharacter",
             Self::TogglePanel(Panel::QuestLog) => "ui.toggleQuestLog",
             Self::OpenChat => "ui.openChat",
+            Self::Guard => "combat.guard",
         }
     }
 
@@ -83,6 +87,7 @@ impl ControlAction {
             Self::TogglePanel(Panel::Character) => ("Toggle character pane", GAMEPLAY, &["KeyC"]),
             Self::TogglePanel(Panel::QuestLog) => ("Toggle quest log", GAMEPLAY, &["KeyL"]),
             Self::OpenChat => ("Chat", GAMEPLAY, &["Enter", "NumpadEnter"]),
+            Self::Guard => ("Shield guard (hold, aim up/down)", GAMEPLAY, &["KeyZ"]),
         }
     }
 }

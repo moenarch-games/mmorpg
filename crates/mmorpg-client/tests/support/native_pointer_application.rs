@@ -227,6 +227,7 @@ impl NativeApplication {
             camera: OrbitCamera::default(),
             orbit_buttons: HashSet::new(),
             cursor: None,
+            guard_offset: None,
             error: None,
             frames: None,
             rendered: 0,
