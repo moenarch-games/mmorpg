@@ -131,6 +131,8 @@ pub struct ViewerState {
     /// Inclusive melee damage range, the equipment bonus included.
     pub damage: [u16; 2],
     pub guard: GuardView,
+    /// A living Warden's melee stance toward its target (#155).
+    pub stance: Option<crate::MeleeStance>,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -276,6 +278,7 @@ impl ZoneSimulation {
                         protecting: self.guard_lane(player_id)?.is_some(),
                         broken: viewer.guard.broken,
                     },
+                    stance: self.melee_stance(player_id, viewer.target)?,
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),

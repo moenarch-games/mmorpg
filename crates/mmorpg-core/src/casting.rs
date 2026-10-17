@@ -292,6 +292,7 @@ impl ZoneSimulation {
             AbilityEffect::WeaponStrike { .. } => {
                 if let Some(creature_id) = creature {
                     let amount = self.weapon_strike_amount(player_id, ability.effect);
+                    let amount = self.stance_damage(player_id, target, amount)?;
                     self.player_damages_creature(player_id, creature_id, amount, false, now)?;
                 }
             }
@@ -325,6 +326,7 @@ impl ZoneSimulation {
                     );
                     for victim in victims {
                         let amount = self.weapon_roll(melee);
+                        let amount = self.stance_damage(player_id, target, amount)?;
                         self.player_damages_creature(player_id, victim, amount, false, now)?;
                     }
                 }
