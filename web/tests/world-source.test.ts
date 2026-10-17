@@ -14,6 +14,7 @@ import {
   type HeldIntent,
 } from "../src/world/orbit-camera";
 import { FakeWorldSource } from "./support/fake-world-source";
+import { testCharacters } from "./support/local-characters";
 import { encodeTestSnapshot } from "./support/snapshot-encoder";
 import { playerEntity, testSnapshot } from "./support/snapshots";
 import { immediate, worldSourceContract } from "./support/world-source-contract";
@@ -22,8 +23,9 @@ import { immediate, worldSourceContract } from "./support/world-source-contract"
 class RecordingZone implements LocalZoneHandle {
   readonly submitted: { player: number; sequence: number; bytes: string }[] = [];
   readonly left: number[] = [];
-  /** `[player, class, sex]` of every join; the zone submits the choice as sequence 1. */
-  readonly joins: [number, number, number][] = [];
+  /** `[player, character, class, sex]` of every entry. */
+  readonly joins: [number, string, number, number][] = [];
+  saves = 0;
   ticks = 0;
   viewerOverride: number | null = null;
   /** While set, projections are truncated bytes the strict decoder rejects. */
@@ -31,17 +33,23 @@ class RecordingZone implements LocalZoneHandle {
   #nextPlayer = 1;
   #players = new Set<number>();
 
-  join(classId: number, sex: number): number {
+  enter(_entries: unknown, characterId: string, classId: number, sex: number): number {
     const player = this.#nextPlayer;
     this.#nextPlayer += 1;
     this.#players.add(player);
-    this.joins.push([player, classId, sex]);
+    this.joins.push([player, characterId, classId, sex]);
     return player;
   }
 
-  leave(player: number): boolean {
+  save(): bigint {
+    this.saves += 1;
+    return BigInt(this.saves);
+  }
+
+  exit(_entries: unknown, player: number): bigint {
     this.left.push(player);
-    return this.#players.delete(player);
+    this.#players.delete(player);
+    return 0n;
   }
 
   submit(player: number, sequence: number, command: Uint8Array): boolean {
@@ -70,35 +78,35 @@ worldSourceContract("FakeWorldSource", () => immediate(new FakeWorldSource()), (
   source.refuseJoins = true;
   return { ...immediate(source), repair: () => { source.refuseJoins = false; } };
 });
-worldSourceContract("LocalZoneSource over a recording zone", () => immediate(new LocalZoneSource(new RecordingZone())), () => {
+worldSourceContract("LocalZoneSource over a recording zone", () => immediate(new LocalZoneSource(new RecordingZone(), testCharacters())), () => {
   const zone = new RecordingZone();
   zone.corruptProjections = true;
-  return { ...immediate(new LocalZoneSource(zone)), repair: () => { zone.corruptProjections = false; } };
+  return { ...immediate(new LocalZoneSource(zone, testCharacters())), repair: () => { zone.corruptProjections = false; } };
 });
 
 describe("LocalZoneSource", () => {
   test("sends encoded commands with strictly increasing sequences per player", async () => {
     const zone = new RecordingZone();
-    const source = new LocalZoneSource(zone);
-    const first = await source.join({ classId: "arcanist", sex: "female" });
+    const source = new LocalZoneSource(zone, testCharacters());
+    const first = await source.join({ id: "local-2", classId: "arcanist", sex: "female" });
     source.sendCommand({ kind: "move", forward: 1, strafe: -1, facing: 16_384 });
     source.sendCommand({ kind: "jump" });
     source.leave();
     const second = await source.join();
     source.sendCommand({ kind: "jump" });
-    // Joining spent sequence 1 on the class choice; the default is a male Warden.
-    expect(zone.joins).toEqual([[first, 2, 0], [second, 0, 1]]);
+    // The default is a male Warden.
+    expect(zone.joins).toEqual([[first, "local-2", 2, 0], [second, "default-warden", 0, 1]]);
     expect(zone.submitted).toEqual([
-      { player: first, sequence: 2, bytes: "0b0101ff4000" },
-      { player: first, sequence: 3, bytes: Buffer.from(encodeCommand({ kind: "jump" })).toString("hex") },
-      { player: second, sequence: 2, bytes: "0b02" },
+      { player: first, sequence: 1, bytes: "0b0101ff4000" },
+      { player: first, sequence: 2, bytes: Buffer.from(encodeCommand({ kind: "jump" })).toString("hex") },
+      { player: second, sequence: 1, bytes: "0b02" },
     ]);
     expect(zone.left).toEqual([first]);
   });
 
   test("runs fixed ticks from a bounded accumulator only while joined", async () => {
     const zone = new RecordingZone();
-    const source = new LocalZoneSource(zone);
+    const source = new LocalZoneSource(zone, testCharacters());
     source.advance(1);
     expect(zone.ticks).toBe(0);
     await source.join();
@@ -113,7 +121,7 @@ describe("LocalZoneSource", () => {
 
   test("samples interpolate one tick behind the latest projection", async () => {
     const zone = new RecordingZone();
-    const source = new LocalZoneSource(zone);
+    const source = new LocalZoneSource(zone, testCharacters());
     await source.join();
     source.advance(2 / 30 + 1e-9);
     expect(zone.ticks).toBe(2);
@@ -125,7 +133,7 @@ describe("LocalZoneSource", () => {
   test("a projection addressed to another player is rejected", async () => {
     const zone = new RecordingZone();
     zone.viewerOverride = 99;
-    await expect(new LocalZoneSource(zone).join()).rejects.toThrow("another player");
+    await expect(new LocalZoneSource(zone, testCharacters()).join()).rejects.toThrow("another player");
   });
 
   test("a rejected first projection removes the unit it just added from the zone", async () => {
@@ -133,14 +141,14 @@ describe("LocalZoneSource", () => {
       const zone = new RecordingZone();
       if (fault === "corrupt") zone.corruptProjections = true;
       else zone.viewerOverride = 99;
-      const source = new LocalZoneSource(zone);
+      const source = new LocalZoneSource(zone, testCharacters());
       await expect(source.join()).rejects.toThrow(message);
       expect(zone.left).toEqual([1]);
       zone.corruptProjections = false;
       zone.viewerOverride = null;
       expect(await source.join()).toBe(2);
       source.sendCommand({ kind: "jump" });
-      expect(zone.submitted).toEqual([{ player: 2, sequence: 2, bytes: "0b02" }]);
+      expect(zone.submitted).toEqual([{ player: 2, sequence: 1, bytes: "0b02" }]);
     }
   });
 });

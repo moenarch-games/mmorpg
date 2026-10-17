@@ -15,6 +15,7 @@ import { LocalZoneSource, type LocalZoneHandle } from "../src/world/local-zone-s
 import type { Prop } from "../src/world/scenery";
 import { buildSceneryScene } from "../src/world/scenery-nodes";
 import { terrainSurfaceY } from "../src/world/terrain-mesh";
+import { MemoryLocks, MemoryStorage, testCharacters } from "./support/local-characters";
 import { localZoneModule } from "./support/local-zone-module";
 import { propMeshes } from "./support/scenery-geometry";
 import { immediate, worldSourceContract } from "./support/world-source-contract";
@@ -41,9 +42,9 @@ function run(source: LocalZoneSource, ticks: number): void {
 }
 
 describe("WASM local zone host", () => {
-  test("a real Greyhaven death publishes fenced loot, commits once and recovers dropped economic projections", () => {
-    const { source } = createLocalWorld(wasm);
-    source.join();
+  test("a real Greyhaven death publishes fenced loot, commits once and recovers dropped economic projections", async () => {
+    const { source } = createLocalWorld(wasm, testCharacters());
+    await source.join();
     const bag = new BagState();
     const loot = new LootState();
     bag.update(source.latestProjection()!);
@@ -118,14 +119,15 @@ describe("WASM local zone host", () => {
     expect(loot.copper).toBe(0);
     expect(loot.sheet).toBeNull();
     expect(claim(before)).toBeNull();
-    source.join();
+    await source.join();
     loot.reset(source.latestProjection());
     loot.update(source.latestProjection()!);
-    expect(loot.copper).toBe(0);
-    expect(source.latestProjection()?.viewer.copper).toBe(0);
+    // The looted copper is the stored character's; the loot window starts empty.
+    expect(loot.sheet).toBeNull();
+    expect(source.latestProjection()?.viewer.copper).toBe(2);
   });
   test("shared relief queries and both exported terrain grids consume the saved signed-centimetre field", () => {
-    const provider = createLocalWorld(wasm).scenery;
+    const provider = createLocalWorld(wasm, testCharacters()).scenery;
     const field = record(JSON.parse(readFileSync(`${RELIEF_PACKAGE_DIRECTORY}/flattened.heights.json`, "utf8")));
     const heights = field.heights;
     if (!Array.isArray(heights)) {
@@ -151,9 +153,9 @@ describe("WASM local zone host", () => {
     }
     expect(provider.scenery.contentRevision).toBe(9n);
   });
-  test("multi-tick frames retain intermediate bag sheets and refusal feedback", () => {
-    const { source } = createLocalWorld(wasm);
-    source.join();
+  test("multi-tick frames retain intermediate bag sheets and refusal feedback", async () => {
+    const { source } = createLocalWorld(wasm, testCharacters());
+    await source.join();
     const bag = new BagState();
     bag.update(source.latestProjection()!);
     source.sendCommand({ kind: "move-item", source: 0, destination: 15, quantity: 2 });
@@ -177,9 +179,9 @@ describe("WASM local zone host", () => {
     expect(bag.feedback).toContain("refused");
     expect(source.advance(0)).toEqual([]);
   });
-  test("bag moves use queued core authority and missed sheets recover periodically", () => {
-    const { source } = createLocalWorld(wasm);
-    source.join();
+  test("bag moves use queued core authority and missed sheets recover periodically", async () => {
+    const { source } = createLocalWorld(wasm, testCharacters());
+    await source.join();
     const initial = source.latestProjection();
     expect(initial?.inventoryRevision).toBe(1n);
     expect(initial?.inventory?.[0]).toEqual({ itemId: 1, quantity: 3 });
@@ -199,13 +201,14 @@ describe("WASM local zone host", () => {
     run(source, 1);
     expect(source.latestProjection()?.inventory).toEqual(changed?.inventory);
     source.leave();
-    source.join();
+    // Re-entering resumes the stored bag under a fresh zone-local revision.
+    await source.join();
     expect(source.latestProjection()?.inventoryRevision).toBe(1n);
-    expect(source.latestProjection()?.inventory?.[0]).toEqual({ itemId: 1, quantity: 3 });
+    expect(source.latestProjection()?.inventory).toEqual(changed?.inventory);
   });
-  test("equipping the starter dagger reaches the sheet and the melee range", () => {
-    const { source } = createLocalWorld(wasm);
-    source.join();
+  test("equipping the starter dagger reaches the sheet and the melee range", async () => {
+    const { source } = createLocalWorld(wasm, testCharacters());
+    await source.join();
     expect(source.latestProjection()?.equipment).toEqual(Array(6).fill(null));
     expect(source.latestProjection()?.viewer.damage).toEqual({ min: 3, max: 6 });
     source.sendCommand({ kind: "equip-item", bagSlot: 1 });
@@ -225,7 +228,7 @@ describe("WASM local zone host", () => {
     expect(source.latestProjection()?.inventory?.[1]).toEqual({ itemId: 2, quantity: 1 });
   });
   test("a spoken line comes back to the speaker, and a second within a second is refused", async () => {
-    const { source } = createLocalWorld(wasm);
+    const { source } = createLocalWorld(wasm, testCharacters());
     const player = await source.join();
     source.sendCommand({ kind: "chat", channel: "say", text: "Hail, Greyhaven!" });
     source.sendCommand({ kind: "chat", channel: "yell", text: "Too soon" });
@@ -236,9 +239,9 @@ describe("WASM local zone host", () => {
     expect(source.latestProjection()?.chat).toEqual([]);
   });
 
-  test("the real vendor sells and buys back at the inn's counter", () => {
-    const { source, catalog } = createLocalWorld(wasm);
-    source.join();
+  test("the real vendor sells and buys back at the inn's counter", async () => {
+    const { source, catalog } = createLocalWorld(wasm, testCharacters());
+    await source.join();
     expect(catalog.vendors.get(3)?.offers[0]).toEqual({ item: 2, price: 5 });
     expect(catalog.items.get(1)?.sellPrice).toBe(1);
     // Out of reach on the spawn plaza.
@@ -270,31 +273,50 @@ describe("WASM local zone host", () => {
 
   test("loads under Bun and hosts zone 1 with the shared content revision", () => {
     const zone = new wasm.LocalZone() as InstanceType<typeof wasm.LocalZone> & { zoneId(): number };
+    const { entries } = testCharacters();
     expect(zone.zoneId()).toBe(1);
     expect(zone.contentRevision()).toBe(9n);
-    const player = zone.join(2, 0);
+    const player = zone.enter(entries, "local-1", 2, 0, 1n);
     const projection = decodeSnapshot(zone.projection(player));
-    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: 9n, viewerId: player, acknowledgedSequence: 1 });
-    // The class choice resolves in the first tick.
+    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: 9n, viewerId: player, acknowledgedSequence: 0 });
+    // A new character has made its class choice on entry.
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, autoAttacking: false, target: null,
-      classChoice: null, resource: null, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
+      classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
       guard: { raised: null, protecting: false, broken: 0 },
     });
-    zone.tick();
-    expect(decodeSnapshot(zone.projection(player)).viewer).toMatchObject({
-      classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 },
-    });
-    expect(() => zone.submit(player, 2, Uint8Array.of(1, 1, 0, 0, 0, 0))).toThrow();
+    expect(() => zone.submit(player, 1, Uint8Array.of(1, 1, 0, 0, 0, 0))).toThrow();
+    expect(zone.submit(player, 1, encodeCommand({ kind: "jump" }))).toBe(true);
     expect(zone.submit(player, 1, encodeCommand({ kind: "jump" }))).toBe(false);
-    expect(zone.submit(player, 2, encodeCommand({ kind: "jump" }))).toBe(true);
-    expect(zone.submit(player, 2, encodeCommand({ kind: "jump" }))).toBe(false);
-    expect(zone.leave(player)).toBe(true);
+    zone.exit(entries, player);
     expect(() => zone.projection(player)).toThrow();
   });
 
+  test("a local character keeps its progress and place across pages and plays in one tab only", async () => {
+    const storage = new MemoryStorage();
+    const characters = testCharacters(storage);
+    const first = createLocalWorld(wasm, characters).source;
+    await first.join({ id: "local-1", classId: "warden", sex: "female" });
+    first.sendCommand({ kind: "move", forward: 1, strafe: 0, facing: EAST });
+    run(first, 20);
+    const moved = self(first).position;
+    // Another tab of the same browser cannot play the character meanwhile.
+    const otherTab = createLocalWorld(wasm, characters).source;
+    await expect(otherTab.join({ id: "local-1", classId: "warden", sex: "female" })).rejects.toThrow("another tab");
+    // A page that goes away without leaving keeps its last commit; once the browser
+    // dropped its lock, the next page's newer epoch takes the character over.
+    first.persist();
+    const reloaded = createLocalWorld(wasm, testCharacters(storage, new MemoryLocks())).source;
+    await reloaded.join({ id: "local-1", classId: "ranger", sex: "male" });
+    expect(self(reloaded).position).toEqual(moved);
+    expect(reloaded.latestProjection()?.viewer.classChoice).toEqual({ classId: "warden", sex: "female" });
+    // The superseded page is fenced: its next commit fails closed.
+    expect(() => first.persist()).toThrow("no longer current");
+    reloaded.leave();
+  });
+
   test("camera-relative movement moves the decoded viewer in the expected direction", async () => {
-    const { source } = createLocalWorld(wasm);
+    const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();
     const spawn = self(source).position;
     source.sendCommand({ kind: "move", forward: 1, strafe: 0, facing: EAST });
@@ -317,7 +339,7 @@ describe("WASM local zone host", () => {
   });
 
   test("a grounded jump rises and physics brings the unit back down", async () => {
-    const { source } = createLocalWorld(wasm);
+    const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();
     const ground = self(source).position[1];
     source.sendCommand({ kind: "jump" });
@@ -334,7 +356,7 @@ describe("WASM local zone host", () => {
   });
 
   test("interpolated samples stay between authoritative ticks", async () => {
-    const { source } = createLocalWorld(wasm);
+    const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();
     source.sendCommand({ kind: "move", forward: 1, strafe: 0, facing: EAST });
     run(source, 2);
@@ -346,7 +368,7 @@ describe("WASM local zone host", () => {
   });
 
   test("scenery and areas come from the same content as the zone", async () => {
-    const { source, scenery } = createLocalWorld(wasm);
+    const { source, scenery } = createLocalWorld(wasm, testCharacters());
     expect(scenery.scenery.contentRevision).toBe(9n);
     expect(scenery.scenery.source).toBe("mmorpg-scenery");
     expect(scenery.scenery.playerHalfExtents).toEqual([30, 90, 30]);
@@ -368,7 +390,7 @@ describe("WASM local zone host", () => {
   });
 
   test("WASM scenery consumes the exact selected Outpost anchors and presentation transforms", () => {
-    const provider = createLocalWorld(wasm).scenery;
+    const provider = createLocalWorld(wasm, testCharacters()).scenery;
     const selected = record(JSON.parse(readFileSync(`${GRASS_PACKAGE_DIRECTORY}/selected.instances.json`, "utf8"))).instances;
     const transforms: unknown = JSON.parse(readFileSync(`${GRASS_PACKAGE_DIRECTORY}/selected.transforms.json`, "utf8"));
     if (!Array.isArray(selected) || !Array.isArray(transforms)) {
@@ -394,7 +416,7 @@ describe("WASM local zone host", () => {
   });
 
   test("the vale's static scene models every prop within a bounded node and vertex budget", () => {
-    const { scenery } = createLocalWorld(wasm);
+    const { scenery } = createLocalWorld(wasm, testCharacters());
     const scene = buildSceneryScene(scenery.scenery);
     const modelled = Object.values(scene.stats.props).reduce((sum, count) => sum + (count ?? 0), 0);
     expect(modelled).toBe(scenery.scenery.props.length);
@@ -409,7 +431,7 @@ describe("WASM local zone host", () => {
   });
 
   test("props stand on the drawn terrain where the finer relief would lift them off it", () => {
-    const vale = createLocalWorld(wasm).scenery.scenery;
+    const vale = createLocalWorld(wasm, testCharacters()).scenery.scenery;
     const { terrain, unitsPerMetre } = vale;
     const surfaceAt = (prop: Prop) => terrainSurfaceY(terrain, unitsPerMetre, prop.position[0] / unitsPerMetre, prop.position[2] / unitsPerMetre);
     // The prop of each kind whose exported feet sit highest above the 4 m mesh, if more than 10 cm.
@@ -433,7 +455,7 @@ describe("WASM local zone host", () => {
 
 describe("WASM local zone combat intents", () => {
   test("the catalog names the hosted units and matches the zone's content", () => {
-    const { catalog } = createLocalWorld(wasm);
+    const { catalog } = createLocalWorld(wasm, testCharacters());
     expect(catalog.contentRevision).toBe(9n);
     expect([...catalog.items.values()].map((item) => item.name)).toEqual([
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
@@ -472,9 +494,9 @@ describe("WASM local zone combat intents", () => {
     expect(catalog.abilities.get(12)?.channel).toBe(true);
   });
 
-  test("the chosen class reaches the zone and ability slots are refused or validated there", () => {
-    const { source, catalog } = createLocalWorld(wasm);
-    source.join({ classId: "arcanist", sex: "female" });
+  test("the chosen class reaches the zone and ability slots are refused or validated there", async () => {
+    const { source, catalog } = createLocalWorld(wasm, testCharacters());
+    await source.join({ id: "local-1", classId: "arcanist", sex: "female" });
     run(source, 1);
     const projection = source.latestProjection()!;
     expect(projection.viewer.classChoice).toEqual({ classId: "arcanist", sex: "female" });
@@ -494,10 +516,10 @@ describe("WASM local zone combat intents", () => {
     ]);
   });
 
-  test("a directed Heroic Strike reaches the zone, which validates it like the slot's ability", () => {
+  test("a directed Heroic Strike reaches the zone, which validates it like the slot's ability", async () => {
     for (const [classId, code] of [["warden", "not-enough-resource"], ["ranger", "not-learned"]] as const) {
-      const { source } = createLocalWorld(wasm);
-      source.join({ classId, sex: "male" });
+      const { source } = createLocalWorld(wasm, testCharacters());
+      await source.join({ id: "local-1", classId, sex: "male" });
       run(source, 1);
       // A fresh Warden has no Rage yet; the zone, not the client, refuses the swing.
       source.sendCommand({ kind: "directed-strike", ability: 1, facing: 0, aim: { side: "left", height: "high" } });
@@ -507,7 +529,7 @@ describe("WASM local zone combat intents", () => {
   });
 
   test("hub NPCs are visible, selectable and refuse to be attacked", async () => {
-    const { source, catalog } = createLocalWorld(wasm);
+    const { source, catalog } = createLocalWorld(wasm, testCharacters());
     await source.join();
     const projection = source.latestProjection();
     const npcs = projection?.entities.filter((entity) => entity.kind === "npc") ?? [];
@@ -532,7 +554,7 @@ describe("WASM local zone combat intents", () => {
   });
 
   test("the Marshal offers the first quest, marks it and the zone accepts and abandons it", async () => {
-    const { source, catalog } = createLocalWorld(wasm);
+    const { source, catalog } = createLocalWorld(wasm, testCharacters());
     await source.join();
     const quests = new QuestState();
     quests.update(source.latestProjection()!, catalog);
@@ -569,7 +591,7 @@ describe("WASM local zone combat intents", () => {
   });
 
   test("intents beyond the per-tick bound are reported, never a session error", async () => {
-    const { source } = createLocalWorld(wasm);
+    const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();
     for (let press = 0; press < 20; press += 1) {
       expect(() => source.sendCommand({ kind: "stop-attack" })).not.toThrow();
@@ -587,13 +609,14 @@ function refusingWasmSource() {
   const zone = new wasm.LocalZone();
   let corrupt = true;
   const handle: LocalZoneHandle = {
-    join: (classId, sex) => zone.join(classId, sex),
-    leave: (player) => zone.leave(player),
+    enter: (entries, characterId, classId, sex, zoneEpoch) => zone.enter(entries, characterId, classId, sex, zoneEpoch),
+    save: (entries, player) => zone.save(entries, player),
+    exit: (entries, player) => zone.exit(entries, player),
     submit: (player, sequence, command) => zone.submit(player, sequence, command),
     tick: () => zone.tick(),
     projection: (player) => (corrupt ? zone.projection(player).subarray(1) : zone.projection(player)),
   };
-  return { ...immediate(new LocalZoneSource(handle)), repair: () => { corrupt = false; } };
+  return { ...immediate(new LocalZoneSource(handle, testCharacters())), repair: () => { corrupt = false; } };
 }
 
-worldSourceContract("LocalZoneSource over the WASM zone", () => immediate(createLocalWorld(wasm).source), refusingWasmSource);
+worldSourceContract("LocalZoneSource over the WASM zone", () => immediate(createLocalWorld(wasm, testCharacters()).source), refusingWasmSource);

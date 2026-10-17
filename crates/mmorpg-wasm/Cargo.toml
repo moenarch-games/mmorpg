@@ -12,6 +12,7 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+mmorpg-characters.workspace = true
 mmorpg-core.workspace = true
 mmorpg-protocol.workspace = true
 # Presentation only: the scenery export and relief queries. The local zone
