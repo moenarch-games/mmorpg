@@ -27,7 +27,8 @@ struct Options {
     zone_id: ZoneId,
     smoke: bool,
     frames: Option<u32>,
-    class: PlayerClass,
+    /// Without `--class`, the window offers character selection.
+    class: Option<PlayerClass>,
     sex: Sex,
 }
 
@@ -39,7 +40,7 @@ impl Options {
             zone_id: ZoneId::new(1),
             smoke: false,
             frames: None,
-            class: PlayerClass::Warden,
+            class: None,
             sex: Sex::Male,
         };
         let mut args = args.into_iter();
@@ -59,10 +60,12 @@ impl Options {
                     let name = args
                         .next()
                         .ok_or("--class needs warden, ranger or arcanist")?;
-                    options.class = PlayerClass::ALL
-                        .into_iter()
-                        .find(|class| class.name() == name)
-                        .ok_or("--class must be warden, ranger or arcanist")?;
+                    options.class = Some(
+                        PlayerClass::ALL
+                            .into_iter()
+                            .find(|class| class.name() == name)
+                            .ok_or("--class must be warden, ranger or arcanist")?,
+                    );
                 }
                 "--sex" => {
                     options.sex = match args.next().as_deref() {
@@ -91,7 +94,7 @@ impl Options {
 fn main() -> Result<(), ClientError> {
     let Some(options) = Options::parse(std::env::args().skip(1))? else {
         println!(
-            "mmorpg-client [--url https://host:4433/game/matches/zone-1] [--zone 1] [--certificate cert.pem] [--class warden|ranger|arcanist] [--sex female|male] [--smoke] [--frames N]\nW/S move, A/D or Q/E strafe, Space jumps; Tab targets the nearest creature, F attacks, 1-4 use the class abilities, R releases a dead spirit; drag a mouse button to orbit, wheel zooms. Escape cancels a cast, otherwise closes. --smoke connects, chooses the class and verifies an offscreen GPU frame.\nWithout --certificate, system certificate trust is used. The class defaults to a male Warden."
+            "mmorpg-client [--url https://host:4433/game/matches/zone-1] [--zone 1] [--certificate cert.pem] [--class warden|ranger|arcanist] [--sex female|male] [--smoke] [--frames N]\nW/S move, A/D or Q/E strafe, Space jumps; Tab targets the nearest creature, F attacks, 1-4 use the class abilities, R releases a dead spirit; drag a mouse button to orbit, wheel zooms. Enter talks to a selected NPC or chats, B bags, C character, L quests. Escape cancels a cast, closes panels, otherwise quits. --smoke connects, chooses the class and verifies an offscreen GPU frame.\nWithout --certificate, system certificate trust is used. Without --class the window offers character selection (smoke uses a male Warden)."
         );
         return Ok(());
     };
@@ -108,7 +111,10 @@ fn main() -> Result<(), ClientError> {
         scenery.content_revision,
     ))?;
     let player_id = session.player_id();
-    let class_choice = (options.class.code(), options.sex.code());
+    let class_choice = (
+        options.class.unwrap_or(PlayerClass::Warden).code(),
+        options.sex.code(),
+    );
     if options.smoke {
         return runtime.block_on(async {
             // Choose the class until the zone confirms it (a datagram may be
@@ -137,7 +143,7 @@ fn main() -> Result<(), ClientError> {
     }
     // The session sends the class choice until a projection confirms it.
     let (input_sender, input_receiver) = watch::channel(PlayerInput {
-        class_choice: Some(class_choice),
+        class_choice: options.class.map(|_| class_choice),
         ..PlayerInput::default()
     });
     let (update_sender, update_receiver) = watch::channel(NetworkUpdate::Waiting);
@@ -159,7 +165,7 @@ fn main() -> Result<(), ClientError> {
         input_sender,
         update_receiver,
         options.frames,
-        options.class,
+        options.class.map(|class| (class, options.sex)),
     );
     // A closed worker already owns its connection cleanup.
     let _ = shutdown_sender.send(());

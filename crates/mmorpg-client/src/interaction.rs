@@ -48,7 +48,13 @@ impl NpcContext {
         self.npc = None;
         self.feedback.clear();
     }
-    fn quest_rows<'a>(&self, content: &'a ZoneContent, npc: NpcId) -> Vec<&'a mmorpg_core::Quest> {
+    /// The NPC's quests in display order: turn-ins, then offers, then the rest.
+    #[must_use]
+    pub fn quest_rows<'a>(
+        &self,
+        content: &'a ZoneContent,
+        npc: NpcId,
+    ) -> Vec<&'a mmorpg_core::Quest> {
         let sheet = self.quests.as_ref();
         let mut rows: Vec<_> = content
             .quests()
@@ -261,6 +267,17 @@ fn item_name(id: mmorpg_core::ItemId) -> &'static str {
 }
 
 fn dialogue_pages(quest: &mmorpg_core::Quest, content: &ZoneContent) -> Vec<String> {
+    quest_brief(quest, content)
+        .chars()
+        .collect::<Vec<_>>()
+        .chunks(100)
+        .map(|chunk| chunk.iter().collect())
+        .collect()
+}
+
+/// A quest's authored text, where it starts and ends, and its named objectives.
+#[must_use]
+pub fn quest_brief(quest: &mmorpg_core::Quest, content: &ZoneContent) -> String {
     use mmorpg_core::QuestObjective;
     let ender = content
         .npc(quest.ender)
@@ -296,11 +313,7 @@ fn dialogue_pages(quest: &mmorpg_core::Quest, content: &ZoneContent) -> Vec<Stri
             ),
         });
     }
-    text.chars()
-        .collect::<Vec<_>>()
-        .chunks(100)
-        .map(|chunk| chunk.iter().collect())
-        .collect()
+    text
 }
 
 #[cfg(test)]

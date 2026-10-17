@@ -21,16 +21,32 @@ pub enum ControlAction {
     AbilitySlot(u8),
     /// Cancel the viewer's cast or channel.
     CancelCast,
+    /// Open or close an interface window.
+    TogglePanel(Panel),
+    /// Move keyboard focus to the chat field.
+    OpenChat,
+}
+
+/// A toggled interface window, as in the browser's `ui.toggle*` actions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Panel {
+    Bags,
+    Character,
+    QuestLog,
 }
 
 impl ControlAction {
     /// Every control action in catalog order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 9] = [
         Self::AbilitySlot(1),
         Self::AbilitySlot(2),
         Self::AbilitySlot(3),
         Self::AbilitySlot(4),
         Self::CancelCast,
+        Self::TogglePanel(Panel::Bags),
+        Self::TogglePanel(Panel::Character),
+        Self::TogglePanel(Panel::QuestLog),
+        Self::OpenChat,
     ];
 
     /// The shared semantic id. A slot outside 1–4 is no control action and has
@@ -44,6 +60,10 @@ impl ControlAction {
             Self::AbilitySlot(4) => "ability.slot4",
             Self::AbilitySlot(_) => "",
             Self::CancelCast => "combat.cancelCast",
+            Self::TogglePanel(Panel::Bags) => "ui.toggleBags",
+            Self::TogglePanel(Panel::Character) => "ui.toggleCharacter",
+            Self::TogglePanel(Panel::QuestLog) => "ui.toggleQuestLog",
+            Self::OpenChat => "ui.openChat",
         }
     }
 
@@ -51,14 +71,18 @@ impl ControlAction {
         Self::ALL.into_iter().find(|action| action.id() == id)
     }
 
-    /// Title, context and default physical key, as in the browser catalog.
-    fn default_binding(self) -> (&'static str, &'static str, &'static str) {
+    /// Title, context and default physical keys, as in the browser catalog.
+    fn default_binding(self) -> (&'static str, &'static str, &'static [&'static str]) {
         match self {
-            Self::AbilitySlot(1) => ("Ability 1", GAMEPLAY, "Digit1"),
-            Self::AbilitySlot(2) => ("Ability 2", GAMEPLAY, "Digit2"),
-            Self::AbilitySlot(3) => ("Ability 3", GAMEPLAY, "Digit3"),
-            Self::AbilitySlot(_) => ("Ability 4", GAMEPLAY, "Digit4"),
-            Self::CancelCast => ("Cancel cast", CASTING, "Escape"),
+            Self::AbilitySlot(1) => ("Ability 1", GAMEPLAY, &["Digit1"]),
+            Self::AbilitySlot(2) => ("Ability 2", GAMEPLAY, &["Digit2"]),
+            Self::AbilitySlot(3) => ("Ability 3", GAMEPLAY, &["Digit3"]),
+            Self::AbilitySlot(_) => ("Ability 4", GAMEPLAY, &["Digit4"]),
+            Self::CancelCast => ("Cancel cast", CASTING, &["Escape"]),
+            Self::TogglePanel(Panel::Bags) => ("Toggle bags", GAMEPLAY, &["KeyB"]),
+            Self::TogglePanel(Panel::Character) => ("Toggle character pane", GAMEPLAY, &["KeyC"]),
+            Self::TogglePanel(Panel::QuestLog) => ("Toggle quest log", GAMEPLAY, &["KeyL"]),
+            Self::OpenChat => ("Chat", GAMEPLAY, &["Enter", "NumpadEnter"]),
         }
     }
 }
@@ -80,7 +104,7 @@ pub fn native_action_registry() -> ActionRegistry {
             .into_iter()
             .map(|action| {
                 let id = action.id();
-                let (title, context, key) = action.default_binding();
+                let (title, context, keys) = action.default_binding();
                 ActionDefinition {
                     id: id.to_owned(),
                     title: title.to_owned(),
@@ -88,15 +112,19 @@ pub fn native_action_registry() -> ActionRegistry {
                     category_path: Vec::new(),
                     repeat_policy: RepeatPolicy::Never,
                     allowed_devices: vec![DeviceClass::Keyboard],
-                    defaults: vec![Binding {
-                        id: format!("{id}.0"),
-                        action: id.to_owned(),
-                        sequence: vec![physical(key)],
-                        when: WhenExpr::Context {
-                            id: context.to_owned(),
-                        },
-                        priority: 0,
-                    }],
+                    defaults: keys
+                        .iter()
+                        .enumerate()
+                        .map(|(index, key)| Binding {
+                            id: format!("{id}.{index}"),
+                            action: id.to_owned(),
+                            sequence: vec![physical(key)],
+                            when: WhenExpr::Context {
+                                id: context.to_owned(),
+                            },
+                            priority: 0,
+                        })
+                        .collect(),
                     provenance: Some(Provenance {
                         source: "mmorpg".to_owned(),
                         version: Some("1".to_owned()),
