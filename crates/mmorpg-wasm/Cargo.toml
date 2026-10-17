@@ -18,6 +18,8 @@ mmorpg-protocol.workspace = true
 # Presentation only: the scenery export and relief queries. The local zone
 # host never reads it (checked by a test in src/scenery.rs).
 mmorpg-scenery.workspace = true
+# Presentation only: the shared static world the browser draws (#184).
+mmorpg-presentation.workspace = true
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 # The web build verifies that the installed wasm-bindgen CLI has this exact version.

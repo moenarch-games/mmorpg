@@ -1,0 +1,18 @@
+[package]
+name = "mmorpg-presentation"
+description = "Shared procedural presentation geometry for both clients: Greyhaven terrain, roads, water and props"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Client-only, renderer-neutral and WASM-compatible: the native client lowers
+# its draws to wgpu meshes and `mmorpg-wasm` exports them to the browser.
+# Hosts never depend on it (mmorpg-game-server/tests/dependency_boundary.rs).
+[dependencies]
+mmorpg-core.workspace = true
+mmorpg-scenery.workspace = true
+
+[lints]
+workspace = true

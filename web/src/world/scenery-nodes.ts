@@ -1,23 +1,55 @@
-import type { Matrix4Values, RendererSceneNode, RendererInstanceBatch } from "@moritzbrantner/three-d-renderer";
-import { ENVIRONMENT, type EnvironmentStyle } from "./environment";
-import { SceneBatcher, batchVisible, type InstanceBatch, type StaticBatch } from "./mesh-batching";
+import type {
+  IndexedMeshGeometry,
+  Matrix4Values,
+  RendererInstance,
+  RendererInstanceBatch,
+  RendererSceneNode,
+} from "@moritzbrantner/three-d-renderer";
 import type { Vec3 } from "./mesh-builder";
-import { appendPropModels, type AnimatedMesh, type AnimatedParts, type ModelContext } from "./prop-models";
-import type { Color, Prop, PropKind, Scenery } from "./scenery";
-import { appendLakeBeds, appendPatches, appendRoads, appendTerrain, terrainSurfaceY, waterNodes } from "./terrain-mesh";
+import type { Color, PropKind, Scenery } from "./scenery";
 
 /**
- * The static world of one scenery value, built once per content revision:
- * vertex-coloured terrain and far-ring meshes, road ribbons, the lake, and
- * procedural props. Vegetation and rocks share instance geometry; other static
- * parts merge by spatial chunk, colour and cull class. A few animated parts (windmill sails, campfire flames, reeds) stay
- * separate nodes whose transforms change every frame.
+ * The shared static world (#184): `mmorpg-presentation` builds terrain, roads,
+ * water and every prop model once in Rust, and both clients draw the same
+ * draws. The native client lowers them to wgpu meshes; this module decodes the
+ * WASM export (`mmorpg.static-scene` v1) into renderer nodes once per content
+ * revision and per frame only hides far groups and places animated parts.
  */
+export type CullClass = "always" | "far" | "mid" | "near";
+
+/** Beyond this camera distance (metres, to the group's bounding circle) a class is hidden. */
+export const CULL_DISTANCE_METRES: Readonly<Record<CullClass, number>> = {
+  always: Number.POSITIVE_INFINITY,
+  far: 420,
+  mid: 150,
+  near: 75,
+};
+
+/** What the WASM module exposes about the shared static world. */
+export type StaticSceneContent = {
+  staticScene(): string;
+  staticSceneVertices(): Float32Array;
+  staticSceneIndices(): Uint32Array;
+  staticSceneModels(): Float32Array;
+  staticSceneMotion(seconds: number, animate: boolean): Float32Array;
+  surfaceY(x: number, z: number): number;
+};
+
+type Bounds = { cull: CullClass; center: readonly [number, number]; radius: number };
+export type StaticBatch = Bounds & { node: RendererSceneNode & { geometry: IndexedMeshGeometry } };
+export type InstanceBatch = Bounds & { batch: RendererInstanceBatch };
+
+// Animated props use the default lit material; retain that branch of the renderer contract.
+type AnimatedNode = Omit<Extract<RendererSceneNode, { unlit?: false }>, "transform" | "modelMatrix">;
+
 export type SceneryScene = {
   batches: readonly StaticBatch[];
   instanceBatches: readonly InstanceBatch[];
   water: readonly RendererSceneNode[];
-  animated: AnimatedParts;
+  /** Nodes of each animated part; `motion` places them. */
+  animated: readonly (readonly AnimatedNode[])[];
+  /** One column-major matrix (16 floats) per animated part at a cosmetic clock. */
+  motion(seconds: number, animate: boolean): Float32Array;
   stats: SceneryStats;
   /** The rendered terrain height in metres at `(x, z)` metres. */
   surfaceY(x: number, z: number): number;
@@ -33,135 +65,129 @@ export type SceneryStats = {
   props: Partial<Record<PropKind, number>>;
 };
 
-const HUB_KINDS: ReadonlySet<PropKind> = new Set(["keep", "inn", "smithy", "house", "well", "waystone"]);
+const FORMAT = "mmorpg.static-scene";
+const VERSION = 1;
+const CULLS: readonly CullClass[] = ["always", "far", "mid", "near"];
 
-function resourcePrefix(scenery: Scenery): string {
-  return `scenery:${scenery.source}:${scenery.contentRevision}:${scenery.presentationFingerprint}`;
+type GeometryEntry = { resourceKey: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
+type DrawEntry = { id: string; geometry: number; model: number; color: Color; emissive: Color | null; opacity: number };
+type GroupEntry = { cull: CullClass; instanced: boolean; min: [number, number]; max: [number, number]; draws: DrawEntry[] };
+type Layout = { format: string; version: number; prefix: string; geometries: GeometryEntry[]; groups: GroupEntry[]; water: DrawEntry[]; animated: DrawEntry[][] };
+
+function fail(reason: string): never {
+  throw new Error(`Invalid static scene: ${reason}`);
 }
 
-/** Centroid of the samples of a named biome, in metres. */
-function biomeCentroid(scenery: Scenery, name: string): readonly [number, number] | null {
-  const id = scenery.biomes.find((biome) => biome.name === name)?.id;
-  const { terrain, unitsPerMetre } = scenery;
-  let sumX = 0;
-  let sumZ = 0;
-  let count = 0;
-  terrain.biomes.forEach((biome, index) => {
-    if (biome === id) {
-      sumX += terrain.originXz[0] + (index % terrain.columns) * terrain.step;
-      sumZ += terrain.originXz[1] + Math.floor(index / terrain.columns) * terrain.step;
-      count += 1;
-    }
-  });
-  return count === 0 ? null : [sumX / count / unitsPerMetre, sumZ / count / unitsPerMetre];
-}
-
-function nearestRoadPoint(scenery: Scenery, x: number, z: number): readonly [number, number] | null {
-  let best: [number, number] | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  const metres = (units: number) => units / scenery.unitsPerMetre;
-  for (const road of scenery.roads) {
-    for (let index = 0; index + 1 < road.points.length; index += 1) {
-      const [ax, az] = road.points[index]!.map(metres) as [number, number];
-      const [bx, bz] = road.points[index + 1]!.map(metres) as [number, number];
-      const dx = bx - ax;
-      const dz = bz - az;
-      const lengthSquared = dx * dx + dz * dz;
-      const t = lengthSquared === 0 ? 0 : Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / lengthSquared));
-      const px = ax + dx * t;
-      const pz = az + dz * t;
-      const distance = Math.hypot(px - x, pz - z);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = [px, pz];
-      }
-    }
+function triples(values: Float32Array, start: number, count: number): [number, number, number][] {
+  const out: [number, number, number][] = new Array(count);
+  for (let index = 0; index < count; index += 1) {
+    const at = start + index * 3;
+    out[index] = [values[at]!, values[at + 1]!, values[at + 2]!];
   }
-  return best;
+  return out;
 }
 
-export function buildSceneryScene(scenery: Scenery, style: EnvironmentStyle = ENVIRONMENT): SceneryScene {
-  const prefix = resourcePrefix(scenery);
-  const batcher = new SceneBatcher(prefix);
-  const { unitsPerMetre, terrain } = scenery;
-  const surfaceY = (x: number, z: number) => terrainSurfaceY(terrain, unitsPerMetre, x, z);
-  appendTerrain(batcher, scenery, style);
-  appendPatches(batcher, scenery, style);
-  appendRoads(batcher, scenery, style);
-  appendLakeBeds(batcher, scenery, style);
-  const plaza = biomeCentroid(scenery, "plaza") ?? [0, 0];
-  const metres = (prop: Prop): readonly [number, number] => [prop.position[0] / unitsPerMetre, prop.position[2] / unitsPerMetre];
-  const gatePosts = scenery.props.filter((prop) => prop.kind === "gate-post").map(metres);
-  const animated: AnimatedParts = { sails: [], flames: [], reeds: [] };
-  const context: ModelContext = {
-    batcher,
-    style,
-    unitsPerMetre,
-    surface: surfaceY,
-    doorTarget(prop) {
-      const [x, z] = metres(prop);
-      return HUB_KINDS.has(prop.kind) ? plaza : nearestRoadPoint(scenery, x, z) ?? plaza;
-    },
-    gatePartner(prop) {
-      const [x, z] = metres(prop);
-      let best: readonly [number, number] | null = null;
-      let bestDistance = 7;
-      for (const other of gatePosts) {
-        const distance = Math.hypot(other[0] - x, other[1] - z);
-        if (distance > 0.01 && distance < bestDistance) {
-          best = other;
-          bestDistance = distance;
-        }
-      }
-      return best;
-    },
-    animated,
+function bounds(group: GroupEntry): Bounds {
+  const [minX, minZ] = group.min;
+  const [maxX, maxZ] = group.max;
+  return { cull: group.cull, center: [(minX + maxX) / 2, (minZ + maxZ) / 2], radius: Math.hypot(maxX - minX, maxZ - minZ) / 2 };
+}
+
+/** Decodes the shared static world once; unknown shapes fail closed. */
+export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent): SceneryScene {
+  let layout: Layout;
+  try {
+    layout = JSON.parse(content.staticScene()) as Layout;
+  } catch {
+    fail("not JSON");
+  }
+  if (layout.format !== FORMAT || layout.version !== VERSION) {
+    fail(`unsupported format ${String(layout.format)} v${String(layout.version)}`);
+  }
+  if (!layout.prefix.startsWith(`scenery:${scenery.contentRevision}:`)) {
+    fail(`prefix ${layout.prefix} does not match content revision ${scenery.contentRevision}`);
+  }
+  const vertices = content.staticSceneVertices();
+  const indices = content.staticSceneIndices();
+  const models = content.staticSceneModels();
+  const geometries = layout.geometries.map((entry): IndexedMeshGeometry => {
+    const { vertexOffset: start, vertexCount: count, indexOffset, indexCount } = entry;
+    const end = start + count * (entry.colored ? 9 : 6);
+    if (end > vertices.length || indexOffset + indexCount > indices.length) {
+      fail(`geometry ${entry.resourceKey} exceeds the shared buffers`);
+    }
+    const geometry: IndexedMeshGeometry = {
+      kind: "mesh",
+      resourceKey: entry.resourceKey,
+      positions: triples(vertices, start, count),
+      normals: triples(vertices, start + count * 3, count),
+      indices: Array.from(indices.subarray(indexOffset, indexOffset + indexCount)),
+    };
+    return entry.colored ? { ...geometry, colors: triples(vertices, start + count * 6, count) } : geometry;
+  });
+  const geometry = (draw: DrawEntry) => geometries[draw.geometry] ?? fail(`draw ${draw.id} names a missing geometry`);
+  const model = (draw: DrawEntry): Matrix4Values => {
+    if ((draw.model + 1) * 16 > models.length) {
+      fail(`draw ${draw.id} names a missing model matrix`);
+    }
+    return Array.from(models.subarray(draw.model * 16, draw.model * 16 + 16)) as Matrix4Values;
   };
-  const { byKind } = appendPropModels(context, scenery.props);
-  const emissive = new Set<Color>([style.palette.rune, style.palette.lampGlow, style.palette.windowLit, style.palette.fire, style.palette.fireCore]);
-  const batches = batcher.batches().map((batch): StaticBatch => typeof batch.node.color === "string" && emissive.has(batch.node.color)
-    ? { ...batch, node: { ...batch.node, unlit: false, emissive: batch.node.color } } : batch);
-  const instanceBatches = batcher.instanceBatches();
-  const geometries = new Set([...batches.map((batch) => batch.node.geometry), ...instanceBatches.map((batch) => batch.batch.geometry)]);
+  const batches: StaticBatch[] = [];
+  const instanceBatches: InstanceBatch[] = [];
+  for (const group of layout.groups) {
+    if (!CULLS.includes(group.cull) || group.draws.length === 0) {
+      fail("group has an unknown cull class or no draws");
+    }
+    if (!group.instanced) {
+      const [draw] = group.draws;
+      batches.push({
+        ...bounds(group),
+        node: {
+          id: draw!.id,
+          geometry: geometry(draw!),
+          color: draw!.color,
+          modelMatrix: model(draw!),
+          ...(draw!.emissive ? { unlit: false, emissive: draw!.emissive } : {}),
+        },
+      });
+      continue;
+    }
+    const first = group.draws[0]!;
+    const instances: RendererInstance[] = group.draws.map((draw) => ({ modelMatrix: model(draw), color: draw.color }));
+    instanceBatches.push({
+      ...bounds(group),
+      // Instance draw IDs are `<batch id>:<ordinal>`; the batch shares one geometry.
+      batch: { id: first.id.slice(0, first.id.lastIndexOf(":")), geometry: geometry(first), color: "#ffffff", revision: layout.prefix, instances },
+    });
+  }
+  const water = layout.water.map((draw): RendererSceneNode => ({
+    id: draw.id, geometry: geometry(draw), color: draw.color, opacity: draw.opacity, modelMatrix: model(draw),
+  }));
+  const animated = layout.animated.map((part) => part.map((draw): AnimatedNode => ({ id: draw.id, geometry: geometry(draw), color: draw.color })));
+  const byKind: Partial<Record<PropKind, number>> = {};
+  for (const prop of scenery.props) {
+    byKind[prop.kind] = (byKind[prop.kind] ?? 0) + 1;
+  }
   return {
     batches,
     instanceBatches,
-    water: waterNodes(scenery, style, prefix),
+    water,
     animated,
+    motion: (seconds, animate) => content.staticSceneMotion(seconds, animate),
     stats: {
       staticNodes: batches.length + instanceBatches.length,
-      staticVertices: [...geometries].reduce((sum, geometry) => sum + (geometry.kind === "mesh" ? geometry.positions.length : 0), 0),
-      staticTriangles: [...geometries].reduce((sum, geometry) => sum + (geometry.kind === "mesh" ? geometry.indices.length / 3 : 0), 0),
+      staticVertices: layout.geometries.reduce((sum, entry) => sum + entry.vertexCount, 0),
+      staticTriangles: layout.geometries.reduce((sum, entry) => sum + entry.indexCount / 3, 0),
       props: byKind,
     },
-    surfaceY,
+    surfaceY: (x, z) => content.surfaceY(x, z),
   };
 }
 
-type Quaternion = [number, number, number, number];
-
-function yawQuaternion(yaw: number): Quaternion {
-  return [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)];
-}
-
-/** Rotation about Y by `yaw`, then about the (turned) Z axis by `roll`. */
-export function yawRollQuaternion(yaw: number, roll: number): Quaternion {
-  const sy = Math.sin(yaw / 2);
-  const wy = Math.cos(yaw / 2);
-  const sz = Math.sin(roll / 2);
-  const wz = Math.cos(roll / 2);
-  return [sy * sz, sy * wz, wy * sz, wy * wz];
-}
-
-// Animated props use the default lit material; retain that branch of the renderer contract.
-type AnimatedNode = Omit<Extract<RendererSceneNode, { unlit?: false }>, "transform" | "modelMatrix">;
-
-function meshNode(mesh: AnimatedMesh, prefix: string): AnimatedNode {
-  return {
-    id: mesh.id,
-    geometry: { kind: "mesh", resourceKey: `${prefix}:${mesh.id}`, positions: mesh.positions, normals: mesh.normals, indices: mesh.indices },
-    color: mesh.color,
-  };
+/** Whether a group is within its class's distance of the camera eye (XZ, metres). */
+export function batchVisible(batch: Bounds, eyeX: number, eyeZ: number): boolean {
+  const distance = Math.hypot(batch.center[0] - eyeX, batch.center[1] - eyeZ) - batch.radius;
+  return distance <= CULL_DISTANCE_METRES[batch.cull];
 }
 
 /** Cosmetic animation input; without motion every part holds its rest pose. */
@@ -172,14 +198,11 @@ export class SceneryFrame {
   readonly #scene: SceneryScene;
   readonly #visible: RendererSceneNode[];
   readonly #hidden: RendererSceneNode[];
-  readonly #animated: AnimatedNode[][];
 
-  constructor(scene: SceneryScene, prefix: string) {
+  constructor(scene: SceneryScene) {
     this.#scene = scene;
     this.#visible = scene.batches.map((batch) => batch.node);
     this.#hidden = scene.batches.map((batch) => ({ ...batch.node, visible: false }));
-    const { sails, flames, reeds } = scene.animated;
-    this.#animated = [...sails, ...flames, ...reeds].map((part) => part.mesh.map((mesh) => meshNode(mesh, prefix)));
   }
 
   nodes(eye: Vec3, motion: SceneryMotion): { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[]; visibleBatches: number } {
@@ -191,33 +214,13 @@ export class SceneryFrame {
       nodes.push(visible ? this.#visible[index]! : this.#hidden[index]!);
     });
     nodes.push(...this.#scene.water);
-    const t = motion.animate ? motion.seconds : 0;
-    const { sails, flames, reeds } = this.#scene.animated;
-    let part = 0;
-    const partNodes = () => this.#animated[part++] ?? [];
-    for (const sail of sails) {
-      const rotationQuaternion = yawRollQuaternion(sail.axisYaw, t * 0.45);
-      for (const node of partNodes()) {
-        nodes.push({ ...node, transform: { translation: [...sail.hub], rotationQuaternion } });
-      }
-    }
-    for (const flame of flames) {
-      const flicker: [number, number, number] = motion.animate
-        ? [1 + 0.1 * Math.sin(t * 9.1 + flame.seed), 1 + 0.18 * Math.sin(t * 7.3 + flame.seed * 2) * Math.sin(t * 3.1), 1 + 0.1 * Math.cos(t * 8.3)]
-        : [1, 1, 1];
-      for (const node of partNodes()) {
-        nodes.push({ ...node, transform: { translation: [...flame.base], scale: flicker, rotationQuaternion: yawQuaternion(t * 0.7) } });
-      }
-    }
-    for (const reed of reeds) {
-      const kx = motion.animate ? 0.045 * Math.sin(t * 1.1 + reed.phase) : 0;
-      const kz = motion.animate ? 0.035 * Math.sin(t * 0.83 + reed.phase * 1.7) : 0;
-      // Column-major shear about the ground: x += kx (y - ground), z += kz (y - ground).
-      const modelMatrix: Matrix4Values = [1, 0, 0, 0, kx, 1, kz, 0, 0, 0, 1, 0, -kx * reed.groundY, 0, -kz * reed.groundY, 1];
-      for (const node of partNodes()) {
+    const matrices = this.#scene.motion(motion.seconds, motion.animate);
+    this.#scene.animated.forEach((part, index) => {
+      const modelMatrix = Array.from(matrices.subarray(index * 16, index * 16 + 16)) as Matrix4Values;
+      for (const node of part) {
         nodes.push({ ...node, modelMatrix });
       }
-    }
+    });
     const instanceBatches = this.#scene.instanceBatches.map((batch) => {
       const visible = batchVisible(batch, eye[0], eye[2]);
       visibleBatches += visible ? 1 : 0;
@@ -226,5 +229,3 @@ export class SceneryFrame {
     return { nodes, instanceBatches, visibleBatches };
   }
 }
-
-export { resourcePrefix as sceneryResourcePrefix };

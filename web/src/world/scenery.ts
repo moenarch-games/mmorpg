@@ -1,3 +1,4 @@
+import type { StaticSceneContent } from "./scenery-nodes";
 /**
  * Presentation scenery from the WASM `scenery()` export (format
  * `mmorpg.scenery` v3), which maps the Rust `mmorpg-scenery` value the native
@@ -72,7 +73,7 @@ export type Scenery = {
 };
 
 /** What the WASM module exposes about static zone content. */
-export type SceneryContent = {
+export type SceneryContent = StaticSceneContent & {
   scenery(): string;
   areaAt(x: number, z: number): number | undefined;
   reliefAt(x: number, z: number): number;
@@ -80,6 +81,8 @@ export type SceneryContent = {
 
 export type SceneryProvider = {
   readonly scenery: Scenery;
+  /** The shared static world both clients draw (#184), straight from the WASM owner. */
+  readonly staticScene: StaticSceneContent;
   /** The named core area at `(x, z)` in units, if any. */
   areaAt(x: number, z: number): Area | null;
   /** Presentation relief at `(x, z)` in units; units are drawn raised by it. */
@@ -338,6 +341,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
   const areasById = new Map(scenery.areas.map((area) => [area.id, area]));
   return {
     scenery,
+    staticScene: content,
     areaAt(x, z) {
       const id = content.areaAt(Math.round(x), Math.round(z));
       if (id === undefined) {

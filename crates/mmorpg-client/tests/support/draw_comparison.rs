@@ -55,10 +55,24 @@ fn digest(mesh: &three_d_core::Mesh) -> String {
     }
     format!("{hash:016x}")
 }
+/// Draws by their exact ID; both clients name draws from the same shared source.
+fn unique_index<'a, T>(
+    values: impl IntoIterator<Item = (&'a str, T)>,
+    label: &str,
+) -> std::collections::BTreeMap<&'a str, T> {
+    let mut indexed = std::collections::BTreeMap::new();
+    for (id, value) in values {
+        assert!(
+            indexed.insert(id, value).is_none(),
+            "duplicate {label} draw ID {id}"
+        );
+    }
+    indexed
+}
+
 pub fn compare_draws(actual: &[SceneDraw], expected: &Value, resources: &Value) {
-    let by_id =
-        super::identity::unique_index(actual.iter().map(|draw| (draw.id.as_str(), draw)), "actual");
-    let expected_by_id = super::identity::unique_index(
+    let by_id = unique_index(actual.iter().map(|draw| (draw.id.as_str(), draw)), "actual");
+    let expected_by_id = unique_index(
         expected
             .as_array()
             .unwrap()
@@ -66,11 +80,10 @@ pub fn compare_draws(actual: &[SceneDraw], expected: &Value, resources: &Value) 
             .map(|draw| (draw["id"].as_str().unwrap(), draw)),
         "expected",
     );
-    for (canonical, (id, draw)) in expected_by_id {
-        let actual = by_id
-            .get(&canonical)
-            .unwrap_or_else(|| panic!("missing actual submitted draw {id} (canonical {canonical})"))
-            .1;
+    for (id, draw) in expected_by_id {
+        let actual = *by_id
+            .get(id)
+            .unwrap_or_else(|| panic!("missing actual submitted draw {id}"));
         vector(
             &actual.model.elements,
             &draw["model"],

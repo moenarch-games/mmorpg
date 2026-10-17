@@ -1,8 +1,49 @@
 import type { EntityState } from "../replication";
 import { mixColor, shadeColor, type EnvironmentStyle } from "./environment";
-import type { Color, Prop, Scenery } from "./scenery";
-import { groundBiomes } from "./terrain-mesh";
+import type { Color, Prop, Scenery, TerrainGrid } from "./scenery";
 import { disposition as unitDisposition } from "./units/creature-bodies";
+
+const OVERLAY_BIOMES: ReadonlySet<string> = new Set(["road", "lake bed", "shore", "plaza", "farmland"]);
+
+/**
+ * Biome IDs per sample with overlay biomes (roads, water, the plaza and the
+ * field) replaced by the most common other biome within two samples, or by
+ * the meadow where only overlay surrounds them.
+ */
+export function groundBiomes(grid: TerrainGrid, biomeNames: ReadonlyMap<number, string>): number[] {
+  const overlay = new Set([...biomeNames.entries()].filter(([, name]) => OVERLAY_BIOMES.has(name)).map(([id]) => id));
+  const meadow = [...biomeNames.entries()].find(([, name]) => name === "meadow")?.[0];
+  return grid.biomes.map((biome, index) => {
+    if (!overlay.has(biome)) {
+      return biome;
+    }
+    const column = index % grid.columns;
+    const row = Math.floor(index / grid.columns);
+    const counts = new Map<number, number>();
+    for (let dr = -2; dr <= 2; dr += 1) {
+      for (let dc = -2; dc <= 2; dc += 1) {
+        const c = column + dc;
+        const r = row + dr;
+        if (c < 0 || r < 0 || c >= grid.columns || r >= grid.rows) {
+          continue;
+        }
+        const neighbour = grid.biomes[r * grid.columns + c]!;
+        if (!overlay.has(neighbour)) {
+          counts.set(neighbour, (counts.get(neighbour) ?? 0) + 1);
+        }
+      }
+    }
+    let best = meadow ?? biome;
+    let bestCount = 0;
+    for (const [candidate, count] of [...counts.entries()].sort(([a], [b]) => a - b)) {
+      if (count > bestCount) {
+        best = candidate;
+        bestCount = count;
+      }
+    }
+    return best;
+  });
+}
 
 /**
  * The circular minimap. `buildMinimapLayers` turns scenery into a top-down

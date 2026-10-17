@@ -3,8 +3,6 @@
 //! differential is paused until the browser adopts the same models, then compares them again.
 #[path = "support/draw_comparison.rs"]
 mod comparison;
-#[path = "support/draw_identity.rs"]
-mod identity;
 #[path = "support/world_reference.rs"]
 mod reference;
 use comparison::compare_draws;

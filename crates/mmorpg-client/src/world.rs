@@ -1,12 +1,11 @@
-//! CPU presentation geometry for the native renderer. Game-specific meshes
-//! follow the browser world; immutable resources are shared across frames.
-//! Legacy blockout fields remain available during renderer migration.
-mod batching;
+//! Native lowering of the shared static world (`mmorpg-presentation`, #184):
+//! both clients draw the same procedural terrain, roads, water and props; this
+//! module turns those draws into immutable wgpu meshes once and only selects
+//! visible groups and animated transforms per frame. Legacy blockout fields
+//! remain available during renderer migration.
 pub(crate) mod geometry;
-mod props;
-mod terrain;
 pub use crate::environment::Environment;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 use three_d_animation::Mat4;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +33,7 @@ pub struct WorldFrame {
 }
 use crate::presentation::SceneBox;
 use mmorpg_core::UNITS_PER_METRE;
+use mmorpg_presentation::StaticScene;
 use mmorpg_scenery::{Prop, PropKind, RockSize, Scenery, TreeVariant};
 
 /// Terrain vertices are two metres apart over the scenery's ±200 m grid.
@@ -63,10 +63,43 @@ pub struct WorldScene {
     pub props: Vec<SceneBox>,
     /// Additional caller-authored presentation geometry, rendered and picked with the world.
     pub additional_draws: Vec<SceneDraw>,
-    grid: mmorpg_scenery::TerrainGrid,
-    groups: Vec<batching::Group>,
+    scene: StaticScene,
+    groups: Vec<Vec<SceneDraw>>,
     water_draws: Vec<SceneDraw>,
-    animated: Vec<props::Animated>,
+    animated: Vec<Vec<SceneDraw>>,
+}
+
+/// Lowers shared draws, uploading each distinct resource's mesh once.
+#[derive(Default)]
+struct Lowering(BTreeMap<String, Arc<three_d_core::Mesh>>);
+
+impl Lowering {
+    fn draw(&mut self, draw: &mmorpg_presentation::Draw) -> SceneDraw {
+        use geometry::ToMesh;
+        let mesh = self
+            .0
+            .entry(draw.resource_key.clone())
+            .or_insert_with(|| Arc::new(draw.geometry.mesh()));
+        SceneDraw {
+            id: draw.id.clone(),
+            resource_key: draw.resource_key.clone(),
+            mesh: Arc::clone(mesh),
+            model: Mat4 {
+                elements: draw.model,
+            },
+            material: material(&draw.material),
+        }
+    }
+}
+
+fn material(material: &mmorpg_presentation::Material) -> DrawMaterial {
+    DrawMaterial {
+        color: material.color,
+        emissive: material.emissive,
+        opacity: material.opacity,
+        unlit: material.unlit,
+        double_sided: material.double_sided,
+    }
 }
 
 impl WorldScene {
@@ -77,143 +110,56 @@ impl WorldScene {
             let base = metres(scenery.height_at(prop.position[0], prop.position[2]));
             blockout(prop, base, &mut props);
         }
-        let grid = scenery.terrain_grid(400);
-        let mut batcher = batching::Batcher::default();
-        let mut water_draws = terrain::build(&mut batcher, scenery, &grid);
-        let mut animated = props::build(&mut batcher, scenery, &grid);
-        let mut groups = batcher.finish();
-        // Native identity covers actual geometry/material/placement rather than a WASM export envelope.
-        let mut hash = 0xcbf29ce484222325_u64;
-        let mut seen = std::collections::BTreeSet::new();
-        let all = groups
+        let scene = StaticScene::new(scenery);
+        let mut lowering = Lowering::default();
+        let groups = scene
+            .groups
             .iter()
-            .flat_map(|g| &g.draws)
-            .chain(&water_draws)
-            .chain(animated.iter().flat_map(|a| &a.draws));
-        for draw in all {
-            let mut bytes = |values: &[u8]| {
-                for byte in values {
-                    hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
-                }
-            };
-            bytes(draw.id.as_bytes());
-            for value in draw
-                .model
-                .elements
-                .iter()
-                .chain(&draw.material.color)
-                .chain(&draw.material.emissive)
-                .chain([&draw.material.opacity])
-            {
-                bytes(&value.to_le_bytes());
-            }
-            if seen.insert(draw.resource_key.as_str()) {
-                for p in draw.mesh.vertices() {
-                    for value in [p.x, p.y, p.z] {
-                        bytes(&value.to_le_bytes());
-                    }
-                }
-                for index in draw.mesh.indices() {
-                    bytes(&index.to_le_bytes());
-                }
-                if let Some(normals) = &draw.mesh.attributes().normals {
-                    for n in normals {
-                        for value in [n.x, n.y, n.z] {
-                            bytes(&value.to_le_bytes());
-                        }
-                    }
-                }
-                if let Some(colors) = &draw.mesh.attributes().colors {
-                    for c in colors {
-                        for value in [c.r, c.g, c.b] {
-                            bytes(&value.to_le_bytes());
-                        }
-                    }
-                }
-            }
-        }
-        let prefix = format!("native-scenery:{}:{hash:016x}", scenery.content_revision);
-        for draw in groups
-            .iter_mut()
-            .flat_map(|g| &mut g.draws)
-            .chain(&mut water_draws)
-            .chain(animated.iter_mut().flat_map(|a| &mut a.draws))
-        {
-            draw.resource_key = draw.resource_key.replacen("native-scenery", &prefix, 1);
-            draw.id = draw.id.replacen("native-scenery", &prefix, 1);
-        }
+            .map(|group| group.draws.iter().map(|draw| lowering.draw(draw)).collect())
+            .collect();
+        let water_draws = scene.water.iter().map(|draw| lowering.draw(draw)).collect();
+        let animated = scene
+            .animated
+            .iter()
+            .map(|part| part.draws.iter().map(|draw| lowering.draw(draw)).collect())
+            .collect();
         Self {
             additional_draws: Vec::new(),
-            grid,
             groups,
             water_draws,
             animated,
             terrain: terrain_mesh(scenery),
             water: water_mesh(scenery),
             props,
+            scene,
         }
     }
     /// Height of the rendered four-metre terrain triangles, in metres.
     #[must_use]
     pub fn surface_y(&self, x: f32, z: f32) -> f32 {
-        terrain::surface(&self.grid, f64::from(x), f64::from(z)) as f32
+        self.scene.surface_y(f64::from(x), f64::from(z)) as f32
     }
 
     /// Presented world at a cosmetic clock and camera position. Geometry is never copied.
     #[must_use]
     pub fn frame(&self, seconds: f64, animate: bool, eye: [f32; 3]) -> WorldFrame {
-        use geometry::*;
-        let t = if animate && seconds.is_finite() {
-            seconds
-        } else {
-            0.
-        };
         let mut draws: Vec<_> = self
+            .scene
             .groups
             .iter()
-            .filter(|g| g.visible(eye))
-            .flat_map(|g| g.draws.iter().cloned())
+            .zip(&self.groups)
+            .filter(|(group, _)| group.visible(eye))
+            .flat_map(|(_, draws)| draws.iter().cloned())
             .collect();
         draws.extend(self.water_draws.iter().cloned());
-        for part in &self.animated {
-            let a = match part.motion {
-                props::Motion::Sail { hub, yaw } => {
-                    compose(&[translate(hub[0], hub[1], hub[2]), ry(yaw), rz(t * 0.45)])
-                }
-                props::Motion::Flame { base, seed } => {
-                    let flicker = if animate {
-                        [
-                            1. + 0.1 * (t * 9.1 + seed).sin(),
-                            1. + 0.18 * (t * 7.3 + seed * 2.).sin() * (t * 3.1).sin(),
-                            1. + 0.1 * (t * 8.3).cos(),
-                        ]
-                    } else {
-                        [1.; 3]
-                    };
-                    compose(&[
-                        translate(base[0], base[1], base[2]),
-                        ry(t * 0.7),
-                        scale(flicker[0], flicker[1], flicker[2]),
-                    ])
-                }
-                props::Motion::Reed { phase, ground_y } => {
-                    let (kx, kz) = if animate {
-                        (
-                            0.045 * (t * 1.1 + phase).sin(),
-                            0.035 * (t * 0.83 + phase * 1.7).sin(),
-                        )
-                    } else {
-                        (0., 0.)
-                    };
-                    Affine {
-                        m: [1., kx, 0., 0., 1., 0., 0., kz, 1.],
-                        t: [-kx * ground_y, 0., -kz * ground_y],
-                    }
-                }
-            };
-            for draw in &part.draws {
+        for (part, model) in self
+            .animated
+            .iter()
+            .zip(self.scene.motion(seconds, animate))
+        {
+            for draw in part {
                 let mut draw = draw.clone();
-                draw.model = batching::matrix(a);
+                draw.model = Mat4 { elements: model };
                 draws.push(draw);
             }
         }
