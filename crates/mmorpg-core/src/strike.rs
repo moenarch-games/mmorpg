@@ -161,8 +161,10 @@ impl ZoneSimulation {
         self.update_player(player_id, |player| {
             player.global_cooldown = crate::GLOBAL_COOLDOWN_TICKS;
             player.facing = facing;
-            // The sword gesture supersedes a held guard (Atlas 5.2.37).
+            // The sword gesture supersedes a held guard (Atlas 5.2.37) and
+            // commits to its recovery (#156).
             player.guard.raised = None;
+            player.strike_recovery = crate::STRIKE_RECOVERY_TICKS;
         });
         self.pay_and_cool_down(player_id, ability);
         let victim = self.strike_coverage(player_id, facing, aim)?;

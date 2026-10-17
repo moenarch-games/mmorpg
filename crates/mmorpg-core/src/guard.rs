@@ -26,6 +26,12 @@
 //!   ordinary creatures are blocked; charging blows of wolf-sized or larger
 //!   creatures and the heaviest critical hits overpower.
 //!
+//! A directed strike commits the Warden to [`STRIKE_RECOVERY_TICKS`] of
+//! recovery: a guard pressed during it (or just before it, in the same
+//! queue) is held but protects only once the recovery ends, the buffered
+//! guard transition of Atlas 5.2.39 and 5.2.41; releasing it or a stun before
+//! then discards it.
+//!
 //! A broken guard protects nothing; the hold survives the break, so the same
 //! held lane protects again when recovery ends (5.2.59). A protecting guard
 //! slows horizontal movement to [`GUARD_SPEED_PERCENT`] (5.2.61). Guarding
@@ -36,6 +42,10 @@ use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, StrikeHeight, ZoneEr
 
 /// Horizontal speed of a protecting guard, in percent of the unguarded speed.
 pub const GUARD_SPEED_PERCENT: i32 = 60;
+/// A directed strike's committed recovery: 0.2 s. A guard raised meanwhile
+/// is held but protects only when the recovery ends; a stun before then
+/// discards it (Atlas 5.2.39, 5.2.41).
+pub const STRIKE_RECOVERY_TICKS: u16 = 6;
 /// Ticks a broken guard protects nothing: 1.5 s.
 pub const GUARD_BREAK_TICKS: u16 = 45;
 /// The impact (damage plus momentum) at which a blow overpowers a guard.
@@ -84,7 +94,13 @@ pub(crate) fn guard_ready(player: &crate::zone::PlayerState) -> Option<StrikeHei
         .is_some_and(|choice| choice.class == crate::PlayerClass::Warden);
     let stunned = crate::aura::has_kind(&player.auras, crate::AuraKind::Stun);
     match player.guard.raised {
-        Some(lane) if warden && player.is_alive() && !stunned && player.guard.broken == 0 => {
+        Some(lane)
+            if warden
+                && player.is_alive()
+                && !stunned
+                && player.guard.broken == 0
+                && player.strike_recovery == 0 =>
+        {
             Some(lane)
         }
         _ => None,

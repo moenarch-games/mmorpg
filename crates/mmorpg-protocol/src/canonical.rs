@@ -39,6 +39,7 @@ const ACCEPT_QUEST_INTENT: u8 = 15;
 const COMPLETE_QUEST_INTENT: u8 = 16;
 const ABANDON_QUEST_INTENT: u8 = 17;
 const DIRECTED_STRIKE_INTENT: u8 = 18;
+const GUARD_INTENT: u8 = 19;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -157,6 +158,10 @@ fn encode_player(
                 continue;
             }
             PlayerIntent::CancelCast => (CANCEL_CAST_INTENT, None),
+            PlayerIntent::Guard(lane) => {
+                payload.extend_from_slice(&[GUARD_INTENT, crate::wire::encode_lane(lane)]);
+                continue;
+            }
             PlayerIntent::ChooseClass { class, sex } => {
                 payload.extend_from_slice(&[CHOOSE_CLASS_INTENT, class, sex]);
                 continue;
@@ -250,6 +255,7 @@ fn encode_player(
     payload.push(u8::from(landing.airborne));
     payload.extend_from_slice(&landing.recovery.to_be_bytes());
     payload.push(u8::from(landing.attacked_airborne));
+    payload.extend_from_slice(&combat.strike_recovery.to_be_bytes());
     match combat.combo {
         None => payload.extend_from_slice(&[0; 7]),
         Some(combo) => {
@@ -505,6 +511,12 @@ fn decode_player(
             });
             continue;
         }
+        if code == GUARD_INTENT {
+            intents.push(PlayerIntent::Guard(crate::wire::decode_lane(read_u8(
+                payload, offset,
+            )?)?));
+            continue;
+        }
         if code == CHOOSE_CLASS_INTENT {
             let [class, sex] = take(payload, offset)?;
             intents.push(PlayerIntent::ChooseClass { class, sex });
@@ -640,6 +652,7 @@ fn decode_player(
         recovery: u16::from_be_bytes(take(payload, offset)?),
         attacked_airborne: read_bool(payload, offset)?,
     };
+    let strike_recovery = u16::from_be_bytes(take(payload, offset)?);
     let has_combo = read_bool(payload, offset)?;
     let combo_target = CreatureId::new(u32::from_be_bytes(take(payload, offset)?));
     let combo_elapsed = u16::from_be_bytes(take(payload, offset)?);
@@ -700,6 +713,7 @@ fn decode_player(
             abilities,
             landing,
             combo,
+            strike_recovery,
         },
     })
 }
@@ -902,6 +916,7 @@ mod tests {
                             target: CreatureId::new(1),
                             elapsed: 3,
                         }),
+                        strike_recovery: 4,
                     },
                     quests: mmorpg_core::QuestLog::default(),
                     quests_changed_at: 0,
@@ -1322,7 +1337,7 @@ mod tests {
         let mut cases = vec![
             (auto_attack, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
-            (intents + 1, 19, "malformed pending intent"),
+            (intents + 1, 20, "malformed pending intent"),
         ];
         // The third intent (StartAttack) carries no target.
         cases.push((intents + 1 + 2 * 6 + 1, 2, "malformed pending intent"));

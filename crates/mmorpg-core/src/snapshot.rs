@@ -51,6 +51,9 @@ pub enum PlayerIntent {
         facing: u16,
         aim: crate::StrikeAim,
     },
+    /// Holds or releases the shield guard (#156), in order with strikes so
+    /// the last-pressed gesture wins.
+    Guard(Option<crate::StrikeHeight>),
     CancelCast,
     ChooseClass {
         class: u8,
@@ -143,6 +146,8 @@ pub struct CanonicalPlayerCombat {
     pub landing: crate::LandingState,
     /// A pending sword → Shield Bash follow-up (#157).
     pub combo: Option<crate::ComboOpening>,
+    /// Ticks left of a directed strike's committed recovery (#156).
+    pub strike_recovery: u16,
 }
 
 /// Class, resource and ability state of a player; all zero and empty until
@@ -194,6 +199,7 @@ impl Default for CanonicalPlayerCombat {
             abilities: CanonicalPlayerAbilities::default(),
             landing: crate::LandingState::default(),
             combo: None,
+            strike_recovery: 0,
         }
     }
 }
@@ -316,6 +322,7 @@ impl ZoneSimulation {
                         },
                         landing: state.landing,
                         combo: state.combo,
+                        strike_recovery: state.strike_recovery,
                     },
                     chat_ready_at: state.chat_ready_at,
                     chat: state.chat.clone(),
@@ -492,6 +499,9 @@ impl ZoneSimulation {
         {
             return Err(ZoneError::new("player combo state is out of range"));
         }
+        if combat.strike_recovery > crate::STRIKE_RECOVERY_TICKS {
+            return Err(ZoneError::new("player strike recovery is out of range"));
+        }
         if !combat.landing.is_valid() {
             return Err(ZoneError::new("player landing state is out of range"));
         }
@@ -519,6 +529,7 @@ impl ZoneSimulation {
                 guard,
                 landing: combat.landing,
                 combo: combat.combo,
+                strike_recovery: combat.strike_recovery,
                 last_sequence: player.last_sequence,
                 spawn_slot: player.spawn_slot,
                 copper: player.copper,
