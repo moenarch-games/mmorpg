@@ -428,65 +428,34 @@ impl Presentation {
             .collect()
     }
 
-    /// The imported Quaternius model presenting `entity`, if its kind has one yet. Players pick
-    /// by class and sex; creatures and NPCs alternate male and female models by stable ID.
+    /// The imported model presenting `entity`, if it has one: every player is asset-tooling's
+    /// Ranger humanoid while it is the only character bundle (Atlas 6.3.7); wolves, vermin and
+    /// boars are Quaternius animals; humanoid creatures and NPCs keep their procedural models.
     fn imported_asset(
         &self,
         entity: EntityRef,
         record: &EntitySnapshot,
-        snapshot: &ZoneSnapshot,
     ) -> Option<&'static skinned::Asset> {
         use skinned::Kind as K;
-        let female = |id: u32| id % 2 == 1;
         let kind = match entity {
-            EntityRef::Player(id) => {
-                // The viewer's sheet wins; other players' records carry their class and sex.
-                let choice = (id == self.player_id)
-                    .then(|| self.viewer_choice(snapshot))
-                    .flatten()
-                    .or_else(|| mmorpg_core::ClassChoice::from_appearance(record.appearance));
-                let (class, female) = choice.map_or((0, false), |c| {
-                    (c.class.code(), c.sex == mmorpg_core::Sex::Female)
-                });
-                match (class, female) {
-                    (1, false) => K::Elf,
-                    (1, true) => K::NinjaFemale,
-                    (2, false) => K::Wizard,
-                    (2, true) => K::Witch,
-                    (_, false) => K::KnightMale,
-                    (_, true) => K::KnightFemale,
-                }
-            }
-            EntityRef::Creature(id) => {
-                let family = self
+            EntityRef::Player(_) => K::Ranger,
+            EntityRef::Creature(_) => {
+                match self
                     .content
                     .creature_template(CreatureTemplateId::new(record.appearance))?
-                    .family;
-                let f = female(id.get());
-                match family {
+                    .family
+                {
                     CreatureFamily::Wolf => K::Wolf,
                     CreatureFamily::Vermin => K::Rat,
                     CreatureFamily::Boar => K::Pig,
-                    CreatureFamily::Marauder if f => K::VikingFemale,
-                    CreatureFamily::Marauder => K::VikingMale,
-                    CreatureFamily::Mirefin if f => K::GoblinFemale,
-                    CreatureFamily::Mirefin => K::GoblinMale,
-                    CreatureFamily::Redbrand if f => K::PirateFemale,
-                    CreatureFamily::Redbrand => K::PirateMale,
+                    CreatureFamily::Marauder
+                    | CreatureFamily::Mirefin
+                    | CreatureFamily::Redbrand => {
+                        return None;
+                    }
                 }
             }
-            EntityRef::Npc(id) => {
-                let f = female(id.get());
-                match self.content.npc(id)?.role {
-                    NpcRole::Guard if f => K::SoldierFemale,
-                    NpcRole::Guard => K::SoldierMale,
-                    NpcRole::Vendor if f => K::WorkerFemale,
-                    NpcRole::Vendor => K::WorkerMale,
-                    NpcRole::SpiritHealer => K::Wizard,
-                    NpcRole::QuestGiver if f => K::CasualFemale,
-                    NpcRole::QuestGiver => K::CasualMale,
-                }
-            }
+            EntityRef::Npc(_) => return None,
         };
         Some(kind.asset())
     }
@@ -528,7 +497,7 @@ impl Presentation {
                     continue;
                 };
                 if let Some(unit) = units.get(&source)
-                    && let Some(asset) = self.imported_asset(source, &unit.record, &snapshot)
+                    && let Some(asset) = self.imported_asset(source, &unit.record)
                 {
                     self.playbacks
                         .entry(source)
@@ -577,7 +546,7 @@ impl Presentation {
                 EntityKind::Npc => "npc",
             };
             let id = format!("unit-{name}-{}", unit.record.id);
-            let imported = self.imported_asset(entity, &unit.record, &snapshot);
+            let imported = self.imported_asset(entity, &unit.record);
             let body = match entity {
                 _ if imported.is_some() => {
                     let asset = imported.expect("checked above");
