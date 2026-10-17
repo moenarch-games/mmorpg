@@ -24,7 +24,7 @@
     "@types/node": "26.6.3",
     "@types/three": "0.185.4",
     "bun-types": "1.4.2",
-    "coding-tooling": "github:moritzbrantner/coding-tooling#9520016793319fb0b003218277129fa464b5bde8",
+    "coding-tooling": "github:moritzbrantner/coding-tooling#f6b95f942117b37134e85fb1c912033a0fbce448",
     "typescript": "5.9.3",
     "undici-types": "8.9.0",
     "vite": "7.3.6"
