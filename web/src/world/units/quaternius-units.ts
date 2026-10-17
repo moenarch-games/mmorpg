@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { adaptImportedCharacterBundle } from "@moritzbrantner/three-d-renderer/imported-character";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EntityRef } from "../../entity-ref";
@@ -6,41 +7,31 @@ import type { UnitPlacement } from "../humanoid";
 import { ClipPlayback, QUATERNIUS_MODELS, type QuaterniusKind } from "./quaternius";
 
 /**
- * Animated Quaternius units (Atlas 6.3.6) as real three.js skinned meshes, posed by three's own
- * `GLTFLoader`, `SkeletonUtils.clone` and `AnimationMixer` and drawn through the renderer's
- * imported-roots path. Each GLB is fetched on first use and cloned per unit; until it has loaded
- * the caller keeps drawing the procedural model. Presentation only.
+ * Animated imported units as real three.js skinned meshes drawn through the renderer's
+ * imported-roots path. Players use asset-tooling's Ranger humanoid bundle (Atlas 6.3.7), loaded
+ * with 3d-lab's `adaptImportedCharacterBundle` and posed by its Rust runtime; the Quaternius CC0
+ * animals (Atlas 6.3.6) are GLBs posed by three's `GLTFLoader` and `AnimationMixer`. Each model
+ * loads on first use and is instantiated per unit; until it has loaded the caller keeps drawing
+ * the procedural model. Presentation only.
  */
-const URLS: Readonly<Record<QuaterniusKind, string>> = {
-  KnightMale: new URL("../../../../assets/quaternius/Knight_Male.glb", import.meta.url).href,
-  KnightFemale: new URL("../../../../assets/quaternius/Knight_Golden_Female.glb", import.meta.url).href,
-  Elf: new URL("../../../../assets/quaternius/Elf.glb", import.meta.url).href,
-  NinjaFemale: new URL("../../../../assets/quaternius/Ninja_Female.glb", import.meta.url).href,
-  Wizard: new URL("../../../../assets/quaternius/Wizard.glb", import.meta.url).href,
-  Witch: new URL("../../../../assets/quaternius/Witch.glb", import.meta.url).href,
-  VikingMale: new URL("../../../../assets/quaternius/Viking_Male.glb", import.meta.url).href,
-  VikingFemale: new URL("../../../../assets/quaternius/Viking_Female.glb", import.meta.url).href,
-  GoblinMale: new URL("../../../../assets/quaternius/Goblin_Male.glb", import.meta.url).href,
-  GoblinFemale: new URL("../../../../assets/quaternius/Goblin_Female.glb", import.meta.url).href,
-  PirateMale: new URL("../../../../assets/quaternius/Pirate_Male.glb", import.meta.url).href,
-  PirateFemale: new URL("../../../../assets/quaternius/Pirate_Female.glb", import.meta.url).href,
-  SoldierMale: new URL("../../../../assets/quaternius/Soldier_Male.glb", import.meta.url).href,
-  SoldierFemale: new URL("../../../../assets/quaternius/Soldier_Female.glb", import.meta.url).href,
-  WorkerMale: new URL("../../../../assets/quaternius/Worker_Male.glb", import.meta.url).href,
-  WorkerFemale: new URL("../../../../assets/quaternius/Worker_Female.glb", import.meta.url).href,
-  CasualMale: new URL("../../../../assets/quaternius/Casual_Male.glb", import.meta.url).href,
-  CasualFemale: new URL("../../../../assets/quaternius/Casual_Female.glb", import.meta.url).href,
+const ANIMAL_URLS: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> = {
   Wolf: new URL("../../../../assets/quaternius/Wolf.glb", import.meta.url).href,
   Rat: new URL("../../../../assets/quaternius/Rat.glb", import.meta.url).href,
   Pig: new URL("../../../../assets/quaternius/Pig.glb", import.meta.url).href,
 };
+/** The unpacked bundle `scripts/fetch-character-bundle.sh` places in `web/public`. */
+const RANGER_BUNDLE = `${import.meta.env.BASE_URL}characters/humanoid.ranger.male/`;
 
 /** Tint of a dead unit's materials, as native. */
 const DEAD_TINT = 0.6;
 
+/** One drawn model of an asset, posed by clip name and clip time. */
+type Posable = { model: THREE.Object3D; pose(clip: string, time: number): void; dispose(): void };
+
 type Asset = {
-  scene: THREE.Object3D;
-  clips: Map<string, THREE.AnimationClip>;
+  /** Clip durations in seconds by name. */
+  clips: Map<string, number>;
+  instantiate(): Posable;
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
   floor: number;
   height: number;
@@ -52,10 +43,10 @@ type Asset = {
 type Instance = {
   kind: QuaterniusKind;
   root: THREE.Group;
-  mixer: THREE.AnimationMixer;
+  posable: Posable;
   playback: ClipPlayback;
-  action: THREE.AnimationAction | null;
   clip: string;
+  time: number;
   materials: { material: THREE.MeshStandardMaterial; base: THREE.Color }[];
   dead: boolean | null;
   head: THREE.Object3D | null;
@@ -81,13 +72,10 @@ export type QuaterniusUnit = {
 
 const point = new THREE.Vector3();
 
-function measure(scene: THREE.Object3D, idle: THREE.AnimationClip | undefined): Pick<Asset, "floor" | "height" | "centre" | "head"> {
-  const probe = cloneSkinned(scene);
-  if (idle) {
-    const mixer = new THREE.AnimationMixer(probe);
-    mixer.clipAction(idle).play();
-    mixer.update(0);
-  }
+/** Rest bounds and head of a model posed at the start of its idle clip. */
+function measure(posable: Posable, idle: string): Pick<Asset, "floor" | "height" | "centre" | "head"> {
+  posable.pose(idle, 0);
+  const probe = posable.model;
   probe.updateMatrixWorld(true);
   const box = new THREE.Box3();
   const headBox = new THREE.Box3();
@@ -124,14 +112,59 @@ function measure(scene: THREE.Object3D, idle: THREE.AnimationClip | undefined): 
   return { floor: box.min.y, height: box.max.y - box.min.y, centre: [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2], head };
 }
 
-async function loadAsset(loader: GLTFLoader, kind: QuaterniusKind): Promise<Asset> {
-  const gltf = await loader.loadAsync(URLS[kind]);
-  const clips = new Map<string, THREE.AnimationClip>();
+async function loadAnimal(loader: GLTFLoader, kind: Exclude<QuaterniusKind, "Ranger">): Promise<Asset> {
+  const gltf = await loader.loadAsync(ANIMAL_URLS[kind]);
+  const sources = new Map<string, THREE.AnimationClip>();
   for (const clip of gltf.animations) {
     // Blender prefixes clips with their armature ("AnimalArmature|Walk").
-    clips.set(clip.name.split("|").pop() ?? clip.name, clip);
+    sources.set(clip.name.split("|").pop() ?? clip.name, clip);
   }
-  return { scene: gltf.scene, clips, ...measure(gltf.scene, clips.get(QUATERNIUS_MODELS[kind].clips.idle)) };
+  const instantiate = (): Posable => {
+    const model = cloneSkinned(gltf.scene);
+    const mixer = new THREE.AnimationMixer(model);
+    let current: { clip: string; action: THREE.AnimationAction } | null = null;
+    return {
+      model,
+      pose(clip, time) {
+        if (current?.clip !== clip) {
+          mixer.stopAllAction();
+          const source = sources.get(clip);
+          current = source ? { clip, action: mixer.clipAction(source).play() } : null;
+        }
+        if (current) {
+          // Hold a one-shot clip on its last frame rather than letting the loop wrap it to 0.
+          current.action.time = Math.min(time, Math.max(0, current.action.getClip().duration - 1e-4));
+          mixer.update(0);
+        }
+      },
+      dispose: () => mixer.stopAllAction(),
+    };
+  };
+  const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
+  const probe = instantiate();
+  return { clips, instantiate, ...measure(probe, QUATERNIUS_MODELS[kind].clips.idle) };
+}
+
+async function loadRanger(): Promise<Asset> {
+  const read = async (path: string) => {
+    const response = await fetch(new URL(path, new URL(RANGER_BUNDLE, window.location.href)));
+    if (!response.ok) {
+      throw new Error(`Ranger bundle file ${path} is missing (${response.status}); run scripts/fetch-character-bundle.sh.`);
+    }
+    return response.arrayBuffer();
+  };
+  const manifest: unknown = JSON.parse(new TextDecoder().decode(await read("manifest.json")));
+  const character = await adaptImportedCharacterBundle({ manifest, key: "humanoid.ranger.male", readResource: read });
+  const instantiate = (): Posable => {
+    const instance = character.createInstance();
+    // The runtime's clip clock holds a one-shot clip at its end like the animals.
+    return { model: instance.root, pose: (clip, time) => instance.seek(clip, time), dispose: () => instance.dispose() };
+  };
+  const clips = new Map(character.clips.map((clip) => [clip.name, clip.duration]));
+  const probe = instantiate();
+  const measured = measure(probe, QUATERNIUS_MODELS.Ranger.clips.idle);
+  probe.dispose();
+  return { clips, instantiate, ...measured };
 }
 
 export class QuaterniusUnits {
@@ -145,10 +178,10 @@ export class QuaterniusUnits {
     const state = this.#assets.get(kind);
     if (state === undefined) {
       this.#assets.set(kind, "loading");
-      loadAsset(this.#loader, kind).then(
+      (kind === "Ranger" ? loadRanger() : loadAnimal(this.#loader, kind)).then(
         (asset) => this.#assets.set(kind, asset),
         (error: unknown) => {
-          console.warn(`Quaternius model ${kind} failed to load; keeping the procedural model.`, error);
+          console.warn(`Unit model ${kind} failed to load; keeping the procedural model.`, error);
           this.#assets.set(kind, "failed");
         },
       );
@@ -181,7 +214,8 @@ export class QuaterniusUnits {
   }
 
   #create(unit: QuaterniusUnit, asset: Asset): Instance {
-    const model = cloneSkinned(asset.scene);
+    const posable = asset.instantiate();
+    const { model } = posable;
     const materials: Instance["materials"] = [];
     model.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) { return; }
@@ -200,8 +234,8 @@ export class QuaterniusUnits {
     root.name = `${unit.id}-model`;
     root.add(model);
     const instance: Instance = {
-      kind: unit.kind, root, mixer: new THREE.AnimationMixer(model), playback: new ClipPlayback(),
-      action: null, clip: "", materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity, cue: null,
+      kind: unit.kind, root, posable, playback: new ClipPlayback(),
+      clip: "", time: 0, materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity, cue: null,
     };
     this.#instances.set(unit.id, instance);
     this.#rootsChanged = true;
@@ -210,24 +244,16 @@ export class QuaterniusUnits {
 
   #pose(instance: Instance, asset: Asset, unit: QuaterniusUnit, seconds: number, deltaSeconds: number, animate: boolean): void {
     const clips = QUATERNIUS_MODELS[unit.kind].clips;
-    const duration = (name: string) => asset.clips.get(name)?.duration ?? 0;
+    const duration = (name: string) => asset.clips.get(name) ?? 0;
     const cue = animate && !unit.dead && unit.action && !unit.action.hold ? unit.action : null;
     if (cue && (!instance.cue || cue.progress < instance.cue.progress)) {
       instance.playback.attack(duration(clips.attack), seconds);
     }
     instance.cue = cue ? { progress: cue.progress } : null;
     const { clip, time } = instance.playback.advance(clips, duration, unit.speed, unit.dead, seconds, deltaSeconds, !animate);
-    if (clip !== instance.clip) {
-      instance.clip = clip;
-      instance.mixer.stopAllAction();
-      const source = asset.clips.get(clip);
-      instance.action = source ? instance.mixer.clipAction(source).play() : null;
-    }
-    if (instance.action) {
-      // Hold a one-shot clip on its last frame rather than letting the loop wrap it to 0.
-      instance.action.time = Math.min(time, Math.max(0, instance.action.getClip().duration - 1e-4));
-      instance.mixer.update(0);
-    }
+    instance.clip = clip;
+    instance.time = Math.min(time, Math.max(0, duration(clip) - 1e-4));
+    instance.posable.pose(clip, instance.time);
     if (instance.dead !== unit.dead) {
       instance.dead = unit.dead;
       for (const { material, base } of instance.materials) {
@@ -241,7 +267,7 @@ export class QuaterniusUnits {
   }
 
   #drop(id: string, instance: Instance): void {
-    instance.mixer.stopAllAction();
+    instance.posable.dispose();
     for (const { material } of instance.materials) { material.dispose(); }
     this.#instances.delete(id);
     this.#rootsChanged = true;
@@ -269,7 +295,7 @@ export class QuaterniusUnits {
     const head = instance.head ? instance.head.getWorldPosition(point).toArray().map(round) : null;
     const { position, rotation, scale } = instance.root;
     return {
-      clip: instance.clip, time: round(instance.action?.time ?? 0), dead: instance.dead === true,
+      clip: instance.clip, time: round(instance.time), dead: instance.dead === true,
       root: [position.x, position.y, position.z, rotation.y, scale.x].map(round),
       skeleton: extent.isEmpty() ? [] : [...extent.min.toArray(), ...extent.max.toArray()].map(round), head,
     };

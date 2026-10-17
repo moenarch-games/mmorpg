@@ -621,7 +621,6 @@ export class WorldView {
     const anchors = new Map<string, Anchor>();
     let self: { focus: Vec3; x: number; z: number; facing: number } | null = null;
     const imported: QuaterniusUnit[] = [];
-    const viewerClass = { id: projection.viewerId, classChoice: projection.viewer.classChoice };
     for (const entity of source.sample()) {
       const model = unitModel(entity);
       const placement = placeWithModel(model, entity, unitContext, scenery.reliefAt(entity.position[0], entity.position[2]));
@@ -631,7 +630,7 @@ export class WorldView {
       projected.push(projectedUnit(entity, placement, catalog));
       const locomotion = this.#animators.locomotion(entity, placement, unitsPerMetre, deltaSeconds, !animate);
       const deathProgress = this.#animators.deathProgress(entity, deltaSeconds, !animate);
-      const kind = quaterniusKind(entity, catalog, viewerClass);
+      const kind = quaterniusKind(entity, catalog);
       if (kind && this.#models.ready(kind)) {
         const ref = { kind: entity.kind, id: entity.entityId };
         const action = isSelf ? unitContext.viewerAction : unitContext.actionFor?.(ref);

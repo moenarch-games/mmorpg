@@ -10,7 +10,7 @@
         "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#7683fc7b8572b38124d3b99c3c274ae32ab24f19",
         "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#bcb5834545bcf92cf74d4fb80496f410dea3bcaf",
         "@moritzbrantner/settings-browser": "github:moritzbrantner/settings#18289aafa116010fd8dfe485aecff2cc749ceb4a",
-        "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#df52c324a5692d04d2016d8a29f5bc4368e4aac0",
+        "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#356bcc7b58e3739eccced9d03aeaec919fe42640",
         "react": "19.3.1",
         "react-dom": "19.3.1",
         "three": "0.185.1",
@@ -93,7 +93,7 @@
 
     "@moritzbrantner/settings-browser": ["@moritzbrantner/settings-browser@github:moritzbrantner/settings#18289aa", { "peerDependencies": { "@moritzbrantner/ui": ">=1.1.0", "react": ">=19.0.0" }, "optionalPeers": ["@moritzbrantner/ui", "react"] }, "moritzbrantner-settings-18289aa", "sha512-FBj8uv/oMFVw0Gxud3y1KLdzTqHH7HTAgjuonsFTuQ6y41LRu5G5zAYRLtHxfdSCeT4w28FHuPumKG0VYjujVg=="],
 
-    "@moritzbrantner/three-d-renderer": ["@moritzbrantner/three-d-renderer@github:moritzbrantner/3d-lab#df52c32", { "dependencies": { "three": "0.185.1" } }, "moritzbrantner-3d-lab-df52c32", "sha512-fMi0kGCbZMBUHP2LkJgMqfRcZ3XeSdJ9T3Mn29I1mpS6alUHT9Tt3gIeIuPnjfDpmMxu7v4t5sGRUEm6AkJ7fg=="],
+    "@moritzbrantner/three-d-renderer": ["@moritzbrantner/three-d-renderer@github:moritzbrantner/3d-lab#356bcc7", { "dependencies": { "three": "0.185.1" } }, "moritzbrantner-3d-lab-356bcc7", "sha512-zSvJqKyHnXHAIn3oFE4L4o0JpxZNAprKSwXv57wy93lk5rbOzV3kHY3fVi7AvDeP4ohXN12YQiMNSsYH6HIVOw=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 

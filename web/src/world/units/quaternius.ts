@@ -2,47 +2,23 @@ import type { ClassChoice, EntityState } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 
 /**
- * Which bundled Quaternius CC0 model (Atlas 6.3.6) presents a unit, its clip names and the
- * per-unit clip clock. Mirrors the native client's `presentation/skinned.rs` registry and
- * `imported_asset` mapping exactly; presentation only, never read by gameplay.
+ * Which imported model presents a unit, its clip names and the per-unit clip clock. Players
+ * use asset-tooling's Ranger humanoid (Universal Base Characters with the Ranger outfit,
+ * Atlas 6.3.7); wolves, vermin and boars use bundled Quaternius CC0 animals (Atlas 6.3.6);
+ * humanoid creatures and NPCs keep their procedural models. Mirrors the native client's
+ * `presentation/skinned.rs`; presentation only, never read by gameplay.
  */
-export type QuaterniusKind =
-  | "KnightMale" | "KnightFemale" | "Elf" | "NinjaFemale" | "Wizard" | "Witch"
-  | "VikingMale" | "VikingFemale" | "GoblinMale" | "GoblinFemale" | "PirateMale" | "PirateFemale"
-  | "SoldierMale" | "SoldierFemale" | "WorkerMale" | "WorkerFemale" | "CasualMale" | "CasualFemale"
-  | "Wolf" | "Rat" | "Pig";
+export type QuaterniusKind = "Ranger" | "Wolf" | "Rat" | "Pig";
 
 export type QuaterniusClips = { idle: string; walk: string; run: string; attack: string; death: string };
 
-const humanoid = (attack: string): QuaterniusClips => ({ idle: "Idle", walk: "Walk", run: "Run", attack, death: "Death" });
-const SLASH = humanoid("SwordSlash");
-const SHOOT = humanoid("Shoot_OneHanded");
-const PUNCH = humanoid("Punch");
-
-/** File under `assets/quaternius/` and clips of every model. */
-export const QUATERNIUS_MODELS: Readonly<Record<QuaterniusKind, { file: string; clips: QuaterniusClips }>> = {
-  KnightMale: { file: "Knight_Male.glb", clips: SLASH },
-  KnightFemale: { file: "Knight_Golden_Female.glb", clips: SLASH },
-  Elf: { file: "Elf.glb", clips: SHOOT },
-  NinjaFemale: { file: "Ninja_Female.glb", clips: SHOOT },
-  Wizard: { file: "Wizard.glb", clips: SHOOT },
-  Witch: { file: "Witch.glb", clips: SHOOT },
-  VikingMale: { file: "Viking_Male.glb", clips: SLASH },
-  VikingFemale: { file: "Viking_Female.glb", clips: SLASH },
-  GoblinMale: { file: "Goblin_Male.glb", clips: PUNCH },
-  GoblinFemale: { file: "Goblin_Female.glb", clips: PUNCH },
-  PirateMale: { file: "Pirate_Male.glb", clips: SLASH },
-  PirateFemale: { file: "Pirate_Female.glb", clips: SLASH },
-  SoldierMale: { file: "Soldier_Male.glb", clips: SLASH },
-  SoldierFemale: { file: "Soldier_Female.glb", clips: SLASH },
-  WorkerMale: { file: "Worker_Male.glb", clips: PUNCH },
-  WorkerFemale: { file: "Worker_Female.glb", clips: PUNCH },
-  CasualMale: { file: "Casual_Male.glb", clips: PUNCH },
-  CasualFemale: { file: "Casual_Female.glb", clips: PUNCH },
-  Wolf: { file: "Wolf.glb", clips: { idle: "Idle", walk: "Walk", run: "Gallop", attack: "Attack", death: "Death" } },
-  Rat: { file: "Rat.glb", clips: { idle: "Rat_Idle", walk: "Rat_Walk", run: "Rat_Run", attack: "Rat_Attack", death: "Rat_Death" } },
+/** The clips of every model. */
+export const QUATERNIUS_MODELS: Readonly<Record<QuaterniusKind, { clips: QuaterniusClips }>> = {
+  Ranger: { clips: { idle: "Idle_Loop", walk: "Walk_Loop", run: "Jog_Fwd_Loop", attack: "Sword_Attack", death: "Death01" } },
+  Wolf: { clips: { idle: "Idle", walk: "Walk", run: "Gallop", attack: "Attack", death: "Death" } },
+  Rat: { clips: { idle: "Rat_Idle", walk: "Rat_Walk", run: "Rat_Run", attack: "Rat_Attack", death: "Rat_Death" } },
   // The farm pig has no attack clip; its jump reads as a charge.
-  Pig: { file: "Pig.glb", clips: { idle: "Idle", walk: "Walk", run: "Run", attack: "Jump", death: "Death" } },
+  Pig: { clips: { idle: "Idle", walk: "Walk", run: "Run", attack: "Jump", death: "Death" } },
 };
 
 const CLASS_ORDER = ["warden", "ranger", "arcanist"] as const;
@@ -55,49 +31,27 @@ export function classFromAppearance(code: number): ClassChoice | null {
 }
 
 /**
- * The model presenting a projected unit; null when its template or NPC is unknown (the
- * procedural fallback stays). The viewer's own class sheet wins over its projected appearance.
+ * The model presenting a projected unit; null when it keeps its procedural model. Every player
+ * is the Ranger humanoid while it is the only character bundle (Atlas 6.3.7 pauses the
+ * per-class and per-sex look).
  */
 export function quaterniusKind(
   entity: Pick<EntityState, "kind" | "entityId" | "appearance">,
   catalog: ContentCatalog,
-  viewer: { id: number; classChoice: ClassChoice | null },
 ): QuaterniusKind | null {
-  const female = entity.entityId % 2 === 1;
   switch (entity.kind) {
-    case "player": {
-      const choice = (entity.entityId === viewer.id ? viewer.classChoice : null) ?? classFromAppearance(entity.appearance);
-      const isFemale = choice?.sex === "female";
-      switch (choice?.classId) {
-        case "ranger": return isFemale ? "NinjaFemale" : "Elf";
-        case "arcanist": return isFemale ? "Witch" : "Wizard";
-        default: return isFemale ? "KnightFemale" : "KnightMale";
-      }
-    }
+    case "player":
+      return "Ranger";
     case "creature": {
-      const family = catalog.creatureTemplates.get(entity.appearance)?.family;
-      switch (family) {
-        case undefined: return null;
+      switch (catalog.creatureTemplates.get(entity.appearance)?.family) {
         case "wolf": return "Wolf";
         case "vermin": return "Rat";
         case "boar": return "Pig";
-        case "marauder": return female ? "VikingFemale" : "VikingMale";
-        case "mirefin": return female ? "GoblinFemale" : "GoblinMale";
-        case "redbrand": return female ? "PirateFemale" : "PirateMale";
+        default: return null;
       }
-      return null;
     }
-    case "npc": {
-      const role = catalog.npcs.get(entity.entityId)?.role;
-      switch (role) {
-        case undefined: return null;
-        case "guard": return female ? "SoldierFemale" : "SoldierMale";
-        case "vendor": return female ? "WorkerFemale" : "WorkerMale";
-        case "spirit_healer": return "Wizard";
-        case "quest_giver": return female ? "CasualFemale" : "CasualMale";
-      }
+    case "npc":
       return null;
-    }
   }
 }
 
