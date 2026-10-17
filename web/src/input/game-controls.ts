@@ -26,6 +26,7 @@ export const GAME_ACTIONS = [
   "ability.slot2",
   "ability.slot3",
   "ability.slot4",
+  "combat.directedStrike",
   "combat.cancelCast",
   "player.releaseSpirit",
   "ui.toggleBags",
@@ -134,6 +135,8 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ability.slot2", "Ability 2", "gameplay", [key("Digit2"), button(15)]),
     action("ability.slot3", "Ability 3", "gameplay", [key("Digit3"), button(13)]),
     action("ability.slot4", "Ability 4", "gameplay", [key("Digit4"), button(14)]),
+    // Hold, aim with the pointer, release (#154): the Warden's directed Heroic Strike.
+    action("combat.directedStrike", "Directed Heroic Strike (hold, aim, release)", "gameplay", [key("KeyG")]),
     action("combat.cancelCast", "Cancel cast", "casting", [key("Escape"), button(1)]),
     action("player.releaseSpirit", "Release spirit", "gameplay", [key("KeyR"), button(3)]),
     action("ui.toggleBags", "Toggle bags", "gameplay", [key("KeyB"), button(8)]),
@@ -166,9 +169,19 @@ export type GameControlsTargets = {
   frameScheduler?: FrameScheduler | undefined;
 };
 
+/** Held actions report their whole lifecycle instead of a one-shot press. */
+export const HELD_ACTIONS = ["combat.directedStrike"] as const;
+export type HeldAction = (typeof HELD_ACTIONS)[number];
+/**
+ * `release` is a deliberate key release; `cancel` is any retirement (blur, hidden page, Settings,
+ * a profile or screen change) and must never act.
+ */
+export type HoldPhase = "press" | "release" | "cancel";
+
 export type GameControlsOptions = {
   screen: () => ControlScreen;
   onAction: (action: GameAction) => void;
+  onHold?: (action: HeldAction, phase: HoldPhase) => void;
 };
 
 /**
@@ -187,6 +200,14 @@ export class GameControls {
       consumePolicy: "matched",
       onDispatch: (dispatch) => {
         this.#state.apply(dispatch);
+        if (isHeldAction(dispatch.action)) {
+          if (dispatch.phase === "press") {
+            options.onHold?.(dispatch.action, "press");
+          } else if (dispatch.phase === "release") {
+            options.onHold?.(dispatch.action, dispatch.reason === "keyUp" ? "release" : "cancel");
+          }
+          return;
+        }
         if (dispatch.phase === "press" && isGameAction(dispatch.action)) {
           options.onAction(dispatch.action);
         }
@@ -252,6 +273,10 @@ export class GameControls {
       ),
     };
   }
+}
+
+function isHeldAction(action: string): action is HeldAction {
+  return (HELD_ACTIONS as readonly string[]).includes(action);
 }
 
 function isGameAction(action: string): action is GameAction {

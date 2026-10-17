@@ -129,6 +129,16 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
       return `${capitalise(name(event.source))} ${isViewer(event.source) ? "begin" : "begins"} ${abilityName(event.ability, catalog)}.`;
     case "ability-used":
       return `${capitalise(name(event.source))} ${isViewer(event.source) ? "use" : "uses"} ${abilityName(event.ability, catalog)}.`;
+    case "strike-swept": {
+      const aim = `${event.aim.height}-${event.aim.side}`;
+      const ability = abilityName(event.ability, catalog);
+      if (!isViewer(event.source)) {
+        return `${capitalise(name(event.source))} sweeps ${ability}.`;
+      }
+      return event.target === null
+        ? `Your ${aim} ${ability} cuts only air.`
+        : `Your ${aim} ${ability} strikes ${name(event.target)}.`;
+    }
     case "healed":
       return `${abilityName(event.ability, catalog)} heals ${name(event.target)} for ${event.amount}.`;
     case "aura-applied":

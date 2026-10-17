@@ -1,10 +1,11 @@
-import { findEntity, type AuraState, type ResourceKind, type ZoneSnapshot } from "../../replication";
+import { findEntity, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type ResourceKind, type StrikeAim, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { abilitySlots } from "./abilities";
 import { auraPolarity, glyphOf } from "./ability-presentation";
 import { cooldownSeconds, resourceName, slotState, sweepDegrees, targetDistanceUnits, tooltipText, type SlotState } from "./ability-state";
 import { auraLabel, auraTimer, sortAuras } from "./aura-display";
 import { castBarView } from "./cast-bar";
+import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
 import { COMBAT_TEXT_MS, INTERRUPT_FLASH_MS, combatTexts, viewerInterrupted } from "./combat-text";
 import { unitName } from "./combat-hud";
 
@@ -68,6 +69,8 @@ function glyphElement(glyph: string, accent: string): SVGSVGElement {
 type SlotElements = {
   button: HTMLButtonElement;
   keybind: HTMLElement;
+  /** The directed-strike binding hint on the Heroic Strike slot (Atlas 5.2.57). */
+  alt: HTMLElement | null;
   timer: HTMLElement;
   unlock: HTMLElement;
 };
@@ -93,6 +96,10 @@ export class ClassHud {
   #tick = -1n;
   #catalog: ContentCatalog | null = null;
   #latest: ZoneSnapshot | null = null;
+  /** Labels of the directed-strike action's working bindings; empty when unbound. */
+  #directedLabels: readonly string[] = [];
+  #tooltipIndex: number | null = null;
+  readonly #aim: { root: HTMLElement; cells: HTMLElement[] };
 
   constructor(root: HTMLElement, callbacks: ClassHudCallbacks) {
     this.#callbacks = callbacks;
@@ -110,6 +117,20 @@ export class ClassHud {
       cast: part(root, "target-cast"), castFill: part(root, "target-cast-fill"), castName: part(root, "target-cast-name"),
     };
     this.#text = part(root, "combat-text");
+    // The held directed-strike aim: a 3 × 3 grid, high row first, left column first.
+    const aimRoot = document.createElement("div");
+    aimRoot.className = "strike-aim";
+    aimRoot.dataset.part = "strike-aim";
+    aimRoot.setAttribute("aria-hidden", "true");
+    aimRoot.hidden = true;
+    const cells = [...STRIKE_HEIGHTS].reverse().flatMap((height) => STRIKE_SIDES.map((side) => {
+      const cell = document.createElement("span");
+      cell.dataset.aim = `${height}-${side}`;
+      return cell;
+    }));
+    aimRoot.append(...cells);
+    root.append(aimRoot);
+    this.#aim = { root: aimRoot, cells };
     // The HUD itself ignores pointers, so a tap anywhere outside the action bar (the world canvas,
     // other controls) dismisses a touch tooltip through the document.
     root.ownerDocument.addEventListener("pointerdown", (event) => {
@@ -117,6 +138,47 @@ export class ClassHud {
         this.#hideTooltip();
       }
     }, true);
+  }
+
+  /**
+   * The directed-strike action's current working bindings (from `input-bindings`); the Heroic
+   * Strike slot's hint and tooltip show them, or say the action is unbound.
+   */
+  setDirectedBinding(labels: readonly string[]): void {
+    if (labels.join("\u0000") === this.#directedLabels.join("\u0000")) {
+      return;
+    }
+    this.#directedLabels = [...labels];
+    for (const slot of this.#slots) {
+      this.#paintDirectedHint(slot);
+    }
+    if (this.#tooltipIndex !== null) {
+      this.#tooltipFor(this.#tooltipIndex);
+    }
+  }
+
+  /** Shows the held aim, or hides it with null. */
+  showStrikeAim(aim: StrikeAim | null): void {
+    const key = aim ? `${aim.height}-${aim.side}` : null;
+    this.#aim.root.hidden = key === null;
+    for (const cell of this.#aim.cells) {
+      setData(cell, "on", cell.dataset.aim === key ? "true" : null);
+    }
+  }
+
+  #paintDirectedHint(slot: SlotElements): void {
+    const index = this.#slots.indexOf(slot);
+    const name = this.#catalog?.abilities.get(Number(slot.button.dataset.ability))?.name ?? "Ability";
+    const directed = slot.alt === null
+      ? ""
+      : this.#directedLabels.length > 0
+        ? `; hold ${this.#directedLabels[0]} and aim to strike directed`
+        : "; directed strike unbound";
+    slot.button.setAttribute("aria-label", `${name} (key ${KEYBIND_LABELS[index] ?? ""}${directed})`);
+    if (slot.alt) {
+      setText(slot.alt, this.#directedLabels[0] ?? "");
+      slot.alt.hidden = this.#directedLabels.length === 0;
+    }
   }
 
   /** Clears everything for a new session. */
@@ -210,6 +272,13 @@ export class ClassHud {
       const unlock = document.createElement("span");
       unlock.className = "slot-unlock";
       button.append(icon, sweep, keybind, timer, unlock);
+      let alt: HTMLElement | null = null;
+      if (id === HEROIC_STRIKE_ABILITY) {
+        alt = document.createElement("kbd");
+        alt.className = "slot-alt";
+        alt.title = "Directed Heroic Strike: hold, aim with the pointer, release";
+        button.append(alt);
+      }
       // A pressed slot must not take focus: Space and Enter would then activate it instead of jumping.
       button.addEventListener("mousedown", (event) => event.preventDefault());
       button.addEventListener("click", () => {
@@ -265,9 +334,12 @@ export class ClassHud {
           }
         });
       }
-      return { button, keybind, timer, unlock };
+      return { button, keybind, timer, unlock, alt };
     });
     this.#bar.replaceChildren(...this.#slots.map((slot) => slot.button));
+    for (const slot of this.#slots) {
+      this.#paintDirectedHint(slot);
+    }
   }
 
   #paintSlot(slot: SlotElements, state: SlotState): void {
@@ -308,6 +380,16 @@ export class ClassHud {
       description.textContent = tip.description;
       tooltip.append(description);
     }
+    if (id === HEROIC_STRIKE_ABILITY) {
+      // One ability, two inputs: the directed mode shares this slot's Rage, cooldowns and unlock.
+      const directed = document.createElement("span");
+      directed.className = "tooltip-directed";
+      const key = this.#directedLabels[0];
+      directed.textContent = key
+        ? `Directed: hold ${key}, move the pointer left/right and up (high) or down (low), release to strike. Same Rage and cooldowns.`
+        : "Directed strike: unbound. Assign it in Settings › Controls.";
+      tooltip.append(directed);
+    }
     if (tip.note) {
       const note = document.createElement("em");
       note.textContent = tip.note;
@@ -324,10 +406,12 @@ export class ClassHud {
   }
 
   #showTooltip(index: number): void {
+    this.#tooltipIndex = index;
     this.#tooltipFor(index);
   }
 
   #hideTooltip(): void {
+    this.#tooltipIndex = null;
     this.#tooltip.hidden = true;
   }
 
