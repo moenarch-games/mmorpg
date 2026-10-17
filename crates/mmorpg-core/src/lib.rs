@@ -16,6 +16,7 @@ mod character;
 mod chat;
 mod class;
 mod combat;
+mod combo;
 mod content;
 mod corpse_loot;
 mod creature;
@@ -54,6 +55,7 @@ pub use chat::{
     MAX_CHAT_PER_TICK, SAY_RANGE_UNITS, YELL_RANGE_UNITS,
 };
 pub use class::{ClassChoice, PlayerClass, ResourceKind, Sex};
+pub use combo::{COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboOpening, ComboPhase};
 pub use content::greyhaven_vale::{self, greyhaven_vale_definition};
 pub use content::{
     CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
@@ -121,7 +123,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 19;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 20;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its

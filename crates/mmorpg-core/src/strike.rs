@@ -151,7 +151,8 @@ impl ZoneSimulation {
         aim: StrikeAim,
         now: u64,
     ) -> Result<crate::casting::Refusal, ZoneError> {
-        let ability = match self.ready_ability(player_id, ability, true) {
+        self.update_player(player_id, |player| player.combo = None);
+        let ability = match self.ready_ability(player_id, ability, true, false) {
             None => return Ok(None),
             Some(Err(code)) => return Ok(Some((code, None))),
             Some(Ok(ability)) => ability,
@@ -178,9 +179,27 @@ impl ZoneSimulation {
         if let (Some(creature_id), AbilityEffect::WeaponStrike { .. }) = (victim, ability.effect) {
             let amount = self.weapon_strike_amount(player_id, ability.effect);
             let amount = self.stance_damage(player_id, target, amount)?;
+            let before = self.creature_health(creature_id);
             self.player_damages_creature(player_id, creature_id, amount, false, now)?;
+            // Only positive health damage after absorbs opens the combo (#157).
+            if ability.id == crate::ability::ids::HEROIC_STRIKE
+                && self.creature_health(creature_id) < before
+            {
+                self.update_player(player_id, |player| {
+                    player.combo = Some(crate::ComboOpening {
+                        target: creature_id,
+                        elapsed: 0,
+                    });
+                });
+            }
         }
         Ok(None)
+    }
+
+    fn creature_health(&self, creature_id: CreatureId) -> u32 {
+        self.creatures
+            .get(&creature_id)
+            .map_or(0, |creature| creature.health)
     }
 
     /// The living creature a sweep from the player's body covers: nearest

@@ -41,10 +41,10 @@ impl ZoneSimulation {
             // Warden melee waits out a landing in the queue (#155).
             let mut waiting = Vec::new();
             for intent in intents {
-                let waits = self
-                    .players
-                    .get(&player_id)
-                    .is_some_and(|player| crate::stance::waits_for_landing(player, &intent));
+                let waits = self.players.get(&player_id).is_some_and(|player| {
+                    crate::stance::waits_for_landing(player, &intent)
+                        || crate::combo::waits_for_window(player, &intent)
+                });
                 if waits {
                     waiting.push(intent);
                 } else {
