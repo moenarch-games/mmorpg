@@ -1,0 +1,17 @@
+[package]
+name = "mmorpg-characters"
+description = "Durable character store: versioned records under exclusive fenced zone leases"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Storage only: no game-server, tokio or presentation dependency, so the
+# browser's local host can use the same store over its own backend.
+[dependencies]
+mmorpg-core.workspace = true
+mmorpg-protocol.workspace = true
+
+[lints]
+workspace = true

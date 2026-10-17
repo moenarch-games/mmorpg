@@ -10,10 +10,14 @@ import type { SceneryProvider } from "./scenery";
 export type LinkState = "connected" | "reconnecting";
 
 /** The class and sex a new player chooses on entry; the zone takes the choice once. */
-export type JoinCharacter = { classId: "warden" | "ranger" | "arcanist"; sex: "female" | "male" };
+/**
+ * The character to enter as. `id` names the durable character; a local zone
+ * leases and resumes it, while an online zone host does not read it yet.
+ */
+export type JoinCharacter = { id: string; classId: "warden" | "ranger" | "arcanist"; sex: "female" | "male" };
 
 /** The default entry character: a male Warden, like the native client. */
-export const DEFAULT_JOIN_CHARACTER: JoinCharacter = { classId: "warden", sex: "male" };
+export const DEFAULT_JOIN_CHARACTER: JoinCharacter = { id: "default-warden", classId: "warden", sex: "male" };
 
 /** Wire values of a class choice (0 Warden, 1 Ranger, 2 Arcanist; 0 female, 1 male). */
 export function classChoiceCodes(character: JoinCharacter): { classId: number; sex: number } {

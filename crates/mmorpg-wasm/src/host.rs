@@ -11,8 +11,10 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
+use mmorpg_characters::{CharacterLease, CharacterStore, EntryBackend, LeaseHolder, StoreError};
 use mmorpg_core::{
-    PlayerId, ZoneContent, ZoneDefinition, ZoneError, ZoneId, ZoneSimulation, greyhaven_vale,
+    CharacterId, ClassChoice, PlayerId, ZoneContent, ZoneDefinition, ZoneError, ZoneId,
+    ZoneSimulation, greyhaven_vale,
 };
 use mmorpg_protocol::{ProtocolError, decode_command, pack_snapshot};
 
@@ -45,6 +47,10 @@ pub enum LocalZoneError {
     Zone(ZoneError),
     /// Player IDs are never reused, and all have been issued.
     PlayerIdsExhausted,
+    /// The character store refused or failed; see [`StoreError`].
+    Store(StoreError),
+    /// The player does not hold a character lease.
+    NoCharacter(PlayerId),
 }
 
 impl fmt::Display for LocalZoneError {
@@ -57,6 +63,10 @@ impl fmt::Display for LocalZoneError {
             Self::Command(error) => write!(formatter, "malformed command: {error}"),
             Self::Zone(error) => write!(formatter, "zone error: {error}"),
             Self::PlayerIdsExhausted => formatter.write_str("local player IDs are exhausted"),
+            Self::Store(error) => error.fmt(formatter),
+            Self::NoCharacter(player_id) => {
+                write!(formatter, "player {player_id} plays no stored character")
+            }
         }
     }
 }
@@ -76,6 +86,8 @@ pub struct LocalZoneHost {
     zone: ZoneSimulation,
     next_player_id: PlayerId,
     last_sequences: BTreeMap<PlayerId, u32>,
+    /// The character lease each stored character's player holds.
+    characters: BTreeMap<PlayerId, CharacterLease>,
 }
 
 impl LocalZoneHost {
@@ -86,6 +98,7 @@ impl LocalZoneHost {
             zone,
             next_player_id: 1,
             last_sequences: BTreeMap::new(),
+            characters: BTreeMap::new(),
         })
     }
 
@@ -134,10 +147,104 @@ impl LocalZoneHost {
         Ok(player_id)
     }
 
-    /// Removes the player's unit from the zone immediately.
+    /// Removes the player's unit from the zone immediately. A stored
+    /// character's lease stays with its last commit; see [`Self::exit`].
     pub fn leave(&mut self, player_id: PlayerId) -> bool {
         self.last_sequences.remove(&player_id);
+        self.characters.remove(&player_id);
         self.zone.remove_player(player_id)
+    }
+
+    /// Spawns the stored character `character_id` as a new player, playing
+    /// the zone role of the character store's contract: it acquires the
+    /// character's lease as `holder`, then admits the committed record, or
+    /// creates the character with `class` and commits it at once when it has
+    /// never been stored. The player's commands start at sequence 1.
+    pub fn enter<B: EntryBackend>(
+        &mut self,
+        store: &mut CharacterStore<B>,
+        character_id: CharacterId,
+        class: ClassChoice,
+        holder: LeaseHolder,
+    ) -> Result<PlayerId, LocalZoneError> {
+        let player_id = self.next_player_id;
+        let next = player_id
+            .checked_add(1)
+            .ok_or(LocalZoneError::PlayerIdsExhausted)?;
+        let acquired = store
+            .acquire(&character_id, holder)
+            .map_err(LocalZoneError::Store)?;
+        let admitted = match &acquired.record {
+            Some(record) => self.zone.admit_character(player_id, record),
+            None => self.zone.create_character(player_id, class),
+        }
+        .map_err(LocalZoneError::Zone)
+        .and_then(|()| {
+            if acquired.record.is_some() {
+                return Ok(());
+            }
+            let created = self
+                .zone
+                .capture_character(player_id, character_id)
+                .map_err(LocalZoneError::Zone)?;
+            store
+                .commit(&acquired.lease, &created)
+                .map(drop)
+                .map_err(LocalZoneError::Store)
+        });
+        if let Err(error) = admitted {
+            self.zone.remove_player(player_id);
+            // The refusal stands even if handing the lease back fails too.
+            let _ = store.release(&acquired.lease, None);
+            return Err(error);
+        }
+        self.next_player_id = next;
+        self.last_sequences.insert(player_id, 0);
+        self.characters.insert(player_id, acquired.lease);
+        Ok(player_id)
+    }
+
+    /// Commits the stored character's current record; returns its revision.
+    pub fn save<B: EntryBackend>(
+        &mut self,
+        store: &mut CharacterStore<B>,
+        player_id: PlayerId,
+    ) -> Result<u64, LocalZoneError> {
+        let lease = self
+            .characters
+            .get(&player_id)
+            .ok_or(LocalZoneError::NoCharacter(player_id))?;
+        let record = self
+            .zone
+            .capture_character(player_id, lease.character_id.clone())
+            .map_err(LocalZoneError::Zone)?;
+        store.commit(lease, &record).map_err(LocalZoneError::Store)
+    }
+
+    /// Commits the stored character, returns it to the store and removes
+    /// its unit. The unit is removed even when the store refuses, so a
+    /// fenced zone never keeps playing the character.
+    pub fn exit<B: EntryBackend>(
+        &mut self,
+        store: &mut CharacterStore<B>,
+        player_id: PlayerId,
+    ) -> Result<u64, LocalZoneError> {
+        let lease = self
+            .characters
+            .get(&player_id)
+            .cloned()
+            .ok_or(LocalZoneError::NoCharacter(player_id))?;
+        let released = self
+            .zone
+            .capture_character(player_id, lease.character_id.clone())
+            .map_err(LocalZoneError::Zone)
+            .and_then(|record| {
+                store
+                    .release(&lease, Some(&record))
+                    .map_err(LocalZoneError::Store)
+            });
+        self.leave(player_id);
+        released
     }
 
     /// Checks follow `MatchRuntime::submit_command`: sequence 0 and unknown

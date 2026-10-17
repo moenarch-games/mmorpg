@@ -1613,6 +1613,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmorpg-characters"
+version = "0.1.0"
+dependencies = [
+ "mmorpg-core",
+ "mmorpg-protocol",
+]
+
+[[package]]
 name = "mmorpg-client"
 version = "0.1.0"
 dependencies = [
@@ -1701,6 +1709,7 @@ name = "mmorpg-wasm"
 version = "0.1.0"
 dependencies = [
  "game-server",
+ "mmorpg-characters",
  "mmorpg-core",
  "mmorpg-game-server",
  "mmorpg-protocol",

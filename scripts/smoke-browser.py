@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "artifacts" / "browser"
 ROSTER_KEY = "mmorpg.offline-roster.v1"
 # The retired offline checkpoint key; nothing may write it any more.
+CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
 LEGACY_CHECKPOINT_PREFIX = "mmorpg.offline-demo.v1."
 
 
@@ -115,15 +116,16 @@ class BrowserAcceptance(unittest.TestCase):
     def enter_button(self):
         return self.page.get_by_role("button", name=re.compile("^Enter World"))
 
-    def enter_world(self, ticking=True):
-        """Enters the world. The class choice resolves in the zone's first tick,
-        so the resource check needs a ticking source (tests that pause the
-        source check it after their own ticks)."""
+    def enter_world(self, ticking=True, fresh=True):
+        """Enters the world. A fresh character starts at level 1 without XP; a
+        returning one (`fresh=False`) resumes its stored progress. Tests that
+        pause the source check the class resource after their own ticks."""
         self.enter_button().click()
         expect(self.page.locator("#character-select")).to_be_hidden()
         expect(self.page.locator(".hud")).to_be_visible()
-        expect(self.page.get_by_role("progressbar", name="Level 1 · 0 / 100 XP")).to_be_visible()
-        self.assertEqual(self.page.locator("#experience-bar").evaluate("bar => [bar.max, bar.value]"), [100, 0])
+        if fresh:
+            expect(self.page.get_by_role("progressbar", name="Level 1 · 0 / 100 XP")).to_be_visible()
+            self.assertEqual(self.page.locator("#experience-bar").evaluate("bar => [bar.max, bar.value]"), [100, 0])
         expect(self.page.locator("#progression-feedback")).to_have_text("")
         if ticking:
             self.expect_class_resource()
@@ -447,7 +449,6 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertNotRegex(self.page.locator("body").text_content(), re.compile(r"saved (facing|position)", re.IGNORECASE),
                             "No text may claim world state is saved; the demo cannot persist it")
         self.page.locator('[data-hat-style="ironcrest-helm"]').click()
-        writes = self.page.evaluate("window.__calls.writes")
         self.enter_world()
         expect(self.page.locator("#area-name")).to_have_text("Greyhaven Outpost")
         expect(self.page.locator("#objective")).to_contain_text("No active quests")
@@ -463,6 +464,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.keyboard.up("KeyW")
         self.frames(4)
         moved = self.world_view()
+
+
         self.assertNotEqual(moved, spawn, "Holding W must move the character and its follow camera")
         self.page.screenshot(path=str(ARTIFACTS / "world-moved.png"))
 
@@ -484,15 +487,18 @@ class BrowserAcceptance(unittest.TestCase):
         self.frames(4)
         self.assertNotEqual(self.world_view(), moved, "Orbit and zoom must change the view")
         self.page.screenshot(path=str(ARTIFACTS / "world-orbit.png"))
-        self.assertEqual(self.page.evaluate("window.__calls.writes"), writes, "Playing never writes browser storage")
 
-        # Leaving removes the unit from the local zone; re-entry spawns a fresh character at the spawn.
+        # Leaving commits and releases the durable character; re-entry resumes it where it left.
         self.page.get_by_role("button", name="Characters", exact=True).click()
         expect(self.page.locator("#character-select")).to_be_visible()
+        self.assertEqual(self.page.evaluate("prefix => Object.keys(localStorage).filter(key => key.startsWith(prefix)).length",
+                                            CHARACTER_ENTRY_PREFIX), 1, "Leaving stores the played character")
         expect(self.enter_button()).to_be_enabled()
         self.enter_world()
-        self.assertTrue(self.wait_for_view(spawn, timeout_frames=20),
-                        "Re-entering must show a new character alone at the spawn with a reset camera")
+
+        self.page.screenshot(path=str(ARTIFACTS / "world-reentered.png"))
+        self.assertFalse(self.wait_for_view(spawn, timeout_frames=20),
+                         "Re-entering must resume the character where it left, not at the spawn")
         self.page.locator("#world").focus()
         self.page.keyboard.press("Escape")
         expect(self.page.locator("#character-select")).to_be_visible()
@@ -965,9 +971,9 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertEqual(self.page.evaluate("window.__lootLatest().events.some(e => e.kind === 'error' && e.code === 'empty-loot')"), True)
         self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 2)
         self.page.get_by_role("button", name="Characters", exact=True).click()
-        # The source is still paused: the new player's class choice waits for a tick.
-        self.enter_world(ticking=False)
-        expect(self.page.locator("#copper-status")).to_have_text("Copper: 0")
+        # The stored character returns with its looted copper and a closed, empty loot window.
+        self.enter_world(ticking=False, fresh=False)
+        expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
         expect(panel).to_be_hidden()
         expect(self.page.locator("#loot-feedback")).to_have_text("")
 
@@ -990,7 +996,7 @@ class BrowserAcceptance(unittest.TestCase):
         expect(rewards).to_have_text("2 copper · Torn Fur × 2")
         expect(self.page.locator("#copper-status")).to_have_text("Copper: 0")
         expect(claim).to_be_enabled()
-        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 0)
+        self.assertEqual(self.page.evaluate("window.__lootLatest().viewer.copper"), 2)
         for width, height in [(390,844),(640,360)]:
             self.page.set_viewport_size({"width":width,"height":height})
             box = panel.bounding_box()
@@ -1012,13 +1018,13 @@ class BrowserAcceptance(unittest.TestCase):
           window.__lootSource.latestProjection = window.__lootLatest;
         }""")
         self.page.get_by_role("button", name="Characters", exact=True).click()
-        # Still paused: the class choice of this third entry waits for a tick.
-        self.enter_world(ticking=False)
-        expect(self.page.locator("#copper-status")).to_have_text("Copper: 0")
+        # The third entry also resumes the stored character, never the fixture.
+        self.enter_world(ticking=False, fresh=False)
+        expect(self.page.locator("#copper-status")).to_have_text("Copper: 2")
         expect(rewards).not_to_contain_text("Torn Fur")
         expect(self.page.locator("#loot-feedback")).to_have_text("")
 
-    def test_projected_bags_split_merge_refusal_and_session_reset(self):
+    def test_projected_bags_split_merge_refusal_and_resume(self):
         self.open("?debug")
         self.enter_world()
         self.page.keyboard.press("b")
@@ -1061,11 +1067,12 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.get_by_role("button", name="Close bags").click()
         expect(panel).to_be_hidden()
         self.page.get_by_role("button", name="Characters", exact=True).click()
+        # Re-entry resumes the stored bags.
         self.enter_world()
         self.page.get_by_role("button", name="Bags (B)", exact=True).click()
         expect(slots.nth(0)).to_have_text("Slot 1 · Torn Fur × 3")
-        expect(slots.nth(1)).to_have_text("Slot 2 · Worn Dagger × 1")
-        expect(slots.nth(14)).to_have_text("Slot 15 · Empty")
+        expect(slots.nth(1)).to_have_text("Slot 2 · Empty")
+        expect(slots.nth(14)).to_have_text("Slot 15 · Worn Dagger × 1")
         expect(self.page.locator("#bag-feedback")).to_have_text("")
         self.page.get_by_role("button", name="Close bags").focus()
         self.page.keyboard.press("Escape")

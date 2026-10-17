@@ -704,7 +704,7 @@ impl ZoneSimulation {
             .position())
     }
 
-    fn available_spawn_slot(&self) -> Option<u16> {
+    pub(crate) fn available_spawn_slot(&self) -> Option<u16> {
         (0..MAX_PLAYERS_PER_ZONE)
             .find(|candidate| {
                 self.players
@@ -728,6 +728,18 @@ impl ZoneSimulation {
 
 pub(crate) const fn vector(value: [i32; 3]) -> Vec3i {
     Vec3i::new(value[0], value[1], value[2])
+}
+
+/// Whether a body centre lies strictly inside the world-limit slabs, with
+/// room for a player body.
+pub(crate) fn within_world_limits(position: Vec3i) -> bool {
+    [
+        (position.x, PLAYER_HALF_EXTENTS_UNITS[0]),
+        (position.y, PLAYER_HALF_EXTENTS_UNITS[1]),
+        (position.z, PLAYER_HALF_EXTENTS_UNITS[2]),
+    ]
+    .into_iter()
+    .all(|(component, half)| component.abs() <= MAX_CONTENT_COORDINATE_UNITS - half)
 }
 
 /// Six fixed slabs whose inner faces close the cube `±MAX_CONTENT_COORDINATE_UNITS`.

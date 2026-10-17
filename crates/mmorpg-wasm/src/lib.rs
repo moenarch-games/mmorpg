@@ -6,7 +6,9 @@
 //! `mmorpg-protocol` command bytes with increasing sequences, advances fixed
 //! 30 Hz ticks, and returns only encoded player-scoped projections, which the
 //! browser decodes with the same TypeScript decoder a network source uses.
-//! There is no fencing, lease, handoff, persistence or shared world here.
+//! There is no handoff or shared world here. Characters persist through the
+//! same `mmorpg-characters` record and lease contract as zone hosts, over
+//! the page's [`CharacterEntries`] (the browser keeps them in `localStorage`).
 //!
 //! This crate is a thin adapter: gameplay rules live in `mmorpg-core`, wire
 //! formats in `mmorpg-protocol`. The static scenery export lives in
@@ -25,9 +27,67 @@ pub mod catalog;
 pub mod host;
 pub mod scenery;
 
-use wasm_bindgen::prelude::{JsError, wasm_bindgen};
+use mmorpg_characters::{CharacterStore, EntryBackend, EntryChange, LeaseHolder, StoreError};
+use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex};
+use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 
-use crate::host::{LocalZoneHost, SubmitOutcome};
+use crate::host::{LOCAL_ZONE_ID, LocalZoneHost, SubmitOutcome};
+
+#[wasm_bindgen]
+extern "C" {
+    /// The page's character entry storage:
+    /// `{ read(key: string): Uint8Array | undefined; write(key: string, entry: Uint8Array): void }`.
+    /// Calls are synchronous, so updates within the page never interleave;
+    /// the page keeps other pages away from a character it plays.
+    pub type CharacterEntries;
+
+    #[wasm_bindgen(method, catch)]
+    fn read(this: &CharacterEntries, key: &str) -> Result<Option<Vec<u8>>, JsValue>;
+
+    #[wasm_bindgen(method, catch)]
+    fn write(this: &CharacterEntries, key: &str, entry: &[u8]) -> Result<(), JsValue>;
+}
+
+struct PageEntries<'a>(&'a CharacterEntries);
+
+impl EntryBackend for PageEntries<'_> {
+    fn read(&self, id: &CharacterId) -> Result<Option<Vec<u8>>, StoreError> {
+        self.0.read(id.as_str()).map_err(storage_error)
+    }
+
+    fn update(&mut self, id: &CharacterId, change: &mut EntryChange<'_>) -> Result<(), StoreError> {
+        let current = EntryBackend::read(self, id)?;
+        let next = change(current.as_deref())?;
+        self.0.write(id.as_str(), &next).map_err(storage_error)
+    }
+}
+
+fn storage_error(error: JsValue) -> StoreError {
+    StoreError::Backend(
+        error
+            .as_string()
+            .unwrap_or_else(|| "the page's character storage failed".to_owned()),
+    )
+}
+
+fn store(entries: &CharacterEntries) -> CharacterStore<PageEntries<'_>> {
+    CharacterStore::new(PageEntries(entries))
+}
+
+fn character_id(value: &str) -> Result<CharacterId, JsError> {
+    CharacterId::new(value).map_err(|error| JsError::new(&error.to_string()))
+}
+
+/// The committed level of a stored character, or `undefined` if it was
+/// never stored. Reads only the committed record, like a global profile query.
+#[wasm_bindgen(js_name = committedLevel)]
+pub fn committed_level(entries: &CharacterEntries, character: &str) -> Result<Option<u8>, JsError> {
+    let id = character_id(character)?;
+    store(entries)
+        .committed(&id)
+        .map(|committed| committed.map(|committed| committed.record.level))
+        .map_err(|error| JsError::new(&error.to_string()))
+}
 
 /// The local zone host as seen from JavaScript. Errors surface as exceptions
 /// only for malformed input or misuse (unknown player, sequence 0); a stale
@@ -47,11 +107,45 @@ impl LocalZone {
         })
     }
 
-    /// Spawns a new player with its class (0 Warden, 1 Ranger, 2 Arcanist)
-    /// and sex (0 female, 1 male) and returns its ID. The class choice is the
-    /// player's command sequence 1. IDs are never reused.
-    pub fn join(&mut self, class: u8, sex: u8) -> Result<u32, JsError> {
-        self.host.join_as(class, sex).map_err(js_error)
+    /// Enters the stored character `character` and returns its player ID.
+    /// The page plays zone 1 at `zone_epoch`, which must exceed the epoch of
+    /// any earlier page. A never-stored character is created with its class
+    /// (0 Warden, 1 Ranger, 2 Arcanist) and sex (0 female, 1 male); a stored
+    /// one keeps its own. Commands start at sequence 1. IDs are never reused.
+    pub fn enter(
+        &mut self,
+        entries: &CharacterEntries,
+        character: &str,
+        class: u8,
+        sex: u8,
+        #[wasm_bindgen(js_name = zoneEpoch)] zone_epoch: u64,
+    ) -> Result<u32, JsError> {
+        let id = character_id(character)?;
+        let class = PlayerClass::from_code(class)
+            .zip(Sex::from_code(sex))
+            .map(|(class, sex)| ClassChoice { class, sex })
+            .ok_or_else(|| JsError::new("the class choice is invalid"))?;
+        let holder = LeaseHolder {
+            zone_id: LOCAL_ZONE_ID,
+            zone_epoch,
+        };
+        self.host
+            .enter(&mut store(entries), id, class, holder)
+            .map_err(js_error)
+    }
+
+    /// Commits the player's character; returns the committed revision.
+    pub fn save(&mut self, entries: &CharacterEntries, player: u32) -> Result<u64, JsError> {
+        self.host
+            .save(&mut store(entries), player)
+            .map_err(js_error)
+    }
+
+    /// Commits and releases the player's character and removes its unit.
+    pub fn exit(&mut self, entries: &CharacterEntries, player: u32) -> Result<u64, JsError> {
+        self.host
+            .exit(&mut store(entries), player)
+            .map_err(js_error)
     }
 
     /// Removes the player's unit. Returns whether it was present.

@@ -1,71 +1,122 @@
 import { encodeCommand, type WorldCommand } from "../command-wire";
 import { FixedTickClock } from "../demo-clock";
 import { decodeSnapshot, SnapshotBuffer, type EntityState, type ZoneSnapshot } from "../replication";
+import type { CharacterEntries, LocalCharacters } from "./local-characters";
 import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "./world-source";
 
 /** The subset of the wasm-bindgen `LocalZone` this source drives. */
 export type LocalZoneHandle = {
-  /** Spawns a player and submits its class choice as command sequence 1. */
-  join(classId: number, sex: number): number;
-  leave(player: number): boolean;
+  /** Leases and spawns a stored character, creating it with the class choice if it was never stored. */
+  enter(entries: CharacterEntries, characterId: string, classId: number, sex: number, zoneEpoch: bigint): number;
+  /** Commits the player's character. */
+  save(entries: CharacterEntries, player: number): bigint;
+  /** Commits and releases the player's character and removes its unit. */
+  exit(entries: CharacterEntries, player: number): bigint;
   submit(player: number, sequence: number, command: Uint8Array): boolean;
   tick(): bigint;
   projection(player: number): Uint8Array;
 };
 
 const MAX_SEQUENCE = 0xffff_ffff;
+/** Ticks between commits of the played character (5 s). */
+export const SAVE_INTERVAL_TICKS = 150;
 
 /**
  * A single-player world hosted in this page: the shared Rust zone simulation
  * compiled to WASM, advanced in fixed 30 Hz ticks from a bounded accumulator.
  * Every tick's encoded player-scoped projection goes through the same decoder
  * and history a network source uses; canonical state never reaches here.
+ *
+ * The played character is durable: entry holds it for this tab and leases it
+ * from the page's character storage, progress is committed every few seconds
+ * and on `persist()`, and leaving commits and releases it.
  */
 export class LocalZoneSource implements WorldSource {
   readonly #zone: LocalZoneHandle;
+  readonly #characters: LocalCharacters;
   readonly #clock = new FixedTickClock();
   readonly #history = new SnapshotBuffer();
   #player: number | null = null;
+  #release: (() => void) | null = null;
+  #joining = false;
+  #cancelled = false;
   #sequence = 0;
+  #ticksSinceSave = 0;
   #latest: ZoneSnapshot | null = null;
 
-  constructor(zone: LocalZoneHandle) {
+  constructor(zone: LocalZoneHandle, characters: LocalCharacters) {
     this.#zone = zone;
+    this.#characters = characters;
   }
 
-  // Async only for the contract: a local join completes before it returns its promise.
   async join(character: JoinCharacter = DEFAULT_JOIN_CHARACTER): Promise<number> {
-    if (this.#player !== null) {
+    if (this.#player !== null || this.#joining) {
       throw new Error("Already in the world; leave before joining again.");
     }
-    const choice = classChoiceCodes(character);
-    const player = this.#zone.join(choice.classId, choice.sex);
-    this.#clock.reset();
-    this.#history.reset();
-    this.#latest = null;
+    this.#joining = true;
+    this.#cancelled = false;
     try {
-      this.#publish(player);
-    } catch (error) {
-      // Entry is all or nothing: a rejected first projection removes the unit again.
-      this.#zone.leave(player);
-      throw error;
+      const release = await this.#characters.hold(character.id);
+      let player: number;
+      try {
+        if (this.#cancelled) {
+          throw new Error("Entry was cancelled.");
+        }
+        const choice = classChoiceCodes(character);
+        player = this.#zone.enter(this.#characters.entries, character.id, choice.classId, choice.sex, this.#characters.nextZoneEpoch());
+      } catch (error) {
+        release();
+        throw error;
+      }
+      this.#clock.reset();
+      this.#history.reset();
+      this.#latest = null;
+      try {
+        this.#publish(player);
+      } catch (error) {
+        // Entry is all or nothing: a rejected first projection hands the character back.
+        try {
+          this.#zone.exit(this.#characters.entries, player);
+        } finally {
+          release();
+        }
+        throw error;
+      }
+      this.#player = player;
+      this.#release = release;
+      this.#sequence = 0;
+      this.#ticksSinceSave = 0;
+      return player;
+    } finally {
+      this.#joining = false;
     }
-    this.#player = player;
-    // The class choice was sequence 1.
-    this.#sequence = 1;
-    return player;
+  }
+
+  /** Commits the played character now, e.g. before the page goes away. */
+  persist(): void {
+    if (this.#player !== null) {
+      this.#zone.save(this.#characters.entries, this.#player);
+      this.#ticksSinceSave = 0;
+    }
   }
 
   leave(): void {
     const player = this.#player;
     if (player === null) {
+      this.#cancelled = this.#joining;
       return;
     }
+    const release = this.#release;
     this.#player = null;
+    this.#release = null;
     this.#latest = null;
     this.#history.reset();
     this.#clock.reset();
-    this.#zone.leave(player);
+    try {
+      this.#zone.exit(this.#characters.entries, player);
+    } finally {
+      release?.();
+    }
   }
 
   sendCommand(command: WorldCommand): number {
@@ -91,6 +142,10 @@ export class LocalZoneSource implements WorldSource {
     for (let tick = 0; tick < due; tick += 1) {
       this.#zone.tick();
       received.push(this.#publish(player));
+      this.#ticksSinceSave += 1;
+      if (this.#ticksSinceSave >= SAVE_INTERVAL_TICKS) {
+        this.persist();
+      }
     }
     return received;
   }

@@ -7,7 +7,7 @@ Implementation notes (step 6):
 - `mmorpg-wasm` hosts zone 1 with the same content as `mmorpg-zone-host` and plays the session role that `game-server`'s `MatchRuntime` plays for network hosts: never-reused player IDs from 1, sequence 0 rejected, stale sequences ignored. Its host-target tests check the same content and session outcomes against `MatchRuntime`, and byte-identical projections every tick while joined for a run-and-jump sequence and for the `browser-local-session` scenario's steps. Leaving removes the unit at once instead of after reconnect grace, so the away ticks are not compared.
 - The workspace `unsafe_code = "forbid"` lint applies unchanged; the code `wasm-bindgen` 0.2.129 generates compiles under it.
 - Step 6 landed first, with a scenery export that was a blockout of the hosted core colliders. Step 5 (#20) replaced it behind the same versioned format with a mapping of `mmorpg-scenery`'s Greyhaven Vale; the browser render loop did not change. Named areas are core content (`ZoneAreas`, `greyhaven_vale::areas()`).
-- Local demo saves of world state are removed until the composed character/world save bundle and restore flow (#40) exists; #30 owns its durable character record prerequisite. Roster and appearance saves remain.
+- Local demo saves of world state are removed until the composed character/world save bundle and restore flow (#40) exists. Characters themselves are durable (#30, Atlas 3.1.6): the local host leases and commits them through `mmorpg-characters` over `localStorage`. Roster and appearance saves remain.
 
 Implementation notes (step 14, #29):
 
@@ -28,7 +28,7 @@ Compile `mmorpg-core` and `mmorpg-protocol` to WebAssembly through a thin `mmorp
 - the browser reads only encoded **player-scoped** projections and decodes them with the same TypeScript decoder an online WebTransport source would use. Canonical snapshots never cross into rendering;
 - presentation-only scenery (`mmorpg-scenery`) is exported through the same module so both clients draw identical worlds.
 
-This is not MMO authority in the browser. It has no fencing, no leases, no handoff, no persistence authority and no shared world. It is the same single-writer simulation running in-process for one local player, like a listen server. The presentation layer cannot tell a local source from a network source, which keeps a future browser online mode a transport swap.
+This is not MMO authority in the browser. It has no zone fencing, no handoff, no multiplayer persistence authority and no shared world; its character leases only keep one tab per character and fence superseded pages. It is the same single-writer simulation running in-process for one local player, like a listen server. The presentation layer cannot tell a local source from a network source, which keeps a future browser online mode a transport swap.
 
 ## Consequences
 

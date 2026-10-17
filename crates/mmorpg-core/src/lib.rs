@@ -12,6 +12,7 @@ mod ai;
 mod areas;
 mod aura;
 mod casting;
+mod character;
 mod chat;
 mod class;
 mod combat;
@@ -43,6 +44,10 @@ pub use ability::{
 };
 pub use areas::{Area, AreaId, MAX_AREA_NAME_BYTES, MAX_ZONE_AREAS, ZoneAreas};
 pub use aura::{Aura, CastState, Cooldown};
+pub use character::{
+    CHARACTER_RECORD_SCHEMA_VERSION, CharacterId, CharacterLocation, CharacterRecord,
+    MAX_CHARACTER_ID_BYTES,
+};
 pub use chat::{
     CHAT_INTERVAL_TICKS, ChatChannel, ChatLine, ChatMessage, ChatText, Emote, MAX_CHAT_BYTES,
     MAX_CHAT_PER_TICK, SAY_RANGE_UNITS, YELL_RANGE_UNITS,

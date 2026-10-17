@@ -40,7 +40,8 @@ import {
 } from "./character-roster";
 import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
-import { loadLocalWorld } from "./world/wasm-runtime";
+import { LocalCharacters, VisitStorage } from "./world/local-characters";
+import { committedLevel, loadLocalWorld } from "./world/wasm-runtime";
 import { webTransportConnector } from "./session/webtransport";
 import { onlineChoice, type ZoneServer } from "./world/online-config";
 import { OnlineZoneSource } from "./world/online-zone-source";
@@ -142,6 +143,8 @@ const online = onlineChoice(window.location.search, {
   certificateHash: import.meta.env.VITE_ZONE_CERT_HASH,
 });
 let world: LocalWorld | null = null;
+/** This browser's stored local characters; set once the local world loads. */
+let localCharacters: LocalCharacters | null = null;
 let onlineWorld: ZoneWorld | null = null;
 /** The world the player is in; null on the selection screen. */
 let activeWorld: ZoneWorld | null = null;
@@ -158,6 +161,18 @@ function loadCreatedRoster(): CharacterPreview[] {
   } catch {
     rosterStorageHealthy = false;
     return [];
+  }
+}
+
+/** The committed level of a played local character, else the roster's level. */
+function displayLevel(character: CharacterPreview): number {
+  if (!localCharacters || !world) {
+    return character.level;
+  }
+  try {
+    return committedLevel(localCharacters, character.id) ?? character.level;
+  } catch {
+    return character.level;
   }
 }
 
@@ -623,7 +638,7 @@ function previewHatNodes(
 function renderCharacterDetails(character: CharacterPreview, appearance: CharacterAppearance) {
   characterName.textContent = character.name;
   const sex = character.sex === "male" ? "Male" : "Female";
-  characterSubtitle.textContent = `Level ${character.level} · ${sex} ${character.race} ${character.className}`;
+  characterSubtitle.textContent = `Level ${displayLevel(character)} · ${sex} ${character.race} ${character.className}`;
   characterLocation.textContent = character.location;
   const equipment = equipmentForAppearance(character, appearance);
   equipmentList.replaceChildren(...equipment.map((item) => {
@@ -696,7 +711,7 @@ function renderRoster(): void {
     const name = document.createElement("strong");
     name.textContent = character.name;
     const detail = document.createElement("small");
-    detail.textContent = `${character.level} ${character.className} · ${character.sex === "male" ? "Male" : "Female"} · Greyhaven`;
+    detail.textContent = `${displayLevel(character)} ${character.className} · ${character.sex === "male" ? "Male" : "Female"} · Greyhaven`;
     copy.append(name, detail);
     const check = document.createElement("span");
     check.className = "roster-check";
@@ -999,7 +1014,7 @@ async function enterWorld(): Promise<void> {
   updateEntryButton();
   try {
     const character = selectedCharacter();
-    await target.source.join({ classId: character.classId, sex: character.sex });
+    await target.source.join({ id: character.id, classId: character.classId, sex: character.sex });
   } catch (error) {
     console.error(error);
     worldFailure = `Could not enter the world: ${errorMessage(error)}`;
@@ -1272,9 +1287,29 @@ playOnlineInput.addEventListener("change", () => {
   worldFailure = null;
   updateEntryButton();
 });
-void loadLocalWorld().then((loaded) => {
+window.addEventListener("pagehide", () => {
+  // Commit the local character before the page goes; its lease stays until a newer tab supersedes it.
+  if (world && activeWorld === world) {
+    try {
+      world.source.persist();
+    } catch (error) {
+      console.error(error);
+    }
+  }
+});
+function loadPageWorld(): Promise<LocalWorld> {
+  // Without browser storage the characters still follow the record and lease rules, for this visit only.
+  const characters = new LocalCharacters(browserStorage() ?? new VisitStorage(), navigator.locks);
+  return loadLocalWorld(characters).then((loaded) => {
+    localCharacters = characters;
+    return loaded;
+  });
+}
+void loadPageWorld().then((loaded) => {
   worldView.load(loaded);
   world = loaded;
+  refreshSelectionPresentation();
+  renderRoster();
   onlineWorld = online.kind === "online" ? createOnlineWorld(loaded, online.server) : null;
   updateEntryButton();
 }, (error: unknown) => {

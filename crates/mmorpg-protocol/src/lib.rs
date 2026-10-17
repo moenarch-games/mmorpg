@@ -8,6 +8,7 @@
 //! big-endian and every decoder is strict.
 
 mod canonical;
+mod character;
 mod chat;
 mod command;
 mod inventory;
@@ -17,6 +18,9 @@ mod quest;
 mod wire;
 
 pub use canonical::{decode_canonical_snapshot, encode_canonical_snapshot};
+pub use character::{
+    CHARACTER_RECORD_WIRE_VERSION, decode_character_record, encode_character_record,
+};
 pub use command::{COMMAND_WIRE_VERSION, decode_command, encode_command};
 pub use projection::{
     ENTITY_RECORD_BYTES, EVENT_RECORD_BYTES, MAX_WIRE_ENTITIES, PLAYER_SNAPSHOT_FIXED_BYTES,
