@@ -10,6 +10,7 @@ pub mod network;
 pub mod picking;
 pub mod presentation;
 pub mod session;
+pub mod ui;
 pub mod unit_models;
 pub mod world;
 pub mod world_controls;

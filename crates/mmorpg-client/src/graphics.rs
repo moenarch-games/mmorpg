@@ -13,6 +13,21 @@ use winit::window::Window;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const FAR_PLANE_METRES: f32 = 1400.;
 
+/// Screen-space interface painted into the finished, resolved frame after the
+/// world, before it is presented. It owns its own GPU resources.
+pub trait Overlay {
+    fn paint(&mut self, target: OverlayTarget<'_>) -> Result<(), ClientError>;
+}
+
+/// The device and resolved colour target an [`Overlay`] paints into.
+pub struct OverlayTarget<'a> {
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+    pub view: &'a wgpu::TextureView,
+    pub format: wgpu::TextureFormat,
+    pub size: [u32; 2],
+}
+
 pub struct SceneRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -72,6 +87,7 @@ impl SceneRenderer {
         frame: &WorldFrame,
         hud: &[HudRect],
         view: CameraView,
+        overlay: Option<&mut dyn Overlay>,
     ) -> Result<(), ClientError> {
         self.frame.render(
             &self.device,
@@ -85,7 +101,17 @@ impl SceneRenderer {
             frame,
             hud,
             view,
-        )
+        )?;
+        match overlay {
+            Some(overlay) => overlay.paint(OverlayTarget {
+                device: &self.device,
+                queue: &self.queue,
+                view: target,
+                format: self.format,
+                size: [self.width, self.height],
+            }),
+            None => Ok(()),
+        }
     }
 }
 fn depth_texture(
@@ -247,6 +273,7 @@ impl WindowRenderer {
         hud: &[HudRect],
         view: CameraView,
         bodies: &[(mmorpg_core::EntityRef, SceneDraw)],
+        overlay: Option<&mut dyn Overlay>,
     ) -> Result<(), ClientError> {
         self.last_view = None;
         if self.suspended {
@@ -274,6 +301,7 @@ impl WindowRenderer {
             frame,
             hud,
             view,
+            overlay,
         )?;
         self.renderer.queue.present(target);
         self.picking.present(frame, bodies);
@@ -290,7 +318,7 @@ pub async fn render_offscreen(
 ) -> Result<usize, ClientError> {
     let mut frame = world.frame(0., true, view.eye);
     frame.draws.extend_from_slice(units);
-    let bytes = readback(&frame, hud, view).await?;
+    let bytes = readback(&frame, hud, view, SMOKE_SIZE, None).await?;
     let mut colors = std::collections::BTreeMap::<[u8; 3], usize>::new();
     for p in bytes.chunks_exact(4) {
         *colors.entry([p[0], p[1], p[2]]).or_default() += 1;
@@ -300,22 +328,24 @@ pub async fn render_offscreen(
     }
     Ok(colors.len())
 }
-async fn readback(
+const SMOKE_SIZE: [u32; 2] = [640, 360];
+
+pub(crate) async fn readback(
     frame: &WorldFrame,
     hud: &[HudRect],
     view: CameraView,
+    [width, height]: [u32; 2],
+    overlay: Option<&mut dyn Overlay>,
 ) -> Result<Vec<u8>, ClientError> {
-    const WIDTH: u32 = 640;
-    const HEIGHT: u32 = 360;
     let instance = wgpu::Instance::default();
     let adapter = instance.request_adapter(&Default::default()).await?;
     let mut renderer =
-        SceneRenderer::new(&adapter, wgpu::TextureFormat::Rgba8UnormSrgb, WIDTH, HEIGHT).await?;
+        SceneRenderer::new(&adapter, wgpu::TextureFormat::Rgba8UnormSrgb, width, height).await?;
     let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("native smoke"),
         size: wgpu::Extent3d {
-            width: WIDTH,
-            height: HEIGHT,
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -325,10 +355,16 @@ async fn readback(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    renderer.render(&texture.create_view(&Default::default()), frame, hud, view)?;
+    renderer.render(
+        &texture.create_view(&Default::default()),
+        frame,
+        hud,
+        view,
+        overlay,
+    )?;
     let buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("native readback"),
-        size: u64::from(WIDTH * HEIGHT * 4),
+        size: u64::from(width * height * 4),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -339,13 +375,13 @@ async fn readback(
             buffer: &buffer,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(WIDTH * 4),
-                rows_per_image: Some(HEIGHT),
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
             },
         },
         wgpu::Extent3d {
-            width: WIDTH,
-            height: HEIGHT,
+            width,
+            height,
             depth_or_array_layers: 1,
         },
     );
@@ -373,7 +409,7 @@ async fn offscreen_frame_pixels(
 ) -> Result<Vec<u8>, ClientError> {
     let mut frame = frame.clone();
     frame.draws.extend_from_slice(units);
-    readback(&frame, &[], view).await
+    readback(&frame, &[], view, SMOKE_SIZE, None).await
 }
 // Compatibility for the existing explicit GPU regression fixtures. The live
 // application submits SceneDraws directly; these boxes use that same adapter.
@@ -429,7 +465,7 @@ async fn offscreen_pixels(
             },
         });
     }
-    readback(&frame, hud, view).await
+    readback(&frame, hud, view, SMOKE_SIZE, None).await
 }
 #[cfg(test)]
 mod tests {
@@ -486,15 +522,119 @@ mod tests {
     }
 
     fn save_smoke_frame(name: &str, pixels: &[u8]) {
+        save_frame(name, pixels, SMOKE_SIZE);
+    }
+
+    fn save_frame(name: &str, pixels: &[u8], [width, height]: [u32; 2]) {
         if let Some(directory) = std::env::var_os("MMORPG_SMOKE_FRAME_DIR") {
             let directory = std::path::PathBuf::from(directory);
             std::fs::create_dir_all(&directory).unwrap();
-            let mut ppm = b"P6\n640 360\n255\n".to_vec();
+            let mut ppm = format!("P6\n{width} {height}\n255\n").into_bytes();
             for pixel in pixels.as_chunks::<4>().0 {
                 ppm.extend_from_slice(&pixel[..3]);
             }
             std::fs::write(directory.join(name), ppm).unwrap();
         }
+    }
+
+    #[test]
+    #[ignore = "requires a GPU; scripts/smoke-native.py runs this explicitly"]
+    fn the_egui_interface_paints_over_the_native_world() {
+        use crate::{
+            hud::CombatHud,
+            interaction::NpcContext,
+            ui::{GameUi, UiFrame, overlay::EguiPaint},
+        };
+        use mmorpg_core::{EntityRef, NpcId, ZoneCommand};
+        const SIZE: [u32; 2] = [1280, 720];
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let content = greyhaven_vale::content();
+            let mut zone =
+                ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+            zone.add_player(1).unwrap();
+            zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 1, sex: 0 })
+                .unwrap();
+            zone.apply_command(
+                1,
+                2,
+                ZoneCommand::SelectTarget(Some(EntityRef::Npc(NpcId::new(3)))),
+            )
+            .unwrap();
+            // Advance to a projection that carries the self sheets.
+            let projection = loop {
+                zone.advance_tick().unwrap();
+                let projection = zone.snapshot_for_player(1).unwrap();
+                if projection.inventory.is_some() {
+                    break projection;
+                }
+            };
+            let scenery = greyhaven_vale_scenery();
+            let world = WorldScene::new(&scenery);
+            let now = Instant::now();
+            let mut presentation =
+                Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
+            presentation.push(projection.clone(), now).unwrap();
+            let view = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
+            let mut frame = world.frame(0.0, false, view.eye);
+            frame
+                .draws
+                .extend(presentation.unit_draws(now, view).iter().cloned());
+
+            let mut ui = GameUi::new(&scenery);
+            let names = |entity| presentation.unit_name(entity);
+            ui.observe(&projection, &content, &names, now);
+            ui.bags_open = true;
+            ui.character_open = true;
+            let mut npc = NpcContext::default();
+            npc.observe(&projection);
+            npc.open(NpcId::new(3));
+            let hud = CombatHud::from_projection(&projection);
+            let ui_frame = UiFrame {
+                snapshot: Some(&projection),
+                content: &content,
+                hud: Some(&hud),
+                names: &names,
+                forward: [view.target[0] - view.eye[0], view.target[2] - view.eye[2]],
+                connection: None,
+                choosing: false,
+            };
+            let context = egui::Context::default();
+            let mut paint = EguiPaint::default();
+            // Passes advance time so window layout and fade-in animations settle.
+            for pass in 0..10 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(SIZE[0] as f32, SIZE[1] as f32),
+                    )),
+                    time: Some(f64::from(pass) * 0.1),
+                    ..Default::default()
+                };
+                let output = context.run_pass(input, |ctx| {
+                    let intents = ui.show(ctx, &ui_frame, &mut npc, now);
+                    assert!(intents.is_empty(), "showing alone sends nothing");
+                });
+                let _ = paint.prepare(&context, output);
+            }
+            let bare = readback(&frame, &[], view, SIZE, None).await.unwrap();
+            let shown = readback(&frame, &[], view, SIZE, Some(&mut paint))
+                .await
+                .unwrap();
+            save_frame("interface.ppm", &shown, SIZE);
+            let changed = bare
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(shown.as_chunks::<4>().0)
+                .filter(|(bare, shown)| bare != shown)
+                .count();
+            assert!(
+                changed >= 50_000,
+                "the interface must cover much of the frame: {changed} pixels"
+            );
+            println!("egui interface changed {changed} GPU pixels");
+        });
     }
 
     #[test]
