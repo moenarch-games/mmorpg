@@ -113,10 +113,17 @@ impl Effects {
         let viewer = EntityRef::Player(s.viewer_id);
         for e in &s.events {
             match *e {
+                // A directed strike (#154) presents like its ability's swing.
                 ZoneEvent::AbilityUsed {
                     source,
                     target,
                     ability,
+                }
+                | ZoneEvent::StrikeSwept {
+                    source,
+                    target,
+                    ability,
+                    ..
                 } => {
                     let id = ability.get();
                     let (pose, visual, _) = presentation(id);

@@ -3,7 +3,7 @@
 
 use mmorpg_core::{
     AbilityId, EntityKind, EntityRef, ErrorCode, MAX_QUEST_OBJECTIVES, QuestId,
-    SNAPSHOT_SCHEMA_VERSION, ZoneEvent, ZoneId, ability_by_id,
+    SNAPSHOT_SCHEMA_VERSION, StrikeAim, StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ability_by_id,
 };
 
 use crate::{ProtocolError, SNAPSHOT_WIRE_VERSION};
@@ -37,6 +37,7 @@ const QUEST_PROGRESS: u8 = 14;
 const QUEST_COMPLETED: u8 = 15;
 const ATTACK_PERFORMED: u8 = 16;
 const DAMAGE_OBSERVED: u8 = 17;
+const STRIKE_SWEPT: u8 = 18;
 const CRITICAL_FLAG: u8 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -162,6 +163,18 @@ pub(crate) fn decode_quest(code: u8) -> Result<QuestId, ProtocolError> {
     }
 }
 
+/// A directed strike's aim as its side and height codes.
+pub(crate) const fn encode_aim(aim: StrikeAim) -> [u8; 2] {
+    [aim.side.code(), aim.height.code()]
+}
+
+pub(crate) fn decode_aim([side, height]: [u8; 2]) -> Result<StrikeAim, ProtocolError> {
+    match (StrikeSide::from_code(side), StrikeHeight::from_code(height)) {
+        (Some(side), Some(height)) => Ok(StrikeAim::new(side, height)),
+        _ => Err(ProtocolError::new("unknown strike aim")),
+    }
+}
+
 /// A catalog ability ID carried in an event's flag byte.
 pub(crate) fn decode_ability(code: u8) -> Result<AbilityId, ProtocolError> {
     let ability = AbilityId::new(code);
@@ -175,7 +188,8 @@ pub(crate) fn decode_ability(code: u8) -> Result<AbilityId, ProtocolError> {
 /// 14 bytes: kind, flags (or the ability ID of ability events, or the
 /// quest ID of quest events), source reference, target reference, `u16`
 /// amount (a quest progress event packs the objective index high and the
-/// count low).
+/// count low; a strike sweep packs the aim's side code high and its height
+/// code low).
 pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
     let (kind, flags, source, target, amount) = match *event {
         ZoneEvent::DamageDealt {
@@ -232,6 +246,18 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             target,
             ability,
         } => (ABILITY_USED, ability.get(), Some(source), target, 0),
+        ZoneEvent::StrikeSwept {
+            source,
+            target,
+            ability,
+            aim,
+        } => (
+            STRIKE_SWEPT,
+            ability.get(),
+            Some(source),
+            target,
+            u16::from_be_bytes(encode_aim(aim)),
+        ),
         ZoneEvent::Healed {
             source,
             target,
@@ -383,6 +409,12 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                 }
             }
         }
+        STRIKE_SWEPT => ZoneEvent::StrikeSwept {
+            source: source.ok_or_else(invalid)?,
+            target,
+            ability: decode_ability(flags)?,
+            aim: decode_aim(amount.to_be_bytes())?,
+        },
         HEALED | AURA_APPLIED | AURA_REMOVED => {
             let ability = decode_ability(flags)?;
             let (source, target) = pair()?;

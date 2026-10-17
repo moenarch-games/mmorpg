@@ -494,7 +494,8 @@ impl Presentation {
             self.cue_tick = snapshot.tick;
             for event in &snapshot.events {
                 let (mmorpg_core::ZoneEvent::AttackPerformed { source, .. }
-                | mmorpg_core::ZoneEvent::AbilityUsed { source, .. }) = *event
+                | mmorpg_core::ZoneEvent::AbilityUsed { source, .. }
+                | mmorpg_core::ZoneEvent::StrikeSwept { source, .. }) = *event
                 else {
                     continue;
                 };

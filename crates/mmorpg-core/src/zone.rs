@@ -456,6 +456,15 @@ impl ZoneSimulation {
             ZoneCommand::UseAbility { ability, target } => {
                 Some(PlayerIntent::UseAbility { ability, target })
             }
+            ZoneCommand::DirectedStrike {
+                ability,
+                facing,
+                aim,
+            } => Some(PlayerIntent::DirectedStrike {
+                ability,
+                facing,
+                aim,
+            }),
             ZoneCommand::CancelCast => Some(PlayerIntent::CancelCast),
             ZoneCommand::ChooseClass { class, sex } => {
                 Some(PlayerIntent::ChooseClass { class, sex })

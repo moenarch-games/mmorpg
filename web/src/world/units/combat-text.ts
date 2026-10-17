@@ -22,7 +22,7 @@ function isViewer(entity: EntityRef | null, snapshot: ZoneSnapshot): boolean {
  * damage.
  */
 export function damageIsPeriodic(snapshot: ZoneSnapshot): boolean {
-  const resolved = snapshot.events.some((event) => event.kind === "ability-used" && isViewer(event.source, snapshot));
+  const resolved = snapshot.events.some((event) => (event.kind === "ability-used" || event.kind === "strike-swept") && isViewer(event.source, snapshot));
   if (resolved || snapshot.viewer.autoAttacking) {
     return false;
   }
@@ -51,6 +51,9 @@ function textFor(event: ZoneEvent, snapshot: ZoneSnapshot, periodic: boolean): C
         : null;
     case "absorbed":
       return { kind: "absorb", text: "Absorb" };
+    case "strike-swept":
+      // A hit shows its damage; a whiff of the viewer's own sweep says so.
+      return event.target === null && isViewer(event.source, snapshot) ? { kind: "miss", text: "Whiff" } : null;
     case "interrupted":
       return { kind: "interrupt", text: isViewer(event.target, snapshot) ? "Interrupted" : "Interrupt" };
     default:

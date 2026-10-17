@@ -79,6 +79,11 @@ impl ZoneSimulation {
             PlayerIntent::UseAbility { ability, target } => {
                 self.use_ability(player_id, ability, target, now)?
             }
+            PlayerIntent::DirectedStrike {
+                ability,
+                facing,
+                aim,
+            } => self.directed_strike(player_id, ability, facing, aim, now)?,
             PlayerIntent::CancelCast => {
                 self.cancel_cast(player_id);
                 None

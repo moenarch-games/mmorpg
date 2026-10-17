@@ -31,6 +31,7 @@ import { UnitAnimators, placeWithModel, unitIdentity, unitModel, unitNodeIds, ty
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
 import { CharacterPane, type CharacterElements } from "./units/character-pane";
 import { useAbilitySlot } from "./units/abilities";
+import { DirectedStrikeAim, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
 import { ClassHud } from "./units/class-hud";
 import { CombatHud } from "./units/combat-hud";
 import { LootPanel, type LootElements } from "./units/loot-panel";
@@ -196,6 +197,8 @@ export class WorldView {
   #buildMs = 0;
   #orbit = new OrbitCamera();
   #drag: Drag | null = null;
+  /** A held directed Heroic Strike being aimed with the pointer (#154). */
+  readonly #strikeAim = new DirectedStrikeAim();
   #movementFacing = 0;
   #outbox: MovementOutbox;
   #shownArea: string | null = null;
@@ -295,8 +298,44 @@ export class WorldView {
     this.#buildMs = performance.now() - started;
   }
 
+  /** The directed-strike action's working binding labels, for the Heroic Strike slot hint. */
+  setDirectedBinding(labels: readonly string[]): void {
+    this.#classHud.setDirectedBinding(labels);
+  }
+
+  /** The directed-strike action was pressed: start aiming when the viewer is a living Warden. */
+  beginDirectedStrike(): void {
+    const projection = this.#lastProjection;
+    if (!projection || !this.#catalog || !canStrikeDirected(projection, this.#catalog)) {
+      return;
+    }
+    this.#strikeAim.begin();
+    this.#classHud.showStrikeAim(this.#strikeAim.aim());
+  }
+
+  /** A deliberate release sends one directed strike toward the view's heading; the zone resolves it. */
+  releaseDirectedStrike(): void {
+    const aim = this.#strikeAim.release();
+    this.#classHud.showStrikeAim(null);
+    const catalog = this.#catalog;
+    if (!aim || !catalog) {
+      return;
+    }
+    const facing = this.#orbit.facing();
+    // The Warden turns to strike; later movement keeps that heading until steered.
+    this.#movementFacing = facing;
+    this.queueIntent((projection) => directedStrikeCommand(projection, catalog, facing, aim));
+  }
+
+  /** Blur, menus, retired input or a superseding gesture: no strike. */
+  cancelDirectedStrike(): void {
+    this.#strikeAim.cancel();
+    this.#classHud.showStrikeAim(null);
+  }
+
   /** Starts a session: fresh camera, intent and animation state. */
   enter(input: WorldInput, projection: ZoneSnapshot | null): void {
+    this.cancelDirectedStrike();
     this.#orbit = new OrbitCamera();
     this.#movementFacing = this.#orbit.facing();
     this.#endDrag();
@@ -358,6 +397,7 @@ export class WorldView {
   }
 
   leave(): void {
+    this.cancelDirectedStrike();
     this.#pendingNpc = null;
     this.#clearModels();
     this.#lastSceneryNodes = [];
@@ -683,6 +723,8 @@ export class WorldView {
   }
 
   pointerDown(event: PointerEvent): void {
+    // A click or drag supersedes an aimed strike that has not been released.
+    this.cancelDirectedStrike();
     if (this.#drag || (event.button !== 0 && event.button !== 2)) {
       return;
     }
@@ -700,10 +742,15 @@ export class WorldView {
 
   /** Losing focus retires the gesture without selecting or toggling attack. */
   cancelPointer(): void {
+    this.cancelDirectedStrike();
     this.#endDrag();
   }
 
   pointerMove(event: PointerEvent): void {
+    this.#strikeAim.track(event.clientX, event.clientY);
+    if (this.#strikeAim.active) {
+      this.#classHud.showStrikeAim(this.#strikeAim.aim());
+    }
     this.#secondaryClick.move(event);
     this.#primaryClick.move(event);
     const drag = this.#drag;

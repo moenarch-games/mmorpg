@@ -173,6 +173,21 @@
   color: #e9efe9;
 }
 
+.slot-alt {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  padding: 0 .2rem;
+  border: 0;
+  border-radius: .2rem;
+  background: rgb(120 84 20 / 80%);
+  font-size: .6rem;
+  line-height: 1.1;
+  color: #ffe9b0;
+}
+
+.slot-alt::after { content: "⇅"; margin-left: .1rem; }
+
 .slot-timer {
   position: absolute;
   inset: 0;
@@ -217,6 +232,7 @@
 .ability-tooltip strong { display: block; color: var(--gold-bright); font-size: .88rem; }
 .ability-tooltip span { display: block; color: #cbd6cd; }
 .ability-tooltip p { margin: .3rem 0 0; color: #edf4ee; }
+.ability-tooltip .tooltip-directed { margin-top: .3rem; color: #ffe0a0; }
 .ability-tooltip em { display: block; margin-top: .3rem; color: #ff9d8a; font-style: normal; }
 
 .combat-text {
@@ -282,3 +298,23 @@
   .unit-frames { top: 5rem; }
   .hud { max-width: min(34rem, calc(100vw - 17rem)); max-height: calc(100vh - 13rem); overflow-y: auto; }
 }
+
+/* The held directed-strike aim (#154): high row on top, left column first. */
+.strike-aim {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  display: grid;
+  grid-template-columns: repeat(3, .9rem);
+  gap: .18rem;
+  padding: .3rem;
+  border: 1px solid rgb(255 224 160 / 45%);
+  border-radius: .45rem;
+  background: rgb(9 14 20 / 55%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.strike-aim[hidden] { display: none; }
+.strike-aim span { height: .9rem; border-radius: .2rem; background: rgb(255 255 255 / 14%); }
+.strike-aim span[data-on="true"] { background: #ffd36b; box-shadow: 0 0 .5rem rgb(255 211 107 / 80%); }

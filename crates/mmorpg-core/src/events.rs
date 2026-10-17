@@ -142,6 +142,14 @@ pub enum ZoneEvent {
         target: Option<EntityRef>,
         ability: AbilityId,
     },
+    /// `source` swept a directed strike of `ability` toward `aim` (#154);
+    /// `target` is the creature its coverage struck, `None` a whiff.
+    StrikeSwept {
+        source: EntityRef,
+        target: Option<EntityRef>,
+        ability: AbilityId,
+        aim: crate::StrikeAim,
+    },
     /// `ability` of `source` healed `target` by `amount` effective health.
     Healed {
         source: EntityRef,
@@ -193,7 +201,9 @@ impl ZoneEvent {
         match self {
             Self::AttackPerformed { source, target }
             | Self::DamageObserved { source, target, .. } => Some([Some(source), Some(target)]),
-            Self::CastStarted { source, target, .. } | Self::AbilityUsed { source, target, .. }
+            Self::CastStarted { source, target, .. }
+            | Self::AbilityUsed { source, target, .. }
+            | Self::StrikeSwept { source, target, .. }
                 if source != own && target != Some(own) =>
             {
                 Some([Some(source), target])
@@ -216,6 +226,7 @@ impl ZoneEvent {
             Self::DamageDealt { .. } | Self::QuestProgress { .. } => 2,
             Self::CastStarted { .. }
             | Self::AbilityUsed { .. }
+            | Self::StrikeSwept { .. }
             | Self::Healed { .. }
             | Self::AuraApplied { .. }
             | Self::AuraRemoved { .. }
