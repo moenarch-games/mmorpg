@@ -255,7 +255,7 @@ impl WindowRenderer {
     }
 
     /// Pick only the actual last successfully presented frame and viewport.
-    pub fn pick(&self, pixel: [f64; 2]) -> Result<Option<mmorpg_core::EntityRef>, ClientError> {
+    pub fn pick(&self, pixel: [f64; 2]) -> Result<Option<crate::picking::Picked>, ClientError> {
         let Some(view) = self.last_view else {
             return Ok(None);
         };

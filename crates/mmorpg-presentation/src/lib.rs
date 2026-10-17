@@ -13,6 +13,7 @@
 #![forbid(unsafe_code)]
 
 pub mod batching;
+pub mod buildings;
 pub mod geometry;
 mod props;
 mod terrain;

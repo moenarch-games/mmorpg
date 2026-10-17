@@ -551,6 +551,29 @@ mod ranger_bundle {
     include!(concat!(env!("OUT_DIR"), "/ranger_bundle.rs"));
 }
 
+/// The Greyhaven inn bundle's drawn entries and their resources, embedded by `build.rs` (#158).
+mod inn_bundle {
+    include!(concat!(env!("OUT_DIR"), "/inn_bundle.rs"));
+}
+
+/// The inn's entries as `(key, draws in the entry frame)`, imported once. Static meshes never
+/// re-skin: callers only replace each draw's model matrix, so the GPU upload happens once.
+pub(super) fn inn_draws() -> &'static [(&'static str, Vec<SceneDraw>)] {
+    static DRAWS: OnceLock<Vec<(&'static str, Vec<SceneDraw>)>> = OnceLock::new();
+    DRAWS.get_or_init(|| {
+        inn_bundle::ENTRIES
+            .iter()
+            .map(|&(key, path)| {
+                let model = Model::parse(&bundle_glb(path, inn_bundle::FILES), "")
+                    .expect("an inn entry is valid glTF");
+                let draws =
+                    model.draws_placed(key, three_d_animation::Mat4::IDENTITY, "", 0., None);
+                (key, draws)
+            })
+            .collect()
+    })
+}
+
 /// Normalizes `base`'s directory joined with a relative `uri` ("../../resources/x.bin").
 fn resolve(base: &str, uri: &str) -> String {
     let mut parts: Vec<&str> = base.split('/').collect();

@@ -30,7 +30,7 @@ const ANIMAL_URLS: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> =
   Rat: new URL("../../../../assets/quaternius/Rat.glb", import.meta.url).href,
   Pig: new URL("../../../../assets/quaternius/Pig.glb", import.meta.url).href,
 };
-/** The unpacked bundle `scripts/fetch-character-bundle.sh` places in `web/public`. */
+/** The unpacked bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 const RANGER_BUNDLE = `${import.meta.env.BASE_URL}characters/humanoid.ranger.male/`;
 
 /** One drawn model of an asset, posed by clip name and clip time. */
@@ -166,7 +166,7 @@ async function loadRanger(rest: string): Promise<Asset> {
   const read = async (path: string) => {
     const response = await fetch(new URL(path, new URL(RANGER_BUNDLE, window.location.href)));
     if (!response.ok) {
-      throw new Error(`Ranger bundle file ${path} is missing (${response.status}); run scripts/fetch-character-bundle.sh.`);
+      throw new Error(`Ranger bundle file ${path} is missing (${response.status}); run scripts/fetch-bundles.sh.`);
     }
     return response.arrayBuffer();
   };

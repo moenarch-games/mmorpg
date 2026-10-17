@@ -52,6 +52,16 @@ impl Door {
     pub const fn leaf(&self, open: bool) -> DoorBox {
         if open { self.open } else { self.closed }
     }
+
+    /// Whether feet at `position` (units) are within [`DOOR_REACH_UNITS`] of the closed leaf.
+    #[must_use]
+    pub fn within_reach(&self, position: [i32; 3]) -> bool {
+        let [dx, dz] = [
+            i64::from(position[0]) - i64::from(self.closed.position[0]),
+            i64::from(position[2]) - i64::from(self.closed.position[2]),
+        ];
+        dx * dx + dz * dz <= i64::from(DOOR_REACH_UNITS).pow(2)
+    }
 }
 
 /// A door's state as every player sees it.
@@ -89,11 +99,7 @@ impl ZoneSimulation {
             return Ok(None);
         }
         let from = self.player_position(player_id)?;
-        let [dx, dz] = [
-            i128::from(from.x) - i128::from(door.closed.position[0]),
-            i128::from(from.z) - i128::from(door.closed.position[2]),
-        ];
-        if dx * dx + dz * dz > i128::from(DOOR_REACH_UNITS).pow(2) {
+        if !door.within_reach([from.x, from.y, from.z]) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
         }
         let leaf = door.leaf(open);
