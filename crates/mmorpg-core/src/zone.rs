@@ -80,6 +80,9 @@ pub(crate) struct PlayerState {
     pub(crate) landing: crate::LandingState,
     /// A confirmed slash's pending Shield Bash follow-up (#157).
     pub(crate) combo: Option<crate::ComboOpening>,
+    /// Ticks left of a directed strike's committed recovery; a guard raised
+    /// meanwhile waits to protect (#156, Atlas 5.2.39, 5.2.41).
+    pub(crate) strike_recovery: u16,
     pub(crate) last_sequence: u32,
     pub(crate) spawn_slot: u16,
     pub(crate) level: u8,
@@ -138,6 +141,7 @@ impl PlayerState {
             guard: crate::GuardState::default(),
             landing: crate::LandingState::default(),
             combo: None,
+            strike_recovery: 0,
             last_sequence: 0,
             spawn_slot,
             level: PLAYER_START_LEVEL,
@@ -448,13 +452,8 @@ impl ZoneSimulation {
                 player.jump_pending = alive;
                 None
             }
-            // Held like movement; the dead hold no guard.
-            ZoneCommand::Guard { lane } => {
-                if alive {
-                    player.guard.raised = lane;
-                }
-                None
-            }
+            // Queued so a guard pressed after a strike stays raised (5.2.37).
+            ZoneCommand::Guard { lane } => Some(PlayerIntent::Guard(lane)),
             ZoneCommand::SelectTarget(target) => Some(PlayerIntent::SelectTarget(target)),
             ZoneCommand::StartAttack => Some(PlayerIntent::StartAttack),
             ZoneCommand::Loot(claim) => Some(PlayerIntent::Loot(claim)),

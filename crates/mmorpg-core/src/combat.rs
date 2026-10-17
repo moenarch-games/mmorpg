@@ -105,6 +105,13 @@ impl ZoneSimulation {
                 self.cancel_cast(player_id);
                 None
             }
+            // Held like movement; the dead hold no guard.
+            PlayerIntent::Guard(lane) => {
+                if alive {
+                    self.update_player(player_id, |player| player.guard.raised = lane);
+                }
+                None
+            }
             // Dead players can only release their spirit.
             PlayerIntent::SelectTarget(_)
             | PlayerIntent::StartAttack

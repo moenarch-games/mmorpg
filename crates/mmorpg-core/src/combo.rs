@@ -100,6 +100,13 @@ impl ZoneSimulation {
     /// the dead.
     pub(crate) fn advance_combos(&mut self) {
         for player in self.players.values_mut() {
+            // A stun before the strike recovery ends discards a pending guard.
+            if player.strike_recovery > 0 {
+                player.strike_recovery -= 1;
+                if crate::aura::has_kind(&player.auras, crate::AuraKind::Stun) {
+                    player.guard.raised = None;
+                }
+            }
             player.combo = player.combo.and_then(|combo| {
                 let aged = ComboOpening {
                     elapsed: combo.elapsed + 1,
