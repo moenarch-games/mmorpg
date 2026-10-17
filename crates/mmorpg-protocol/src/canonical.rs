@@ -244,6 +244,8 @@ fn encode_player(
     }
     encode_cast(payload, abilities.cast);
     encode_auras(payload, &abilities.auras)?;
+    payload.push(crate::wire::encode_lane(abilities.guard.raised));
+    payload.extend_from_slice(&abilities.guard.broken.to_be_bytes());
     payload.extend_from_slice(&player.chat_ready_at.to_be_bytes());
     payload.push(encode_u8_count(
         player.chat.len(),
@@ -616,6 +618,10 @@ fn decode_player(
         cooldowns,
         cast: decode_cast(payload, offset)?,
         auras: decode_auras(payload, offset)?,
+        guard: mmorpg_core::GuardState {
+            raised: crate::wire::decode_lane(read_u8(payload, offset)?)?,
+            broken: u16::from_be_bytes(take(payload, offset)?),
+        },
     };
     let chat_ready_at = u64::from_be_bytes(take(payload, offset)?);
     let chat_count = decode_u8_count(
@@ -1029,6 +1035,10 @@ mod tests {
             resource_ticks: 29,
             mana_delay: 150,
             global_cooldown: 44,
+            guard: mmorpg_core::GuardState {
+                raised: Some(mmorpg_core::StrikeHeight::Low),
+                broken: 7,
+            },
             cooldowns: vec![
                 Cooldown {
                     ability: AbilityId::new(10),

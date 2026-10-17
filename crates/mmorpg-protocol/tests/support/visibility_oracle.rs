@@ -85,6 +85,12 @@ pub fn exhaustive_projection(
                 let bonus = observer.equipment.totals().damage_bonus(None);
                 player_damage(combat.level).map(|end| end + bonus)
             },
+            // Classless players never protect.
+            guard: mmorpg_core::GuardView {
+                raised: combat.abilities.guard.raised,
+                protecting: false,
+                broken: combat.abilities.guard.broken,
+            },
         },
         cooldowns: Vec::new(),
         auras: Vec::new(),

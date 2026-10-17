@@ -60,11 +60,11 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             // these fixtures never chat. v14 adds a nine-byte quest part
             // per self sheet (mask, counts and the Marshal's `!` marker;
             // these fixtures never accept a quest) and the one-byte quest
-            // item presence per corpse sheet. Physics/work fences remain
-            // unchanged.
+            // item presence per corpse sheet. v18 adds the four-byte viewer
+            // guard per projection. Physics/work fences remain unchanged.
             let ceiling = if index == 6 {
                 ceiling
-                    + (22 + 23 + 4 + 1) * fixture.players * TICKS
+                    + (22 + 23 + 4 + 1 + 4) * fixture.players * TICKS
                     + (64 + 20 + 9) * fixture.players * (TICKS / 10)
                     + 22 * report.loot_sheets
             } else {
@@ -85,10 +85,10 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert_eq!(report.ai_evaluations, 59 * TICKS);
         }
         if fixture.crowded {
-            // Whole 14-byte events and 21-byte records beside the 105-byte
+            // Whole 14-byte events and 21-byte records beside the 109-byte
             // fixed part, a 93-byte self sheet and an 18-byte copper-only
-            // corpse sheet fill 1,077 bytes.
-            assert_eq!(report.max_projection_bytes, 1_077);
+            // corpse sheet fill 1,076 of 1,077 bytes.
+            assert_eq!(report.max_projection_bytes, 1_076);
             assert!(report.candidates_tested > 1_000_000);
         }
     }

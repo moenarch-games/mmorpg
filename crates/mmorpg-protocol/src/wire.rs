@@ -38,6 +38,8 @@ const QUEST_COMPLETED: u8 = 15;
 const ATTACK_PERFORMED: u8 = 16;
 const DAMAGE_OBSERVED: u8 = 17;
 const STRIKE_SWEPT: u8 = 18;
+const BLOCKED: u8 = 19;
+const GUARD_BROKEN: u8 = 20;
 const CRITICAL_FLAG: u8 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -175,6 +177,23 @@ pub(crate) fn decode_aim([side, height]: [u8; 2]) -> Result<StrikeAim, ProtocolE
     }
 }
 
+/// A guard lane as one byte: 0 lowered (or no lane), 1 + the height code.
+pub(crate) const fn encode_lane(lane: Option<StrikeHeight>) -> u8 {
+    match lane {
+        Some(height) => 1 + height.code(),
+        None => 0,
+    }
+}
+
+pub(crate) fn decode_lane(code: u8) -> Result<Option<StrikeHeight>, ProtocolError> {
+    match code {
+        0 => Ok(None),
+        code => StrikeHeight::from_code(code - 1)
+            .map(Some)
+            .ok_or_else(|| ProtocolError::new("unknown guard lane")),
+    }
+}
+
 /// A catalog ability ID carried in an event's flag byte.
 pub(crate) fn decode_ability(code: u8) -> Result<AbilityId, ProtocolError> {
     let ability = AbilityId::new(code);
@@ -189,7 +208,8 @@ pub(crate) fn decode_ability(code: u8) -> Result<AbilityId, ProtocolError> {
 /// quest ID of quest events), source reference, target reference, `u16`
 /// amount (a quest progress event packs the objective index high and the
 /// count low; a strike sweep packs the aim's side code high and its height
-/// code low).
+/// code low). Guard events carry the lane's height code as flags, and the
+/// blocked amount or the break's recovery ticks.
 pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
     let (kind, flags, source, target, amount) = match *event {
         ZoneEvent::DamageDealt {
@@ -258,6 +278,18 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             target,
             u16::from_be_bytes(encode_aim(aim)),
         ),
+        ZoneEvent::Blocked {
+            source,
+            target,
+            lane,
+            amount,
+        } => (BLOCKED, lane.code(), Some(source), Some(target), amount),
+        ZoneEvent::GuardBroken {
+            source,
+            target,
+            lane,
+            ticks,
+        } => (GUARD_BROKEN, lane.code(), Some(source), Some(target), ticks),
         ZoneEvent::Healed {
             source,
             target,
@@ -415,6 +447,26 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
             ability: decode_ability(flags)?,
             aim: decode_aim(amount.to_be_bytes())?,
         },
+        BLOCKED | GUARD_BROKEN => {
+            let lane = StrikeHeight::from_code(flags)
+                .ok_or_else(|| ProtocolError::new("unknown guard lane"))?;
+            let (source, target) = pair()?;
+            if kind == BLOCKED {
+                ZoneEvent::Blocked {
+                    source,
+                    target,
+                    lane,
+                    amount,
+                }
+            } else {
+                ZoneEvent::GuardBroken {
+                    source,
+                    target,
+                    lane,
+                    ticks: amount,
+                }
+            }
+        }
         HEALED | AURA_APPLIED | AURA_REMOVED => {
             let ability = decode_ability(flags)?;
             let (source, target) = pair()?;
@@ -643,6 +695,56 @@ pub(crate) fn take<const N: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guard_events_carry_their_lane_and_amount() {
+        let wolf = EntityRef::Creature(mmorpg_core::CreatureId::new(3));
+        let player = EntityRef::Player(9);
+        for event in [
+            ZoneEvent::Blocked {
+                source: wolf,
+                target: player,
+                lane: StrikeHeight::Middle,
+                amount: 4,
+            },
+            ZoneEvent::GuardBroken {
+                source: wolf,
+                target: player,
+                lane: StrikeHeight::High,
+                ticks: 45,
+            },
+        ] {
+            let mut payload = Vec::new();
+            encode_event(&mut payload, &event);
+            assert_eq!(
+                &payload[..2],
+                [
+                    if matches!(event, ZoneEvent::Blocked { .. }) {
+                        BLOCKED
+                    } else {
+                        GUARD_BROKEN
+                    },
+                    event_lane(event)
+                ]
+            );
+            assert_eq!(decode_event(&payload, &mut 0).unwrap(), event);
+            payload[1] = 3;
+            assert_eq!(
+                decode_event(&payload, &mut 0).unwrap_err().to_string(),
+                "unknown guard lane"
+            );
+        }
+        assert_eq!(decode_lane(0).unwrap(), None);
+        assert_eq!(decode_lane(3).unwrap(), Some(StrikeHeight::High));
+        assert!(decode_lane(4).is_err());
+    }
+
+    fn event_lane(event: ZoneEvent) -> u8 {
+        match event {
+            ZoneEvent::Blocked { lane, .. } | ZoneEvent::GuardBroken { lane, .. } => lane.code(),
+            _ => u8::MAX,
+        }
+    }
 
     #[test]
     fn error_codes_have_stable_distinct_wire_values() {
