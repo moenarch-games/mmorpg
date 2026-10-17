@@ -1,12 +1,14 @@
 /**
- * Command wire version 9, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
- * `fixtures/protocol/commands-v9.hex` holds both encoders to the same bytes.
+ * Command wire version 10, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
+ * `fixtures/protocol/commands-v10.hex` holds both encoders to the same bytes.
  * The session supplies player identity and sequence separately.
  */
 import { entityKindCode, isU32, type EntityRef } from "./entity-ref";
-import { chatTextError, EMOTES, type EmoteName } from "./replication";
+import { chatTextError, EMOTES, STRIKE_HEIGHTS, STRIKE_SIDES, type EmoteName, type StrikeAim } from "./replication";
 
 export type Axis = -1 | 0 | 1;
+
+export { STRIKE_HEIGHTS, STRIKE_SIDES, type StrikeAim, type StrikeHeight, type StrikeSide } from "./replication";
 
 export type WorldCommand =
   | { kind: "move"; forward: Axis; strafe: Axis; facing: number }
@@ -20,6 +22,8 @@ export type WorldCommand =
   | { kind: "move-item"; source: number; destination: number; quantity: number }
   /** A class ability at `target`, or at the current selection with `null`. */
   | { kind: "use-ability"; ability: number; target: EntityRef | null }
+  /** Heroic Strike's directed mode: turn to `facing` (u16 yaw) and sweep toward `aim`. */
+  | { kind: "directed-strike"; ability: number; facing: number; aim: StrikeAim }
   | { kind: "cancel-cast" }
   /** Class 0 Warden, 1 Ranger, 2 Arcanist; sex 0 female, 1 male. The zone refuses invalid values. */
   | { kind: "choose-class"; classId: number; sex: number }
@@ -40,7 +44,7 @@ export type WorldCommand =
   | { kind: "complete-quest"; npc: number; quest: number; choice: number }
   | { kind: "abandon-quest"; quest: number };
 
-const COMMAND_WIRE_VERSION = 9;
+const COMMAND_WIRE_VERSION = 10;
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
 const SELECT_TARGET_TAG = 3;
@@ -61,6 +65,7 @@ const EMOTE_TAG = 17;
 const ACCEPT_QUEST_TAG = 18;
 const COMPLETE_QUEST_TAG = 19;
 const ABANDON_QUEST_TAG = 20;
+const DIRECTED_STRIKE_TAG = 21;
 const YAW_STEPS = 65_536;
 
 function isAxis(value: number): value is Axis {
@@ -147,6 +152,25 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       view.setUint8(1, USE_ABILITY_TAG);
       view.setUint8(2, command.ability);
       writeEntity(view, 3, command.target);
+      return payload;
+    }
+    case "directed-strike": {
+      const side = STRIKE_SIDES.indexOf(command.aim.side);
+      const height = STRIKE_HEIGHTS.indexOf(command.aim.height);
+      if (!isU8(command.ability) || side < 0 || height < 0) {
+        throw new Error("Directed strikes need a u8 ability and a known aim.");
+      }
+      if (!Number.isInteger(command.facing) || command.facing < 0 || command.facing >= YAW_STEPS) {
+        throw new Error("Facing must be a u16 yaw.");
+      }
+      const payload = new Uint8Array(7);
+      const view = new DataView(payload.buffer);
+      view.setUint8(0, COMMAND_WIRE_VERSION);
+      view.setUint8(1, DIRECTED_STRIKE_TAG);
+      view.setUint8(2, command.ability);
+      view.setUint16(3, command.facing);
+      view.setUint8(5, side);
+      view.setUint8(6, height);
       return payload;
     }
     case "cancel-cast":

@@ -48,7 +48,9 @@ import type { LinkState, ZoneWorld } from "./world/world-source";
 import { characterLook } from "./world/humanoid";
 import { WorldView, webGpuProjection } from "./world/world-view";
 import { attackToggle, nextTabTarget } from "./world/units/targeting";
-import { GameControls, type GameAction } from "./input/game-controls";
+import { GameControls, type GameAction, type HeldAction, type HoldPhase } from "./input/game-controls";
+import { actionBindingLabels } from "./input/binding-labels";
+import type { Profile } from "@moritzbrantner/input-bindings";
 import { cancelCast, useAbilitySlot } from "./world/units/abilities";
 import { Preferences, type ClientPreferences } from "./settings/preferences";
 import { SettingsPanel } from "./settings/settings-panel";
@@ -283,6 +285,7 @@ const controls = new GameControls({
       // A pending join is modal like creation: Escape cancels it.
       : { phase: "selection", creating: creationDraft !== null || joining !== null, settingsOpen },
   onAction: (action) => runAction(action),
+  onHold: (action, phase) => runHold(action, phase),
 });
 
 function browserStorage(): Storage | null {
@@ -322,8 +325,14 @@ function syncBindingProfile(): void {
   if (loaded.problem) {
     console.warn(`Key bindings for ${characterId}: ${loaded.problem}`);
   }
-  boundProfile = loaded.profile;
-  controls.setProfile(boundProfile);
+  bindProfile(loaded.profile);
+}
+
+/** Runs `profile` and shows its working directed-strike binding on the Heroic Strike slot. */
+function bindProfile(profile: Profile): void {
+  boundProfile = profile;
+  controls.setProfile(profile);
+  worldView.setDirectedBinding(actionBindingLabels("combat.directedStrike", profile));
 }
 
 const settingsPanel = new SettingsPanel({
@@ -354,8 +363,7 @@ const settingsPanel = new SettingsPanel({
         }
         // Only a durably saved profile becomes the running mapping.
         if (characterId === boundCharacterId) {
-          boundProfile = profile;
-          controls.setProfile(profile);
+          bindProfile(profile);
         }
         return null;
       },
@@ -1180,6 +1188,24 @@ function runAction(action: GameAction): void {
         joining.source.leave();
       } else {
         cancelCharacterCreation();
+      }
+      return;
+  }
+}
+/**
+ * The held directed Heroic Strike (#154): press starts aiming, a deliberate release in the open
+ * world sends one strike, and every retirement (blur, Settings, profile or screen change) or an
+ * open panel cancels it without a strike.
+ */
+function runHold(action: HeldAction, phase: HoldPhase): void {
+  switch (action) {
+    case "combat.directedStrike":
+      if (entryState.phase !== "world" || settingsOpen || worldView.panelOpen || phase === "cancel") {
+        worldView.cancelDirectedStrike();
+      } else if (phase === "press") {
+        worldView.beginDirectedStrike();
+      } else {
+        worldView.releaseDirectedStrike();
       }
       return;
   }

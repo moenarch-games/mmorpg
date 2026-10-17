@@ -10,44 +10,47 @@ Commands and projections travel inside the pinned `game-server` session frames (
 
 The shared fixture `fixtures/protocol/session-frames-v3.hex` pins these frames and the browser route contract: `crates/mmorpg-game-server/tests/session_frames.rs` renders it from the pinned encoders and decodes it with the pinned decoders, and the browser (`web/tests/session-frames.test.ts`) decodes and encodes the same bytes. A `game-server` pin bump that changes a frame fails in both languages.
 
-## Commands (wire version 9)
+## Commands (wire version 10)
 
 The shared session runtime supplies player identity, connection epoch and command sequence separately. Core rejects zero, stale and duplicate sequences without changing state.
 
 | Command | Bytes | Layout |
 | --- | ---: | --- |
-| Move | 6 | `[version = 9, tag = 1, forward: i8, strafe: i8, facing: u16]` |
-| Jump | 2 | `[version = 9, tag = 2]` |
-| SelectTarget | 7 | `[version = 9, tag = 3, kind: u8, id: u32]` |
-| StartAttack | 2 | `[version = 9, tag = 4]` |
-| StopAttack | 2 | `[version = 9, tag = 5]` |
-| ReleaseSpirit | 2 | `[version = 9, tag = 6]` |
-| MoveItem | 6 | `[version = 9, tag = 7, source_slot: u8, destination_slot: u8, quantity: u16]` |
-| Loot | 14 | `[version = 9, tag = 8, creature_id: u32, died_at: u64]` |
-| UseAbility | 8 | `[version = 9, tag = 9, ability: u8, kind: u8, id: u32]` |
-| CancelCast | 2 | `[version = 9, tag = 10]` |
-| ChooseClass | 4 | `[version = 9, tag = 11, class: u8, sex: u8]` |
-| EquipItem | 3 | `[version = 9, tag = 12, bag_slot: u8]` |
-| UnequipItem | 3 | `[version = 9, tag = 13, equipment_slot: u8]` |
-| BuyItem | 9 | `[version = 9, tag = 14, npc: u32, offer: u8, quantity: u16]` |
-| SellItem | 9 | `[version = 9, tag = 15, npc: u32, bag_slot: u8, quantity: u16]` |
-| Chat | 4 + n | `[version = 9, tag = 16, channel: u8, length: u8, text: n bytes]` |
-| Emote | 3 | `[version = 9, tag = 17, emote: u8]` |
-| AcceptQuest | 7 | `[version = 9, tag = 18, npc: u32, quest: u8]` |
-| CompleteQuest | 8 | `[version = 9, tag = 19, npc: u32, quest: u8, choice: u8]` |
-| AbandonQuest | 3 | `[version = 9, tag = 20, quest: u8]` |
+| Move | 6 | `[version = 10, tag = 1, forward: i8, strafe: i8, facing: u16]` |
+| Jump | 2 | `[version = 10, tag = 2]` |
+| SelectTarget | 7 | `[version = 10, tag = 3, kind: u8, id: u32]` |
+| StartAttack | 2 | `[version = 10, tag = 4]` |
+| StopAttack | 2 | `[version = 10, tag = 5]` |
+| ReleaseSpirit | 2 | `[version = 10, tag = 6]` |
+| MoveItem | 6 | `[version = 10, tag = 7, source_slot: u8, destination_slot: u8, quantity: u16]` |
+| Loot | 14 | `[version = 10, tag = 8, creature_id: u32, died_at: u64]` |
+| UseAbility | 8 | `[version = 10, tag = 9, ability: u8, kind: u8, id: u32]` |
+| CancelCast | 2 | `[version = 10, tag = 10]` |
+| ChooseClass | 4 | `[version = 10, tag = 11, class: u8, sex: u8]` |
+| EquipItem | 3 | `[version = 10, tag = 12, bag_slot: u8]` |
+| UnequipItem | 3 | `[version = 10, tag = 13, equipment_slot: u8]` |
+| BuyItem | 9 | `[version = 10, tag = 14, npc: u32, offer: u8, quantity: u16]` |
+| SellItem | 9 | `[version = 10, tag = 15, npc: u32, bag_slot: u8, quantity: u16]` |
+| Chat | 4 + n | `[version = 10, tag = 16, channel: u8, length: u8, text: n bytes]` |
+| Emote | 3 | `[version = 10, tag = 17, emote: u8]` |
+| AcceptQuest | 7 | `[version = 10, tag = 18, npc: u32, quest: u8]` |
+| CompleteQuest | 8 | `[version = 10, tag = 19, npc: u32, quest: u8, choice: u8]` |
+| AbandonQuest | 3 | `[version = 10, tag = 20, quest: u8]` |
+| DirectedStrike | 7 | `[version = 10, tag = 21, ability: u8, facing: u16, side: u8, height: u8]` |
 
-Version 9 adds quests; tags 1–17 retain their field layouts.
+Version 10 adds the directed strike (tag 21); tags 1–20 retain their field layouts.
 
 - `Move` is held intent relative to `facing`. `forward` and `strafe` are each in `[-1, 1]`; positive strafe is the character's right. The server rotates the intent into one of eight headings (multiples of 45° relative to `facing`) through its integer trigonometry table. Horizontal speed is 21 units/tick (6.3 m/s) when `forward ≥ 0` and 13 units/tick when `forward < 0`. Zero intent stops horizontal movement; vertical velocity always stays with physics. Dead units cannot move: death clears the held intent and a pending jump, and while dead `Move` and `Jump` consume their sequence without holding any intent, so the released spirit stands until the next `Move`. Dead units cannot move: death clears the held intent and a pending jump, and while dead `Move` and `Jump` consume their sequence without holding any intent, so the released spirit stands until the next `Move`.
 - `Jump` is edge-triggered. It is recorded as pending and evaluated during the next tick before physics steps: when a thin probe directly below the feet touches any body other than the character (ground, geometry or another unit), vertical velocity becomes 16 units/tick. The tick always consumes the pending jump, so a mid-air jump has no effect and is not buffered until landing.
 - `SelectTarget` carries an [entity reference](#entity-references): kind 1 player, 2 creature or 3 NPC with its ID, or kind 0 with ID 0 to clear the selection. `StartAttack` starts auto-attacking the selected target, `StopAttack` stops it, and `ReleaseSpirit` returns a dead player to the graveyard with half health.
 
-The eighteen discrete intents (every command but `Move` and `Jump`) are queued in sequence order (at most 16 per player between ticks) and resolved during the next tick in `(player id, sequence)` order, never inside `apply_command`. A well-formed intent that is not allowed right now, such as attacking without a target or out of range, or selecting a unit that is not visible, is accepted and answered with an `Error` [event](#events); it never closes the session. An intent that finds the queue full is accepted the same way: it consumes its sequence, is dropped, and the next tick answers with one `too many intents` error. Only malformed payloads and stale or duplicate sequences fail.
+The nineteen discrete intents (every command but `Move` and `Jump`) are queued in sequence order (at most 16 per player between ticks) and resolved during the next tick in `(player id, sequence)` order, never inside `apply_command`. A well-formed intent that is not allowed right now, such as attacking without a target or out of range, or selecting a unit that is not visible, is accepted and answered with an `Error` [event](#events); it never closes the session. An intent that finds the queue full is accepted the same way: it consumes its sequence, is dropped, and the next tick answers with one `too many intents` error. Only malformed payloads and stale or duplicate sequences fail.
 
 `MoveItem` names only slots in the sender’s own bag. Slot/quantity values that fit the wire but cannot be applied are tick-time feedback, not session errors; there is no item grant command. `EquipItem` equips the item in one of the sender's bag slots into its catalog equipment slot, and `UnequipItem` moves the item in equipment slot 0 main hand, 1 off hand, 2 head, 3 chest, 4 legs or 5 feet to the lowest empty bag slot; every `u8` fits the wire and invalid slots are tick-time feedback. See [INVENTORY.md](INVENTORY.md#equipment).
 
 `UseAbility` names a global ability ID and an [entity reference](#entity-references) as in `SelectTarget`; kind 0 (ID 0) means the current selection, and self-centred abilities ignore it. `CancelCast` stops the player's own cast or channel (nothing happens without one). `ChooseClass` picks class 0 Warden, 1 Ranger or 2 Arcanist and sex 0 female or 1 male, once per player. Every `u8` value fits the wire: unknown abilities, classes or sexes, repeats and every other refusal are `Error` events, never session errors (see [Classes and abilities](#classes-and-abilities)).
+
+`DirectedStrike` executes an ability's directed mode (#154; only Heroic Strike, ability 1, has one): the player turns to `facing` and sweeps toward side 0 left, 1 centre or 2 right and height 0 low, 1 middle or 2 high. It shares the ability's validation order, Rage cost, cooldown and global cooldown; an ability without a directed mode is `not learned`. Instead of a target and range check, core resolves which living creature the sweep physically covers: the arc is centred on `facing` turned 45° toward the side (left is `facing + 45°`) and spans ±30°, it reaches the melee reach (2.5 m XZ centre distance), the creature's physics body must overlap the height band above the striker's feet (low 0–0.6 m, middle 0.6–1.3 m, high 1.3–2 m), and a `physics-engine` ray between body centres must not hit static geometry. The nearest covered creature (ties in `EntityRef` order) takes the ability's weapon-strike damage; a sweep that covers nobody is a whiff that still pays and starts the global cooldown. Side and height codes above 2 are malformed payloads.
 
 `BuyItem` buys `quantity` units of offer `offer` (its index in the vendor's stock) from vendor NPC `npc`; `SellItem` sells `quantity` units from one of the sender's bag slots to that vendor. Every value fits the wire; unknown vendors and offers, reach, copper, capacity and slot problems are tick-time feedback. See [INVENTORY.md](INVENTORY.md#vendors).
 
@@ -59,9 +62,9 @@ The eighteen discrete intents (every command but `Move` and `Jump`) are queued i
 
 `Loot` names a creature spawn and its observed death tick. Core checks life, owner, expiry, authoritative 3D reach and remaining rewards during the tick, then atomically settles money and items. Refusals preserve rewards; no client supplies reward amounts. See [LOOT.md](LOOT.md).
 
-Decoding is strict: exact lengths per tag, known tags only, `forward`/`strafe` in range, known entity kinds, ID 0 for the absent reference, and only version 9. Versions 1–8 are rejected.
+Decoding is strict: exact lengths per tag, known tags only, `forward`/`strafe` and strike aim codes in range, known entity kinds, ID 0 for the absent reference, and only version 10. Versions 1–9 are rejected.
 
-The shared command fixture is `fixtures/protocol/commands-v9.hex`: one encoded command per line followed by its fields, covering every tag. `mmorpg-protocol` renders and verifies it, and the browser encoder (`web/src/command-wire.ts`) must produce the same bytes.
+The shared command fixture is `fixtures/protocol/commands-v10.hex`: one encoded command per line followed by its fields, covering every tag. `mmorpg-protocol` renders and verifies it, and the browser encoder (`web/src/command-wire.ts`) must produce the same bytes.
 
 ## Entity references
 
@@ -71,9 +74,9 @@ An entity reference is 5 bytes: kind (`u8`) then ID (`u32`). Kind 1 is a player 
 
 | Offset | Width | Field |
 | --- | --- | --- |
-| 0 | 1 | Wire version: 16 |
+| 0 | 1 | Wire version: 17 |
 | 1 | 1 | Scope: 1 canonical, 2 player-visible |
-| 2 | 2 | Core schema version: 16 |
+| 2 | 2 | Core schema version: 17 |
 | 4 | 4 | Zone ID |
 | 8 | 8 | Simulation tick |
 
@@ -151,7 +154,7 @@ The events are the viewer's feedback from the tick the snapshot describes (see [
 - Miss and evade carry both units and amount 0: a missed swing between the viewer and a unit, or the viewer's swing ignored by an evading creature.
 - Died carries the dead unit as target, its killer as source (or none) and amount 0.
 - Error carries no source, the unit the refused intent concerned as target (or none) and the error code in `amount`: 1 no target, 2 out of range, 3 target dead, 4 not attackable, 5 you are dead, 6 not dead, 7 invalid target, 8 too many intents (a full queue dropped an intent), 9 invalid inventory move, 10 inventory full, 11 invalid loot (unknown/non-corpse, expired or wrong death tick), 12 not loot owner, 13 empty loot, 14 money overflow, 15 no class, 16 not learned, 17 not ready (global or ability cooldown), 18 not enough resource, 19 stunned, 20 already casting, 21 invalid class (unknown or repeated choice), 22 not equippable (the bag item has no equipment slot), 23 invalid vendor (not a bound vendor NPC, or no such offer), 24 not enough money, 25 chat throttled (the speaker spoke within the last second), 26 invalid quest (unknown, not given or ended by that NPC, unavailable, not active, or an invalid reward choice), 27 quest log full (ten active quests), 28 quest incomplete, 29 line of sight (static world geometry blocks the straight line to the target).
-- Cast started carries the caster, its target (or none) and the cast or channel ticks in `amount`. Ability used carries the user, its target (none for self-centred abilities) and amount 0.
+- Cast started carries the caster, its target (or none) and the cast or channel ticks in `amount`. Ability used carries the user, its target (none for self-centred abilities) and amount 0. Strike swept (kind 18) carries the striker, the creature its directed sweep struck (none for a whiff), the ability in the flag byte and the aim in `amount`: side code high byte, height code low byte; observers in range receive it like ability used.
 - Healed carries the healer, the healed unit and the effective healing. Aura applied carries the caster, the unit and the aura's ticks; aura removed (expiry, a broken root, an emptied shield or replacement on a full unit) carries the caster, the unit and amount 0.
 - Interrupted carries the interrupting unit (none for movement, a jump or cancellation), the interrupted unit and amount 0, with the interrupted ability in the flag byte.
 - Absorbed carries the attacker, the shielded unit and the absorbed damage; its flags are 0.
@@ -208,7 +211,7 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 6, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v16.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text) and an emote. Rust encoding and browser decoding both verify these exact bytes. `player-loot-v16.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The v8–v15 fixtures remain as rejection evidence. `presentation-observation-v16.hex` covers the two new neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot-v17.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text) and an emote. Rust encoding and browser decoding both verify these exact bytes. `player-loot-v17.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The v8–v16 fixtures remain as rejection evidence. `presentation-observation-v17.hex` covers the two new neutral observation records.
 
 ## Canonical scope
 
@@ -266,7 +269,7 @@ A player record starts with 39 movement bytes, 92 inventory and equipment bytes 
 | … | 1 | Aura count, at most 8 |
 | … | 10 × auras | Ability ID (`u8`), caster (entity reference), ticks left (`u16`), amount (`u16`), in slot order |
 
-Pending intent codes 7–11 extend the list: code 7 (use ability, 7 bytes) carries the ability ID and an entity reference, code 8 (cancel cast, 6 bytes) the absent reference, code 9 (choose class, 3 bytes) class and sex, code 10 (equip item, 2 bytes) the bag slot, code 11 (unequip item, 2 bytes) the equipment slot, codes 12 (buy item) and 13 (sell item), 8 bytes each, the vendor NPC (`u32`), the offer or bag slot (`u8`) and the quantity (`u16`), code 14 (chat) the channel, length and text as in the command, codes 15 (accept quest, 6 bytes) and 16 (complete quest, 7 bytes) the NPC (`u32`), the quest (`u8`) and for code 16 the choice (`u8`), and code 17 (abandon quest, 2 bytes) the quest. After each player's auras, the first tick it may speak again (`u64`, at most one interval ahead) and the chat lines it heard this tick (count `u8`, at most 4, then records as in the projection) follow, then the quest log: its last change tick (`u64`, at most the snapshot tick), the turned-in mask (`u32`), the active quest count (`u8`, at most 10) and the active quests (quest ID and three stored progress bytes each, ascending). Stored progress of a collect objective is 0: its progress is the bag's count.
+Pending intent codes 7–11 extend the list: code 7 (use ability, 7 bytes) carries the ability ID and an entity reference, code 8 (cancel cast, 6 bytes) the absent reference, code 9 (choose class, 3 bytes) class and sex, code 10 (equip item, 2 bytes) the bag slot, code 11 (unequip item, 2 bytes) the equipment slot, codes 12 (buy item) and 13 (sell item), 8 bytes each, the vendor NPC (`u32`), the offer or bag slot (`u8`) and the quantity (`u16`), code 14 (chat) the channel, length and text as in the command, codes 15 (accept quest, 6 bytes) and 16 (complete quest, 7 bytes) the NPC (`u32`), the quest (`u8`) and for code 16 the choice (`u8`), code 17 (abandon quest, 2 bytes) the quest, and code 18 (directed strike, 6 bytes) the ability, facing (`u16`) and side and height codes. After each player's auras, the first tick it may speak again (`u64`, at most one interval ahead) and the chat lines it heard this tick (count `u8`, at most 4, then records as in the projection) follow, then the quest log: its last change tick (`u64`, at most the snapshot tick), the turned-in mask (`u32`), the active quest count (`u8`, at most 10) and the active quests (quest ID and three stored progress bytes each, ascending). Stored progress of a collect objective is 0: its progress is the bag's count.
 
 A creature record:
 
@@ -397,3 +400,7 @@ Version 14 and earlier snapshots/checkpoints and recovery bundles fail closed. E
 ## Line of sight: snapshot v16, command v9 unchanged
 
 Wire and core schema version 16 add error code 29, line of sight, without changing section layouts, record sizes, content revision, commands or the datagram budget. Core refuses a targeted ranged ability (`AbilityRange::Units`) when a deterministic `physics-engine` ray between the caster's and target's body centres hits a static content collider, both at use (nothing is paid, no cast starts) and again when a cast completes. Units never block each other. A creature does not start Muck Bolt without line of sight and the bolt fizzles as interrupted if its target moved behind cover. Version 15 and earlier snapshots/checkpoints and recovery bundles fail closed; `player-snapshot-v15.hex` remains as rejection evidence.
+
+## Directed Heroic Strike: snapshot v17 and command v10
+
+Command version 10 adds `DirectedStrike` (tag 21) and rejects v9. Wire and core schema version 17 add pending intent code 18 and event kind 18 (strike swept) within the existing 14-byte event record, without changing section layouts, record sizes, content revision, the ability catalog or the datagram budget. The directed mode is one more way to execute Heroic Strike (Atlas 5.2.27, 5.2.53): one ability ID, unlock, Rage cost, cooldown and global cooldown; core alone resolves the sweep's physical coverage (see [Commands](#commands-wire-version-10)). Version 16 and earlier snapshots/checkpoints, version 9 and earlier commands and recovery bundles fail closed; `player-snapshot-v16.hex` and `commands-v9.hex` remain as rejection evidence.

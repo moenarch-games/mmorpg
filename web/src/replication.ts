@@ -1,4 +1,4 @@
-/** Player-visible protocol v14 only. Canonical recovery state never enters rendering. */
+/** Player-visible protocol v17 only. Canonical recovery state never enters rendering. */
 import { entityKindFromCode, sameEntity, type EntityKind, type EntityRef } from "./entity-ref";
 
 export type { EntityKind, EntityRef } from "./entity-ref";
@@ -102,6 +102,14 @@ export type ErrorCode =
   | "quest-incomplete"
   | "line-of-sight";
 
+/** A directed strike's sweep side and height (#154); the zone resolves what it covers. */
+export type StrikeSide = "left" | "centre" | "right";
+export type StrikeHeight = "low" | "middle" | "high";
+export type StrikeAim = { side: StrikeSide; height: StrikeHeight };
+/** Wire codes in order: 0 left/low, 1 centre/middle, 2 right/high. */
+export const STRIKE_SIDES: readonly StrikeSide[] = ["left", "centre", "right"];
+export const STRIKE_HEIGHTS: readonly StrikeHeight[] = ["low", "middle", "high"];
+
 /** Feedback the viewer received in the projection's tick; cosmetic and lossy. */
 export type ZoneEvent =
   | { kind: "attack-performed"; source: EntityRef; target: EntityRef }
@@ -111,6 +119,8 @@ export type ZoneEvent =
   | { kind: "error"; code: ErrorCode; target: EntityRef | null }
   | { kind: "cast-started"; source: EntityRef; target: EntityRef | null; ability: number; ticks: number }
   | { kind: "ability-used"; source: EntityRef; target: EntityRef | null; ability: number }
+  /** `source` swept a directed strike toward `aim`; `target` is the creature it struck, null a whiff. */
+  | { kind: "strike-swept"; source: EntityRef; target: EntityRef | null; ability: number; aim: StrikeAim }
   | { kind: "healed"; source: EntityRef; target: EntityRef; ability: number; amount: number }
   | { kind: "aura-applied"; source: EntityRef; target: EntityRef; ability: number; ticks: number }
   | { kind: "aura-removed"; source: EntityRef; target: EntityRef; ability: number }
@@ -226,8 +236,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 16;
-const SCHEMA_VERSION = 16;
+const WIRE_VERSION = 17;
+const SCHEMA_VERSION = 17;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -452,6 +462,15 @@ function decodeEvent(reader: Reader): ZoneEvent {
       }
       noAmount();
       return { kind: "ability-used", source, target, ability };
+    }
+    case 18: {
+      const ability = knownAbility(flags);
+      const side = STRIKE_SIDES[amount >> 8];
+      const height = STRIKE_HEIGHTS[amount & 0xff];
+      if (source === null || side === undefined || height === undefined) {
+        throw new Error("Malformed event record");
+      }
+      return { kind: "strike-swept", source, target, ability, aim: { side, height } };
     }
     case 9:
     case 10:

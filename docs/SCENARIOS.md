@@ -205,3 +205,9 @@ second quest, accepts *Trouble in the Woods*, cannot turn it in incomplete,
 abandons and re-accepts it, and keeps it across a connection resume while the
 Marshal's marker follows the log. The full chain is covered by
 `crates/mmorpg-core/tests/quest_chain.rs`.
+
+The `strike_swept` event (a directed Heroic Strike, #154) concerns the struck
+creature, or the striker for a whiff; digests show it as
+`swept:<striker>:<ability>:<side><height>><struck or ->`. Bot steps do not send
+directed strikes yet; `crates/mmorpg-core/tests/directed_strike.rs` covers the
+coverage rules.

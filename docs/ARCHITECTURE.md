@@ -292,7 +292,7 @@ without simulating moves or grants. A bounded source advance returns each decode
 projection in tick order (at most four local catch-up ticks), so intermediate
 sheets and refusals reach the bag cache before drawing the newest frame. Catalog format v2 adds item catalog revision
 and ID/name/stack-limit records; v1 exports fail closed at that presentation
-boundary. Catalog format v3 adds classes and abilities, v4 each item's equipment slot and stats, v5 sale values and vendor stock, and v6 quests; the browser now requires v6. Current gameplay uses snapshot/command v16/v9 and content revision 9; only content identity changes scenery metadata. Quest rules, the log and markers are core's (`mmorpg_core::quest`, tick steps 1 and 8); see [STARTER_ZONE.md](STARTER_ZONE.md#quests).
+boundary. Catalog format v3 adds classes and abilities, v4 each item's equipment slot and stats, v5 sale values and vendor stock, and v6 quests; the browser now requires v6. Current gameplay uses snapshot/command v17/v10 and content revision 9; only content identity changes scenery metadata. Quest rules, the log and markers are core's (`mmorpg_core::quest`, tick steps 1 and 8); see [STARTER_ZONE.md](STARTER_ZONE.md#quests).
 
 Corpse reward authority lives in `mmorpg-core`'s `corpse_loot` module. Immutable
 bound content owns reward rules; a domain-separated canonical RNG generates

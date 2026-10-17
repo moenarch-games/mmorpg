@@ -29,6 +29,7 @@ mod projection;
 mod quest;
 pub mod rng;
 mod snapshot;
+mod strike;
 pub mod trig;
 pub mod unit;
 mod vendor;
@@ -92,6 +93,7 @@ pub use snapshot::{
     CanonicalPlayerCombat, CanonicalPlayerSnapshot, CanonicalZoneSnapshot, CreatureAi,
     CreatureLife, PlayerIntent, ThreatEntry,
 };
+pub use strike::{STRIKE_ARC_HALF_WIDTH, StrikeAim, StrikeHeight, StrikeSide, has_directed_mode};
 pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_CATALOG_REVISION, VENDOR_REACH_UNITS, VendorOffer, VendorStock,
     VendorStockError, VendorTradeError, sell_price, settle_purchase, settle_sale,
@@ -107,7 +109,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 16;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 17;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its
@@ -172,6 +174,14 @@ pub enum ZoneCommand {
     UseAbility {
         ability: u8,
         target: Option<EntityRef>,
+    },
+    /// Executes `ability`'s directed mode (#154; only Heroic Strike has
+    /// one): the player turns to `facing` and sweeps toward `aim`; the zone
+    /// resolves which creature the sweep physically covers.
+    DirectedStrike {
+        ability: u8,
+        facing: u16,
+        aim: StrikeAim,
     },
     /// Stops the player's own cast or channel.
     CancelCast,

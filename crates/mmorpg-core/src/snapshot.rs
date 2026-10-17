@@ -45,6 +45,12 @@ pub enum PlayerIntent {
         ability: u8,
         target: Option<EntityRef>,
     },
+    /// A directed strike (#154), resolved by the next tick.
+    DirectedStrike {
+        ability: u8,
+        facing: u16,
+        aim: crate::StrikeAim,
+    },
     CancelCast,
     ChooseClass {
         class: u8,

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { encodeCommand, type Axis, type WorldCommand } from "../src/command-wire";
+import { encodeCommand, STRIKE_HEIGHTS, STRIKE_SIDES, type Axis, type WorldCommand } from "../src/command-wire";
 import { entityKindFromCode } from "../src/entity-ref";
 import { EMOTES } from "../src/replication";
 
-const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v9.hex", import.meta.url), "utf8");
+const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v10.hex", import.meta.url), "utf8");
 
 function axis(raw: string | undefined): Axis {
   const value = Number(raw);
@@ -15,7 +15,7 @@ function axis(raw: string | undefined): Axis {
 }
 
 function command(fields: readonly string[]): WorldCommand {
-  const [name, first, second, third] = fields;
+  const [name, first, second, third, fourth] = fields;
   switch (name) {
     case "move":
       return { kind: "move", forward: axis(first), strafe: axis(second), facing: Number(third) };
@@ -45,6 +45,13 @@ function command(fields: readonly string[]): WorldCommand {
     }
     case "cancel_cast":
       return { kind: "cancel-cast" };
+    case "directed_strike":
+      return {
+        kind: "directed-strike",
+        ability: Number(first),
+        facing: Number(second),
+        aim: { side: STRIKE_SIDES[Number(third)]!, height: STRIKE_HEIGHTS[Number(fourth)]! },
+      };
     case "choose_class":
       return { kind: "choose-class", classId: Number(first), sex: Number(second) };
     case "equip_item":
@@ -88,7 +95,7 @@ describe("Rust/browser command contract", () => {
     const commands = fixtureCommands();
     const kinds = new Set(commands.map(({ command }) => command.kind));
     expect([...kinds].sort()).toEqual([
-      "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "complete-quest", "emote", "equip-item", "jump",
+      "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "complete-quest", "directed-strike", "emote", "equip-item", "jump",
       "loot", "move", "move-item", "release-spirit", "select-target", "sell-item", "start-attack", "stop-attack", "unequip-item",
       "use-ability",
     ]);
@@ -117,6 +124,9 @@ describe("Rust/browser command contract", () => {
       { kind: "use-ability", ability: -1, target: null },
       { kind: "use-ability", ability: 1, target: { kind: "creature", id: 2 ** 32 } },
       { kind: "emote", emote: "dance" },
+      { kind: "directed-strike", ability: 256, facing: 0, aim: { side: "left", height: "low" } },
+      { kind: "directed-strike", ability: 1, facing: 65_536, aim: { side: "left", height: "low" } },
+      { kind: "directed-strike", ability: 1, facing: 0, aim: { side: "up", height: "low" } },
       { kind: "choose-class", classId: 0, sex: 256 },
       { kind: "choose-class", classId: 1.5, sex: 0 },
       { kind: "accept-quest", npc: -1, quest: 1 },

@@ -493,6 +493,18 @@ describe("WASM local zone combat intents", () => {
     ]);
   });
 
+  test("a directed Heroic Strike reaches the zone, which validates it like the slot's ability", () => {
+    for (const [classId, code] of [["warden", "not-enough-resource"], ["ranger", "not-learned"]] as const) {
+      const { source } = createLocalWorld(wasm);
+      source.join({ classId, sex: "male" });
+      run(source, 1);
+      // A fresh Warden has no Rage yet; the zone, not the client, refuses the swing.
+      source.sendCommand({ kind: "directed-strike", ability: 1, facing: 0, aim: { side: "left", height: "high" } });
+      run(source, 1);
+      expect(source.latestProjection()?.events).toEqual([{ kind: "error", code, target: null }]);
+    }
+  });
+
   test("hub NPCs are visible, selectable and refuse to be attacked", async () => {
     const { source, catalog } = createLocalWorld(wasm);
     await source.join();

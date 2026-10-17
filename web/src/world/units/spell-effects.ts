@@ -1,6 +1,6 @@
 import type { RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import { entityKey, sameEntity, type EntityRef } from "../../entity-ref";
-import type { ZoneSnapshot } from "../../replication";
+import type { StrikeAim, ZoneSnapshot } from "../../replication";
 import { ABILITY_PRESENTATION, presentationOf, type CasterPose, type SpellVisual } from "./ability-presentation";
 
 /**
@@ -16,7 +16,7 @@ type Quaternion = [number, number, number, number];
 
 export type SpellEffect = {
   id: number;
-  visual: SpellVisual | "impact";
+  visual: SpellVisual | "impact" | "sweep";
   critical?: boolean;
   ability: number;
   source: EntityRef;
@@ -26,9 +26,11 @@ export type SpellEffect = {
   startedAt: number;
   /** Seconds a timed effect lives; null while a bound effect follows a cast or an aura. */
   duration: number | null;
+  /** A directed strike's aim and whether the zone said it struck a creature. */
+  sweep?: { aim: StrikeAim; hit: boolean };
 };
 
-export const EFFECT_SECONDS = { projectile: 0.4, arrow: 0.22, ring: 0.65, swing: 0.28 } as const;
+export const EFFECT_SECONDS = { projectile: 0.4, arrow: 0.22, ring: 0.65, swing: 0.28, sweep: 0.34 } as const;
 const MAX_EFFECTS = 24;
 /** Frost Nova's radius (800 units) in metres; Blizzard's area (600 units). */
 const NOVA_RADIUS = 8;
@@ -112,6 +114,10 @@ export class SpellEffects {
         if (visual === "projectile" || visual === "arrow" || visual === "ring" || visual === "swing") {
           this.#add({ visual, ability: event.ability, source: event.source, target: event.target, ground: null, duration: EFFECT_SECONDS[visual] }, now);
         }
+      } else if (event.kind === "strike-swept") {
+        // The zone's outcome, not the input, drives the sweep: its aim, and hit or whiff.
+        this.#actions.set(entityKey(event.source), { pose: "swing", startedAt: now, duration: EFFECT_SECONDS.sweep, hold: false, ability: event.ability, release: false });
+        this.#add({ visual: "sweep", ability: event.ability, source: event.source, target: event.target, ground: null, duration: EFFECT_SECONDS.sweep, sweep: { aim: event.aim, hit: event.target !== null } }, now);
       } else if (event.kind === "interrupted") {
         const key = entityKey(event.target);
         if (this.#casts.get(key)?.ability === event.ability) { this.#casts.delete(key); }
@@ -230,6 +236,12 @@ function scatter(index: number, salt: number): number {
 }
 
 const SHARD_COUNT = 12;
+/** Blade height above the feet (metres) per aimed band; the zone's bands are 0–0.6, 0.6–1.3, 1.3–2 m. */
+export const SWEEP_HEIGHT_METRES = { low: 0.35, middle: 0.95, high: 1.65 } as const;
+/** The aimed side turns the arc 45° from the facing (left is toward +yaw); it spans ±30°. */
+export const SWEEP_SIDE_RADIANS = { left: Math.PI / 4, centre: 0, right: -Math.PI / 4 } as const;
+const SWEEP_HALF_WIDTH = Math.PI / 6;
+const SWEEP_COUNT = 8;
 const RING_COUNT = 20;
 const SWING_COUNT = 6;
 
@@ -341,6 +353,32 @@ export function effectNodes(effect: SpellEffect, now: number, resolve: ResolveAn
           opacity: 0.85,
           transform: {
             translation: [ground[0] + Math.sin(angle) * radius, ground[1] + 6.5 - fall * 6.4, ground[2] + Math.cos(angle) * radius] as Vec3,
+          },
+        };
+      });
+    }
+    case "sweep": {
+      const sweep = effect.sweep;
+      if (!source || !sweep) {
+        return [];
+      }
+      const centre = source.yaw + SWEEP_SIDE_RADIANS[sweep.aim.side];
+      const height = source.feetY + SWEEP_HEIGHT_METRES[sweep.aim.height];
+      const tint = sweep.hit ? "#ffd36b" : "#9fb4c8";
+      // The blade crosses the covered arc from the left edge to the right edge; the trail lags.
+      return Array.from({ length: SWEEP_COUNT }, (_, index) => {
+        const lag = index / SWEEP_COUNT;
+        const reach = Math.max(0, Math.min(1, t * 1.25 - lag * 0.35));
+        const angle = centre + SWEEP_HALF_WIDTH - 2 * SWEEP_HALF_WIDTH * reach;
+        return {
+          id: `${prefix}-sweep-${index}`,
+          geometry: { kind: "box" as const, size: [0.9, 0.05, 0.12] as [number, number, number] },
+          color: index === 0 ? "#ffffff" : tint,
+          unlit: true,
+          opacity: 0.85 * (1 - t) * (1 - lag * 0.6),
+          transform: {
+            translation: [source.x + Math.sin(angle) * 1.6, height, source.z + Math.cos(angle) * 1.6] as Vec3,
+            rotationQuaternion: yawQuaternion(angle + Math.PI / 2),
           },
         };
       });

@@ -70,35 +70,14 @@ impl ZoneSimulation {
         target: Option<EntityRef>,
         now: u64,
     ) -> Result<Refusal, ZoneError> {
+        let ability = match self.ready_ability(player_id, ability, false) {
+            None => return Ok(None),
+            Some(Err(code)) => return Ok(Some((code, None))),
+            Some(Ok(ability)) => ability,
+        };
         let Some(player) = self.players.get(&player_id) else {
             return Ok(None);
         };
-        let Some(choice) = player.class else {
-            return Ok(Some((ErrorCode::NoClass, None)));
-        };
-        let Some(ability) = learned(choice.class, player.level, AbilityId::new(ability)) else {
-            return Ok(Some((ErrorCode::NotLearned, None)));
-        };
-        if !player.is_alive() {
-            return Ok(Some((ErrorCode::YouAreDead, None)));
-        }
-        if has_kind(&player.auras, AuraKind::Stun) {
-            return Ok(Some((ErrorCode::Stunned, None)));
-        }
-        if player.cast.is_some() {
-            return Ok(Some((ErrorCode::AlreadyCasting, None)));
-        }
-        if player.global_cooldown > 0
-            || player
-                .cooldowns
-                .iter()
-                .any(|cooldown| cooldown.ability == ability.id)
-        {
-            return Ok(Some((ErrorCode::NotReady, None)));
-        }
-        if player.resource.value < ability.cost {
-            return Ok(Some((ErrorCode::NotEnoughResource, None)));
-        }
         let target = if ability.needs_target() {
             let target = target.or(player.target);
             let Some(entity @ EntityRef::Creature(creature_id)) = target else {
@@ -167,6 +146,48 @@ impl ZoneSimulation {
         Ok(None)
     }
 
+    /// The shared ability checks in their fixed order (class, learned, the
+    /// directed mode when `directed`, alive, stunned, casting, global
+    /// cooldown and cooldown, resource); `None` for an absent player.
+    pub(crate) fn ready_ability(
+        &self,
+        player_id: PlayerId,
+        ability: u8,
+        directed: bool,
+    ) -> Option<Result<&'static Ability, ErrorCode>> {
+        let player = self.players.get(&player_id)?;
+        let Some(choice) = player.class else {
+            return Some(Err(ErrorCode::NoClass));
+        };
+        let Some(ability) = learned(choice.class, player.level, AbilityId::new(ability)) else {
+            return Some(Err(ErrorCode::NotLearned));
+        };
+        if directed && !crate::strike::has_directed_mode(ability.id) {
+            return Some(Err(ErrorCode::NotLearned));
+        }
+        if !player.is_alive() {
+            return Some(Err(ErrorCode::YouAreDead));
+        }
+        if has_kind(&player.auras, AuraKind::Stun) {
+            return Some(Err(ErrorCode::Stunned));
+        }
+        if player.cast.is_some() {
+            return Some(Err(ErrorCode::AlreadyCasting));
+        }
+        if player.global_cooldown > 0
+            || player
+                .cooldowns
+                .iter()
+                .any(|cooldown| cooldown.ability == ability.id)
+        {
+            return Some(Err(ErrorCode::NotReady));
+        }
+        if player.resource.value < ability.cost {
+            return Some(Err(ErrorCode::NotEnoughResource));
+        }
+        Some(Ok(ability))
+    }
+
     /// Stops the player's own cast or channel; nothing happens without one.
     pub(crate) fn cancel_cast(&mut self, player_id: PlayerId) {
         self.interrupt_cast(EntityRef::Player(player_id), None, None);
@@ -212,7 +233,7 @@ impl ZoneSimulation {
         true
     }
 
-    fn pay_and_cool_down(&mut self, player_id: PlayerId, ability: &Ability) {
+    pub(crate) fn pay_and_cool_down(&mut self, player_id: PlayerId, ability: &Ability) {
         self.update_player(player_id, |player| {
             if let Some(choice) = player.class {
                 player.resource.spend(choice.class.resource(), ability.cost);
@@ -268,15 +289,9 @@ impl ZoneSimulation {
             })
         };
         match ability.effect {
-            AbilityEffect::WeaponStrike {
-                numerator,
-                denominator,
-                bonus,
-            } => {
+            AbilityEffect::WeaponStrike { .. } => {
                 if let Some(creature_id) = creature {
-                    let weapon = self.weapon_roll(melee);
-                    let amount = weapon * u32::from(numerator) / u32::from(denominator.max(1))
-                        + u32::from(bonus);
+                    let amount = self.weapon_strike_amount(player_id, ability.effect);
                     self.player_damages_creature(player_id, creature_id, amount, false, now)?;
                 }
             }
@@ -367,6 +382,32 @@ impl ZoneSimulation {
             AbilityEffect::Blizzard { .. } | AbilityEffect::Bandage { .. } => {}
         }
         Ok(())
+    }
+
+    /// A weapon strike's damage: weapon damage × numerator / denominator +
+    /// bonus; zero for any other effect.
+    pub(crate) fn weapon_strike_amount(
+        &mut self,
+        player_id: PlayerId,
+        effect: AbilityEffect,
+    ) -> u32 {
+        let AbilityEffect::WeaponStrike {
+            numerator,
+            denominator,
+            bonus,
+        } = effect
+        else {
+            return 0;
+        };
+        let Some(melee) = self
+            .players
+            .get(&player_id)
+            .map(super::zone::PlayerState::melee_damage)
+        else {
+            return 0;
+        };
+        let weapon = self.weapon_roll(melee);
+        weapon * u32::from(numerator) / u32::from(denominator.max(1)) + u32::from(bonus)
     }
 
     /// Weapon damage: one uniform draw in the player's melee range.
@@ -516,6 +557,7 @@ impl ZoneSimulation {
             event,
             ZoneEvent::CastStarted { .. }
                 | ZoneEvent::AbilityUsed { .. }
+                | ZoneEvent::StrikeSwept { .. }
                 | ZoneEvent::Interrupted { .. }
         ) {
             let refs: Vec<_> = units.iter().flatten().copied().collect();

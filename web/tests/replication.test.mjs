@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v16.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v17.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({
@@ -117,7 +117,7 @@ describe("Rust/browser snapshot contract", () => {
         { kind: "evade", source: VIEWER, target: WOLF },
         { kind: "died", entity: WOLF, killer: VIEWER },
         { kind: "error", code: "out-of-range", target: WOLF },
-        { kind: "error", code: "not-enough-resource", target: null },
+        { kind: "strike-swept", source: { kind: "player", id: 7 }, target: { kind: "creature", id: 108 }, ability: 1, aim: { side: "left", height: "high" } },
         { kind: "cast-started", source: WOLF, target: VIEWER, ability: 13, ticks: 45 },
         { kind: "ability-used", source: VIEWER, target: null, ability: 10 },
         { kind: "healed", source: VIEWER, target: VIEWER, ability: 3, amount: 2 },
@@ -171,8 +171,8 @@ describe("Rust/browser snapshot contract", () => {
     ];
     codes.forEach((code, index) => {
       const bytes = fixture.slice();
-      bytes[EVENTS + 1 + 6 * 14 + 13] = index + 1;
-      expect(decodeSnapshot(bytes).events[6]).toEqual({ kind: "error", code, target: null });
+      bytes[EVENTS + 1 + 5 * 14 + 13] = index + 1;
+      expect(decodeSnapshot(bytes).events[5]).toEqual({ kind: "error", code, target: { kind: "creature", id: 108 } });
     });
   });
 
@@ -225,7 +225,8 @@ describe("Rust/browser snapshot contract", () => {
       [EVENTS + 1 + 13 * 14 + 1, 1, "flags"],
       [EVENTS + 2, 2, "flags"],
       [EVENTS + 1 + 2 * 14 + 1, 1, "flags"],
-      [EVENTS + 1 + 6 * 14 + 13, 99, "error code"],
+      [EVENTS + 1 + 5 * 14 + 13, 99, "error code"],
+      [EVENTS + 1 + 6 * 14 + 13, 3, "Malformed event record"],
       [ENTITY_COUNT, 255, "count"],
       [CHAT, 5, "chat capacity"],
       [CHAT + 5, 3, "chat channel"],
