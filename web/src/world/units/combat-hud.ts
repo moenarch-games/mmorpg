@@ -1,5 +1,5 @@
 import type { EntityRef } from "../../entity-ref";
-import { findEntity, type ErrorCode, type ZoneEvent, type ZoneSnapshot } from "../../replication";
+import { findEntity, type ErrorCode, type MeleeStance, type ZoneEvent, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { objectiveLabel } from "./quest-state";
 
@@ -61,6 +61,15 @@ export function unitName(entity: EntityRef, snapshot: ZoneSnapshot, catalog: Con
 }
 
 /** Health, level, combat state and target, or how to release a dead spirit. */
+/** The Warden's movement-dependent melee stance and what it does (#155, Atlas 5.2.69–5.2.70). */
+export const STANCE_TEXT: Readonly<Record<MeleeStance, string>> = {
+  planted: "Planted: braced, −10% damage taken",
+  charging: "Charging: +20% melee damage",
+  moving: "Moving: −15% melee damage",
+  airborne: "Airborne: +35% melee damage, +25% taken",
+  landing: "Landing: melee waits",
+};
+
 export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): string {
   const viewer = snapshot.viewer;
   if (viewer.dead) {
@@ -71,6 +80,9 @@ export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): s
     parts.push(`${RESOURCE_NAMES[viewer.resource.kind]} ${viewer.resource.value}/${viewer.resource.max}`);
   }
   parts.push(`Level ${viewer.level}`);
+  if (viewer.stance) {
+    parts.push(STANCE_TEXT[viewer.stance]);
+  }
   if (viewer.cast) {
     const verb = viewer.cast.channel ? "Channelling" : "Casting";
     parts.push(`${verb} ${abilityName(viewer.cast.ability, catalog)} ${viewer.cast.elapsed}/${viewer.cast.total}`);

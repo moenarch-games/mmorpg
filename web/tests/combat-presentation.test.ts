@@ -171,6 +171,8 @@ describe("combat HUD text", () => {
       .toBe("Health 38/50 · Level 1 · In combat · Target: Timber Wolf (level 2, 60%) · Attacking");
     expect(combatStatus(view([], { target: WOLF }), catalog)).toBe("Health 50/50 · Level 1 · Target: a creature (out of sight)");
     expect(combatStatus(view([], { health: 0, dead: true }), catalog)).toContain("Press R to release");
+    // A Warden's movement-dependent melee stance (#155) follows the level.
+    expect(combatStatus(view([], { stance: "charging" }), catalog)).toBe("Health 50/50 · Level 1 · Charging: +20% melee damage");
     expect(unitName({ kind: "npc", id: 5 }, view([]), catalog)).toBe("Brother Aldous");
     expect(unitName({ kind: "player", id: 7 }, view([]), catalog)).toBe("you");
   });

@@ -1,7 +1,7 @@
 import { entityKindCode, type EntityRef } from "../../src/entity-ref";
-import { EMOTES, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type CastState, type ZoneEvent, type ZoneSnapshot } from "../../src/replication";
+import { EMOTES, MELEE_STANCES, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type CastState, type ZoneEvent, type ZoneSnapshot } from "../../src/replication";
 
-const FIXED_BYTES = 109;
+const FIXED_BYTES = 110;
 /** Bag 64, equipment 12 and stat totals 8. */
 const SHEET_BYTES = 84;
 const AURA_KINDS = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
@@ -22,7 +22,7 @@ function flagByte(flags: readonly boolean[]): number {
 }
 
 /**
- * Test-only player-visible snapshot v18 encoder (docs/PROTOCOL.md); Rust owns the real one.
+ * Test-only player-visible snapshot v19 encoder (docs/PROTOCOL.md); Rust owns the real one.
  * Like it, positions must fit i16 and velocities saturate to i8.
  */
 export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
@@ -52,9 +52,9 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(value === null ? 0 : entityKindCode(value.kind));
     u32(value?.id ?? 0);
   };
-  u8(18);
+  u8(19);
   u8(2);
-  u16(18);
+  u16(19);
   u32(snapshot.zoneId);
   u64(snapshot.tick);
   u64(snapshot.contentRevision);
@@ -97,6 +97,8 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   u8(guard.raised === null ? 0 : STRIKE_HEIGHTS.indexOf(guard.raised) + 1);
   u8(guard.protecting ? 1 : 0);
   u16(guard.broken);
+  const stance = viewer.stance ?? null;
+  u8(stance === null ? 0 : MELEE_STANCES.indexOf(stance) + 1);
   u8(snapshot.cooldowns.length);
   for (const cooldown of snapshot.cooldowns) {
     u8(cooldown.ability);
