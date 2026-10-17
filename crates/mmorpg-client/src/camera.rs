@@ -86,6 +86,12 @@ impl OrbitCamera {
         yaw_from_radians(self.yaw)
     }
 
+    /// The horizontal direction the camera looks in, in radians.
+    #[must_use]
+    pub fn yaw(&self) -> f32 {
+        self.yaw
+    }
+
     #[must_use]
     pub fn distance(&self) -> f32 {
         self.distance

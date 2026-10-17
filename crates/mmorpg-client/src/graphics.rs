@@ -177,6 +177,34 @@ fn scene_camera(view: CameraView, viewport: [u32; 2]) -> Result<PerspectiveCamer
     )?)
 }
 
+/// Where a world point lands in a `viewport` rendered from `view`, in pixels
+/// from the top left; `None` behind the eye or beyond the far plane.
+#[must_use]
+pub fn project_to_viewport(
+    view: CameraView,
+    viewport: [u32; 2],
+    point: [f32; 3],
+) -> Option<[f32; 2]> {
+    if viewport[0] == 0 || viewport[1] == 0 {
+        return None;
+    }
+    let m = scene_camera(view, viewport)
+        .ok()?
+        .view_projection_matrix()
+        .elements;
+    let clip: [f32; 4] = std::array::from_fn(|r| {
+        m[r] * point[0] + m[4 + r] * point[1] + m[8 + r] * point[2] + m[12 + r]
+    });
+    if clip[3] <= 1e-4 || !(-1.0..=1.0).contains(&(clip[2] / clip[3])) {
+        return None;
+    }
+    let [x, y] = [clip[0] / clip[3], clip[1] / clip[3]];
+    Some([
+        (x + 1.0) * 0.5 * viewport[0] as f32,
+        (1.0 - y) * 0.5 * viewport[1] as f32,
+    ])
+}
+
 pub struct WindowRenderer {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
@@ -220,6 +248,12 @@ impl WindowRenderer {
             last_view: None,
         })
     }
+    /// The presented surface size in physical pixels.
+    #[must_use]
+    pub fn viewport(&self) -> [u32; 2] {
+        [self.config.width, self.config.height]
+    }
+
     /// Pick only the actual last successfully presented frame and viewport.
     pub fn pick(&self, pixel: [f64; 2]) -> Result<Option<mmorpg_core::EntityRef>, ClientError> {
         let Some(view) = self.last_view else {
@@ -583,7 +617,23 @@ mod tests {
 
             let mut ui = GameUi::new(&scenery);
             let names = |entity| presentation.unit_name(entity);
-            ui.observe(&projection, &content, &names, now);
+            // Cosmetic combat events float over the units they concern.
+            let mut struck = projection.clone();
+            struck.events.extend([
+                mmorpg_core::ZoneEvent::DamageDealt {
+                    source: EntityRef::Player(1),
+                    target: EntityRef::Npc(NpcId::new(3)),
+                    amount: 27,
+                    critical: true,
+                },
+                mmorpg_core::ZoneEvent::Healed {
+                    source: EntityRef::Player(1),
+                    target: EntityRef::Player(1),
+                    ability: mmorpg_core::AbilityId::new(1),
+                    amount: 12,
+                },
+            ]);
+            ui.observe(&struck, &content, &names, now);
             ui.bags_open = true;
             ui.character_open = true;
             let mut npc = NpcContext::default();
@@ -598,7 +648,16 @@ mod tests {
                 forward: [view.target[0] - view.eye[0], view.target[2] - view.eye[2]],
                 connection: None,
                 choosing: false,
+                labels: presentation.labels(),
+                project: &|point| {
+                    project_to_viewport(view, SIZE, point).map(|[x, y]| egui::pos2(x, y))
+                },
+                eye: view.eye,
             };
+            assert!(
+                presentation.labels().len() > 1,
+                "the presented units carry nameplate anchors"
+            );
             let context = egui::Context::default();
             let mut paint = EguiPaint::default();
             // Passes advance time so window layout and fade-in animations settle.

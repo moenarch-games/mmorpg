@@ -1,12 +1,14 @@
 use mmorpg_client::session::{NetworkUpdate, PlayerInput};
 use mmorpg_client::{
     ClientError,
-    camera::OrbitCamera,
+    camera::{CameraView, OrbitCamera},
     controls::{ControlAction, NativeControls},
     graphics::WindowRenderer,
+    graphics::project_to_viewport,
     hud::{CombatHud, class_kit},
     interaction::NpcContext,
     presentation::Presentation,
+    roster::{Roster, config_dir},
     ui::{GameUi, UiFrame, UiIntent, overlay::EguiWindow},
     world::WorldScene,
     world_controls::{WorldAction, WorldControls},
@@ -41,7 +43,15 @@ pub fn run(
     character: Option<(PlayerClass, Sex)>,
 ) -> Result<(), ClientError> {
     let event_loop = EventLoop::new()?;
-    let ui = GameUi::new(&scenery);
+    let mut ui = GameUi::new(&scenery);
+    if character.is_none() {
+        // The local roster offers its characters; `--class` skips it.
+        ui.set_roster(
+            config_dir()
+                .ok_or_else(|| "No configuration directory for the local roster.".to_owned())
+                .and_then(|dir| Roster::load(&dir)),
+        );
+    }
     let mut presentation = Presentation::new(player_id, scenery, content, Instant::now())?;
     if let Some((class, _)) = character {
         presentation.set_default_appearance(class);
@@ -431,9 +441,12 @@ impl App {
                 self.npc_context.close();
                 self.world_controls.set_interaction(false);
             }
-            UiIntent::ChooseCharacter(class, sex) => {
+            UiIntent::ChooseCharacter(class, sex, headwear) => {
                 self.choosing = false;
+                self.presentation.set_preview(None);
                 self.presentation.set_default_appearance(class);
+                // The roster's headwear is a known style, so this cannot fail.
+                let _ = self.presentation.set_headwear(Some(headwear.id()));
                 self.abilities = class_kit(class);
                 self.input.send_modify(|input| {
                     input.class_choice = Some((class.code(), sex.code()));
@@ -443,7 +456,7 @@ impl App {
     }
 
     /// Runs one egui pass over the latest projection and applies its intents.
-    fn interface(&mut self, now: Instant) {
+    fn interface(&mut self, now: Instant, view: CameraView) {
         let (Some(egui), Some(window)) = (self.egui.as_mut(), self.window.as_ref()) else {
             return;
         };
@@ -453,10 +466,15 @@ impl App {
             _ if self.presentation.is_stalled(now) => Some("Connection stalled…"),
             _ => None,
         };
-        let view = self.camera.view([0.0; 3]);
         let forward = [view.target[0] - view.eye[0], view.target[2] - view.eye[2]];
         let presentation = &self.presentation;
         let names = |entity| presentation.unit_name(entity);
+        let viewport = self.renderer.as_ref().map_or([0, 0], |r| r.viewport());
+        let points_per_pixel = 1.0 / egui.context.pixels_per_point().max(0.1);
+        let project = |point| {
+            project_to_viewport(view, viewport, point)
+                .map(|[x, y]| egui::pos2(x * points_per_pixel, y * points_per_pixel))
+        };
         let frame = UiFrame {
             snapshot: presentation.latest(),
             content: presentation.content(),
@@ -465,6 +483,9 @@ impl App {
             forward,
             connection,
             choosing: self.choosing,
+            labels: presentation.labels(),
+            project: &project,
+            eye: view.eye,
         };
         let raw = egui.state.take_egui_input(window);
         let mut intents = Vec::new();
@@ -774,11 +795,20 @@ impl ApplicationHandler for App {
                         return;
                     }
                 }
+                // While choosing, the viewer turns on the turntable facing the camera.
+                let preview = self.choosing.then(|| {
+                    let preview = self.ui.preview();
+                    let _ = self.presentation.set_headwear(Some(preview.headwear.id()));
+                    let yaw =
+                        self.camera.yaw() + std::f32::consts::PI + preview.degrees.to_radians();
+                    (preview.choice, yaw.rem_euclid(std::f32::consts::TAU))
+                });
+                self.presentation.set_preview(preview);
                 let view = self
                     .presentation
                     .camera_view(&mut self.camera, &self.world, now);
                 let frame = self.presentation.frame(&self.world, now, view);
-                self.interface(now);
+                self.interface(now, view);
                 // The egui action bar replaces the flat combat HUD rectangles.
                 let overlay = self
                     .egui
