@@ -14,7 +14,8 @@
       "lint": ["cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--locked", "--", "-D", "warnings"],
       "build": ["cargo", "build", "--workspace", "--all-features", "--locked"],
       "test:unit": ["cargo", "test", "--workspace", "--all-features", "--locked"],
-      "size:budget": ["bun", "run", "--cwd", "web", "size:budget"]
+      "size:budget": ["bun", "run", "--cwd", "web", "size:budget"],
+      "performance:work": ["python3", "scripts/operation-work.py"]
     }
   },
   "taskKnowledge": {

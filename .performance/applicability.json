@@ -16,6 +16,19 @@
           "platforms": [
             "linux"
           ]
+        },
+        {
+          "family": "work-complexity",
+          "capability": "performance:work",
+          "path": ".performance/contract.json",
+          "tools": [
+            "python3",
+            "cargo",
+            "rustc"
+          ],
+          "platforms": [
+            "linux"
+          ]
         }
       ]
     }

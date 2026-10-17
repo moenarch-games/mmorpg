@@ -32,3 +32,16 @@ Payload bytes above count only the MMO visible snapshot (wire version 5: 55 fixe
 The core gate compares indexed and exhaustive results across inclusive radius edges, diagonal edges, vertical separation, negative cells, extreme coordinates, a fixed scattered layout, dense layouts beyond the cap, movement across cells, collision resolution, failed physics steps, admission, removal and checkpoint recovery. The protocol gate runs the shared exhaustive reference and indexed projection through deterministic multi-tick sequences and compares complete snapshots and encoded bytes after each transition; positions outside the compact wire range fail closed identically, and players running on content without walls stay encodable because the world limits stop them. It also asserts exact sparse/dense query work and membership maintenance counts without wall-clock thresholds. Stable ordering, acknowledgements, content revisions and read-only query behavior are checked alongside visibility.
 
 Recorded measurement environment: Rust 1.98.1, `Cargo.lock` SHA-256 `36adf21ccc47ab0a19e8fd6e8792cb1fbd0605d9ac70070d656b6fdec10a0157`, core schema 5, wire version 5, and Greyhaven Vale content revision 3. The counts are architecture-independent integer operations and byte lengths.
+
+## Operation scaling contracts (#138)
+
+`.performance/contract.json` (schema 2) declares the zone's natural operations, the dimensions they scale with and deterministic growth bounds; `coding-tooling performance work --root . --json` checks them against counters that `scripts/operation-work.py` collects from the `operation_work` example of `mmorpg-protocol` (the `performance:work` capability). Every sampled projection is also compared with the exhaustive visibility oracle, so a smaller count can never come from a wrong answer. Wall-clock time plays no part.
+
+| Operation | Dimensions | Bound |
+| --- | --- | --- |
+| `project-one-viewer` | zone population, local neighbourhood | exact distance tests constant in population and linear in local; visible records at most 64 |
+| `publish-sparse` | recipients at a fixed density (21-player clusters three cells apart) | total exact distance tests linear in recipients |
+| `publish-dense-hub` | recipients in one interest radius | the largest recipient's tests linear in recipients (total work is honestly quadratic); at most 64 visible records |
+| `tick-maintenance` | stationary population, players crossing a cell boundary | no full index rebuild; bucket writes constant in population and linear in movers; position re-reads linear |
+
+The checks hold at the declared scale points only; they are executable architectural budgets, not a proof of asymptotic complexity. Physics work stays with `physics-engine`'s own counters.
