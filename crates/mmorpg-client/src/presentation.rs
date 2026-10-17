@@ -92,6 +92,10 @@ pub struct Presentation {
     cue_tick: u64,
     effects: effects::Effects,
     headwear: Option<player::Hat>,
+    /// Character-selection preview of the viewer: class, sex and turntable yaw.
+    preview: Option<(mmorpg_core::ClassChoice, f32)>,
+    /// Nameplate anchors above each presented unit's head, from the last draw.
+    labels: Vec<crate::ui::world_labels::UnitLabel>,
     reduced_motion: bool,
     origin: Instant,
     last_draw: Instant,
@@ -127,6 +131,8 @@ impl Presentation {
             cue_tick: 0,
             effects: effects::Effects::default(),
             headwear: None,
+            preview: None,
+            labels: Vec::new(),
             reduced_motion: false,
             origin: now,
             last_draw: now,
@@ -139,6 +145,7 @@ impl Presentation {
         self.camera_framed = false;
         self.picked_bodies.clear();
         self.picked_draws.clear();
+        self.labels.clear();
         self.animators.clear();
         self.gaits.clear();
         self.effects.clear();
@@ -373,6 +380,25 @@ impl Presentation {
         Ok(())
     }
 
+    /// While a character is being chosen, the viewer shows the previewed class
+    /// and sex turned to `yaw` (presentation only; the zone's facing is unchanged).
+    pub fn set_preview(&mut self, preview: Option<(mmorpg_core::ClassChoice, f32)>) {
+        self.preview = preview;
+    }
+
+    /// The viewer's class and sex as presented: the preview, else the zone's choice.
+    fn viewer_choice(&self, snapshot: &ZoneSnapshot) -> Option<mmorpg_core::ClassChoice> {
+        self.preview
+            .map(|(choice, _)| choice)
+            .or(snapshot.viewer.class)
+    }
+
+    /// Where each presented unit's nameplate hangs, from the last unit draw.
+    #[must_use]
+    pub fn labels(&self) -> &[crate::ui::world_labels::UnitLabel] {
+        &self.labels
+    }
+
     pub fn set_reduced_motion(&mut self, reduced: bool) {
         self.reduced_motion = reduced;
     }
@@ -416,7 +442,7 @@ impl Presentation {
             EntityRef::Player(id) => {
                 // The viewer's sheet wins; other players' records carry their class and sex.
                 let choice = (id == self.player_id)
-                    .then_some(snapshot.viewer.class)
+                    .then(|| self.viewer_choice(snapshot))
                     .flatten()
                     .or_else(|| mmorpg_core::ClassChoice::from_appearance(record.appearance));
                 let (class, female) = choice.map_or((0, false), |c| {
@@ -471,6 +497,7 @@ impl Presentation {
         use kit::*;
         let Some(snapshot) = self.latest().cloned() else {
             self.picked_draws.clear();
+            self.labels.clear();
             return Vec::new();
         };
         let dt = now
@@ -483,6 +510,7 @@ impl Presentation {
         self.animators.retain(|e, _| units.contains_key(e));
         self.playbacks.retain(|e, _| units.contains_key(e));
         self.picked_draws.clear();
+        self.labels.clear();
         let mut draws = Vec::new();
         let mut anchors = BTreeMap::new();
         let action = if self.reduced_motion {
@@ -516,7 +544,13 @@ impl Presentation {
                 f64::from(unit.pose.position[1] - half[1]),
                 f64::from(unit.pose.position[2]),
             ];
-            let yaw = f64::from(unit.pose.yaw);
+            let preview_yaw = self
+                .preview
+                .filter(|_| entity == EntityRef::Player(self.player_id))
+                .map(|(_, yaw)| yaw);
+            let yaw = f64::from(preview_yaw.unwrap_or(unit.pose.yaw));
+            let bar_y = unit.pose.position[1] + half[1] + 0.3;
+            let mut label_y = bar_y + 0.15;
             let root = Frame {
                 p: feet,
                 q: qa(1, yaw),
@@ -561,13 +595,9 @@ impl Presentation {
                         asset
                             .model
                             .draws(&id, root, height, clip, time, dead.then_some(0.6));
-                    if let EntityRef::Player(id_num) = entity
-                        && id_num == self.player_id
-                        && !dead
-                        && let Some((centre, radius)) = asset.model.head(clip, time)
-                    {
+                    let head = asset.model.head(clip, time).map(|(centre, radius)| {
                         let m = asset.model.placement(root, height).elements;
-                        let p = std::array::from_fn(|r| {
+                        let p: [f64; 3] = std::array::from_fn(|r| {
                             f64::from(
                                 m[r] * centre[0]
                                     + m[4 + r] * centre[1]
@@ -576,7 +606,18 @@ impl Presentation {
                             )
                         });
                         let scale = f64::from(m[0].hypot(m[1]).hypot(m[2]));
-                        let choice = snapshot.viewer.class;
+                        (p, f64::from(radius) * scale)
+                    });
+                    if let Some((p, radius)) = head {
+                        // Above the posed head, or the health bar when that is higher.
+                        label_y = label_y.max((p[1] + radius) as f32 + 0.15);
+                    }
+                    if let EntityRef::Player(id_num) = entity
+                        && id_num == self.player_id
+                        && !dead
+                        && let Some((p, radius)) = head
+                    {
+                        let choice = self.viewer_choice(&snapshot);
                         let look = player::Look::new(
                             choice.map_or(0, |c| c.class.code()),
                             choice.is_none_or(|c| c.sex.code() == 0),
@@ -588,14 +629,14 @@ impl Presentation {
                             &id,
                             look,
                             Frame { p, q: root.q },
-                            f64::from(radius) * scale,
+                            radius,
                         ));
                     }
                     body
                 }
                 EntityRef::Player(id_num) => {
                     let other = id_num != self.player_id;
-                    let choice = snapshot.viewer.class;
+                    let choice = self.viewer_choice(&snapshot);
                     let look = player::Look::new(
                         choice.map_or(0, |c| c.class.code()),
                         choice.is_none_or(|c| c.sex.code() == 0),
@@ -687,6 +728,10 @@ impl Presentation {
                     }
                 }
             };
+            self.labels.push(crate::ui::world_labels::UnitLabel {
+                entity,
+                anchor: [unit.pose.position[0], label_y, unit.pose.position[2]],
+            });
             self.picked_draws
                 .extend(body.iter().cloned().map(|d| (entity, d)));
             draws.extend(body);
