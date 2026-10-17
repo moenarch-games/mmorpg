@@ -51,6 +51,31 @@ fn vector(m: &M4, v: [f32; 3]) -> [f32; 3] {
     std::array::from_fn(|r| m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2])
 }
 
+/// The sRGB colour (0..=1) of `image`'s nearest texel at `uv`, wrapping like a repeat sampler.
+fn sample(image: &gltf::image::Data, [u, v]: [f32; 2]) -> [f32; 3] {
+    use gltf::image::Format as F;
+    let (width, height) = (image.width as usize, image.height as usize);
+    if width == 0 || height == 0 {
+        return [1.; 3];
+    }
+    let x = ((u.rem_euclid(1.) * width as f32) as usize).min(width - 1);
+    let y = ((v.rem_euclid(1.) * height as f32) as usize).min(height - 1);
+    let stride = match image.format {
+        F::R8 => 1,
+        F::R8G8 => 2,
+        F::R8G8B8 => 3,
+        F::R8G8B8A8 => 4,
+        _ => return [1.; 3],
+    };
+    let at = (y * width + x) * stride;
+    let channel = |i: usize| f32::from(image.pixels[at + i.min(stride - 1)]) / 255.;
+    if stride < 3 {
+        [channel(0); 3]
+    } else {
+        [channel(0), channel(1), channel(2)]
+    }
+}
+
 /// glTF base colours are linear; the native mesh path expects sRGB vertex colours.
 fn srgb(c: f32) -> f32 {
     if c <= 0.003_130_8 {
@@ -147,7 +172,7 @@ pub(super) struct Model {
 
 impl Model {
     pub fn parse(bytes: &[u8], rest_clip: &str) -> Result<Self, gltf::Error> {
-        let (document, buffers, _) = gltf::import_slice(bytes)?;
+        let (document, buffers, images) = gltf::import_slice(bytes)?;
         let count = document.nodes().len();
         let mut rest = Vec::with_capacity(count);
         let mut parents = vec![None; count];
@@ -193,12 +218,27 @@ impl Model {
                 let normals: Vec<[f32; 3]> = reader
                     .read_normals()
                     .map_or_else(|| vec![[0., 1., 0.]; positions.len()], Iterator::collect);
-                let base = primitive
-                    .material()
-                    .pbr_metallic_roughness()
-                    .base_color_factor();
-                let colors =
-                    vec![Color3::new(srgb(base[0]), srgb(base[1]), srgb(base[2])); positions.len()];
+                let pbr = primitive.material().pbr_metallic_roughness();
+                let base = pbr.base_color_factor();
+                let factor = [srgb(base[0]), srgb(base[1]), srgb(base[2])];
+                // A textured material bakes its base-colour texel at each vertex's UV.
+                let texture = pbr
+                    .base_color_texture()
+                    .map(|info| &images[info.texture().source().index()]);
+                let colors = match (texture, reader.read_tex_coords(0)) {
+                    (Some(image), Some(uvs)) => uvs
+                        .into_f32()
+                        .map(|uv| {
+                            let texel = sample(image, uv);
+                            Color3::new(
+                                texel[0] * factor[0],
+                                texel[1] * factor[1],
+                                texel[2] * factor[2],
+                            )
+                        })
+                        .collect(),
+                    _ => vec![Color3::new(factor[0], factor[1], factor[2]); positions.len()],
+                };
                 let indices: Vec<u32> = reader.read_indices().map_or_else(
                     || (0..u32::try_from(positions.len()).unwrap_or(0)).collect(),
                     |i| i.into_u32().collect(),
@@ -476,27 +516,11 @@ pub(super) struct Asset {
     pub clips: Clips,
 }
 
-/// Every bundled Quaternius model (CC0); see `assets/quaternius/PROVENANCE.md`.
+/// Every imported unit model: asset-tooling's Ranger humanoid for players (Atlas 6.3.7) and
+/// the bundled Quaternius CC0 animals (Atlas 6.3.6; see `assets/quaternius/PROVENANCE.md`).
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum Kind {
-    KnightMale,
-    KnightFemale,
-    Elf,
-    NinjaFemale,
-    Wizard,
-    Witch,
-    VikingMale,
-    VikingFemale,
-    GoblinMale,
-    GoblinFemale,
-    PirateMale,
-    PirateFemale,
-    SoldierMale,
-    SoldierFemale,
-    WorkerMale,
-    WorkerFemale,
-    CasualMale,
-    CasualFemale,
+    Ranger,
     Wolf,
     Rat,
     Pig,
@@ -508,67 +532,130 @@ macro_rules! bundled {
     };
 }
 
-/// Shared clips of the Ultimate Animated Character pack.
-const fn humanoid(attack: &'static str) -> Clips {
-    Clips {
-        idle: "Idle",
-        walk: "Walk",
-        run: "Run",
-        attack,
-        death: "Death",
+/// The Ranger bundle's glTF and declared resources, embedded by `build.rs`.
+mod ranger_bundle {
+    include!(concat!(env!("OUT_DIR"), "/ranger_bundle.rs"));
+}
+
+/// Normalizes `base`'s directory joined with a relative `uri` ("../../resources/x.bin").
+fn resolve(base: &str, uri: &str) -> String {
+    let mut parts: Vec<&str> = base.split('/').collect();
+    parts.pop();
+    for part in uri.split('/') {
+        match part {
+            ".." => {
+                parts.pop();
+            }
+            "." | "" => {}
+            part => parts.push(part),
+        }
     }
+    parts.join("/")
+}
+
+/// One GLB of an asset-tooling `gltf-resources-v1` entry: every external buffer and image
+/// becomes a view of a single binary chunk, so the ordinary GLB import reads it.
+fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
+    let file = |path: &str| {
+        files
+            .iter()
+            .find(|(name, _)| *name == path)
+            .map(|(_, bytes)| *bytes)
+            .unwrap_or_else(|| panic!("the bundle embeds {path}"))
+    };
+    let mut json: serde_json::Value =
+        serde_json::from_slice(file(entry)).expect("the bundle glTF is JSON");
+    let mut bin = Vec::new();
+    let mut append = |bytes: &[u8]| {
+        while bin.len() % 4 != 0 {
+            bin.push(0);
+        }
+        let offset = bin.len();
+        bin.extend_from_slice(bytes);
+        offset
+    };
+    let mut offsets = Vec::new();
+    for buffer in json["buffers"].as_array().cloned().unwrap_or_default() {
+        let uri = buffer["uri"].as_str().expect("bundle buffers are external");
+        offsets.push(append(file(&resolve(entry, uri))));
+    }
+    for view in json["bufferViews"].as_array_mut().into_iter().flatten() {
+        let buffer = view["buffer"].as_u64().expect("a view names its buffer") as usize;
+        let start = view["byteOffset"].as_u64().unwrap_or(0) as usize + offsets[buffer];
+        view["buffer"] = 0.into();
+        view["byteOffset"] = start.into();
+    }
+    let mut views = Vec::new();
+    for image in json["images"].as_array_mut().into_iter().flatten() {
+        let uri = image["uri"]
+            .as_str()
+            .expect("bundle images are external")
+            .to_owned();
+        let bytes = file(&resolve(entry, &uri));
+        let offset = append(bytes);
+        views.push(
+            serde_json::json!({"buffer": 0, "byteOffset": offset, "byteLength": bytes.len()}),
+        );
+        if let Some(image) = image.as_object_mut() {
+            image.remove("uri");
+        }
+    }
+    let first = json["bufferViews"].as_array().map_or(0, Vec::len);
+    for (index, image) in json["images"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        image["bufferView"] = (first + index).into();
+    }
+    if let Some(list) = json["bufferViews"].as_array_mut() {
+        list.extend(views);
+    }
+    while bin.len() % 4 != 0 {
+        bin.push(0);
+    }
+    json["buffers"] = serde_json::json!([{"byteLength": bin.len()}]);
+    let mut text = serde_json::to_vec(&json).expect("JSON serializes");
+    while text.len() % 4 != 0 {
+        text.push(b' ');
+    }
+    let length = 12 + 8 + text.len() + 8 + bin.len();
+    let mut glb = Vec::with_capacity(length);
+    let word = |value: usize| {
+        u32::try_from(value)
+            .expect("bundle fits a GLB")
+            .to_le_bytes()
+    };
+    glb.extend_from_slice(b"glTF");
+    glb.extend_from_slice(&2_u32.to_le_bytes());
+    glb.extend_from_slice(&word(length));
+    glb.extend_from_slice(&word(text.len()));
+    glb.extend_from_slice(b"JSON");
+    glb.extend_from_slice(&text);
+    glb.extend_from_slice(&word(bin.len()));
+    glb.extend_from_slice(b"BIN\0");
+    glb.extend_from_slice(&bin);
+    glb
 }
 
 impl Kind {
-    const ALL: [Self; 21] = [
-        Self::KnightMale,
-        Self::KnightFemale,
-        Self::Elf,
-        Self::NinjaFemale,
-        Self::Wizard,
-        Self::Witch,
-        Self::VikingMale,
-        Self::VikingFemale,
-        Self::GoblinMale,
-        Self::GoblinFemale,
-        Self::PirateMale,
-        Self::PirateFemale,
-        Self::SoldierMale,
-        Self::SoldierFemale,
-        Self::WorkerMale,
-        Self::WorkerFemale,
-        Self::CasualMale,
-        Self::CasualFemale,
-        Self::Wolf,
-        Self::Rat,
-        Self::Pig,
-    ];
+    const ALL: [Self; 4] = [Self::Ranger, Self::Wolf, Self::Rat, Self::Pig];
 
-    fn source(self) -> (&'static [u8], Clips) {
-        const SLASH: &str = "SwordSlash";
-        const SHOOT: &str = "Shoot_OneHanded";
-        const PUNCH: &str = "Punch";
+    fn source(self) -> (std::borrow::Cow<'static, [u8]>, Clips) {
         match self {
-            Self::KnightMale => (bundled!("Knight_Male.glb"), humanoid(SLASH)),
-            Self::KnightFemale => (bundled!("Knight_Golden_Female.glb"), humanoid(SLASH)),
-            Self::Elf => (bundled!("Elf.glb"), humanoid(SHOOT)),
-            Self::NinjaFemale => (bundled!("Ninja_Female.glb"), humanoid(SHOOT)),
-            Self::Wizard => (bundled!("Wizard.glb"), humanoid(SHOOT)),
-            Self::Witch => (bundled!("Witch.glb"), humanoid(SHOOT)),
-            Self::VikingMale => (bundled!("Viking_Male.glb"), humanoid(SLASH)),
-            Self::VikingFemale => (bundled!("Viking_Female.glb"), humanoid(SLASH)),
-            Self::GoblinMale => (bundled!("Goblin_Male.glb"), humanoid(PUNCH)),
-            Self::GoblinFemale => (bundled!("Goblin_Female.glb"), humanoid(PUNCH)),
-            Self::PirateMale => (bundled!("Pirate_Male.glb"), humanoid(SLASH)),
-            Self::PirateFemale => (bundled!("Pirate_Female.glb"), humanoid(SLASH)),
-            Self::SoldierMale => (bundled!("Soldier_Male.glb"), humanoid(SLASH)),
-            Self::SoldierFemale => (bundled!("Soldier_Female.glb"), humanoid(SLASH)),
-            Self::WorkerMale => (bundled!("Worker_Male.glb"), humanoid(PUNCH)),
-            Self::WorkerFemale => (bundled!("Worker_Female.glb"), humanoid(PUNCH)),
-            Self::CasualMale => (bundled!("Casual_Male.glb"), humanoid(PUNCH)),
-            Self::CasualFemale => (bundled!("Casual_Female.glb"), humanoid(PUNCH)),
+            Self::Ranger => (
+                bundle_glb(ranger_bundle::ENTRY, ranger_bundle::FILES).into(),
+                Clips {
+                    idle: "Idle_Loop",
+                    walk: "Walk_Loop",
+                    run: "Jog_Fwd_Loop",
+                    attack: "Sword_Attack",
+                    death: "Death01",
+                },
+            ),
             Self::Wolf => (
-                bundled!("Wolf.glb"),
+                bundled!("Wolf.glb").into(),
                 Clips {
                     idle: "Idle",
                     walk: "Walk",
@@ -578,7 +665,7 @@ impl Kind {
                 },
             ),
             Self::Rat => (
-                bundled!("Rat.glb"),
+                bundled!("Rat.glb").into(),
                 Clips {
                     idle: "Rat_Idle",
                     walk: "Rat_Walk",
@@ -589,7 +676,7 @@ impl Kind {
             ),
             // The farm pig has no attack clip; its jump reads as a charge.
             Self::Pig => (
-                bundled!("Pig.glb"),
+                bundled!("Pig.glb").into(),
                 Clips {
                     idle: "Idle",
                     walk: "Walk",
@@ -612,8 +699,8 @@ impl Kind {
         slots[index].get_or_init(|| {
             let (bytes, clips) = self.source();
             Asset {
-                model: Model::parse(bytes, clips.idle)
-                    .expect("bundled Quaternius model is valid glTF"),
+                model: Model::parse(&bytes, clips.idle)
+                    .expect("an imported unit model is valid glTF"),
                 clips,
             }
         })

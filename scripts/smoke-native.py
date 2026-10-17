@@ -27,6 +27,8 @@ def main():
     parser.add_argument("--window", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
+    # The client build embeds the asset-tooling Ranger bundle; fetching is idempotent.
+    subprocess.run([str(root / "scripts" / "fetch-character-bundle.sh")], cwd=root, check=True, timeout=600)
     subprocess.run(["cargo", "build", "--locked", "-p", "mmorpg-client", "-p", "mmorpg-game-server"], cwd=root, check=True, timeout=600)
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--locked", "--format-version", "1"], cwd=root, timeout=30))
     suffix = ".exe" if os.name == "nt" else ""
