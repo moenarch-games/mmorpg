@@ -5,7 +5,7 @@
 # same release is kept. The directory is ignored build input, never committed.
 set -euo pipefail
 
-readonly TAG="humanoid-ranger-male-v3"
+readonly TAG="humanoid-ranger-male-v4"
 readonly URL="https://github.com/moritzbrantner/asset-tooling/releases/download/${TAG}/humanoid.ranger.male.tar"
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly DEST="${ROOT_DIR}/web/public/characters/humanoid.ranger.male"

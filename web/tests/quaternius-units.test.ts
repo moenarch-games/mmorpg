@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ContentCatalog } from "../src/world/catalog";
-import { ClipPlayback, QUATERNIUS_MODELS, classFromAppearance, quaterniusKind } from "../src/world/units/quaternius";
+import { ClipPlayback, QUATERNIUS_MODELS, classFromAppearance, loadoutFor, quaterniusKind } from "../src/world/units/quaternius";
 
 const catalog = {
   creatureTemplates: new Map([
@@ -23,6 +23,19 @@ describe("imported unit mapping (mirrors native imported_asset)", () => {
     expect([4, 5, 6, 99].map(creature)).toEqual([null, null, null, null]);
     const npc = (entityId: number) => quaterniusKind({ kind: "npc", entityId, appearance: 0 }, catalog);
     expect([10, 11, 12, 13, 14].map(npc)).toEqual([null, null, null, null, null]);
+  });
+
+  test("only a Warden carries the sword and shield", () => {
+    expect(loadoutFor({ classId: "warden", sex: "male" })).toBe("sword-and-shield");
+    expect([loadoutFor({ classId: "ranger", sex: "female" }), loadoutFor({ classId: "arcanist", sex: "male" }), loadoutFor(null)]).toEqual([null, null, null]);
+  });
+
+  test("a standing held guard raises the shield; moving keeps the locomotion clip", () => {
+    const clips = QUATERNIUS_MODELS.Ranger.clips;
+    const playback = new ClipPlayback();
+    expect(playback.advance(clips, () => 1, 0, false, 0, 0.1, false, true).clip).toBe("Idle_Shield_Loop");
+    expect(playback.advance(clips, () => 1, 1, false, 0, 0.1, false, true).clip).toBe("Walk_Loop");
+    expect(new ClipPlayback().advance(QUATERNIUS_MODELS.Wolf.clips, () => 1, 0, false, 0, 0.1, false, true).clip).toBe("Idle");
   });
 
   test("clip choice follows speed, attack and death; reduced motion freezes the clock", () => {

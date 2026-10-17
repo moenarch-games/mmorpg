@@ -10,11 +10,23 @@ import type { ContentCatalog } from "../catalog";
  */
 export type QuaterniusKind = "Ranger" | "Wolf" | "Rat" | "Pig";
 
-export type QuaterniusClips = { idle: string; walk: string; run: string; attack: string; death: string };
+export type QuaterniusClips = {
+  idle: string; walk: string; run: string; attack: string; death: string;
+  /** A standing raised shield, for a model that carries one (#156). */
+  guard?: string;
+};
+
+/** What a player model carries: a Warden's sword and shield, or nothing (#156). */
+export type Loadout = "sword-and-shield" | null;
+
+/** The loadout of a player's class: only the Warden has equipment in the character bundle. */
+export function loadoutFor(choice: ClassChoice | null): Loadout {
+  return choice?.classId === "warden" ? "sword-and-shield" : null;
+}
 
 /** The clips of every model. */
 export const QUATERNIUS_MODELS: Readonly<Record<QuaterniusKind, { clips: QuaterniusClips }>> = {
-  Ranger: { clips: { idle: "Idle_Loop", walk: "Walk_Loop", run: "Jog_Fwd_Loop", attack: "Sword_Attack", death: "Death01" } },
+  Ranger: { clips: { idle: "Idle_Loop", walk: "Walk_Loop", run: "Jog_Fwd_Loop", attack: "Sword_Attack", death: "Death01", guard: "Idle_Shield_Loop" } },
   Wolf: { clips: { idle: "Idle", walk: "Walk", run: "Gallop", attack: "Attack", death: "Death" } },
   Rat: { clips: { idle: "Rat_Idle", walk: "Rat_Walk", run: "Rat_Run", attack: "Rat_Attack", death: "Rat_Death" } },
   // The farm pig has no attack clip; its jump reads as a charge.
@@ -75,6 +87,7 @@ export class ClipPlayback {
     now: number,
     dt: number,
     reduced: boolean,
+    guarding = false,
   ): { clip: string; time: number } {
     let clip: string;
     let rate = 1;
@@ -88,7 +101,8 @@ export class ClipPlayback {
     } else if (speed > 0.25) {
       clip = clips.walk; rate = Math.min(1.6, Math.max(0.6, speed / 1.8));
     } else {
-      clip = clips.idle;
+      // A standing raised guard holds the shield up; walking keeps the walk (no layered blend).
+      clip = guarding && clips.guard ? clips.guard : clips.idle;
     }
     if (clip !== this.#clip) {
       this.#clip = clip;

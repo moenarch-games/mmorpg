@@ -551,6 +551,9 @@ impl Presentation {
                 _ if imported.is_some() => {
                     let asset = imported.expect("checked above");
                     let dead = unit.record.flags.dead;
+                    let viewer = matches!(entity, EntityRef::Player(n) if n == self.player_id);
+                    // Only the viewer's guard is projected; a held one raises the shield (#156).
+                    let guarding = viewer && snapshot.viewer.guard.raised.is_some();
                     let (clip, time) = self.playbacks.entry(entity).or_default().advance(
                         asset,
                         loc.forward.hypot(loc.right),
@@ -558,12 +561,31 @@ impl Presentation {
                         seconds,
                         dt,
                         self.reduced_motion,
+                        guarding,
                     );
                     let height = f64::from(half[1]) * 2.;
                     let mut body =
                         asset
                             .model
                             .draws(&id, root, height, clip, time, dead.then_some(0.6));
+                    // A Warden carries the bundle's sword and shield (#156).
+                    let class = if viewer {
+                        self.viewer_choice(&snapshot)
+                    } else {
+                        mmorpg_core::ClassChoice::from_appearance(unit.record.appearance)
+                    };
+                    if matches!(entity, EntityRef::Player(_))
+                        && class.is_some_and(|c| c.class == mmorpg_core::PlayerClass::Warden)
+                    {
+                        body.extend(skinned::Equipment::sword_and_shield().draws(
+                            &id,
+                            &asset.model,
+                            asset.model.placement(root, height),
+                            clip,
+                            time,
+                            dead.then_some(0.6),
+                        ));
+                    }
                     let head = asset.model.head(clip, time).map(|(centre, radius)| {
                         let m = asset.model.placement(root, height).elements;
                         let p: [f64; 3] = std::array::from_fn(|r| {

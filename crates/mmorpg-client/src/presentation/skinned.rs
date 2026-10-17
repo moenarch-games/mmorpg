@@ -162,6 +162,8 @@ pub(super) struct Model {
     order: Vec<usize>,
     primitives: Vec<Primitive>,
     clips: BTreeMap<String, Clip>,
+    /// Node names, for attaching items to joints.
+    names: Vec<Option<String>>,
     /// Rest-clip bounds: lowest point and height along +Y, horizontal centre.
     pub floor: f32,
     pub height: f32,
@@ -305,12 +307,17 @@ impl Model {
             let name = name.rsplit('|').next().unwrap_or(name).to_owned();
             clips.insert(name, Clip { duration, channels });
         }
+        let names = document
+            .nodes()
+            .map(|node| node.name().map(str::to_owned))
+            .collect();
         let mut model = Self {
             rest,
             parents,
             order,
             primitives,
             clips,
+            names,
             floor: 0.,
             height: 1.,
             centre: [0.; 2],
@@ -442,6 +449,14 @@ impl Model {
             .collect()
     }
 
+    /// The model-space transform of the named joint in the posed clip.
+    pub fn joint(&self, name: &str, clip: &str, time: f32) -> Option<three_d_animation::Mat4> {
+        let index = self.names.iter().position(|n| n.as_deref() == Some(name))?;
+        let mut joint = three_d_animation::Mat4::IDENTITY;
+        joint.elements = self.globals(clip, time)[index];
+        Some(joint)
+    }
+
     /// Draws for one posed instance standing at `root`, scaled to `height` metres.
     pub fn draws(
         &self,
@@ -452,7 +467,18 @@ impl Model {
         time: f32,
         tint: Option<f32>,
     ) -> Vec<SceneDraw> {
-        let placement = self.placement(root, height);
+        self.draws_placed(id, self.placement(root, height), clip, time, tint)
+    }
+
+    /// Draws for one posed instance under an explicit model-to-world `placement`.
+    pub fn draws_placed(
+        &self,
+        id: &str,
+        placement: three_d_animation::Mat4,
+        clip: &str,
+        time: f32,
+        tint: Option<f32>,
+    ) -> Vec<SceneDraw> {
         self.skin(clip, time)
             .into_iter()
             .zip(&self.primitives)
@@ -509,6 +535,8 @@ pub(super) struct Clips {
     pub run: &'static str,
     pub attack: &'static str,
     pub death: &'static str,
+    /// A standing raised shield, for a model that carries one (#156).
+    pub guard: Option<&'static str>,
 }
 
 pub(super) struct Asset {
@@ -567,7 +595,7 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
         serde_json::from_slice(file(entry)).expect("the bundle glTF is JSON");
     let mut bin = Vec::new();
     let mut append = |bytes: &[u8]| {
-        while bin.len() % 4 != 0 {
+        while !bin.len().is_multiple_of(4) {
             bin.push(0);
         }
         let offset = bin.len();
@@ -579,14 +607,24 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
         let uri = buffer["uri"].as_str().expect("bundle buffers are external");
         offsets.push(append(file(&resolve(entry, uri))));
     }
-    for view in json["bufferViews"].as_array_mut().into_iter().flatten() {
+    for view in json
+        .get_mut("bufferViews")
+        .and_then(serde_json::Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
         let buffer = view["buffer"].as_u64().expect("a view names its buffer") as usize;
         let start = view["byteOffset"].as_u64().unwrap_or(0) as usize + offsets[buffer];
         view["buffer"] = 0.into();
         view["byteOffset"] = start.into();
     }
     let mut views = Vec::new();
-    for image in json["images"].as_array_mut().into_iter().flatten() {
+    for image in json
+        .get_mut("images")
+        .and_then(serde_json::Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
         let uri = image["uri"]
             .as_str()
             .expect("bundle images are external")
@@ -601,23 +639,27 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
         }
     }
     let first = json["bufferViews"].as_array().map_or(0, Vec::len);
-    for (index, image) in json["images"]
-        .as_array_mut()
+    for (index, image) in json
+        .get_mut("images")
+        .and_then(serde_json::Value::as_array_mut)
         .into_iter()
         .flatten()
         .enumerate()
     {
         image["bufferView"] = (first + index).into();
     }
-    if let Some(list) = json["bufferViews"].as_array_mut() {
+    if let Some(list) = json
+        .get_mut("bufferViews")
+        .and_then(serde_json::Value::as_array_mut)
+    {
         list.extend(views);
     }
-    while bin.len() % 4 != 0 {
+    while !bin.len().is_multiple_of(4) {
         bin.push(0);
     }
     json["buffers"] = serde_json::json!([{"byteLength": bin.len()}]);
     let mut text = serde_json::to_vec(&json).expect("JSON serializes");
-    while text.len() % 4 != 0 {
+    while !text.len().is_multiple_of(4) {
         text.push(b' ');
     }
     let length = 12 + 8 + text.len() + 8 + bin.len();
@@ -639,19 +681,108 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
     glb
 }
 
+/// The Warden's carried items: a model each and the joint and socket it is held at.
+pub(super) struct Equipment {
+    pub items: Vec<(Model, &'static str, three_d_animation::Mat4)>,
+}
+
+/// The `humanoid-sockets` socket `id` as its joint and column-major transform.
+fn socket(descriptor: &serde_json::Value, id: &str) -> (&'static str, three_d_animation::Mat4) {
+    let entry = descriptor["sockets"]
+        .as_array()
+        .and_then(|sockets| sockets.iter().find(|socket| socket["id"] == id))
+        .unwrap_or_else(|| panic!("the bundle declares socket {id}"));
+    let numbers = |key: &str| -> Vec<f32> {
+        entry[key]
+            .as_array()
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|v| v.as_f64())
+                    .map(|v| v as f32)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let (t, q) = (numbers("translation"), numbers("rotation"));
+    let mut matrix = three_d_animation::Mat4::IDENTITY;
+    matrix.elements = trs([t[0], t[1], t[2]], [q[0], q[1], q[2], q[3]], [1.; 3]);
+    let joint: &'static str = Box::leak(
+        entry["joint"]
+            .as_str()
+            .expect("a socket names its joint")
+            .to_owned()
+            .into_boxed_str(),
+    );
+    (joint, matrix)
+}
+
+impl Equipment {
+    /// The sword in the right hand and the shield in the left, imported once.
+    pub fn sword_and_shield() -> &'static Self {
+        static EQUIPMENT: OnceLock<Equipment> = OnceLock::new();
+        EQUIPMENT.get_or_init(|| {
+            let descriptor: serde_json::Value = serde_json::from_slice(
+                ranger_bundle::FILES
+                    .iter()
+                    .find(|(name, _)| *name == ranger_bundle::SOCKETS)
+                    .map(|(_, bytes)| *bytes)
+                    .expect("the bundle embeds its sockets"),
+            )
+            .expect("the sockets descriptor is JSON");
+            let item = |entry: &str, socket_id: &str| {
+                let model = Model::parse(&bundle_glb(entry, ranger_bundle::FILES), "")
+                    .expect("a bundle item is valid glTF");
+                let (joint, matrix) = socket(&descriptor, socket_id);
+                (model, joint, matrix)
+            };
+            Self {
+                items: vec![
+                    item(ranger_bundle::SWORD, "hand_r.weapon"),
+                    item(ranger_bundle::SHIELD, "hand_l.shield"),
+                ],
+            }
+        })
+    }
+
+    /// Draws of the items held by a character posed at `placement` in `clip`.
+    pub fn draws(
+        &self,
+        id: &str,
+        character: &Model,
+        placement: three_d_animation::Mat4,
+        clip: &str,
+        time: f32,
+        tint: Option<f32>,
+    ) -> Vec<SceneDraw> {
+        let mut draws = Vec::new();
+        for (index, (model, joint, matrix)) in self.items.iter().enumerate() {
+            let Some(at) = character.joint(joint, clip, time) else {
+                continue;
+            };
+            // The item's grip frame is its origin: holder = placement × joint × socket.
+            let mut held = three_d_animation::Mat4::IDENTITY;
+            held.elements = mul(&mul(&placement.elements, &at.elements), &matrix.elements);
+            draws.extend(model.draws_placed(&format!("{id}-item-{index}"), held, "", 0., tint));
+        }
+        draws
+    }
+}
+
 impl Kind {
     const ALL: [Self; 4] = [Self::Ranger, Self::Wolf, Self::Rat, Self::Pig];
 
     fn source(self) -> (std::borrow::Cow<'static, [u8]>, Clips) {
         match self {
             Self::Ranger => (
-                bundle_glb(ranger_bundle::ENTRY, ranger_bundle::FILES).into(),
+                bundle_glb(ranger_bundle::CHARACTER, ranger_bundle::FILES).into(),
                 Clips {
                     idle: "Idle_Loop",
                     walk: "Walk_Loop",
                     run: "Jog_Fwd_Loop",
                     attack: "Sword_Attack",
                     death: "Death01",
+                    guard: Some("Idle_Shield_Loop"),
                 },
             ),
             Self::Wolf => (
@@ -662,6 +793,7 @@ impl Kind {
                     run: "Gallop",
                     attack: "Attack",
                     death: "Death",
+                    guard: None,
                 },
             ),
             Self::Rat => (
@@ -672,6 +804,7 @@ impl Kind {
                     run: "Rat_Run",
                     attack: "Rat_Attack",
                     death: "Rat_Death",
+                    guard: None,
                 },
             ),
             // The farm pig has no attack clip; its jump reads as a charge.
@@ -683,6 +816,7 @@ impl Kind {
                     run: "Run",
                     attack: "Jump",
                     death: "Death",
+                    guard: None,
                 },
             ),
         }
@@ -730,6 +864,7 @@ impl Playback {
         now: f64,
         dt: f64,
         reduced: bool,
+        guarding: bool,
     ) -> (&'static str, f32) {
         let c = &asset.clips;
         let (clip, rate, once) = if dead {
@@ -741,7 +876,8 @@ impl Playback {
         } else if speed > 0.25 {
             (c.walk, (speed / 1.8).clamp(0.6, 1.6), false)
         } else {
-            (c.idle, 1., false)
+            // A standing raised guard holds the shield up; walking keeps the walk.
+            (c.guard.filter(|_| guarding).unwrap_or(c.idle), 1., false)
         };
         if clip != self.clip {
             self.clip = clip;

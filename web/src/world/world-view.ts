@@ -44,7 +44,7 @@ import { ProgressionHud } from "./units/progression-hud";
 import { SpellEffects, allEffectNodes, type Anchor } from "./units/spell-effects";
 import { PointerClick, SecondaryClick, attackToggle } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
-import { quaterniusKind } from "./units/quaternius";
+import { classFromAppearance, loadoutFor, quaterniusKind } from "./units/quaternius";
 import { QuaterniusUnits, type QuaterniusUnit } from "./units/quaternius-units";
 import { unitHalfMetres } from "./units/creature-models";
 import { targetRingNode } from "./units/model-kit";
@@ -640,6 +640,12 @@ export class WorldView {
           speed: Math.hypot(locomotion.forward, locomotion.right),
           dead: entity.flags.dead,
           action: action ?? null,
+          // The viewer's own sheet wins; other players carry their class in the appearance code.
+          loadout: entity.kind === "player"
+            ? loadoutFor(isSelf ? projection.viewer.classChoice : classFromAppearance(entity.appearance))
+            : null,
+          // Only the viewer's guard is projected.
+          guarding: isSelf && projection.viewer.guard.raised !== null,
         });
         if (entity.kind !== "player" && sameEntity(ref, projection.viewer.target)) {
           const [hx, , hz] = unitHalfMetres(entity, catalog, unitsPerMetre, playerHalfExtents[1]);
