@@ -118,6 +118,7 @@ impl Channel {
 }
 
 struct Primitive {
+    double_sided: bool,
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
     colors: Vec<Color3>,
@@ -140,6 +141,8 @@ pub(super) struct Model {
     pub floor: f32,
     pub height: f32,
     pub centre: [f32; 2],
+    /// The `Head` joint, and the rest head centre's offset from it with the head's radius.
+    head: Option<(usize, [f32; 3], f32)>,
 }
 
 impl Model {
@@ -209,6 +212,7 @@ impl Model {
                     _ => vec![[(0, 1.), (0, 0.), (0, 0.), (0, 0.)]; positions.len()],
                 };
                 primitives.push(Primitive {
+                    double_sided: primitive.material().double_sided(),
                     positions,
                     normals,
                     colors,
@@ -270,6 +274,7 @@ impl Model {
             floor: 0.,
             height: 1.,
             centre: [0.; 2],
+            head: None,
         };
         let (mut min, mut max) = ([f32::MAX; 3], [f32::MIN; 3]);
         for p in model.skin(rest_clip, 0.).iter().flat_map(|(p, _)| p) {
@@ -283,7 +288,57 @@ impl Model {
             model.height = max[1] - min[1];
             model.centre = [(min[0] + max[0]) * 0.5, (min[2] + max[2]) * 0.5];
         }
+        model.head = model.rest_head(&document, rest_clip);
         Ok(model)
+    }
+
+    /// Vertices mostly bound to the `Head` joint, measured in the rest pose.
+    fn rest_head(&self, document: &gltf::Document, clip: &str) -> Option<(usize, [f32; 3], f32)> {
+        let joint = document.nodes().find(|n| n.name() == Some("Head"))?.index();
+        let (mut min, mut max) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for ((positions, _), p) in self.skin(clip, 0.).iter().zip(&self.primitives) {
+            for (q, weights) in positions.iter().zip(&p.influences) {
+                let main = weights.iter().max_by(|a, b| a.1.total_cmp(&b.1))?;
+                if p.slots.get(usize::from(main.0)).map(|s| s.0) != Some(joint) {
+                    continue;
+                }
+                for i in 0..3 {
+                    min[i] = min[i].min(q[i]);
+                    max[i] = max[i].max(q[i]);
+                }
+            }
+        }
+        if min[0] > max[0] {
+            return None;
+        }
+        let at = self.globals(clip, 0.)[joint];
+        let centre: [f32; 3] = std::array::from_fn(|i| (min[i] + max[i]) * 0.5);
+        let radius = (0..3).map(|i| (max[i] - min[i]) * 0.5).fold(0., f32::max);
+        Some((
+            joint,
+            std::array::from_fn(|i| centre[i] - at[12 + i]),
+            radius,
+        ))
+    }
+
+    /// The posed head centre and radius in model space, following the head joint's position.
+    pub fn head(&self, clip: &str, time: f32) -> Option<([f32; 3], f32)> {
+        let (joint, offset, radius) = self.head?;
+        let at = self.globals(clip, time)[joint];
+        Some((std::array::from_fn(|i| at[12 + i] + offset[i]), radius))
+    }
+
+    /// Model-to-world placement: scaled to `height` metres, lowest rest point on `root`.
+    pub fn placement(&self, root: Frame, height: f64) -> three_d_animation::Mat4 {
+        let scale = height / f64::from(self.height);
+        let mut placement = model(root, [scale; 3]);
+        let offset = [-self.centre[0], -self.floor, -self.centre[1]].map(f64::from);
+        let m = &mut placement.elements;
+        for r in 0..3 {
+            let shift: f64 = (0..3).map(|k| f64::from(m[k * 4 + r]) * offset[k]).sum();
+            m[12 + r] += shift as f32;
+        }
+        placement
     }
 
     pub fn duration(&self, clip: &str) -> f32 {
@@ -357,15 +412,7 @@ impl Model {
         time: f32,
         tint: Option<f32>,
     ) -> Vec<SceneDraw> {
-        let scale = height / f64::from(self.height);
-        let mut placement = model(root, [scale; 3]);
-        // Lift the lowest rest point to the feet and centre the body over the root.
-        let offset = [-self.centre[0], -self.floor, -self.centre[1]].map(f64::from);
-        let m = &mut placement.elements;
-        for r in 0..3 {
-            let shift: f64 = (0..3).map(|k| f64::from(m[k * 4 + r]) * offset[k]).sum();
-            m[12 + r] += shift as f32;
-        }
+        let placement = self.placement(root, height);
         self.skin(clip, time)
             .into_iter()
             .zip(&self.primitives)
@@ -407,7 +454,7 @@ impl Model {
                         emissive: [0.; 3],
                         opacity: 1.,
                         unlit: false,
-                        double_sided: false,
+                        double_sided: p.double_sided,
                     },
                 })
             })
@@ -429,62 +476,148 @@ pub(super) struct Asset {
     pub clips: Clips,
 }
 
-fn load(bytes: &[u8], clips: Clips) -> Asset {
-    Asset {
-        model: Model::parse(bytes, clips.idle).expect("bundled Quaternius model is valid glTF"),
-        clips,
+/// Every bundled Quaternius model (CC0); see `assets/quaternius/PROVENANCE.md`.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) enum Kind {
+    KnightMale,
+    KnightFemale,
+    Elf,
+    NinjaFemale,
+    Wizard,
+    Witch,
+    VikingMale,
+    VikingFemale,
+    GoblinMale,
+    GoblinFemale,
+    PirateMale,
+    PirateFemale,
+    SoldierMale,
+    SoldierFemale,
+    WorkerMale,
+    WorkerFemale,
+    CasualMale,
+    CasualFemale,
+    Wolf,
+    Rat,
+    Pig,
+}
+
+macro_rules! bundled {
+    ($file:literal) => {
+        include_bytes!(concat!("../../../../assets/quaternius/", $file)).as_slice()
+    };
+}
+
+/// Shared clips of the Ultimate Animated Character pack.
+const fn humanoid(attack: &'static str) -> Clips {
+    Clips {
+        idle: "Idle",
+        walk: "Walk",
+        run: "Run",
+        attack,
+        death: "Death",
     }
 }
 
-/// Animated Knight (Quaternius, CC0).
-pub(super) fn knight() -> &'static Asset {
-    static ASSET: OnceLock<Asset> = OnceLock::new();
-    ASSET.get_or_init(|| {
-        load(
-            include_bytes!("../../../../assets/quaternius/KnightCharacter.glb"),
-            Clips {
-                idle: "Idle",
-                walk: "Walking",
-                run: "Run",
-                attack: "Run_swordAttack",
-                death: "Death",
-            },
-        )
-    })
-}
+impl Kind {
+    const ALL: [Self; 21] = [
+        Self::KnightMale,
+        Self::KnightFemale,
+        Self::Elf,
+        Self::NinjaFemale,
+        Self::Wizard,
+        Self::Witch,
+        Self::VikingMale,
+        Self::VikingFemale,
+        Self::GoblinMale,
+        Self::GoblinFemale,
+        Self::PirateMale,
+        Self::PirateFemale,
+        Self::SoldierMale,
+        Self::SoldierFemale,
+        Self::WorkerMale,
+        Self::WorkerFemale,
+        Self::CasualMale,
+        Self::CasualFemale,
+        Self::Wolf,
+        Self::Rat,
+        Self::Pig,
+    ];
 
-/// Wolf from the Ultimate Animated Animal pack (Quaternius, CC0).
-pub(super) fn wolf() -> &'static Asset {
-    static ASSET: OnceLock<Asset> = OnceLock::new();
-    ASSET.get_or_init(|| {
-        load(
-            include_bytes!("../../../../assets/quaternius/Wolf.glb"),
-            Clips {
-                idle: "Idle",
-                walk: "Walk",
-                run: "Gallop",
-                attack: "Attack",
-                death: "Death",
-            },
-        )
-    })
-}
+    fn source(self) -> (&'static [u8], Clips) {
+        const SLASH: &str = "SwordSlash";
+        const SHOOT: &str = "Shoot_OneHanded";
+        const PUNCH: &str = "Punch";
+        match self {
+            Self::KnightMale => (bundled!("Knight_Male.glb"), humanoid(SLASH)),
+            Self::KnightFemale => (bundled!("Knight_Golden_Female.glb"), humanoid(SLASH)),
+            Self::Elf => (bundled!("Elf.glb"), humanoid(SHOOT)),
+            Self::NinjaFemale => (bundled!("Ninja_Female.glb"), humanoid(SHOOT)),
+            Self::Wizard => (bundled!("Wizard.glb"), humanoid(SHOOT)),
+            Self::Witch => (bundled!("Witch.glb"), humanoid(SHOOT)),
+            Self::VikingMale => (bundled!("Viking_Male.glb"), humanoid(SLASH)),
+            Self::VikingFemale => (bundled!("Viking_Female.glb"), humanoid(SLASH)),
+            Self::GoblinMale => (bundled!("Goblin_Male.glb"), humanoid(PUNCH)),
+            Self::GoblinFemale => (bundled!("Goblin_Female.glb"), humanoid(PUNCH)),
+            Self::PirateMale => (bundled!("Pirate_Male.glb"), humanoid(SLASH)),
+            Self::PirateFemale => (bundled!("Pirate_Female.glb"), humanoid(SLASH)),
+            Self::SoldierMale => (bundled!("Soldier_Male.glb"), humanoid(SLASH)),
+            Self::SoldierFemale => (bundled!("Soldier_Female.glb"), humanoid(SLASH)),
+            Self::WorkerMale => (bundled!("Worker_Male.glb"), humanoid(PUNCH)),
+            Self::WorkerFemale => (bundled!("Worker_Female.glb"), humanoid(PUNCH)),
+            Self::CasualMale => (bundled!("Casual_Male.glb"), humanoid(PUNCH)),
+            Self::CasualFemale => (bundled!("Casual_Female.glb"), humanoid(PUNCH)),
+            Self::Wolf => (
+                bundled!("Wolf.glb"),
+                Clips {
+                    idle: "Idle",
+                    walk: "Walk",
+                    run: "Gallop",
+                    attack: "Attack",
+                    death: "Death",
+                },
+            ),
+            Self::Rat => (
+                bundled!("Rat.glb"),
+                Clips {
+                    idle: "Rat_Idle",
+                    walk: "Rat_Walk",
+                    run: "Rat_Run",
+                    attack: "Rat_Attack",
+                    death: "Rat_Death",
+                },
+            ),
+            // The farm pig has no attack clip; its jump reads as a charge.
+            Self::Pig => (
+                bundled!("Pig.glb"),
+                Clips {
+                    idle: "Idle",
+                    walk: "Walk",
+                    run: "Run",
+                    attack: "Jump",
+                    death: "Death",
+                },
+            ),
+        }
+    }
 
-/// Rat from the Easy Enemy pack (Quaternius, CC0).
-pub(super) fn rat() -> &'static Asset {
-    static ASSET: OnceLock<Asset> = OnceLock::new();
-    ASSET.get_or_init(|| {
-        load(
-            include_bytes!("../../../../assets/quaternius/Rat.glb"),
-            Clips {
-                idle: "Rat_Idle",
-                walk: "Rat_Walk",
-                run: "Rat_Run",
-                attack: "Rat_Attack",
-                death: "Rat_Death",
-            },
-        )
-    })
+    /// The parsed model, imported once per process on first use.
+    pub fn asset(self) -> &'static Asset {
+        static ASSETS: OnceLock<Vec<OnceLock<Asset>>> = OnceLock::new();
+        let slots = ASSETS.get_or_init(|| Self::ALL.iter().map(|_| OnceLock::new()).collect());
+        let index = Self::ALL
+            .iter()
+            .position(|kind| *kind == self)
+            .expect("every kind is listed");
+        slots[index].get_or_init(|| {
+            let (bytes, clips) = self.source();
+            Asset {
+                model: Model::parse(bytes, clips.idle)
+                    .expect("bundled Quaternius model is valid glTF"),
+                clips,
+            }
+        })
+    }
 }
 
 /// Per-unit clip choice and clock. Presentation-owned and cosmetic.

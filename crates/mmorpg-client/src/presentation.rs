@@ -402,27 +402,67 @@ impl Presentation {
             .collect()
     }
 
-    /// The imported Quaternius model presenting `entity`, if one exists yet for its kind.
+    /// The imported Quaternius model presenting `entity`, if its kind has one yet. Players pick
+    /// by class and sex; creatures and NPCs alternate male and female models by stable ID.
     fn imported_asset(
         &self,
         entity: EntityRef,
         record: &EntitySnapshot,
+        snapshot: &ZoneSnapshot,
     ) -> Option<&'static skinned::Asset> {
-        match entity {
-            EntityRef::Player(_) => Some(skinned::knight()),
-            EntityRef::Creature(_) => {
-                match self
-                    .content
-                    .creature_template(CreatureTemplateId::new(record.appearance))?
-                    .family
-                {
-                    CreatureFamily::Wolf => Some(skinned::wolf()),
-                    CreatureFamily::Vermin => Some(skinned::rat()),
-                    _ => None,
+        use skinned::Kind as K;
+        let female = |id: u32| id % 2 == 1;
+        let kind = match entity {
+            EntityRef::Player(id) => {
+                // The viewer's sheet wins; other players' records carry their class and sex.
+                let choice = (id == self.player_id)
+                    .then_some(snapshot.viewer.class)
+                    .flatten()
+                    .or_else(|| mmorpg_core::ClassChoice::from_appearance(record.appearance));
+                let (class, female) = choice.map_or((0, false), |c| {
+                    (c.class.code(), c.sex == mmorpg_core::Sex::Female)
+                });
+                match (class, female) {
+                    (1, false) => K::Elf,
+                    (1, true) => K::NinjaFemale,
+                    (2, false) => K::Wizard,
+                    (2, true) => K::Witch,
+                    (_, false) => K::KnightMale,
+                    (_, true) => K::KnightFemale,
                 }
             }
-            EntityRef::Npc(_) => None,
-        }
+            EntityRef::Creature(id) => {
+                let family = self
+                    .content
+                    .creature_template(CreatureTemplateId::new(record.appearance))?
+                    .family;
+                let f = female(id.get());
+                match family {
+                    CreatureFamily::Wolf => K::Wolf,
+                    CreatureFamily::Vermin => K::Rat,
+                    CreatureFamily::Boar => K::Pig,
+                    CreatureFamily::Marauder if f => K::VikingFemale,
+                    CreatureFamily::Marauder => K::VikingMale,
+                    CreatureFamily::Mirefin if f => K::GoblinFemale,
+                    CreatureFamily::Mirefin => K::GoblinMale,
+                    CreatureFamily::Redbrand if f => K::PirateFemale,
+                    CreatureFamily::Redbrand => K::PirateMale,
+                }
+            }
+            EntityRef::Npc(id) => {
+                let f = female(id.get());
+                match self.content.npc(id)?.role {
+                    NpcRole::Guard if f => K::SoldierFemale,
+                    NpcRole::Guard => K::SoldierMale,
+                    NpcRole::Vendor if f => K::WorkerFemale,
+                    NpcRole::Vendor => K::WorkerMale,
+                    NpcRole::SpiritHealer => K::Wizard,
+                    NpcRole::QuestGiver if f => K::CasualFemale,
+                    NpcRole::QuestGiver => K::CasualMale,
+                }
+            }
+        };
+        Some(kind.asset())
     }
 
     /// The same CPU geometry/material/model payload consumed by rendering and picking.
@@ -459,7 +499,7 @@ impl Presentation {
                     continue;
                 };
                 if let Some(unit) = units.get(&source)
-                    && let Some(asset) = self.imported_asset(source, &unit.record)
+                    && let Some(asset) = self.imported_asset(source, &unit.record, &snapshot)
                 {
                     self.playbacks
                         .entry(source)
@@ -502,7 +542,7 @@ impl Presentation {
                 EntityKind::Npc => "npc",
             };
             let id = format!("unit-{name}-{}", unit.record.id);
-            let imported = self.imported_asset(entity, &unit.record);
+            let imported = self.imported_asset(entity, &unit.record, &snapshot);
             let body = match entity {
                 _ if imported.is_some() => {
                     let asset = imported.expect("checked above");
@@ -515,14 +555,42 @@ impl Presentation {
                         dt,
                         self.reduced_motion,
                     );
-                    asset.model.draws(
-                        &id,
-                        root,
-                        f64::from(half[1]) * 2.,
-                        clip,
-                        time,
-                        dead.then_some(0.6),
-                    )
+                    let height = f64::from(half[1]) * 2.;
+                    let mut body =
+                        asset
+                            .model
+                            .draws(&id, root, height, clip, time, dead.then_some(0.6));
+                    if let EntityRef::Player(id_num) = entity
+                        && id_num == self.player_id
+                        && !dead
+                        && let Some((centre, radius)) = asset.model.head(clip, time)
+                    {
+                        let m = asset.model.placement(root, height).elements;
+                        let p = std::array::from_fn(|r| {
+                            f64::from(
+                                m[r] * centre[0]
+                                    + m[4 + r] * centre[1]
+                                    + m[8 + r] * centre[2]
+                                    + m[12 + r],
+                            )
+                        });
+                        let scale = f64::from(m[0].hypot(m[1]).hypot(m[2]));
+                        let choice = snapshot.viewer.class;
+                        let look = player::Look::new(
+                            choice.map_or(0, |c| c.class.code()),
+                            choice.is_none_or(|c| c.sex.code() == 0),
+                            self.headwear,
+                            false,
+                        );
+                        body.extend(player::headwear(
+                            &mut self.resources,
+                            &id,
+                            look,
+                            Frame { p, q: root.q },
+                            f64::from(radius) * scale,
+                        ));
+                    }
+                    body
                 }
                 EntityRef::Player(id_num) => {
                     let other = id_num != self.player_id;
