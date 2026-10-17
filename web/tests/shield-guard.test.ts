@@ -4,7 +4,7 @@ import { encodeCommand } from "../src/command-wire";
 import { actionBindingLabels } from "../src/input/binding-labels";
 import { decodeSnapshot, type ZoneEvent } from "../src/replication";
 import { combatTexts } from "../src/world/units/combat-text";
-import { GUARD_LANE_THRESHOLD_PX, ShieldGuardHold, canGuard, guardDisplay, laneFromOffset } from "../src/world/units/shield-guard";
+import { GUARD_LANE_THRESHOLD_PX, ShieldGuardHold, canGuard, guardDisplay, laneFromOffset, padGuardLane } from "../src/world/units/shield-guard";
 import { SWEEP_HEIGHT_METRES, SpellEffects, allEffectNodes, type Anchor } from "../src/world/units/spell-effects";
 import { encodeTestSnapshot } from "./support/snapshot-encoder";
 import { playerEntity, testSnapshot } from "./support/snapshots";
@@ -49,7 +49,7 @@ describe("shield guard input", () => {
 
   test("the guard has its own configurable binding and wire command", () => {
     const profile: Profile = { id: "character:test", patches: [] };
-    expect(actionBindingLabels("combat.guard", profile)).toEqual(["Z"]);
+    expect(actionBindingLabels("combat.guard", profile)).toEqual(["Z", "Pad 6"]);
     expect([...encodeCommand({ kind: "guard", lane: "high" })]).toEqual([11, 22, 3]);
     expect([...encodeCommand({ kind: "guard", lane: null })]).toEqual([11, 22, 0]);
   });
@@ -87,5 +87,24 @@ describe("shield guard presentation", () => {
     // Lowering the guard in the zone removes the raised shield.
     effects.sync(snapshot([]), 1, resolve);
     expect(effects.active(1).some((effect) => effect.visual === "guard")).toBe(false);
+  });
+});
+
+describe("pad shield guard", () => {
+  const pad = (trigger: number, stickY: number) => ({
+    buttons: Array.from({ length: 17 }, (_, index) => ({ value: index === 6 ? trigger : 0 })),
+    axes: [0, 0, 0, stickY],
+  });
+
+  test("holding LT aims with the right stick and overrides the pointer while held", () => {
+    expect(padGuardLane([null, pad(0, -1)])).toBeNull();
+    expect([padGuardLane([pad(1, 0)]), padGuardLane([pad(1, -0.8)]), padGuardLane([pad(1, 0.6)])]).toEqual(["middle", "high", "low"]);
+    const hold = new ShieldGuardHold();
+    hold.begin();
+    hold.aimWithPad(padGuardLane([pad(1, -0.9)]));
+    expect(hold.pending()).toBe("high");
+    hold.aimWithPad(null);
+    expect(hold.pending()).toBe("middle");
+    expect(hold.end()).toBe(true);
   });
 });

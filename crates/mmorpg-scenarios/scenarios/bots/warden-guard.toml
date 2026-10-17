@@ -1,0 +1,112 @@
+# The Warden's shield guard through the hosted runtime (#156). A Warden walks
+# the vale-wolf-hunt route to Timber Wolf 108 and stands facing it with a
+# middle guard: the wolf's middle-height bites are blocked. Guarding high, the
+# wrong lane, lets them through again; lowering the guard is applied.
+name = "warden-guard"
+zone = 1
+ticks = 700
+digest_interval = 100
+
+[[bots]]
+name = "warden"
+
+[[steps]]
+tick = 0
+bot = "warden"
+action = "join"
+
+[[steps]]
+tick = 0
+bot = "warden"
+action = "choose_class"
+class = "warden"
+sex = "male"
+
+[[steps]]
+tick = 0
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+[[steps]]
+tick = 36
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 121
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 131
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 375
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 380
+bot = "warden"
+action = "select_target"
+entity = "creature:108"
+
+# Stand facing the den and raise a middle guard before the wolf arrives.
+[[steps]]
+tick = 395
+bot = "warden"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 395
+bot = "warden"
+action = "guard"
+lane = "middle"
+
+# The wrong lane: wolves bite middle.
+[[steps]]
+tick = 550
+bot = "warden"
+action = "guard"
+lane = "high"
+
+[[steps]]
+tick = 650
+bot = "warden"
+action = "guard"
+lane = "none"
+
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "blocked"
+entity = "creature:108"
+by_tick = 550
+
+[[expect]]
+kind = "event"
+bot = "warden"
+event = "damage_taken"
+entity = "creature:108"
+from_tick = 552
+by_tick = 650

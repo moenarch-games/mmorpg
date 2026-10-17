@@ -33,7 +33,7 @@ name = "alice"
 [[steps]]                   # applied at `tick`, before it advances to tick + 1
 tick = 0
 bot = "alice"
-action = "join"             # join | move | jump | select_target | start_attack | stop_attack | release_spirit | move_item | loot | disconnect | reconnect
+action = "join"             # join | move | jump | select_target | start_attack | stop_attack | release_spirit | move_item | loot | guard | disconnect | reconnect
 
 [[steps]]
 tick = 0
@@ -51,6 +51,12 @@ tick = 1
 bot = "alice"
 action = "select_target"
 entity = "creature:108"     # select_target only: none | bot:<name> | creature:<id> | npc:<id>
+
+[[steps]]
+tick = 2
+bot = "alice"
+action = "guard"
+lane = "middle"             # guard only: high | middle | low | none (lowers it); the zone decides what it blocks
 
 [[expect]]                  # checked against the snapshot decoded at `tick`
 kind = "sees"               # sees | not_sees | position | acknowledged | identity | visible_count | area

@@ -1519,6 +1519,59 @@ class BrowserAcceptance(unittest.TestCase):
             self.frames(3)
             self.page.screenshot(path=str(ARTIFACTS / f"class-kit-warden-{width}x{height}.png"))
 
+    def set_pad(self, trigger, stick_y):
+        """Replaces the page's gamepads with one standard pad holding LT at `trigger` and the right
+        stick at `stick_y` (W3C: negative is up); `trigger=None` disconnects it."""
+        self.page.evaluate("""([trigger, stickY]) => {
+          const pads = trigger === null ? [] : [{
+            index: 0, connected: true, mapping: 'standard', id: 'smoke pad', timestamp: performance.now(),
+            buttons: Array.from({length: 17}, (_, i) => ({pressed: i === 6 && trigger >= 0.5, touched: false, value: i === 6 ? trigger : 0})),
+            axes: [0, 0, 0, stickY],
+          }];
+          Object.defineProperty(navigator, 'getGamepads', {configurable: true, value: () => pads});
+        }""", [trigger, stick_y])
+
+    def guard_label(self):
+        return self.page.locator("[data-part=shield-guard] em")
+
+    def test_warden_shield_guard_keyboard_pointer_and_gamepad(self):
+        """A Warden beside a wolf holds Z and aims the guard with the pointer, then holds LT and aims
+        with the right stick (#156); the HUD shows the zone's protecting lane and release lowers it."""
+        self.open("?debug")
+        self.enter_beside_wolf()
+        guard = self.page.locator("[data-part=shield-guard]")
+        expect(guard).to_be_hidden()
+        box = self.page.locator("#world").bounding_box()
+        x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        self.page.mouse.move(x, y)
+        self.page.keyboard.down("KeyZ")
+        self.step(2)
+        expect(guard).to_be_visible()
+        expect(self.guard_label()).to_have_text("Guarding middle")
+        self.page.mouse.move(x, y - 40, steps=4)
+        self.step(2)
+        expect(self.guard_label()).to_have_text("Guarding high")
+        self.page.screenshot(path=str(ARTIFACTS / "shield-guard-high.png"))
+        self.page.keyboard.up("KeyZ")
+        self.step(2)
+        expect(guard).to_be_hidden()
+
+        # Gamepad: holding LT raises the guard, the right stick picks the lane, release lowers it.
+        self.set_pad(1.0, 0.0)
+        self.step(2)
+        expect(self.guard_label()).to_have_text("Guarding middle")
+        self.set_pad(1.0, 0.9)
+        self.step(2)
+        expect(self.guard_label()).to_have_text("Guarding low")
+        self.set_pad(1.0, -0.9)
+        self.step(2)
+        expect(self.guard_label()).to_have_text("Guarding high")
+        self.page.screenshot(path=str(ARTIFACTS / "shield-guard-pad-high.png"))
+        self.set_pad(0.0, -0.9)
+        self.step(2)
+        expect(guard).to_be_hidden()
+        self.set_pad(None, 0.0)
+
     def aim_action_unit(self, kind, identity):
         """Elevated side view for action proof; legacy click-test camera defaults stay intact."""
         _, _, point = self.aim_at_world_unit(kind, identity)

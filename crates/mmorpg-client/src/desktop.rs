@@ -4,7 +4,8 @@ use mmorpg_client::{
     camera::{CameraView, OrbitCamera},
     controls::{ControlAction, NativeControls},
     gamepad::{
-        PadAction, PadControls, PadMovement, PadState, camera_orbit, interface_key, read_pad,
+        PadAction, PadControls, PadMovement, PadState, camera_orbit, guard_lane, interface_key,
+        read_pad,
     },
     graphics::WindowRenderer,
     graphics::project_to_viewport,
@@ -75,6 +76,7 @@ pub fn run(
         orbit_buttons: HashSet::new(),
         cursor: None,
         guard_offset: None,
+        pad_guard: None,
         error: None,
         frames,
         rendered: 0,
@@ -124,6 +126,8 @@ struct App {
     cursor: Option<PhysicalPosition<f64>>,
     /// Vertical pointer travel since the guard key went down, while it is held (#156).
     guard_offset: Option<f64>,
+    /// The lane the pad's held left trigger aims with the right stick (#156).
+    pad_guard: Option<mmorpg_core::StrikeHeight>,
     error: Option<String>,
     frames: Option<u32>,
     rendered: u32,
@@ -211,7 +215,7 @@ fn held_movement(keys: &HashSet<KeyCode>, pad: PadMovement, dead: bool) -> HeldM
 /// Pointer travel (physical pixels) from the middle lane before the guard moves high or low.
 const GUARD_LANE_THRESHOLD_PX: f64 = 24.;
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
-const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC or chats · B bags · C character · L quests · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump, X attack, RB target, d-pad abilities, LB NPC, Start talk, B back";
+const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC or chats · B bags · C character · L quests · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump, X attack, RB target, d-pad abilities, LB NPC, Start talk, B back, hold LT to guard (right stick up/down aims), L3 character, RT quests";
 
 impl App {
     fn retire_pointer(&mut self) {
@@ -468,7 +472,7 @@ impl App {
         if !self.controls.is_held(ControlAction::Guard) || !can_guard {
             self.guard_offset = None;
         }
-        let lane = self.guard_offset.map(|offset| {
+        let pointer = self.guard_offset.map(|offset| {
             if offset <= -GUARD_LANE_THRESHOLD_PX {
                 mmorpg_core::StrikeHeight::High
             } else if offset >= GUARD_LANE_THRESHOLD_PX {
@@ -477,6 +481,8 @@ impl App {
                 mmorpg_core::StrikeHeight::Middle
             }
         });
+        // The key's pointer aim wins over a pad guard held at the same time.
+        let lane = pointer.or(self.pad_guard.filter(|_| can_guard));
         if self.input.borrow().guard != lane {
             self.input.send_modify(|input| input.guard = lane);
         }
@@ -512,7 +518,12 @@ impl App {
         for action in self.pad.sample(&pads) {
             self.pad_action(action);
         }
-        let [dx, dy] = camera_orbit(&pads, seconds);
+        self.pad_guard = self.pad.guarding().then(|| guard_lane(&pads));
+        let [dx, mut dy] = camera_orbit(&pads, seconds);
+        // While the pad guards, the right stick's vertical aims the shield.
+        if self.pad_guard.is_some() {
+            dy = 0.0;
+        }
         if dx != 0.0 || dy != 0.0 {
             self.camera.orbit(dx, dy);
         }

@@ -228,6 +228,7 @@ impl NativeApplication {
             orbit_buttons: HashSet::new(),
             cursor: None,
             guard_offset: None,
+            pad_guard: None,
             error: None,
             frames: None,
             rendered: 0,

@@ -15,6 +15,35 @@ export function laneFromOffset(dy: number, threshold = GUARD_LANE_THRESHOLD_PX):
   return dy <= -threshold ? "high" : dy >= threshold ? "low" : "middle";
 }
 
+/** Right-stick deflection past which a pad-held guard aims high or low. */
+export const GUARD_STICK_DEFLECTION = 0.5;
+/** Standard-mapping left trigger and right stick vertical axis. */
+const LEFT_TRIGGER = 6;
+const RIGHT_STICK_Y = 3;
+
+/** The parts of a standard-mapping pad the guard reads. */
+export type GuardPad = { readonly buttons: readonly { readonly value: number }[]; readonly axes: readonly number[] };
+
+/**
+ * The lane a pad holding the left trigger aims with its right stick (owner answer #156.Q1 A): up
+ * high, centred middle, down low. `null` while no pad holds the trigger, so the pointer aims.
+ */
+export function padGuardLane(pads: readonly (GuardPad | null)[]): StrikeHeight | null {
+  let lane: StrikeHeight | null = null;
+  let deflection = -1;
+  for (const pad of pads) {
+    if (!pad || (pad.buttons[LEFT_TRIGGER]?.value ?? 0) < 0.5) {
+      continue;
+    }
+    const y = Number.isFinite(pad.axes[RIGHT_STICK_Y]) ? (pad.axes[RIGHT_STICK_Y] as number) : 0;
+    if (Math.abs(y) > deflection) {
+      deflection = Math.abs(y);
+      lane = y <= -GUARD_STICK_DEFLECTION ? "high" : y >= GUARD_STICK_DEFLECTION ? "low" : "middle";
+    }
+  }
+  return lane;
+}
+
 /** Whether the viewer can raise a shield guard: a living Warden. */
 export function canGuard(snapshot: ZoneSnapshot): boolean {
   return !snapshot.viewer.dead && snapshot.viewer.classChoice?.classId === "warden";
@@ -43,6 +72,7 @@ export class ShieldGuardHold {
   #offset: number | null = null;
   #lastY: number | null = null;
   #sent: StrikeHeight | null = null;
+  #padLane: StrikeHeight | null = null;
 
   get active(): boolean {
     return this.#offset !== null;
@@ -64,8 +94,13 @@ export class ShieldGuardHold {
     this.#offset = 0;
   }
 
+  /** A pad holding the guard aims it with its right stick, overriding the pointer; `null` returns it. */
+  aimWithPad(lane: StrikeHeight | null): void {
+    this.#padLane = lane;
+  }
+
   lane(): StrikeHeight | null {
-    return this.#offset === null ? null : laneFromOffset(this.#offset);
+    return this.#offset === null ? null : (this.#padLane ?? laneFromOffset(this.#offset));
   }
 
   /** The lane to send now, if it differs from the last one sent; `undefined` means nothing to send. */
