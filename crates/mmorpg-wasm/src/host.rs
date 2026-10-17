@@ -16,7 +16,10 @@ use mmorpg_core::{
     CharacterId, ClassChoice, PlayerId, ZoneContent, ZoneDefinition, ZoneError, ZoneId,
     ZoneSimulation, greyhaven_vale,
 };
-use mmorpg_protocol::{ProtocolError, decode_command, pack_snapshot};
+use mmorpg_protocol::{
+    ProtocolError, decode_canonical_snapshot, decode_command, encode_canonical_snapshot,
+    pack_snapshot,
+};
 
 /// The zone the local host simulates. It matches `mmorpg-zone-host`'s default
 /// `MMORPG_ZONE_IDS=1`, so local and network projections carry the same zone ID.
@@ -145,6 +148,43 @@ impl LocalZoneHost {
             return Err(error);
         }
         Ok(player_id)
+    }
+
+    /// Resumes the world of a [`Self::world_checkpoint`]: the hosted content
+    /// at the saved tick with its creatures, corpses, timers and RNG, and no
+    /// players. Bytes of another version or content, corrupt bytes or a
+    /// checkpoint holding players fail closed.
+    pub fn from_world_checkpoint(bytes: &[u8]) -> Result<Self, LocalZoneError> {
+        let snapshot = decode_canonical_snapshot(bytes).map_err(LocalZoneError::Command)?;
+        if snapshot.zone_id != LOCAL_ZONE_ID || !snapshot.players.is_empty() {
+            return Err(LocalZoneError::Zone(ZoneError::new(
+                "a world checkpoint is the local zone without players",
+            )));
+        }
+        let zone = ZoneSimulation::from_snapshot(snapshot, hosted_content())
+            .map_err(LocalZoneError::Zone)?;
+        Ok(Self {
+            zone,
+            next_player_id: 1,
+            last_sequences: BTreeMap::new(),
+            characters: BTreeMap::new(),
+        })
+    }
+
+    /// The world without its players, as canonical snapshot bytes (#40,
+    /// Atlas 3.3.7): characters persist in their own records, the world in
+    /// this checkpoint. Players leave the copy exactly as a departing player
+    /// leaves the zone, so creatures drop them from threat and loot rights.
+    pub fn world_checkpoint(&self) -> Result<Vec<u8>, LocalZoneError> {
+        let snapshot = self.zone.snapshot().map_err(LocalZoneError::Zone)?;
+        let players: Vec<PlayerId> = snapshot.players.iter().map(|p| p.player_id).collect();
+        let mut world = ZoneSimulation::from_snapshot(snapshot, Arc::clone(self.zone.content()))
+            .map_err(LocalZoneError::Zone)?;
+        for player_id in players {
+            world.remove_player(player_id);
+        }
+        let snapshot = world.snapshot().map_err(LocalZoneError::Zone)?;
+        encode_canonical_snapshot(&snapshot).map_err(LocalZoneError::Command)
     }
 
     /// Removes the player's unit from the zone immediately. A stored
@@ -326,6 +366,27 @@ mod tests {
             .find(|entity| entity.kind == EntityKind::Player && entity.id == player_id)
             .unwrap()
             .position
+    }
+
+    #[test]
+    fn a_world_checkpoint_resumes_the_world_without_its_players() {
+        let mut host = LocalZoneHost::new().unwrap();
+        let player = host.join_as(0, 1).unwrap();
+        for _ in 0..90 {
+            host.tick().unwrap();
+        }
+        let bytes = host.world_checkpoint().unwrap();
+        let restored = LocalZoneHost::from_world_checkpoint(&bytes).unwrap();
+        assert_eq!(restored.current_tick(), host.current_tick());
+        let world = restored.zone.snapshot().unwrap();
+        assert!(world.players.is_empty());
+        assert_eq!(world.creatures, host.zone.snapshot().unwrap().creatures);
+        assert_eq!(restored.world_checkpoint().unwrap(), bytes);
+        // The live player is untouched, and a checkpoint is no place for players.
+        assert!(host.projection(player).is_ok());
+        let live = encode_canonical_snapshot(&host.zone.snapshot().unwrap()).unwrap();
+        assert!(LocalZoneHost::from_world_checkpoint(&live).is_err());
+        assert!(LocalZoneHost::from_world_checkpoint(&bytes[..bytes.len() - 1]).is_err());
     }
 
     #[test]
