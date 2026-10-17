@@ -813,6 +813,8 @@ export class WorldView {
         ...unitNodeIds(this.#lastUnitNodes, identity),
         ...(this.#models.has(identity) ? [`${identity}-model`] : []),
       ],
+      /** The imported model's actual clip, clip time, root and bone world positions, or null. */
+      unitModelPose: (identity: string) => this.#models.pose(identity),
       /** Copies of actual submitted geometry transforms, never a simulation control. */
       unitNodes: (identity: string) => structuredClone(this.#lastUnitNodes.filter((node) => node.id.startsWith(`${identity}-`))),
       /** The units of the last projection (kind, id, creature family, position in metres). */
