@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 2,
+  "suite": "mmorpg/zone-operations",
+  "description": "Deterministic work bounds of zone interest and tick operations (#138); counters come from mmorpg-core, never wall-clock time.",
+  "scenarios": [
+    {
+      "id": "sparse-viewer",
+      "kind": "scaling",
+      "description": "One viewer with a fixed local neighbourhood in a zone of 512 players",
+      "dimensions": { "population": 512, "local": 8 },
+      "metrics": [
+        {
+          "name": "exact_distance_tests",
+          "unit": "tests",
+          "direction": "lower",
+          "signal": "operation-count",
+          "blocking": true
+        }
+      ]
+    }
+  ],
+  "operations": [
+    {
+      "id": "project-one-viewer",
+      "description": "Project one viewer's visible snapshot: candidate work follows its local neighbourhood, not the zone population.",
+      "dimensions": {
+        "population": { "description": "players in the zone" },
+        "local": { "description": "players inside the viewer's interest neighbourhood" }
+      },
+      "scalePoints": [
+        { "population": 128, "local": 8 },
+        { "population": 256, "local": 8 },
+        { "population": 512, "local": 8 },
+        { "population": 512, "local": 4 },
+        { "population": 512, "local": 16 }
+      ],
+      "metrics": [
+        {
+          "name": "exact_distance_tests",
+          "unit": "tests",
+          "signal": "operation-count",
+          "growth": [
+            { "dimension": "population", "bound": "constant" },
+            { "dimension": "local", "bound": "linear" }
+          ]
+        },
+        {
+          "name": "visible_records",
+          "unit": "records",
+          "signal": "operation-count",
+          "budget": { "max": 64 },
+          "growth": [{ "dimension": "population", "bound": "constant" }]
+        }
+      ]
+    },
+    {
+      "id": "publish-sparse",
+      "description": "Publish every player's snapshot in a sparse zone: total candidate work is linear in recipients at a fixed local density.",
+      "dimensions": { "recipients": { "description": "players receiving a snapshot, spread at a fixed density" } },
+      "scalePoints": [{ "recipients": 126 }, { "recipients": 252 }, { "recipients": 504 }],
+      "metrics": [
+        {
+          "name": "exact_distance_tests",
+          "unit": "tests",
+          "signal": "operation-count",
+          "growth": [{ "dimension": "recipients", "bound": "linear" }]
+        }
+      ]
+    },
+    {
+      "id": "publish-dense-hub",
+      "description": "Publish every player's snapshot when everyone stands in one hub: each recipient's candidates grow with the crowd, honestly quadratic in total.",
+      "dimensions": { "recipients": { "description": "players crowded within one interest radius" } },
+      "scalePoints": [{ "recipients": 64 }, { "recipients": 128 }, { "recipients": 256 }],
+      "metrics": [
+        {
+          "name": "largest_recipient_tests",
+          "unit": "tests",
+          "signal": "operation-count",
+          "growth": [{ "dimension": "recipients", "bound": "linear" }]
+        },
+        {
+          "name": "visible_records_per_recipient",
+          "unit": "records",
+          "signal": "operation-count",
+          "budget": { "max": 64 }
+        }
+      ]
+    },
+    {
+      "id": "tick-maintenance",
+      "description": "Advance one tick: interest index writes follow the units that change cells, never a rebuild, whatever the stationary population.",
+      "dimensions": {
+        "population": { "description": "stationary players" },
+        "moved": { "description": "players crossing an interest cell boundary this tick" }
+      },
+      "scalePoints": [
+        { "population": 128, "moved": 8 },
+        { "population": 256, "moved": 8 },
+        { "population": 448, "moved": 8 },
+        { "population": 448, "moved": 16 },
+        { "population": 448, "moved": 32 }
+      ],
+      "metrics": [
+        {
+          "name": "full_index_rebuilds",
+          "unit": "rebuilds",
+          "signal": "operation-count",
+          "budget": { "max": 0 }
+        },
+        {
+          "name": "bucket_writes",
+          "unit": "writes",
+          "signal": "operation-count",
+          "growth": [
+            { "dimension": "population", "bound": "constant" },
+            { "dimension": "moved", "bound": "linear" }
+          ]
+        },
+        {
+          "name": "units_inspected",
+          "unit": "units",
+          "signal": "operation-count",
+          "notes": "Maintenance re-reads every body position once per tick; it must stay linear, not rebuild.",
+          "growth": [
+            { "dimension": "population", "bound": "linear" },
+            { "dimension": "moved", "bound": "linear" }
+          ]
+        }
+      ]
+    }
+  ]
+}
