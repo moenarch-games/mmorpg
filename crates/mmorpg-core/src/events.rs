@@ -150,6 +150,22 @@ pub enum ZoneEvent {
         ability: AbilityId,
         aim: crate::StrikeAim,
     },
+    /// `target`'s shield guard fully blocked `source`'s melee blow of
+    /// `amount` in `lane` (#156).
+    Blocked {
+        source: EntityRef,
+        target: EntityRef,
+        lane: crate::StrikeHeight,
+        amount: u16,
+    },
+    /// `source`'s blow overpowered `target`'s guard in `lane`: the blow
+    /// lands and the guard recovers for `ticks` ticks (#156).
+    GuardBroken {
+        source: EntityRef,
+        target: EntityRef,
+        lane: crate::StrikeHeight,
+        ticks: u16,
+    },
     /// `ability` of `source` healed `target` by `amount` effective health.
     Healed {
         source: EntityRef,
@@ -208,6 +224,11 @@ impl ZoneEvent {
             {
                 Some([Some(source), target])
             }
+            Self::Blocked { source, target, .. } | Self::GuardBroken { source, target, .. }
+                if target != own =>
+            {
+                Some([Some(source), Some(target)])
+            }
             Self::Interrupted { source, target, .. } if source != Some(own) && target != own => {
                 Some([source, Some(target)])
             }
@@ -221,7 +242,7 @@ impl ZoneEvent {
     const fn priority(self) -> u8 {
         match self {
             Self::Died { .. } => 5,
-            Self::DamageTaken { .. } => 4,
+            Self::DamageTaken { .. } | Self::GuardBroken { .. } => 4,
             Self::Error { .. } | Self::QuestCompleted { .. } => 3,
             Self::DamageDealt { .. } | Self::QuestProgress { .. } => 2,
             Self::CastStarted { .. }
@@ -231,7 +252,8 @@ impl ZoneEvent {
             | Self::AuraApplied { .. }
             | Self::AuraRemoved { .. }
             | Self::Interrupted { .. }
-            | Self::Absorbed { .. } => 1,
+            | Self::Absorbed { .. }
+            | Self::Blocked { .. } => 1,
             Self::Miss { .. }
             | Self::Evade { .. }
             | Self::AttackPerformed { .. }

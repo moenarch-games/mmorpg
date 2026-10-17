@@ -99,6 +99,17 @@ pub struct TargetDetail {
     pub auras: Vec<AuraView>,
 }
 
+/// The viewer's shield guard (#156).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GuardView {
+    /// The lane the guard key holds.
+    pub raised: Option<crate::StrikeHeight>,
+    /// The zone blocks blows in `raised` right now: a ready, grounded guard.
+    pub protecting: bool,
+    /// Ticks of guard-break recovery left.
+    pub broken: u16,
+}
+
 /// The viewer's own exact unit state.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ViewerState {
@@ -119,6 +130,7 @@ pub struct ViewerState {
     pub global_cooldown: u16,
     /// Inclusive melee damage range, the equipment bonus included.
     pub damage: [u16; 2],
+    pub guard: GuardView,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -259,6 +271,11 @@ impl ZoneSimulation {
                     cast: viewer.cast.and_then(cast_view),
                     global_cooldown: viewer.global_cooldown,
                     damage: viewer.melee_damage(),
+                    guard: GuardView {
+                        raised: viewer.guard.raised,
+                        protecting: self.guard_lane(player_id)?.is_some(),
+                        broken: viewer.guard.broken,
+                    },
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),
