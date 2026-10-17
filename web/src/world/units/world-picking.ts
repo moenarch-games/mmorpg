@@ -33,6 +33,7 @@ export class WorldPicking {
     scenery: readonly RendererSceneNode[],
     units: readonly RendererSceneNode[],
     instanceBatches: readonly RendererInstanceBatch[] = [],
+    models: readonly { entity: EntityRef; object: THREE.Object3D }[] = [],
   ): EntityRef | null {
     this.#raycaster.setFromCamera(point, camera);
     this.#raycaster.near = camera.near;
@@ -58,6 +59,18 @@ export class WorldPicking {
           target = identity && (kind === "creature" || kind === "npc")
             ? { kind, id: Number(identity[2]) }
             : null;
+        }
+      }
+    }
+    // Imported unit models: three.js raycasts the skinned meshes in their current pose.
+    for (const { entity, object } of models) {
+      object.traverse((child) => {
+        if (child instanceof THREE.SkinnedMesh) { child.computeBoundingSphere(); }
+      });
+      for (const hit of this.#raycaster.intersectObject(object, true)) {
+        if (hit.distance < this.#raycaster.far) {
+          this.#raycaster.far = hit.distance;
+          target = entity.kind === "creature" || entity.kind === "npc" ? entity : null;
         }
       }
     }
