@@ -1,12 +1,12 @@
 //! Browser creature families and NPC role rigs, fitted to their real content boxes.
 use super::{animation::*, kit::*};
-use crate::world::{SceneDraw, geometry::V};
+use crate::{Draw, geometry::V};
 use mmorpg_core::{CreatureFamily, EntitySnapshot, NpcRole};
 use std::f64::consts::PI;
 struct Parts<'a> {
     id: &'a str,
     r: &'a mut Resources,
-    draws: Vec<SceneDraw>,
+    draws: Vec<Draw>,
     dead: bool,
 }
 impl Parts<'_> {
@@ -22,7 +22,7 @@ impl Parts<'_> {
         self.add(n, Primitive::Box(s), c, f);
     }
 }
-pub(super) fn accent(e: &EntitySnapshot, f: CreatureFamily) -> u32 {
+pub fn accent(e: &EntitySnapshot, f: CreatureFamily) -> u32 {
     if e.flags.tapped_by_other {
         return 0x8b8b8b;
     }
@@ -96,7 +96,7 @@ fn animal_spec(f: CreatureFamily) -> Animal {
         },
     }
 }
-pub(super) fn animal(
+pub fn animal(
     r: &mut Resources,
     id: &str,
     placement: Frame,
@@ -104,8 +104,11 @@ pub(super) fn animal(
     family: CreatureFamily,
     accent: u32,
     s: Locomotion,
-    dead: bool,
-) -> Vec<SceneDraw> {
+    action: Option<Action>,
+    life: Life,
+) -> Vec<Draw> {
+    let dead = life.dead();
+    let fall = life.fall();
     let spec = animal_spec(family);
     let [hx, hy, hz] = half;
     let h = hy * 2.;
@@ -114,7 +117,12 @@ pub(super) fn animal(
         placement.p,
         2. * placement.q[1].atan2(placement.q[3]),
         hy,
-        dead.then(|| (tilt(0., PI / 2., 0.), spec.lift * hx)),
+        dead.then(|| {
+            (
+                tilt(0., PI / 2. * fall, 0.),
+                hy + (spec.lift * hx - hy) * fall,
+            )
+        }),
     );
     let speed = s.forward.hypot(s.right);
     let mov = if dead { 0. } else { s.movement };
@@ -129,6 +137,10 @@ pub(super) fn animal(
     let head_pitch = -0.12 * run * mov + 0.05 * idle * (time * 0.7).sin();
     let sway = 0.3 * idle * (time * 1.7).sin() + 0.2 * mov * phase.sin();
     let lift = if dead { 0. } else { 0.15 + 0.45 * run * mov };
+    // An attempt lunges: the body pitches in, the head drops and the forelegs reach.
+    let lunge = action.map_or(0., |a| weight(a));
+    let pitch = pitch + lunge * 0.22;
+    let head_pitch = head_pitch - lunge * 0.45;
     let body = child(root, [0., pivot + bob, 0.], tilt(pitch, 0., 0.));
     let at = |p: V, side: f64| [p[0] * side * hx, p[1] * h - pivot, p[2] * hz];
     let size = |s: V| [s[0] * hx, s[1] * h, s[2] * hz];
@@ -148,7 +160,12 @@ pub(super) fn animal(
     let swings = if dead {
         [0.25, 0.1, -0.2, -0.1]
     } else {
-        [diagonal, -diagonal, -diagonal, diagonal]
+        [
+            diagonal + lunge * 0.4,
+            -diagonal + lunge * 0.4,
+            -diagonal,
+            diagonal,
+        ]
     };
     for (i, name, side, z) in [
         (0, "front-left", 1., spec.legs[4]),
@@ -225,7 +242,7 @@ pub(super) fn animal(
     }
     p.draws
 }
-pub(super) fn humanoid(
+pub fn humanoid(
     r: &mut Resources,
     id: &str,
     placement: Frame,
@@ -235,8 +252,11 @@ pub(super) fn humanoid(
     elite: bool,
     accent: u32,
     loc: Locomotion,
-    dead: bool,
-) -> Vec<SceneDraw> {
+    action: Option<Action>,
+    life: Life,
+) -> Vec<Draw> {
+    let dead = life.dead();
+    let fall = life.fall();
     let (skin, tunic, trousers, boots, stance, hunch) = match (family, role) {
         (Some(CreatureFamily::Marauder), _) => {
             (0xa07a52, accent, 0x4a4036, 0x2f2923, Stance::Sword, 0.08)
@@ -255,12 +275,20 @@ pub(super) fn humanoid(
         _ => (0xe2cdb8, 0xf1f1f4, 0xf1f1f4, 0xd8d8de, Stance::Staff, 0.),
     };
     let [sx, sy, sz] = [half[0] / 0.3, half[1] * 2. / 1.8, half[2] / 0.3];
-    let pose = pose(if dead { Locomotion::default() } else { loc }, stance);
+    let pose = super::animation::action(
+        pose(if dead { Locomotion::default() } else { loc }, stance),
+        if dead { None } else { action },
+    );
     let rt = root(
         placement.p,
         2. * placement.q[1].atan2(placement.q[3]),
         half[1],
-        dead.then(|| (tilt(-PI / 2., 0., 0.), 0.16 * sz)),
+        dead.then(|| {
+            (
+                tilt(-PI / 2. * fall, 0., 0.),
+                half[1] + (0.16 * sz - half[1]) * fall,
+            )
+        }),
     );
     let mut p = Parts {
         id,

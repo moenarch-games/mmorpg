@@ -1,6 +1,7 @@
 import type { ContentCatalog, CreatureFamily } from "../catalog";
 import type { EntityState } from "../../replication";
-import type { UnitPlacement } from "../humanoid";
+/** Where a unit stands in metres: its feet, raised by presentation relief. */
+export type UnitPlacement = { x: number; feetY: number; z: number; yawRadians: number };
 
 /** One unit of the current projection, as the `?debug` readout lists it. Positions are metres. */
 export type ProjectedUnit = {

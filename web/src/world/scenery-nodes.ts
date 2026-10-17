@@ -5,7 +5,6 @@ import type {
   RendererInstanceBatch,
   RendererSceneNode,
 } from "@moritzbrantner/three-d-renderer";
-import type { Vec3 } from "./mesh-builder";
 import type { Color, PropKind, Scenery } from "./scenery";
 
 /**
@@ -205,7 +204,7 @@ export class SceneryFrame {
     this.#hidden = scene.batches.map((batch) => ({ ...batch.node, visible: false }));
   }
 
-  nodes(eye: Vec3, motion: SceneryMotion): { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[]; visibleBatches: number } {
+  nodes(eye: readonly [number, number, number], motion: SceneryMotion): { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[]; visibleBatches: number } {
     const nodes: RendererSceneNode[] = [];
     let visibleBatches = 0;
     this.#scene.batches.forEach((batch, index) => {

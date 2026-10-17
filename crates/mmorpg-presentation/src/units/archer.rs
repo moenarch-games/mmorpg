@@ -1,9 +1,6 @@
 //! Normalize the checked-in asset-tooling OBJ with the external precision-preserving OBJ parser.
 use super::{kit::*, player::Look};
-use crate::{
-    ClientError,
-    world::{DrawMaterial, SceneDraw, geometry::*},
-};
+use crate::{Draw, Material, geometry::*};
 use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock},
@@ -13,11 +10,11 @@ const MANIFEST: &str = include_str!("../../../../web/assets/medieval-character-k
 const MATERIALS: &str =
     include_str!("../../../../web/assets/medieval-character-kit/materials.json");
 struct Package {
-    parts: Vec<(String, Arc<three_d_core::Mesh>, String)>,
+    parts: Vec<(String, Arc<Geometry>, String)>,
     colors: BTreeMap<String, u32>,
     identity: String,
 }
-fn load() -> Result<Package, ClientError> {
+fn load() -> Result<Package, Box<dyn std::error::Error>> {
     let manifest: serde_json::Value = serde_json::from_str(MANIFEST)?;
     let materials: serde_json::Value = serde_json::from_str(MATERIALS)?;
     if manifest["coordinateSystem"] != "right-handed-y-up"
@@ -131,7 +128,7 @@ fn load() -> Result<Package, ClientError> {
                 g.n.push(n);
             }
         }
-        parts.push((name, Arc::new(g.mesh()), role));
+        parts.push((name, Arc::new(g), role));
     }
     let names: Vec<_> = parts
         .iter()
@@ -149,23 +146,22 @@ fn load() -> Result<Package, ClientError> {
         identity,
     })
 }
-fn package() -> Result<&'static Package, ClientError> {
+fn package() -> Result<&'static Package, String> {
     static PACKAGE: OnceLock<Result<Package, String>> = OnceLock::new();
     PACKAGE
         .get_or_init(|| load().map_err(|e| e.to_string()))
         .as_ref()
-        .map_err(|e| e.clone().into())
+        .map_err(Clone::clone)
 }
-pub(super) fn validate() -> Result<(), ClientError> {
+/// Loads and checks the embedded archer package once.
+///
+/// # Errors
+///
+/// When the checked-in package is inconsistent.
+pub fn validate() -> Result<(), String> {
     package().map(|_| ())
 }
-pub(super) fn nodes(
-    _resources: &mut Resources,
-    id: &str,
-    root: Frame,
-    l: Look,
-    bob: f64,
-) -> Vec<SceneDraw> {
+pub fn nodes(_resources: &mut Resources, id: &str, root: Frame, l: Look, bob: f64) -> Vec<Draw> {
     let package = package().expect("embedded archer package validated at presentation creation");
     let f = Frame {
         p: [root.p[0], root.p[1] + bob, root.p[2]],
@@ -180,12 +176,12 @@ pub(super) fn nodes(
                 "cloth-secondary" => l.chest,
                 _ => package.colors[role],
             };
-            SceneDraw {
+            Draw {
                 id: format!("{id}-{name}"),
                 resource_key: format!("{}:{name}", package.identity),
-                mesh: Arc::clone(mesh),
+                geometry: Arc::clone(mesh),
                 model: model(f, [1.; 3]),
-                material: DrawMaterial {
+                material: Material {
                     color: rgb(c),
                     emissive: [0.; 3],
                     opacity: 1.,

@@ -8,12 +8,6 @@
 //! by disposition (hostile red-ish, neutral yellow-ish) and shaded by family,
 //! NPCs green-ish; corpses lie flat, and the viewer's target stands on a
 //! marker. Names come from the zone content.
-mod animation;
-mod archer;
-mod creatures;
-mod effects;
-mod kit;
-mod player;
 mod skinned;
 
 use crate::{
@@ -24,6 +18,9 @@ use crate::{
 use mmorpg_core::{
     CreatureFamily, CreatureTemplateId, EntityKind, EntityRef, EntitySnapshot, NpcRole,
     PLAYER_HALF_EXTENTS_UNITS, TICK_HZ, UNITS_PER_METRE, ZoneContent, ZoneSnapshot,
+};
+use mmorpg_presentation::units::{
+    FrameInput, SampledUnit, UnitPresenter, Viewer, imported::Kind, player,
 };
 use mmorpg_scenery::Scenery;
 use std::{
@@ -85,12 +82,10 @@ pub struct Presentation {
     last_scene: Instant,
     picked_bodies: Vec<(EntityRef, SceneBox)>,
     picked_draws: Vec<(EntityRef, crate::world::SceneDraw)>,
-    resources: kit::Resources,
-    animators: BTreeMap<EntityRef, animation::Animator>,
-    /// Imported-model clip clocks per visible unit, and the last tick whose cues they consumed.
-    playbacks: BTreeMap<EntityRef, skinned::Playback>,
-    cue_tick: u64,
-    effects: effects::Effects,
+    /// Shared procedural units, poses, spell visuals and imported-model clip choice (#184).
+    units_presenter: UnitPresenter,
+    /// Native meshes of the shared draws, uploaded once per resource.
+    lowering: crate::world::Lowering,
     headwear: Option<player::Hat>,
     /// Character-selection preview of the viewer: class, sex and turntable yaw.
     preview: Option<(mmorpg_core::ClassChoice, f32)>,
@@ -114,7 +109,12 @@ impl Presentation {
         if content.revision() != scenery.content_revision {
             return Err("scenery and zone content revisions differ".into());
         }
-        archer::validate()?;
+        mmorpg_presentation::units::archer::validate()?;
+        let mut units_presenter =
+            UnitPresenter::new(player_id, Arc::clone(&content), Arc::new(scenery.clone()));
+        for kind in Kind::ALL {
+            units_presenter.model_ready(kind, skinned::asset(kind).model.clip_durations());
+        }
         Ok(Self {
             player_id,
             scenery,
@@ -125,11 +125,8 @@ impl Presentation {
             last_scene: now,
             picked_bodies: Vec::new(),
             picked_draws: Vec::new(),
-            resources: kit::Resources::default(),
-            animators: BTreeMap::new(),
-            playbacks: BTreeMap::new(),
-            cue_tick: 0,
-            effects: effects::Effects::default(),
+            units_presenter,
+            lowering: crate::world::Lowering::default(),
             headwear: None,
             preview: None,
             labels: Vec::new(),
@@ -146,10 +143,9 @@ impl Presentation {
         self.picked_bodies.clear();
         self.picked_draws.clear();
         self.labels.clear();
-        self.animators.clear();
         self.gaits.clear();
-        self.effects.clear();
-        self.resources = kit::Resources::default();
+        self.units_presenter.reset();
+        self.lowering = crate::world::Lowering::default();
         self.last_draw = now;
         self.last_scene = now;
         self.history.clear();
@@ -185,11 +181,9 @@ impl Presentation {
                 self.history.clear();
             }
         }
-        let anchors = self.snapshot_anchors(&snapshot);
-        self.effects.push(
+        self.units_presenter.push(
             &snapshot,
             now.saturating_duration_since(self.origin).as_secs_f64(),
-            &anchors,
         );
         self.latest_received = now;
         self.history.push_back(snapshot);
@@ -409,61 +403,9 @@ impl Presentation {
         &self.picked_draws
     }
 
-    fn snapshot_anchors(&self, snapshot: &ZoneSnapshot) -> BTreeMap<EntityRef, effects::Anchor> {
-        snapshot
-            .entities
-            .iter()
-            .map(|e| {
-                let (_, half) = self.unit_look(e.entity(), e);
-                let p = self.rendered(e.position);
-                (
-                    e.entity(),
-                    effects::Anchor {
-                        feet: [f64::from(p[0]), f64::from(p[1] - half[1]), f64::from(p[2])],
-                        centre: f64::from(p[1]),
-                        yaw: f64::from(e.facing) / 65536. * std::f64::consts::TAU,
-                    },
-                )
-            })
-            .collect()
-    }
-
-    /// The imported model presenting `entity`, if it has one: every player is asset-tooling's
-    /// Ranger humanoid while it is the only character bundle (Atlas 6.3.7); wolves, vermin and
-    /// boars are Quaternius animals; humanoid creatures and NPCs keep their procedural models.
-    fn imported_asset(
-        &self,
-        entity: EntityRef,
-        record: &EntitySnapshot,
-    ) -> Option<&'static skinned::Asset> {
-        use skinned::Kind as K;
-        let kind = match entity {
-            EntityRef::Player(_) => K::Ranger,
-            EntityRef::Creature(_) => {
-                match self
-                    .content
-                    .creature_template(CreatureTemplateId::new(record.appearance))?
-                    .family
-                {
-                    CreatureFamily::Wolf => K::Wolf,
-                    CreatureFamily::Vermin => K::Rat,
-                    CreatureFamily::Boar => K::Pig,
-                    CreatureFamily::Marauder
-                    | CreatureFamily::Mirefin
-                    | CreatureFamily::Redbrand => {
-                        return None;
-                    }
-                }
-            }
-            EntityRef::Npc(_) => return None,
-        };
-        Some(kind.asset())
-    }
-
     /// The same CPU geometry/material/model payload consumed by rendering and picking.
     #[must_use]
     pub fn unit_draws(&mut self, now: Instant, view: CameraView) -> Vec<crate::world::SceneDraw> {
-        use kit::*;
         let Some(snapshot) = self.latest().cloned() else {
             self.picked_draws.clear();
             self.labels.clear();
@@ -475,311 +417,126 @@ impl Presentation {
             .min(0.25);
         self.last_draw = self.last_draw.max(now);
         let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
-        let units = self.units(now);
-        self.animators.retain(|e, _| units.contains_key(e));
-        self.playbacks.retain(|e, _| units.contains_key(e));
+        let units: Vec<_> = self
+            .units(now)
+            .into_values()
+            .map(|unit| SampledUnit {
+                record: unit.record,
+                centre: unit.pose.position,
+                yaw: unit.pose.yaw,
+            })
+            .collect();
+        let frame = self.units_presenter.frame(&FrameInput {
+            snapshot: &snapshot,
+            units: &units,
+            viewer: Viewer {
+                choice: self.viewer_choice(&snapshot),
+                headwear: self.headwear,
+                preview_yaw: self.preview.map(|(_, yaw)| yaw),
+            },
+            seconds,
+            dt,
+            reduced_motion: self.reduced_motion,
+            bar_yaw: (view.target[0] - view.eye[0]).atan2(view.target[2] - view.eye[2]),
+        });
+        let mut draws: Vec<_> = frame
+            .draws
+            .iter()
+            .map(|draw| self.lowering.draw(draw))
+            .collect();
         self.picked_draws.clear();
         self.labels.clear();
-        let mut draws = Vec::new();
-        let mut anchors = BTreeMap::new();
-        let action = if self.reduced_motion {
-            None
-        } else {
-            self.effects.action(&snapshot, seconds)
-        };
-        if snapshot.tick != self.cue_tick && !self.reduced_motion {
-            self.cue_tick = snapshot.tick;
-            for event in &snapshot.events {
-                let (mmorpg_core::ZoneEvent::AttackPerformed { source, .. }
-                | mmorpg_core::ZoneEvent::AbilityUsed { source, .. }
-                | mmorpg_core::ZoneEvent::StrikeSwept { source, .. }) = *event
-                else {
-                    continue;
-                };
-                if let Some(unit) = units.get(&source)
-                    && let Some(asset) = self.imported_asset(source, &unit.record)
-                {
-                    self.playbacks
-                        .entry(source)
-                        .or_default()
-                        .attack(asset, seconds);
+        for unit in &frame.units {
+            self.picked_draws.extend(
+                draws[unit.body.clone()]
+                    .iter()
+                    .cloned()
+                    .map(|draw| (unit.entity, draw)),
+            );
+        }
+        for imported in &frame.imported {
+            let asset = &skinned::asset(imported.kind).model;
+            let placement = asset.placement(imported.root, imported.height);
+            let mut body = asset.draws(
+                &imported.id,
+                imported.root,
+                imported.height,
+                imported.clip,
+                imported.time,
+                imported.tint,
+            );
+            if imported.sword_and_shield {
+                body.extend(skinned::Equipment::sword_and_shield().draws(
+                    &imported.id,
+                    asset,
+                    placement,
+                    imported.clip,
+                    imported.time,
+                    imported.tint,
+                ));
+            }
+            let head = asset
+                .head(imported.clip, imported.time)
+                .map(|(centre, radius)| {
+                    let m = placement.elements;
+                    let p: [f64; 3] = std::array::from_fn(|r| {
+                        f64::from(
+                            m[r] * centre[0]
+                                + m[4 + r] * centre[1]
+                                + m[8 + r] * centre[2]
+                                + m[12 + r],
+                        )
+                    });
+                    let scale = f64::from(m[0].hypot(m[1]).hypot(m[2]));
+                    (p, f64::from(radius) * scale)
+                });
+            if let (Some(look), Some((p, radius))) = (imported.headwear, head) {
+                let yaw = frame
+                    .units
+                    .iter()
+                    .find(|unit| unit.entity == imported.entity)
+                    .map_or(0., |unit| unit.yaw);
+                for draw in self.units_presenter.headwear(
+                    &imported.id,
+                    look,
+                    p,
+                    yaw,
+                    radius,
+                    imported.height,
+                ) {
+                    body.push(self.lowering.draw(&draw));
                 }
             }
-        }
-        for (entity, unit) in units {
-            let (_, half) = self.unit_look(entity, &unit.record);
-            let feet = [
-                f64::from(unit.pose.position[0]),
-                f64::from(unit.pose.position[1] - half[1]),
-                f64::from(unit.pose.position[2]),
-            ];
-            let preview_yaw = self
-                .preview
-                .filter(|_| entity == EntityRef::Player(self.player_id))
-                .map(|(_, yaw)| yaw);
-            let yaw = f64::from(preview_yaw.unwrap_or(unit.pose.yaw));
-            let bar_y = unit.pose.position[1] + half[1] + 0.3;
-            let mut label_y = bar_y + 0.15;
-            let root = Frame {
-                p: feet,
-                q: qa(1, yaw),
-            };
-            anchors.insert(
-                entity,
-                effects::Anchor {
-                    feet,
-                    centre: f64::from(unit.pose.position[1]),
-                    yaw,
-                },
-            );
-            let v = unit.record.velocity.map(|v| f64::from(v) * 0.3);
-            let loc = self.animators.entry(entity).or_default().update(
-                [feet[0], feet[2]],
-                yaw,
-                v,
-                dt,
-                self.reduced_motion,
-            );
-            let name = match entity.kind() {
-                EntityKind::Player => "player",
-                EntityKind::Creature => "creature",
-                EntityKind::Npc => "npc",
-            };
-            let id = format!("unit-{name}-{}", unit.record.id);
-            let imported = self.imported_asset(entity, &unit.record);
-            let body = match entity {
-                _ if imported.is_some() => {
-                    let asset = imported.expect("checked above");
-                    let dead = unit.record.flags.dead;
-                    let viewer = matches!(entity, EntityRef::Player(n) if n == self.player_id);
-                    // Only the viewer's guard is projected; a held one raises the shield (#156).
-                    let guarding = viewer && snapshot.viewer.guard.raised.is_some();
-                    let (clip, time) = self.playbacks.entry(entity).or_default().advance(
-                        asset,
-                        loc.forward.hypot(loc.right),
-                        dead,
-                        seconds,
-                        dt,
-                        self.reduced_motion,
-                        guarding,
-                    );
-                    let height = f64::from(half[1]) * 2.;
-                    let mut body =
-                        asset
-                            .model
-                            .draws(&id, root, height, clip, time, dead.then_some(0.6));
-                    // A Warden carries the bundle's sword and shield (#156).
-                    let class = if viewer {
-                        self.viewer_choice(&snapshot)
-                    } else {
-                        mmorpg_core::ClassChoice::from_appearance(unit.record.appearance)
-                    };
-                    if matches!(entity, EntityRef::Player(_))
-                        && class.is_some_and(|c| c.class == mmorpg_core::PlayerClass::Warden)
-                    {
-                        body.extend(skinned::Equipment::sword_and_shield().draws(
-                            &id,
-                            &asset.model,
-                            asset.model.placement(root, height),
-                            clip,
-                            time,
-                            dead.then_some(0.6),
-                        ));
-                    }
-                    let head = asset.model.head(clip, time).map(|(centre, radius)| {
-                        let m = asset.model.placement(root, height).elements;
-                        let p: [f64; 3] = std::array::from_fn(|r| {
-                            f64::from(
-                                m[r] * centre[0]
-                                    + m[4 + r] * centre[1]
-                                    + m[8 + r] * centre[2]
-                                    + m[12 + r],
-                            )
-                        });
-                        let scale = f64::from(m[0].hypot(m[1]).hypot(m[2]));
-                        (p, f64::from(radius) * scale)
-                    });
-                    if let Some((p, radius)) = head {
-                        // Above the posed head, or the health bar when that is higher.
-                        label_y = label_y.max((p[1] + radius) as f32 + 0.15);
-                    }
-                    if let EntityRef::Player(id_num) = entity
-                        && id_num == self.player_id
-                        && !dead
-                        && let Some((p, radius)) = head
-                    {
-                        let choice = self.viewer_choice(&snapshot);
-                        let look = player::Look::new(
-                            choice.map_or(0, |c| c.class.code()),
-                            choice.is_none_or(|c| c.sex.code() == 0),
-                            self.headwear,
-                            false,
-                        );
-                        body.extend(player::headwear(
-                            &mut self.resources,
-                            &id,
-                            look,
-                            Frame { p, q: root.q },
-                            headwear_radius(radius, height),
-                        ));
-                    }
-                    body
-                }
-                EntityRef::Player(id_num) => {
-                    let other = id_num != self.player_id;
-                    let choice = self.viewer_choice(&snapshot);
-                    let look = player::Look::new(
-                        choice.map_or(0, |c| c.class.code()),
-                        choice.is_none_or(|c| c.sex.code() == 0),
-                        self.headwear,
-                        other,
-                    );
-                    let base = animation::pose(loc, look.stance);
-                    let posed = animation::action(base, if other { None } else { action });
-                    let bow_turn = posed.twist - base.twist;
-                    player::nodes(&mut self.resources, &id, root, look, posed, bow_turn)
-                }
-                _ => {
-                    let template = (entity.kind() == EntityKind::Creature)
-                        .then(|| {
-                            self.content
-                                .creature_template(CreatureTemplateId::new(unit.record.appearance))
-                        })
-                        .flatten();
-                    let family = template.map(|t| t.family);
-                    let role = match entity {
-                        EntityRef::Npc(id) => self.content.npc(id).map(|n| n.role),
-                        _ => None,
-                    };
-                    let accent = family.map_or(0x4f9d5d, |f| creatures::accent(&unit.record, f));
-                    if let Some(
-                        f @ (CreatureFamily::Wolf | CreatureFamily::Boar | CreatureFamily::Vermin),
-                    ) = family
-                    {
-                        creatures::animal(
-                            &mut self.resources,
-                            &id,
-                            root,
-                            half.map(f64::from),
-                            f,
-                            accent,
-                            loc,
-                            unit.record.flags.dead,
-                        )
-                    } else if family.is_some() || role.is_some() {
-                        creatures::humanoid(
-                            &mut self.resources,
-                            &id,
-                            root,
-                            half.map(f64::from),
-                            family,
-                            role,
-                            template.is_some_and(|t| t.elite),
-                            accent,
-                            loc,
-                            unit.record.flags.dead,
-                        )
-                    } else {
-                        let half = half.map(f64::from);
-                        let c = if unit.record.flags.dead {
-                            shade(accent, 0.45)
-                        } else {
-                            accent
-                        };
-                        let mut body = vec![self.resources.primitive(
-                            format!("{id}-body"),
-                            Primitive::Box(if unit.record.flags.dead {
-                                [half[0] * 2., 0.16, half[1] * 2.]
-                            } else {
-                                half.map(|v| v * 2.)
-                            }),
-                            c,
-                            offset(
-                                root,
-                                [
-                                    0.,
-                                    if unit.record.flags.dead {
-                                        0.08
-                                    } else {
-                                        half[1]
-                                    },
-                                    0.,
-                                ],
-                            ),
-                        )];
-                        if !unit.record.flags.dead {
-                            body.push(self.resources.primitive(
-                                format!("{id}-nose"),
-                                Primitive::Box([0.12, 0.12, 0.12]),
-                                0xead9b5,
-                                offset(root, [0., half[1] * 1.4, half[2] + 0.06]),
-                            ));
-                        }
-                        body
-                    }
-                }
-            };
-            self.labels.push(crate::ui::world_labels::UnitLabel {
-                entity,
-                anchor: [unit.pose.position[0], label_y, unit.pose.position[2]],
-            });
-            self.picked_draws
-                .extend(body.iter().cloned().map(|d| (entity, d)));
-            draws.extend(body);
-            if !unit.record.flags.dead && entity.kind() != EntityKind::Npc {
-                let yaw = (view.target[0] - view.eye[0]).atan2(view.target[2] - view.eye[2]);
-                let mut bars = Vec::new();
-                append_health_bar(
-                    &mut bars,
-                    [
-                        unit.pose.position[0],
-                        unit.pose.position[1] + half[1] + 0.3,
-                        unit.pose.position[2],
+            if let (Some(unit), Some((p, radius))) = (
+                frame
+                    .units
+                    .iter()
+                    .find(|unit| unit.entity == imported.entity),
+                head,
+            ) {
+                // Above the posed head, or the health bar when that is higher.
+                self.labels.push(crate::ui::world_labels::UnitLabel {
+                    entity: unit.entity,
+                    anchor: [
+                        unit.label[0],
+                        unit.label[1].max((p[1] + radius) as f32 + 0.15),
+                        unit.label[2],
                     ],
-                    unit.record.health_percent,
-                    yaw,
-                );
-                for (index, bar) in bars.into_iter().enumerate() {
-                    let mut draw = self.resources.draw(
-                        format!("{id}-health-{index}"),
-                        "box",
-                        0xffffff,
-                        Frame {
-                            p: bar.position.map(f64::from),
-                            q: qa(1, f64::from(bar.yaw)),
-                        },
-                        bar.size.map(|s| f64::from(s) * 0.5),
-                    );
-                    draw.material.color = bar.color.map(|v| {
-                        if v <= 0.0031308 {
-                            v * 12.92
-                        } else {
-                            1.055 * v.powf(1. / 2.4) - 0.055
-                        }
-                    });
-                    draw.material.unlit = true;
-                    draws.push(draw);
-                }
+                });
             }
-            if entity.kind() != EntityKind::Player && snapshot.viewer.target == Some(entity) {
-                let mut ring = self.resources.primitive(
-                    format!("{id}-target-ring"),
-                    Primitive::Post(f64::from(half[0].max(half[2])) + 0.35, 0.04),
-                    0xf2d15f,
-                    Frame {
-                        p: [feet[0], feet[1] + 0.02, feet[2]],
-                        q: IQ,
-                    },
-                );
-                ring.material.opacity = 0.85;
-                ring.material.unlit = true;
-                draws.push(ring);
+            self.picked_draws
+                .extend(body.iter().cloned().map(|draw| (imported.entity, draw)));
+            draws.extend(body);
+        }
+        self.lowering.retain_used(&draws);
+        for unit in &frame.units {
+            if !self.labels.iter().any(|label| label.entity == unit.entity) {
+                self.labels.push(crate::ui::world_labels::UnitLabel {
+                    entity: unit.entity,
+                    anchor: unit.label,
+                });
             }
         }
-        if !self.reduced_motion {
-            draws.extend(self.effects.nodes(&mut self.resources, seconds, &anchors));
-        }
-        self.resources.retire_unused();
         draws
     }
 
@@ -1097,13 +854,3 @@ fn yaw_radians(steps: f32) -> f32 {
 fn metres(value: [i32; 3]) -> [f32; 3] {
     value.map(|component| component as f32 / UNITS_PER_METRE as f32)
 }
-
-/// Explicit headwear scales to the skull, not to the head joint's whole
-/// vertex extent: imported Quaternius heads carry their own hats, horns,
-/// ears and hair, which made helms balloon to several head widths.
-fn headwear_radius(head_extent: f64, height: f64) -> f64 {
-    head_extent.min(SKULL_RADIUS_PER_HEIGHT * height)
-}
-
-/// About the skull radius of the bundled chibi-proportioned characters.
-const SKULL_RADIUS_PER_HEIGHT: f64 = 0.12;

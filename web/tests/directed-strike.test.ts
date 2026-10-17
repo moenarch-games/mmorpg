@@ -3,7 +3,6 @@ import type { Profile } from "@moritzbrantner/input-bindings";
 import { actionBindingLabels } from "../src/input/binding-labels";
 import { GameControls, type HoldPhase } from "../src/input/game-controls";
 import { AIM_THRESHOLD_PX, DirectedStrikeAim, aimFromDelta } from "../src/world/units/directed-strike";
-import { SWEEP_HEIGHT_METRES, SpellEffects, allEffectNodes, type Anchor } from "../src/world/units/spell-effects";
 import { eventText } from "../src/world/units/combat-hud";
 import { playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -102,32 +101,6 @@ describe("directed Heroic Strike input", () => {
 });
 
 describe("directed Heroic Strike presentation", () => {
-  test("the zone's sweep event draws a hit or whiff arc at the aimed height", () => {
-    const viewer = { kind: "player", id: 1 } as const;
-    const wolf = { kind: "creature", id: 108 } as const;
-    const anchor: Anchor = { x: 0, feetY: 0, centreY: 0.9, z: 0, yaw: 0 };
-    const resolve = () => anchor;
-    for (const [height, target] of [["high", null], ["low", wolf]] as const) {
-      const effects = new SpellEffects();
-      effects.spawn(testSnapshot({
-        zoneId: 1, tick: 5n, contentRevision: 1n, acknowledgedSequence: 1, viewerId: 1,
-        entities: [playerEntity(1, [0, 90, 0]), { ...playerEntity(108, [0, 45, 150]), kind: "creature" }],
-        events: [{ kind: "strike-swept", source: viewer, target, ability: 1, aim: { side: "left", height } }],
-      }), 0, resolve);
-      const [sweep] = effects.active(0.1);
-      expect(sweep?.visual).toBe("sweep");
-      expect(sweep?.sweep).toEqual({ aim: { side: "left", height }, hit: target !== null });
-      const nodes = allEffectNodes([sweep!], 0.1, resolve);
-      expect(nodes.length).toBeGreaterThan(0);
-      for (const node of nodes) {
-        expect(node.transform.translation?.[1]).toBeCloseTo(SWEEP_HEIGHT_METRES[height]);
-        // Left of a +Z facing is +X.
-        expect(node.transform.translation?.[0]).toBeGreaterThan(0);
-      }
-      expect(effects.actionFor(viewer, 0.1)?.pose).toBe("swing");
-    }
-  });
-
   test("feedback names the aim and whether the sweep struck", () => {
     const snapshot = testSnapshot({ zoneId: 1, tick: 1n, contentRevision: 1n, acknowledgedSequence: 0, viewerId: 1, entities: [playerEntity(1, [0, 90, 0])] });
     const catalog = { abilities: new Map([[1, { name: "Heroic Strike" }]]), creatureTemplates: new Map(), npcs: new Map(), quests: new Map() } as never;

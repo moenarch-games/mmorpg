@@ -1,27 +1,13 @@
-/** #182 reference: the Pages presentation path. Static scenery comes through the shared WASM export (#184); units use the Pages generators. */
+/** #182 reference: the Pages presentation path of the shared static world (#184), through the real WASM export. */
 import * as THREE from "three";
 import type { RendererInstance, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import { ENVIRONMENT, DAY_SECONDS, environmentAt, skyAt } from "../../src/world/environment";
 import { decodeScenery } from "../../src/world/scenery";
 import { SceneryFrame, buildSceneryScene } from "../../src/world/scenery-nodes";
 import { localZoneModule } from "./local-zone-module";
-import { decodeCatalog } from "../../src/world/catalog";
-import { characterLook } from "../../src/world/humanoid";
-import { UnitAnimators, placeWithModel, unitIdentity, unitModel, type UnitContext } from "../../src/world/unit-nodes";
-import { SpellEffects, allEffectNodes } from "../../src/world/units/spell-effects";
-import { testSnapshot, HEALTHY_VIEWER } from "./snapshots";
-import type { EntityState } from "../../src/replication";
-import { HAT_OPTIONS } from "../../src/character-customization";
 
 const input = JSON.parse(await Bun.stdin.text());
 const scenery = decodeScenery(JSON.stringify(input.scenery));
-const catalog = decodeCatalog(JSON.stringify(input.catalog));
-function reliefAt(entity: EntityState): number {
-  const key = `${entity.position[0]},${entity.position[2]}`;
-  const units = input.reliefSamples[key];
-  if (typeof units !== "number" || !Number.isFinite(units)) { throw new Error(`Missing shared WASM relief sample ${key}`); }
-  return units;
-}
 const resources: Record<string, unknown> = {};
 const resourceObjects = new WeakMap<object, string>();
 const wasm = await localZoneModule();
@@ -103,36 +89,6 @@ for (const request of input.requests) {
     const phase = request.animate ? request.seconds / DAY_SECONDS : 0;
     const environment = environmentAt(ENVIRONMENT, phase);
     scenes.push({ name: request.name, draws, environment, sky_stops: skyAt(ENVIRONMENT, phase) });
-  } else {
-    const context: UnitContext = { unitsPerMetre: scenery.unitsPerMetre, playerHalfHeightUnits: scenery.playerHalfExtents[1],
-      viewerId: 1, viewerLook: characterLook({ classId: request.classId, sex: request.sex }, HAT_OPTIONS.find((option) => option.id === request.headwear)?.id ?? null),
-      catalog, viewerTarget: request.target ?? null };
-    const animators = new UnitAnimators();
-    const resolve = (ref: {kind:string;id:number}) => {
-      const entity = request.entities.find((entity:EntityState) => entity.kind === ref.kind && entity.entityId === ref.id);
-      if (!entity) { return null; }
-      const model = unitModel(entity); const place = placeWithModel(model, entity, context, reliefAt(entity));
-      return { x: place.x, feetY: place.feetY, centreY: place.feetY + model.halfHeightUnits(entity,context)/scenery.unitsPerMetre, z: place.z, yaw: place.yawRadians };
-    };
-    const snapshot = testSnapshot({zoneId:1n,tick:1n,contentRevision:1n,acknowledgedSequence:0,viewerId:1,
-      entities:request.entities, events:request.events ?? [], auras:request.auras ?? [],
-      viewer:{...HEALTHY_VIEWER,target:request.target ?? null,cast:request.cast ?? null}});
-    const effects = new SpellEffects();
-    if (request.previousCast) {
-      effects.spawn({...snapshot,events:[],viewer:{...snapshot.viewer,cast:request.previousCast}},0,resolve);
-    }
-    effects.spawn(snapshot,0,resolve); effects.sync(snapshot,0,resolve);
-    const sampleSeconds = request.sampleSeconds ?? 0;
-    context.viewerAction = request.animate ? effects.viewerAction(snapshot,sampleSeconds) : null;
-    const draws = [];
-    for (const entity of request.entities as EntityState[]) {
-      const model = unitModel(entity);
-      const placement = placeWithModel(model, entity, context, reliefAt(entity));
-      const locomotion = animators.locomotion(entity, placement, scenery.unitsPerMetre, request.delta ?? 0, !request.animate);
-      draws.push(...model.nodes({ id: unitIdentity(entity), entity, placement, locomotion, context }).map((node) => draw(node)));
-    }
-    if (request.animate) { draws.push(...allEffectNodes(effects.active(sampleSeconds),sampleSeconds,resolve).map((node)=>draw(node))); }
-    scenes.push({ name: request.name, draws });
   }
 }
-console.log(JSON.stringify({ resources, scenes, reliefSamples: input.reliefSamples }));
+console.log(JSON.stringify({ resources, scenes }));

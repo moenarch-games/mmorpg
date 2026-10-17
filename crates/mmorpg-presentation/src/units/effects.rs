@@ -1,0 +1,825 @@
+//! Spell visuals and actor actions, observed from authoritative projections.
+//!
+//! An effect starts from a projection event (or from the viewer's own cast, aura or guard
+//! state), lives for a fixed time or while its cast, aura or guard lasts, and expires on its own.
+//! Every visible actor (except NPCs) plays its own attempts: swings, casts that hold while they
+//! run, and releases. Death and interrupts end an action. Nothing here feeds back into the zone.
+use super::{
+    animation::{Action, Stance},
+    kit::*,
+};
+use crate::{Draw, geometry::V};
+use mmorpg_core::{
+    AuraKind, EntityRef, StrikeAim, StrikeHeight, StrikeSide, ZoneEvent, ZoneSnapshot,
+};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    f64::consts::{PI, TAU},
+};
+
+#[derive(Clone, Copy, PartialEq)]
+enum Visual {
+    Projectile,
+    Arrow,
+    Ring,
+    Bubble,
+    Shards,
+    Swing,
+    Impact {
+        critical: bool,
+    },
+    Sweep {
+        aim: StrikeAim,
+        hit: bool,
+    },
+    /// The viewer's raised shield: its lane and whether it protects, waits or is broken.
+    Guard {
+        lane: StrikeHeight,
+        state: GuardState,
+    },
+    /// A blow met a guard in `lane`: blocked, or overpowering it. The source is the defender.
+    Block {
+        lane: StrikeHeight,
+        broken: bool,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum GuardState {
+    Protecting,
+    Suspended,
+    Broken,
+}
+
+#[derive(Clone)]
+struct Effect {
+    id: u64,
+    visual: Visual,
+    ability: u8,
+    source: EntityRef,
+    target: Option<EntityRef>,
+    ground: Option<V>,
+    start: f64,
+    /// Seconds a timed effect lives; `None` while it follows a cast, aura or guard.
+    duration: Option<f64>,
+}
+
+#[derive(Clone, Copy)]
+pub struct Anchor {
+    pub feet: V,
+    pub centre: f64,
+    pub yaw: f64,
+}
+
+#[derive(Clone, Copy)]
+struct ActorAction {
+    stance: Stance,
+    start: f64,
+    duration: f64,
+    hold: bool,
+    ability: u8,
+    release: bool,
+    /// The viewer's own projected cast progress, which wins over the clock.
+    projected: Option<f64>,
+}
+
+const MAX_EFFECTS: usize = 24;
+const ACTION_SECONDS: f64 = 0.3;
+const SWEEP_SECONDS: f64 = 0.34;
+const BLOCK_SECONDS: f64 = 0.45;
+const IMPACT_SECONDS: f64 = 0.32;
+const BLIZZARD: u8 = 12;
+const BARRIER: u8 = 11;
+/// The zone's guard coverage is centred 30° toward the shield (left) side of the facing.
+const GUARD_SIDE: f64 = PI / 6.;
+const SWEEP_HALF_WIDTH: f64 = PI / 6.;
+
+#[derive(Default)]
+pub struct Effects {
+    effects: Vec<Effect>,
+    next: u64,
+    actions: BTreeMap<EntityRef, ActorAction>,
+    casts: BTreeMap<EntityRef, ActorAction>,
+    dead: BTreeSet<EntityRef>,
+    last_tick: Option<u64>,
+    session: Option<(u32, u32, u64)>,
+}
+
+/// Each ability's caster pose, visual and accent colour.
+fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
+    match id {
+        1 => (Some(Stance::Sword), Some(Visual::Swing), 0xe0a15c),
+        2 => (Some(Stance::Sword), None, 0x9fb4c8),
+        3 => (None, None, 0x7fd08a),
+        4 => (Some(Stance::Sword), Some(Visual::Swing), 0xd9a066),
+        5 => (Some(Stance::Bow), Some(Visual::Arrow), 0xc9b36a),
+        6 => (Some(Stance::Bow), Some(Visual::Arrow), 0x7fc05a),
+        7 => (Some(Stance::Bow), Some(Visual::Arrow), 0xb0a58c),
+        8 => (None, None, 0xf2c14e),
+        9 => (Some(Stance::Staff), Some(Visual::Projectile), 0xff8a3d),
+        10 => (Some(Stance::Staff), Some(Visual::Ring), 0x8fd8ff),
+        11 => (Some(Stance::Staff), Some(Visual::Bubble), 0xb69cff),
+        12 => (Some(Stance::Staff), Some(Visual::Shards), 0xa8e4ff),
+        13 => (Some(Stance::Staff), Some(Visual::Projectile), 0x7d9a4a),
+        14 => (Some(Stance::Staff), None, 0xe7dcc0),
+        _ => (None, None, 0xffffff),
+    }
+}
+
+fn timed(visual: Visual) -> Option<f64> {
+    match visual {
+        Visual::Projectile => Some(0.4),
+        Visual::Arrow => Some(0.22),
+        Visual::Ring => Some(0.65),
+        Visual::Swing => Some(0.28),
+        _ => None,
+    }
+}
+
+/// Blade height above the feet (metres) per aimed band; the zone's bands are 0–0.6, 0.6–1.3, 1.3–2 m.
+fn lane_height(lane: StrikeHeight) -> f64 {
+    match lane {
+        StrikeHeight::Low => 0.35,
+        StrikeHeight::Middle => 0.95,
+        StrikeHeight::High => 1.65,
+    }
+}
+
+impl Effects {
+    pub fn clear(&mut self) {
+        *self = Self {
+            next: self.next,
+            ..Self::default()
+        };
+    }
+
+    fn add(
+        &mut self,
+        visual: Visual,
+        ability: u8,
+        source: EntityRef,
+        target: Option<EntityRef>,
+        duration: Option<f64>,
+        now: f64,
+    ) {
+        self.next += 1;
+        self.effects.push(Effect {
+            id: self.next,
+            visual,
+            ability,
+            source,
+            target,
+            ground: None,
+            start: now,
+            duration,
+        });
+        if self.effects.len() > MAX_EFFECTS {
+            self.effects.remove(0);
+        }
+    }
+
+    fn shards(
+        &mut self,
+        source: EntityRef,
+        target: Option<EntityRef>,
+        now: f64,
+        anchors: &BTreeMap<EntityRef, Anchor>,
+    ) {
+        if self
+            .effects
+            .iter()
+            .any(|e| e.visual == Visual::Shards && e.source == source)
+        {
+            return;
+        }
+        if let Some(a) = target.and_then(|t| anchors.get(&t)) {
+            self.add(Visual::Shards, BLIZZARD, source, target, None, now);
+            if let Some(effect) = self.effects.last_mut() {
+                effect.ground = Some(a.feet);
+            }
+        }
+    }
+
+    /// Consumes one received projection; identities never share animation state.
+    pub fn push(&mut self, s: &ZoneSnapshot, now: f64, anchors: &BTreeMap<EntityRef, Anchor>) {
+        let session = (s.zone_id.get(), s.viewer_id, s.content_revision);
+        if self.session != Some(session) || self.last_tick.is_some_and(|tick| s.tick < tick) {
+            self.clear();
+            self.session = Some(session);
+        }
+        if self.last_tick != Some(s.tick) {
+            self.last_tick = Some(s.tick);
+            self.spawn(s, now, anchors);
+        }
+        self.sync(s, now, anchors);
+    }
+
+    fn spawn(&mut self, s: &ZoneSnapshot, now: f64, anchors: &BTreeMap<EntityRef, Anchor>) {
+        let visible: BTreeSet<_> = s.entities.iter().map(|e| e.entity()).collect();
+        self.dead = s
+            .entities
+            .iter()
+            .filter(|e| e.flags.dead)
+            .map(|e| e.entity())
+            .collect();
+        let gone = |e: &EntityRef| !visible.contains(e);
+        for actions in [&mut self.actions, &mut self.casts] {
+            actions.retain(|e, _| !gone(e));
+        }
+        self.effects
+            .retain(|e| !gone(&e.source) && e.target.is_none_or(|t| !gone(&t)));
+        for event in &s.events {
+            match *event {
+                ZoneEvent::AttackPerformed { source, .. } => {
+                    self.actions.insert(
+                        source,
+                        ActorAction {
+                            stance: Stance::Sword,
+                            start: now,
+                            duration: ACTION_SECONDS,
+                            hold: false,
+                            ability: 0,
+                            release: false,
+                            projected: None,
+                        },
+                    );
+                }
+                ZoneEvent::CastStarted {
+                    source,
+                    target,
+                    ability,
+                    ticks,
+                } => {
+                    let id = ability.get();
+                    if let Some(stance) = presentation(id).0 {
+                        self.casts.insert(
+                            source,
+                            ActorAction {
+                                stance,
+                                start: now,
+                                duration: f64::from(ticks) / 30.,
+                                hold: true,
+                                ability: id,
+                                release: false,
+                                projected: None,
+                            },
+                        );
+                    }
+                    if id == BLIZZARD {
+                        self.shards(source, target, now, anchors);
+                    }
+                }
+                ZoneEvent::AbilityUsed {
+                    source,
+                    target,
+                    ability,
+                } => {
+                    let id = ability.get();
+                    let (stance, visual, _) = presentation(id);
+                    let release = self.casts.get(&source).is_some_and(|c| c.ability == id);
+                    if release {
+                        self.casts.remove(&source);
+                    }
+                    if let Some(stance) = stance {
+                        self.actions.insert(
+                            source,
+                            ActorAction {
+                                stance,
+                                start: now,
+                                duration: ACTION_SECONDS,
+                                hold: false,
+                                ability: id,
+                                release,
+                                projected: None,
+                            },
+                        );
+                    }
+                    if let Some(visual) = visual
+                        && let Some(duration) = timed(visual)
+                    {
+                        self.add(visual, id, source, target, Some(duration), now);
+                    }
+                }
+                ZoneEvent::StrikeSwept {
+                    source,
+                    target,
+                    ability,
+                    aim,
+                } => {
+                    // The zone's outcome, not the input, drives the sweep: its aim, and hit or whiff.
+                    self.actions.insert(
+                        source,
+                        ActorAction {
+                            stance: Stance::Sword,
+                            start: now,
+                            duration: SWEEP_SECONDS,
+                            hold: false,
+                            ability: ability.get(),
+                            release: false,
+                            projected: None,
+                        },
+                    );
+                    self.add(
+                        Visual::Sweep {
+                            aim,
+                            hit: target.is_some(),
+                        },
+                        ability.get(),
+                        source,
+                        target,
+                        Some(SWEEP_SECONDS),
+                        now,
+                    );
+                }
+                ZoneEvent::Blocked {
+                    source,
+                    target,
+                    lane,
+                    ..
+                }
+                | ZoneEvent::GuardBroken {
+                    source,
+                    target,
+                    lane,
+                    ..
+                } => {
+                    // The defender's shield meets the blow at the zone's lane, facing the attacker.
+                    let broken = matches!(event, ZoneEvent::GuardBroken { .. });
+                    self.add(
+                        Visual::Block { lane, broken },
+                        0,
+                        target,
+                        Some(source),
+                        Some(BLOCK_SECONDS),
+                        now,
+                    );
+                }
+                ZoneEvent::Interrupted {
+                    target, ability, ..
+                } => {
+                    let id = ability.get();
+                    if self.casts.get(&target).is_some_and(|c| c.ability == id) {
+                        self.casts.remove(&target);
+                    }
+                    if self.actions.get(&target).is_some_and(|a| a.ability == id) {
+                        self.actions.remove(&target);
+                    }
+                }
+                ZoneEvent::DamageDealt {
+                    source,
+                    target,
+                    amount,
+                    critical,
+                }
+                | ZoneEvent::DamageTaken {
+                    source,
+                    target,
+                    amount,
+                    critical,
+                }
+                | ZoneEvent::DamageObserved {
+                    source,
+                    target,
+                    amount,
+                    critical,
+                } if amount > 0 => {
+                    self.add(
+                        Visual::Impact { critical },
+                        0,
+                        source,
+                        Some(target),
+                        Some(IMPACT_SECONDS),
+                        now,
+                    );
+                }
+                ZoneEvent::Died { entity, .. } => {
+                    self.dead.insert(entity);
+                }
+                _ => {}
+            }
+        }
+        // Death wins even when the same projection also contains an accepted attempt.
+        for entity in &self.dead {
+            self.actions.remove(entity);
+            self.casts.remove(entity);
+        }
+    }
+
+    /// Only the viewer's continuously projected cast, auras and guard reconstruct bound effects.
+    fn sync(&mut self, s: &ZoneSnapshot, now: f64, anchors: &BTreeMap<EntityRef, Anchor>) {
+        let viewer = EntityRef::Player(s.viewer_id);
+        let cast = s.viewer.cast;
+        match cast.and_then(|c| presentation(c.ability.get()).0.map(|stance| (c, stance))) {
+            Some((c, stance)) if !s.viewer.dead => {
+                self.casts.insert(
+                    viewer,
+                    ActorAction {
+                        stance,
+                        start: now - f64::from(c.elapsed) / 30.,
+                        duration: f64::from(c.total) / 30.,
+                        hold: true,
+                        ability: c.ability.get(),
+                        release: false,
+                        projected: Some(if c.total > 0 {
+                            f64::from(c.elapsed) / f64::from(c.total)
+                        } else {
+                            1.
+                        }),
+                    },
+                );
+            }
+            _ => {
+                self.casts.remove(&viewer);
+            }
+        }
+        let barrier = !s.viewer.dead
+            && s.auras
+                .iter()
+                .any(|a| a.ability.get() == BARRIER && a.kind == AuraKind::Absorb);
+        let casts = &self.casts;
+        self.effects.retain(|e| {
+            if e.duration.is_some() || matches!(e.visual, Visual::Guard { .. }) {
+                return true;
+            }
+            if e.visual == Visual::Shards {
+                return casts.get(&e.source).is_some_and(|c| c.ability == BLIZZARD);
+            }
+            e.source == viewer && barrier
+        });
+        if cast.is_some_and(|c| c.channel && c.ability.get() == BLIZZARD) && !s.viewer.dead {
+            self.shards(viewer, s.viewer.target, now, anchors);
+        }
+        // The raised shield follows the zone's guard: its lane, and protecting, suspended or broken.
+        let shown = if s.viewer.dead {
+            None
+        } else {
+            s.viewer.guard.raised.map(|lane| {
+                let state = if s.viewer.guard.broken > 0 {
+                    GuardState::Broken
+                } else if s.viewer.guard.protecting {
+                    GuardState::Protecting
+                } else {
+                    GuardState::Suspended
+                };
+                Visual::Guard { lane, state }
+            })
+        };
+        match (
+            shown,
+            self.effects
+                .iter_mut()
+                .find(|e| matches!(e.visual, Visual::Guard { .. })),
+        ) {
+            (None, _) => self
+                .effects
+                .retain(|e| !matches!(e.visual, Visual::Guard { .. })),
+            (Some(visual), Some(raised)) => raised.visual = visual,
+            (Some(visual), None) => self.add(visual, 0, viewer, None, None, now),
+        }
+        if barrier
+            && !self
+                .effects
+                .iter()
+                .any(|e| e.visual == Visual::Bubble && e.source == viewer)
+        {
+            self.add(Visual::Bubble, BARRIER, viewer, None, None, now);
+        }
+    }
+
+    /// The action `entity` plays at `now`, if any; NPCs and the dead play none.
+    #[must_use]
+    pub fn action_for(&self, entity: EntityRef, now: f64) -> Option<Action> {
+        if matches!(entity, EntityRef::Npc(_)) || self.dead.contains(&entity) {
+            return None;
+        }
+        for action in [self.actions.get(&entity), self.casts.get(&entity)]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(progress) = action.projected {
+                return Some(Action {
+                    stance: action.stance,
+                    progress: progress.min(1.),
+                    hold: true,
+                });
+            }
+            let elapsed = now - action.start;
+            if elapsed >= action.duration {
+                continue;
+            }
+            let progress = (elapsed / action.duration.max(0.001)).clamp(0., 1.);
+            return Some(Action {
+                stance: action.stance,
+                progress: if action.release {
+                    0.5 + progress / 2.
+                } else {
+                    progress
+                },
+                hold: action.hold,
+            });
+        }
+        None
+    }
+
+    /// The viewer's own cast, draw or swing over its locomotion.
+    #[must_use]
+    pub fn action(&self, s: &ZoneSnapshot, now: f64) -> Option<Action> {
+        if s.viewer.dead {
+            return None;
+        }
+        if let Some(c) = s.viewer.cast
+            && let Some(stance) = presentation(c.ability.get()).0
+        {
+            return Some(Action {
+                stance,
+                progress: if c.total > 0 {
+                    (f64::from(c.elapsed) / f64::from(c.total)).min(1.)
+                } else {
+                    1.
+                },
+                hold: true,
+            });
+        }
+        self.action_for(EntityRef::Player(s.viewer_id), now)
+    }
+
+    /// Draws of every live effect at `now`; stable IDs, only transforms change.
+    pub fn nodes(
+        &mut self,
+        r: &mut Resources,
+        now: f64,
+        anchors: &BTreeMap<EntityRef, Anchor>,
+    ) -> Vec<Draw> {
+        for actions in [&mut self.actions, &mut self.casts] {
+            actions.retain(|_, a| a.projected.is_some() || now - a.start < a.duration);
+        }
+        let casts = &self.casts;
+        self.effects.retain(|e| match e.duration {
+            Some(d) => now - e.start < d,
+            None => {
+                casts.get(&e.source).is_some_and(|c| c.ability == e.ability)
+                    || matches!(e.visual, Visual::Bubble | Visual::Guard { .. })
+            }
+        });
+        let mut out = Vec::new();
+        for e in &self.effects {
+            let age = now - e.start;
+            let t = e.duration.map_or(0., |d| (age / d).clamp(0., 1.));
+            let source = anchors.get(&e.source);
+            let target = e.target.and_then(|t| anchors.get(&t));
+            let color = presentation(e.ability).2;
+            let prefix = format!("fx-{}", e.id);
+            let mut add = |suffix: &str,
+                           p: Primitive,
+                           c: u32,
+                           position: V,
+                           q: Q,
+                           opacity: f32,
+                           unlit: bool| {
+                let mut d =
+                    r.primitive(format!("{prefix}-{suffix}"), p, c, Frame { p: position, q });
+                d.material.opacity = opacity;
+                d.material.unlit = unlit;
+                out.push(d);
+            };
+            let lerp = |a: f64, b: f64, t: f64| a + (b - a) * t;
+            match e.visual {
+                Visual::Projectile => {
+                    if let (Some(s), Some(d)) = (source, target) {
+                        let position = |t: f64| {
+                            [
+                                lerp(s.feet[0], d.feet[0], t),
+                                lerp(s.centre, d.centre, t) + (PI * t).sin() * 0.5,
+                                lerp(s.feet[2], d.feet[2], t),
+                            ]
+                        };
+                        add(
+                            "core",
+                            Primitive::Ball(0.2),
+                            color,
+                            position(t),
+                            IQ,
+                            1.,
+                            false,
+                        );
+                        add(
+                            "trail",
+                            Primitive::Ball(0.12),
+                            0xfff2c4,
+                            position((t - 0.12).max(0.)),
+                            IQ,
+                            0.7,
+                            false,
+                        );
+                    }
+                }
+                Visual::Arrow => {
+                    if let (Some(s), Some(d)) = (source, target) {
+                        let from = [s.feet[0], s.centre + 0.2, s.feet[2]];
+                        let to = [d.feet[0], d.centre, d.feet[2]];
+                        let dir = std::array::from_fn::<_, 3, _>(|i| to[i] - from[i]);
+                        let q = qm(
+                            qa(1, dir[0].atan2(dir[2])),
+                            qa(0, -dir[1].atan2(dir[0].hypot(dir[2]))),
+                        );
+                        add(
+                            "shaft",
+                            Primitive::Box([0.05, 0.05, 0.9]),
+                            color,
+                            std::array::from_fn(|i| lerp(from[i], to[i], t)),
+                            q,
+                            1.,
+                            false,
+                        );
+                    }
+                }
+                Visual::Ring => {
+                    if let Some(s) = source {
+                        let radius = (8. * (1. - (1. - t) * (1. - t))).max(0.3);
+                        for i in 0..20 {
+                            let a = f64::from(i) / 20. * TAU;
+                            add(
+                                &format!("ring-{i}"),
+                                Primitive::Box([0.5, 0.14, 0.18]),
+                                color,
+                                [
+                                    s.feet[0] + a.sin() * radius,
+                                    s.feet[1] + 0.2,
+                                    s.feet[2] + a.cos() * radius,
+                                ],
+                                qa(1, a + PI / 2.),
+                                0.8,
+                                false,
+                            );
+                        }
+                    }
+                }
+                Visual::Bubble => {
+                    if let Some(s) = source {
+                        add(
+                            "bubble",
+                            Primitive::Ball(1.25 * (1. + 0.03 * (age * 3.).sin())),
+                            color,
+                            [s.feet[0], s.centre, s.feet[2]],
+                            IQ,
+                            0.28,
+                            false,
+                        );
+                    }
+                }
+                Visual::Shards => {
+                    if let Some(g) = e.ground {
+                        let scatter = |i: f64, salt: f64| {
+                            let v = (i * 127.1 + salt * 311.7).sin() * 43758.5453;
+                            v - v.floor()
+                        };
+                        for i in 0..12 {
+                            let j = f64::from(i);
+                            let a = scatter(j, 1.) * TAU;
+                            let radius = scatter(j, 2.).sqrt() * 6.;
+                            let fall = (age * (0.9 + scatter(j, 3.) * 0.7) + scatter(j, 4.)) % 1.;
+                            add(
+                                &format!("shard-{i}"),
+                                Primitive::Box([0.09, 0.6, 0.09]),
+                                color,
+                                [
+                                    g[0] + a.sin() * radius,
+                                    g[1] + 6.5 - fall * 6.4,
+                                    g[2] + a.cos() * radius,
+                                ],
+                                IQ,
+                                0.85,
+                                false,
+                            );
+                        }
+                    }
+                }
+                Visual::Swing => {
+                    if let Some(s) = source {
+                        let sweep = PI * 0.9;
+                        for i in 0..6 {
+                            let a = s.yaw + sweep / 2. - sweep * t * (f64::from(6 - i) / 6.);
+                            add(
+                                &format!("arc-{i}"),
+                                Primitive::Box([0.7, 0.06, 0.16]),
+                                if i == 0 { 0xffffff } else { color },
+                                [
+                                    s.feet[0] + a.sin() * 1.5,
+                                    s.centre + 0.25,
+                                    s.feet[2] + a.cos() * 1.5,
+                                ],
+                                qa(1, a + PI / 2.),
+                                0.75,
+                                false,
+                            );
+                        }
+                    }
+                }
+                Visual::Impact { critical } => {
+                    if let Some(d) = target {
+                        let glow = if critical { 0xffe6a3 } else { 0xffb376 };
+                        let fade = (0.85 * (1. - t)) as f32;
+                        add(
+                            "flash",
+                            Primitive::Ball(0.08 + 0.2 * t),
+                            glow,
+                            [d.feet[0], d.centre, d.feet[2]],
+                            IQ,
+                            fade,
+                            true,
+                        );
+                        for i in 0..6 {
+                            let a = f64::from(i) / 6. * TAU;
+                            let radius = 0.12 + 0.85 * t;
+                            add(
+                                &format!("spark-{i}"),
+                                Primitive::Box([0.06, 0.06, 0.18]),
+                                glow,
+                                [
+                                    d.feet[0] + a.cos() * radius,
+                                    d.centre + a.sin() * radius,
+                                    d.feet[2] + (a * 2.).sin() * radius * 0.3,
+                                ],
+                                qa(1, a),
+                                (0.9 * (1. - t)) as f32,
+                                true,
+                            );
+                        }
+                    }
+                }
+                Visual::Sweep { aim, hit } => {
+                    if let Some(s) = source {
+                        let side = match aim.side {
+                            StrikeSide::Left => PI / 4.,
+                            StrikeSide::Centre => 0.,
+                            StrikeSide::Right => -PI / 4.,
+                        };
+                        let centre = s.yaw + side;
+                        let height = s.feet[1] + lane_height(aim.height);
+                        let tint = if hit { 0xffd36b } else { 0x9fb4c8 };
+                        // The blade crosses the covered arc from the left edge to the right; the trail lags.
+                        for i in 0..8 {
+                            let lag = f64::from(i) / 8.;
+                            let reach = (t * 1.25 - lag * 0.35).clamp(0., 1.);
+                            let a = centre + SWEEP_HALF_WIDTH - 2. * SWEEP_HALF_WIDTH * reach;
+                            add(
+                                &format!("sweep-{i}"),
+                                Primitive::Box([0.9, 0.05, 0.12]),
+                                if i == 0 { 0xffffff } else { tint },
+                                [s.feet[0] + a.sin() * 1.6, height, s.feet[2] + a.cos() * 1.6],
+                                qa(1, a + PI / 2.),
+                                (0.85 * (1. - t) * (1. - lag * 0.6)) as f32,
+                                true,
+                            );
+                        }
+                    }
+                }
+                Visual::Guard { lane, state } => {
+                    if let Some(s) = source {
+                        // The shield covers the front and the shield (left) side: it sits 30° toward it.
+                        let a = s.yaw + GUARD_SIDE;
+                        let (tint, opacity) = match state {
+                            GuardState::Protecting => (0x9cc8ff, 0.55),
+                            GuardState::Broken => (0xff6a4d, 0.25),
+                            GuardState::Suspended => (0x9fb4c8, 0.25),
+                        };
+                        add(
+                            "shield",
+                            Primitive::Box([0.62, 0.5, 0.07]),
+                            tint,
+                            [
+                                s.feet[0] + a.sin() * 0.55,
+                                s.feet[1] + lane_height(lane),
+                                s.feet[2] + a.cos() * 0.55,
+                            ],
+                            qa(1, a),
+                            opacity,
+                            true,
+                        );
+                    }
+                }
+                Visual::Block { lane, broken } => {
+                    if let (Some(s), Some(d)) = (source, target) {
+                        let a = (d.feet[0] - s.feet[0]).atan2(d.feet[2] - s.feet[2]);
+                        // A block flashes and holds; a broken guard flares red and drops away.
+                        let drop = if broken { 0.5 * t * t } else { 0. };
+                        add(
+                            "plate",
+                            Primitive::Box([0.7 + 0.25 * t, 0.55 + 0.2 * t, 0.06]),
+                            if broken { 0xff5a3c } else { 0xe8f3ff },
+                            [
+                                s.feet[0] + a.sin() * 0.7,
+                                s.feet[1] + lane_height(lane) - drop,
+                                s.feet[2] + a.cos() * 0.7,
+                            ],
+                            qa(1, a),
+                            (0.9 * (1. - t)) as f32,
+                            true,
+                        );
+                    }
+                }
+            }
+        }
+        out
+    }
+}

@@ -114,7 +114,7 @@
       },
       {
         "id": "native-presentation",
-        "paths": ["crates/mmorpg-presentation/**", "web/src/world/scenery-nodes.ts"],
+        "paths": ["crates/mmorpg-presentation/**", "web/src/world/scenery-nodes.ts", "web/src/world/unit-presenter.ts"],
         "instructions": ["docs/ARCHITECTURE.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],

@@ -16,6 +16,7 @@ pub mod batching;
 pub mod geometry;
 mod props;
 mod terrain;
+pub mod units;
 
 use std::sync::Arc;
 

@@ -1,15 +1,15 @@
 //! Current published player silhouettes and class/sex proportions.
 use super::{animation::*, kit::*};
-use crate::world::{SceneDraw, geometry::*};
+use crate::{Draw, geometry::*};
 use std::f64::consts::PI;
-#[derive(Clone, Copy)]
-pub(super) enum Hat {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Hat {
     Helm,
     Cap,
     Hood,
 }
-#[derive(Clone, Copy)]
-pub(super) struct Look {
+#[derive(Clone, Copy, Debug)]
+pub struct Look {
     pub female: bool,
     pub stance: Stance,
     pub body: u32,
@@ -114,7 +114,7 @@ fn build(l: Look) -> Build {
 struct Parts<'a> {
     id: &'a str,
     resources: &'a mut Resources,
-    draws: Vec<SceneDraw>,
+    draws: Vec<Draw>,
 }
 impl Parts<'_> {
     fn part(&mut self, n: &str, s: &str, c: u32, f: Frame, scale: V) {
@@ -130,13 +130,7 @@ const DARK_METAL: u32 = 0x6d7378;
 const LEATHER: u32 = 0x6a4a30;
 const BOOTS: u32 = 0x4c3828;
 /// Explicit headwear over an imported model's head centre; imported models bring their own hair.
-pub(super) fn headwear(
-    resources: &mut Resources,
-    id: &str,
-    l: Look,
-    head: Frame,
-    r: f64,
-) -> Vec<SceneDraw> {
+pub fn headwear(resources: &mut Resources, id: &str, l: Look, head: Frame, r: f64) -> Vec<Draw> {
     let mut p = Parts {
         id,
         resources,
@@ -265,14 +259,14 @@ fn hat(p: &mut Parts, l: Look, head: Frame, r: f64) {
         );
     }
 }
-pub(super) fn nodes(
+pub fn nodes(
     resources: &mut Resources,
     id: &str,
     root: Frame,
     l: Look,
     pose: Pose,
     bow_turn: f64,
-) -> Vec<SceneDraw> {
+) -> Vec<Draw> {
     let b = build(l);
     let mut p = Parts {
         id,

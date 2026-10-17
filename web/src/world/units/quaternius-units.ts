@@ -8,16 +8,22 @@ import {
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EntityRef } from "../../entity-ref";
-import type { UnitPlacement } from "../humanoid";
-import { ClipPlayback, QUATERNIUS_MODELS, type Loadout, type QuaterniusKind } from "./quaternius";
+import type { ImportedModelKind, ImportedRequest } from "../unit-presenter";
+
+type QuaterniusKind = ImportedModelKind;
+/** What a player model carries: a Warden's sword and shield, or nothing (#156). */
+type Loadout = "sword-and-shield" | null;
+/** The rest (idle) clip a model is measured in, from the shared presenter's clip table. */
+export type RestClip = (kind: QuaterniusKind) => string;
 
 /**
  * Animated imported units as real three.js skinned meshes drawn through the renderer's
  * imported-roots path. Players use asset-tooling's Ranger humanoid bundle (Atlas 6.3.7), loaded
  * with 3d-lab's `adaptImportedCharacterBundle` and posed by its Rust runtime; the Quaternius CC0
  * animals (Atlas 6.3.6) are GLBs posed by three's `GLTFLoader` and `AnimationMixer`. Each model
- * loads on first use and is instantiated per unit; until it has loaded the caller keeps drawing
- * the procedural model. Presentation only.
+ * loads on first use and is instantiated per unit; until it has loaded the shared presenter keeps
+ * drawing the procedural model. Clip choice and clock come from the shared presenter (#184).
+ * Presentation only.
  */
 const ANIMAL_URLS: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> = {
   Wolf: new URL("../../../../assets/quaternius/Wolf.glb", import.meta.url).href,
@@ -26,9 +32,6 @@ const ANIMAL_URLS: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> =
 };
 /** The unpacked bundle `scripts/fetch-character-bundle.sh` places in `web/public`. */
 const RANGER_BUNDLE = `${import.meta.env.BASE_URL}characters/humanoid.ranger.male/`;
-
-/** Tint of a dead unit's materials, as native. */
-const DEAD_TINT = 0.6;
 
 /** One drawn model of an asset, posed by clip name and clip time. */
 type Posable = { model: THREE.Object3D; pose(clip: string, time: number): void; dispose(): void };
@@ -50,34 +53,12 @@ type Instance = {
   loadout: Loadout;
   root: THREE.Group;
   posable: Posable;
-  playback: ClipPlayback;
   clip: string;
   time: number;
   materials: { material: THREE.MeshStandardMaterial; base: THREE.Color }[];
   dead: boolean | null;
   head: THREE.Object3D | null;
   entity: EntityRef;
-  /** Whether the last frame's action cue was already counted as an attack. */
-  cue: { progress: number } | null;
-};
-
-/** One unit to present this frame. */
-export type QuaterniusUnit = {
-  id: string;
-  entity: EntityRef;
-  kind: QuaterniusKind;
-  placement: UnitPlacement;
-  /** Collision height in metres; the model is scaled to it. */
-  heightMetres: number;
-  /** Planar speed in m/s. */
-  speed: number;
-  dead: boolean;
-  /** The unit's current #27 action cue; a new non-held cue starts the attack clip. */
-  action: { progress: number; hold: boolean } | null;
-  /** What the model carries (players only). */
-  loadout: Loadout;
-  /** A held shield guard: a standing unit raises its shield (#156). */
-  guarding: boolean;
 };
 
 const point = new THREE.Vector3();
@@ -122,7 +103,7 @@ function measure(posable: Posable, idle: string): Pick<Asset, "floor" | "height"
   return { floor: box.min.y, height: box.max.y - box.min.y, centre: [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2], head };
 }
 
-async function loadAnimal(loader: GLTFLoader, kind: Exclude<QuaterniusKind, "Ranger">): Promise<Asset> {
+async function loadAnimal(loader: GLTFLoader, kind: Exclude<QuaterniusKind, "Ranger">, rest: string): Promise<Asset> {
   const gltf = await loader.loadAsync(ANIMAL_URLS[kind]);
   const sources = new Map<string, THREE.AnimationClip>();
   for (const clip of gltf.animations) {
@@ -152,7 +133,7 @@ async function loadAnimal(loader: GLTFLoader, kind: Exclude<QuaterniusKind, "Ran
   };
   const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
   const probe = instantiate();
-  return { clips, instantiate, ...measure(probe, QUATERNIUS_MODELS[kind].clips.idle) };
+  return { clips, instantiate, ...measure(probe, rest) };
 }
 
 /** A humanoid-sockets descriptor socket as a column-major matrix in its joint's frame. */
@@ -181,7 +162,7 @@ const LOADOUT_ITEMS = {
   ],
 } as const;
 
-async function loadRanger(): Promise<Asset> {
+async function loadRanger(rest: string): Promise<Asset> {
   const read = async (path: string) => {
     const response = await fetch(new URL(path, new URL(RANGER_BUNDLE, window.location.href)));
     if (!response.ok) {
@@ -221,24 +202,33 @@ async function loadRanger(): Promise<Asset> {
   };
   const clips = new Map(character.clips.map((clip) => [clip.name, clip.duration]));
   const probe = instantiate(null);
-  const measured = measure(probe, QUATERNIUS_MODELS.Ranger.clips.idle);
+  const measured = measure(probe, rest);
   probe.dispose();
   return { clips, instantiate, ...measured };
 }
 
 export class QuaterniusUnits {
   readonly #loader = new GLTFLoader();
+  readonly #rest: RestClip;
   readonly #assets = new Map<QuaterniusKind, Asset | "loading" | "failed">();
   readonly #instances = new Map<string, Instance>();
+  readonly #loaded: [QuaterniusKind, [string, number][]][] = [];
   #rootsChanged = false;
+
+  constructor(rest: RestClip) {
+    this.#rest = rest;
+  }
 
   /** Starts loading `kind`; true once it can be drawn. */
   ready(kind: QuaterniusKind): boolean {
     const state = this.#assets.get(kind);
     if (state === undefined) {
       this.#assets.set(kind, "loading");
-      (kind === "Ranger" ? loadRanger() : loadAnimal(this.#loader, kind)).then(
-        (asset) => this.#assets.set(kind, asset),
+      (kind === "Ranger" ? loadRanger(this.#rest(kind)) : loadAnimal(this.#loader, kind, this.#rest(kind))).then(
+        (asset) => {
+          this.#assets.set(kind, asset);
+          this.#loaded.push([kind, [...asset.clips]]);
+        },
         (error: unknown) => {
           console.warn(`Unit model ${kind} failed to load; keeping the procedural model.`, error);
           this.#assets.set(kind, "failed");
@@ -249,31 +239,34 @@ export class QuaterniusUnits {
     return typeof state === "object";
   }
 
-  /**
-   * Poses every given unit (whose model is `ready`) for this frame and drops the instances of
-   * units not given, so interest exits clean up. `seconds` is the presentation clock.
-   */
-  update(units: readonly QuaterniusUnit[], seconds: number, deltaSeconds: number, animate: boolean): void {
+  /** Models that finished loading since the last call, with their clip lengths. */
+  drainLoaded(): [QuaterniusKind, [string, number][]][] {
+    return this.#loaded.splice(0);
+  }
+
+  /** Poses every requested unit and drops the instances of units not requested. */
+  update(units: readonly ImportedRequest[]): void {
     const seen = new Set<string>();
     for (const unit of units) {
       const asset = this.#assets.get(unit.kind);
       if (typeof asset !== "object") { continue; }
       seen.add(unit.id);
+      const loadout: Loadout = unit.swordAndShield ? "sword-and-shield" : null;
       let instance = this.#instances.get(unit.id);
-      if (instance && (instance.kind !== unit.kind || instance.loadout !== unit.loadout)) {
+      if (instance && (instance.kind !== unit.kind || instance.loadout !== loadout)) {
         this.#drop(unit.id, instance);
         instance = undefined;
       }
-      instance ??= this.#create(unit, asset);
-      this.#pose(instance, asset, unit, seconds, deltaSeconds, animate);
+      instance ??= this.#create(unit, loadout, asset);
+      this.#pose(instance, asset, unit);
     }
     for (const [id, instance] of this.#instances) {
       if (!seen.has(id)) { this.#drop(id, instance); }
     }
   }
 
-  #create(unit: QuaterniusUnit, asset: Asset): Instance {
-    const posable = asset.instantiate(unit.loadout);
+  #create(unit: ImportedRequest, loadout: Loadout, asset: Asset): Instance {
+    const posable = asset.instantiate(loadout);
     const { model } = posable;
     const materials: Instance["materials"] = [];
     model.traverse((object) => {
@@ -293,35 +286,29 @@ export class QuaterniusUnits {
     root.name = `${unit.id}-model`;
     root.add(model);
     const instance: Instance = {
-      kind: unit.kind, loadout: unit.loadout, root, posable, playback: new ClipPlayback(),
-      clip: "", time: 0, materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity, cue: null,
+      kind: unit.kind, loadout, root, posable,
+      clip: "", time: 0, materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity,
     };
     this.#instances.set(unit.id, instance);
     this.#rootsChanged = true;
     return instance;
   }
 
-  #pose(instance: Instance, asset: Asset, unit: QuaterniusUnit, seconds: number, deltaSeconds: number, animate: boolean): void {
-    const clips = QUATERNIUS_MODELS[unit.kind].clips;
-    const duration = (name: string) => asset.clips.get(name) ?? 0;
-    const cue = animate && !unit.dead && unit.action && !unit.action.hold ? unit.action : null;
-    if (cue && (!instance.cue || cue.progress < instance.cue.progress)) {
-      instance.playback.attack(duration(clips.attack), seconds);
-    }
-    instance.cue = cue ? { progress: cue.progress } : null;
-    const { clip, time } = instance.playback.advance(clips, duration, unit.speed, unit.dead, seconds, deltaSeconds, !animate, unit.guarding);
+  #pose(instance: Instance, asset: Asset, unit: ImportedRequest): void {
+    const { clip } = unit;
     instance.clip = clip;
-    instance.time = Math.min(time, Math.max(0, duration(clip) - 1e-4));
+    instance.time = Math.min(unit.time, Math.max(0, (asset.clips.get(clip) ?? 0) - 1e-4));
     instance.posable.pose(clip, instance.time);
-    if (instance.dead !== unit.dead) {
-      instance.dead = unit.dead;
+    const dead = unit.tint !== null;
+    if (instance.dead !== dead) {
+      instance.dead = dead;
       for (const { material, base } of instance.materials) {
-        material.color.copy(base).multiplyScalar(unit.dead ? DEAD_TINT : 1);
+        material.color.copy(base).multiplyScalar(unit.tint ?? 1);
       }
     }
     const { root } = instance;
-    root.position.set(unit.placement.x, unit.placement.feetY, unit.placement.z);
-    root.rotation.set(0, unit.placement.yawRadians, 0);
+    root.position.set(unit.feet[0], unit.feet[1], unit.feet[2]);
+    root.rotation.set(0, unit.yaw, 0);
     root.scale.setScalar(unit.heightMetres / asset.height);
   }
 

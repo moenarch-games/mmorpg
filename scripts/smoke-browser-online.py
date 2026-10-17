@@ -175,7 +175,7 @@ class OnlineAcceptance(unittest.TestCase):
         context = self.browser.new_context(viewport={"width": 1280, "height": 800}, reduced_motion="no-preference" if animated else "reduce")
         context.add_init_script("""(() => {
           const Original = window.WebTransport;
-          window.__acceptanceNodes = identity => window.__valeDebug.unitNodes(identity).map(({id,transform}) => ({id,transform}));
+          window.__acceptanceNodes = identity => window.__valeDebug.unitNodes(identity).map(({id,transform,modelMatrix}) => ({id,transform,modelMatrix}));
           window.__actualTransports = [];
           window.__transportKinds = [];
           window.WebTransport = new Proxy(Original, {construct(Target, args) {

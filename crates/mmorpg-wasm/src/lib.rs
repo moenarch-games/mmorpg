@@ -27,6 +27,7 @@ pub mod catalog;
 pub mod host;
 pub mod scenery;
 pub mod static_scene;
+pub mod units;
 
 use mmorpg_characters::{CharacterStore, EntryBackend, EntryChange, LeaseHolder, StoreError};
 use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex};
@@ -263,6 +264,97 @@ pub fn static_scene_motion(seconds: f64, animate: bool) -> Vec<f32> {
 #[wasm_bindgen(js_name = surfaceY)]
 pub fn surface_y(x: f64, z: f64) -> f64 {
     static_scene::surface_y(x, z)
+}
+
+/// The rest (idle) clip of an imported unit model, which the page measures it in.
+#[wasm_bindgen(js_name = importedRestClip)]
+pub fn imported_rest_clip(kind: &str) -> Option<String> {
+    mmorpg_presentation::units::imported::Kind::from_name(kind)
+        .map(|kind| kind.clips().idle.to_owned())
+}
+
+/// The shared unit presentation of one joined player (#184): push received projections,
+/// then ask for each frame's unit draws; see [`units`].
+#[wasm_bindgen]
+pub struct UnitPresenter(units::Units);
+
+#[wasm_bindgen]
+impl UnitPresenter {
+    #[wasm_bindgen(constructor)]
+    pub fn new(player: u32) -> Self {
+        Self(units::Units::new(player))
+    }
+
+    #[wasm_bindgen(js_name = modelReady)]
+    pub fn model_ready(&mut self, kind: &str, clips: &str) -> Result<(), JsError> {
+        self.0
+            .model_ready(kind, clips)
+            .map_err(|error| JsError::new(&error))
+    }
+
+    pub fn push(&mut self, projection: &[u8], seconds: f64) -> Result<(), JsError> {
+        self.0
+            .push(projection, seconds)
+            .map_err(|error| JsError::new(&error))
+    }
+
+    pub fn reset(&mut self) {
+        self.0.reset();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn frame(
+        &mut self,
+        units: &[f64],
+        seconds: f64,
+        dt: f64,
+        #[wasm_bindgen(js_name = reducedMotion)] reduced_motion: bool,
+        #[wasm_bindgen(js_name = barYaw)] bar_yaw: f32,
+        choice: u16,
+        headwear: &str,
+        #[wasm_bindgen(js_name = previewYaw)] preview_yaw: f32,
+    ) -> Result<String, JsError> {
+        self.0
+            .frame(
+                units,
+                seconds,
+                dt,
+                reduced_motion,
+                bar_yaw,
+                choice,
+                headwear,
+                preview_yaw,
+            )
+            .map_err(|error| JsError::new(&error))
+    }
+
+    pub fn headwear(
+        &mut self,
+        id: &str,
+        x: f64,
+        y: f64,
+        z: f64,
+        yaw: f64,
+        radius: f64,
+    ) -> Result<String, JsError> {
+        self.0
+            .headwear(id, [x, y, z], yaw, radius)
+            .map_err(|error| JsError::new(&error))
+    }
+
+    /// Model matrices of the last call's draws, 16 floats each.
+    pub fn models(&self) -> Vec<f32> {
+        self.0.buffers.models.clone()
+    }
+
+    /// Positions, normals and colours of the last call's new geometries.
+    pub fn vertices(&self) -> Vec<f32> {
+        self.0.buffers.vertices.clone()
+    }
+
+    pub fn indices(&self) -> Vec<u32> {
+        self.0.buffers.indices.clone()
+    }
 }
 
 fn js_error(error: host::LocalZoneError) -> JsError {
