@@ -62,6 +62,7 @@ jobs:
           printf 'rust_changed=%s\n' "$rust_changed" >> "$GITHUB_OUTPUT"
 
   rust:
+    # The native client's gamepad backend (gilrs) links libudev, so every Rust compile installs its headers first.
     needs: scope
     permissions:
       contents: read
@@ -74,8 +75,8 @@ jobs:
       cache_bun: false
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}
-      lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && bun run --cwd web typecheck:size && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
-      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo test --workspace --all-features --locked && mkdir -p artifacts && bun run --cwd web size:budget > artifacts/native-size.json && bun run --cwd web test:size-evidence' || '' }}
-      build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'cargo check --workspace --locked') || '' }}
+      lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && bun run --cwd web typecheck:size && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
+      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && python3 scripts/test-dev-native.py && cargo test --workspace --all-features --locked && mkdir -p artifacts && bun run --cwd web size:budget > artifacts/native-size.json && bun run --cwd web test:size-evidence' || '' }}
+      build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && cargo check --workspace --locked') || '' }}
       artifact_paths: artifacts/native-size.json
       upload_artifacts_on: ${{ needs.scope.outputs.full_validation == 'true' && 'always' || 'never' }}
