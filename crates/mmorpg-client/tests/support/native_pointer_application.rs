@@ -237,6 +237,10 @@ impl NativeApplication {
             world_controls: WorldControls::new(),
             npc_context: NpcContext::default(),
             pointer_origin: None,
+            ui: GameUi::new(&mmorpg_scenery::greyhaven_vale_scenery()),
+            egui: None,
+            choosing: false,
+            chat_focused: false,
         };
         let event_loop = EventLoop::builder()
             .with_x11()

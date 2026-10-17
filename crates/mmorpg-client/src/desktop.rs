@@ -7,10 +7,11 @@ use mmorpg_client::{
     hud::{CombatHud, class_kit},
     interaction::NpcContext,
     presentation::Presentation,
+    ui::{GameUi, UiFrame, UiIntent, overlay::EguiWindow},
     world::WorldScene,
     world_controls::{WorldAction, WorldControls},
 };
-use mmorpg_core::{EntityKind, EntityRef, PlayerClass, ZoneContent};
+use mmorpg_core::{EntityKind, EntityRef, PlayerClass, Sex, ZoneContent};
 use mmorpg_scenery::Scenery;
 use std::{
     collections::HashSet,
@@ -37,11 +38,14 @@ pub fn run(
     input: watch::Sender<PlayerInput>,
     updates: watch::Receiver<NetworkUpdate>,
     frames: Option<u32>,
-    class: PlayerClass,
+    character: Option<(PlayerClass, Sex)>,
 ) -> Result<(), ClientError> {
     let event_loop = EventLoop::new()?;
+    let ui = GameUi::new(&scenery);
     let mut presentation = Presentation::new(player_id, scenery, content, Instant::now())?;
-    presentation.set_default_appearance(class);
+    if let Some((class, _)) = character {
+        presentation.set_default_appearance(class);
+    }
     let mut app = App {
         runtime,
         window: None,
@@ -61,12 +65,18 @@ pub fn run(
         frames,
         rendered: 0,
         next_frame: Instant::now(),
-        abilities: class_kit(class),
+        abilities: character
+            .map(|(class, _)| class_kit(class))
+            .unwrap_or_default(),
         controls: NativeControls::new(),
         hud: None,
         world_controls: WorldControls::new(),
         npc_context: NpcContext::default(),
         pointer_origin: None,
+        ui,
+        egui: None,
+        choosing: character.is_none(),
+        chat_focused: false,
     };
     event_loop.run_app(&mut app)?;
     match app.error {
@@ -107,6 +117,13 @@ struct App {
     npc_context: NpcContext,
     /// A left press remains a click only within five physical pixels.
     pointer_origin: Option<PhysicalPosition<f64>>,
+    /// The egui interface (#183): panels, frames and their intents.
+    ui: GameUi,
+    egui: Option<EguiWindow>,
+    /// The character still needs a class and sex before abilities work.
+    choosing: bool,
+    /// The chat field owned the keyboard after the last interface frame.
+    chat_focused: bool,
 }
 
 const FORWARD_KEYS: [KeyCode; 2] = [KeyCode::KeyW, KeyCode::ArrowUp];
@@ -139,7 +156,7 @@ fn held_movement(keys: &HashSet<KeyCode>, dead: bool) -> HeldMovement {
 
 /// Browser-style pixel scrolling: this many pixels count as one wheel line.
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
-const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter interact · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast or closes";
+const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC or chats · B bags · C character · L quests · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits";
 
 impl App {
     fn retire_pointer(&mut self) {
@@ -357,7 +374,7 @@ impl App {
     }
 
     /// A slot use or cast cancel is an intent; the zone decides what happens.
-    fn control(&self, action: ControlAction) {
+    fn control(&mut self, action: ControlAction) {
         match action {
             ControlAction::AbilitySlot(slot) => {
                 let ability = usize::from(slot)
@@ -375,16 +392,112 @@ impl App {
                     input.cancels = input.cancels.wrapping_add(1);
                 });
             }
+            ControlAction::TogglePanel(panel) => self.ui.toggle(panel),
+            ControlAction::OpenChat => self.ui.open_chat(),
         }
     }
 
+    /// Held keys, armed clicks and held semantic actions let go, e.g. when
+    /// the chat field takes the keyboard.
+    fn retire_held_input(&mut self) {
+        self.controls.focus_lost();
+        self.world_controls.reset();
+        self.keys.clear();
+        self.update_movement();
+    }
+
+    /// An interface control's intent becomes the same command as its key.
+    fn ui_intent(&mut self, intent: UiIntent) {
+        match intent {
+            UiIntent::Command(command) => {
+                self.input.send_modify(|input| {
+                    input.interaction = Some(command);
+                    input.interactions = input.interactions.wrapping_add(1);
+                });
+            }
+            UiIntent::AbilitySlot(slot) => self.control(ControlAction::AbilitySlot(slot)),
+            UiIntent::ToggleAttack => self.combat_key(KeyCode::KeyF),
+            UiIntent::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
+            UiIntent::Select(target) => {
+                self.input.send_modify(|input| {
+                    input.target = target;
+                    input.selections = input.selections.wrapping_add(1);
+                });
+            }
+            UiIntent::Talk => {
+                self.world_action(WorldAction::Interact);
+            }
+            UiIntent::CloseContext => {
+                self.npc_context.close();
+                self.world_controls.set_interaction(false);
+            }
+            UiIntent::ChooseCharacter(class, sex) => {
+                self.choosing = false;
+                self.presentation.set_default_appearance(class);
+                self.abilities = class_kit(class);
+                self.input.send_modify(|input| {
+                    input.class_choice = Some((class.code(), sex.code()));
+                });
+            }
+        }
+    }
+
+    /// Runs one egui pass over the latest projection and applies its intents.
+    fn interface(&mut self, now: Instant) {
+        let (Some(egui), Some(window)) = (self.egui.as_mut(), self.window.as_ref()) else {
+            return;
+        };
+        let connection = match &*self.updates.borrow() {
+            NetworkUpdate::Waiting => Some("Connecting to the world…"),
+            NetworkUpdate::Reconnecting => Some("Reconnecting to the world…"),
+            _ if self.presentation.is_stalled(now) => Some("Connection stalled…"),
+            _ => None,
+        };
+        let view = self.camera.view([0.0; 3]);
+        let forward = [view.target[0] - view.eye[0], view.target[2] - view.eye[2]];
+        let presentation = &self.presentation;
+        let names = |entity| presentation.unit_name(entity);
+        let frame = UiFrame {
+            snapshot: presentation.latest(),
+            content: presentation.content(),
+            hud: self.hud.as_ref(),
+            names: &names,
+            forward,
+            connection,
+            choosing: self.choosing,
+        };
+        let raw = egui.state.take_egui_input(window);
+        let mut intents = Vec::new();
+        let output = egui.context.run_pass(raw, |ctx| {
+            intents = self.ui.show(ctx, &frame, &mut self.npc_context, now);
+        });
+        let platform = egui.paint.prepare(&egui.context, output);
+        egui.state.handle_platform_output(window, platform);
+        for intent in intents {
+            self.ui_intent(intent);
+        }
+        let focused = self.ui.chat_focused();
+        if focused && !self.chat_focused {
+            self.retire_held_input();
+        }
+        self.chat_focused = focused;
+    }
+
     /// The HUD and the `casting` control layer follow the latest projection.
-    fn follow_projection(&mut self) {
+    fn follow_projection(&mut self, now: Instant) {
         let latest = self.presentation.latest();
         self.controls
             .set_casting(latest.is_some_and(|latest| latest.viewer.cast.is_some()));
         self.hud = latest.map(CombatHud::from_projection);
+        if let Some(choice) = latest.and_then(|latest| latest.viewer.class) {
+            // The zone keeps the class; the bar follows the projected kit.
+            self.choosing = false;
+            self.abilities = class_kit(choice.class);
+        }
         if let Some(snapshot) = latest {
+            let names = |entity| self.presentation.unit_name(entity);
+            self.ui
+                .observe(snapshot, self.presentation.content(), &names, now);
             self.npc_context.observe(snapshot);
             if self.npc_context.npc.is_some()
                 && self.npc_context.npc.map(EntityRef::Npc) != snapshot.viewer.target
@@ -443,6 +556,7 @@ impl ApplicationHandler for App {
         {
             Ok(renderer) => {
                 self.renderer = Some(renderer);
+                self.egui = Some(EguiWindow::new(&window));
                 self.window = Some(window);
             }
             Err(error) => self.fail(event_loop, error),
@@ -455,6 +569,29 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        // The interface sees pointer and window events; the keyboard only while
+        // the chat field owns it, so focused buttons never steal movement keys.
+        let keyboard = matches!(
+            event,
+            WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_)
+        );
+        let chat_owns_keyboard = self.chat_focused || self.ui.chat_focused();
+        let ui_consumed = match (self.egui.as_mut(), self.window.as_ref()) {
+            (Some(egui), Some(window)) if !keyboard || chat_owns_keyboard => {
+                egui.state.on_window_event(window, &event).consumed
+            }
+            _ => false,
+        };
+        if keyboard && chat_owns_keyboard {
+            if let WindowEvent::KeyboardInput { event, .. } = &event
+                && let PhysicalKey::Code(code) = event.physical_key
+                && event.state == ElementState::Released
+            {
+                self.controls.key_up(code);
+                self.keys.remove(&code);
+            }
+            return;
+        }
         match event {
             WindowEvent::CloseRequested => {
                 self.stop();
@@ -471,6 +608,13 @@ impl ApplicationHandler for App {
                 self.retire_pointer();
                 self.update_movement();
             }
+            // A press on the interface stays there; releases always reach the
+            // world so a drag that ends over a panel still lets go.
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                ..
+            } if ui_consumed => {}
+            WindowEvent::MouseWheel { .. } if ui_consumed => {}
             WindowEvent::MouseInput { state, button, .. } => {
                 if matches!(button, MouseButton::Left | MouseButton::Right) {
                     if state == ElementState::Pressed {
@@ -532,8 +676,10 @@ impl ApplicationHandler for App {
                         let handled = self.world_action(action);
                         cancel_handled |= action == WorldAction::Cancel && handled;
                     }
+                    // Enter that opened a selected NPC's context does not also chat.
+                    let context_opened = !context_was_open && self.npc_context.npc.is_some();
                     self.show_title(Instant::now());
-                    if context_was_open || cancel_handled {
+                    if context_was_open || context_opened || cancel_handled {
                         if event.state == ElementState::Released {
                             self.controls.key_up(code);
                             self.keys.remove(&code);
@@ -547,6 +693,9 @@ impl ApplicationHandler for App {
                         // Escape cancels a cast through the controls, otherwise a
                         // fresh press closes; a held Escape's repeats never close.
                         if code == KeyCode::Escape && actions.is_empty() {
+                            if !event.repeat && self.ui.close_panels() {
+                                return;
+                            }
                             if !event.repeat {
                                 self.stop();
                                 event_loop.exit();
@@ -598,6 +747,7 @@ impl ApplicationHandler for App {
                     } => {
                         if self.connection_epoch != Some(connection_epoch) {
                             self.presentation.reset(now);
+                            self.ui.reset();
                             self.npc_context = NpcContext::default();
                             self.world_controls.set_interaction(false);
                             self.retire_pointer();
@@ -607,7 +757,7 @@ impl ApplicationHandler for App {
                             self.fail(event_loop, error);
                             return;
                         }
-                        self.follow_projection();
+                        self.follow_projection(now);
                         if let Some(refusal) = refusal {
                             let receipt = (connection_epoch, refusal);
                             if self.last_refusal != Some(receipt) {
@@ -628,12 +778,19 @@ impl ApplicationHandler for App {
                     .presentation
                     .camera_view(&mut self.camera, &self.world, now);
                 let frame = self.presentation.frame(&self.world, now, view);
+                self.interface(now);
+                // The egui action bar replaces the flat combat HUD rectangles.
+                let overlay = self
+                    .egui
+                    .as_mut()
+                    .map(|egui| &mut egui.paint as &mut dyn mmorpg_client::graphics::Overlay);
                 if let Some(renderer) = &mut self.renderer
                     && let Err(error) = renderer.render(
                         &frame,
-                        &self.hud.as_ref().map(CombatHud::rects).unwrap_or_default(),
+                        &[],
                         view,
                         self.presentation.picked_draws(),
+                        overlay,
                     )
                 {
                     self.fail(event_loop, error);
