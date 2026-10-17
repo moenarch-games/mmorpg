@@ -755,12 +755,14 @@ class BrowserAcceptance(unittest.TestCase):
             identity = identities[name]
             ids = self.page.evaluate("identity => window.__valeDebug.unitNodeIds(identity)", identity)
             parts = {i[len(identity) + 1:] for i in ids}
-            self.assertGreaterEqual(len(parts), 8, f"{identity} must draw a multi-part model, got {sorted(parts)}")
             self.assertFalse(parts <= {"body", "nose", "target-ring"}, f"{identity} regressed to the placeholder box")
-            if name == "animal":
-                self.assertTrue({"ear-left", "ear-right", "eye-left", "eye-right"} <= parts, f"The {animal['family']} draws its animal parts: {sorted(parts)}")
-            if name == "guard":
-                self.assertIn("head", parts, "The guard draws a humanoid model")
+            # The imported Quaternius model reports `-model`; until its GLB loads the procedural model draws instead.
+            if "model" not in parts:
+                self.assertGreaterEqual(len(parts), 8, f"{identity} must draw a multi-part model, got {sorted(parts)}")
+                if name == "animal":
+                    self.assertTrue({"ear-left", "ear-right", "eye-left", "eye-right"} <= parts, f"The {animal['family']} draws its animal parts: {sorted(parts)}")
+                if name == "guard":
+                    self.assertIn("head", parts, "The guard draws a humanoid model")
             colours = self.canvas_colours()
             self.assertGreater(colours["distinct"], 400, f"The {name} view must render a varied scene")
             self.assertGreater(colours["covered"], 0.5, f"The {name} view must draw most of the frame")
