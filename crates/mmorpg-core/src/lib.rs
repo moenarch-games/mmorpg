@@ -23,6 +23,7 @@ mod creature;
 mod door;
 mod entity;
 mod equipment;
+mod forced;
 mod events;
 mod guard;
 mod interest;
@@ -99,6 +100,10 @@ pub use loot::{
     LootTableError, MAX_LOOT_OUTCOMES, loot_table, settle_loot,
 };
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
+pub use forced::{
+    CHARGE_MAX_TICKS, CHARGE_SPEED_UNITS, FORCED_IMMUNITY_TICKS, ForcedMove, ForcedState,
+    KNOCKBACK_TICKS,
+};
 pub use projectile::{
     ARROW_SPEED_UNITS, BOLT_SPEED_UNITS, Flight, MAX_PROJECTILES, MAX_VISIBLE_PROJECTILES,
     Projectile, ProjectileKind, ProjectileView, STUCK_IN_UNIT_TICKS, STUCK_TICKS,
