@@ -218,6 +218,18 @@ pub fn motion(seconds: f64, animate: bool) -> Vec<f32> {
         .collect()
 }
 
+/// Per animated part 1 (drawn) or 0 (cut away, a cave roof over the `viewer`'s feet in
+/// metres; empty without a viewer).
+#[must_use]
+pub fn shown(viewer: &[f64]) -> Vec<u8> {
+    let viewer = (viewer.len() == 3).then(|| [viewer[0], viewer[1], viewer[2]]);
+    hosted_static_scene()
+        .shown(viewer)
+        .into_iter()
+        .map(u8::from)
+        .collect()
+}
+
 /// Rendered terrain height in metres at `(x, z)` metres.
 #[must_use]
 pub fn surface_y(x: f64, z: f64) -> f64 {

@@ -115,11 +115,13 @@ pub enum PropKind {
     MineEntrance,
     CropRow,
     Dock,
+    /// A cave's roof slab (#159), cut away while the viewer stands under it.
+    CaveRoof,
 }
 
 impl PropKind {
     /// Every kind with its variants flattened, in declaration order.
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 35] = [
         Self::Keep,
         Self::Inn,
         Self::House,
@@ -154,6 +156,7 @@ impl PropKind {
         Self::MineEntrance,
         Self::CropRow,
         Self::Dock,
+        Self::CaveRoof,
     ];
 
     /// Stable kebab-case name with the variant, independent of `Debug`
@@ -195,6 +198,7 @@ impl PropKind {
             Self::MineEntrance => "mine-entrance",
             Self::CropRow => "crop-row",
             Self::Dock => "dock",
+            Self::CaveRoof => "cave-roof",
         }
     }
 }
@@ -436,7 +440,8 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::GATE_POSTS.contains(&id) => PropKind::GatePost,
         _ if ids::GRAVESTONES.contains(&id) => PropKind::Gravestone,
         _ if ids::FENCES.contains(&id) => PropKind::Fence,
-        _ if ids::CLIFFS.contains(&id) => PropKind::Cliff,
+        _ if ids::CLIFFS.contains(&id) || ids::CAVE_WALLS.contains(&id) => PropKind::Cliff,
+        ids::CAVE_ROOF => PropKind::CaveRoof,
         _ if ids::TENTS.contains(&id) => PropKind::Tent,
         _ if ids::CRATES.contains(&id) => PropKind::Crate,
         ids::WATCHTOWER => PropKind::Keep,
@@ -494,6 +499,7 @@ const fn kind_code(kind: PropKind) -> [u8; 2] {
         PropKind::MineEntrance => [28, 0],
         PropKind::CropRow => [29, 0],
         PropKind::Dock => [30, 0],
+        PropKind::CaveRoof => [31, 0],
     }
 }
 
@@ -774,6 +780,10 @@ impl Scenery {
         }
         if self.farmland.iter().any(|field| field.distance(point) == 0) {
             return Biome::Farmland;
+        }
+        // The cave's bare rock floor (#159).
+        if greyhaven_vale::cave::GREYFANG.flattens(x, z) {
+            return Biome::Rock;
         }
         match greyhaven_vale::area_at(x, z).map(Area::id) {
             Some(greyhaven_vale::WOLFRUN_WOODS) => Biome::Woods,

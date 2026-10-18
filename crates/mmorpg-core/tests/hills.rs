@@ -1,7 +1,7 @@
 //! The outer valley's hills (#159): authored terrain the zone's Rapier physics walks units on.
 use std::sync::Arc;
 
-use mmorpg_core::greyhaven_vale::{self, hill_height, terrain};
+use mmorpg_core::greyhaven_vale::{self, cave::GREYFANG, hill_height, terrain};
 use mmorpg_core::{ZoneCommand, ZoneId, ZoneSimulation};
 
 /// World-axis heading of forward movement toward +X.
@@ -41,7 +41,10 @@ fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
                 assert_eq!(height, 0, "the original valley stays flat at {x}, {z}");
             }
             tallest = tallest.max(height);
-            if column + 1 < i32::from(grid.columns) {
+            // The cave's floor drops away under its walls, where nothing walks.
+            let walled =
+                |x: i32| GREYFANG.flattens(x, z) || GREYFANG.flattens(x + terrain::STEP, z);
+            if column + 1 < i32::from(grid.columns) && !walled(x) {
                 let next = grid.heights
                     [usize::try_from(row * i32::from(grid.columns) + column + 1).unwrap()];
                 steepest = steepest.max(i64::from((next - height).abs()));

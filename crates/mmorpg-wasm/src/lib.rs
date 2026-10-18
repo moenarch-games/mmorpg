@@ -306,6 +306,13 @@ pub fn static_scene_motion(seconds: f64, animate: bool) -> Vec<f32> {
     static_scene::motion(seconds, animate)
 }
 
+/// Per animated part 1 (drawn) or 0 (a cave roof cut away over the viewer's feet, metres;
+/// `viewer` is empty without one).
+#[wasm_bindgen(js_name = staticSceneShown)]
+pub fn static_scene_shown(viewer: &[f64]) -> Vec<u8> {
+    static_scene::shown(viewer)
+}
+
 /// Rendered terrain height in metres at `(x, z)` metres.
 #[wasm_bindgen(js_name = surfaceY)]
 pub fn surface_y(x: f64, z: f64) -> f64 {

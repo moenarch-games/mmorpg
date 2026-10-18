@@ -772,7 +772,7 @@ export class WorldView {
     this.#camera.position.set(...view.eye);
     this.#camera.lookAt(...view.target);
     this.#camera.updateMatrixWorld(true);
-    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate });
+    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z] });
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
     nodes.push(...frame.nodes, ...unitNodes);

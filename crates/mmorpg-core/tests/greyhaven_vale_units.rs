@@ -12,12 +12,12 @@ use mmorpg_core::{
 /// Pins every content table of revision 10, including the bound ability, item,
 /// loot, vendor and quest catalogs, the inn door and the NPC routines. Changing creatures, NPCs,
 /// colliders or areas requires a new revision and a new recorded value.
-const FINGERPRINT: u64 = 0x9eee_a7d5_4109_87a7;
+const FINGERPRINT: u64 = 0x0527_20eb_e85a_f27f;
 
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.revision(), 13);
+    assert_eq!(content.revision(), 14);
     assert_eq!(content.rng_seed(), 0x3cbc_808b_be89_b29c);
     assert_eq!(
         content.definition(),

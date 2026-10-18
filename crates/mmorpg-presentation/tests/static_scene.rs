@@ -295,11 +295,31 @@ fn animated_parts_only_move_with_time() {
     assert_ne!(scene.motion(9., true), scene.motion(3., false));
     let ids = |draws: Vec<Draw>| draws.into_iter().map(|draw| draw.id).collect::<Vec<_>>();
     assert_eq!(
-        ids(scene.frame(9., true, [0., 5., 0.])),
-        ids(scene.frame(3., false, [0., 5., 0.]))
+        ids(scene.frame(9., true, [0., 5., 0.], None)),
+        ids(scene.frame(3., false, [0., 5., 0.], None))
     );
     assert!(
-        scene.frame(0., false, [5_000., 5., 5_000.]).len()
-            < scene.frame(0., false, [0., 5., 0.]).len()
+        scene.frame(0., false, [5_000., 5., 5_000.], None).len()
+            < scene.frame(0., false, [0., 5., 0.], None).len()
     );
+}
+
+#[test]
+fn the_cave_roof_is_cut_away_while_the_viewer_stands_under_it() {
+    let scenery = greyhaven_vale_scenery();
+    let roof = first(&scenery, PropKind::CaveRoof);
+    let scene = only(vec![roof]);
+    assert_eq!(scene.animated.len(), 1, "the roof is its own part");
+    let [x, _, z] = roof.position.map(|units| f64::from(units) / 100.);
+    let shown = |viewer| scene.shown(viewer)[0];
+    assert!(shown(None));
+    assert!(!shown(Some([x, 0., z])), "inside the cave");
+    assert!(shown(Some([x, 6., z])), "standing on the roof");
+    assert!(shown(Some([x, 0., z + 30.])), "outside");
+    let drawn = |viewer| {
+        scene
+            .frame(0., false, [x as f32, 5., z as f32], viewer)
+            .len()
+    };
+    assert!(drawn(Some([x, 0., z])) < drawn(None));
 }

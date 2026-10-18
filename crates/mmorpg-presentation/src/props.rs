@@ -653,6 +653,42 @@ fn campfire(m: &mut Model, p: &Prop, index: usize, f: Affine) -> Animated {
         },
     }
 }
+/// A cave's roof slab (#159): rock with a mossy cap, drawn as its own part so clients can
+/// cut it away while the viewer stands under it.
+fn cave_roof(p: &Prop, index: usize) -> Animated {
+    let [hx, hy, hz] = half(p);
+    let t = hy * 2.;
+    let s = seed(p);
+    let mut m = Model::new(Cull::Always);
+    m.box_at(ROCK_DARK, [0., t * 0.3, 0.], [hx, t * 0.3, hz]);
+    m.box_at(ROCK, [0., t * 0.8, 0.], [hx - 0.2, t * 0.2, hz - 0.2]);
+    m.box_at(MOSS, [0., t + 0.06, 0.], [hx - 0.8, 0.08, hz - 0.8]);
+    for i in 0..((hx * hz / 8.).round().clamp(4., 24.) as usize) {
+        let j = i as f64;
+        let size = 0.8 + hash(&[s * 1e6, j, 3.]) * 1.4;
+        let x = (hash(&[s * 1e6, j, 1.]) * 2. - 1.) * (hx - size);
+        let z = (hash(&[s * 1e6, j, 2.]) * 2. - 1.) * (hz - size);
+        m.put(
+            if i % 2 == 0 { ROCK } else { ROCK_DARK },
+            blob(0, false, 0.3, s + j),
+            at(x, t, z, size, size * 0.5, size * 0.9),
+        );
+    }
+    let at = [
+        metres(p.position[0]),
+        metres(p.position[1]),
+        metres(p.position[2]),
+    ];
+    animated(
+        m,
+        |part| format!("cave-roof-{index}-{part}"),
+        Motion::Roof {
+            at,
+            min: [at[0] - hx, at[2] - hz],
+            max: [at[0] + hx, at[2] + hz],
+        },
+    )
+}
 fn sails(index: usize, hub: V, yaw: f64) -> Animated {
     let mut m = Model::new(Cull::Always);
     m.box_at(DARK, [0.; 3], [0.32, 0.32, 0.22]);
@@ -687,6 +723,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut reeds = BTreeMap::<usize, Model>::new();
     let mut windmills = 0;
     let mut fires = 0;
+    let mut roofs = 0;
     for p in &s.props {
         // The inn is asset-tooling's walk-in bundle (`crate::buildings`), not a procedural block.
         if p.kind == PropKind::Inn {
@@ -852,6 +889,10 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                 }
             }
             PropKind::Cliff => cliff(&mut m, p),
+            PropKind::CaveRoof => {
+                animations.push(cave_roof(p, roofs));
+                roofs += 1;
+            }
             PropKind::Campfire => {
                 animations.push(campfire(&mut m, p, fires, f));
                 fires += 1;

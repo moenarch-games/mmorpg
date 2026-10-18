@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0xd5ab_9e78_ec23_7c2c;
+const STABLE_HASH: u64 = 0xaf78_c2f8_d910_fff0;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -95,9 +95,9 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
     }
     assert_eq!(
         greyhaven_vale::content().fingerprint(),
-        0x9eee_a7d5_4109_87a7
+        0x0527_20eb_e85a_f27f
     );
-    assert_eq!(scenery.content_revision, 13);
+    assert_eq!(scenery.content_revision, 14);
 }
 
 #[test]
@@ -161,7 +161,10 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
         }
         let area = prop.footprint();
         for collider in &structures {
-            if prop.collider != Some(collider.id) {
+            // The cave's roof slab rests on its walls.
+            let cave = |id: u32| id == ids::CAVE_ROOF || ids::CAVE_WALLS.contains(&id);
+            let roofed = cave(collider.id) && prop.collider.is_some_and(cave);
+            if prop.collider != Some(collider.id) && !roofed {
                 assert!(
                     !area.intersects(footprint(collider)),
                     "{:?} at {:?} intersects collider {}",

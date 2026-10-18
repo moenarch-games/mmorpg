@@ -77,7 +77,8 @@ fn content_is_a_bounded_deterministic_revision() {
             // Structures stand on the ground (the inn's lintel spans its doorway) and stay
             // inside the playable square.
             // Out on the hills they stand on the terrain, sunk 0.3 m below their lowest corner (#159).
-            if !ids::INN_PARTS.contains(&collider.id) {
+            // The cave's roof rests on its walls.
+            if !ids::INN_PARTS.contains(&collider.id) && collider.id != ids::CAVE_ROOF {
                 let ground = definition.terrain().map_or(0, |terrain| {
                     [min, [max[0], min[1]], max, [min[0], max[1]]]
                         .iter()

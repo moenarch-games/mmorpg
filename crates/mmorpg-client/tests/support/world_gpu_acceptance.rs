@@ -41,7 +41,7 @@ fn submitted_frame_mesh_material_transform_and_environment_change_actual_pixels(
             eye: [0.0, 12.0, 28.0],
             target: [0.0, 2.0, 0.0],
         };
-        let frame = world.frame(0.0, true, view.eye);
+        let frame = world.frame(0.0, true, view.eye, None);
         let before = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
         save("consumed-before", &before);
         let mut material = frame.clone();
@@ -68,7 +68,7 @@ fn submitted_frame_mesh_material_transform_and_environment_change_actual_pixels(
         let after = offscreen_frame_pixels(&geometry, &[], view).await.unwrap();
         changed(&before, &after, "mesh geometry");
         save("consumed-mesh", &after);
-        let night = world.frame(600.0, true, view.eye);
+        let night = world.frame(600.0, true, view.eye, None);
         let after = offscreen_frame_pixels(&night, &[], view).await.unwrap();
         changed(&before, &after, "day/night environment");
         save("consumed-night", &after);
@@ -147,7 +147,7 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
                     "GALLERY_CAMERA {{\"name\":\"{name}-{phase}\",\"eye\":{:?},\"target\":{:?}}}",
                     view.eye, view.target
                 );
-                let frame = world.frame(seconds, true, view.eye);
+                let frame = world.frame(seconds, true, view.eye, None);
                 let pixels = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
                 save(&format!("{name}-{phase}"), &pixels);
             }
@@ -180,7 +180,7 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
                 view.eye,
                 view.target
             );
-            let frame = world.frame(0.0, false, view.eye);
+            let frame = world.frame(0.0, false, view.eye, None);
             let pixels = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
             save(&format!("prop-{}", kind.name()), &pixels);
         }
@@ -203,7 +203,7 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
                     .set_default_appearance(mmorpg_core::PlayerClass::from_code(class).unwrap());
                 presentation.push(projection, now).unwrap();
                 let view = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
-                let frame = world.frame(0.0, false, view.eye);
+                let frame = world.frame(0.0, false, view.eye, None);
                 let units = presentation.unit_draws(now, view);
                 let pixels = offscreen_frame_pixels(&frame, &units, view).await.unwrap();
                 save(&format!("class-{class}-sex-{sex}"), &pixels);
@@ -298,7 +298,7 @@ fn current_creature_and_npc_model_images_reach_native_gpu() {
                 eye: [5.0, 3.0, 7.0],
                 target: [2.5, 0.9, 0.0],
             };
-            let frame = world.frame(0.0, false, view.eye);
+            let frame = world.frame(0.0, false, view.eye, None);
             let pixels = offscreen_frame_pixels(&frame, &presentation.unit_draws(now, view), view)
                 .await
                 .unwrap();
@@ -316,7 +316,7 @@ fn empty_frame_renders_submitted_background_without_hidden_css_sky() {
             eye: [0.0, 4.0, 9.0],
             target: [0.0, 1.0, 0.0],
         };
-        let mut frame = world.frame(0.0, false, view.eye);
+        let mut frame = world.frame(0.0, false, view.eye, None);
         frame.draws.clear();
         frame.environment.background = [0.2, 0.4, 0.6];
         let before = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
