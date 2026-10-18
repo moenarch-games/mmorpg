@@ -5,7 +5,9 @@
 //! [`crate::ZoneCommand::UseDoor`]; the zone moves the leaf on the next tick unless a unit's
 //! body overlaps the box the leaf would take ([`crate::ErrorCode::DoorBlocked`]). Asking for
 //! the state a door already has changes nothing, so two players cannot toggle it against each
-//! other. Door states belong to canonical state and every projection.
+//! other, and a player cannot move a leaf within [`DOOR_COOLDOWN_TICKS`] of its last change
+//! ([`crate::ErrorCode::DoorBusy`]). A routine NPC opens a closed door on its path (#158).
+//! Door states and their change ticks belong to canonical state and every projection.
 
 use crate::{EntityRef, ErrorCode, PlayerId, ZoneError, ZoneSimulation};
 
@@ -15,6 +17,8 @@ pub const DOOR_REACH_UNITS: i32 = 250;
 pub const NPC_SIGHT_HEIGHT_UNITS: i32 = 160;
 /// Doors a zone's content may author.
 pub const MAX_DOORS: usize = 16;
+/// Players cannot move a door leaf again within 1.5 s of its last change.
+pub const DOOR_COOLDOWN_TICKS: u64 = 45;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DoorId(u8);
@@ -71,6 +75,21 @@ pub struct DoorView {
     pub open: bool,
 }
 
+/// A door's canonical state: its view and the tick its leaf last moved (0: never).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CanonicalDoor {
+    pub door: DoorId,
+    pub open: bool,
+    pub changed_tick: u64,
+}
+
+/// A door's live state.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct DoorState {
+    pub(crate) open: bool,
+    pub(crate) changed_tick: u64,
+}
+
 impl ZoneSimulation {
     /// Every content door's state, in door-ID order.
     #[must_use]
@@ -80,7 +99,24 @@ impl ZoneSimulation {
             .iter()
             .map(|door| DoorView {
                 door: door.id,
-                open: self.doors.get(&door.id).copied().unwrap_or(false),
+                open: self.doors.get(&door.id).is_some_and(|state| state.open),
+            })
+            .collect()
+    }
+
+    /// Every content door's canonical state, in door-ID order.
+    #[must_use]
+    pub(crate) fn canonical_doors(&self) -> Vec<CanonicalDoor> {
+        self.content
+            .doors()
+            .iter()
+            .map(|door| {
+                let state = self.doors.get(&door.id).copied().unwrap_or_default();
+                CanonicalDoor {
+                    door: door.id,
+                    open: state.open,
+                    changed_tick: state.changed_tick,
+                }
             })
             .collect()
     }
@@ -95,33 +131,50 @@ impl ZoneSimulation {
         let Some(door) = self.content.door(id).copied() else {
             return Ok(Some((ErrorCode::InvalidTarget, None)));
         };
-        if self.doors.get(&id).copied().unwrap_or(false) == open {
+        let state = self.doors.get(&id).copied().unwrap_or_default();
+        if state.open == open {
             return Ok(None);
+        }
+        if state.changed_tick != 0 && self.tick < state.changed_tick + DOOR_COOLDOWN_TICKS {
+            return Ok(Some((ErrorCode::DoorBusy, None)));
         }
         let from = self.player_position(player_id)?;
         if !door.within_reach([from.x, from.y, from.z]) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
         }
+        if self.leaf_blocked(&door, open)? {
+            return Ok(Some((ErrorCode::DoorBlocked, None)));
+        }
+        self.set_door(&door, open, self.tick)?;
+        Ok(None)
+    }
+
+    /// Whether a unit's body overlaps the box `door`'s leaf would take.
+    fn leaf_blocked(&self, door: &Door, open: bool) -> Result<bool, ZoneError> {
         let leaf = door.leaf(open);
         let probe = physics_engine::Aabb::new(
             crate::zone::vector(leaf.position),
             crate::zone::vector(leaf.half_extents),
         );
-        let blocked = self
+        Ok(self
             .world
             .overlap_query(probe)
             .map_err(|error| ZoneError::new(format!("door overlap query failed: {error}")))?
             .into_iter()
-            .any(crate::entity::is_unit_body);
-        if blocked {
-            return Ok(Some((ErrorCode::DoorBlocked, None)));
-        }
-        self.set_door(&door, open)?;
-        Ok(None)
+            .any(crate::entity::is_unit_body))
     }
 
-    /// Moves `door`'s leaf body to its `open` or closed box.
-    pub(crate) fn set_door(&mut self, door: &Door, open: bool) -> Result<(), ZoneError> {
+    /// A routine NPC opens `door` unless a unit stands in the leaf's way; it tries again next
+    /// tick while still in reach.
+    pub(crate) fn try_open_for_npc(&mut self, door: &Door) -> Result<(), ZoneError> {
+        if !self.leaf_blocked(door, true)? {
+            self.set_door(door, true, self.tick)?;
+        }
+        Ok(())
+    }
+
+    /// Moves `door`'s leaf body to its `open` or closed box, recording `tick` as its change.
+    pub(crate) fn set_door(&mut self, door: &Door, open: bool, tick: u64) -> Result<(), ZoneError> {
         let leaf = door.leaf(open);
         self.world
             .replace_body(physics_engine::RigidBody::fixed(
@@ -130,7 +183,13 @@ impl ZoneSimulation {
                 crate::zone::vector(leaf.half_extents),
             ))
             .map_err(|error| ZoneError::new(format!("door body update failed: {error}")))?;
-        self.doors.insert(door.id, open);
+        self.doors.insert(
+            door.id,
+            DoorState {
+                open,
+                changed_tick: tick,
+            },
+        );
         Ok(())
     }
 
@@ -142,7 +201,7 @@ impl ZoneSimulation {
         player_id: PlayerId,
         npc: crate::NpcId,
     ) -> Result<bool, ZoneError> {
-        let Some(feet) = self.content.npc(npc).map(|npc| npc.position) else {
+        let Some(feet) = self.npc_feet(npc) else {
             return Ok(false);
         };
         let centre = self.player_position(player_id)?;

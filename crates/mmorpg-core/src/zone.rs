@@ -220,8 +220,8 @@ pub struct ZoneSimulation {
     pub(crate) interest: InterestIndex,
     pub(crate) interest_work: InterestMaintenanceStats,
     pub(crate) tick_work: ZoneTickWork,
-    /// Open doors by ID; absent means closed (#158).
-    pub(crate) doors: BTreeMap<crate::DoorId, bool>,
+    /// Door states by ID; absent means closed and never moved (#158).
+    pub(crate) doors: BTreeMap<crate::DoorId, crate::door::DoorState>,
 }
 
 impl ZoneSimulation {
@@ -592,6 +592,8 @@ impl ZoneSimulation {
         self.advance_combos();
         self.advance_quest_objectives(now)?;
         self.tick = now;
+        // Routine NPCs stand where the new tick's time of day puts them (#158).
+        self.place_routine_npcs(true)?;
         Ok(())
     }
 
@@ -682,7 +684,8 @@ impl ZoneSimulation {
         let mut interest = InterestIndex::default();
         let mut inserted = 0;
         for npc in self.content.npcs() {
-            interest.insert(EntityRef::Npc(npc.id), npc.position[0], npc.position[1]);
+            let [x, z] = self.npc_feet(npc.id).unwrap_or(npc.position);
+            interest.insert(EntityRef::Npc(npc.id), x, z);
             inserted += 1;
         }
         for &player_id in self.players.keys() {

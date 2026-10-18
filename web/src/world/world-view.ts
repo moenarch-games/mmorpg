@@ -13,7 +13,7 @@ import { entityKey, sameEntity } from "../entity-ref";
 import type { EntityRef } from "../entity-ref";
 import { projectionBytes, type EntityState, type StrikeHeight, type ZoneSnapshot } from "../replication";
 import { DebugOverlay, FrameRate } from "./debug-overlay";
-import { ENVIRONMENT, DAY_SECONDS, environmentAt } from "./environment";
+import { ENVIRONMENT, DAY_SECONDS, environmentAt, zoneSkySeconds } from "./environment";
 import { Minimap, buildMinimapLayers, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
 import { MovementOutbox, type MovementInput } from "./movement-outbox";
 import {
@@ -710,7 +710,8 @@ export class WorldView {
       viewMatrix: [...this.#camera.matrixWorldInverse.elements] as Matrix4Values,
       projectionMatrix: webGpuProjection(this.#camera),
     };
-    const seconds = this.#presentationTime ?? (animate ? this.#seconds : 0);
+    // The sky follows the zone's clock (#158); a debug presentation time overrides it.
+    const seconds = this.#presentationTime ?? zoneSkySeconds(projection.tick);
     const environment = environmentAt(ENVIRONMENT, seconds / DAY_SECONDS);
     this.#lastEnvironment = environment;
     this.#lastInstanceBatches = frame.instanceBatches;

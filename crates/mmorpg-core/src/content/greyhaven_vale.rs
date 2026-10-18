@@ -29,7 +29,7 @@ pub mod units;
 /// (the Wolf Pelt) and vendor catalog 2; revision 10 replaces the inn block
 /// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
 /// inside.
-pub const REVISION: u64 = 10;
+pub const REVISION: u64 = 11;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -539,7 +539,9 @@ static CONTENT: LazyLock<Arc<ZoneContent>> = LazyLock::new(|| {
             .with_quests(crate::QUEST_CATALOG_REVISION, quests::quests())
             .expect("built-in Greyhaven Vale quest content is valid")
             .with_doors(vec![inn::door(ids::INN_DOOR)])
-            .expect("built-in Greyhaven Vale door content is valid"),
+            .expect("built-in Greyhaven Vale door content is valid")
+            .with_routines(units::routines(), units::closed_at_night())
+            .expect("built-in Greyhaven Vale routine content is valid"),
     )
 });
 

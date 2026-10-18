@@ -40,7 +40,7 @@ fn observation_records_round_trip_without_reinterpreting_previous_snapshot_versi
     let bytes = encode_snapshot(&view).unwrap();
     let golden = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../fixtures/protocol/presentation-observation-v22.hex"
+        "/../../fixtures/protocol/presentation-observation-v23.hex"
     ))
     .unwrap();
     let expected: Vec<u8> = golden
@@ -52,11 +52,11 @@ fn observation_records_round_trip_without_reinterpreting_previous_snapshot_versi
     assert_eq!(bytes, expected);
     assert_eq!(decode_snapshot(&bytes).unwrap(), view);
     assert_eq!(
-        SNAPSHOT_WIRE_VERSION, 22,
-        "one intentional migration from baseline21"
+        SNAPSHOT_WIRE_VERSION, 23,
+        "one intentional migration from baseline22"
     );
     // Use the current encoder for the new schema; old version is explicitly rejected.
-    let old = include_str!("../../../fixtures/protocol/player-snapshot-v21.hex");
+    let old = include_str!("../../../fixtures/protocol/player-snapshot-v22.hex");
     let old: Vec<u8> = old
         .trim()
         .as_bytes()

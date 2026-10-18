@@ -39,6 +39,8 @@ pub struct ZoneContent {
     quest_revision: u64,
     quests: Vec<crate::Quest>,
     doors: Vec<crate::Door>,
+    routines: Vec<crate::NpcRoutine>,
+    closed_at_night: Vec<NpcId>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -136,6 +138,8 @@ impl ZoneContent {
             quest_revision: 0,
             quests: Vec::new(),
             doors: Vec::new(),
+            routines: Vec::new(),
+            closed_at_night: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -165,6 +169,8 @@ impl ZoneContent {
             quest_revision: 0,
             quests: Vec::new(),
             doors: Vec::new(),
+            routines: Vec::new(),
+            closed_at_night: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -504,7 +510,93 @@ impl ZoneContent {
             .map(|index| &self.doors[index])
     }
 
+    /// Binds NPC day/night routines and the vendors that close at night (#158): each routine
+    /// names a distinct content NPC, has 1..=[`crate::MAX_ROUTINE_WAYPOINTS`] in-range
+    /// waypoints and at most a content door; each closing NPC is a content vendor.
+    pub fn with_routines(
+        mut self,
+        mut routines: Vec<crate::NpcRoutine>,
+        mut closed_at_night: Vec<NpcId>,
+    ) -> Result<Self, ZoneError> {
+        routines.sort_by_key(|routine| routine.npc);
+        closed_at_night.sort();
+        if routines.windows(2).any(|pair| pair[0].npc == pair[1].npc)
+            || closed_at_night.windows(2).any(|pair| pair[0] == pair[1])
+        {
+            return Err(ZoneError::new("duplicate npc routine or closing vendor"));
+        }
+        for routine in &routines {
+            if self.npc(routine.npc).is_none()
+                || routine.path.is_empty()
+                || routine.path.len() > crate::MAX_ROUTINE_WAYPOINTS
+                || routine
+                    .path
+                    .iter()
+                    .flatten()
+                    .any(|value| value.abs() > super::MAX_CONTENT_COORDINATE_UNITS)
+                || routine.door.is_some_and(|door| self.door(door).is_none())
+            {
+                return Err(ZoneError::new("invalid npc routine"));
+            }
+        }
+        if closed_at_night
+            .iter()
+            .any(|npc| self.vendor_stock(*npc).is_none())
+        {
+            return Err(ZoneError::new("a closing npc is not a vendor"));
+        }
+        self.routines = routines;
+        self.closed_at_night = closed_at_night;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Ordered by NPC ID.
+    #[must_use]
+    pub fn routines(&self) -> &[crate::NpcRoutine] {
+        &self.routines
+    }
+
+    #[must_use]
+    pub fn routine(&self, npc: NpcId) -> Option<&crate::NpcRoutine> {
+        self.routines
+            .binary_search_by_key(&npc, |routine| routine.npc)
+            .ok()
+            .map(|index| &self.routines[index])
+    }
+
+    /// Whether the vendor `npc` refuses trade between dusk and dawn.
+    #[must_use]
+    pub fn closed_at_night(&self, npc: NpcId) -> bool {
+        self.closed_at_night.binary_search(&npc).is_ok()
+    }
+
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_door_fingerprint();
+        if self.routines.is_empty() && self.closed_at_night.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v8");
+        hash.u64(fingerprint);
+        hash.len(self.routines.len());
+        for routine in &self.routines {
+            hash.u32(routine.npc.get());
+            hash.len(routine.path.len());
+            for value in routine.path.iter().flatten() {
+                hash.i32(*value);
+            }
+            hash.u16(routine.home_facing);
+            hash.u8(routine.door.map_or(0, crate::DoorId::get));
+        }
+        hash.len(self.closed_at_night.len());
+        for npc in &self.closed_at_night {
+            hash.u32(npc.get());
+        }
+        hash.finish()
+    }
+
+    fn compute_door_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_quest_fingerprint();
         if self.doors.is_empty() {
             return fingerprint;

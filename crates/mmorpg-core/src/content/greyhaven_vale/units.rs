@@ -256,3 +256,26 @@ pub fn creature_abilities() -> Vec<(CreatureTemplateId, crate::AbilityId)> {
 pub(crate) fn vendors() -> Vec<(NpcId, crate::VendorStock)> {
     vec![(NpcId::new(3), crate::starter_vendor_stock())]
 }
+
+/// Tanner Hilda Brook (NPC 2) works by her tannery and spends the night in the inn's common
+/// room, crossing the square and opening the inn door on the way (#158, Atlas 5.1.45). Her
+/// quests stay available wherever she is.
+pub(crate) fn routines() -> Vec<crate::NpcRoutine> {
+    vec![crate::NpcRoutine {
+        npc: NpcId::new(2),
+        path: vec![
+            [-1_500, 2_000],
+            [1_500, 1_000],
+            [1_500, 620],
+            [1_500, 350],
+            [1_600, 100],
+        ],
+        home_facing: 16_384,
+        door: Some(super::inn::DOOR),
+    }]
+}
+
+/// Bram (NPC 3) closes his shop at night (#158, Atlas 5.1.47).
+pub(crate) fn closed_at_night() -> Vec<NpcId> {
+    vec![NpcId::new(3)]
+}

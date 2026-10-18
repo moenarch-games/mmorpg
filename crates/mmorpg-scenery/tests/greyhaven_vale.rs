@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0xe1ea_e974_cd9d_facd;
+const STABLE_HASH: u64 = 0xf53e_4a8f_8657_1d50;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -95,9 +95,9 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
     }
     assert_eq!(
         greyhaven_vale::content().fingerprint(),
-        0xec89_82ff_4ec6_6ff7
+        0x93c8_708b_f727_3b64
     );
-    assert_eq!(scenery.content_revision, 10);
+    assert_eq!(scenery.content_revision, 11);
 }
 
 #[test]

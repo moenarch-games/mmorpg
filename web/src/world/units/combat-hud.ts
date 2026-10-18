@@ -38,6 +38,8 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "quest-incomplete": "That quest is not complete yet.",
   "line-of-sight": "Target not in line of sight.",
   "door-blocked": "Something is in the way of the door.",
+  "vendor-closed": "The shop is closed for the night.",
+  "door-busy": "The door is still swinging.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana" } as const;

@@ -600,9 +600,8 @@ impl ZoneSimulation {
                     .ok_or_else(|| ZoneError::new("creature is despawned"))
             }
             EntityRef::Npc(npc_id) => self
-                .content
-                .npc(npc_id)
-                .map(|npc| [npc.position[0], 0, npc.position[1]])
+                .npc_feet(npc_id)
+                .map(|feet| [feet[0], 0, feet[1]])
                 .ok_or_else(|| ZoneError::new("unknown npc")),
         }
     }

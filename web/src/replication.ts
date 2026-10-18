@@ -119,7 +119,9 @@ export type ErrorCode =
   | "quest-log-full"
   | "quest-incomplete"
   | "line-of-sight"
-  | "door-blocked";
+  | "door-blocked"
+  | "vendor-closed"
+  | "door-busy";
 
 /** A directed strike's sweep side and height (#154); the zone resolves what it covers. */
 export type StrikeSide = "left" | "centre" | "right";
@@ -264,7 +266,7 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 22;
+const WIRE_VERSION = 23;
 const SCHEMA_VERSION = 22;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
@@ -292,7 +294,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "invalid-loot", "not-loot-owner", "empty-loot", "money-overflow",
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
   "not-equippable", "invalid-vendor", "not-enough-money", "chat-throttled", "invalid-quest", "quest-log-full",
-  "quest-incomplete", "line-of-sight", "door-blocked",
+  "quest-incomplete", "line-of-sight", "door-blocked", "vendor-closed", "door-busy",
 ];
 /** Doors a zone's content may author (`mmorpg_core::MAX_DOORS`). */
 const MAX_DOORS = 16;

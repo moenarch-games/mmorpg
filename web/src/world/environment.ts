@@ -175,6 +175,17 @@ export function hazeMix(style: EnvironmentStyle, distanceMetres: number): number
 /** A 20-minute day in real seconds. */
 export const DAY_SECONDS = 20 * 60;
 
+/** The zone's day in ticks and its start time (`mmorpg_core::DAY_TICKS`, `ZONE_START_TIME`). */
+export const ZONE_DAY_TICKS = 2 * 60 * 60 * 30;
+export const ZONE_START_TIME = ZONE_DAY_TICKS / 3;
+
+/** The zone's time of day at `tick` on the sky cycle's `DAY_SECONDS` scale, zero at noon (#158). */
+export function zoneSkySeconds(tick: bigint): number {
+  const day = BigInt(ZONE_DAY_TICKS);
+  const fraction = Number((tick + BigInt(ZONE_START_TIME)) % day) / ZONE_DAY_TICKS;
+  return (((fraction - 0.5) % 1) + 1) % 1 * DAY_SECONDS;
+}
+
 /** A periodic presentation clock; zero is noon, half a cycle is midnight. */
 function cycle(dayFraction: number): { daylight: number; dusk: number; angle: number } {
   const fraction = Number.isFinite(dayFraction) ? dayFraction - Math.floor(dayFraction) : 0;

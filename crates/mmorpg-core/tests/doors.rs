@@ -154,13 +154,8 @@ fn a_body_in_the_leafs_way_blocks_it_and_recovery_keeps_the_state() {
     );
     assert!(!zone.door_open());
     let state = zone.zone.snapshot().unwrap();
-    assert_eq!(
-        state.doors,
-        [DoorView {
-            door: DOOR,
-            open: false
-        }]
-    );
+    assert_eq!(state.doors.len(), 1);
+    assert!(!state.doors[0].open && state.doors[0].changed_tick > 0);
 }
 
 #[test]

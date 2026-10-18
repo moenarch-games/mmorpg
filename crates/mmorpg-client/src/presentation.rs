@@ -559,6 +559,15 @@ impl Presentation {
             !self.reduced_motion,
             view.eye,
         );
+        // The sky shows the zone's time of day; clouds keep drifting on the client clock.
+        if let Some(tick) = self.latest().map(|snapshot| snapshot.tick) {
+            let clouds = frame.environment.cloud_offset;
+            frame.environment = crate::environment::Environment::at(
+                crate::environment::zone_sky_seconds(tick),
+                true,
+            );
+            frame.environment.cloud_offset = clouds;
+        }
         frame.draws.extend(self.unit_draws(now, view));
         self.append_inn(&mut frame.draws, now);
         frame

@@ -80,6 +80,10 @@ pub enum ErrorCode {
     QuestIncomplete,
     /// A unit stands where the door leaf would move (#158).
     DoorBlocked,
+    /// The vendor does not trade at this hour (#158).
+    VendorClosed,
+    /// The door leaf moved within the last [`crate::DOOR_COOLDOWN_TICKS`] (#158).
+    DoorBusy,
 }
 
 /// One feedback event addressed to a player.
