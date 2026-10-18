@@ -84,17 +84,16 @@ t=1200 hunter stop_attack -> applied seq=15 epoch=1
 t=1201 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp20/50 target=creature:106 in_combat
 t=1240 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp17/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:3]
 t=1300 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp15/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:2]
-t=1360 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp13/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:2]
-t=1400 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp13/50 target=creature:106 in_combat
-t=1420 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp11/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:2]
-t=1480 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp9/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:2]
-t=1500 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp9/50 target=creature:106 in_combat
-t=1540 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp6/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:3]
-t=1600 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp2/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:4]
-t=1660 expect hunter event died bot:hunter by t=1700 ok events[attack:creature:106>hunter,taken:creature:106:2,died:hunter]
-t=1660 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp0/50 dead target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:2,died:hunter]
-t=1661 expect hunter unit creature:106 evading by t=1700 ok L1 hp60% (-9313,45,-1055) [hostile,attackable,evading]
-t=1661 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp0/50 dead target=creature:106 in_combat
+t=1360 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp12/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:3]
+t=1400 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp12/50 target=creature:106 in_combat
+t=1420 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp10/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:2]
+t=1480 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp8/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:2]
+t=1500 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp8/50 target=creature:106 in_combat
+t=1540 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp4/50 target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:4]
+t=1600 expect hunter event died bot:hunter by t=1700 ok events[attack:creature:106>hunter,taken:creature:106:4,died:hunter]
+t=1600 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp0/50 dead target=creature:106 in_combat events[attack:creature:106>hunter,taken:creature:106:4,died:hunter]
+t=1601 expect hunter unit creature:106 evading by t=1700 ok L1 hp60% (-9313,45,-1055) [hostile,attackable,evading]
+t=1601 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp0/50 dead target=creature:106 in_combat
 t=1700 expect hunter health ok health=0/50
 t=1700 expect hunter unit bot:hunter dead ok L1 hp0% (-9229,90,-824) [dead,in_combat]
 t=1700 hunter p1 e1 ack15 (-9229,90,-824) sees[] hp0/50 dead target=creature:106 in_combat
@@ -103,9 +102,9 @@ t=1700 hunter move -> applied seq=17 epoch=1 forward=1 strafe=0 facing=0
 t=1701 expect hunter event error:you_are_dead ok events[error:you_are_dead]
 t=1701 expect hunter target creature:106 ok target=creature:106
 t=1701 hunter p1 e1 ack17 (-9229,90,-824) sees[] hp0/50 dead target=creature:106 in_combat events[error:you_are_dead]
+t=1750 hunter p1 e1 ack17 (-9229,90,-824) sees[] hp0/50 dead target=creature:106
 t=1800 expect hunter position hunter ok [-9229, 90, -824]
-t=1800 hunter p1 e1 ack17 (-9229,90,-824) sees[] hp0/50 dead target=creature:106 in_combat
-t=1810 hunter p1 e1 ack17 (-9229,90,-824) sees[] hp0/50 dead target=creature:106
+t=1800 hunter p1 e1 ack17 (-9229,90,-824) sees[] hp0/50 dead target=creature:106
 t=1900 hunter p1 e1 ack17 (-9229,90,-824) sees[] hp0/50 dead target=creature:106
 t=1900 hunter release_spirit -> applied seq=18 epoch=1
 t=1901 expect hunter position hunter ok [-2000, 90, 4150]

@@ -566,12 +566,8 @@ async fn the_inn_journey_crosses_real_transport_and_both_players_see_the_door() 
             door: inn::DOOR,
             open,
         };
-        // Around the watcher, who stands one slot east: kinematic bodies block (#271).
-        let outside = [
-            [spawn[0], spawn[2] + 250],
-            [1_495, spawn[2] + 250],
-            [1_495, 620],
-        ];
+        // Straight past the watcher one slot east: the walker slides around it.
+        let outside = [[1_495, spawn[2]], [1_495, 620]];
         walk(&mut walker, &outside).await?;
         walker.send_command(door(true))?;
         let opened = door_reaches(&walker, true, [0, u64::MAX]).await?.tick;

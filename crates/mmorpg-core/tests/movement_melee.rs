@@ -128,9 +128,8 @@ fn first_blow(movement: ZoneCommand) -> u16 {
 #[test]
 fn a_planted_warden_braces_against_creature_blows() {
     assert_eq!(first_blow(arena::stand(SOUTH)), 18);
-    // Kinematic bodies do not push each other (#271): pressing into the creature does not move
-    // the Warden, who stays planted and braced.
-    assert_eq!(first_blow(arena::walk(SOUTH)), 18);
+    // Pressing into the creature slides the Warden around it (#273), moving and unbraced.
+    assert_eq!(first_blow(arena::walk(SOUTH)), 20);
 }
 
 #[test]

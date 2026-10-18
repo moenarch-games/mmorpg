@@ -114,7 +114,17 @@ fn a_new_warden_reaches_level_two_and_equips_a_marauder_drop() {
         // A living target is fought in melee; an owned corpse is walked up to
         // until its loot sheet is projected and claimed above.
         if let Some(unit) = target.filter(|unit| !unit.flags.dead || unit.flags.lootable) {
-            script.approach(me, unit.position);
+            // Field Marauders are pulled from the field's east corner, away from the
+            // middle of the group, which would join all at once.
+            let goal = if unit.appearance == FIELD_MARAUDER
+                && !unit.flags.targets_viewer
+                && (me[0] < 9_200 || me[2] < 5_300)
+            {
+                [9_300, 90, 5_400]
+            } else {
+                unit.position
+            };
+            script.approach(me, goal);
             if !unit.flags.dead {
                 if !view.viewer.auto_attacking {
                     script.send(ZoneCommand::StartAttack);

@@ -10,11 +10,12 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // candidates and total encoded player-projection bytes. A decrease is welcome;
     // raising a ceiling requires a deliberate workload/behavior/performance review.
     // Rapier physics (#271) replaced the first-party engine's pair, TOI and contact
-    // counters; these ceilings were recorded on the switch.
+    // counters; these ceilings were recorded on the switch. Sliding around other
+    // characters (#273) moved the spread 32-player fight slightly.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [21_240, 132_480, 190_080, 3_598_128],
         [21_240, 129_600, 70_005, 1_203_308],
-        [21_240, 138_240, 367_057, 6_232_461],
+        [21_240, 138_240, 368_377, 6_291_779],
         [20_285, 148_805, 1_926_294, 24_392_554],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {

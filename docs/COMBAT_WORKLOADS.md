@@ -80,7 +80,7 @@ content revision 11):
 | --- | ---: | ---: | ---: | ---: |
 | vale-idle-16 | 21,240 | 132,480 | 190,080 | 3,598,128 |
 | vale-fights-8 | 21,240 | 129,600 | 70,005 | 1,203,308 |
-| vale-fights-32 | 21,240 | 138,240 | 367,057 | 6,232,461 |
+| vale-fights-32 | 21,240 | 138,240 | 368,377 | 6,291,779 |
 | vale-crowded-fights-64 | 20,285 | 148,805 | 1,926,294 | 24,392,554 |
 
 The crowded case reaches the full byte budget and publishes 23,040 projections;
