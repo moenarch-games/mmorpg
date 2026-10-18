@@ -14,7 +14,7 @@
 use std::sync::{Arc, LazyLock};
 
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
-use crate::{Area, AreaId, ZoneAreas};
+use crate::{Area, AreaId, Terrain, ZoneAreas};
 
 pub mod inn;
 pub mod quests;
@@ -29,7 +29,7 @@ pub mod units;
 /// (the Wolf Pelt) and vendor catalog 2; revision 10 replaces the inn block
 /// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
 /// inside.
-pub const REVISION: u64 = 12;
+pub const REVISION: u64 = 13;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -395,6 +395,116 @@ static STRUCTURES: [Footprint; 83] = [
     (537, [-14_620, -1_200], [-14_440, -1_040], 130),
 ];
 
+/// The outer valley's ground (#159): a 4 m grid of heights over the playable square and a
+/// little beyond. The original valley stays flat; hills rise across the ring of outer
+/// regions and settle again before the boundary walls.
+pub mod terrain {
+    /// The grid's first sample, in units; aligned with the clients' 4 m terrain grid.
+    pub const ORIGIN: [i32; 2] = [-21_200, -21_200];
+    pub const STEP: i32 = 400;
+    pub const COUNT: u16 = 107;
+    /// Tallest hill (10 m).
+    pub const HILL_UNITS: i64 = 1_000;
+    /// Hills start beyond this Chebyshev distance from the origin and reach full height at
+    /// [`RISE_END`] …
+    pub const RISE_START: i64 = 12_600;
+    pub const RISE_END: i64 = 15_600;
+    /// … and settle again from [`SETTLE_START`] to [`SETTLE_END`], before the walls.
+    pub const SETTLE_START: i64 = 18_000;
+    pub const SETTLE_END: i64 = 20_400;
+    /// Noise lattice spacing of the large and small hills.
+    pub const CELLS: [i64; 2] = [7_000, 3_500];
+    pub const SEED: u64 = 0x4752_4559_4849_4c4c;
+}
+
+/// Smoothstep of `value` between `start` and `end` in Q10 (0..=1024).
+const fn smooth_q10(value: i64, start: i64, end: i64) -> i64 {
+    if value <= start {
+        return 0;
+    }
+    if value >= end {
+        return 1_024;
+    }
+    let t = (value - start) * 1_024 / (end - start);
+    t * t * (3 * 1_024 - 2 * t) / (1_024 * 1_024)
+}
+
+/// Value noise in Q10 at `(x, z)` on a lattice of `cell` units: smoothly interpolated hashes.
+fn value_noise_q10(x: i64, z: i64, cell: i64, seed: u64) -> i64 {
+    let corner = |cx: i64, cz: i64| {
+        let key = ((cx as u64) << 32) ^ (cz as u64 & 0xffff_ffff);
+        (splitmix64(seed ^ key) % 1_025) as i64
+    };
+    let (cx, cz) = (x.div_euclid(cell), z.div_euclid(cell));
+    let fx = smooth_q10(x.rem_euclid(cell), 0, cell);
+    let fz = smooth_q10(z.rem_euclid(cell), 0, cell);
+    let top = corner(cx, cz) * (1_024 - fx) + corner(cx + 1, cz) * fx;
+    let bottom = corner(cx, cz + 1) * (1_024 - fx) + corner(cx + 1, cz + 1) * fx;
+    (top * (1_024 - fz) + bottom * fz) / (1_024 * 1_024)
+}
+
+/// The authored hill height at `(x, z)` in units (#159).
+#[must_use]
+pub fn hill_height(x: i32, z: i32) -> i32 {
+    let (x, z) = (i64::from(x), i64::from(z));
+    let reach = x.abs().max(z.abs());
+    let weight = smooth_q10(reach, terrain::RISE_START, terrain::RISE_END)
+        * (1_024 - smooth_q10(reach, terrain::SETTLE_START, terrain::SETTLE_END))
+        / 1_024;
+    if weight == 0 {
+        return 0;
+    }
+    let large = value_noise_q10(x, z, terrain::CELLS[0], terrain::SEED);
+    let small = value_noise_q10(x, z, terrain::CELLS[1], terrain::SEED.rotate_left(17));
+    let noise = (large * 4 + small) / 5;
+    i32::try_from(terrain::HILL_UNITS * noise * weight / (1_024 * 1_024)).unwrap_or(0)
+}
+
+/// The outer valley's terrain grid (#159), sampled from [`hill_height`].
+#[must_use]
+pub fn terrain() -> Terrain {
+    let count = i32::from(terrain::COUNT);
+    let heights = (0..count)
+        .flat_map(|row| {
+            (0..count).map(move |column| {
+                hill_height(
+                    terrain::ORIGIN[0] + column * terrain::STEP,
+                    terrain::ORIGIN[1] + row * terrain::STEP,
+                )
+            })
+        })
+        .collect();
+    Terrain {
+        origin: terrain::ORIGIN,
+        step: terrain::STEP,
+        columns: terrain::COUNT,
+        rows: terrain::COUNT,
+        heights,
+    }
+}
+
+static TERRAIN: LazyLock<Terrain> = LazyLock::new(terrain);
+
+/// Where a footprint `[min, max]` rests on the terrain: its lowest corner, sunk 0.3 m so
+/// nothing floats on a slope.
+fn footing(min: [i32; 2], max: [i32; 2]) -> i32 {
+    let corners = [min, [max[0], min[1]], max, [min[0], max[1]]];
+    let lowest = corners
+        .iter()
+        .map(|corner| TERRAIN.height_at(corner[0], corner[1]))
+        .min()
+        .unwrap_or(0);
+    if lowest == 0
+        && corners
+            .iter()
+            .all(|corner| TERRAIN.height_at(corner[0], corner[1]) == 0)
+    {
+        0
+    } else {
+        lowest - 30
+    }
+}
+
 /// A box standing on y = 0 over an authored footprint.
 const fn standing(id: u32, min: [i32; 2], max: [i32; 2], height: i32) -> StaticCollider {
     let half = [(max[0] - min[0]) / 2, height / 2, (max[1] - min[1]) / 2];
@@ -498,9 +608,10 @@ fn trees() -> Vec<StaticCollider> {
                 let z =
                     origin[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
                 let half = 30 + jitter(24) % 16;
+                let base = footing([x - half, z - half], [x + half, z + half]);
                 let collider = StaticCollider {
                     id: next_id,
-                    position: [x, woods::TRUNK_HEIGHT / 2, z],
+                    position: [x, base + woods::TRUNK_HEIGHT / 2, z],
                     half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
                 };
                 if !clear_of_roads(&collider) || near_structure(&collider) {
@@ -632,11 +743,12 @@ fn colliders() -> Vec<StaticCollider> {
         wall(4, [0, -wall_middle], [extent, thin]),
         wall(5, [0, wall_middle], [extent, thin]),
     ];
-    colliders.extend(
-        STRUCTURES
-            .iter()
-            .map(|&(id, min, max, height)| standing(id, min, max, height)),
-    );
+    colliders.extend(STRUCTURES.iter().map(|&(id, min, max, height)| {
+        // Structures out on the hills stand on the terrain (#159).
+        let mut collider = standing(id, min, max, height);
+        collider.position[1] += footing(min, max);
+        collider
+    }));
     colliders.extend(inn::colliders(*ids::INN_PARTS.start()));
     colliders.extend(trees());
     colliders
@@ -647,6 +759,7 @@ fn colliders() -> Vec<StaticCollider> {
 #[must_use]
 pub fn greyhaven_vale_definition() -> ZoneDefinition {
     ZoneDefinition::with_spawn_grid(REVISION, GRAVITY, SPAWN_GRID, colliders())
+        .and_then(|definition| definition.with_terrain(TERRAIN.clone()))
         .expect("built-in Greyhaven Vale content is valid")
 }
 

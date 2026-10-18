@@ -36,7 +36,7 @@ The browser demo runs the same `ZoneSimulation` through a WASM build as a local,
 
 - 100 simulation units per metre, Y up, 30 Hz ticks.
 - The playable square is about 416 m × 416 m, centred on the origin (#159: the original 240 m valley plus a ring of four outer regions — Greyfang Ridge, Southmeadow Downs, Hollowpine Reach and Eastwater Fen — joined by the Vale Ring Road, the Fen Track and the Downs Trail). Invisible boundary walls enclose it; mountains outside are scenery.
-- **Walkable ground is physically flat** (y = 0). Rapier (#271) resolves capsule units against box colliders and a floor half-space; there is no step-up or heightfield yet (#59). Terrain relief inside the walkable area is presentation-only, at most about 0.6 m. Both clients offset units vertically from the same shared relief function in `mmorpg-scenery`, and that function is flattened under buildings, roads and plazas. Walkable slopes would need a physics-engine heightfield or step-up controller. That is recorded as a foundation follow-up, not faked in core.
+- **Walkable ground** is physically flat (y = 0) across the original 240 m valley. The outer valley (#159, content revision 13) has physical hills up to 10 m: an authored 4 m heightfield (`greyhaven_vale::terrain()`) that the zone's Rapier world walks units on, with flat cells left to the floor half-space. Structures and trunks out there stand on it, creatures spawn on it. Clients draw the terrain as physical ground plus the presentation relief (at most about 0.6 m) and draw units at their physics position plus that relief.
 - Yaw is a `u16` angle (65 536 = one turn). Yaw 0 faces +Z and increasing yaw turns toward +X: `direction = (sin yaw, cos yaw)`.
 
 ## World layout

@@ -409,7 +409,8 @@ mod tests {
         for (index, height) in terrain.heights.iter().enumerate() {
             let x = terrain.origin_xz[0] + offset(index % columns);
             let z = terrain.origin_xz[1] + offset(index / columns);
-            assert_eq!(*height, relief_at(x, z), "sample {index}");
+            // The drawn surface: the physical ground (#159) plus the presentation relief.
+            assert_eq!(*height, hosted_scenery().surface_at(x, z), "sample {index}");
         }
     }
 
@@ -501,8 +502,8 @@ mod tests {
         assert_eq!(value["format"], SCENERY_FORMAT);
         assert_eq!(value["version"], SCENERY_FORMAT_VERSION);
         assert_eq!(value["source"], SCENERY_SOURCE);
-        assert_eq!(value["contentRevision"], "12");
-        assert_eq!(value["presentationFingerprint"], "f4c878c84358155f");
+        assert_eq!(value["contentRevision"], "13");
+        assert_eq!(value["presentationFingerprint"], "b102025af178533d");
         assert_eq!(value["unitsPerMetre"], 100);
         assert_eq!(value["playerHalfExtents"], serde_json::json!([30, 90, 30]));
         let names: Vec<_> = value["areas"]

@@ -12,12 +12,12 @@ use mmorpg_core::{
 /// Pins every content table of revision 10, including the bound ability, item,
 /// loot, vendor and quest catalogs, the inn door and the NPC routines. Changing creatures, NPCs,
 /// colliders or areas requires a new revision and a new recorded value.
-const FINGERPRINT: u64 = 0xe51b_e063_16a5_425c;
+const FINGERPRINT: u64 = 0x9eee_a7d5_4109_87a7;
 
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.revision(), 12);
+    assert_eq!(content.revision(), 13);
     assert_eq!(content.rng_seed(), 0x3cbc_808b_be89_b29c);
     assert_eq!(
         content.definition(),
@@ -269,13 +269,15 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         assert_eq!(creature.creature_id, spawn.id);
         assert!((template.min_level..=template.max_level).contains(&creature.level));
         assert_eq!(creature.health, template.max_health(creature.level));
-        assert_eq!(
-            mmorpg_core::physics::to_units(creature.position),
-            [
-                spawn.position[0],
-                template.half_extents[1],
-                spawn.position[1]
-            ]
+        // Spawned on the ground, out on the hills too (#159): the physics heightfield triangles stay
+        // within 0.15 m of the analytic hills.
+        let [x, y, z] = mmorpg_core::physics::to_units(creature.position);
+        assert_eq!([x, z], spawn.position);
+        let ground = greyhaven_vale::hill_height(x, z);
+        assert!(
+            (y - ground - template.half_extents[1]).abs() <= 15,
+            "{:?} at {y} on {ground}",
+            spawn.id
         );
     }
     // A player on the plaza sees the hub NPCs but no creature.

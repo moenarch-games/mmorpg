@@ -115,7 +115,7 @@ mod tests {
         let after = greyhaven_vale_scenery();
         let mut captured_revision = before.clone();
         captured_revision.content_revision = 4;
-        assert_eq!(captured_revision.stable_hash(), 0xae40_b4f7_3119_f138);
+        assert_eq!(captured_revision.stable_hash(), 0xd35d_9d2f_8cfd_ee54);
         assert_eq!(before.props, after.props);
         assert_eq!(before.roads, after.roads);
         assert_eq!(before.water, after.water);

@@ -915,7 +915,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("""() => {
           const moves = new Map([[0,[1,0]],[36,[1,49152]],[121,[1,32768]],
             [131,[1,49152]],[375,[1,32768]],[395,[0,32768]]]);
-          for (let tick = 0; tick < 1092; tick++) {
+          for (let tick = 0; tick < 972; tick++) {
             const move = moves.get(tick);
             if (move) window.__lootSend({kind:'move',forward:move[0],strafe:0,facing:move[1]});
             if (tick === 1) window.__lootSend({kind:'start-attack'});
@@ -927,7 +927,7 @@ class BrowserAcceptance(unittest.TestCase):
           }
           window.__lootBefore = window.__lootLatest();
         }""")
-        self.assertEqual(self.page.evaluate("Number(window.__lootLatest().loot.diedAt)"), 1035)
+        self.assertEqual(self.page.evaluate("Number(window.__lootLatest().loot.diedAt)"), 915)
         self.expect_class_resource()
         self.page.evaluate("""() => {
           window.__lootSend({kind:'select-target',target:null});
@@ -965,7 +965,7 @@ class BrowserAcceptance(unittest.TestCase):
         expect(slots.nth(0)).to_have_text("Slot 1 · Torn Fur × 5")
         expect(slots.nth(0)).to_be_enabled()
         self.page.evaluate("""() => {
-          window.__lootSend({kind:'loot',creatureId:108,diedAt:1035n});
+          window.__lootSend({kind:'loot',creatureId:108,diedAt:915n});
           window.__lootStep(1);
         }""")
         self.assertEqual(self.page.evaluate("window.__lootLatest().events.some(e => e.kind === 'error' && e.code === 'empty-loot')"), True)

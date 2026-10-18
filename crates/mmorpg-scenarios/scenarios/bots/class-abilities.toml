@@ -306,9 +306,16 @@ tick = 450
 bot = "arcanist"
 action = "cancel_cast"
 
-# Rage comes from swings dealt and taken: too little at first.
+# Rage comes from swings dealt and taken: too little at first, then a Heroic
+# Strike, and the global cooldown holds the next one.
 [[steps]]
 tick = 470
+bot = "warden"
+action = "use_ability"
+ability = 1
+
+[[steps]]
+tick = 500
 bot = "warden"
 action = "use_ability"
 ability = 1
@@ -319,6 +326,12 @@ tick = 500
 bot = "arcanist"
 action = "use_ability"
 ability = 9
+
+[[steps]]
+tick = 501
+bot = "warden"
+action = "use_ability"
+ability = 1
 
 [[steps]]
 tick = 510
@@ -340,19 +353,11 @@ bot = "ranger"
 action = "use_ability"
 ability = 5
 
-# Once the Warden's swings have built 20 rage: a Heroic Strike, and the global
-# cooldown holds the next one.
+# The Warden stops swinging so that the Firebolt lands the killing blow.
 [[steps]]
-tick = 556
+tick = 530
 bot = "warden"
-action = "use_ability"
-ability = 1
-
-[[steps]]
-tick = 557
-bot = "warden"
-action = "use_ability"
-ability = 1
+action = "stop_attack"
 
 [[steps]]
 tick = 570
@@ -453,32 +458,32 @@ tick = 471
 kind = "resource"
 bot = "warden"
 resource = 20
-tick = 556
+tick = 500
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "ability_used"
-tick = 557
+tick = 501
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "damage_dealt"
 entity = "creature:108"
-tick = 557
+tick = 501
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 5
-tick = 557
+tick = 501
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "error:not_ready"
-tick = 558
+tick = 502
 
 [[expect]]
 kind = "event"
@@ -565,13 +570,13 @@ tick = 739
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 5
+resource = 9
 tick = 734
 
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 3
+resource = 7
 tick = 735
 
 # #27: a visible recipient observes other actors without receiving their damage credit.
@@ -594,7 +599,7 @@ kind = "event"
 bot = "ranger"
 event = "damage_observed"
 entity = "bot:warden"
-tick = 557
+tick = 501
 
 [[expect]]
 kind = "event"

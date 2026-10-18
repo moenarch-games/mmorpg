@@ -258,8 +258,17 @@ struct Handles {
     collider: ColliderHandle,
 }
 
+/// The authored ground as a Rapier heightfield (#159).
+#[derive(Clone)]
+struct Ground {
+    id: BodyId,
+    terrain: crate::Terrain,
+    collider: Option<ColliderHandle>,
+}
+
 pub struct World {
     gravity: [f32; 3],
+    ground: Option<Ground>,
     world: PhysicsWorld,
     queries: QueryDispatcherChain<UprightShapes, DefaultQueryDispatcher>,
     controller: KinematicCharacterController,
@@ -281,6 +290,7 @@ impl Clone for World {
         let mut world = Self::new(round(self.gravity));
         world.gravity = self.gravity;
         world.bodies = self.bodies.clone();
+        world.ground = self.ground.clone();
         world.rebuild();
         world
     }
@@ -367,12 +377,67 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
     }
 }
 
+/// Inserts `terrain` as a heightfield collider: its rows run along +Z and its columns along +X.
+fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain) -> ColliderHandle {
+    let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
+    // Parry's heightfield is column-major with rows along Z: entry (row, column) at row + column × rows.
+    let mut data = vec![0.0; columns * rows];
+    for row in 0..rows {
+        for column in 0..columns {
+            #[allow(clippy::cast_precision_loss)]
+            let height = terrain.heights[row * columns + column] as f32 / UNITS_PER_METRE;
+            data[row + column * rows] = height;
+        }
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let extent = |count: usize| (count - 1) as f32 * terrain.step as f32;
+    let (width, depth) = (extent(columns), extent(rows));
+    #[allow(clippy::cast_precision_loss)]
+    let centre = [
+        terrain.origin[0] as f32 + width / 2.0,
+        0.0,
+        terrain.origin[1] as f32 + depth / 2.0,
+    ];
+    let mut field = rapier3d::parry::shape::HeightField::new(
+        rapier3d::parry::utils::Array2::new(rows, columns, data),
+        Vector::new(width / UNITS_PER_METRE, 1.0, depth / UNITS_PER_METRE),
+    );
+    // Flat cells are left to the floor half-space, whose exact queries keep resting bodies
+    // still; parry's heightfield contacts let them sink by fractions of a unit (#159).
+    for row in 0..rows - 1 {
+        for column in 0..columns - 1 {
+            let flat = [
+                (row, column),
+                (row + 1, column),
+                (row, column + 1),
+                (row + 1, column + 1),
+            ]
+            .iter()
+            .all(|&(r, c)| terrain.heights[r * columns + c] == 0);
+            if flat {
+                field.set_cell_status(
+                    row,
+                    column,
+                    rapier3d::parry::shape::HeightFieldCellStatus::CELL_REMOVED,
+                );
+            }
+        }
+    }
+    world.colliders.insert(
+        ColliderBuilder::new(SharedShape::new(field))
+            .translation(metres(centre))
+            .user_data(u128::from(id.0))
+            .build(),
+    )
+}
+
 impl World {
     /// An empty world; `gravity` is in units per tick squared.
     #[must_use]
     pub fn new(gravity: Vec3i) -> Self {
         Self {
             gravity: exact(gravity),
+            ground: None,
             world: empty_world(),
             queries: UprightShapes.chain(DefaultQueryDispatcher),
             controller: KinematicCharacterController {
@@ -484,8 +549,46 @@ impl World {
             .values()
             .map(|body| (body.id, insert(&mut world, body)))
             .collect();
+        if let Some(ground) = self.ground.as_mut() {
+            ground.collider = Some(insert_ground(&mut world, ground.id, &ground.terrain));
+        }
         self.world = world;
         self.refresh();
+    }
+
+    /// Lays the authored ground as a heightfield collider identified as `id` (#159).
+    pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
+        if let Some(handle) = self.ground.as_ref().and_then(|ground| ground.collider) {
+            self.world.remove_collider(handle);
+        }
+        let collider = insert_ground(&mut self.world, id, &terrain);
+        self.ground = Some(Ground {
+            id,
+            terrain,
+            collider: Some(collider),
+        });
+        self.refresh();
+    }
+
+    /// The height (units) of the authored ground straight below or above `(x, z)`, if any.
+    #[must_use]
+    pub fn terrain_height(&self, x: i32, z: i32) -> Option<f32> {
+        let handle = self.ground.as_ref()?.collider?;
+        let predicate =
+            |collider: ColliderHandle, _: &rapier3d::prelude::Collider| collider == handle;
+        let queries = self.world.broad_phase.as_query_pipeline(
+            &self.queries,
+            &self.world.bodies,
+            &self.world.colliders,
+            QueryFilter::default().predicate(&predicate),
+        );
+        #[allow(clippy::cast_precision_loss)]
+        let top = crate::MAX_TERRAIN_HEIGHT_UNITS as f32 + 100.0;
+        // A ray straight down a heightfield's grid line can slip between its cells' triangles;
+        // a hundredth of a unit aside it always meets one.
+        let ray = RapierRay::new(metres([x as f32 + 0.01, top, z as f32 + 0.01]), -Vector::Y);
+        let (_, time_of_impact) = queries.cast_ray(&ray, 2.0 * top / UNITS_PER_METRE, true)?;
+        Some(top - time_of_impact * UNITS_PER_METRE)
     }
 
     /// Advances one tick: each moving body, in ID order, gains gravity and asks the character

@@ -117,7 +117,14 @@ impl WorldScene {
     pub fn new(scenery: &Scenery) -> Self {
         let mut props = Vec::new();
         for prop in &scenery.props {
-            let base = metres(scenery.height_at(prop.position[0], prop.position[2]));
+            // Collider-backed props are their exact physics body; decorations stand on the
+            // physical ground (their y) raised by the presentation relief.
+            let relief = if prop.collider.is_some() {
+                0
+            } else {
+                scenery.height_at(prop.position[0], prop.position[2])
+            };
+            let base = metres(prop.position[1] + relief);
             blockout(prop, base, &mut props);
         }
         let scene = StaticScene::new(scenery);

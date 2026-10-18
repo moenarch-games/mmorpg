@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0x5f74_8c7b_8cf3_a62d;
+const STABLE_HASH: u64 = 0xd5ab_9e78_ec23_7c2c;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -95,9 +95,9 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
     }
     assert_eq!(
         greyhaven_vale::content().fingerprint(),
-        0xe51b_e063_16a5_425c
+        0x9eee_a7d5_4109_87a7
     );
-    assert_eq!(scenery.content_revision, 12);
+    assert_eq!(scenery.content_revision, 13);
 }
 
 #[test]
@@ -151,7 +151,14 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
         .filter(|collider| !is_terrain(collider))
         .collect();
     for prop in &scenery.props {
-        assert_eq!(prop.position[1], 0, "feet rest on y = 0 before relief");
+        if prop.collider.is_none() {
+            // Decorations stand on the physical ground (#159) before relief.
+            assert_eq!(
+                prop.position[1],
+                scenery.ground_at(prop.position[0], prop.position[2]),
+                "feet rest on the ground before relief"
+            );
+        }
         let area = prop.footprint();
         for collider in &structures {
             if prop.collider != Some(collider.id) {
@@ -480,8 +487,11 @@ fn the_far_ring_continues_the_same_relief_into_distant_ranges() {
     for row in 0..far.rows {
         for column in 0..far.columns {
             let (vertex, color) = far.vertex(column, row).unwrap();
-            assert_eq!(vertex[1], scenery.height_at(vertex[0], vertex[2]));
-            assert!((-WALKABLE_RELIEF_UNITS..=FAR_PEAK_UNITS).contains(&vertex[1]));
+            assert_eq!(vertex[1], scenery.surface_at(vertex[0], vertex[2]));
+            assert!(
+                (-WALKABLE_RELIEF_UNITS..=FAR_PEAK_UNITS)
+                    .contains(&scenery.height_at(vertex[0], vertex[2]))
+            );
             if let (Some(inner_column), Some(inner_row)) =
                 (column.checked_sub(offset), row.checked_sub(offset))
                 && let Some(inner) = near.vertex(inner_column, inner_row)

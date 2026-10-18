@@ -99,21 +99,21 @@ tick = 1114
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1035
+died_at = 915
 
 [[steps]]
 tick = 1114
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1035
+died_at = 915
 
 [[steps]]
 tick = 1114
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1035
+died_at = 915
 seq = 11
 expect = "ignored_stale"
 
@@ -134,14 +134,14 @@ tick = 1118
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1035
+died_at = 915
 
 [[steps]]
 tick = 1119
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1035
+died_at = 915
 connection_epoch = 1
 expect = "rejected:stale_connection"
 
@@ -158,7 +158,7 @@ bot = "hunter"
 tick = 1112
 sheet = true
 creature = 108
-died_at = 1035
+died_at = 915
 
 [[expect]]
 kind = "copper"
@@ -179,7 +179,7 @@ bot = "hunter"
 tick = 1114
 sheet = true
 creature = 108
-died_at = 1035
+died_at = 915
 
 [[expect]]
 kind = "loot"
