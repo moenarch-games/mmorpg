@@ -17,7 +17,7 @@
 //! Walkable ground is physically flat at y = 0. [`Scenery::height_at`] adds at
 //! most ±0.6 m of relief inside the playable square, flattened to exactly 0
 //! under and around structures, roads, the spawn plaza and water, and rises to
-//! mountains of up to 40 m beyond the boundary walls. Beyond the ±200 m
+//! mountains of up to 40 m beyond the boundary walls. Beyond the ±280 m
 //! terrain grid the same function keeps rising into distant ranges of up to
 //! 140 m, which clients draw as a coarse far ring. Clients render a unit at
 //! its physics position plus the relief height at its XZ; the offset never
@@ -40,8 +40,8 @@ use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_PLAZA, ids};
 use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, greyhaven_vale_definition, trig};
 pub use outpost_grass::outpost_grass_placements;
 
-/// Half the side of the square the terrain grid covers (±200 m).
-pub const TERRAIN_EXTENT_UNITS: i32 = 20_000;
+/// Half the side of the square the terrain grid covers (±280 m).
+pub const TERRAIN_EXTENT_UNITS: i32 = 28_000;
 /// Half the side of the square the far terrain ring covers (±600 m).
 pub const FAR_TERRAIN_EXTENT_UNITS: i32 = 60_000;
 /// Largest relief magnitude inside the playable square (0.6 m).
@@ -57,6 +57,12 @@ pub const FAR_PEAK_UNITS: i32 = 14_000;
 /// The distant ranges rise from nothing at the terrain grid's edge to full
 /// height over this distance (120 m).
 const FAR_RISE_UNITS: i64 = 12_000;
+/// Half the side of the original 240 m valley, whose scatter predates the outer
+/// valley (#159).
+const ORIGINAL_HALF_EXTENT_UNITS: i32 = 12_000;
+/// Seed of the outer valley's scatter (#159).
+const SEED_OUTER_PROPS: u64 = 0x4f55_5445_5256_414c;
+
 /// Visual half width of every road (3 m wide); core keeps 2 m clear.
 pub const ROAD_HALF_WIDTH_UNITS: i32 = 150;
 
@@ -429,7 +435,11 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::CLIFFS.contains(&id) => PropKind::Cliff,
         _ if ids::TENTS.contains(&id) => PropKind::Tent,
         _ if ids::CRATES.contains(&id) => PropKind::Crate,
-        _ if ids::SHORE_ROCKS.contains(&id) => {
+        ids::WATCHTOWER => PropKind::Keep,
+        _ if ids::STANDING_STONES.contains(&id) => PropKind::Waystone,
+        _ if ids::RUINS.contains(&id) => PropKind::House,
+        _ if ids::RUIN_FENCES.contains(&id) => PropKind::Fence,
+        _ if ids::SHORE_ROCKS.contains(&id) || ids::BOULDERS.contains(&id) => {
             let largest = collider.half_extents[0].max(collider.half_extents[2]);
             PropKind::Rock(match largest {
                 100.. => RockSize::Large,
@@ -1106,7 +1116,13 @@ impl Placer<'_> {
     /// Seeded vegetation and rocks, rejected against colliders and features.
     fn decorations(&mut self) {
         let mut rng = Rng::new(SEED_PROPS);
-        let playable = [PLAYABLE_BOUNDS.min[0] + 100, PLAYABLE_BOUNDS.max[0] - 100];
+        // The original 240 m valley keeps its scatter exactly; the outer valley (#159)
+        // scatters from its own seed afterwards.
+        let playable = [
+            ORIGINAL_HALF_EXTENT_UNITS - 100,
+            ORIGINAL_HALF_EXTENT_UNITS - 100,
+        ];
+        let playable = [-playable[0], playable[1]];
         let within = |rng: &mut Rng, bounds: XzBounds| {
             [
                 rng.range(bounds.min[0], bounds.max[0]),
@@ -1192,6 +1208,41 @@ impl Placer<'_> {
                 placed += 1;
             }
         }
+        self.outer_decorations();
+    }
+
+    /// Grass, flowers and undergrowth across the outer valley's ring (#159).
+    fn outer_decorations(&mut self) {
+        let mut rng = Rng::new(SEED_OUTER_PROPS);
+        let ring = |rng: &mut Rng| {
+            let at = [
+                rng.range(PLAYABLE_BOUNDS.min[0] + 100, PLAYABLE_BOUNDS.max[0] - 100),
+                rng.range(PLAYABLE_BOUNDS.min[1] + 100, PLAYABLE_BOUNDS.max[1] - 100),
+            ];
+            let outer = at[0].abs().max(at[1].abs()) >= ORIGINAL_HALF_EXTENT_UNITS;
+            outer.then_some(at)
+        };
+        self.scatter(&mut rng, 1_600, 8_000, |rng| {
+            ring(rng).map(|at| (PropKind::GrassTuft, at))
+        });
+        self.scatter(&mut rng, 400, 4_000, |rng| {
+            ring(rng)
+                .filter(|at| {
+                    greyhaven_vale::area_at(at[0], at[1]).map(Area::id)
+                        != Some(greyhaven_vale::HOLLOWPINE_REACH)
+                })
+                .map(|at| (PropKind::Flowers, at))
+        });
+        let reach = area_bounds(greyhaven_vale::HOLLOWPINE_REACH);
+        self.scatter(&mut rng, 140, 2_000, |rng| {
+            Some((
+                PropKind::Bush,
+                [
+                    rng.range(reach.min[0], reach.max[0]),
+                    rng.range(reach.min[1], reach.max[1]),
+                ],
+            ))
+        });
     }
 
     /// Up to `target` props from at most `attempts` candidates.

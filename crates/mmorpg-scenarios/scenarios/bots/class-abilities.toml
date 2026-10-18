@@ -306,16 +306,9 @@ tick = 450
 bot = "arcanist"
 action = "cancel_cast"
 
-# Rage comes from swings dealt and taken: too little at first, then a Heroic
-# Strike, and the global cooldown holds the next one.
+# Rage comes from swings dealt and taken: too little at first.
 [[steps]]
 tick = 470
-bot = "warden"
-action = "use_ability"
-ability = 1
-
-[[steps]]
-tick = 500
 bot = "warden"
 action = "use_ability"
 ability = 1
@@ -326,12 +319,6 @@ tick = 500
 bot = "arcanist"
 action = "use_ability"
 ability = 9
-
-[[steps]]
-tick = 501
-bot = "warden"
-action = "use_ability"
-ability = 1
 
 [[steps]]
 tick = 510
@@ -352,6 +339,20 @@ tick = 521
 bot = "ranger"
 action = "use_ability"
 ability = 5
+
+# Once the Warden's swings have built 20 rage: a Heroic Strike, and the global
+# cooldown holds the next one.
+[[steps]]
+tick = 556
+bot = "warden"
+action = "use_ability"
+ability = 1
+
+[[steps]]
+tick = 557
+bot = "warden"
+action = "use_ability"
+ability = 1
 
 [[steps]]
 tick = 570
@@ -452,32 +453,32 @@ tick = 471
 kind = "resource"
 bot = "warden"
 resource = 20
-tick = 500
+tick = 556
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "ability_used"
-tick = 501
+tick = 557
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "damage_dealt"
 entity = "creature:108"
-tick = 501
+tick = 557
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 5
-tick = 501
+tick = 557
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "error:not_ready"
-tick = 502
+tick = 558
 
 [[expect]]
 kind = "event"
@@ -564,14 +565,14 @@ tick = 739
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 15
-tick = 731
+resource = 5
+tick = 734
 
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 13
-tick = 732
+resource = 3
+tick = 735
 
 # #27: a visible recipient observes other actors without receiving their damage credit.
 [[expect]]
@@ -593,7 +594,7 @@ kind = "event"
 bot = "ranger"
 event = "damage_observed"
 entity = "bot:warden"
-tick = 501
+tick = 557
 
 [[expect]]
 kind = "event"

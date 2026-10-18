@@ -456,7 +456,11 @@ mod tests {
                 "Wolfrun Woods",
                 "Millbrook Farm",
                 "Stillwater Lake",
-                "Redbrand Hollow"
+                "Redbrand Hollow",
+                "Greyfang Ridge",
+                "Southmeadow Downs",
+                "Hollowpine Reach",
+                "Eastwater Fen"
             ]
         );
         assert_eq!(

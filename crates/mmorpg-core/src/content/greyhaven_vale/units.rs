@@ -77,9 +77,9 @@ const TEMPLATES: [TemplateRow; 7] = {
 
 /// `(spawn id, template, feet XZ, facing)`. IDs group by subzone:
 /// 100s Wolfrun Woods, 200s Millbrook Farm, 300s Stillwater Lake, 400s
-/// Redbrand Hollow.
+/// Redbrand Hollow, 500s–800s the outer valley (#159).
 #[rustfmt::skip]
-const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 59] = {
+const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 74] = {
     use templates::*;
     [
         // Wolfrun Woods: timber wolves on trunk-grid corners. Wolf 108 guards
@@ -150,6 +150,26 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 59] = {
         (413, REDBRAND_BANDIT, [-1_500, -7_700], 16_384),
         // Garrick Redbrand holds the mine entrance.
         (450, GARRICK_REDBRAND, [0, -10_500], 0),
+        // The outer valley (#159), on trunk-grid corners of its woods.
+        // Hollowpine Reach: wolves and boars among the pines.
+        (500, TIMBER_WOLF, [-18_600, -8_000], 0),
+        (501, TIMBER_WOLF, [-17_250, -4_400], 16_384),
+        (502, TIMBER_WOLF, [-19_050, 550], 32_768),
+        (503, TIMBER_WOLF, [-16_800, 4_150], 49_152),
+        (504, YOUNG_BOAR, [-18_150, 8_200], 8_192),
+        (505, YOUNG_BOAR, [-13_200, -2_150], 40_960),
+        // Greyfang Ridge: Redbrand outriders watching the standing stones.
+        (600, REDBRAND_BANDIT, [-1_350, -17_250], 0),
+        (601, REDBRAND_BANDIT, [1_350, -17_250], 0),
+        (602, REDBRAND_BANDIT, [0, -18_600], 32_768),
+        // Southmeadow Downs: boars and a rat around the ruined farmstead.
+        (700, YOUNG_BOAR, [3_600, 17_300], 16_384),
+        (701, YOUNG_BOAR, [9_000, 16_850], 49_152),
+        (702, GRAIN_RAT, [5_850, 17_300], 0),
+        // Eastwater Fen: mirefin lurkers in the wet ground.
+        (800, MIREFIN_LURKER, [14_850, -7_100], 16_384),
+        (801, MIREFIN_LURKER, [17_550, -4_400], 32_768),
+        (802, MIREFIN_LURKER, [16_200, 2_350], 49_152),
     ]
 };
 

@@ -54,7 +54,7 @@ fn content_is_a_bounded_deterministic_revision() {
         .iter()
         .filter(|collider| ids::TREES.contains(&collider.id))
         .count();
-    assert!((150..=300).contains(&trees), "{trees} trees");
+    assert!((800..=1_200).contains(&trees), "{trees} trees");
     for collider in definition.colliders() {
         let (min, max) = footprint(collider);
         let reach = PLAYABLE_BOUNDS.max[0] + 200;
@@ -244,9 +244,12 @@ fn wolfrun_woods_trunks_always_leave_a_walkable_gap() {
         assert_eq!(tree.id, first_id + u32::try_from(index).unwrap());
         assert!((30..=45).contains(&tree.half_extents[0]));
         assert_eq!(tree.half_extents[0], tree.half_extents[2]);
-        assert_eq!(
-            area_at(tree.position[0], tree.position[2]).map(Area::id),
-            Some(greyhaven_vale::WOLFRUN_WOODS)
+        // Wolfrun Woods first, then the outer valley's woods (#159).
+        let area = area_at(tree.position[0], tree.position[2]).map(Area::id);
+        assert!(
+            area.is_some_and(|area| area == greyhaven_vale::WOLFRUN_WOODS || area.get() >= 6),
+            "tree {} in {area:?}",
+            tree.id
         );
     }
     let body_width = 2 * PLAYER_HALF_EXTENTS_UNITS[0];
@@ -278,7 +281,11 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
             "Wolfrun Woods",
             "Millbrook Farm",
             "Stillwater Lake",
-            "Redbrand Hollow"
+            "Redbrand Hollow",
+            "Greyfang Ridge",
+            "Southmeadow Downs",
+            "Hollowpine Reach",
+            "Eastwater Fen"
         ]
     );
     // Area bounds are inclusive; as half-open rectangles they compare with
@@ -364,7 +371,7 @@ fn structures_and_boundary_walls_block_movement() {
         ZoneSimulation::with_definition(ZoneId::new(1), greyhaven_vale_definition()).unwrap();
     zone.add_player(1).unwrap();
     let mut snapshot = zone.snapshot().unwrap();
-    snapshot.players[0].position = mmorpg_core::physics::from_units([0, 90, 10_000]);
+    snapshot.players[0].position = mmorpg_core::physics::from_units([0, 90, 16_000]);
     let mut zone = ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
     zone.apply_command(1, 1, run(FACE_SOUTH)).unwrap();
     let mut sequence = 1;

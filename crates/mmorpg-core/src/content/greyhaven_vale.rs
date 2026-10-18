@@ -29,7 +29,7 @@ pub mod units;
 /// (the Wolf Pelt) and vendor catalog 2; revision 10 replaces the inn block
 /// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
 /// inside.
-pub const REVISION: u64 = 11;
+pub const REVISION: u64 = 12;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -37,8 +37,8 @@ pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
 pub const GRAVITY: [i32; 3] = [0, -1, 0];
 /// The inner faces of the boundary walls enclose this square.
 pub const PLAYABLE_BOUNDS: XzBounds = XzBounds {
-    min: [-12_000, -12_000],
-    max: [12_000, 12_000],
+    min: [-20_800, -20_800],
+    max: [20_800, 20_800],
 };
 /// The hub plaza: kept free of colliders so every spawn slot is clear.
 pub const SPAWN_PLAZA: XzBounds = XzBounds {
@@ -94,8 +94,19 @@ pub mod ids {
     pub const CRATES: RangeInclusive<u32> = 430..=433;
     pub const CAMPFIRE: u32 = 440;
 
-    /// Wolfrun Woods trunks, numbered in generation order from the start.
-    pub const TREES: RangeInclusive<u32> = 1_000..=1_999;
+    /// The Greyfang standing stones (#159).
+    pub const STANDING_STONES: RangeInclusive<u32> = 500..=506;
+    /// The Southmeadow ruined farmstead's houses and fences (#159).
+    pub const RUINS: RangeInclusive<u32> = 510..=511;
+    pub const RUIN_FENCES: RangeInclusive<u32> = 512..=514;
+    /// The Eastwater watchtower (#159).
+    pub const WATCHTOWER: u32 = 520;
+    /// Hollowpine Reach boulders (#159).
+    pub const BOULDERS: RangeInclusive<u32> = 530..=537;
+
+    /// Trunks, numbered in generation order from the start: Wolfrun Woods
+    /// first, then the outer woods (#159).
+    pub const TREES: RangeInclusive<u32> = 1_000..=4_999;
 }
 
 pub const OUTPOST: AreaId = AreaId::new(1);
@@ -103,10 +114,14 @@ pub const WOLFRUN_WOODS: AreaId = AreaId::new(2);
 pub const MILLBROOK_FARM: AreaId = AreaId::new(3);
 pub const STILLWATER_LAKE: AreaId = AreaId::new(4);
 pub const REDBRAND_HOLLOW: AreaId = AreaId::new(5);
+pub const GREYFANG_RIDGE: AreaId = AreaId::new(6);
+pub const SOUTHMEADOW_DOWNS: AreaId = AreaId::new(7);
+pub const HOLLOWPINE_REACH: AreaId = AreaId::new(8);
+pub const EASTWATER_FEN: AreaId = AreaId::new(9);
 
 /// The five subzones as `(id, name, half-open bounds)`, like every other
 /// rectangle in this module. Bounds are disjoint.
-const AREA_TABLE: [(AreaId, &str, XzBounds); 5] = [
+const AREA_TABLE: [(AreaId, &str, XzBounds); 9] = [
     (
         OUTPOST,
         "Greyhaven Outpost",
@@ -147,6 +162,39 @@ const AREA_TABLE: [(AreaId, &str, XzBounds); 5] = [
             max: [3_500, -7_000],
         },
     ),
+    // The outer valley (#159): a ring of four regions around the original five.
+    (
+        GREYFANG_RIDGE,
+        "Greyfang Ridge",
+        XzBounds {
+            min: [-20_800, -20_800],
+            max: [20_800, -12_000],
+        },
+    ),
+    (
+        SOUTHMEADOW_DOWNS,
+        "Southmeadow Downs",
+        XzBounds {
+            min: [-20_800, 12_000],
+            max: [20_800, 20_800],
+        },
+    ),
+    (
+        HOLLOWPINE_REACH,
+        "Hollowpine Reach",
+        XzBounds {
+            min: [-20_800, -12_000],
+            max: [-12_000, 12_000],
+        },
+    ),
+    (
+        EASTWATER_FEN,
+        "Eastwater Fen",
+        XzBounds {
+            min: [12_000, -12_000],
+            max: [20_800, 12_000],
+        },
+    ),
 ];
 
 static AREAS: LazyLock<ZoneAreas> = LazyLock::new(|| {
@@ -183,7 +231,7 @@ pub struct Road {
     pub points: &'static [[i32; 2]],
 }
 
-static ROADS: [Road; 5] = [
+static ROADS: [Road; 8] = [
     Road {
         name: "Hollow Road",
         points: &[[0, 1_200], [0, -1_000], [0, -4_000], [0, -8_600]],
@@ -215,7 +263,27 @@ static ROADS: [Road; 5] = [
     },
     Road {
         name: "South Road",
-        points: &[[0, 2_800], [0, 5_000], [0, 10_500]],
+        points: &[[0, 2_800], [0, 5_000], [0, 10_500], [0, 15_000]],
+    },
+    // The outer valley (#159): a ring road through the four outer regions and
+    // two trails that join the farm and the woods to it without the outpost.
+    Road {
+        name: "Vale Ring Road",
+        points: &[
+            [-15_000, -15_000],
+            [15_000, -15_000],
+            [15_000, 15_000],
+            [-15_000, 15_000],
+            [-15_000, -15_000],
+        ],
+    },
+    Road {
+        name: "Fen Track",
+        points: &[[4_400, 2_000], [11_000, -1_000], [15_000, -3_000]],
+    },
+    Road {
+        name: "Downs Trail",
+        points: &[[-4_400, 2_000], [-4_400, 6_000], [-15_000, 6_000]],
     },
 ];
 
@@ -230,7 +298,7 @@ pub fn roads() -> &'static [Road] {
 type Footprint = (u32, [i32; 2], [i32; 2], i32);
 
 #[rustfmt::skip]
-static STRUCTURES: [Footprint; 62] = [
+static STRUCTURES: [Footprint; 83] = [
     // Greyhaven Outpost: keep, inn, smithy, houses, well and waystone.
     (ids::KEEP, [-2_600, -500], [-800, 700], 1_000),
     (ids::SMITHY, [2_400, 100], [3_000, 800], 450),
@@ -300,6 +368,31 @@ static STRUCTURES: [Footprint; 62] = [
     (432, [560, -10_380], [660, -10_280], 100),
     (433, [-700, -10_300], [-600, -10_200], 100),
     (ids::CAMPFIRE, [-60, -9_260], [60, -9_140], 30),
+    // Greyfang Ridge: seven standing stones in an 8 m ring (#159).
+    (500, [-40, -15_730], [40, -15_670], 250),
+    (501, [590, -16_030], [670, -15_970], 230),
+    (502, [740, -16_710], [820, -16_650], 260),
+    (503, [310, -17_250], [390, -17_190], 240),
+    (504, [-390, -17_250], [-310, -17_190], 250),
+    (505, [-820, -16_710], [-740, -16_650], 220),
+    (506, [-670, -16_030], [-590, -15_970], 260),
+    // Southmeadow Downs: a ruined farmstead inside its old fence (#159).
+    (510, [5_000, 16_000], [5_800, 16_600], 300),
+    (511, [6_200, 16_200], [6_800, 16_700], 250),
+    (512, [4_700, 15_800], [7_000, 15_820], 110),
+    (513, [4_700, 15_820], [4_720, 17_000], 110),
+    (514, [6_980, 15_820], [7_000, 17_000], 110),
+    // Eastwater Fen: the old watchtower (#159).
+    (ids::WATCHTOWER, [16_500, -6_200], [16_900, -5_800], 1_400),
+    // Hollowpine Reach: boulders beside the ring road (#159).
+    (530, [-15_700, -9_200], [-15_480, -9_000], 160),
+    (531, [-14_600, -4_300], [-14_420, -4_140], 120),
+    (532, [-15_620, 1_800], [-15_420, 1_960], 140),
+    (533, [-14_640, 9_400], [-14_460, 9_580], 110),
+    (534, [-15_800, 12_600], [-15_560, 12_820], 180),
+    (535, [-14_560, -12_800], [-14_400, -12_660], 100),
+    (536, [-15_660, 4_400], [-15_500, 4_540], 90),
+    (537, [-14_620, -1_200], [-14_440, -1_040], 130),
 ];
 
 /// A box standing on y = 0 over an authored footprint.
@@ -327,6 +420,18 @@ mod woods {
     pub const CLEARING_RADIUS: i32 = 900;
     pub const TRUNK_HEIGHT: i32 = 500;
 }
+
+/// The outer valley's woods (#159): `(origin, cells, seed, percent of cells
+/// with a trunk)` on the same 4.5 m jittered grid as Wolfrun Woods.
+const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 4] = [
+    // Hollowpine Reach: dense pines west of Wolfrun Woods.
+    ([-20_400, -11_600], [17, 52], 0x484f_4c4c_4f57_5049, 60),
+    // Greyfang Ridge and Southmeadow Downs: scattered copses.
+    ([-18_000, -20_400], [80, 10], 0x4752_4559_4641_4e47, 12),
+    ([-18_000, 16_400], [80, 9], 0x534f_5554_484d_4544, 12),
+    // Eastwater Fen: sparse alders east of the farm and the lake.
+    ([12_600, -11_600], [17, 52], 0x4541_5354_5741_5445, 15),
+];
 
 /// SplitMix64 finaliser: a fixed integer hash, identical on every platform.
 const fn splitmix64(value: u64) -> u64 {
@@ -379,7 +484,47 @@ fn trees() -> Vec<StaticCollider> {
             next_id += 1;
         }
     }
+    for (origin, cells, seed, percent) in OUTER_FORESTS {
+        for row in 0..cells[1] {
+            for column in 0..cells[0] {
+                let cell = (u64::from(row.unsigned_abs()) << 32) | u64::from(column.unsigned_abs());
+                let hash = splitmix64(seed ^ cell);
+                if hash % 100 >= percent {
+                    continue;
+                }
+                let jitter = |shift: u32| (hash >> shift) as i32 & 0xff;
+                let x =
+                    origin[0] + column * woods::CELL + woods::EDGE_MARGIN + jitter(8) % (span + 1);
+                let z =
+                    origin[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
+                let half = 30 + jitter(24) % 16;
+                let collider = StaticCollider {
+                    id: next_id,
+                    position: [x, woods::TRUNK_HEIGHT / 2, z],
+                    half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
+                };
+                if !clear_of_roads(&collider) || near_structure(&collider) {
+                    continue;
+                }
+                trees.push(collider);
+                next_id += 1;
+            }
+        }
+    }
     trees
+}
+
+/// Whether a trunk stands within 1.5 m of an authored structure's footprint.
+fn near_structure(collider: &StaticCollider) -> bool {
+    const MARGIN: i32 = 150;
+    let [x, _, z] = collider.position;
+    let [hx, _, hz] = collider.half_extents;
+    STRUCTURES.iter().any(|&(_, min, max, _)| {
+        x + hx + MARGIN > min[0]
+            && x - hx - MARGIN < max[0]
+            && z + hz + MARGIN > min[1]
+            && z - hz - MARGIN < max[1]
+    })
 }
 
 /// Whether a collider's footprint keeps [`ROAD_CLEARANCE_UNITS`] from every road.

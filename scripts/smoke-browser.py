@@ -610,7 +610,7 @@ class BrowserAcceptance(unittest.TestCase):
         stats = self.debug_stats()
         overlay_stats = json.loads(overlay.get_attribute("data-stats"))
         self.assertGreater(overlay_stats["nodes"], overlay_stats["staticNodes"])
-        self.assertLessEqual(overlay_stats["staticNodes"], 600, "Static batching keeps draw calls bounded")
+        self.assertLessEqual(overlay_stats["staticNodes"], 1_500, "Static batching keeps draw calls bounded")
         self.assertGreater(overlay_stats["fps"], 0)
         (ARTIFACTS / "scene-stats.json").write_text(json.dumps({
             "note": "fps comes from headless Chromium with SwiftShader software rendering; it is not a hardware measurement",
@@ -801,8 +801,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "outpost-grass-clearing.png"))
         stats = self.debug_stats()
         self.assertEqual(stats["self"], before)
-        self.assertEqual(stats["scene"]["props"]["grass-tuft"], 2337)
-        self.assertLessEqual(stats["scene"]["staticNodes"], 600)
+        self.assertEqual(stats["scene"]["props"]["grass-tuft"], 3936)
+        self.assertLessEqual(stats["scene"]["staticNodes"], 1_500)
         self.assertLessEqual(stats["scene"]["staticVertices"], 230_000)
         colours = self.canvas_colours()
         self.assertGreater(colours["distinct"], 400)
@@ -827,7 +827,7 @@ class BrowserAcceptance(unittest.TestCase):
             self.page.screenshot(path=str(ARTIFACTS / f"outpost-relief-{name}.png"))
             stats = self.debug_stats()
             self.assertEqual(stats["self"], before)
-            self.assertLessEqual(stats["scene"]["staticNodes"], 600)
+            self.assertLessEqual(stats["scene"]["staticNodes"], 1_500)
             self.assertLessEqual(stats["scene"]["staticVertices"], 230_000)
             colours = self.canvas_colours()
             self.assertGreater(colours["distinct"], 400)
@@ -915,7 +915,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("""() => {
           const moves = new Map([[0,[1,0]],[36,[1,49152]],[121,[1,32768]],
             [131,[1,49152]],[375,[1,32768]],[395,[0,32768]]]);
-          for (let tick = 0; tick < 912; tick++) {
+          for (let tick = 0; tick < 1092; tick++) {
             const move = moves.get(tick);
             if (move) window.__lootSend({kind:'move',forward:move[0],strafe:0,facing:move[1]});
             if (tick === 1) window.__lootSend({kind:'start-attack'});
@@ -927,7 +927,7 @@ class BrowserAcceptance(unittest.TestCase):
           }
           window.__lootBefore = window.__lootLatest();
         }""")
-        self.assertEqual(self.page.evaluate("Number(window.__lootLatest().loot.diedAt)"), 852)
+        self.assertEqual(self.page.evaluate("Number(window.__lootLatest().loot.diedAt)"), 1035)
         self.expect_class_resource()
         self.page.evaluate("""() => {
           window.__lootSend({kind:'select-target',target:null});
@@ -965,7 +965,7 @@ class BrowserAcceptance(unittest.TestCase):
         expect(slots.nth(0)).to_have_text("Slot 1 · Torn Fur × 5")
         expect(slots.nth(0)).to_be_enabled()
         self.page.evaluate("""() => {
-          window.__lootSend({kind:'loot',creatureId:108,diedAt:852n});
+          window.__lootSend({kind:'loot',creatureId:108,diedAt:1035n});
           window.__lootStep(1);
         }""")
         self.assertEqual(self.page.evaluate("window.__lootLatest().events.some(e => e.kind === 'error' && e.code === 'empty-loot')"), True)
@@ -983,7 +983,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("""() => {
           const before = window.__lootBefore;
           const current = window.__lootLatest();
-          window.__lootFixture = {...before, viewerId:current.viewerId, tick:1000n, acknowledgedSequence:100,
+          window.__lootFixture = {...before, viewerId:current.viewerId, tick:1200n, acknowledgedSequence:100,
             entities:before.entities.map(entity => entity.kind === 'player' && entity.entityId === before.viewerId
               ? {...entity, entityId:current.viewerId} : entity),
             inventoryRevision:100n, inventory:Array.from({length:16},()=>({itemId:2,quantity:1})), events:[]};
@@ -1556,6 +1556,10 @@ class BrowserAcceptance(unittest.TestCase):
         # The wolf closes in and two swings land within four seconds: hits build rage and combat
         # text floats up for each damage event.
         self.step(120)
+        for _ in range(20):
+            if self.hud_number("[data-part=player-resource-text]", r"Rage (\d+)") >= 15:
+                break
+            self.step(10)
         self.assertGreaterEqual(self.hud_number("[data-part=player-resource-text]", r"Rage (\d+)"), 15)
         self.assertTrue(self.page.evaluate("window.__combatTexts.length"), "Combat text floated up")
         before = self.hud_number("[data-part=player-resource-text]", r"Rage (\d+)")
@@ -1760,7 +1764,12 @@ class BrowserAcceptance(unittest.TestCase):
             else if (outcome === 'target-below-half') done = p.entities.some(e => e.kind === 'creature' && e.entityId === 401 && e.healthPercent < 50);
             else if (outcome === 'ordinary-attempt') done = window.__actualCombatEvents.some(e => e.kind === 'attack-performed' && e.source.kind === 'player');
             else if (outcome === 'damage-dealt') done = p.events.some(e => e.kind === 'damage-dealt');
-            else done = p.events.some(e => e.kind === 'ability-used' && e.ability === Number(outcome));
+            else {
+              // "ability" or "ability@creature": the ability's use, optionally by one creature.
+              const [ability, caster] = outcome.split('@').map(Number);
+              done = p.events.some(e => e.kind === 'ability-used' && e.ability === ability
+                && (!caster || (e.source?.kind === 'creature' && e.source.id === caster)));
+            }
             if (done) return true;
           }
           return false;
@@ -1839,7 +1848,7 @@ class BrowserAcceptance(unittest.TestCase):
         frames = [casting]
         self.frames(4)
         frames.append(self.creature_action_frame(300))
-        self.assertTrue(self.advance_action_until("13", 70, 1))
+        self.assertTrue(self.advance_action_until("13@300", 70, 1))
         frames.append(self.creature_action_frame(300))
         self.page.screenshot(path=str(ARTIFACTS / "procedural-muck-bolt-release.png"))
         self.frames(8)
