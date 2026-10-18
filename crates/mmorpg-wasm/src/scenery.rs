@@ -418,7 +418,7 @@ mod tests {
         let export = hosted_export();
         let terrain = &export.terrain;
         assert_samples_relief(terrain, TERRAIN_STEP_UNITS, TERRAIN_EXTENT_UNITS);
-        assert_eq!((terrain.columns, terrain.rows), (101, 101));
+        assert_eq!((terrain.columns, terrain.rows), (141, 141));
         let biome_ids: Vec<u8> = export.biomes.iter().map(|biome| biome.id).collect();
         assert!(terrain.biomes.iter().all(|id| biome_ids.contains(id)));
         assert!(
@@ -501,8 +501,8 @@ mod tests {
         assert_eq!(value["format"], SCENERY_FORMAT);
         assert_eq!(value["version"], SCENERY_FORMAT_VERSION);
         assert_eq!(value["source"], SCENERY_SOURCE);
-        assert_eq!(value["contentRevision"], "11");
-        assert_eq!(value["presentationFingerprint"], "46bad15522c46309");
+        assert_eq!(value["contentRevision"], "12");
+        assert_eq!(value["presentationFingerprint"], "f4c878c84358155f");
         assert_eq!(value["unitsPerMetre"], 100);
         assert_eq!(value["playerHalfExtents"], serde_json::json!([30, 90, 30]));
         let names: Vec<_> = value["areas"]
@@ -518,7 +518,11 @@ mod tests {
                 "Wolfrun Woods",
                 "Millbrook Farm",
                 "Stillwater Lake",
-                "Redbrand Hollow"
+                "Redbrand Hollow",
+                "Greyfang Ridge",
+                "Southmeadow Downs",
+                "Hollowpine Reach",
+                "Eastwater Fen"
             ]
         );
         assert_eq!(

@@ -116,11 +116,14 @@ fn a_new_warden_reaches_level_two_and_equips_a_marauder_drop() {
         if let Some(unit) = target.filter(|unit| !unit.flags.dead || unit.flags.lootable) {
             // Field Marauders are pulled from the field's east corner, away from the
             // middle of the group, which would join all at once.
+            const CORNER: [i32; 3] = [9_300, 90, 5_400];
+            let away = i64::from(CORNER[0] - me[0]).pow(2) + i64::from(CORNER[2] - me[2]).pow(2);
             let goal = if unit.appearance == FIELD_MARAUDER
                 && !unit.flags.targets_viewer
-                && (me[0] < 9_200 || me[2] < 5_300)
+                && away > 250_i64.pow(2)
+                && me[2] < CORNER[2]
             {
-                [9_300, 90, 5_400]
+                CORNER
             } else {
                 unit.position
             };

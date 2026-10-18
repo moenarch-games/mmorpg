@@ -11,12 +11,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // raising a ceiling requires a deliberate workload/behavior/performance review.
     // Rapier physics (#271) replaced the first-party engine's pair, TOI and contact
     // counters; these ceilings were recorded on the switch. Sliding around other
-    // characters (#273) moved the spread 32-player fight slightly.
+    // characters (#273) moved the spread 32-player fight slightly. The outer valley
+    // (content revision 12, #159) adds 15 creatures and about 700 trunks, so every
+    // step's Rapier world holds more bodies.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [21_240, 132_480, 190_080, 3_598_128],
-        [21_240, 129_600, 70_005, 1_203_308],
-        [21_240, 138_240, 368_377, 6_291_779],
-        [20_285, 148_805, 1_926_294, 24_392_554],
+        [26_640, 430_200, 191_328, 3_598_128],
+        [26_640, 427_320, 72_679, 1_130_123],
+        [26_522, 435_842, 321_123, 5_123_476],
+        [25_745, 446_585, 1_936_714, 24_390_181],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -53,7 +55,7 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert!(report.death_records > 0);
         } else {
             assert_eq!(report.event_records, 0);
-            assert_eq!(report.ai_evaluations, 59 * TICKS);
+            assert_eq!(report.ai_evaluations, 74 * TICKS);
         }
         if fixture.crowded {
             // Whole 14-byte events and 21-byte records beside the fixed part

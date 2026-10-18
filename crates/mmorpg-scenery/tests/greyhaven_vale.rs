@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0xf53e_4a8f_8657_1d50;
+const STABLE_HASH: u64 = 0x5f74_8c7b_8cf3_a62d;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -95,9 +95,9 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
     }
     assert_eq!(
         greyhaven_vale::content().fingerprint(),
-        0x93c8_708b_f727_3b64
+        0xe51b_e063_16a5_425c
     );
-    assert_eq!(scenery.content_revision, 11);
+    assert_eq!(scenery.content_revision, 12);
 }
 
 #[test]
@@ -279,15 +279,15 @@ fn terrain_grid_samples_relief_and_biomes() {
     let scenery: Scenery = greyhaven_vale_scenery();
     let grid = scenery.terrain_grid(200);
     assert_eq!(grid.step, 200);
-    assert_eq!((grid.columns, grid.rows), (201, 201));
+    assert_eq!((grid.columns, grid.rows), (281, 281));
     assert_eq!(grid.origin, [-TERRAIN_EXTENT_UNITS, -TERRAIN_EXTENT_UNITS]);
-    assert_eq!(grid.heights.len(), 201 * 201);
-    assert_eq!(grid.colors.len(), 201 * 201);
+    assert_eq!(grid.heights.len(), 281 * 281);
+    assert_eq!(grid.colors.len(), 281 * 281);
     for (column, row) in [(0, 0), (100, 100), (37, 158), (200, 200)] {
         let (vertex, _) = grid.vertex(column, row).unwrap();
         assert_eq!(vertex[1], scenery.height_at(vertex[0], vertex[2]));
     }
-    assert!(grid.vertex(201, 0).is_none());
+    assert!(grid.vertex(281, 0).is_none());
     let color = |x: i32, z: i32| {
         let column = usize::try_from((x + TERRAIN_EXTENT_UNITS) / 200).unwrap();
         let row = usize::try_from((z + TERRAIN_EXTENT_UNITS) / 200).unwrap();
@@ -428,9 +428,10 @@ fn prop_counts_stay_within_their_budgets() {
         .count();
     assert_eq!(derived, structures);
     let count = |kind| counts.get(&kind).copied().unwrap_or(0);
-    assert!((2_000..=2_400).contains(&count(PropKind::GrassTuft)));
-    assert!((400..=700).contains(&count(PropKind::Flowers)));
-    assert!((100..=160).contains(&count(PropKind::Bush)));
+    // The outer valley (#159) adds its own grass, flowers and undergrowth.
+    assert!((3_500..=4_100).contains(&count(PropKind::GrassTuft)));
+    assert!((900..=1_200).contains(&count(PropKind::Flowers)));
+    assert!((250..=320).contains(&count(PropKind::Bush)));
     assert!((100..=140).contains(&count(PropKind::Reeds)));
     assert!((400..=520).contains(&background_trees));
     assert_eq!(count(PropKind::CropRow), 13);
@@ -439,9 +440,10 @@ fn prop_counts_stay_within_their_budgets() {
     assert_eq!(count(PropKind::Barrel), 4);
     assert_eq!(count(PropKind::Cart), 2);
     assert_eq!(count(PropKind::Dock), 1);
-    assert_eq!(count(PropKind::Keep), 1);
-    assert_eq!(count(PropKind::House), 4);
-    assert!(scenery.props.len() <= 6_000, "{}", scenery.props.len());
+    // The Eastwater watchtower and the Southmeadow ruins join the keep and houses (#159).
+    assert_eq!(count(PropKind::Keep), 2);
+    assert_eq!(count(PropKind::House), 6);
+    assert!(scenery.props.len() <= 8_000, "{}", scenery.props.len());
 }
 
 #[test]
