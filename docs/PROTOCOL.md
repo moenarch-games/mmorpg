@@ -88,7 +88,7 @@ An entity reference is 5 bytes: kind (`u8`) then ID (`u32`). Kind 1 is a player 
 
 ## Player-visible scope
 
-Sections follow in fixed order: header, self (including class, resource, cast, melee damage range, guard, melee stance, combo phase, cooldowns and auras), target (target-of-target, then the target's cast and auras), self sheet (bag, equipment, stats and quests), self loot sheet, doors, events, chat, entities.
+Sections follow in fixed order: header, self (including class, resource, cast, melee damage range, guard, melee stance, combo phase, cooldowns and auras), target (target-of-target, then the target's cast and auras), self sheet (bag, equipment, stats and quests), self loot sheet, doors, events, chat, entities, projectiles.
 
 | Offset | Width | Field |
 | --- | --- | --- |
@@ -225,7 +225,7 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 6, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v24.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text), an emote and two doors (1 open, 2 closed). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v24.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v23 fixtures remain as rejection evidence. `presentation-observation-v24.hex` covers the two neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot-v25.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed) and two projectiles (a flying arrow and a stuck bolt). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v25.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v24 fixtures remain as rejection evidence. `presentation-observation-v25.hex` covers the two neutral observation records.
 
 ## Canonical scope
 
@@ -434,6 +434,10 @@ Wire and core schema version 20 add the viewer's combo phase (one byte after the
 ## Buffered guard: snapshot v21, command v11 unchanged
 
 Wire and core schema version 21 change only canonical state: a `Guard` command now becomes pending intent code 19 (2 bytes, the lane), consumed in order with strikes so the last-pressed gesture wins, and each player carries its directed strike's committed recovery (`u16`, at most `STRIKE_RECOVERY_TICKS` = 6) before its combo opening. A guard raised during that recovery is held but protects only when it ends; a release or stun before then discards it (Atlas 5.2.39, 5.2.41, #156). The player projection's layout is unchanged; its version moves with the shared constant. Version 20 and earlier snapshots/checkpoints and recovery bundles fail closed; `player-snapshot-v20.hex` remains as rejection evidence.
+
+## Projectiles: snapshot v25
+
+Wire version 25 and core schema 23 (#286) add projectiles. After the entities, the player projection carries a projectile count (`u8`, at most 8) and per projectile, nearest first: ID (`u16`, the zone's ID truncated; presentation identity only), kind (`u8`: 1 arrow, 2 crossbow bolt), position (`3 × i16` units, the tip), heading (`u16`, the facing convention) and pitch (`i16`, positive up; both 1/65,536 turns) and a stuck flag (`u8`, 0 or 1): 14 bytes. The fixed part grows to 113 bytes (`MAX_WIRE_ENTITIES` stays 45); projectiles are packed after the viewer and its target but before other entities. Canonical snapshots append the next projectile ID (`u32`), a count (`u16`, at most 256) and per projectile its ID (`u32`), kind, owner, ability, exact `f32` position and velocity, age (`u16`) and flight: 1 tracking (target, remaining ticks `u16`), 2 free, or 3 stuck (optional unit, `f32` offset, remaining ticks `u16`). Ability catalog revision 2 adds Crossbow Bolt (ID 15) and the projectile that carries Aimed Shot, Serpent Sting, Concussive Shot and Crossbow Bolt; loot catalog revision 3 adds the Redbrand Crossbowman. Version 24 snapshots and checkpoints fail closed; `player-snapshot-v24.hex` remains as rejection evidence.
 
 ## Rapier physics state: snapshot v24
 

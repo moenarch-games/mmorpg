@@ -195,7 +195,16 @@ fn projected_arrows_draw_along_their_flight() {
         .expect("the arrow's shaft is drawn");
     // Heading a quarter turn: the shaft lies behind the tip along −X.
     let tip = scene.presenter.rendered([at[0], at[1] + 30, at[2]]);
-    assert!((shaft.model[12] - (tip[0] - 0.4)).abs() < 1e-3, "{:?}", shaft.model);
+    assert!(
+        (shaft.model[12] - (tip[0] - 0.4)).abs() < 1e-3,
+        "{:?}",
+        shaft.model
+    );
     assert!((shaft.model[14] - tip[2]).abs() < 1e-3);
-    assert!(frame.draws.iter().any(|draw| draw.id == "projectile-7-head"));
+    assert!(
+        frame
+            .draws
+            .iter()
+            .any(|draw| draw.id == "projectile-7-head")
+    );
 }
