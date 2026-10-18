@@ -123,6 +123,23 @@ pub(crate) const fn is_unit_body(body: BodyId) -> bool {
     (body.0 >= PLAYER_BODY_BASE && body.0 < WORLD_LIMIT_BODY_BASE) || body.0 >= CREATURE_BODY_BASE
 }
 
+/// The unit owning `body`, if it is a unit body.
+pub(crate) const fn entity_of(body: BodyId) -> Option<EntityRef> {
+    let id = body.0;
+    #[allow(clippy::cast_possible_truncation)]
+    if id >= NPC_BODY_BASE {
+        Some(EntityRef::Npc(NpcId::new((id - NPC_BODY_BASE) as u32)))
+    } else if id >= CREATURE_BODY_BASE {
+        Some(EntityRef::Creature(CreatureId::new(
+            (id - CREATURE_BODY_BASE) as u32,
+        )))
+    } else if id >= PLAYER_BODY_BASE && id < WORLD_LIMIT_BODY_BASE {
+        Some(EntityRef::Player((id - PLAYER_BODY_BASE) as u32))
+    } else {
+        None
+    }
+}
+
 /// The physics body of a unit. Namespaces never overlap across kinds.
 pub(crate) const fn body_id(entity: EntityRef) -> BodyId {
     match entity {

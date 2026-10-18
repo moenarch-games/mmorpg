@@ -174,3 +174,37 @@ fn a_witnessed_death_falls_while_a_corpse_seen_dead_lies_settled() {
     fresh.presenter.push(&fresh.snapshot, 0.);
     assert_eq!(body(&frame(&mut fresh, 0.), fresh.wolf), settled);
 }
+
+#[test]
+fn projected_arrows_draw_along_their_flight() {
+    let mut scene = scene();
+    let at = scene.snapshot.entities[0].position;
+    scene.snapshot.projectiles = vec![mmorpg_core::ProjectileView {
+        id: 7,
+        kind: mmorpg_core::ProjectileKind::Arrow,
+        position: [at[0], at[1] + 30, at[2]],
+        yaw: 16_384,
+        pitch: 0,
+        stuck: false,
+    }];
+    let frame = frame(&mut scene, 1.);
+    let shaft = frame
+        .draws
+        .iter()
+        .find(|draw| draw.id == "projectile-7-shaft")
+        .expect("the arrow's shaft is drawn");
+    // Heading a quarter turn: the shaft lies behind the tip along −X.
+    let tip = scene.presenter.rendered([at[0], at[1] + 30, at[2]]);
+    assert!(
+        (shaft.model[12] - (tip[0] - 0.4)).abs() < 1e-3,
+        "{:?}",
+        shaft.model
+    );
+    assert!((shaft.model[14] - tip[2]).abs() < 1e-3);
+    assert!(
+        frame
+            .draws
+            .iter()
+            .any(|draw| draw.id == "projectile-7-head")
+    );
+}

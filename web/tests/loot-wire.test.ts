@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { decodeSnapshot } from "../src/replication";
 
-const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v24.hex", import.meta.url), "utf8").trim(), "hex"));
+const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v25.hex", import.meta.url), "utf8").trim(), "hex"));
 
 describe("Rust/browser corpse loot contract", () => {
   test("reads the complete fenced sheet and repeated balance from Rust's golden bytes", () => {

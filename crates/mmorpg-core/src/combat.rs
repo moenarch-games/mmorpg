@@ -748,7 +748,7 @@ impl ZoneSimulation {
     }
 
     /// A guard outcome for the defender and the players who see both units.
-    fn guard_feedback(&mut self, player_id: PlayerId, event: ZoneEvent) {
+    pub(crate) fn guard_feedback(&mut self, player_id: PlayerId, event: ZoneEvent) {
         let (ZoneEvent::Blocked { source, target, .. }
         | ZoneEvent::GuardBroken { source, target, .. }) = event
         else {

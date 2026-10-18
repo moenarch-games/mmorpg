@@ -124,6 +124,29 @@ impl crate::ZoneSimulation {
         Ok(crate::zone::is_grounded(&self.world, body)?.then_some(lane))
     }
 
+    /// The lane of the player's protecting guard when its shield covers the bearing toward
+    /// `from` (exact units), for blocking projectiles (#286); any held lane blocks a shot.
+    pub(crate) fn shield_covers(
+        &self,
+        player_id: PlayerId,
+        from: [f32; 3],
+    ) -> Result<Option<StrikeHeight>, ZoneError> {
+        let Some(lane) = self.guard_lane(player_id)? else {
+            return Ok(None);
+        };
+        let Some(facing) = self.players.get(&player_id).map(|player| player.facing) else {
+            return Ok(None);
+        };
+        let to = self.player_position(player_id)?;
+        let [x, _, z] = crate::physics::to_units(from);
+        let (dx, dz) = (x - to.x, z - to.z);
+        let length = i64::try_from(trig::xz_length(dx, dz))
+            .map_err(|_| ZoneError::new("guard distance overflow"))?;
+        let (arc_x, arc_z) = trig::direction(facing.wrapping_add(GUARD_ARC_OFFSET));
+        let along = i64::from(dx) * i64::from(arc_x) + i64::from(dz) * i64::from(arc_z);
+        Ok((along >= length * i64::from(trig::cos(GUARD_ARC_HALF_WIDTH))).then_some(lane))
+    }
+
     /// Resolves a creature's rolled `amount` against the player's guard.
     pub(crate) fn guard_outcome(
         &self,

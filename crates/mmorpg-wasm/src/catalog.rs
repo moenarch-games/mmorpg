@@ -433,7 +433,7 @@ mod tests {
                 {"id": 2, "name": "arcanist", "resource": "mana"}
             ])
         );
-        assert_eq!(value["abilityCatalogRevision"], "1");
+        assert_eq!(value["abilityCatalogRevision"], "2");
         assert_eq!(
             value["abilities"][8],
             json!({

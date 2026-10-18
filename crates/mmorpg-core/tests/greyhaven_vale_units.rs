@@ -12,7 +12,7 @@ use mmorpg_core::{
 /// Pins every content table of revision 10, including the bound ability, item,
 /// loot, vendor and quest catalogs, the inn door and the NPC routines. Changing creatures, NPCs,
 /// colliders or areas requires a new revision and a new recorded value.
-const FINGERPRINT: u64 = 0x0527_20eb_e85a_f27f;
+const FINGERPRINT: u64 = 0x6b5f_3bdd_bcbc_ba09;
 
 #[test]
 fn the_content_identity_is_pinned() {
@@ -142,6 +142,18 @@ fn templates_follow_the_design_contract() {
                 72,
                 9_000
             ),
+            (
+                "Redbrand Crossbowman",
+                Redbrand,
+                Aggressive,
+                [3, 5],
+                false,
+                70,
+                14,
+                [3, 6],
+                66,
+                1_800
+            ),
         ]
     );
     let wolf = content
@@ -182,7 +194,7 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::STILLWATER_LAKE, "Mirefin Lurker"), 8),
         ((greyhaven_vale::REDBRAND_HOLLOW, "Redbrand Bandit"), 14),
         ((greyhaven_vale::REDBRAND_HOLLOW, "Garrick Redbrand"), 1),
-        ((greyhaven_vale::GREYFANG_RIDGE, "Redbrand Bandit"), 3),
+        ((greyhaven_vale::GREYFANG_RIDGE, "Redbrand Crossbowman"), 3),
         ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Young Boar"), 2),
         ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Grain Rat"), 1),
         ((greyhaven_vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),

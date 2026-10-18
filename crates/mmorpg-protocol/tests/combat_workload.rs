@@ -15,12 +15,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // (content revision 12, #159) adds 15 creatures and about 700 trunks, so every
     // step's Rapier world holds more bodies. Its hills (revision 13) moved the spread
     // 32-player fight's creatures slightly, and so did sliding around off-axis contacts.
-    // The Greyfang cave (revision 14) adds eight rock boxes to every step's world.
+    // The Greyfang cave (revision 14) adds eight rock boxes to every step's world. Snapshot v25
+    // (#286) adds a projectile count byte to every projection.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [26_640, 433_080, 191_328, 3_598_128],
-        [26_640, 430_200, 72_679, 1_130_123],
-        [26_522, 438_722, 320_771, 5_140_136],
-        [25_745, 449_465, 1_936_714, 24_390_181],
+        [26_640, 433_080, 191_328, 3_603_888],
+        [26_640, 430_200, 72_679, 1_133_003],
+        [26_522, 438_722, 320_771, 5_151_656],
+        [25_745, 449_465, 1_936_714, 24_412_129],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -61,9 +62,9 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
         }
         if fixture.crowded {
             // Whole 14-byte events and 21-byte records beside the fixed part
-            // and the door section, a 93-byte self sheet and an 18-byte copper-only
-            // corpse sheet fill all 1,077 bytes.
-            assert_eq!(report.max_projection_bytes, 1_077);
+            // and the door section, a 93-byte self sheet, an 18-byte copper-only
+            // corpse sheet and the projectile count fill 1,076 of the 1,077 bytes.
+            assert_eq!(report.max_projection_bytes, 1_076);
             assert!(report.candidates_tested > 1_000_000);
         }
     }

@@ -82,6 +82,21 @@ impl Fight {
         panic!("condition not reached within {limit} ticks");
     }
 
+    /// Ticks until every shot in flight has landed; returns the landing tick.
+    fn land(&mut self) -> u64 {
+        while self
+            .zone
+            .snapshot()
+            .unwrap()
+            .projectiles
+            .iter()
+            .any(|projectile| !projectile.is_stuck())
+        {
+            self.tick();
+        }
+        self.zone.current_tick()
+    }
+
     fn view(&self) -> ZoneSnapshot {
         self.zone.snapshot_for_player(1).unwrap()
     }
@@ -123,6 +138,20 @@ impl Fight {
             })
             .collect()
     }
+}
+
+/// Ticks until every shot in flight has landed (#286); returns the landing tick.
+fn land(zone: &mut ZoneSimulation) -> u64 {
+    while zone
+        .snapshot()
+        .unwrap()
+        .projectiles
+        .iter()
+        .any(|projectile| !projectile.is_stuck())
+    {
+        zone.advance_tick().unwrap();
+    }
+    zone.current_tick()
 }
 
 fn damage_dealt_to(event: &ZoneEvent, unit: EntityRef) -> Option<u16> {
@@ -372,10 +401,25 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
 
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
     fight.use_ability(ids::AIMED_SHOT);
-    let events = fight.tick();
-    let shot = events
-        .iter()
-        .find_map(|event| damage_dealt_to(event, TARGET))
+    let fired = fight.zone.current_tick() + 1;
+    fight.tick();
+    // The arrow flies 25 m at 54 m/s: the damage lands when it arrives (#286).
+    assert!(
+        fight
+            .since(fired, |event| damage_dealt_to(event, TARGET).is_some())
+            .is_empty()
+    );
+    assert_eq!(fight.view().projectiles.len(), 1);
+    let landed = fight.until(30, |fight| {
+        !fight
+            .since(fired, |event| damage_dealt_to(event, TARGET).is_some())
+            .is_empty()
+    });
+    assert!(landed > fired + 5, "flew {} ticks", landed - fired);
+    let shot = fight
+        .since(fired, |event| damage_dealt_to(event, TARGET).is_some())
+        .first()
+        .and_then(|(_, event)| damage_dealt_to(event, TARGET))
         .unwrap();
     // 2 × weapon damage (8–11) + 8.
     assert!((24..=30).contains(&shot), "{shot}");
@@ -386,12 +430,14 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
     assert_eq!(fight.resource(), 75);
     fight.use_ability(ids::SERPENT_STING);
     fight.tick();
-    let stung = fight.zone.current_tick();
     assert_eq!(fight.resource(), 55);
+    let stung = fight.land();
 
     // Concussive Shot halves the charging wolf's speed.
     fight.ticks(44);
     fight.use_ability(ids::CONCUSSIVE_SHOT);
+    fight.tick();
+    fight.land();
     fight.tick();
     let velocity = mmorpg_core::physics::to_units(fight.creature(FIRST).velocity);
     assert!(velocity[2] < 0 && velocity[2] >= -9, "{velocity:?}");
@@ -759,13 +805,13 @@ fn a_pulse_that_breaks_an_earlier_root_skips_no_later_aura() {
     send(&mut zone, 1, ability(ids::FROST_NOVA));
     send(&mut zone, 2, ability(ids::SERPENT_STING));
     zone.advance_tick().unwrap();
-    let stung = zone.current_tick();
+    let stung = land(&mut zone);
     for _ in 0..45 {
         zone.advance_tick().unwrap();
     }
     send(&mut zone, 2, ability(ids::CONCUSSIVE_SHOT));
     zone.advance_tick().unwrap();
-    let snared = zone.current_tick();
+    let snared = land(&mut zone);
     let kinds = |zone: &ZoneSimulation| {
         zone.snapshot().unwrap().creatures[0]
             .abilities

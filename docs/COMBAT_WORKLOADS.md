@@ -73,15 +73,15 @@ and recovery acceptance. The complete ceilings live in the protocol test.
 
 Since the switch to Rapier (#271) the physics counters are the bodies in each
 step's rebuilt Rapier world and the moving bodies it visits; the first-party
-engine's pair, TOI and contact counters are gone. Current ceilings (snapshot v24,
+engine's pair, TOI and contact counters are gone. Current ceilings (snapshot v25,
 content revision 14, the expanded valley, hills and Greyfang cave of #159):
 
 | Workload | AI decisions | Physics body visits | Projection candidates | Total projection bytes |
 | --- | ---: | ---: | ---: | ---: |
-| vale-idle-16 | 26,640 | 433,080 | 191,328 | 3,598,128 |
-| vale-fights-8 | 26,640 | 430,200 | 72,679 | 1,130,123 |
-| vale-fights-32 | 26,522 | 438,722 | 320,771 | 5,140,136 |
-| vale-crowded-fights-64 | 25,745 | 449,465 | 1,936,714 | 24,390,181 |
+| vale-idle-16 | 26,640 | 433,080 | 191,328 | 3,603,888 |
+| vale-fights-8 | 26,640 | 430,200 | 72,679 | 1,133,003 |
+| vale-fights-32 | 26,522 | 438,722 | 320,771 | 5,151,656 |
+| vale-crowded-fights-64 | 25,745 | 449,465 | 1,936,714 | 24,412,129 |
 
 The crowded case reaches the full byte budget and publishes 23,040 projections;
 its lower AI total reflects killed creatures, not reduced evaluation frequency.

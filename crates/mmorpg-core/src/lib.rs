@@ -30,6 +30,7 @@ mod inventory;
 mod loot;
 pub mod physics;
 mod progression;
+mod projectile;
 mod projection;
 mod quest;
 pub mod rng;
@@ -98,6 +99,10 @@ pub use loot::{
     LootTableError, MAX_LOOT_OUTCOMES, loot_table, settle_loot,
 };
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
+pub use projectile::{
+    ARROW_SPEED_UNITS, BOLT_SPEED_UNITS, Flight, MAX_PROJECTILES, MAX_VISIBLE_PROJECTILES,
+    Projectile, ProjectileKind, ProjectileView, STUCK_IN_UNIT_TICKS, STUCK_TICKS,
+};
 pub use projection::{
     AuraView, CastView, EntityFlags, EntitySnapshot, GuardView, ResourceView, TargetDetail,
     ViewerState, ZoneSnapshot,
@@ -134,7 +139,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 22;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 23;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its

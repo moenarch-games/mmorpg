@@ -22,13 +22,14 @@ use std::{
 
 use mmorpg_core::{
     ClassChoice, CreatureFamily, CreatureTemplateId, EntityKind, EntityRef, EntitySnapshot,
-    PLAYER_HALF_EXTENTS_UNITS, PlayerClass, UNITS_PER_METRE, ZoneContent, ZoneEvent, ZoneSnapshot,
+    PLAYER_HALF_EXTENTS_UNITS, PlayerClass, ProjectileKind, UNITS_PER_METRE, ZoneContent,
+    ZoneEvent, ZoneSnapshot,
 };
 use mmorpg_scenery::Scenery;
 
 use crate::{Draw, geometry::V};
 use imported::{Kind, Playback};
-use kit::{Frame, IQ, Primitive, Resources, offset, qa, shade};
+use kit::{Frame, IQ, Primitive, Resources, offset, qa, qm, shade};
 use player::{Hat, Look};
 
 const HEALTH_BAR_WIDTH: f32 = 1.0;
@@ -386,8 +387,42 @@ impl UnitPresenter {
             out.draws
                 .extend(self.effects.nodes(&mut self.resources, seconds, &anchors));
         }
+        self.projectiles(&mut out.draws, snapshot);
         self.resources.retire_unused();
         out
+    }
+
+    /// Arrows and bolts where the zone says they are (#286): a shaft behind the tip along its
+    /// heading and pitch, and a dark head. Placeholder shapes until asset-tooling's bow and
+    /// arrow bundle (asset-tooling #277) lands.
+    fn projectiles(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
+        for projectile in &snapshot.projectiles {
+            let (length, width, shaft, head) = match projectile.kind {
+                ProjectileKind::Arrow => (0.8, 0.03, 0xb08a5b, 0x4a4d52),
+                ProjectileKind::Bolt => (0.45, 0.045, 0x5c3f28, 0x3a3c40),
+            };
+            let turn = |value: f64| value / 65_536. * std::f64::consts::TAU;
+            let tip = Frame {
+                p: self.rendered(projectile.position).map(f64::from),
+                q: qm(
+                    qa(1, turn(f64::from(projectile.yaw))),
+                    qa(0, -turn(f64::from(projectile.pitch))),
+                ),
+            };
+            let id = format!("projectile-{}", projectile.id);
+            draws.push(self.resources.primitive(
+                format!("{id}-shaft"),
+                Primitive::Box([width, width, length]),
+                shaft,
+                offset(tip, [0., 0., -length / 2.]),
+            ));
+            draws.push(self.resources.primitive(
+                format!("{id}-head"),
+                Primitive::Box([width * 2.5, width * 2.5, 0.08]),
+                head,
+                offset(tip, [0., 0., -0.04]),
+            ));
+        }
     }
 
     /// The viewer's headwear on an imported model's posed head (`centre`, `radius` in

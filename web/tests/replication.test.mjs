@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v24.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v25.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({
@@ -88,7 +88,7 @@ describe("Rust/browser snapshot contract", () => {
     }
   });
   test("decodes the same golden bytes as the Rust encoder", () => {
-    expect(fixture.length).toBe(112 + 2 * 2 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21);
+    expect(fixture.length).toBe(113 + 2 * 2 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21 + 2 * 14);
     expect(decodeSnapshot(fixture)).toEqual({
       zoneId: 42, tick: 99n, contentRevision: 4n, acknowledgedSequence: 81, viewerId: 7,
       viewer: {
@@ -156,6 +156,10 @@ describe("Rust/browser snapshot contract", () => {
           kind: "creature", entityId: 109, appearance: 1, position: [-900, 45, 2_600], velocity: [0, 0, 0], facing: 0,
           level: 1, healthPercent: 0, flags: { ...NO_FLAGS, dead: true, hostile: true, tappedByOther: true },
         },
+      ],
+      projectiles: [
+        { id: 3, kind: "arrow", x: 120, y: 110, z: -340, yaw: 16_384, pitch: -900, stuck: false },
+        { id: 65_535, kind: "bolt", x: -32_768, y: 0, z: 32_767, yaw: 0, pitch: 16_384, stuck: true },
       ],
     });
     const offsetBuffer = new Uint8Array(fixture.length + 4);
@@ -233,7 +237,7 @@ describe("Rust/browser snapshot contract", () => {
       [QUESTS + 9, 9, "too many markers"],
       [QUESTS + 12, 4, "Inconsistent quest marker"],
       [QUESTS + 14, 1, "Inconsistent quest marker"],
-      [EVENTS + 1 + 7 * 14 + 1, 15, "Unknown ability"],
+      [EVENTS + 1 + 7 * 14 + 1, 16, "Unknown ability"],
       [EVENTS + 1 + 7 * 14 + 1, 0, "Unknown ability"],
       [EVENTS + 1 + 8 * 14 + 13, 1, "Malformed"],
       [EVENTS + 1 + 13 * 14 + 1, 1, "flags"],
@@ -285,9 +289,12 @@ describe("Rust/browser snapshot contract", () => {
   });
 
   test("rejects duplicate entity identities", () => {
+    // The duplicate goes after the four entities, before the projectile section.
+    const end = FIRST_ENTITY + 4 * 21;
     const encoded = new Uint8Array(fixture.length + 21);
-    encoded.set(fixture);
-    encoded.set(fixture.slice(FIRST_ENTITY, FIRST_ENTITY + 21), fixture.length);
+    encoded.set(fixture.slice(0, end));
+    encoded.set(fixture.slice(FIRST_ENTITY, FIRST_ENTITY + 21), end);
+    encoded.set(fixture.slice(end), end + 21);
     new DataView(encoded.buffer).setUint16(ENTITY_COUNT, 5);
     expect(() => decodeSnapshot(encoded)).toThrow("Duplicate");
   });

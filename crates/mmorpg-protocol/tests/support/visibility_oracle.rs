@@ -66,6 +66,8 @@ pub fn exhaustive_projection(
             })
             .collect(),
         loot: None,
+        // The oracle's workloads fire no projectiles.
+        projectiles: Vec::new(),
         content_revision: canonical.content_revision,
         acknowledged_sequence: observer.last_sequence,
         viewer_id: observer.player_id,

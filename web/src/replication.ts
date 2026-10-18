@@ -220,6 +220,20 @@ export type ZoneSnapshot = {
   chat: readonly ChatLine[];
   /** Priority order: the viewer, its target, then nearest first. */
   entities: readonly EntityState[];
+  /** Arrows and bolts in flight or stuck, nearest first (#286). */
+  projectiles: readonly ProjectileState[];
+};
+
+/** One projectile: position in units, heading/pitch in 1/65 536 turns (heading 0 is +Z). */
+export type ProjectileState = {
+  id: number;
+  kind: "arrow" | "bolt";
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  stuck: boolean;
 };
 
 /** A line the viewer heard: player `speaker` said or yelled `text`. */
@@ -266,23 +280,26 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 24;
-const SCHEMA_VERSION = 22;
+const WIRE_VERSION = 25;
+const SCHEMA_VERSION = 23;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
 /**
  * Common prefix 16, revision 8, acknowledged sequence 4, viewer 4, self 27, self abilities 26 (class,
  * resource, global cooldown, cast, melee damage range, guard, melee stance, combo phase, two list counts), target 12 (target-of-target,
- * its cast, aura count), sheet revision 8/presence 1, loot presence 1, door, event, chat and entity counts.
+ * its cast, aura count), sheet revision 8/presence 1, loot presence 1, door, event, chat, entity and projectile counts.
  * The sheet (bag, equipment, stat totals, quests) and the corpse sheet follow their presence bytes;
  * two bytes per door follow its count.
  */
-const FIXED_BYTES = 112;
+const FIXED_BYTES = 113;
 const ENTITY_BYTES = 21;
 const MAX_EVENTS = 16;
-/** (1 077 − 112) / 21: records that fit without events, sheets, doors, cooldowns or auras. */
+/** (1 077 − 113) / 21: records that fit without events, sheets, doors, cooldowns or auras. */
 const MAX_ENTITIES = 45;
+/** `u16` ID, kind, `3 × i16` position, `u16` yaw, `i16` pitch and flags. */
+const PROJECTILE_BYTES = 14;
+const MAX_PROJECTILES = 8;
 const MAX_COOLDOWNS = 4;
 const MAX_AURAS = 8;
 export const GLOBAL_COOLDOWN_TICKS = 45;
@@ -352,6 +369,7 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [12, { castTicks: 180, channel: true, cooldown: 0, aura: null, auraTicks: 0 }],
   [13, { castTicks: 45, channel: false, cooldown: 240, aura: null, auraTicks: 0 }],
   [14, { castTicks: 90, channel: false, cooldown: 600, aura: null, auraTicks: 0 }],
+  [15, { castTicks: 30, channel: false, cooldown: 240, aura: null, auraTicks: 0 }],
 ]);
 /** Mana: 110 + 22 per level above 1; rage and focus: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {
@@ -914,7 +932,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     }
   }
   const count = reader.u16();
-  if (count > MAX_ENTITIES || view.byteLength !== reader.offset + count * ENTITY_BYTES) {
+  if (count > MAX_ENTITIES || view.byteLength < reader.offset + count * ENTITY_BYTES + 1) {
     throw new Error("Invalid snapshot length or entity count");
   }
   const entities: EntityState[] = [];
@@ -927,6 +945,28 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     }
     identities.add(identity);
     entities.push(entity);
+  }
+  const projectileCount = reader.u8();
+  if (projectileCount > MAX_PROJECTILES || view.byteLength !== reader.offset + projectileCount * PROJECTILE_BYTES) {
+    throw new Error("Invalid snapshot length or projectile count");
+  }
+  const projectiles: ProjectileState[] = [];
+  for (let index = 0; index < projectileCount; index += 1) {
+    const id = reader.u16();
+    const kind = (["arrow", "bolt"] as const)[reader.u8() - 1];
+    if (kind === undefined) {
+      throw new Error("Unknown projectile kind");
+    }
+    const x = reader.i16();
+    const y = reader.i16();
+    const z = reader.i16();
+    const yaw = reader.u16();
+    const pitch = reader.i16();
+    const stuck = reader.u8();
+    if (stuck > 1) {
+      throw new Error("Invalid projectile flags");
+    }
+    projectiles.push({ id, kind, x, y, z, yaw, pitch, stuck: stuck === 1 });
   }
   // Records arrive in relevance-priority order, and the viewer always leads.
   const first = entities[0];
@@ -946,7 +986,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
       classChoice, resource, cast, globalCooldown, damage, guard, stance, combo,
     },
     cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors,
-    events, chat, entities,
+    events, chat, entities, projectiles,
   };
   PROJECTION_BYTES.set(snapshot, payload.slice());
   return snapshot;
