@@ -119,11 +119,24 @@
 }
 
 .settings-bindings { min-width: 0; }
-.settings-binding-context {
-  margin: 0 0 .7rem;
+.settings-bindings-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  margin-bottom: .7rem;
   color: var(--settings-muted);
   font-size: .87rem;
 }
+.settings-bindings-toolbar button {
+  padding: .4rem .7rem;
+  border: 1px solid var(--settings-border);
+  border-radius: .3rem;
+  background: var(--settings-surface);
+  color: #edf4ee;
+  cursor: pointer;
+}
+.settings-bindings-toolbar button:hover { background: var(--settings-raised); }
 .settings-bindings-host { min-width: 0; }
 .settings-error { color: #ff9b91; }
 .settings-status { margin: 0; color: var(--settings-muted); font-size: .85rem; }
@@ -207,6 +220,14 @@
 .settings-bindings-host .ib-binding-list { gap: .35rem; }
 .settings-bindings-host .ib-details { grid-column: 2; }
 .settings-bindings-host .ib-binding kbd { border-color: var(--settings-muted); }
+
+/* Leave the common task (find an action and edit its binding) unobstructed.
+   Switching modes remounts only the shared workbench, not the saved profile. */
+.settings-bindings-editor:not(.is-advanced) .ib-workbench-header,
+.settings-bindings-editor:not(.is-advanced) .ib-presentation-toolbar,
+.settings-bindings-editor:not(.is-advanced) .ib-shortcut-filter,
+.settings-bindings-editor:not(.is-advanced) .ib-toolbar-actions,
+.settings-bindings-editor:not(.is-advanced) .ib-details { display: none; }
 
 /* The keyboard preview should stay readable even when the OS prefers a light theme. */
 .settings-bindings-host .ib-key.is-used,
