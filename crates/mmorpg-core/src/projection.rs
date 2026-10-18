@@ -176,6 +176,8 @@ pub struct ZoneSnapshot {
     pub entities: Vec<EntitySnapshot>,
     /// Every content door's state, in door-ID order (#158).
     pub doors: Vec<crate::DoorView>,
+    /// Projectiles within the interest radius, nearest first (#286).
+    pub projectiles: Vec<crate::ProjectileView>,
 }
 
 impl ZoneSimulation {
@@ -308,6 +310,7 @@ impl ZoneSimulation {
                 chat: viewer.chat.clone(),
                 entities,
                 doors: self.door_views(),
+                projectiles: self.projectile_views([center.x, center.y, center.z]),
             },
             stats,
         })

@@ -81,6 +81,15 @@ pub fn to_units(value: [f32; 3]) -> [i32; 3] {
     value.map(|axis| axis.round() as i32)
 }
 
+/// The first body a ray met: its identity, the fraction of the ray travelled and the
+/// surface normal there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RayHit {
+    pub body: BodyId,
+    pub fraction: f32,
+    pub normal: [f32; 3],
+}
+
 /// A game-chosen body identity (content colliders, players, creatures and NPCs each take
 /// their own range, see `entity.rs`).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -862,6 +871,42 @@ impl World {
                 true,
             )
             .is_some_and(|(_, time_of_impact)| time_of_impact < 1.0)
+    }
+
+    /// The first body accepted by `hits` on the segment from `origin` along `translation`
+    /// (units), with the hit's fraction of the segment and its surface normal (#286). Rapier
+    /// rays see every collider kind, terrain heightfield included.
+    pub fn cast_ray(
+        &self,
+        origin: [f32; 3],
+        translation: [f32; 3],
+        hits: impl Fn(BodyId) -> bool,
+    ) -> Option<RayHit> {
+        if translation == [0.0; 3] {
+            return None;
+        }
+        let predicate = |_, collider: &rapier3d::prelude::Collider| {
+            hits(BodyId(
+                u64::try_from(collider.user_data).unwrap_or(u64::MAX),
+            ))
+        };
+        let queries = self.world.broad_phase.as_query_pipeline(
+            &self.queries,
+            &self.world.bodies,
+            &self.world.colliders,
+            QueryFilter::default().predicate(&predicate),
+        );
+        let (handle, hit) = queries.cast_ray_and_get_normal(
+            &RapierRay::new(metres(origin), metres(translation)),
+            1.0,
+            true,
+        )?;
+        let collider = self.world.colliders.get(handle)?;
+        Some(RayHit {
+            body: BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX)),
+            fraction: hit.time_of_impact,
+            normal: [hit.normal.x, hit.normal.y, hit.normal.z],
+        })
     }
 
     /// Brings Rapier's broad phase (the query structure) up to date.

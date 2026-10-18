@@ -93,28 +93,33 @@ impl ZoneSimulation {
         };
         let target = if ability.needs_target() {
             let target = target.or(player.target);
-            let Some(entity @ EntityRef::Creature(creature_id)) = target else {
-                return Ok(Some((ErrorCode::InvalidTarget, target)));
-            };
-            let alive = self
-                .creatures
-                .get(&creature_id)
-                .is_some_and(|creature| creature.is_alive());
-            if !alive || !self.visible_to(player_id, entity)? {
-                return Ok(Some((ErrorCode::InvalidTarget, target)));
+            // Aimed Shot without a target flies freely along the facing (#286).
+            if target.is_none() && ability.aims_freely() {
+                None
+            } else {
+                let Some(entity @ EntityRef::Creature(creature_id)) = target else {
+                    return Ok(Some((ErrorCode::InvalidTarget, target)));
+                };
+                let alive = self
+                    .creatures
+                    .get(&creature_id)
+                    .is_some_and(|creature| creature.is_alive());
+                if !alive || !self.visible_to(player_id, entity)? {
+                    return Ok(Some((ErrorCode::InvalidTarget, target)));
+                }
+                let reach = ability.range.reach().unwrap_or(0);
+                if self.unit_distance_squared(EntityRef::Player(player_id), entity)?
+                    > i64::from(reach).pow(2)
+                {
+                    return Ok(Some((ErrorCode::OutOfRange, target)));
+                }
+                if matches!(ability.range, AbilityRange::Units(_))
+                    && !self.line_of_sight(EntityRef::Player(player_id), entity)?
+                {
+                    return Ok(Some((ErrorCode::LineOfSight, target)));
+                }
+                Some(entity)
             }
-            let reach = ability.range.reach().unwrap_or(0);
-            if self.unit_distance_squared(EntityRef::Player(player_id), entity)?
-                > i64::from(reach).pow(2)
-            {
-                return Ok(Some((ErrorCode::OutOfRange, target)));
-            }
-            if matches!(ability.range, AbilityRange::Units(_))
-                && !self.line_of_sight(EntityRef::Player(player_id), entity)?
-            {
-                return Ok(Some((ErrorCode::LineOfSight, target)));
-            }
-            Some(entity)
         } else {
             None
         };
@@ -276,11 +281,9 @@ impl ZoneSimulation {
         target: Option<EntityRef>,
         now: u64,
     ) -> Result<(), ZoneError> {
-        let Some(player) = self.players.get(&player_id) else {
+        let Some(facing) = self.players.get(&player_id).map(|player| player.facing) else {
             return Ok(());
         };
-        let (level, max_health) = (player.level, player.max_health());
-        let (melee, bonus) = (player.melee_damage(), u32::from(player.damage_bonus()));
         let source = EntityRef::Player(player_id);
         self.notify_units(
             [Some(source), target],
@@ -290,6 +293,30 @@ impl ZoneSimulation {
                 ability: ability.id,
             },
         );
+        // A shot carries the effect: it lands when the projectile does (#286).
+        if let Some(kind) = ability.projectile {
+            return match target {
+                Some(target) => self.shoot_at(source, target, kind, ability.id),
+                None => self.shoot_free(source, facing, kind, ability.id),
+            };
+        }
+        self.apply_player_effect(player_id, ability, target, now)
+    }
+
+    /// What a player's ability does to `target` (or around the caster) when it lands.
+    pub(crate) fn apply_player_effect(
+        &mut self,
+        player_id: PlayerId,
+        ability: &Ability,
+        target: Option<EntityRef>,
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        let Some(player) = self.players.get(&player_id) else {
+            return Ok(());
+        };
+        let (level, max_health) = (player.level, player.max_health());
+        let (melee, bonus) = (player.melee_damage(), u32::from(player.damage_bonus()));
+        let source = EntityRef::Player(player_id);
         let creature = match target {
             Some(EntityRef::Creature(creature_id)) => Some(creature_id),
             _ => None,
@@ -789,6 +816,10 @@ impl ZoneSimulation {
                         ability: ability.id,
                     },
                 );
+                // A shot carries the bolt: it lands when the projectile does (#286).
+                if let Some(kind) = ability.projectile {
+                    return self.shoot_at(source, target, kind, ability.id);
+                }
                 let amount = self
                     .rng
                     .inclusive(u32::from(damage[0]), u32::from(damage[1]))
@@ -827,6 +858,27 @@ impl ZoneSimulation {
             _ => {}
         }
         Ok(())
+    }
+
+    /// A creature's shot of `ability` reached `player_id` (#286): its bolt damage lands.
+    pub(crate) fn creature_effect_lands(
+        &mut self,
+        creature_id: CreatureId,
+        player_id: PlayerId,
+        ability: &Ability,
+    ) -> Result<(), ZoneError> {
+        let AbilityEffect::Bolt { damage, per_level } = ability.effect else {
+            return Ok(());
+        };
+        let level = self
+            .creatures
+            .get(&creature_id)
+            .map_or(1, |creature| creature.level);
+        let amount = self
+            .rng
+            .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+            + u32::from(scaled(0, per_level, level));
+        self.creature_damages_player(creature_id, player_id, amount, false)
     }
 
     /// The creature's ability waits its cooldown plus a 0–30 tick jitter.

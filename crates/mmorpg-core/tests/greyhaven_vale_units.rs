@@ -142,6 +142,18 @@ fn templates_follow_the_design_contract() {
                 72,
                 9_000
             ),
+            (
+                "Redbrand Crossbowman",
+                Redbrand,
+                Aggressive,
+                [3, 5],
+                false,
+                70,
+                14,
+                [3, 6],
+                66,
+                1_800
+            ),
         ]
     );
     let wolf = content
@@ -182,7 +194,7 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::STILLWATER_LAKE, "Mirefin Lurker"), 8),
         ((greyhaven_vale::REDBRAND_HOLLOW, "Redbrand Bandit"), 14),
         ((greyhaven_vale::REDBRAND_HOLLOW, "Garrick Redbrand"), 1),
-        ((greyhaven_vale::GREYFANG_RIDGE, "Redbrand Bandit"), 3),
+        ((greyhaven_vale::GREYFANG_RIDGE, "Redbrand Crossbowman"), 3),
         ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Young Boar"), 2),
         ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Grain Rat"), 1),
         ((greyhaven_vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),

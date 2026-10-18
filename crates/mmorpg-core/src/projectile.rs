@@ -1,0 +1,451 @@
+//! Physical projectiles (#286, Atlas 5.2.71): arrows and crossbow bolts.
+//!
+//! A target-based shot **tracks** its target: every tick it re-plans the ballistic arc that
+//! lands on the target's body centre after the remaining flight ticks, so it follows a moving
+//! target but still flies a visible arc. A free shot (Aimed Shot without a target) leaves along
+//! the shooter's facing and falls under gravity. Each tick a projectile sweeps the segment it
+//! travels with a Rapier ray, so it never tunnels: walls, props, terrain and units in the way
+//! stop it, and a Warden's raised shield turned toward it blocks it. The ability's effect lands
+//! only when the shot reaches a valid victim. Spent projectiles stay stuck where they hit — in a
+//! wall for [`STUCK_TICKS`], riding a unit for [`STUCK_IN_UNIT_TICKS`] — then vanish.
+//!
+//! Rapier gap noted for physics-engine parity: no continuous projectile body is used; a
+//! per-tick ray sweep stands in for CCD on a thin, fast body.
+
+use crate::entity::{EntityRef, body_id, entity_of};
+use crate::physics::BodyId;
+use crate::{AbilityId, ZoneError, ZoneEvent, ZoneSimulation};
+
+/// At most this many projectiles fly or stick in one zone; the oldest goes first.
+pub const MAX_PROJECTILES: usize = 256;
+/// At most this many projectiles reach one player projection, nearest first.
+pub const MAX_VISIBLE_PROJECTILES: usize = 16;
+/// Flight speed of an arrow (54 m/s) and of a crossbow bolt (45 m/s), units per tick.
+pub const ARROW_SPEED_UNITS: f32 = 180.0;
+pub const BOLT_SPEED_UNITS: f32 = 150.0;
+/// Gravity on a free projectile: 9.81 m/s² in units per tick².
+pub const PROJECTILE_GRAVITY_UNITS: f32 = 981.0 / 900.0;
+/// A projectile still flying after this many ticks (2 s) falls away.
+pub const MAX_FLIGHT_TICKS: u16 = 60;
+/// Ticks a spent projectile stays stuck in a wall or prop (3 s) …
+pub const STUCK_TICKS: u16 = 90;
+/// … or in a unit or its shield (1 s).
+pub const STUCK_IN_UNIT_TICKS: u16 = 30;
+/// Shots leave this far above the shooter's body centre (chest height). A level free shot
+/// drops to the ground about 32 m out.
+pub const LAUNCH_HEIGHT_UNITS: f32 = 20.0;
+
+/// What flies; the wire value is its code.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ProjectileKind {
+    Arrow,
+    Bolt,
+}
+
+impl ProjectileKind {
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Arrow => 1,
+            Self::Bolt => 2,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            1 => Some(Self::Arrow),
+            2 => Some(Self::Bolt),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Arrow => "arrow",
+            Self::Bolt => "bolt",
+        }
+    }
+
+    #[must_use]
+    pub const fn speed(self) -> f32 {
+        match self {
+            Self::Arrow => ARROW_SPEED_UNITS,
+            Self::Bolt => BOLT_SPEED_UNITS,
+        }
+    }
+}
+
+/// How a projectile moves this tick.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Flight {
+    /// Tracks `target`, planned to arrive after `remaining` more ticks.
+    Tracking { target: EntityRef, remaining: u16 },
+    /// Flies freely under gravity.
+    Free,
+    /// Spent: stuck at `offset` from the unit it hit (or at `offset` in the world) for
+    /// `remaining` more ticks.
+    Stuck {
+        unit: Option<EntityRef>,
+        offset: [f32; 3],
+        remaining: u16,
+    },
+}
+
+/// One projectile; positions and velocities are exact units (per tick).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Projectile {
+    pub id: u32,
+    pub kind: ProjectileKind,
+    pub owner: EntityRef,
+    /// The ability whose effect lands on impact.
+    pub ability: AbilityId,
+    pub position: [f32; 3],
+    pub velocity: [f32; 3],
+    pub flight: Flight,
+    /// Ticks flown.
+    pub age: u16,
+}
+
+impl Projectile {
+    #[must_use]
+    pub const fn is_stuck(&self) -> bool {
+        matches!(self.flight, Flight::Stuck { .. })
+    }
+}
+
+/// What a viewer sees of a projectile: where it is and where it points.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ProjectileView {
+    /// The zone's projectile ID, truncated; presentation identity only.
+    pub id: u16,
+    pub kind: ProjectileKind,
+    /// Whole units.
+    pub position: [i32; 3],
+    /// Heading (the facing convention) and pitch (positive up), in 1/65 536 turns.
+    pub yaw: u16,
+    pub pitch: i16,
+    pub stuck: bool,
+}
+
+fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn scale(a: [f32; 3], by: f32) -> [f32; 3] {
+    a.map(|axis| axis * by)
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn turns(radians: f32) -> i32 {
+    (radians / std::f32::consts::TAU * 65_536.0).round() as i32
+}
+
+/// The heading and pitch of `velocity`, in the facing convention (yaw 0 is +Z, a quarter
+/// turn is +X).
+#[must_use]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub fn orientation(velocity: [f32; 3]) -> (u16, i16) {
+    let [x, y, z] = velocity;
+    let yaw = turns(x.atan2(z)).rem_euclid(65_536) as u16;
+    let pitch = turns(y.atan2(x.hypot(z))).clamp(-16_384, 16_384) as i16;
+    (yaw, pitch)
+}
+
+/// The ballistic velocity that covers `delta` in `ticks` ticks under projectile gravity.
+fn ballistic(delta: [f32; 3], ticks: u16) -> [f32; 3] {
+    let t = f32::from(ticks.max(1));
+    [
+        delta[0] / t,
+        delta[1] / t + PROJECTILE_GRAVITY_UNITS * (t - 1.0) / 2.0,
+        delta[2] / t,
+    ]
+}
+
+impl ZoneSimulation {
+    /// A unit's physics body centre in exact units.
+    fn unit_centre(&self, unit: EntityRef) -> Option<[f32; 3]> {
+        self.world
+            .body(body_id(unit))
+            .map(crate::physics::RigidBody::exact_position)
+    }
+
+    fn launch_point(&self, owner: EntityRef) -> Result<[f32; 3], ZoneError> {
+        let centre = self
+            .unit_centre(owner)
+            .ok_or_else(|| ZoneError::new("shooter physics body is missing"))?;
+        Ok(add(centre, [0.0, LAUNCH_HEIGHT_UNITS, 0.0]))
+    }
+
+    fn add_projectile(&mut self, mut projectile: Projectile) {
+        projectile.id = self.next_projectile;
+        self.next_projectile = self.next_projectile.wrapping_add(1);
+        if self.projectiles.len() >= MAX_PROJECTILES
+            && let Some((&oldest, _)) = self.projectiles.iter().next()
+        {
+            self.projectiles.remove(&oldest);
+        }
+        self.projectiles.insert(projectile.id, projectile);
+    }
+
+    /// `owner` shoots `kind` at `target`; `ability` lands on impact.
+    pub(crate) fn shoot_at(
+        &mut self,
+        owner: EntityRef,
+        target: EntityRef,
+        kind: ProjectileKind,
+        ability: AbilityId,
+    ) -> Result<(), ZoneError> {
+        let from = self.launch_point(owner)?;
+        let to = self
+            .unit_centre(target)
+            .ok_or_else(|| ZoneError::new("target physics body is missing"))?;
+        let delta = sub(to, from);
+        let distance = delta[0].hypot(delta[1]).hypot(delta[2]);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let remaining = (distance / kind.speed())
+            .ceil()
+            .clamp(1.0, f32::from(MAX_FLIGHT_TICKS)) as u16;
+        self.add_projectile(Projectile {
+            id: 0,
+            kind,
+            owner,
+            ability,
+            position: from,
+            velocity: ballistic(delta, remaining),
+            flight: Flight::Tracking { target, remaining },
+            age: 0,
+        });
+        Ok(())
+    }
+
+    /// `owner` shoots `kind` freely along `facing`; `ability` lands on whatever it hits.
+    pub(crate) fn shoot_free(
+        &mut self,
+        owner: EntityRef,
+        facing: u16,
+        kind: ProjectileKind,
+        ability: AbilityId,
+    ) -> Result<(), ZoneError> {
+        let from = self.launch_point(owner)?;
+        let (x, z) = crate::trig::direction(facing);
+        #[allow(clippy::cast_precision_loss)]
+        let unit = |value: i32| value as f32 / crate::trig::TRIG_ONE as f32;
+        let speed = kind.speed();
+        self.add_projectile(Projectile {
+            id: 0,
+            kind,
+            owner,
+            ability,
+            position: from,
+            velocity: [unit(x) * speed, 0.0, unit(z) * speed],
+            flight: Flight::Free,
+            age: 0,
+        });
+        Ok(())
+    }
+
+    /// Every projectile flies, sticks or vanishes, in ID order.
+    pub(crate) fn advance_projectiles(&mut self, now: u64) -> Result<(), ZoneError> {
+        let ids: Vec<_> = self.projectiles.keys().copied().collect();
+        for id in ids {
+            let Some(mut projectile) = self.projectiles.get(&id).copied() else {
+                continue;
+            };
+            if let Flight::Stuck {
+                unit,
+                offset,
+                remaining,
+            } = projectile.flight
+            {
+                if remaining <= 1 {
+                    self.projectiles.remove(&id);
+                    continue;
+                }
+                projectile.flight = Flight::Stuck {
+                    unit,
+                    offset,
+                    remaining: remaining - 1,
+                };
+                if let Some(unit) = unit {
+                    match self.unit_centre(unit) {
+                        Some(centre) => projectile.position = add(centre, offset),
+                        None => {
+                            self.projectiles.remove(&id);
+                            continue;
+                        }
+                    }
+                }
+                self.projectiles.insert(id, projectile);
+                continue;
+            }
+            projectile.age += 1;
+            if projectile.age > MAX_FLIGHT_TICKS {
+                self.projectiles.remove(&id);
+                continue;
+            }
+            if let Flight::Tracking { target, remaining } = projectile.flight {
+                match self.unit_centre(target).filter(|_| self.unit_alive(target)) {
+                    Some(centre) => {
+                        projectile.velocity =
+                            ballistic(sub(centre, projectile.position), remaining);
+                        projectile.flight = Flight::Tracking {
+                            target,
+                            remaining: remaining.saturating_sub(1).max(1),
+                        };
+                    }
+                    // The target is gone: the shot flies on as it was.
+                    None => projectile.flight = Flight::Free,
+                }
+            }
+            let segment = projectile.velocity;
+            let hit = self.world.cast_ray(projectile.position, segment, |body| {
+                self.projectile_meets(&projectile, body)
+            });
+            let Some(hit) = hit else {
+                projectile.position = add(projectile.position, segment);
+                if projectile.flight == Flight::Free {
+                    projectile.velocity[1] -= PROJECTILE_GRAVITY_UNITS;
+                }
+                self.projectiles.insert(id, projectile);
+                continue;
+            };
+            let point = add(projectile.position, scale(segment, hit.fraction));
+            projectile.position = point;
+            let unit = entity_of(hit.body);
+            projectile.flight = match unit.and_then(|unit| Some((unit, self.unit_centre(unit)?))) {
+                Some((unit, centre)) => Flight::Stuck {
+                    unit: Some(unit),
+                    offset: sub(point, centre),
+                    remaining: STUCK_IN_UNIT_TICKS,
+                },
+                None => Flight::Stuck {
+                    unit: None,
+                    offset: point,
+                    remaining: STUCK_TICKS,
+                },
+            };
+            self.projectiles.insert(id, projectile);
+            if let Some(unit) = unit {
+                self.projectile_strikes(projectile, unit, now)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether a body stops `projectile`: everything but its shooter, the shooter's own side
+    /// (players' shots pass players, creatures' shots pass creatures) and corpses.
+    fn projectile_meets(&self, projectile: &Projectile, body: BodyId) -> bool {
+        if body == body_id(projectile.owner) {
+            return false;
+        }
+        match entity_of(body) {
+            None => true,
+            Some(unit) => {
+                std::mem::discriminant(&unit) != std::mem::discriminant(&projectile.owner)
+                    && self.unit_alive(unit)
+            }
+        }
+    }
+
+    fn unit_alive(&self, unit: EntityRef) -> bool {
+        match unit {
+            EntityRef::Player(id) => self
+                .players
+                .get(&id)
+                .is_some_and(|player| player.is_alive()),
+            EntityRef::Creature(id) => self
+                .creatures
+                .get(&id)
+                .is_some_and(|creature| creature.is_alive()),
+            EntityRef::Npc(_) => true,
+        }
+    }
+
+    /// `projectile` reached `unit`: a raised shield turned toward it blocks it; otherwise its
+    /// ability lands on a valid victim (the tracked target, or anything a free shot meets).
+    fn projectile_strikes(
+        &mut self,
+        projectile: Projectile,
+        unit: EntityRef,
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        let ability = crate::ability_by_id(projectile.ability)
+            .ok_or_else(|| ZoneError::new("projectile names an unknown ability"))?;
+        let from = sub(projectile.position, projectile.velocity);
+        if let EntityRef::Player(player_id) = unit
+            && let Some(lane) = self.shield_covers(player_id, from)?
+        {
+            self.update_player(player_id, |player| {
+                player.combat_timer = crate::unit::COMBAT_LINGER_TICKS;
+            });
+            self.guard_feedback(
+                player_id,
+                ZoneEvent::Blocked {
+                    source: projectile.owner,
+                    target: unit,
+                    lane,
+                    amount: 0,
+                },
+            );
+            return Ok(());
+        }
+        match (projectile.owner, unit) {
+            (EntityRef::Player(player_id), EntityRef::Creature(_)) => {
+                if self.players.contains_key(&player_id) {
+                    self.apply_player_effect(player_id, ability, Some(unit), now)?;
+                }
+            }
+            (EntityRef::Creature(creature_id), EntityRef::Player(player_id)) => {
+                if self
+                    .creatures
+                    .get(&creature_id)
+                    .is_some_and(|creature| creature.is_alive())
+                {
+                    self.creature_effect_lands(creature_id, player_id, ability)?;
+                }
+            }
+            // Cover: an NPC in the way takes the shot without effect.
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// The projectiles a viewer at `centre` sees, nearest first.
+    pub(crate) fn projectile_views(&self, centre: [i32; 3]) -> Vec<ProjectileView> {
+        let radius = f64::from(crate::INTEREST_RADIUS_UNITS);
+        let mut near: Vec<_> = self
+            .projectiles
+            .values()
+            .filter_map(|projectile| {
+                let [x, y, z] = crate::physics::to_units(projectile.position);
+                let distance = (f64::from(x - centre[0])).hypot(f64::from(z - centre[2]));
+                (distance <= radius).then(|| {
+                    let (yaw, pitch) = orientation(projectile.velocity);
+                    (
+                        distance,
+                        ProjectileView {
+                            #[allow(clippy::cast_possible_truncation)]
+                            id: projectile.id as u16,
+                            kind: projectile.kind,
+                            position: [x, y, z],
+                            yaw,
+                            pitch,
+                            stuck: projectile.is_stuck(),
+                        },
+                    )
+                })
+            })
+            .collect();
+        near.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.id.cmp(&b.1.id)));
+        near.into_iter()
+            .take(MAX_VISIBLE_PROJECTILES)
+            .map(|(_, view)| view)
+            .collect()
+    }
+}

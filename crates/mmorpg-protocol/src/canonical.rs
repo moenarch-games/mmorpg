@@ -82,6 +82,11 @@ pub fn encode_canonical_snapshot(
         encode_creature(&mut payload, creature)?;
     }
     encode_canonical_doors(&mut payload, &snapshot.doors)?;
+    encode_projectiles(
+        &mut payload,
+        snapshot.next_projectile,
+        &snapshot.projectiles,
+    )?;
     Ok(payload)
 }
 
@@ -441,6 +446,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         creatures.push(decode_creature(payload, &mut offset)?);
     }
     let doors = decode_canonical_doors(payload, &mut offset)?;
+    let (next_projectile, projectiles) = decode_projectiles(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         schema_version,
@@ -453,6 +459,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         players,
         creatures,
         doors,
+        projectiles,
+        next_projectile,
     })
 }
 
@@ -840,6 +848,108 @@ fn encode_trade_intent(
     payload.extend_from_slice(&quantity.to_be_bytes());
 }
 
+const TRACKING: u8 = 1;
+const FREE: u8 = 2;
+const STUCK: u8 = 3;
+
+/// Projectiles (#286): the next ID (`u32`), a `u16` count, then per projectile its ID
+/// (`u32`), kind, owner, ability, exact position and velocity, age (`u16`) and flight.
+fn encode_projectiles(
+    payload: &mut Vec<u8>,
+    next: u32,
+    projectiles: &[mmorpg_core::Projectile],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(&next.to_be_bytes());
+    payload.extend_from_slice(
+        &u16::try_from(projectiles.len())
+            .ok()
+            .filter(|&count| usize::from(count) <= mmorpg_core::MAX_PROJECTILES)
+            .ok_or_else(|| ProtocolError::new("too many projectiles"))?
+            .to_be_bytes(),
+    );
+    for projectile in projectiles {
+        payload.extend_from_slice(&projectile.id.to_be_bytes());
+        payload.push(projectile.kind.code());
+        encode_entity_ref(payload, Some(projectile.owner));
+        payload.push(projectile.ability.get());
+        for component in projectile.position.into_iter().chain(projectile.velocity) {
+            payload.extend_from_slice(&component.to_be_bytes());
+        }
+        payload.extend_from_slice(&projectile.age.to_be_bytes());
+        match projectile.flight {
+            mmorpg_core::Flight::Tracking { target, remaining } => {
+                payload.push(TRACKING);
+                encode_entity_ref(payload, Some(target));
+                payload.extend_from_slice(&remaining.to_be_bytes());
+            }
+            mmorpg_core::Flight::Free => payload.push(FREE),
+            mmorpg_core::Flight::Stuck {
+                unit,
+                offset,
+                remaining,
+            } => {
+                payload.push(STUCK);
+                encode_entity_ref(payload, unit);
+                for component in offset {
+                    payload.extend_from_slice(&component.to_be_bytes());
+                }
+                payload.extend_from_slice(&remaining.to_be_bytes());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn decode_projectiles(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<(u32, Vec<mmorpg_core::Projectile>), ProtocolError> {
+    let next = u32::from_be_bytes(take(payload, offset)?);
+    let count = decode_u16_count(
+        payload,
+        offset,
+        mmorpg_core::MAX_PROJECTILES,
+        "too many projectiles",
+    )?;
+    let mut projectiles = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = u32::from_be_bytes(take(payload, offset)?);
+        let kind = mmorpg_core::ProjectileKind::from_code(crate::wire::read_u8(payload, offset)?)
+            .ok_or_else(|| ProtocolError::new("unknown projectile kind"))?;
+        let owner = decode_entity_ref(payload, offset)?
+            .ok_or_else(|| ProtocolError::new("a projectile needs an owner"))?;
+        let ability = mmorpg_core::AbilityId::new(crate::wire::read_u8(payload, offset)?);
+        let position = crate::wire::read_f32_vector(payload, offset)?;
+        let velocity = crate::wire::read_f32_vector(payload, offset)?;
+        let age = u16::from_be_bytes(take(payload, offset)?);
+        let flight = match crate::wire::read_u8(payload, offset)? {
+            TRACKING => mmorpg_core::Flight::Tracking {
+                target: decode_entity_ref(payload, offset)?
+                    .ok_or_else(|| ProtocolError::new("a tracking projectile needs a target"))?,
+                remaining: u16::from_be_bytes(take(payload, offset)?),
+            },
+            FREE => mmorpg_core::Flight::Free,
+            STUCK => mmorpg_core::Flight::Stuck {
+                unit: decode_entity_ref(payload, offset)?,
+                offset: crate::wire::read_f32_vector(payload, offset)?,
+                remaining: u16::from_be_bytes(take(payload, offset)?),
+            },
+            _ => return Err(ProtocolError::new("unknown projectile flight")),
+        };
+        projectiles.push(mmorpg_core::Projectile {
+            id,
+            kind,
+            owner,
+            ability,
+            position,
+            velocity,
+            flight,
+            age,
+        });
+    }
+    Ok((next, projectiles))
+}
+
 /// Canonical doors: the projection's door list plus each leaf's last change tick (`u64`, #158).
 fn encode_canonical_doors(
     payload: &mut Vec<u8>,
@@ -888,6 +998,36 @@ mod tests {
     fn snapshot() -> CanonicalZoneSnapshot {
         let wolf = EntityRef::Creature(CreatureId::new(4));
         CanonicalZoneSnapshot {
+            next_projectile: 9,
+            projectiles: vec![
+                mmorpg_core::Projectile {
+                    id: 7,
+                    kind: mmorpg_core::ProjectileKind::Arrow,
+                    owner: EntityRef::Player(1),
+                    ability: mmorpg_core::ability::ids::AIMED_SHOT,
+                    position: [1.5, 110.25, -3.0],
+                    velocity: [180.0, 0.5, 0.0],
+                    flight: mmorpg_core::Flight::Tracking {
+                        target: wolf,
+                        remaining: 4,
+                    },
+                    age: 2,
+                },
+                mmorpg_core::Projectile {
+                    id: 8,
+                    kind: mmorpg_core::ProjectileKind::Bolt,
+                    owner: wolf,
+                    ability: mmorpg_core::ability::ids::CROSSBOW_BOLT,
+                    position: [10.0, 20.0, -30.0],
+                    velocity: [0.0, -1.0, 150.0],
+                    flight: mmorpg_core::Flight::Stuck {
+                        unit: Some(EntityRef::Player(1)),
+                        offset: [0.0, 15.0, -30.0],
+                        remaining: 29,
+                    },
+                    age: 6,
+                },
+            ],
             loot_rng_state: 0,
             schema_version: SNAPSHOT_SCHEMA_VERSION,
             zone_id: ZoneId::new(42),

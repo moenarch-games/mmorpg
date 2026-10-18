@@ -22,6 +22,8 @@ pub mod templates {
     pub const MIREFIN_LURKER: CreatureTemplateId = CreatureTemplateId::new(5);
     pub const REDBRAND_BANDIT: CreatureTemplateId = CreatureTemplateId::new(6);
     pub const GARRICK_REDBRAND: CreatureTemplateId = CreatureTemplateId::new(7);
+    /// The Greyfang outriders, who shoot crossbow bolts (#286).
+    pub const REDBRAND_CROSSBOWMAN: CreatureTemplateId = CreatureTemplateId::new(8);
 }
 
 /// Default respawn time: 60 s.
@@ -60,7 +62,7 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 7] = {
+const TEMPLATES: [TemplateRow; 8] = {
     use CreatureBehaviour::{Aggressive, Neutral};
     use CreatureFamily::{Boar, Marauder, Mirefin, Redbrand, Vermin, Wolf};
     use templates::*;
@@ -72,6 +74,7 @@ const TEMPLATES: [TemplateRow; 7] = {
         (MIREFIN_LURKER, "Mirefin Lurker", Mirefin, Aggressive, [3, 3], false, 70, 0, [3, 6], 0, 60, RESPAWN_TICKS, LURKER),
         (REDBRAND_BANDIT, "Redbrand Bandit", Redbrand, Aggressive, [3, 5], false, 75, 16, [4, 7], 0, 66, RESPAWN_TICKS, HUMANOID),
         (GARRICK_REDBRAND, "Garrick Redbrand", Redbrand, Aggressive, [5, 5], true, 420, 0, [8, 14], 0, 72, GARRICK_RESPAWN_TICKS, GARRICK),
+        (REDBRAND_CROSSBOWMAN, "Redbrand Crossbowman", Redbrand, Aggressive, [3, 5], false, 70, 14, [3, 6], 0, 66, RESPAWN_TICKS, HUMANOID),
     ]
 };
 
@@ -159,9 +162,9 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 74] = {
         (504, YOUNG_BOAR, [-18_150, 8_200], 8_192),
         (505, YOUNG_BOAR, [-13_200, -2_150], 40_960),
         // Greyfang Ridge: Redbrand outriders watching the standing stones.
-        (600, REDBRAND_BANDIT, [-1_350, -17_250], 0),
-        (601, REDBRAND_BANDIT, [1_350, -17_250], 0),
-        (602, REDBRAND_BANDIT, [0, -18_600], 32_768),
+        (600, REDBRAND_CROSSBOWMAN, [-1_350, -17_250], 0),
+        (601, REDBRAND_CROSSBOWMAN, [1_350, -17_250], 0),
+        (602, REDBRAND_CROSSBOWMAN, [0, -18_600], 32_768),
         // Southmeadow Downs: boars and a rat around the ruined farmstead.
         (700, YOUNG_BOAR, [3_600, 17_300], 16_384),
         (701, YOUNG_BOAR, [9_000, 16_850], 49_152),
@@ -268,6 +271,10 @@ pub fn creature_abilities() -> Vec<(CreatureTemplateId, crate::AbilityId)> {
         (
             templates::REDBRAND_BANDIT,
             crate::ability::ids::CRUDE_BANDAGE,
+        ),
+        (
+            templates::REDBRAND_CROSSBOWMAN,
+            crate::ability::ids::CROSSBOW_BOLT,
         ),
     ]
 }

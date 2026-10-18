@@ -41,6 +41,7 @@ fn viewer_of(class: PlayerClass) -> ZoneSnapshot {
     let kind = resource_kind(class);
     ZoneSnapshot {
         doors: Vec::new(),
+        projectiles: Vec::new(),
         content_revision: greyhaven_vale::REVISION,
         acknowledged_sequence: 1,
         viewer_id: 1,

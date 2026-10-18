@@ -476,6 +476,7 @@ describe("WASM local zone combat intents", () => {
     }
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
+      "Redbrand Crossbowman",
     ]);
     expect(catalog.npcs.get(5)).toEqual({ id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10 });
     expect(catalog.areas.get(2)).toBe("Wolfrun Woods");

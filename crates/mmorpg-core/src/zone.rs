@@ -220,6 +220,9 @@ pub struct ZoneSimulation {
     pub(crate) tick_work: ZoneTickWork,
     /// Door states by ID; absent means closed and never moved (#158).
     pub(crate) doors: BTreeMap<crate::DoorId, crate::door::DoorState>,
+    /// Flying and stuck projectiles by ID (#286).
+    pub(crate) projectiles: BTreeMap<u32, crate::Projectile>,
+    pub(crate) next_projectile: u32,
 }
 
 impl ZoneSimulation {
@@ -327,6 +330,8 @@ impl ZoneSimulation {
             interest_work: InterestMaintenanceStats::default(),
             tick_work: ZoneTickWork::default(),
             doors: BTreeMap::new(),
+            projectiles: BTreeMap::new(),
+            next_projectile: 1,
         })
     }
 
@@ -596,6 +601,7 @@ impl ZoneSimulation {
         }
         self.update_interest()?;
         self.advance_casts(now)?;
+        self.advance_projectiles(now)?;
         self.advance_auras(now)?;
         self.resolve_combat(now)?;
         self.update_timers(now)?;

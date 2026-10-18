@@ -277,6 +277,9 @@ pub struct CanonicalZoneSnapshot {
     pub creatures: Vec<CanonicalCreatureSnapshot>,
     /// One state per content door, in door-ID order (#158).
     pub doors: Vec<crate::CanonicalDoor>,
+    /// Flying and stuck projectiles in ID order, and the next projectile ID (#286).
+    pub projectiles: Vec<crate::Projectile>,
+    pub next_projectile: u32,
 }
 
 impl ZoneSimulation {
@@ -397,6 +400,8 @@ impl ZoneSimulation {
             players,
             creatures,
             doors: self.canonical_doors(),
+            projectiles: self.projectiles.values().copied().collect(),
+            next_projectile: self.next_projectile,
         })
     }
 
@@ -458,6 +463,28 @@ impl ZoneSimulation {
                 zone.set_door(door, view.open, view.changed_tick)?;
             }
         }
+        if snapshot.projectiles.len() > crate::MAX_PROJECTILES
+            || snapshot
+                .projectiles
+                .windows(2)
+                .any(|pair| pair[0].id >= pair[1].id)
+            || snapshot.projectiles.iter().any(|projectile| {
+                crate::ability_by_id(projectile.ability).is_none()
+                    || projectile
+                        .position
+                        .iter()
+                        .chain(&projectile.velocity)
+                        .any(|value| !value.is_finite())
+            })
+        {
+            return Err(ZoneError::new("snapshot projectiles are invalid"));
+        }
+        zone.projectiles = snapshot
+            .projectiles
+            .into_iter()
+            .map(|projectile| (projectile.id, projectile))
+            .collect();
+        zone.next_projectile = snapshot.next_projectile;
         // The snapshot tick's routine placements; doors are already as that tick left them.
         zone.place_routine_npcs(false)?;
         zone.validate_references()?;

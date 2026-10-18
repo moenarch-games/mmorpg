@@ -20,7 +20,6 @@ use std::{
 #[derive(Clone, Copy, PartialEq)]
 enum Visual {
     Projectile,
-    Arrow,
     Ring,
     Bubble,
     Shards,
@@ -112,9 +111,10 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         2 => (Some(Stance::Sword), None, 0x9fb4c8),
         3 => (None, None, 0x7fd08a),
         4 => (Some(Stance::Sword), Some(Visual::Swing), 0xd9a066),
-        5 => (Some(Stance::Bow), Some(Visual::Arrow), 0xc9b36a),
-        6 => (Some(Stance::Bow), Some(Visual::Arrow), 0x7fc05a),
-        7 => (Some(Stance::Bow), Some(Visual::Arrow), 0xb0a58c),
+        // The zone's own arrows fly for the shots (#286).
+        5 => (Some(Stance::Bow), None, 0xc9b36a),
+        6 => (Some(Stance::Bow), None, 0x7fc05a),
+        7 => (Some(Stance::Bow), None, 0xb0a58c),
         8 => (None, None, 0xf2c14e),
         9 => (Some(Stance::Staff), Some(Visual::Projectile), 0xff8a3d),
         10 => (Some(Stance::Staff), Some(Visual::Ring), 0x8fd8ff),
@@ -122,6 +122,7 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         12 => (Some(Stance::Staff), Some(Visual::Shards), 0xa8e4ff),
         13 => (Some(Stance::Staff), Some(Visual::Projectile), 0x7d9a4a),
         14 => (Some(Stance::Staff), None, 0xe7dcc0),
+        15 => (Some(Stance::Bow), None, 0x8a6a4a),
         _ => (None, None, 0xffffff),
     }
 }
@@ -129,7 +130,6 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
 fn timed(visual: Visual) -> Option<f64> {
     match visual {
         Visual::Projectile => Some(0.4),
-        Visual::Arrow => Some(0.22),
         Visual::Ring => Some(0.65),
         Visual::Swing => Some(0.28),
         _ => None,
@@ -609,26 +609,6 @@ impl Effects {
                             position((t - 0.12).max(0.)),
                             IQ,
                             0.7,
-                            false,
-                        );
-                    }
-                }
-                Visual::Arrow => {
-                    if let (Some(s), Some(d)) = (source, target) {
-                        let from = [s.feet[0], s.centre + 0.2, s.feet[2]];
-                        let to = [d.feet[0], d.centre, d.feet[2]];
-                        let dir = std::array::from_fn::<_, 3, _>(|i| to[i] - from[i]);
-                        let q = qm(
-                            qa(1, dir[0].atan2(dir[2])),
-                            qa(0, -dir[1].atan2(dir[0].hypot(dir[2]))),
-                        );
-                        add(
-                            "shaft",
-                            Primitive::Box([0.05, 0.05, 0.9]),
-                            color,
-                            std::array::from_fn(|i| lerp(from[i], to[i], t)),
-                            q,
-                            1.,
                             false,
                         );
                     }

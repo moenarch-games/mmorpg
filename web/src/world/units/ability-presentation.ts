@@ -9,7 +9,7 @@ import type { AbilityRecord, ContentCatalog } from "../catalog";
  */
 export type AbilityRange = "self" | "melee" | { units: number };
 
-export type SpellVisual = "projectile" | "ring" | "bubble" | "shards" | "arrow" | "swing";
+export type SpellVisual = "projectile" | "ring" | "bubble" | "shards" | "swing";
 
 /** The body motion the caster plays: arms raised, bow drawn or a weapon swung. */
 export type CasterPose = "cast" | "draw" | "swing";
@@ -43,15 +43,15 @@ const SHARDS = "M4 2 8 10 3 12ZM11 2 15 12 9 14ZM18 2 22 10 17 14ZM7 15 11 22 4 
 const BANDAGE = "M3 9 15 3 21 15 9 21ZM10 10 14 12 12 16 8 14Z";
 const SPLAT = "M12 3C15 3 17 6 20 7 22 10 19 13 19 16 17 19 14 18 12 21 9 19 6 20 5 16 3 13 4 10 6 8 8 5 10 4Z";
 
-/** Player abilities 1–12 and creature abilities 13–14, by catalog ID. */
+/** Player abilities 1–12 and creature abilities 13–15, by catalog ID. Shots (5–7, 15) fly as the zone's own projectiles (#286). */
 export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = new Map<number, AbilityPresentation>([
   [1, { range: "melee", description: "A heavy weapon blow at your target.", glyph: SWORD, accent: "#e0a15c", visual: "swing", pose: "swing" }],
   [2, { range: "melee", description: "Slams your shield into the target: interrupts its cast and stuns it.", glyph: SHIELD, accent: "#9fb4c8", visual: null, pose: "swing" }],
   [3, { range: "self", description: "Rallies your spirit and heals you over time.", glyph: HEART, accent: "#7fd08a", visual: null, pose: null }],
   [4, { range: "melee", description: "A sweeping blow that also hits creatures near your target.", glyph: CLEAVE, accent: "#d9a066", visual: "swing", pose: "swing" }],
-  [5, { range: RANGED, description: "A carefully placed shot at your target.", glyph: ARROW, accent: "#c9b36a", visual: "arrow", pose: "draw" }],
-  [6, { range: RANGED, description: "A poisoned shot that damages the target over time.", glyph: SNAKE, accent: "#7fc05a", visual: "arrow", pose: "draw" }],
-  [7, { range: RANGED, description: "A stunning shot that slows the target's movement.", glyph: FOOT, accent: "#b0a58c", visual: "arrow", pose: "draw" }],
+  [5, { range: RANGED, description: "A carefully placed shot at your target.", glyph: ARROW, accent: "#c9b36a", visual: null, pose: "draw" }],
+  [6, { range: RANGED, description: "A poisoned shot that damages the target over time.", glyph: SNAKE, accent: "#7fc05a", visual: null, pose: "draw" }],
+  [7, { range: RANGED, description: "A stunning shot that slows the target's movement.", glyph: FOOT, accent: "#b0a58c", visual: null, pose: "draw" }],
   [8, { range: "self", description: "Quickens your attacks for a short time.", glyph: BOLT, accent: "#f2c14e", visual: null, pose: null }],
   [9, { range: RANGED, description: "Hurls a bolt of fire at your target after a short cast.", glyph: FLAME, accent: "#ff8a3d", visual: "projectile", pose: "cast" }],
   [10, { range: "self", description: "A burst of frost around you that damages and roots nearby creatures.", glyph: FLAKE, accent: "#8fd8ff", visual: "ring", pose: "cast" }],
@@ -59,6 +59,7 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [12, { range: RANGED, description: "Channel a storm of ice shards onto the area around your target.", glyph: SHARDS, accent: "#a8e4ff", visual: "shards", pose: "cast" }],
   [13, { range: { units: 2_000 }, description: "A bolt of muck flung at its target.", glyph: SPLAT, accent: "#7d9a4a", visual: "projectile", pose: "cast" }],
   [14, { range: "self", description: "Binds wounds when badly hurt.", glyph: BANDAGE, accent: "#e7dcc0", visual: null, pose: "cast" }],
+  [15, { range: { units: 2_000 }, description: "A crossbow bolt at its target; walls and raised shields stop it.", glyph: ARROW, accent: "#8a6a4a", visual: null, pose: "draw" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

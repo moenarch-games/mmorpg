@@ -1,7 +1,7 @@
 import { entityKindCode, type EntityRef } from "../../src/entity-ref";
 import { COMBO_PHASES, EMOTES, MELEE_STANCES, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type CastState, type ZoneEvent, type ZoneSnapshot } from "../../src/replication";
 
-const FIXED_BYTES = 112;
+const FIXED_BYTES = 113;
 /** Bag 64, equipment 12 and stat totals 8. */
 const SHEET_BYTES = 84;
 const AURA_KINDS = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
@@ -22,7 +22,7 @@ function flagByte(flags: readonly boolean[]): number {
 }
 
 /**
- * Test-only player-visible snapshot v24 encoder (docs/PROTOCOL.md); Rust owns the real one.
+ * Test-only player-visible snapshot v25 encoder (docs/PROTOCOL.md); Rust owns the real one.
  * Like it, positions must fit i16 and velocities saturate to i8.
  */
 export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
@@ -40,7 +40,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   const chatText = (line: (typeof chat)[number]) =>
     line.channel === "emote" ? null : new TextEncoder().encode(line.text);
   const chatBytes = chat.reduce((total, line) => total + 6 + (chatText(line)?.length ?? 0), 0);
-  const size = FIXED_BYTES + lists + (snapshot.inventory === null ? 0 : SHEET_BYTES) + questBytes + lootBytes + 2 * (snapshot.doors ?? []).length + EVENT_BYTES * snapshot.events.length + chatBytes + ENTITY_BYTES * snapshot.entities.length;
+  const size = FIXED_BYTES + lists + (snapshot.inventory === null ? 0 : SHEET_BYTES) + questBytes + lootBytes + 2 * (snapshot.doors ?? []).length + EVENT_BYTES * snapshot.events.length + chatBytes + ENTITY_BYTES * snapshot.entities.length + 14 * (snapshot.projectiles ?? []).length;
   const bytes = new Uint8Array(size);
   const view = new DataView(bytes.buffer);
   let offset = 0;
@@ -52,9 +52,9 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(value === null ? 0 : entityKindCode(value.kind));
     u32(value?.id ?? 0);
   };
-  u8(24);
+  u8(25);
   u8(2);
-  u16(22);
+  u16(23);
   u32(snapshot.zoneId);
   u64(snapshot.tick);
   u64(snapshot.contentRevision);
@@ -200,6 +200,20 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(record.healthPercent);
     const flags = record.flags;
     u8(flagByte([flags.dead, flags.inCombat, flags.hostile, flags.attackable, flags.tappedByOther, flags.evading, flags.targetsViewer, flags.lootable]));
+  }
+  const projectiles = snapshot.projectiles ?? [];
+  u8(projectiles.length);
+  for (const projectile of projectiles) {
+    u16(projectile.id);
+    u8(projectile.kind === "arrow" ? 1 : 2);
+    for (const component of [projectile.x, projectile.y, projectile.z]) {
+      view.setInt16(offset, component);
+      offset += 2;
+    }
+    u16(projectile.yaw);
+    view.setInt16(offset, projectile.pitch);
+    offset += 2;
+    u8(projectile.stuck ? 1 : 0);
   }
   return bytes;
 }

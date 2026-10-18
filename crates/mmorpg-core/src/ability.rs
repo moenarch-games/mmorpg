@@ -8,7 +8,7 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 1;
+pub const ABILITY_CATALOG_REVISION: u64 = 2;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
@@ -235,6 +235,8 @@ pub struct Ability {
     pub cooldown: u16,
     pub range: AbilityRange,
     pub effect: AbilityEffect,
+    /// The projectile that carries the effect to the target (#286); `None` lands at once.
+    pub projectile: Option<crate::ProjectileKind>,
 }
 
 impl Ability {
@@ -278,6 +280,12 @@ impl Ability {
         )
     }
 
+    /// Whether the ability may also fly freely along the facing without a target (#286).
+    #[must_use]
+    pub const fn aims_freely(&self) -> bool {
+        self.id.0 == ids::AIMED_SHOT.0
+    }
+
     /// Whether the ability needs a hostile unit target (otherwise it is
     /// centred on the caster and ignores any target).
     #[must_use]
@@ -311,6 +319,15 @@ const fn ability(
         cooldown,
         range,
         effect,
+        projectile: None,
+    }
+}
+
+/// `ability` carried by a `kind` projectile.
+const fn shot(ability: Ability, kind: crate::ProjectileKind) -> Ability {
+    Ability {
+        projectile: Some(kind),
+        ..ability
     }
 }
 
@@ -336,10 +353,11 @@ pub mod ids {
     pub const BLIZZARD: AbilityId = AbilityId::new(12);
     pub const MUCK_BOLT: AbilityId = AbilityId::new(13);
     pub const CRUDE_BANDAGE: AbilityId = AbilityId::new(14);
+    pub const CROSSBOW_BOLT: AbilityId = AbilityId::new(15);
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 14] = [
+pub const ABILITY_CATALOG: [Ability; 15] = [
     ability(
         1,
         "Heroic Strike",
@@ -398,50 +416,59 @@ pub const ABILITY_CATALOG: [Ability; 14] = [
             radius: 300,
         },
     ),
-    ability(
-        5,
-        "Aimed Shot",
-        RANGER,
-        1,
-        30,
-        CastTime::Instant,
-        180,
-        RANGED,
-        AbilityEffect::WeaponStrike {
-            numerator: 2,
-            denominator: 1,
-            bonus: 8,
-        },
+    shot(
+        ability(
+            5,
+            "Aimed Shot",
+            RANGER,
+            1,
+            30,
+            CastTime::Instant,
+            180,
+            RANGED,
+            AbilityEffect::WeaponStrike {
+                numerator: 2,
+                denominator: 1,
+                bonus: 8,
+            },
+        ),
+        crate::ProjectileKind::Arrow,
     ),
-    ability(
-        6,
-        "Serpent Sting",
-        RANGER,
-        2,
-        20,
-        CastTime::Instant,
-        0,
-        RANGED,
-        AbilityEffect::DamageOverTime {
-            base: 30,
-            per_level: 4,
-            duration: 450,
-            period: 90,
-        },
+    shot(
+        ability(
+            6,
+            "Serpent Sting",
+            RANGER,
+            2,
+            20,
+            CastTime::Instant,
+            0,
+            RANGED,
+            AbilityEffect::DamageOverTime {
+                base: 30,
+                per_level: 4,
+                duration: 450,
+                period: 90,
+            },
+        ),
+        crate::ProjectileKind::Arrow,
     ),
-    ability(
-        7,
-        "Concussive Shot",
-        RANGER,
-        4,
-        15,
-        CastTime::Instant,
-        360,
-        RANGED,
-        AbilityEffect::Snare {
-            percent: 50,
-            duration: 120,
-        },
+    shot(
+        ability(
+            7,
+            "Concussive Shot",
+            RANGER,
+            4,
+            15,
+            CastTime::Instant,
+            360,
+            RANGED,
+            AbilityEffect::Snare {
+                percent: 50,
+                duration: 120,
+            },
+        ),
+        crate::ProjectileKind::Arrow,
     ),
     ability(
         8,
@@ -545,6 +572,23 @@ pub const ABILITY_CATALOG: [Ability; 14] = [
             percent: 20,
             below_percent: 50,
         },
+    ),
+    shot(
+        ability(
+            15,
+            "Crossbow Bolt",
+            AbilityUser::Creature,
+            1,
+            0,
+            CastTime::Cast(30),
+            240,
+            AbilityRange::Units(2_000),
+            AbilityEffect::Bolt {
+                damage: [5, 8],
+                per_level: 0,
+            },
+        ),
+        crate::ProjectileKind::Bolt,
     ),
 ];
 
@@ -691,7 +735,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(15)), None);
+        assert_eq!(ability_by_id(AbilityId::new(16)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG
