@@ -185,14 +185,20 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         ([4, 9], vec![gear(2), gear(7), gear(9), nothing(3)]),
     ];
     let content = greyhaven_vale::content();
-    assert_eq!(content.creature_templates().len(), rows.len());
-    for (template, (money, outcomes)) in content.creature_templates().iter().zip(rows) {
+    // Breakable props (#288) drop nothing and have no table.
+    let creatures: Vec<_> = content
+        .creature_templates()
+        .iter()
+        .filter(|template| template.prop().is_none())
+        .collect();
+    assert_eq!(creatures.len(), rows.len());
+    for (template, (money, outcomes)) in creatures.into_iter().zip(rows) {
         let table = loot_table(template.id).unwrap();
         assert_eq!(table.money_range(), money);
         assert_eq!(table.outcomes(), outcomes);
         assert_eq!(*table, LootTable::new(money, &outcomes).unwrap());
     }
-    for unknown in [0, 9, u16::MAX] {
+    for unknown in [0, 9, 13, u16::MAX] {
         assert!(loot_table(CreatureTemplateId::new(unknown)).is_none());
     }
 }
@@ -203,7 +209,10 @@ fn supplied_rolls_repeat_with_valid_rewards_and_do_not_touch_live_zone_state() {
     zone.add_player(1).unwrap();
     let before = zone.snapshot().unwrap();
     for template in zone.content().creature_templates() {
-        let table = loot_table(template.id).unwrap();
+        let Some(table) = loot_table(template.id) else {
+            assert!(template.prop().is_some(), "only props drop nothing");
+            continue;
+        };
         for money in [0, 1, 7, u32::MAX] {
             for outcome in [0, 1, 7, u32::MAX] {
                 for quantity in [0, 1, 7, u32::MAX] {

@@ -682,12 +682,19 @@ impl ZoneSimulation {
     }
 
     /// Step 5: re-reads every body's position and moves index memberships
-    /// only when a cell changes. Corpses and NPCs do not move.
+    /// only when a cell changes. Corpses, NPCs and standing props (#288) do not move.
     fn update_interest(&mut self) -> Result<(), ZoneError> {
+        let content = &self.content;
         let bodies = self.players.keys().map(|&id| EntityRef::Player(id)).chain(
             self.creatures
                 .iter()
-                .filter(|(_, creature)| creature.is_alive())
+                .filter(|&(&id, creature)| {
+                    creature.is_alive()
+                        && content
+                            .creature_spawn(id)
+                            .and_then(|spawn| content.creature_template(spawn.template))
+                            .is_some_and(|template| template.prop().is_none())
+                })
                 .map(|(&id, _)| EntityRef::Creature(id)),
         );
         for entity in bodies {

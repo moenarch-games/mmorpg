@@ -88,6 +88,7 @@ pub fn encode_canonical_snapshot(
         &snapshot.projectiles,
     )?;
     encode_forced(&mut payload, &snapshot.forced)?;
+    encode_debris(&mut payload, snapshot.next_debris, &snapshot.debris)?;
     Ok(payload)
 }
 
@@ -449,6 +450,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let doors = decode_canonical_doors(payload, &mut offset)?;
     let (next_projectile, projectiles) = decode_projectiles(payload, &mut offset)?;
     let forced = decode_forced(payload, &mut offset)?;
+    let (next_debris, debris) = decode_debris(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         schema_version,
@@ -464,6 +466,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         projectiles,
         next_projectile,
         forced,
+        debris,
+        next_debris,
     })
 }
 
@@ -953,6 +957,83 @@ fn decode_projectiles(
     Ok((next, projectiles))
 }
 
+/// Debris (#288): the next ID (`u32`), a `u16` count, then per piece its ID (`u32`), prop kind
+/// and piece index (`u8` each), position, rotation quaternion, velocity and spin (`f32`s), age
+/// (`u16`) and resting flag. Half extents follow from kind and piece.
+fn encode_debris(
+    payload: &mut Vec<u8>,
+    next: u32,
+    debris: &[mmorpg_core::Debris],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(&next.to_be_bytes());
+    payload.extend_from_slice(
+        &encode_u16_count(debris.len(), mmorpg_core::MAX_DEBRIS, "too much debris")?.to_be_bytes(),
+    );
+    for piece in debris {
+        payload.extend_from_slice(&piece.id.to_be_bytes());
+        payload.push(piece.kind.code());
+        payload.push(piece.piece);
+        let body = &piece.body;
+        for component in body
+            .position
+            .iter()
+            .chain(&body.rotation)
+            .chain(&body.velocity)
+            .chain(&body.spin)
+        {
+            payload.extend_from_slice(&component.to_be_bytes());
+        }
+        payload.extend_from_slice(&piece.age.to_be_bytes());
+        payload.push(u8::from(body.resting));
+    }
+    Ok(())
+}
+
+fn decode_debris(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<(u32, Vec<mmorpg_core::Debris>), ProtocolError> {
+    let next = u32::from_be_bytes(take(payload, offset)?);
+    let count = decode_u16_count(payload, offset, mmorpg_core::MAX_DEBRIS, "too much debris")?;
+    let mut debris = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = u32::from_be_bytes(take(payload, offset)?);
+        let kind = mmorpg_core::PropKind::from_code(read_u8(payload, offset)?)
+            .ok_or_else(|| ProtocolError::new("unknown debris kind"))?;
+        let piece = read_u8(payload, offset)?;
+        let [hx, hy, hz] = mmorpg_core::debris_pieces(kind)
+            .get(usize::from(piece))
+            .ok_or_else(|| ProtocolError::new("unknown debris piece"))?
+            .half_extents;
+        let position = read_f32_vector(payload, offset)?;
+        let rotation = [
+            f32::from_be_bytes(take(payload, offset)?),
+            f32::from_be_bytes(take(payload, offset)?),
+            f32::from_be_bytes(take(payload, offset)?),
+            f32::from_be_bytes(take(payload, offset)?),
+        ];
+        let velocity = read_f32_vector(payload, offset)?;
+        let spin = read_f32_vector(payload, offset)?;
+        let age = u16::from_be_bytes(take(payload, offset)?);
+        let resting = read_bool(payload, offset)?;
+        debris.push(mmorpg_core::Debris {
+            id,
+            kind,
+            piece,
+            body: mmorpg_core::physics::DebrisBody {
+                position,
+                rotation,
+                velocity,
+                spin,
+                half_extents: mmorpg_core::physics::Vec3i::new(hx, hy, hz),
+                resting,
+            },
+            age,
+        });
+    }
+    Ok((next, debris))
+}
+
 /// At most one forced-movement state per unit.
 const MAX_FORCED: usize = MAX_PLAYERS_PER_ZONE + MAX_CREATURE_SPAWNS;
 
@@ -1077,6 +1158,21 @@ mod tests {
     fn snapshot() -> CanonicalZoneSnapshot {
         let wolf = EntityRef::Creature(CreatureId::new(4));
         CanonicalZoneSnapshot {
+            debris: vec![mmorpg_core::Debris {
+                id: 7,
+                kind: mmorpg_core::PropKind::Fence,
+                piece: 2,
+                body: mmorpg_core::physics::DebrisBody {
+                    position: [12.5, 3.25, -40.0],
+                    rotation: [0.0, 0.6, 0.0, 0.8],
+                    velocity: [1.5, -2.0, 0.25],
+                    spin: [0.1, 0.0, -0.05],
+                    half_extents: mmorpg_core::physics::Vec3i::new(92, 5, 3),
+                    resting: false,
+                },
+                age: 9,
+            }],
+            next_debris: 8,
             forced: vec![
                 (
                     EntityRef::Player(1),

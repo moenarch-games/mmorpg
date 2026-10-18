@@ -12,9 +12,19 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
 
     zone.advance_tick().unwrap();
     let work = zone.tick_work();
+    // Breakable props (#288) stand on fixed bodies and decide nothing.
+    let props = content
+        .creature_spawns()
+        .iter()
+        .filter(|spawn| {
+            content
+                .creature_template(spawn.template)
+                .is_some_and(|template| template.prop().is_some())
+        })
+        .count();
     assert_eq!(
         work.creature_ai_evaluations,
-        content.creature_spawns().len()
+        content.creature_spawns().len() - props
     );
     let physics = work.physics.unwrap();
     assert_eq!(
