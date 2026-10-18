@@ -853,10 +853,10 @@ mod tests {
 
     #[test]
     fn commands_match_the_shared_golden_fixture() {
-        let checked_in = include_str!("../../../fixtures/protocol/commands-v12.hex");
-        if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
-            print!("{}", command_fixture());
-        }
+        let checked_in = mmorpg_core::golden::golden(
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/commands-v12.hex"),
+            &command_fixture(),
+        );
         assert_eq!(checked_in, command_fixture());
         for line in checked_in.lines().filter(|line| !line.starts_with('#')) {
             let hex = line.split_whitespace().next().unwrap();

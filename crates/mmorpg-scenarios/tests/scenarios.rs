@@ -42,7 +42,8 @@ fn scenario_files(tool: &str) -> Vec<PathBuf> {
 }
 
 fn check_goldens(tool: &str, run: Runner) {
-    let update = std::env::var_os("MMORPG_SCENARIOS_UPDATE").is_some();
+    let update =
+        std::env::var_os("MMORPG_SCENARIOS_UPDATE").is_some() || mmorpg_core::golden::updating();
     let mut mismatches = Vec::new();
     for path in scenario_files(tool) {
         let text = std::fs::read_to_string(&path).unwrap();

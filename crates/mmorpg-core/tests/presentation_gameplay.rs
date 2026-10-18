@@ -40,5 +40,12 @@ fn presentation_preserves_the_prechange_combat_trace() {
             ));
         }
     }
-    assert_eq!(trace, include_str!("fixtures/presentation-gameplay.txt"));
+    let golden = mmorpg_core::golden::golden(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/presentation-gameplay.txt"
+        ),
+        &trace,
+    );
+    assert_eq!(trace, golden);
 }

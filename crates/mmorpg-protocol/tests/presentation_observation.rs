@@ -38,26 +38,11 @@ fn observation_records_round_trip_without_reinterpreting_previous_snapshot_versi
         },
     ];
     let bytes = encode_snapshot(&view).unwrap();
-    if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
-        println!(
-            "observation {}",
-            bytes
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        );
-    }
-    let golden = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../fixtures/protocol/presentation-observation-v25.hex"
-    ))
-    .unwrap();
-    let expected: Vec<u8> = golden
-        .trim()
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-        .collect();
+    let expected = mmorpg_core::golden::golden_hex(
+        mmorpg_core::golden::workspace_root()
+            .join("fixtures/protocol/presentation-observation-v25.hex"),
+        &bytes,
+    );
     assert_eq!(bytes, expected);
     assert_eq!(decode_snapshot(&bytes).unwrap(), view);
     assert_eq!(

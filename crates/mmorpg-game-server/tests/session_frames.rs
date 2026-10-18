@@ -172,7 +172,11 @@ fn lines<'a>(kind: &'a str) -> impl Iterator<Item = (Vec<u8>, &'static str)> + '
 
 #[test]
 fn session_frames_match_the_shared_golden_fixture() {
-    assert_eq!(FIXTURE, render());
+    let golden = mmorpg_core::golden::golden(
+        mmorpg_core::golden::workspace_root().join("fixtures/protocol/session-frames-v3.hex"),
+        &render(),
+    );
+    assert_eq!(golden, render());
 }
 
 #[test]
