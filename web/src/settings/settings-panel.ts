@@ -242,13 +242,10 @@ export class SettingsPanel {
     const section = document.createElement("section");
     section.className = "settings-bindings";
     section.setAttribute("aria-label", `Key bindings for ${bindings.characterName}`);
-    const context = document.createElement("p");
-    context.className = "settings-binding-context";
-    context.textContent = `Bindings for ${bindings.characterName}`;
     const host = document.createElement("div");
     host.className = "settings-bindings-host";
     host.textContent = "Loading the binding editor…";
-    section.append(context, host);
+    section.append(host);
     let cancelled = false;
     this.#unmountEditor = () => {
       cancelled = true;
