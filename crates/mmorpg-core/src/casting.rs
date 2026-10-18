@@ -38,6 +38,22 @@ pub(crate) const SHIELD_BASH_LOCKOUT_TICKS: u16 = 120;
 /// A refusal: the error code and the unit it concerned.
 pub(crate) type Refusal = Option<(ErrorCode, Option<EntityRef>)>;
 
+/// One explosion: Fire Blast (#287) or a breaking explosive barrel (#288).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Detonation {
+    /// The player credited with the damage to creatures and props.
+    pub(crate) attacker: PlayerId,
+    /// The exploding barrel, which also hurts players; `None` for a spell.
+    pub(crate) source: Option<CreatureId>,
+    pub(crate) centre: [i32; 3],
+    pub(crate) radius: i32,
+    pub(crate) damage: [u16; 2],
+    pub(crate) bonus: u32,
+    pub(crate) knockback: i32,
+    /// The push direction for a unit standing on the centre.
+    pub(crate) fallback: [i64; 2],
+}
+
 impl ZoneSimulation {
     /// A one-time class choice; the resource starts at the class's start value.
     /// Content that never bound the ability catalog keeps it out of its
@@ -443,24 +459,19 @@ impl ZoneSimulation {
             } => {
                 if let Some(target) = target {
                     let centre = self.unit_position(target)?;
-                    for (victim, distance) in self.blast_victims(centre, radius)? {
-                        // Linear falloff to half at the edge, in per-mille.
-                        let share = 1_000 - 500 * distance / i64::from(radius.max(1));
-                        let amount = self
-                            .rng
-                            .inclusive(u32::from(damage[0]), u32::from(damage[1]))
-                            + u32::from(scaled(0, per_level, level))
-                            + bonus;
-                        let amount = u32::try_from(i64::from(amount) * share / 1_000).unwrap_or(0);
-                        self.player_damages_creature(player_id, victim, amount.max(1), false, now)?;
-                        let push = i32::try_from(i64::from(knockback) * share / 1_000).unwrap_or(0);
-                        self.knock_away(
-                            EntityRef::Creature(victim),
-                            [centre[0], centre[2]],
+                    self.detonate(
+                        Detonation {
+                            attacker: player_id,
+                            source: None,
+                            centre,
+                            radius,
+                            damage,
+                            bonus: u32::from(scaled(0, per_level, level)) + bonus,
+                            knockback,
                             fallback,
-                            push,
-                        )?;
-                    }
+                        },
+                        now,
+                    )?;
                 }
             }
             AbilityEffect::Charge { knockback } => {
@@ -532,25 +543,90 @@ impl ZoneSimulation {
         Ok(found)
     }
 
-    /// Living creatures within `radius` of the blast `centre` that it can see (#287), with their XZ
-    /// distance: a static collider between centre and body shields a creature.
+    /// One explosion (#287, #288): every victim the centre can see within `radius` takes
+    /// `damage` (inclusive) + `bonus` and is knocked `knockback` units away, both falling off
+    /// linearly to half at the edge; walls between centre and victim shield it. Creatures and
+    /// props take the damage from `attacker`. With an exploding `source` (an explosive barrel)
+    /// living players within reach are hurt by that source too.
+    pub(crate) fn detonate(&mut self, blast: Detonation, now: u64) -> Result<(), ZoneError> {
+        let Detonation {
+            attacker,
+            source,
+            centre,
+            radius,
+            damage,
+            bonus,
+            knockback,
+            fallback,
+        } = blast;
+        for (victim, distance) in self.blast_victims(centre, radius, source.is_some())? {
+            // Linear falloff to half at the edge, in per-mille.
+            let share = 1_000 - 500 * distance / i64::from(radius.max(1));
+            let amount = self
+                .rng
+                .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+                + bonus;
+            let amount = u32::try_from(i64::from(amount) * share / 1_000)
+                .unwrap_or(0)
+                .max(1);
+            match (victim, source) {
+                (EntityRef::Creature(creature_id), _) => {
+                    self.player_damages_creature(attacker, creature_id, amount, false, now)?;
+                }
+                (EntityRef::Player(player_id), Some(barrel)) => {
+                    self.creature_damages_player(barrel, player_id, amount, false)?;
+                }
+                _ => continue,
+            }
+            let push = i32::try_from(i64::from(knockback) * share / 1_000).unwrap_or(0);
+            self.knock_away(victim, [centre[0], centre[2]], fallback, push)?;
+        }
+        Ok(())
+    }
+
+    /// Living units within `radius` of the blast `centre` that it can see (#287): living
+    /// players first when `players`, then living creatures, with their XZ distance. A static
+    /// collider between centre and body shields a unit.
     fn blast_victims(
         &self,
         centre: [i32; 3],
         radius: i32,
-    ) -> Result<Vec<(CreatureId, i64)>, ZoneError> {
+        players: bool,
+    ) -> Result<Vec<(EntityRef, i64)>, ZoneError> {
+        let mut units = Vec::new();
+        if players {
+            let mut near: Vec<_> = self
+                .interest
+                .near(centre[0], centre[2], radius)
+                .into_iter()
+                .filter(|unit| match unit {
+                    EntityRef::Player(id) => self.players.get(id).is_some_and(|p| p.is_alive()),
+                    _ => false,
+                })
+                .collect();
+            near.sort_unstable();
+            units.extend(near);
+        }
+        units.extend(
+            self.living_creatures_near([centre[0], centre[2]], radius)?
+                .into_iter()
+                .map(EntityRef::Creature),
+        );
         let origin = crate::physics::Vec3i::new(centre[0], centre[1], centre[2]);
         let mut victims = Vec::new();
-        for creature_id in self.living_creatures_near([centre[0], centre[2]], radius)? {
-            let at = self.unit_position(EntityRef::Creature(creature_id))?;
+        for unit in units {
+            let at = self.unit_position(unit)?;
+            let distance = distance_squared([centre[0], centre[2]], [at[0], at[2]]);
+            if distance > i64::from(radius).pow(2) {
+                continue;
+            }
             let shielded = self.world.segment_blocked(
                 origin,
                 crate::physics::Vec3i::new(at[0] - centre[0], at[1] - centre[1], at[2] - centre[2]),
                 |body| body.0 < crate::entity::PLAYER_BODY_BASE,
             );
             if !shielded {
-                let distance = distance_squared([centre[0], centre[2]], [at[0], at[2]]).isqrt();
-                victims.push((creature_id, distance));
+                victims.push((unit, distance.isqrt()));
             }
         }
         Ok(victims)

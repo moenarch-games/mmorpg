@@ -19,9 +19,7 @@ use crate::creature::{CreatureState, Life, MAX_THREAT_ENTRIES};
 use crate::entity::body_id;
 use crate::rng::ZoneRng;
 use crate::unit::{PLAYER_START_LEVEL, player_max_health};
-use crate::zone::{
-    Axis, MAX_PENDING_INTENTS, PLAYER_HALF_EXTENTS, PlayerState, physics_error, vector,
-};
+use crate::zone::{Axis, MAX_PENDING_INTENTS, PLAYER_HALF_EXTENTS, PlayerState, physics_error};
 use crate::{
     Aura, CastState, ClassChoice, Cooldown, CreatureId, EntityRef, MAX_EVENTS_PER_PLAYER,
     MAX_PLAYERS_PER_ZONE, PlayerId, SNAPSHOT_SCHEMA_VERSION, ZoneContent, ZoneError, ZoneEvent,
@@ -282,6 +280,9 @@ pub struct CanonicalZoneSnapshot {
     pub next_projectile: u32,
     /// Forced moves in progress and immunities, in unit order (#287).
     pub forced: Vec<(crate::EntityRef, crate::ForcedState)>,
+    /// Pieces of broken props in ID order, and the next piece ID (#288).
+    pub debris: Vec<crate::Debris>,
+    pub next_debris: u32,
 }
 
 impl ZoneSimulation {
@@ -405,6 +406,8 @@ impl ZoneSimulation {
             projectiles: self.projectiles.values().copied().collect(),
             next_projectile: self.next_projectile,
             forced: self.forced_states(),
+            debris: self.debris.values().copied().collect(),
+            next_debris: self.next_debris,
         })
     }
 
@@ -489,6 +492,7 @@ impl ZoneSimulation {
             .collect();
         zone.next_projectile = snapshot.next_projectile;
         zone.restore_forced(snapshot.forced)?;
+        zone.restore_debris(snapshot.debris, snapshot.next_debris)?;
         // The snapshot tick's routine placements; doors are already as that tick left them.
         zone.place_routine_npcs(false)?;
         zone.validate_references()?;
@@ -691,12 +695,18 @@ impl ZoneSimulation {
                 if record.health == 0 {
                     return Err(ZoneError::new("a living creature needs health"));
                 }
+                if template.prop().is_some()
+                    && (record.velocity != [0.0; 3] || record.position.map(f32::fract) != [0.0; 3])
+                {
+                    return Err(ZoneError::new("a standing prop is fixed in whole units"));
+                }
                 self.world
-                    .add_body(RigidBody::moving(
-                        body_id(EntityRef::Creature(record.creature_id)),
+                    .add_body(crate::creature::creature_body(
+                        record.creature_id,
+                        template,
+                        record.facing,
                         record.position,
                         record.velocity,
-                        vector(template.half_extents),
                     ))
                     .map_err(physics_error)?;
                 Life::Alive

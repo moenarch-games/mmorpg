@@ -23,17 +23,20 @@ pub enum CreatureFamily {
     Marauder,
     Mirefin,
     Redbrand,
+    /// Breakable props (#288): crates, barrels and fences. They never assist.
+    Prop,
 }
 
 impl CreatureFamily {
     /// Every family, in order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Wolf,
         Self::Boar,
         Self::Vermin,
         Self::Marauder,
         Self::Mirefin,
         Self::Redbrand,
+        Self::Prop,
     ];
 
     /// Stable lower-case name for exports.
@@ -46,6 +49,58 @@ impl CreatureFamily {
             Self::Marauder => "marauder",
             Self::Mirefin => "mirefin",
             Self::Redbrand => "redbrand",
+            Self::Prop => "prop",
+        }
+    }
+}
+
+/// What a breakable prop is (#288).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PropKind {
+    Crate,
+    Barrel,
+    /// Explodes like Fire Blast when broken, so barrels chain-react.
+    ExplosiveBarrel,
+    Fence,
+}
+
+impl PropKind {
+    pub const ALL: [Self; 4] = [
+        Self::Crate,
+        Self::Barrel,
+        Self::ExplosiveBarrel,
+        Self::Fence,
+    ];
+
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Crate => "crate",
+            Self::Barrel => "barrel",
+            Self::ExplosiveBarrel => "explosive_barrel",
+            Self::Fence => "fence",
+        }
+    }
+
+    /// Stable wire and fingerprint code.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Crate => 0,
+            Self::Barrel => 1,
+            Self::ExplosiveBarrel => 2,
+            Self::Fence => 3,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::Crate),
+            1 => Some(Self::Barrel),
+            2 => Some(Self::ExplosiveBarrel),
+            3 => Some(Self::Fence),
+            _ => None,
         }
     }
 }
@@ -57,6 +112,9 @@ pub enum CreatureBehaviour {
     Aggressive,
     /// Engages only when attacked.
     Neutral,
+    /// A breakable prop (#288): a targetable unit with a little health that never moves or
+    /// fights, gives no experience or loot, and breaks into debris.
+    Prop(PropKind),
 }
 
 impl CreatureBehaviour {
@@ -65,6 +123,16 @@ impl CreatureBehaviour {
         match self {
             Self::Aggressive => "aggressive",
             Self::Neutral => "neutral",
+            Self::Prop(_) => "prop",
+        }
+    }
+
+    /// The prop kind of a breakable.
+    #[must_use]
+    pub const fn prop(self) -> Option<PropKind> {
+        match self {
+            Self::Prop(kind) => Some(kind),
+            Self::Aggressive | Self::Neutral => None,
         }
     }
 }
@@ -106,6 +174,24 @@ impl CreatureTemplate {
     pub const fn damage_at(&self, level: u8) -> [u16; 2] {
         let bonus = self.damage_per_level * self.levels_above_min(level) as u16;
         [self.damage[0] + bonus, self.damage[1] + bonus]
+    }
+
+    /// The prop kind of a breakable template.
+    #[must_use]
+    pub const fn prop(&self) -> Option<PropKind> {
+        self.behaviour.prop()
+    }
+
+    /// The collision box of a unit facing `facing`: a facing nearer a quarter turn than a
+    /// half turn swaps the X and Z extents, so a fence runs along its facing's side.
+    #[must_use]
+    pub const fn body_half_extents(&self, facing: u16) -> [i32; 3] {
+        let [x, y, z] = self.half_extents;
+        if (facing.wrapping_add(8_192) / 16_384) % 2 == 1 {
+            [z, y, x]
+        } else {
+            [x, y, z]
+        }
     }
 
     const fn levels_above_min(&self, level: u8) -> u8 {

@@ -225,6 +225,9 @@ pub struct ZoneSimulation {
     pub(crate) next_projectile: u32,
     /// Forced moves in progress and the immunity after them (#287).
     pub(crate) forced: BTreeMap<EntityRef, crate::ForcedState>,
+    /// Pieces of broken props by ID (#288).
+    pub(crate) debris: BTreeMap<u32, crate::Debris>,
+    pub(crate) next_debris: u32,
 }
 
 impl ZoneSimulation {
@@ -335,6 +338,8 @@ impl ZoneSimulation {
             projectiles: BTreeMap::new(),
             next_projectile: 1,
             forced: BTreeMap::new(),
+            debris: BTreeMap::new(),
+            next_debris: 1,
         })
     }
 
@@ -569,7 +574,7 @@ impl ZoneSimulation {
     ///    creature velocities; roots and stuns stop them, snares slow them;
     /// 3. player movement velocities and grounded jumps (dead and stunned
     ///    players stand still); movement or a jump interrupts a cast;
-    /// 4. one physics step;
+    /// 4. one physics step, then one debris step for broken props' pieces (#288);
     /// 5. interest index maintenance from the new positions;
     /// 6. combat: global cooldowns, cooldowns and casts or channels (players,
     ///    then creatures), aura pulses and expiry in `(EntityRef, aura slot)`
@@ -599,6 +604,7 @@ impl ZoneSimulation {
         self.apply_forced_moves()?;
         self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
         self.settle_forced_moves();
+        self.advance_debris();
         self.update_landings()?;
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
         for player in self.players.values_mut() {

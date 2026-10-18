@@ -25,7 +25,7 @@ use rapier3d::parry::query::{
 };
 use rapier3d::prelude::{
     Capsule, ColliderBuilder, ColliderHandle, Cuboid, PhysicsWorld, Pose, QueryFilter,
-    Ray as RapierRay, RigidBodyBuilder, RigidBodyHandle, SharedShape, Vector,
+    Ray as RapierRay, RigidBodyBuilder, RigidBodyHandle, Rotation, SharedShape, Vector,
 };
 
 use queries::UprightShapes;
@@ -252,6 +252,57 @@ impl RigidBody {
         matches!(self.kind, Kind::Moving)
     }
 }
+
+/// A short-lived dynamic rigid body (#288): one piece of a broken prop. Rapier integrates it
+/// under gravity against the fixed world (content, terrain, doors, NPCs and standing props);
+/// units neither push it nor feel it. Like every body here its state is the game's, so a
+/// restored zone continues it exactly.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DebrisBody {
+    /// Centre, in units.
+    pub position: [f32; 3],
+    /// Unit quaternion `[x, y, z, w]`.
+    pub rotation: [f32; 4],
+    /// Units per tick.
+    pub velocity: [f32; 3],
+    /// Radians per tick.
+    pub spin: [f32; 3],
+    pub half_extents: Vec3i,
+    /// Settled: no longer simulated, and a fixed obstacle for pieces still moving.
+    pub resting: bool,
+}
+
+impl DebrisBody {
+    /// Whether the state is finite and the rotation a unit quaternion.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        let finite = self
+            .position
+            .iter()
+            .chain(&self.rotation)
+            .chain(&self.velocity)
+            .chain(&self.spin)
+            .all(|value| value.is_finite());
+        let norm: f32 = self.rotation.iter().map(|value| value * value).sum();
+        finite
+            && (norm - 1.0).abs() < 1.0e-3
+            && [
+                self.half_extents.x,
+                self.half_extents.y,
+                self.half_extents.z,
+            ]
+            .iter()
+            .all(|&extent| extent > 0)
+    }
+}
+
+/// A piece slower than this (units per tick) and turning slower than [`DEBRIS_REST_SPIN`]
+/// (radians per tick) settles.
+const DEBRIS_REST_SPEED_UNITS: f32 = 0.6;
+const DEBRIS_REST_SPIN: f32 = 0.03;
+/// Fixed geometry this far (units) around the pieces takes part in a debris step.
+const DEBRIS_REACH_UNITS: f32 = 1_000.0;
+const TICKS_PER_SECOND: f32 = 30.0;
 
 /// What one step did.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -907,6 +958,99 @@ impl World {
             fraction: hit.time_of_impact,
             normal: [hit.normal.x, hit.normal.y, hit.normal.z],
         })
+    }
+
+    /// Advances `debris` (#288) one tick: Rapier steps a world of the pieces still moving as
+    /// dynamic bodies, the settled ones and the fixed geometry around them, rebuilt from the
+    /// game's state in slice order like every step here. A piece that slows below the rest
+    /// thresholds settles once `settle` allows it. Returns how many pieces moved.
+    ///
+    /// Rapier gap (#288): rebuilding each tick drops the solver's warm-start contact impulses,
+    /// so a resting stack jitters; pieces settle into fixed obstacles instead of sleeping.
+    pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
+        let moving = debris.iter().filter(|piece| !piece.resting).count();
+        if moving == 0 {
+            return 0;
+        }
+        let mut world = empty_world();
+        let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND;
+        world.gravity = metres(self.gravity) * per_second;
+        let (mut low, mut high) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for piece in debris.iter() {
+            for axis in 0..3 {
+                low[axis] = low[axis].min(piece.position[axis] - DEBRIS_REACH_UNITS);
+                high[axis] = high[axis].max(piece.position[axis] + DEBRIS_REACH_UNITS);
+            }
+        }
+        for body in self.bodies.values().filter(|body| !body.is_moving()) {
+            #[allow(clippy::cast_precision_loss)]
+            let near = matches!(body.kind, Kind::Floor)
+                || (0..3).all(|axis| {
+                    let half = [
+                        body.half_extents.x,
+                        body.half_extents.y,
+                        body.half_extents.z,
+                    ][axis] as f32;
+                    body.position[axis] + half >= low[axis]
+                        && body.position[axis] - half <= high[axis]
+                });
+            if near {
+                insert(&mut world, body);
+            }
+        }
+        if let Some(ground) = self.ground.as_ref() {
+            insert_ground(&mut world, ground.id, &ground.terrain);
+        }
+        let pose = |piece: &DebrisBody| {
+            let [x, y, z, w] = piece.rotation;
+            Pose::from_parts(metres(piece.position), Rotation::from_xyzw(x, y, z, w))
+        };
+        let mut handles = Vec::with_capacity(debris.len());
+        for piece in debris.iter() {
+            let shape = SharedShape::new(cuboid(piece.half_extents));
+            let collider = ColliderBuilder::new(shape)
+                .friction(0.8)
+                .restitution(0.15)
+                .density(600.0);
+            if piece.resting {
+                world
+                    .colliders
+                    .insert(collider.position(pose(piece)).build());
+                handles.push(None);
+                continue;
+            }
+            let handle = world.bodies.insert(
+                RigidBodyBuilder::dynamic()
+                    .pose(pose(piece))
+                    .linvel(metres(piece.velocity) * TICKS_PER_SECOND)
+                    .angvel(Vector::from(piece.spin) * TICKS_PER_SECOND)
+                    .linear_damping(0.2)
+                    .angular_damping(0.8)
+                    .build(),
+            );
+            world
+                .colliders
+                .insert_with_parent(collider.build(), handle, &mut world.bodies);
+            handles.push(Some(handle));
+        }
+        world.step();
+        for ((piece, handle), &settles) in debris.iter_mut().zip(handles).zip(settle) {
+            let Some(body) = handle.and_then(|handle| world.bodies.get(handle)) else {
+                continue;
+            };
+            piece.position = units(body.translation());
+            piece.rotation = body.rotation().normalize().to_array();
+            piece.velocity = units(body.linvel() / TICKS_PER_SECOND);
+            piece.spin = (body.angvel() / TICKS_PER_SECOND).to_array();
+            let speed = piece.velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
+            let spin = piece.spin.iter().map(|v| v * v).sum::<f32>().sqrt();
+            if settles && speed < DEBRIS_REST_SPEED_UNITS && spin < DEBRIS_REST_SPIN {
+                piece.resting = true;
+                piece.velocity = [0.0; 3];
+                piece.spin = [0.0; 3];
+            }
+        }
+        moving
     }
 
     /// Brings Rapier's broad phase (the query structure) up to date.

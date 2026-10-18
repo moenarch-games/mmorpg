@@ -24,12 +24,19 @@ pub mod templates {
     pub const GARRICK_REDBRAND: CreatureTemplateId = CreatureTemplateId::new(7);
     /// The Greyfang outriders, who shoot crossbow bolts (#286).
     pub const REDBRAND_CROSSBOWMAN: CreatureTemplateId = CreatureTemplateId::new(8);
+    /// Breakable props (#288).
+    pub const CRATE: CreatureTemplateId = CreatureTemplateId::new(9);
+    pub const BARREL: CreatureTemplateId = CreatureTemplateId::new(10);
+    pub const EXPLOSIVE_BARREL: CreatureTemplateId = CreatureTemplateId::new(11);
+    pub const FENCE: CreatureTemplateId = CreatureTemplateId::new(12);
 }
 
 /// Default respawn time: 60 s.
 pub const RESPAWN_TICKS: u32 = 1_800;
 /// Garrick Redbrand respawns after 5 min.
 pub const GARRICK_RESPAWN_TICKS: u32 = 9_000;
+/// A broken prop stands again after 5 min, once its spot is clear (#288).
+pub const PROP_RESPAWN_TICKS: u32 = 9_000;
 /// Idle creatures wander within 6 m of their spawn point.
 pub const WANDER_RADIUS_UNITS: i32 = 600;
 /// Released spirits return beside the graveyard, south of the gravestones'
@@ -42,6 +49,10 @@ const RAT: [i32; 3] = [25, 20, 25];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
 const GARRICK: [i32; 3] = [40, 100, 40];
+const CRATE_BOX: [i32; 3] = [35, 35, 35];
+const BARREL_BOX: [i32; 3] = [30, 45, 30];
+/// A fence section runs along X at facing 0.
+const FENCE_BOX: [i32; 3] = [110, 50, 8];
 
 /// `(id, name, family, behaviour, levels, elite, health, health/level,
 /// damage, damage/level, swing ticks, respawn ticks, half extents)`.
@@ -62,9 +73,10 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 8] = {
-    use CreatureBehaviour::{Aggressive, Neutral};
+const TEMPLATES: [TemplateRow; 12] = {
+    use CreatureBehaviour::{Aggressive, Neutral, Prop};
     use CreatureFamily::{Boar, Marauder, Mirefin, Redbrand, Vermin, Wolf};
+    use crate::PropKind;
     use templates::*;
     [
         (TIMBER_WOLF, "Timber Wolf", Wolf, Aggressive, [1, 2], false, 42, 14, [2, 4], 1, 60, RESPAWN_TICKS, WOLF),
@@ -75,6 +87,41 @@ const TEMPLATES: [TemplateRow; 8] = {
         (REDBRAND_BANDIT, "Redbrand Bandit", Redbrand, Aggressive, [3, 5], false, 75, 16, [4, 7], 0, 66, RESPAWN_TICKS, HUMANOID),
         (GARRICK_REDBRAND, "Garrick Redbrand", Redbrand, Aggressive, [5, 5], true, 420, 0, [8, 14], 0, 72, GARRICK_RESPAWN_TICKS, GARRICK),
         (REDBRAND_CROSSBOWMAN, "Redbrand Crossbowman", Redbrand, Aggressive, [3, 5], false, 70, 14, [3, 6], 0, 66, RESPAWN_TICKS, HUMANOID),
+        // Breakable props (#288): a few hits break them; they never swing.
+        (CRATE, "Crate", CreatureFamily::Prop, Prop(PropKind::Crate), [1, 1], false, 12, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, CRATE_BOX),
+        (BARREL, "Barrel", CreatureFamily::Prop, Prop(PropKind::Barrel), [1, 1], false, 15, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, BARREL_BOX),
+        (EXPLOSIVE_BARREL, "Blasting Powder Barrel", CreatureFamily::Prop, Prop(PropKind::ExplosiveBarrel), [1, 1], false, 10, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, BARREL_BOX),
+        (FENCE, "Fence", CreatureFamily::Prop, Prop(PropKind::Fence), [1, 1], false, 18, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, FENCE_BOX),
+    ]
+};
+
+/// Breakable props (#288) as `(spawn id, template, feet XZ, facing)`: crates and barrels by
+/// Greyhaven's smithy and houses, crates, barrels and fences at Millbrook Farm, and powder
+/// barrels in the Redbrand camp, set close enough to chain-react.
+#[rustfmt::skip]
+const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 17] = {
+    use templates::*;
+    [
+        // Greyhaven Outpost.
+        (900, CRATE, [2_200, 1_000], 0),
+        (901, CRATE, [2_310, 1_000], 2_048),
+        (902, BARREL, [2_700, 1_050], 0),
+        (903, BARREL, [1_750, 3_300], 0),
+        (904, CRATE, [-1_900, 3_200], 4_096),
+        // Millbrook Farm.
+        (910, CRATE, [7_250, 3_450], 0),
+        (911, CRATE, [7_250, 3_340], 0),
+        (912, BARREL, [8_750, 3_450], 0),
+        (913, BARREL, [6_700, 4_300], 0),
+        (914, FENCE, [5_200, 3_600], 0),
+        (915, FENCE, [5_430, 3_600], 0),
+        (916, FENCE, [5_000, 3_730], 16_384),
+        // Redbrand Hollow: powder barrels by the campfire and beside the western tents.
+        (920, EXPLOSIVE_BARREL, [300, -9_000], 0),
+        (921, EXPLOSIVE_BARREL, [370, -9_000], 0),
+        (922, EXPLOSIVE_BARREL, [335, -8_935], 0),
+        (923, EXPLOSIVE_BARREL, [-800, -9_500], 0),
+        (924, EXPLOSIVE_BARREL, [-870, -9_500], 0),
     ]
 };
 
@@ -246,6 +293,17 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
             facing,
             wander_radius: WANDER_RADIUS_UNITS,
         })
+        .chain(
+            PROPS
+                .iter()
+                .map(|&(id, template, position, facing)| CreatureSpawn {
+                    id: CreatureId::new(id),
+                    template,
+                    position,
+                    facing,
+                    wander_radius: 0,
+                }),
+        )
         .collect()
 }
 
