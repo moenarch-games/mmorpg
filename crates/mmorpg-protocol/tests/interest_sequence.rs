@@ -184,8 +184,9 @@ fn players_running_on_unenclosed_content_stay_encodable() {
         .iter()
         .map(|player| mmorpg_core::physics::to_units(player.position))
         .collect();
-    // Player 2 spawned 2 m ahead and rests against the limit; player 1 rests against it.
+    // Player 2 spawned 2 m ahead and rests against the limit; player 1 caught up, slid
+    // around it (#273) and rests against the limit beside it.
     let front = MAX_CONTENT_COORDINATE_UNITS - 30;
-    assert_eq!(positions, [[front - 60, 90, 0], [front, 90, 0]]);
+    assert_eq!(positions, [[front, 90, -61], [front, 90, 0]]);
     assert_wire_parity(&zone);
 }

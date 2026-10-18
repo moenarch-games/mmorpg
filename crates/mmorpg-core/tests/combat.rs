@@ -400,7 +400,7 @@ fn assist_death_release_spirit_and_evade() {
 #[test]
 fn held_movement_does_not_survive_death() {
     let content = arena::arena(
-        vec![arena::wolf(400, [20, 30])],
+        vec![arena::wolf(400, [60, 80])],
         vec![arena::spawn(1, WOLF, [0, 2_000])],
         vec![],
     );

@@ -534,6 +534,7 @@ impl World {
                     .velocity = velocity;
                 continue;
             }
+            let desired = self.slide_around(&body, desired);
             let (moved, grounded) = self.move_shape(&body, desired)?;
             let to = [
                 body.position[0] + moved[0],
@@ -563,6 +564,60 @@ impl World {
             moved_bodies,
             bodies: self.bodies.len(),
         })
+    }
+
+    /// `desired` with the horizontal part that presses into a touching moving capsule turned
+    /// along it, so characters slide around each other instead of locking head-on: Rapier's
+    /// controller only stops a kinematic body at another (#273; physics-engine #308 will do
+    /// this natively). Exactly head-on, both step aside to opposite sides at full speed.
+    fn slide_around(&self, body: &RigidBody, desired: [f32; 3]) -> [f32; 3] {
+        let [mut vx, vy, mut vz] = desired;
+        let speed = vx.hypot(vz);
+        if speed == 0.0 {
+            return desired;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let radius = |half: Vec3i| half.x.max(half.z) as f32;
+        #[allow(clippy::cast_precision_loss)]
+        let (low, high) = (
+            body.position[1] - body.half_extents.y as f32,
+            body.position[1] + body.half_extents.y as f32,
+        );
+        for other in self.bodies.values() {
+            if other.id == body.id || !other.is_moving() {
+                continue;
+            }
+            #[allow(clippy::cast_precision_loss)]
+            let other_half_y = other.half_extents.y as f32;
+            if other.position[1] + other_half_y < low || other.position[1] - other_half_y > high {
+                continue;
+            }
+            let (dx, dz) = (
+                body.position[0] - other.position[0],
+                body.position[2] - other.position[2],
+            );
+            let distance = dx.hypot(dz);
+            let reach =
+                radius(body.half_extents) + radius(other.half_extents) + CONTACT_OFFSET_UNITS + 1.0;
+            if distance == 0.0 || distance > reach {
+                continue;
+            }
+            // `n` points from the other body to this one; only motion against it is turned.
+            let (nx, nz) = (dx / distance, dz / distance);
+            let into = vx * nx + vz * nz;
+            if into >= 0.0 {
+                continue;
+            }
+            vx -= into * nx;
+            vz -= into * nz;
+            if vx.hypot(vz) < 0.25 * speed {
+                // The tangent (-nz, nx): mirrored for the other body, so two characters
+                // meeting exactly head-on step to opposite sides.
+                vx = -nz * speed;
+                vz = nx * speed;
+            }
+        }
+        [vx, vy, vz]
     }
 
     /// The translation (units) the controller applies to `body` for `desired`, and whether
@@ -751,6 +806,43 @@ mod tests {
         let x = world.body(unit).unwrap().exact_position()[0];
         assert!((219.0..=220.0).contains(&x), "stopped at the wall: {x}");
         assert_eq!(world.body(unit).unwrap().position().y, 90);
+    }
+
+    #[test]
+    fn characters_meeting_head_on_slide_around_each_other() {
+        let mut world = world();
+        world
+            .add_body(RigidBody::dynamic(
+                BodyId(10),
+                Vec3i::new(-200, 90, 0),
+                Vec3i::new(10, 0, 0),
+                BODY,
+            ))
+            .unwrap();
+        world
+            .add_body(RigidBody::dynamic(
+                BodyId(11),
+                Vec3i::new(200, 90, 0),
+                Vec3i::new(-10, 0, 0),
+                BODY,
+            ))
+            .unwrap();
+        for _ in 0..60 {
+            for (id, vx) in [(10, 10), (11, -10)] {
+                world
+                    .set_velocity(BodyId(id), Vec3i::new(vx, 0, 0))
+                    .unwrap();
+            }
+            world.step().unwrap();
+        }
+        let (a, b) = (
+            world.body(BodyId(10)).unwrap().position(),
+            world.body(BodyId(11)).unwrap().position(),
+        );
+        assert!(
+            a.x > 200 && b.x < -200,
+            "they passed each other: {a:?} {b:?}"
+        );
     }
 
     #[test]
