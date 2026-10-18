@@ -9,11 +9,6 @@ use mmorpg_core::{
     NpcRole, ZoneCommand, ZoneId, ZoneSimulation,
 };
 
-/// Pins every content table of revision 10, including the bound ability, item,
-/// loot, vendor and quest catalogs, the inn door and the NPC routines. Changing creatures, NPCs,
-/// colliders or areas requires a new revision and a new recorded value.
-const FINGERPRINT: u64 = 0x39fb_5f3e_1474_823f;
-
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
@@ -24,12 +19,16 @@ fn the_content_identity_is_pinned() {
         &greyhaven_vale::greyhaven_vale_definition()
     );
     assert_eq!(content.areas(), greyhaven_vale::areas());
-    assert_eq!(
-        content.fingerprint(),
-        FINGERPRINT,
-        "recorded fingerprint {:#018x}",
-        content.fingerprint()
+    // The recorded fingerprint pins every content table, including the bound ability, item,
+    // loot, vendor and quest catalogs, the inn door and the NPC routines. Changing creatures,
+    // NPCs, colliders or areas requires a new revision; `MMORPG_UPDATE_FIXTURES=1` re-records it.
+    let actual = format!("{:#018x}\n", content.fingerprint());
+    let recorded = mmorpg_core::golden::golden(
+        mmorpg_core::golden::workspace_root()
+            .join("fixtures/content/greyhaven-vale-fingerprint.txt"),
+        &actual,
     );
+    assert_eq!(actual, recorded, "recorded fingerprint");
 }
 
 #[test]

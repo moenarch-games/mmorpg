@@ -93,9 +93,14 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
         assert!(prop.collider.is_none());
         assert!(!prop.footprint().intersects(clearing));
     }
+    let recorded = std::fs::read_to_string(
+        mmorpg_core::golden::workspace_root()
+            .join("fixtures/content/greyhaven-vale-fingerprint.txt"),
+    )
+    .unwrap();
     assert_eq!(
-        greyhaven_vale::content().fingerprint(),
-        0x39fb_5f3e_1474_823f
+        format!("{:#018x}", greyhaven_vale::content().fingerprint()),
+        recorded.trim()
     );
     assert_eq!(scenery.content_revision, 14);
 }

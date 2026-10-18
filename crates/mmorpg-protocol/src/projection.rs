@@ -1192,10 +1192,12 @@ mod tests {
             .collect()
     }
 
+    /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
-        hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v25.hex"
-        ))
+        mmorpg_core::golden::golden_hex(
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v25.hex"),
+            &encode_snapshot(&fixture_snapshot()).unwrap(),
+        )
     }
 
     /// Byte offsets of the fixture's sections.
@@ -1232,15 +1234,6 @@ mod tests {
     fn player_snapshot_matches_the_shared_golden_fixture() {
         let snapshot = fixture_snapshot();
         let encoded = encode_snapshot(&snapshot).unwrap();
-        if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
-            println!(
-                "{}",
-                encoded
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>()
-            );
-        }
         assert_eq!(
             encoded.len(),
             PLAYER_SNAPSHOT_FIXED_BYTES
@@ -1307,20 +1300,11 @@ mod tests {
         });
         // A dead target has no target detail.
         snapshot.target_detail = TargetDetail::default();
-        let expected = hex(include_str!(
-            "../../../fixtures/protocol/player-loot-v25.hex"
-        ));
-        if std::env::var_os("MMORPG_PRINT_FIXTURE").is_some() {
-            let bytes = encode_snapshot(&snapshot).unwrap();
-            println!(
-                "loot {}",
-                bytes
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>()
-            );
-        }
         let bytes = encode_snapshot(&snapshot).unwrap();
+        let expected = mmorpg_core::golden::golden_hex(
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v25.hex"),
+            &bytes,
+        );
         assert_eq!(bytes, expected);
         assert_eq!(decode_snapshot(&bytes).unwrap(), snapshot);
         // Without target detail auras the sheet sits one aura record earlier.
@@ -1405,7 +1389,11 @@ mod tests {
             (CAST + 1, 2, "reserved flag bits are set"),
             (CAST + 3, 60, "cast state is inconsistent"),
             (DAMAGE + 1, 13, "viewer damage range is inverted"),
-            (COOLDOWNS, 9, "snapshot has too many cooldowns"),
+            (
+                COOLDOWNS,
+                MAX_COOLDOWNS as u8 + 1,
+                "snapshot has too many cooldowns",
+            ),
             (COOLDOWNS + 1, 11, "cooldown record is inconsistent"),
             (COOLDOWNS + 2, 9, "cooldown record is inconsistent"),
             (AURAS, 9, "snapshot has too many auras"),
@@ -1435,7 +1423,7 @@ mod tests {
             ),
             (
                 EVENTS + 1 + 7 * EVENT_RECORD_BYTES + 1,
-                18,
+                mmorpg_core::ABILITY_CATALOG.len() as u8 + 1,
                 "unknown ability",
             ),
             (

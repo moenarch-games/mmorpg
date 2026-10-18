@@ -25,6 +25,8 @@ mod entity;
 mod equipment;
 mod events;
 mod forced;
+#[doc(hidden)]
+pub mod golden;
 mod guard;
 mod interest;
 mod inventory;
