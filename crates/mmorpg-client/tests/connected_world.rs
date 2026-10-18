@@ -701,15 +701,22 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
             let sheet_bytes = snapshot.quests.as_ref().map_or(0, |quests| {
                 84 + 4 + 1 + 4 * quests.entries.len() + 1 + 3 * quests.markers.len()
             });
-            let expected_entities =
-                (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES - sheet_bytes)
-                    / ENTITY_RECORD_BYTES;
+            // Every projection also carries the content doors (#158).
+            let door_bytes = 2 * snapshot.doors.len();
+            let expected_entities = (MAX_PLAYER_PROJECTION_BYTES
+                - PLAYER_SNAPSHOT_FIXED_BYTES
+                - sheet_bytes
+                - door_bytes)
+                / ENTITY_RECORD_BYTES;
             assert_eq!(snapshot.entities.len(), expected_entities);
             assert_eq!(snapshot.entities[0].id, session.player_id());
             assert_eq!(snapshot.entities[0].kind, EntityKind::Player);
             assert_eq!(
                 mmorpg_protocol::encode_snapshot(&snapshot)?.len(),
-                PLAYER_SNAPSHOT_FIXED_BYTES + sheet_bytes + expected_entities * ENTITY_RECORD_BYTES
+                PLAYER_SNAPSHOT_FIXED_BYTES
+                    + sheet_bytes
+                    + door_bytes
+                    + expected_entities * ENTITY_RECORD_BYTES
             );
             assert!(
                 previous_tick < Some(snapshot.tick),
