@@ -267,12 +267,14 @@ impl ZoneSimulation {
             let [x, y, z] = collider.position;
             let [hx, hy, hz] = collider.half_extents;
             if y + hy == 0 && (x - spawn[0]).abs() <= hx && (z - spawn[2]).abs() <= hz {
+                let id = crate::physics::BodyId(u64::from(collider.id));
                 world
-                    .add_body(RigidBody::floor(
-                        crate::physics::BodyId(u64::from(collider.id)),
-                        0,
-                    ))
+                    .add_body(RigidBody::floor(id, 0))
                     .map_err(physics_error)?;
+                // Authored hills rise from the flat ground under the same identity (#159).
+                if let Some(terrain) = definition.terrain() {
+                    world.set_terrain(id, terrain.clone());
+                }
                 continue;
             }
             world
@@ -725,6 +727,15 @@ impl ZoneSimulation {
         if self.interest.move_if_needed(entity, x, z) {
             self.interest_work.bucket_inserts += 1;
         }
+    }
+
+    /// The authored ground's height at `(x, z)` in whole units (#159); 0 on flat content.
+    pub(crate) fn ground_y(&self, x: i32, z: i32) -> i32 {
+        // Heights stay within ±100 m, far inside `i32`.
+        #[allow(clippy::cast_possible_truncation)]
+        self.world
+            .terrain_height(x, z)
+            .map_or(0, |height| height.round() as i32)
     }
 
     /// The body position of a player.

@@ -787,6 +787,14 @@ impl ZoneContent {
             hash.i32s(&collider.position);
             hash.i32s(&collider.half_extents);
         }
+        if let Some(terrain) = definition.terrain() {
+            hash.bytes(b"terrain");
+            hash.i32s(&terrain.origin);
+            hash.i32(terrain.step);
+            hash.u16(terrain.columns);
+            hash.u16(terrain.rows);
+            hash.i32s(&terrain.heights);
+        }
         hash.len(self.areas.areas().len());
         for area in self.areas.areas() {
             hash.u16(area.id().get());

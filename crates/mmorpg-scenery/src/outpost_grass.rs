@@ -50,10 +50,10 @@ mod tests {
         let before = unmasked_greyhaven_vale_scenery();
         let mut captured_revision = before.clone();
         captured_revision.content_revision = 4;
-        assert_eq!(captured_revision.stable_hash(), 0x0f4f_95eb_395a_1d0f);
+        assert_eq!(captured_revision.stable_hash(), 0x4b32_1776_bf5d_336f);
         let mut previous_revision = before.clone();
         previous_revision.content_revision = 3;
-        assert_eq!(previous_revision.stable_hash(), 0x748f_9b50_d032_e174);
+        assert_eq!(previous_revision.stable_hash(), 0x90a0_1dcc_a637_e6b4);
         let original: Vec<_> = before
             .props
             .iter()

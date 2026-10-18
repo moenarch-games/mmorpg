@@ -169,7 +169,7 @@ impl ZoneSimulation {
         let entity = EntityRef::Creature(id);
         let position = Vec3i::new(
             spawn.position[0],
-            template.half_extents[1],
+            self.ground_y(spawn.position[0], spawn.position[1]) + template.half_extents[1],
             spawn.position[1],
         );
         self.world

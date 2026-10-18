@@ -249,7 +249,14 @@ impl ZoneSimulation {
         }
         if teleport_home {
             self.world
-                .set_position(body, Vec3i::new(home[0], template.half_extents[1], home[1]))
+                .set_position(
+                    body,
+                    Vec3i::new(
+                        home[0],
+                        self.ground_y(home[0], home[1]) + template.half_extents[1],
+                        home[1],
+                    ),
+                )
                 .map_err(physics_error)?;
         }
         self.world

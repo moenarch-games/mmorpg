@@ -14,7 +14,9 @@
 //!
 //! # Presentation-only relief
 //!
-//! Walkable ground is physically flat at y = 0. [`Scenery::height_at`] adds at
+//! The original valley's walkable ground is physically flat at y = 0; the outer valley's
+//! hills (#159) are physical too, a core-authored terrain the zone's Rapier physics walks
+//! units on ([`Scenery::ground_at`]). [`Scenery::height_at`] adds, on top of that ground, at
 //! most ±0.6 m of relief inside the playable square, flattened to exactly 0
 //! under and around structures, roads, the spawn plaza and water, and rises to
 //! mountains of up to 40 m beyond the boundary walls. Beyond the ±280 m
@@ -408,6 +410,8 @@ pub struct Scenery {
     pub water: Vec<Water>,
     farmland: Vec<Rect>,
     relief: Relief,
+    /// The physical ground units walk on (#159); `None` is flat ground at y = 0.
+    ground: Option<mmorpg_core::Terrain>,
     authored_outpost_relief: bool,
 }
 
@@ -601,6 +605,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         water,
         farmland: vec![FARMLAND],
         relief,
+        ground: definition.terrain().cloned(),
         authored_outpost_relief: false,
     };
     let blockers = Blockers::new(structures.iter().map(|(collider, _)| *collider));
@@ -616,8 +621,22 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
 }
 
 impl Scenery {
-    /// Presentation relief at an XZ position, in units above the physically
-    /// flat ground (y = 0).
+    /// The physical ground's height at an XZ position, in units (#159): what units stand on.
+    #[must_use]
+    pub fn ground_at(&self, x: i32, z: i32) -> i32 {
+        self.ground
+            .as_ref()
+            .map_or(0, |ground| ground.height_at(x, z))
+    }
+
+    /// The drawn terrain surface: the physical ground plus the presentation relief.
+    #[must_use]
+    pub fn surface_at(&self, x: i32, z: i32) -> i32 {
+        self.ground_at(x, z) + self.height_at(x, z)
+    }
+
+    /// Presentation relief at an XZ position, in units above the physical
+    /// ground ([`Scenery::ground_at`]); units are drawn raised by it.
     #[must_use]
     pub fn height_at(&self, x: i32, z: i32) -> i32 {
         if self.authored_outpost_relief
@@ -656,7 +675,7 @@ impl Scenery {
             for _ in 0..count {
                 let height = self.height_at(x, z);
                 let biome = self.biome_at(x, z, height);
-                heights.push(height);
+                heights.push(height + self.ground_at(x, z));
                 biomes.push(biome);
                 colors.push(biome_color(biome, x, z));
                 x += step;
@@ -1053,7 +1072,7 @@ impl Placer<'_> {
         });
         let prop = Prop {
             kind,
-            position: [at[0], 0, at[1]],
+            position: [at[0], self.scenery.ground_at(at[0], at[1]), at[1]],
             yaw,
             scale_permille: scale,
             collider: None,

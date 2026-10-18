@@ -76,8 +76,21 @@ fn content_is_a_bounded_deterministic_revision() {
         if !is_terrain(collider) {
             // Structures stand on the ground (the inn's lintel spans its doorway) and stay
             // inside the playable square.
+            // Out on the hills they stand on the terrain, sunk 0.3 m below their lowest corner (#159).
             if !ids::INN_PARTS.contains(&collider.id) {
-                assert_eq!(collider.position[1], collider.half_extents[1]);
+                let ground = definition.terrain().map_or(0, |terrain| {
+                    [min, [max[0], min[1]], max, [min[0], max[1]]]
+                        .iter()
+                        .map(|corner| terrain.height_at(corner[0], corner[1]))
+                        .min()
+                        .unwrap_or(0)
+                });
+                let base = collider.position[1] - collider.half_extents[1];
+                assert!(
+                    base == 0 || base == ground - 30,
+                    "collider {} stands at {base} on {ground}",
+                    collider.id
+                );
             }
             assert!(PLAYABLE_BOUNDS.contains(min[0], min[1]), "{}", collider.id);
             assert!(
@@ -371,7 +384,9 @@ fn structures_and_boundary_walls_block_movement() {
         ZoneSimulation::with_definition(ZoneId::new(1), greyhaven_vale_definition()).unwrap();
     zone.add_player(1).unwrap();
     let mut snapshot = zone.snapshot().unwrap();
-    snapshot.players[0].position = mmorpg_core::physics::from_units([0, 90, 16_000]);
+    // On the downs' hills (#159): start standing on the ground.
+    let ground = greyhaven_vale::hill_height(0, 16_000);
+    snapshot.players[0].position = mmorpg_core::physics::from_units([0, ground + 92, 16_000]);
     let mut zone = ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
     zone.apply_command(1, 1, run(FACE_SOUTH)).unwrap();
     let mut sequence = 1;

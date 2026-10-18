@@ -64,7 +64,14 @@ fn every_structure_renders_its_exact_collision_box() {
             world
                 .props
                 .iter()
-                .any(|item| item.position == position && item.size == size && item.yaw == 0.0),
+                // Hillside structures (#159) sum their footing and half height in f32.
+                .any(|item| item
+                    .position
+                    .iter()
+                    .zip(position)
+                    .all(|(a, b)| (a - b).abs() < 1.0e-4)
+                    && item.size == size
+                    && item.yaw == 0.0),
             "collider {} has no exact box",
             collider.id
         );

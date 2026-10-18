@@ -49,7 +49,7 @@ describe("WASM local zone host", () => {
     loot.update(source.latestProjection()!);
     const movement = new Map([[0, [1, 0]], [36, [1, 49152]], [121, [1, 32768]],
       [131, [1, 49152]], [375, [1, 32768]], [395, [0, 32768]]]);
-    for (let tick = 0; tick < 1092; tick += 1) {
+    for (let tick = 0; tick < 972; tick += 1) {
       const move = movement.get(tick);
       if (move) {
         source.sendCommand({ kind: "move", forward: move[0] === 0 ? 0 : 1, strafe: 0, facing: move[1] ?? 0 });
@@ -64,13 +64,13 @@ describe("WASM local zone host", () => {
       run(source, 1);
     }
     const before = source.latestProjection()!;
-    expect(before.viewer).toMatchObject({ copper: 0, health: 26, experience: 50 });
+    expect(before.viewer).toMatchObject({ copper: 0, health: 30, experience: 50 });
     loot.update(before);
     const sheet = loot.sheet;
     if (sheet === null) {
       throw new Error("Missing authoritative corpse sheet");
     }
-    expect(sheet).toEqual({ creatureId: 108, diedAt: 1035n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
+    expect(sheet).toEqual({ creatureId: 108, diedAt: 915n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
     source.sendCommand({ kind: "loot", creatureId: sheet.creatureId, diedAt: sheet.diedAt + 1n });
     run(source, 1);
     expect(source.latestProjection()?.events).toContainEqual({ kind: "error", code: "invalid-loot", target: { kind: "creature", id: 108 } });
@@ -148,7 +148,7 @@ describe("WASM local zone host", () => {
         }
       }
     }
-    expect(provider.scenery.contentRevision).toBe(12n);
+    expect(provider.scenery.contentRevision).toBe(13n);
   });
   test("multi-tick frames retain intermediate bag sheets and refusal feedback", async () => {
     const { source } = createLocalWorld(wasm, testCharacters());
@@ -283,10 +283,10 @@ describe("WASM local zone host", () => {
     const zone = new wasm.LocalZone() as InstanceType<typeof wasm.LocalZone> & { zoneId(): number };
     const { entries } = testCharacters();
     expect(zone.zoneId()).toBe(1);
-    expect(zone.contentRevision()).toBe(12n);
+    expect(zone.contentRevision()).toBe(13n);
     const player = zone.enter(entries, "local-1", 2, 0, 1n);
     const projection = decodeSnapshot(zone.projection(player));
-    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: 12n, viewerId: player, acknowledgedSequence: 0 });
+    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: 13n, viewerId: player, acknowledgedSequence: 0 });
     // A new character has made its class choice on entry.
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, autoAttacking: false, target: null,
@@ -390,7 +390,7 @@ describe("WASM local zone host", () => {
 
   test("scenery and areas come from the same content as the zone", async () => {
     const { source, scenery } = createLocalWorld(wasm, testCharacters());
-    expect(scenery.scenery.contentRevision).toBe(12n);
+    expect(scenery.scenery.contentRevision).toBe(13n);
     expect(scenery.scenery.source).toBe("mmorpg-scenery");
     expect(scenery.scenery.playerHalfExtents).toEqual([30, 90, 30]);
     await source.join();
@@ -435,8 +435,8 @@ describe("WASM local zone host", () => {
     const actual = provider.scenery.props.filter((prop) => prop.kind === "grass-tuft" && prop.position[0] >= -3500 && prop.position[0] <= 3500 && prop.position[2] >= -1300 && prop.position[2] <= 5300);
     expect(actual).toEqual(expected);
     expect(actual.length).toBe(55);
-    expect(provider.scenery.presentationFingerprint).toBe("f4c878c84358155f");
-    expect(provider.scenery.contentRevision).toBe(12n);
+    expect(provider.scenery.presentationFingerprint).toBe("b102025af178533d");
+    expect(provider.scenery.contentRevision).toBe(13n);
   });
 
   test("the vale's static scene models every prop within a bounded node and vertex budget", () => {
@@ -459,7 +459,7 @@ describe("WASM local zone host", () => {
 describe("WASM local zone combat intents", () => {
   test("the catalog names the hosted units and matches the zone's content", () => {
     const { catalog } = createLocalWorld(wasm, testCharacters());
-    expect(catalog.contentRevision).toBe(12n);
+    expect(catalog.contentRevision).toBe(13n);
     expect([...catalog.items.values()].map((item) => item.name)).toEqual([
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
       "Padded Trousers", "Worn Boots", "Wolf Pelt",
