@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { contextStack, GameControls, type ControlScreen, type GameAction } from "../src/input/game-controls";
+import { contextStack, GAME_ACTION_REGISTRY, GameControls, type ControlScreen, type GameAction } from "../src/input/game-controls";
 import { bindingProfileKey, loadBindingProfile, saveBindingProfile } from "../src/settings/binding-profiles";
 import { Preferences, SETTING } from "../src/settings/preferences";
 
@@ -78,6 +78,13 @@ describe("browser key ownership (Atlas 6.4.2)", () => {
     expect(app.actions).toEqual(["move.forward"]);
     expect(contextStack({ phase: "selection", creating: false, settingsOpen: true }).at(-1)).toEqual({ id: "settings", blocksLower: true });
   });
+});
+
+test("all game actions have useful categories in the bindings editor", () => {
+  for (const action of GAME_ACTION_REGISTRY.actions) {
+    expect(action.categoryPath?.length).toBeGreaterThan(0);
+    expect(action.categoryPath).not.toContain("Other");
+  }
 });
 
 describe("per-character binding profiles (#41 Q21)", () => {
