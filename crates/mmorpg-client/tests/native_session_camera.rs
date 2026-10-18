@@ -12,13 +12,12 @@ fn obstructed(
     scenery: &mmorpg_scenery::Scenery,
     content: &mmorpg_core::ZoneContent,
 ) -> bool {
+    // The inn's footprint is a presentation anchor without a collider (#158).
+    let colliders = content.definition().colliders();
     scenery.props.iter().filter_map(|p| p.collider).any(|id| {
-        let c = content
-            .definition()
-            .colliders()
-            .iter()
-            .find(|c| c.id == id)
-            .unwrap();
+        let Some(c) = colliders.iter().find(|c| c.id == id) else {
+            return false;
+        };
         [0.35_f32, 0.6, 0.8, 1.0].into_iter().any(|t| {
             (0..3).all(|axis| {
                 let p = view.target[axis] + (view.eye[axis] - view.target[axis]) * t;
