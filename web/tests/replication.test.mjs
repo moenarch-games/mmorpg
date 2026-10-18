@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v25.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v26.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({
@@ -88,7 +88,7 @@ describe("Rust/browser snapshot contract", () => {
     }
   });
   test("decodes the same golden bytes as the Rust encoder", () => {
-    expect(fixture.length).toBe(113 + 2 * 2 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21 + 2 * 14);
+    expect(fixture.length).toBe(114 + 2 * 2 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21 + 2 * 14);
     expect(decodeSnapshot(fixture)).toEqual({
       zoneId: 42, tick: 99n, contentRevision: 4n, acknowledgedSequence: 81, viewerId: 7,
       viewer: {
@@ -161,6 +161,7 @@ describe("Rust/browser snapshot contract", () => {
         { id: 3, kind: "arrow", x: 120, y: 110, z: -340, yaw: 16_384, pitch: -900, stuck: false },
         { id: 65_535, kind: "bolt", x: -32_768, y: 0, z: 32_767, yaw: 0, pitch: 16_384, stuck: true },
       ],
+      debris: [],
     });
     const offsetBuffer = new Uint8Array(fixture.length + 4);
     offsetBuffer.set(fixture, 2);

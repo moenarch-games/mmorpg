@@ -33,6 +33,8 @@ pub fn accent(e: &EntitySnapshot, f: CreatureFamily) -> u32 {
         CreatureFamily::Marauder => 3,
         CreatureFamily::Mirefin => 4,
         CreatureFamily::Redbrand => 5,
+        // Props (#288) keep their own wood colours.
+        CreatureFamily::Prop => return 0x8a6a45,
     };
     if e.flags.hostile {
         [0xb3533f, 0xb8452f, 0xa84a3a, 0xc23b2e, 0xa55a4c, 0x992d27][i]

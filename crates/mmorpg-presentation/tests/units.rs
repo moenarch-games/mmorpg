@@ -208,3 +208,47 @@ fn projected_arrows_draw_along_their_flight() {
             .any(|draw| draw.id == "projectile-7-head")
     );
 }
+
+#[test]
+fn props_stand_as_their_pieces_and_debris_flies_with_a_powder_flash() {
+    let mut scene = scene();
+    let at = scene.snapshot.entities[0].position;
+    scene.snapshot.entities.push(EntitySnapshot {
+        kind: EntityKind::Creature,
+        id: 900,
+        appearance: greyhaven_vale::units::templates::CRATE.get(),
+        position: [at[0] - 200, 35, at[2]],
+        velocity: [0; 3],
+        facing: 0,
+        level: 1,
+        health_percent: 100,
+        flags: EntityFlags {
+            attackable: true,
+            ..EntityFlags::default()
+        },
+    });
+    scene.snapshot.debris = vec![mmorpg_core::DebrisView {
+        id: 4,
+        kind: mmorpg_core::PropKind::ExplosiveBarrel,
+        piece: 0,
+        position: [at[0], 60, at[2] + 200],
+        rotation: [0, 0, 0, 32_767],
+        age: 2,
+    }];
+    let frame = frame(&mut scene, 1.);
+    let crate_body = body(
+        &frame,
+        EntityRef::Creature(mmorpg_core::CreatureId::new(900)),
+    );
+    assert_eq!(
+        crate_body
+            .iter()
+            .filter(|(id, _)| id.contains("-piece-"))
+            .count(),
+        6,
+        "a crate is its six panels"
+    );
+    for id in ["debris-4-piece", "debris-4-flash"] {
+        assert!(frame.draws.iter().any(|draw| draw.id == id), "{id}");
+    }
+}

@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0xaf78_c2f8_d910_fff0;
+const STABLE_HASH: u64 = 0x772a_4857_d740_5431;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.

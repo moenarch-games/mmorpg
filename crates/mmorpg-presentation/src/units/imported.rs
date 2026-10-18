@@ -104,7 +104,10 @@ impl Kind {
             CreatureFamily::Wolf => Some(Self::Wolf),
             CreatureFamily::Vermin => Some(Self::Rat),
             CreatureFamily::Boar => Some(Self::Pig),
-            CreatureFamily::Marauder | CreatureFamily::Mirefin | CreatureFamily::Redbrand => None,
+            CreatureFamily::Marauder
+            | CreatureFamily::Mirefin
+            | CreatureFamily::Redbrand
+            | CreatureFamily::Prop => None,
         }
     }
 }

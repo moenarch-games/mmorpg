@@ -8,6 +8,7 @@
 //! physics position plus `Scenery::height_at` at its XZ, never fed back.
 pub mod animation;
 pub mod archer;
+pub mod breakables;
 pub mod creatures;
 pub mod effects;
 pub mod imported;
@@ -195,7 +196,9 @@ impl UnitPresenter {
             EntityRef::Creature(_) => self
                 .content
                 .creature_template(CreatureTemplateId::new(record.appearance))
-                .map_or(character, |template| metres(template.half_extents)),
+                .map_or(character, |template| {
+                    metres(template.body_half_extents(record.facing))
+                }),
             EntityRef::Player(_) | EntityRef::Npc(_) => character,
         }
     }
@@ -388,6 +391,11 @@ impl UnitPresenter {
                 .extend(self.effects.nodes(&mut self.resources, seconds, &anchors));
         }
         self.projectiles(&mut out.draws, snapshot);
+        for view in &snapshot.debris {
+            let centre = self.rendered(view.position);
+            out.draws
+                .extend(breakables::piece(&mut self.resources, view, centre));
+        }
         self.resources.retire_unused();
         out
     }
@@ -528,6 +536,15 @@ impl UnitPresenter {
                     .creature_template(CreatureTemplateId::new(unit.record.appearance))
             })
             .flatten();
+        if let Some((kind, t)) = template.and_then(|t| Some((t.prop()?, t))) {
+            return breakables::standing(
+                &mut self.resources,
+                id,
+                root,
+                kind,
+                f64::from(t.half_extents[1]) / f64::from(UNITS_PER_METRE),
+            );
+        }
         let family = template.map(|t| t.family);
         let role = match entity {
             EntityRef::Npc(id) => self.content.npc(id).map(|n| n.role),
