@@ -49,6 +49,7 @@ cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unk
 cargo run -p mmorpg-scenarios --locked -- bots crates/mmorpg-scenarios/scenarios/bots/*.toml                    # headless multiplayer bots, no GPU
 cargo run -p mmorpg-scenarios --locked -- control-plane crates/mmorpg-scenarios/scenarios/control-plane/*.toml  # lease/handoff invariants
 MMORPG_SCENARIOS_UPDATE=1 cargo test -p mmorpg-scenarios --test scenarios --locked                              # regenerate expected scenario outputs
+MMORPG_UPDATE_FIXTURES=1 cargo nextest run --workspace --locked                                                 # regenerate every golden fixture (protocol hex, traces, content fingerprint, scenarios); review the diff
 python3 scripts/smoke-native.py      # offscreen end-to-end: host + client + GPU frame
 ./scripts/dev-native.sh              # full local native dev environment
 python3 scripts/smoke-browser.py     # real Chromium against the built web/dist (needs Playwright)
