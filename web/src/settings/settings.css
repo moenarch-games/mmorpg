@@ -1,12 +1,16 @@
-/* The Settings modal (#41 Q11/Q12): central dialog, world visible behind it, category sidebar
-   on desktop and a compact category row on narrow screens. */
+/* The browser settings modal uses the game's palette, including the shared binding editor. */
 .settings-dialog {
-  width: min(72rem, calc(100vw - 2rem));
+  --settings-surface: #151d20;
+  --settings-raised: #202b2e;
+  --settings-border: rgb(216 231 218 / 20%);
+  --settings-muted: #b2c0b8;
+  width: min(68rem, calc(100vw - 2rem));
   max-height: calc(100dvh - 2rem);
   padding: 0;
   border: 1px solid var(--panel-border);
-  background: rgb(10 15 18 / 96%);
+  background: #101719;
   color: #edf4ee;
+  color-scheme: dark;
   box-shadow: 0 24px 80px rgb(0 0 0 / 55%);
 }
 
@@ -15,7 +19,7 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-.settings-dialog::backdrop { background: rgb(4 7 9 / 45%); }
+.settings-dialog::backdrop { background: rgb(4 7 9 / 60%); }
 
 .settings-header,
 .settings-footer {
@@ -23,11 +27,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: .8rem 1.1rem;
+  padding: .7rem 1rem;
 }
 
-.settings-header { border-bottom: 1px solid rgb(255 255 255 / 8%); }
-.settings-footer { border-top: 1px solid rgb(255 255 255 / 8%); }
+.settings-header { border-bottom: 1px solid var(--settings-border); }
+.settings-footer { border-top: 1px solid var(--settings-border); }
+.settings-footer:has(.settings-status:empty):has(#settings-reset-all[hidden]) { display: none; }
 .settings-header h2 { margin: 0; color: var(--gold-bright); font-size: 1.15rem; }
 
 .settings-header button,
@@ -36,86 +41,215 @@
 .settings-control button,
 .selection-settings {
   padding: .4rem .8rem;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--settings-border, var(--panel-border));
+  border-radius: .3rem;
   background: rgb(255 255 255 / 5%);
   color: inherit;
   cursor: pointer;
 }
 
+.settings-dialog button:hover:not(:disabled) { background: var(--settings-raised); }
+.settings-dialog :focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
 .settings-control button:disabled { opacity: .45; cursor: default; }
-
 .selection-settings { width: 100%; margin-top: .6rem; }
 
 .settings-body {
   display: grid;
-  grid-template-columns: 12rem minmax(0, 1fr);
+  grid-template-columns: 10rem minmax(0, 1fr);
   min-height: 0;
 }
 
 .settings-categories {
   display: flex;
   flex-direction: column;
-  gap: .3rem;
-  padding: 1rem;
-  border-right: 1px solid rgb(255 255 255 / 8%);
+  align-items: stretch;
+  gap: .25rem;
+  padding: .9rem .6rem;
+  border-right: 1px solid var(--settings-border);
 }
 
-.settings-categories button { text-align: left; }
-.settings-categories button[aria-current="true"] { border-color: var(--gold); color: var(--gold-bright); }
+.settings-categories button { text-align: left; border-color: transparent; }
+.settings-categories button[aria-current="true"] {
+  border-color: var(--panel-border);
+  background: rgb(198 168 95 / 12%);
+  color: var(--gold-bright);
+}
 
 .settings-content {
   display: grid;
   align-content: start;
-  gap: 1rem;
+  gap: 1.25rem;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 1rem 1.2rem;
+  padding: 1rem 1.25rem;
 }
 
 .settings-row {
   display: grid;
-  grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr);
+  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
   gap: .3rem 1rem;
   align-items: center;
 }
 
 .settings-label { font-weight: 650; }
-
-.settings-control {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: .6rem;
+.settings-control { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.settings-control input[type="number"] { width: 5.5rem; }
+.settings-control input[type="range"] {
+  flex: 1 1 9rem;
+  min-width: 8rem;
+  accent-color: var(--gold-bright);
 }
 
-.settings-control input[type="number"] { width: 6rem; }
-.settings-control input[type="range"] { flex: 1 1 10rem; min-width: 8rem; }
+.settings-control input:not([type="range"]),
+.settings-control select {
+  min-height: 2.25rem;
+  padding: .3rem .5rem;
+  border: 1px solid var(--settings-border);
+  border-radius: .3rem;
+  background: var(--settings-surface);
+  color: inherit;
+}
 
 .settings-description {
-  grid-column: 2;
+  grid-column: 1 / -1;
   margin: 0;
-  color: #9aa9a0;
-  font-size: .85rem;
+  color: var(--settings-muted);
+  font-size: .84rem;
 }
 
-.settings-bindings h3 { margin: .5rem 0 .25rem; color: var(--gold-bright); font-size: 1rem; }
-.settings-bindings-host { margin-top: .8rem; padding: .8rem; background: #eef1ee; color: #1f2328; }
-/* The shared workbench brings its own light surface. */
-.settings-bindings-host .ib-workbench { color-scheme: light; }
-.settings-error { color: #b42318; }
-.settings-status { margin: 0; color: #c9d4cc; font-size: .85rem; }
+.settings-bindings { min-width: 0; }
+.settings-binding-context {
+  margin: 0 0 .7rem;
+  color: var(--settings-muted);
+  font-size: .87rem;
+}
+.settings-bindings-host { min-width: 0; }
+.settings-error { color: #ff9b91; }
+.settings-status { margin: 0; color: var(--settings-muted); font-size: .85rem; }
 
-@media (max-width: 720px) {
+/* input-bindings ships with a standalone light theme. Override its tokens at the
+   embedding boundary, not in the shared editor or the global game palette. */
+.settings-bindings-host .ib-workbench,
+.settings-bindings-host .ib-editor {
+  --ib-border: var(--settings-border);
+  --ib-muted: var(--settings-muted);
+  --ib-surface: var(--settings-surface);
+  --ib-subtle: var(--settings-raised);
+  --ib-accent: var(--gold-bright);
+  --ib-accent-soft: #333025;
+  --ib-danger: #ff9b91;
+  --ib-danger-soft: #372326;
+  --ib-warning: #e5cf86;
+  color: inherit;
+  color-scheme: dark;
+  font-family: inherit;
+}
+
+.settings-bindings-host .ib-workbench { gap: .65rem; }
+.settings-bindings-host .ib-workbench-panel { gap: .7rem; }
+
+/* The game already supplies the Settings and Controls headings. Keep the
+   workbench's functional tabs without repeating its diagnostic introduction. */
+.settings-bindings-host .ib-workbench-header,
+.settings-bindings-host .ib-presentation-toolbar {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.settings-bindings-host .ib-workbench-header { justify-content: flex-start; }
+.settings-bindings-host .ib-workbench-header > div:first-child,
+.settings-bindings-host .ib-presentation-toolbar > div:first-child { display: none; }
+.settings-bindings-host .ib-workbench-tabs { padding: .2rem; }
+.settings-bindings-host .ib-presentation-toolbar { justify-content: flex-end; }
+.settings-bindings-host .ib-presentation-toolbar .ib-mode-switch { flex: 0 0 auto; }
+
+/* Search remains prominent; optional filters are collapsed until requested,
+   including on desktop (the shared editor already owns the Filters toggle). */
+.settings-bindings-host .ib-toolbar {
+  grid-template-columns: minmax(10rem, 1fr) auto auto;
+  gap: .55rem;
+  align-items: end;
+  margin-bottom: .4rem;
+}
+.settings-bindings-host .ib-search { grid-column: 1; min-width: 0; }
+.settings-bindings-host .ib-search input::placeholder { color: transparent; }
+.settings-bindings-host .ib-mobile-filters-toggle {
+  display: block;
+  grid-column: 2;
+  align-self: end;
+}
+.settings-bindings-host .ib-shortcut-filter { grid-column: 3; align-self: end; }
+.settings-bindings-host .ib-filter-grid { display: none; grid-column: 1 / -1; }
+.settings-bindings-host .ib-filter-grid.is-open {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .6rem;
+}
+.settings-bindings-host .ib-toolbar-actions { grid-column: 1 / -1; justify-content: flex-end; }
+.settings-bindings-host .ib-toolbar-actions button { background: transparent; color: var(--settings-muted); }
+
+/* Only action names and editable bindings belong in the default game list.
+   The shared conflict review and recorder retain their diagnostic information. */
+.settings-bindings-host .ib-table-head,
+.settings-bindings-host .ib-row {
+  grid-template-columns: minmax(9rem, .95fr) minmax(0, 1.6fr);
+  gap: .75rem;
+}
+.settings-bindings-host .ib-table-head > :last-child,
+.settings-bindings-host .ib-action code,
+.settings-bindings-host .ib-action p,
+.settings-bindings-host .ib-action .ib-muted,
+.settings-bindings-host .ib-details > span,
+.settings-bindings-host .ib-binding .ib-context { display: none; }
+.settings-bindings-host .ib-row { padding: .7rem .8rem; }
+.settings-bindings-host .ib-binding-list { gap: .35rem; }
+.settings-bindings-host .ib-details { grid-column: 2; }
+.settings-bindings-host .ib-binding kbd { border-color: var(--settings-muted); }
+
+/* The keyboard preview should stay readable even when the OS prefers a light theme. */
+.settings-bindings-host .ib-key.is-used,
+.settings-bindings-host .ib-legend-swatch.is-used {
+  border-color: #ab9159 !important;
+  background: #343126 !important;
+}
+.settings-bindings-host .ib-key.is-pressed,
+.settings-bindings-host .ib-legend-swatch.is-pressed {
+  border-color: #7fab8a !important;
+  background: #21382c !important;
+  color: #d4efda;
+}
+
+@media (max-width: 900px) {
+  .settings-bindings-host .ib-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .settings-bindings-host .ib-shortcut-filter { grid-column: 1 / -1; }
+  .settings-bindings-host .ib-row { grid-template-columns: minmax(0, 1fr); }
+  .settings-bindings-host .ib-table-head { display: none; }
+  .settings-bindings-host .ib-details { grid-column: 1; }
+}
+
+@media (max-width: 800px) {
   .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .settings-categories {
     flex-direction: row;
     overflow-x: auto;
-    padding: .6rem 1rem;
+    padding: .6rem;
     border-right: 0;
-    border-bottom: 1px solid rgb(255 255 255 / 8%);
+    border-bottom: 1px solid var(--settings-border);
   }
+  .settings-categories button { white-space: nowrap; }
+  .settings-content { padding: .85rem; }
   .settings-row { grid-template-columns: minmax(0, 1fr); }
-  .settings-description { grid-column: 1; }
+  .settings-bindings-host .ib-filter-grid.is-open { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .settings-bindings-host .ib-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .settings-bindings-host .ib-search,
+  .settings-bindings-host .ib-mobile-filters-toggle,
+  .settings-bindings-host .ib-shortcut-filter { grid-column: 1; }
+  .settings-bindings-host .ib-presentation-toolbar { justify-content: stretch; }
 }
 
 /* An explicit Reduce motion setting; the system preference keeps its own media rules. */
