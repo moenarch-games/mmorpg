@@ -17,7 +17,7 @@ export class InnBuilding {
   readonly #presenter: InnPresenterHandle;
   readonly #entries: readonly string[];
   #roots: THREE.Object3D[] = [];
-  #loading = false;
+  #loading: Promise<boolean> | null = null;
   #changed = false;
   #frame: Float32Array | null = null;
 
@@ -26,13 +26,16 @@ export class InnBuilding {
     this.#entries = entries;
   }
 
-  /** Starts loading the bundle once; a missing bundle is reported, never fatal to the world. */
-  load(): void {
-    if (this.#loading) { return; }
-    this.#loading = true;
-    void this.#load().catch((error: unknown) => {
+  /**
+   * Starts loading the bundle once and settles when it is drawable (true) or failed (false); a
+   * missing bundle is reported, never fatal to the world.
+   */
+  load(): Promise<boolean> {
+    this.#loading ??= this.#load().then(() => true, (error: unknown) => {
       console.error(`The Greyhaven inn bundle did not load: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
     });
+    return this.#loading;
   }
 
   async #load(): Promise<void> {

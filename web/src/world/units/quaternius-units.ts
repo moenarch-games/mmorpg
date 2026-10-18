@@ -263,6 +263,7 @@ export class QuaterniusUnits {
   readonly #loader = new GLTFLoader();
   readonly #rest: RestClip;
   readonly #assets = new Map<QuaterniusKind, Asset | "loading" | "failed">();
+  readonly #settled = new Map<QuaterniusKind, Promise<boolean>>();
   readonly #instances = new Map<string, Instance>();
   readonly #loaded: [QuaterniusKind, [string, number][]][] = [];
   #rootsChanged = false;
@@ -276,19 +277,27 @@ export class QuaterniusUnits {
     const state = this.#assets.get(kind);
     if (state === undefined) {
       this.#assets.set(kind, "loading");
-      (kind === "Ranger" ? loadRanger(this.#loader, this.#rest(kind)) : loadAnimal(this.#loader, kind, this.#rest(kind))).then(
+      this.#settled.set(kind, (kind === "Ranger" ? loadRanger(this.#loader, this.#rest(kind)) : loadAnimal(this.#loader, kind, this.#rest(kind))).then(
         (asset) => {
           this.#assets.set(kind, asset);
           this.#loaded.push([kind, [...asset.clips]]);
+          return true;
         },
         (error: unknown) => {
           console.warn(`Unit model ${kind} failed to load; keeping the procedural model.`, error);
           this.#assets.set(kind, "failed");
+          return false;
         },
-      );
+      ));
       return false;
     }
     return typeof state === "object";
+  }
+
+  /** Starts loading `kind` and settles once it is drawable (true) or failed (false). */
+  preload(kind: QuaterniusKind): Promise<boolean> {
+    this.ready(kind);
+    return this.#settled.get(kind) ?? Promise.resolve(true);
   }
 
   /** Models that finished loading since the last call, with their clip lengths. */

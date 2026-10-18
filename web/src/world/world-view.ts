@@ -144,6 +144,9 @@ function obstructed(boxes: readonly Box[], target: Vec3, eye: Vec3): boolean {
 /** `padGuard` is the lane a pad holding the guard trigger aims, or `null` (#156). */
 export type WorldInput = { held: HeldIntent; jumps: number; padGuard?: StrikeHeight | null };
 
+/** The imported unit models a world draws. */
+const UNIT_MODEL_KINDS = ["Ranger", "Wolf", "Rat", "Pig"] as const;
+
 export class WorldView {
   readonly #renderer: ThreeSceneRenderer;
   readonly #camera: THREE.PerspectiveCamera;
@@ -160,6 +163,8 @@ export class WorldView {
   readonly #models = new QuaterniusUnits((kind) => this.#restClip(kind));
   /** The walk-in inn (#158), drawn from its asset-tooling bundle once loaded. */
   #inn: InnBuilding | null = null;
+  #art: { loaded: number; total: number } | null = null;
+  #onArtProgress: (() => void) | null = null;
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
   readonly #impacts = new ImpactEffects();
   #reachableDoor: (x: number, z: number) => number = () => 0;
@@ -303,7 +308,20 @@ export class WorldView {
     this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new InnBuilding(world.scenery.inn.presenter(), world.scenery.inn.entries());
-    this.#inn.load();
+    // Greyhaven's art streams in while the player is still choosing a character (#240): the
+    // Ranger, the creature models and the inn, each a separate piece.
+    const pieces: Promise<boolean>[] = [
+      ...UNIT_MODEL_KINDS.map((kind) => this.#models.preload(kind)),
+      this.#inn.load(),
+    ];
+    this.#art = { loaded: 0, total: pieces.length };
+    const art = this.#art;
+    for (const piece of pieces) {
+      void piece.then(() => {
+        art.loaded += 1;
+        this.#onArtProgress?.();
+      });
+    }
     this.#reachableDoor = world.scenery.inn.reachableDoor;
     this.#units = null;
     this.#sceneryFrame = new SceneryFrame(this.#scene);
@@ -629,7 +647,7 @@ export class WorldView {
       this.#units = { viewerId: projection.viewerId, units, pushed: null };
     }
     const units = this.#units.units;
-    for (const kind of ["Ranger", "Wolf", "Rat", "Pig"] as const) { this.#models.ready(kind); }
+    for (const kind of UNIT_MODEL_KINDS) { this.#models.ready(kind); }
     for (const [kind, clips] of this.#models.drainLoaded()) {
       this.#loadedModels.push([kind, clips]);
       units.modelReady(kind, clips);
@@ -896,6 +914,16 @@ export class WorldView {
       : event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY : event.deltaY * 3;
     // Scrolling up (negative delta) zooms in.
     this.#orbit.zoom(-lines);
+  }
+
+  /** How many of the world's art pieces have settled (loaded or failed) out of how many. */
+  artProgress(): { loaded: number; total: number } {
+    return { ...(this.#art ?? { loaded: 0, total: 0 }) };
+  }
+
+  /** Called whenever another art piece settles. */
+  set onArtProgress(callback: (() => void) | null) {
+    this.#onArtProgress = callback;
   }
 
   /** Debug-only hooks for screenshots and measurements; the simulation never sees them. */
