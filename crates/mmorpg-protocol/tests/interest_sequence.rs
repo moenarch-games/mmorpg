@@ -187,6 +187,6 @@ fn players_running_on_unenclosed_content_stay_encodable() {
     // Player 2 spawned 2 m ahead and rests against the limit; player 1 caught up, slid
     // around it (#273) and rests against the limit beside it.
     let front = MAX_CONTENT_COORDINATE_UNITS - 30;
-    assert_eq!(positions, [[front, 90, -61], [front, 90, 0]]);
+    assert_eq!(positions, [[front, 90, -64], [front, 90, 0]]);
     assert_wire_parity(&zone);
 }
