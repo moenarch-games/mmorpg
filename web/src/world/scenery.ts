@@ -87,6 +87,8 @@ export type SceneryContent = StaticSceneContent & {
   importedRestClip(kind: string): string | undefined;
   areaAt(x: number, z: number): number | undefined;
   reliefAt(x: number, z: number): number;
+  /** Per area, the imported unit models its creatures use (#240), as JSON. */
+  regionModels(): string;
 };
 
 /** The WASM inn presenter (`mmorpg_presentation::buildings::Inn`). */
@@ -108,6 +110,8 @@ export type SceneryProvider = {
   areaAt(x: number, z: number): Area | null;
   /** Presentation relief at `(x, z)` in units; units are drawn raised by it. */
   reliefAt(x: number, z: number): number;
+  /** The imported unit models the creatures of area `id` use (#240). */
+  regionModels(id: number): readonly string[];
 };
 
 const FORMAT = "mmorpg.scenery";
@@ -360,7 +364,10 @@ export function decodeScenery(json: string): Scenery {
 export function createSceneryProvider(content: SceneryContent): SceneryProvider {
   const scenery = decodeScenery(content.scenery());
   const areasById = new Map(scenery.areas.map((area) => [area.id, area]));
+  const regionModels = new Map((JSON.parse(content.regionModels()) as { area: number; models: string[] }[])
+    .map((region) => [region.area, region.models]));
   return {
+    regionModels: (id) => regionModels.get(id) ?? [],
     scenery,
     staticScene: content,
     unitPresenter: (player) => new content.UnitPresenter(player),

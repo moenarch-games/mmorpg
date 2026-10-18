@@ -41,7 +41,7 @@ import {
 import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { committedLevel, loadLocalWorld } from "./world/wasm-runtime";
+import { committedArea, committedLevel, loadLocalWorld } from "./world/wasm-runtime";
 import { webTransportConnector } from "./session/webtransport";
 import { onlineChoice, type ZoneServer } from "./world/online-config";
 import { OnlineZoneSource } from "./world/online-zone-source";
@@ -403,7 +403,7 @@ for (const button of [requireElement<HTMLButtonElement>("#world-settings"), requ
 // Debug-only camera and public-source hooks for deterministic acceptance; `?debug` enables them.
 if (new URLSearchParams(window.location.search).has("debug")) {
   Object.assign(window, { __valeDebug: { ...worldView.debugApi(), worldSource: () => (activeWorld ?? chosenWorld())?.source ?? null,
-    loadingReport: () => ({ ...loading, art: worldView.artProgress() }) } });
+    loadingReport: () => ({ ...loading, startArea: startArea(), art: worldView.artProgress(startArea()), allArt: worldView.artProgress(null) }) } });
 }
 
 const selectionStageNodes: RendererSceneNode[] = [
@@ -750,7 +750,7 @@ function entryNote(character: CharacterPreview): string {
     return worldLoadError ? `The zone simulation could not load: ${worldLoadError}` : "Loading the zone simulation…";
   }
   if (!artReady()) {
-    const { loaded, total } = worldView.artProgress();
+    const { loaded, total } = worldView.artProgress(startArea());
     return `Loading Greyhaven… ${loaded} of ${total} pieces`;
   }
   if (joining) {
@@ -1032,9 +1032,29 @@ function fetchedBytes(): number {
   }, 0);
 }
 
-/** Whether every Greyhaven art piece has settled (loaded or failed to its fallback). */
+/** Greyhaven Outpost, where new characters start. */
+const OUTPOST_AREA = 1;
+
+/** The area the selected character enters in: its committed location's, else the outpost. */
+function startArea(): number {
+  if (!localCharacters || creationDraft) {
+    return OUTPOST_AREA;
+  }
+  try {
+    return committedArea(localCharacters, selectedCharacter().id) ?? OUTPOST_AREA;
+  } catch {
+    return OUTPOST_AREA;
+  }
+}
+
+/**
+ * Whether the starting area's art has settled (loaded or failed to its fallback); fetching it
+ * starts here, so it streams while the player is still choosing (#240).
+ */
 function artReady(): boolean {
-  const { loaded, total } = worldView.artProgress();
+  const area = startArea();
+  worldView.prefetchRegion(area);
+  const { loaded, total } = worldView.artProgress(area);
   return total > 0 && loaded >= total;
 }
 

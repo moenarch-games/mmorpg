@@ -91,6 +91,52 @@ pub fn committed_level(entries: &CharacterEntries, character: &str) -> Result<Op
         .map_err(|error| JsError::new(&error.to_string()))
 }
 
+/// The area of a stored character's committed location, or `undefined` if it was never stored
+/// or stands outside every area (#240: the page loads that region's art first).
+#[wasm_bindgen(js_name = committedArea)]
+pub fn committed_area(entries: &CharacterEntries, character: &str) -> Result<Option<u16>, JsError> {
+    let id = character_id(character)?;
+    let committed = store(entries)
+        .committed(&id)
+        .map_err(|error| JsError::new(&error.to_string()))?;
+    Ok(committed.and_then(|committed| {
+        let [x, _, z] = committed.record.location.position;
+        mmorpg_core::greyhaven_vale::area_at(x, z).map(|area| area.id().get())
+    }))
+}
+
+/// Per area, the imported unit models its creature spawns use, as JSON
+/// `[{"area": id, "models": ["Wolf", …]}]` in area order (#240).
+#[wasm_bindgen(js_name = regionModels)]
+pub fn region_models() -> String {
+    let content = mmorpg_core::greyhaven_vale::content();
+    let regions: Vec<_> = mmorpg_core::greyhaven_vale::areas()
+        .areas()
+        .iter()
+        .map(|area| {
+            let mut models: Vec<_> = content
+                .creature_spawns()
+                .iter()
+                .filter(|spawn| {
+                    mmorpg_core::greyhaven_vale::area_at(spawn.position[0], spawn.position[1])
+                        .is_some_and(|at| at.id() == area.id())
+                })
+                .filter_map(|spawn| {
+                    let family = content.creature_template(spawn.template)?.family;
+                    mmorpg_presentation::units::imported::Kind::of_family(family)
+                })
+                .collect();
+            models.sort();
+            models.dedup();
+            serde_json::json!({
+                "area": area.id().get(),
+                "models": models.iter().map(|model| model.name()).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    serde_json::Value::Array(regions).to_string()
+}
+
 /// The local zone host as seen from JavaScript. Errors surface as exceptions
 /// only for malformed input or misuse (unknown player, sequence 0); a stale
 /// sequence is a normal `false` result.
