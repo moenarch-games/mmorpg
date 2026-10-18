@@ -402,7 +402,8 @@ for (const button of [requireElement<HTMLButtonElement>("#world-settings"), requ
 
 // Debug-only camera and public-source hooks for deterministic acceptance; `?debug` enables them.
 if (new URLSearchParams(window.location.search).has("debug")) {
-  Object.assign(window, { __valeDebug: { ...worldView.debugApi(), worldSource: () => (activeWorld ?? chosenWorld())?.source ?? null } });
+  Object.assign(window, { __valeDebug: { ...worldView.debugApi(), worldSource: () => (activeWorld ?? chosenWorld())?.source ?? null,
+    loadingReport: () => ({ ...loading, art: worldView.artProgress() }) } });
 }
 
 const selectionStageNodes: RendererSceneNode[] = [
@@ -748,6 +749,10 @@ function entryNote(character: CharacterPreview): string {
   if (!world) {
     return worldLoadError ? `The zone simulation could not load: ${worldLoadError}` : "Loading the zone simulation…";
   }
+  if (!artReady()) {
+    const { loaded, total } = worldView.artProgress();
+    return `Loading Greyhaven… ${loaded} of ${total} pieces`;
+  }
   if (joining) {
     return server ? `Connecting to ${server.label}…` : `Joining with ${character.name}…`;
   }
@@ -756,7 +761,7 @@ function entryNote(character: CharacterPreview): string {
 
 function updateEntryButton(): void {
   const server = chosenServer();
-  enterWorldButton.disabled = chosenWorld() === null || joining !== null;
+  enterWorldButton.disabled = chosenWorld() === null || joining !== null || !artReady();
   enterWorldLabel.textContent = joining ? "Entering…" : "Enter World";
   enterWorldNote.textContent = entryNote(selectedCharacter());
   playOnlineInput.disabled = joining !== null;
@@ -997,6 +1002,10 @@ function frame(now: number) {
     try {
       worldView.frame(activeWorld, worldInput(), viewerLook(), paused ? 0 : deltaSeconds, now);
       showLinkState(activeWorld.source.linkState());
+      if (loading.entry !== null && loading.playableMs === null) {
+        loading.playableMs = Math.round(now - loading.entry);
+        console.info(`Greyhaven playable ${loading.playableMs} ms after Enter World; ${loading.bytesBeforeEntry} bytes fetched before entry.`);
+      }
     } catch (error) {
       // Fail closed and visibly: leave the world and say why on the selection screen.
       console.error(error);
@@ -1007,12 +1016,37 @@ function frame(now: number) {
   renderSelection();
 }
 
+/**
+ * Progressive loading (#240): what the page fetched before Enter World and how long entry took
+ * until the first world frame. Greyhaven's code, scenery and art load during character selection.
+ */
+const loading: { entry: number | null; bytesBeforeEntry: number; playableMs: number | null } = {
+  entry: null, bytesBeforeEntry: 0, playableMs: null,
+};
+
+/** Bytes the page has fetched so far, from resource timing (decoded size where transfer is hidden). */
+function fetchedBytes(): number {
+  return performance.getEntriesByType("resource").reduce((sum, entry) => {
+    const resource = entry as PerformanceResourceTiming;
+    return sum + (resource.transferSize || resource.encodedBodySize || 0);
+  }, 0);
+}
+
+/** Whether every Greyhaven art piece has settled (loaded or failed to its fallback). */
+function artReady(): boolean {
+  const { loaded, total } = worldView.artProgress();
+  return total > 0 && loaded >= total;
+}
+
 /** Joins the chosen world, then switches the page to it. Never rejects: failures are shown on the selection screen. */
 async function enterWorld(): Promise<void> {
   const target = chosenWorld();
-  if (creationDraft || !target || entryState.phase === "world" || joining) {
+  if (creationDraft || !target || entryState.phase === "world" || joining || !artReady()) {
     return;
   }
+  loading.entry = performance.now();
+  loading.bytesBeforeEntry = fetchedBytes();
+  loading.playableMs = null;
   const server = chosenServer();
   const next = enterPreviewWorld(entryState, selectedCharacter());
   // Join before switching the page: a refused join leaves the source unjoined, so
@@ -1316,6 +1350,7 @@ function loadPageWorld(): Promise<LocalWorld> {
     return loaded;
   });
 }
+worldView.onArtProgress = updateEntryButton;
 void loadPageWorld().then((loaded) => {
   worldView.load(loaded);
   world = loaded;
