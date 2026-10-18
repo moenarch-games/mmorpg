@@ -26,6 +26,7 @@ import {
   type Vec3,
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
+import { ImpactEffects, impactCues } from "./impact-effects";
 import { InnBuilding, INN_DOOR } from "./inn-building";
 import { SkyLayer } from "./sky";
 import { SharedUnits, type ImportedModelKind, type ViewerLook } from "./unit-presenter";
@@ -159,6 +160,8 @@ export class WorldView {
   readonly #models = new QuaterniusUnits((kind) => this.#restClip(kind));
   /** The walk-in inn (#158), drawn from its asset-tooling bundle once loaded. */
   #inn: InnBuilding | null = null;
+  /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
+  readonly #impacts = new ImpactEffects();
   #reachableDoor: (x: number, z: number) => number = () => 0;
   #restClip: (kind: ImportedModelKind) => string = () => { throw new Error("No world is loaded."); };
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
@@ -432,12 +435,13 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? [])] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), this.#impacts.root] });
     }
   }
 
   leave(): void {
     this.cancelDirectedStrike();
+    this.#impacts.clear();
     this.#guardHold.end();
     this.#pendingNpc = null;
     this.#clearModels();
@@ -660,6 +664,15 @@ export class WorldView {
       }
     }
     this.#models.update(presented.imported);
+    const intensity = animate ? "strong" : "subtle";
+    this.#impacts.preload(intensity);
+    for (const received of receivedProjections) {
+      for (const cue of impactCues(received)) {
+        const unit = presented.units.find((candidate) => sameEntity(candidate.entity, cue.target));
+        if (unit) { this.#impacts.spawn(cue.family, intensity, [unit.feet[0], unit.centreY, unit.feet[2]], now); }
+      }
+    }
+    this.#impacts.update(now);
     const unitNodes = presented.nodes.filter((node) => !node.id.startsWith("fx-"));
     for (const imported of presented.imported) {
       const head = imported.headwear ? this.#models.head(imported.id) : null;
@@ -704,8 +717,8 @@ export class WorldView {
     this.#lastCamera = camera;
     const models = this.#models.roots();
     const inn = this.#inn?.roots() ?? { roots: [], changed: false };
-    if (models.changed || inn.changed) {
-      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots] });
+    if (models.changed || inn.changed || !this.#impacts.root.parent) {
+      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, this.#impacts.root] });
     }
     this.#lastWork = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
