@@ -123,7 +123,9 @@ export class SettingsPanel {
       });
       return button;
     }));
-    const states = new Map(preferences.states().map((state) => [state.id, state]));
+    const currentStates = preferences.states();
+    this.#elements.resetAll.hidden = !currentStates.some((state) => state.overridden);
+    const states = new Map(currentStates.map((state) => [state.id, state]));
     const rows = preferences.presentation()
       .filter((entry) => entry.metadata.category_key === this.#category)
       .sort((left, right) => (left.metadata.order ?? 0) - (right.metadata.order ?? 0))
@@ -220,14 +222,18 @@ export class SettingsPanel {
     reset.type = "button";
     reset.className = "settings-reset";
     reset.textContent = "Reset";
-    reset.disabled = !state.overridden;
     reset.setAttribute("aria-label", `Reset ${text(labelKey)} to default`);
     reset.addEventListener("click", () => {
       preferences.reset(id);
       this.#render();
     });
-    control.append(reset);
-    row.append(label, control, description);
+    if (state.overridden) {
+      control.append(reset);
+    }
+    row.append(label, control);
+    if (description.textContent) {
+      row.append(description);
+    }
     return row;
   }
 
@@ -235,15 +241,11 @@ export class SettingsPanel {
     const bindings = this.#options.bindings();
     const section = document.createElement("section");
     section.className = "settings-bindings";
-    const heading = document.createElement("h3");
-    heading.textContent = `Key bindings · ${bindings.characterName}`;
-    const note = document.createElement("p");
-    note.className = "settings-description";
-    note.textContent = "Each character has its own bindings. A confirmed binding change applies and saves immediately; Reset all settings does not change bindings.";
+    section.setAttribute("aria-label", `Key bindings for ${bindings.characterName}`);
     const host = document.createElement("div");
     host.className = "settings-bindings-host";
     host.textContent = "Loading the binding editor…";
-    section.append(heading, note, host);
+    section.append(host);
     let cancelled = false;
     this.#unmountEditor = () => {
       cancelled = true;

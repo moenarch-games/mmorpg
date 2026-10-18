@@ -21,6 +21,7 @@ const SCENARIOS: readonly InputBindingsContextScenario[] = [
 function BindingsEditor({ bindings }: { bindings: CharacterBindings }) {
   const [profile, setProfile] = useState(bindings.profile);
   const [problem, setProblem] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(false);
   const onProfileChange = (next: Profile) => {
     const failure = bindings.save(next);
     setProblem(failure);
@@ -30,9 +31,20 @@ function BindingsEditor({ bindings }: { bindings: CharacterBindings }) {
   };
   return createElement(
     "div",
-    null,
+    { className: `settings-bindings-editor${advanced ? " is-advanced" : ""}` },
     problem ? createElement("p", { className: "settings-error", role: "alert" }, problem) : null,
+    createElement(
+      "div",
+      { className: "settings-bindings-toolbar" },
+      createElement("span", null, `Bindings for ${bindings.characterName}`),
+      createElement("button", {
+        type: "button",
+        "aria-pressed": advanced,
+        onClick: () => setAdvanced((value) => !value),
+      }, advanced ? "Basic view" : "Advanced"),
+    ),
     createElement(InputBindingsWorkbench, {
+      key: advanced ? "advanced" : "basic",
       registry: GAME_ACTION_REGISTRY,
       profile,
       onProfileChange,
