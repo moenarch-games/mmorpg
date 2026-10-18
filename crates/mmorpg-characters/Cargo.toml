@@ -8,10 +8,15 @@ license.workspace = true
 publish.workspace = true
 
 # Storage only: no game-server, tokio or presentation dependency, so the
-# browser's local host can use the same store over its own backend.
+# browser's local host can use the same store over its own backend. The
+# opt-in `postgres` feature adds the production backend for native hosts.
 [dependencies]
 mmorpg-core.workspace = true
 mmorpg-protocol.workspace = true
+postgres = { workspace = true, optional = true }
+
+[features]
+postgres = ["dep:postgres"]
 
 [lints]
 workspace = true

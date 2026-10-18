@@ -30,6 +30,7 @@ mmorpg-protocol = { path = "crates/mmorpg-protocol" }
 mmorpg-game-server = { path = "crates/mmorpg-game-server" }
 mmorpg-scenery = { path = "crates/mmorpg-scenery" }
 mmorpg-presentation = { path = "crates/mmorpg-presentation" }
+postgres = "=0.19.14"
 tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 
 [workspace.lints.rust]
