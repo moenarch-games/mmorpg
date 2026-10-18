@@ -26,6 +26,10 @@ export const GAME_ACTIONS = [
   "ability.slot2",
   "ability.slot3",
   "ability.slot4",
+  "ability.slot5",
+  "ability.slot6",
+  "ability.slot7",
+  "ability.slot8",
   "combat.directedStrike",
   "combat.guard",
   "combat.cancelCast",
@@ -146,6 +150,11 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ability.slot2", "Ability 2", "gameplay", [key("Digit2"), button(15)]),
     action("ability.slot3", "Ability 3", "gameplay", [key("Digit3"), button(13)]),
     action("ability.slot4", "Ability 4", "gameplay", [key("Digit4"), button(14)]),
+    // Slots 5–8 are keyboard-only by default; the d-pad holds slots 1–4.
+    action("ability.slot5", "Ability 5", "gameplay", [key("Digit5")]),
+    action("ability.slot6", "Ability 6", "gameplay", [key("Digit6")]),
+    action("ability.slot7", "Ability 7", "gameplay", [key("Digit7")]),
+    action("ability.slot8", "Ability 8", "gameplay", [key("Digit8")]),
     // Hold, aim with the pointer, release (#154): the Warden's directed Heroic Strike.
     action("combat.directedStrike", "Directed Heroic Strike (hold, aim, release)", "gameplay", [key("KeyG")]),
     // Hold to raise the Warden's shield; pointer up/down (or the right stick, holding LT) picks the lane (#156).

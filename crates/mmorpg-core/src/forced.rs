@@ -70,7 +70,12 @@ impl ZoneSimulation {
 
     /// Knocks `unit` `distance` units along `direction` (XZ), unless it is immune; returns
     /// whether it moves.
-    pub(crate) fn knock_back(&mut self, unit: EntityRef, direction: [i64; 2], distance: i32) -> bool {
+    pub(crate) fn knock_back(
+        &mut self,
+        unit: EntityRef,
+        direction: [i64; 2],
+        distance: i32,
+    ) -> bool {
         if distance <= 0 || !self.movable(unit) {
             return false;
         }
@@ -183,7 +188,10 @@ impl ZoneSimulation {
                 .velocity()
                 .y;
             self.world
-                .set_velocity(body, Vec3i::new(moving.velocity[0], vertical, moving.velocity[1]))
+                .set_velocity(
+                    body,
+                    Vec3i::new(moving.velocity[0], vertical, moving.velocity[1]),
+                )
                 .map_err(crate::zone::physics_error)?;
             if let Some(state) = self.forced.get_mut(&unit) {
                 state.moving = Some(moving);
@@ -213,7 +221,10 @@ impl ZoneSimulation {
 
     /// The forced-movement states, for canonical snapshots.
     pub(crate) fn forced_states(&self) -> Vec<(EntityRef, ForcedState)> {
-        self.forced.iter().map(|(&unit, &state)| (unit, state)).collect()
+        self.forced
+            .iter()
+            .map(|(&unit, &state)| (unit, state))
+            .collect()
     }
 
     pub(crate) fn restore_forced(

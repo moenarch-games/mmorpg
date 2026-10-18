@@ -8,13 +8,13 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 2;
+pub const ABILITY_CATALOG_REVISION: u64 = 3;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
 pub const MAX_AURAS: usize = 8;
-/// At most this many cooldowns run on one player (its class abilities).
-pub const MAX_COOLDOWNS: usize = 4;
+/// At most this many cooldowns run on one player: one per action-bar slot (its class abilities).
+pub const MAX_COOLDOWNS: usize = 8;
 /// Zone-RNG jitter added whenever a creature's ability timer starts.
 pub const CREATURE_ABILITY_JITTER_TICKS: u16 = 30;
 
@@ -172,8 +172,12 @@ pub enum AbilityEffect {
         bonus: u16,
     },
     /// Interrupts the target's cast, locking that ability for
-    /// `lockout_ticks`, and stuns it.
-    Bash { stun_ticks: u16, lockout_ticks: u16 },
+    /// `lockout_ticks`, stuns it and knocks it `knockback` units away (#287).
+    Bash {
+        stun_ticks: u16,
+        lockout_ticks: u16,
+        knockback: i32,
+    },
     /// Heals `percent` of the caster's maximum health over the aura.
     HealOverTime {
         percent: u16,
@@ -220,6 +224,17 @@ pub enum AbilityEffect {
     },
     /// Heals `percent` of maximum health; usable only below `below_percent`.
     Bandage { percent: u16, below_percent: u16 },
+    /// An explosion at the target (#287): `damage` + `per_level` and a `knockback` (units) away
+    /// from the centre for every living creature within `radius` that the centre can see. Both
+    /// fall off linearly to half at the edge; walls between centre and creature shield it.
+    Blast {
+        damage: [u16; 2],
+        per_level: u16,
+        radius: i32,
+        knockback: i32,
+    },
+    /// The caster rushes at the target (#287) and knocks it `knockback` units back on arrival.
+    Charge { knockback: i32 },
 }
 
 /// One catalog row.
@@ -259,7 +274,9 @@ impl Ability {
             | AbilityEffect::Cleave { .. }
             | AbilityEffect::Bolt { .. }
             | AbilityEffect::Blizzard { .. }
-            | AbilityEffect::Bandage { .. } => return None,
+            | AbilityEffect::Bandage { .. }
+            | AbilityEffect::Blast { .. }
+            | AbilityEffect::Charge { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -354,10 +371,12 @@ pub mod ids {
     pub const MUCK_BOLT: AbilityId = AbilityId::new(13);
     pub const CRUDE_BANDAGE: AbilityId = AbilityId::new(14);
     pub const CROSSBOW_BOLT: AbilityId = AbilityId::new(15);
+    pub const FIRE_BLAST: AbilityId = AbilityId::new(16);
+    pub const CHARGE: AbilityId = AbilityId::new(17);
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 15] = [
+pub const ABILITY_CATALOG: [Ability; 17] = [
     ability(
         1,
         "Heroic Strike",
@@ -385,6 +404,7 @@ pub const ABILITY_CATALOG: [Ability; 15] = [
         AbilityEffect::Bash {
             stun_ticks: 60,
             lockout_ticks: 120,
+            knockback: 300,
         },
     ),
     ability(
@@ -590,6 +610,34 @@ pub const ABILITY_CATALOG: [Ability; 15] = [
         ),
         crate::ProjectileKind::Bolt,
     ),
+    ability(
+        16,
+        "Fire Blast",
+        ARCANIST,
+        3,
+        45,
+        CastTime::Cast(45),
+        300,
+        RANGED,
+        AbilityEffect::Blast {
+            damage: [12, 16],
+            per_level: 3,
+            radius: 500,
+            knockback: 600,
+        },
+    ),
+    ability(
+        17,
+        "Charge",
+        WARDEN,
+        3,
+        0,
+        CastTime::Instant,
+        450,
+        // A charge covers CHARGE_MAX_TICKS × CHARGE_SPEED_UNITS plus melee reach.
+        AbilityRange::Units(1_500),
+        AbilityEffect::Charge { knockback: 300 },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -646,7 +694,8 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
             AbilityEffect::Bash {
                 stun_ticks,
                 lockout_ticks,
-            } => vec![2, stun_ticks.into(), lockout_ticks.into()],
+                knockback,
+            } => vec![2, stun_ticks.into(), lockout_ticks.into(), knockback],
             AbilityEffect::HealOverTime {
                 percent,
                 duration,
@@ -705,6 +754,20 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 percent,
                 below_percent,
             } => vec![12, percent.into(), below_percent.into()],
+            AbilityEffect::Blast {
+                damage,
+                per_level,
+                radius,
+                knockback,
+            } => vec![
+                13,
+                damage[0].into(),
+                damage[1].into(),
+                per_level.into(),
+                radius,
+                knockback,
+            ],
+            AbilityEffect::Charge { knockback } => vec![14, knockback],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -735,7 +798,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(16)), None);
+        assert_eq!(ability_by_id(AbilityId::new(18)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG

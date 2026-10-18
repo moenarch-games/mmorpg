@@ -329,9 +329,25 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
         "{wolf_hits:?}"
     );
 
-    // Cleave hits the target and both packmates within 3 m of it.
+    // Cleave hits the target and both packmates within 3 m of it, once the target the
+    // bash knocked back (#287) has run back into melee.
     fight.until(300, |fight| {
-        fight.resource() >= 20 && fight.me().combat.abilities.global_cooldown == 0
+        let state = fight.zone.snapshot().unwrap();
+        let at = |id: u32| {
+            let creature = state
+                .creatures
+                .iter()
+                .find(|creature| creature.creature_id == CreatureId::new(id))
+                .unwrap();
+            [creature.position[0], creature.position[2]]
+        };
+        let near = (2..=3).all(|wolf| {
+            let [a, b] = [at(1), at(wolf)];
+            (a[0] - b[0]).hypot(a[1] - b[1]) < 250.0
+        });
+        let me = fight.me().position;
+        let reach = (at(1)[0] - me[0]).hypot(at(1)[1] - me[2]) < 250.0;
+        near && reach && fight.resource() >= 20 && fight.me().combat.abilities.global_cooldown == 0
     });
     fight.use_ability(ids::CLEAVE);
     let events = fight.tick();

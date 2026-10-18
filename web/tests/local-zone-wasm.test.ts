@@ -506,7 +506,7 @@ describe("WASM local zone combat intents", () => {
     expect(projection.viewer.classChoice).toEqual({ classId: "arcanist", sex: "female" });
     expect(self(source).appearance).toBe(5);
     expect(abilitySlots(projection, catalog).map((ability) => ability.name)).toEqual([
-      "Firebolt", "Frost Nova", "Arcane Barrier", "Blizzard",
+      "Firebolt", "Frost Nova", "Arcane Barrier", "Blizzard", "Fire Blast",
     ]);
     expect(combatStatus(projection, catalog)).toBe("Health 50/50 · Mana 110/110 · Level 1");
     // Firebolt needs a target; Frost Nova is learned at level 2.

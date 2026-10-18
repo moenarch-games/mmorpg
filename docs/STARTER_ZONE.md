@@ -87,9 +87,9 @@ Creatures respawn 60 s after death unless noted and wander within 6 m of their s
 
 | Class | Resource | Abilities (unlock level) |
 | --- | --- | --- |
-| Warden (tank/melee) | Rage (gain on hit dealt/taken, decays out of combat) | Heroic Strike (1), Shield Bash: interrupt + 2 s stun (2), Rallying Cry: self heal-over-time (4), Cleave: target and two nearby enemies (6) |
+| Warden (tank/melee) | Rage (gain on hit dealt/taken, decays out of combat) | Heroic Strike (1), Shield Bash: interrupt + 2 s stun + 3 m knockback (2), Charge: rush up to 15 m and knock the target back 3 m (3), Rallying Cry: self heal-over-time (4), Cleave: target and two nearby enemies (6) |
 | Ranger (ranged physical) | Focus (regenerates) | Aimed Shot (1), Serpent Sting: DoT (2), Concussive Shot: snare (4), Rapid Fire: haste buff (6) |
-| Arcanist (caster) | Mana (regenerates, faster out of combat) | Firebolt: 2.0 s cast (1), Frost Nova: AoE root (2), Arcane Barrier: absorb shield (4), Blizzard: channelled AoE (6) |
+| Arcanist (caster) | Mana (regenerates, faster out of combat) | Firebolt: 2.0 s cast (1), Frost Nova: AoE root (2), Fire Blast: 1.5 s cast, 5 m explosion at the target with knockback, damage and push falling off to half at the edge, walls shield (3), Arcane Barrier: absorb shield (4), Blizzard: channelled AoE (6) |
 
 There is a 1.5 s global cooldown. Casts have a cast time, and moving or being stunned interrupts them. Auras have tick-precise durations and periodic effects.
 

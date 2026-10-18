@@ -22,7 +22,7 @@ const SVG = "http://www.w3.org/2000/svg";
 const LONG_PRESS_MS = 450;
 const TOOLTIP_MARGIN_PX = 8;
 const MAX_FLOATING_TEXTS = 12;
-const KEYBIND_LABELS = ["1", "2", "3", "4"] as const;
+const KEYBIND_LABELS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
 
 function part<T extends HTMLElement>(root: HTMLElement, name: string): T {
   const element = root.querySelector<T>(`[data-part="${name}"]`);

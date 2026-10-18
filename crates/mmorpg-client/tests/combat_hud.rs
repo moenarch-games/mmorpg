@@ -119,9 +119,9 @@ fn assert_close(actual: Option<f32>, expected: f32, what: &str) {
 #[test]
 fn slots_hold_the_projected_class_kit_in_catalog_order() {
     for (class, expected) in [
-        (PlayerClass::Warden, [1, 2, 3, 4]),
-        (PlayerClass::Ranger, [5, 6, 7, 8]),
-        (PlayerClass::Arcanist, [9, 10, 11, 12]),
+        (PlayerClass::Warden, &[1, 2, 3, 4, 17][..]),
+        (PlayerClass::Ranger, &[5, 6, 7, 8]),
+        (PlayerClass::Arcanist, &[9, 10, 11, 12, 16]),
     ] {
         let hud = CombatHud::from_projection(&received(&viewer_of(class)));
         assert_eq!(slot_ids(&hud), expected, "{class:?}");
@@ -208,7 +208,7 @@ fn each_slot_shows_its_running_cooldown_against_the_catalog_cooldown() {
         },
     ];
     let hud = CombatHud::from_projection(&received(&warden));
-    assert_eq!(slot_ids(&hud), [1, 2, 3, 4]);
+    assert_eq!(slot_ids(&hud), [1, 2, 3, 4, 17]);
     let cooldowns: Vec<_> = hud.slots.iter().map(|slot| slot.cooldown).collect();
     assert_eq!(
         cooldowns,
@@ -224,6 +224,7 @@ fn each_slot_shows_its_running_cooldown_against_the_catalog_cooldown() {
                 remaining: 12,
                 total: catalog_cooldown(3),
             }),
+            None,
             None,
         ]
     );
@@ -279,6 +280,7 @@ fn the_global_cooldown_covers_every_slot_unless_a_longer_cooldown_runs() {
                 total: catalog_cooldown(3),
             }),
             global,
+            global,
         ]
     );
 }
@@ -311,7 +313,11 @@ fn a_channel_drains_and_marks_its_slot() {
     );
     assert_close(hud.cast_fill(), 0.75, "a quarter-run channel");
     let casting: Vec<_> = hud.slots.iter().map(|slot| slot.casting).collect();
-    assert_eq!(casting, [false, false, false, true], "only Blizzard's slot");
+    assert_eq!(
+        casting,
+        [false, false, false, true, false],
+        "only Blizzard's slot"
+    );
 }
 
 #[test]
@@ -333,7 +339,7 @@ fn a_dead_viewer_shows_death_with_the_projected_resource_and_no_cast() {
         0.0,
         "death drains rage in the projection",
     );
-    assert_eq!(slot_ids(&hud), [1, 2, 3, 4], "the bar stays");
+    assert_eq!(slot_ids(&hud), [1, 2, 3, 4, 17], "the bar stays");
 }
 
 /// End to end through core: a level-1 Arcanist starts Firebolt (a 60-tick
@@ -383,9 +389,9 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
     assert_close(hud.cast_fill(), 0.25, "Firebolt 15 of 60 ticks");
     assert_eq!(hud.resource, projection.viewer.resource);
     assert_close(hud.resource_fill(), 1.0, "a cast pays on completion");
-    assert_eq!(slot_ids(&hud), [9, 10, 11, 12]);
+    assert_eq!(slot_ids(&hud), [9, 10, 11, 12, 16]);
     let casting: Vec<_> = hud.slots.iter().map(|slot| slot.casting).collect();
-    assert_eq!(casting, [true, false, false, false]);
+    assert_eq!(casting, [true, false, false, false, false]);
     let global = projection.viewer.global_cooldown;
     assert!(global > 0, "fixture: the global cooldown is running");
     for slot in &hud.slots {

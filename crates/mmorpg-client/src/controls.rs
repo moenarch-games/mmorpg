@@ -17,7 +17,7 @@ use winit::keyboard::KeyCode;
 /// A semantic action the native client resolves from input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ControlAction {
-    /// Action-bar slot 1–4.
+    /// Action-bar slot 1–8.
     AbilitySlot(u8),
     /// Cancel the viewer's cast or channel.
     CancelCast,
@@ -39,11 +39,15 @@ pub enum Panel {
 
 impl ControlAction {
     /// Every control action in catalog order.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 14] = [
         Self::AbilitySlot(1),
         Self::AbilitySlot(2),
         Self::AbilitySlot(3),
         Self::AbilitySlot(4),
+        Self::AbilitySlot(5),
+        Self::AbilitySlot(6),
+        Self::AbilitySlot(7),
+        Self::AbilitySlot(8),
         Self::CancelCast,
         Self::TogglePanel(Panel::Bags),
         Self::TogglePanel(Panel::Character),
@@ -52,7 +56,7 @@ impl ControlAction {
         Self::Guard,
     ];
 
-    /// The shared semantic id. A slot outside 1–4 is no control action and has
+    /// The shared semantic id. A slot outside 1–8 is no control action and has
     /// the empty id, which no binding uses.
     #[must_use]
     pub fn id(self) -> &'static str {
@@ -61,6 +65,10 @@ impl ControlAction {
             Self::AbilitySlot(2) => "ability.slot2",
             Self::AbilitySlot(3) => "ability.slot3",
             Self::AbilitySlot(4) => "ability.slot4",
+            Self::AbilitySlot(5) => "ability.slot5",
+            Self::AbilitySlot(6) => "ability.slot6",
+            Self::AbilitySlot(7) => "ability.slot7",
+            Self::AbilitySlot(8) => "ability.slot8",
             Self::AbilitySlot(_) => "",
             Self::CancelCast => "combat.cancelCast",
             Self::TogglePanel(Panel::Bags) => "ui.toggleBags",
@@ -81,7 +89,11 @@ impl ControlAction {
             Self::AbilitySlot(1) => ("Ability 1", GAMEPLAY, &["Digit1"]),
             Self::AbilitySlot(2) => ("Ability 2", GAMEPLAY, &["Digit2"]),
             Self::AbilitySlot(3) => ("Ability 3", GAMEPLAY, &["Digit3"]),
-            Self::AbilitySlot(_) => ("Ability 4", GAMEPLAY, &["Digit4"]),
+            Self::AbilitySlot(4) => ("Ability 4", GAMEPLAY, &["Digit4"]),
+            Self::AbilitySlot(5) => ("Ability 5", GAMEPLAY, &["Digit5"]),
+            Self::AbilitySlot(6) => ("Ability 6", GAMEPLAY, &["Digit6"]),
+            Self::AbilitySlot(7) => ("Ability 7", GAMEPLAY, &["Digit7"]),
+            Self::AbilitySlot(_) => ("Ability 8", GAMEPLAY, &["Digit8"]),
             Self::CancelCast => ("Cancel cast", CASTING, &["Escape"]),
             Self::TogglePanel(Panel::Bags) => ("Toggle bags", GAMEPLAY, &["KeyB"]),
             Self::TogglePanel(Panel::Character) => ("Toggle character pane", GAMEPLAY, &["KeyC"]),

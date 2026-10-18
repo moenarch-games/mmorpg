@@ -23,8 +23,8 @@ mod creature;
 mod door;
 mod entity;
 mod equipment;
-mod forced;
 mod events;
+mod forced;
 mod guard;
 mod interest;
 mod inventory;
@@ -86,6 +86,10 @@ pub use equipment::{
     PRIMARY_STAT_PER_DAMAGE, StatTotals,
 };
 pub use events::{ErrorCode, MAX_EVENTS_PER_PLAYER, ZoneEvent};
+pub use forced::{
+    CHARGE_MAX_TICKS, CHARGE_SPEED_UNITS, FORCED_IMMUNITY_TICKS, ForcedMove, ForcedState,
+    KNOCKBACK_TICKS,
+};
 pub use guard::{
     GUARD_ARC_HALF_WIDTH, GUARD_ARC_OFFSET, GUARD_BREAK_IMPACT, GUARD_BREAK_TICKS,
     GUARD_SPEED_PERCENT, GuardState, STRIKE_RECOVERY_TICKS, lane_of,
@@ -100,10 +104,6 @@ pub use loot::{
     LootTableError, MAX_LOOT_OUTCOMES, loot_table, settle_loot,
 };
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
-pub use forced::{
-    CHARGE_MAX_TICKS, CHARGE_SPEED_UNITS, FORCED_IMMUNITY_TICKS, ForcedMove, ForcedState,
-    KNOCKBACK_TICKS,
-};
 pub use projectile::{
     ARROW_SPEED_UNITS, BOLT_SPEED_UNITS, Flight, MAX_PROJECTILES, MAX_VISIBLE_PROJECTILES,
     Projectile, ProjectileKind, ProjectileView, STUCK_IN_UNIT_TICKS, STUCK_TICKS,
@@ -144,7 +144,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 23;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 24;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its
