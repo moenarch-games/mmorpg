@@ -16,6 +16,7 @@ use std::sync::{Arc, LazyLock};
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, Terrain, ZoneAreas};
 
+pub mod cave;
 pub mod inn;
 pub mod quests;
 pub mod units;
@@ -29,7 +30,7 @@ pub mod units;
 /// (the Wolf Pelt) and vendor catalog 2; revision 10 replaces the inn block
 /// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
 /// inside.
-pub const REVISION: u64 = 13;
+pub const REVISION: u64 = 14;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -103,6 +104,9 @@ pub mod ids {
     pub const WATCHTOWER: u32 = 520;
     /// Hollowpine Reach boulders (#159).
     pub const BOULDERS: RangeInclusive<u32> = 530..=537;
+    /// The Greyfang cave's rock walls and roof slab (#159).
+    pub const CAVE_WALLS: RangeInclusive<u32> = 540..=546;
+    pub const CAVE_ROOF: u32 = 547;
 
     /// Trunks, numbered in generation order from the start: Wolfrun Woods
     /// first, then the outer woods (#159).
@@ -467,10 +471,14 @@ pub fn terrain() -> Terrain {
     let heights = (0..count)
         .flat_map(|row| {
             (0..count).map(move |column| {
-                hill_height(
-                    terrain::ORIGIN[0] + column * terrain::STEP,
-                    terrain::ORIGIN[1] + row * terrain::STEP,
-                )
+                let x = terrain::ORIGIN[0] + column * terrain::STEP;
+                let z = terrain::ORIGIN[1] + row * terrain::STEP;
+                // The cave floor stays flat inside its hillside.
+                if cave::GREYFANG.flattens(x, z) {
+                    0
+                } else {
+                    hill_height(x, z)
+                }
             })
         })
         .collect();
@@ -630,7 +638,12 @@ fn near_structure(collider: &StaticCollider) -> bool {
     const MARGIN: i32 = 150;
     let [x, _, z] = collider.position;
     let [hx, _, hz] = collider.half_extents;
-    STRUCTURES.iter().any(|&(_, min, max, _)| {
+    // The cave's roof covers its walls.
+    let mut footprints = STRUCTURES
+        .iter()
+        .map(|&(_, min, max, _)| (min, max))
+        .chain([cave::GREYFANG.roof]);
+    footprints.any(|(min, max)| {
         x + hx + MARGIN > min[0]
             && x - hx - MARGIN < max[0]
             && z + hz + MARGIN > min[1]
@@ -750,6 +763,7 @@ fn colliders() -> Vec<StaticCollider> {
         collider
     }));
     colliders.extend(inn::colliders(*ids::INN_PARTS.start()));
+    colliders.extend(cave::GREYFANG.colliders(*ids::CAVE_WALLS.start()));
     colliders.extend(trees());
     colliders
 }
