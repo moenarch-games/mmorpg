@@ -84,7 +84,7 @@ fn only_the_living_nearby_tapper_receives_experience() {
         zone.add_player(2).unwrap();
         let mut state = zone.snapshot().unwrap();
         state.players[1].combat.health = health;
-        state.players[1].position = position;
+        state.players[1].position = mmorpg_core::physics::from_units(position);
         state.creatures[0].tapped_by = Some(2);
         let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
         kill(&mut zone, 1, 1);

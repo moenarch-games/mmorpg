@@ -59,7 +59,7 @@
       {
         "id": "native-core",
         "paths": ["crates/mmorpg-core/**"],
-        "instructions": ["docs/ARCHITECTURE.md", "docs/INTEREST_WORKLOADS.md", "docs/PHYSICS_WORKLOADS.md", "docs/SCENARIOS.md"],
+        "instructions": ["docs/ARCHITECTURE.md", "docs/INTEREST_WORKLOADS.md", "docs/SCENARIOS.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
         "owners": ["moritzbrantner/mmorpg", "moritzbrantner/physics-engine"]

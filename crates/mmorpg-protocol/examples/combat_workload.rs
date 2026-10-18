@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for fixture in combat_workload::FIXTURES {
         let r = combat_workload::measure(fixture)?;
         println!(
-            "{{\"schema\":\"mmorpg.combat-workload/v1\",\"workload\":\"{}\",\"core_schema\":{},\"wire_version\":{},\"content_revision\":{},\"content_fingerprint\":\"{:016x}\",\"players\":{},\"ticks\":{},\"ai_evaluations\":{},\"physics_steps\":{},\"physics_body_visits\":{},\"dynamic_body_visits\":{},\"staged_bodies\":{},\"pair_checks\":{},\"toi_tests\":{},\"contact_resolutions\":{},\"maintenance_inspections\":{},\"projections\":{},\"candidates_tested\":{},\"packed_entities\":{},\"event_records\":{},\"damage_records\":{},\"death_records\":{},\"loot_sheets\":{},\"projection_bytes\":{},\"max_projection_bytes\":{},\"trace_hash\":\"{:016x}\",\"replay_parity\":true,\"recovery_parity\":true}}",
+            "{{\"schema\":\"mmorpg.combat-workload/v1\",\"workload\":\"{}\",\"core_schema\":{},\"wire_version\":{},\"content_revision\":{},\"content_fingerprint\":\"{:016x}\",\"players\":{},\"ticks\":{},\"ai_evaluations\":{},\"physics_steps\":{},\"physics_body_visits\":{},\"dynamic_body_visits\":{},\"maintenance_inspections\":{},\"projections\":{},\"candidates_tested\":{},\"packed_entities\":{},\"event_records\":{},\"damage_records\":{},\"death_records\":{},\"loot_sheets\":{},\"projection_bytes\":{},\"max_projection_bytes\":{},\"trace_hash\":\"{:016x}\",\"replay_parity\":true,\"recovery_parity\":true}}",
             fixture.name,
             mmorpg_core::SNAPSHOT_SCHEMA_VERSION,
             mmorpg_protocol::SNAPSHOT_WIRE_VERSION,
@@ -21,10 +21,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             r.physics_steps,
             r.physics_body_visits,
             r.dynamic_body_visits,
-            r.staged_bodies,
-            r.pair_checks,
-            r.toi_tests,
-            r.contact_resolutions,
             r.maintenance_inspections,
             r.projections,
             r.candidates_tested,

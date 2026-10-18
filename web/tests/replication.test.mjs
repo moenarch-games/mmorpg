@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v23.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v24.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({

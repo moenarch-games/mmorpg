@@ -393,7 +393,7 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
     fight.ticks(44);
     fight.use_ability(ids::CONCUSSIVE_SHOT);
     fight.tick();
-    let velocity = fight.creature(FIRST).velocity;
+    let velocity = mmorpg_core::physics::to_units(fight.creature(FIRST).velocity);
     assert!(velocity[2] < 0 && velocity[2] >= -9, "{velocity:?}");
     assert_eq!(
         fight.view().target_detail.auras[1].kind,
@@ -484,7 +484,7 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
     fight.use_ability(ids::FROST_NOVA);
     fight.tick();
     let rooted = fight.zone.current_tick();
-    let velocity = fight.creature(FIRST).velocity;
+    let velocity = mmorpg_core::physics::to_units(fight.creature(FIRST).velocity);
     assert_eq!([velocity[0], velocity[2]], [0, 0]);
     let root = fight.view().target_detail.auras[0];
     assert_eq!((root.kind, root.remaining), (AuraKind::Root, 179));

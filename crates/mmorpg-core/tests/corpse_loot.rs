@@ -241,14 +241,14 @@ fn ownership_life_and_three_dimensional_reach_are_authoritative() {
         state.players[0].combat.health = 50;
         state.players[0].position = [
             state.creatures[0].position[0],
-            state.creatures[0].position[1] + 301,
+            state.creatures[0].position[1] + 301.0,
             state.creatures[0].position[2],
         ];
     });
     assert!(zone.snapshot_for_player(1).unwrap().loot.is_none());
     refuse(&mut zone, 1, claim, ErrorCode::OutOfRange);
     restore(&mut zone, |state| {
-        state.players[0].position[1] = state.creatures[0].position[1] + 300
+        state.players[0].position[1] = state.creatures[0].position[1] + 300.0
     });
     command(&mut zone, 1, ZoneCommand::Loot(claim));
     zone.advance_tick().unwrap();

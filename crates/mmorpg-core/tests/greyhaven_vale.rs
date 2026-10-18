@@ -131,7 +131,7 @@ fn every_spawn_slot_stands_clear_inside_the_hub_plaza() {
     let players = zone.snapshot().unwrap().players;
     let mut positions = std::collections::BTreeSet::new();
     for player in &players {
-        let [x, y, z] = player.position;
+        let [x, y, z] = mmorpg_core::physics::to_units(player.position);
         assert_eq!(y, body[1], "feet rest on y = 0");
         assert!(SPAWN_PLAZA.contains(x - body[0], z - body[2]));
         assert!(SPAWN_PLAZA.contains(x + body[0] - 1, z + body[2] - 1));
@@ -353,15 +353,18 @@ fn structures_and_boundary_walls_block_movement() {
         zone.advance_tick().unwrap();
     }
     let player = &zone.snapshot().unwrap().players[0];
-    assert_eq!(player.position, [-1_550, 90, 730]);
-    assert_eq!(player.velocity, [0, 0, 0]);
+    assert_eq!(
+        mmorpg_core::physics::to_units(player.position),
+        [-1_550, 90, 730]
+    );
+    assert_eq!(mmorpg_core::physics::to_units(player.velocity), [0, 0, 0]);
 
     // Down the South Road, then jumping against the southern wall.
     let mut zone =
         ZoneSimulation::with_definition(ZoneId::new(1), greyhaven_vale_definition()).unwrap();
     zone.add_player(1).unwrap();
     let mut snapshot = zone.snapshot().unwrap();
-    snapshot.players[0].position = [0, 90, 10_000];
+    snapshot.players[0].position = mmorpg_core::physics::from_units([0, 90, 10_000]);
     let mut zone = ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
     zone.apply_command(1, 1, run(FACE_SOUTH)).unwrap();
     let mut sequence = 1;
@@ -371,12 +374,12 @@ fn structures_and_boundary_walls_block_movement() {
             zone.apply_command(1, sequence, ZoneCommand::Jump).unwrap();
         }
         zone.advance_tick().unwrap();
-        let z = zone.snapshot().unwrap().players[0].position[2];
+        let z = mmorpg_core::physics::to_units(zone.snapshot().unwrap().players[0].position)[2];
         assert!(z <= PLAYABLE_BOUNDS.max[1] - PLAYER_HALF_EXTENTS_UNITS[2]);
     }
     let player = &zone.snapshot().unwrap().players[0];
     assert_eq!(
-        player.position[2],
+        mmorpg_core::physics::to_units(player.position)[2],
         PLAYABLE_BOUNDS.max[1] - PLAYER_HALF_EXTENTS_UNITS[2]
     );
 }

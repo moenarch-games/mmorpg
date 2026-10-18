@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use physics_engine::RigidBody;
+use crate::physics::RigidBody;
 
 use crate::ability::{
     AbilityId, AuraKind, CREATURE_ABILITY_JITTER_TICKS, GLOBAL_COOLDOWN_TICKS, MAX_AURAS,
@@ -208,11 +208,13 @@ impl Default for CanonicalPlayerCombat {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// `position` (body centre, units) and `velocity` (units per tick) are the exact `f32`
+/// physics state (#271), so recovery continues exactly.
+#[derive(Clone, Debug, PartialEq)]
 pub struct CanonicalPlayerSnapshot {
     pub player_id: PlayerId,
-    pub position: [i32; 3],
-    pub velocity: [i32; 3],
+    pub position: [f32; 3],
+    pub velocity: [f32; 3],
     pub facing: u16,
     pub forward: i8,
     pub strafe: i8,
@@ -238,14 +240,15 @@ pub struct CanonicalPlayerSnapshot {
 
 /// A creature; `position` is its body or corpse, zero once despawned, and
 /// `velocity` is zero unless it is alive.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CanonicalCreatureSnapshot {
     pub creature_id: CreatureId,
     pub level: u8,
     pub health: u32,
     pub facing: u16,
-    pub position: [i32; 3],
-    pub velocity: [i32; 3],
+    /// Exact `f32` body state while alive; a corpse's whole-unit position.
+    pub position: [f32; 3],
+    pub velocity: [f32; 3],
     pub life: CreatureLife,
     pub ai: CreatureAi,
     /// Ordered by entity.
@@ -259,7 +262,7 @@ pub struct CanonicalCreatureSnapshot {
 
 /// Everything authoritative about a zone at a tick boundary, with its
 /// content referenced by identity.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CanonicalZoneSnapshot {
     pub schema_version: u16,
     pub zone_id: ZoneId,
@@ -286,11 +289,10 @@ impl ZoneSimulation {
                     .world
                     .body(body_id(EntityRef::Player(player_id)))
                     .ok_or_else(|| ZoneError::new("player physics body is missing"))?;
-                let (position, velocity) = (body.position(), body.velocity());
                 Ok(CanonicalPlayerSnapshot {
                     player_id,
-                    position: [position.x, position.y, position.z],
-                    velocity: [velocity.x, velocity.y, velocity.z],
+                    position: body.exact_position(),
+                    velocity: body.exact_velocity(),
                     facing: state.facing,
                     forward: state.forward.get(),
                     strafe: state.strafe.get(),
@@ -347,18 +349,19 @@ impl ZoneSimulation {
                             .world
                             .body(body_id(EntityRef::Creature(creature_id)))
                             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
-                        let (position, velocity) = (body.position(), body.velocity());
                         (
-                            [position.x, position.y, position.z],
-                            [velocity.x, velocity.y, velocity.z],
+                            body.exact_position(),
+                            body.exact_velocity(),
                             CreatureLife::Alive,
                         )
                     }
-                    Life::Corpse { died_at, position } => {
-                        (position, [0; 3], CreatureLife::Corpse { died_at })
-                    }
+                    Life::Corpse { died_at, position } => (
+                        position.map(|axis| axis as f32),
+                        [0.0; 3],
+                        CreatureLife::Corpse { died_at },
+                    ),
                     Life::Despawned { died_at } => {
-                        ([0; 3], [0; 3], CreatureLife::Despawned { died_at })
+                        ([0.0; 3], [0.0; 3], CreatureLife::Despawned { died_at })
                     }
                 };
                 Ok(CanonicalCreatureSnapshot {
@@ -543,10 +546,10 @@ impl ZoneSimulation {
             return Err(ZoneError::new("player guard state is out of range"));
         }
         self.world
-            .add_body(RigidBody::dynamic(
+            .add_body(RigidBody::moving(
                 body_id(EntityRef::Player(player.player_id)),
-                vector(player.position),
-                vector(player.velocity),
+                player.position,
+                player.velocity,
                 PLAYER_HALF_EXTENTS,
             ))
             .map_err(physics_error)?;
@@ -618,7 +621,16 @@ impl ZoneSimulation {
             CreatureAi::Idle { destination: Some(to), .. }
                 if !is_wander_point(spawn.position, to, spawn.wander_radius)
         );
-        if !record.position.into_iter().all(within_content_range) || wanders_off {
+        if !record
+            .position
+            .iter()
+            .chain(&record.velocity)
+            .all(|axis| axis.is_finite())
+            || !whole_units(record.position)
+                .into_iter()
+                .all(within_content_range)
+            || wanders_off
+        {
             return Err(ZoneError::new(
                 "creature position or wander destination is out of range",
             ));
@@ -641,7 +653,7 @@ impl ZoneSimulation {
             && record.threat.is_empty()
             && record.swing_timer == 0
             && record.combat_timer == 0
-            && record.velocity == [0; 3]
+            && record.velocity == [0.0; 3]
             && record.health == 0;
         let life = match record.life {
             CreatureLife::Alive => {
@@ -649,21 +661,27 @@ impl ZoneSimulation {
                     return Err(ZoneError::new("a living creature needs health"));
                 }
                 self.world
-                    .add_body(RigidBody::dynamic(
+                    .add_body(RigidBody::moving(
                         body_id(EntityRef::Creature(record.creature_id)),
-                        vector(record.position),
-                        vector(record.velocity),
+                        record.position,
+                        record.velocity,
                         vector(template.half_extents),
                     ))
                     .map_err(physics_error)?;
                 Life::Alive
             }
-            CreatureLife::Corpse { died_at } if at_rest && died_at <= self.tick => Life::Corpse {
-                died_at,
-                position: record.position,
-            },
+            CreatureLife::Corpse { died_at }
+                if at_rest
+                    && died_at <= self.tick
+                    && record.position.map(|axis| axis.fract()) == [0.0; 3] =>
+            {
+                Life::Corpse {
+                    died_at,
+                    position: whole_units(record.position),
+                }
+            }
             CreatureLife::Despawned { died_at }
-                if at_rest && died_at <= self.tick && record.position == [0; 3] =>
+                if at_rest && died_at <= self.tick && record.position == [0.0; 3] =>
             {
                 Life::Despawned { died_at }
             }
@@ -1001,4 +1019,10 @@ fn validate_creature_abilities(
         validate_cast(cast)?;
     }
     validate_auras(&abilities.auras)
+}
+
+/// An `f32` position rounded to whole units; the caller has checked it is finite.
+#[allow(clippy::cast_possible_truncation)]
+fn whole_units(position: [f32; 3]) -> [i32; 3] {
+    position.map(|axis| axis.round() as i32)
 }

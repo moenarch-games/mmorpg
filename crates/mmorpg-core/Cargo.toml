@@ -7,7 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-physics-engine.workspace = true
+rapier3d.workspace = true
 
 [lints]
 workspace = true

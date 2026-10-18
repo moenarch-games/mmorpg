@@ -493,7 +493,8 @@ fn pending_trades_continue_exactly_after_canonical_recovery() {
 fn a_recovered_player_at_the_coordinate_limit_is_out_of_reach_without_overflow() {
     let zone = near(starter_bag(), 30);
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = [i32::MIN + 100, 50, i32::MIN + 100];
+    state.players[0].position =
+        mmorpg_core::physics::from_units([i32::MIN + 100, 50, i32::MIN + 100]);
     let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     zone.apply_command(1, 1, buy(DAGGER_OFFER, 1)).unwrap();
     // The trade resolves before physics moves the far-away player.

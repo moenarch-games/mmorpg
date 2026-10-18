@@ -20,11 +20,12 @@ fn arena() -> ZoneSimulation {
         zone.add_player(id).unwrap();
     }
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = [0, 90, 0];
+    state.players[0].position = mmorpg_core::physics::from_units([0, 90, 0]);
     state.players[0].combat.level = 6;
     state.players[0].combat.health = mmorpg_core::unit::player_max_health(6);
-    state.players[1].position = [500, 90, 0];
-    state.players[2].position = [INTEREST_RADIUS_UNITS + 5_000, 90, 0];
+    state.players[1].position = mmorpg_core::physics::from_units([500, 90, 0]);
+    state.players[2].position =
+        mmorpg_core::physics::from_units([INTEREST_RADIUS_UNITS + 5_000, 90, 0]);
     ZoneSimulation::from_snapshot(state, content).unwrap()
 }
 fn fight(zone: &mut ZoneSimulation) {
@@ -184,7 +185,7 @@ fn waiting_and_out_of_range_do_not_create_ordinary_attempts() {
     );
     let content = Arc::clone(zone.content());
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = [0, 90, -3_000];
+    state.players[0].position = mmorpg_core::physics::from_units([0, 90, -3_000]);
     let mut zone = ZoneSimulation::from_snapshot(state, content).unwrap();
     fight(&mut zone);
     for _ in 0..10 {
@@ -236,7 +237,7 @@ fn observers_see_existing_creature_casts_without_acquiring_player_feedback() {
         zone.add_player(1).unwrap();
         zone.add_player(2).unwrap();
         let mut state = zone.snapshot().unwrap();
-        state.players[1].position = [500, 90, 0];
+        state.players[1].position = mmorpg_core::physics::from_units([500, 90, 0]);
         if ability == ids::CRUDE_BANDAGE {
             state.creatures[0].health = 100;
         }
@@ -274,7 +275,8 @@ fn partially_visible_interaction_does_not_disclose_hidden_actor_identity() {
     let mut zone = arena();
     let mut state = zone.snapshot().unwrap();
     // Wolf is inside viewer2's radius, source player1 outside it.
-    state.players[1].position = [-INTEREST_RADIUS_UNITS - 100, 90, 0];
+    state.players[1].position =
+        mmorpg_core::physics::from_units([-INTEREST_RADIUS_UNITS - 100, 90, 0]);
     zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     fight(&mut zone);
     zone.advance_tick().unwrap();
@@ -384,13 +386,13 @@ fn observation_does_not_name_actors_omitted_by_projection_entity_cap() {
         zone.add_player(id).unwrap();
     }
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = [0, 90, 0];
+    state.players[0].position = mmorpg_core::physics::from_units([0, 90, 0]);
     for (index, player) in state.players.iter_mut().enumerate().skip(1) {
-        player.position = [
+        player.position = mmorpg_core::physics::from_units([
             -4000 + (index as i32 % 8) * 100,
             90,
             (index as i32 / 8) * 100,
-        ];
+        ]);
     }
     zone = ZoneSimulation::from_snapshot(state, content).unwrap();
     fight(&mut zone);

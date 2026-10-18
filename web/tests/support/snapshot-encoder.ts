@@ -22,7 +22,7 @@ function flagByte(flags: readonly boolean[]): number {
 }
 
 /**
- * Test-only player-visible snapshot v23 encoder (docs/PROTOCOL.md); Rust owns the real one.
+ * Test-only player-visible snapshot v24 encoder (docs/PROTOCOL.md); Rust owns the real one.
  * Like it, positions must fit i16 and velocities saturate to i8.
  */
 export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
@@ -52,7 +52,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(value === null ? 0 : entityKindCode(value.kind));
     u32(value?.id ?? 0);
   };
-  u8(23);
+  u8(24);
   u8(2);
   u16(22);
   u32(snapshot.zoneId);

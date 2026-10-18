@@ -18,7 +18,7 @@
 
 use std::sync::Arc;
 
-use physics_engine::Vec3i;
+use crate::physics::Vec3i;
 
 use crate::creature::{Life, aggro_radius};
 use crate::entity::body_id;

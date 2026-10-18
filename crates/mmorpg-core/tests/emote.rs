@@ -27,7 +27,7 @@ fn crowd(positions: &[[i32; 2]]) -> ZoneSimulation {
     }
     let mut state = zone.snapshot().unwrap();
     for (player, position) in state.players.iter_mut().zip(positions) {
-        player.position = [position[0], 90, position[1]];
+        player.position = mmorpg_core::physics::from_units([position[0], 90, position[1]]);
     }
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
 }

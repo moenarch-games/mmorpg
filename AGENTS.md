@@ -61,7 +61,7 @@ python3 scripts/smoke-browser-online.py  # two Chromium pages join one real zone
 ## Authority
 
 - `mmorpg-core` owns deterministic zone-local gameplay and interest/visibility policy.
-- `physics-engine` owns collision, movement integration and physics semantics. Do not reimplement them here.
+- Rapier (`rapier3d`, embedded in `mmorpg-core/src/physics.rs`, Atlas 2.1.6, #271) resolves collision and character motion: units are capsules moved by its `KinematicCharacterController`, and f32 positions/velocities are authoritative (rounded only on the wire). `mmorpg-core` keeps movement intent, gravity/jumps and every gameplay outcome. Do not grow a second solver; record each Rapier gap or workaround for physics-engine issues.
 - `game-server` owns reusable transport/session/tick/reconnect/replay/recovery behavior. Keep MMO adapters thin.
 - `mmorpg-control-plane` owns placement, leases, fencing and handoff metadata. It must not mutate zone gameplay state.
 - `mmorpg-scenery` owns presentation scenery and relief derived from core colliders. Network hosts never depend on it (`mmorpg-game-server/tests/dependency_boundary.rs`), `mmorpg-wasm`'s local zone host never reads it, and it never feeds back into gameplay.
@@ -117,7 +117,7 @@ General engineering rules (git and merging, commits, testing, ADRs, docs, depend
 
 ## Shared foundations
 
-- Shared foundations (`game-server`, `physics-engine`, `3d-lab`, …) are checked out beside this repo under `~/privat/`. Fix defects there and bump the pin here (DEP-003). For rendering/asset-import gaps, apply the owner’s external-provider adoption rule above before starting upstream work; extending an unproven internal tool is not the default way to unblock the game.
+- Shared foundations (`game-server`, `3d-lab`, …) are checked out beside this repo under `~/privat/`. Fix defects there and bump the pin here (DEP-003). For rendering/asset-import gaps, apply the owner’s external-provider adoption rule above before starting upstream work; extending an unproven internal tool is not the default way to unblock the game.
 
 ## Done means
 

@@ -1,8 +1,7 @@
 # Greyhaven combat workload budgets
 
 Issue #26 measures complete zone composition with fixed commands, horizons and
-content. It complements the player-only [interest workloads](INTEREST_WORKLOADS.md)
-and the [physics adoption comparisons](PHYSICS_WORKLOADS.md). It introduces no new
+content. It complements the player-only [interest workloads](INTEREST_WORKLOADS.md). It introduces no new
 combat rules, capacity claim or wall-clock correctness gate.
 
 ```sh
@@ -72,17 +71,22 @@ The deterministic gate allows counts to decrease. Increasing a ceiling requires
 reviewing the changed workload, mechanics or performance cost, alongside replay
 and recovery acceptance. The complete ceilings live in the protocol test.
 
-| Workload | AI decisions | Physics body visits | Pair checks | Projection candidates | Total projection bytes | Largest bytes |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| vale-idle-16 | 21,240 | 120,960 | 170,837 | 190,080 | 3,204,720 | 559 |
-| vale-fights-8 | 21,240 | 118,080 | 238,275 | 70,336 | 981,271 | 482 |
-| vale-fights-32 | 21,240 | 126,720 | 362,835 | 364,710 | 5,406,543 | 678 |
-| vale-crowded-fights-64 | 20,106 | 137,106 | 462,299 | 1,938,628 | 24,499,402 | 1,077 |
+Since the switch to Rapier (#271) the physics counters are the bodies in each
+step's rebuilt Rapier world and the moving bodies it visits; the first-party
+engine's pair, TOI and contact counters are gone. Current ceilings (snapshot v24,
+content revision 11):
+
+| Workload | AI decisions | Physics body visits | Projection candidates | Total projection bytes |
+| --- | ---: | ---: | ---: | ---: |
+| vale-idle-16 | 21,240 | 132,480 | 190,080 | 3,598,128 |
+| vale-fights-8 | 21,240 | 129,600 | 70,005 | 1,203,308 |
+| vale-fights-32 | 21,240 | 138,240 | 367,057 | 6,232,461 |
+| vale-crowded-fights-64 | 20,285 | 148,805 | 1,926,294 | 24,392,554 |
 
 The crowded case reaches the full byte budget and publishes 23,040 projections;
 its lower AI total reflects killed creatures, not reduced evaluation frequency.
 Exact completion/projection counts and workload-specific combat controls accompany
-the ceilings. Engine staging, TOI and contact-resolution ceilings are also checked.
+the ceilings.
 Existing scenario/protocol golden fixtures remain unchanged.
 
 Evidence baseline: consumer `676fab2632c209bdaffc9ac0cdce376acb32f484`, physics-engine

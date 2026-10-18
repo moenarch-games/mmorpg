@@ -18,7 +18,7 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
     );
     let physics = work.physics.unwrap();
     assert_eq!(
-        physics.body_count,
+        physics.bodies,
         content.definition().colliders().len()
             + 6
             + content.npcs().len()
@@ -26,10 +26,7 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
             + content.doors().len()
             + 1
     );
-    assert_eq!(
-        physics.work.dynamic_bodies,
-        content.creature_spawns().len() + 1
-    );
+    assert!(physics.moved_bodies <= content.creature_spawns().len() + 1);
 
     let checkpoint = zone.snapshot().unwrap();
     let mut recovered = ZoneSimulation::from_snapshot(checkpoint.clone(), content).unwrap();

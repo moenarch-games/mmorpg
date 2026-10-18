@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use physics_engine::{Aabb, RigidBody, Vec3i, World, WorldConfig};
+use crate::physics::{RigidBody, Vec3i, World};
 
 use crate::creature::CreatureState;
 use crate::entity::{WORLD_LIMIT_BODY_BASE, body_id};
@@ -34,8 +34,6 @@ pub(crate) const PLAYER_HALF_EXTENTS: Vec3i = Vec3i::new(
     PLAYER_HALF_EXTENTS_UNITS[1],
     PLAYER_HALF_EXTENTS_UNITS[2],
 );
-/// The grounded probe spans this many units directly below the feet.
-const GROUND_PROBE_DEPTH_UNITS: i32 = 2;
 
 /// One validated movement axis; the wire and canonical form is `-1`, `0` or `1`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -205,7 +203,7 @@ pub struct ZoneTickWork {
     /// Living creatures whose AI decision was evaluated, including idle units.
     pub creature_ai_evaluations: usize,
     /// The engine's own report, present only after a successful physics step.
-    pub physics: Option<physics_engine::StepStats>,
+    pub physics: Option<crate::physics::StepStats>,
 }
 
 pub struct ZoneSimulation {
@@ -262,14 +260,24 @@ impl ZoneSimulation {
     ) -> Result<Self, ZoneError> {
         let definition = content.definition();
         let gravity = definition.gravity();
-        let mut world = World::new(WorldConfig {
-            gravity: Vec3i::new(gravity[0], gravity[1], gravity[2]),
-            ..WorldConfig::default()
-        });
+        let mut world = World::new(Vec3i::new(gravity[0], gravity[1], gravity[2]));
+        let spawn = definition.spawn_grid().feet(0).unwrap_or([0; 3]);
         for collider in definition.colliders() {
+            // The flat ground the spawn grid stands on is a floor half-space at y = 0 (#271).
+            let [x, y, z] = collider.position;
+            let [hx, hy, hz] = collider.half_extents;
+            if y + hy == 0 && (x - spawn[0]).abs() <= hx && (z - spawn[2]).abs() <= hz {
+                world
+                    .add_body(RigidBody::floor(
+                        crate::physics::BodyId(u64::from(collider.id)),
+                        0,
+                    ))
+                    .map_err(physics_error)?;
+                continue;
+            }
             world
                 .add_body(RigidBody::fixed(
-                    physics_engine::BodyId(u64::from(collider.id)),
+                    crate::physics::BodyId(u64::from(collider.id)),
                     vector(collider.position),
                     vector(collider.half_extents),
                 ))
@@ -282,7 +290,7 @@ impl ZoneSimulation {
         for door in content.doors() {
             world
                 .add_body(RigidBody::fixed(
-                    physics_engine::BodyId(u64::from(door.body)),
+                    crate::physics::BodyId(u64::from(door.body)),
                     vector(door.closed.position),
                     vector(door.closed.half_extents),
                 ))
@@ -578,7 +586,7 @@ impl ZoneSimulation {
         self.consume_intents()?;
         self.decide_creatures()?;
         self.drive_players()?;
-        self.tick_work.physics = Some(self.world.step(1).map_err(physics_error)?.stats);
+        self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
         self.update_landings()?;
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
         for player in self.players.values_mut() {
@@ -782,8 +790,12 @@ fn world_limit_bodies() -> impl Iterator<Item = RigidBody> {
             position[axis] = side * (limit + half_thickness);
             let mut half_extents = [span; 3];
             half_extents[axis] = half_thickness;
+            // The bottom limit is a floor half-space at its top face.
+            if (axis, side) == (1, -1) {
+                return RigidBody::floor(crate::physics::BodyId(id), -limit);
+            }
             RigidBody::fixed(
-                physics_engine::BodyId(id),
+                crate::physics::BodyId(id),
                 vector(position),
                 vector(half_extents),
             )
@@ -824,36 +836,14 @@ fn movement_velocity(state: &PlayerState) -> Result<Vec3i, ZoneError> {
 /// touching a wall is not ground. The physics query counts touching bodies;
 /// any body other than the player itself supports a jump.
 pub(crate) fn is_grounded(world: &World, body: &RigidBody) -> Result<bool, ZoneError> {
-    let position = body.position();
-    let half_extents = body.half_extents();
-    let probe_half_height = GROUND_PROBE_DEPTH_UNITS / 2;
-    // Beyond the representable range there is no ground: the jump is ignored.
-    let Some(probe_y) = position
-        .y
-        .checked_sub(half_extents.y)
-        .and_then(|feet| feet.checked_sub(probe_half_height))
-    else {
-        return Ok(false);
-    };
-    let probe = Aabb::new(
-        Vec3i::new(position.x, probe_y, position.z),
-        Vec3i::new(
-            (half_extents.x - 1).max(0),
-            probe_half_height,
-            (half_extents.z - 1).max(0),
-        ),
-    );
-    let hits = world
-        .overlap_query(probe)
-        .map_err(|error| ZoneError::new(error.to_string()))?;
-    Ok(hits.into_iter().any(|hit| hit != body.id()))
+    Ok(world.grounded(body.id()))
 }
 
 pub(crate) fn saturate_i8(value: i32) -> i8 {
     i8::try_from(value).unwrap_or(if value < 0 { i8::MIN } else { i8::MAX })
 }
 
-pub(crate) fn physics_error(error: physics_engine::PhysicsError) -> ZoneError {
+pub(crate) fn physics_error(error: crate::physics::PhysicsError) -> ZoneError {
     ZoneError::new(error.to_string())
 }
 
@@ -863,7 +853,7 @@ mod tests {
     use crate::EntityKind;
 
     #[test]
-    fn movement_is_driven_through_the_shared_physics_engine() {
+    fn movement_is_driven_through_the_shared_physics() {
         let mut zone = ZoneSimulation::new(ZoneId::new(7));
         zone.add_player(1).unwrap();
         let before = zone.snapshot().unwrap().players[0].position;
@@ -906,7 +896,10 @@ mod tests {
             .unwrap()
             .players
             .into_iter()
-            .map(|player| (player.position[0], player.position[2]))
+            .map(|player| {
+                let [x, _, z] = crate::physics::to_units(player.position);
+                (x, z)
+            })
             .collect::<BTreeSet<_>>();
 
         assert_eq!(positions.len(), MAX_PLAYERS_PER_ZONE);
@@ -1179,7 +1172,7 @@ mod tests {
         )
         .unwrap();
         let mut canonical = zone.snapshot().unwrap();
-        canonical.players[0].velocity = [70_000, -70_000, 32_767];
+        canonical.players[0].velocity = [70_000.0, -70_000.0, 32_767.0];
         let zone = ZoneSimulation::from_snapshot(canonical, Arc::clone(zone.content())).unwrap();
 
         let visible = zone.snapshot_for_player(2).unwrap();
@@ -1195,7 +1188,7 @@ mod tests {
         assert_eq!(other.facing, 0);
         assert_eq!(
             zone.snapshot().unwrap().players[0].velocity,
-            [70_000, -70_000, 32_767],
+            [70_000.0, -70_000.0, 32_767.0],
             "canonical state keeps exact velocity"
         );
     }

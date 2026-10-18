@@ -760,8 +760,8 @@ mod tests {
                 ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
             zone.add_player(1).unwrap();
             let mut state = zone.snapshot().unwrap();
-            state.players[0].position = [0, 90, -2_000];
-            state.creatures[0].position = [180, 45, -1_700];
+            state.players[0].position = mmorpg_core::physics::from_units([0, 90, -2_000]);
+            state.creatures[0].position = mmorpg_core::physics::from_units([180, 45, -1_700]);
             let scenery = greyhaven_vale_scenery();
             let world = WorldScene::new(&scenery);
             let now = Instant::now();

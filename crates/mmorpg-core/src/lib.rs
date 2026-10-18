@@ -5,7 +5,7 @@
 //!
 //! [`ZoneSimulation`] advances in the fixed tick order documented on
 //! [`ZoneSimulation::advance_tick`]. Physics integration and collision stay in
-//! `physics-engine`; wire formats live in `mmorpg-protocol`.
+//! Rapier, embedded in [`physics`] (#271); wire formats live in `mmorpg-protocol`.
 
 pub mod ability;
 mod ai;
@@ -28,6 +28,7 @@ mod guard;
 mod interest;
 mod inventory;
 mod loot;
+pub mod physics;
 mod progression;
 mod projection;
 mod quest;

@@ -12,7 +12,7 @@
 //! - the band is a height range above the Warden's feet ([`StrikeHeight`]);
 //!   a creature is covered when its physics body's vertical extent overlaps
 //!   it, so a high slash passes over a wolf and a low one under nothing;
-//! - static content colliders block the sweep through the `physics-engine`
+//! - static content colliders block the sweep through the Rapier physics world
 //!   ray query that line of sight uses.
 //!
 //! The nearest covered living creature (ties in `EntityRef` order) takes the

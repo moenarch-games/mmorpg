@@ -32,8 +32,12 @@ fn player(
     Ok(CanonicalPlayerSnapshot {
         copper: 0,
         player_id: u32::try_from(id)? + 1,
-        position: [position[0], PLAYER_HALF_EXTENTS_UNITS[1], position[1]],
-        velocity: [0; 3],
+        position: mmorpg_core::physics::from_units([
+            position[0],
+            PLAYER_HALF_EXTENTS_UNITS[1],
+            position[1],
+        ]),
+        velocity: [0.0; 3],
         facing,
         forward,
         strafe: 0,

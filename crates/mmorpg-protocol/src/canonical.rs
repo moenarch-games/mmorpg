@@ -17,7 +17,7 @@ use crate::inventory::{decode_equipment, decode_inventory, encode_equipment, enc
 use crate::wire::{
     CANONICAL_SNAPSHOT_SCOPE, decode_common_header, decode_entity_ref, decode_event,
     decode_u8_count, decode_u16_count, encode_common_header, encode_entity_ref, encode_event,
-    encode_u8_count, encode_u16_count, ensure_fully_consumed, read_bool, read_u8, read_vector,
+    encode_u8_count, encode_u16_count, ensure_fully_consumed, read_bool, read_f32_vector, read_u8,
     take,
 };
 
@@ -461,8 +461,8 @@ fn decode_player(
     offset: &mut usize,
 ) -> Result<CanonicalPlayerSnapshot, ProtocolError> {
     let player_id = u32::from_be_bytes(take(payload, offset)?);
-    let position = read_vector(payload, offset)?;
-    let velocity = read_vector(payload, offset)?;
+    let position = read_f32_vector(payload, offset)?;
+    let velocity = read_f32_vector(payload, offset)?;
     let facing = u16::from_be_bytes(take(payload, offset)?);
     let forward = i8::from_be_bytes(take(payload, offset)?);
     let strafe = i8::from_be_bytes(take(payload, offset)?);
@@ -746,8 +746,8 @@ fn decode_creature(
     let level = read_u8(payload, offset)?;
     let health = u32::from_be_bytes(take(payload, offset)?);
     let facing = u16::from_be_bytes(take(payload, offset)?);
-    let position = read_vector(payload, offset)?;
-    let velocity = read_vector(payload, offset)?;
+    let position = read_f32_vector(payload, offset)?;
+    let velocity = read_f32_vector(payload, offset)?;
     let life_code = read_u8(payload, offset)?;
     let died_at = u64::from_be_bytes(take(payload, offset)?);
     let life = match (life_code, died_at) {
@@ -906,8 +906,8 @@ mod tests {
                     chat: Vec::new(),
                     copper: 0,
                     player_id: 7,
-                    position: [10, 20, -30],
-                    velocity: [1, -2, 70_000],
+                    position: [10.0, 20.0, -30.0],
+                    velocity: [1.0, -2.0, 70000.0],
                     facing: 0xfedc,
                     forward: -1,
                     strafe: 1,
@@ -987,8 +987,8 @@ mod tests {
                     chat: Vec::new(),
                     copper: 0,
                     player_id: 8,
-                    position: [0; 3],
-                    velocity: [0; 3],
+                    position: [0.0; 3],
+                    velocity: [0.0; 3],
                     facing: 0,
                     forward: 0,
                     strafe: 0,
@@ -1011,8 +1011,8 @@ mod tests {
                     level: 1,
                     health: 30,
                     facing: 3,
-                    position: [100, 45, 200],
-                    velocity: [-19, -1, 0],
+                    position: [100.0, 45.0, 200.0],
+                    velocity: [-19.0, -1.0, 0.0],
                     life: CreatureLife::Alive,
                     ai: CreatureAi::Engaged,
                     threat: vec![ThreatEntry {
@@ -1030,8 +1030,8 @@ mod tests {
                     level: 1,
                     health: 0,
                     facing: 3,
-                    position: [300, 45, 200],
-                    velocity: [0; 3],
+                    position: [300.0, 45.0, 200.0],
+                    velocity: [0.0; 3],
                     life: CreatureLife::Corpse { died_at: 90 },
                     ai: CreatureAi::Idle {
                         timer: 0,
@@ -1049,8 +1049,8 @@ mod tests {
                     level: 1,
                     health: 30,
                     facing: 3,
-                    position: [500, 45, 200],
-                    velocity: [8, 0, 0],
+                    position: [500.0, 45.0, 200.0],
+                    velocity: [8.0, 0.0, 0.0],
                     life: CreatureLife::Alive,
                     ai: CreatureAi::Idle {
                         timer: 290,
@@ -1068,8 +1068,8 @@ mod tests {
                     level: 1,
                     health: 12,
                     facing: 3,
-                    position: [700, 45, 200],
-                    velocity: [0, 0, 24],
+                    position: [700.0, 45.0, 200.0],
+                    velocity: [0.0, 0.0, 24.0],
                     life: CreatureLife::Alive,
                     ai: CreatureAi::Evading { ticks: 44 },
                     threat: Vec::new(),

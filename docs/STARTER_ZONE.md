@@ -8,7 +8,7 @@ This document is the design contract for that slice. The implementation plan bel
 
 | Concern | Owner | Notes |
 | --- | --- | --- |
-| Movement intent, facing, jump preconditions | `mmorpg-core` | Physics integration and contact stay in `physics-engine`. |
+| Movement intent, facing, jump preconditions | `mmorpg-core` | Physics contact and character motion stay in the embedded Rapier world (#271). |
 | Units, health, resources, combat, auras, abilities | `mmorpg-core` | Typed intent commands; the tick resolves outcomes. |
 | Creature AI, spawns, respawn, threat, leash | `mmorpg-core` | Deterministic, ordered iteration and a zone RNG in canonical state. |
 | Experience, levels, loot, inventory, equipment, vendors, money | `mmorpg-core` | Content tables are immutable and revisioned with the zone. |
@@ -36,7 +36,7 @@ The browser demo runs the same `ZoneSimulation` through a WASM build as a local,
 
 - 100 simulation units per metre, Y up, 30 Hz ticks.
 - The playable square is about 240 m × 240 m, centred on the origin. Invisible boundary walls enclose it; mountains outside are scenery.
-- **Walkable ground is physically flat** (y = 0). The pinned translational `World` is AABB-only and has no step-up or heightfield support. Terrain relief inside the walkable area is presentation-only, at most about 0.6 m. Both clients offset units vertically from the same shared relief function in `mmorpg-scenery`, and that function is flattened under buildings, roads and plazas. Walkable slopes would need a physics-engine heightfield or step-up controller. That is recorded as a foundation follow-up, not faked in core.
+- **Walkable ground is physically flat** (y = 0). Rapier (#271) resolves capsule units against box colliders and a floor half-space; there is no step-up or heightfield yet (#59). Terrain relief inside the walkable area is presentation-only, at most about 0.6 m. Both clients offset units vertically from the same shared relief function in `mmorpg-scenery`, and that function is flattened under buildings, roads and plazas. Walkable slopes would need a physics-engine heightfield or step-up controller. That is recorded as a foundation follow-up, not faked in core.
 - Yaw is a `u16` angle (65 536 = one turn). Yaw 0 faces +Z and increasing yaw turns toward +X: `direction = (sin yaw, cos yaw)`.
 
 ## World layout

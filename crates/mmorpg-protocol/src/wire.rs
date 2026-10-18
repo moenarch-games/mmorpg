@@ -681,6 +681,23 @@ pub(crate) fn read_vector(payload: &[u8], offset: &mut usize) -> Result<[i32; 3]
     ])
 }
 
+/// Three finite big-endian `f32` values (exact canonical physics state, #271).
+pub(crate) fn read_f32_vector(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<[f32; 3], ProtocolError> {
+    let vector = [
+        f32::from_be_bytes(take(payload, offset)?),
+        f32::from_be_bytes(take(payload, offset)?),
+        f32::from_be_bytes(take(payload, offset)?),
+    ];
+    if vector.iter().all(|value| value.is_finite()) {
+        Ok(vector)
+    } else {
+        Err(ProtocolError::new("physics state must be finite"))
+    }
+}
+
 pub(crate) fn take<const N: usize>(
     payload: &[u8],
     offset: &mut usize,

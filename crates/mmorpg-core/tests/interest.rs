@@ -35,8 +35,8 @@ fn zone_at(positions: &[[i32; 3]]) -> ZoneSimulation {
             copper: 0,
             // Reverse IDs deliberately: spatial traversal must not change wire order.
             player_id: u32::try_from(positions.len() - slot).unwrap(),
-            position,
-            velocity: [0; 3],
+            position: mmorpg_core::physics::from_units(position),
+            velocity: [0.0; 3],
             facing: 0,
             forward: 0,
             strafe: 0,
@@ -63,8 +63,12 @@ fn assert_matches_exhaustive(zone: &ZoneSimulation) {
     let canonical = zone.snapshot().unwrap();
     for observer in &canonical.players {
         let distance_squared = |candidate: &CanonicalPlayerSnapshot| {
-            let dx = i128::from(candidate.position[0]) - i128::from(observer.position[0]);
-            let dz = i128::from(candidate.position[2]) - i128::from(observer.position[2]);
+            let (candidate, observer) = (
+                mmorpg_core::physics::to_units(candidate.position),
+                mmorpg_core::physics::to_units(observer.position),
+            );
+            let dx = i128::from(candidate[0]) - i128::from(observer[0]);
+            let dz = i128::from(candidate[2]) - i128::from(observer[2]);
             dx * dx + dz * dz
         };
         let mut relevant: Vec<_> = canonical
@@ -86,9 +90,8 @@ fn assert_matches_exhaustive(zone: &ZoneSimulation) {
                 kind: EntityKind::Player,
                 id: candidate.player_id,
                 appearance: 0,
-                position: candidate.position,
-                velocity: candidate
-                    .velocity
+                position: mmorpg_core::physics::to_units(candidate.position),
+                velocity: mmorpg_core::physics::to_units(candidate.velocity)
                     .map(|component| component.clamp(-128, 127) as i8),
                 facing: candidate.facing,
                 level: 1,
@@ -231,7 +234,7 @@ fn sparse_work_is_bounded_and_dense_visibility_is_capped_by_priority() {
 }
 
 #[test]
-fn projection_tracks_collision_resolution_and_failed_physics_steps() {
+fn projection_tracks_collision_resolution_and_extreme_recovered_bodies() {
     let mut zone =
         ZoneSimulation::with_definition(ZoneId::new(7), mmorpg_core::greyhaven_vale_definition())
             .unwrap();
@@ -243,15 +246,13 @@ fn projection_tracks_collision_resolution_and_failed_physics_steps() {
         assert_matches_exhaustive(&zone);
     }
 
+    // Recovered bodies at the extremes of the coordinate range keep projecting exactly.
     let mut edge = zone_at(&[[i32::MAX - 50, 50, 0], [i32::MIN + 31, 50, 0]]);
     edge.apply_command(2, 4, run(EAST)).unwrap();
-    edge.advance_tick().unwrap();
-    edge.advance_tick().unwrap();
-    let before_failure = edge.interest_maintenance_stats();
-    assert!(edge.advance_tick().is_err());
-    assert_eq!(edge.current_tick(), 101);
-    assert_eq!(edge.interest_maintenance_stats(), before_failure);
-    assert_matches_exhaustive(&edge);
+    for _ in 0..3 {
+        edge.advance_tick().unwrap();
+        assert_matches_exhaustive(&edge);
+    }
 }
 
 #[test]

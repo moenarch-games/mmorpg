@@ -34,8 +34,8 @@ fn presentation_preserves_the_prechange_combat_trace() {
                 player.combat.health,
                 creature.health,
                 player.combat.swing_timer,
-                player.position,
-                creature.position,
+                mmorpg_core::physics::to_units(player.position),
+                mmorpg_core::physics::to_units(creature.position),
                 creature.threat
             ));
         }

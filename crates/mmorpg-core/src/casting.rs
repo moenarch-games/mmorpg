@@ -611,17 +611,11 @@ impl ZoneSimulation {
     pub(crate) fn line_of_sight(&self, from: EntityRef, to: EntityRef) -> Result<bool, ZoneError> {
         let origin = self.unit_position(from)?;
         let end = self.unit_position(to)?;
-        let ray = physics_engine::Ray::new(
-            physics_engine::Vec3i::new(origin[0], origin[1], origin[2]),
-            physics_engine::Vec3i::new(end[0] - origin[0], end[1] - origin[1], end[2] - origin[2]),
-        );
-        let hits = self
-            .world
-            .ray_cast(ray, 1)
-            .map_err(|error| ZoneError::new(format!("line-of-sight query failed: {error}")))?;
-        Ok(!hits
-            .iter()
-            .any(|hit| hit.body.0 < crate::entity::PLAYER_BODY_BASE))
+        Ok(!self.world.segment_blocked(
+            crate::physics::Vec3i::new(origin[0], origin[1], origin[2]),
+            crate::physics::Vec3i::new(end[0] - origin[0], end[1] - origin[1], end[2] - origin[2]),
+            |body| body.0 < crate::entity::PLAYER_BODY_BASE,
+        ))
     }
 
     fn unit_distance_squared(&self, from: EntityRef, to: EntityRef) -> Result<i64, ZoneError> {

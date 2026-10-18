@@ -11,7 +11,7 @@ Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decis
 | Concern | Authority |
 | --- | --- |
 | Zone-local gameplay rules and interest policy | `mmorpg-core` |
-| Collision and physical movement | `physics-engine` |
+| Collision and physical movement | Rapier (`rapier3d`, embedded in `mmorpg-core`, #271) |
 | Command/snapshot wire encoding | `mmorpg-protocol` |
 | Session ticks, reconnects, replay/recovery, WebTransport | `game-server` |
 | Zone placement, lease fencing, host routing, handoff metadata | `mmorpg-control-plane` |
@@ -50,7 +50,7 @@ client ────────▶│ game-server│   │ game-server│◀─�
                  mmorpg-core      mmorpg-core
                       |                |
                       v                v
-                physics-engine   physics-engine
+                Rapier (core)    Rapier (core)
 ```
 
 A zone is a single-writer authoritative simulation. A host may own many zones and the fleet may contain many hosts. Cross-zone movement transfers authority at a deterministic boundary using a unique transfer ID plus source/destination lease epochs. Two hosts must never concurrently own the same zone epoch.
@@ -62,12 +62,11 @@ This deliberately avoids shared mutable physics across machines. Horizontal scal
 The workspace provides:
 
 - a Rust 1.98 workspace and reusable validation workflow;
-- a deterministic zone simulation that uses the pinned `physics-engine`;
+- a deterministic zone simulation with embedded Rapier physics (capsule units on `KinematicCharacterController`, #271);
 - validated immutable collision content, gravity, and velocity-preserving physical recovery;
 - stale-command rejection and bounded per-zone player capacity;
 - canonical full-zone snapshots for replay/recovery that reference their immutable content by revision and fingerprint and fail closed on any content mismatch;
 - player-scoped interest snapshots with a spatial index for network publication;
-- [actual-zone physics adoption workloads](docs/PHYSICS_WORKLOADS.md), including unchanged canonical/projection bytes across the engine update;
 - [deterministic visibility workloads](docs/INTEREST_WORKLOADS.md) with wire parity and snapshot-size evidence;
 - [deterministic Greyhaven combat workloads](docs/COMBAT_WORKLOADS.md) with AI/physics/publication counters, replay/recovery parity and ratcheted work/byte budgets;
 - an explicit `game-server::GameSimulation` adapter;
@@ -203,7 +202,7 @@ Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative du
 
 ## Pinned foundations
 
-- `physics-engine`: `16833b766629c354a6a5925b991eeb74208a242d`
+- `rapier3d`: `=0.36.1` (crates.io, default features)
 - `game-server`: `a3851dab9c1fb25dd31b465fb554ca475769caab`
 - `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `df52c324a5692d04d2016d8a29f5bc4368e4aac0`
 - reusable validation workflow: `45042e56be120b438096e774027637cac0280075`

@@ -264,7 +264,7 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         assert!((template.min_level..=template.max_level).contains(&creature.level));
         assert_eq!(creature.health, template.max_health(creature.level));
         assert_eq!(
-            creature.position,
+            mmorpg_core::physics::to_units(creature.position),
             [
                 spawn.position[0],
                 template.half_extents[1],
@@ -321,7 +321,10 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         .creatures
         .iter()
         .zip(content.creature_spawns())
-        .filter(|(creature, spawn)| [creature.position[0], creature.position[2]] != spawn.position)
+        .filter(|(creature, spawn)| {
+            let [x, _, z] = mmorpg_core::physics::to_units(creature.position);
+            [x, z] != spawn.position
+        })
         .count();
     assert!(moved > 20, "only {moved} creatures wandered");
     for (creature, spawn) in first
@@ -331,8 +334,10 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         .iter()
         .zip(content.creature_spawns())
     {
-        let dx = i64::from(creature.position[0] - spawn.position[0]);
-        let dz = i64::from(creature.position[2] - spawn.position[1]);
+        let dx =
+            i64::from(mmorpg_core::physics::to_units(creature.position)[0] - spawn.position[0]);
+        let dz =
+            i64::from(mmorpg_core::physics::to_units(creature.position)[2] - spawn.position[1]);
         let limit = i64::from(spawn.wander_radius) + 50;
         assert!(
             dx * dx + dz * dz <= limit * limit,
