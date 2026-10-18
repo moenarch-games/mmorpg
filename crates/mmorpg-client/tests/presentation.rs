@@ -20,6 +20,7 @@ fn facing_snapshot(tick: u64, position: [i32; 3], facing: u16) -> ZoneSnapshot {
     ZoneSnapshot {
         doors: Vec::new(),
         projectiles: Vec::new(),
+        debris: Vec::new(),
         loot: None,
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         zone_id: ZoneId::new(1),

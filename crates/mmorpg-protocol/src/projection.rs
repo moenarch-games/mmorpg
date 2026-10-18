@@ -48,9 +48,25 @@ const MAX_SELF_SHEET_BYTES: usize = SELF_SHEET_BYTES + crate::quest::MAX_QUEST_S
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES + 1;
 /// Every section's fixed part: header, self, target, inventory revision
 /// and presence, loot presence, door count (`u8`), event count (`u8`), chat
-/// count (`u8`), entity count (`u16`) and projectile count (`u8`).
-pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize =
-    HEADER_BYTES + SELF_BYTES + SELF_ABILITY_BYTES + TARGET_BYTES + 8 + 1 + 1 + 1 + 1 + 1 + 2 + 1;
+/// count (`u8`), entity count (`u16`), projectile count (`u8`) and debris count (`u8`).
+pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
+    + SELF_BYTES
+    + SELF_ABILITY_BYTES
+    + TARGET_BYTES
+    + 8
+    + 1
+    + 1
+    + 1
+    + 1
+    + 1
+    + 2
+    + 1
+    + 1;
+/// `u16` ID, prop kind, piece index, `3 × i16` position, `4 × i16` rotation quaternion and age
+/// (#288).
+pub const DEBRIS_RECORD_BYTES: usize = 2 + 1 + 1 + 6 + 8 + 1;
+/// At most this many pieces of debris, nearest first, take what budget the units leave.
+pub const MAX_WIRE_DEBRIS: usize = 16;
 /// `u16` ID, kind, `3 × i16` position, `u16` yaw, `i16` pitch and flags (#286).
 pub const PROJECTILE_RECORD_BYTES: usize = 2 + 1 + 6 + 2 + 2 + 1;
 /// At most this many projectiles, nearest first, share a projection's budget.
@@ -70,7 +86,7 @@ pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// facing, level, health percent and flags.
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 6 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events, sheets, cooldowns or auras:
-/// (1,077 − 113) / 21 = 45.
+/// (1,077 − 114) / 21 = 45.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -102,6 +118,8 @@ pub struct PackedSnapshot {
     pub packed_entities: usize,
     /// Leading projectiles that fit; the rest were omitted.
     pub packed_projectiles: usize,
+    /// Leading pieces of debris that fit; the rest were omitted (#288).
+    pub packed_debris: usize,
 }
 
 /// Budget-driven packing: writes the header, the viewer's own state, its
@@ -270,7 +288,8 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     let count_offset = payload.len();
     payload.extend_from_slice(&0_u16.to_be_bytes());
     let mut packed_entities = 0_u16;
-    let projectile_bytes = 1 + projectiles * PROJECTILE_RECORD_BYTES;
+    // Projectiles and the debris count follow the entities.
+    let projectile_bytes = 1 + projectiles * PROJECTILE_RECORD_BYTES + 1;
     for entity in snapshot.entities.iter().take(planned) {
         if payload.len() + ENTITY_RECORD_BYTES + projectile_bytes > MAX_PLAYER_PROJECTION_BYTES {
             break;
@@ -283,10 +302,20 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     for projectile in &snapshot.projectiles[..projectiles] {
         encode_projectile(&mut payload, projectile)?;
     }
+    // Debris (#288) takes what the units left.
+    let debris = (MAX_PLAYER_PROJECTION_BYTES.saturating_sub(payload.len() + 1)
+        / DEBRIS_RECORD_BYTES)
+        .min(MAX_WIRE_DEBRIS)
+        .min(snapshot.debris.len());
+    payload.push(u8::try_from(debris).unwrap_or(u8::MAX));
+    for piece in &snapshot.debris[..debris] {
+        encode_debris(&mut payload, piece)?;
+    }
     Ok(PackedSnapshot {
         payload,
         packed_entities: usize::from(packed_entities),
         packed_projectiles: projectiles,
+        packed_debris: debris,
     })
 }
 
@@ -297,6 +326,7 @@ pub fn encode_snapshot(snapshot: &ZoneSnapshot) -> Result<Vec<u8>, ProtocolError
     let packed = pack_snapshot(snapshot)?;
     if packed.packed_entities < snapshot.entities.len()
         || packed.packed_projectiles < snapshot.projectiles.len()
+        || packed.packed_debris < snapshot.debris.len()
     {
         return Err(ProtocolError::new(
             "player projection exceeds the byte budget",
@@ -409,6 +439,55 @@ fn encode_projectile(
     payload.extend_from_slice(&projectile.pitch.to_be_bytes());
     payload.push(u8::from(projectile.stuck));
     Ok(())
+}
+
+fn encode_debris(
+    payload: &mut Vec<u8>,
+    piece: &mmorpg_core::DebrisView,
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(&piece.id.to_be_bytes());
+    payload.push(piece.kind.code());
+    payload.push(piece.piece);
+    for component in piece.position {
+        let component = i16::try_from(component)
+            .map_err(|_| ProtocolError::new("debris position is outside the compact wire range"))?;
+        payload.extend_from_slice(&component.to_be_bytes());
+    }
+    for component in piece.rotation {
+        payload.extend_from_slice(&component.to_be_bytes());
+    }
+    payload.push(piece.age);
+    Ok(())
+}
+
+fn decode_debris(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<mmorpg_core::DebrisView, ProtocolError> {
+    let id = u16::from_be_bytes(take(payload, offset)?);
+    let kind = mmorpg_core::PropKind::from_code(read_u8(payload, offset)?)
+        .ok_or_else(|| ProtocolError::new("unknown debris kind"))?;
+    let piece = read_u8(payload, offset)?;
+    if usize::from(piece) >= mmorpg_core::debris_pieces(kind).len() {
+        return Err(ProtocolError::new("unknown debris piece"));
+    }
+    let mut position = [0; 3];
+    for axis in &mut position {
+        *axis = i32::from(i16::from_be_bytes(take(payload, offset)?));
+    }
+    let mut rotation = [0; 4];
+    for axis in &mut rotation {
+        *axis = i16::from_be_bytes(take(payload, offset)?);
+    }
+    let age = read_u8(payload, offset)?;
+    Ok(mmorpg_core::DebrisView {
+        id,
+        kind,
+        piece,
+        position,
+        rotation,
+        age,
+    })
 }
 
 fn decode_projectile(
@@ -675,6 +754,16 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
     for _ in 0..count {
         projectiles.push(decode_projectile(payload, &mut offset)?);
     }
+    let count = decode_u8_count(
+        payload,
+        &mut offset,
+        MAX_WIRE_DEBRIS,
+        "snapshot has too much debris",
+    )?;
+    let mut debris = Vec::with_capacity(count);
+    for _ in 0..count {
+        debris.push(decode_debris(payload, &mut offset)?);
+    }
     ensure_fully_consumed(payload, offset)?;
     if entities
         .first()
@@ -750,6 +839,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         entities,
         doors,
         projectiles,
+        debris,
         quests,
     })
 }
@@ -858,6 +948,7 @@ mod tests {
         slots[1] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(2), 1).unwrap());
         slots[15] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 20).unwrap());
         ZoneSnapshot {
+            debris: Vec::new(),
             doors: vec![
                 mmorpg_core::DoorView {
                     door: mmorpg_core::DoorId::new(1),
@@ -1195,7 +1286,7 @@ mod tests {
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
         mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v25.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v26.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
     }
@@ -1262,12 +1353,56 @@ mod tests {
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
         // The previous version's fixture is rejected, never reinterpreted.
         let legacy = hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v24.hex"
+            "../../../fixtures/protocol/player-snapshot-v25.hex"
         ));
         assert_eq!(
             decode_snapshot(&legacy).unwrap_err().to_string(),
             "unsupported snapshot wire version"
         );
+    }
+
+    #[test]
+    fn debris_ends_the_projection_and_round_trips() {
+        let mut snapshot = fixture_snapshot();
+        snapshot.debris = vec![
+            mmorpg_core::DebrisView {
+                id: 9,
+                kind: mmorpg_core::PropKind::ExplosiveBarrel,
+                piece: 7,
+                position: [-300, 12, 9_000],
+                rotation: [0, 23_170, 0, 23_170],
+                age: 4,
+            },
+            mmorpg_core::DebrisView {
+                id: 65_535,
+                kind: mmorpg_core::PropKind::Crate,
+                piece: 0,
+                position: [32_767, -32_768, 0],
+                rotation: [-32_767, 0, 0, 0],
+                age: 255,
+            },
+        ];
+        let encoded = encode_snapshot(&snapshot).unwrap();
+        assert_eq!(
+            encoded.len(),
+            fixture_bytes().len() + 2 * DEBRIS_RECORD_BYTES
+        );
+        assert_eq!(decode_snapshot(&encoded).unwrap(), snapshot);
+        let debris = encoded.len() - 2 * DEBRIS_RECORD_BYTES;
+        assert_eq!(encoded[debris - 1], 2);
+        for (offset, value, message) in [
+            (debris + 2, 9, "unknown debris kind"),
+            (debris + 3, 8, "unknown debris piece"),
+            (debris - 1, 17, "snapshot has too much debris"),
+        ] {
+            let mut invalid = encoded.clone();
+            invalid[offset] = value;
+            assert_eq!(
+                decode_snapshot(&invalid).unwrap_err().to_string(),
+                message,
+                "byte {offset} = {value}"
+            );
+        }
     }
 
     #[test]
@@ -1302,7 +1437,7 @@ mod tests {
         snapshot.target_detail = TargetDetail::default();
         let bytes = encode_snapshot(&snapshot).unwrap();
         let expected = mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v25.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v26.hex"),
             &bytes,
         );
         assert_eq!(bytes, expected);
@@ -1511,7 +1646,8 @@ mod tests {
         more[ENTITY_COUNT..FIRST_ENTITY].copy_from_slice(&5_u16.to_be_bytes());
         assert!(decode_snapshot(&more).is_err(), "count must match records");
         // The two projectile records end the projection (#286).
-        let projectiles = encoded.len() - 2 * PROJECTILE_RECORD_BYTES;
+        // The empty debris section (#288) follows them.
+        let projectiles = encoded.len() - 1 - 2 * PROJECTILE_RECORD_BYTES;
         assert_eq!(encoded[projectiles - 1], 2);
         for (offset, value, message) in [
             (projectiles + 2, 9, "unknown projectile kind"),
@@ -1671,7 +1807,7 @@ mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (113, 14, 21)
+            (114, 14, 21)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 45);
         let viewer_id = u32::MAX;
@@ -1718,6 +1854,7 @@ mod tests {
         };
         let snapshot = ZoneSnapshot {
             projectiles: Vec::new(),
+            debris: Vec::new(),
             doors: vec![
                 mmorpg_core::DoorView {
                     door: mmorpg_core::DoorId::new(1),

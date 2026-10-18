@@ -29,8 +29,8 @@ pub mod units;
 /// revision 9 binds quest catalog 1 (the Greyhaven chain), item catalog 3
 /// (the Wolf Pelt) and vendor catalog 2; revision 10 replaces the inn block
 /// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
-/// inside.
-pub const REVISION: u64 = 14;
+/// inside; revision 15 adds breakable crates, barrels, fences and powder barrels (#288).
+pub const REVISION: u64 = 15;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -791,6 +791,8 @@ static CONTENT: LazyLock<Arc<ZoneContent>> = LazyLock::new(|| {
     let tables = content
         .creature_templates()
         .iter()
+        // Breakable props (#288) drop nothing.
+        .filter(|template| template.prop().is_none())
         .map(|template| {
             (
                 template.id,

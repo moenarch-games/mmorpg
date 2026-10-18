@@ -37,7 +37,12 @@ fn every_model() -> Vec<(UnitModel, [f32; 3])> {
     .into_iter()
     .map(|kind| (UnitModel::Humanoid(kind), character))
     .collect();
-    for template in content.creature_templates() {
+    // Breakable props (#288) are drawn by the shared presenter, not these models.
+    for template in content
+        .creature_templates()
+        .iter()
+        .filter(|template| template.prop().is_none())
+    {
         let model = UnitModel::choose(
             EntityKind::Creature,
             Some(template.family),

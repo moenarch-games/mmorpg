@@ -209,6 +209,8 @@ impl UnitModel {
                 Some(CreatureFamily::Mirefin) => Self::Humanoid(HumanoidKind::Mirefin),
                 Some(CreatureFamily::Redbrand) if elite => Self::Humanoid(HumanoidKind::Garrick),
                 Some(CreatureFamily::Redbrand) => Self::Humanoid(HumanoidKind::Redbrand),
+                // Props (#288) are drawn by the shared unit presenter.
+                Some(CreatureFamily::Prop) => Self::Placeholder,
             },
         }
     }
