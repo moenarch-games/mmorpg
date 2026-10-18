@@ -23,12 +23,14 @@
 //!
 //! The rules live once, in [`CharacterStore`], over an [`EntryBackend`] that
 //! only needs an atomic read-modify-write of one entry: [`FileEntries`] for
-//! development and LAN hosts, the browser's `localStorage` in `mmorpg-wasm`.
-//! A PostgreSQL backend is the production target (TECH-002).
+//! development and LAN hosts, the browser's `localStorage` in `mmorpg-wasm`,
+//! and [`PostgresEntries`] (feature `postgres`) for production (TECH-002).
 
 mod entry;
 #[cfg(not(target_arch = "wasm32"))]
 mod file;
+#[cfg(feature = "postgres")]
+pub mod postgres;
 
 use std::error::Error;
 use std::fmt;
@@ -38,6 +40,8 @@ use mmorpg_core::{CharacterId, CharacterRecord, ZoneId};
 pub use entry::{ENTRY_FORMAT_VERSION, decode_entry, encode_entry};
 #[cfg(not(target_arch = "wasm32"))]
 pub use file::FileEntries;
+#[cfg(feature = "postgres")]
+pub use postgres::PostgresEntries;
 
 /// A zone at one control-plane lease epoch: the only party that may hold a
 /// character lease.
