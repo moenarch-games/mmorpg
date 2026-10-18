@@ -62,22 +62,25 @@ jobs:
           printf 'rust_changed=%s\n' "$rust_changed" >> "$GITHUB_OUTPUT"
 
   rust:
-    # The native client's gamepad backend (gilrs) links libudev, so every Rust compile installs its headers first;
+    # The native client's gamepad backend (gilrs) links libudev, so every Rust job installs its headers;
     # its build embeds the asset-tooling Ranger bundle, which the fetch script downloads first.
     needs: scope
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@45042e56be120b438096e774027637cac0280075
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@16cd27876a7f21645999432e4993ee2afa68fa6e
     with:
       bun_version: ${{ needs.scope.outputs.full_validation == 'true' && '1.4.2' || '' }}
       node_version: ""
       install_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cd web && bun install --frozen-lockfile' || '' }}
       cache_bun: false
+      # Once per job: libudev headers, the asset bundles and cargo-nextest (tests run per process, in parallel).
+      apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev' || '' }}
+      pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'scripts/fetch-bundles.sh && curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"' || '' }}
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}
-      lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-bundles.sh && cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
+      lint_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && (cd web && bunx --no-install tsc --noEmit -p tsconfig.assets.json)' || '' }}
       # Ordinary Rust PRs run the workspace tests too. GPU tests are #[ignore]d, and the native/Pages
       # reference tests (they build the WASM page with Bun and wasm-bindgen) stay in full validation.
-      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-bundles.sh && python3 scripts/test-dev-native.py && cargo test --workspace --all-features --locked' || (needs.scope.outputs.rust_changed == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-bundles.sh && cargo test --workspace --locked -- --skip every_world_prop_region_and_day_phase_matches_pages_submitted_content --skip pages_reference_inventory_covers_current_world_scope' || '') }}
-      build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-bundles.sh && cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'sudo apt-get update -qq && sudo apt-get install -y -qq libudev-dev && scripts/fetch-bundles.sh && cargo check --workspace --locked') || '' }}
+      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run --workspace --locked -E "not (test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content) | test(~pages_reference_inventory_covers_current_world_scope))"' || '') }}
+      build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'cargo check --workspace --locked') || '' }}
