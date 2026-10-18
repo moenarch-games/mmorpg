@@ -76,6 +76,7 @@ struct ImportedEntry {
     time: f32,
     tint: Option<f32>,
     sword_and_shield: bool,
+    bow_and_quiver: bool,
     headwear: bool,
 }
 
@@ -274,6 +275,7 @@ impl Units {
                     time: unit.time,
                     tint: unit.tint,
                     sword_and_shield: unit.sword_and_shield,
+                    bow_and_quiver: unit.bow_and_quiver,
                     headwear: unit.headwear.is_some(),
                 }
             })

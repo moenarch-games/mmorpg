@@ -51,6 +51,8 @@ export type ImportedRequest = {
   tint: number | null;
   /** A Warden carries the bundle's sword and shield (#156). */
   swordAndShield: boolean;
+  /** A Ranger carries the bundle's bow and quiver on its back (#244). */
+  bowAndQuiver: boolean;
   /** The living viewer wears headwear on the posed head: call `headwear` after skinning. */
   headwear: boolean;
 };
@@ -64,7 +66,7 @@ type DrawEntry = { id: string; key: string; model: number; color: Color; emissiv
 type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number;
-  height: number; clip: string; time: number; tint: number | null; swordAndShield: boolean; headwear: boolean };
+  height: number; clip: string; time: number; tint: number | null; swordAndShield: boolean; bowAndQuiver: boolean; headwear: boolean };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2 };
@@ -129,7 +131,7 @@ export class SharedUnits {
       })),
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw,
-        heightMetres: unit.height, clip: unit.clip, time: unit.time, tint: unit.tint, swordAndShield: unit.swordAndShield, headwear: unit.headwear,
+        heightMetres: unit.height, clip: unit.clip, time: unit.time, tint: unit.tint, swordAndShield: unit.swordAndShield, bowAndQuiver: unit.bowAndQuiver, headwear: unit.headwear,
       })),
     };
   }
