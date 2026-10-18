@@ -927,7 +927,7 @@ class BrowserAcceptance(unittest.TestCase):
           }
           window.__lootBefore = window.__lootLatest();
         }""")
-        self.assertEqual(self.page.evaluate("Number(window.__lootLatest().loot.diedAt)"), 912)
+        self.assertEqual(self.page.evaluate("Number(window.__lootLatest().loot.diedAt)"), 852)
         self.expect_class_resource()
         self.page.evaluate("""() => {
           window.__lootSend({kind:'select-target',target:null});
@@ -965,7 +965,7 @@ class BrowserAcceptance(unittest.TestCase):
         expect(slots.nth(0)).to_have_text("Slot 1 · Torn Fur × 5")
         expect(slots.nth(0)).to_be_enabled()
         self.page.evaluate("""() => {
-          window.__lootSend({kind:'loot',creatureId:108,diedAt:912n});
+          window.__lootSend({kind:'loot',creatureId:108,diedAt:852n});
           window.__lootStep(1);
         }""")
         self.assertEqual(self.page.evaluate("window.__lootLatest().events.some(e => e.kind === 'error' && e.code === 'empty-loot')"), True)

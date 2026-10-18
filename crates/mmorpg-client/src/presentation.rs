@@ -560,7 +560,12 @@ impl Presentation {
             view.eye,
         );
         // The sky shows the zone's time of day; clouds keep drifting on the client clock.
-        if let Some(tick) = self.latest().map(|snapshot| snapshot.tick) {
+        if let Some(mut tick) = self.latest().map(|snapshot| snapshot.tick) {
+            // Reduced motion steps the sky once per zone hour instead of drifting.
+            if self.reduced_motion {
+                let hour = u64::from(mmorpg_core::HOUR_TICKS);
+                tick -= (tick + u64::from(mmorpg_core::ZONE_START_TIME)) % hour;
+            }
             let clouds = frame.environment.cloud_offset;
             frame.environment = crate::environment::Environment::at(
                 crate::environment::zone_sky_seconds(tick),
