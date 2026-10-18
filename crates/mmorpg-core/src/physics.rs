@@ -39,6 +39,10 @@ const UNITS_PER_METRE: f32 = 100.0;
 const CONTACT_OFFSET_UNITS: f32 = 0.25;
 /// [`CONTACT_OFFSET_UNITS`] in metres.
 const CONTACT_OFFSET: f32 = CONTACT_OFFSET_UNITS / UNITS_PER_METRE;
+/// Approaches within 60 degrees of head-on step fully aside in [`World::slide_around`].
+const NEAR_HEAD_ON_COS: f32 = 0.5;
+/// The outward motion (units per tick) [`World::slide_around`] adds against a touching body.
+const SEPARATION_UNITS: f32 = 1.0;
 /// How far (in metres) below a body the controller still finds the ground: its contact
 /// offset plus the fixed 5 cm its grounded test predicts. Support queries and snapping use
 /// the same reach.
@@ -672,7 +676,8 @@ impl World {
     /// `desired` with the horizontal part that presses into a touching moving capsule turned
     /// along it, so characters slide around each other instead of locking head-on: Rapier's
     /// controller only stops a kinematic body at another (#273; physics-engine #308 will do
-    /// this natively). Exactly head-on, both step aside to opposite sides at full speed.
+    /// this natively). Within 60 degrees of head-on, both step aside to opposite sides at full
+    /// speed.
     fn slide_around(&self, body: &RigidBody, desired: [f32; 3]) -> [f32; 3] {
         let [mut vx, vy, mut vz] = desired;
         let speed = vx.hypot(vz);
@@ -711,14 +716,26 @@ impl World {
             if into >= 0.0 {
                 continue;
             }
-            vx -= into * nx;
-            vz -= into * nz;
-            if vx.hypot(vz) < 0.25 * speed {
-                // The tangent (-nz, nx): mirrored for the other body, so two characters
-                // meeting exactly head-on step to opposite sides.
-                vx = -nz * speed;
-                vz = nx * speed;
-            }
+            // The tangent (-nz, nx) is mirrored for the other body, whose `n` is opposite.
+            let (tx, tz) = (-nz, nx);
+            let along = vx * tx + vz * tz;
+            let along = if into < -NEAR_HEAD_ON_COS * speed {
+                // Near head-on, projecting would leave a crawl: step aside at full speed, to
+                // the side the motion already leans or, exactly head-on, the tangent's side
+                // (opposite for the two bodies, so they never pick the same one).
+                let side = if along.abs() > 1.0e-3 * speed {
+                    along.signum()
+                } else {
+                    1.0
+                };
+                side * speed
+            } else {
+                along
+            };
+            // A little outward motion too: against a touching capsule Rapier's controller
+            // otherwise stops even motion along it.
+            vx = along * tx + SEPARATION_UNITS * nx;
+            vz = along * tz + SEPARATION_UNITS * nz;
         }
         [vx, vy, vz]
     }
@@ -795,6 +812,10 @@ impl World {
     }
 
     /// Every body whose shape intersects the box, in ID order.
+    ///
+    /// Rapier's `intersect_shape` silently skips cuboid–heightfield pairs (parry reports them
+    /// unsupported), so the terrain never shows up here. Door probes (`door::leaf_blocked`)
+    /// only look for units, so that is harmless for now.
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
         let queries = self.world.broad_phase.as_query_pipeline(
             &self.queries,
@@ -946,6 +967,53 @@ mod tests {
             a.x > 200 && b.x < -200,
             "they passed each other: {a:?} {b:?}"
         );
+    }
+
+    #[test]
+    fn characters_meeting_off_axis_slide_around_each_other() {
+        // Head-on and slightly off-axis pairs, at walking and running speeds, both ways round.
+        let mut stuck = Vec::new();
+        for offset in [0, 1, 3, 5, 8, 12, 20, 30, 45] {
+            for speed in [8, 21] {
+                for flip in [false, true] {
+                    let mut world = world();
+                    let (a, b) = if flip {
+                        (BodyId(11), BodyId(10))
+                    } else {
+                        (BodyId(10), BodyId(11))
+                    };
+                    world
+                        .add_body(RigidBody::dynamic(
+                            a,
+                            Vec3i::new(-300, 90, 0),
+                            Vec3i::ZERO,
+                            BODY,
+                        ))
+                        .unwrap();
+                    world
+                        .add_body(RigidBody::dynamic(
+                            b,
+                            Vec3i::new(300, 90, offset),
+                            Vec3i::ZERO,
+                            BODY,
+                        ))
+                        .unwrap();
+                    for _ in 0..120 {
+                        world.set_velocity(a, Vec3i::new(speed, 0, 0)).unwrap();
+                        world.set_velocity(b, Vec3i::new(-speed, 0, 0)).unwrap();
+                        world.step().unwrap();
+                    }
+                    let (pa, pb) = (
+                        world.body(a).unwrap().position(),
+                        world.body(b).unwrap().position(),
+                    );
+                    if !(pa.x > 300 && pb.x < -300) {
+                        stuck.push((offset, speed, flip, pa, pb));
+                    }
+                }
+            }
+        }
+        assert!(stuck.is_empty(), "pairs deadlocked: {stuck:?}");
     }
 
     #[test]
