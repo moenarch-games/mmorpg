@@ -80,7 +80,7 @@ content revision 13, the expanded valley and hills of #159):
 | --- | ---: | ---: | ---: | ---: |
 | vale-idle-16 | 26,640 | 430,200 | 191,328 | 3,598,128 |
 | vale-fights-8 | 26,640 | 427,320 | 72,679 | 1,130,123 |
-| vale-fights-32 | 26,581 | 435,901 | 321,123 | 5,137,864 |
+| vale-fights-32 | 26,522 | 435,842 | 320,771 | 5,140,136 |
 | vale-crowded-fights-64 | 25,745 | 446,585 | 1,936,714 | 24,390,181 |
 
 The crowded case reaches the full byte budget and publishes 23,040 projections;
