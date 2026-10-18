@@ -350,7 +350,7 @@ pub async fn render_offscreen(
     hud: &[HudRect],
     view: CameraView,
 ) -> Result<usize, ClientError> {
-    let mut frame = world.frame(0., true, view.eye);
+    let mut frame = world.frame(0., true, view.eye, None);
     frame.draws.extend_from_slice(units);
     let bytes = readback(&frame, hud, view, SMOKE_SIZE, None).await?;
     let mut colors = std::collections::BTreeMap::<[u8; 3], usize>::new();
@@ -454,7 +454,7 @@ async fn offscreen_pixels(
     hud: &[HudRect],
     view: CameraView,
 ) -> Result<Vec<u8>, ClientError> {
-    let mut frame = world.frame(0., false, view.eye);
+    let mut frame = world.frame(0., false, view.eye, None);
     let cube = Arc::new(three_d_core::Mesh::unit_cube());
     for (i, b) in boxes.iter().enumerate() {
         let (s, c) = b.yaw.sin_cos();
@@ -610,7 +610,7 @@ mod tests {
                 Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
             presentation.push(projection.clone(), now).unwrap();
             let view = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
-            let mut frame = world.frame(0.0, false, view.eye);
+            let mut frame = world.frame(0.0, false, view.eye, None);
             frame
                 .draws
                 .extend(presentation.unit_draws(now, view).iter().cloned());
@@ -783,7 +783,7 @@ mod tests {
                     Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
                 presentation.push(projection, now).unwrap();
                 let view = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
-                let frame = world.frame(0.0, false, view.eye);
+                let frame = world.frame(0.0, false, view.eye, None);
                 let units = presentation.unit_draws(now, view);
                 let pixels = offscreen_frame_pixels(&frame, &units, view).await.unwrap();
                 save_smoke_frame(if damaged { "damaged.ppm" } else { "full.ppm" }, &pixels);

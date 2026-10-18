@@ -31,6 +31,7 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
             request["seconds"].as_f64().unwrap(),
             request["animate"].as_bool().unwrap(),
             eye,
+            None,
         );
         compare_draws(&frame.draws, &expected["draws"], &output["resources"]);
         let env = &frame.environment;
@@ -82,6 +83,7 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
             request["seconds"].as_f64().unwrap() + 0.25,
             request["animate"].as_bool().unwrap(),
             eye,
+            None,
         );
         let mut resources = BTreeMap::new();
         for draw in frame.draws.iter().chain(&next.draws) {

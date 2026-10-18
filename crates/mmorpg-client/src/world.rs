@@ -157,9 +157,16 @@ impl WorldScene {
         self.scene.surface_y(f64::from(x), f64::from(z)) as f32
     }
 
-    /// Presented world at a cosmetic clock and camera position. Geometry is never copied.
+    /// Presented world at a cosmetic clock and camera position, cave roofs cut away over the
+    /// `viewer`'s feet (metres). Geometry is never copied.
     #[must_use]
-    pub fn frame(&self, seconds: f64, animate: bool, eye: [f32; 3]) -> WorldFrame {
+    pub fn frame(
+        &self,
+        seconds: f64,
+        animate: bool,
+        eye: [f32; 3],
+        viewer: Option<[f64; 3]>,
+    ) -> WorldFrame {
         let mut draws: Vec<_> = self
             .scene
             .groups
@@ -173,6 +180,8 @@ impl WorldScene {
             .animated
             .iter()
             .zip(self.scene.motion(seconds, animate))
+            .zip(self.scene.shown(viewer))
+            .filter_map(|(placed, shown)| shown.then_some(placed))
         {
             for draw in part {
                 let mut draw = draw.clone();
@@ -411,7 +420,7 @@ fn blockout(prop: &Prop, base: f32, boxes: &mut Vec<SceneBox>) {
                 [0.2, 0.9, 0.95],
             );
         }
-        PropKind::Gravestone | PropKind::Cliff => body(&mut part, DARK_STONE),
+        PropKind::Gravestone | PropKind::Cliff | PropKind::CaveRoof => body(&mut part, DARK_STONE),
         PropKind::Rock(size_class) => {
             body(
                 &mut part,

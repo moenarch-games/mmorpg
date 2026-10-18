@@ -85,6 +85,13 @@ pub enum Motion {
     Flame { base: [f64; 3], seed: f64 },
     /// Reeds sway, sheared about the ground.
     Reed { phase: f64, ground_y: f64 },
+    /// A cave roof (#159) stands at `at` (metres) and is cut away while the viewer's feet are
+    /// under it: inside the XZ rect `[min, max]` and below its base.
+    Roof {
+        at: [f64; 3],
+        min: [f64; 2],
+        max: [f64; 2],
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -160,9 +167,30 @@ impl StaticScene {
             .collect()
     }
 
+    /// Whether each animated part is drawn for the `viewer`'s feet (metres), one per
+    /// [`Self::animated`] entry: a cave roof is cut away while the viewer stands under it.
+    #[must_use]
+    pub fn shown(&self, viewer: Option<[f64; 3]>) -> Vec<bool> {
+        self.animated
+            .iter()
+            .map(|part| match part.motion {
+                Motion::Roof { at, min, max } => !viewer.is_some_and(|[x, y, z]| {
+                    (min[0]..=max[0]).contains(&x) && (min[1]..=max[1]).contains(&z) && y < at[1]
+                }),
+                _ => true,
+            })
+            .collect()
+    }
+
     /// Visible static draws, water and placed animated parts for one camera eye.
     #[must_use]
-    pub fn frame(&self, seconds: f64, animate: bool, eye: [f32; 3]) -> Vec<Draw> {
+    pub fn frame(
+        &self,
+        seconds: f64,
+        animate: bool,
+        eye: [f32; 3],
+        viewer: Option<[f64; 3]>,
+    ) -> Vec<Draw> {
         let mut draws: Vec<_> = self
             .groups
             .iter()
@@ -170,7 +198,13 @@ impl StaticScene {
             .flat_map(|group| group.draws.iter().cloned())
             .collect();
         draws.extend(self.water.iter().cloned());
-        for (part, model) in self.animated.iter().zip(self.motion(seconds, animate)) {
+        for (part, model) in self
+            .animated
+            .iter()
+            .zip(self.motion(seconds, animate))
+            .zip(self.shown(viewer))
+            .filter_map(|(placed, shown)| shown.then_some(placed))
+        {
             draws.extend(part.draws.iter().map(|draw| Draw {
                 model,
                 ..draw.clone()
@@ -182,6 +216,7 @@ impl StaticScene {
 
 fn motion(motion: Motion, t: f64, animate: bool) -> Affine {
     match motion {
+        Motion::Roof { at, .. } => translate(at[0], at[1], at[2]),
         Motion::Sail { hub, yaw } => {
             compose(&[translate(hub[0], hub[1], hub[2]), ry(yaw), rz(t * 0.45)])
         }

@@ -15,11 +15,12 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // (content revision 12, #159) adds 15 creatures and about 700 trunks, so every
     // step's Rapier world holds more bodies. Its hills (revision 13) moved the spread
     // 32-player fight's creatures slightly, and so did sliding around off-axis contacts.
+    // The Greyfang cave (revision 14) adds eight rock boxes to every step's world.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [26_640, 430_200, 191_328, 3_598_128],
-        [26_640, 427_320, 72_679, 1_130_123],
-        [26_522, 435_842, 320_771, 5_140_136],
-        [25_745, 446_585, 1_936_714, 24_390_181],
+        [26_640, 433_080, 191_328, 3_598_128],
+        [26_640, 430_200, 72_679, 1_130_123],
+        [26_522, 438_722, 320_771, 5_140_136],
+        [25_745, 449_465, 1_936_714, 24_390_181],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

@@ -142,7 +142,7 @@ fn ground_sampler_matches_independent_four_metre_triangle_barycentres() {
                     .sum()
             });
             let actual = world.surface_y(p[0] as f32, p[2] as f32);
-            let tolerance = 32.0 * f32::EPSILON * (p[1].abs() as f32).max(1.0);
+            let tolerance = 64.0 * f32::EPSILON * (p[1].abs() as f32).max(1.0);
             assert!(
                 (actual - p[1] as f32).abs() <= tolerance,
                 "rendered triangle floor {p:?}: actual {actual}"

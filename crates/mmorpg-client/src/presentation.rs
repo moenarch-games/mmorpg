@@ -554,10 +554,15 @@ impl Presentation {
         now: Instant,
         view: CameraView,
     ) -> crate::world::WorldFrame {
+        let viewer = self
+            .players(now)
+            .get(&self.player_id)
+            .map(|pose| pose.position.map(f64::from));
         let mut frame = world.frame(
             now.saturating_duration_since(self.origin).as_secs_f64(),
             !self.reduced_motion,
             view.eye,
+            viewer,
         );
         // The sky shows the zone's time of day; clouds keep drifting on the client clock.
         if let Some(mut tick) = self.latest().map(|snapshot| snapshot.tick) {
