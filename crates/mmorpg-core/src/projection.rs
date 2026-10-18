@@ -438,17 +438,20 @@ impl ZoneSimulation {
                     .content
                     .npc(npc_id)
                     .ok_or_else(|| ZoneError::new("unknown npc"))?;
+                let placement = self
+                    .npc_placement(npc_id)
+                    .ok_or_else(|| ZoneError::new("unknown npc"))?;
                 EntitySnapshot {
                     kind: EntityKind::Npc,
                     id: npc_id.get(),
                     appearance: u16::try_from(npc_id.get()).unwrap_or(u16::MAX),
                     position: [
-                        npc.position[0],
+                        placement.position[0],
                         PLAYER_HALF_EXTENTS_UNITS[1],
-                        npc.position[1],
+                        placement.position[1],
                     ],
-                    velocity: [0; 3],
-                    facing: npc.facing,
+                    velocity: [placement.velocity[0], 0, placement.velocity[1]],
+                    facing: placement.facing,
                     level: npc.level,
                     health_percent: 100,
                     flags: EntityFlags::default(),

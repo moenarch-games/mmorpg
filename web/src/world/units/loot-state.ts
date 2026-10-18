@@ -174,4 +174,6 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "quest-incomplete": null,
   "line-of-sight": null,
   "door-blocked": null,
+  "vendor-closed": null,
+  "door-busy": null,
 };

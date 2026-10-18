@@ -556,7 +556,7 @@ impl ZoneSimulation {
 
     /// Whether the player's feet are within quest reach of `npc`'s.
     fn within_quest_reach(&self, player_id: PlayerId, npc: NpcId) -> Result<bool, ZoneError> {
-        let Some(feet) = self.content.npc(npc).map(|npc| npc.position) else {
+        let Some(feet) = self.npc_feet(npc) else {
             return Ok(false);
         };
         let from = self.player_position(player_id)?;

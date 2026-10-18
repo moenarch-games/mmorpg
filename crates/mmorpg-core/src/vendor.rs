@@ -213,7 +213,9 @@ impl ZoneSimulation {
         else {
             return refuse(ErrorCode::InvalidVendor);
         };
-        let feet = vendor.position;
+        let Some(feet) = self.npc_feet(vendor.id) else {
+            return refuse(ErrorCode::InvalidVendor);
+        };
         let Some(stock) = self.content.vendor_stock(npc) else {
             return refuse(ErrorCode::InvalidVendor);
         };
@@ -234,6 +236,9 @@ impl ZoneSimulation {
             || !self.npc_in_sight(player_id, npc)?
         {
             return refuse(ErrorCode::OutOfRange);
+        }
+        if !self.vendor_open(npc) {
+            return refuse(ErrorCode::VendorClosed);
         }
         let player = self
             .players

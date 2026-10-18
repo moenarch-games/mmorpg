@@ -294,6 +294,8 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::QuestIncomplete => "quest_incomplete",
         ErrorCode::DoorBlocked => "door_blocked",
         ErrorCode::LineOfSight => "line_of_sight",
+        ErrorCode::VendorClosed => "vendor_closed",
+        ErrorCode::DoorBusy => "door_busy",
     }
 }
 
@@ -329,6 +331,8 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "quest_incomplete" => ErrorCode::QuestIncomplete,
         "door_blocked" => ErrorCode::DoorBlocked,
         "line_of_sight" => ErrorCode::LineOfSight,
+        "vendor_closed" => ErrorCode::VendorClosed,
+        "door_busy" => ErrorCode::DoorBusy,
         _ => return None,
     })
 }
@@ -479,6 +483,8 @@ mod tests {
             ErrorCode::QuestIncomplete,
             ErrorCode::DoorBlocked,
             ErrorCode::LineOfSight,
+            ErrorCode::VendorClosed,
+            ErrorCode::DoorBusy,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));

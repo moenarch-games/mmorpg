@@ -81,7 +81,7 @@ pub fn encode_canonical_snapshot(
     for creature in &snapshot.creatures {
         encode_creature(&mut payload, creature)?;
     }
-    crate::wire::encode_doors(&mut payload, &snapshot.doors)?;
+    encode_canonical_doors(&mut payload, &snapshot.doors)?;
     Ok(payload)
 }
 
@@ -440,7 +440,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     for _ in 0..creature_count {
         creatures.push(decode_creature(payload, &mut offset)?);
     }
-    let doors = crate::wire::decode_doors(payload, &mut offset)?;
+    let doors = decode_canonical_doors(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         schema_version,
@@ -840,6 +840,42 @@ fn encode_trade_intent(
     payload.extend_from_slice(&quantity.to_be_bytes());
 }
 
+/// Canonical doors: the projection's door list plus each leaf's last change tick (`u64`, #158).
+fn encode_canonical_doors(
+    payload: &mut Vec<u8>,
+    doors: &[mmorpg_core::CanonicalDoor],
+) -> Result<(), ProtocolError> {
+    let views: Vec<_> = doors
+        .iter()
+        .map(|door| mmorpg_core::DoorView {
+            door: door.door,
+            open: door.open,
+        })
+        .collect();
+    crate::wire::encode_doors(payload, &views)?;
+    for door in doors {
+        payload.extend_from_slice(&door.changed_tick.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_canonical_doors(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::CanonicalDoor>, ProtocolError> {
+    let views = crate::wire::decode_doors(payload, offset)?;
+    views
+        .into_iter()
+        .map(|view| {
+            Ok(mmorpg_core::CanonicalDoor {
+                door: view.door,
+                open: view.open,
+                changed_tick: u64::from_be_bytes(crate::wire::take(payload, offset)?),
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -859,9 +895,10 @@ mod tests {
             content_revision: 3,
             content_fingerprint: 0x0123_4567_89ab_cdef,
             rng_state: u64::MAX,
-            doors: vec![mmorpg_core::DoorView {
+            doors: vec![mmorpg_core::CanonicalDoor {
                 door: mmorpg_core::DoorId::new(1),
                 open: true,
+                changed_tick: 3,
             }],
             players: vec![
                 CanonicalPlayerSnapshot {

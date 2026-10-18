@@ -273,7 +273,7 @@ pub struct CanonicalZoneSnapshot {
     /// One record per content spawn, in creature-ID order.
     pub creatures: Vec<CanonicalCreatureSnapshot>,
     /// One state per content door, in door-ID order (#158).
-    pub doors: Vec<crate::DoorView>,
+    pub doors: Vec<crate::CanonicalDoor>,
 }
 
 impl ZoneSimulation {
@@ -393,7 +393,7 @@ impl ZoneSimulation {
             loot_rng_state: self.loot_rng.state(),
             players,
             creatures,
-            doors: self.door_views(),
+            doors: self.canonical_doors(),
         })
     }
 
@@ -446,10 +446,17 @@ impl ZoneSimulation {
             ));
         }
         for (view, door) in snapshot.doors.iter().zip(&doors) {
-            if view.open {
-                zone.set_door(door, true)?;
+            if view.changed_tick > snapshot.tick {
+                return Err(ZoneError::new(
+                    "snapshot door changed after the snapshot tick",
+                ));
+            }
+            if view.open || view.changed_tick != 0 {
+                zone.set_door(door, view.open, view.changed_tick)?;
             }
         }
+        // The snapshot tick's routine placements; doors are already as that tick left them.
+        zone.place_routine_npcs(false)?;
         zone.validate_references()?;
         zone.rebuild_interest()?;
         Ok(zone)

@@ -349,8 +349,8 @@ impl ZoneSimulation {
                 },
                 None => return Ok(false),
             },
-            EntityRef::Npc(npc_id) => match self.content.npc(npc_id) {
-                Some(npc) => [npc.position[0], 0, npc.position[1]],
+            EntityRef::Npc(npc_id) => match self.npc_feet(npc_id) {
+                Some(feet) => [feet[0], 0, feet[1]],
                 None => return Ok(false),
             },
         };

@@ -55,6 +55,14 @@ fn rgb(color: u32) -> [f32; 3] {
     [16, 8, 0].map(|shift| ((color >> shift) & 255) as f32 / 255.0)
 }
 
+/// The zone's time of day at `tick` on the presentation cycle's 1,200-second scale, whose zero
+/// is noon (#158): the sky follows the zone's clock rather than the client's.
+#[must_use]
+pub fn zone_sky_seconds(tick: u64) -> f64 {
+    let fraction = f64::from(mmorpg_core::time_of_day(tick)) / f64::from(mmorpg_core::DAY_TICKS);
+    (fraction - 0.5).rem_euclid(1.0) * 1200.0
+}
+
 impl Environment {
     /// The current Pages twenty-minute cycle; reduced motion holds noon.
     #[must_use]

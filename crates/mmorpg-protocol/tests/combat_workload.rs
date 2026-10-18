@@ -18,11 +18,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Content revision 10 replaced the inn block with the walk-in inn's 32 wall
     // and furniture bodies and its door (+32 bodies × 360 ticks of visits) and
     // raised the broad-phase pairs, and candidates slightly, near the inn (#158).
+    // Content revision 11 (NPC routines, #158) reseeds the zone RNG, which moves the
+    // crowded fight's pair checks by +36.
     let ceilings: [[usize; 7]; FIXTURES.len()] = [
         [21_240, 132_480, 174_870, 4, 27_222, 190_080, 3_204_720],
         [21_240, 129_600, 262_455, 20, 24_540, 70_367, 981_271],
         [21_240, 138_240, 377_262, 41, 32_010, 367_679, 5_442_236],
-        [20_106, 148_626, 469_181, 68, 39_928, 1_938_628, 24_499_402],
+        [20_106, 148_626, 469_217, 68, 39_928, 1_938_628, 24_499_402],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

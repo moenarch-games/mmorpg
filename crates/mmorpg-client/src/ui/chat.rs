@@ -246,10 +246,15 @@ impl Logs {
                     (LineKind::Quest, format!("{} completed.", quest_name(quest)))
                 }
                 ZoneEvent::Error { code, .. } => {
-                    let text = if code == mmorpg_core::ErrorCode::DoorBlocked {
-                        "Something is in the way of the door.".into()
-                    } else {
-                        humanize(&format!("{code:?}"))
+                    let text = match code {
+                        mmorpg_core::ErrorCode::DoorBlocked => {
+                            "Something is in the way of the door.".into()
+                        }
+                        mmorpg_core::ErrorCode::DoorBusy => "The door is still swinging.".into(),
+                        mmorpg_core::ErrorCode::VendorClosed => {
+                            "The shop is closed for the night.".into()
+                        }
+                        _ => humanize(&format!("{code:?}")),
                     };
                     refusals.push(text.clone());
                     if code == mmorpg_core::ErrorCode::ChatThrottled {

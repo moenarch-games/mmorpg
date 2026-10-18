@@ -13,7 +13,7 @@ const ERROR_CODES = [
   "no-target", "out-of-range", "target-dead", "not-attackable", "you-are-dead", "not-dead", "invalid-target", "too-many-intents", "invalid-inventory-move", "inventory-full", "invalid-loot", "not-loot-owner", "empty-loot", "money-overflow",
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
   "not-equippable", "invalid-vendor", "not-enough-money", "chat-throttled", "invalid-quest", "quest-log-full",
-  "quest-incomplete", "line-of-sight", "door-blocked",
+  "quest-incomplete", "line-of-sight", "door-blocked", "vendor-closed", "door-busy",
 ];
 const QUEST_MARKERS = ["available", "in-progress", "complete"];
 
@@ -22,7 +22,7 @@ function flagByte(flags: readonly boolean[]): number {
 }
 
 /**
- * Test-only player-visible snapshot v22 encoder (docs/PROTOCOL.md); Rust owns the real one.
+ * Test-only player-visible snapshot v23 encoder (docs/PROTOCOL.md); Rust owns the real one.
  * Like it, positions must fit i16 and velocities saturate to i8.
  */
 export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
@@ -52,7 +52,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(value === null ? 0 : entityKindCode(value.kind));
     u32(value?.id ?? 0);
   };
-  u8(22);
+  u8(23);
   u8(2);
   u16(22);
   u32(snapshot.zoneId);

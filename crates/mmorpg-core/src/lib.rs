@@ -32,6 +32,7 @@ mod progression;
 mod projection;
 mod quest;
 pub mod rng;
+mod routine;
 mod snapshot;
 mod stance;
 mod strike;
@@ -73,7 +74,8 @@ pub use creature::{
     LEASH_RADIUS_UNITS, MAX_THREAT_ENTRIES, WANDER_WAIT_TICKS, WANDER_WALK_TIMEOUT_TICKS,
 };
 pub use door::{
-    DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView, MAX_DOORS, NPC_SIGHT_HEIGHT_UNITS,
+    CanonicalDoor, DOOR_COOLDOWN_TICKS, DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView,
+    MAX_DOORS, NPC_SIGHT_HEIGHT_UNITS,
 };
 pub use entity::{CreatureId, CreatureTemplateId, EntityKind, EntityRef, NpcId};
 pub use equipment::{
@@ -104,6 +106,10 @@ pub use quest::{
     MAX_QUEST_OBJECTIVES, MAX_QUEST_TEXT_BYTES, MAX_QUESTS, MAX_REWARD_CHOICES, NpcMarker,
     QUEST_CATALOG_REVISION, QUEST_REACH_UNITS, Quest, QuestContentError, QuestEntry, QuestId,
     QuestLog, QuestMarker, QuestObjective, QuestRewards, QuestSheet,
+};
+pub use routine::{
+    DAWN, DAY_TICKS, DUSK, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
+    NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,
 };
 pub use snapshot::{
     CanonicalCreatureAbilities, CanonicalCreatureSnapshot, CanonicalPlayerAbilities,

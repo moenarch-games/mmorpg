@@ -124,9 +124,9 @@ clearance flatness and centimetre boundary continuity.
 The authoring captures and adoption checksums above describe revision 4. Corpse
 loot activation (revision 5), class abilities (revision 6), equipment
 (revision 7), the vendor (revision 8), quests (revision 9) and the walk-in inn
-(revision 10, its footprint unchanged for relief) change only live content
-identity metadata: Greyhaven revision 10, fingerprint `ec8982ff4ec66ff7`,
-snapshot v22/command v12. Live scenery hash is `e1eae974cd9dfacd` and complete
-browser export fingerprint is `158b68e979983ee8`.
+(revision 10, its footprint unchanged for relief) and NPC routines (revision 11)
+change only live content identity metadata: Greyhaven revision 11, fingerprint
+`93c8708bf7273b64`, snapshot v23/command v12. Live scenery hash is
+`f53e4a8f86571d50` and complete browser export fingerprint is `46bad15522c46309`.
 All authored masks, placements, heights and source revision-4 provenance remain
 unchanged; none of these identity changes requires recapturing geometry.
