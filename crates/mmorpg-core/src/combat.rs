@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use physics_engine::Vec3i;
+use crate::physics::Vec3i;
 
 use crate::ai::{creature_reach, distance_squared};
 use crate::creature::Life;

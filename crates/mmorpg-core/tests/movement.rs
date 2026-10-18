@@ -3,9 +3,8 @@
 use std::sync::Arc;
 
 use mmorpg_core::{
-    BACKPEDAL_SPEED_UNITS_PER_TICK, CanonicalPlayerSnapshot, JUMP_VELOCITY_UNITS_PER_TICK,
-    PLAYER_HALF_EXTENTS_UNITS, RUN_SPEED_UNITS_PER_TICK, StaticCollider, ZoneCommand,
-    ZoneDefinition, ZoneId, ZoneSimulation,
+    BACKPEDAL_SPEED_UNITS_PER_TICK, JUMP_VELOCITY_UNITS_PER_TICK, PLAYER_HALF_EXTENTS_UNITS,
+    RUN_SPEED_UNITS_PER_TICK, StaticCollider, ZoneCommand, ZoneDefinition, ZoneId, ZoneSimulation,
 };
 
 const REST_Y: i32 = PLAYER_HALF_EXTENTS_UNITS[1];
@@ -20,8 +19,21 @@ fn ground(extra: Vec<StaticCollider>) -> ZoneDefinition {
     ZoneDefinition::new(5, [0, -1, 0], colliders).unwrap()
 }
 
-fn player(zone: &ZoneSimulation) -> CanonicalPlayerSnapshot {
-    zone.snapshot().unwrap().players[0].clone()
+/// The player's body as gameplay rules see it: whole units (#271).
+#[derive(Clone, Copy, Debug)]
+struct Body {
+    position: [i32; 3],
+    velocity: [i32; 3],
+    jump_pending: bool,
+}
+
+fn player(zone: &ZoneSimulation) -> Body {
+    let state = &zone.snapshot().unwrap().players[0];
+    Body {
+        position: mmorpg_core::physics::to_units(state.position),
+        velocity: mmorpg_core::physics::to_units(state.velocity),
+        jump_pending: state.jump_pending,
+    }
 }
 
 fn one_tick_velocity(forward: i8, strafe: i8, facing: u16) -> [i32; 3] {
@@ -123,8 +135,8 @@ fn zero_intent_stops_horizontally_but_gravity_keeps_vertical_velocity() {
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), ground(Vec::new())).unwrap();
     zone.add_player(1).unwrap();
     let mut airborne = zone.snapshot().unwrap();
-    airborne.players[0].position = [0, 1_000, 0];
-    airborne.players[0].velocity = [21, -3, 21];
+    airborne.players[0].position = mmorpg_core::physics::from_units([0, 1_000, 0]);
+    airborne.players[0].velocity = mmorpg_core::physics::from_units([21, -3, 21]);
     let mut zone = ZoneSimulation::from_snapshot(airborne, Arc::clone(zone.content())).unwrap();
     zone.advance_tick().unwrap();
     let falling = player(&zone);
@@ -237,7 +249,7 @@ fn a_falling_body_beside_a_wall_cannot_jump() {
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), ground(vec![wall])).unwrap();
     zone.add_player(1).unwrap();
     let mut airborne = zone.snapshot().unwrap();
-    airborne.players[0].position = [0, 1_500, 0];
+    airborne.players[0].position = mmorpg_core::physics::from_units([0, 1_500, 0]);
     let mut zone = ZoneSimulation::from_snapshot(airborne, Arc::clone(zone.content())).unwrap();
     zone.advance_tick().unwrap();
     let before = player(&zone);
@@ -246,18 +258,20 @@ fn a_falling_body_beside_a_wall_cannot_jump() {
     assert_eq!(player(&zone).velocity[1], before.velocity[1] - 1);
 }
 
+/// Another unit's body is no ground (#271, as in ARPG): a player resting on another player's
+/// capsule cannot jump off it.
 #[test]
-fn standing_on_another_player_supports_a_jump() {
+fn another_player_is_no_ground_to_jump_from() {
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), ground(Vec::new())).unwrap();
     zone.add_player(1).unwrap();
     zone.add_player(2).unwrap();
     let mut stacked = zone.snapshot().unwrap();
-    stacked.players[1].position = [0, 3 * REST_Y, 0];
+    stacked.players[1].position = mmorpg_core::physics::from_units([0, 3 * REST_Y, 0]);
     let mut zone = ZoneSimulation::from_snapshot(stacked, Arc::clone(zone.content())).unwrap();
     zone.apply_command(2, 1, ZoneCommand::Jump).unwrap();
     zone.advance_tick().unwrap();
     let top = zone.snapshot().unwrap().players[1].clone();
-    assert_eq!(top.velocity[1], JUMP_VELOCITY_UNITS_PER_TICK - 1);
+    assert!(top.velocity[1] < 0.0, "{:?}", top.velocity);
 }
 
 #[test]

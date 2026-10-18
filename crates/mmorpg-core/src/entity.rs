@@ -6,7 +6,7 @@
 //! namespace above the static collider IDs, which zone content keeps below
 //! [`PLAYER_BODY_BASE`].
 
-use physics_engine::BodyId;
+use crate::physics::BodyId;
 
 use crate::PlayerId;
 

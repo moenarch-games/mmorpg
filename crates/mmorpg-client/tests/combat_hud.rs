@@ -348,8 +348,8 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
         .unwrap();
     zone.advance_tick().unwrap();
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = [0, 90, -2_000];
-    state.creatures[0].position = [180, 45, -1_700];
+    state.players[0].position = mmorpg_core::physics::from_units([0, 90, -2_000]);
+    state.creatures[0].position = mmorpg_core::physics::from_units([180, 45, -1_700]);
     let creature = EntityRef::Creature(state.creatures[0].creature_id);
     let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(&content)).unwrap();
     zone.apply_command(1, 2, ZoneCommand::SelectTarget(Some(creature)))

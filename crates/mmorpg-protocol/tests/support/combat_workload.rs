@@ -53,10 +53,6 @@ pub struct Report {
     /// Sum of admitted bodies reported at the start of each engine step.
     pub physics_body_visits: usize,
     pub dynamic_body_visits: usize,
-    pub staged_bodies: usize,
-    pub pair_checks: usize,
-    pub toi_tests: usize,
-    pub contact_resolutions: usize,
     pub maintenance_inspections: usize,
     pub projections: usize,
     pub candidates_tested: usize,
@@ -107,8 +103,8 @@ fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> {
         state.players.push(CanonicalPlayerSnapshot {
             copper: 0,
             player_id: u32::try_from(index)? + 1,
-            position,
-            velocity: [0; 3],
+            position: mmorpg_core::physics::from_units(position),
+            velocity: [0.0; 3],
             facing: 0,
             forward: 0,
             strafe: 0,
@@ -152,8 +148,12 @@ fn commands(
                 .iter()
                 .filter(|creature| creature.life == CreatureLife::Alive)
                 .min_by_key(|creature| {
-                    let dx = i64::from(creature.position[0]) - i64::from(player.position[0]);
-                    let dz = i64::from(creature.position[2]) - i64::from(player.position[2]);
+                    let (creature_at, player_at) = (
+                        mmorpg_core::physics::to_units(creature.position),
+                        mmorpg_core::physics::to_units(player.position),
+                    );
+                    let dx = i64::from(creature_at[0]) - i64::from(player_at[0]);
+                    let dz = i64::from(creature_at[2]) - i64::from(player_at[2]);
                     (dx * dx + dz * dz, creature.creature_id)
                 })
                 .map(|creature| EntityRef::Creature(creature.creature_id));
@@ -227,12 +227,8 @@ pub fn measure(fixture: Fixture) -> Result<Report, Box<dyn Error>> {
         let physics = work.physics.ok_or("missing completed physics step")?;
         report.ai_evaluations += work.creature_ai_evaluations;
         report.physics_steps += 1;
-        report.physics_body_visits += physics.body_count;
-        report.dynamic_body_visits += physics.work.dynamic_bodies;
-        report.staged_bodies += physics.work.staged_bodies;
-        report.pair_checks += physics.pair_checks;
-        report.toi_tests += physics.toi_tests;
-        report.contact_resolutions += physics.contact_resolutions;
+        report.physics_body_visits += physics.bodies;
+        report.dynamic_body_visits += physics.moving;
         report.maintenance_inspections +=
             zone.interest_maintenance_stats().units_inspected - maintenance_before.units_inspected;
 

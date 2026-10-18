@@ -53,8 +53,8 @@ fn measure(name: &str) -> Result<(), Box<dyn Error>> {
         canonical.players.push(CanonicalPlayerSnapshot {
             copper: 0,
             player_id: u32::try_from(index)? + 1,
-            position,
-            velocity: [0; 3],
+            position: mmorpg_core::physics::from_units(position),
+            velocity: [0.0; 3],
             facing: 0,
             forward: 0,
             strafe: 0,

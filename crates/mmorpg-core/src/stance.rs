@@ -19,7 +19,7 @@
 //! Cleave; other classes and other abilities are unaffected. The values are
 //! the owner's modest starting point, to be tuned after playtesting.
 
-use physics_engine::RigidBody;
+use crate::physics::RigidBody;
 
 use crate::entity::body_id;
 use crate::snapshot::PlayerIntent;

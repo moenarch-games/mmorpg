@@ -15,7 +15,7 @@
 
 use std::fmt;
 
-use physics_engine::{RigidBody, Vec3i};
+use crate::physics::{RigidBody, Vec3i};
 
 use crate::entity::body_id;
 use crate::snapshot::{CanonicalPlayerAbilities, validate_player_abilities};

@@ -44,4 +44,4 @@ Recorded measurement environment: Rust 1.98.1, `Cargo.lock` SHA-256 `36adf21ccc4
 | `publish-dense-hub` | recipients in one interest radius | the largest recipient's tests linear in recipients (total work is honestly quadratic); at most 64 visible records |
 | `tick-maintenance` | stationary population, players crossing a cell boundary | no full index rebuild; bucket writes constant in population and linear in movers; position re-reads linear |
 
-The checks hold at the declared scale points only; they are executable architectural budgets, not a proof of asymptotic complexity. Physics work stays with `physics-engine`'s own counters.
+The checks hold at the declared scale points only; they are executable architectural budgets, not a proof of asymptotic complexity. Physics work is counted by the zone's Rapier step statistics (#271).

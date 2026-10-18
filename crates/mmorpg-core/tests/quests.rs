@@ -186,8 +186,8 @@ impl Run {
     /// Restores the zone with the player moved to `feet` (setup only).
     fn teleport(&mut self, feet: [i32; 2]) {
         let mut state = self.zone.snapshot().unwrap();
-        state.players[0].position = [feet[0], 90, feet[1]];
-        state.players[0].velocity = [0; 3];
+        state.players[0].position = mmorpg_core::physics::from_units([feet[0], 90, feet[1]]);
+        state.players[0].velocity = [0.0; 3];
         self.zone = ZoneSimulation::from_snapshot(state, Arc::clone(self.zone.content())).unwrap();
     }
 

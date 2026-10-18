@@ -67,7 +67,7 @@ fn a_new_warden_reaches_level_two_and_equips_a_marauder_drop() {
     zone.add_player(1).unwrap();
     // Setup only: the walk from the hub is covered by `vale-wolf-hunt`.
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = START;
+    state.players[0].position = mmorpg_core::physics::from_units(START);
     let zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     let mut script = Script {
         zone,

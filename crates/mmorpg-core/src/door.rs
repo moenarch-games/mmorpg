@@ -152,7 +152,7 @@ impl ZoneSimulation {
     /// Whether a unit's body overlaps the box `door`'s leaf would take.
     fn leaf_blocked(&self, door: &Door, open: bool) -> Result<bool, ZoneError> {
         let leaf = door.leaf(open);
-        let probe = physics_engine::Aabb::new(
+        let probe = crate::physics::Aabb::new(
             crate::zone::vector(leaf.position),
             crate::zone::vector(leaf.half_extents),
         );
@@ -177,8 +177,8 @@ impl ZoneSimulation {
     pub(crate) fn set_door(&mut self, door: &Door, open: bool, tick: u64) -> Result<(), ZoneError> {
         let leaf = door.leaf(open);
         self.world
-            .replace_body(physics_engine::RigidBody::fixed(
-                physics_engine::BodyId(u64::from(door.body)),
+            .replace_body(crate::physics::RigidBody::fixed(
+                crate::physics::BodyId(u64::from(door.body)),
                 crate::zone::vector(leaf.position),
                 crate::zone::vector(leaf.half_extents),
             ))
@@ -206,20 +206,14 @@ impl ZoneSimulation {
         };
         let centre = self.player_position(player_id)?;
         let eye = centre.y - crate::PLAYER_HALF_EXTENTS_UNITS[1] + NPC_SIGHT_HEIGHT_UNITS;
-        let ray = physics_engine::Ray::new(
-            physics_engine::Vec3i::new(centre.x, eye, centre.z),
-            physics_engine::Vec3i::new(
+        Ok(!self.world.segment_blocked(
+            crate::physics::Vec3i::new(centre.x, eye, centre.z),
+            crate::physics::Vec3i::new(
                 feet[0] - centre.x,
                 NPC_SIGHT_HEIGHT_UNITS - eye,
                 feet[1] - centre.z,
             ),
-        );
-        let hits = self
-            .world
-            .ray_cast(ray, 1)
-            .map_err(|error| ZoneError::new(format!("npc sight query failed: {error}")))?;
-        Ok(!hits
-            .iter()
-            .any(|hit| hit.body.0 < crate::entity::PLAYER_BODY_BASE))
+            |body| body.0 < crate::entity::PLAYER_BODY_BASE,
+        ))
     }
 }

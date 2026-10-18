@@ -49,8 +49,14 @@ fn shared_physics_resolves_gravity_ground_and_wall_contact() {
     }
     let snapshot = zone.snapshot().unwrap();
     // The wall face at x = 280 stops the 30-unit half-width body; feet rest on y = 0.
-    assert_eq!(snapshot.players[0].position, [250, 90, 0]);
-    assert_eq!(snapshot.players[0].velocity, [0, 0, 0]);
+    assert_eq!(
+        mmorpg_core::physics::to_units(snapshot.players[0].position),
+        [250, 90, 0]
+    );
+    assert_eq!(
+        mmorpg_core::physics::to_units(snapshot.players[0].velocity),
+        [0, 0, 0]
+    );
     let projection = zone.snapshot_for_player(1).unwrap();
     assert_eq!(projection.content_revision, 7);
     assert_eq!(projection.acknowledged_sequence, 1);
@@ -61,11 +67,11 @@ fn recovery_continues_airborne_motion_and_collision_identically() {
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition()).unwrap();
     zone.add_player(1).unwrap();
     let mut snapshot = zone.snapshot().unwrap();
-    snapshot.players[0].position = [0, 400, 0];
-    snapshot.players[0].velocity = [0, -7, 0];
+    snapshot.players[0].position = [0.0, 400.0, 0.0];
+    snapshot.players[0].velocity = [0.0, -7.0, 0.0];
     let mut original = ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
     original.advance_tick().unwrap();
-    assert!(original.snapshot().unwrap().players[0].velocity[1] < -7);
+    assert!(original.snapshot().unwrap().players[0].velocity[1] < -7.0);
     let mut restored =
         ZoneSimulation::from_snapshot(original.snapshot().unwrap(), Arc::clone(original.content()))
             .unwrap();
@@ -74,7 +80,10 @@ fn recovery_continues_airborne_motion_and_collision_identically() {
         restored.advance_tick().unwrap();
         assert_eq!(original.snapshot().unwrap(), restored.snapshot().unwrap());
     }
-    assert_eq!(restored.snapshot().unwrap().players[0].position[1], 90);
+    assert_eq!(
+        mmorpg_core::physics::to_units(restored.snapshot().unwrap().players[0].position)[1],
+        90
+    );
 }
 
 #[test]
@@ -188,7 +197,10 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
         open.advance_tick().unwrap();
     }
     let players = open.snapshot().unwrap().players;
-    let positions: Vec<_> = players.iter().map(|player| player.position).collect();
+    let positions: Vec<_> = players
+        .iter()
+        .map(|player| mmorpg_core::physics::to_units(player.position))
+        .collect();
     assert_eq!(
         positions,
         [
@@ -205,7 +217,13 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
     open.advance_tick().unwrap();
     restored.advance_tick().unwrap();
     assert_eq!(restored.snapshot().unwrap(), open.snapshot().unwrap());
-    assert_eq!(open.snapshot().unwrap().players, players);
+    // Pressed against the limits, bodies stay put to within the controller's nudges.
+    for (now, before) in open.snapshot().unwrap().players.iter().zip(&players) {
+        assert_eq!(
+            mmorpg_core::physics::to_units(now.position),
+            mmorpg_core::physics::to_units(before.position)
+        );
+    }
 
     // Gravity without ground or ceiling carries a body to the floor or ceiling limit.
     for (gravity, y) in [(-1, -limit + half_y), (1, limit - half_y)] {
@@ -216,8 +234,17 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
             zone.advance_tick().unwrap();
         }
         let player = &zone.snapshot().unwrap().players[0];
-        assert_eq!(player.position, [0, y, 0], "gravity {gravity}");
-        assert_eq!(player.velocity, [0, 0, 0], "gravity {gravity}");
+        // Rapier's controller stops a rising body within a unit of the ceiling.
+        let [x, at, z] = mmorpg_core::physics::to_units(player.position);
+        assert!(
+            [x, z] == [0, 0] && (at - y).abs() <= 1,
+            "gravity {gravity}: {at}"
+        );
+        assert_eq!(
+            mmorpg_core::physics::to_units(player.velocity),
+            [0, 0, 0],
+            "gravity {gravity}"
+        );
     }
 }
 
@@ -280,9 +307,12 @@ fn every_spawn_slot_is_validated_clear_of_colliders() {
         zone.add_player(u32::try_from(id).unwrap()).unwrap();
     }
     let players = zone.snapshot().unwrap().players;
-    assert_eq!(players[0].position, [-1_000, 90, 2_000]);
     assert_eq!(
-        players[MAX_PLAYERS_PER_ZONE - 1].position,
+        mmorpg_core::physics::to_units(players[0].position),
+        [-1_000, 90, 2_000]
+    );
+    assert_eq!(
+        mmorpg_core::physics::to_units(players[MAX_PLAYERS_PER_ZONE - 1].position),
         [feet[0], 90, feet[2]]
     );
     zone.advance_tick().unwrap();
@@ -307,20 +337,12 @@ fn exhausted_tick_does_not_move_physics() {
 }
 
 #[test]
-fn physics_diagnostics_reuse_fixed_bounds_without_entering_recovery_state() {
+fn physics_diagnostics_stay_out_of_recovery_state() {
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition()).unwrap();
     zone.add_player(1).unwrap();
     assert_eq!(zone.tick_work().physics, None);
     zone.advance_tick().unwrap();
-    let bootstrap = zone.tick_work().physics.unwrap();
-    assert_eq!(bootstrap.work.fixed_sweep_bound_preparations, 8);
-    assert!(bootstrap.work.fixed_sweep_bound_reuses > 0);
-    zone.advance_tick().unwrap();
-    let warm = zone.tick_work().physics.unwrap();
-    assert_eq!(warm.work.fixed_sweep_bound_preparations, 0);
-    assert_eq!(warm.work.staged_state_capacity_growths, 0);
-    assert_eq!(warm.work.broad_phase_capacity_growths, 0);
-    assert!(warm.work.fixed_sweep_bound_reuses > 0);
+    assert_eq!(zone.tick_work().physics.unwrap().bodies, 2 + 6 + 1);
     let snapshot = zone.snapshot().unwrap();
     let mut restored =
         ZoneSimulation::from_snapshot(snapshot.clone(), Arc::clone(zone.content())).unwrap();
@@ -329,13 +351,4 @@ fn physics_diagnostics_reuse_fixed_bounds_without_entering_recovery_state() {
     restored.advance_tick().unwrap();
     zone.advance_tick().unwrap();
     assert_eq!(restored.snapshot().unwrap(), zone.snapshot().unwrap());
-    assert_eq!(
-        restored
-            .tick_work()
-            .physics
-            .unwrap()
-            .work
-            .fixed_sweep_bound_preparations,
-        8
-    );
 }

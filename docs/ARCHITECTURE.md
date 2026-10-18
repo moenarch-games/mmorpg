@@ -28,7 +28,7 @@ flowchart TD
     Adapter --> Core[mmorpg-core: zone gameplay and interest]
     Protocol --> Core
     Directory --> Core
-    Core --> Physics[physics-engine: integration and collision]
+    Core --> Physics[Rapier rapier3d: collision and character motion, embedded]
     Client --> NativeRenderer[Native: wgpu/winit, external tobj asset import]
     Client --> BrowserRenderer[Browser: Three.js through pinned renderer adapter]
     Client --> Presentation[mmorpg-presentation: shared static world]

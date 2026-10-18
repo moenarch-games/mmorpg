@@ -99,7 +99,10 @@ fn recovery_mid_run_and_mid_jump_reproduces_the_continuation_exactly() {
     let mut recovered = recover(&zone);
     assert_identical_continuation(&mut zone, &mut recovered, 4, &[]);
     let rising = zone.snapshot().unwrap();
-    assert!(rising.players[0].velocity[1] > 0, "mid-jump while running");
+    assert!(
+        rising.players[0].velocity[1] > 0.0,
+        "mid-jump while running"
+    );
     assert!(!rising.players[0].jump_pending);
 
     // Checkpoint while rising; later inputs change direction and jump again.
@@ -127,11 +130,20 @@ fn recovery_mid_run_and_mid_jump_reproduces_the_continuation_exactly() {
 
     // Checkpoint while falling back toward the ground.
     let falling = zone.snapshot().unwrap();
-    assert!(falling.players.iter().any(|player| player.velocity[1] < 0));
+    assert!(
+        falling
+            .players
+            .iter()
+            .any(|player| player.velocity[1] < 0.0)
+    );
     let mut recovered = recover(&zone);
     assert_identical_continuation(&mut zone, &mut recovered, 40, &[]);
     for player in zone.snapshot().unwrap().players {
-        assert_eq!(player.position[1], 90, "both players land on the ground");
-        assert_eq!(player.velocity[1], 0);
+        assert_eq!(
+            mmorpg_core::physics::to_units(player.position)[1],
+            90,
+            "both players land on the ground"
+        );
+        assert_eq!(player.velocity[1], 0.0);
     }
 }

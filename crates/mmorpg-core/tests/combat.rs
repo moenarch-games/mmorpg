@@ -108,7 +108,8 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
     let aggro = session.until(100, |session| {
         session.creature(FIRST).ai == CreatureAi::Engaged
     });
-    let position = session.zone.snapshot().unwrap().players[0].position;
+    let position =
+        mmorpg_core::physics::to_units(session.zone.snapshot().unwrap().players[0].position);
     assert!(
         position[2] >= 1_000 - 21,
         "aggro began at z = {}",
@@ -201,7 +202,7 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
         Some(1),
         "the first damaging player tapped it"
     );
-    assert_eq!((corpse.health, corpse.velocity), (0, [0; 3]));
+    assert_eq!((corpse.health, corpse.velocity), (0, [0.0; 3]));
 
     session.tick();
     let view = session.zone.snapshot_for_player(1).unwrap();
@@ -217,7 +218,10 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
         .unwrap();
     assert!(record.flags.dead && !record.flags.attackable && !record.flags.tapped_by_other);
     assert_eq!(record.health_percent, 0);
-    assert_eq!(record.position, corpse.position);
+    assert_eq!(
+        record.position,
+        mmorpg_core::physics::to_units(corpse.position)
+    );
     session.send(ZoneCommand::StartAttack);
     session.tick();
     assert_eq!(
@@ -246,7 +250,10 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
     let respawned = session.creature(FIRST);
     assert_eq!(respawned.life, CreatureLife::Alive);
     assert_eq!(respawned.health, 30);
-    assert_eq!(respawned.position, [0, 45, 2_000]);
+    assert_eq!(
+        mmorpg_core::physics::to_units(respawned.position),
+        [0, 45, 2_000]
+    );
     assert_eq!(respawned.tapped_by, None);
     assert!(respawned.threat.is_empty());
 }
@@ -308,7 +315,8 @@ fn assist_death_release_spirit_and_evade() {
     assert!(damaged.health < 80, "the player hit the first wolf");
 
     // Dead players can only release their spirit; they cannot move.
-    let corpse = session.zone.snapshot().unwrap().players[0].position;
+    let corpse =
+        mmorpg_core::physics::to_units(session.zone.snapshot().unwrap().players[0].position);
     session.send(arena::walk(NORTHWARD));
     session.send(ZoneCommand::StartAttack);
     session.send(ZoneCommand::SelectTarget(None));
@@ -320,7 +328,10 @@ fn assist_death_release_spirit_and_evade() {
             (died + 1, ErrorCode::YouAreDead)
         ]
     );
-    assert_eq!(session.zone.snapshot().unwrap().players[0].position, corpse);
+    assert_eq!(
+        mmorpg_core::physics::to_units(session.zone.snapshot().unwrap().players[0].position),
+        corpse
+    );
 
     // Both wolves evade home, ignoring nothing because nobody attacks, and reset.
     session.tick();
@@ -339,7 +350,7 @@ fn assist_death_release_spirit_and_evade() {
         let wolf = session.creature(id);
         assert_eq!(wolf.health, 80, "evading resets health");
         assert_eq!(wolf.tapped_by, None);
-        let [x, _, z] = wolf.position;
+        let [x, _, z] = mmorpg_core::physics::to_units(wolf.position);
         let (dx, dz) = (i64::from(x - home[0]), i64::from(z - home[1]));
         assert!(dx * dx + dz * dz <= 20 * 20, "{id:?} is home at {x}, {z}");
     }
@@ -475,7 +486,7 @@ fn leashed_creatures_evade_and_ignore_damage() {
         matches!(session.creature(FIRST).ai, CreatureAi::Evading { .. })
     });
     // The leash broke beyond 40 m; the same tick already took one step home.
-    let [_, _, z] = session.creature(FIRST).position;
+    let [_, _, z] = mmorpg_core::physics::to_units(session.creature(FIRST).position);
     assert!(
         2_000 - z > 4_000 - CREATURE_EVADE_SPEED_UNITS_PER_TICK,
         "the leash broke 40 m from the spawn (z = {z})"
@@ -496,8 +507,8 @@ fn leashed_creatures_evade_and_ignore_damage() {
     let mut checkpoint = session.zone.snapshot().unwrap();
     let evading = checkpoint.creatures[0].clone();
     let player = &mut checkpoint.players[0];
-    player.position = [evading.position[0], 90, evading.position[2] - 150];
-    player.velocity = [0; 3];
+    player.position = [evading.position[0], 90.0, evading.position[2] - 150.0];
+    player.velocity = [0.0; 3];
     player.forward = 0;
     player.combat.swing_timer = 0;
     assert!(player.combat.auto_attack && player.combat.target == Some(wolf));

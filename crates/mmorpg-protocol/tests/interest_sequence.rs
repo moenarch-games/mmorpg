@@ -53,8 +53,8 @@ fn zone_at(positions: &[[i32; 3]], definition: ZoneDefinition) -> ZoneSimulation
         .map(|(index, &position)| CanonicalPlayerSnapshot {
             copper: 0,
             player_id: u32::try_from(positions.len() - index).unwrap(),
-            position,
-            velocity: [0; 3],
+            position: mmorpg_core::physics::from_units(position),
+            velocity: [0.0; 3],
             facing: 0,
             forward: 0,
             strafe: 0,
@@ -115,7 +115,7 @@ fn multi_tick_membership_transitions_match_exhaustive_wire_output() {
 }
 
 #[test]
-fn collision_corrections_and_failed_step_preserve_reference_parity() {
+fn collision_corrections_and_extreme_bodies_preserve_reference_parity() {
     // Player 2 runs from the hub plaza into the keep's south face at z = 700.
     let mut colliding = zone_at(
         &[[-1_550, 90, 1_250], [450, 90, 1_250]],
@@ -127,14 +127,16 @@ fn collision_corrections_and_failed_step_preserve_reference_parity() {
         assert_wire_parity(&colliding);
     }
     assert_eq!(
-        colliding
-            .snapshot()
-            .unwrap()
-            .players
-            .iter()
-            .find(|player| player.player_id == 2)
-            .unwrap()
-            .position,
+        mmorpg_core::physics::to_units(
+            colliding
+                .snapshot()
+                .unwrap()
+                .players
+                .iter()
+                .find(|player| player.player_id == 2)
+                .unwrap()
+                .position
+        ),
         [-1_550, 90, 730],
         "the shared physics collider must correct the nominal movement"
     );
@@ -144,12 +146,10 @@ fn collision_corrections_and_failed_step_preserve_reference_parity() {
         ZoneDefinition::default(),
     );
     edge.apply_command(2, 4, run(EAST)).unwrap();
-    edge.advance_tick().unwrap();
-    edge.advance_tick().unwrap();
-    let work = edge.interest_maintenance_stats();
-    assert!(edge.advance_tick().is_err());
-    assert_eq!(edge.interest_maintenance_stats(), work);
-    assert_wire_parity(&edge);
+    for _ in 0..3 {
+        edge.advance_tick().unwrap();
+        assert_wire_parity(&edge);
+    }
     assert_eq!(
         encode_snapshot(&edge.snapshot_for_player(1).unwrap())
             .unwrap_err()
@@ -182,7 +182,7 @@ fn players_running_on_unenclosed_content_stay_encodable() {
         .unwrap()
         .players
         .iter()
-        .map(|player| player.position)
+        .map(|player| mmorpg_core::physics::to_units(player.position))
         .collect();
     // Player 2 spawned 2 m ahead and rests against the limit; player 1 rests against it.
     let front = MAX_CONTENT_COORDINATE_UNITS - 30;

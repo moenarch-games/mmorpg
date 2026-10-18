@@ -19,8 +19,12 @@ pub fn exhaustive_projection(
         "the oracle covers players only"
     );
     let distance_squared = |candidate: &CanonicalPlayerSnapshot| {
-        let dx = i128::from(candidate.position[0]) - i128::from(observer.position[0]);
-        let dz = i128::from(candidate.position[2]) - i128::from(observer.position[2]);
+        let (candidate_at, observer_at) = (
+            mmorpg_core::physics::to_units(candidate.position),
+            mmorpg_core::physics::to_units(observer.position),
+        );
+        let dx = i128::from(candidate_at[0]) - i128::from(observer_at[0]);
+        let dz = i128::from(candidate_at[2]) - i128::from(observer_at[2]);
         dx * dx + dz * dz
     };
     let viewer = EntityRef::Player(observer.player_id);
@@ -116,9 +120,8 @@ pub fn exhaustive_projection(
                 kind: EntityKind::Player,
                 id: candidate.player_id,
                 appearance: 0,
-                position: candidate.position,
-                velocity: candidate
-                    .velocity
+                position: mmorpg_core::physics::to_units(candidate.position),
+                velocity: mmorpg_core::physics::to_units(candidate.velocity)
                     .map(|component| component.clamp(-128, 127) as i8),
                 facing: candidate.facing,
                 level: candidate.combat.level,

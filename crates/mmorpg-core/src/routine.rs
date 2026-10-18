@@ -188,7 +188,7 @@ impl ZoneSimulation {
                 continue;
             }
             self.world
-                .replace_body(physics_engine::RigidBody::fixed(
+                .replace_body(crate::physics::RigidBody::fixed(
                     crate::entity::body_id(entity),
                     crate::zone::vector([x, crate::PLAYER_HALF_EXTENTS_UNITS[1], z]),
                     crate::zone::PLAYER_HALF_EXTENTS,

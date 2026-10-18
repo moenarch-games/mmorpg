@@ -25,8 +25,8 @@ fn recovered(zone: &ZoneSimulation) -> ZoneSimulation {
 /// Moves player 1 to `feet` through a restored canonical snapshot (setup only).
 fn teleported(zone: &ZoneSimulation, feet: [i32; 2]) -> ZoneSimulation {
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = [feet[0], 90, feet[1]];
-    state.players[0].velocity = [0; 3];
+    state.players[0].position = mmorpg_core::physics::from_units([feet[0], 90, feet[1]]);
+    state.players[0].velocity = [0.0; 3];
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
 }
 

@@ -163,7 +163,7 @@ fn recovery_during_a_fight_reproduces_every_following_tick() {
         &[
             ("mid-chase", |state| {
                 first_wolf(state).ai == CreatureAi::Engaged
-                    && first_wolf(state).velocity != [0, 0, 0]
+                    && first_wolf(state).velocity != [0.0; 3]
             }),
             ("mid-swing", |state| {
                 first_wolf(state).swing_timer > 0

@@ -335,7 +335,7 @@ mod tests {
         assert_eq!(snapshot.zone_id, zone_id);
         assert_eq!(snapshot.tick, 5);
         assert_eq!(snapshot.players[0].last_sequence, 9);
-        assert!(snapshot.players[0].position[0] > 0);
+        assert!(snapshot.players[0].position[0] > 0.0);
         assert_eq!(reconnected.player_id, lease.player_id);
         assert_eq!(reconnected.connection_epoch, lease.connection_epoch + 1);
     }

@@ -475,8 +475,9 @@ impl NativeApplication {
     fn setup(&mut self, feet: [i32; 2], creatures: &[(u32, [i32; 2])]) {
         let mut snapshot = self.snapshot();
         let player = &mut snapshot.players[0];
-        player.position = [feet[0], PLAYER_HALF_EXTENTS_UNITS[1], feet[1]];
-        player.velocity = [0; 3];
+        player.position =
+            mmorpg_core::physics::from_units([feet[0], PLAYER_HALF_EXTENTS_UNITS[1], feet[1]]);
+        player.velocity = [0.0; 3];
         player.forward = 0;
         player.strafe = 0;
         player.combat.target = None;
@@ -491,9 +492,9 @@ impl NativeApplication {
                 .iter_mut()
                 .find(|creature| creature.creature_id.get() == id)
                 .unwrap();
-            creature.position[0] = position[0];
-            creature.position[2] = position[1];
-            creature.velocity = [0; 3];
+            creature.position[0] = position[0] as f32;
+            creature.position[2] = position[1] as f32;
+            creature.velocity = [0.0; 3];
             creature.ai = CreatureAi::Idle {
                 timer: 60_000,
                 destination: None,

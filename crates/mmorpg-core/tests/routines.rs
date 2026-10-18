@@ -26,7 +26,7 @@ fn zone_at(tick: u64, feet: [i32; 2]) -> ZoneSimulation {
     zone.add_player(1).unwrap();
     let mut state = zone.snapshot().unwrap();
     state.tick = tick;
-    state.players[0].position = [feet[0], 90, feet[1]];
+    state.players[0].position = mmorpg_core::physics::from_units([feet[0], 90, feet[1]]);
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
 }
 

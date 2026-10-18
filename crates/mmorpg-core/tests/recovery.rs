@@ -159,11 +159,11 @@ fn recovery_refuses_creature_and_corpse_positions_outside_the_content_bounds() {
     let at = |position: [i32; 3], corpse: bool| {
         let mut state = valid.clone();
         let creature = &mut state.creatures[0];
-        creature.position = position;
+        creature.position = mmorpg_core::physics::from_units(position);
         if corpse {
             creature.life = CreatureLife::Corpse { died_at: 0 };
             creature.health = 0;
-            creature.velocity = [0; 3];
+            creature.velocity = [0.0; 3];
             creature.ai = CreatureAi::Idle {
                 timer: 0,
                 destination: None,
@@ -198,8 +198,10 @@ fn extreme_player_positions_never_overflow_combat_and_ai_arithmetic() {
     zone.add_player(1).unwrap();
     zone.add_player(2).unwrap();
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = [i32::MIN + 100, 50, i32::MIN + 100];
-    state.players[1].position = [i32::MAX - 100, 50, i32::MAX - 100];
+    state.players[0].position =
+        mmorpg_core::physics::from_units([i32::MIN + 100, 50, i32::MIN + 100]);
+    state.players[1].position =
+        mmorpg_core::physics::from_units([i32::MAX - 100, 50, i32::MAX - 100]);
     let wolf = &mut state.creatures[0];
     wolf.ai = CreatureAi::Engaged;
     wolf.threat = vec![ThreatEntry {
@@ -223,7 +225,7 @@ fn extreme_player_positions_never_overflow_combat_and_ai_arithmetic() {
     assert_eq!(wolf.creature_id, CreatureId::new(1));
     assert_eq!(wolf.ai, CreatureAi::Engaged, "the wolf chases its target");
     assert!(
-        wolf.velocity[0] < 0 && wolf.velocity[2] < 0,
+        wolf.velocity[0] < 0.0 && wolf.velocity[2] < 0.0,
         "it steers toward the far corner: {:?}",
         wolf.velocity
     );

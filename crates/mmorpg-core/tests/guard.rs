@@ -255,10 +255,12 @@ fn guarding_slows_movement_and_a_jump_suspends_protection() {
     let distance = |lane: Option<StrikeHeight>| {
         let mut warden = Warden::new(content(&[]), NORTH, lane);
         warden.run(5);
-        let start = warden.zone.snapshot().unwrap().players[0].position[2];
+        let start =
+            mmorpg_core::physics::to_units(warden.zone.snapshot().unwrap().players[0].position)[2];
         warden.send(arena::walk(NORTH));
         warden.run(30);
-        warden.zone.snapshot().unwrap().players[0].position[2] - start
+        mmorpg_core::physics::to_units(warden.zone.snapshot().unwrap().players[0].position)[2]
+            - start
     };
     let (free, guarded) = (distance(None), distance(Some(MIDDLE)));
     assert!(guarded > 0 && guarded < free, "{guarded} vs {free}");
@@ -275,7 +277,8 @@ fn guarding_slows_movement_and_a_jump_suspends_protection() {
     warden.run(3);
     let guard = warden.guard();
     assert_eq!((guard.raised, guard.protecting), (Some(LOW), false));
-    let velocity = warden.zone.snapshot().unwrap().players[0].velocity;
+    let velocity =
+        mmorpg_core::physics::to_units(warden.zone.snapshot().unwrap().players[0].velocity);
     assert_eq!(
         velocity[2],
         mmorpg_core::RUN_SPEED_UNITS_PER_TICK,
