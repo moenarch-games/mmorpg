@@ -146,7 +146,16 @@ fn commands(
             let target = state
                 .creatures
                 .iter()
-                .filter(|creature| creature.life == CreatureLife::Alive)
+                .zip(zone.content().creature_spawns())
+                // The bots fight creatures, not breakable props (#288).
+                .filter(|(creature, spawn)| {
+                    creature.life == CreatureLife::Alive
+                        && zone
+                            .content()
+                            .creature_template(spawn.template)
+                            .is_some_and(|template| template.prop().is_none())
+                })
+                .map(|(creature, _)| creature)
                 .min_by_key(|creature| {
                     let (creature_at, player_at) = (
                         mmorpg_core::physics::to_units(creature.position),
@@ -218,7 +227,15 @@ pub fn measure(fixture: Fixture) -> Result<Report, Box<dyn Error>> {
             .snapshot()?
             .creatures
             .iter()
-            .filter(|creature| creature.life == CreatureLife::Alive)
+            .zip(zone.content().creature_spawns())
+            // Breakable props (#288) decide nothing.
+            .filter(|(creature, spawn)| {
+                creature.life == CreatureLife::Alive
+                    && zone
+                        .content()
+                        .creature_template(spawn.template)
+                        .is_some_and(|template| template.prop().is_none())
+            })
             .count();
         let maintenance_before = zone.interest_maintenance_stats();
         zone.advance_tick()?;

@@ -6,13 +6,13 @@ use std::collections::BTreeMap;
 use mmorpg_core::greyhaven_vale::{self, SPAWN_GRID, area_at, units};
 use mmorpg_core::{
     AreaId, CreatureBehaviour, CreatureFamily, INTEREST_RADIUS_UNITS, MAX_PLAYERS_PER_ZONE,
-    NpcRole, ZoneCommand, ZoneId, ZoneSimulation,
+    NpcRole, PropKind, ZoneCommand, ZoneId, ZoneSimulation,
 };
 
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.revision(), 14);
+    assert_eq!(content.revision(), 15);
     assert_eq!(content.rng_seed(), 0x3cbc_808b_be89_b29c);
     assert_eq!(
         content.definition(),
@@ -153,6 +153,55 @@ fn templates_follow_the_design_contract() {
                 66,
                 1_800
             ),
+            // Breakable props (#288): a little health, 5 min respawn.
+            (
+                "Crate",
+                Prop,
+                CreatureBehaviour::Prop(PropKind::Crate),
+                [1, 1],
+                false,
+                12,
+                0,
+                [1, 1],
+                60,
+                9_000
+            ),
+            (
+                "Barrel",
+                Prop,
+                CreatureBehaviour::Prop(PropKind::Barrel),
+                [1, 1],
+                false,
+                15,
+                0,
+                [1, 1],
+                60,
+                9_000
+            ),
+            (
+                "Blasting Powder Barrel",
+                Prop,
+                CreatureBehaviour::Prop(PropKind::ExplosiveBarrel),
+                [1, 1],
+                false,
+                10,
+                0,
+                [1, 1],
+                60,
+                9_000
+            ),
+            (
+                "Fence",
+                Prop,
+                CreatureBehaviour::Prop(PropKind::Fence),
+                [1, 1],
+                false,
+                18,
+                0,
+                [1, 1],
+                60,
+                9_000
+            ),
         ]
     );
     let wolf = content
@@ -199,9 +248,19 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
         ((greyhaven_vale::HOLLOWPINE_REACH, "Young Boar"), 2),
         ((greyhaven_vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
+        // Breakable props (#288): around Greyhaven and the farm, powder barrels in the camp.
+        ((greyhaven_vale::OUTPOST, "Crate"), 3),
+        ((greyhaven_vale::OUTPOST, "Barrel"), 2),
+        ((greyhaven_vale::MILLBROOK_FARM, "Crate"), 2),
+        ((greyhaven_vale::MILLBROOK_FARM, "Barrel"), 2),
+        ((greyhaven_vale::MILLBROOK_FARM, "Fence"), 3),
+        (
+            (greyhaven_vale::REDBRAND_HOLLOW, "Blasting Powder Barrel"),
+            5,
+        ),
     ]);
     assert_eq!(counts, expected);
-    assert_eq!(content.creature_spawns().len(), 74);
+    assert_eq!(content.creature_spawns().len(), 91);
 }
 
 /// No creature wanders within the interest radius (plus a margin) of any
@@ -212,6 +271,13 @@ fn creatures_stay_out_of_sight_of_the_spawn_plaza() {
     const MARGIN: i64 = 400;
     let content = greyhaven_vale::content();
     for spawn in content.creature_spawns() {
+        // Breakable props (#288) stand around the hub; they never fight.
+        if content
+            .creature_template(spawn.template)
+            .is_some_and(|template| template.prop().is_some())
+        {
+            continue;
+        }
         let keep_away = i64::from(INTEREST_RADIUS_UNITS) + i64::from(spawn.wander_radius) + MARGIN;
         for slot in 0..MAX_PLAYERS_PER_ZONE {
             let feet = SPAWN_GRID.feet(u16::try_from(slot).unwrap()).unwrap();
@@ -274,7 +340,7 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
     let mut first = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let mut second = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let start = first.snapshot().unwrap();
-    assert_eq!(start.creatures.len(), 74);
+    assert_eq!(start.creatures.len(), 91);
     for (creature, spawn) in start.creatures.iter().zip(content.creature_spawns()) {
         let template = content.creature_template(spawn.template).unwrap();
         assert_eq!(creature.creature_id, spawn.id);
@@ -291,7 +357,7 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
             spawn.id
         );
     }
-    // A player on the plaza sees the hub NPCs but no creature.
+    // A player on the plaza sees the hub NPCs and props but no creature that fights.
     first.add_player(1).unwrap();
     second.add_player(1).unwrap();
     first
@@ -322,11 +388,12 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
     }
     assert_eq!(first.snapshot().unwrap(), second.snapshot().unwrap());
     let view = first.snapshot_for_player(1).unwrap();
-    assert!(
-        view.entities
-            .iter()
-            .all(|entity| entity.kind != mmorpg_core::EntityKind::Creature)
-    );
+    assert!(view.entities.iter().all(|entity| {
+        entity.kind != mmorpg_core::EntityKind::Creature
+            || content
+                .creature_template(mmorpg_core::CreatureTemplateId::new(entity.appearance))
+                .is_some_and(|template| template.prop().is_some())
+    }));
     assert!(
         view.entities
             .iter()

@@ -63,9 +63,12 @@ impl ZoneSimulation {
         }
     }
 
-    /// Whether `unit` can be force-moved now: alive, not moving and not immune.
+    /// Whether `unit` can be force-moved now: alive, not a fixed prop (#288), not moving and not
+    /// immune.
     fn movable(&self, unit: EntityRef) -> bool {
-        self.unit_alive_now(unit) && self.forced.get(&unit).is_none_or(ForcedState::is_settled)
+        self.unit_alive_now(unit)
+            && !self.is_prop(unit)
+            && self.forced.get(&unit).is_none_or(ForcedState::is_settled)
     }
 
     /// Knocks `unit` `distance` units along `direction` (XZ), unless it is immune; returns
@@ -106,6 +109,10 @@ impl ZoneSimulation {
         fallback: [i64; 2],
         distance: i32,
     ) -> Result<bool, ZoneError> {
+        // A prop broken by the same blast (#288) has no position left.
+        if !self.movable(unit) {
+            return Ok(false);
+        }
         let at = self.unit_position(unit)?;
         let away = [i64::from(at[0] - from[0]), i64::from(at[2] - from[1])];
         let direction = if away == [0, 0] { fallback } else { away };

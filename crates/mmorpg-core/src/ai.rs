@@ -135,7 +135,8 @@ impl ZoneSimulation {
         let Some(creature) = self.creatures.get(&id) else {
             return Ok(());
         };
-        if creature.life != Life::Alive {
+        // Props (#288) decide nothing.
+        if creature.life != Life::Alive || template.prop().is_some() {
             return Ok(());
         }
         self.tick_work.creature_ai_evaluations += 1;
@@ -299,6 +300,10 @@ impl ZoneSimulation {
         target: EntityRef,
         assist: bool,
     ) -> Result<(), ZoneError> {
+        // Props (#288) never engage.
+        if self.is_prop(EntityRef::Creature(id)) {
+            return Ok(());
+        }
         let Some(creature) = self.creatures.get_mut(&id) else {
             return Ok(());
         };

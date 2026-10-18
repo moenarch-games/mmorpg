@@ -129,6 +129,28 @@ pub(crate) fn top_threat(threat: &[ThreatEntry]) -> Option<EntityRef> {
         .map(|entry| entry.entity)
 }
 
+/// A creature's physics body at an exact position and velocity: a moving capsule, or for a
+/// prop (#288) a fixed box turned with its facing.
+pub(crate) fn creature_body(
+    id: CreatureId,
+    template: &CreatureTemplate,
+    facing: u16,
+    position: [f32; 3],
+    velocity: [f32; 3],
+) -> RigidBody {
+    let body = body_id(EntityRef::Creature(id));
+    if template.prop().is_some() {
+        let [x, y, z] = crate::physics::to_units(position);
+        RigidBody::fixed(
+            body,
+            Vec3i::new(x, y, z),
+            vector(template.body_half_extents(facing)),
+        )
+    } else {
+        RigidBody::moving(body, position, velocity, vector(template.half_extents))
+    }
+}
+
 /// Aggro radius of a creature against a player: 10 m ± 1 m per level of
 /// difference, clamped to 5–20 m.
 #[must_use]
@@ -158,14 +180,19 @@ impl ZoneSimulation {
     pub(crate) fn spawn_creature(&mut self, id: CreatureId) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
         let (spawn, template) = Self::creature_content(&content, id)?;
-        let level = self
-            .rng
-            .inclusive(u32::from(template.min_level), u32::from(template.max_level));
-        let level = u8::try_from(level).unwrap_or(template.max_level);
-        let wait = self.rng.inclusive(
-            u32::from(WANDER_WAIT_TICKS[0]),
-            u32::from(WANDER_WAIT_TICKS[1]),
-        );
+        // A prop (#288) stands at its lowest level and draws nothing from the zone RNG.
+        let (level, wait) = if template.prop().is_some() {
+            (template.min_level, 0)
+        } else {
+            let level = self
+                .rng
+                .inclusive(u32::from(template.min_level), u32::from(template.max_level));
+            let wait = self.rng.inclusive(
+                u32::from(WANDER_WAIT_TICKS[0]),
+                u32::from(WANDER_WAIT_TICKS[1]),
+            );
+            (u8::try_from(level).unwrap_or(template.max_level), wait)
+        };
         let entity = EntityRef::Creature(id);
         let position = Vec3i::new(
             spawn.position[0],
@@ -173,11 +200,12 @@ impl ZoneSimulation {
             spawn.position[1],
         );
         self.world
-            .add_body(RigidBody::dynamic(
-                body_id(entity),
-                position,
-                Vec3i::ZERO,
-                vector(template.half_extents),
+            .add_body(creature_body(
+                id,
+                template,
+                spawn.facing,
+                crate::physics::from_units([position.x, position.y, position.z]),
+                [0.0; 3],
             ))
             .map_err(physics_error)?;
         self.place_in_interest(entity, position.x, position.z);

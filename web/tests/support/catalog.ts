@@ -2,7 +2,7 @@
 export function catalogJson(revision = "3"): Record<string, unknown> {
   return {
     format: "mmorpg.catalog",
-    version: 6,
+    version: 7,
     itemCatalogRevision: "3",
     items: [
       { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
@@ -13,8 +13,8 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
     contentRevision: revision,
     contentFingerprint: "3cbc808bbe89b29c",
     creatureTemplates: [
-      { id: 1, name: "Timber Wolf", family: "wolf", behaviour: "aggressive", minLevel: 1, maxLevel: 2, elite: false, halfExtents: [40, 45, 40] },
-      { id: 2, name: "Young Boar", family: "boar", behaviour: "neutral", minLevel: 1, maxLevel: 2, elite: false, halfExtents: [45, 45, 45] },
+      { id: 1, name: "Timber Wolf", family: "wolf", behaviour: "aggressive", minLevel: 1, maxLevel: 2, elite: false, halfExtents: [40, 45, 40], prop: null },
+      { id: 2, name: "Young Boar", family: "boar", behaviour: "neutral", minLevel: 1, maxLevel: 2, elite: false, halfExtents: [45, 45, 45], prop: null },
     ],
     npcs: [
       { id: 1, name: "Marshal Elden Greywatch", role: "quest_giver", level: 10 },

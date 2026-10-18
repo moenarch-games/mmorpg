@@ -94,10 +94,12 @@ impl ZoneContent {
                 .binary_search_by_key(&spawn.template, |template| template.id)
                 .map(|index| &templates[index])
                 .map_err(|_| ZoneError::new("creature spawn names an unknown template"))?;
-            if !(0..=MAX_WANDER_RADIUS_UNITS).contains(&spawn.wander_radius) {
+            if !(0..=MAX_WANDER_RADIUS_UNITS).contains(&spawn.wander_radius)
+                || (template.prop().is_some() && spawn.wander_radius != 0)
+            {
                 return Err(ZoneError::new("creature wander radius is out of range"));
             }
-            let body = standing_body(spawn.position, template.half_extents);
+            let body = standing_body(spawn.position, template.body_half_extents(spawn.facing));
             validate_unit_body(&definition, body, &unit_boxes, &fixed_boxes)?;
             unit_boxes.push(body);
         }
@@ -810,6 +812,7 @@ impl ZoneContent {
             hash.u8(match template.behaviour {
                 super::units::CreatureBehaviour::Aggressive => 1,
                 super::units::CreatureBehaviour::Neutral => 2,
+                super::units::CreatureBehaviour::Prop(kind) => 16 + kind.code(),
             });
             hash.u8(template.min_level);
             hash.u8(template.max_level);
@@ -859,6 +862,7 @@ const fn family_code(family: super::units::CreatureFamily) -> u8 {
         CreatureFamily::Marauder => 4,
         CreatureFamily::Mirefin => 5,
         CreatureFamily::Redbrand => 6,
+        CreatureFamily::Prop => 7,
     }
 }
 
@@ -871,6 +875,12 @@ fn validate_name(name: &str) -> Result<(), ZoneError> {
 
 fn validate_template(template: &CreatureTemplate) -> Result<(), ZoneError> {
     validate_name(&template.name)?;
+    // Breakable props (#288) are exactly the prop family.
+    if template.prop().is_some() != (template.family == super::units::CreatureFamily::Prop) {
+        return Err(ZoneError::new(
+            "creature template prop behaviour and family disagree",
+        ));
+    }
     if template.min_level == 0
         || template.min_level > template.max_level
         || template.max_level > MAX_UNIT_LEVEL

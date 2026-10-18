@@ -1,13 +1,15 @@
 /**
  * The content catalog from the WASM `catalog()` export (format
- * `mmorpg.catalog` v6): names and presentation facts for the IDs that
+ * `mmorpg.catalog` v7): names and presentation facts for the IDs that
  * projections carry. Creature templates by template ID, NPCs by NPC ID,
  * areas by area ID, items (with equipment slot and stats) by item ID,
  * classes by wire value, abilities by ability ID and quests by quest ID.
  * Combat numbers stay on the server.
  */
-export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand";
-export type CreatureBehaviour = "aggressive" | "neutral";
+export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand" | "prop";
+export type CreatureBehaviour = "aggressive" | "neutral" | "prop";
+/** A breakable prop (#288). */
+export type PropKind = "crate" | "barrel" | "explosive_barrel" | "fence";
 export type NpcRole = "quest_giver" | "vendor" | "spirit_healer" | "guard";
 
 export type CreatureTemplate = {
@@ -20,6 +22,8 @@ export type CreatureTemplate = {
   elite: boolean;
   /** Collision box in units. */
   halfExtents: readonly [number, number, number];
+  /** The breakable prop kind, or null for creatures. */
+  prop: PropKind | null;
 };
 
 export type NpcRecord = { id: number; name: string; role: NpcRole; level: number };
@@ -102,13 +106,14 @@ export type ContentCatalog = {
 };
 
 const FORMAT = "mmorpg.catalog";
-const VERSION = 6;
+const VERSION = 7;
 const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore"] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist"];
 const RESOURCES = ["rage", "focus", "mana"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
-const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand"];
-const BEHAVIOURS: readonly CreatureBehaviour[] = ["aggressive", "neutral"];
+const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop"];
+const BEHAVIOURS: readonly CreatureBehaviour[] = ["aggressive", "neutral", "prop"];
+const PROPS: readonly PropKind[] = ["crate", "barrel", "explosive_barrel", "fence"];
 const ROLES: readonly NpcRole[] = ["quest_giver", "vendor", "spirit_healer", "guard"];
 
 type Json = Record<string, unknown>;
@@ -194,7 +199,7 @@ export function decodeCatalog(json: string): ContentCatalog {
   const templates = list(root.creatureTemplates, "creature templates", 256).map((value, index) => {
     const name = `creature template ${index}`;
     const record = object(value, [
-      "id", "name", "family", "behaviour", "minLevel", "maxLevel", "elite", "halfExtents",
+      "id", "name", "family", "behaviour", "minLevel", "maxLevel", "elite", "halfExtents", "prop",
     ], name);
     const minLevel = int(record.minLevel, `${name} minimum level`, 1, 255);
     const maxLevel = int(record.maxLevel, `${name} maximum level`, minLevel, 255);
@@ -212,6 +217,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       maxLevel,
       elite: record.elite,
       halfExtents: [x, y, z] as const,
+      prop: record.prop === null ? null : oneOf(record.prop, PROPS, `${name} prop`),
     };
   });
   const npcs = list(root.npcs, "npcs", 256).map((value, index) => {

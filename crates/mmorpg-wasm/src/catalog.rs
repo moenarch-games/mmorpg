@@ -4,7 +4,7 @@
 //! clients read area names from core content. The catalog (format
 //! [`CATALOG_FORMAT`], version [`CATALOG_FORMAT_VERSION`]) exports those
 //! tables of the hosted [`ZoneContent`] as compact JSON: creature templates
-//! (name, family, behaviour, levels, elite, body size), NPCs (name, role,
+//! (name, family, behaviour, levels, elite, body size, breakable prop kind), NPCs (name, role,
 //! level), areas (name), items (name, stack limit, equipment slot, stats,
 //! sale value), vendors (NPC and priced offers), classes (name, resource),
 //! abilities (name, user, unlock level, cost, cast time, cooldown, aura) and
@@ -21,7 +21,7 @@ use serde::Serialize;
 use crate::host::hosted_content;
 
 pub const CATALOG_FORMAT: &str = "mmorpg.catalog";
-pub const CATALOG_FORMAT_VERSION: u32 = 6;
+pub const CATALOG_FORMAT_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -137,7 +137,7 @@ pub struct AbilityExport {
     pub aura: Option<u8>,
 }
 
-/// `[id, name, family, behaviour, minLevel, maxLevel, elite, halfExtents]`
+/// `[id, name, family, behaviour, minLevel, maxLevel, elite, halfExtents, prop]`
 /// in object form.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -151,6 +151,8 @@ pub struct CreatureTemplateExport {
     pub elite: bool,
     /// Collision box in units; presentation sizes placeholder bodies by it.
     pub half_extents: [i32; 3],
+    /// `crate`, `barrel`, `explosive_barrel` or `fence` for a breakable prop (#288).
+    pub prop: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -290,6 +292,7 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                 max_level: template.max_level,
                 elite: template.elite,
                 half_extents: template.half_extents,
+                prop: template.prop().map(mmorpg_core::PropKind::name),
             })
             .collect(),
         npcs: content
@@ -414,6 +417,7 @@ mod tests {
                 "maxLevel": 2,
                 "elite": false,
                 "halfExtents": [40, 45, 40],
+                "prop": null,
             })
         );
         let garrick = &value["creatureTemplates"][6];

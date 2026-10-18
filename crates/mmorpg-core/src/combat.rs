@@ -504,11 +504,14 @@ impl ZoneSimulation {
         };
         match swing {
             Swing::Miss => {
+                let prop = self.is_prop(target);
                 let Some(creature) = self.creatures.get_mut(&creature_id) else {
                     return Ok(());
                 };
                 creature.combat_timer = COMBAT_LINGER_TICKS;
-                creature.add_threat(source, 0);
+                if !prop {
+                    creature.add_threat(source, 0);
+                }
                 self.notify(player_id, ZoneEvent::Miss { source, target });
                 self.engage(creature_id, source, true)
             }
@@ -563,14 +566,18 @@ impl ZoneSimulation {
         self.update_player(player_id, |player| {
             player.combat_timer = COMBAT_LINGER_TICKS;
         });
+        // Props (#288) keep no threat or tap: they never fight back and drop nothing.
+        let prop = self.is_prop(target);
         let Some(creature) = self.creatures.get_mut(&creature_id) else {
             return Ok(());
         };
         creature.combat_timer = COMBAT_LINGER_TICKS;
         let dealt = amount.min(creature.health);
         creature.health -= dealt;
-        creature.add_threat(source, dealt);
-        creature.tapped_by.get_or_insert(player_id);
+        if !prop {
+            creature.add_threat(source, dealt);
+            creature.tapped_by.get_or_insert(player_id);
+        }
         let dead = creature.health == 0;
         self.notify(
             player_id,
@@ -766,6 +773,10 @@ impl ZoneSimulation {
         now: u64,
     ) -> Result<(), ZoneError> {
         let entity = EntityRef::Creature(creature_id);
+        let (_, template) = Self::creature_content(&self.content, creature_id)?;
+        if let Some(kind) = template.prop() {
+            return self.prop_breaks(creature_id, kind, killer, now);
+        }
         let body = self
             .world
             .remove_body(body_id(entity))
@@ -968,8 +979,10 @@ impl ZoneSimulation {
                 continue;
             };
             let (_, template) = Self::creature_content(&content, creature_id)?;
+            // A prop (#288) stands again only once no unit stands on its spot.
             if let Life::Despawned { died_at } = creature.life
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))
+                && (template.prop().is_none() || !self.prop_spot_taken(creature_id)?)
             {
                 self.spawn_creature(creature_id)?;
             }

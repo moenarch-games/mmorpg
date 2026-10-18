@@ -4,7 +4,8 @@
 //! resource, cast, cooldowns and auras), its target's target and the
 //! target's cast and auras, this tick's events and the relevant units within the interest radius in
 //! priority order: the viewer first, then the viewer's current target (alive
-//! or corpse), then ascending `(squared XZ distance, kind, id)`, capped at
+//! or corpse), then ascending `(squared XZ distance, kind, id)`, and breakable props
+//! (#288) after every other unit in the same order, capped at
 //! [`MAX_VISIBLE_ENTITIES`]. Canonical state never leaves the zone this way.
 
 use std::collections::BTreeSet;
@@ -178,6 +179,8 @@ pub struct ZoneSnapshot {
     pub doors: Vec<crate::DoorView>,
     /// Projectiles within the interest radius, nearest first (#286).
     pub projectiles: Vec<crate::ProjectileView>,
+    /// Pieces of broken props within the interest radius, nearest first (#288).
+    pub debris: Vec<crate::DebrisView>,
 }
 
 impl ZoneSimulation {
@@ -212,6 +215,9 @@ impl ZoneSimulation {
                     0
                 } else if viewer.target == Some(candidate) {
                     1
+                } else if self.is_prop(candidate) {
+                    // Props (#288) yield every slot to players, creatures and NPCs.
+                    3
                 } else {
                     2
                 };
@@ -311,6 +317,7 @@ impl ZoneSimulation {
                 entities,
                 doors: self.door_views(),
                 projectiles: self.projectile_views([center.x, center.y, center.z]),
+                debris: self.debris_views([center.x, center.y, center.z]),
             },
             stats,
         })
