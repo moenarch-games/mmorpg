@@ -88,6 +88,15 @@ const stick = (axis: number, direction: "positive" | "negative"): InputStroke =>
 });
 const button = (index: number): InputStroke => ({ device: "gamepadButton", button: index, threshold: 50 });
 
+const ACTION_CATEGORIES: Readonly<Record<string, string>> = {
+  move: "Movement",
+  target: "Targeting",
+  combat: "Combat",
+  ability: "Abilities",
+  player: "Character",
+  ui: "Interface",
+};
+
 function action(
   id: GameAction,
   title: string,
@@ -97,6 +106,7 @@ function action(
   return {
     id,
     title,
+    categoryPath: [ACTION_CATEGORIES[id.split(".")[0] ?? ""] ?? "Other"],
     repeatPolicy: "never",
     allowedDevices: ["keyboard", "gamepad"],
     defaults: strokes.map((stroke, index): Binding => ({
