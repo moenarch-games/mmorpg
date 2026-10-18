@@ -900,7 +900,7 @@ dependencies = [
 [[package]]
 name = "geometry-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=b3e2bf8f84958dc84598422beb5e00ca6841b803#b3e2bf8f84958dc84598422beb5e00ca6841b803"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=c9a2d1bdaad586e6c4a25ffce2d78dba8060c758#c9a2d1bdaad586e6c4a25ffce2d78dba8060c758"
 dependencies = [
  "spatial-kernels",
 ]
@@ -2354,7 +2354,7 @@ dependencies = [
 [[package]]
 name = "physics-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/physics-engine.git?rev=90f393023d48f36e5e18b9985d046e4e640b705b#90f393023d48f36e5e18b9985d046e4e640b705b"
+source = "git+https://github.com/moritzbrantner/physics-engine.git?rev=500e87d4e08f2316267216f85d5c4ed79be2a38b#500e87d4e08f2316267216f85d5c4ed79be2a38b"
 dependencies = [
  "geometry-kernels",
  "sha2",
@@ -3079,7 +3079,7 @@ dependencies = [
 [[package]]
 name = "spatial-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=b3e2bf8f84958dc84598422beb5e00ca6841b803#b3e2bf8f84958dc84598422beb5e00ca6841b803"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=c9a2d1bdaad586e6c4a25ffce2d78dba8060c758#c9a2d1bdaad586e6c4a25ffce2d78dba8060c758"
 
 [[package]]
 name = "spirv"
