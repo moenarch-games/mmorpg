@@ -281,7 +281,7 @@ export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
 const WIRE_VERSION = 25;
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -300,7 +300,7 @@ const MAX_ENTITIES = 45;
 /** `u16` ID, kind, `3 × i16` position, `u16` yaw, `i16` pitch and flags. */
 const PROJECTILE_BYTES = 14;
 const MAX_PROJECTILES = 8;
-const MAX_COOLDOWNS = 4;
+const MAX_COOLDOWNS = 8;
 const MAX_AURAS = 8;
 export const GLOBAL_COOLDOWN_TICKS = 45;
 const BUFFER_CAPACITY = 32;
@@ -370,6 +370,8 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [13, { castTicks: 45, channel: false, cooldown: 240, aura: null, auraTicks: 0 }],
   [14, { castTicks: 90, channel: false, cooldown: 600, aura: null, auraTicks: 0 }],
   [15, { castTicks: 30, channel: false, cooldown: 240, aura: null, auraTicks: 0 }],
+  [16, { castTicks: 45, channel: false, cooldown: 300, aura: null, auraTicks: 0 }],
+  [17, instant(450)],
 ]);
 /** Mana: 110 + 22 per level above 1; rage and focus: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

@@ -223,6 +223,8 @@ pub struct ZoneSimulation {
     /// Flying and stuck projectiles by ID (#286).
     pub(crate) projectiles: BTreeMap<u32, crate::Projectile>,
     pub(crate) next_projectile: u32,
+    /// Forced moves in progress and the immunity after them (#287).
+    pub(crate) forced: BTreeMap<EntityRef, crate::ForcedState>,
 }
 
 impl ZoneSimulation {
@@ -332,6 +334,7 @@ impl ZoneSimulation {
             doors: BTreeMap::new(),
             projectiles: BTreeMap::new(),
             next_projectile: 1,
+            forced: BTreeMap::new(),
         })
     }
 
@@ -593,7 +596,9 @@ impl ZoneSimulation {
         self.consume_intents()?;
         self.decide_creatures()?;
         self.drive_players()?;
+        self.apply_forced_moves()?;
         self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
+        self.settle_forced_moves();
         self.update_landings()?;
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
         for player in self.players.values_mut() {

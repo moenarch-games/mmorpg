@@ -280,6 +280,8 @@ pub struct CanonicalZoneSnapshot {
     /// Flying and stuck projectiles in ID order, and the next projectile ID (#286).
     pub projectiles: Vec<crate::Projectile>,
     pub next_projectile: u32,
+    /// Forced moves in progress and immunities, in unit order (#287).
+    pub forced: Vec<(crate::EntityRef, crate::ForcedState)>,
 }
 
 impl ZoneSimulation {
@@ -402,6 +404,7 @@ impl ZoneSimulation {
             doors: self.canonical_doors(),
             projectiles: self.projectiles.values().copied().collect(),
             next_projectile: self.next_projectile,
+            forced: self.forced_states(),
         })
     }
 
@@ -485,6 +488,7 @@ impl ZoneSimulation {
             .map(|projectile| (projectile.id, projectile))
             .collect();
         zone.next_projectile = snapshot.next_projectile;
+        zone.restore_forced(snapshot.forced)?;
         // The snapshot tick's routine placements; doors are already as that tick left them.
         zone.place_routine_npcs(false)?;
         zone.validate_references()?;

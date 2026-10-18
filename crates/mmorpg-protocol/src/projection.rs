@@ -1405,7 +1405,7 @@ mod tests {
             (CAST + 1, 2, "reserved flag bits are set"),
             (CAST + 3, 60, "cast state is inconsistent"),
             (DAMAGE + 1, 13, "viewer damage range is inverted"),
-            (COOLDOWNS, 5, "snapshot has too many cooldowns"),
+            (COOLDOWNS, 9, "snapshot has too many cooldowns"),
             (COOLDOWNS + 1, 11, "cooldown record is inconsistent"),
             (COOLDOWNS + 2, 9, "cooldown record is inconsistent"),
             (AURAS, 9, "snapshot has too many auras"),
@@ -1435,7 +1435,7 @@ mod tests {
             ),
             (
                 EVENTS + 1 + 7 * EVENT_RECORD_BYTES + 1,
-                16,
+                18,
                 "unknown ability",
             ),
             (

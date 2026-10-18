@@ -1217,7 +1217,11 @@ function runAction(action: GameAction): void {
     case "ability.slot1":
     case "ability.slot2":
     case "ability.slot3":
-    case "ability.slot4": {
+    case "ability.slot4":
+    case "ability.slot5":
+    case "ability.slot6":
+    case "ability.slot7":
+    case "ability.slot8": {
       const slot = Number(action.slice(-1));
       const catalog = world?.catalog;
       worldView.queueIntent((projection) => (catalog ? useAbilitySlot(slot, projection, catalog) : null));

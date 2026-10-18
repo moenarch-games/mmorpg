@@ -45,14 +45,14 @@ pub struct CombatHud {
     pub dead: bool,
 }
 
-/// The class abilities in catalog id order: action-bar slots 1–4.
+/// The class abilities in catalog id order: action-bar slots 1–8.
 #[must_use]
 pub fn class_kit(class: PlayerClass) -> Vec<u8> {
     ABILITY_CATALOG
         .iter()
         .filter(|ability| ability.user == AbilityUser::Class(class))
         .map(|ability| ability.id.get())
-        .take(4)
+        .take(8)
         .collect()
 }
 
@@ -252,9 +252,9 @@ mod tests {
 
     #[test]
     fn class_kits_hold_the_catalog_order() {
-        assert_eq!(class_kit(PlayerClass::Warden), [1, 2, 3, 4]);
+        assert_eq!(class_kit(PlayerClass::Warden), [1, 2, 3, 4, 17]);
         assert_eq!(class_kit(PlayerClass::Ranger), [5, 6, 7, 8]);
-        assert_eq!(class_kit(PlayerClass::Arcanist), [9, 10, 11, 12]);
+        assert_eq!(class_kit(PlayerClass::Arcanist), [9, 10, 11, 12, 16]);
     }
 
     #[test]
