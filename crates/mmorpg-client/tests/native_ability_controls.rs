@@ -252,7 +252,6 @@ fn unbound_keys_use_nothing() {
     let mut controls = NativeControls::new();
     for key in [
         KeyCode::Digit0,
-        KeyCode::Digit5,
         KeyCode::Digit9,
         KeyCode::Numpad1,
         KeyCode::KeyX,

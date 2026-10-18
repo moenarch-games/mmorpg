@@ -132,7 +132,7 @@ struct App {
     frames: Option<u32>,
     rendered: u32,
     next_frame: Instant,
-    /// Ability IDs on action-bar slots 1–4: the class kit in catalog order.
+    /// Ability IDs on action-bar slots 1–8: the class kit in catalog order.
     abilities: Vec<u8>,
     /// Ability slots and cast cancelling through the shared input runtime.
     controls: NativeControls,
@@ -215,7 +215,7 @@ fn held_movement(keys: &HashSet<KeyCode>, pad: PadMovement, dead: bool) -> HeldM
 /// Pointer travel (physical pixels) from the middle lane before the guard moves high or low.
 const GUARD_LANE_THRESHOLD_PX: f64 = 24.;
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
-const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC, opens or closes a door in reach, or chats · click a door to open or close it · B bags · C character · L quests · Tab target · F attack · 1-4 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump, X attack, RB target, d-pad abilities, LB NPC, Start talk or door, B back, hold LT to guard (right stick up/down aims), L3 character, RT quests";
+const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC, opens or closes a door in reach, or chats · click a door to open or close it · B bags · C character · L quests · Tab target · F attack · 1-8 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump, X attack, RB target, d-pad abilities, LB NPC, Start talk or door, B back, hold LT to guard (right stick up/down aims), L3 character, RT quests";
 
 impl App {
     fn retire_pointer(&mut self) {

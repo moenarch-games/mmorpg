@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 pub enum UiIntent {
     /// One deliberate shared command (quest, vendor, bag, equipment, loot, chat).
     Command(ZoneCommand),
-    /// Use action-bar slot 1–4.
+    /// Use action-bar slot 1–8.
     AbilitySlot(u8),
     /// Start auto-attacking the target, or stop.
     ToggleAttack,

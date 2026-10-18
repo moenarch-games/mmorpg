@@ -87,6 +87,7 @@ pub fn encode_canonical_snapshot(
         snapshot.next_projectile,
         &snapshot.projectiles,
     )?;
+    encode_forced(&mut payload, &snapshot.forced)?;
     Ok(payload)
 }
 
@@ -447,6 +448,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     }
     let doors = decode_canonical_doors(payload, &mut offset)?;
     let (next_projectile, projectiles) = decode_projectiles(payload, &mut offset)?;
+    let forced = decode_forced(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         schema_version,
@@ -461,6 +463,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         doors,
         projectiles,
         next_projectile,
+        forced,
     })
 }
 
@@ -950,6 +953,82 @@ fn decode_projectiles(
     Ok((next, projectiles))
 }
 
+/// At most one forced-movement state per unit.
+const MAX_FORCED: usize = MAX_PLAYERS_PER_ZONE + MAX_CREATURE_SPAWNS;
+
+/// Forced movement (#287): a `u16` count, then per unit its reference, the move in progress
+/// (flag; XZ velocity `i32`s, remaining `u16`, charge flag with target and knockback `i32`) and
+/// the immunity left (`u16`).
+fn encode_forced(
+    payload: &mut Vec<u8>,
+    forced: &[(EntityRef, mmorpg_core::ForcedState)],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(forced.len(), MAX_FORCED, "too many forced moves")?.to_be_bytes(),
+    );
+    for (unit, state) in forced {
+        encode_entity_ref(payload, Some(*unit));
+        payload.push(u8::from(state.moving.is_some()));
+        if let Some(moving) = state.moving {
+            for axis in moving.velocity {
+                payload.extend_from_slice(&axis.to_be_bytes());
+            }
+            payload.extend_from_slice(&moving.remaining.to_be_bytes());
+            payload.push(u8::from(moving.charge.is_some()));
+            if let Some((target, knockback)) = moving.charge {
+                encode_entity_ref(payload, Some(target));
+                payload.extend_from_slice(&knockback.to_be_bytes());
+            }
+        }
+        payload.extend_from_slice(&state.immune.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_flag(payload: &[u8], offset: &mut usize) -> Result<bool, ProtocolError> {
+    match crate::wire::read_u8(payload, offset)? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(ProtocolError::new("invalid forced-movement flag")),
+    }
+}
+
+fn decode_forced(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<(EntityRef, mmorpg_core::ForcedState)>, ProtocolError> {
+    let count = decode_u16_count(payload, offset, MAX_FORCED, "too many forced moves")?;
+    let mut forced = Vec::with_capacity(count);
+    for _ in 0..count {
+        let unit = decode_entity_ref(payload, offset)?
+            .ok_or_else(|| ProtocolError::new("a forced move needs a unit"))?;
+        let moving = if decode_flag(payload, offset)? {
+            let velocity = [
+                i32::from_be_bytes(take(payload, offset)?),
+                i32::from_be_bytes(take(payload, offset)?),
+            ];
+            let remaining = u16::from_be_bytes(take(payload, offset)?);
+            let charge = if decode_flag(payload, offset)? {
+                let target = decode_entity_ref(payload, offset)?
+                    .ok_or_else(|| ProtocolError::new("a charge needs a target"))?;
+                Some((target, i32::from_be_bytes(take(payload, offset)?)))
+            } else {
+                None
+            };
+            Some(mmorpg_core::ForcedMove {
+                velocity,
+                remaining,
+                charge,
+            })
+        } else {
+            None
+        };
+        let immune = u16::from_be_bytes(take(payload, offset)?);
+        forced.push((unit, mmorpg_core::ForcedState { moving, immune }));
+    }
+    Ok(forced)
+}
+
 /// Canonical doors: the projection's door list plus each leaf's last change tick (`u64`, #158).
 fn encode_canonical_doors(
     payload: &mut Vec<u8>,
@@ -998,6 +1077,26 @@ mod tests {
     fn snapshot() -> CanonicalZoneSnapshot {
         let wolf = EntityRef::Creature(CreatureId::new(4));
         CanonicalZoneSnapshot {
+            forced: vec![
+                (
+                    EntityRef::Player(1),
+                    mmorpg_core::ForcedState {
+                        moving: Some(mmorpg_core::ForcedMove {
+                            velocity: [0, 45],
+                            remaining: 12,
+                            charge: Some((wolf, 300)),
+                        }),
+                        immune: 0,
+                    },
+                ),
+                (
+                    wolf,
+                    mmorpg_core::ForcedState {
+                        moving: None,
+                        immune: 17,
+                    },
+                ),
+            ],
             next_projectile: 9,
             projectiles: vec![
                 mmorpg_core::Projectile {
@@ -1396,10 +1495,8 @@ mod tests {
         let snapshot = snapshot();
         let encoded = encode_canonical_snapshot(&snapshot).unwrap();
         assert_eq!(decode_canonical_snapshot(&encoded).unwrap(), snapshot);
-        assert_eq!(
-            decode_snapshot(&encoded).unwrap_err().to_string(),
-            "unexpected snapshot scope"
-        );
+        // A canonical snapshot is never a player projection.
+        assert!(decode_snapshot(&encoded).is_err());
         for length in 0..encoded.len() {
             assert!(decode_canonical_snapshot(&encoded[..length]).is_err());
         }

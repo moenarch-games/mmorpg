@@ -315,6 +315,9 @@ impl ZoneSimulation {
             return Ok(());
         };
         let (level, max_health) = (player.level, player.max_health());
+        let (x, z) = crate::trig::direction(player.facing);
+        // A unit standing exactly on a knockback's centre is pushed along the caster's facing.
+        let fallback = [i64::from(x), i64::from(z)];
         let (melee, bonus) = (player.melee_damage(), u32::from(player.damage_bonus()));
         let source = EntityRef::Player(player_id);
         let creature = match target {
@@ -337,7 +340,11 @@ impl ZoneSimulation {
                     self.player_damages_creature(player_id, creature_id, amount, false, now)?;
                 }
             }
-            AbilityEffect::Bash { lockout_ticks, .. } => {
+            AbilityEffect::Bash {
+                lockout_ticks,
+                knockback,
+                ..
+            } => {
                 if let Some(creature_id) = creature {
                     self.interrupt_cast(
                         EntityRef::Creature(creature_id),
@@ -347,6 +354,13 @@ impl ZoneSimulation {
                     if let Some(stun) = aura(0) {
                         self.hostile_aura(player_id, creature_id, stun)?;
                     }
+                    let from = self.player_position(player_id)?;
+                    self.knock_away(
+                        EntityRef::Creature(creature_id),
+                        [from.x, from.z],
+                        fallback,
+                        knockback,
+                    )?;
                 }
             }
             AbilityEffect::HealOverTime { percent, .. } => {
@@ -421,6 +435,39 @@ impl ZoneSimulation {
                     self.put_aura(source, aura);
                 }
             }
+            AbilityEffect::Blast {
+                damage,
+                per_level,
+                radius,
+                knockback,
+            } => {
+                if let Some(target) = target {
+                    let centre = self.unit_position(target)?;
+                    for (victim, distance) in self.blast_victims(centre, radius)? {
+                        // Linear falloff to half at the edge, in per-mille.
+                        let share = 1_000 - 500 * distance / i64::from(radius.max(1));
+                        let amount = self
+                            .rng
+                            .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+                            + u32::from(scaled(0, per_level, level))
+                            + bonus;
+                        let amount = u32::try_from(i64::from(amount) * share / 1_000).unwrap_or(0);
+                        self.player_damages_creature(player_id, victim, amount.max(1), false, now)?;
+                        let push = i32::try_from(i64::from(knockback) * share / 1_000).unwrap_or(0);
+                        self.knock_away(
+                            EntityRef::Creature(victim),
+                            [centre[0], centre[2]],
+                            fallback,
+                            push,
+                        )?;
+                    }
+                }
+            }
+            AbilityEffect::Charge { knockback } => {
+                if let Some(target) = target {
+                    self.charge(source, target, knockback);
+                }
+            }
             // Blizzard pulses while it channels; bandages are creature-only.
             AbilityEffect::Blizzard { .. } | AbilityEffect::Bandage { .. } => {}
         }
@@ -483,6 +530,30 @@ impl ZoneSimulation {
             }
         }
         Ok(found)
+    }
+
+    /// Living creatures within `radius` of the blast `centre` that it can see (#287), with their XZ
+    /// distance: a static collider between centre and body shields a creature.
+    fn blast_victims(
+        &self,
+        centre: [i32; 3],
+        radius: i32,
+    ) -> Result<Vec<(CreatureId, i64)>, ZoneError> {
+        let origin = crate::physics::Vec3i::new(centre[0], centre[1], centre[2]);
+        let mut victims = Vec::new();
+        for creature_id in self.living_creatures_near([centre[0], centre[2]], radius)? {
+            let at = self.unit_position(EntityRef::Creature(creature_id))?;
+            let shielded = self.world.segment_blocked(
+                origin,
+                crate::physics::Vec3i::new(at[0] - centre[0], at[1] - centre[1], at[2] - centre[2]),
+                |body| body.0 < crate::entity::PLAYER_BODY_BASE,
+            );
+            if !shielded {
+                let distance = distance_squared([centre[0], centre[2]], [at[0], at[2]]).isqrt();
+                victims.push((creature_id, distance));
+            }
+        }
+        Ok(victims)
     }
 
     /// Puts a player's aura on a creature: evading creatures ignore it,

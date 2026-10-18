@@ -54,7 +54,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   };
   u8(25);
   u8(2);
-  u16(23);
+  u16(24);
   u32(snapshot.zoneId);
   u64(snapshot.tick);
   u64(snapshot.contentRevision);
