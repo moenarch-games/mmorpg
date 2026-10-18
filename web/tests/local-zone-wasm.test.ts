@@ -397,6 +397,9 @@ describe("WASM local zone host", () => {
     const [x, , z] = self(source).position;
     expect(scenery.areaAt(x, z)?.name).toBe("Greyhaven Outpost");
     expect(scenery.areaAt(-5_500, 0)?.name).toBe("Wolfrun Woods");
+    // Region streaming (#240): the woods need wolf and boar models, the outpost none.
+    expect([...scenery.regionModels(2)].sort()).toEqual(["Pig", "Wolf"]);
+    expect(scenery.regionModels(1)).toEqual([]);
     expect(scenery.areaAt(-50_000, -50_000)).toBeNull();
     // Spawn slots are flat; the mountains beyond the walls are not.
     expect(scenery.reliefAt(x, z)).toBe(0);

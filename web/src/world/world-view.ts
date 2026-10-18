@@ -144,8 +144,75 @@ function obstructed(boxes: readonly Box[], target: Vec3, eye: Vec3): boolean {
 /** `padGuard` is the lane a pad holding the guard trigger aims, or `null` (#156). */
 export type WorldInput = { held: HeldIntent; jumps: number; padGuard?: StrikeHeight | null };
 
-/** The imported unit models a world draws. */
-const UNIT_MODEL_KINDS = ["Ranger", "Wolf", "Rat", "Pig"] as const;
+/** Areas within this distance of the player (60 m) have their art fetched ahead of arrival. */
+const STREAM_RADIUS_UNITS = 6_000;
+
+/** The viewer's feet XZ in a projection. */
+function entitiesSelf(projection: ZoneSnapshot): [number, number] | null {
+  const self = projection.entities.find((entity) => entity.kind === "player" && entity.entityId === projection.viewerId);
+  return self ? [self.position[0], self.position[2]] : null;
+}
+
+/**
+ * Greyhaven's art in pieces (#240): the Ranger, each creature model and the inn load once on
+ * first need. A region needs the Ranger, its creatures' models and, for the area the inn stands
+ * in, the inn. A failed piece settles too; its units keep their procedural stand-ins.
+ */
+class RegionArt {
+  readonly #world: ZoneWorld;
+  readonly #models: QuaterniusUnits;
+  readonly #inn: InnBuilding;
+  readonly #onProgress: () => void;
+  readonly #settled = new Set<string>();
+  readonly #started = new Set<string>();
+  readonly #innArea: number | null;
+
+  constructor(world: ZoneWorld, models: QuaterniusUnits, inn: InnBuilding, onProgress: () => void) {
+    this.#world = world;
+    this.#models = models;
+    this.#inn = inn;
+    this.#onProgress = onProgress;
+    const innProp = world.scenery.scenery.props.find((prop) => prop.kind === "inn");
+    this.#innArea = innProp ? world.scenery.areaAt(innProp.position[0], innProp.position[2])?.id ?? null : null;
+  }
+
+  /** The pieces area `id` needs (every piece for `null`). */
+  #pieces(id: number | null): string[] {
+    if (id === null) {
+      return ["Ranger", "Wolf", "Rat", "Pig", "inn"];
+    }
+    return ["Ranger", ...this.#world.scenery.regionModels(id), ...(id === this.#innArea ? ["inn"] : [])];
+  }
+
+  fetch(id: number | null): void {
+    for (const piece of this.#pieces(id)) {
+      if (this.#started.has(piece)) { continue; }
+      this.#started.add(piece);
+      const loading = piece === "inn" ? this.#inn.load() : this.#models.preload(piece as ImportedModelKind);
+      void loading.then(() => {
+        this.#settled.add(piece);
+        this.#onProgress();
+      });
+    }
+  }
+
+  progress(id: number | null): { loaded: number; total: number } {
+    const pieces = this.#pieces(id);
+    return { loaded: pieces.filter((piece) => this.#settled.has(piece)).length, total: pieces.length };
+  }
+
+  /** Fetches the area at `at` and every area within the streaming radius of it. */
+  approach(at: [number, number] | null, areas: readonly { id: number; minXz: readonly [number, number]; maxXz: readonly [number, number] }[]): void {
+    if (!at) { return; }
+    for (const area of areas) {
+      const dx = Math.max(area.minXz[0] - at[0], 0, at[0] - area.maxXz[0]);
+      const dz = Math.max(area.minXz[1] - at[1], 0, at[1] - area.maxXz[1]);
+      if (dx * dx + dz * dz <= STREAM_RADIUS_UNITS ** 2) {
+        this.fetch(area.id);
+      }
+    }
+  }
+}
 
 export class WorldView {
   readonly #renderer: ThreeSceneRenderer;
@@ -163,7 +230,7 @@ export class WorldView {
   readonly #models = new QuaterniusUnits((kind) => this.#restClip(kind));
   /** The walk-in inn (#158), drawn from its asset-tooling bundle once loaded. */
   #inn: InnBuilding | null = null;
-  #art: { loaded: number; total: number } | null = null;
+  #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
   readonly #impacts = new ImpactEffects();
@@ -308,20 +375,9 @@ export class WorldView {
     this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new InnBuilding(world.scenery.inn.presenter(), world.scenery.inn.entries());
-    // Greyhaven's art streams in while the player is still choosing a character (#240): the
-    // Ranger, the creature models and the inn, each a separate piece.
-    const pieces: Promise<boolean>[] = [
-      ...UNIT_MODEL_KINDS.map((kind) => this.#models.preload(kind)),
-      this.#inn.load(),
-    ];
-    this.#art = { loaded: 0, total: pieces.length };
-    const art = this.#art;
-    for (const piece of pieces) {
-      void piece.then(() => {
-        art.loaded += 1;
-        this.#onArtProgress?.();
-      });
-    }
+    // Greyhaven's art streams in region by region (#240): the selection screen fetches the
+    // starting area's pieces, and play fetches each area the player approaches.
+    this.#regions = new RegionArt(world, this.#models, this.#inn, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.inn.reachableDoor;
     this.#units = null;
     this.#sceneryFrame = new SceneryFrame(this.#scene);
@@ -647,7 +703,7 @@ export class WorldView {
       this.#units = { viewerId: projection.viewerId, units, pushed: null };
     }
     const units = this.#units.units;
-    for (const kind of UNIT_MODEL_KINDS) { this.#models.ready(kind); }
+    this.#regions?.approach(entitiesSelf(projection), scenery.scenery.areas);
     for (const [kind, clips] of this.#models.drainLoaded()) {
       this.#loadedModels.push([kind, clips]);
       units.modelReady(kind, clips);
@@ -916,9 +972,14 @@ export class WorldView {
     this.#orbit.zoom(-lines);
   }
 
-  /** How many of the world's art pieces have settled (loaded or failed) out of how many. */
-  artProgress(): { loaded: number; total: number } {
-    return { ...(this.#art ?? { loaded: 0, total: 0 }) };
+  /** Starts fetching the art pieces of area `id` (or every area's, for `null`). */
+  prefetchRegion(id: number | null): void {
+    this.#regions?.fetch(id);
+  }
+
+  /** How many of area `id`'s art pieces have settled (loaded or failed) out of how many. */
+  artProgress(id: number | null): { loaded: number; total: number } {
+    return this.#regions?.progress(id) ?? { loaded: 0, total: 0 };
   }
 
   /** Called whenever another art piece settles. */

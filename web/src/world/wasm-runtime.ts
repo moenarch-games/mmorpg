@@ -11,6 +11,11 @@ export async function loadLocalWorld(characters: LocalCharacters): Promise<Local
   return createLocalWorld(generated, characters);
 }
 
+/** The area id of a stored local character's committed location, or null (#240). */
+export function committedArea(characters: LocalCharacters, characterId: string): number | null {
+  return generated.committedArea(characters.entries, characterId) ?? null;
+}
+
 /** The committed level of a stored local character, or null if it was never played. */
 export function committedLevel(characters: LocalCharacters, characterId: string): number | null {
   return generated.committedLevel(characters.entries, characterId) ?? null;

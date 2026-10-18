@@ -88,18 +88,23 @@ impl Kind {
     pub fn of(entity: EntityRef, record: &EntitySnapshot, content: &ZoneContent) -> Option<Self> {
         match entity {
             EntityRef::Player(_) => Some(Self::Ranger),
-            EntityRef::Creature(_) => match content
-                .creature_template(CreatureTemplateId::new(record.appearance))?
-                .family
-            {
-                CreatureFamily::Wolf => Some(Self::Wolf),
-                CreatureFamily::Vermin => Some(Self::Rat),
-                CreatureFamily::Boar => Some(Self::Pig),
-                CreatureFamily::Marauder | CreatureFamily::Mirefin | CreatureFamily::Redbrand => {
-                    None
-                }
-            },
+            EntityRef::Creature(_) => Self::of_family(
+                content
+                    .creature_template(CreatureTemplateId::new(record.appearance))?
+                    .family,
+            ),
             EntityRef::Npc(_) => None,
+        }
+    }
+
+    /// The model creatures of `family` use, if any.
+    #[must_use]
+    pub const fn of_family(family: CreatureFamily) -> Option<Self> {
+        match family {
+            CreatureFamily::Wolf => Some(Self::Wolf),
+            CreatureFamily::Vermin => Some(Self::Rat),
+            CreatureFamily::Boar => Some(Self::Pig),
+            CreatureFamily::Marauder | CreatureFamily::Mirefin | CreatureFamily::Redbrand => None,
         }
     }
 }

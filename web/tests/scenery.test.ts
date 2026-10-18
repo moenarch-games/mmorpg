@@ -80,6 +80,7 @@ describe("scenery provider and local world", () => {
     scenery: () => JSON.stringify(fixtureExport()),
     areaAt: () => areaId,
     reliefAt: (x: number, z: number) => x + z,
+    regionModels: () => JSON.stringify([{ area: 1, models: [] }, { area: 2, models: ["Wolf", "Pig"] }]),
   });
 
   test("routes area and relief queries to the WASM owners", () => {
@@ -87,6 +88,9 @@ describe("scenery provider and local world", () => {
     expect(createSceneryProvider(content(undefined)).areaAt(0, 0)).toBeNull();
     expect(() => createSceneryProvider(content(9)).areaAt(0, 0)).toThrow("missing");
     expect(createSceneryProvider(content(1)).reliefAt(1.4, 2.6)).toBe(4);
+    // Region streaming (#240): each area's creature models, none for unknown areas.
+    expect(createSceneryProvider(content(1)).regionModels(2)).toEqual(["Wolf", "Pig"]);
+    expect(createSceneryProvider(content(1)).regionModels(7)).toEqual([]);
   });
 
   test("refuses scenery or a catalog from another content revision than the zone", () => {
