@@ -47,6 +47,27 @@ class LayoutExportTests(unittest.TestCase):
         ])
         self.assertEqual(len(output["decoration"]), 2)
 
+    def test_generated_ids_do_not_steal_existing_authored_ids(self):
+        source = {
+            **SOURCE,
+            "collision": [{"id": 60000, "position": [2500, 3500]}],
+            "decoration": [
+                {"id": "authored-0001", "kind": "flowers", "position": [1500, 800], "yaw": 0}
+            ],
+        }
+        records = [
+            {"name": "A new house", "kind": "house", "id": "", "position": [-2200, 2000], "yaw": 0},
+            {"name": "A new flowers", "kind": "flowers", "id": "", "position": [1600, 800], "yaw": 0},
+            {"name": "Z existing house", "kind": "house", "id": "60000", "position": [2500, 3500], "yaw": 0},
+            {"name": "Z existing flowers", "kind": "flowers", "id": "authored-0001", "position": [1500, 800], "yaw": 0},
+        ]
+        result, assigned = build_document(source, BASE, records)
+        self.assertEqual(assigned["A new house"], "60001")
+        self.assertEqual(assigned["A new flowers"], "authored-0002")
+        self.assertEqual(assigned["Z existing house"], "60000")
+        self.assertEqual(assigned["Z existing flowers"], "authored-0001")
+        self.assertEqual([row["id"] for row in result["collision"]], [103, 104, 60000, 60001])
+
     def test_unknown_prefab_fails(self):
         with self.assertRaisesRegex(ValueError, "Unsupported"):
             build_document(SOURCE, BASE, [
