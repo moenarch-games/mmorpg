@@ -79,6 +79,69 @@ fn hosts_never_link_presentation_scenery() {
     }
 }
 
+/// physics-engine is a test/bench-only second physics backend (physics-engine #330): the
+/// lockfile lists it under `mmorpg-core` because it is an optional dependency there, so the
+/// boundary is that only `mmorpg-core` declares it, optionally, behind the non-default
+/// `physics-ab` feature, and no other crate (hosts, `mmorpg-wasm`) enables that feature.
+#[test]
+fn production_builds_never_enable_the_physics_ab_backend() {
+    const CORE: &str = include_str!("../../mmorpg-core/Cargo.toml");
+    let declaration = CORE
+        .lines()
+        .find(|line| line.starts_with("physics-engine"))
+        .expect("mmorpg-core declares physics-engine");
+    assert!(declaration.contains("optional = true"), "{declaration}");
+    assert!(CORE.contains("physics-ab = [\"dep:physics-engine\"]"));
+    assert!(
+        !CORE.contains("default = ["),
+        "mmorpg-core has no default features"
+    );
+    for (name, manifest) in [
+        ("mmorpg-game-server", include_str!("../Cargo.toml")),
+        ("mmorpg-wasm", include_str!("../../mmorpg-wasm/Cargo.toml")),
+        (
+            "mmorpg-protocol",
+            include_str!("../../mmorpg-protocol/Cargo.toml"),
+        ),
+        (
+            "mmorpg-scenarios",
+            include_str!("../../mmorpg-scenarios/Cargo.toml"),
+        ),
+        (
+            "mmorpg-client",
+            include_str!("../../mmorpg-client/Cargo.toml"),
+        ),
+        (
+            "mmorpg-scenery",
+            include_str!("../../mmorpg-scenery/Cargo.toml"),
+        ),
+        (
+            "mmorpg-presentation",
+            include_str!("../../mmorpg-presentation/Cargo.toml"),
+        ),
+        (
+            "mmorpg-control-plane",
+            include_str!("../../mmorpg-control-plane/Cargo.toml"),
+        ),
+        (
+            "mmorpg-characters",
+            include_str!("../../mmorpg-characters/Cargo.toml"),
+        ),
+    ] {
+        assert!(
+            !manifest.contains("physics-ab") && !manifest.contains("physics-engine"),
+            "{name} must not enable the physics A/B backend"
+        );
+    }
+    let graph = dependency_graph(LOCKFILE);
+    let users: Vec<_> = graph
+        .iter()
+        .filter(|(_, dependencies)| dependencies.contains(&"physics-engine"))
+        .map(|(name, _)| *name)
+        .collect();
+    assert_eq!(users, ["mmorpg-core"]);
+}
+
 #[test]
 fn a_transitive_presentation_dependency_is_detected() {
     let graph = dependency_graph(

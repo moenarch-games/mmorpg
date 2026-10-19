@@ -10,6 +10,25 @@ publish.workspace = true
 rapier3d.workspace = true
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
+# Test/bench-only second physics backend (physics-engine #330); never in production or WASM.
+physics-engine = { workspace = true, optional = true }
+
+[features]
+# Lets `physics::World` run on physics-engine instead of Rapier, for the `physics_ab` test
+# and example only. Production builds (zone host, `mmorpg-wasm`) never enable it.
+physics-ab = ["dep:physics-engine"]
+
+[dev-dependencies]
+# Reads the bot scenario files the physics A/B test replays.
+toml = { version = "=1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+
+[[test]]
+name = "physics_ab"
+required-features = ["physics-ab"]
+
+[[example]]
+name = "physics_ab"
+required-features = ["physics-ab"]
 
 [lints]
 workspace = true

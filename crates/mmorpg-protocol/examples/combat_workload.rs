@@ -3,6 +3,8 @@ use std::error::Error;
 
 #[path = "../tests/support/combat_workload.rs"]
 mod combat_workload;
+#[path = "../../mmorpg-core/tests/support/greyhaven_workload.rs"]
+mod greyhaven_workload;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let content = mmorpg_core::greyhaven_vale::content();

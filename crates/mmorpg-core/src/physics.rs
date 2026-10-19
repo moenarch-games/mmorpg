@@ -1,54 +1,34 @@
-//! The zone's authoritative physical world, resolved by Rapier (#271, Atlas 2.1.4).
+//! The zone's authoritative physical world (#271, Atlas 2.1.4 and 2.1.6).
 //!
 //! `mmorpg-core` decides movement intent, jumps, gravity and every gameplay outcome; this
-//! module asks Rapier where that intent physically leads. Static content colliders, world
-//! limits, door leaves and NPCs are fixed cuboid colliders. Players and creatures are
-//! kinematic position-based bodies with upright capsule colliders, moved by Rapier's
-//! `KinematicCharacterController`, which resolves contact, sliding and support.
+//! module asks the physics backend where that intent physically leads. Static content
+//! colliders, world limits, door leaves and NPCs are fixed boxes; the flat ground is a floor
+//! half-space and the authored hills a heightfield. Players and creatures are upright capsules
+//! moved by a kinematic character controller, which resolves contact, sliding and support.
 //!
 //! The game speaks centimetre units in `f32`: a moving body's position and velocity (units
 //! per tick) are authoritative here and go into canonical snapshots exactly; gameplay rules
-//! and projections read a rounded whole-unit view ([`RigidBody::position`]). Rapier simulates
-//! in metres, the scale its tolerances and parry's epsilons assume. Nothing of Rapier's own
-//! state is saved: recovery rebuilds this world from the bodies the game restores, and every
-//! step rebuilds it in body-ID order first, so a restored zone continues exactly.
+//! and projections read a rounded whole-unit view ([`RigidBody::position`]).
 //!
-//! The controller's contact queries go through [`queries`], exact closed forms for the
-//! upright capsules and boxes the zone uses, ahead of parry's general GJK/EPA path.
+//! Rapier (`physics/rapier.rs`) is the only backend in every production and WASM build. With
+//! the non-default `physics-ab` feature (the `physics_ab` test and example only,
+//! physics-engine #330), [`World`] can instead run on physics-engine's `approximate::World`
+//! (`physics/engine.rs`) so the same zone simulation can be compared on both; `Backend` and
+//! `using_backend` select it at runtime. No call site changes with the backend.
 
-use std::collections::BTreeMap;
 use std::fmt;
 
-use rapier3d::control::{CharacterLength, KinematicCharacterController};
-use rapier3d::parry::query::{
-    DefaultQueryDispatcher, QueryDispatcher, QueryDispatcherChain, ShapeCastOptions,
-};
-use rapier3d::prelude::{
-    Capsule, ColliderBuilder, ColliderHandle, Cuboid, PhysicsWorld, Pose, QueryFilter,
-    Ray as RapierRay, RigidBodyBuilder, RigidBodyHandle, Rotation, SharedShape, Vector,
-};
-
-use queries::UprightShapes;
-
+#[cfg(feature = "physics-ab")]
+mod engine;
 mod queries;
+mod rapier;
 
-/// Centimetre units per metre.
-const UNITS_PER_METRE: f32 = 100.0;
-/// The gap (in units) Rapier's controller keeps between a body and what it touches: well
-/// above `f32` resolution across the zone and below the half unit projections round away.
+/// The gap (in units) the character controller keeps between a body and what it touches:
+/// well above `f32` resolution across the zone and below the half unit projections round
+/// away. A moving body's backend position is its game centre raised by this offset, so a body
+/// resting on the ground (one offset above it) has its feet exactly on the ground in game
+/// coordinates.
 const CONTACT_OFFSET_UNITS: f32 = 0.25;
-/// [`CONTACT_OFFSET_UNITS`] in metres.
-const CONTACT_OFFSET: f32 = CONTACT_OFFSET_UNITS / UNITS_PER_METRE;
-/// Approaches within 60 degrees of head-on step fully aside in [`World::slide_around`].
-const NEAR_HEAD_ON_COS: f32 = 0.5;
-/// The outward motion (units per tick) [`World::slide_around`] adds against a touching body.
-const SEPARATION_UNITS: f32 = 1.0;
-/// How far (in metres) below a body the controller still finds the ground: its contact
-/// offset plus the fixed 5 cm its grounded test predicts. Support queries and snapping use
-/// the same reach.
-const SUPPORT_REACH: f32 = CONTACT_OFFSET + 0.05;
-/// A ground gap (units) below this counts as standing on it.
-const GAP_TOLERANCE_UNITS: f32 = 1.0e-3;
 
 /// An integer vector in units: the rounded view gameplay rules read, and static geometry.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -248,7 +228,7 @@ impl RigidBody {
         self.half_extents
     }
 
-    const fn is_moving(&self) -> bool {
+    pub(crate) const fn is_moving(&self) -> bool {
         matches!(self.kind, Kind::Moving)
     }
 }
@@ -296,14 +276,6 @@ impl DebrisBody {
     }
 }
 
-/// A piece slower than this (units per tick) and turning slower than [`DEBRIS_REST_SPIN`]
-/// (radians per tick) settles.
-const DEBRIS_REST_SPEED_UNITS: f32 = 0.6;
-const DEBRIS_REST_SPIN: f32 = 0.03;
-/// Fixed geometry this far (units) around the pieces takes part in a debris step.
-const DEBRIS_REACH_UNITS: f32 = 1_000.0;
-const TICKS_PER_SECOND: f32 = 30.0;
-
 /// What one step did.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StepStats {
@@ -315,582 +287,218 @@ pub struct StepStats {
     pub bodies: usize,
 }
 
-/// A body's Rapier handles.
-#[derive(Clone, Copy)]
-struct Handles {
-    body: Option<RigidBodyHandle>,
-    collider: ColliderHandle,
+/// Which physics backend a [`World`] runs on (physics-engine #330, test/bench only).
+#[cfg(feature = "physics-ab")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Backend {
+    /// Rapier, the production authority.
+    Rapier,
+    /// physics-engine's `approximate::World`; debris stays on Rapier.
+    Engine,
 }
 
-/// The authored ground as a Rapier heightfield (#159).
+#[cfg(feature = "physics-ab")]
+impl Backend {
+    pub const ALL: [Self; 2] = [Self::Rapier, Self::Engine];
+
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Rapier => "rapier",
+            Self::Engine => "physics-engine",
+        }
+    }
+}
+
+#[cfg(feature = "physics-ab")]
+thread_local! {
+    static DEFAULT_BACKEND: std::cell::Cell<Backend> = const { std::cell::Cell::new(Backend::Rapier) };
+}
+
+/// Runs `run` with every [`World::new`] on this thread using `backend`, so whole zones (and
+/// their recoveries) are built on it without any call site naming a backend.
+#[cfg(feature = "physics-ab")]
+pub fn using_backend<R>(backend: Backend, run: impl FnOnce() -> R) -> R {
+    struct Restore(Backend);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            DEFAULT_BACKEND.with(|cell| cell.set(self.0));
+        }
+    }
+    let _restore = Restore(DEFAULT_BACKEND.with(|cell| cell.replace(backend)));
+    run()
+}
+
+// Rapier stays inline: it is the only variant in production builds. The engine variant exists
+// only with `physics-ab` and is boxed.
+#[cfg_attr(feature = "physics-ab", allow(clippy::large_enum_variant))]
 #[derive(Clone)]
-struct Ground {
-    id: BodyId,
-    terrain: crate::Terrain,
-    collider: Option<ColliderHandle>,
+enum Worlds {
+    Rapier(rapier::World),
+    #[cfg(feature = "physics-ab")]
+    Engine(Box<engine::World>),
 }
 
+/// The zone's physical world, on Rapier unless `physics-ab` selects physics-engine.
 pub struct World {
-    gravity: [f32; 3],
-    ground: Option<Ground>,
-    world: PhysicsWorld,
-    queries: QueryDispatcherChain<UprightShapes, DefaultQueryDispatcher>,
-    controller: KinematicCharacterController,
-    bodies: BTreeMap<BodyId, RigidBody>,
-    handles: BTreeMap<BodyId, Handles>,
+    worlds: Worlds,
+    /// Nanoseconds spent in this world's calls, debris excluded (`physics-ab` timing).
+    #[cfg(feature = "physics-ab")]
+    spent: std::sync::atomic::AtomicU64,
 }
 
 impl fmt::Debug for World {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("World")
-            .field("bodies", &self.bodies.len())
-            .finish_non_exhaustive()
+        match &self.worlds {
+            Worlds::Rapier(world) => world.fmt(formatter),
+            #[cfg(feature = "physics-ab")]
+            Worlds::Engine(world) => world.fmt(formatter),
+        }
     }
 }
 
 impl Clone for World {
     fn clone(&self) -> Self {
-        let mut world = Self::new(round(self.gravity));
-        world.gravity = self.gravity;
-        world.bodies = self.bodies.clone();
-        world.ground = self.ground.clone();
-        world.rebuild();
-        world
-    }
-}
-
-fn metres(value: [f32; 3]) -> Vector {
-    Vector::new(value[0], value[1], value[2]) / UNITS_PER_METRE
-}
-
-/// A moving body's Rapier position: its game centre raised by the contact offset, so a body
-/// the controller rests on the ground (one offset above it) has its feet exactly on the
-/// ground in game coordinates.
-fn lifted(value: [f32; 3]) -> Vector {
-    metres(value) + Vector::new(0.0, CONTACT_OFFSET, 0.0)
-}
-
-fn units(value: Vector) -> [f32; 3] {
-    let value = value * UNITS_PER_METRE;
-    [value.x, value.y, value.z]
-}
-
-fn empty_world() -> PhysicsWorld {
-    let mut world = PhysicsWorld::new();
-    // Gravity and jumps are movement intent the zone integrates: nothing is dynamic.
-    world.gravity = Vector::ZERO;
-    world.integration_parameters.dt = 1.0 / 30.0;
-    world
-}
-
-/// An upright capsule as wide and tall as `half_extents`, in metres.
-fn capsule(half_extents: Vec3i) -> Capsule {
-    #[allow(clippy::cast_precision_loss)]
-    let radius = half_extents.x.max(half_extents.z) as f32;
-    #[allow(clippy::cast_precision_loss)]
-    let half_height = (half_extents.y as f32 - radius).max(0.0);
-    Capsule::new_y(half_height / UNITS_PER_METRE, radius / UNITS_PER_METRE)
-}
-
-fn cuboid(half_extents: Vec3i) -> Cuboid {
-    Cuboid::new(metres(exact(half_extents)))
-}
-
-fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
-    let user_data = u128::from(body.id.0);
-    if body.is_moving() {
-        let handle = world.bodies.insert(
-            RigidBodyBuilder::kinematic_position_based()
-                .translation(lifted(body.position))
-                .build(),
-        );
-        let collider = world.colliders.insert_with_parent(
-            ColliderBuilder::new(SharedShape::new(capsule(body.half_extents)))
-                .user_data(user_data)
-                .build(),
-            handle,
-            &mut world.bodies,
-        );
-        Handles {
-            body: Some(handle),
-            collider,
-        }
-    } else if matches!(body.kind, Kind::Floor) {
-        let collider = world.colliders.insert(
-            ColliderBuilder::new(SharedShape::halfspace(Vector::Y))
-                .translation(metres(body.position))
-                .user_data(user_data)
-                .build(),
-        );
-        Handles {
-            body: None,
-            collider,
-        }
-    } else {
-        let collider = world.colliders.insert(
-            ColliderBuilder::new(SharedShape::new(cuboid(body.half_extents)))
-                .translation(metres(body.position))
-                .user_data(user_data)
-                .build(),
-        );
-        Handles {
-            body: None,
-            collider,
+        Self {
+            worlds: self.worlds.clone(),
+            #[cfg(feature = "physics-ab")]
+            spent: std::sync::atomic::AtomicU64::new(
+                self.spent.load(std::sync::atomic::Ordering::Relaxed),
+            ),
         }
     }
 }
 
-/// Inserts `terrain` as a heightfield collider: its rows run along +Z and its columns along +X.
-fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain) -> ColliderHandle {
-    let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
-    // Parry's heightfield is column-major with rows along Z: entry (row, column) at row + column × rows.
-    let mut data = vec![0.0; columns * rows];
-    for row in 0..rows {
-        for column in 0..columns {
-            #[allow(clippy::cast_precision_loss)]
-            let height = terrain.heights[row * columns + column] as f32 / UNITS_PER_METRE;
-            data[row + column * rows] = height;
-        }
-    }
-    #[allow(clippy::cast_precision_loss)]
-    let extent = |count: usize| (count - 1) as f32 * terrain.step as f32;
-    let (width, depth) = (extent(columns), extent(rows));
-    #[allow(clippy::cast_precision_loss)]
-    let centre = [
-        terrain.origin[0] as f32 + width / 2.0,
-        0.0,
-        terrain.origin[1] as f32 + depth / 2.0,
-    ];
-    let mut field = rapier3d::parry::shape::HeightField::new(
-        rapier3d::parry::utils::Array2::new(rows, columns, data),
-        Vector::new(width / UNITS_PER_METRE, 1.0, depth / UNITS_PER_METRE),
-    );
-    // Flat cells are left to the floor half-space, whose exact queries keep resting bodies
-    // still; parry's heightfield contacts let them sink by fractions of a unit (#159).
-    for row in 0..rows - 1 {
-        for column in 0..columns - 1 {
-            let flat = [
-                (row, column),
-                (row + 1, column),
-                (row, column + 1),
-                (row + 1, column + 1),
-            ]
-            .iter()
-            .all(|&(r, c)| terrain.heights[r * columns + c] == 0);
-            if flat {
-                field.set_cell_status(
-                    row,
-                    column,
-                    rapier3d::parry::shape::HeightFieldCellStatus::CELL_REMOVED,
-                );
-            }
-        }
-    }
-    world.colliders.insert(
-        ColliderBuilder::new(SharedShape::new(field))
-            .translation(metres(centre))
-            .user_data(u128::from(id.0))
-            .build(),
-    )
+/// Calls the same method on whichever backend `$worlds` holds; with `physics-ab`, the call's
+/// wall-clock time is added to the world's [`World::spent_nanos`].
+macro_rules! dispatch {
+    ($self:ident, $worlds:expr, $world:ident => $call:expr) => {{
+        #[cfg(feature = "physics-ab")]
+        let started = std::time::Instant::now();
+        let result = match $worlds {
+            Worlds::Rapier($world) => $call,
+            #[cfg(feature = "physics-ab")]
+            Worlds::Engine($world) => $call,
+        };
+        #[cfg(feature = "physics-ab")]
+        $self.spent.fetch_add(
+            u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        result
+    }};
 }
 
 impl World {
     /// An empty world; `gravity` is in units per tick squared.
     #[must_use]
     pub fn new(gravity: Vec3i) -> Self {
-        Self {
-            gravity: exact(gravity),
-            ground: None,
-            world: empty_world(),
-            queries: UprightShapes.chain(DefaultQueryDispatcher),
-            controller: KinematicCharacterController {
-                up: Vector::Y,
-                offset: CharacterLength::Absolute(CONTACT_OFFSET),
-                slide: true,
-                // No stairs or ledges exist yet (#59 adds slopes and steps).
-                autostep: None,
-                max_slope_climb_angle: std::f32::consts::FRAC_PI_4,
-                min_slope_slide_angle: std::f32::consts::FRAC_PI_4,
-                snap_to_ground: Some(CharacterLength::Absolute(SUPPORT_REACH)),
-                normal_nudge_factor: KinematicCharacterController::default().normal_nudge_factor,
-            },
-            bodies: BTreeMap::new(),
-            handles: BTreeMap::new(),
+        #[cfg(feature = "physics-ab")]
+        {
+            Self::with_backend(gravity, DEFAULT_BACKEND.with(std::cell::Cell::get))
+        }
+        #[cfg(not(feature = "physics-ab"))]
+        {
+            Self {
+                worlds: Worlds::Rapier(rapier::World::new(gravity)),
+            }
         }
     }
 
+    /// An empty world on `backend`.
+    #[cfg(feature = "physics-ab")]
+    #[must_use]
+    pub fn with_backend(gravity: Vec3i, backend: Backend) -> Self {
+        let worlds = match backend {
+            Backend::Rapier => Worlds::Rapier(rapier::World::new(gravity)),
+            Backend::Engine => Worlds::Engine(Box::new(engine::World::new(gravity))),
+        };
+        Self {
+            worlds,
+            spent: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    #[cfg(feature = "physics-ab")]
+    #[must_use]
+    pub const fn backend(&self) -> Backend {
+        match self.worlds {
+            Worlds::Rapier(_) => Backend::Rapier,
+            Worlds::Engine(_) => Backend::Engine,
+        }
+    }
+
+    /// Wall-clock nanoseconds spent in this world's calls since it was created: the whole
+    /// physics path of the zone (steps, queries and body updates), debris excluded.
+    #[cfg(feature = "physics-ab")]
+    #[must_use]
+    pub fn spent_nanos(&self) -> u64 {
+        self.spent.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn add_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
-        if self.bodies.contains_key(&body.id) {
-            return Err(error(format!("physics body {} already exists", body.id.0)));
-        }
-        if body
-            .position
-            .iter()
-            .chain(&body.velocity)
-            .any(|value| !value.is_finite())
-        {
-            return Err(error("physics body state must be finite"));
-        }
-        let handles = insert(&mut self.world, &body);
-        self.handles.insert(body.id, handles);
-        self.bodies.insert(body.id, body);
-        self.refresh();
-        Ok(())
+        dispatch!(self, &mut self.worlds, world => world.add_body(body))
     }
 
     /// Replaces an existing body, for example a door leaf moving to its other box.
     pub fn replace_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
-        if self.remove_body(body.id).is_none() {
-            return Err(error(format!("physics body {} is missing", body.id.0)));
-        }
-        self.add_body(body)
+        dispatch!(self, &mut self.worlds, world => world.replace_body(body))
     }
 
     pub fn remove_body(&mut self, id: BodyId) -> Option<RigidBody> {
-        let body = self.bodies.remove(&id)?;
-        if let Some(handles) = self.handles.remove(&id) {
-            match handles.body {
-                Some(handle) => {
-                    self.world.remove_body(handle);
-                }
-                None => {
-                    self.world.remove_collider(handles.collider);
-                }
-            }
-        }
-        self.refresh();
-        Some(body)
+        dispatch!(self, &mut self.worlds, world => world.remove_body(id))
     }
 
     #[must_use]
     pub fn body(&self, id: BodyId) -> Option<&RigidBody> {
-        self.bodies.get(&id)
+        match &self.worlds {
+            Worlds::Rapier(world) => world.body(id),
+            #[cfg(feature = "physics-ab")]
+            Worlds::Engine(world) => world.body(id),
+        }
     }
 
     /// Places a moving body at `position` without resolving contact: placement by the zone
     /// (respawns, evade resets, recovery), never movement.
     pub fn set_position(&mut self, id: BodyId, position: Vec3i) -> Result<(), PhysicsError> {
-        self.place(id, exact(position))
-    }
-
-    fn place(&mut self, id: BodyId, position: [f32; 3]) -> Result<(), PhysicsError> {
-        let body = self
-            .bodies
-            .get_mut(&id)
-            .filter(|body| body.is_moving())
-            .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
-        if body.position == position {
-            return Ok(());
-        }
-        body.position = position;
-        let handle = self.handles.get(&id).and_then(|handles| handles.body);
-        if let Some(rapier) = handle.and_then(|handle| self.world.bodies.get_mut(handle)) {
-            rapier.set_translation(lifted(position), false);
-        }
-        self.refresh();
-        Ok(())
+        dispatch!(self, &mut self.worlds, world => world.set_position(id, position))
     }
 
     pub fn set_velocity(&mut self, id: BodyId, velocity: Vec3i) -> Result<(), PhysicsError> {
-        let body = self
-            .bodies
-            .get_mut(&id)
-            .filter(|body| body.is_moving())
-            .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
-        body.velocity = exact(velocity);
-        Ok(())
+        dispatch!(self, &mut self.worlds, world => world.set_velocity(id, velocity))
     }
 
-    /// Rebuilds the Rapier world from the bodies in ID order. Rapier's broad phase depends on
-    /// the history of insertions, removals and moves, and the controller breaks exact ties
-    /// between equally near contacts by its traversal order; rebuilding first makes each
-    /// step a function of zone state alone.
-    fn rebuild(&mut self) {
-        let mut world = empty_world();
-        self.handles = self
-            .bodies
-            .values()
-            .map(|body| (body.id, insert(&mut world, body)))
-            .collect();
-        if let Some(ground) = self.ground.as_mut() {
-            ground.collider = Some(insert_ground(&mut world, ground.id, &ground.terrain));
-        }
-        self.world = world;
-        self.refresh();
-    }
-
-    /// Lays the authored ground as a heightfield collider identified as `id` (#159).
+    /// Lays the authored ground as a heightfield identified as `id` (#159).
     pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
-        if let Some(handle) = self.ground.as_ref().and_then(|ground| ground.collider) {
-            self.world.remove_collider(handle);
-        }
-        let collider = insert_ground(&mut self.world, id, &terrain);
-        self.ground = Some(Ground {
-            id,
-            terrain,
-            collider: Some(collider),
-        });
-        self.refresh();
+        dispatch!(self, &mut self.worlds, world => world.set_terrain(id, terrain));
     }
 
     /// The height (units) of the authored ground straight below or above `(x, z)`, if any.
     #[must_use]
     pub fn terrain_height(&self, x: i32, z: i32) -> Option<f32> {
-        let handle = self.ground.as_ref()?.collider?;
-        let predicate =
-            |collider: ColliderHandle, _: &rapier3d::prelude::Collider| collider == handle;
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            QueryFilter::default().predicate(&predicate),
-        );
-        #[allow(clippy::cast_precision_loss)]
-        let top = crate::MAX_TERRAIN_HEIGHT_UNITS as f32 + 100.0;
-        // A ray straight down a heightfield's grid line can slip between its cells' triangles;
-        // a hundredth of a unit aside it always meets one.
-        let ray = RapierRay::new(metres([x as f32 + 0.01, top, z as f32 + 0.01]), -Vector::Y);
-        let (_, time_of_impact) = queries.cast_ray(&ray, 2.0 * top / UNITS_PER_METRE, true)?;
-        Some(top - time_of_impact * UNITS_PER_METRE)
+        dispatch!(self, &self.worlds, world => world.terrain_height(x, z))
     }
 
     /// Advances one tick: each moving body, in ID order, gains gravity and asks the character
     /// controller where its velocity leads. Landing on ground or meeting a ceiling ends its
     /// vertical velocity.
     pub fn step(&mut self) -> Result<StepStats, PhysicsError> {
-        self.rebuild();
-        let ids: Vec<_> = self
-            .bodies
-            .values()
-            .filter(|body| body.is_moving())
-            .map(|body| body.id)
-            .collect();
-        let mut moved_bodies = 0;
-        let moving_count = ids.len();
-        for id in ids {
-            let body = *self
-                .bodies
-                .get(&id)
-                .ok_or_else(|| error("moving body vanished"))?;
-            let mut velocity = body.velocity;
-            // A body on the ground stays on it unless it jumps: gravity would only press it
-            // into the ground, which the controller answers with a nudge back up. A body just
-            // above the ground settles onto it.
-            let mut settle = 0.0;
-            match self.ground_gap(&body, body.position) {
-                Some(gap) if velocity[1] <= 0.0 => {
-                    velocity[1] = 0.0;
-                    if gap > GAP_TOLERANCE_UNITS {
-                        settle = -gap;
-                    }
-                }
-                _ => {
-                    for (axis, gravity) in velocity.iter_mut().zip(self.gravity) {
-                        *axis += gravity;
-                    }
-                }
-            }
-            let desired = [velocity[0], velocity[1] + settle, velocity[2]];
-            // A body with nowhere to go stays exactly where it is: asked to move nowhere, the
-            // controller still snaps and nudges it by fractions of a unit.
-            if desired == [0.0; 3] {
-                self.bodies
-                    .get_mut(&id)
-                    .ok_or_else(|| error("moving body vanished"))?
-                    .velocity = velocity;
-                continue;
-            }
-            let desired = self.slide_around(&body, desired);
-            let (moved, grounded) = self.move_shape(&body, desired)?;
-            let to = [
-                body.position[0] + moved[0],
-                body.position[1] + moved[1],
-                body.position[2] + moved[2],
-            ];
-            let supported = grounded && self.ground_below(&body, to);
-            if (supported && velocity[1] <= 0.0)
-                || (velocity[1] > 0.0 && moved[1] < velocity[1] - 1.0e-3)
-            {
-                velocity[1] = 0.0;
-            }
-            if moved != [0.0; 3] {
-                moved_bodies += 1;
-            }
-            // The horizontal velocity is what contact let the body realize this tick.
-            velocity[0] = moved[0];
-            velocity[2] = moved[2];
-            self.place(id, to)?;
-            self.bodies
-                .get_mut(&id)
-                .ok_or_else(|| error("moving body vanished"))?
-                .velocity = velocity;
-        }
-        Ok(StepStats {
-            moving: moving_count,
-            moved_bodies,
-            bodies: self.bodies.len(),
-        })
-    }
-
-    /// `desired` with the horizontal part that presses into a touching moving capsule turned
-    /// along it, so characters slide around each other instead of locking head-on: Rapier's
-    /// controller only stops a kinematic body at another (#273; physics-engine #308 will do
-    /// this natively). Within 60 degrees of head-on, both step aside to opposite sides at full
-    /// speed.
-    fn slide_around(&self, body: &RigidBody, desired: [f32; 3]) -> [f32; 3] {
-        let [mut vx, vy, mut vz] = desired;
-        let speed = vx.hypot(vz);
-        if speed == 0.0 {
-            return desired;
-        }
-        #[allow(clippy::cast_precision_loss)]
-        let radius = |half: Vec3i| half.x.max(half.z) as f32;
-        #[allow(clippy::cast_precision_loss)]
-        let (low, high) = (
-            body.position[1] - body.half_extents.y as f32,
-            body.position[1] + body.half_extents.y as f32,
-        );
-        for other in self.bodies.values() {
-            if other.id == body.id || !other.is_moving() {
-                continue;
-            }
-            #[allow(clippy::cast_precision_loss)]
-            let other_half_y = other.half_extents.y as f32;
-            if other.position[1] + other_half_y < low || other.position[1] - other_half_y > high {
-                continue;
-            }
-            let (dx, dz) = (
-                body.position[0] - other.position[0],
-                body.position[2] - other.position[2],
-            );
-            let distance = dx.hypot(dz);
-            let reach =
-                radius(body.half_extents) + radius(other.half_extents) + CONTACT_OFFSET_UNITS + 1.0;
-            if distance == 0.0 || distance > reach {
-                continue;
-            }
-            // `n` points from the other body to this one; only motion against it is turned.
-            let (nx, nz) = (dx / distance, dz / distance);
-            let into = vx * nx + vz * nz;
-            if into >= 0.0 {
-                continue;
-            }
-            // The tangent (-nz, nx) is mirrored for the other body, whose `n` is opposite.
-            let (tx, tz) = (-nz, nx);
-            let along = vx * tx + vz * tz;
-            let along = if into < -NEAR_HEAD_ON_COS * speed {
-                // Near head-on, projecting would leave a crawl: step aside at full speed, to
-                // the side the motion already leans or, exactly head-on, the tangent's side
-                // (opposite for the two bodies, so they never pick the same one).
-                let side = if along.abs() > 1.0e-3 * speed {
-                    along.signum()
-                } else {
-                    1.0
-                };
-                side * speed
-            } else {
-                along
-            };
-            // A little outward motion too: against a touching capsule Rapier's controller
-            // otherwise stops even motion along it.
-            vx = along * tx + SEPARATION_UNITS * nx;
-            vz = along * tz + SEPARATION_UNITS * nz;
-        }
-        [vx, vy, vz]
-    }
-
-    /// The translation (units) the controller applies to `body` for `desired`, and whether
-    /// it ends grounded.
-    fn move_shape(
-        &self,
-        body: &RigidBody,
-        desired: [f32; 3],
-    ) -> Result<([f32; 3], bool), PhysicsError> {
-        let handle = self
-            .handles
-            .get(&body.id)
-            .and_then(|handles| handles.body)
-            .ok_or_else(|| error("moving body has no Rapier body"))?;
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            QueryFilter::default().exclude_rigid_body(handle),
-        );
-        let movement = self.controller.move_shape(
-            self.world.integration_parameters.dt,
-            &queries,
-            &capsule(body.half_extents),
-            &Pose::from_translation(lifted(body.position)),
-            metres(desired),
-            |_| {},
-        );
-        Ok((units(movement.translation), movement.grounded))
-    }
-
-    /// Whether static ground lies within the support reach below `body` placed at `position`;
-    /// another unit's body is no ground.
-    fn ground_below(&self, body: &RigidBody, position: [f32; 3]) -> bool {
-        self.ground_gap(body, position).is_some()
-    }
-
-    /// How far (units) static ground within the support reach lies below `body` at
-    /// `position`, beyond the controller's contact offset.
-    fn ground_gap(&self, body: &RigidBody, position: [f32; 3]) -> Option<f32> {
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            QueryFilter::only_fixed(),
-        );
-        queries
-            .cast_shape(
-                &Pose::from_translation(lifted(position)),
-                -Vector::Y,
-                &capsule(body.half_extents),
-                ShapeCastOptions {
-                    target_distance: CONTACT_OFFSET,
-                    stop_at_penetration: false,
-                    max_time_of_impact: SUPPORT_REACH,
-                    compute_impact_geometry_on_penetration: true,
-                },
-            )
-            .filter(|(_, hit)| {
-                hit.normal1.dot(Vector::Y) >= self.controller.max_slope_climb_angle.cos()
-            })
-            .map(|(_, hit)| hit.time_of_impact * UNITS_PER_METRE)
+        dispatch!(self, &mut self.worlds, world => world.step())
     }
 
     /// Whether a moving body stands on static ground.
     #[must_use]
     pub fn grounded(&self, id: BodyId) -> bool {
-        self.bodies
-            .get(&id)
-            .filter(|body| body.is_moving())
-            .is_some_and(|body| self.ground_below(body, body.position))
+        dispatch!(self, &self.worlds, world => world.grounded(id))
     }
 
     /// Every body whose shape intersects the box, in ID order.
     ///
     /// Rapier's `intersect_shape` silently skips cuboid–heightfield pairs (parry reports them
-    /// unsupported), so the terrain never shows up here. Door probes (`door::leaf_blocked`)
-    /// only look for units, so that is harmless for now.
+    /// unsupported), so on Rapier the terrain never shows up here. Door probes
+    /// (`door::leaf_blocked`) only look for units, so that is harmless for now.
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            QueryFilter::default(),
-        );
-        let shape = cuboid(aabb.half_extents);
-        let mut hits: Vec<_> = queries
-            .intersect_shape(Pose::from_translation(metres(exact(aabb.center))), &shape)
-            .map(|(_, collider)| BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX)))
-            .collect();
-        hits.sort_unstable();
-        hits.dedup();
-        Ok(hits)
+        dispatch!(self, &self.worlds, world => world.overlap_query(aabb))
     }
 
     /// Whether a body accepted by `blocks` lies on the segment from `origin` along
@@ -901,63 +509,19 @@ impl World {
         translation: Vec3i,
         blocks: impl Fn(BodyId) -> bool,
     ) -> bool {
-        if translation == Vec3i::ZERO {
-            return false;
-        }
-        let predicate = |_, collider: &rapier3d::prelude::Collider| {
-            blocks(BodyId(
-                u64::try_from(collider.user_data).unwrap_or(u64::MAX),
-            ))
-        };
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            QueryFilter::default().predicate(&predicate),
-        );
-        queries
-            .cast_ray(
-                &RapierRay::new(metres(exact(origin)), metres(exact(translation))),
-                1.0,
-                true,
-            )
-            .is_some_and(|(_, time_of_impact)| time_of_impact < 1.0)
+        dispatch!(self, &self.worlds, world => world.segment_blocked(origin, translation, &blocks))
     }
 
     /// The first body accepted by `hits` on the segment from `origin` along `translation`
-    /// (units), with the hit's fraction of the segment and its surface normal (#286). Rapier
-    /// rays see every collider kind, terrain heightfield included.
+    /// (units), with the hit's fraction of the segment and its surface normal (#286). Rays
+    /// see every collider kind, terrain heightfield included.
     pub fn cast_ray(
         &self,
         origin: [f32; 3],
         translation: [f32; 3],
         hits: impl Fn(BodyId) -> bool,
     ) -> Option<RayHit> {
-        if translation == [0.0; 3] {
-            return None;
-        }
-        let predicate = |_, collider: &rapier3d::prelude::Collider| {
-            hits(BodyId(
-                u64::try_from(collider.user_data).unwrap_or(u64::MAX),
-            ))
-        };
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            QueryFilter::default().predicate(&predicate),
-        );
-        let (handle, hit) = queries.cast_ray_and_get_normal(
-            &RapierRay::new(metres(origin), metres(translation)),
-            1.0,
-            true,
-        )?;
-        let collider = self.world.colliders.get(handle)?;
-        Some(RayHit {
-            body: BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX)),
-            fraction: hit.time_of_impact,
-            normal: [hit.normal.x, hit.normal.y, hit.normal.z],
-        })
+        dispatch!(self, &self.worlds, world => world.cast_ray(origin, translation, &hits))
     }
 
     /// Advances `debris` (#288) one tick: Rapier steps a world of the pieces still moving as
@@ -965,97 +529,17 @@ impl World {
     /// game's state in slice order like every step here. A piece that slows below the rest
     /// thresholds settles once `settle` allows it. Returns how many pieces moved.
     ///
+    /// Debris always runs on Rapier, whichever backend the world uses (physics-engine #330
+    /// parks dynamics), and is excluded from [`World::spent_nanos`].
+    ///
     /// Rapier gap (#288): rebuilding each tick drops the solver's warm-start contact impulses,
     /// so a resting stack jitters; pieces settle into fixed obstacles instead of sleeping.
     pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
-        let moving = debris.iter().filter(|piece| !piece.resting).count();
-        if moving == 0 {
-            return 0;
+        match &self.worlds {
+            Worlds::Rapier(world) => world.step_debris(debris, settle),
+            #[cfg(feature = "physics-ab")]
+            Worlds::Engine(world) => world.step_debris(debris, settle),
         }
-        let mut world = empty_world();
-        let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND;
-        world.gravity = metres(self.gravity) * per_second;
-        let (mut low, mut high) = ([f32::MAX; 3], [f32::MIN; 3]);
-        for piece in debris.iter() {
-            for axis in 0..3 {
-                low[axis] = low[axis].min(piece.position[axis] - DEBRIS_REACH_UNITS);
-                high[axis] = high[axis].max(piece.position[axis] + DEBRIS_REACH_UNITS);
-            }
-        }
-        for body in self.bodies.values().filter(|body| !body.is_moving()) {
-            #[allow(clippy::cast_precision_loss)]
-            let near = matches!(body.kind, Kind::Floor)
-                || (0..3).all(|axis| {
-                    let half = [
-                        body.half_extents.x,
-                        body.half_extents.y,
-                        body.half_extents.z,
-                    ][axis] as f32;
-                    body.position[axis] + half >= low[axis]
-                        && body.position[axis] - half <= high[axis]
-                });
-            if near {
-                insert(&mut world, body);
-            }
-        }
-        if let Some(ground) = self.ground.as_ref() {
-            insert_ground(&mut world, ground.id, &ground.terrain);
-        }
-        let pose = |piece: &DebrisBody| {
-            let [x, y, z, w] = piece.rotation;
-            Pose::from_parts(metres(piece.position), Rotation::from_xyzw(x, y, z, w))
-        };
-        let mut handles = Vec::with_capacity(debris.len());
-        for piece in debris.iter() {
-            let shape = SharedShape::new(cuboid(piece.half_extents));
-            let collider = ColliderBuilder::new(shape)
-                .friction(0.8)
-                .restitution(0.15)
-                .density(600.0);
-            if piece.resting {
-                world
-                    .colliders
-                    .insert(collider.position(pose(piece)).build());
-                handles.push(None);
-                continue;
-            }
-            let handle = world.bodies.insert(
-                RigidBodyBuilder::dynamic()
-                    .pose(pose(piece))
-                    .linvel(metres(piece.velocity) * TICKS_PER_SECOND)
-                    .angvel(Vector::from(piece.spin) * TICKS_PER_SECOND)
-                    .linear_damping(0.2)
-                    .angular_damping(0.8)
-                    .build(),
-            );
-            world
-                .colliders
-                .insert_with_parent(collider.build(), handle, &mut world.bodies);
-            handles.push(Some(handle));
-        }
-        world.step();
-        for ((piece, handle), &settles) in debris.iter_mut().zip(handles).zip(settle) {
-            let Some(body) = handle.and_then(|handle| world.bodies.get(handle)) else {
-                continue;
-            };
-            piece.position = units(body.translation());
-            piece.rotation = body.rotation().normalize().to_array();
-            piece.velocity = units(body.linvel() / TICKS_PER_SECOND);
-            piece.spin = (body.angvel() / TICKS_PER_SECOND).to_array();
-            let speed = piece.velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
-            let spin = piece.spin.iter().map(|v| v * v).sum::<f32>().sqrt();
-            if settles && speed < DEBRIS_REST_SPEED_UNITS && spin < DEBRIS_REST_SPIN {
-                piece.resting = true;
-                piece.velocity = [0.0; 3];
-                piece.spin = [0.0; 3];
-            }
-        }
-        moving
-    }
-
-    /// Brings Rapier's broad phase (the query structure) up to date.
-    fn refresh(&mut self) {
-        self.world.detect_collisions(&(), &());
     }
 }
 
@@ -1065,6 +549,13 @@ mod tests {
 
     const BODY: Vec3i = Vec3i::new(30, 90, 30);
 
+    /// Runs `test` on Rapier and, with `physics-ab`, again on physics-engine.
+    fn on_each_backend(test: fn()) {
+        test();
+        #[cfg(feature = "physics-ab")]
+        using_backend(Backend::Engine, test);
+    }
+
     fn world() -> World {
         let mut world = World::new(Vec3i::new(0, -1, 0));
         world.add_body(RigidBody::floor(BodyId(1), 0)).unwrap();
@@ -1073,6 +564,10 @@ mod tests {
 
     #[test]
     fn a_unit_falls_lands_and_walks_into_a_wall() {
+        on_each_backend(a_unit_falls_lands_and_walks_into_a_wall_on);
+    }
+
+    fn a_unit_falls_lands_and_walks_into_a_wall_on() {
         let mut world = world();
         world
             .add_body(RigidBody::fixed(
@@ -1123,6 +618,10 @@ mod tests {
 
     #[test]
     fn characters_meeting_head_on_slide_around_each_other() {
+        on_each_backend(characters_meeting_head_on_slide_around_each_other_on);
+    }
+
+    fn characters_meeting_head_on_slide_around_each_other_on() {
         let mut world = world();
         world
             .add_body(RigidBody::dynamic(
@@ -1160,6 +659,10 @@ mod tests {
 
     #[test]
     fn characters_meeting_off_axis_slide_around_each_other() {
+        on_each_backend(characters_meeting_off_axis_slide_around_each_other_on);
+    }
+
+    fn characters_meeting_off_axis_slide_around_each_other_on() {
         // Head-on and slightly off-axis pairs, at walking and running speeds, both ways round.
         let mut stuck = Vec::new();
         for offset in [0, 1, 3, 5, 8, 12, 20, 30, 45] {
@@ -1207,6 +710,10 @@ mod tests {
 
     #[test]
     fn queries_see_bodies_and_rebuilt_worlds_continue_exactly() {
+        on_each_backend(queries_see_bodies_and_rebuilt_worlds_continue_exactly_on);
+    }
+
+    fn queries_see_bodies_and_rebuilt_worlds_continue_exactly_on() {
         let mut world = world();
         world
             .add_body(RigidBody::dynamic(

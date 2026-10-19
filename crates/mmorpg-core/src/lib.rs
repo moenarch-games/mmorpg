@@ -33,6 +33,8 @@ mod interest;
 mod inventory;
 mod loot;
 pub mod physics;
+#[cfg(feature = "physics-ab")]
+pub mod physics_ab;
 mod progression;
 mod projectile;
 mod projection;
