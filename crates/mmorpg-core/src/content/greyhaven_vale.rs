@@ -34,8 +34,8 @@ pub mod units;
 /// revision 16 composes the saved Outpost layout overrides (#321); revision 17 adds the
 /// Hill Ogre, a large creature that shoves and stomps (#297); revision 18 adds the mill
 /// hoist, a moving platform (#56); revision 19 adds the mill's loading dock and its ramps
-/// (#59).
-pub const REVISION: u64 = 19;
+/// (#59); revision 20 adds the Redbrand watch post, a destructible structure (#305).
+pub const REVISION: u64 = 20;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -104,6 +104,8 @@ pub mod ids {
     pub const TENTS: RangeInclusive<u32> = 420..=422;
     pub const CRATES: RangeInclusive<u32> = 430..=433;
     pub const CAMPFIRE: u32 = 440;
+    /// The Redbrand watch post's destructible pieces (#305).
+    pub const WATCH_POST: RangeInclusive<u32> = 460..=462;
 
     /// The Greyfang standing stones (#159).
     pub const STANDING_STONES: RangeInclusive<u32> = 500..=506;
@@ -811,6 +813,49 @@ pub const MILL_RAMPS: [crate::Ramp; 2] = [
     },
 ];
 
+/// Greyhaven's destructible sites (#305): the Redbrand camp, whose pieces rebuild after 5 min.
+#[must_use]
+pub fn structure_sites() -> Vec<crate::StructureSite> {
+    vec![crate::StructureSite {
+        id: 1,
+        name: "Redbrand Hollow".to_owned(),
+        regrowth_ticks: 9_000,
+    }]
+}
+
+/// The Redbrand watch post (#305) east of the Hollow Road at the camp's southern edge: two
+/// timber walls 3 m wide and 2.5 m tall and the lookout deck resting on both. A broken west
+/// wall leaves a knee-high rubble heap that still blocks the way.
+#[must_use]
+pub fn watch_post() -> Vec<crate::StructurePiece> {
+    let [west, east, deck] = [460, 461, 462];
+    let wall =
+        |id: u16, body: u32, x: i32, rubble: Option<crate::PieceBox>| crate::StructurePiece {
+            id: crate::PieceId::new(id),
+            site: 1,
+            body,
+            position: [x, 125, -7_200],
+            half_extents: [150, 125, 20],
+            health: 120,
+            supports: Vec::new(),
+            rubble,
+        };
+    vec![
+        wall(1, west, 500, Some(([500, 20, -7_200], [150, 20, 40]))),
+        wall(2, east, 900, None),
+        crate::StructurePiece {
+            id: crate::PieceId::new(3),
+            site: 1,
+            body: deck,
+            position: [700, 265, -7_200],
+            half_extents: [350, 15, 120],
+            health: 60,
+            supports: vec![crate::PieceId::new(1), crate::PieceId::new(2)],
+            rubble: None,
+        },
+    ]
+}
+
 /// The hosted collision content. Hosts, clients and scenery consume this
 /// exact definition; the spawn grid is validated clear of every collider.
 #[must_use]
@@ -865,6 +910,7 @@ pub fn content_with_definition(
             .with_doors(vec![inn::door(ids::INN_DOOR)])?
             .with_platforms(vec![MILL_HOIST])?
             .with_ramps(MILL_RAMPS.to_vec())?
+            .with_structures(structure_sites(), watch_post())?
             .with_routines(units::routines(), units::closed_at_night())?,
     ))
 }

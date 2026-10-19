@@ -86,6 +86,8 @@ export type SceneryContent = StaticSceneContent & {
   /** The rest clip an imported unit model is measured in. */
   importedRestClip(kind: string): string | undefined;
   areaAt(x: number, z: number): number | undefined;
+  /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
+  reachablePieces(x: number, z: number): Uint16Array;
   reliefAt(x: number, z: number): number;
   /** Per area, the imported unit models its creatures use (#240), as JSON. */
   regionModels(): string;
@@ -108,6 +110,8 @@ export type SceneryProvider = {
   importedRestClip(kind: string): string;
   /** The named core area at `(x, z)` in units, if any. */
   areaAt(x: number, z: number): Area | null;
+  /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
+  reachablePieces(x: number, z: number): readonly number[];
   /** Presentation relief at `(x, z)` in units; units are drawn raised by it. */
   reliefAt(x: number, z: number): number;
   /** The imported unit models the creatures of area `id` use (#240). */
@@ -382,6 +386,9 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
         throw new Error(`No imported unit model ${kind}.`);
       }
       return clip;
+    },
+    reachablePieces(x, z) {
+      return [...content.reachablePieces(Math.round(x), Math.round(z))];
     },
     areaAt(x, z) {
       const id = content.areaAt(Math.round(x), Math.round(z));

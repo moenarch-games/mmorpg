@@ -333,6 +333,9 @@ impl ZoneSimulation {
             self.projectiles.insert(id, projectile);
             if let Some(unit) = unit {
                 self.projectile_strikes(projectile, unit, now)?;
+            } else if let Some(piece) = self.piece_of_body(hit.body) {
+                // A shot into a destructible piece chips it (#305).
+                self.damage_piece(piece, crate::PROJECTILE_PIECE_DAMAGE, now)?;
             }
         }
         Ok(())

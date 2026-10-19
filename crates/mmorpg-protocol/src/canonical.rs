@@ -41,6 +41,7 @@ const ABANDON_QUEST_INTENT: u8 = 17;
 const DIRECTED_STRIKE_INTENT: u8 = 18;
 const GUARD_INTENT: u8 = 19;
 const USE_DOOR_INTENT: u8 = 20;
+const REPAIR_INTENT: u8 = 21;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -89,6 +90,7 @@ pub fn encode_canonical_snapshot(
     )?;
     encode_forced(&mut payload, &snapshot.forced)?;
     encode_debris(&mut payload, snapshot.next_debris, &snapshot.debris)?;
+    encode_pieces(&mut payload, &snapshot.pieces)?;
     Ok(payload)
 }
 
@@ -173,6 +175,11 @@ fn encode_player(
             }
             PlayerIntent::UseDoor { door, open } => {
                 payload.extend_from_slice(&[USE_DOOR_INTENT, door.get(), u8::from(open)]);
+                continue;
+            }
+            PlayerIntent::Repair(piece) => {
+                payload.push(REPAIR_INTENT);
+                payload.extend_from_slice(&crate::wire::encode_piece(piece).to_be_bytes());
                 continue;
             }
             PlayerIntent::ChooseClass { class, sex } => {
@@ -269,6 +276,7 @@ fn encode_player(
     payload.extend_from_slice(&landing.recovery.to_be_bytes());
     payload.push(u8::from(landing.attacked_airborne));
     payload.extend_from_slice(&combat.strike_recovery.to_be_bytes());
+    payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
     match combat.combo {
         None => payload.extend_from_slice(&[0; 7]),
         Some(combo) => {
@@ -451,6 +459,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let (next_projectile, projectiles) = decode_projectiles(payload, &mut offset)?;
     let forced = decode_forced(payload, &mut offset)?;
     let (next_debris, debris) = decode_debris(payload, &mut offset)?;
+    let pieces = decode_pieces(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         schema_version,
@@ -468,7 +477,49 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         forced,
         debris,
         next_debris,
+        pieces,
     })
+}
+
+/// Destructible pieces (#305): count (`u8`), then per piece its ID (`u16`), health (`u32`),
+/// last change tick (`u64`) and repaired regrowth ticks (`u32`), in content order.
+fn encode_pieces(
+    payload: &mut Vec<u8>,
+    pieces: &[mmorpg_core::CanonicalPiece],
+) -> Result<(), ProtocolError> {
+    payload.push(
+        u8::try_from(pieces.len())
+            .ok()
+            .filter(|&count| usize::from(count) <= mmorpg_core::MAX_PIECES)
+            .ok_or_else(|| ProtocolError::new("too many structure pieces"))?,
+    );
+    for piece in pieces {
+        payload.extend_from_slice(&piece.piece.get().to_be_bytes());
+        payload.extend_from_slice(&piece.health.to_be_bytes());
+        payload.extend_from_slice(&piece.changed_tick.to_be_bytes());
+        payload.extend_from_slice(&piece.repaired.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_pieces(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::CanonicalPiece>, ProtocolError> {
+    let count = usize::from(read_u8(payload, offset)?);
+    if count > mmorpg_core::MAX_PIECES {
+        return Err(ProtocolError::new("too many structure pieces"));
+    }
+    (0..count)
+        .map(|_| {
+            Ok(mmorpg_core::CanonicalPiece {
+                piece: mmorpg_core::PieceId::new(u16::from_be_bytes(take(payload, offset)?)),
+                health: u32::from_be_bytes(take(payload, offset)?),
+                changed_tick: u64::from_be_bytes(take(payload, offset)?),
+                repaired: u32::from_be_bytes(take(payload, offset)?),
+            })
+        })
+        .collect()
 }
 
 fn decode_player(
@@ -550,6 +601,11 @@ fn decode_player(
                     _ => return Err(ProtocolError::new("door state must be 0 or 1")),
                 },
             });
+            continue;
+        }
+        if code == REPAIR_INTENT {
+            let piece = u16::from_be_bytes(take(payload, offset)?);
+            intents.push(PlayerIntent::Repair(crate::wire::decode_piece(piece)));
             continue;
         }
         if code == CHOOSE_CLASS_INTENT {
@@ -688,6 +744,7 @@ fn decode_player(
         attacked_airborne: read_bool(payload, offset)?,
     };
     let strike_recovery = u16::from_be_bytes(take(payload, offset)?);
+    let repairing = crate::wire::decode_piece(u16::from_be_bytes(take(payload, offset)?));
     let has_combo = read_bool(payload, offset)?;
     let combo_target = CreatureId::new(u32::from_be_bytes(take(payload, offset)?));
     let combo_elapsed = u16::from_be_bytes(take(payload, offset)?);
@@ -749,6 +806,7 @@ fn decode_player(
             landing,
             combo,
             strike_recovery,
+            repairing,
         },
     })
 }
@@ -1313,6 +1371,7 @@ mod tests {
                             elapsed: 3,
                         }),
                         strike_recovery: 4,
+                        repairing: Some(mmorpg_core::PieceId::new(3)),
                     },
                     quests: mmorpg_core::QuestLog::default(),
                     quests_changed_at: 0,
@@ -1414,6 +1473,12 @@ mod tests {
                     abilities: CanonicalCreatureAbilities::default(),
                 },
             ],
+            pieces: vec![mmorpg_core::CanonicalPiece {
+                piece: mmorpg_core::PieceId::new(3),
+                health: 40,
+                changed_tick: 77,
+                repaired: 8,
+            }],
         }
     }
 
@@ -1731,7 +1796,7 @@ mod tests {
         let mut cases = vec![
             (auto_attack, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
-            (intents + 1, 21, "malformed pending intent"),
+            (intents + 1, 22, "malformed pending intent"),
         ];
         // The third intent (StartAttack) carries no target.
         cases.push((intents + 1 + 2 * 6 + 1, 2, "malformed pending intent"));

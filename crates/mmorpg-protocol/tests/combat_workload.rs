@@ -24,12 +24,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // revision 17 (#297) adds the hill ogre: one more creature for AI and physics every tick,
     // and the spread fights' players stand by shifted spawns of the longer spawn table. Content
     // revision 18 (#56) adds the mill hoist's platform body to every step's world, and
-    // revision 19 (#59) the mill's loading dock and its two ramps.
+    // revision 19 (#59) the mill's loading dock and its two ramps. Revision 20 (#305) adds the
+    // Redbrand watch post's three pieces to every step's world, and snapshot v27 a piece count
+    // byte to every projection.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [27_000, 441_000, 220_128, 4_214_448],
-        [27_000, 438_120, 78_385, 1_362_928],
-        [27_000, 446_760, 362_091, 6_060_971],
-        [26_105, 457_385, 2_162_794, 24_434_854],
+        [27_000, 442_080, 220_128, 4_220_208],
+        [27_000, 439_200, 78_385, 1_365_808],
+        [27_000, 447_840, 362_091, 6_072_491],
+        [26_105, 458_465, 2_162_794, 24_457_474],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -71,8 +73,9 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
         if fixture.crowded {
             // Whole 14-byte events and 21-byte records beside the fixed part
             // and the door section, a 93-byte self sheet, an 18-byte copper-only
-            // corpse sheet and the projectile and debris counts fill all 1,077 bytes.
-            assert_eq!(report.max_projection_bytes, 1_077);
+            // corpse sheet, the projectile, debris and piece counts fill 1,076 of the 1,077
+            // bytes: no further 21-byte record fits.
+            assert_eq!(report.max_projection_bytes, 1_076);
             assert!(report.candidates_tested > 1_000_000);
         }
     }

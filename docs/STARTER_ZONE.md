@@ -75,6 +75,8 @@ Content revision 18 adds the **mill hoist** (#56, `greyhaven_vale::MILL_HOIST`),
 
 Content revision 19 adds the first **ramps** (#59, `greyhaven_vale::MILL_RAMPS`): a 1.5 m stone loading dock west of the windmill with a shallow 17° cart ramp up its west side, which units walk up and down grounded on the slope, and a steep 60° chute on its north side that no unit can climb (both controllers climb at most 45°). A ramp is a wedge filling the lower half of its box, its top rising toward one horizontal direction; it is solid physics on both backends, and both clients draw it from the same content.
 
+Content revision 20 adds the first **destructible structure** (#305, `greyhaven_vale::watch_post`): the Redbrand watch post at the camp's southern edge, east of the Hollow Road: two timber walls (120 health each) and the lookout deck resting on both (60). Fire Blasts and powder barrels hurt every piece they reach and see (their top roll, with falloff), arrows and bolts chip a piece by 3; a piece passes through damaged, crumbling and destroyed stages, a destroyed wall's collider leaves the world (the west wall leaves a knee-high rubble blocker) and the deck falls once neither wall stands. Pieces regrow 5 minutes after their last change once their spot is clear; Interact (T) near a damaged piece repairs it for free, five times faster, until the player moves (Atlas 5.2.80).
+
 ## Systems
 
 ### Movement

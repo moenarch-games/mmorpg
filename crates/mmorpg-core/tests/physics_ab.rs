@@ -658,6 +658,31 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
                     .map_err(|failure| format!("{name} on {backend}: {failure}"))?;
             }
         }
+        if matches!(workload, Workload::WatchPost) {
+            // On each backend the fight breaks pieces of the post (#305).
+            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+                let last = trace.snapshots.last().ok_or("empty watch post trace")?;
+                let content = mmorpg_core::greyhaven_vale::content();
+                let damaged: Vec<_> = last
+                    .pieces
+                    .iter()
+                    .zip(content.pieces())
+                    .filter(|(state, piece)| state.health < piece.health)
+                    .map(|(state, _)| (state.piece.get(), state.health))
+                    .collect();
+                println!("  {name} on {backend}: pieces {damaged:?}");
+                assert!(!damaged.is_empty(), "{name} on {backend}: no piece damaged");
+            }
+        }
+        if matches!(workload, Workload::WatchPost) {
+            // The same blasts and arrows break the same pieces on both backends.
+            let pieces = |trace: &Trace| trace.snapshots.last().map(|last| last.pieces.clone());
+            assert_eq!(
+                pieces(&rapier),
+                pieces(&engine),
+                "{name}: piece states differ"
+            );
+        }
         if matches!(workload, Workload::ChargePath) {
             // On each backend some Warden charges (#57).
             for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {

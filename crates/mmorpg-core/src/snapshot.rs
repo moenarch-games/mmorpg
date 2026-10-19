@@ -56,6 +56,8 @@ pub enum PlayerIntent {
         door: crate::DoorId,
         open: bool,
     },
+    /// Starts or stops repairing a destructible piece (#305).
+    Repair(Option<crate::PieceId>),
     CancelCast,
     ChooseClass {
         class: u8,
@@ -150,6 +152,8 @@ pub struct CanonicalPlayerCombat {
     pub combo: Option<crate::ComboOpening>,
     /// Ticks left of a directed strike's committed recovery (#156).
     pub strike_recovery: u16,
+    /// The destructible piece the player is repairing (#305).
+    pub repairing: Option<crate::PieceId>,
 }
 
 /// Class, resource and ability state of a player; all zero and empty until
@@ -202,6 +206,7 @@ impl Default for CanonicalPlayerCombat {
             landing: crate::LandingState::default(),
             combo: None,
             strike_recovery: 0,
+            repairing: None,
         }
     }
 }
@@ -283,6 +288,8 @@ pub struct CanonicalZoneSnapshot {
     /// Pieces of broken props in ID order, and the next piece ID (#288).
     pub debris: Vec<crate::Debris>,
     pub next_debris: u32,
+    /// Every destructible piece's health and last change, in content order (#305).
+    pub pieces: Vec<crate::CanonicalPiece>,
 }
 
 impl ZoneSimulation {
@@ -337,6 +344,7 @@ impl ZoneSimulation {
                         landing: state.landing,
                         combo: state.combo,
                         strike_recovery: state.strike_recovery,
+                        repairing: state.repairing,
                     },
                     chat_ready_at: state.chat_ready_at,
                     chat: state.chat.clone(),
@@ -408,6 +416,7 @@ impl ZoneSimulation {
             forced: self.forced_states(),
             debris: self.debris.values().copied().collect(),
             next_debris: self.next_debris,
+            pieces: self.canonical_pieces(),
         })
     }
 
@@ -459,6 +468,7 @@ impl ZoneSimulation {
                 "snapshot doors do not match the content doors",
             ));
         }
+        zone.restore_pieces(&snapshot.pieces, snapshot.tick)?;
         for (view, door) in snapshot.doors.iter().zip(&doors) {
             if view.changed_tick > snapshot.tick {
                 return Err(ZoneError::new(
@@ -573,6 +583,11 @@ impl ZoneSimulation {
         if combat.strike_recovery > crate::STRIKE_RECOVERY_TICKS {
             return Err(ZoneError::new("player strike recovery is out of range"));
         }
+        if combat.repairing.is_some_and(|piece| {
+            !alive || !self.content.pieces().iter().any(|known| known.id == piece)
+        }) {
+            return Err(ZoneError::new("player repair is invalid"));
+        }
         if !combat.landing.is_valid() {
             return Err(ZoneError::new("player landing state is out of range"));
         }
@@ -601,6 +616,7 @@ impl ZoneSimulation {
                 landing: combat.landing,
                 combo: combat.combo,
                 strike_recovery: combat.strike_recovery,
+                repairing: combat.repairing,
                 last_sequence: player.last_sequence,
                 spawn_slot: player.spawn_slot,
                 copper: player.copper,

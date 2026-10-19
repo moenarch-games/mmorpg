@@ -191,6 +191,9 @@ pub enum Workload {
     /// Charges through Wolfrun Woods (#57): four level-6 Wardens charge at wolves among the
     /// trunks; a charge needs a path as wide as the body (`World::cast_shape`).
     ChargePath,
+    /// The Redbrand watch post (#305): an arcanist draws the camp's bandits past the post and
+    /// blasts them there, breaking pieces whose colliders leave both physical worlds.
+    WatchPost,
     /// The mill dock's ramps (#59): one player walks up the cart ramp onto the dock and back
     /// down and across it, another walks into the steep chute.
     MillRamps,
@@ -231,6 +234,37 @@ fn charge_path_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
             }
         })
         .collect()
+}
+
+/// The watch post workload's length.
+pub const WATCH_POST_TICKS: usize = 420;
+
+/// The arcanist just north of the watch post, inside the camp, and a ranger beside it.
+const WATCH_POST_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [700.0, -7_350.0]), (2, [300.0, -7_400.0])];
+
+/// The watch post commands: classes, the nearest bandits as targets, Fire Blasts and arrows.
+fn watch_post_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let creature = |id| Some(EntityRef::Creature(CreatureId::new(id)));
+    let ability = |ability: mmorpg_core::AbilityId, target| ZoneCommand::UseAbility {
+        ability: ability.get(),
+        target,
+    };
+    use mmorpg_core::ability::ids;
+    match tick {
+        0 => vec![
+            (1, ZoneCommand::ChooseClass { class: 2, sex: 0 }),
+            (2, ZoneCommand::ChooseClass { class: 1, sex: 1 }),
+        ],
+        1 => vec![
+            (1, ZoneCommand::SelectTarget(creature(401))),
+            (2, ZoneCommand::SelectTarget(creature(400))),
+            (2, ZoneCommand::StartAttack),
+        ],
+        // The bandits run at them past the post; blast whoever is at the walls.
+        30 | 340 => vec![(1, ability(ids::FIRE_BLAST, creature(401)))],
+        60 | 120 | 200 => vec![(2, ability(ids::AIMED_SHOT, creature(400)))],
+        _ => Vec::new(),
+    }
 }
 
 /// The ramp walk's length.
@@ -409,6 +443,7 @@ impl Workload {
             Self::MillHoist => "vale-mill-hoist",
             Self::MillRamps => "vale-mill-ramps",
             Self::ChargePath => "vale-charge-path",
+            Self::WatchPost => "vale-watch-post",
         }
     }
 
@@ -421,6 +456,7 @@ impl Workload {
             Self::MillHoist => MILL_HOIST_TICKS,
             Self::MillRamps => MILL_RAMPS_TICKS,
             Self::ChargePath => CHARGE_PATH_TICKS,
+            Self::WatchPost => WATCH_POST_TICKS,
         }
     }
 }
@@ -444,6 +480,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::MillHoist);
     workloads.push(Workload::MillRamps);
     workloads.push(Workload::ChargePath);
+    workloads.push(Workload::WatchPost);
     Ok(workloads)
 }
 
@@ -478,6 +515,7 @@ impl Run {
             Workload::MillHoist => (mill_hoist_zone()?, 0),
             Workload::MillRamps => (placed_zone(&MILL_RAMPS_PLAYERS)?, 0),
             Workload::ChargePath => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
+            Workload::WatchPost => (placed_zone_at_level(&WATCH_POST_PLAYERS, 6)?, 0),
         };
         Ok(Self {
             zone,
@@ -539,11 +577,13 @@ impl Run {
             Workload::OgreBrawl
             | Workload::MillHoist
             | Workload::MillRamps
-            | Workload::ChargePath => {
+            | Workload::ChargePath
+            | Workload::WatchPost => {
                 let commands = match self.workload {
                     Workload::OgreBrawl => ogre_brawl_commands(self.tick),
                     Workload::MillHoist => mill_hoist_commands(self.tick),
                     Workload::ChargePath => charge_path_commands(self.tick),
+                    Workload::WatchPost => watch_post_commands(self.tick),
                     _ => mill_ramps_commands(self.tick),
                 };
                 for (player, command) in commands {

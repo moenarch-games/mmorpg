@@ -295,6 +295,10 @@ impl App {
                     // Without a selected NPC, interact swings the door in reach (#158).
                     self.send_interaction(command);
                     return true;
+                } else if let Some(command) = self.presentation.reachable_repair() {
+                    // Or repairs a damaged structure piece in reach (#305).
+                    self.send_interaction(command);
+                    return true;
                 }
             }
             WorldAction::NextNpc if self.connected() => {

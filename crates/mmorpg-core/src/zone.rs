@@ -81,6 +81,8 @@ pub(crate) struct PlayerState {
     /// Ticks left of a directed strike's committed recovery; a guard raised
     /// meanwhile waits to protect (#156, Atlas 5.2.39, 5.2.41).
     pub(crate) strike_recovery: u16,
+    /// The destructible piece the player is repairing (#305).
+    pub(crate) repairing: Option<crate::PieceId>,
     pub(crate) last_sequence: u32,
     pub(crate) spawn_slot: u16,
     pub(crate) level: u8,
@@ -140,6 +142,7 @@ impl PlayerState {
             landing: crate::LandingState::default(),
             combo: None,
             strike_recovery: 0,
+            repairing: None,
             last_sequence: 0,
             spawn_slot,
             level: PLAYER_START_LEVEL,
@@ -228,6 +231,8 @@ pub struct ZoneSimulation {
     /// Pieces of broken props by ID (#288).
     pub(crate) debris: BTreeMap<u32, crate::Debris>,
     pub(crate) next_debris: u32,
+    /// Destructible pieces' health and last change (#305).
+    pub(crate) pieces: BTreeMap<crate::PieceId, crate::structure::PieceState>,
 }
 
 impl ZoneSimulation {
@@ -315,6 +320,8 @@ impl ZoneSimulation {
                 ))
                 .map_err(physics_error)?;
         }
+        // Destructible pieces (#305) stand intact.
+        let pieces = Self::build_pieces(&mut world, &content)?;
         // Platforms (#56) start at their tick-0 centre.
         for platform in content.platforms() {
             let [x, y, z] = platform.centre_at(0);
@@ -360,6 +367,7 @@ impl ZoneSimulation {
             forced: BTreeMap::new(),
             debris: BTreeMap::new(),
             next_debris: 1,
+            pieces,
         })
     }
 
@@ -511,6 +519,7 @@ impl ZoneSimulation {
             // Queued so a guard pressed after a strike stays raised (5.2.37).
             ZoneCommand::Guard { lane } => Some(PlayerIntent::Guard(lane)),
             ZoneCommand::UseDoor { door, open } => Some(PlayerIntent::UseDoor { door, open }),
+            ZoneCommand::Repair { piece } => Some(PlayerIntent::Repair(piece)),
             ZoneCommand::SelectTarget(target) => Some(PlayerIntent::SelectTarget(target)),
             ZoneCommand::StartAttack => Some(PlayerIntent::StartAttack),
             ZoneCommand::Loot(claim) => Some(PlayerIntent::Loot(claim)),
@@ -641,6 +650,7 @@ impl ZoneSimulation {
         self.advance_auras(now)?;
         self.resolve_combat(now)?;
         self.update_timers(now)?;
+        self.regrow_pieces(now)?;
         self.advance_combos();
         self.advance_quest_objectives(now)?;
         self.tick = now;
@@ -667,6 +677,12 @@ impl ZoneSimulation {
             .collect();
         for player_id in moving {
             self.interrupt_cast(EntityRef::Player(player_id), None, None);
+        }
+        // Moving or jumping stops a repair (#305).
+        for player in self.players.values_mut() {
+            if player.forward != Axis::Zero || player.strafe != Axis::Zero || player.jump_pending {
+                player.repairing = None;
+            }
         }
         for (&player_id, state) in &self.players {
             let body_id = body_id(EntityRef::Player(player_id));

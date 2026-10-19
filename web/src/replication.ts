@@ -215,6 +215,8 @@ export type ZoneSnapshot = {
   loot: LootView | null;
   /** Every content door's state in ID order, the same for every viewer (#158). */
   doors: readonly DoorState[];
+  /** Destructible pieces that are not intact, in ID order (#305). */
+  pieces: readonly PieceState[];
   events: readonly ZoneEvent[];
   /** Chat lines the viewer heard this tick, in delivery order; cosmetic and lossy like events. */
   chat: readonly ChatLine[];
@@ -225,6 +227,13 @@ export type ZoneSnapshot = {
   /** Pieces of broken props, nearest first (#288). */
   debris: readonly DebrisState[];
 };
+
+/** A destructible piece's damage stage (#305); intact pieces are not sent. */
+export type PieceStage = "damaged" | "crumbling" | "destroyed";
+export type PieceState = { piece: number; stage: PieceStage };
+const PIECE_STAGES: readonly PieceStage[] = ["damaged", "crumbling", "destroyed"];
+/** Pieces a zone's content may author (`mmorpg_core::MAX_PIECES`). */
+const MAX_PIECES = 6;
 
 /** One piece of a broken prop: position in units, rotation as a quaternion in 1/32 767 steps. */
 export type DebrisState = {
@@ -295,22 +304,22 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 26;
-const SCHEMA_VERSION = 25;
+const WIRE_VERSION = 27;
+const SCHEMA_VERSION = 26;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
 /**
  * Common prefix 16, revision 8, acknowledged sequence 4, viewer 4, self 27, self abilities 26 (class,
  * resource, global cooldown, cast, melee damage range, guard, melee stance, combo phase, two list counts), target 12 (target-of-target,
- * its cast, aura count), sheet revision 8/presence 1, loot presence 1, door, event, chat, entity, projectile and debris counts.
+ * its cast, aura count), sheet revision 8/presence 1, loot presence 1, door, piece, event, chat, entity, projectile and debris counts.
  * The sheet (bag, equipment, stat totals, quests) and the corpse sheet follow their presence bytes;
  * two bytes per door follow its count.
  */
-const FIXED_BYTES = 114;
+const FIXED_BYTES = 115;
 const ENTITY_BYTES = 21;
 const MAX_EVENTS = 16;
-/** (1 077 − 114) / 21: records that fit without events, sheets, doors, cooldowns or auras. */
+/** (1 077 − 115) / 21: records that fit without events, sheets, doors, cooldowns or auras. */
 const MAX_ENTITIES = 45;
 /** `u16` ID, kind, `3 × i16` position, `u16` yaw, `i16` pitch and flags. */
 const PROJECTILE_BYTES = 14;
@@ -926,6 +935,20 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     }
     doors.push({ door, open: state === 1 });
   }
+  const pieceCount = reader.u8();
+  if (pieceCount > MAX_PIECES) {
+    throw new Error("Snapshot exceeds the structure piece capacity");
+  }
+  const pieces: PieceState[] = [];
+  for (let index = 0; index < pieceCount; index += 1) {
+    const piece = reader.u16();
+    const code = reader.u8();
+    const stage = PIECE_STAGES[code - 1];
+    if (stage === undefined || (pieces.length > 0 && pieces[pieces.length - 1]!.piece >= piece)) {
+      throw new Error("Invalid structure piece section");
+    }
+    pieces.push({ piece, stage });
+  }
   const eventCount = reader.u8();
   if (eventCount > MAX_EVENTS) {
     throw new Error("Snapshot exceeds the event capacity");
@@ -1033,7 +1056,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
       copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, autoAttacking, target,
       classChoice, resource, cast, globalCooldown, damage, guard, stance, combo,
     },
-    cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors,
+    cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors, pieces,
     events, chat, entities, projectiles, debris,
   };
   PROJECTION_BYTES.set(snapshot, payload.slice());

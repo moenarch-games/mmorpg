@@ -139,6 +139,7 @@ pub fn exhaustive_projection(
                 },
             })
             .collect(),
+        pieces: Vec::new(),
     }
 }
 

@@ -41,6 +41,8 @@ pub struct ZoneContent {
     doors: Vec<crate::Door>,
     platforms: Vec<crate::Platform>,
     ramps: Vec<crate::Ramp>,
+    sites: Vec<crate::StructureSite>,
+    pieces: Vec<crate::StructurePiece>,
     routines: Vec<crate::NpcRoutine>,
     closed_at_night: Vec<NpcId>,
 }
@@ -144,6 +146,8 @@ impl ZoneContent {
             doors: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
+            sites: Vec::new(),
+            pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
         };
@@ -177,6 +181,8 @@ impl ZoneContent {
             doors: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
+            sites: Vec::new(),
+            pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
         };
@@ -572,6 +578,47 @@ impl ZoneContent {
         Ok(self)
     }
 
+    /// Binds destructible structures (#305): sites and pieces in ID order, piece bodies in the
+    /// static collider namespace that nothing else uses, supports among earlier pieces.
+    pub fn with_structures(
+        mut self,
+        sites: Vec<crate::StructureSite>,
+        pieces: Vec<crate::StructurePiece>,
+    ) -> Result<Self, ZoneError> {
+        crate::structure::validate(&sites, &pieces)?;
+        let mut bodies: Vec<_> = pieces.iter().map(|piece| piece.body).collect();
+        bodies.sort_unstable();
+        if bodies.windows(2).any(|pair| pair[0] == pair[1])
+            || bodies.iter().any(|&body| {
+                u64::from(body) >= crate::entity::PLAYER_BODY_BASE
+                    || self.definition.colliders().iter().any(|c| c.id == body)
+                    || self.doors.iter().any(|door| door.body == body)
+                    || self.platforms.iter().any(|platform| platform.body == body)
+                    || self.ramps.iter().any(|ramp| ramp.body == body)
+            })
+        {
+            return Err(ZoneError::new(
+                "structure piece body collides with another body id",
+            ));
+        }
+        self.sites = sites;
+        self.pieces = pieces;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Destructible sites in ID order (#305).
+    #[must_use]
+    pub fn sites(&self) -> &[crate::StructureSite] {
+        &self.sites
+    }
+
+    /// Destructible pieces in ID order (#305).
+    #[must_use]
+    pub fn pieces(&self) -> &[crate::StructurePiece] {
+        &self.pieces
+    }
+
     /// Ordered by body.
     #[must_use]
     pub fn ramps(&self) -> &[crate::Ramp] {
@@ -660,6 +707,46 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_ramp_fingerprint();
+        if self.pieces.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v11");
+        hash.u64(fingerprint);
+        hash.len(self.sites.len());
+        for site in &self.sites {
+            hash.u8(site.id);
+            hash.text(&site.name);
+            hash.u32(site.regrowth_ticks);
+        }
+        hash.len(self.pieces.len());
+        for piece in &self.pieces {
+            hash.u32(u32::from(piece.id.get()));
+            hash.u8(piece.site);
+            hash.u32(piece.body);
+            for value in piece.position.iter().chain(&piece.half_extents) {
+                hash.i32(*value);
+            }
+            hash.u32(piece.health);
+            hash.len(piece.supports.len());
+            for support in &piece.supports {
+                hash.u32(u32::from(support.get()));
+            }
+            match piece.rubble {
+                None => hash.u8(0),
+                Some((centre, half)) => {
+                    hash.u8(1);
+                    for value in centre.iter().chain(&half) {
+                        hash.i32(*value);
+                    }
+                }
+            }
+        }
+        hash.finish()
+    }
+
+    fn compute_ramp_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_platform_fingerprint();
         if self.ramps.is_empty() {
             return fingerprint;
