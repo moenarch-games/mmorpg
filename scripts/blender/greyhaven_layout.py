@@ -261,7 +261,10 @@ def export_scene(args: argparse.Namespace) -> None:
     objects = {}
     for obj in group.objects:
         if obj.type != "MESH" or not obj.get("gh_kind"):
-            continue
+            raise ValueError(
+                f"{obj.name}: not a supported Greyhaven prefab; "
+                "use a template from Greyhaven Prefabs"
+            )
         if any(abs(value - 1) > 0.0001 for value in obj.scale):
             raise ValueError(f"{obj.name}: resize is not part of the placement format")
         if abs(obj.location.z - obj.get("gh_vertical", 0.0)) > 0.01:
