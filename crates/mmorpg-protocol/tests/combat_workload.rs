@@ -20,12 +20,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // The Greyfang cave (revision 14) adds eight rock boxes to every step's world. Snapshot v25
     // (#286) adds a projectile count byte to every projection. Content revision 15 (#288) stands 17
     // breakable props on fixed bodies in every step's world; projections show the props near
-    // the players after every other unit, and snapshot v26 adds a debris count byte.
+    // the players after every other unit, and snapshot v26 adds a debris count byte. Content
+    // revision 17 (#297) adds the hill ogre: one more creature for AI and physics every tick,
+    // and the spread fights' players stand by shifted spawns of the longer spawn table.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [26_640, 439_200, 220_128, 4_214_448],
-        [26_581, 436_261, 78_385, 1_275_848],
-        [26_640, 444_960, 358_196, 5_945_191],
-        [25_745, 455_585, 2_162_794, 24_434_854],
+        [27_000, 439_560, 220_128, 4_214_448],
+        [27_000, 436_680, 78_385, 1_362_928],
+        [27_000, 445_320, 362_091, 6_060_971],
+        [26_105, 455_945, 2_162_794, 24_434_854],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -62,7 +64,7 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert!(report.death_records > 0);
         } else {
             assert_eq!(report.event_records, 0);
-            assert_eq!(report.ai_evaluations, 74 * TICKS);
+            assert_eq!(report.ai_evaluations, 75 * TICKS);
         }
         if fixture.crowded {
             // Whole 14-byte events and 21-byte records beside the fixed part

@@ -63,6 +63,11 @@ const PROBE_RANGE_UNITS: f32 = 4_000.0;
 /// What the invariant checks saw over one run.
 #[derive(Debug)]
 struct Check {
+    /// Ogre brawl (#297): the smallest gap between the ogre's capsule and a player's, ticks
+    /// a player was being shoved, and whether a stomp hurt a player.
+    ogre_gap: f32,
+    shoved_ticks: usize,
+    stomped: bool,
     /// The smallest capsule-to-box gap (units), authored ground overlap excluded.
     closest: f32,
     /// The first tick the zone restored halfway differs from the uninterrupted one.
@@ -259,6 +264,57 @@ fn check_invariants(
     Ok(())
 }
 
+/// The gap between two upright capsules given as unit bodies (their game centres).
+fn capsule_gap(a: &UnitBody, b: &UnitBody) -> f32 {
+    let shape = |unit: &UnitBody| {
+        let half = unit.body.half_extents();
+        #[allow(clippy::cast_precision_loss)]
+        let (radius, half_height) = (half.x.max(half.z) as f32, half.y as f32);
+        (radius, (half_height - radius).max(0.0))
+    };
+    let ((ra, sa), (rb, sb)) = (shape(a), shape(b));
+    let (p, q) = (a.body.exact_position(), b.body.exact_position());
+    let vertical = ((p[1] - q[1]).abs() - sa - sb).max(0.0);
+    (p[0] - q[0]).hypot(p[2] - q[2]).hypot(vertical) - ra - rb
+}
+
+/// The ogre brawl's own observations (#297): the ogre's body never takes a player in, shoves
+/// (forced moves of players) happen, and the ogre stomps.
+fn check_ogre(
+    zone: &ZoneSimulation,
+    snapshot: &CanonicalZoneSnapshot,
+    units: &[UnitBody],
+    check: &mut Check,
+) {
+    let ogre = EntityRef::Creature(mmorpg_core::CreatureId::new(710));
+    let Some(ogre_body) = units.iter().find(|unit| unit.unit == ogre) else {
+        return;
+    };
+    for unit in units
+        .iter()
+        .filter(|unit| matches!(unit.unit, EntityRef::Player(_)))
+    {
+        check.ogre_gap = check.ogre_gap.min(capsule_gap(ogre_body, unit));
+    }
+    check.shoved_ticks += snapshot
+        .forced
+        .iter()
+        .filter(|(unit, state)| matches!(unit, EntityRef::Player(_)) && state.moving.is_some())
+        .count();
+    check.stomped |= snapshot.players.iter().any(|player| {
+        zone.snapshot_for_player(player.player_id)
+            .is_ok_and(|projection| {
+                projection.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        mmorpg_core::ZoneEvent::AbilityUsed { ability, .. }
+                            if *ability == mmorpg_core::ability::ids::STOMP
+                    )
+                })
+            })
+    });
+}
+
 fn run(workload: &Workload, backend: Backend) -> Result<(Trace, Check)> {
     using_backend(backend, || {
         let mut run = Run::new(workload)?;
@@ -267,6 +323,9 @@ fn run(workload: &Workload, backend: Backend) -> Result<(Trace, Check)> {
         // Restored from its canonical snapshot halfway, the zone continues exactly.
         let mut restored: Option<Run> = None;
         let mut check = Check {
+            ogre_gap: f32::INFINITY,
+            shoved_ticks: 0,
+            stomped: false,
             closest: f32::INFINITY,
             departed: None,
             placed_inside: std::collections::BTreeSet::new(),
@@ -278,6 +337,9 @@ fn run(workload: &Workload, backend: Backend) -> Result<(Trace, Check)> {
             check_invariants(&run.zone, &snapshot, &units, &trace.units, &mut check).map_err(
                 |failure| format!("{} on {}: {failure}", workload.name(), backend.name()),
             )?;
+            if matches!(workload, Workload::OgreBrawl) {
+                check_ogre(&run.zone, &snapshot, &units, &mut check);
+            }
             if let Some(restored) = restored.as_mut() {
                 restored.advance()?;
                 if check.departed.is_none() && restored.zone.snapshot()? != snapshot {
@@ -550,6 +612,23 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
             rapier_check.placed_inside.len(),
             started.elapsed(),
         );
+        if matches!(workload, Workload::OgreBrawl) {
+            // On each backend the ogre's body blocks every player, it shoves the ones in its
+            // way and its stomps land (#297).
+            for (check, backend) in [(&rapier_check, "rapier"), (&engine_check, "engine")] {
+                println!(
+                    "  {name} on {backend}: ogre–player gap ≥ {:.4}, {} shoved player-ticks, stomped={}",
+                    check.ogre_gap, check.shoved_ticks, check.stomped
+                );
+                assert!(
+                    check.ogre_gap >= -PENETRATION_TOLERANCE_UNITS,
+                    "{name} on {backend}: a player inside the ogre by {}",
+                    -check.ogre_gap
+                );
+                assert!(check.shoved_ticks > 0, "{name} on {backend}: no shove");
+                assert!(check.stomped, "{name} on {backend}: no stomp landed");
+            }
+        }
         if let Workload::Bots(scenario) = &workload {
             // The replay drives the zone as the bot runner does: Rapier reproduces the
             // scenario's expected positions exactly.

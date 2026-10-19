@@ -31,8 +31,9 @@ pub mod units;
 /// (the Wolf Pelt) and vendor catalog 2; revision 10 replaces the inn block
 /// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
 /// inside; revision 15 adds breakable crates, barrels, fences and powder barrels (#288);
-/// revision 16 composes the saved Outpost layout overrides (#321).
-pub const REVISION: u64 = 16;
+/// revision 16 composes the saved Outpost layout overrides (#321); revision 17 adds the
+/// Hill Ogre, a large creature that shoves and stomps (#297).
+pub const REVISION: u64 = 17;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;

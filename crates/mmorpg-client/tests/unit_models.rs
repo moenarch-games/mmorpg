@@ -69,6 +69,7 @@ fn model_choice_follows_kind_family_role_and_elite() {
         (F::Marauder, UnitModel::Humanoid(HumanoidKind::Marauder)),
         (F::Mirefin, UnitModel::Humanoid(HumanoidKind::Mirefin)),
         (F::Redbrand, UnitModel::Humanoid(HumanoidKind::Redbrand)),
+        (F::Ogre, UnitModel::Humanoid(HumanoidKind::Marauder)),
     ] {
         assert_eq!(
             choose(EntityKind::Creature, Some(family), false, None),

@@ -184,6 +184,73 @@ impl BotScenario {
 pub enum Workload {
     Bots(BotScenario),
     Greyhaven(Fixture),
+    /// The hill ogre (#297): body-blocking, shoving and stomping in Southmeadow Downs.
+    OgreBrawl,
+}
+
+/// The ogre brawl's script length.
+pub const OGRE_BRAWL_TICKS: usize = 360;
+/// The hill ogre and its spawn point (Greyhaven content).
+const OGRE: u32 = 710;
+const OGRE_AT: [f32; 2] = [7_450.0, 18_150.0];
+/// Yaws: 0 faces +Z, a quarter turn +X.
+const SOUTH: u16 = 32_768;
+const WEST: u16 = 49_152;
+
+/// The brawl's players by ID and feet XZ: 1 provokes the ogre from 3 m south and later runs
+/// on south past 2, who stands in the ogre's way; 3 walks into the ogre's side from the east.
+const OGRE_BRAWL_PLAYERS: [(u32, [f32; 2]); 3] = [
+    (1, [OGRE_AT[0], OGRE_AT[1] - 300.0]),
+    (2, [OGRE_AT[0] + 20.0, OGRE_AT[1] - 800.0]),
+    (3, [OGRE_AT[0] + 600.0, OGRE_AT[1]]),
+];
+
+/// The brawl's commands at `tick`, as `(player, command)`.
+fn ogre_brawl_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let walk = |facing| ZoneCommand::Move {
+        forward: 1,
+        strafe: 0,
+        facing,
+    };
+    let stand = |facing| ZoneCommand::Move {
+        forward: 0,
+        strafe: 0,
+        facing,
+    };
+    let ogre = Some(EntityRef::Creature(CreatureId::new(OGRE)));
+    match tick {
+        0 => vec![
+            (1, ZoneCommand::SelectTarget(ogre)),
+            (1, ZoneCommand::StartAttack),
+            (3, walk(WEST)),
+        ],
+        60 => vec![(1, walk(SOUTH)), (3, stand(WEST))],
+        110 => vec![(1, stand(0))],
+        200 => vec![(3, walk(WEST))],
+        240 => vec![(3, stand(WEST))],
+        _ => Vec::new(),
+    }
+}
+
+/// The ogre brawl's initial zone: Greyhaven with its three players placed by the ogre.
+fn ogre_brawl_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    let content = mmorpg_core::greyhaven_vale::content();
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), std::sync::Arc::clone(&content))?;
+    for (player, _) in OGRE_BRAWL_PLAYERS {
+        zone.add_player(player)?;
+    }
+    let mut state = zone.snapshot()?;
+    for (player, [x, z]) in OGRE_BRAWL_PLAYERS {
+        let snapshot = state
+            .players
+            .iter_mut()
+            .find(|snapshot| snapshot.player_id == player)
+            .ok_or("missing brawl player")?;
+        #[allow(clippy::cast_precision_loss)]
+        let y = zone.ground_probe(x as i32, z as i32) as f32 + 90.0;
+        snapshot.position = [x, y, z];
+    }
+    Ok(ZoneSimulation::from_snapshot(state, content)?)
 }
 
 impl Workload {
@@ -192,6 +259,7 @@ impl Workload {
         match self {
             Self::Bots(scenario) => &scenario.name,
             Self::Greyhaven(fixture) => fixture.name,
+            Self::OgreBrawl => "vale-ogre-brawl",
         }
     }
 
@@ -200,6 +268,7 @@ impl Workload {
         match self {
             Self::Bots(scenario) => usize::try_from(scenario.ticks).expect("tick count fits"),
             Self::Greyhaven(_) => greyhaven_workload::TICKS,
+            Self::OgreBrawl => OGRE_BRAWL_TICKS,
         }
     }
 }
@@ -219,6 +288,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
         .map(|source| BotScenario::parse(source).map(Workload::Bots))
         .collect::<Result<_, _>>()?;
     workloads.extend(greyhaven_workload::FIXTURES.map(Workload::Greyhaven));
+    workloads.push(Workload::OgreBrawl);
     Ok(workloads)
 }
 
@@ -249,6 +319,7 @@ impl Run {
                 scenario.bots.len(),
             ),
             Workload::Greyhaven(fixture) => (greyhaven_workload::initial_zone(*fixture)?, 0),
+            Workload::OgreBrawl => (ogre_brawl_zone()?, 0),
         };
         Ok(Self {
             zone,
@@ -307,6 +378,16 @@ impl Run {
             Workload::Greyhaven(fixture) => {
                 greyhaven_workload::commands(&mut self.zone, *fixture, self.tick)?;
             }
+            Workload::OgreBrawl => {
+                for (player, command) in ogre_brawl_commands(self.tick) {
+                    let sequence = self.next_sequence(player);
+                    let outcome = match self.zone.apply_command(player, sequence, command) {
+                        Ok(()) => "applied".to_owned(),
+                        Err(error) => format!("refused: {error}"),
+                    };
+                    self.outcomes.push(outcome);
+                }
+            }
             Workload::Bots(scenario) => {
                 let scenario = scenario.clone();
                 while let Some(step) = scenario.steps.get(self.next_step) {
@@ -319,6 +400,17 @@ impl Run {
             }
         }
         Ok(())
+    }
+
+    /// The next command sequence of a scripted (non-bot) player.
+    fn next_sequence(&mut self, player: PlayerId) -> u32 {
+        let index = usize::try_from(player).expect("player IDs fit") - 1;
+        if self.sequences.len() <= index {
+            self.sequences.resize(index + 1, 1);
+        }
+        let sequence = self.sequences[index];
+        self.sequences[index] += 1;
+        sequence
     }
 
     fn apply(&mut self, step: &Step) -> Result<(), Box<dyn Error>> {

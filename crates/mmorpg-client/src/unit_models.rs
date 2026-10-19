@@ -205,7 +205,10 @@ impl UnitModel {
                 Some(CreatureFamily::Wolf) => Self::Quadruped(AnimalKind::Wolf),
                 Some(CreatureFamily::Boar) => Self::Quadruped(AnimalKind::Boar),
                 Some(CreatureFamily::Vermin) => Self::Quadruped(AnimalKind::Vermin),
-                Some(CreatureFamily::Marauder) => Self::Humanoid(HumanoidKind::Marauder),
+                // Large creatures (#297) draw as a marauder fitted to their bigger box.
+                Some(CreatureFamily::Marauder | CreatureFamily::Ogre) => {
+                    Self::Humanoid(HumanoidKind::Marauder)
+                }
                 Some(CreatureFamily::Mirefin) => Self::Humanoid(HumanoidKind::Mirefin),
                 Some(CreatureFamily::Redbrand) if elite => Self::Humanoid(HumanoidKind::Garrick),
                 Some(CreatureFamily::Redbrand) => Self::Humanoid(HumanoidKind::Redbrand),

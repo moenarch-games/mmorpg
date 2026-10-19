@@ -393,6 +393,7 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [15, { castTicks: 30, channel: false, cooldown: 240, aura: null, auraTicks: 0 }],
   [16, { castTicks: 45, channel: false, cooldown: 300, aura: null, auraTicks: 0 }],
   [17, instant(450)],
+  [18, { castTicks: 30, channel: false, cooldown: 360, aura: null, auraTicks: 0 }],
 ]);
 /** Mana: 110 + 22 per level above 1; rage and focus: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

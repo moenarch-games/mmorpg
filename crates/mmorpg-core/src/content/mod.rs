@@ -10,8 +10,9 @@ mod zone_content;
 
 pub use units::{
     CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
-    MAX_CREATURE_HALF_EXTENT_UNITS, MAX_CREATURE_SPAWNS, MAX_CREATURE_TEMPLATES, MAX_NPCS,
-    MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc, NpcRole, PropKind,
+    LARGE_CREATURE_HALF_WIDTH_UNITS, MAX_CREATURE_HALF_EXTENT_UNITS, MAX_CREATURE_SPAWNS,
+    MAX_CREATURE_TEMPLATES, MAX_NPCS, MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc, NpcRole,
+    PropKind,
 };
 pub use zone_content::ZoneContent;
 

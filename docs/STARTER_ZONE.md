@@ -65,8 +65,11 @@ Map north is −Z (the Redbrand cliffs); yaw 0 faces +Z. Content revision 5 (`mm
 | Mirefin Lurker | Mirefin | 3 | 70 | 3–6 | 60 | aggressive |
 | Redbrand Bandit | Redbrand | 3–5 | 75 (+16) | 4–7 | 66 | aggressive |
 | Garrick Redbrand | Redbrand | 5 elite | 420 | 8–14 | 72 | aggressive, 5 min respawn |
+| Hill Ogre | Ogre | 5 | 300 | 9–15 | 84 | aggressive, large (#297) |
 
 Creatures respawn 60 s after death unless noted and wander within 6 m of their spawn point. These numbers are a starting point for tuning.
+
+Content revision 17 adds a **large creature** (#297): the Hill Ogre squats east of the ruined Southmeadow farmstead. A creature at least 1.4 m across is large: its capsule body-blocks smaller units like any body; it holds its ground while idle (and so draws nothing from the zone RNG, leaving every other creature's script unchanged); a step that would carry it into a smaller living unit shoves that unit 1.2 m aside, off its path, as a forced move with the usual immunity (Atlas 5.2.72; walls stop it); and it casts **Stomp** (ability 18: 1 s wind-up, 12 s cooldown) once its target is within 3.5 m, hurting and knocking back every player within 3.5 m it can see, falling off to half at the edge.
 
 ## Systems
 
