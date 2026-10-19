@@ -30,6 +30,17 @@ def build_document(document: dict, base_houses: list[dict], records: list[dict])
     base = {item["id"]: item["position"] for item in base_houses}
     used_houses: set[int] = set()
     used_decorations: set[str] = set()
+    # Never allocate an ID that another saved object already owns, even if
+    # the new Blender duplicate sorts first by name.
+    reserved_houses = {
+        int(str(item.get("id"))) for item in records
+        if str(item.get("id", "")).isdecimal()
+    } | {item["id"] for item in document.get("collision", [])}
+    reserved_decorations = {
+        str(item["id"]) for item in document.get("decoration", [])
+    } | {
+        str(item.get("id")) for item in records if item.get("id")
+    }
     collision: list[dict] = []
     decoration: list[dict] = []
     assigned: dict[str, str] = {}
@@ -51,7 +62,7 @@ def build_document(document: dict, base_houses: list[dict], records: list[dict])
             ):
                 requested = None
             if requested is None:
-                while next_house in used_houses:
+                while next_house in used_houses or next_house in reserved_houses:
                     next_house += 1
                 if next_house >= 65000:
                     raise ValueError("No free authored house IDs")
@@ -69,7 +80,8 @@ def build_document(document: dict, base_houses: list[dict], records: list[dict])
                 char.isascii() and (char.isalnum() or char == "-") for char in requested
             )
             if not valid or requested in used_decorations:
-                while f"authored-{next_decoration:04d}" in used_decorations:
+                while (f"authored-{next_decoration:04d}" in used_decorations
+                       or f"authored-{next_decoration:04d}" in reserved_decorations):
                     next_decoration += 1
                 requested = f"authored-{next_decoration:04d}"
                 next_decoration += 1
