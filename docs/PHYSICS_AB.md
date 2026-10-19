@@ -134,7 +134,7 @@ Intentional or explained differences:
 
 ## physics-engine gaps found
 
-Two open:
+Three open:
 
 - **Climbing too-steep slopes** (#59). On a wedge steeper than `max_slope` (the mill chute,
   60°, 1.5 m high), a character walking into it rides part-way up and slides back, over and
@@ -159,6 +159,12 @@ Two open:
   rest flush with a floor, a capsule on it, the box moved 5 units: the rider must follow).
   The engine arm moves a platform by removing and re-adding its static box every tick it
   moves, which also costs time (below).
+
+- **A ray starting on a box face** (#57). A solid ray whose origin lies exactly on a box's
+  face and points away reports a hit at fraction 0 on physics-engine and no hit on Rapier
+  (parry's `cast_ray` with `solid`). Gameplay rays start at body centres, never on a face, so
+  no decision changed. Minimal repro: a box of half extents (1, 100, 200) at x = 500 and a
+  1,000-unit ray along +X from x = 501.
 
 Fixed at the pinned rev, and the test now
 asserts the engine arm's exact continuation:

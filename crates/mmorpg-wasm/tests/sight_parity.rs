@@ -1,0 +1,136 @@
+//! Native-vs-browser line-of-sight parity (#57): the local zone host plays one scripted
+//! Greyhaven session (an arcanist targets a crate and casts Firebolt in the open, then again
+//! from behind the inn, refused for line of sight) and digests every projection it publishes. This native run records the digest in
+//! `fixtures/parity/greyhaven-sight-session.txt`; `web/tests/sight-parity.test.ts` plays the
+//! same script on the WASM build and must reach the same digest, so the authoritative sight
+//! decisions (and everything else the session projects but broken props' debris) agree across
+//! targets.
+
+use std::collections::BTreeMap;
+
+use mmorpg_characters::{EntryBackend, EntryChange, LeaseHolder, StoreError};
+use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex, ZoneCommand, ZoneEvent};
+use mmorpg_protocol::{DEBRIS_RECORD_BYTES, decode_snapshot, encode_command};
+use mmorpg_wasm::host::{LOCAL_ZONE_ID, LocalZoneHost};
+
+/// The script: the arcanist targets a crate by the smithy (prop 901) and walks south-east
+/// from the spawn plaza; its Firebolt from the open starts and lands. It walks on behind the
+/// inn, targets the crate beside it (prop 900), and its Firebolts are refused.
+const MOVES: [(u64, i8, u16); 4] = [
+    (0, 1, 24_576),
+    (80, 0, 24_576),
+    (145, 1, 24_576),
+    (170, 0, 24_576),
+];
+/// `(tick, prop)`: a crate by the smithy first, then the one beside it.
+const TARGETS: [(u64, u32); 2] = [(2, 901), (171, 900)];
+const CASTS: [u64; 3] = [81, 172, 190];
+const FIREBOLT: u8 = 9;
+const TICKS: u64 = 200;
+
+#[derive(Default)]
+struct Memory(BTreeMap<String, Vec<u8>>);
+
+impl EntryBackend for Memory {
+    fn read(&self, id: &CharacterId) -> Result<Option<Vec<u8>>, StoreError> {
+        Ok(self.0.get(id.as_str()).cloned())
+    }
+
+    fn update(&mut self, id: &CharacterId, change: &mut EntryChange<'_>) -> Result<(), StoreError> {
+        let next = change(self.0.get(id.as_str()).map(Vec::as_slice))?;
+        self.0.insert(id.as_str().to_owned(), next);
+        Ok(())
+    }
+}
+
+/// FNV-1a over every byte, 64-bit.
+fn fnv(hash: u64, bytes: &[u8]) -> u64 {
+    bytes.iter().fold(hash, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+#[test]
+fn the_sight_session_digest_is_recorded_for_the_browser_build() {
+    let mut host = LocalZoneHost::new().unwrap();
+    let mut store = mmorpg_characters::CharacterStore::new(Memory::default());
+    let player = host
+        .enter(
+            &mut store,
+            CharacterId::new("local-1").unwrap(),
+            ClassChoice {
+                class: PlayerClass::Arcanist,
+                sex: Sex::Female,
+            },
+            LeaseHolder {
+                zone_id: LOCAL_ZONE_ID,
+                zone_epoch: 1,
+            },
+        )
+        .unwrap();
+    let mut sequence = 0;
+    let mut send = |host: &mut LocalZoneHost, command| {
+        sequence += 1;
+        host.submit(player, sequence, &encode_command(command))
+            .unwrap();
+    };
+    let mut digest = 0xcbf2_9ce4_8422_2325_u64;
+    let (mut refused, mut started) = (0, 0);
+    for tick in 0..TICKS {
+        if let Some(&(_, forward, facing)) = MOVES.iter().find(|(at, ..)| *at == tick) {
+            send(
+                &mut host,
+                ZoneCommand::Move {
+                    forward,
+                    strafe: 0,
+                    facing,
+                },
+            );
+        }
+        if let Some(&(_, prop)) = TARGETS.iter().find(|(at, _)| *at == tick) {
+            send(
+                &mut host,
+                ZoneCommand::SelectTarget(Some(mmorpg_core::EntityRef::Creature(
+                    mmorpg_core::CreatureId::new(prop),
+                ))),
+            );
+        }
+        if CASTS.contains(&tick) {
+            send(
+                &mut host,
+                ZoneCommand::UseAbility {
+                    ability: FIREBOLT,
+                    target: None,
+                },
+            );
+        }
+        host.tick().unwrap();
+        let projection = host.projection(player).unwrap();
+        let snapshot = decode_snapshot(&projection).unwrap();
+        // Broken props' debris (the trailing section) is left out: Rapier's dynamic pieces are
+        // not bit-identical between wasm32 and native builds (a rotation component can round
+        // one step apart), and they decide nothing.
+        let kept = projection.len() - snapshot.debris.len() * DEBRIS_RECORD_BYTES;
+        digest = fnv(digest, &projection[..kept]);
+        for event in snapshot.events {
+            match event {
+                ZoneEvent::Error {
+                    code: mmorpg_core::ErrorCode::LineOfSight,
+                    ..
+                } => refused += 1,
+                ZoneEvent::CastStarted { .. } => started += 1,
+                _ => {}
+            }
+        }
+    }
+    // The session exercises both sight decisions.
+    assert!(
+        refused > 0 && started > 0,
+        "refused {refused}, started {started}"
+    );
+    let recorded = mmorpg_core::golden::golden(
+        mmorpg_core::golden::workspace_root().join("fixtures/parity/greyhaven-sight-session.txt"),
+        &format!("{digest:016x}\n"),
+    );
+    assert_eq!(format!("{digest:016x}\n"), recorded);
+}

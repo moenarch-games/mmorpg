@@ -23,8 +23,8 @@ pub use character::{
 };
 pub use command::{COMMAND_WIRE_VERSION, decode_command, encode_command};
 pub use projection::{
-    ENTITY_RECORD_BYTES, EVENT_RECORD_BYTES, MAX_WIRE_ENTITIES, PLAYER_SNAPSHOT_FIXED_BYTES,
-    PackedSnapshot, decode_snapshot, encode_snapshot, pack_snapshot,
+    DEBRIS_RECORD_BYTES, ENTITY_RECORD_BYTES, EVENT_RECORD_BYTES, MAX_WIRE_ENTITIES,
+    PLAYER_SNAPSHOT_FIXED_BYTES, PackedSnapshot, decode_snapshot, encode_snapshot, pack_snapshot,
 };
 
 use std::error::Error;
