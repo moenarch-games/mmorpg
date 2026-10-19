@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "half": collider.half_extents,
         })
     };
-    let editable = |id| (103..=106).contains(&id) || (60_000..65_000).contains(&id);
+    let editable = |id: u32| (103..=106).contains(&id) || (60_000..65_000).contains(&id);
     let base_houses: Vec<_> = greyhaven_vale::base_definition()
         .colliders()
         .iter()
@@ -65,16 +65,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let step = 200;
     let columns = ((region.max[0] - region.min[0]) / step + 1) as usize;
     let rows = ((region.max[1] - region.min[1]) / step + 1) as usize;
-    let heights: Vec<_> = (0..rows)
-        .flat_map(|row| {
-            (0..columns).map(move |column| {
-                scenery.surface_at(
-                    region.min[0] + column as i32 * step,
-                    region.min[1] + row as i32 * step,
-                )
-            })
-        })
-        .collect();
+    let mut heights = Vec::with_capacity(rows * columns);
+    for row in 0..rows {
+        for column in 0..columns {
+            heights.push(scenery.surface_at(
+                region.min[0] + column as i32 * step,
+                region.min[1] + row as i32 * step,
+            ));
+        }
+    }
     let roads: Vec<_> = scenery
         .roads
         .iter()
