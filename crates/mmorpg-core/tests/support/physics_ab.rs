@@ -197,6 +197,64 @@ pub enum Workload {
     /// The mill dock's ramps (#59): one player walks up the cart ramp onto the dock and back
     /// down and across it, another walks into the steep chute.
     MillRamps,
+    /// Millbrook's heavy crates (#58): two Wardens Shield Bash them across the yard, then one
+    /// walks into a crate where it rests. The slides run on Rapier in both arms.
+    CrateShove,
+}
+
+/// The crate workload's length.
+pub const CRATE_SHOVE_TICKS: usize = 180;
+
+/// Two Wardens 2 m south of heavy crates 917 and 918.
+const CRATE_SHOVE_PLAYERS: [(u32, [f32; 2]); 2] =
+    [(1, [7_400.0, 3_000.0]), (2, [7_550.0, 3_000.0])];
+
+/// Two level-6 Wardens with full rage by the crates.
+fn crate_shove_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    let zone = placed_zone_at_level(&CRATE_SHOVE_PLAYERS, 6)?;
+    let mut state = zone.snapshot()?;
+    for player in &mut state.players {
+        player.combat.abilities.class = Some(mmorpg_core::ClassChoice {
+            class: mmorpg_core::PlayerClass::Warden,
+            sex: mmorpg_core::Sex::Female,
+        });
+        player.combat.abilities.resource = 100;
+    }
+    Ok(ZoneSimulation::from_snapshot(
+        state,
+        std::sync::Arc::clone(zone.content()),
+    )?)
+}
+
+/// The crate commands: Wardens facing north, the crates as targets, bashes, then player 2
+/// walks north into its crate.
+fn crate_shove_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let stand = |forward| ZoneCommand::Move {
+        forward,
+        strafe: 0,
+        facing: 0,
+    };
+    let crates = [(1, 917), (2, 918)];
+    crates
+        .into_iter()
+        .flat_map(|(player, prop)| match tick {
+            0 => vec![(player, stand(0))],
+            1 => vec![(
+                player,
+                ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(prop)))),
+            )],
+            2 => vec![(
+                player,
+                ZoneCommand::UseAbility {
+                    ability: mmorpg_core::ability::ids::SHIELD_BASH.get(),
+                    target: None,
+                },
+            )],
+            60 if player == 2 => vec![(player, stand(1))],
+            150 if player == 2 => vec![(player, stand(0))],
+            _ => Vec::new(),
+        })
+        .collect()
 }
 
 /// The charge workload's length.
@@ -444,6 +502,7 @@ impl Workload {
             Self::MillRamps => "vale-mill-ramps",
             Self::ChargePath => "vale-charge-path",
             Self::WatchPost => "vale-watch-post",
+            Self::CrateShove => "vale-crate-shove",
         }
     }
 
@@ -457,6 +516,7 @@ impl Workload {
             Self::MillRamps => MILL_RAMPS_TICKS,
             Self::ChargePath => CHARGE_PATH_TICKS,
             Self::WatchPost => WATCH_POST_TICKS,
+            Self::CrateShove => CRATE_SHOVE_TICKS,
         }
     }
 }
@@ -481,6 +541,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::MillRamps);
     workloads.push(Workload::ChargePath);
     workloads.push(Workload::WatchPost);
+    workloads.push(Workload::CrateShove);
     Ok(workloads)
 }
 
@@ -516,6 +577,7 @@ impl Run {
             Workload::MillRamps => (placed_zone(&MILL_RAMPS_PLAYERS)?, 0),
             Workload::ChargePath => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
             Workload::WatchPost => (placed_zone_at_level(&WATCH_POST_PLAYERS, 6)?, 0),
+            Workload::CrateShove => (crate_shove_zone()?, 0),
         };
         Ok(Self {
             zone,
@@ -578,12 +640,14 @@ impl Run {
             | Workload::MillHoist
             | Workload::MillRamps
             | Workload::ChargePath
-            | Workload::WatchPost => {
+            | Workload::WatchPost
+            | Workload::CrateShove => {
                 let commands = match self.workload {
                     Workload::OgreBrawl => ogre_brawl_commands(self.tick),
                     Workload::MillHoist => mill_hoist_commands(self.tick),
                     Workload::ChargePath => charge_path_commands(self.tick),
                     Workload::WatchPost => watch_post_commands(self.tick),
+                    Workload::CrateShove => crate_shove_commands(self.tick),
                     _ => mill_ramps_commands(self.tick),
                 };
                 for (player, command) in commands {

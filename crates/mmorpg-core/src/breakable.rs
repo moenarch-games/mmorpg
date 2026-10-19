@@ -79,7 +79,7 @@ const FENCE_PIECES: [DebrisPiece; 5] = [
 #[must_use]
 pub const fn debris_pieces(kind: PropKind) -> &'static [DebrisPiece] {
     match kind {
-        PropKind::Crate => &CRATE_PIECES,
+        PropKind::Crate | PropKind::HeavyCrate => &CRATE_PIECES,
         PropKind::Barrel | PropKind::ExplosiveBarrel => &BARREL_PIECES,
         PropKind::Fence => &FENCE_PIECES,
     }
@@ -185,6 +185,7 @@ impl ZoneSimulation {
             prop.reset_abilities();
         }
         self.forced.remove(&entity);
+        self.prop_motion.remove(&id);
         if self.interest.remove(entity) {
             self.interest_work.bucket_removes += 1;
         }
@@ -204,7 +205,7 @@ impl ZoneSimulation {
             );
         }
         let from = self.unit_position(killer).ok();
-        self.throw_debris(kind, centre, facing, from);
+        self.throw_debris(kind.debris(), centre, facing, from);
         if kind == PropKind::ExplosiveBarrel
             && let EntityRef::Player(player_id) = killer
         {

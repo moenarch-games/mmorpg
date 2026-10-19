@@ -42,12 +42,13 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// The workloads whose players are only scripted: the bot scenarios and the idle plaza. The
 /// fighting fixtures place players inside props, boxes and hills, which Rapier leaves embedded
 /// and physics-engine pushes out, so their fights (and every position after) legitimately part.
-const SCRIPTED: [&str; 5] = [
+const SCRIPTED: [&str; 6] = [
     "two-bots-move",
     "vale-hub-walk",
     "vale-wolf-hunt",
     "vale-idle-16",
     "vale-mill-hoist",
+    "vale-crate-shove",
 ];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
 /// same boxes, capsules and triangles in `f32`.
@@ -706,6 +707,43 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
                 println!("  {name} on {backend}: charged {charging:?}");
                 assert!(!charging.is_empty(), "{name} on {backend}: nobody charged");
             }
+        }
+        if matches!(workload, Workload::CrateShove) {
+            // On each backend both bashes slide their crates over a metre and they come to rest
+            // (#58); the slides run on Rapier in both arms, so the crates end where they agree.
+            let crates = |trace: &Trace| -> Vec<([f32; 3], [f32; 3])> {
+                let last = trace.snapshots.last().expect("crate trace");
+                [917, 918]
+                    .map(|id| {
+                        let record = last
+                            .creatures
+                            .iter()
+                            .find(|record| record.creature_id.get() == id)
+                            .expect("heavy crate");
+                        (record.position, record.velocity)
+                    })
+                    .to_vec()
+            };
+            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+                let ends = crates(trace);
+                println!("  {name} on {backend}: crates end at {ends:?}");
+                for ((position, velocity), start) in ends.iter().zip([7_400.0, 7_550.0]) {
+                    assert_eq!(
+                        *velocity, [0.0; 3],
+                        "{name} on {backend}: a crate still slides"
+                    );
+                    assert!(
+                        position[2] > 3_300.0 && (position[0] - start).abs() < 20.0,
+                        "{name} on {backend}: a crate did not slide north: {position:?}"
+                    );
+                }
+            }
+            let gap = crates(&rapier)
+                .iter()
+                .zip(crates(&engine))
+                .map(|((a, _), (b, _))| (a[0] - b[0]).hypot(a[2] - b[2]))
+                .fold(0.0_f32, f32::max);
+            assert!(gap <= 0.5, "{name}: crates part by {gap}");
         }
         if matches!(workload, Workload::MillRamps) {
             // Both hold the chute's walker at its foot (physics-engine #351: too-steep slopes are

@@ -236,6 +236,8 @@ pub struct ZoneSimulation {
     /// Navigation cell results (#307), derived from static geometry and dropped when it
     /// changes; not canonical state.
     pub(crate) nav_cache: crate::nav::NavCache,
+    /// Standing movable props' exact state (#58).
+    pub(crate) prop_motion: BTreeMap<CreatureId, crate::movable::PropMotion>,
 }
 
 impl ZoneSimulation {
@@ -372,6 +374,7 @@ impl ZoneSimulation {
             next_debris: 1,
             pieces,
             nav_cache: BTreeMap::new(),
+            prop_motion: BTreeMap::new(),
         })
     }
 
@@ -643,6 +646,7 @@ impl ZoneSimulation {
         self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
         self.settle_forced_moves();
         self.advance_debris();
+        self.advance_movable_props()?;
         self.update_landings()?;
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
         for player in self.players.values_mut() {

@@ -27,12 +27,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // revision 19 (#59) the mill's loading dock and its two ramps. Revision 20 (#305) adds the
     // Redbrand watch post's three pieces to every step's world, and snapshot v27 a piece count
     // byte to every projection. Creature navigation (#307) routes blocked chases around
-    // walls, which moves the spread and crowded fights.
+    // walls, which moves the spread and crowded fights. Revision 21 (#58) stands two heavy crates
+    // in every step's world, and the spread fights push and see them.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [27_000, 442_080, 220_128, 4_220_208],
-        [27_000, 439_200, 78_385, 1_365_808],
-        [27_000, 447_840, 364_508, 6_100_547],
-        [26_105, 458_465, 2_162_794, 24_458_435],
+        [27_000, 442_800, 220_128, 4_220_208],
+        [27_000, 439_920, 79_197, 1_328_344],
+        [27_000, 448_560, 386_013, 6_437_919],
+        [25_986, 459_066, 2_208_874, 24_458_435],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

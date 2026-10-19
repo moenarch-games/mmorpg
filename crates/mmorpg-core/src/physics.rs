@@ -620,6 +620,17 @@ impl World {
             Worlds::Engine(world) => world.step_debris(debris, settle),
         }
     }
+
+    /// Advances movable props (#58) one tick: like debris, but upright (they slide, never
+    /// turn), stopped by units, and leaving out the props' own fixed boxes `exclude`. Runs on
+    /// Rapier whichever backend the world uses, excluded from [`World::spent_nanos`].
+    pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
+        match &self.worlds {
+            Worlds::Rapier(world) => world.step_props(props, exclude),
+            #[cfg(feature = "physics-ab")]
+            Worlds::Engine(world) => world.step_props(props, exclude),
+        }
+    }
 }
 
 #[cfg(test)]

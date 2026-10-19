@@ -678,4 +678,13 @@ impl World {
             .map(|ground| (ground.id, &ground.terrain));
         super::rapier::step_debris(self.gravity, &self.bodies, ground, debris, settle)
     }
+
+    /// Movable props (#58) slide on Rapier too, like debris: physics-engine parks dynamics.
+    pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
+        let ground = self
+            .ground
+            .as_ref()
+            .map(|ground| (ground.id, &ground.terrain));
+        super::rapier::step_props(self.gravity, &self.bodies, ground, props, exclude)
+    }
 }

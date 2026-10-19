@@ -9,7 +9,7 @@
 export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand" | "prop" | "ogre";
 export type CreatureBehaviour = "aggressive" | "neutral" | "prop";
 /** A breakable prop (#288). */
-export type PropKind = "crate" | "barrel" | "explosive_barrel" | "fence";
+export type PropKind = "crate" | "barrel" | "explosive_barrel" | "fence" | "heavy_crate";
 export type NpcRole = "quest_giver" | "vendor" | "spirit_healer" | "guard";
 
 export type CreatureTemplate = {
@@ -113,7 +113,7 @@ const RESOURCES = ["rage", "focus", "mana"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
 const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop", "ogre"];
 const BEHAVIOURS: readonly CreatureBehaviour[] = ["aggressive", "neutral", "prop"];
-const PROPS: readonly PropKind[] = ["crate", "barrel", "explosive_barrel", "fence"];
+const PROPS: readonly PropKind[] = ["crate", "barrel", "explosive_barrel", "fence", "heavy_crate"];
 const ROLES: readonly NpcRole[] = ["quest_giver", "vendor", "spirit_healer", "guard"];
 
 type Json = Record<string, unknown>;

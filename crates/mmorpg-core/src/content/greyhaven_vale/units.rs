@@ -31,6 +31,8 @@ pub mod templates {
     pub const FENCE: CreatureTemplateId = CreatureTemplateId::new(12);
     /// A large creature (#297) that body-blocks, shoves and stomps.
     pub const HILL_OGRE: CreatureTemplateId = CreatureTemplateId::new(13);
+    /// A movable crate (#58) that knockbacks and blasts slide.
+    pub const HEAVY_CRATE: CreatureTemplateId = CreatureTemplateId::new(14);
 }
 
 /// Default respawn time: 60 s.
@@ -77,7 +79,7 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 13] = {
+const TEMPLATES: [TemplateRow; 14] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
     use CreatureFamily::{Boar, Marauder, Mirefin, Ogre, Redbrand, Vermin, Wolf};
     use crate::PropKind;
@@ -98,6 +100,8 @@ const TEMPLATES: [TemplateRow; 13] = {
         (FENCE, "Fence", CreatureFamily::Prop, Prop(PropKind::Fence), [1, 1], false, 18, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, FENCE_BOX),
         // A large creature (#297): slow heavy swings, shoves and stomps.
         (HILL_OGRE, "Hill Ogre", Ogre, Aggressive, [5, 5], false, 300, 0, [9, 15], 1, 84, RESPAWN_TICKS, OGRE),
+        // A movable prop (#58): knockbacks slide it; it breaks like a crate.
+        (HEAVY_CRATE, "Heavy Crate", CreatureFamily::Prop, Prop(PropKind::HeavyCrate), [1, 1], false, 30, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, CRATE_BOX),
     ]
 };
 
@@ -105,7 +109,7 @@ const TEMPLATES: [TemplateRow; 13] = {
 /// Greyhaven's smithy and houses, crates, barrels and fences at Millbrook Farm, and powder
 /// barrels in the Redbrand camp, set close enough to chain-react.
 #[rustfmt::skip]
-const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 17] = {
+const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 19] = {
     use templates::*;
     [
         // Greyhaven Outpost.
@@ -122,6 +126,9 @@ const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 17] = {
         (914, FENCE, [5_200, 3_600], 0),
         (915, FENCE, [5_430, 3_600], 0),
         (916, FENCE, [5_000, 3_730], 16_384),
+        // Millbrook Farm: two heavy crates south of the barn that knockbacks slide (#58).
+        (917, HEAVY_CRATE, [7_400, 3_200], 0),
+        (918, HEAVY_CRATE, [7_550, 3_200], 0),
         // Redbrand Hollow: powder barrels by the campfire and beside the western tents.
         (920, EXPLOSIVE_BARREL, [300, -9_000], 0),
         (921, EXPLOSIVE_BARREL, [370, -9_000], 0),

@@ -32,6 +32,7 @@ mod guard;
 mod interest;
 mod inventory;
 mod loot;
+mod movable;
 mod nav;
 pub mod physics;
 #[cfg(feature = "physics-ab")]

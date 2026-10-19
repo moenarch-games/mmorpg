@@ -34,8 +34,9 @@ pub mod units;
 /// revision 16 composes the saved Outpost layout overrides (#321); revision 17 adds the
 /// Hill Ogre, a large creature that shoves and stomps (#297); revision 18 adds the mill
 /// hoist, a moving platform (#56); revision 19 adds the mill's loading dock and its ramps
-/// (#59); revision 20 adds the Redbrand watch post, a destructible structure (#305).
-pub const REVISION: u64 = 20;
+/// (#59); revision 20 adds the Redbrand watch post, a destructible structure (#305); revision 21
+/// adds two heavy crates at Millbrook Farm, movable props (#58).
+pub const REVISION: u64 = 21;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
