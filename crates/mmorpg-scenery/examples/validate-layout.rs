@@ -1,4 +1,4 @@
-//! The editor's save boundary uses the same validation as its WASM preview.
+//! Shared offline validation for the Blender authoring export and committed layout.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args()
         .nth(1)
