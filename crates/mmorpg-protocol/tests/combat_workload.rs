@@ -23,12 +23,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // the players after every other unit, and snapshot v26 adds a debris count byte. Content
     // revision 17 (#297) adds the hill ogre: one more creature for AI and physics every tick,
     // and the spread fights' players stand by shifted spawns of the longer spawn table. Content
-    // revision 18 (#56) adds the mill hoist's platform body to every step's world.
+    // revision 18 (#56) adds the mill hoist's platform body to every step's world, and
+    // revision 19 (#59) the mill's loading dock and its two ramps.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [27_000, 439_920, 220_128, 4_214_448],
-        [27_000, 437_040, 78_385, 1_362_928],
-        [27_000, 445_680, 362_091, 6_060_971],
-        [26_105, 456_305, 2_162_794, 24_434_854],
+        [27_000, 441_000, 220_128, 4_214_448],
+        [27_000, 438_120, 78_385, 1_362_928],
+        [27_000, 446_760, 362_091, 6_060_971],
+        [26_105, 457_385, 2_162_794, 24_434_854],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

@@ -306,6 +306,17 @@ impl ZoneSimulation {
                 ))
                 .map_err(physics_error)?;
         }
+        // Ramps (#59) are fixed wedges.
+        for ramp in content.ramps() {
+            world
+                .add_body(RigidBody::ramp(
+                    crate::physics::BodyId(u64::from(ramp.body)),
+                    vector(ramp.position),
+                    vector(ramp.half_extents),
+                    ramp.rises,
+                ))
+                .map_err(physics_error)?;
+        }
         // Platforms (#56) start at their tick-0 centre.
         for platform in content.platforms() {
             let [x, y, z] = platform.centre_at(0);

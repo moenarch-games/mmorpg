@@ -189,6 +189,53 @@ pub enum Workload {
     /// The mill hoist (#56): a player rides the moving platform up and walks off at the top.
     /// Unsupported on physics-engine (no moving support).
     MillHoist,
+    /// The mill dock's ramps (#59): one player walks up the cart ramp onto the dock and back
+    /// down and across it, another walks into the steep chute.
+    MillRamps,
+}
+
+/// The ramp walk's length.
+pub const MILL_RAMPS_TICKS: usize = 240;
+
+/// The ramp walk's players by ID and feet XZ.
+const MILL_RAMPS_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [7_300.0, 1_950.0]), (2, [8_250.0, 1_500.0])];
+
+/// The ramp walk's commands at `tick`.
+fn mill_ramps_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let walk = |facing| ZoneCommand::Move {
+        forward: 1,
+        strafe: 0,
+        facing,
+    };
+    let (east, west, plus_z, minus_z) = (16_384, 49_152, 0, 32_768);
+    match tick {
+        0 => vec![(1, walk(east)), (2, walk(plus_z))],
+        44 => vec![(1, walk(west))],
+        // Back on the ramp, across its slope.
+        60 => vec![(1, walk(plus_z))],
+        64 => vec![(1, walk(minus_z))],
+        72 => vec![(1, walk(west))],
+        120 => vec![(1, walk(east)), (2, walk(minus_z))],
+        150 => vec![
+            (
+                1,
+                ZoneCommand::Move {
+                    forward: 0,
+                    strafe: 0,
+                    facing: east,
+                },
+            ),
+            (
+                2,
+                ZoneCommand::Move {
+                    forward: 0,
+                    strafe: 0,
+                    facing: plus_z,
+                },
+            ),
+        ],
+        _ => Vec::new(),
+    }
 }
 
 /// The mill hoist ride: one full cycle and a little more.
@@ -272,13 +319,18 @@ fn ogre_brawl_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 
 /// The ogre brawl's initial zone: Greyhaven with its three players placed by the ogre.
 fn ogre_brawl_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    placed_zone(&OGRE_BRAWL_PLAYERS)
+}
+
+/// Greyhaven with `players` placed at their feet XZ, standing on the ground.
+fn placed_zone(players: &[(u32, [f32; 2])]) -> Result<ZoneSimulation, Box<dyn Error>> {
     let content = mmorpg_core::greyhaven_vale::content();
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), std::sync::Arc::clone(&content))?;
-    for (player, _) in OGRE_BRAWL_PLAYERS {
+    for &(player, _) in players {
         zone.add_player(player)?;
     }
     let mut state = zone.snapshot()?;
-    for (player, [x, z]) in OGRE_BRAWL_PLAYERS {
+    for &(player, [x, z]) in players {
         let snapshot = state
             .players
             .iter_mut()
@@ -299,6 +351,7 @@ impl Workload {
             Self::Greyhaven(fixture) => fixture.name,
             Self::OgreBrawl => "vale-ogre-brawl",
             Self::MillHoist => "vale-mill-hoist",
+            Self::MillRamps => "vale-mill-ramps",
         }
     }
 
@@ -309,6 +362,7 @@ impl Workload {
             Self::Greyhaven(_) => greyhaven_workload::TICKS,
             Self::OgreBrawl => OGRE_BRAWL_TICKS,
             Self::MillHoist => MILL_HOIST_TICKS,
+            Self::MillRamps => MILL_RAMPS_TICKS,
         }
     }
 
@@ -317,7 +371,7 @@ impl Workload {
     pub const fn engine_unsupported(&self) -> Option<&'static str> {
         match self {
             Self::MillHoist => Some("moving support: a platform that carries characters"),
-            Self::Bots(_) | Self::Greyhaven(_) | Self::OgreBrawl => None,
+            Self::Bots(_) | Self::Greyhaven(_) | Self::OgreBrawl | Self::MillRamps => None,
         }
     }
 }
@@ -339,6 +393,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.extend(greyhaven_workload::FIXTURES.map(Workload::Greyhaven));
     workloads.push(Workload::OgreBrawl);
     workloads.push(Workload::MillHoist);
+    workloads.push(Workload::MillRamps);
     Ok(workloads)
 }
 
@@ -371,6 +426,7 @@ impl Run {
             Workload::Greyhaven(fixture) => (greyhaven_workload::initial_zone(*fixture)?, 0),
             Workload::OgreBrawl => (ogre_brawl_zone()?, 0),
             Workload::MillHoist => (mill_hoist_zone()?, 0),
+            Workload::MillRamps => (placed_zone(&MILL_RAMPS_PLAYERS)?, 0),
         };
         Ok(Self {
             zone,
@@ -429,11 +485,11 @@ impl Run {
             Workload::Greyhaven(fixture) => {
                 greyhaven_workload::commands(&mut self.zone, *fixture, self.tick)?;
             }
-            Workload::OgreBrawl | Workload::MillHoist => {
-                let commands = if matches!(self.workload, Workload::OgreBrawl) {
-                    ogre_brawl_commands(self.tick)
-                } else {
-                    mill_hoist_commands(self.tick)
+            Workload::OgreBrawl | Workload::MillHoist | Workload::MillRamps => {
+                let commands = match self.workload {
+                    Workload::OgreBrawl => ogre_brawl_commands(self.tick),
+                    Workload::MillHoist => mill_hoist_commands(self.tick),
+                    _ => mill_ramps_commands(self.tick),
                 };
                 for (player, command) in commands {
                     let sequence = self.next_sequence(player);

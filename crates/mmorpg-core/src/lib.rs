@@ -40,6 +40,7 @@ mod progression;
 mod projectile;
 mod projection;
 mod quest;
+mod ramp;
 pub mod rng;
 mod routine;
 mod snapshot;
@@ -129,6 +130,7 @@ pub use quest::{
     QUEST_CATALOG_REVISION, QUEST_REACH_UNITS, Quest, QuestContentError, QuestEntry, QuestId,
     QuestLog, QuestMarker, QuestObjective, QuestRewards, QuestSheet,
 };
+pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use routine::{
     DAWN, DAY_TICKS, DUSK, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
     NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,

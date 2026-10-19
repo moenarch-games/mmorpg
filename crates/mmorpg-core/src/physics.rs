@@ -117,6 +117,9 @@ enum Kind {
     /// A fixed box the zone moves on a schedule (#56); its velocity is the displacement the
     /// next step applies.
     Platform,
+    /// A fixed wedge (#59) filling the lower half of its box, its top rising toward the
+    /// direction.
+    Ramp(crate::RampRise),
 }
 
 /// One body: a fixed box, or a moving unit's capsule with its authoritative `f32` state.
@@ -166,6 +169,24 @@ impl RigidBody {
             position: exact(Vec3i::new(0, y, 0)),
             velocity: [0.0; 3],
             half_extents: Vec3i::ZERO,
+        }
+    }
+
+    /// A fixed ramp (#59): a wedge in the box centred on `position`, its top rising toward
+    /// `rises`.
+    #[must_use]
+    pub const fn ramp(
+        id: BodyId,
+        position: Vec3i,
+        half_extents: Vec3i,
+        rises: crate::RampRise,
+    ) -> Self {
+        Self {
+            id,
+            kind: Kind::Ramp(rises),
+            position: exact(position),
+            velocity: [0.0; 3],
+            half_extents,
         }
     }
 
@@ -740,6 +761,128 @@ mod tests {
             }
         }
         assert!(stuck.is_empty(), "pairs deadlocked: {stuck:?}");
+    }
+
+    /// A ramp rising toward +X from the floor at x = -300 to `height` at x = 300, a dock box
+    /// behind its high end at the same height, and a unit at x = -600 walking +X for 200
+    /// ticks. Returns where the unit ends and its lowest grounded height while on the ramp.
+    fn walk_up_ramp(height: i32, run: i32) -> ([f32; 3], bool) {
+        let mut world = world();
+        world
+            .add_body(RigidBody::ramp(
+                BodyId(2),
+                Vec3i::new(0, height / 2, 0),
+                Vec3i::new(run / 2, height / 2, 200),
+                crate::RampRise::PosX,
+            ))
+            .unwrap();
+        world
+            .add_body(RigidBody::fixed(
+                BodyId(3),
+                Vec3i::new(run / 2 + 1_000, height / 2, 0),
+                Vec3i::new(1_000, height / 2, 200),
+            ))
+            .unwrap();
+        let unit = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                unit,
+                Vec3i::new(-run / 2 - 300, 90, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        let mut grounded = true;
+        for _ in 0..200 {
+            world
+                .set_velocity(
+                    unit,
+                    Vec3i::new(8, world.body(unit).unwrap().velocity().y, 0),
+                )
+                .unwrap();
+            world.step().unwrap();
+            let x = world.body(unit).unwrap().exact_position()[0];
+            #[allow(clippy::cast_precision_loss)]
+            if x.abs() < run as f32 / 2.0 - 40.0 {
+                grounded &= world.grounded(unit);
+            }
+        }
+        (world.body(unit).unwrap().exact_position(), grounded)
+    }
+
+    #[test]
+    fn a_unit_walks_up_a_shallow_ramp_onto_the_dock_but_not_up_a_steep_one() {
+        on_each_backend(a_unit_walks_up_a_shallow_ramp_onto_the_dock_but_not_up_a_steep_one_on);
+    }
+
+    fn a_unit_walks_up_a_shallow_ramp_onto_the_dock_but_not_up_a_steep_one_on() {
+        // 20°: 220 units over a 600-unit run. Grounded all the way up, then on the dock.
+        let (end, grounded) = walk_up_ramp(220, 600);
+        assert!(grounded, "grounded on the ramp");
+        assert!(
+            end[0] > 350.0 && (end[1] - 310.0).abs() < 0.5,
+            "on the dock: {end:?}"
+        );
+        // 60°: 208 units over 120. The unit cannot climb it and stays on the floor before it.
+        let (end, _) = walk_up_ramp(208, 120);
+        assert!(
+            end[0] < 0.0 && end[1] < 150.0,
+            "stopped by the steep ramp: {end:?}"
+        );
+    }
+
+    #[test]
+    fn a_unit_walks_down_and_across_a_ramp_on_its_surface() {
+        on_each_backend(a_unit_walks_down_and_across_a_ramp_on_its_surface_on);
+    }
+
+    fn a_unit_walks_down_and_across_a_ramp_on_its_surface_on() {
+        let mut world = world();
+        let ramp = crate::Ramp {
+            body: 2,
+            position: [0, 110, 0],
+            half_extents: [300, 110, 300],
+            rises: crate::RampRise::NegZ,
+        };
+        world
+            .add_body(RigidBody::ramp(
+                BodyId(2),
+                Vec3i::new(0, 110, 0),
+                Vec3i::new(300, 110, 300),
+                ramp.rises,
+            ))
+            .unwrap();
+        // Dropped onto the high end, then walking across (+X) and down (+Z).
+        let unit = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                unit,
+                Vec3i::new(-200, 400, -200),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        for velocity in [Vec3i::ZERO, Vec3i::new(6, 0, 0), Vec3i::new(0, 0, 6)] {
+            for _ in 0..60 {
+                let vertical = world.body(unit).unwrap().velocity().y;
+                world
+                    .set_velocity(unit, Vec3i::new(velocity.x, vertical, velocity.z))
+                    .unwrap();
+                world.step().unwrap();
+            }
+            let [x, y, z] = world.body(unit).unwrap().exact_position();
+            #[allow(clippy::cast_possible_truncation)]
+            let top = ramp.top_at(x.round() as i32, z.round() as i32).unwrap();
+            // The capsule's lowest point rests on the slope where it touches, a little uphill
+            // of its centre: within the capsule's radius times the slope.
+            #[allow(clippy::cast_possible_truncation)]
+            let feet = f64::from(y) - 90.0;
+            assert!(
+                feet >= top - 0.5 && feet <= top + 30.0 * (110.0 / 300.0) + 1.0,
+                "on the surface at {x} {z}: feet {feet}, top {top}"
+            );
+            assert!(world.grounded(unit), "grounded on the ramp at {x} {z}");
+        }
     }
 
     /// A lift pillar (#56) whose top rises from the floor to 300 units at 5 units a tick.

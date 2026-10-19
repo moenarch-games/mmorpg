@@ -38,7 +38,7 @@ use std::fmt;
 use physics_engine::BodyId as EngineId;
 use physics_engine::approximate::{
     Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, HeightfieldDesc,
-    QueryFilter, QueryPose, RayCast, Shape, ShapeCast, Vector,
+    Quaternion, QueryFilter, QueryPose, RayCast, Shape, ShapeCast, Vector,
 };
 
 use super::{
@@ -159,6 +159,21 @@ impl World {
                 engine_body
             }
             Kind::Floor => Body::keyed(key, Shape::HalfSpace, vector(body.position), 0.0),
+            // A ramp (#59) is the engine's wedge, which rises toward local -X, turned about Y
+            // toward the ramp's rise; along Z its local X extent is the box's Z extent.
+            Kind::Ramp(rises) => {
+                let [hx, hy, hz] = exact(body.half_extents);
+                let (half, turn) = match rises {
+                    crate::RampRise::NegX => (Vector(hx, hy, hz), 0.0),
+                    crate::RampRise::PosX => (Vector(hx, hy, hz), std::f32::consts::PI),
+                    crate::RampRise::PosZ => (Vector(hz, hy, hx), std::f32::consts::FRAC_PI_2),
+                    crate::RampRise::NegZ => (Vector(hz, hy, hx), -std::f32::consts::FRAC_PI_2),
+                };
+                let mut wedge = Body::keyed(key, Shape::Wedge(half), vector(body.position), 0.0);
+                let (sin, cos) = (turn / 2.0).sin_cos();
+                wedge.orientation = Quaternion(0.0, sin, 0.0, cos);
+                wedge
+            }
             // A moving platform (#56) is a static box the adapter re-adds where the zone moves
             // it: physics-engine has no moving support that carries characters.
             Kind::Fixed | Kind::Platform => Body::keyed(

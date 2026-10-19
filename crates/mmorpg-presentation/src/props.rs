@@ -1096,6 +1096,16 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     );
                 }
             }
+            // A loading dock (#59): a stone block with a plank deck.
+            PropKind::LoadingDock => {
+                m.box_at(STONE, [0., hy - 0.03, 0.], [hx, hy - 0.03, hz]);
+                m.box_at(WOOD, [0., hy * 2. - 0.03, 0.], [hx, 0.03, hz]);
+            }
+            // A ramp (#59): planks over a stone wedge, rising toward local +Z.
+            PropKind::Ramp => {
+                m.put(STONE, wedge(), at(0., 0., 0., hx, hy * 2., hz));
+                m.put(WOOD, wedge(), at(0., 0.03, 0., hx * 0.9, hy * 2., hz));
+            }
             PropKind::Dock => {
                 m.cull = Cull::Mid;
                 let deck = 0.34;

@@ -40,6 +40,7 @@ pub struct ZoneContent {
     quests: Vec<crate::Quest>,
     doors: Vec<crate::Door>,
     platforms: Vec<crate::Platform>,
+    ramps: Vec<crate::Ramp>,
     routines: Vec<crate::NpcRoutine>,
     closed_at_night: Vec<NpcId>,
 }
@@ -142,6 +143,7 @@ impl ZoneContent {
             quests: Vec::new(),
             doors: Vec::new(),
             platforms: Vec::new(),
+            ramps: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
         };
@@ -174,6 +176,7 @@ impl ZoneContent {
             quests: Vec::new(),
             doors: Vec::new(),
             platforms: Vec::new(),
+            ramps: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
         };
@@ -537,6 +540,44 @@ impl ZoneContent {
         Ok(self)
     }
 
+    /// Binds ramps (#59): bodies in the static collider namespace that no collider, door,
+    /// platform or other ramp uses, with valid boxes. Ramps are ordered by body.
+    pub fn with_ramps(mut self, mut ramps: Vec<crate::Ramp>) -> Result<Self, ZoneError> {
+        if ramps.len() > crate::MAX_RAMPS {
+            return Err(ZoneError::new("zone ramp content capacity reached"));
+        }
+        ramps.sort_by_key(|ramp| ramp.body);
+        if ramps.windows(2).any(|pair| pair[0].body == pair[1].body) {
+            return Err(ZoneError::new("duplicate ramp body"));
+        }
+        for ramp in &ramps {
+            ramp.validate()?;
+            if u64::from(ramp.body) >= crate::entity::PLAYER_BODY_BASE
+                || self
+                    .definition
+                    .colliders()
+                    .iter()
+                    .any(|c| c.id == ramp.body)
+                || self.doors.iter().any(|door| door.body == ramp.body)
+                || self
+                    .platforms
+                    .iter()
+                    .any(|platform| platform.body == ramp.body)
+            {
+                return Err(ZoneError::new("ramp body collides with another body id"));
+            }
+        }
+        self.ramps = ramps;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Ordered by body.
+    #[must_use]
+    pub fn ramps(&self) -> &[crate::Ramp] {
+        &self.ramps
+    }
+
     /// Ordered by platform ID.
     #[must_use]
     pub fn platforms(&self) -> &[crate::Platform] {
@@ -619,6 +660,25 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_platform_fingerprint();
+        if self.ramps.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v10");
+        hash.u64(fingerprint);
+        hash.len(self.ramps.len());
+        for ramp in &self.ramps {
+            hash.u32(ramp.body);
+            for value in ramp.position.iter().chain(&ramp.half_extents) {
+                hash.i32(*value);
+            }
+            hash.u8(ramp.rises.code());
+        }
+        hash.finish()
+    }
+
+    fn compute_platform_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_routine_fingerprint();
         if self.platforms.is_empty() {
             return fingerprint;
