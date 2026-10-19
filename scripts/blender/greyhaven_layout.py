@@ -207,7 +207,7 @@ def import_scene(args: argparse.Namespace) -> None:
 
     sizes = {
         "lamp": [30, 150, 30], "signpost": [45, 120, 25],
-        "flowers": [40, 25, 40], "house": [280, 210, 300],
+        "flowers": [40, 25, 40], "house": data["base_houses"][0]["half"],
     }
     for item in data["decoration"]:
         kind = item["kind"]
