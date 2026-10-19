@@ -5,7 +5,8 @@
 //! Every workload runs twice on each backend. Each run must keep shared invariants (finite
 //! state, no penetration of content boxes, door leaves, props, the floor or the terrain beyond
 //! [`PENETRATION_TOLERANCE_UNITS`], units at rest grounded), replay bit-identically on its own
-//! backend and, restored from its canonical snapshot halfway, continue exactly (Atlas 2.1.5). Across backends, scripted players' positions must agree within
+//! backend and, restored from its canonical snapshot halfway, continue exactly (Atlas 2.1.5).
+//! Across backends, scripted players' positions must agree within
 //! [`SCRIPTED_POSITION_TOLERANCE_UNITS`] with the same command outcomes and door states, and
 //! every query decision gameplay makes (line of sight, NPC sight, projectile contact, door
 //! occupancy, ground height, grounded) must agree on identical states: Rapier's state at
@@ -508,11 +509,14 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
         let name = workload.name().to_owned();
         let (rapier, rapier_check) = run(&workload, Backend::Rapier)?;
         let (engine, engine_check) = run(&workload, Backend::Engine)?;
-        // Restored halfway, Rapier continues exactly. physics-engine cannot yet: a rebuilt world
-        // forgets which characters may snap to the ground (engine gap, docs/PHYSICS_AB.md).
+        // Restored halfway, both backends continue exactly (Atlas 2.1.5).
         assert_eq!(
             rapier_check.departed, None,
             "{name}: Rapier recovery departs"
+        );
+        assert_eq!(
+            engine_check.departed, None,
+            "{name}: engine recovery departs"
         );
         // Same-backend replay is bit-identical.
         assert!(
@@ -538,14 +542,12 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
             "{name}: ticks={} players max Δxz={horizontal:.4} Δy={vertical:.4} first rounded \
              difference at {first:?}; creatures max final Δxz={creatures:.3} ({creatures_differing} \
              differ, first rounded difference at {creatures_first:?}); doors differ={doors_differ}; command outcomes differ={outcomes_differ}; \
-             closest box gap rapier={:.4} engine={:.4}; placed overlapping {}; engine restored \
-             halfway departs at {:?}; {probes} \
+             closest box gap rapier={:.4} engine={:.4}; placed overlapping {}; {probes} \
              query probes agree ({embedded} embedded units' grounded not compared) [{:?}]",
             rapier.snapshots.len(),
             rapier_check.closest,
             engine_check.closest,
             rapier_check.placed_inside.len(),
-            engine_check.departed,
             started.elapsed(),
         );
         if let Workload::Bots(scenario) = &workload {

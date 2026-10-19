@@ -29,12 +29,8 @@
 //!   after the last move, or snapped to (Rapier: any static ground within offset + 5 cm).
 //!   A body that was placed or added since its last move is answered by the same test as a
 //!   shape cast.
-//! - Engine gap: whether a character may snap to the ground on its next move is engine state
-//!   (its grounded result from the previous move) that a world rebuilt from game state cannot
-//!   restore, so a zone restored from a canonical snapshot can move a character walking
-//!   downhill differently on its first tick (Atlas 2.1.5). The adapter does not work around it.
-//! - Overlap queries see the terrain (Rapier skips box–heightfield pairs), and the terrain keeps
-//!   its flat cells (Rapier removes them and leaves them to the floor half-space).
+//! - Overlap queries see the terrain (Rapier skips box–heightfield pairs). Flat terrain cells
+//!   are removed on both backends and left to the floor half-space.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -251,23 +247,40 @@ impl World {
     }
 
     /// Lays `terrain` as an engine heightfield: rows along +Z, columns along +X, heights
-    /// row-major as the content stores them.
+    /// row-major as the content stores them, with the flat cells removed like the Rapier
+    /// backend removes them.
     pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
         if let Some(ground) = self.ground.take() {
             self.engine.remove_body(ground.body);
             self.games.remove(&ground.body.to_bits());
         }
+        let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
+        // Flat cells are left to the floor half-space, as on the Rapier backend.
+        let removed_cells = (0..rows - 1)
+            .flat_map(|row| (0..columns - 1).map(move |column| (row, column)))
+            .map(|(row, column)| {
+                [
+                    (row, column),
+                    (row + 1, column),
+                    (row, column + 1),
+                    (row + 1, column + 1),
+                ]
+                .iter()
+                .all(|&(r, c)| terrain.heights[r * columns + c] == 0)
+            })
+            .collect();
         #[allow(clippy::cast_precision_loss)]
         let desc = HeightfieldDesc {
             origin: Vector(terrain.origin[0] as f32, 0.0, terrain.origin[1] as f32),
             cell_size: (terrain.step as f32, terrain.step as f32),
-            columns: usize::from(terrain.columns),
-            rows: usize::from(terrain.rows),
+            columns,
+            rows,
             heights: terrain
                 .heights
                 .iter()
                 .map(|&height| height as f32)
                 .collect(),
+            removed_cells: Some(removed_cells),
         };
         // Content validation already bounds the grid; an engine refusal is a broken invariant.
         let body = self
