@@ -885,6 +885,97 @@ mod tests {
         }
     }
 
+    #[test]
+    fn line_queries_cover_thin_touching_inside_tied_filtered_and_removed_bodies() {
+        on_each_backend(
+            line_queries_cover_thin_touching_inside_tied_filtered_and_removed_bodies_on,
+        );
+    }
+
+    /// Line-of-sight edge cases (#57) on the world's ray and segment queries.
+    fn line_queries_cover_thin_touching_inside_tied_filtered_and_removed_bodies_on() {
+        let mut world = world();
+        let all = |_: BodyId| true;
+        // A 2-unit-thin wall across x = 500, from z = -200 to 200.
+        let wall = RigidBody::fixed(BodyId(2), Vec3i::new(500, 100, 0), Vec3i::new(1, 100, 200));
+        world.add_body(wall).unwrap();
+        let along = Vec3i::new(1_000, 0, 0);
+        assert!(
+            world.segment_blocked(Vec3i::new(0, 100, 0), along, all),
+            "thin wall blocks"
+        );
+        assert!(
+            !world.segment_blocked(Vec3i::new(0, 100, 202), along, all),
+            "a line two units past its edge is clear"
+        );
+        assert!(
+            !world.segment_blocked(Vec3i::new(0, 100, 0), Vec3i::new(498, 0, 0), all),
+            "a line ending a unit short of it is clear"
+        );
+        // Touching: from a unit off either face, away is clear and into it is blocked; from
+        // inside, blocked at once.
+        assert!(!world.segment_blocked(Vec3i::new(502, 100, 0), along, all));
+        assert!(world.segment_blocked(Vec3i::new(498, 100, 0), along, all));
+        let inside = world
+            .cast_ray([500.0, 100.0, 0.0], [300.0, 0.0, 0.0], all)
+            .expect("a ray from inside hits");
+        assert_eq!((inside.body, inside.fraction), (BodyId(2), 0.0));
+        // Ties: a second box sharing the wall's near face; the lower ID wins on both backends.
+        world
+            .add_body(RigidBody::fixed(
+                BodyId(3),
+                Vec3i::new(510, 100, 0),
+                Vec3i::new(11, 50, 50),
+            ))
+            .unwrap();
+        let tie = world
+            .cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], all)
+            .unwrap();
+        assert_eq!(tie.body, BodyId(2));
+        assert!((tie.fraction - 0.499).abs() < 1.0e-4, "{tie:?}");
+        // Filters: skipping the wall finds the box behind it; units are skipped when excluded.
+        let behind = world
+            .cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], |id| id != BodyId(2))
+            .unwrap();
+        assert_eq!(behind.body, BodyId(3));
+        let unit = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                unit,
+                Vec3i::new(250, 90, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        assert_eq!(
+            world
+                .cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], all)
+                .unwrap()
+                .body,
+            unit
+        );
+        assert_eq!(
+            world
+                .cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], |id| id.0 < 10)
+                .unwrap()
+                .body,
+            BodyId(2)
+        );
+        // Removal and ID reuse: the wall's ID now names a box elsewhere.
+        assert!(world.remove_body(BodyId(2)).is_some());
+        assert!(world.remove_body(BodyId(3)).is_some());
+        assert!(!world.segment_blocked(Vec3i::new(0, 100, 0), along, |id| id.0 < 10));
+        world
+            .add_body(RigidBody::fixed(
+                BodyId(2),
+                Vec3i::new(500, 100, 600),
+                Vec3i::new(1, 100, 200),
+            ))
+            .unwrap();
+        assert!(!world.segment_blocked(Vec3i::new(0, 100, 0), along, |id| id.0 < 10));
+        assert!(world.segment_blocked(Vec3i::new(0, 100, 600), along, |id| id.0 < 10));
+    }
+
     /// A lift pillar (#56) whose top rises from the floor to 300 units at 5 units a tick.
     fn lift(world: &mut World) -> BodyId {
         let lift = BodyId(5);

@@ -40,6 +40,8 @@ const SEPARATION_UNITS: f32 = 1.0;
 /// offset plus the fixed 5 cm its grounded test predicts. Support queries and snapping use
 /// the same reach.
 const SUPPORT_REACH: f32 = CONTACT_OFFSET + 0.05;
+/// Ray hits this close (units) along the ray tie, broken by body ID (#57).
+const TIE_UNITS: f32 = 1.0e-3;
 /// A ground gap (units) below this counts as standing on it.
 const GAP_TOLERANCE_UNITS: f32 = 1.0e-3;
 
@@ -815,25 +817,40 @@ impl World {
         if translation == [0.0; 3] {
             return None;
         }
-        let predicate = |_, collider: &rapier3d::prelude::Collider| {
-            hits(BodyId(
-                u64::try_from(collider.user_data).unwrap_or(u64::MAX),
-            ))
+        let body = |collider: &rapier3d::prelude::Collider| {
+            BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX))
         };
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            QueryFilter::default().predicate(&predicate),
-        );
-        let (handle, hit) = queries.cast_ray_and_get_normal(
-            &RapierRay::new(metres(origin), metres(translation)),
-            1.0,
-            true,
-        )?;
-        let collider = self.world.colliders.get(handle)?;
+        let ray = RapierRay::new(metres(origin), metres(translation));
+        // The first accepted hit below `below` (an ID), within `reach` of the ray.
+        let first = |below: Option<BodyId>, reach: f32| {
+            let predicate = |_, collider: &rapier3d::prelude::Collider| {
+                let id = body(collider);
+                below.is_none_or(|below| id < below) && hits(id)
+            };
+            let queries = self.world.broad_phase.as_query_pipeline(
+                &self.queries,
+                &self.world.bodies,
+                &self.world.colliders,
+                QueryFilter::default().predicate(&predicate),
+            );
+            let (handle, hit) = queries.cast_ray_and_get_normal(&ray, reach, true)?;
+            Some((body(self.world.colliders.get(handle)?), hit))
+        };
+        // Rapier breaks equally near hits by its tree order; the game breaks them by body ID
+        // (#57), like physics-engine: look for a lower ID at the same distance (within a
+        // thousandth of a unit) until none.
+        let length = translation
+            .iter()
+            .map(|axis| axis * axis)
+            .sum::<f32>()
+            .sqrt();
+        let tie = TIE_UNITS / length;
+        let (mut id, mut hit) = first(None, 1.0)?;
+        while let Some((lower, tied)) = first(Some(id), hit.time_of_impact + tie) {
+            (id, hit) = (lower, tied);
+        }
         Some(RayHit {
-            body: BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX)),
+            body: id,
             fraction: hit.time_of_impact,
             normal: [hit.normal.x, hit.normal.y, hit.normal.z],
         })
