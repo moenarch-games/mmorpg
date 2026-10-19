@@ -73,6 +73,8 @@ Content revision 17 adds a **large creature** (#297): the Hill Ogre squats east 
 
 Content revision 18 adds the **mill hoist** (#56, `greyhaven_vale::MILL_HOIST`), a moving platform: a 2 m square stone pillar against the Millbrook windmill's south face. It rests 5 s with its top flush with the ground, rises 8 m to the windmill's flat top (its gallery) at 1.5 m/s, rests 5 s and sinks back, forever; its position is a pure function of the zone tick, so canonical snapshots and projections carry nothing new and both clients draw it from content and the projection's tick. Its box fills the shaft under its top, so it sweeps no space a unit could stand in except on it. Physics carries every unit standing on it that is not jumping; a rider walks off onto the gallery at the top, or off the edge and falls.
 
+Content revision 19 adds the first **ramps** (#59, `greyhaven_vale::MILL_RAMPS`): a 1.5 m stone loading dock west of the windmill with a shallow 17° cart ramp up its west side, which units walk up and down grounded on the slope, and a steep 60° chute on its north side that no unit can climb (both controllers climb at most 45°). A ramp is a wedge filling the lower half of its box, its top rising toward one horizontal direction; it is solid physics on both backends, and both clients draw it from the same content.
+
 ## Systems
 
 ### Movement

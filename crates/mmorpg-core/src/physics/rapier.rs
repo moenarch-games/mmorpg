@@ -133,6 +133,26 @@ fn cuboid(half_extents: Vec3i) -> Cuboid {
     Cuboid::new(metres(exact(half_extents)))
 }
 
+/// A ramp's wedge (#59) in metres around its box centre: the box's bottom rectangle and its
+/// top edge at the high end, as a convex hull.
+fn wedge(half_extents: Vec3i, rises: crate::RampRise) -> SharedShape {
+    let [hx, hy, hz] = exact(half_extents).map(|value| value / UNITS_PER_METRE);
+    let [dx, dz] = rises.direction();
+    let mut points = Vec::with_capacity(6);
+    for sx in [-1.0, 1.0] {
+        for sz in [-1.0, 1.0] {
+            points.push(Vector::new(sx * hx, -hy, sz * hz));
+            // The top edge lies over the high end of the bottom.
+            #[allow(clippy::cast_precision_loss)]
+            let high = (dx != 0 && sx == dx as f32) || (dz != 0 && sz == dz as f32);
+            if high {
+                points.push(Vector::new(sx * hx, hy, sz * hz));
+            }
+        }
+    }
+    SharedShape::convex_hull(&points).expect("a ramp's box spans a solid wedge")
+}
+
 fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
     let user_data = u128::from(body.id.0);
     if body.is_moving() {
@@ -150,6 +170,17 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
         );
         Handles {
             body: Some(handle),
+            collider,
+        }
+    } else if let Kind::Ramp(rises) = body.kind {
+        let collider = world.colliders.insert(
+            ColliderBuilder::new(wedge(body.half_extents, rises))
+                .translation(metres(body.position))
+                .user_data(user_data)
+                .build(),
+        );
+        Handles {
+            body: None,
             collider,
         }
     } else if matches!(body.kind, Kind::Floor) {

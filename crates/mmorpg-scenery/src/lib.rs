@@ -118,11 +118,15 @@ pub enum PropKind {
     Dock,
     /// A cave's roof slab (#159), cut away while the viewer stands under it.
     CaveRoof,
+    /// A ramp's wedge (#59): its box at yaw 0 rises toward +Z.
+    Ramp,
+    /// A loading dock (#59): a stone block with a plank deck, fitted to its collider.
+    LoadingDock,
 }
 
 impl PropKind {
     /// Every kind with its variants flattened, in declaration order.
-    pub const ALL: [Self; 35] = [
+    pub const ALL: [Self; 37] = [
         Self::Keep,
         Self::Inn,
         Self::House,
@@ -158,6 +162,8 @@ impl PropKind {
         Self::CropRow,
         Self::Dock,
         Self::CaveRoof,
+        Self::Ramp,
+        Self::LoadingDock,
     ];
 
     /// Stable kebab-case name with the variant, independent of `Debug`
@@ -200,6 +206,8 @@ impl PropKind {
             Self::CropRow => "crop-row",
             Self::Dock => "dock",
             Self::CaveRoof => "cave-roof",
+            Self::Ramp => "ramp",
+            Self::LoadingDock => "loading-dock",
         }
     }
 }
@@ -446,6 +454,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::TENTS.contains(&id) => PropKind::Tent,
         _ if ids::CRATES.contains(&id) => PropKind::Crate,
         ids::WATCHTOWER => PropKind::Keep,
+        ids::MILL_DOCK => PropKind::LoadingDock,
         _ if ids::STANDING_STONES.contains(&id) => PropKind::Waystone,
         _ if ids::RUINS.contains(&id) => PropKind::House,
         _ if ids::RUIN_FENCES.contains(&id) => PropKind::Fence,
@@ -461,6 +470,20 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ => return None,
     };
     Some(kind)
+}
+
+/// The yaw that turns a ramp's +Z rise toward its content rise (#59).
+fn ramp_yaw(body: u32) -> u16 {
+    let rises = greyhaven_vale::MILL_RAMPS
+        .iter()
+        .find(|ramp| ramp.body == body)
+        .map_or(mmorpg_core::RampRise::PosZ, |ramp| ramp.rises);
+    match rises {
+        mmorpg_core::RampRise::PosZ => 0,
+        mmorpg_core::RampRise::PosX => 16_384,
+        mmorpg_core::RampRise::NegZ => 32_768,
+        mmorpg_core::RampRise::NegX => 49_152,
+    }
 }
 
 /// Stable two-byte code of a kind for hashing; independent of `Debug` output.
@@ -501,6 +524,8 @@ const fn kind_code(kind: PropKind) -> [u8; 2] {
         PropKind::CropRow => [29, 0],
         PropKind::Dock => [30, 0],
         PropKind::CaveRoof => [31, 0],
+        PropKind::Ramp => [32, 0],
+        PropKind::LoadingDock => [33, 0],
     }
 }
 
@@ -572,6 +597,15 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         ],
         half_extents: greyhaven_vale::inn::FOOTPRINT_HALF_EXTENTS,
     };
+    // Ramps (#59) are wedges in their boxes; their boxes anchor them like structures.
+    let ramps: Vec<_> = greyhaven_vale::MILL_RAMPS
+        .iter()
+        .map(|ramp| StaticCollider {
+            id: ramp.body,
+            position: ramp.position,
+            half_extents: ramp.half_extents,
+        })
+        .collect();
     // In its former collider order, right after the keep, so placement and hashes stay put.
     let structures: Vec<_> = definition
         .colliders()
@@ -581,6 +615,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
             let inn = (structure.0.id == ids::KEEP).then_some((&inn, PropKind::Inn));
             [Some(structure), inn].into_iter().flatten()
         })
+        .chain(ramps.iter().map(|ramp| (ramp, PropKind::Ramp)))
         .collect();
     let roads = greyhaven_vale::roads()
         .iter()
@@ -605,10 +640,21 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
                 collider.position[1] - collider.half_extents[1],
                 collider.position[2],
             ],
-            yaw: 0,
+            yaw: if *kind == PropKind::Ramp {
+                ramp_yaw(collider.id)
+            } else {
+                0
+            },
             scale_permille: 1_000,
-            collider: Some(collider.id),
-            half_extents: collider.half_extents,
+            // A ramp is no box collider; its box is given before its yaw.
+            collider: (*kind != PropKind::Ramp).then_some(collider.id),
+            half_extents: match (*kind, ramp_yaw(collider.id)) {
+                (PropKind::Ramp, 16_384 | 49_152) => {
+                    let [x, y, z] = collider.half_extents;
+                    [z, y, x]
+                }
+                _ => collider.half_extents,
+            },
         })
         .collect();
     let mut scenery = Scenery {

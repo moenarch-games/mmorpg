@@ -315,6 +315,27 @@ fn check_ogre(
     });
 }
 
+/// The ramp walk on one backend (#59): the walker is on the dock (feet 1.5 m up) when it
+/// turns back and on the ground at the end; the chute never lets the other player onto the
+/// dock.
+fn check_mill_ramps(trace: &Trace) -> std::result::Result<(), String> {
+    let feet =
+        |tick: usize, player: usize| trace.snapshots[tick - 1].players[player].position[1] - 90.0;
+    if (feet(44, 0) - 150.0).abs() > 3.0 || feet(trace.snapshots.len(), 0).abs() > 0.5 {
+        return Err(format!(
+            "the walker's feet at 44 {} and at the end {}",
+            feet(44, 0),
+            feet(trace.snapshots.len(), 0)
+        ));
+    }
+    if let Some(tick) = (1..=trace.snapshots.len()).find(|&tick| feet(tick, 1) >= 149.0) {
+        return Err(format!(
+            "the chute let player 2 onto the dock at tick {tick}"
+        ));
+    }
+    Ok(())
+}
+
 /// The hoist ride on Rapier (#56): the rider ends on the windmill's gallery, 8 m up.
 fn check_mill_hoist(trace: &Trace) -> Result<()> {
     let last = trace.snapshots.last().ok_or("empty hoist trace")?;
@@ -647,6 +668,12 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
             rapier_check.placed_inside.len(),
             started.elapsed(),
         );
+        if matches!(workload, Workload::MillRamps) {
+            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+                check_mill_ramps(trace)
+                    .map_err(|failure| format!("{name} on {backend}: {failure}"))?;
+            }
+        }
         if matches!(workload, Workload::OgreBrawl) {
             // On each backend the ogre's body blocks every player, it shoves the ones in its
             // way and its stomps land (#297).

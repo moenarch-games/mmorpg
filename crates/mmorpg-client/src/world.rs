@@ -535,5 +535,8 @@ fn blockout(prop: &Prop, base: f32, boxes: &mut Vec<SceneBox>) {
         }
         PropKind::CropRow => body(&mut part, [0.62, 0.52, 0.16]),
         PropKind::Dock => part([0.0, base + 0.2, 0.0], size, WOOD),
+        PropKind::LoadingDock => body(&mut part, STONE),
+        // A ramp's wedge (#59) is no box; the shared static scene draws it.
+        PropKind::Ramp => {}
     }
 }

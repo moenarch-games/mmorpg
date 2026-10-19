@@ -33,8 +33,9 @@ pub mod units;
 /// inside; revision 15 adds breakable crates, barrels, fences and powder barrels (#288);
 /// revision 16 composes the saved Outpost layout overrides (#321); revision 17 adds the
 /// Hill Ogre, a large creature that shoves and stomps (#297); revision 18 adds the mill
-/// hoist, a moving platform (#56).
-pub const REVISION: u64 = 18;
+/// hoist, a moving platform (#56); revision 19 adds the mill's loading dock and its ramps
+/// (#59).
+pub const REVISION: u64 = 19;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -91,6 +92,9 @@ pub mod ids {
     pub const WINDMILL: u32 = 202;
     /// The mill hoist (#56): a lift pillar at the windmill's south face.
     pub const MILL_HOIST: u32 = 203;
+    /// The mill's loading dock (#59) and its ramps.
+    pub const MILL_DOCK: u32 = 204;
+    pub const MILL_RAMPS: RangeInclusive<u32> = 205..=206;
     pub const FENCES: RangeInclusive<u32> = 210..=214;
 
     pub const SHORE_ROCKS: RangeInclusive<u32> = 300..=305;
@@ -308,7 +312,7 @@ pub fn roads() -> &'static [Road] {
 type Footprint = (u32, [i32; 2], [i32; 2], i32);
 
 #[rustfmt::skip]
-static STRUCTURES: [Footprint; 83] = [
+static STRUCTURES: [Footprint; 84] = [
     // Greyhaven Outpost: keep, inn, smithy, houses, well and waystone.
     (ids::KEEP, [-2_600, -500], [-800, 700], 1_000),
     (ids::SMITHY, [2_400, 100], [3_000, 800], 450),
@@ -349,6 +353,8 @@ static STRUCTURES: [Footprint; 83] = [
     (ids::BARN, [7_400, 3_600], [8_600, 5_200], 700),
     (ids::FARMHOUSE, [5_800, 4_300], [6_600, 5_000], 500),
     (ids::WINDMILL, [8_550, 1_850], [9_050, 2_350], 800),
+    // The mill's loading dock (#59), 1.5 m high, west of the windmill.
+    (ids::MILL_DOCK, [8_100, 1_800], [8_400, 2_100], 150),
     (210, [5_000, 5_590], [7_000, 5_610], 110),
     (211, [7_400, 5_590], [9_600, 5_610], 110),
     (212, [5_000, 8_390], [9_600, 8_410], 110),
@@ -788,6 +794,23 @@ pub const MILL_HOIST: crate::Platform = crate::Platform {
     dwell: 150,
 };
 
+/// The mill's loading dock ramps (#59): a shallow cart ramp (17°) up the dock's west side
+/// and a steep stone chute (60°) on its north side that no unit can walk up.
+pub const MILL_RAMPS: [crate::Ramp; 2] = [
+    crate::Ramp {
+        body: *ids::MILL_RAMPS.start(),
+        position: [7_850, 75, 1_950],
+        half_extents: [250, 75, 100],
+        rises: crate::RampRise::PosX,
+    },
+    crate::Ramp {
+        body: *ids::MILL_RAMPS.end(),
+        position: [8_250, 75, 1_757],
+        half_extents: [100, 75, 43],
+        rises: crate::RampRise::PosZ,
+    },
+];
+
 /// The hosted collision content. Hosts, clients and scenery consume this
 /// exact definition; the spawn grid is validated clear of every collider.
 #[must_use]
@@ -841,6 +864,7 @@ pub fn content_with_definition(
             .with_quests(crate::QUEST_CATALOG_REVISION, quests::quests())?
             .with_doors(vec![inn::door(ids::INN_DOOR)])?
             .with_platforms(vec![MILL_HOIST])?
+            .with_ramps(MILL_RAMPS.to_vec())?
             .with_routines(units::routines(), units::closed_at_night())?,
     ))
 }
