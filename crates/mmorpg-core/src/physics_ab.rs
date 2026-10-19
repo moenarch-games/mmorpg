@@ -100,6 +100,11 @@ impl ZoneSimulation {
             }))
     }
 
+    /// Whether `from`'s body fits along a charge at `to` (#57): the charge-path rule's shape cast.
+    pub fn charge_path_probe(&self, from: EntityRef, to: EntityRef) -> Result<bool, ZoneError> {
+        self.charge_path_clear(from, to)
+    }
+
     /// The ground height gameplay reads at `(x, z)` (whole units, 0 on flat content).
     #[must_use]
     pub fn ground_probe(&self, x: i32, z: i32) -> i32 {

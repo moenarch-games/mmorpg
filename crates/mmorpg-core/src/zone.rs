@@ -272,9 +272,7 @@ impl ZoneSimulation {
         let spawn = definition.spawn_grid().feet(0).unwrap_or([0; 3]);
         for collider in definition.colliders() {
             // The flat ground the spawn grid stands on is a floor half-space at y = 0 (#271).
-            let [x, y, z] = collider.position;
-            let [hx, hy, hz] = collider.half_extents;
-            if y + hy == 0 && (x - spawn[0]).abs() <= hx && (z - spawn[2]).abs() <= hz {
+            if is_ground(collider, spawn) {
                 let id = crate::physics::BodyId(u64::from(collider.id));
                 world
                     .add_body(RigidBody::floor(id, 0))
@@ -907,6 +905,27 @@ pub(crate) fn saturate_i8(value: i32) -> i8 {
 
 pub(crate) fn physics_error(error: crate::physics::PhysicsError) -> ZoneError {
     ZoneError::new(error.to_string())
+}
+
+/// Whether `collider` is the flat ground the spawn grid stands on (feet at `spawn`): its top at
+/// y = 0 under the spawn. It becomes the floor half-space, and the terrain shares its ID.
+fn is_ground(collider: &crate::StaticCollider, spawn: [i32; 3]) -> bool {
+    let [x, y, z] = collider.position;
+    let [hx, hy, hz] = collider.half_extents;
+    y + hy == 0 && (x - spawn[0]).abs() <= hx && (z - spawn[2]).abs() <= hz
+}
+
+impl ZoneSimulation {
+    /// The ground's body (#57): the floor half-space and the terrain rising from it.
+    pub(crate) fn ground_body(&self) -> Option<crate::physics::BodyId> {
+        let definition = self.content.definition();
+        let spawn = definition.spawn_grid().feet(0).unwrap_or([0; 3]);
+        definition
+            .colliders()
+            .iter()
+            .find(|collider| is_ground(collider, spawn))
+            .map(|collider| crate::physics::BodyId(u64::from(collider.id)))
+    }
 }
 
 #[cfg(test)]
