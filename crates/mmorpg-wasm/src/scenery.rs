@@ -1,7 +1,7 @@
 //! Versioned presentation scenery for the browser's `SceneryProvider`.
 //!
 //! The export is JSON (format [`SCENERY_FORMAT`], version
-//! [`SCENERY_FORMAT_VERSION`]) so `mmorpg-core` stays free of serde. It maps
+//! [`SCENERY_FORMAT_VERSION`]) to keep the presentation schema outside `mmorpg-core`. It maps
 //! the hosted content's `mmorpg-scenery` value, the same one the native
 //! client draws, onto that format:
 //!
@@ -170,7 +170,11 @@ pub fn hosted_scenery_json() -> &'static str {
     })
 }
 
-fn export(scenery: &Scenery, colliders: &[StaticCollider], areas: &ZoneAreas) -> SceneryExport {
+pub(crate) fn export(
+    scenery: &Scenery,
+    colliders: &[StaticCollider],
+    areas: &ZoneAreas,
+) -> SceneryExport {
     let structures = scenery
         .props
         .iter()
@@ -502,8 +506,8 @@ mod tests {
         assert_eq!(value["format"], SCENERY_FORMAT);
         assert_eq!(value["version"], SCENERY_FORMAT_VERSION);
         assert_eq!(value["source"], SCENERY_SOURCE);
-        assert_eq!(value["contentRevision"], "15");
-        assert_eq!(value["presentationFingerprint"], "fecddc57634728e6");
+        assert_eq!(value["contentRevision"], "16");
+        assert_eq!(value["presentationFingerprint"], "dc2f5dd3bf29e040");
         assert_eq!(value["unitsPerMetre"], 100);
         assert_eq!(value["playerHalfExtents"], serde_json::json!([30, 90, 30]));
         let names: Vec<_> = value["areas"]

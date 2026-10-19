@@ -31,6 +31,7 @@
 //! platform builds identical scenery ([`Scenery::stable_hash`]).
 
 mod geometry;
+pub mod layout;
 mod outpost_grass;
 mod outpost_relief;
 
@@ -39,7 +40,7 @@ use std::collections::BTreeMap;
 pub use geometry::Rect;
 use geometry::{Ellipse, Rng, polyline_distance, splitmix64, value_noise};
 use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_PLAZA, ids};
-use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, greyhaven_vale_definition, trig};
+use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, trig};
 pub use outpost_grass::outpost_grass_placements;
 
 /// Half the side of the square the terrain grid covers (±280 m).
@@ -435,7 +436,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         ids::WINDMILL => PropKind::Windmill,
         ids::MINE_ENTRANCE => PropKind::MineEntrance,
         ids::CAMPFIRE => PropKind::Campfire,
-        _ if ids::HOUSES.contains(&id) => PropKind::House,
+        _ if ids::HOUSES.contains(&id) || (60_000..65_000).contains(&id) => PropKind::House,
         _ if ids::PALISADE.contains(&id) => PropKind::PalisadeSegment,
         _ if ids::GATE_POSTS.contains(&id) => PropKind::GatePost,
         _ if ids::GRAVESTONES.contains(&id) => PropKind::Gravestone,
@@ -544,7 +545,7 @@ const FARMLAND: Rect = Rect {
 
 /// Builds the Greyhaven Vale scenery from the core content revision.
 #[must_use]
-pub fn greyhaven_vale_scenery() -> Scenery {
+pub fn base_scenery() -> Scenery {
     let mut scenery = unmasked_greyhaven_vale_scenery();
     outpost_grass::apply(&mut scenery.props);
     // Apply after procedural placement, preserving every accepted prop/RNG draw.
@@ -552,8 +553,14 @@ pub fn greyhaven_vale_scenery() -> Scenery {
     scenery
 }
 
+pub fn greyhaven_vale_scenery() -> Scenery {
+    let definition = greyhaven_vale::greyhaven_vale_definition();
+    layout::compose(greyhaven_vale::layout::SOURCE, &definition)
+        .expect("committed scenery layout is valid")
+}
+
 fn unmasked_greyhaven_vale_scenery() -> Scenery {
-    let definition = greyhaven_vale_definition();
+    let definition = greyhaven_vale::base_definition();
     // The walk-in inn (#158) collides through its walls and furniture; its footprint still
     // anchors the building, its flattened ground and the decoration keep-out.
     let inn = StaticCollider {
@@ -1114,11 +1121,7 @@ impl Placer<'_> {
 
     /// Hand-placed hub, farm and lake dressing.
     fn fixed_props(&mut self) {
-        let fixed: [(PropKind, [i32; 2], u16); 13] = [
-            (PropKind::Lamp, [-1_800, 1_000], 0),
-            (PropKind::Lamp, [1_800, 1_000], 0),
-            (PropKind::Lamp, [-1_800, 3_000], 0),
-            (PropKind::Lamp, [1_800, 3_000], 0),
+        let fixed: [(PropKind, [i32; 2], u16); 9] = [
             (PropKind::Signpost, [300, 5_300], 0),
             (PropKind::Signpost, [-4_600, 2_300], 16_384),
             (PropKind::Signpost, [300, -1_300], 32_768),

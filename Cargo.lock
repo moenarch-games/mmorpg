@@ -1820,6 +1820,8 @@ name = "mmorpg-core"
 version = "0.1.0"
 dependencies = [
  "rapier3d",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1869,6 +1871,8 @@ name = "mmorpg-scenery"
 version = "0.1.0"
 dependencies = [
  "mmorpg-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

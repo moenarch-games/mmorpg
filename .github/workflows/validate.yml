@@ -71,7 +71,7 @@ jobs:
                   *) docs_only=false ;;
                 esac
                 case "$file" in
-                  Cargo.toml|Cargo.lock|rust-toolchain*|.cargo/*|crates/*|web/assets/*) rust_changed=true ;;
+                  Cargo.toml|Cargo.lock|rust-toolchain*|.cargo/*|crates/*|content/*|web/assets/*) rust_changed=true ;;
                 esac
               done
             fi
@@ -106,7 +106,7 @@ jobs:
                       selected = not negative
               return selected
 
-          specs = {'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'fixtures/protocol/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
+          specs = {'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
           pr = os.environ["GITHUB_EVENT_NAME"] == "pull_request"
           event = json.loads(os.environ.get("PR_EVENT", "{}"))
           paths = []
