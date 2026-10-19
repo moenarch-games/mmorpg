@@ -174,8 +174,8 @@ impl World {
                 wedge.orientation = Quaternion(0.0, sin, 0.0, cos);
                 wedge
             }
-            // A moving platform (#56) is a static box the adapter re-adds where the zone moves
-            // it; the adapter carries its riders.
+            // A moving platform (#56) is a static box the adapter moves in place where the zone
+            // moves it; the adapter carries its riders.
             Kind::Fixed | Kind::Platform => Body::keyed(
                 key,
                 Shape::Box(vector(exact(body.half_extents))),
@@ -270,20 +270,23 @@ impl World {
     }
 
     pub fn place_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
-        let mut platform = *self.platform_mut(id)?;
-        platform.position = exact(to);
-        platform.velocity = [0.0; 3];
-        self.replace_body(platform)
+        let platform = self.platform_mut(id)?;
+        let by = [0, 1, 2].map(|axis| exact(to)[axis] - platform.position[axis]);
+        self.shift_platform(id, by)
     }
 
-    /// Moves platform `id`'s static box by `by`: removed and added again where it goes.
+    /// Moves platform `id`'s static box by `by`, in place (`set_static_position`).
     fn shift_platform(&mut self, id: BodyId, by: [f32; 3]) -> Result<(), PhysicsError> {
-        let mut platform = *self.platform_mut(id)?;
+        let platform = self.platform_mut(id)?;
         for (axis, delta) in platform.position.iter_mut().zip(by) {
             *axis += delta;
         }
         platform.velocity = [0.0; 3];
-        self.replace_body(platform)
+        let position = platform.position;
+        let handle = self.handles[&id];
+        self.engine
+            .set_static_position(handle, vector(position))
+            .map_err(|failure| engine_error("set_static_position", failure))
     }
 
     /// Whether moving `body` stands on platform `platform`: walkable top within the ground
