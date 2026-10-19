@@ -11,6 +11,11 @@ cargo test -p mmorpg-core --features physics-ab --test physics_ab -- --nocapture
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab      # manual timing
 ```
 
+Renovate bumps the physics-engine pin as soon as its `main` moves (`renovate.json`) and
+automerges once `merge-ready` passes; a `Cargo.lock` or `Cargo.toml` change counts as a Rust
+change in `validate.yml`, so the A/B test runs on every bump. A bump that needs adapter work
+fails there and is taken over by hand.
+
 ## Seam
 
 - `physics::World` is an enum over the backends (`crates/mmorpg-core/src/physics.rs`). Rapier's
