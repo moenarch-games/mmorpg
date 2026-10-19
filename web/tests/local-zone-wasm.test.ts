@@ -511,13 +511,13 @@ describe("WASM local zone combat intents", () => {
       "Firebolt", "Frost Nova", "Arcane Barrier", "Blizzard", "Fire Blast",
     ]);
     expect(combatStatus(projection, catalog)).toBe("Health 50/50 · Mana 110/110 · Level 1");
-    // Firebolt needs a target; Frost Nova is learned at level 2.
+    // Firebolt without a target is cast along the facing (#289); Frost Nova is learned at level 2.
     for (const slot of [1, 2]) {
       source.sendCommand(useAbilitySlot(slot, projection, catalog)!);
     }
     run(source, 1);
     expect(source.latestProjection()?.events).toEqual([
-      { kind: "error", code: "invalid-target", target: null },
+      { kind: "cast-started", source: { kind: "player", id: 1 }, target: null, ability: 9, ticks: 60 },
       { kind: "error", code: "not-learned", target: null },
     ]);
   });

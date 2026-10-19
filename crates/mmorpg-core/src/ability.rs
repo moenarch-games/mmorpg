@@ -8,7 +8,7 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 4;
+pub const ABILITY_CATALOG_REVISION: u64 = 5;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
@@ -307,10 +307,11 @@ impl Ability {
         )
     }
 
-    /// Whether the ability may also fly freely along the facing without a target (#286).
+    /// Whether the ability may also fly freely along the facing without a target: Aimed Shot
+    /// (#286) and Firebolt (#289).
     #[must_use]
     pub const fn aims_freely(&self) -> bool {
-        self.id.0 == ids::AIMED_SHOT.0
+        self.id.0 == ids::AIMED_SHOT.0 || self.id.0 == ids::FIREBOLT.0
     }
 
     /// Whether the ability needs a hostile unit target (otherwise it is
@@ -515,19 +516,23 @@ pub const ABILITY_CATALOG: [Ability; 18] = [
             duration: 300,
         },
     ),
-    ability(
-        9,
-        "Firebolt",
-        ARCANIST,
-        1,
-        25,
-        CastTime::Cast(60),
-        0,
-        RANGED,
-        AbilityEffect::Bolt {
-            damage: [10, 14],
-            per_level: 3,
-        },
+    // A magic missile (#289): it homes on its target, or flies straight along the facing.
+    shot(
+        ability(
+            9,
+            "Firebolt",
+            ARCANIST,
+            1,
+            25,
+            CastTime::Cast(60),
+            0,
+            RANGED,
+            AbilityEffect::Bolt {
+                damage: [10, 14],
+                per_level: 3,
+            },
+        ),
+        crate::ProjectileKind::Missile,
     ),
     ability(
         10,
@@ -814,6 +819,7 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
         for field in fields {
             bytes.extend_from_slice(&field.to_be_bytes());
         }
+        bytes.push(ability.projectile.map_or(0, crate::ProjectileKind::code));
     }
     bytes
 }

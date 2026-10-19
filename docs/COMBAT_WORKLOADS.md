@@ -73,7 +73,7 @@ and recovery acceptance. The complete ceilings live in the protocol test.
 
 Since the switch to Rapier (#271) the physics counters are the bodies in each
 step's rebuilt Rapier world and the moving bodies it visits; the first-party
-engine's pair, TOI and contact counters are gone. Current ceilings (snapshot v27,
+engine's pair, TOI and contact counters are gone. Current ceilings (snapshot v28,
 content revision 21: the expanded valley, hills and Greyfang cave of #159, the 17
 breakable props of #288, the hill ogre of #297, the mill hoist, dock and ramps of #56/#59
 the Redbrand watch post of #305 and Millbrook's two heavy crates of #58; creatures route

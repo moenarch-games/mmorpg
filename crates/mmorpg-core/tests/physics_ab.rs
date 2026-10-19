@@ -42,13 +42,14 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// The workloads whose players are only scripted: the bot scenarios and the idle plaza. The
 /// fighting fixtures place players inside props, boxes and hills, which Rapier leaves embedded
 /// and physics-engine pushes out, so their fights (and every position after) legitimately part.
-const SCRIPTED: [&str; 6] = [
+const SCRIPTED: [&str; 7] = [
     "two-bots-move",
     "vale-hub-walk",
     "vale-wolf-hunt",
     "vale-idle-16",
     "vale-mill-hoist",
     "vale-crate-shove",
+    "vale-missiles",
 ];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
 /// same boxes, capsules and triangles in `f32`.
@@ -707,6 +708,59 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
                 println!("  {name} on {backend}: charged {charging:?}");
                 assert!(!charging.is_empty(), "{name} on {backend}: nobody charged");
             }
+        }
+        if matches!(workload, Workload::Missiles) {
+            // On each backend the homing Firebolts fly and strike wolves or trunks in the way, and
+            // the free ones fly straight (#289); both arms spend the same missiles the same way.
+            let outcomes = |trace: &Trace| -> std::collections::BTreeMap<u32, (bool, [f32; 3])> {
+                trace
+                    .snapshots
+                    .iter()
+                    .flat_map(|snapshot| &snapshot.projectiles)
+                    .filter_map(|projectile| match projectile.flight {
+                        mmorpg_core::Flight::Stuck { unit, .. }
+                            if projectile.kind == mmorpg_core::ProjectileKind::Missile =>
+                        {
+                            Some((projectile.id, (unit.is_some(), projectile.position)))
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            };
+            let (a, b) = (outcomes(&rapier), outcomes(&engine));
+            let struck = |outcome: &std::collections::BTreeMap<u32, (bool, [f32; 3])>| {
+                outcome
+                    .iter()
+                    .filter(|(_, (unit, _))| *unit)
+                    .map(|(id, _)| *id)
+                    .collect::<Vec<_>>()
+            };
+            println!(
+                "  {name}: missiles struck units {:?} / {:?}, spent {} / {}",
+                struck(&a),
+                struck(&b),
+                a.len(),
+                b.len()
+            );
+            assert!(
+                !struck(&a).is_empty(),
+                "{name} on rapier: no missile struck"
+            );
+            assert!(
+                !struck(&b).is_empty(),
+                "{name} on engine: no missile struck"
+            );
+            let same_ends =
+                a.keys().eq(b.keys()) && a.values().zip(b.values()).all(|(x, y)| x.0 == y.0);
+            assert!(same_ends, "{name}: missiles end differently: {a:?} / {b:?}");
+            // Missiles spent in the world end within the creatures' drift of each other.
+            let gap = a
+                .values()
+                .zip(b.values())
+                .filter(|(x, _)| !x.0)
+                .map(|(x, y)| (x.1[0] - y.1[0]).hypot(x.1[2] - y.1[2]))
+                .fold(0.0_f32, f32::max);
+            println!("  {name}: missiles spent in the world part by at most {gap:.3}");
         }
         if matches!(workload, Workload::CrateShove) {
             // On each backend both bashes slide their crates over a metre and they come to rest
