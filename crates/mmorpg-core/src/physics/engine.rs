@@ -175,7 +175,7 @@ impl World {
                 wedge
             }
             // A moving platform (#56) is a static box the adapter re-adds where the zone moves
-            // it: physics-engine has no moving support that carries characters.
+            // it; the adapter carries its riders.
             Kind::Fixed | Kind::Platform => Body::keyed(
                 key,
                 Shape::Box(vector(exact(body.half_extents))),
@@ -422,9 +422,9 @@ impl World {
     /// character move per moving body (all in one batch), then landing or a ceiling ends the
     /// vertical velocity and the horizontal velocity becomes what the move realized.
     ///
-    /// Moving platforms (#56) are unsupported beyond moving their box: physics-engine has no
-    /// moving support that carries characters, so a step in which a unit stands on a moving
-    /// platform fails with an unsupported error instead of substituting anything.
+    /// Moving platforms (#56) carry the units standing on them that are not rising, as on the
+    /// Rapier backend: a platform's displacement is added to each rider's move, a platform that
+    /// does not rise moves before the units and a rising one after them.
     pub fn step(&mut self) -> Result<StepStats, PhysicsError> {
         let platforms: Vec<_> = self
             .bodies
@@ -432,17 +432,15 @@ impl World {
             .filter(|body| body.is_platform() && body.velocity != [0.0; 3])
             .map(|body| (body.id, body.velocity))
             .collect();
-        for &(platform, _) in &platforms {
-            if let Some(rider) = self
-                .bodies
-                .values()
-                .find(|body| body.is_moving() && self.stands_on(body, platform))
-            {
-                return Err(error(format!(
-                    "unsupported on physics-engine: body {} stands on moving platform {} \
-                     (no moving support that carries characters)",
-                    rider.id.0, platform.0
-                )));
+        let mut carried = BTreeMap::new();
+        for &(platform, displacement) in &platforms {
+            for body in self.bodies.values().filter(|body| body.is_moving()) {
+                if body.velocity[1] <= 0.0
+                    && !carried.contains_key(&body.id)
+                    && self.stands_on(body, platform)
+                {
+                    carried.insert(body.id, displacement);
+                }
             }
         }
         for &(platform, displacement) in &platforms {
@@ -450,16 +448,23 @@ impl World {
                 self.shift_platform(platform, displacement)?;
             }
         }
-        let stats = self.step_characters()?;
+        let stats = self.step_characters(&carried)?;
         for &(platform, displacement) in &platforms {
             if displacement[1] > 0.0 {
                 self.shift_platform(platform, displacement)?;
             }
         }
+        // A rider's grounded result predates its platform's rise: ask the geometry again.
+        for id in carried.keys() {
+            self.grounded.remove(id);
+        }
         Ok(stats)
     }
 
-    fn step_characters(&mut self) -> Result<StepStats, PhysicsError> {
+    fn step_characters(
+        &mut self,
+        carried: &BTreeMap<BodyId, [f32; 3]>,
+    ) -> Result<StepStats, PhysicsError> {
         let mut moves = std::mem::take(&mut self.moves);
         moves.clear();
         let mut velocities = std::mem::take(&mut self.velocities);
@@ -474,9 +479,10 @@ impl World {
                 }
             }
             velocities.push((body.id, velocity));
+            let carry = carried.get(&body.id).copied().unwrap_or([0.0; 3]);
             moves.push(CharacterMove {
                 body: self.handles[&body.id],
-                desired: vector(velocity),
+                desired: vector([0, 1, 2].map(|axis| velocity[axis] + carry[axis])),
             });
         }
         let outcome = self.run_batch(&moves);
@@ -496,8 +502,10 @@ impl World {
             if moved != [0.0; 3] || result.depenetration != Vector::ZERO {
                 moved_bodies += 1;
             }
-            velocity[0] = moved[0];
-            velocity[2] = moved[2];
+            // The horizontal velocity is what the move realized, less what the platform carried.
+            let carry = carried.get(&id).copied().unwrap_or([0.0; 3]);
+            velocity[0] = moved[0] - carry[0];
+            velocity[2] = moved[2] - carry[2];
             if let Some(body) = self.bodies.get_mut(&id) {
                 body.velocity = velocity;
             }

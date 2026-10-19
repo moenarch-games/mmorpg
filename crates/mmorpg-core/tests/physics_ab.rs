@@ -42,11 +42,12 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// The workloads whose players are only scripted: the bot scenarios and the idle plaza. The
 /// fighting fixtures place players inside props, boxes and hills, which Rapier leaves embedded
 /// and physics-engine pushes out, so their fights (and every position after) legitimately part.
-const SCRIPTED: [&str; 4] = [
+const SCRIPTED: [&str; 5] = [
     "two-bots-move",
     "vale-hub-walk",
     "vale-wolf-hunt",
     "vale-idle-16",
+    "vale-mill-hoist",
 ];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
 /// same boxes, capsules and triangles in `f32`.
@@ -336,7 +337,7 @@ fn check_mill_ramps(trace: &Trace) -> std::result::Result<(), String> {
     Ok(())
 }
 
-/// The hoist ride on Rapier (#56): the rider ends on the windmill's gallery, 8 m up.
+/// The hoist ride (#56): the rider ends on the windmill's gallery, 8 m up.
 fn check_mill_hoist(trace: &Trace) -> Result<()> {
     let last = trace.snapshots.last().ok_or("empty hoist trace")?;
     let [_, y, z] = last.players[0].position;
@@ -608,31 +609,6 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
         let started = std::time::Instant::now();
         let name = workload.name().to_owned();
         let (rapier, rapier_check) = run(&workload, Backend::Rapier)?;
-        if let Some(missing) = workload.engine_unsupported() {
-            // Disclosed, never substituted: physics-engine refuses the workload with an
-            // unsupported error. Rapier alone keeps the shared invariants, replays and
-            // continues exactly when restored halfway.
-            let refusal = run(&workload, Backend::Engine)
-                .err()
-                .ok_or_else(|| format!("{name}: physics-engine ran an unsupported workload"))?
-                .to_string();
-            assert!(refusal.contains("unsupported"), "{name}: {refusal}");
-            assert_eq!(
-                rapier_check.departed, None,
-                "{name}: Rapier recovery departs"
-            );
-            assert!(
-                run(&workload, Backend::Rapier)?.0 == rapier,
-                "{name}: Rapier replay differs"
-            );
-            check_mill_hoist(&rapier)?;
-            println!(
-                "{name}: physics-engine unsupported ({missing}): {refusal}; Rapier keeps the \
-                 invariants, replays and continues [{:?}]",
-                started.elapsed()
-            );
-            continue;
-        }
         let (engine, engine_check) = run(&workload, Backend::Engine)?;
         // Restored halfway, both backends continue exactly (Atlas 2.1.5).
         assert_eq!(
@@ -675,6 +651,13 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
             rapier_check.placed_inside.len(),
             started.elapsed(),
         );
+        if matches!(workload, Workload::MillHoist) {
+            // On each backend the hoist carries its rider to the gallery (#56).
+            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+                check_mill_hoist(trace)
+                    .map_err(|failure| format!("{name} on {backend}: {failure}"))?;
+            }
+        }
         if matches!(workload, Workload::ChargePath) {
             // On each backend some Warden charges (#57).
             for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
