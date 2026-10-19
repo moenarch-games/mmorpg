@@ -1065,7 +1065,10 @@ mod tests {
 
     #[test]
     fn a_platform_carries_its_rider_up_and_down_and_lets_it_walk_off() {
-        // Rapier carries; physics-engine has no moving support and says so.
+        on_each_backend(a_platform_carries_its_rider_up_and_down_and_lets_it_walk_off_on);
+    }
+
+    fn a_platform_carries_its_rider_up_and_down_and_lets_it_walk_off_on() {
         let mut world = world();
         let lift = lift(&mut world);
         let rider = BodyId(10);
@@ -1120,6 +1123,10 @@ mod tests {
 
     #[test]
     fn a_rider_falls_when_its_platform_is_removed_and_a_jump_leaves_it() {
+        on_each_backend(a_rider_falls_when_its_platform_is_removed_and_a_jump_leaves_it_on);
+    }
+
+    fn a_rider_falls_when_its_platform_is_removed_and_a_jump_leaves_it_on() {
         let mut world = world();
         let lift = lift(&mut world);
         world.place_platform(lift, Vec3i::new(0, 150, 0)).unwrap();
@@ -1152,31 +1159,6 @@ mod tests {
             90,
             "fell to the floor"
         );
-    }
-
-    #[cfg(feature = "physics-ab")]
-    #[test]
-    fn physics_engine_refuses_to_carry_a_rider() {
-        let mut world = World::with_backend(Vec3i::new(0, -1, 0), Backend::Engine);
-        world.add_body(RigidBody::floor(BodyId(1), 0)).unwrap();
-        let lift = lift(&mut world);
-        world
-            .add_body(RigidBody::dynamic(
-                BodyId(10),
-                Vec3i::new(0, 90, 0),
-                Vec3i::ZERO,
-                BODY,
-            ))
-            .unwrap();
-        world.step().unwrap();
-        world.move_platform(lift, Vec3i::new(0, -145, 0)).unwrap();
-        let failure = world.step().unwrap_err().to_string();
-        assert!(failure.contains("unsupported"), "{failure}");
-        // A platform nobody stands on moves.
-        world.remove_body(BodyId(10));
-        world.move_platform(lift, Vec3i::new(0, -140, 0)).unwrap();
-        world.step().unwrap();
-        assert_eq!(world.body(lift).unwrap().position(), Vec3i::new(0, -140, 0));
     }
 
     #[test]

@@ -187,7 +187,6 @@ pub enum Workload {
     /// The hill ogre (#297): body-blocking, shoving and stomping in Southmeadow Downs.
     OgreBrawl,
     /// The mill hoist (#56): a player rides the moving platform up and walks off at the top.
-    /// Unsupported on physics-engine (no moving support).
     MillHoist,
     /// Charges through Wolfrun Woods (#57): four level-6 Wardens charge at wolves among the
     /// trunks; a charge needs a path as wide as the body (`World::cast_shape`).
@@ -422,19 +421,6 @@ impl Workload {
             Self::MillHoist => MILL_HOIST_TICKS,
             Self::MillRamps => MILL_RAMPS_TICKS,
             Self::ChargePath => CHARGE_PATH_TICKS,
-        }
-    }
-
-    /// Why physics-engine cannot run this workload, if it cannot: the capability it lacks.
-    #[must_use]
-    pub const fn engine_unsupported(&self) -> Option<&'static str> {
-        match self {
-            Self::MillHoist => Some("moving support: a platform that carries characters"),
-            Self::Bots(_)
-            | Self::Greyhaven(_)
-            | Self::OgreBrawl
-            | Self::MillRamps
-            | Self::ChargePath => None,
         }
     }
 }
