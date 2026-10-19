@@ -556,6 +556,16 @@ impl World {
         dispatch!(self, &self.worlds, world => world.overlap_query(aabb))
     }
 
+    /// Every body whose shape intersects the box centred on `centre` (units) with
+    /// `half_extents`, in ID order: [`World::overlap_query`] off the whole-unit grid.
+    pub fn overlap_box(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        dispatch!(self, &self.worlds, world => world.overlap_box(centre, half_extents))
+    }
+
     /// Whether a body accepted by `blocks` lies on the segment from `origin` along
     /// `translation` (units), strictly before its end.
     pub fn segment_blocked(

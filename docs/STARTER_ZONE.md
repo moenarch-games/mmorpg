@@ -77,6 +77,8 @@ Content revision 19 adds the first **ramps** (#59, `greyhaven_vale::MILL_RAMPS`)
 
 Content revision 20 adds the first **destructible structure** (#305, `greyhaven_vale::watch_post`): the Redbrand watch post at the camp's southern edge, east of the Hollow Road: two timber walls (120 health each) and the lookout deck resting on both (60). Fire Blasts and powder barrels hurt every piece they reach and see (their top roll, with falloff), arrows and bolts chip a piece by 3; a piece passes through damaged, crumbling and destroyed stages, a destroyed wall's collider leaves the world (the west wall leaves a knee-high rubble blocker) and the deck falls once neither wall stands. Pieces regrow 5 minutes after their last change once their spot is clear; Interact (T) near a damaged piece repairs it for free, five times faster, until the player moves (Atlas 5.2.80).
 
+Creatures **navigate around blockers** (#307): a creature chasing a target or running home whose capsule, swept straight above knee height, would meet a wall, a structure piece, rubble or a closed door walks an A* route on a 1 m grid instead (cells tested by physics overlap queries, cached until a door moves or a piece breaks or regrows), steering at the farthest of the next six route cells it can reach straight. So a creature boxed in by pieces comes out once a wall breaks, and goes around a broken post's rubble. Spell and arrow sight lines follow the pieces that stand, since a broken piece's collider leaves the world.
+
 ## Systems
 
 ### Movement

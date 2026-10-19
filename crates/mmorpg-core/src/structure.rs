@@ -252,6 +252,7 @@ impl ZoneSimulation {
 
     /// Puts `piece`'s collider (or rubble, or nothing) where its health says.
     fn place_piece(&mut self, piece: &StructurePiece, standing: bool) -> Result<(), ZoneError> {
+        self.invalidate_navigation();
         let body = BodyId(u64::from(piece.body));
         let shape = if standing {
             Some((piece.position, piece.half_extents))

@@ -450,9 +450,11 @@ struct Decisions {
     shots: BTreeMap<String, Option<(Option<EntityRef>, BodyId, f32)>>,
     /// Whether the player's body fits along a charge at the creature (#57, shape cast).
     charges: BTreeMap<String, bool>,
+    /// Where the creature would steer to reach the player (#307, navigation).
+    routes: BTreeMap<String, Option<[i32; 2]>>,
 }
 
-fn decisions(zone: &ZoneSimulation) -> Result<Decisions> {
+fn decisions(zone: &mut ZoneSimulation) -> Result<Decisions> {
     let mut decisions = Decisions::default();
     let units = zone.physics_units();
     let boxes = boxes(zone);
@@ -496,6 +498,9 @@ fn decisions(zone: &ZoneSimulation) -> Result<Decisions> {
             decisions
                 .charges
                 .insert(pair.clone(), zone.charge_path_probe(from.unit, to.unit)?);
+            decisions
+                .routes
+                .insert(pair.clone(), zone.route_probe(to.unit, from.unit)?);
             decisions.shots.insert(pair, shot);
         }
         let EntityRef::Player(player) = from.unit else {
@@ -547,6 +552,7 @@ fn decision_differences(rapier: &Decisions, engine: &Decisions) -> Vec<String> {
     exact("door blocked", &rapier.doors, &engine.doors, &mut out);
     exact("ground", &rapier.ground, &engine.ground, &mut out);
     exact("charge path", &rapier.charges, &engine.charges, &mut out);
+    exact("route", &rapier.routes, &engine.routes, &mut out);
     for (key, left) in &rapier.shots {
         let right = engine.shots.get(key).copied().flatten();
         let same = match (left, right) {
@@ -580,9 +586,9 @@ fn query_parity(workload: &Workload, rapier: &Trace) -> Result<(usize, usize)> {
                 ZoneSimulation::from_snapshot(snapshot.clone(), std::sync::Arc::clone(&content))
             })
         };
-        let (left, right) = (on(Backend::Rapier)?, on(Backend::Engine)?);
+        let (mut left, mut right) = (on(Backend::Rapier)?, on(Backend::Engine)?);
         assert_eq!(right.physics().backend(), Backend::Engine);
-        let (a, b) = (decisions(&left)?, decisions(&right)?);
+        let (a, b) = (decisions(&mut left)?, decisions(&mut right)?);
         embedded = embedded.max(a.embedded);
         probes += a.grounded.len()
             + a.sight.len()
@@ -590,6 +596,7 @@ fn query_parity(workload: &Workload, rapier: &Trace) -> Result<(usize, usize)> {
             + a.doors.len()
             + a.ground.len()
             + a.charges.len()
+            + a.routes.len()
             + a.shots.len();
         let differences = decision_differences(&a, &b);
         assert!(

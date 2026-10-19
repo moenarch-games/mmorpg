@@ -176,6 +176,7 @@ impl ZoneSimulation {
 
     /// Moves `door`'s leaf body to its `open` or closed box, recording `tick` as its change.
     pub(crate) fn set_door(&mut self, door: &Door, open: bool, tick: u64) -> Result<(), ZoneError> {
+        self.invalidate_navigation();
         let leaf = door.leaf(open);
         self.world
             .replace_body(crate::physics::RigidBody::fixed(
