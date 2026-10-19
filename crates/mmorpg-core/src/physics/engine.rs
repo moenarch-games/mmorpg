@@ -25,16 +25,12 @@
 //!
 //! - Characters meeting head-on use the engine's native sidestep instead of the Rapier
 //!   backend's `slide_around` workaround; characters do not push each other.
-//! - Grounded is the engine's own result: walkable static support within two contact offsets
-//!   after the last move, or snapped to (Rapier: any static ground within offset + 5 cm).
-//!   A body that was placed or added since its last move is answered by the same test as a
-//!   shape cast.
-//! - Engine gap: whether a character may snap to the ground on its next move is engine state
-//!   (its grounded result from the previous move) that a world rebuilt from game state cannot
-//!   restore, so a zone restored from a canonical snapshot can move a character walking
-//!   downhill differently on its first tick (Atlas 2.1.5). The adapter does not work around it.
-//! - Overlap queries see the terrain (Rapier skips box–heightfield pairs), and the terrain keeps
-//!   its flat cells (Rapier removes them and leaves them to the floor half-space).
+//! - Grounded is the engine's own result: walkable static support within the contact offset
+//!   plus 5 cm after the last move, or snapped to (Rapier: any static ground within offset +
+//!   5 cm). A body that was placed or added since its last move is answered by the same test
+//!   as a shape cast.
+//! - Overlap queries see the terrain (Rapier skips box–heightfield pairs). Flat terrain cells
+//!   are removed on both backends and left to the floor half-space.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -52,6 +48,8 @@ use super::{
 
 /// The game's centimetres per metre: the engine's length unit.
 const UNITS_PER_METRE: f32 = 100.0;
+/// Ground within the contact offset plus this (5 cm) counts as support, as in Rapier.
+const GROUND_PREDICTION_UNITS: f32 = 5.0;
 /// A ceiling stops a rising body when it realizes less than this much (units) of its rise.
 const CEILING_TOLERANCE_UNITS: f32 = 1.0e-3;
 
@@ -251,23 +249,40 @@ impl World {
     }
 
     /// Lays `terrain` as an engine heightfield: rows along +Z, columns along +X, heights
-    /// row-major as the content stores them.
+    /// row-major as the content stores them, with the flat cells removed like the Rapier
+    /// backend removes them.
     pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
         if let Some(ground) = self.ground.take() {
             self.engine.remove_body(ground.body);
             self.games.remove(&ground.body.to_bits());
         }
+        let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
+        // Flat cells are left to the floor half-space, as on the Rapier backend.
+        let removed_cells = (0..rows - 1)
+            .flat_map(|row| (0..columns - 1).map(move |column| (row, column)))
+            .map(|(row, column)| {
+                [
+                    (row, column),
+                    (row + 1, column),
+                    (row, column + 1),
+                    (row + 1, column + 1),
+                ]
+                .iter()
+                .all(|&(r, c)| terrain.heights[r * columns + c] == 0)
+            })
+            .collect();
         #[allow(clippy::cast_precision_loss)]
         let desc = HeightfieldDesc {
             origin: Vector(terrain.origin[0] as f32, 0.0, terrain.origin[1] as f32),
             cell_size: (terrain.step as f32, terrain.step as f32),
-            columns: usize::from(terrain.columns),
-            rows: usize::from(terrain.rows),
+            columns,
+            rows,
             heights: terrain
                 .heights
                 .iter()
                 .map(|&height| height as f32)
                 .collect(),
+            removed_cells: Some(removed_cells),
         };
         // Content validation already bounds the grid; an engine refusal is a broken invariant.
         let body = self
@@ -383,7 +398,7 @@ impl World {
 
     /// Whether a moving body stands on static ground: its last move's engine result, or for a
     /// body placed or added since, the engine's grounded test as a downward shape cast
-    /// (walkable static support within two contact offsets).
+    /// (walkable static support within the contact offset plus 5 cm).
     pub fn grounded(&self, id: BodyId) -> bool {
         let Some(body) = self.bodies.get(&id).filter(|body| body.is_moving()) else {
             return false;
@@ -391,8 +406,10 @@ impl World {
         if let Some(&grounded) = self.grounded.get(&id) {
             return grounded;
         }
+        // The engine's (and Rapier's) ground prediction: offset + 5 cm.
         let offset = self.settings.offset;
-        let reach = offset + self.settings.snap_to_ground.unwrap_or(0.0) + offset;
+        let predict = offset + GROUND_PREDICTION_UNITS;
+        let reach = predict + offset;
         let cast = ShapeCast::new(
             QueryPose::new(capsule(body.half_extents), lifted(body.position)),
             Vector(0.0, -reach, 0.0),
@@ -415,7 +432,7 @@ impl World {
                         .and_then(|game| self.bodies.get(game))
                         .is_none_or(|body| !body.is_moving())
             })
-            .is_some_and(|hit| hit.normal.1 >= min_up && hit.fraction * reach <= 2.0 * offset)
+            .is_some_and(|hit| hit.normal.1 >= min_up && hit.fraction * reach <= predict)
     }
 
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
