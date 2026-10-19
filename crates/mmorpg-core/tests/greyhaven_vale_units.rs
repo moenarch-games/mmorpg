@@ -12,7 +12,7 @@ use mmorpg_core::{
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.revision(), 16);
+    assert_eq!(content.revision(), 17);
     assert_eq!(content.rng_seed(), 0x3cbc_808b_be89_b29c);
     assert_eq!(
         content.definition(),
@@ -202,6 +202,19 @@ fn templates_follow_the_design_contract() {
                 60,
                 9_000
             ),
+            // A large creature (#297).
+            (
+                "Hill Ogre",
+                Ogre,
+                Aggressive,
+                [5, 5],
+                false,
+                300,
+                0,
+                [9, 15],
+                84,
+                1_800
+            ),
         ]
     );
     let wolf = content
@@ -244,6 +257,7 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::REDBRAND_HOLLOW, "Garrick Redbrand"), 1),
         ((greyhaven_vale::GREYFANG_RIDGE, "Redbrand Crossbowman"), 3),
         ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Young Boar"), 2),
+        ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Hill Ogre"), 1),
         ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Grain Rat"), 1),
         ((greyhaven_vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
         ((greyhaven_vale::HOLLOWPINE_REACH, "Young Boar"), 2),
@@ -260,7 +274,7 @@ fn spawns_populate_their_subzones() {
         ),
     ]);
     assert_eq!(counts, expected);
-    assert_eq!(content.creature_spawns().len(), 91);
+    assert_eq!(content.creature_spawns().len(), 92);
 }
 
 /// No creature wanders within the interest radius (plus a margin) of any
@@ -340,7 +354,7 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
     let mut first = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let mut second = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let start = first.snapshot().unwrap();
-    assert_eq!(start.creatures.len(), 91);
+    assert_eq!(start.creatures.len(), 92);
     for (creature, spawn) in start.creatures.iter().zip(content.creature_spawns()) {
         let template = content.creature_template(spawn.template).unwrap();
         assert_eq!(creature.creature_id, spawn.id);

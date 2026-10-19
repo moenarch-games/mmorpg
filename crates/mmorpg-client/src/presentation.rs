@@ -913,6 +913,7 @@ fn creature_color(family: CreatureFamily, hostile: bool) -> [f32; 3] {
         CreatureFamily::Mirefin => 0.16,
         CreatureFamily::Redbrand => 0.2,
         CreatureFamily::Prop => 0.24,
+        CreatureFamily::Ogre => 0.28,
     };
     if hostile {
         [0.78 - shade, 0.24 + shade * 0.5, 0.18]

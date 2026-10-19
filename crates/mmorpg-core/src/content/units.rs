@@ -13,6 +13,9 @@ pub const MAX_NPCS: usize = 256;
 pub const MAX_WANDER_RADIUS_UNITS: i32 = 2_000;
 /// Largest creature half-extent on any axis (5 m).
 pub const MAX_CREATURE_HALF_EXTENT_UNITS: i32 = 500;
+/// A creature at least 1.4 m across (this half-width) is large (#297): it holds its ground while
+/// idle and shoves smaller units it walks into.
+pub const LARGE_CREATURE_HALF_WIDTH_UNITS: i32 = 70;
 
 /// Creatures of one family assist each other.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -25,11 +28,13 @@ pub enum CreatureFamily {
     Redbrand,
     /// Breakable props (#288): crates, barrels and fences. They never assist.
     Prop,
+    /// Large creatures (#297): big bodies that body-block, shove smaller units and stomp.
+    Ogre,
 }
 
 impl CreatureFamily {
     /// Every family, in order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Wolf,
         Self::Boar,
         Self::Vermin,
@@ -37,6 +42,7 @@ impl CreatureFamily {
         Self::Mirefin,
         Self::Redbrand,
         Self::Prop,
+        Self::Ogre,
     ];
 
     /// Stable lower-case name for exports.
@@ -50,6 +56,7 @@ impl CreatureFamily {
             Self::Mirefin => "mirefin",
             Self::Redbrand => "redbrand",
             Self::Prop => "prop",
+            Self::Ogre => "ogre",
         }
     }
 }
@@ -180,6 +187,19 @@ impl CreatureTemplate {
     #[must_use]
     pub const fn prop(&self) -> Option<PropKind> {
         self.behaviour.prop()
+    }
+
+    /// The half-width of its upright body (the larger horizontal half extent).
+    #[must_use]
+    pub const fn half_width(&self) -> i32 {
+        let [x, _, z] = self.half_extents;
+        if x > z { x } else { z }
+    }
+
+    /// Whether it is a large creature (#297) that shoves smaller units; props never are.
+    #[must_use]
+    pub const fn is_large(&self) -> bool {
+        self.prop().is_none() && self.half_width() >= LARGE_CREATURE_HALF_WIDTH_UNITS
     }
 
     /// The collision box of a unit facing `facing`: a facing nearer a quarter turn than a

@@ -8,7 +8,7 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 3;
+pub const ABILITY_CATALOG_REVISION: u64 = 4;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
@@ -235,6 +235,15 @@ pub enum AbilityEffect {
     },
     /// The caster rushes at the target (#287) and knocks it `knockback` units back on arrival.
     Charge { knockback: i32 },
+    /// A large creature's stomp (#297), centred on the caster: `damage` + `per_level` and a
+    /// `knockback` (units) away from it for every living player within `radius` that it can
+    /// see, both falling off linearly to half at the edge; walls shield.
+    Stomp {
+        damage: [u16; 2],
+        per_level: u16,
+        radius: i32,
+        knockback: i32,
+    },
 }
 
 /// One catalog row.
@@ -276,7 +285,8 @@ impl Ability {
             | AbilityEffect::Blizzard { .. }
             | AbilityEffect::Bandage { .. }
             | AbilityEffect::Blast { .. }
-            | AbilityEffect::Charge { .. } => return None,
+            | AbilityEffect::Charge { .. }
+            | AbilityEffect::Stomp { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -373,10 +383,11 @@ pub mod ids {
     pub const CROSSBOW_BOLT: AbilityId = AbilityId::new(15);
     pub const FIRE_BLAST: AbilityId = AbilityId::new(16);
     pub const CHARGE: AbilityId = AbilityId::new(17);
+    pub const STOMP: AbilityId = AbilityId::new(18);
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 17] = [
+pub const ABILITY_CATALOG: [Ability; 18] = [
     ability(
         1,
         "Heroic Strike",
@@ -638,6 +649,23 @@ pub const ABILITY_CATALOG: [Ability; 17] = [
         AbilityRange::Units(1_500),
         AbilityEffect::Charge { knockback: 300 },
     ),
+    // A one-second wind-up gives players time to step out (#297).
+    ability(
+        18,
+        "Stomp",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(30),
+        360,
+        AbilityRange::SelfCentred,
+        AbilityEffect::Stomp {
+            damage: [8, 12],
+            per_level: 2,
+            radius: 350,
+            knockback: 300,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -768,6 +796,19 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 knockback,
             ],
             AbilityEffect::Charge { knockback } => vec![14, knockback],
+            AbilityEffect::Stomp {
+                damage,
+                per_level,
+                radius,
+                knockback,
+            } => vec![
+                15,
+                damage[0].into(),
+                damage[1].into(),
+                per_level.into(),
+                radius,
+                knockback,
+            ],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -798,7 +839,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(18)), None);
+        assert_eq!(ability_by_id(AbilityId::new(19)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG

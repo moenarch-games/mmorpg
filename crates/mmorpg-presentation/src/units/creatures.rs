@@ -33,13 +33,18 @@ pub fn accent(e: &EntitySnapshot, f: CreatureFamily) -> u32 {
         CreatureFamily::Marauder => 3,
         CreatureFamily::Mirefin => 4,
         CreatureFamily::Redbrand => 5,
+        CreatureFamily::Ogre => 6,
         // Props (#288) keep their own wood colours.
         CreatureFamily::Prop => return 0x8a6a45,
     };
     if e.flags.hostile {
-        [0xb3533f, 0xb8452f, 0xa84a3a, 0xc23b2e, 0xa55a4c, 0x992d27][i]
+        [
+            0xb3533f, 0xb8452f, 0xa84a3a, 0xc23b2e, 0xa55a4c, 0x992d27, 0x8f4a32,
+        ][i]
     } else {
-        [0xc9ab45, 0xc79f2f, 0xbfae5a, 0xd1b04a, 0xb7a553, 0xc2a03c][i]
+        [
+            0xc9ab45, 0xc79f2f, 0xbfae5a, 0xd1b04a, 0xb7a553, 0xc2a03c, 0xb39a4a,
+        ][i]
     }
 }
 struct Animal {
@@ -269,6 +274,10 @@ pub fn humanoid(
         (Some(CreatureFamily::Redbrand), _) => {
             (0xd0a27c, accent, 0x3a3330, 0x2a221c, Stance::Sword, 0.02)
         }
+        // Large creatures (#297): a hunched, grey-green brute with a club.
+        (Some(CreatureFamily::Ogre), _) => {
+            (0x7d8a5c, accent, 0x4f4436, 0x34291f, Stance::Sword, 0.18)
+        }
         (_, Some(NpcRole::Guard)) => (0xd7a582, 0x7d878c, 0x4a5256, 0x2f2923, Stance::Sword, 0.),
         (_, Some(NpcRole::Vendor)) => (0xd7a582, 0xd9c9a3, 0x5a4632, 0x3a2a1e, Stance::Staff, 0.),
         (_, Some(NpcRole::QuestGiver)) => {
@@ -418,6 +427,14 @@ pub fn humanoid(
                 child(hands[1], [0., -0.2 * sy, 0.05 * sz], tilt(0.35, 0., 0.)),
             );
             shield(&mut p, 0x6b5a45);
+        }
+        (Some(CreatureFamily::Ogre), _) => {
+            p.bx(
+                "club",
+                [0.09 * sx, 0.55 * sy, 0.09 * sz],
+                0x5a3e28,
+                child(hands[1], [0., -0.22 * sy, 0.05 * sz], tilt(0.35, 0., 0.)),
+            );
         }
         (Some(CreatureFamily::Mirefin), _) => {
             for (i, (z, h)) in [(0.06, 0.14), (-0.02, 0.19), (-0.1, 0.13)]

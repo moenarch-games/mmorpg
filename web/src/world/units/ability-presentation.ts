@@ -43,7 +43,7 @@ const SHARDS = "M4 2 8 10 3 12ZM11 2 15 12 9 14ZM18 2 22 10 17 14ZM7 15 11 22 4 
 const BANDAGE = "M3 9 15 3 21 15 9 21ZM10 10 14 12 12 16 8 14Z";
 const SPLAT = "M12 3C15 3 17 6 20 7 22 10 19 13 19 16 17 19 14 18 12 21 9 19 6 20 5 16 3 13 4 10 6 8 8 5 10 4Z";
 
-/** Player abilities 1–12 and 16–17, creature abilities 13–15, by catalog ID. Shots (5–7, 15) fly as the zone's own projectiles (#286). */
+/** Player abilities 1–12 and 16–17, creature abilities 13–15 and 18, by catalog ID. Shots (5–7, 15) fly as the zone's own projectiles (#286). */
 export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = new Map<number, AbilityPresentation>([
   [1, { range: "melee", description: "A heavy weapon blow at your target.", glyph: SWORD, accent: "#e0a15c", visual: "swing", pose: "swing" }],
   [2, { range: "melee", description: "Slams your shield into the target: interrupts its cast, stuns it and knocks it back.", glyph: SHIELD, accent: "#9fb4c8", visual: null, pose: "swing" }],
@@ -62,6 +62,7 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [15, { range: { units: 2_000 }, description: "A crossbow bolt at its target; walls and raised shields stop it.", glyph: ARROW, accent: "#8a6a4a", visual: null, pose: "draw" }],
   [16, { range: RANGED, description: "An explosion at your target that burns and hurls back every creature nearby; walls shield those behind them.", glyph: FLAME, accent: "#ff5a2a", visual: "ring", pose: "cast" }],
   [17, { range: { units: 1_500 }, description: "Rush at your target and knock it back on arrival; walls stop the charge.", glyph: FOOT, accent: "#c98a4a", visual: null, pose: "swing" }],
+  [18, { range: "self", description: "A ground-shaking stomp that hurts and hurls back every player nearby; walls shield those behind them.", glyph: FOOT, accent: "#8a7a5a", visual: "ring", pose: "swing" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

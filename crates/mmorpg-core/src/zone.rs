@@ -573,7 +573,9 @@ impl ZoneSimulation {
     ///    wander, leash, evade and creature ability casts), which set
     ///    creature velocities; roots and stuns stop them, snares slow them;
     /// 3. player movement velocities and grounded jumps (dead and stunned
-    ///    players stand still); movement or a jump interrupts a cast;
+    ///    players stand still); movement or a jump interrupts a cast; large
+    ///    creatures shove smaller units in their way (#297) and forced moves
+    ///    set their units' velocities;
     /// 4. one physics step, then one debris step for broken props' pieces (#288);
     /// 5. interest index maintenance from the new positions;
     /// 6. combat: global cooldowns, cooldowns and casts or channels (players,
@@ -601,6 +603,7 @@ impl ZoneSimulation {
         self.consume_intents()?;
         self.decide_creatures()?;
         self.drive_players()?;
+        self.shove_with_large_creatures()?;
         self.apply_forced_moves()?;
         self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
         self.settle_forced_moves();

@@ -107,6 +107,7 @@ impl Kind {
             CreatureFamily::Marauder
             | CreatureFamily::Mirefin
             | CreatureFamily::Redbrand
+            | CreatureFamily::Ogre
             | CreatureFamily::Prop => None,
         }
     }

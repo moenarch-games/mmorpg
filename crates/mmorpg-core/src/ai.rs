@@ -3,7 +3,8 @@
 //! - **Idle**: aggressive creatures engage the nearest living player within
 //!   their aggro radius, found through the zone's spatial index. Otherwise
 //!   they wait 5–15 s (zone RNG), then walk to a random point within their
-//!   wander radius at walking speed.
+//!   wander radius at walking speed. Large creatures (#297) hold their
+//!   ground instead.
 //! - **Engaged**: the target is the threat leader. The creature steers
 //!   straight at it at run speed until it is inside melee reach and faces it;
 //!   combat swings on the swing timer. An empty threat table or straying
@@ -194,6 +195,9 @@ impl ZoneSimulation {
 
         let mut teleport_home = false;
         let (velocity, facing) = match creature.ai {
+            // Large creatures (#297) hold their ground while idle instead of wandering, so they
+            // draw nothing from the zone RNG until a fight.
+            CreatureAi::Idle { .. } if template.is_large() => ([0, 0], None),
             CreatureAi::Idle { .. } => wander(
                 &mut self.rng,
                 &mut creature.ai,
