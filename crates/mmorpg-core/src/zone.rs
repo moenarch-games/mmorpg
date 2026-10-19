@@ -233,6 +233,9 @@ pub struct ZoneSimulation {
     pub(crate) next_debris: u32,
     /// Destructible pieces' health and last change (#305).
     pub(crate) pieces: BTreeMap<crate::PieceId, crate::structure::PieceState>,
+    /// Navigation cell results (#307), derived from static geometry and dropped when it
+    /// changes; not canonical state.
+    pub(crate) nav_cache: crate::nav::NavCache,
 }
 
 impl ZoneSimulation {
@@ -368,6 +371,7 @@ impl ZoneSimulation {
             debris: BTreeMap::new(),
             next_debris: 1,
             pieces,
+            nav_cache: BTreeMap::new(),
         })
     }
 

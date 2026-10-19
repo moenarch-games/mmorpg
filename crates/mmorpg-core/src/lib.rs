@@ -32,6 +32,7 @@ mod guard;
 mod interest;
 mod inventory;
 mod loot;
+mod nav;
 pub mod physics;
 #[cfg(feature = "physics-ab")]
 pub mod physics_ab;
@@ -115,6 +116,7 @@ pub use loot::{
     LOOT_CATALOG_REVISION, LootOutcome, LootRewards, LootRolls, LootSettlementError, LootTable,
     LootTableError, MAX_LOOT_OUTCOMES, loot_table, settle_loot,
 };
+pub use nav::NAV_CELL_UNITS;
 pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
 pub use projectile::{

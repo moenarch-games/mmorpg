@@ -147,6 +147,7 @@ impl ZoneSimulation {
             .body(body)
             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
         let (position, vertical) = (current.position(), current.velocity().y);
+        let (centre, half) = (current.exact_position(), current.half_extents());
         let here = [position.x, position.z];
         let (idle, level) = (
             matches!(creature.ai, CreatureAi::Idle { .. }),
@@ -175,6 +176,15 @@ impl ZoneSimulation {
 
         let home = spawn.position;
         let leashed = distance_squared(home, here) > i64::from(LEASH_RADIUS_UNITS).pow(2);
+        // Walls, pieces and rubble in the way (#307): a route around them.
+        let ai = self.creatures.get(&id).map(|creature| creature.ai);
+        let route = match (ai, chase) {
+            (Some(CreatureAi::Engaged), Some((target, to))) if !leashed => {
+                self.route_waypoint(centre, half, to, creature_reach(target))?
+            }
+            (Some(CreatureAi::Evading { .. }), _) => self.route_waypoint(centre, half, home, 0)?,
+            _ => None,
+        };
         // An engaged creature that keeps fighting may cast its ability.
         let casting = match chase {
             Some((target, to)) if !leashed => self.try_creature_ability(id, target, here, to)?,
@@ -211,6 +221,13 @@ impl ZoneSimulation {
                     let (dx, dz) = offset(here, to);
                     ([0, 0], yaw_from_vector(dx, dz))
                 }
+                Some((_, _)) if route.is_some() => {
+                    let (dx, dz) = offset(here, route.unwrap_or(here));
+                    (
+                        steer(dx, dz, CREATURE_RUN_SPEED_UNITS_PER_TICK),
+                        yaw_from_vector(dx, dz),
+                    )
+                }
                 Some((target, to)) => {
                     let (dx, dz) = offset(here, to);
                     (
@@ -238,6 +255,7 @@ impl ZoneSimulation {
                     ([0, 0], None)
                 } else {
                     creature.ai = CreatureAi::Evading { ticks: ticks + 1 };
+                    let (dx, dz) = route.map_or((dx, dz), |waypoint| offset(here, waypoint));
                     (
                         steer(dx, dz, CREATURE_EVADE_SPEED_UNITS_PER_TICK),
                         yaw_from_vector(dx, dz),

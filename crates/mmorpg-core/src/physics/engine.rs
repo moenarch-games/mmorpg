@@ -562,10 +562,15 @@ impl World {
     }
 
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
-        let pose = QueryPose::new(
-            Shape::Box(vector(exact(aabb.half_extents))),
-            vector(exact(aabb.center)),
-        );
+        self.overlap_box(exact(aabb.center), exact(aabb.half_extents))
+    }
+
+    pub fn overlap_box(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        let pose = QueryPose::new(Shape::Box(vector(half_extents)), vector(centre));
         let mut hits = Vec::new();
         self.engine
             .overlap_shape(pose, QueryFilter::default(), &mut hits)

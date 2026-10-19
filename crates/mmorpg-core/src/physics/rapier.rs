@@ -758,15 +758,23 @@ impl World {
     /// unsupported), so the terrain never shows up here. Door probes (`door::leaf_blocked`)
     /// only look for units, so that is harmless for now.
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
+        self.overlap_box(exact(aabb.center), exact(aabb.half_extents))
+    }
+
+    pub fn overlap_box(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
         let queries = self.world.broad_phase.as_query_pipeline(
             &self.queries,
             &self.world.bodies,
             &self.world.colliders,
             QueryFilter::default(),
         );
-        let shape = cuboid(aabb.half_extents);
+        let shape = Cuboid::new(metres(half_extents));
         let mut hits: Vec<_> = queries
-            .intersect_shape(Pose::from_translation(metres(exact(aabb.center))), &shape)
+            .intersect_shape(Pose::from_translation(metres(centre)), &shape)
             .map(|(_, collider)| BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX)))
             .collect();
         hits.sort_unstable();
