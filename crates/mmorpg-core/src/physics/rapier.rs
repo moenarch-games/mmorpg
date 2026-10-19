@@ -328,6 +328,65 @@ impl World {
         Ok(())
     }
 
+    /// The platform `id` (#56), mutably.
+    fn platform_mut(&mut self, id: BodyId) -> Result<&mut RigidBody, PhysicsError> {
+        self.bodies
+            .get_mut(&id)
+            .filter(|body| body.is_platform())
+            .ok_or_else(|| error(format!("platform body {} is missing", id.0)))
+    }
+
+    pub fn move_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        let platform = self.platform_mut(id)?;
+        let to = exact(to);
+        platform.velocity = [0, 1, 2].map(|axis| to[axis] - platform.position[axis]);
+        Ok(())
+    }
+
+    pub fn place_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        let platform = self.platform_mut(id)?;
+        platform.velocity = [0.0; 3];
+        let by = [0, 1, 2].map(|axis| exact(to)[axis] - platform.position[axis]);
+        self.shift_platform(id, by)
+    }
+
+    /// Moves platform `id`'s box by `by` (units) and its collider with it.
+    fn shift_platform(&mut self, id: BodyId, by: [f32; 3]) -> Result<(), PhysicsError> {
+        if by == [0.0; 3] {
+            return Ok(());
+        }
+        let platform = self.platform_mut(id)?;
+        for (axis, delta) in platform.position.iter_mut().zip(by) {
+            *axis += delta;
+        }
+        let position = platform.position;
+        if let Some(collider) = self
+            .handles
+            .get(&id)
+            .and_then(|handles| self.world.colliders.get_mut(handles.collider))
+        {
+            collider.set_translation(metres(position));
+        }
+        self.refresh();
+        Ok(())
+    }
+
+    /// Whether `body` stands on platform `platform`: its walkable top within the support
+    /// reach below.
+    fn stands_on(&self, body: &RigidBody, platform: BodyId) -> bool {
+        let Some(collider) = self.handles.get(&platform).map(|handles| handles.collider) else {
+            return false;
+        };
+        let predicate =
+            |handle: ColliderHandle, _: &rapier3d::prelude::Collider| handle == collider;
+        self.support_gap(
+            body,
+            body.position,
+            QueryFilter::default().predicate(&predicate),
+        )
+        .is_some()
+    }
+
     pub fn set_velocity(&mut self, id: BodyId, velocity: Vec3i) -> Result<(), PhysicsError> {
         let body = self
             .bodies
@@ -394,8 +453,34 @@ impl World {
     /// Advances one tick: each moving body, in ID order, gains gravity and asks the character
     /// controller where its velocity leads. Landing on ground or meeting a ceiling ends its
     /// vertical velocity.
+    ///
+    /// Moving platforms (#56) carry the units standing on them that are not rising: a
+    /// platform's displacement is added to each rider's move. A platform that does not rise
+    /// moves before the units and a rising one after them, so neither runs into its riders.
     pub fn step(&mut self) -> Result<StepStats, PhysicsError> {
         self.rebuild();
+        let platforms: Vec<_> = self
+            .bodies
+            .values()
+            .filter(|body| body.is_platform() && body.velocity != [0.0; 3])
+            .map(|body| (body.id, body.velocity))
+            .collect();
+        let mut carried = BTreeMap::new();
+        for &(platform, displacement) in &platforms {
+            for body in self.bodies.values().filter(|body| body.is_moving()) {
+                if body.velocity[1] <= 0.0
+                    && !carried.contains_key(&body.id)
+                    && self.stands_on(body, platform)
+                {
+                    carried.insert(body.id, displacement);
+                }
+            }
+        }
+        for &(platform, displacement) in &platforms {
+            if displacement[1] <= 0.0 {
+                self.shift_platform(platform, displacement)?;
+            }
+        }
         let ids: Vec<_> = self
             .bodies
             .values()
@@ -427,7 +512,17 @@ impl World {
                     }
                 }
             }
-            let desired = [velocity[0], velocity[1] + settle, velocity[2]];
+            // A rider follows its platform instead of settling onto it: the platform that
+            // sank before the units already opened the gap the carry closes.
+            let carry = carried.get(&id).copied().unwrap_or([0.0; 3]);
+            if carried.contains_key(&id) {
+                settle = 0.0;
+            }
+            let desired = [
+                velocity[0] + carry[0],
+                velocity[1] + settle + carry[1],
+                velocity[2] + carry[2],
+            ];
             // A body with nowhere to go stays exactly where it is: asked to move nowhere, the
             // controller still snaps and nudges it by fractions of a unit.
             if desired == [0.0; 3] {
@@ -453,14 +548,21 @@ impl World {
             if moved != [0.0; 3] {
                 moved_bodies += 1;
             }
-            // The horizontal velocity is what contact let the body realize this tick.
-            velocity[0] = moved[0];
-            velocity[2] = moved[2];
+            // The horizontal velocity is what contact let the body realize this tick, less
+            // what its platform carried.
+            velocity[0] = moved[0] - carry[0];
+            velocity[2] = moved[2] - carry[2];
             self.place(id, to)?;
             self.bodies
                 .get_mut(&id)
                 .ok_or_else(|| error("moving body vanished"))?
                 .velocity = velocity;
+        }
+        for &(platform, displacement) in &platforms {
+            if displacement[1] > 0.0 {
+                self.shift_platform(platform, displacement)?;
+            }
+            self.platform_mut(platform)?.velocity = [0.0; 3];
         }
         Ok(StepStats {
             moving: moving_count,
@@ -574,11 +676,21 @@ impl World {
     /// How far (units) static ground within the support reach lies below `body` at
     /// `position`, beyond the controller's contact offset.
     fn ground_gap(&self, body: &RigidBody, position: [f32; 3]) -> Option<f32> {
+        self.support_gap(body, position, QueryFilter::only_fixed())
+    }
+
+    /// [`Self::ground_gap`] against the colliders `filter` admits.
+    fn support_gap(
+        &self,
+        body: &RigidBody,
+        position: [f32; 3],
+        filter: QueryFilter<'_>,
+    ) -> Option<f32> {
         let queries = self.world.broad_phase.as_query_pipeline(
             &self.queries,
             &self.world.bodies,
             &self.world.colliders,
-            QueryFilter::only_fixed(),
+            filter,
         );
         queries
             .cast_shape(

@@ -391,6 +391,7 @@ impl UnitPresenter {
                 .extend(self.effects.nodes(&mut self.resources, seconds, &anchors));
         }
         self.projectiles(&mut out.draws, snapshot);
+        self.platforms(&mut out.draws, snapshot);
         for view in &snapshot.debris {
             let centre = self.rendered(view.position);
             out.draws
@@ -398,6 +399,36 @@ impl UnitPresenter {
         }
         self.resources.retire_unused();
         out
+    }
+
+    /// Moving platforms (#56) where their schedule puts them at the projection's tick: a
+    /// stone pillar with a plank top. Content and tick decide; nothing is simulated here.
+    fn platforms(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
+        for platform in self.content.platforms() {
+            let centre = self
+                .rendered(platform.centre_at(snapshot.tick))
+                .map(f64::from);
+            let [x, y, z] = metres(platform.half_extents).map(f64::from);
+            let id = format!("platform-{}", platform.id.get());
+            draws.push(self.resources.primitive(
+                format!("{id}-pillar"),
+                Primitive::Box([2. * x, 2. * y - 0.06, 2. * z]),
+                0x8c8478,
+                Frame {
+                    p: [centre[0], centre[1] - 0.03, centre[2]],
+                    q: IQ,
+                },
+            ));
+            draws.push(self.resources.primitive(
+                format!("{id}-top"),
+                Primitive::Box([2. * x, 0.06, 2. * z]),
+                0x7a5a3a,
+                Frame {
+                    p: [centre[0], centre[1] + y - 0.03, centre[2]],
+                    q: IQ,
+                },
+            ));
+        }
     }
 
     /// Arrows and bolts where the zone says they are (#286): a shaft behind the tip along its

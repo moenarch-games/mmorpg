@@ -71,6 +71,8 @@ Creatures respawn 60 s after death unless noted and wander within 6 m of their s
 
 Content revision 17 adds a **large creature** (#297): the Hill Ogre squats east of the ruined Southmeadow farmstead. A creature at least 1.4 m across is large: its capsule body-blocks smaller units like any body; it holds its ground while idle (and so draws nothing from the zone RNG, leaving every other creature's script unchanged); a step that would carry it into a smaller living unit shoves that unit 1.2 m aside, off its path, as a forced move with the usual immunity (Atlas 5.2.72; walls stop it); and it casts **Stomp** (ability 18: 1 s wind-up, 12 s cooldown) once its target is within 3.5 m, hurting and knocking back every player within 3.5 m it can see, falling off to half at the edge.
 
+Content revision 18 adds the **mill hoist** (#56, `greyhaven_vale::MILL_HOIST`), a moving platform: a 2 m square stone pillar against the Millbrook windmill's south face. It rests 5 s with its top flush with the ground, rises 8 m to the windmill's flat top (its gallery) at 1.5 m/s, rests 5 s and sinks back, forever; its position is a pure function of the zone tick, so canonical snapshots and projections carry nothing new and both clients draw it from content and the projection's tick. Its box fills the shaft under its top, so it sweeps no space a unit could stand in except on it. Physics carries every unit standing on it that is not jumping; a rider walks off onto the gallery at the top, or off the edge and falls.
+
 ## Systems
 
 ### Movement

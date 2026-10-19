@@ -32,8 +32,9 @@ pub mod units;
 /// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
 /// inside; revision 15 adds breakable crates, barrels, fences and powder barrels (#288);
 /// revision 16 composes the saved Outpost layout overrides (#321); revision 17 adds the
-/// Hill Ogre, a large creature that shoves and stomps (#297).
-pub const REVISION: u64 = 17;
+/// Hill Ogre, a large creature that shoves and stomps (#297); revision 18 adds the mill
+/// hoist, a moving platform (#56).
+pub const REVISION: u64 = 18;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -88,6 +89,8 @@ pub mod ids {
     pub const BARN: u32 = 200;
     pub const FARMHOUSE: u32 = 201;
     pub const WINDMILL: u32 = 202;
+    /// The mill hoist (#56): a lift pillar at the windmill's south face.
+    pub const MILL_HOIST: u32 = 203;
     pub const FENCES: RangeInclusive<u32> = 210..=214;
 
     pub const SHORE_ROCKS: RangeInclusive<u32> = 300..=305;
@@ -771,6 +774,20 @@ fn colliders() -> Vec<StaticCollider> {
     colliders
 }
 
+/// The mill hoist (#56): a 2 m square stone pillar against the windmill's south face that
+/// rests with its top flush with the ground, rises 8 m to the windmill's gallery (its flat
+/// top) at 1.5 m/s, rests 5 s and sinks back. Its box fills the shaft below its top, so it
+/// sweeps no space a unit could stand in except on top.
+pub const MILL_HOIST: crate::Platform = crate::Platform {
+    id: crate::PlatformId::new(1),
+    body: ids::MILL_HOIST,
+    half_extents: [100, 400, 100],
+    low: [8_800, -400, 1_748],
+    high: [8_800, 400, 1_748],
+    speed: 5,
+    dwell: 150,
+};
+
 /// The hosted collision content. Hosts, clients and scenery consume this
 /// exact definition; the spawn grid is validated clear of every collider.
 #[must_use]
@@ -823,6 +840,7 @@ pub fn content_with_definition(
             .with_vendors(crate::VENDOR_CATALOG_REVISION, units::vendors())?
             .with_quests(crate::QUEST_CATALOG_REVISION, quests::quests())?
             .with_doors(vec![inn::door(ids::INN_DOOR)])?
+            .with_platforms(vec![MILL_HOIST])?
             .with_routines(units::routines(), units::closed_at_night())?,
     ))
 }
