@@ -159,7 +159,9 @@ impl World {
                 engine_body
             }
             Kind::Floor => Body::keyed(key, Shape::HalfSpace, vector(body.position), 0.0),
-            Kind::Fixed => Body::keyed(
+            // A moving platform (#56) is a static box the adapter re-adds where the zone moves
+            // it: physics-engine has no moving support that carries characters.
+            Kind::Fixed | Kind::Platform => Body::keyed(
                 key,
                 Shape::Box(vector(exact(body.half_extents))),
                 vector(body.position),
@@ -236,6 +238,66 @@ impl World {
             .map_err(|failure| engine_error("set_kinematic_position", failure))?;
         self.grounded.remove(&id);
         Ok(())
+    }
+
+    fn platform_mut(&mut self, id: BodyId) -> Result<&mut RigidBody, PhysicsError> {
+        self.bodies
+            .get_mut(&id)
+            .filter(|body| body.is_platform())
+            .ok_or_else(|| error(format!("platform body {} is missing", id.0)))
+    }
+
+    pub fn move_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        let platform = self.platform_mut(id)?;
+        let to = exact(to);
+        platform.velocity = [0, 1, 2].map(|axis| to[axis] - platform.position[axis]);
+        Ok(())
+    }
+
+    pub fn place_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        let mut platform = *self.platform_mut(id)?;
+        platform.position = exact(to);
+        platform.velocity = [0.0; 3];
+        self.replace_body(platform)
+    }
+
+    /// Moves platform `id`'s static box by `by`: removed and added again where it goes.
+    fn shift_platform(&mut self, id: BodyId, by: [f32; 3]) -> Result<(), PhysicsError> {
+        let mut platform = *self.platform_mut(id)?;
+        for (axis, delta) in platform.position.iter_mut().zip(by) {
+            *axis += delta;
+        }
+        platform.velocity = [0.0; 3];
+        self.replace_body(platform)
+    }
+
+    /// Whether moving `body` stands on platform `platform`: walkable top within the ground
+    /// prediction below it.
+    fn stands_on(&self, body: &RigidBody, platform: BodyId) -> bool {
+        let Some(&target) = self.handles.get(&platform) else {
+            return false;
+        };
+        let offset = self.settings.offset;
+        let predict = offset + GROUND_PREDICTION_UNITS;
+        let reach = predict + offset;
+        let cast = ShapeCast::new(
+            QueryPose::new(capsule(body.half_extents), lifted(body.position)),
+            Vector(0.0, -reach, 0.0),
+        );
+        let filter = QueryFilter {
+            exclude: Some(self.handles[&body.id]),
+            ..QueryFilter::default()
+        };
+        let mut hits = Vec::new();
+        self.engine
+            .cast_shape(cast, filter, &mut hits)
+            .expect("physics-engine platform support cast failed");
+        let min_up = self.settings.max_slope.cos();
+        hits.iter().any(|hit| {
+            hit.body == target
+                && (hit.starts_overlapping || hit.normal.1 >= min_up)
+                && hit.fraction * reach <= predict
+        })
     }
 
     pub fn set_velocity(&mut self, id: BodyId, velocity: Vec3i) -> Result<(), PhysicsError> {
@@ -344,7 +406,45 @@ impl World {
     /// Advances one tick like the Rapier backend: gravity unless grounded and not rising, one
     /// character move per moving body (all in one batch), then landing or a ceiling ends the
     /// vertical velocity and the horizontal velocity becomes what the move realized.
+    ///
+    /// Moving platforms (#56) are unsupported beyond moving their box: physics-engine has no
+    /// moving support that carries characters, so a step in which a unit stands on a moving
+    /// platform fails with an unsupported error instead of substituting anything.
     pub fn step(&mut self) -> Result<StepStats, PhysicsError> {
+        let platforms: Vec<_> = self
+            .bodies
+            .values()
+            .filter(|body| body.is_platform() && body.velocity != [0.0; 3])
+            .map(|body| (body.id, body.velocity))
+            .collect();
+        for &(platform, _) in &platforms {
+            if let Some(rider) = self
+                .bodies
+                .values()
+                .find(|body| body.is_moving() && self.stands_on(body, platform))
+            {
+                return Err(error(format!(
+                    "unsupported on physics-engine: body {} stands on moving platform {} \
+                     (no moving support that carries characters)",
+                    rider.id.0, platform.0
+                )));
+            }
+        }
+        for &(platform, displacement) in &platforms {
+            if displacement[1] <= 0.0 {
+                self.shift_platform(platform, displacement)?;
+            }
+        }
+        let stats = self.step_characters()?;
+        for &(platform, displacement) in &platforms {
+            if displacement[1] > 0.0 {
+                self.shift_platform(platform, displacement)?;
+            }
+        }
+        Ok(stats)
+    }
+
+    fn step_characters(&mut self) -> Result<StepStats, PhysicsError> {
         let mut moves = std::mem::take(&mut self.moves);
         moves.clear();
         let mut velocities = std::mem::take(&mut self.velocities);

@@ -39,6 +39,7 @@ pub struct ZoneContent {
     quest_revision: u64,
     quests: Vec<crate::Quest>,
     doors: Vec<crate::Door>,
+    platforms: Vec<crate::Platform>,
     routines: Vec<crate::NpcRoutine>,
     closed_at_night: Vec<NpcId>,
 }
@@ -140,6 +141,7 @@ impl ZoneContent {
             quest_revision: 0,
             quests: Vec::new(),
             doors: Vec::new(),
+            platforms: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
         };
@@ -171,6 +173,7 @@ impl ZoneContent {
             quest_revision: 0,
             quests: Vec::new(),
             doors: Vec::new(),
+            platforms: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
         };
@@ -498,6 +501,48 @@ impl ZoneContent {
         Ok(self)
     }
 
+    /// Binds moving platforms (#56): unique IDs, bodies in the static collider namespace that
+    /// no collider or door uses, valid boxes and schedules.
+    pub fn with_platforms(
+        mut self,
+        mut platforms: Vec<crate::Platform>,
+    ) -> Result<Self, ZoneError> {
+        if platforms.len() > crate::MAX_PLATFORMS {
+            return Err(ZoneError::new("zone platform content capacity reached"));
+        }
+        platforms.sort_by_key(|platform| platform.id);
+        if platforms
+            .windows(2)
+            .any(|pair| pair[0].id == pair[1].id || pair[0].body == pair[1].body)
+        {
+            return Err(ZoneError::new("duplicate platform id or body"));
+        }
+        for platform in &platforms {
+            platform.validate()?;
+            if u64::from(platform.body) >= crate::entity::PLAYER_BODY_BASE
+                || self
+                    .definition
+                    .colliders()
+                    .iter()
+                    .any(|c| c.id == platform.body)
+                || self.doors.iter().any(|door| door.body == platform.body)
+            {
+                return Err(ZoneError::new(
+                    "platform body collides with another body id",
+                ));
+            }
+        }
+        self.platforms = platforms;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Ordered by platform ID.
+    #[must_use]
+    pub fn platforms(&self) -> &[crate::Platform] {
+        &self.platforms
+    }
+
     /// Ordered by door ID.
     #[must_use]
     pub fn doors(&self) -> &[crate::Door] {
@@ -574,6 +619,32 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_routine_fingerprint();
+        if self.platforms.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v9");
+        hash.u64(fingerprint);
+        hash.len(self.platforms.len());
+        for platform in &self.platforms {
+            hash.u8(platform.id.get());
+            hash.u32(platform.body);
+            for value in platform
+                .half_extents
+                .iter()
+                .chain(&platform.low)
+                .chain(&platform.high)
+            {
+                hash.i32(*value);
+            }
+            hash.i32(platform.speed);
+            hash.u32(platform.dwell);
+        }
+        hash.finish()
+    }
+
+    fn compute_routine_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_door_fingerprint();
         if self.routines.is_empty() && self.closed_at_night.is_empty() {
             return fingerprint;

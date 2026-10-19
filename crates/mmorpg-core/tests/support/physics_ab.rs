@@ -186,6 +186,44 @@ pub enum Workload {
     Greyhaven(Fixture),
     /// The hill ogre (#297): body-blocking, shoving and stomping in Southmeadow Downs.
     OgreBrawl,
+    /// The mill hoist (#56): a player rides the moving platform up and walks off at the top.
+    /// Unsupported on physics-engine (no moving support).
+    MillHoist,
+}
+
+/// The mill hoist ride: one full cycle and a little more.
+pub const MILL_HOIST_TICKS: usize = 640;
+
+/// The hoist ride's commands: player 1 stands on the resting hoist from the start and walks
+/// north onto the windmill's gallery once the hoist is up.
+fn mill_hoist_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let top = mmorpg_core::greyhaven_vale::MILL_HOIST;
+    let up = usize::try_from(top.dwell + top.travel_ticks()).expect("ticks fit");
+    let walk = |forward| ZoneCommand::Move {
+        forward,
+        strafe: 0,
+        facing: 0,
+    };
+    if tick == up + 10 {
+        vec![(1, walk(1))]
+    } else if tick == up + 30 {
+        vec![(1, walk(0))]
+    } else {
+        Vec::new()
+    }
+}
+
+/// The hoist ride's initial zone: Greyhaven with player 1 on the resting hoist.
+fn mill_hoist_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    let content = mmorpg_core::greyhaven_vale::content();
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), std::sync::Arc::clone(&content))?;
+    zone.add_player(1)?;
+    let mut state = zone.snapshot()?;
+    let [x, _, z] = mmorpg_core::greyhaven_vale::MILL_HOIST.low;
+    #[allow(clippy::cast_precision_loss)]
+    let feet = [x as f32, 90.0, z as f32];
+    state.players[0].position = feet;
+    Ok(ZoneSimulation::from_snapshot(state, content)?)
 }
 
 /// The ogre brawl's script length.
@@ -260,6 +298,7 @@ impl Workload {
             Self::Bots(scenario) => &scenario.name,
             Self::Greyhaven(fixture) => fixture.name,
             Self::OgreBrawl => "vale-ogre-brawl",
+            Self::MillHoist => "vale-mill-hoist",
         }
     }
 
@@ -269,6 +308,16 @@ impl Workload {
             Self::Bots(scenario) => usize::try_from(scenario.ticks).expect("tick count fits"),
             Self::Greyhaven(_) => greyhaven_workload::TICKS,
             Self::OgreBrawl => OGRE_BRAWL_TICKS,
+            Self::MillHoist => MILL_HOIST_TICKS,
+        }
+    }
+
+    /// Why physics-engine cannot run this workload, if it cannot: the capability it lacks.
+    #[must_use]
+    pub const fn engine_unsupported(&self) -> Option<&'static str> {
+        match self {
+            Self::MillHoist => Some("moving support: a platform that carries characters"),
+            Self::Bots(_) | Self::Greyhaven(_) | Self::OgreBrawl => None,
         }
     }
 }
@@ -289,6 +338,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
         .collect::<Result<_, _>>()?;
     workloads.extend(greyhaven_workload::FIXTURES.map(Workload::Greyhaven));
     workloads.push(Workload::OgreBrawl);
+    workloads.push(Workload::MillHoist);
     Ok(workloads)
 }
 
@@ -320,6 +370,7 @@ impl Run {
             ),
             Workload::Greyhaven(fixture) => (greyhaven_workload::initial_zone(*fixture)?, 0),
             Workload::OgreBrawl => (ogre_brawl_zone()?, 0),
+            Workload::MillHoist => (mill_hoist_zone()?, 0),
         };
         Ok(Self {
             zone,
@@ -378,8 +429,13 @@ impl Run {
             Workload::Greyhaven(fixture) => {
                 greyhaven_workload::commands(&mut self.zone, *fixture, self.tick)?;
             }
-            Workload::OgreBrawl => {
-                for (player, command) in ogre_brawl_commands(self.tick) {
+            Workload::OgreBrawl | Workload::MillHoist => {
+                let commands = if matches!(self.workload, Workload::OgreBrawl) {
+                    ogre_brawl_commands(self.tick)
+                } else {
+                    mill_hoist_commands(self.tick)
+                };
+                for (player, command) in commands {
                     let sequence = self.next_sequence(player);
                     let outcome = match self.zone.apply_command(player, sequence, command) {
                         Ok(()) => "applied".to_owned(),

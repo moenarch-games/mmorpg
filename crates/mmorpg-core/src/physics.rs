@@ -114,6 +114,9 @@ enum Kind {
     /// An upward half-space whose surface is at the body's `y`.
     Floor,
     Moving,
+    /// A fixed box the zone moves on a schedule (#56); its velocity is the displacement the
+    /// next step applies.
+    Platform,
 }
 
 /// One body: a fixed box, or a moving unit's capsule with its authoritative `f32` state.
@@ -163,6 +166,18 @@ impl RigidBody {
             position: exact(Vec3i::new(0, y, 0)),
             velocity: [0.0; 3],
             half_extents: Vec3i::ZERO,
+        }
+    }
+
+    /// A moving platform's box (#56) centred on `position`, at rest.
+    #[must_use]
+    pub const fn platform(id: BodyId, position: Vec3i, half_extents: Vec3i) -> Self {
+        Self {
+            id,
+            kind: Kind::Platform,
+            position: exact(position),
+            velocity: [0.0; 3],
+            half_extents,
         }
     }
 
@@ -230,6 +245,12 @@ impl RigidBody {
 
     pub(crate) const fn is_moving(&self) -> bool {
         matches!(self.kind, Kind::Moving)
+    }
+
+    /// Whether it is a moving platform's box (#56).
+    #[must_use]
+    pub const fn is_platform(&self) -> bool {
+        matches!(self.kind, Kind::Platform)
     }
 }
 
@@ -466,6 +487,19 @@ impl World {
 
     pub fn set_velocity(&mut self, id: BodyId, velocity: Vec3i) -> Result<(), PhysicsError> {
         dispatch!(self, &mut self.worlds, world => world.set_velocity(id, velocity))
+    }
+
+    /// Moves platform `id`'s box (#56) to centre `to` during the next [`World::step`], before
+    /// or after the units (so it never runs into the ones it carries), carrying every unit
+    /// that stands on it and is not rising: the displacement is added to that unit's move.
+    pub fn move_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        dispatch!(self, &mut self.worlds, world => world.move_platform(id, to))
+    }
+
+    /// Places platform `id`'s box at centre `to` at once, carrying nothing: building or
+    /// restoring a zone.
+    pub fn place_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        dispatch!(self, &mut self.worlds, world => world.place_platform(id, to))
     }
 
     /// Lays the authored ground as a heightfield identified as `id` (#159).
@@ -706,6 +740,135 @@ mod tests {
             }
         }
         assert!(stuck.is_empty(), "pairs deadlocked: {stuck:?}");
+    }
+
+    /// A lift pillar (#56) whose top rises from the floor to 300 units at 5 units a tick.
+    fn lift(world: &mut World) -> BodyId {
+        let lift = BodyId(5);
+        world
+            .add_body(RigidBody::platform(
+                lift,
+                Vec3i::new(0, -150, 0),
+                Vec3i::new(100, 150, 100),
+            ))
+            .unwrap();
+        lift
+    }
+
+    #[test]
+    fn a_platform_carries_its_rider_up_and_down_and_lets_it_walk_off() {
+        // Rapier carries; physics-engine has no moving support and says so.
+        let mut world = world();
+        let lift = lift(&mut world);
+        let rider = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                rider,
+                Vec3i::new(0, 90, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        world.step().unwrap();
+        for tick in 1..=60 {
+            world
+                .move_platform(lift, Vec3i::new(0, -150 + 5 * tick, 0))
+                .unwrap();
+            world.step().unwrap();
+            let body = world.body(rider).unwrap();
+            assert!(
+                (body.exact_position()[1] - (90.0 + 5.0 * tick as f32)).abs() < 0.05,
+                "carried up at tick {tick}: {:?}",
+                body.exact_position()
+            );
+            assert!(world.grounded(rider));
+        }
+        for tick in (0..60).rev() {
+            world
+                .move_platform(lift, Vec3i::new(0, -150 + 5 * tick, 0))
+                .unwrap();
+            world.step().unwrap();
+            let y = world.body(rider).unwrap().exact_position()[1];
+            assert!(
+                (y - (90.0 + 5.0 * tick as f32)).abs() < 0.05,
+                "carried down at tick {tick}: {y}"
+            );
+        }
+        // Up again, then step off the top onto nothing: the rider falls to the floor.
+        for tick in 1..=60 {
+            world
+                .move_platform(lift, Vec3i::new(0, -150 + 5 * tick, 0))
+                .unwrap();
+            world.step().unwrap();
+        }
+        world.set_velocity(rider, Vec3i::new(10, 0, 0)).unwrap();
+        for _ in 0..90 {
+            world.step().unwrap();
+        }
+        let body = *world.body(rider).unwrap();
+        assert!(body.position().x > 150, "walked off: {:?}", body.position());
+        assert_eq!(body.position().y, 90, "and fell to the floor");
+    }
+
+    #[test]
+    fn a_rider_falls_when_its_platform_is_removed_and_a_jump_leaves_it() {
+        let mut world = world();
+        let lift = lift(&mut world);
+        world.place_platform(lift, Vec3i::new(0, 150, 0)).unwrap();
+        let rider = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                rider,
+                Vec3i::new(0, 390, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        world.step().unwrap();
+        assert!(world.grounded(rider));
+        // A jump while the platform sinks: the rider rises on its own, not carried down.
+        world.set_velocity(rider, Vec3i::new(0, 12, 0)).unwrap();
+        world.move_platform(lift, Vec3i::new(0, 145, 0)).unwrap();
+        world.step().unwrap();
+        assert!(world.body(rider).unwrap().exact_position()[1] > 390.0);
+        for _ in 0..40 {
+            world.step().unwrap();
+        }
+        assert!(world.grounded(rider));
+        assert!(world.remove_body(lift).is_some());
+        for _ in 0..60 {
+            world.step().unwrap();
+        }
+        assert_eq!(
+            world.body(rider).unwrap().position().y,
+            90,
+            "fell to the floor"
+        );
+    }
+
+    #[cfg(feature = "physics-ab")]
+    #[test]
+    fn physics_engine_refuses_to_carry_a_rider() {
+        let mut world = World::with_backend(Vec3i::new(0, -1, 0), Backend::Engine);
+        world.add_body(RigidBody::floor(BodyId(1), 0)).unwrap();
+        let lift = lift(&mut world);
+        world
+            .add_body(RigidBody::dynamic(
+                BodyId(10),
+                Vec3i::new(0, 90, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        world.step().unwrap();
+        world.move_platform(lift, Vec3i::new(0, -145, 0)).unwrap();
+        let failure = world.step().unwrap_err().to_string();
+        assert!(failure.contains("unsupported"), "{failure}");
+        // A platform nobody stands on moves.
+        world.remove_body(BodyId(10));
+        world.move_platform(lift, Vec3i::new(0, -140, 0)).unwrap();
+        world.step().unwrap();
+        assert_eq!(world.body(lift).unwrap().position(), Vec3i::new(0, -140, 0));
     }
 
     #[test]

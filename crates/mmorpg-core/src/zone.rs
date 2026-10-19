@@ -306,6 +306,17 @@ impl ZoneSimulation {
                 ))
                 .map_err(physics_error)?;
         }
+        // Platforms (#56) start at their tick-0 centre.
+        for platform in content.platforms() {
+            let [x, y, z] = platform.centre_at(0);
+            world
+                .add_body(RigidBody::platform(
+                    crate::physics::BodyId(u64::from(platform.body)),
+                    Vec3i::new(x, y, z),
+                    vector(platform.half_extents),
+                ))
+                .map_err(physics_error)?;
+        }
         let mut interest = InterestIndex::default();
         for npc in content.npcs() {
             let entity = EntityRef::Npc(npc.id);
@@ -576,7 +587,8 @@ impl ZoneSimulation {
     ///    players stand still); movement or a jump interrupts a cast; large
     ///    creatures shove smaller units in their way (#297) and forced moves
     ///    set their units' velocities;
-    /// 4. one physics step, then one debris step for broken props' pieces (#288);
+    /// 4. moving platforms take their scheduled centre for this tick (#56), carrying their
+    ///    riders in one physics step, then one debris step for broken props' pieces (#288);
     /// 5. interest index maintenance from the new positions;
     /// 6. combat: global cooldowns, cooldowns and casts or channels (players,
     ///    then creatures), aura pulses and expiry in `(EntityRef, aura slot)`
@@ -605,6 +617,7 @@ impl ZoneSimulation {
         self.drive_players()?;
         self.shove_with_large_creatures()?;
         self.apply_forced_moves()?;
+        self.schedule_platforms(now, false)?;
         self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
         self.settle_forced_moves();
         self.advance_debris();

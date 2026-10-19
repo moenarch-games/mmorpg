@@ -167,6 +167,10 @@ fn main() -> Result<()> {
                 [Backend::Engine, Backend::Rapier]
             };
             for backend in order {
+                // A workload physics-engine cannot run is timed on Rapier only.
+                if backend == Backend::Engine && workload.engine_unsupported().is_some() {
+                    continue;
+                }
                 let samples = match backend {
                     Backend::Rapier => &mut rapier,
                     Backend::Engine => &mut engine,
@@ -187,6 +191,17 @@ fn main() -> Result<()> {
             (Backend::Rapier, &mut rapier),
             (Backend::Engine, &mut engine),
         ] {
+            if backend == Backend::Engine
+                && let Some(missing) = workload.engine_unsupported()
+            {
+                println!(
+                    "| {} | {} | | {} | unsupported: {missing} | | | | | |",
+                    workload.name(),
+                    workload.ticks(),
+                    backend.name(),
+                );
+                continue;
+            }
             samples.ticks.sort_unstable();
             samples.setup.sort_unstable();
             samples.setup_physics.sort_unstable();

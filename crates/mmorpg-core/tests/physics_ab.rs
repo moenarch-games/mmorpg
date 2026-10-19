@@ -315,6 +315,16 @@ fn check_ogre(
     });
 }
 
+/// The hoist ride on Rapier (#56): the rider ends on the windmill's gallery, 8 m up.
+fn check_mill_hoist(trace: &Trace) -> Result<()> {
+    let last = trace.snapshots.last().ok_or("empty hoist trace")?;
+    let [_, y, z] = last.players[0].position;
+    if (y - 890.0).abs() > 0.1 || z < 1_900.0 {
+        return Err(format!("the hoist rider ends at {:?}", last.players[0].position).into());
+    }
+    Ok(())
+}
+
 fn run(workload: &Workload, backend: Backend) -> Result<(Trace, Check)> {
     using_backend(backend, || {
         let mut run = Run::new(workload)?;
@@ -570,6 +580,31 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
         let started = std::time::Instant::now();
         let name = workload.name().to_owned();
         let (rapier, rapier_check) = run(&workload, Backend::Rapier)?;
+        if let Some(missing) = workload.engine_unsupported() {
+            // Disclosed, never substituted: physics-engine refuses the workload with an
+            // unsupported error. Rapier alone keeps the shared invariants, replays and
+            // continues exactly when restored halfway.
+            let refusal = run(&workload, Backend::Engine)
+                .err()
+                .ok_or_else(|| format!("{name}: physics-engine ran an unsupported workload"))?
+                .to_string();
+            assert!(refusal.contains("unsupported"), "{name}: {refusal}");
+            assert_eq!(
+                rapier_check.departed, None,
+                "{name}: Rapier recovery departs"
+            );
+            assert!(
+                run(&workload, Backend::Rapier)?.0 == rapier,
+                "{name}: Rapier replay differs"
+            );
+            check_mill_hoist(&rapier)?;
+            println!(
+                "{name}: physics-engine unsupported ({missing}): {refusal}; Rapier keeps the \
+                 invariants, replays and continues [{:?}]",
+                started.elapsed()
+            );
+            continue;
+        }
         let (engine, engine_check) = run(&workload, Backend::Engine)?;
         // Restored halfway, both backends continue exactly (Atlas 2.1.5).
         assert_eq!(

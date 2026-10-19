@@ -493,8 +493,10 @@ impl ZoneSimulation {
         zone.next_projectile = snapshot.next_projectile;
         zone.restore_forced(snapshot.forced)?;
         zone.restore_debris(snapshot.debris, snapshot.next_debris)?;
-        // The snapshot tick's routine placements; doors are already as that tick left them.
+        // The snapshot tick's routine placements and platforms (#56); doors are already as that
+        // tick left them.
         zone.place_routine_npcs(false)?;
+        zone.schedule_platforms(zone.tick, true)?;
         zone.validate_references()?;
         zone.rebuild_interest()?;
         Ok(zone)
