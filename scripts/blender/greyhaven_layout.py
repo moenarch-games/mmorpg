@@ -141,7 +141,7 @@ def import_scene(args: argparse.Namespace) -> None:
         for coll in tuple(obj.users_collection):
             coll.objects.unlink(obj)
         group.objects.link(obj)
-        obj.location = blender_position(position)
+        obj.location = blender_position([position[0], position[1] + half[1], position[2]])
         obj.dimensions = (
             max(0.12, half[0] * 2 / 100),
             max(0.12, half[2] * 2 / 100),
