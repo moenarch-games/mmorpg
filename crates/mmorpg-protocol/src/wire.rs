@@ -753,6 +753,61 @@ pub(crate) fn decode_doors(
     Ok(doors)
 }
 
+/// A destructible piece reference (#305): 0 for none, else the piece ID plus one.
+pub(crate) fn encode_piece(piece: Option<mmorpg_core::PieceId>) -> u16 {
+    piece.map_or(0, |piece| piece.get().saturating_add(1))
+}
+
+pub(crate) fn decode_piece(value: u16) -> Option<mmorpg_core::PieceId> {
+    value.checked_sub(1).map(mmorpg_core::PieceId::new)
+}
+
+/// The not-intact pieces of a projection (#305): count (`u8`), then per piece its ID (`u16`)
+/// and stage (`u8`), in ascending ID order.
+pub(crate) fn encode_piece_views(
+    payload: &mut Vec<u8>,
+    pieces: &[mmorpg_core::PieceView],
+) -> Result<(), ProtocolError> {
+    payload.push(
+        u8::try_from(pieces.len())
+            .ok()
+            .filter(|&count| usize::from(count) <= mmorpg_core::MAX_PIECES)
+            .ok_or_else(|| ProtocolError::new("too many structure pieces"))?,
+    );
+    for piece in pieces {
+        payload.extend_from_slice(&piece.piece.get().to_be_bytes());
+        payload.push(piece.stage.code());
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_piece_views(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::PieceView>, ProtocolError> {
+    let count = usize::from(read_u8(payload, offset)?);
+    if count > mmorpg_core::MAX_PIECES {
+        return Err(ProtocolError::new("too many structure pieces"));
+    }
+    let mut pieces: Vec<mmorpg_core::PieceView> = Vec::with_capacity(count);
+    for _ in 0..count {
+        let piece = mmorpg_core::PieceId::new(u16::from_be_bytes([
+            read_u8(payload, offset)?,
+            read_u8(payload, offset)?,
+        ]));
+        let stage = mmorpg_core::PieceStage::from_code(read_u8(payload, offset)?)
+            .filter(|stage| *stage != mmorpg_core::PieceStage::Intact)
+            .ok_or_else(|| ProtocolError::new("unknown structure piece stage"))?;
+        if pieces.last().is_some_and(|last| last.piece >= piece) {
+            return Err(ProtocolError::new(
+                "structure pieces must be in ascending ID order",
+            ));
+        }
+        pieces.push(mmorpg_core::PieceView { piece, stage });
+    }
+    Ok(pieces)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

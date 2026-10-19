@@ -599,7 +599,8 @@ impl ZoneSimulation {
             let push = i32::try_from(i64::from(knockback) * share / 1_000).unwrap_or(0);
             self.knock_away(victim, [centre[0], centre[2]], fallback, push)?;
         }
-        Ok(())
+        // Destructible pieces (#305) take the blast's top roll, after the units it reached.
+        self.blast_pieces(centre, radius, u32::from(damage[1]) + bonus, now)
     }
 
     /// A large creature's stomp (#297): falloff damage and knockback, as a blast centred on the

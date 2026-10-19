@@ -1,6 +1,6 @@
 /**
- * Command wire version 12, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
- * `fixtures/protocol/commands-v12.hex` holds both encoders to the same bytes.
+ * Command wire version 13, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
+ * `fixtures/protocol/commands-v13.hex` holds both encoders to the same bytes.
  * The session supplies player identity and sequence separately.
  */
 import { entityKindCode, isU32, type EntityRef } from "./entity-ref";
@@ -46,9 +46,11 @@ export type WorldCommand =
   | { kind: "complete-quest"; npc: number; quest: number; choice: number }
   | { kind: "abandon-quest"; quest: number }
   /** Opens (`open`) or closes content door `door` (#158); the zone checks reach and blockers. */
-  | { kind: "use-door"; door: number; open: boolean };
+  | { kind: "use-door"; door: number; open: boolean }
+  /** Starts repairing a destructible piece (#305), or stops with `null`. */
+  | { kind: "repair"; piece: number | null };
 
-const COMMAND_WIRE_VERSION = 12;
+const COMMAND_WIRE_VERSION = 13;
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
 const SELECT_TARGET_TAG = 3;
@@ -72,6 +74,7 @@ const ABANDON_QUEST_TAG = 20;
 const DIRECTED_STRIKE_TAG = 21;
 const GUARD_TAG = 22;
 const USE_DOOR_TAG = 23;
+const REPAIR_TAG = 24;
 const YAW_STEPS = 65_536;
 
 function isAxis(value: number): value is Axis {
@@ -251,6 +254,13 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
         throw new Error("Door IDs must be u8.");
       }
       return Uint8Array.of(COMMAND_WIRE_VERSION, USE_DOOR_TAG, command.door, command.open ? 1 : 0);
+    case "repair": {
+      if (command.piece !== null && !(Number.isInteger(command.piece) && command.piece >= 0 && command.piece < 0xffff)) {
+        throw new Error("Piece IDs must be u16 below 65 535.");
+      }
+      const reference = command.piece === null ? 0 : command.piece + 1;
+      return Uint8Array.of(COMMAND_WIRE_VERSION, REPAIR_TAG, reference >> 8, reference & 0xff);
+    }
     case "start-attack":
       return Uint8Array.of(COMMAND_WIRE_VERSION, START_ATTACK_TAG);
     case "stop-attack":

@@ -47,8 +47,8 @@ const MAX_SELF_SHEET_BYTES: usize = SELF_SHEET_BYTES + crate::quest::MAX_QUEST_S
 /// The target's own target, the target's cast and its aura count.
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES + 1;
 /// Every section's fixed part: header, self, target, inventory revision
-/// and presence, loot presence, door count (`u8`), event count (`u8`), chat
-/// count (`u8`), entity count (`u16`), projectile count (`u8`) and debris count (`u8`).
+/// and presence, loot presence, door count (`u8`), piece count (`u8`), event count (`u8`),
+/// chat count (`u8`), entity count (`u16`), projectile count (`u8`) and debris count (`u8`).
 pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
     + SELF_BYTES
     + SELF_ABILITY_BYTES
@@ -61,7 +61,10 @@ pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
     + 1
     + 2
     + 1
+    + 1
     + 1;
+/// Destructible piece ID (`u16`) and stage (#305).
+pub const PIECE_RECORD_BYTES: usize = 3;
 /// `u16` ID, prop kind, piece index, `3 × i16` position, `4 × i16` rotation quaternion and age
 /// (#288).
 pub const DEBRIS_RECORD_BYTES: usize = 2 + 1 + 1 + 6 + 8 + 1;
@@ -104,6 +107,7 @@ const _: () = assert!(
         + MAX_EVENT_SECTION_BYTES
         + MAX_CHAT_SECTION_BYTES
         + mmorpg_core::MAX_DOORS * DOOR_RECORD_BYTES
+        + mmorpg_core::MAX_PIECES * PIECE_RECORD_BYTES
         + 2 * ENTITY_RECORD_BYTES
         <= MAX_PLAYER_PROJECTION_BYTES
 );
@@ -235,6 +239,7 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
         crate::loot::encode_rewards(&mut payload, view.rewards);
     }
     crate::wire::encode_doors(&mut payload, &snapshot.doors)?;
+    crate::wire::encode_piece_views(&mut payload, &snapshot.pieces)?;
     let mut chat_payload = Vec::new();
     chat_payload.push(encode_u8_count(
         snapshot.chat.len(),
@@ -713,6 +718,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         None
     };
     let doors = crate::wire::decode_doors(payload, &mut offset)?;
+    let pieces = crate::wire::decode_piece_views(payload, &mut offset)?;
     let event_count = decode_u8_count(
         payload,
         &mut offset,
@@ -840,6 +846,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         doors,
         projectiles,
         debris,
+        pieces,
         quests,
     })
 }
@@ -949,6 +956,16 @@ mod tests {
         slots[15] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 20).unwrap());
         ZoneSnapshot {
             debris: Vec::new(),
+            pieces: vec![
+                mmorpg_core::PieceView {
+                    piece: mmorpg_core::PieceId::new(2),
+                    stage: mmorpg_core::PieceStage::Damaged,
+                },
+                mmorpg_core::PieceView {
+                    piece: mmorpg_core::PieceId::new(0x0105),
+                    stage: mmorpg_core::PieceStage::Destroyed,
+                },
+            ],
             doors: vec![
                 mmorpg_core::DoorView {
                     door: mmorpg_core::DoorId::new(1),
@@ -1286,7 +1303,7 @@ mod tests {
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
         mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v26.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v27.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
     }
@@ -1312,7 +1329,9 @@ mod tests {
     const QUEST_BYTES: usize = 4 + 1 + 4 + 1 + 2 * 3;
     /// The fixture's door section: count and two door records.
     const DOORS: usize = 1 + 2 * DOOR_RECORD_BYTES;
-    const EVENTS: usize = INVENTORY + 8 + 1 + SELF_SHEET_BYTES + QUEST_BYTES + 1 + DOORS;
+    /// The fixture's piece section (#305): count and two piece records.
+    const PIECES: usize = 1 + 2 * PIECE_RECORD_BYTES;
+    const EVENTS: usize = INVENTORY + 8 + 1 + SELF_SHEET_BYTES + QUEST_BYTES + 1 + DOORS + PIECES;
     /// The fixture's chat records: 6 + 16 and 6 + 8 bytes, then a 6-byte emote.
     const CHAT_BYTES: usize = 22 + 14 + 6;
     const CHAT: usize = EVENTS + 1 + EVENT_COUNT * EVENT_RECORD_BYTES;
@@ -1334,6 +1353,7 @@ mod tests {
                 + EVENT_COUNT * EVENT_RECORD_BYTES
                 + CHAT_BYTES
                 + 2 * DOOR_RECORD_BYTES
+                + 2 * PIECE_RECORD_BYTES
                 + 4 * ENTITY_RECORD_BYTES
                 + 2 * PROJECTILE_RECORD_BYTES
         );
@@ -1346,7 +1366,7 @@ mod tests {
         assert_eq!(encoded[CLASS], 5, "Arcanist, female");
         assert_eq!(encoded[EVENTS], 16);
         assert_eq!(
-            encoded[QUESTS..EVENTS - 1 - DOORS],
+            encoded[QUESTS..EVENTS - 1 - DOORS - PIECES],
             [0, 0, 0, 1, 1, 2, 3, 0, 0, 2, 0, 1, 1, 0, 2, 2],
             "the quest sheet ends the self sheet"
         );
@@ -1437,13 +1457,13 @@ mod tests {
         snapshot.target_detail = TargetDetail::default();
         let bytes = encode_snapshot(&snapshot).unwrap();
         let expected = mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v26.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v27.hex"),
             &bytes,
         );
         assert_eq!(bytes, expected);
         assert_eq!(decode_snapshot(&bytes).unwrap(), snapshot);
         // Without target detail auras the sheet sits one aura record earlier.
-        let presence = EVENTS - 1 - DOORS - AURA_RECORD_BYTES;
+        let presence = EVENTS - 1 - DOORS - PIECES - AURA_RECORD_BYTES;
         for length in 0..bytes.len() {
             assert!(decode_snapshot(&bytes[..length]).is_err());
         }
@@ -1807,7 +1827,7 @@ mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (114, 14, 21)
+            (115, 14, 21)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 45);
         let viewer_id = u32::MAX;
@@ -1907,6 +1927,7 @@ mod tests {
             events: vec![event; MAX_EVENTS_PER_PLAYER],
             entities,
             quests: None,
+            pieces: Vec::new(),
         };
         let packed = pack_snapshot(&snapshot).unwrap();
         // (1,077 − 112 − 16 × 14 − 16 × 2) / 21 = 33 records fit beside a full event section

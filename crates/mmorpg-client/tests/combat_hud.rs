@@ -43,6 +43,7 @@ fn viewer_of(class: PlayerClass) -> ZoneSnapshot {
         doors: Vec::new(),
         projectiles: Vec::new(),
         debris: Vec::new(),
+        pieces: Vec::new(),
         content_revision: greyhaven_vale::REVISION,
         acknowledged_sequence: 1,
         viewer_id: 1,

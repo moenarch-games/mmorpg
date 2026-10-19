@@ -181,6 +181,8 @@ pub struct ZoneSnapshot {
     pub projectiles: Vec<crate::ProjectileView>,
     /// Pieces of broken props within the interest radius, nearest first (#288).
     pub debris: Vec<crate::DebrisView>,
+    /// Destructible pieces that are not intact, in ID order (#305).
+    pub pieces: Vec<crate::PieceView>,
 }
 
 impl ZoneSimulation {
@@ -318,6 +320,7 @@ impl ZoneSimulation {
                 doors: self.door_views(),
                 projectiles: self.projectile_views([center.x, center.y, center.z]),
                 debris: self.debris_views([center.x, center.y, center.z]),
+                pieces: self.piece_views(),
             },
             stats,
         })

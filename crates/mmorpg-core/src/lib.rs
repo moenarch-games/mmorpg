@@ -46,6 +46,7 @@ mod routine;
 mod snapshot;
 mod stance;
 mod strike;
+mod structure;
 pub mod trig;
 pub mod unit;
 mod vendor;
@@ -142,6 +143,10 @@ pub use snapshot::{
 };
 pub use stance::{LANDING_RECOVERY_TICKS, LandingState, MeleeStance, OVERHEAD_LANDING_TICKS};
 pub use strike::{STRIKE_ARC_HALF_WIDTH, StrikeAim, StrikeHeight, StrikeSide, has_directed_mode};
+pub use structure::{
+    CanonicalPiece, MAX_PIECES, MAX_SITES, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceStage,
+    PieceView, REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
+};
 pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_CATALOG_REVISION, VENDOR_REACH_UNITS, VendorOffer, VendorStock,
     VendorStockError, VendorTradeError, sell_price, settle_purchase, settle_sale,
@@ -157,7 +162,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 25;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 26;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its
@@ -243,6 +248,12 @@ pub enum ZoneCommand {
     UseDoor {
         door: DoorId,
         open: bool,
+    },
+    /// Starts repairing a destructible piece (#305), or stops with `None`: held like a guard,
+    /// free, and it speeds up the piece's timed regrowth while the player stands within
+    /// reach. Any movement stops it.
+    Repair {
+        piece: Option<PieceId>,
     },
     /// Stops the player's own cast or channel.
     CancelCast,
