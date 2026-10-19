@@ -701,6 +701,15 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
             }
         }
         if matches!(workload, Workload::MillRamps) {
+            // Both hold the chute's walker at its foot (physics-engine #351: too-steep slopes are
+            // walls); they part only where Rapier's controller tops the dock's edge 2.5 units
+            // high for a tick before settling.
+            assert!(
+                horizontal <= 2.0 && vertical <= 3.0,
+                "{name}: players diverge by Δxz={horizontal} Δy={vertical}"
+            );
+        }
+        if matches!(workload, Workload::MillRamps) {
             for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
                 check_mill_ramps(trace)
                     .map_err(|failure| format!("{name} on {backend}: {failure}"))?;
