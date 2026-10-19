@@ -141,48 +141,49 @@ impl Buffers {
 
 fn buffers() -> &'static (String, Vec<f32>, Vec<u32>, Vec<f32>) {
     static BUFFERS: OnceLock<(String, Vec<f32>, Vec<u32>, Vec<f32>)> = OnceLock::new();
-    BUFFERS.get_or_init(|| {
-        let scene = hosted_static_scene();
-        let mut buffers = Buffers {
-            keys: Vec::new(),
-            geometries: Vec::new(),
-            vertices: Vec::new(),
-            indices: Vec::new(),
-            models: Vec::new(),
-        };
-        let groups = scene
-            .groups
-            .iter()
-            .map(|group| GroupEntry {
-                cull: group.cull.name(),
-                instanced: group.instanced,
-                min: group.min,
-                max: group.max,
-                draws: group.draws.iter().map(|draw| buffers.draw(draw)).collect(),
-            })
-            .collect();
-        let water = scene.water.iter().map(|draw| buffers.draw(draw)).collect();
-        let animated = scene
-            .animated
-            .iter()
-            .map(|part| part.draws.iter().map(|draw| buffers.draw(draw)).collect())
-            .collect();
-        let layout = Layout {
-            format: STATIC_SCENE_FORMAT,
-            version: STATIC_SCENE_FORMAT_VERSION,
-            prefix: scene.prefix.clone(),
-            geometries: std::mem::take(&mut buffers.geometries),
-            groups,
-            water,
-            animated,
-        };
-        (
-            serde_json::to_string(&layout).expect("the static scene layout is plain data"),
-            buffers.vertices,
-            buffers.indices,
-            buffers.models,
-        )
-    })
+    BUFFERS.get_or_init(|| encode(hosted_static_scene()))
+}
+
+pub(crate) fn encode(scene: &StaticScene) -> (String, Vec<f32>, Vec<u32>, Vec<f32>) {
+    let mut buffers = Buffers {
+        keys: Vec::new(),
+        geometries: Vec::new(),
+        vertices: Vec::new(),
+        indices: Vec::new(),
+        models: Vec::new(),
+    };
+    let groups = scene
+        .groups
+        .iter()
+        .map(|group| GroupEntry {
+            cull: group.cull.name(),
+            instanced: group.instanced,
+            min: group.min,
+            max: group.max,
+            draws: group.draws.iter().map(|draw| buffers.draw(draw)).collect(),
+        })
+        .collect();
+    let water = scene.water.iter().map(|draw| buffers.draw(draw)).collect();
+    let animated = scene
+        .animated
+        .iter()
+        .map(|part| part.draws.iter().map(|draw| buffers.draw(draw)).collect())
+        .collect();
+    let layout = Layout {
+        format: STATIC_SCENE_FORMAT,
+        version: STATIC_SCENE_FORMAT_VERSION,
+        prefix: scene.prefix.clone(),
+        geometries: std::mem::take(&mut buffers.geometries),
+        groups,
+        water,
+        animated,
+    };
+    (
+        serde_json::to_string(&layout).expect("the static scene layout is plain data"),
+        buffers.vertices,
+        buffers.indices,
+        buffers.models,
+    )
 }
 
 /// The JSON layout of the hosted static scene.

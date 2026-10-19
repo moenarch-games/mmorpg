@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "generator": "greyhaven-15",
+  "collision": [],
+  "decoration": [
+    {
+      "id": "outpost-lamp-1",
+      "kind": "lamp",
+      "position": [
+        -1800,
+        1000
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "outpost-lamp-2",
+      "kind": "lamp",
+      "position": [
+        1800,
+        1000
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "outpost-lamp-3",
+      "kind": "lamp",
+      "position": [
+        -1800,
+        3000
+      ],
+      "yaw": 0
+    },
+    {
+      "id": "outpost-lamp-4",
+      "kind": "lamp",
+      "position": [
+        1800,
+        3000
+      ],
+      "yaw": 0
+    }
+  ]
+}

@@ -120,7 +120,7 @@ def inputs():
         "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain",
         *LAUNCHER_INPUTS, *NATIVE_ASSET_INPUTS,
     )]
-    for directory in (ROOT / "crates", ROOT / ".cargo"):
+    for directory in (ROOT / "crates", ROOT / "content", ROOT / ".cargo"):
         for current, directories, files in os.walk(directory):
             directories[:] = [name for name in directories
                               if name not in {"target", ".git", "__pycache__", "node_modules"}]

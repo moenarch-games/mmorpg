@@ -25,6 +25,7 @@
 
 pub mod catalog;
 pub mod host;
+mod layout_editor;
 pub mod scenery;
 pub mod static_scene;
 pub mod units;

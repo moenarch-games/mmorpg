@@ -18,6 +18,7 @@ use crate::{Area, AreaId, Terrain, ZoneAreas};
 
 pub mod cave;
 pub mod inn;
+pub mod layout;
 pub mod quests;
 pub mod units;
 
@@ -29,8 +30,9 @@ pub mod units;
 /// revision 9 binds quest catalog 1 (the Greyhaven chain), item catalog 3
 /// (the Wolf Pelt) and vendor catalog 2; revision 10 replaces the inn block
 /// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
-/// inside; revision 15 adds breakable crates, barrels, fences and powder barrels (#288).
-pub const REVISION: u64 = 15;
+/// inside; revision 15 adds breakable crates, barrels, fences and powder barrels (#288);
+/// revision 16 composes the saved Outpost layout overrides (#321).
+pub const REVISION: u64 = 16;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -771,22 +773,33 @@ fn colliders() -> Vec<StaticCollider> {
 /// The hosted collision content. Hosts, clients and scenery consume this
 /// exact definition; the spawn grid is validated clear of every collider.
 #[must_use]
-pub fn greyhaven_vale_definition() -> ZoneDefinition {
+pub fn base_definition() -> ZoneDefinition {
     ZoneDefinition::with_spawn_grid(REVISION, GRAVITY, SPAWN_GRID, colliders())
         .and_then(|definition| definition.with_terrain(TERRAIN.clone()))
         .expect("built-in Greyhaven Vale content is valid")
 }
 
+pub fn greyhaven_vale_definition() -> ZoneDefinition {
+    layout::compile(layout::SOURCE).expect("committed Outpost layout is valid")
+}
+
 static CONTENT: LazyLock<Arc<ZoneContent>> = LazyLock::new(|| {
+    content_with_definition(greyhaven_vale_definition())
+        .expect("built-in Greyhaven content is valid")
+});
+
+/// Shared final validation for authoring previews and every runtime host.
+pub fn content_with_definition(
+    definition: ZoneDefinition,
+) -> Result<Arc<ZoneContent>, crate::ZoneError> {
     let content = ZoneContent::new(
-        greyhaven_vale_definition(),
+        definition,
         areas().clone(),
         units::creature_templates(),
         units::creature_spawns(),
         units::npcs(),
         units::GRAVEYARD,
-    )
-    .expect("built-in Greyhaven Vale unit content is valid")
+    )?
     .with_rng_seed(RNG_SEED);
     let tables = content
         .creature_templates()
@@ -802,22 +815,16 @@ static CONTENT: LazyLock<Arc<ZoneContent>> = LazyLock::new(|| {
             )
         })
         .collect();
-    Arc::new(
+    Ok(Arc::new(
         content
-            .with_loot_tables(crate::LOOT_CATALOG_REVISION, tables)
-            .expect("built-in Greyhaven Vale loot content is valid")
-            .with_creature_abilities(crate::ABILITY_CATALOG_REVISION, units::creature_abilities())
-            .expect("built-in Greyhaven Vale ability content is valid")
-            .with_vendors(crate::VENDOR_CATALOG_REVISION, units::vendors())
-            .expect("built-in Greyhaven Vale vendor content is valid")
-            .with_quests(crate::QUEST_CATALOG_REVISION, quests::quests())
-            .expect("built-in Greyhaven Vale quest content is valid")
-            .with_doors(vec![inn::door(ids::INN_DOOR)])
-            .expect("built-in Greyhaven Vale door content is valid")
-            .with_routines(units::routines(), units::closed_at_night())
-            .expect("built-in Greyhaven Vale routine content is valid"),
-    )
-});
+            .with_loot_tables(crate::LOOT_CATALOG_REVISION, tables)?
+            .with_creature_abilities(crate::ABILITY_CATALOG_REVISION, units::creature_abilities())?
+            .with_vendors(crate::VENDOR_CATALOG_REVISION, units::vendors())?
+            .with_quests(crate::QUEST_CATALOG_REVISION, quests::quests())?
+            .with_doors(vec![inn::door(ids::INN_DOOR)])?
+            .with_routines(units::routines(), units::closed_at_night())?,
+    ))
+}
 
 /// The complete hosted content: collision definition, areas, creatures,
 /// NPCs and graveyard, validated once and shared.

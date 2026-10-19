@@ -12,6 +12,8 @@ publish.workspace = true
 # mmorpg-game-server/tests/dependency_boundary.rs.
 [dependencies]
 mmorpg-core.workspace = true
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
 
 [lints]
 workspace = true

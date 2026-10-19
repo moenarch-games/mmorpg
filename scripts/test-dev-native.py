@@ -18,7 +18,7 @@ import unittest
 ROOT = Path(__file__).resolve().parent.parent
 INPUTS = ["crates/mmorpg-client/src/main.rs", "crates/mmorpg-client/src/scene.wgsl",
           "crates/mmorpg-scenery/assets/outpost-grass/selected.props.rs",
-          "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo/config.toml"]
+          "content/greyhaven/outpost-layout.json", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo/config.toml"]
 FAKE = r'''#!/usr/bin/env python3
 import hashlib,json,os,pathlib,signal,subprocess,sys,time
 root=pathlib.Path(os.environ['FIXTURE_ROOT']); control=pathlib.Path(os.environ['CONTROL'])
