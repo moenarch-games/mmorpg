@@ -60,35 +60,79 @@ fn kind(name: &str) -> Result<PropKind, String> {
     }
 }
 
+fn base_lamp_id(prop: &Prop) -> Option<&'static str> {
+    if prop.kind != PropKind::Lamp {
+        return None;
+    }
+    match [prop.position[0], prop.position[2]] {
+        [-1_800, 1_000] => Some("outpost-lamp-1"),
+        [1_800, 1_000] => Some("outpost-lamp-2"),
+        [-1_800, 3_000] => Some("outpost-lamp-3"),
+        [1_800, 3_000] => Some("outpost-lamp-4"),
+        _ => None,
+    }
+}
+
+fn house(collider: &mmorpg_core::StaticCollider) -> Prop {
+    Prop {
+        kind: PropKind::House,
+        position: [
+            collider.position[0],
+            collider.position[1] - collider.half_extents[1],
+            collider.position[2],
+        ],
+        yaw: 0,
+        scale_permille: 1_000,
+        collider: Some(collider.id),
+        half_extents: collider.half_extents,
+    }
+}
+
 pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, String> {
     let decoration = decorations(source)?;
     let mut scenery = base_scenery();
-    // Regeneration always starts from the same base; edits never reroll the scatter RNG.
-    scenery
-        .props
-        .retain(|prop| !prop.collider.is_some_and(|id| (103..=106).contains(&id)));
-    for collider in definition.colliders().iter().filter(|collider| {
-        (103..=106).contains(&collider.id) || (60_000..65_000).contains(&collider.id)
-    }) {
-        let house = Prop {
-            kind: PropKind::House,
-            position: [
-                collider.position[0],
-                collider.position[1] - collider.half_extents[1],
-                collider.position[2],
-            ],
-            yaw: 0,
-            scale_permille: 1_000,
-            collider: Some(collider.id),
-            half_extents: collider.half_extents,
-        };
-        // Suppress intersecting cosmetic scatter rather than move or reroll it.
-        scenery.props.retain(|prop| {
-            prop.collider.is_some() || !prop.footprint().intersects(house.footprint())
-        });
-        scenery.props.push(house);
+    // Preserve the frozen base and placement order. Overrides replace existing logical
+    // objects in place; only author additions append. Never reroll the scatter RNG.
+    scenery.props.retain_mut(|prop| {
+        if let Some(id) = prop.collider.filter(|id| (103..=106).contains(id)) {
+            if let Some(collider) = definition
+                .colliders()
+                .iter()
+                .find(|collider| collider.id == id)
+            {
+                *prop = house(collider);
+            } else {
+                return false;
+            }
+        }
+        true
+    });
+    for collider in definition
+        .colliders()
+        .iter()
+        .filter(|collider| (60_000..65_000).contains(&collider.id))
+    {
+        scenery.props.push(house(collider));
     }
-    for prop in decoration {
+    let houses: Vec<_> = scenery
+        .props
+        .iter()
+        .filter(|prop| {
+            prop.collider
+                .is_some_and(|id| (103..=106).contains(&id) || (60_000..65_000).contains(&id))
+        })
+        .map(Prop::footprint)
+        .collect();
+    // Suppress intersecting cosmetic scatter rather than move or reroll it. The
+    // saved lamp layer is applied below, so a moved lamp can leave this footprint.
+    scenery.props.retain(|prop| {
+        prop.collider.is_some()
+            || !houses
+                .iter()
+                .any(|bounds| prop.footprint().intersects(*bounds))
+    });
+    let mut placements = Vec::new();
+    for prop in &decoration {
         let kind = kind(&prop.kind)?;
         let half_extents = base_half_extents(kind);
         let placed = Prop {
@@ -120,7 +164,25 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
                 prop.id
             ));
         }
-        scenery.props.push(placed);
+        placements.push((prop.id.as_str(), placed));
     }
+    let mut replaced = BTreeSet::new();
+    scenery.props.retain_mut(|prop| {
+        if let Some(id) = base_lamp_id(prop) {
+            if let Some((_, placement)) = placements.iter().find(|(key, _)| *key == id) {
+                *prop = *placement;
+                replaced.insert(id);
+            } else {
+                return false;
+            }
+        }
+        true
+    });
+    scenery.props.extend(
+        placements
+            .into_iter()
+            .filter(|(id, _)| !replaced.contains(id))
+            .map(|(_, prop)| prop),
+    );
     Ok(scenery)
 }

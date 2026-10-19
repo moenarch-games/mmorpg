@@ -1121,7 +1121,11 @@ impl Placer<'_> {
 
     /// Hand-placed hub, farm and lake dressing.
     fn fixed_props(&mut self) {
-        let fixed: [(PropKind, [i32; 2], u16); 9] = [
+        let fixed: [(PropKind, [i32; 2], u16); 13] = [
+            (PropKind::Lamp, [-1_800, 1_000], 0),
+            (PropKind::Lamp, [1_800, 1_000], 0),
+            (PropKind::Lamp, [-1_800, 3_000], 0),
+            (PropKind::Lamp, [1_800, 3_000], 0),
             (PropKind::Signpost, [300, 5_300], 0),
             (PropKind::Signpost, [-4_600, 2_300], 16_384),
             (PropKind::Signpost, [300, -1_300], 32_768),

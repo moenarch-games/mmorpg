@@ -507,7 +507,7 @@ mod tests {
         assert_eq!(value["version"], SCENERY_FORMAT_VERSION);
         assert_eq!(value["source"], SCENERY_SOURCE);
         assert_eq!(value["contentRevision"], "16");
-        assert_eq!(value["presentationFingerprint"], "dc2f5dd3bf29e040");
+        assert_eq!(value["presentationFingerprint"], "19ae1697b3a28f7b");
         assert_eq!(value["unitsPerMetre"], 100);
         assert_eq!(value["playerHalfExtents"], serde_json::json!([30, 90, 30]));
         let names: Vec<_> = value["areas"]
