@@ -211,6 +211,12 @@ impl ZoneSimulation {
             ))
             .map_err(physics_error)?;
         self.place_in_interest(entity, position.x, position.z);
+        if template.prop().is_some_and(crate::PropKind::movable) {
+            self.place_movable_prop(
+                id,
+                crate::physics::from_units([position.x, position.y, position.z]),
+            );
+        }
         self.creatures.insert(
             id,
             CreatureState {

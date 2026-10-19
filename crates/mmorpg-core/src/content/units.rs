@@ -69,15 +69,33 @@ pub enum PropKind {
     /// Explodes like Fire Blast when broken, so barrels chain-react.
     ExplosiveBarrel,
     Fence,
+    /// A movable crate (#58): knockbacks and blasts slide it; it breaks like a crate.
+    HeavyCrate,
 }
 
 impl PropKind {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Crate,
         Self::Barrel,
         Self::ExplosiveBarrel,
         Self::Fence,
+        Self::HeavyCrate,
     ];
+
+    /// Whether gameplay impulses move it (#58).
+    #[must_use]
+    pub const fn movable(self) -> bool {
+        matches!(self, Self::HeavyCrate)
+    }
+
+    /// The kind whose pieces it breaks into.
+    #[must_use]
+    pub const fn debris(self) -> Self {
+        match self {
+            Self::HeavyCrate => Self::Crate,
+            other => other,
+        }
+    }
 
     #[must_use]
     pub const fn name(self) -> &'static str {
@@ -86,6 +104,7 @@ impl PropKind {
             Self::Barrel => "barrel",
             Self::ExplosiveBarrel => "explosive_barrel",
             Self::Fence => "fence",
+            Self::HeavyCrate => "heavy_crate",
         }
     }
 
@@ -97,6 +116,7 @@ impl PropKind {
             Self::Barrel => 1,
             Self::ExplosiveBarrel => 2,
             Self::Fence => 3,
+            Self::HeavyCrate => 4,
         }
     }
 
@@ -107,6 +127,7 @@ impl PropKind {
             1 => Some(Self::Barrel),
             2 => Some(Self::ExplosiveBarrel),
             3 => Some(Self::Fence),
+            4 => Some(Self::HeavyCrate),
             _ => None,
         }
     }

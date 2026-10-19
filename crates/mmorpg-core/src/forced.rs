@@ -93,6 +93,12 @@ impl ZoneSimulation {
         direction: [i64; 2],
         distance: i32,
     ) -> bool {
+        // A movable prop (#58) slides instead.
+        if let EntityRef::Creature(id) = unit
+            && self.is_movable_prop(unit)
+        {
+            return self.push_prop(id, direction, distance);
+        }
         if distance <= 0 || !self.movable(unit) {
             return false;
         }
@@ -124,7 +130,7 @@ impl ZoneSimulation {
         distance: i32,
     ) -> Result<bool, ZoneError> {
         // A prop broken by the same blast (#288) has no position left.
-        if !self.movable(unit) {
+        if !self.movable(unit) && !self.is_movable_prop(unit) {
             return Ok(false);
         }
         let at = self.unit_position(unit)?;

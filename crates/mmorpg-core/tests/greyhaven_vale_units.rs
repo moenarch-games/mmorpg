@@ -12,7 +12,7 @@ use mmorpg_core::{
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.revision(), 20);
+    assert_eq!(content.revision(), 21);
     assert_eq!(content.rng_seed(), 0x3cbc_808b_be89_b29c);
     assert_eq!(
         content.definition(),
@@ -215,6 +215,19 @@ fn templates_follow_the_design_contract() {
                 84,
                 1_800
             ),
+            // A movable prop (#58).
+            (
+                "Heavy Crate",
+                Prop,
+                CreatureBehaviour::Prop(PropKind::HeavyCrate),
+                [1, 1],
+                false,
+                30,
+                0,
+                [1, 1],
+                60,
+                9_000
+            ),
         ]
     );
     let wolf = content
@@ -268,13 +281,14 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::MILLBROOK_FARM, "Crate"), 2),
         ((greyhaven_vale::MILLBROOK_FARM, "Barrel"), 2),
         ((greyhaven_vale::MILLBROOK_FARM, "Fence"), 3),
+        ((greyhaven_vale::MILLBROOK_FARM, "Heavy Crate"), 2),
         (
             (greyhaven_vale::REDBRAND_HOLLOW, "Blasting Powder Barrel"),
             5,
         ),
     ]);
     assert_eq!(counts, expected);
-    assert_eq!(content.creature_spawns().len(), 92);
+    assert_eq!(content.creature_spawns().len(), 94);
 }
 
 /// No creature wanders within the interest radius (plus a margin) of any
@@ -354,7 +368,7 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
     let mut first = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let mut second = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let start = first.snapshot().unwrap();
-    assert_eq!(start.creatures.len(), 92);
+    assert_eq!(start.creatures.len(), 94);
     for (creature, spawn) in start.creatures.iter().zip(content.creature_spawns()) {
         let template = content.creature_template(spawn.template).unwrap();
         assert_eq!(creature.creature_id, spawn.id);

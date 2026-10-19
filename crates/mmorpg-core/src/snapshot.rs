@@ -363,11 +363,13 @@ impl ZoneSimulation {
                             .world
                             .body(body_id(EntityRef::Creature(creature_id)))
                             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
-                        (
-                            body.exact_position(),
-                            body.exact_velocity(),
-                            CreatureLife::Alive,
-                        )
+                        // A movable prop's exact slide state (#58).
+                        let (position, velocity) = self
+                            .prop_motion_of(creature_id)
+                            .map_or((body.exact_position(), body.exact_velocity()), |motion| {
+                                (motion.position, motion.velocity)
+                            });
+                        (position, velocity, CreatureLife::Alive)
                     }
                     Life::Corpse { died_at, position } => (
                         position.map(|axis| axis as f32),
@@ -713,10 +715,18 @@ impl ZoneSimulation {
                 if record.health == 0 {
                     return Err(ZoneError::new("a living creature needs health"));
                 }
+                let movable = template.prop().is_some_and(crate::PropKind::movable);
                 if template.prop().is_some()
+                    && !movable
                     && (record.velocity != [0.0; 3] || record.position.map(f32::fract) != [0.0; 3])
                 {
                     return Err(ZoneError::new("a standing prop is fixed in whole units"));
+                }
+                if movable {
+                    self.place_movable_prop(record.creature_id, record.position);
+                    if let Some(motion) = self.prop_motion.get_mut(&record.creature_id) {
+                        motion.velocity = record.velocity;
+                    }
                 }
                 self.world
                     .add_body(crate::creature::creature_body(

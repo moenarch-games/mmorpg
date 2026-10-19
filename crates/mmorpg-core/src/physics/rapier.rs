@@ -939,6 +939,14 @@ impl World {
         step_debris(self.gravity, &self.bodies, ground, debris, settle)
     }
 
+    pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
+        let ground = self
+            .ground
+            .as_ref()
+            .map(|ground| (ground.id, &ground.terrain));
+        step_props(self.gravity, &self.bodies, ground, props, exclude)
+    }
+
     /// Brings Rapier's broad phase (the query structure) up to date.
     fn refresh(&mut self) {
         self.world.detect_collisions(&(), &());
@@ -954,6 +962,52 @@ pub(super) fn step_debris(
     debris: &mut [DebrisBody],
     settle: &[bool],
 ) -> usize {
+    step_dynamic(gravity, bodies, ground, debris, settle, &Dynamic::default())
+}
+
+/// How [`step_dynamic`] treats its pieces.
+#[derive(Default)]
+pub(super) struct Dynamic<'a> {
+    /// Pieces keep upright: they slide but never turn (movable props, #58).
+    pub upright: bool,
+    /// Units' capsules stop the pieces (movable props), instead of letting them pass (debris).
+    pub units_block: bool,
+    /// Bodies left out of the step: the movable props' own fixed boxes.
+    pub exclude: &'a [BodyId],
+}
+
+/// [`World::step_props`] (#58): movable props slide upright under gravity and impulses,
+/// stopped by the fixed world and by units. Shared by both backends like debris.
+pub(super) fn step_props(
+    gravity: [f32; 3],
+    bodies: &BTreeMap<BodyId, RigidBody>,
+    ground: Option<(BodyId, &crate::Terrain)>,
+    props: &mut [DebrisBody],
+    exclude: &[BodyId],
+) -> usize {
+    let settle = vec![true; props.len()];
+    step_dynamic(
+        gravity,
+        bodies,
+        ground,
+        props,
+        &settle,
+        &Dynamic {
+            upright: true,
+            units_block: true,
+            exclude,
+        },
+    )
+}
+
+fn step_dynamic(
+    gravity: [f32; 3],
+    bodies: &BTreeMap<BodyId, RigidBody>,
+    ground: Option<(BodyId, &crate::Terrain)>,
+    debris: &mut [DebrisBody],
+    settle: &[bool],
+    options: &Dynamic<'_>,
+) -> usize {
     let moving = debris.iter().filter(|piece| !piece.resting).count();
     if moving == 0 {
         return 0;
@@ -968,7 +1022,11 @@ pub(super) fn step_debris(
             high[axis] = high[axis].max(piece.position[axis] + DEBRIS_REACH_UNITS);
         }
     }
-    for body in bodies.values().filter(|body| !body.is_moving()) {
+    for body in bodies
+        .values()
+        .filter(|body| options.units_block || !body.is_moving())
+        .filter(|body| !options.exclude.contains(&body.id))
+    {
         #[allow(clippy::cast_precision_loss)]
         let near = matches!(body.kind, Kind::Floor)
             || (0..3).all(|axis| {
@@ -979,7 +1037,14 @@ pub(super) fn step_debris(
                 ][axis] as f32;
                 body.position[axis] + half >= low[axis] && body.position[axis] - half <= high[axis]
             });
-        if near {
+        if near && body.is_moving() {
+            // A unit stands in the props' way as a fixed capsule (#58).
+            world.colliders.insert(
+                ColliderBuilder::new(SharedShape::new(capsule(body.half_extents)))
+                    .translation(lifted(body.position))
+                    .build(),
+            );
+        } else if near {
             insert(&mut world, body);
         }
     }
@@ -1004,15 +1069,16 @@ pub(super) fn step_debris(
             handles.push(None);
             continue;
         }
-        let handle = world.bodies.insert(
-            RigidBodyBuilder::dynamic()
-                .pose(pose(piece))
-                .linvel(metres(piece.velocity) * TICKS_PER_SECOND)
-                .angvel(Vector::from(piece.spin) * TICKS_PER_SECOND)
-                .linear_damping(0.2)
-                .angular_damping(0.8)
-                .build(),
-        );
+        let mut builder = RigidBodyBuilder::dynamic()
+            .pose(pose(piece))
+            .linvel(metres(piece.velocity) * TICKS_PER_SECOND)
+            .angvel(Vector::from(piece.spin) * TICKS_PER_SECOND)
+            .linear_damping(0.2)
+            .angular_damping(0.8);
+        if options.upright {
+            builder = builder.lock_rotations();
+        }
+        let handle = world.bodies.insert(builder.build());
         world
             .colliders
             .insert_with_parent(collider.build(), handle, &mut world.bodies);
