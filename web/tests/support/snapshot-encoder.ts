@@ -52,9 +52,9 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(value === null ? 0 : entityKindCode(value.kind));
     u32(value?.id ?? 0);
   };
-  u8(27);
+  u8(28);
   u8(2);
-  u16(26);
+  u16(27);
   u32(snapshot.zoneId);
   u64(snapshot.tick);
   u64(snapshot.contentRevision);

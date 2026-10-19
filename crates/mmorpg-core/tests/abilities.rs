@@ -221,8 +221,12 @@ fn players_choose_a_class_once_and_need_one_for_abilities() {
             ErrorCode::NotLearned,
             ErrorCode::NotLearned,
             ErrorCode::NotLearned,
-            ErrorCode::InvalidTarget
         ]
+    );
+    // Firebolt without a target is cast along the facing (#289).
+    assert_eq!(
+        fight.view().viewer.cast.map(|cast| cast.ability),
+        Some(ids::FIREBOLT)
     );
 }
 
@@ -520,6 +524,19 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
     fight.until(70, |fight| fight.view().viewer.cast.is_none());
     let landed = fight.zone.current_tick();
     assert_eq!(landed - started, 59, "60 ticks including the start tick");
+    // The missile flies the 25 m to the wolf at 30 m/s (#289).
+    assert!(
+        fight
+            .view()
+            .projectiles
+            .iter()
+            .any(|projectile| projectile.kind == mmorpg_core::ProjectileKind::Missile)
+    );
+    fight.until(30, |fight| {
+        !fight
+            .since(landed, |event| damage_dealt_to(event, TARGET).is_some())
+            .is_empty()
+    });
     let bolt = fight
         .since(landed, |event| damage_dealt_to(event, TARGET).is_some())
         .remove(0)
@@ -528,9 +545,11 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
     assert!((25..=29).contains(&damage_dealt_to(&bolt, TARGET).unwrap()));
     assert_eq!(fight.resource(), 195);
     let me = fight.me();
-    // The five-second rule counts the spending tick.
-    assert_eq!(me.combat.abilities.mana_delay, 149);
-    fight.ticks(149 + 29);
+    // The five-second rule counts the spending tick (at the cast's end, before the flight).
+    let flight = u16::try_from(fight.zone.current_tick() - landed).unwrap();
+    assert!((20..=26).contains(&flight), "flew {flight} ticks");
+    assert_eq!(me.combat.abilities.mana_delay, 149 - flight);
+    fight.ticks(u64::from(149 - flight) + 29);
     assert_eq!(fight.resource(), 195, "no regeneration for 150 ticks");
     fight.tick();
     assert!(fight.resource() > 195);

@@ -993,13 +993,14 @@ fn validate_auras(auras: &[Aura]) -> Result<(), ZoneError> {
 }
 
 /// A recovered cast: `ability` casts or channels, the elapsed time stays
-/// below its cast time, a hostile ability has a target and only a channel
-/// keeps a target point.
+/// below its cast time, a hostile ability has a target (unless it aims freely, #289) and only a
+/// channel keeps a target point.
 fn validate_cast(cast: CastState) -> Result<(), ZoneError> {
     let valid = ability_by_id(cast.ability).is_some_and(|ability| {
         cast.elapsed < ability.cast.ticks()
             && cast.point.is_some() == ability.cast.is_channel()
-            && cast.target.is_some() == ability.needs_target()
+            && (cast.target.is_some() == ability.needs_target()
+                || (cast.target.is_none() && ability.aims_freely()))
             && cast
                 .point
                 .is_none_or(|point| point.into_iter().all(within_content_range))

@@ -993,6 +993,14 @@ mod tests {
                     pitch: 16_384,
                     stuck: true,
                 },
+                mmorpg_core::ProjectileView {
+                    id: 7,
+                    kind: mmorpg_core::ProjectileKind::Missile,
+                    position: [60, 130, -200],
+                    yaw: 49_152,
+                    pitch: 0,
+                    stuck: false,
+                },
             ],
             quests: Some(quest_sheet()),
             loot: None,
@@ -1303,7 +1311,7 @@ mod tests {
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
         mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v27.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v28.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
     }
@@ -1355,7 +1363,7 @@ mod tests {
                 + 2 * DOOR_RECORD_BYTES
                 + 2 * PIECE_RECORD_BYTES
                 + 4 * ENTITY_RECORD_BYTES
-                + 2 * PROJECTILE_RECORD_BYTES
+                + 3 * PROJECTILE_RECORD_BYTES
         );
         assert_eq!(encoded, fixture_bytes());
         assert_eq!(
@@ -1457,7 +1465,7 @@ mod tests {
         snapshot.target_detail = TargetDetail::default();
         let bytes = encode_snapshot(&snapshot).unwrap();
         let expected = mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v27.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v28.hex"),
             &bytes,
         );
         assert_eq!(bytes, expected);
@@ -1665,10 +1673,10 @@ mod tests {
         let mut more = encoded.clone();
         more[ENTITY_COUNT..FIRST_ENTITY].copy_from_slice(&5_u16.to_be_bytes());
         assert!(decode_snapshot(&more).is_err(), "count must match records");
-        // The two projectile records end the projection (#286).
+        // The three projectile records (arrow, bolt, missile) end the projection (#286, #289).
         // The empty debris section (#288) follows them.
-        let projectiles = encoded.len() - 1 - 2 * PROJECTILE_RECORD_BYTES;
-        assert_eq!(encoded[projectiles - 1], 2);
+        let projectiles = encoded.len() - 1 - 3 * PROJECTILE_RECORD_BYTES;
+        assert_eq!(encoded[projectiles - 1], 3);
         for (offset, value, message) in [
             (projectiles + 2, 9, "unknown projectile kind"),
             (projectiles + 13, 2, "boolean field must be 0 or 1"),

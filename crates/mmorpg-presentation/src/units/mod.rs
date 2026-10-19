@@ -472,12 +472,14 @@ impl UnitPresenter {
 
     /// Arrows and bolts where the zone says they are (#286): a shaft behind the tip along its
     /// heading and pitch, and a dark head. Placeholder shapes until asset-tooling's bow and
-    /// arrow bundle (asset-tooling #277) lands.
+    /// arrow bundle (asset-tooling #277) lands. A magic missile (#289) is a fiery ball with a
+    /// short trail.
     fn projectiles(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
         for projectile in &snapshot.projectiles {
             let (length, width, shaft, head) = match projectile.kind {
                 ProjectileKind::Arrow => (0.8, 0.03, 0xb08a5b, 0x4a4d52),
                 ProjectileKind::Bolt => (0.45, 0.045, 0x5c3f28, 0x3a3c40),
+                ProjectileKind::Missile => (0.5, 0.08, 0xff8a2a, 0xffd36a),
             };
             let turn = |value: f64| value / 65_536. * std::f64::consts::TAU;
             let tip = Frame {
@@ -488,6 +490,21 @@ impl UnitPresenter {
                 ),
             };
             let id = format!("projectile-{}", projectile.id);
+            if projectile.kind == ProjectileKind::Missile {
+                draws.push(self.resources.primitive(
+                    format!("{id}-ball"),
+                    Primitive::Ball(0.12),
+                    head,
+                    tip,
+                ));
+                draws.push(self.resources.primitive(
+                    format!("{id}-trail"),
+                    Primitive::Box([width, width, length]),
+                    shaft,
+                    offset(tip, [0., 0., -length / 2.]),
+                ));
+                continue;
+            }
             draws.push(self.resources.primitive(
                 format!("{id}-shaft"),
                 Primitive::Box([width, width, length]),

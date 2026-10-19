@@ -228,7 +228,7 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 6, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v27.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), two projectiles (a flying arrow and a stuck bolt) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v27.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v26 fixtures remain as rejection evidence. `presentation-observation-v27.hex` covers the two neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot-v28.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v28.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v27 fixtures remain as rejection evidence. `presentation-observation-v28.hex` covers the two neutral observation records.
 
 ## Canonical scope
 
@@ -437,6 +437,17 @@ Wire and core schema version 20 add the viewer's combo phase (one byte after the
 ## Buffered guard: snapshot v21, command v11 unchanged
 
 Wire and core schema version 21 change only canonical state: a `Guard` command now becomes pending intent code 19 (2 bytes, the lane), consumed in order with strikes so the last-pressed gesture wins, and each player carries its directed strike's committed recovery (`u16`, at most `STRIKE_RECOVERY_TICKS` = 6) before its combo opening. A guard raised during that recovery is held but protects only when it ends; a release or stun before then discards it (Atlas 5.2.39, 5.2.41, #156). The player projection's layout is unchanged; its version moves with the shared constant. Version 20 and earlier snapshots/checkpoints and recovery bundles fail closed; `player-snapshot-v20.hex` remains as rejection evidence.
+
+## Magic missiles: snapshot v28
+
+Wire version 28 and core schema 27 (#289) add the projectile kind 3, a magic missile, to the
+player projection's and canonical snapshots' projectile records; layouts are unchanged. A
+missile ignores gravity: a tracking missile homes on its target at its own speed, a free one
+flies level along the caster's facing. Ability catalog revision 5 makes Firebolt (ID 9) carry a
+missile and lets it be cast without a target (along the facing), and the catalog bytes now
+include each ability's projectile kind (0 for none). A recovered cast may have no target when
+its ability aims freely. Commands are unchanged (v13). Version 27 snapshots and checkpoints
+fail closed; `player-snapshot-v27.hex` remains as rejection evidence.
 
 ## Destructible structures: snapshot v27 and command v13
 

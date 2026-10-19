@@ -200,6 +200,48 @@ pub enum Workload {
     /// Millbrook's heavy crates (#58): two Wardens Shield Bash them across the yard, then one
     /// walks into a crate where it rests. The slides run on Rapier in both arms.
     CrateShove,
+    /// Magic missiles in Wolfrun Woods (#289): four level-6 Arcanists Firebolt wolves among the
+    /// trunks (homing missiles), then cast free Firebolts along their facing into the woods.
+    Missiles,
+}
+
+/// The missile workload's length.
+pub const MISSILES_TICKS: usize = 300;
+
+/// The missile commands: Arcanists, wolves as targets, homing Firebolts, then free ones.
+fn missiles_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let wolves = [102, 103, 101, 107];
+    let firebolt = |target| ZoneCommand::UseAbility {
+        ability: mmorpg_core::ability::ids::FIREBOLT.get(),
+        target,
+    };
+    (1..=4)
+        .flat_map(|player: u32| {
+            let wolf = wolves[usize::try_from(player - 1).expect("four players")];
+            let facing = u16::try_from(player * 16_384 - 8_192).expect("a facing");
+            match tick {
+                0 => vec![(player, ZoneCommand::ChooseClass { class: 2, sex: 0 })],
+                1 => vec![(
+                    player,
+                    ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(wolf)))),
+                )],
+                2 => vec![(player, firebolt(None))],
+                150 => vec![
+                    (player, ZoneCommand::SelectTarget(None)),
+                    (
+                        player,
+                        ZoneCommand::Move {
+                            forward: 0,
+                            strafe: 0,
+                            facing,
+                        },
+                    ),
+                ],
+                151 => vec![(player, firebolt(None))],
+                _ => Vec::new(),
+            }
+        })
+        .collect()
 }
 
 /// The crate workload's length.
@@ -503,6 +545,7 @@ impl Workload {
             Self::ChargePath => "vale-charge-path",
             Self::WatchPost => "vale-watch-post",
             Self::CrateShove => "vale-crate-shove",
+            Self::Missiles => "vale-missiles",
         }
     }
 
@@ -517,6 +560,7 @@ impl Workload {
             Self::ChargePath => CHARGE_PATH_TICKS,
             Self::WatchPost => WATCH_POST_TICKS,
             Self::CrateShove => CRATE_SHOVE_TICKS,
+            Self::Missiles => MISSILES_TICKS,
         }
     }
 }
@@ -542,6 +586,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::ChargePath);
     workloads.push(Workload::WatchPost);
     workloads.push(Workload::CrateShove);
+    workloads.push(Workload::Missiles);
     Ok(workloads)
 }
 
@@ -578,6 +623,7 @@ impl Run {
             Workload::ChargePath => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
             Workload::WatchPost => (placed_zone_at_level(&WATCH_POST_PLAYERS, 6)?, 0),
             Workload::CrateShove => (crate_shove_zone()?, 0),
+            Workload::Missiles => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
         };
         Ok(Self {
             zone,
@@ -641,13 +687,15 @@ impl Run {
             | Workload::MillRamps
             | Workload::ChargePath
             | Workload::WatchPost
-            | Workload::CrateShove => {
+            | Workload::CrateShove
+            | Workload::Missiles => {
                 let commands = match self.workload {
                     Workload::OgreBrawl => ogre_brawl_commands(self.tick),
                     Workload::MillHoist => mill_hoist_commands(self.tick),
                     Workload::ChargePath => charge_path_commands(self.tick),
                     Workload::WatchPost => watch_post_commands(self.tick),
                     Workload::CrateShove => crate_shove_commands(self.tick),
+                    Workload::Missiles => missiles_commands(self.tick),
                     _ => mill_ramps_commands(self.tick),
                 };
                 for (player, command) in commands {

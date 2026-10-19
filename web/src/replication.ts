@@ -251,7 +251,7 @@ export type DebrisState = {
 /** One projectile: position in units, heading/pitch in 1/65 536 turns (heading 0 is +Z). */
 export type ProjectileState = {
   id: number;
-  kind: "arrow" | "bolt";
+  kind: "arrow" | "bolt" | "missile";
   x: number;
   y: number;
   z: number;
@@ -304,8 +304,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 27;
-const SCHEMA_VERSION = 26;
+const WIRE_VERSION = 28;
+const SCHEMA_VERSION = 27;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -1005,7 +1005,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const projectiles: ProjectileState[] = [];
   for (let index = 0; index < projectileCount; index += 1) {
     const id = reader.u16();
-    const kind = (["arrow", "bolt"] as const)[reader.u8() - 1];
+    const kind = (["arrow", "bolt", "missile"] as const)[reader.u8() - 1];
     if (kind === undefined) {
       throw new Error("Unknown projectile kind");
     }
