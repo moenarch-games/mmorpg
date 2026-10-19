@@ -1,5 +1,7 @@
 #[path = "support/combat_workload.rs"]
 mod combat_workload;
+#[path = "../../mmorpg-core/tests/support/greyhaven_workload.rs"]
+mod greyhaven_workload;
 
 use combat_workload::{FIXTURES, TICKS, measure};
 use mmorpg_protocol::MAX_PLAYER_PROJECTION_BYTES;

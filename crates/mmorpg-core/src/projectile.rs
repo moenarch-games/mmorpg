@@ -169,13 +169,13 @@ fn ballistic(delta: [f32; 3], ticks: u16) -> [f32; 3] {
 
 impl ZoneSimulation {
     /// A unit's physics body centre in exact units.
-    fn unit_centre(&self, unit: EntityRef) -> Option<[f32; 3]> {
+    pub(crate) fn unit_centre(&self, unit: EntityRef) -> Option<[f32; 3]> {
         self.world
             .body(body_id(unit))
             .map(crate::physics::RigidBody::exact_position)
     }
 
-    fn launch_point(&self, owner: EntityRef) -> Result<[f32; 3], ZoneError> {
+    pub(crate) fn launch_point(&self, owner: EntityRef) -> Result<[f32; 3], ZoneError> {
         let centre = self
             .unit_centre(owner)
             .ok_or_else(|| ZoneError::new("shooter physics body is missing"))?;
@@ -305,7 +305,7 @@ impl ZoneSimulation {
             }
             let segment = projectile.velocity;
             let hit = self.world.cast_ray(projectile.position, segment, |body| {
-                self.projectile_meets(&projectile, body)
+                self.projectile_meets(projectile.owner, body)
             });
             let Some(hit) = hit else {
                 projectile.position = add(projectile.position, segment);
@@ -338,16 +338,16 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    /// Whether a body stops `projectile`: everything but its shooter, the shooter's own side
+    /// Whether a body stops a shot by `owner`: everything but its shooter, the shooter's own side
     /// (players' shots pass players, creatures' shots pass creatures) and corpses.
-    fn projectile_meets(&self, projectile: &Projectile, body: BodyId) -> bool {
-        if body == body_id(projectile.owner) {
+    pub(crate) fn projectile_meets(&self, owner: EntityRef, body: BodyId) -> bool {
+        if body == body_id(owner) {
             return false;
         }
         match entity_of(body) {
             None => true,
             Some(unit) => {
-                std::mem::discriminant(&unit) != std::mem::discriminant(&projectile.owner)
+                std::mem::discriminant(&unit) != std::mem::discriminant(&owner)
                     && self.unit_alive(unit)
             }
         }

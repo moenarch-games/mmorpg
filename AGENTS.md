@@ -46,6 +46,8 @@ cargo test --workspace --all-features --locked
 cargo build --workspace --all-features --locked
 cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked
 (cd web && bun install --frozen-lockfile && bun test && bun run build)
+cargo test -p mmorpg-core --features physics-ab --test physics_ab --locked                                     # Rapier vs physics-engine A/B invariants (docs/PHYSICS_AB.md)
+cargo run --release -p mmorpg-core --example physics_ab --features physics-ab --locked                           # manual A/B physics timing
 cargo run -p mmorpg-scenarios --locked -- bots crates/mmorpg-scenarios/scenarios/bots/*.toml                    # headless multiplayer bots, no GPU
 cargo run -p mmorpg-scenarios --locked -- control-plane crates/mmorpg-scenarios/scenarios/control-plane/*.toml  # lease/handoff invariants
 MMORPG_SCENARIOS_UPDATE=1 cargo test -p mmorpg-scenarios --test scenarios --locked                              # regenerate expected scenario outputs
@@ -62,7 +64,7 @@ python3 scripts/smoke-browser-online.py  # two Chromium pages join one real zone
 ## Authority
 
 - `mmorpg-core` owns deterministic zone-local gameplay and interest/visibility policy.
-- Rapier (`rapier3d`, embedded in `mmorpg-core/src/physics.rs`, Atlas 2.1.6, #271) resolves collision and character motion: units are capsules moved by its `KinematicCharacterController`, and f32 positions/velocities are authoritative (rounded only on the wire). `mmorpg-core` keeps movement intent, gravity/jumps and every gameplay outcome. Do not grow a second solver; record each Rapier gap or workaround for physics-engine issues.
+- Rapier (`rapier3d`, embedded in `mmorpg-core/src/physics.rs`, Atlas 2.1.6, #271) resolves collision and character motion: units are capsules moved by its `KinematicCharacterController`, and f32 positions/velocities are authoritative (rounded only on the wire). `mmorpg-core` keeps movement intent, gravity/jumps and every gameplay outcome. Do not grow a second solver; record each Rapier gap or workaround for physics-engine issues. physics-engine is compiled only behind the test/bench `physics-ab` feature for the A/B comparison (Atlas 2.1.7); never enable it in a production or WASM build.
 - `game-server` owns reusable transport/session/tick/reconnect/replay/recovery behavior. Keep MMO adapters thin.
 - `mmorpg-control-plane` owns placement, leases, fencing and handoff metadata. It must not mutate zone gameplay state.
 - `mmorpg-scenery` owns presentation scenery and relief derived from core colliders. Network hosts never depend on it (`mmorpg-game-server/tests/dependency_boundary.rs`), `mmorpg-wasm`'s local zone host never reads it, and it never feeds back into gameplay.
