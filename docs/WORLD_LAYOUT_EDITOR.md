@@ -1,45 +1,101 @@
-# Greyhaven layout editor
+# Greyhaven layout authoring with Blender
 
-The first region is the Outpost interior (62 × 58 m). The separate authoring page edits its four existing houses and lamp placements, adds houses/lamps/signs/flowers, removes placements, and previews the shared game geometry. Terrain, keep, inn, smithy, walls, doors, NPCs and arbitrary generated scatter remain locked context. Existing house prefabs are axis aligned; decorative props can rotate.
+Blender 5.2.2 LTS is an **optional development-only program** for arranging the
+Greyhaven Outpost. It replaces the former HTML editor. The game never loads
+Blender, .blend files or Python scripts. The repository's existing
+`content/greyhaven/outpost-layout.json` is the authoritative saved
+authoring input. No in-game editor or second world simulator is introduced.
 
-![Outpost placement editor and shared game preview](images/greyhaven-layout-editor.png)
+## Start editing
 
-## Use
+Install [Blender 5.2.2 LTS](https://www.blender.org/releases/5-2/) on your
+development machine and make `blender` available on PATH, or set
+`BLENDER_BIN` to the installed executable. Rust and Cargo must also
+be installed. The launcher checks the exact Blender version rather than
+installing or updating it.
 
-Prerequisites are the browser game's Rust toolchain, WASM target, matching wasm-bindgen CLI and Bun. Run from the repository:
+From the MMORPG repository root:
 
 ```sh
-scripts/fetch-bundles.sh
-cd web
-bun install --frozen-lockfile
-bun run editor
+bash scripts/dev-blender.sh open
 ```
 
-Open the printed local URL with `/mmorpg/editor.html`. Select an object from the list or canvas. Drag it, enter exact X/Z in metres, or focus the map and press arrow keys (10 cm; Shift: 1 m). Add a prefab at its initial free plot, then move it. Delete or **Remove object** removes the selected placement; **Undo** restores the preceding accepted edit. The 3D preview can show the Outpost or follow the selection. Selection is retained in the URL.
+On the first run, a small native Rust example exports the **actual** current
+Outpost scene context from `mmorpg-core` and `mmorpg-scenery`.
+Blender opens a generated `artifacts/greyhaven/outpost.blend` (ignored
+by Git) with separate collections:
 
-Invalid edits report the reason and preserve the accepted state. Houses must keep their entire footprint inside the authoring region, clear of roads, the spawn plaza, existing collision, creature/NPC spawns, the graveyard and authored routine constraints. Decoration cannot obscure the protected roads/plaza or intersect structures, but never creates collision.
+- **Greyhaven Editable**: four existing houses, saved lamps and authored
+  decorations. Use Blender's ordinary select/move/duplicate/delete tools,
+  object transforms and Outliner.
+- **Greyhaven Context**: a terrain mesh, roads, buildings and nearby scenery
+  derived from the real game. This is a non-selectable guide; its geometry is
+  not an editable source of gameplay.
+- **Greyhaven Prefabs**: one house, lamp, signpost and flowers template.
+  Duplicate a template, move the copy into **Greyhaven Editable** using
+  Blender's Collections/Outliner, and position it inside the Outpost region.
 
-**Save to repository & rebuild game** validates both owners, atomically replaces `content/greyhaven/outpost-layout.json`, and rebuilds WASM. Wait for completion, then use **Open game** or reload an existing game tab. **Reopen** reloads the saved file; discarding unsaved changes requires confirmation. Externally changed files cause a conflict rather than an overwrite. The local authoring server binds loopback and accepts only same-origin saves, with a bounded request size. It is never part of a zone host or the published site.
+Blender uses metres and Z-up. Game X maps to Blender X, game Z maps to negative
+Blender Y, and game Y maps to Blender Z. Only horizontal position and yaw
+(for decorations) are supported by the saved layout; the existing house
+colliders remain axis aligned. Changes to mesh topology, scale or height
+cannot be represented by this file; model assets separately in Blender and
+pass them through the existing asset-tooling GLB path.
 
-The public editor page supports preview and JSON import/export. To use an exported layout, import it in the local editor and save, or replace the repository file and run the validator below. Native hosts/clients consume the same committed file on their next build; the native development launcher watches it. Running sessions retain their existing immutable content, and old checkpoints fail closed if gameplay fingerprints differ.
+## Save changes into the game
 
-## Saved representation and ownership
+1. In Blender, save the .blend project and **close the Blender window**.
+2. From the repository root, run:
 
-- `version: 1` and `generator: "greyhaven-15"` identify the schema and deterministic base. Generator changes require an explicit override rebase; unknown versions fail closed.
-- `collision` is the override layer. IDs 103–106 identify existing houses; 60000–64999 identify persistent author additions. `position` is exact `[x, z]` in centimetres. `removed: true` suppresses a base placement. Reopening retains the IDs; deletion does not shift identities. Core reuses the existing house footprint and owns final gameplay validation.
-- `decoration` contains the saved presentation placements, with persistent textual IDs, prefab `kind`, centimetre coordinates and `u16` yaw. It overrides the four existing Outpost lamps while retaining the original base generator. Scenery owns this schema; core ignores it. Other fixed/procedural decoration remains in its existing generator.
-- Regeneration always starts from the unchanged base. House edits neither reseed nor reroll scatter. Presentation suppresses scatter intersecting the resulting houses; it does not create another collision solver. Layout composition is deterministic and idempotent.
+   ```sh
+   bash scripts/dev-blender.sh export
+   ```
 
-The content revision is 16 for this format adoption; collision changes alter the existing canonical content fingerprint. Treat a published gameplay layout as immutable: record a new content revision and refresh its existing content fixture when publishing later collision changes. Decorative-only edits retain gameplay identity. The format is intentionally limited to the proven palette, not a new mesh importer or asset catalog.
+3. The bridge serializes the edited placements and runs the real Rust
+   `validate-layout` example, which checks core
+   collision/spawns/roads and presentation overlap. Only accepted layouts
+   atomically replace `content/greyhaven/outpost-layout.json`.
+   Rejected edits leave the repository file intact.
+4. Rebuild/restart the game. To refresh the browser's compiled WASM:
+   `cd web && bun run build:wasm`. Native host/client builds
+   consume the same committed layout, without Blender installed.
+5. Run `bash scripts/dev-blender.sh open` to continue editing.
+   The accepted project retains generated object IDs and is synchronized
+   to its saved layout.
 
-## Checks
+After a failed validation, reopen the saved .blend, correct the offending
+objects and export again. The export rejects any external changes to the JSON
+since the Blender project was opened, rather than overwriting them.
+
+This first slice can add, delete and move Outpost houses, lamps, signposts and
+flowers. Other generated scatter, structures, terrain sculpting, physics
+changes outside the supported house layout, and model import remain separate.
+
+## Ownership and format
+
+- The existing `version: 1`, `generator: "greyhaven-15"`
+  JSON representation, stable collider IDs (103–106, authored 60000–64999),
+  tombstones and persistent decoration IDs are unchanged.
+- `mmorpg-core` validates physical colliders; `mmorpg-scenery`
+  owns decoration and suppresses intersecting procedural scatter. Both
+  browser and native clients consume the same accepted definition.
+- A generated Blender .blend is local, disposable authoring state under
+  `artifacts/`, not the canonical source. A clean checkout rebuilds
+  it from the checked-in JSON and deterministic game content. Never overwrite
+  a .blend containing unsaved work merely to regenerate it.
+- The adapter runs only from the developer command, outside rendering,
+  simulation, network hosts, production builds and default CI.
+
+## Focused verification
 
 ```sh
+python3 -m unittest discover -s scripts/blender -p 'test_*.py'
 cargo run --locked -p mmorpg-scenery --example validate-layout -- content/greyhaven/outpost-layout.json
-cargo test --locked -p mmorpg-scenery --test layout_editor
-python3 scripts/smoke-layout-editor.py
+# With Blender 5.2.2 available, manually verify an edit-save-export-rebuild cycle:
+bash scripts/dev-blender.sh open
+bash scripts/dev-blender.sh export
 ```
 
-The focused browser journey requires the existing Playwright prerequisite and built WASM. It edits/nudges/adds/removes/undoes, saves and rebuilds, reopens, then enters the actual game and checks its compiled house location. It restores the original layout and rebuilds WASM on exit; don't run it against another active editor. Screenshots are written to `artifacts/layout-editor/`. Optional `BROWSER_EXECUTABLE` selects an installed Chromium; `MMORPG_BROWSER_SINGLE_PROCESS=1` supports environments without browser subprocess sockets.
-
-This implements Atlas 5.1.81 / TECH-010 and continues TECH-008/TECH-009. It does not reopen the completed valley expansion (#159/#308) or duplicate building (#158), cave (#160), or asset normalization (#53) ownership.
+This supersedes the browser-editor implementation described in the original
+TECH-010 decision, while retaining TECH-008/TECH-009's Blender authoring
+and non-destructive override policy.
