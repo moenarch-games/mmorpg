@@ -143,6 +143,12 @@ impl ZoneSimulation {
                 {
                     return Ok(Some((ErrorCode::LineOfSight, target)));
                 }
+                // A charge needs a path as wide as the charger's body (#57).
+                if matches!(ability.effect, AbilityEffect::Charge { .. })
+                    && !self.charge_path_clear(EntityRef::Player(player_id), entity)?
+                {
+                    return Ok(Some((ErrorCode::LineOfSight, target)));
+                }
                 Some(entity)
             }
         } else {

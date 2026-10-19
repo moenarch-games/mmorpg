@@ -447,6 +447,8 @@ struct Decisions {
     doors: BTreeMap<String, bool>,
     ground: BTreeMap<String, i32>,
     shots: BTreeMap<String, Option<(Option<EntityRef>, BodyId, f32)>>,
+    /// Whether the player's body fits along a charge at the creature (#57, shape cast).
+    charges: BTreeMap<String, bool>,
 }
 
 fn decisions(zone: &ZoneSimulation) -> Result<Decisions> {
@@ -490,6 +492,9 @@ fn decisions(zone: &ZoneSimulation) -> Result<Decisions> {
             let shot = zone
                 .shot_probe(from.unit, to.unit)?
                 .map(|probe| (probe.unit, probe.hit.body, probe.hit.fraction));
+            decisions
+                .charges
+                .insert(pair.clone(), zone.charge_path_probe(from.unit, to.unit)?);
             decisions.shots.insert(pair, shot);
         }
         let EntityRef::Player(player) = from.unit else {
@@ -540,6 +545,7 @@ fn decision_differences(rapier: &Decisions, engine: &Decisions) -> Vec<String> {
     exact("npc sight", &rapier.npc_sight, &engine.npc_sight, &mut out);
     exact("door blocked", &rapier.doors, &engine.doors, &mut out);
     exact("ground", &rapier.ground, &engine.ground, &mut out);
+    exact("charge path", &rapier.charges, &engine.charges, &mut out);
     for (key, left) in &rapier.shots {
         let right = engine.shots.get(key).copied().flatten();
         let same = match (left, right) {
@@ -582,6 +588,7 @@ fn query_parity(workload: &Workload, rapier: &Trace) -> Result<(usize, usize)> {
             + a.npc_sight.len()
             + a.doors.len()
             + a.ground.len()
+            + a.charges.len()
             + a.shots.len();
         let differences = decision_differences(&a, &b);
         assert!(
@@ -668,6 +675,23 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
             rapier_check.placed_inside.len(),
             started.elapsed(),
         );
+        if matches!(workload, Workload::ChargePath) {
+            // On each backend some Warden charges (#57).
+            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+                let charging: std::collections::BTreeSet<_> = trace
+                    .snapshots
+                    .iter()
+                    .flat_map(|snapshot| &snapshot.forced)
+                    .filter(|(unit, state)| {
+                        matches!(unit, EntityRef::Player(_))
+                            && state.moving.is_some_and(|moving| moving.charge.is_some())
+                    })
+                    .map(|(unit, _)| *unit)
+                    .collect();
+                println!("  {name} on {backend}: charged {charging:?}");
+                assert!(!charging.is_empty(), "{name} on {backend}: nobody charged");
+            }
+        }
         if matches!(workload, Workload::MillRamps) {
             for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
                 check_mill_ramps(trace)

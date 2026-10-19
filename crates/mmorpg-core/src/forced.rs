@@ -24,6 +24,11 @@ pub const KNOCKBACK_TICKS: u16 = 8;
 /// A charge rushes at 13.5 m/s for at most 1 s.
 pub const CHARGE_SPEED_UNITS: i32 = 45;
 pub const CHARGE_MAX_TICKS: u16 = 30;
+/// A charge's path (#57) must be clear for the charger's body above this height (units over
+/// its feet): knee height, so the ground, slopes, kerbs and campfires it runs over do not
+/// count. Even, so the raised capsule stays whole units; obstacles exactly as high as the
+/// clearance would graze the sweep, where the backends' contact tolerances differ.
+pub const CHARGE_CLEARANCE_UNITS: i32 = 32;
 /// How far (units) a large creature (#297) shoves a smaller unit in its way.
 pub const SHOVE_UNITS: i32 = 120;
 /// A unit counts as in a large creature's way when its body is within the creature's step
@@ -126,6 +131,43 @@ impl ZoneSimulation {
         let away = [i64::from(at[0] - from[0]), i64::from(at[2] - from[1])];
         let direction = if away == [0, 0] { fallback } else { away };
         Ok(self.knock_back(unit, direction, distance))
+    }
+
+    /// Whether `unit`'s body fits along the straight path of a charge at `target` (#57): its
+    /// capsule, raised by [`CHARGE_CLEARANCE_UNITS`], swept horizontally toward the target until
+    /// it would arrive within melee reach meets no static geometry but the ground.
+    pub(crate) fn charge_path_clear(
+        &self,
+        unit: EntityRef,
+        target: EntityRef,
+    ) -> Result<bool, ZoneError> {
+        let body = *self
+            .world
+            .body(body_id(unit))
+            .ok_or_else(|| ZoneError::new("charging unit physics body is missing"))?;
+        let here = body.exact_position();
+        let there = self.unit_position(target)?;
+        #[allow(clippy::cast_precision_loss)]
+        let delta = [there[0] as f32 - here[0], there[2] as f32 - here[2]];
+        let distance = delta[0].hypot(delta[1]);
+        #[allow(clippy::cast_precision_loss)]
+        let travel = distance - crate::unit::PLAYER_REACH_UNITS as f32;
+        if travel <= 0.0 {
+            return Ok(true);
+        }
+        let half = body.half_extents();
+        let lift = CHARGE_CLEARANCE_UNITS / 2;
+        #[allow(clippy::cast_precision_loss)]
+        let origin = [here[0], here[1] + lift as f32, here[2]];
+        let scale = travel / distance;
+        let ground = self.ground_body();
+        let hit = self.world.cast_shape(
+            origin,
+            Vec3i::new(half.x, half.y - lift, half.z),
+            [delta[0] * scale, 0.0, delta[1] * scale],
+            |body| body.0 < crate::entity::PLAYER_BODY_BASE && Some(body) != ground,
+        );
+        Ok(hit.is_none())
     }
 
     /// `unit` charges at `target`, knocking it back `knockback` units when it arrives.

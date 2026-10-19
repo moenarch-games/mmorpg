@@ -33,7 +33,8 @@ per-character `CharacterSettings`, in game-ID order), fixed boxes (content, door
 NPCs, standing props), ramps (#59, `Shape::Wedge` turned about Y), moving platforms (#56, a
 static box re-added where it moves; carrying riders is unsupported), the floor half-spaces, the
 terrain heightfield (`add_heightfield`),
-rays (`cast_ray`/`cast_ray_first`), overlaps (`overlap_shape`) and segment checks. **Debris
+rays (`cast_ray`/`cast_ray_first`), capsule sweeps (`cast_shape`, the charge-path rule),
+overlaps (`overlap_shape`) and segment checks. **Debris
 (#288) is not supported by the engine arm**: it stays on Rapier in both arms
 (`physics::rapier::step_debris` over the adapter's fixed bodies) and is excluded from timing.
 
@@ -47,7 +48,8 @@ workload fixtures (`tests/support/greyhaven_workload.rs`, shared with `mmorpg-pr
 another standing in its way, a third walks into its side) and `vale-mill-hoist` (#56: a
 player rides the mill hoist up and walks off onto the windmill's gallery) and `vale-mill-ramps`
 (#59: one player walks up the dock's cart ramp, back down and across it, another walks into the
-steep chute) through the real zone simulation, from the same initial state with the same inputs and tick count.
+steep chute) and `vale-charge-path` (#57: four level-6 Wardens charge at wolves among the Wolfrun
+trunks) through the real zone simulation, from the same initial state with the same inputs and tick count.
 
 `vale-mill-hoist` is **unsupported on physics-engine** (no moving support, gap below): the
 engine arm refuses its first step with a rider with an `unsupported` error, which the test
@@ -65,6 +67,7 @@ On **each** backend, every run must:
 - replay bit-identically (canonical snapshots, unit bodies and command outcomes);
 - in `vale-ogre-brawl`, keep every player's capsule out of the ogre's (beyond 0.01 units), shove
   a player aside at least once and stomp;
+- in `vale-charge-path`, let some Warden charge;
 - in `vale-mill-ramps`, carry the walker up the cart ramp onto the dock (feet 1.5 m up within 3
   units) and back to the ground, and never let the chute's player onto the dock.
 
@@ -74,7 +77,8 @@ Across backends:
   rounding step gameplay sees; measured ≤ 0.01), identical command outcomes and door states,
   and the players' grounded state identical on every tick.
 - Every query decision on **identical states** (Rapier's state every 60 ticks, recovered onto
-  both backends): line of sight and shots for player–creature pairs within 40 m, NPC sight,
+  both backends): line of sight, shots and charge paths (a capsule `cast_shape`, #57) for player–creature
+  pairs within 40 m, NPC sight,
   open and closed door-leaf occupancy, ground height and grounded must agree exactly; shot
   fractions within 10⁻⁴. Grounded is not compared for units a fixture embedded in geometry.
 - Restored from its canonical snapshot halfway, each arm continues exactly (Atlas 2.1.5).
@@ -98,6 +102,7 @@ Measured at the commit the timing table names:
 | vale-ogre-brawl | 31.3 / 1.9 (from tick 27) | 3 apart (max 21.5) | continues |
 | vale-mill-hoist | unsupported on physics-engine | | |
 | vale-mill-ramps | 33.9 / 59.2 (from tick 10) | 0 apart | continues |
+| vale-charge-path | 0 / 0 | 0 apart (max 0.34) | continues |
 
 Every query decision on identical states agreed (333–11,846 probes per workload).
 
@@ -184,7 +189,7 @@ one tick's whole physics path (the step, every gameplay query and body update th
 as `World::spent_nanos` counts them; debris excluded); setup is building the zone. Timing is
 evidence for physics-engine #330, not a gate.
 
-- mmorpg: 71c7b0ea9fc6043f882b8c2473043ec184e60f01
+- mmorpg: 7649416a3a8c339f4b555c44eebed9119c2c9e67
 - physics-engine: version = "0.1.0" source = "git+https://github.com/moritzbrantner/physics-engine?rev=e8aac2fa847fad6c5c72920be83f934b00aa7d7e#e8aac2fa847fad6c5c72920be83f934b00aa7d7e"
 - rapier3d: version = "0.36.1" source = "registry+https://github.com/rust-lang/crates.io-index"
 - rustc: rustc 1.98.1 (48a229cea 2026-09-01)
@@ -193,28 +198,30 @@ evidence for physics-engine #330, not a gate.
 
 | workload | ticks | moving / bodies | backend | median | p95 | p99 | mean | setup (physics) | engine / rapier, median of paired rounds |
 |---|---:|---:|---|---:|---:|---:|---:|---:|---:|
-| two-bots-move | 10 | 77 / 1211 | rapier | 1504.0 | 2261.9 | 2680.5 | 1590.3 | 4460.9 (4321.4) |  |
-| two-bots-move | 10 | 77 / 1211 | physics-engine | 203.7 | 710.5 | 838.7 | 262.7 | 10990.8 (10854.7) | 0.166 |
-| vale-hub-walk | 280 | 77 / 1211 | rapier | 1227.1 | 1668.0 | 1954.6 | 1243.8 | 3569.5 (3449.8) |  |
-| vale-hub-walk | 280 | 77 / 1211 | physics-engine | 200.1 | 527.0 | 665.6 | 293.2 | 8005.2 (7899.7) | 0.238 |
-| vale-wolf-hunt | 2200 | 76 / 1210 | rapier | 1382.4 | 1876.5 | 2204.0 | 1426.9 | 3328.9 (3194.1) |  |
-| vale-wolf-hunt | 2200 | 76 / 1210 | physics-engine | 356.9 | 483.8 | 623.5 | 300.1 | 7871.0 (7762.3) | 0.212 |
-| vale-idle-16 | 360 | 91 / 1225 | rapier | 1185.6 | 1538.8 | 1750.5 | 1177.4 | 6600.8 (3044.8) |  |
-| vale-idle-16 | 360 | 91 / 1225 | physics-engine | 189.9 | 529.6 | 628.2 | 299.6 | 14915.2 (7423.3) | 0.254 |
-| vale-fights-8 | 360 | 83 / 1217 | rapier | 1199.3 | 1515.3 | 1730.2 | 1206.1 | 6387.7 (2939.6) |  |
-| vale-fights-8 | 360 | 83 / 1217 | physics-engine | 192.0 | 523.9 | 657.9 | 292.5 | 14911.7 (7391.3) | 0.243 |
-| vale-fights-32 | 360 | 107 / 1241 | rapier | 1326.4 | 1695.8 | 1988.6 | 1334.6 | 6319.2 (3003.7) |  |
-| vale-fights-32 | 360 | 107 / 1241 | physics-engine | 314.5 | 677.4 | 800.8 | 400.0 | 14929.5 (7625.5) | 0.301 |
-| vale-crowded-fights-64 | 360 | 139 / 1273 | rapier | 1371.8 | 1944.8 | 2333.0 | 1392.8 | 6703.6 (3263.2) |  |
-| vale-crowded-fights-64 | 360 | 139 / 1273 | physics-engine | 456.9 | 831.2 | 962.0 | 522.0 | 15452.1 (7838.3) | 0.377 |
-| vale-ogre-brawl | 360 | 78 / 1212 | rapier | 1203.7 | 1610.1 | 1905.7 | 1237.8 | 6812.0 (3142.8) |  |
-| vale-ogre-brawl | 360 | 78 / 1212 | physics-engine | 191.5 | 487.8 | 602.3 | 286.3 | 14854.9 (7462.1) | 0.231 |
-| vale-mill-hoist | 640 | 76 / 1210 | rapier | 1304.2 | 1674.7 | 1948.4 | 1296.7 | 6732.9 (3119.3) |  |
+| two-bots-move | 10 | 77 / 1211 | rapier | 1024.4 | 1422.7 | 1535.1 | 1075.1 | 3080.0 (2983.6) |  |
+| two-bots-move | 10 | 77 / 1211 | physics-engine | 143.4 | 508.7 | 624.9 | 181.0 | 7183.1 (7012.1) | 0.170 |
+| vale-hub-walk | 280 | 77 / 1211 | rapier | 1071.8 | 1602.1 | 2168.3 | 1132.7 | 3178.7 (3069.1) |  |
+| vale-hub-walk | 280 | 77 / 1211 | physics-engine | 180.9 | 500.8 | 768.8 | 265.4 | 6724.3 (6629.7) | 0.223 |
+| vale-wolf-hunt | 2200 | 76 / 1210 | rapier | 1293.0 | 2207.0 | 3212.7 | 1405.4 | 3257.5 (3150.1) |  |
+| vale-wolf-hunt | 2200 | 76 / 1210 | physics-engine | 295.2 | 729.1 | 1617.5 | 334.3 | 5990.9 (5910.0) | 0.195 |
+| vale-idle-16 | 360 | 91 / 1225 | rapier | 1007.7 | 1514.9 | 2530.4 | 1080.3 | 5411.0 (2476.9) |  |
+| vale-idle-16 | 360 | 91 / 1225 | physics-engine | 164.9 | 458.3 | 657.9 | 257.2 | 12046.7 (6061.4) | 0.245 |
+| vale-fights-8 | 360 | 83 / 1217 | rapier | 1565.5 | 3801.6 | 7242.6 | 1860.5 | 7353.0 (3507.8) |  |
+| vale-fights-8 | 360 | 83 / 1217 | physics-engine | 355.0 | 945.2 | 1746.6 | 433.2 | 20493.3 (7935.1) | 0.232 |
+| vale-fights-32 | 360 | 107 / 1241 | rapier | 2870.8 | 16026.3 | 40163.7 | 5782.0 | 21035.2 (11434.4) |  |
+| vale-fights-32 | 360 | 107 / 1241 | physics-engine | 646.4 | 3260.1 | 12594.0 | 1216.2 | 30936.4 (14607.9) | 0.209 |
+| vale-crowded-fights-64 | 360 | 139 / 1273 | rapier | 1147.9 | 2383.7 | 5019.0 | 1337.0 | 5463.4 (2664.7) |  |
+| vale-crowded-fights-64 | 360 | 139 / 1273 | physics-engine | 419.1 | 966.6 | 1694.1 | 491.0 | 12417.8 (6408.2) | 0.362 |
+| vale-ogre-brawl | 360 | 78 / 1212 | rapier | 978.1 | 1676.6 | 2241.3 | 1051.9 | 5321.4 (2525.1) |  |
+| vale-ogre-brawl | 360 | 78 / 1212 | physics-engine | 170.1 | 501.2 | 890.3 | 250.1 | 12825.9 (6158.3) | 0.237 |
+| vale-mill-hoist | 640 | 76 / 1210 | rapier | 1067.4 | 1739.6 | 2548.6 | 1126.7 | 5377.1 (2614.8) |  |
 | vale-mill-hoist | 640 | | physics-engine | unsupported: moving support: a platform that carries characters | | | | | |
-| vale-mill-ramps | 240 | 77 / 1211 | rapier | 1075.2 | 1437.5 | 1702.1 | 1126.7 | 6065.5 (2864.5) |  |
-| vale-mill-ramps | 240 | 77 / 1211 | physics-engine | 176.8 | 479.7 | 585.2 | 262.4 | 14375.2 (7154.8) | 0.233 |
+| vale-mill-ramps | 240 | 77 / 1211 | rapier | 914.3 | 1605.6 | 2258.5 | 1014.4 | 5292.9 (2469.4) |  |
+| vale-mill-ramps | 240 | 77 / 1211 | physics-engine | 145.3 | 387.9 | 605.9 | 214.9 | 12492.1 (6012.6) | 0.223 |
+| vale-charge-path | 240 | 79 / 1213 | rapier | 969.8 | 1806.1 | 3172.0 | 1103.7 | 9069.0 (2544.2) |  |
+| vale-charge-path | 240 | 79 / 1213 | physics-engine | 130.8 | 454.7 | 714.0 | 221.1 | 18193.3 (6000.7) | 0.203 |
 
-On this machine the engine arm's per-tick physics path costs 0.17–0.38× Rapier's
+On this machine the engine arm's per-tick physics path costs 0.17–0.36× Rapier's
 (paired-round medians; absolute times vary with machine load; the crowded fixture, where
 characters overlap most, is the most expensive). The mill hoist (#56) raised it from
 0.12–0.26×: the engine arm re-adds the hoist's static box every tick the hoist moves (in 280

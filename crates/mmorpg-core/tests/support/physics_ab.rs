@@ -189,9 +189,49 @@ pub enum Workload {
     /// The mill hoist (#56): a player rides the moving platform up and walks off at the top.
     /// Unsupported on physics-engine (no moving support).
     MillHoist,
+    /// Charges through Wolfrun Woods (#57): four level-6 Wardens charge at wolves among the
+    /// trunks; a charge needs a path as wide as the body (`World::cast_shape`).
+    ChargePath,
     /// The mill dock's ramps (#59): one player walks up the cart ramp onto the dock and back
     /// down and across it, another walks into the steep chute.
     MillRamps,
+}
+
+/// The charge workload's length.
+pub const CHARGE_PATH_TICKS: usize = 240;
+
+/// The Wardens by ID and feet XZ, on Wolfrun Woods trunk-grid corners near wolves.
+const CHARGE_PATH_PLAYERS: [(u32, [f32; 2]); 4] = [
+    (1, [-7_550.0, -2_700.0]),
+    (2, [-6_650.0, -2_250.0]),
+    (3, [-8_900.0, -2_700.0]),
+    (4, [-7_100.0, -900.0]),
+];
+
+/// The charge workload's commands: each Warden chooses its class, targets a wolf and charges.
+fn charge_path_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    // Wolves 102, 103, 101 and 107 (Greyhaven spawns).
+    let wolves = [102, 103, 101, 107];
+    (1..=4)
+        .flat_map(|player: u32| {
+            let wolf = wolves[usize::try_from(player - 1).expect("four players")];
+            match tick {
+                0 => vec![(player, ZoneCommand::ChooseClass { class: 0, sex: 0 })],
+                1 => vec![(
+                    player,
+                    ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(wolf)))),
+                )],
+                2 => vec![(
+                    player,
+                    ZoneCommand::UseAbility {
+                        ability: mmorpg_core::ability::ids::CHARGE.get(),
+                        target: None,
+                    },
+                )],
+                _ => Vec::new(),
+            }
+        })
+        .collect()
 }
 
 /// The ramp walk's length.
@@ -322,6 +362,23 @@ fn ogre_brawl_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
     placed_zone(&OGRE_BRAWL_PLAYERS)
 }
 
+/// [`placed_zone`] with every player at `level` and full health.
+fn placed_zone_at_level(
+    players: &[(u32, [f32; 2])],
+    level: u8,
+) -> Result<ZoneSimulation, Box<dyn Error>> {
+    let zone = placed_zone(players)?;
+    let mut state = zone.snapshot()?;
+    for player in &mut state.players {
+        player.combat.level = level;
+        player.combat.health = mmorpg_core::unit::player_max_health(level);
+    }
+    Ok(ZoneSimulation::from_snapshot(
+        state,
+        std::sync::Arc::clone(zone.content()),
+    )?)
+}
+
 /// Greyhaven with `players` placed at their feet XZ, standing on the ground.
 fn placed_zone(players: &[(u32, [f32; 2])]) -> Result<ZoneSimulation, Box<dyn Error>> {
     let content = mmorpg_core::greyhaven_vale::content();
@@ -352,6 +409,7 @@ impl Workload {
             Self::OgreBrawl => "vale-ogre-brawl",
             Self::MillHoist => "vale-mill-hoist",
             Self::MillRamps => "vale-mill-ramps",
+            Self::ChargePath => "vale-charge-path",
         }
     }
 
@@ -363,6 +421,7 @@ impl Workload {
             Self::OgreBrawl => OGRE_BRAWL_TICKS,
             Self::MillHoist => MILL_HOIST_TICKS,
             Self::MillRamps => MILL_RAMPS_TICKS,
+            Self::ChargePath => CHARGE_PATH_TICKS,
         }
     }
 
@@ -371,7 +430,11 @@ impl Workload {
     pub const fn engine_unsupported(&self) -> Option<&'static str> {
         match self {
             Self::MillHoist => Some("moving support: a platform that carries characters"),
-            Self::Bots(_) | Self::Greyhaven(_) | Self::OgreBrawl | Self::MillRamps => None,
+            Self::Bots(_)
+            | Self::Greyhaven(_)
+            | Self::OgreBrawl
+            | Self::MillRamps
+            | Self::ChargePath => None,
         }
     }
 }
@@ -394,6 +457,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::OgreBrawl);
     workloads.push(Workload::MillHoist);
     workloads.push(Workload::MillRamps);
+    workloads.push(Workload::ChargePath);
     Ok(workloads)
 }
 
@@ -427,6 +491,7 @@ impl Run {
             Workload::OgreBrawl => (ogre_brawl_zone()?, 0),
             Workload::MillHoist => (mill_hoist_zone()?, 0),
             Workload::MillRamps => (placed_zone(&MILL_RAMPS_PLAYERS)?, 0),
+            Workload::ChargePath => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
         };
         Ok(Self {
             zone,
@@ -485,10 +550,14 @@ impl Run {
             Workload::Greyhaven(fixture) => {
                 greyhaven_workload::commands(&mut self.zone, *fixture, self.tick)?;
             }
-            Workload::OgreBrawl | Workload::MillHoist | Workload::MillRamps => {
+            Workload::OgreBrawl
+            | Workload::MillHoist
+            | Workload::MillRamps
+            | Workload::ChargePath => {
                 let commands = match self.workload {
                     Workload::OgreBrawl => ogre_brawl_commands(self.tick),
                     Workload::MillHoist => mill_hoist_commands(self.tick),
+                    Workload::ChargePath => charge_path_commands(self.tick),
                     _ => mill_ramps_commands(self.tick),
                 };
                 for (player, command) in commands {

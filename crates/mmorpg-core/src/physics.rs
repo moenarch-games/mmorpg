@@ -579,6 +579,20 @@ impl World {
         dispatch!(self, &self.worlds, world => world.cast_ray(origin, translation, &hits))
     }
 
+    /// The first body accepted by `hits` that an upright capsule as wide and tall as
+    /// `half_extents`, centred on `origin`, meets when swept along `translation` (units), with
+    /// the fraction of the sweep and the contact normal (#57). A body it starts overlapping is
+    /// met at fraction 0. Equally near bodies are ordered by ID.
+    pub fn cast_shape(
+        &self,
+        origin: [f32; 3],
+        half_extents: Vec3i,
+        translation: [f32; 3],
+        hits: impl Fn(BodyId) -> bool,
+    ) -> Option<RayHit> {
+        dispatch!(self, &self.worlds, world => world.cast_shape(origin, half_extents, translation, &hits))
+    }
+
     /// Advances `debris` (#288) one tick: Rapier steps a world of the pieces still moving as
     /// dynamic bodies, the settled ones and the fixed geometry around them, rebuilt from the
     /// game's state in slice order like every step here. A piece that slows below the rest
@@ -883,6 +897,66 @@ mod tests {
             );
             assert!(world.grounded(unit), "grounded on the ramp at {x} {z}");
         }
+    }
+
+    #[test]
+    fn a_body_wide_sweep_needs_a_gap_the_body_fits_through() {
+        on_each_backend(a_body_wide_sweep_needs_a_gap_the_body_fits_through_on);
+    }
+
+    /// Shape casts (#57): a capsule swept through gaps of different widths.
+    fn a_body_wide_sweep_needs_a_gap_the_body_fits_through_on() {
+        let statics = |id: BodyId| id.0 < 10;
+        let sweep = |gap: i32| {
+            let mut world = world();
+            // Two posts at x = 500 leaving `gap` units between them around z = 0.
+            for (id, side) in [(2, -1), (3, 1)] {
+                world
+                    .add_body(RigidBody::fixed(
+                        BodyId(id),
+                        Vec3i::new(500, 100, side * (gap / 2 + 50)),
+                        Vec3i::new(20, 100, 50),
+                    ))
+                    .unwrap();
+            }
+            let ray = world.cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], statics);
+            // A 30-unit-radius body, its bottom 30 units up, so the floor is never met.
+            let body = world.cast_shape(
+                [0.0, 150.0, 0.0],
+                Vec3i::new(30, 60, 30),
+                [1_000.0, 0.0, 0.0],
+                statics,
+            );
+            (ray, body)
+        };
+        let (ray, body) = sweep(40);
+        assert!(ray.is_none(), "a ray threads a 40-unit gap");
+        let body = body.expect("a 60-unit-wide body does not");
+        assert!((body.fraction - 0.45).abs() < 0.01, "{body:?}");
+        assert_eq!(body.body, BodyId(2), "equally near posts: the lower ID");
+        let (_, body) = sweep(80);
+        assert!(body.is_none(), "an 80-unit gap lets it through");
+        // Starting inside a post meets it at once.
+        let world = {
+            let mut world = world();
+            world
+                .add_body(RigidBody::fixed(
+                    BodyId(2),
+                    Vec3i::new(0, 100, 0),
+                    Vec3i::new(20, 100, 20),
+                ))
+                .unwrap();
+            world
+        };
+        let inside = world
+            .cast_shape(
+                [0.0, 150.0, 0.0],
+                Vec3i::new(30, 60, 30),
+                [500.0, 0.0, 0.0],
+                statics,
+            )
+            .unwrap();
+        assert_eq!(inside.fraction, 0.0);
     }
 
     #[test]

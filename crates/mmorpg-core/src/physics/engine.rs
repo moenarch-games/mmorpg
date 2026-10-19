@@ -624,6 +624,35 @@ impl World {
         })
     }
 
+    pub fn cast_shape(
+        &self,
+        origin: [f32; 3],
+        half_extents: Vec3i,
+        translation: [f32; 3],
+        accept: impl Fn(BodyId) -> bool,
+    ) -> Option<RayHit> {
+        if translation == [0.0; 3] {
+            return None;
+        }
+        let cast = ShapeCast::new(
+            QueryPose::new(capsule(half_extents), vector(origin)),
+            vector(translation),
+        );
+        let mut hits = Vec::new();
+        self.engine
+            .cast_shape(cast, QueryFilter::default(), &mut hits)
+            .expect("physics-engine shape cast failed");
+        // Hits come ordered by fraction, then body order (game ID).
+        hits.iter().find_map(|hit| {
+            let id = self.games.get(&hit.body.to_bits()).copied()?;
+            accept(id).then_some(RayHit {
+                body: id,
+                fraction: hit.fraction,
+                normal: array(hit.normal),
+            })
+        })
+    }
+
     /// Debris stays on Rapier (physics-engine #330 parks dynamics): the shared Rapier debris
     /// step over this world's fixed bodies and terrain.
     pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {

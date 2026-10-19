@@ -856,6 +856,66 @@ impl World {
         })
     }
 
+    pub fn cast_shape(
+        &self,
+        origin: [f32; 3],
+        half_extents: Vec3i,
+        translation: [f32; 3],
+        hits: impl Fn(BodyId) -> bool,
+    ) -> Option<RayHit> {
+        if translation == [0.0; 3] {
+            return None;
+        }
+        let body = |collider: &rapier3d::prelude::Collider| {
+            BodyId(u64::try_from(collider.user_data).unwrap_or(u64::MAX))
+        };
+        let shape = capsule(half_extents);
+        let pose = Pose::from_translation(metres(origin));
+        let velocity = metres(translation);
+        // The first accepted hit below `below` (an ID), within `reach` of the sweep.
+        let first = |below: Option<BodyId>, reach: f32| {
+            let predicate = |_, collider: &rapier3d::prelude::Collider| {
+                let id = body(collider);
+                below.is_none_or(|below| id < below) && hits(id)
+            };
+            let queries = self.world.broad_phase.as_query_pipeline(
+                &self.queries,
+                &self.world.bodies,
+                &self.world.colliders,
+                QueryFilter::default().predicate(&predicate),
+            );
+            let (handle, hit) = queries.cast_shape(
+                &pose,
+                velocity,
+                &shape,
+                ShapeCastOptions {
+                    target_distance: 0.0,
+                    stop_at_penetration: true,
+                    max_time_of_impact: reach,
+                    compute_impact_geometry_on_penetration: true,
+                },
+            )?;
+            Some((body(self.world.colliders.get(handle)?), hit))
+        };
+        // Ties within a thousandth of a unit go to the lower body ID, as for rays.
+        let length = translation
+            .iter()
+            .map(|axis| axis * axis)
+            .sum::<f32>()
+            .sqrt();
+        let tie = TIE_UNITS / length;
+        let (mut id, mut hit) = first(None, 1.0)?;
+        while let Some((lower, tied)) = first(Some(id), hit.time_of_impact + tie) {
+            (id, hit) = (lower, tied);
+        }
+        // `normal2` is the target's outward normal at the contact, in world space.
+        Some(RayHit {
+            body: id,
+            fraction: hit.time_of_impact,
+            normal: [hit.normal2.x, hit.normal2.y, hit.normal2.z],
+        })
+    }
+
     /// Advances `debris` (#288) one tick: Rapier steps a world of the pieces still moving as
     /// dynamic bodies, the settled ones and the fixed geometry around them, rebuilt from the
     /// game's state in slice order like every step here. A piece that slows below the rest
