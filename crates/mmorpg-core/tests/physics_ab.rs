@@ -587,6 +587,23 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
                 "{name}: players diverge by Δxz={horizontal} Δy={vertical}"
             );
             assert!(!outcomes_differ, "{name}: command outcomes differ");
+            // Both report ground within the contact offset plus 5 cm: the scripted players'
+            // grounded state agrees on every tick.
+            for (tick, (a, b)) in rapier.units.iter().zip(&engine.units).enumerate() {
+                let players = |units: &[UnitBody]| -> Vec<_> {
+                    units
+                        .iter()
+                        .filter(|unit| matches!(unit.unit, EntityRef::Player(_)))
+                        .map(|unit| (unit.unit, unit.grounded))
+                        .collect()
+                };
+                assert_eq!(
+                    players(a),
+                    players(b),
+                    "{name}: grounded differs at tick {}",
+                    tick + 1
+                );
+            }
             assert!(!doors_differ, "{name}: door states differ");
         }
     }

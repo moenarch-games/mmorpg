@@ -56,7 +56,8 @@ On **each** backend, every run must:
 Across backends:
 
 - Scripted workloads (the bot scenarios and `vale-idle-16`): players within **1 unit** (the
-  rounding step gameplay sees; measured ≤ 0.01), identical command outcomes and door states.
+  rounding step gameplay sees; measured ≤ 0.01), identical command outcomes and door states,
+  and the players' grounded state identical on every tick.
 - Every query decision on **identical states** (Rapier's state every 60 ticks, recovered onto
   both backends): line of sight and shots for player–creature pairs within 40 m, NPC sight,
   open and closed door-leaf occupancy, ground height and grounded must agree exactly; shot
@@ -94,9 +95,10 @@ Intentional or explained differences:
    spawned on hillsides by 0.5–4.6 units, and pushes the 1/7/18 players the fighting fixtures
    place inside props, boxes or hills (feet at y = 0) out of them. From there, who reaches which
    creature, and so the fights, deaths and respawns, legitimately differ.
-3. **Grounded.** The engine reports walkable static support within two contact offsets after
-   the last move, or snapped to; Rapier reports any static ground within offset + 5 cm. On
-   identical states they agreed for every unit not embedded in geometry.
+3. **Grounded.** Both report static ground within the contact offset plus 5 cm (Rapier's ground
+   prediction; physics-engine #348; the engine also requires it walkable). On identical states
+   they agree for every unit not embedded in geometry; inside geometry the depenetration
+   differs (2.).
 4. **Creature drift.** Creatures wander and chase on a zone RNG they share. Over 2,200 ticks
    (`vale-wolf-hunt`) the small differences above move AI decisions and the RNG stream, so most
    creatures end elsewhere; the scripted hunter's path, fights and command outcomes stay
@@ -111,13 +113,16 @@ Intentional or explained differences:
 
 ## physics-engine gaps found
 
-None open. The three gaps this page listed are fixed at the pinned rev, and the test now
+None open. The gaps found so far are fixed at the pinned rev, and the test now
 asserts the engine arm's exact continuation:
 
 1. Snap state was not rebuildable from game state (physics-engine #340): snapping is now
    decided from the geometry at the move's start, so a restored zone continues exactly.
 2. Depenetration double-counted coincident surfaces (physics-engine #344).
 3. No heightfield cell mask (physics-engine #342): `HeightfieldDesc::removed_cells`.
+4. Grounded within two contact offsets instead of Rapier's offset + 5 cm prediction
+   (physics-engine #347/#348); the adapter's grounded test for a just-placed body uses the
+   same prediction.
 
 ## Timing
 
