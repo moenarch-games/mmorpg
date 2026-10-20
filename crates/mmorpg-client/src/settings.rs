@@ -5,7 +5,11 @@ use settings_core::{
     PreservedEntries, SettingDefinition, SettingId, SettingScope, SettingValue, SettingsRegistry,
     SettingsState, export_scope_json, import_scope_json,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::Write,
+    path::Path,
+};
 
 pub const FIELD_OF_VIEW: &str = "camera.field_of_view";
 pub const LOOK_SENSITIVITY: &str = "controls.look_sensitivity";
@@ -69,6 +73,43 @@ impl Preferences {
             })
             .collect::<Result<_, String>>()?;
         Ok(Self { registry, scopes })
+    }
+
+    /// Load each durable scope independently. Unreadable data keeps safe defaults
+    /// and returns a visible diagnostic; loading never rewrites the source file.
+    pub fn load(directory: &Path) -> Result<(Self, Vec<String>), String> {
+        let mut preferences = Self::new()?;
+        let mut problems = Vec::new();
+        for (scope, name) in durable_scopes() {
+            let path = directory.join(name);
+            match std::fs::read_to_string(&path) {
+                Ok(json) => match preferences.import(scope, &json) {
+                    Ok(diagnostics) => problems.extend(diagnostics),
+                    Err(error) => problems.push(format!("{}: {error}", path.display())),
+                },
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => problems.push(format!("{}: {error}", path.display())),
+            }
+        }
+        Ok((preferences, problems))
+    }
+
+    /// Persist delta-only User and Device snapshots to separate atomic targets.
+    /// A failed replacement leaves the previous complete snapshot recoverable.
+    pub fn save(&self, directory: &Path) -> Result<(), String> {
+        std::fs::create_dir_all(directory).map_err(message)?;
+        for (scope, name) in durable_scopes() {
+            let json = self.export(scope)?;
+            let mut temporary = tempfile::NamedTempFile::new_in(directory).map_err(message)?;
+            temporary.write_all(json.as_bytes()).map_err(message)?;
+            temporary.as_file().sync_all().map_err(message)?;
+            temporary.persist(directory.join(name)).map_err(message)?;
+        }
+        #[cfg(unix)]
+        std::fs::File::open(directory)
+            .and_then(|dir| dir.sync_all())
+            .map_err(message)?;
+        Ok(())
     }
 
     pub fn value(&self, raw_id: &str) -> Result<&SettingValue, String> {
@@ -141,6 +182,12 @@ impl Preferences {
         Ok((id, definition.scope))
     }
 }
+fn durable_scopes() -> [(SettingScope, &'static str); 2] {
+    [
+        (SettingScope::User, "settings.user.json"),
+        (SettingScope::Device, "settings.device.json"),
+    ]
+}
 fn message(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
@@ -148,6 +195,34 @@ fn message(error: impl std::fmt::Display) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_scope_files_reload_and_corrupt_user_data_keeps_defaults() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut preferences = Preferences::new().unwrap();
+        preferences
+            .set(FIELD_OF_VIEW, SettingValue::Integer(70))
+            .unwrap();
+        preferences.save(directory.path()).unwrap();
+        let (restored, problems) = Preferences::load(directory.path()).unwrap();
+        assert!(problems.is_empty());
+        assert_eq!(
+            restored.value(FIELD_OF_VIEW).unwrap(),
+            &SettingValue::Integer(70)
+        );
+        std::fs::write(directory.path().join("settings.user.json"), "broken").unwrap();
+        let (defaults, problems) = Preferences::load(directory.path()).unwrap();
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            defaults.value(FIELD_OF_VIEW).unwrap(),
+            &SettingValue::Integer(50)
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("settings.user.json")).unwrap(),
+            "broken"
+        );
+        assert!(defaults.export(SettingScope::Session).is_err());
+    }
+
     #[test]
     fn shared_camera_preference_round_trips_as_a_delta_and_reset_removes_it() {
         let mut preferences = Preferences::new().unwrap();

@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 getrandom = "=0.4.3"
+tempfile = "=3.27.0"
 serde_json = "=1.0.154"
 serde = { version = "=1.0.229", features = ["derive"] }
 settings-core = { git = "https://github.com/moritzbrantner/settings.git", rev = "38c468c5d1a380416df630d7980be5f0d16631c2" }
@@ -39,7 +40,6 @@ serde_json = "=1.0.154"
 
 [dev-dependencies]
 mmorpg-wasm = { path = "../mmorpg-wasm" }
-tempfile = "=3.27.0"
 mmorpg-game-server = { path = "../mmorpg-game-server" }
 wtransport = { version = "=0.7.2", default-features = false, features = ["ring", "self-signed", "quinn"] }
 
