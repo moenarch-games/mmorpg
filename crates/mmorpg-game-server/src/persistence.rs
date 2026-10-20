@@ -10,8 +10,27 @@ use mmorpg_core::CharacterRecord;
 use std::{collections::BTreeSet, error::Error, fmt};
 
 /// Stable entitlement identity, authored from durable world/character identities.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct GrantId(String);
+#[derive(Clone, Debug)]
+pub struct GrantId {
+    value: String,
+    reward: Option<mmorpg_core::RewardKey>,
+}
+impl PartialEq for GrantId {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+impl Eq for GrantId {}
+impl PartialOrd for GrantId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for GrantId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
 impl GrantId {
     pub fn new(value: impl Into<String>) -> Result<Self, InvalidGrantId> {
         let value = value.into();
@@ -23,9 +42,23 @@ impl GrantId {
         {
             return Err(InvalidGrantId);
         }
-        Ok(Self(value))
+        Ok(Self {
+            value,
+            reward: None,
+        })
     }
     pub(crate) fn for_reward(
+        world: &str,
+        zone: mmorpg_core::ZoneId,
+        character: &mmorpg_core::CharacterId,
+        key: mmorpg_core::RewardKey,
+    ) -> Result<Self, InvalidGrantId> {
+        key.validate().map_err(|_| InvalidGrantId)?;
+        let mut id = Self::reward_id(world, zone, character, key)?;
+        id.reward = Some(key);
+        Ok(id)
+    }
+    fn reward_id(
         world: &str,
         zone: mmorpg_core::ZoneId,
         character: &mmorpg_core::CharacterId,
@@ -80,7 +113,10 @@ impl GrantId {
         }
     }
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.value
+    }
+    pub(crate) fn reward_key(&self) -> Option<mmorpg_core::RewardKey> {
+        self.reward
     }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

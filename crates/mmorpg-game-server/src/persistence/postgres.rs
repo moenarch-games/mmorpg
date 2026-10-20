@@ -429,9 +429,15 @@ impl PostgresJournal {
                 if write.release { store.release(&write.lease, None)?; }
                 for grant in &write.grants {
                     store.backend().with_sql(|transaction| {
-                        let inserted = transaction.execute("INSERT INTO mmorpg_persistence.grants (grant_id,character_id,zone_id,world_id,timeline,journal_position,record_revision) VALUES ($1,$2,$3,$4::text::uuid,$5,$6,$7) ON CONFLICT DO NOTHING", &[
+                        let key = grant.reward_key();
+                        let encoded = key.map(mmorpg_protocol::encode_reward_receipt).transpose().map_err(sql)?;
+                        let source = key.and_then(mmorpg_core::RewardKey::creature_life);
+                        let creature = source.map(|(id, _)| i64::from(id.get()));
+                        let life = source.map(|(_, life)| integer(life)).transpose()?;
+                        let world_owned = key.is_some_and(mmorpg_core::RewardKey::world_owned);
+                        let inserted = transaction.execute("INSERT INTO mmorpg_persistence.grants (grant_id,character_id,zone_id,world_id,timeline,journal_position,record_revision,reward_key,source_creature,source_life,world_owned) VALUES ($1,$2,$3,$4::text::uuid,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING", &[
                             &grant.as_str(), &write.lease.character_id.as_str(), &i64::from(self.fence.lease.zone_id.get()), &self.fence.world_id,
-                            &integer(self.fence.timeline)?, &integer(position)?, &integer(revision)?,
+                            &integer(self.fence.timeline)?, &integer(position)?, &integer(revision)?, &encoded, &creature, &life, &world_owned,
                         ]).map_err(sql)?;
                         if inserted != 1 { return Err(failure("grant already committed; admission/recovery must load its durable deduplication state")); }
                         Ok(())
@@ -599,6 +605,51 @@ impl PostgresJournal {
         }))
     }
 
+    /// Load exact receipts relevant to the current/future lives, bounded before
+    /// allocation. Quest completion receipts are character-global across worlds.
+    pub(crate) fn reward_receipts(
+        &mut self,
+        character: &CharacterId,
+        lives: &std::collections::BTreeMap<mmorpg_core::CreatureId, u64>,
+        maximum: u16,
+    ) -> Result<Vec<mmorpg_core::RewardKey>, StoreError> {
+        if maximum == 0 {
+            return Err(failure("reward receipt limit must be positive"));
+        }
+        let creatures: Vec<i64> = lives.keys().map(|id| i64::from(id.get())).collect();
+        let generations: Vec<i64> = lives
+            .values()
+            .copied()
+            .map(integer)
+            .collect::<Result<_, _>>()?;
+        self.entries.transaction(|store| store.backend().with_sql(|transaction| {
+            check_fence(transaction, &self.fence, false)?;
+            let rows = transaction.query(
+                "SELECT grant_id,character_id,world_id::text,zone_id,source_creature,source_life,world_owned,CASE WHEN octet_length(reward_key)::bigint<=$7 THEN reward_key ELSE NULL END AS key FROM mmorpg_persistence.grants WHERE reward_key IS NOT NULL AND ((world_id=$1::text::uuid AND zone_id=$2 AND (world_owned OR character_id=$3) AND EXISTS (SELECT 1 FROM unnest($4::bigint[],$5::bigint[]) AS lives(creature,life) WHERE source_creature=lives.creature AND source_life>=lives.life)) OR (character_id=$3 AND source_creature IS NULL)) ORDER BY grant_id LIMIT $6",
+                &[&self.fence.world_id, &i64::from(self.fence.lease.zone_id.get()), &character.as_str(), &creatures, &generations, &(i64::from(maximum)+1), &integer(mmorpg_protocol::MAX_REWARD_RECEIPT_BYTES as u64)?],
+            ).map_err(sql)?;
+            if rows.len() > usize::from(maximum) { return Err(failure("reward receipt admission limit reached")); }
+            let mut keys = std::collections::BTreeSet::new();
+            for row in rows {
+                let bytes: Option<Vec<u8>> = row.get("key");
+                let key = mmorpg_protocol::decode_reward_receipt(&bytes.ok_or_else(|| corrupt("oversized reward receipt metadata"))?).map_err(sql)?;
+                let owner = CharacterId::new(row.get::<_, String>(1)).map_err(sql)?;
+                let world: String = row.get(2);
+                let zone: u32 = unsigned(row.get(3))?.try_into().map_err(sql)?;
+                let expected = GrantId::for_reward(&world, mmorpg_core::ZoneId::new(zone), &owner, key).map_err(sql)?;
+                let source = key.creature_life();
+                if row.get::<_, String>(0) != expected.as_str()
+                    || row.get::<_, bool>("world_owned") != key.world_owned()
+                    || row.get::<_, Option<i64>>("source_creature") != source.map(|(id, _)| i64::from(id.get()))
+                    || row.get::<_, Option<i64>>("source_life") != source.map(|(_, life)| integer(life)).transpose()? {
+                    return Err(corrupt("reward receipt metadata differs from stable grant identity"));
+                }
+                keys.insert(key);
+            }
+            Ok(keys.into_iter().collect())
+        }))
+    }
+
     pub(crate) fn grant_ids(
         &mut self,
         character: Option<&CharacterId>,
@@ -676,6 +727,14 @@ fn digest_commit(payload: [u8; 32], writes: &[CharacterWrite]) -> Result<[u8; 32
         digest.update(record);
         digest.update((write.grants.len() as u64).to_be_bytes());
         for grant in &write.grants {
+            let key = grant
+                .reward_key()
+                .map(mmorpg_protocol::encode_reward_receipt)
+                .transpose()
+                .map_err(sql)?
+                .unwrap_or_default();
+            digest.update((key.len() as u64).to_be_bytes());
+            digest.update(key);
             digest.update((grant.as_str().len() as u64).to_be_bytes());
             digest.update(grant.as_str().as_bytes());
         }
@@ -824,7 +883,39 @@ mod tests {
             expected_revision: 0,
             record: record.clone(),
             release: false,
-            grants: [GrantId::new(format!("test/{zone_number}/reward")).unwrap()].into(),
+            grants: [
+                GrantId::new(format!("test/{zone_number}/reward")).unwrap(),
+                GrantId::for_reward(
+                    &fence.world_id,
+                    zone,
+                    &character,
+                    mmorpg_core::RewardKey::LootMoney {
+                        creature: mmorpg_core::CreatureId::new(7),
+                        life: 2,
+                    },
+                )
+                .unwrap(),
+                GrantId::for_reward(
+                    &fence.world_id,
+                    zone,
+                    &character,
+                    mmorpg_core::RewardKey::KillExperience {
+                        creature: mmorpg_core::CreatureId::new(7),
+                        life: 2,
+                    },
+                )
+                .unwrap(),
+                GrantId::for_reward(
+                    &fence.world_id,
+                    zone,
+                    &character,
+                    mmorpg_core::RewardKey::QuestCompletion {
+                        quest: mmorpg_core::QuestId::new(1),
+                    },
+                )
+                .unwrap(),
+            ]
+            .into(),
         }];
         let snapshot = live.advance_tick().unwrap();
         let batch = SnapshotCommitBatch {
@@ -838,6 +929,30 @@ mod tests {
         assert_eq!(
             journal.grant_ids(Some(&character)).unwrap(),
             writes[0].grants.iter().cloned().collect::<Vec<_>>()
+        );
+        let lives = [(mmorpg_core::CreatureId::new(7), 2)].into();
+        assert_eq!(
+            journal
+                .reward_receipts(&character, &lives, 4)
+                .unwrap()
+                .len(),
+            3
+        );
+        assert!(journal.reward_receipts(&character, &lives, 2).is_err());
+        let later = [(mmorpg_core::CreatureId::new(7), 3)].into();
+        assert_eq!(
+            journal.reward_receipts(&character, &later, 4).unwrap(),
+            vec![mmorpg_core::RewardKey::QuestCompletion {
+                quest: mmorpg_core::QuestId::new(1)
+            }]
+        );
+        let other = CharacterId::new("other-receipt-owner").unwrap();
+        assert_eq!(
+            journal.reward_receipts(&other, &lives, 4).unwrap(),
+            vec![mmorpg_core::RewardKey::LootMoney {
+                creature: mmorpg_core::CreatureId::new(7),
+                life: 2
+            }]
         );
         let committed = journal
             .characters(|store| store.committed(&character))
@@ -877,7 +992,10 @@ mod tests {
                 &super::super::checkpoints::VerifiedCheckpoint::for_sql_test(latest.clone()),
             )
             .unwrap();
-        assert_eq!(journal.grant_ids(Some(&character)).unwrap().len(), 1);
+        assert_eq!(
+            journal.grant_ids(Some(&character)).unwrap().len(),
+            writes[0].grants.len()
+        );
         let retained: i64 = coordinator
             .query_one(
                 "SELECT retained_batches FROM mmorpg_persistence.streams WHERE zone_id=$1",

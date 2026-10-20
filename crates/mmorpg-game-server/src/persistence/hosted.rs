@@ -27,6 +27,11 @@ use tokio::sync::{mpsc, oneshot};
 
 type Reply<T> = oneshot::Sender<Result<T, PersistenceError>>;
 
+pub(crate) struct ClaimedCharacter {
+    pub acquired: Acquired,
+    pub receipts: Vec<mmorpg_core::RewardKey>,
+}
+
 pub(crate) enum Durability {
     Development,
     Replicated { standby_url: String },
@@ -73,7 +78,7 @@ enum Request {
     Claim {
         id: CharacterId,
         player: game_server::PlayerId,
-        reply: Reply<Acquired>,
+        reply: Reply<ClaimedCharacter>,
     },
     Checkpoint {
         reply: Reply<()>,
@@ -176,7 +181,7 @@ impl HostedPersistence {
         &self,
         id: CharacterId,
         player: game_server::PlayerId,
-    ) -> Result<Acquired, PersistenceError> {
+    ) -> Result<ClaimedCharacter, PersistenceError> {
         self.request(|reply| Request::Claim { id, player, reply })
             .await
     }
@@ -238,6 +243,8 @@ struct State {
     content: Arc<ZoneContent>,
     match_id: MatchId,
     position: u64,
+    reward_lives: BTreeMap<mmorpg_core::CreatureId, u64>,
+    receipt_limit: Option<u16>,
     last_image: RecoveryImage,
     checkpoint_interval: u64,
     last_attempt_tick: u64,
@@ -258,19 +265,32 @@ impl State {
         &mut self,
         id: CharacterId,
         player: game_server::PlayerId,
-    ) -> Result<Acquired, StoreError> {
+    ) -> Result<ClaimedCharacter, StoreError> {
         self.ensure_authority()
             .map_err(|cause| StoreError::Backend(cause.to_string()))?;
         let holder = LeaseHolder {
             zone_id: self.fence.lease.zone_id,
             zone_epoch: self.fence.lease.epoch,
         };
-        if self.bindings.contains_key(&id) {
+        if self.bindings.contains_key(&id)
+            || self
+                .bindings
+                .values()
+                .any(|binding| binding.player == player)
+        {
             return Err(StoreError::Leased(holder));
         }
         let acquired = self
             .journal
             .characters(|store| store.acquire(&id, holder))?;
+        self.ensure_authority()
+            .map_err(|cause| StoreError::Backend(cause.to_string()))?;
+        let receipts = if let Some(maximum) = self.receipt_limit {
+            self.journal
+                .reward_receipts(&id, &self.reward_lives, maximum)?
+        } else {
+            Vec::new()
+        };
         self.ensure_authority()
             .map_err(|cause| StoreError::Backend(cause.to_string()))?;
         self.bindings.insert(
@@ -281,7 +301,7 @@ impl State {
                 seen: false,
             },
         );
-        Ok(acquired)
+        Ok(ClaimedCharacter { acquired, receipts })
     }
     fn tick(&mut self, batch: SnapshotCommitBatch) -> Result<(), PersistenceError> {
         self.ensure_authority()?;
@@ -390,6 +410,8 @@ impl State {
                 binding.acquired.record = Some(write.record);
             }
         }
+        self.reward_lives = zone.creature_lives().collect();
+        self.receipt_limit = zone.reward_history().map(|history| history.max_known_ids);
         self.last_image = batch.checkpoint;
         if self
             .last_image
@@ -620,6 +642,8 @@ fn initialize(
         content: config.content,
         match_id: config.match_id,
         position,
+        reward_lives: zone.creature_lives().collect(),
+        receipt_limit: zone.reward_history().map(|history| history.max_known_ids),
         last_image: image,
         checkpoint_interval: config.checkpoint_interval_ticks,
         last_attempt_tick: tick,
@@ -636,7 +660,7 @@ fn initialize(
         let acquired = state
             .claim(stored.record.character_id.clone(), stored.player)
             .map_err(error)?;
-        if acquired.record.as_ref() != Some(&stored.record) {
+        if acquired.acquired.record.as_ref() != Some(&stored.record) {
             return Err(error(
                 "recovered character differs from global committed progression",
             ));
@@ -778,7 +802,8 @@ mod tests {
         let character =
             CharacterId::new(format!("hosted-worker-{}", fence.lease.zone_id.get())).unwrap();
         let acquired = storage.claim(character.clone(), 1).await.unwrap();
-        assert!(acquired.record.is_none());
+        assert!(acquired.acquired.record.is_none());
+        assert!(acquired.receipts.is_empty());
         // A rejected duplicate claim is a routine refusal, not a storage failure.
         assert!(storage.claim(character.clone(), 1).await.is_err());
         let mut character_zone =
@@ -798,6 +823,13 @@ mod tests {
         record.copper = 37;
         let mut live = MatchRuntime::new_with_replay_capture(adapter(), 30);
         let session = live.admit(game_server::ReconnectToken([71; 16])).unwrap();
+        for key in acquired.receipts {
+            live.submit_host_input(
+                session.player_id,
+                &ZoneGameServerAdapter::reward_receipt_input(key).unwrap(),
+            )
+            .unwrap();
+        }
         live.submit_host_input(
             session.player_id,
             &ZoneGameServerAdapter::character_admission_input(&record).unwrap(),

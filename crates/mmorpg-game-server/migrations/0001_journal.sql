@@ -39,10 +39,19 @@ CREATE TABLE mmorpg_persistence.grants (
   world_id uuid NOT NULL,
   timeline bigint NOT NULL,
   journal_position bigint NOT NULL,
-  record_revision bigint NOT NULL CHECK (record_revision > 0)
+  record_revision bigint NOT NULL CHECK (record_revision > 0),
+  reward_key bytea,
+  source_creature bigint,
+  source_life bigint,
+  world_owned boolean NOT NULL DEFAULT false,
+  CHECK ((source_creature IS NULL AND source_life IS NULL)
+      OR (source_creature IS NOT NULL AND source_creature >= 0 AND source_life IS NOT NULL AND source_life > 0)),
+  CHECK (reward_key IS NOT NULL OR (source_creature IS NULL AND NOT world_owned))
 );
 CREATE INDEX grants_by_character ON mmorpg_persistence.grants(character_id);
 CREATE INDEX grants_by_world ON mmorpg_persistence.grants(world_id);
+CREATE INDEX grants_world_source ON mmorpg_persistence.grants(world_id,zone_id,source_creature,source_life) WHERE world_owned;
+CREATE INDEX grants_personal_source ON mmorpg_persistence.grants(character_id,world_id,zone_id,source_creature,source_life) WHERE NOT world_owned;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mmorpg_zone_journal') THEN
     CREATE ROLE mmorpg_zone_journal NOLOGIN;

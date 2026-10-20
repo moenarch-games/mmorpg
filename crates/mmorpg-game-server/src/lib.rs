@@ -66,6 +66,7 @@ pub struct ZoneGameServerAdapter {
     parked_characters:
         std::collections::BTreeMap<game_server::PlayerId, character_admission::ParkedCharacter>,
     character_ownership: Option<Arc<std::fs::File>>,
+    requires_character_claims: bool,
     authority: Option<Arc<mmorpg_control_plane::LocalZonePermit>>,
 }
 
@@ -82,6 +83,9 @@ impl ZoneGameServerAdapter {
             .map_err(|error| SimulationError::new(error.to_string()))?;
         self.authority = Some(permit);
         Ok(self)
+    }
+    pub fn require_durable_character_claims(&mut self) {
+        self.requires_character_claims = true;
     }
     fn ensure_authority(&self) -> Result<(), SimulationError> {
         if let Some(permit) = &self.authority {
@@ -103,6 +107,7 @@ impl ZoneGameServerAdapter {
             characters: Default::default(),
             parked_characters: Default::default(),
             character_ownership: None,
+            requires_character_claims: false,
             authority: None,
         }
     }
@@ -118,6 +123,7 @@ impl ZoneGameServerAdapter {
             characters: Default::default(),
             parked_characters: Default::default(),
             character_ownership: None,
+            requires_character_claims: false,
             authority: None,
         })
     }
@@ -230,7 +236,7 @@ impl GameSimulation for ZoneGameServerAdapter {
         payload: &[u8],
     ) -> Result<(), SimulationError> {
         self.ensure_authority()?;
-        if self.character_ownership.is_some() && !self.characters.contains_key(&player_id) {
+        if self.requires_character_claims && !self.characters.contains_key(&player_id) {
             return Err(SimulationError::new(
                 "claim a durable character before gameplay",
             ));

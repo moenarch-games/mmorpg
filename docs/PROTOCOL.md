@@ -512,3 +512,11 @@ activation. These fields never enter player projections; their layout is unchang
 Commands remain v13. Older v28 snapshots/checkpoints fail closed, and their fixtures
 are retained as compatibility evidence. Reward storage and admission are composed
 by the host, with no database I/O inside core ticks.
+
+Trusted receipt admission uses host-input family version 1, tag 3, followed by a
+version-1 reward receipt (at most 16 bytes). These inputs come from the fenced
+storage worker, never a client command. Load every receipt before the character
+admission input activates its body; duplicate pages are idempotent and emit no
+new grant. Personal receipts survive the staged placeholder-body replacement.
+Queries retain only current/future creature lives, plus character-global quest
+completion, and fail closed if the configured receipt bound is exceeded.

@@ -8,6 +8,9 @@ use mmorpg_core::{
 };
 use std::collections::BTreeSet;
 
+/// Version byte plus the largest tagged receipt (kill objective or quest item).
+pub const MAX_REWARD_RECEIPT_BYTES: usize = 16;
+
 fn error(cause: impl std::fmt::Display) -> ProtocolError {
     ProtocolError::new(cause.to_string())
 }
@@ -214,4 +217,20 @@ mod tests {
         assert_eq!(offset, bytes.len());
         assert!(decode_history(&bytes[..bytes.len() - 1], &mut 0).is_err());
     }
+}
+
+/// Versioned receipt metadata used by the PostgreSQL adapter and trusted inputs.
+pub fn encode_reward_receipt(key: RewardKey) -> Result<Vec<u8>, ProtocolError> {
+    let mut bytes = vec![1];
+    encode_key(&mut bytes, key)?;
+    Ok(bytes)
+}
+pub fn decode_reward_receipt(bytes: &[u8]) -> Result<RewardKey, ProtocolError> {
+    if bytes.first() != Some(&1) {
+        return Err(error("unsupported reward receipt version"));
+    }
+    let mut offset = 1;
+    let key = decode_key(bytes, &mut offset)?;
+    crate::wire::ensure_fully_consumed(bytes, offset)?;
+    Ok(key)
 }

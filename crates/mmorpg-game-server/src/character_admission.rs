@@ -39,11 +39,33 @@ impl ZoneGameServerAdapter {
         Ok(payload)
     }
 
+    /// Receipt pages are trusted server inputs loaded before character activation.
+    /// A page is independently replayable and idempotent; no database is queried here.
+    pub fn reward_receipt_input(key: mmorpg_core::RewardKey) -> Result<Vec<u8>, SimulationError> {
+        let mut payload = vec![1, 3];
+        payload.extend_from_slice(
+            &mmorpg_protocol::encode_reward_receipt(key).map_err(map_protocol_error)?,
+        );
+        Ok(payload)
+    }
+
     pub(super) fn admit_stored_character(
         &mut self,
         player: game_server::PlayerId,
         payload: &[u8],
     ) -> Result<(), SimulationError> {
+        if let Some(bytes) = payload.strip_prefix(&[1, 3]) {
+            if self.characters.contains_key(&player) {
+                return Err(SimulationError::new(
+                    "reward receipts must precede character activation",
+                ));
+            }
+            let key = mmorpg_protocol::decode_reward_receipt(bytes).map_err(map_protocol_error)?;
+            return self
+                .zone
+                .load_reward_receipt(player, key)
+                .map_err(map_zone_error);
+        }
         if payload == [1, 2] {
             let id = self
                 .characters
@@ -80,12 +102,22 @@ impl ZoneGameServerAdapter {
             self.zone.content().clone(),
         )
         .map_err(map_zone_error)?;
+        let receipts = candidate
+            .reward_history()
+            .and_then(|history| history.players.get(&player))
+            .cloned()
+            .unwrap_or_default();
         if !candidate.remove_player(player) {
             return Err(SimulationError::new("unknown admission session"));
         }
         candidate
             .admit_character(player, &record)
             .map_err(map_zone_error)?;
+        for key in receipts {
+            candidate
+                .load_reward_receipt(player, key)
+                .map_err(map_zone_error)?;
+        }
         self.zone = candidate;
         self.characters.insert(player, record.character_id);
         Ok(())
@@ -93,6 +125,7 @@ impl ZoneGameServerAdapter {
     /// Holds the development directory lock for the whole simulation lifetime.
     pub fn require_character_claims(&mut self, ownership: std::sync::Arc<std::fs::File>) {
         self.character_ownership = Some(ownership);
+        self.requires_character_claims = true;
     }
 
     pub(super) fn character_snapshot(
@@ -293,6 +326,60 @@ mod tests {
         )
         .unwrap();
         assert_eq!(verified.final_snapshot, snapshot);
+    }
+
+    #[test]
+    fn receipt_inputs_rebind_personal_history_and_replay_under_a_new_session() {
+        let adapter = || {
+            let mut adapter =
+                ZoneGameServerAdapter::with_content(ZoneId::new(1), greyhaven_vale::content())
+                    .unwrap();
+            adapter.zone_mut().enable_reward_tracking(64, 16).unwrap();
+            adapter.require_durable_character_claims();
+            adapter
+        };
+        let creature = greyhaven_vale::content().creature_spawns()[0].id;
+        let keys = [
+            mmorpg_core::RewardKey::KillExperience { creature, life: 1 },
+            mmorpg_core::RewardKey::LootMoney { creature, life: 1 },
+        ];
+        let mut live = MatchRuntime::new_with_replay_capture(adapter(), 30);
+        let first = live.admit(ReconnectToken([31; 16])).unwrap();
+        for key in keys {
+            let input = ZoneGameServerAdapter::reward_receipt_input(key).unwrap();
+            assert!(input.len() <= game_server::MAX_COMMAND_PAYLOAD_BYTES);
+            live.submit_host_input(first.player_id, &input).unwrap();
+            live.submit_host_input(first.player_id, &input).unwrap();
+        }
+        let admission = ZoneGameServerAdapter::character_admission_input(&record()).unwrap();
+        live.submit_host_input(first.player_id, &admission).unwrap();
+        live.advance_tick().unwrap();
+        live.submit_host_input(first.player_id, &[1, 2]).unwrap();
+        let next = live.admit(ReconnectToken([32; 16])).unwrap();
+        assert_ne!(first.player_id, next.player_id);
+        for key in keys {
+            live.submit_host_input(
+                next.player_id,
+                &ZoneGameServerAdapter::reward_receipt_input(key).unwrap(),
+            )
+            .unwrap();
+        }
+        live.submit_host_input(next.player_id, &admission).unwrap();
+        let snapshot = live.advance_tick().unwrap();
+        let (zone, _) =
+            ZoneGameServerAdapter::decode_stored_zone(&snapshot.payload, greyhaven_vale::content())
+                .unwrap();
+        let history = zone.reward_history().unwrap();
+        assert!(!history.players.contains_key(&first.player_id));
+        assert!(!history.allows(next.player_id, keys[0]));
+        assert!(!history.allows(next.player_id, keys[1]));
+        assert!(history.grants.is_empty());
+        let verified = verify_replay(adapter(), live.replay_log().unwrap()).unwrap();
+        assert_eq!(verified.final_snapshot, snapshot);
+        live.freeze_for_recovery();
+        let recovered =
+            MatchRuntime::restore_from_recovery(adapter(), live.recovery_image().unwrap()).unwrap();
+        assert_eq!(recovered.snapshot().unwrap(), snapshot);
     }
 
     #[test]

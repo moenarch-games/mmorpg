@@ -266,6 +266,11 @@ impl crate::ZoneSimulation {
         player: PlayerId,
         key: RewardKey,
     ) -> Result<(), ZoneError> {
+        key.validate()?;
+        let history = self
+            .rewards
+            .as_mut()
+            .ok_or_else(|| ZoneError::new("reward tracking is disabled"))?;
         if !key.world_owned() && !self.players.contains_key(&player) {
             return Err(ZoneError::new("reward receipt player is absent"));
         }
@@ -275,10 +280,19 @@ impl crate::ZoneSimulation {
         {
             return Err(ZoneError::new("reward receipt creature is absent"));
         }
-        self.rewards
-            .as_mut()
-            .ok_or_else(|| ZoneError::new("reward tracking is disabled"))?
-            .load(player, key)
+        if key.creature_life().is_some_and(|(id, life)| {
+            self.creatures
+                .get(&id)
+                .is_some_and(|creature| life < creature.generation)
+        }) {
+            return Ok(());
+        }
+        history.load(player, key)
+    }
+    pub fn creature_lives(&self) -> impl Iterator<Item = (CreatureId, u64)> + '_ {
+        self.creatures
+            .iter()
+            .map(|(id, state)| (*id, state.generation))
     }
     #[must_use]
     pub fn reward_history(&self) -> Option<&RewardHistory> {

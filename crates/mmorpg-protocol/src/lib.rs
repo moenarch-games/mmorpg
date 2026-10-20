@@ -27,6 +27,7 @@ pub use projection::{
     DEBRIS_RECORD_BYTES, ENTITY_RECORD_BYTES, EVENT_RECORD_BYTES, MAX_WIRE_ENTITIES,
     PLAYER_SNAPSHOT_FIXED_BYTES, PackedSnapshot, decode_snapshot, encode_snapshot, pack_snapshot,
 };
+pub use rewards::{MAX_REWARD_RECEIPT_BYTES, decode_reward_receipt, encode_reward_receipt};
 
 use std::error::Error;
 use std::fmt;
