@@ -105,6 +105,13 @@ impl ZoneSimulation {
                 self.cancel_cast(player_id);
                 None
             }
+            PlayerIntent::Repair(piece) => {
+                if alive {
+                    self.start_repair(player_id, piece)?
+                } else {
+                    Some((ErrorCode::YouAreDead, None))
+                }
+            }
             // Held like movement; the dead hold no guard.
             PlayerIntent::Guard(lane) => {
                 if alive {

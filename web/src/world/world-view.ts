@@ -235,6 +235,7 @@ export class WorldView {
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
   readonly #impacts = new ImpactEffects();
   #reachableDoor: (x: number, z: number) => number = () => 0;
+  #reachablePieces: (x: number, z: number) => readonly number[] = () => [];
   #restClip: (kind: ImportedModelKind) => string = () => { throw new Error("No world is loaded."); };
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][]][] = [];
@@ -379,6 +380,7 @@ export class WorldView {
     // starting area's pieces, and play fetches each area the player approaches.
     this.#regions = new RegionArt(world, this.#models, this.#inn, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.inn.reachableDoor;
+    this.#reachablePieces = world.scenery.reachablePieces;
     this.#units = null;
     this.#sceneryFrame = new SceneryFrame(this.#scene);
     this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
@@ -576,18 +578,26 @@ export class WorldView {
 
   /**
    * Interact (T / gamepad Start): talk to a selected NPC; without one, swing the door in reach
-   * (#158); otherwise open the quest dialog, which says whom to approach.
+   * (#158), or repair a damaged structure piece in reach (#305, free; moving stops it);
+   * otherwise open the quest dialog, which says whom to approach.
    */
   interact(): void {
     const projection = this.#lastProjection;
     // The viewer leads every projection; positions are in units.
     const at = projection?.entities[0]?.position;
-    const door = at && projection.viewer.target?.kind !== "npc" ? this.#reachableDoor(at[0], at[2]) : 0;
-    if (door === 0) {
-      this.toggleQuestDialog();
+    const talking = projection?.viewer.target?.kind === "npc";
+    const door = at && !talking ? this.#reachableDoor(at[0], at[2]) : 0;
+    if (door !== 0) {
+      this.queueIntent((latest) => doorToggle(latest, door));
       return;
     }
-    this.queueIntent((latest) => doorToggle(latest, door));
+    const damaged = new Set(projection?.pieces.map((view) => view.piece) ?? []);
+    const piece = at && !talking ? this.#reachablePieces(at[0], at[2]).find((id) => damaged.has(id)) : undefined;
+    if (piece !== undefined) {
+      this.queueIntent(() => ({ kind: "repair", piece }));
+      return;
+    }
+    this.toggleQuestDialog();
   }
 
   toggleQuestLog(): void {

@@ -56,6 +56,8 @@ pub enum PlayerIntent {
         door: crate::DoorId,
         open: bool,
     },
+    /// Starts or stops repairing a destructible piece (#305).
+    Repair(Option<crate::PieceId>),
     CancelCast,
     ChooseClass {
         class: u8,
@@ -150,6 +152,8 @@ pub struct CanonicalPlayerCombat {
     pub combo: Option<crate::ComboOpening>,
     /// Ticks left of a directed strike's committed recovery (#156).
     pub strike_recovery: u16,
+    /// The destructible piece the player is repairing (#305).
+    pub repairing: Option<crate::PieceId>,
 }
 
 /// Class, resource and ability state of a player; all zero and empty until
@@ -202,6 +206,7 @@ impl Default for CanonicalPlayerCombat {
             landing: crate::LandingState::default(),
             combo: None,
             strike_recovery: 0,
+            repairing: None,
         }
     }
 }
@@ -283,6 +288,8 @@ pub struct CanonicalZoneSnapshot {
     /// Pieces of broken props in ID order, and the next piece ID (#288).
     pub debris: Vec<crate::Debris>,
     pub next_debris: u32,
+    /// Every destructible piece's health and last change, in content order (#305).
+    pub pieces: Vec<crate::CanonicalPiece>,
 }
 
 impl ZoneSimulation {
@@ -337,6 +344,7 @@ impl ZoneSimulation {
                         landing: state.landing,
                         combo: state.combo,
                         strike_recovery: state.strike_recovery,
+                        repairing: state.repairing,
                     },
                     chat_ready_at: state.chat_ready_at,
                     chat: state.chat.clone(),
@@ -355,11 +363,13 @@ impl ZoneSimulation {
                             .world
                             .body(body_id(EntityRef::Creature(creature_id)))
                             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
-                        (
-                            body.exact_position(),
-                            body.exact_velocity(),
-                            CreatureLife::Alive,
-                        )
+                        // A movable prop's exact slide state (#58).
+                        let (position, velocity) = self
+                            .prop_motion_of(creature_id)
+                            .map_or((body.exact_position(), body.exact_velocity()), |motion| {
+                                (motion.position, motion.velocity)
+                            });
+                        (position, velocity, CreatureLife::Alive)
                     }
                     Life::Corpse { died_at, position } => (
                         position.map(|axis| axis as f32),
@@ -408,6 +418,7 @@ impl ZoneSimulation {
             forced: self.forced_states(),
             debris: self.debris.values().copied().collect(),
             next_debris: self.next_debris,
+            pieces: self.canonical_pieces(),
         })
     }
 
@@ -459,6 +470,7 @@ impl ZoneSimulation {
                 "snapshot doors do not match the content doors",
             ));
         }
+        zone.restore_pieces(&snapshot.pieces, snapshot.tick)?;
         for (view, door) in snapshot.doors.iter().zip(&doors) {
             if view.changed_tick > snapshot.tick {
                 return Err(ZoneError::new(
@@ -493,8 +505,10 @@ impl ZoneSimulation {
         zone.next_projectile = snapshot.next_projectile;
         zone.restore_forced(snapshot.forced)?;
         zone.restore_debris(snapshot.debris, snapshot.next_debris)?;
-        // The snapshot tick's routine placements; doors are already as that tick left them.
+        // The snapshot tick's routine placements and platforms (#56); doors are already as that
+        // tick left them.
         zone.place_routine_npcs(false)?;
+        zone.schedule_platforms(zone.tick, true)?;
         zone.validate_references()?;
         zone.rebuild_interest()?;
         Ok(zone)
@@ -571,6 +585,11 @@ impl ZoneSimulation {
         if combat.strike_recovery > crate::STRIKE_RECOVERY_TICKS {
             return Err(ZoneError::new("player strike recovery is out of range"));
         }
+        if combat.repairing.is_some_and(|piece| {
+            !alive || !self.content.pieces().iter().any(|known| known.id == piece)
+        }) {
+            return Err(ZoneError::new("player repair is invalid"));
+        }
         if !combat.landing.is_valid() {
             return Err(ZoneError::new("player landing state is out of range"));
         }
@@ -599,6 +618,7 @@ impl ZoneSimulation {
                 landing: combat.landing,
                 combo: combat.combo,
                 strike_recovery: combat.strike_recovery,
+                repairing: combat.repairing,
                 last_sequence: player.last_sequence,
                 spawn_slot: player.spawn_slot,
                 copper: player.copper,
@@ -695,10 +715,18 @@ impl ZoneSimulation {
                 if record.health == 0 {
                     return Err(ZoneError::new("a living creature needs health"));
                 }
+                let movable = template.prop().is_some_and(crate::PropKind::movable);
                 if template.prop().is_some()
+                    && !movable
                     && (record.velocity != [0.0; 3] || record.position.map(f32::fract) != [0.0; 3])
                 {
                     return Err(ZoneError::new("a standing prop is fixed in whole units"));
+                }
+                if movable {
+                    self.place_movable_prop(record.creature_id, record.position);
+                    if let Some(motion) = self.prop_motion.get_mut(&record.creature_id) {
+                        motion.velocity = record.velocity;
+                    }
                 }
                 self.world
                     .add_body(crate::creature::creature_body(
@@ -965,13 +993,14 @@ fn validate_auras(auras: &[Aura]) -> Result<(), ZoneError> {
 }
 
 /// A recovered cast: `ability` casts or channels, the elapsed time stays
-/// below its cast time, a hostile ability has a target and only a channel
-/// keeps a target point.
+/// below its cast time, a hostile ability has a target (unless it aims freely, #289) and only a
+/// channel keeps a target point.
 fn validate_cast(cast: CastState) -> Result<(), ZoneError> {
     let valid = ability_by_id(cast.ability).is_some_and(|ability| {
         cast.elapsed < ability.cast.ticks()
             && cast.point.is_some() == ability.cast.is_channel()
-            && cast.target.is_some() == ability.needs_target()
+            && (cast.target.is_some() == ability.needs_target()
+                || (cast.target.is_none() && ability.aims_freely()))
             && cast
                 .point
                 .is_none_or(|point| point.into_iter().all(within_content_range))

@@ -220,3 +220,45 @@ fn charge_rushes_at_the_target_and_knocks_it_back() {
         "the charge knocked the wolf: {forced:?}"
     );
 }
+
+/// Two posts across the charge's path at z = 700 leaving `gap` units around x = 0.
+fn posts(gap: i32) -> Vec<StaticCollider> {
+    [(2, -1), (3, 1)]
+        .map(|(id, side): (u32, i32)| StaticCollider {
+            id,
+            position: [side * (gap / 2 + 100), 100, 700],
+            half_extents: [100, 100, 20],
+        })
+        .to_vec()
+}
+
+#[test]
+fn a_charge_needs_a_path_as_wide_as_the_warden() {
+    // A 40-unit gap: the sight line threads it, the 60-unit-wide Warden does not (#57).
+    let run = || {
+        let mut narrow = Caster::new(content(posts(40), &[[0, 1_450]]), WARDEN);
+        narrow.cast(ids::CHARGE, creature(1));
+        narrow.ticks(2);
+        assert!(
+            narrow.events.iter().any(|event| matches!(
+                event,
+                ZoneEvent::Error {
+                    code: mmorpg_core::ErrorCode::LineOfSight,
+                    ..
+                }
+            )),
+            "{:?}",
+            narrow.refusals()
+        );
+        assert!(narrow.player_at()[1].abs() < 1.0, "no charge");
+        // A 1 m gap lets the charge through.
+        let mut wide = Caster::new(content(posts(100), &[[0, 1_450]]), WARDEN);
+        wide.cast(ids::CHARGE, creature(1));
+        wide.ticks(30);
+        assert!(wide.refusals().is_empty(), "{:?}", wide.refusals());
+        assert!(wide.player_at()[1] > 1_000.0, "{:?}", wide.player_at());
+    };
+    run();
+    #[cfg(feature = "physics-ab")]
+    mmorpg_core::physics::using_backend(mmorpg_core::physics::Backend::Engine, run);
+}

@@ -180,8 +180,10 @@ impl ZoneSimulation {
     pub(crate) fn spawn_creature(&mut self, id: CreatureId) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
         let (spawn, template) = Self::creature_content(&content, id)?;
-        // A prop (#288) stands at its lowest level and draws nothing from the zone RNG.
-        let (level, wait) = if template.prop().is_some() {
+        // A prop (#288) or a large creature (#297), which holds its ground while idle, stands
+        // at its lowest level and draws nothing from the zone RNG, so adding one rerolls no
+        // other creature.
+        let (level, wait) = if template.prop().is_some() || template.is_large() {
             (template.min_level, 0)
         } else {
             let level = self
@@ -209,6 +211,12 @@ impl ZoneSimulation {
             ))
             .map_err(physics_error)?;
         self.place_in_interest(entity, position.x, position.z);
+        if template.prop().is_some_and(crate::PropKind::movable) {
+            self.place_movable_prop(
+                id,
+                crate::physics::from_units([position.x, position.y, position.z]),
+            );
+        }
         self.creatures.insert(
             id,
             CreatureState {

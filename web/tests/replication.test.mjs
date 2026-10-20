@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v26.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v28.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({
@@ -30,7 +30,8 @@ const STATS = EQUIPMENT + 12;
 /** The quest part ends the sheet: mask, one entry, two markers (16 bytes). */
 const QUESTS = STATS + 8;
 const DOORS = INVENTORY + 8 + 1 + 84 + 16 + 1;
-const EVENTS = DOORS + 1 + 2 * 2;
+const PIECES = DOORS + 1 + 2 * 2;
+const EVENTS = PIECES + 1 + 2 * 3;
 /** Two chat lines and an emote follow the sixteen events: 6 + 16, 6 + 8 and 6 bytes. */
 const CHAT = EVENTS + 1 + 16 * 14;
 const EMOTE = CHAT + 1 + 22 + 14;
@@ -88,7 +89,7 @@ describe("Rust/browser snapshot contract", () => {
     }
   });
   test("decodes the same golden bytes as the Rust encoder", () => {
-    expect(fixture.length).toBe(114 + 2 * 2 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21 + 2 * 14);
+    expect(fixture.length).toBe(115 + 2 * 2 + 2 * 3 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21 + 3 * 14);
     expect(decodeSnapshot(fixture)).toEqual({
       zoneId: 42, tick: 99n, contentRevision: 4n, acknowledgedSequence: 81, viewerId: 7,
       viewer: {
@@ -115,6 +116,7 @@ describe("Rust/browser snapshot contract", () => {
       },
       loot: null,
       doors: [{ door: 1, open: true }, { door: 2, open: false }],
+      pieces: [{ piece: 2, stage: "damaged" }, { piece: 0x0105, stage: "destroyed" }],
       events: [
         { kind: "damage-dealt", source: VIEWER, target: WOLF, amount: 7, critical: true },
         { kind: "damage-taken", source: WOLF, target: VIEWER, amount: 3, critical: false },
@@ -160,6 +162,7 @@ describe("Rust/browser snapshot contract", () => {
       projectiles: [
         { id: 3, kind: "arrow", x: 120, y: 110, z: -340, yaw: 16_384, pitch: -900, stuck: false },
         { id: 65_535, kind: "bolt", x: -32_768, y: 0, z: 32_767, yaw: 0, pitch: 16_384, stuck: true },
+        { id: 7, kind: "missile", x: 60, y: 130, z: -200, yaw: 49_152, pitch: 0, stuck: false },
       ],
       debris: [],
     });
@@ -226,6 +229,10 @@ describe("Rust/browser snapshot contract", () => {
       [DOORS, 17, "door capacity"],
       [DOORS + 2, 2, "door section"],
       [DOORS + 3, 1, "door section"],
+      [PIECES, 7, "structure piece capacity"],
+      [PIECES + 3, 0, "structure piece section"],
+      [PIECES + 3, 4, "structure piece section"],
+      [PIECES + 1, 2, "structure piece section"],
       [EVENTS, 17, "event capacity"],
       [EVENTS + 1, 255, "event kind"],
       [EVENTS + 1 + 14 * 14 + 1, 0, "Quest id"],
@@ -238,7 +245,7 @@ describe("Rust/browser snapshot contract", () => {
       [QUESTS + 9, 9, "too many markers"],
       [QUESTS + 12, 4, "Inconsistent quest marker"],
       [QUESTS + 14, 1, "Inconsistent quest marker"],
-      [EVENTS + 1 + 7 * 14 + 1, 18, "Unknown ability"],
+      [EVENTS + 1 + 7 * 14 + 1, 19, "Unknown ability"],
       [EVENTS + 1 + 7 * 14 + 1, 0, "Unknown ability"],
       [EVENTS + 1 + 8 * 14 + 13, 1, "Malformed"],
       [EVENTS + 1 + 13 * 14 + 1, 1, "flags"],

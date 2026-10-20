@@ -103,7 +103,8 @@ bot = "warden"
 action = "use_ability"
 ability = 1
 
-# Firebolt needs a target; Frost Nova belongs to level 2.
+# Firebolt without a target aims along the facing (#289), so walking interrupts its cast;
+# Frost Nova belongs to level 2.
 [[steps]]
 tick = 1
 bot = "arcanist"
@@ -413,7 +414,7 @@ tick = 2
 [[expect]]
 kind = "event"
 bot = "arcanist"
-event = "error:invalid_target"
+event = "interrupted"
 tick = 2
 
 [[expect]]
@@ -517,7 +518,7 @@ bot = "ranger"
 event = "error:not_ready"
 tick = 571
 
-# Firebolt completes 60 ticks after it started, pays 25 mana and kills.
+# Firebolt completes 60 ticks after it started and pays 25 mana; its missile kills (#289).
 [[expect]]
 kind = "event"
 bot = "arcanist"
@@ -530,7 +531,7 @@ kind = "event"
 bot = "arcanist"
 event = "died"
 entity = "creature:108"
-tick = 560
+by_tick = 580
 
 [[expect]]
 kind = "resource"
@@ -543,7 +544,7 @@ kind = "unit"
 bot = "warden"
 entity = "creature:108"
 state = "dead"
-tick = 560
+by_tick = 580
 
 # Focus regenerates 5 per second back to full.
 [[expect]]

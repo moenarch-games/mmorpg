@@ -39,6 +39,10 @@ pub struct ZoneContent {
     quest_revision: u64,
     quests: Vec<crate::Quest>,
     doors: Vec<crate::Door>,
+    platforms: Vec<crate::Platform>,
+    ramps: Vec<crate::Ramp>,
+    sites: Vec<crate::StructureSite>,
+    pieces: Vec<crate::StructurePiece>,
     routines: Vec<crate::NpcRoutine>,
     closed_at_night: Vec<NpcId>,
 }
@@ -140,6 +144,10 @@ impl ZoneContent {
             quest_revision: 0,
             quests: Vec::new(),
             doors: Vec::new(),
+            platforms: Vec::new(),
+            ramps: Vec::new(),
+            sites: Vec::new(),
+            pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
         };
@@ -171,6 +179,10 @@ impl ZoneContent {
             quest_revision: 0,
             quests: Vec::new(),
             doors: Vec::new(),
+            platforms: Vec::new(),
+            ramps: Vec::new(),
+            sites: Vec::new(),
+            pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
         };
@@ -498,6 +510,127 @@ impl ZoneContent {
         Ok(self)
     }
 
+    /// Binds moving platforms (#56): unique IDs, bodies in the static collider namespace that
+    /// no collider or door uses, valid boxes and schedules.
+    pub fn with_platforms(
+        mut self,
+        mut platforms: Vec<crate::Platform>,
+    ) -> Result<Self, ZoneError> {
+        if platforms.len() > crate::MAX_PLATFORMS {
+            return Err(ZoneError::new("zone platform content capacity reached"));
+        }
+        platforms.sort_by_key(|platform| platform.id);
+        if platforms
+            .windows(2)
+            .any(|pair| pair[0].id == pair[1].id || pair[0].body == pair[1].body)
+        {
+            return Err(ZoneError::new("duplicate platform id or body"));
+        }
+        for platform in &platforms {
+            platform.validate()?;
+            if u64::from(platform.body) >= crate::entity::PLAYER_BODY_BASE
+                || self
+                    .definition
+                    .colliders()
+                    .iter()
+                    .any(|c| c.id == platform.body)
+                || self.doors.iter().any(|door| door.body == platform.body)
+            {
+                return Err(ZoneError::new(
+                    "platform body collides with another body id",
+                ));
+            }
+        }
+        self.platforms = platforms;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Binds ramps (#59): bodies in the static collider namespace that no collider, door,
+    /// platform or other ramp uses, with valid boxes. Ramps are ordered by body.
+    pub fn with_ramps(mut self, mut ramps: Vec<crate::Ramp>) -> Result<Self, ZoneError> {
+        if ramps.len() > crate::MAX_RAMPS {
+            return Err(ZoneError::new("zone ramp content capacity reached"));
+        }
+        ramps.sort_by_key(|ramp| ramp.body);
+        if ramps.windows(2).any(|pair| pair[0].body == pair[1].body) {
+            return Err(ZoneError::new("duplicate ramp body"));
+        }
+        for ramp in &ramps {
+            ramp.validate()?;
+            if u64::from(ramp.body) >= crate::entity::PLAYER_BODY_BASE
+                || self
+                    .definition
+                    .colliders()
+                    .iter()
+                    .any(|c| c.id == ramp.body)
+                || self.doors.iter().any(|door| door.body == ramp.body)
+                || self
+                    .platforms
+                    .iter()
+                    .any(|platform| platform.body == ramp.body)
+            {
+                return Err(ZoneError::new("ramp body collides with another body id"));
+            }
+        }
+        self.ramps = ramps;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Binds destructible structures (#305): sites and pieces in ID order, piece bodies in the
+    /// static collider namespace that nothing else uses, supports among earlier pieces.
+    pub fn with_structures(
+        mut self,
+        sites: Vec<crate::StructureSite>,
+        pieces: Vec<crate::StructurePiece>,
+    ) -> Result<Self, ZoneError> {
+        crate::structure::validate(&sites, &pieces)?;
+        let mut bodies: Vec<_> = pieces.iter().map(|piece| piece.body).collect();
+        bodies.sort_unstable();
+        if bodies.windows(2).any(|pair| pair[0] == pair[1])
+            || bodies.iter().any(|&body| {
+                u64::from(body) >= crate::entity::PLAYER_BODY_BASE
+                    || self.definition.colliders().iter().any(|c| c.id == body)
+                    || self.doors.iter().any(|door| door.body == body)
+                    || self.platforms.iter().any(|platform| platform.body == body)
+                    || self.ramps.iter().any(|ramp| ramp.body == body)
+            })
+        {
+            return Err(ZoneError::new(
+                "structure piece body collides with another body id",
+            ));
+        }
+        self.sites = sites;
+        self.pieces = pieces;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Destructible sites in ID order (#305).
+    #[must_use]
+    pub fn sites(&self) -> &[crate::StructureSite] {
+        &self.sites
+    }
+
+    /// Destructible pieces in ID order (#305).
+    #[must_use]
+    pub fn pieces(&self) -> &[crate::StructurePiece] {
+        &self.pieces
+    }
+
+    /// Ordered by body.
+    #[must_use]
+    pub fn ramps(&self) -> &[crate::Ramp] {
+        &self.ramps
+    }
+
+    /// Ordered by platform ID.
+    #[must_use]
+    pub fn platforms(&self) -> &[crate::Platform] {
+        &self.platforms
+    }
+
     /// Ordered by door ID.
     #[must_use]
     pub fn doors(&self) -> &[crate::Door] {
@@ -574,6 +707,91 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_ramp_fingerprint();
+        if self.pieces.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v11");
+        hash.u64(fingerprint);
+        hash.len(self.sites.len());
+        for site in &self.sites {
+            hash.u8(site.id);
+            hash.text(&site.name);
+            hash.u32(site.regrowth_ticks);
+        }
+        hash.len(self.pieces.len());
+        for piece in &self.pieces {
+            hash.u32(u32::from(piece.id.get()));
+            hash.u8(piece.site);
+            hash.u32(piece.body);
+            for value in piece.position.iter().chain(&piece.half_extents) {
+                hash.i32(*value);
+            }
+            hash.u32(piece.health);
+            hash.len(piece.supports.len());
+            for support in &piece.supports {
+                hash.u32(u32::from(support.get()));
+            }
+            match piece.rubble {
+                None => hash.u8(0),
+                Some((centre, half)) => {
+                    hash.u8(1);
+                    for value in centre.iter().chain(&half) {
+                        hash.i32(*value);
+                    }
+                }
+            }
+        }
+        hash.finish()
+    }
+
+    fn compute_ramp_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_platform_fingerprint();
+        if self.ramps.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v10");
+        hash.u64(fingerprint);
+        hash.len(self.ramps.len());
+        for ramp in &self.ramps {
+            hash.u32(ramp.body);
+            for value in ramp.position.iter().chain(&ramp.half_extents) {
+                hash.i32(*value);
+            }
+            hash.u8(ramp.rises.code());
+        }
+        hash.finish()
+    }
+
+    fn compute_platform_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_routine_fingerprint();
+        if self.platforms.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/v9");
+        hash.u64(fingerprint);
+        hash.len(self.platforms.len());
+        for platform in &self.platforms {
+            hash.u8(platform.id.get());
+            hash.u32(platform.body);
+            for value in platform
+                .half_extents
+                .iter()
+                .chain(&platform.low)
+                .chain(&platform.high)
+            {
+                hash.i32(*value);
+            }
+            hash.i32(platform.speed);
+            hash.u32(platform.dwell);
+        }
+        hash.finish()
+    }
+
+    fn compute_routine_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_door_fingerprint();
         if self.routines.is_empty() && self.closed_at_night.is_empty() {
             return fingerprint;
@@ -863,6 +1081,7 @@ const fn family_code(family: super::units::CreatureFamily) -> u8 {
         CreatureFamily::Mirefin => 5,
         CreatureFamily::Redbrand => 6,
         CreatureFamily::Prop => 7,
+        CreatureFamily::Ogre => 8,
     }
 }
 

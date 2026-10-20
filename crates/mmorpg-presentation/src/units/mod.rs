@@ -391,6 +391,8 @@ impl UnitPresenter {
                 .extend(self.effects.nodes(&mut self.resources, seconds, &anchors));
         }
         self.projectiles(&mut out.draws, snapshot);
+        self.platforms(&mut out.draws, snapshot);
+        self.structure_pieces(&mut out.draws, snapshot);
         for view in &snapshot.debris {
             let centre = self.rendered(view.position);
             out.draws
@@ -400,14 +402,84 @@ impl UnitPresenter {
         out
     }
 
+    /// Destructible pieces (#305) as their projected stage shows them: intact timber, darker and
+    /// sagging when damaged, a low slumped heap when crumbling, and only the authored rubble
+    /// (or nothing) once destroyed.
+    fn structure_pieces(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
+        let pieces = self.content.pieces().to_vec();
+        for piece in &pieces {
+            let stage = snapshot
+                .pieces
+                .iter()
+                .find(|view| view.piece == piece.id)
+                .map_or(mmorpg_core::PieceStage::Intact, |view| view.stage);
+            let id = format!("piece-{}", piece.id.get());
+            let (box_, colour) = match stage {
+                mmorpg_core::PieceStage::Intact => ((piece.position, piece.half_extents), 0x7a5a3a),
+                mmorpg_core::PieceStage::Damaged => {
+                    ((piece.position, piece.half_extents), 0x5e4630)
+                }
+                mmorpg_core::PieceStage::Crumbling => {
+                    let [x, y, z] = piece.position;
+                    let [hx, hy, hz] = piece.half_extents;
+                    (([x, y - hy / 3, z], [hx, hy - hy / 3, hz]), 0x4a3828)
+                }
+                mmorpg_core::PieceStage::Destroyed => match piece.rubble {
+                    Some(rubble) => (rubble, 0x6b6156),
+                    None => continue,
+                },
+            };
+            let centre = self.rendered(box_.0).map(f64::from);
+            let size = metres(box_.1).map(|half| 2. * f64::from(half));
+            draws.push(self.resources.primitive(
+                id,
+                Primitive::Box(size),
+                colour,
+                Frame { p: centre, q: IQ },
+            ));
+        }
+    }
+
+    /// Moving platforms (#56) where their schedule puts them at the projection's tick: a
+    /// stone pillar with a plank top. Content and tick decide; nothing is simulated here.
+    fn platforms(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
+        for platform in self.content.platforms() {
+            let centre = self
+                .rendered(platform.centre_at(snapshot.tick))
+                .map(f64::from);
+            let [x, y, z] = metres(platform.half_extents).map(f64::from);
+            let id = format!("platform-{}", platform.id.get());
+            draws.push(self.resources.primitive(
+                format!("{id}-pillar"),
+                Primitive::Box([2. * x, 2. * y - 0.06, 2. * z]),
+                0x8c8478,
+                Frame {
+                    p: [centre[0], centre[1] - 0.03, centre[2]],
+                    q: IQ,
+                },
+            ));
+            draws.push(self.resources.primitive(
+                format!("{id}-top"),
+                Primitive::Box([2. * x, 0.06, 2. * z]),
+                0x7a5a3a,
+                Frame {
+                    p: [centre[0], centre[1] + y - 0.03, centre[2]],
+                    q: IQ,
+                },
+            ));
+        }
+    }
+
     /// Arrows and bolts where the zone says they are (#286): a shaft behind the tip along its
     /// heading and pitch, and a dark head. Placeholder shapes until asset-tooling's bow and
-    /// arrow bundle (asset-tooling #277) lands.
+    /// arrow bundle (asset-tooling #277) lands. A magic missile (#289) is a fiery ball with a
+    /// short trail.
     fn projectiles(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
         for projectile in &snapshot.projectiles {
             let (length, width, shaft, head) = match projectile.kind {
                 ProjectileKind::Arrow => (0.8, 0.03, 0xb08a5b, 0x4a4d52),
                 ProjectileKind::Bolt => (0.45, 0.045, 0x5c3f28, 0x3a3c40),
+                ProjectileKind::Missile => (0.5, 0.08, 0xff8a2a, 0xffd36a),
             };
             let turn = |value: f64| value / 65_536. * std::f64::consts::TAU;
             let tip = Frame {
@@ -418,6 +490,21 @@ impl UnitPresenter {
                 ),
             };
             let id = format!("projectile-{}", projectile.id);
+            if projectile.kind == ProjectileKind::Missile {
+                draws.push(self.resources.primitive(
+                    format!("{id}-ball"),
+                    Primitive::Ball(0.12),
+                    head,
+                    tip,
+                ));
+                draws.push(self.resources.primitive(
+                    format!("{id}-trail"),
+                    Primitive::Box([width, width, length]),
+                    shaft,
+                    offset(tip, [0., 0., -length / 2.]),
+                ));
+                continue;
+            }
             draws.push(self.resources.primitive(
                 format!("{id}-shaft"),
                 Primitive::Box([width, width, length]),

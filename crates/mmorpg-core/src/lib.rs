@@ -32,18 +32,23 @@ mod guard;
 mod interest;
 mod inventory;
 mod loot;
+mod movable;
+mod nav;
 pub mod physics;
 #[cfg(feature = "physics-ab")]
 pub mod physics_ab;
+mod platform;
 mod progression;
 mod projectile;
 mod projection;
 mod quest;
+mod ramp;
 pub mod rng;
 mod routine;
 mod snapshot;
 mod stance;
 mod strike;
+mod structure;
 pub mod trig;
 pub mod unit;
 mod vendor;
@@ -73,10 +78,10 @@ pub use combo::{COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboOpening, ComboPhase
 pub use content::greyhaven_vale::{self, greyhaven_vale_definition};
 pub use content::{
     CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
-    MAX_CONTENT_COORDINATE_UNITS, MAX_CREATURE_HALF_EXTENT_UNITS, MAX_CREATURE_SPAWNS,
-    MAX_CREATURE_TEMPLATES, MAX_NPCS, MAX_STATIC_COLLIDERS, MAX_TERRAIN_HEIGHT_UNITS,
-    MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc, NpcRole, PropKind, SpawnGrid,
-    StaticCollider, Terrain, UNITS_PER_METRE, XzBounds, ZoneContent, ZoneDefinition,
+    LARGE_CREATURE_HALF_WIDTH_UNITS, MAX_CONTENT_COORDINATE_UNITS, MAX_CREATURE_HALF_EXTENT_UNITS,
+    MAX_CREATURE_SPAWNS, MAX_CREATURE_TEMPLATES, MAX_NPCS, MAX_STATIC_COLLIDERS,
+    MAX_TERRAIN_HEIGHT_UNITS, MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc, NpcRole, PropKind,
+    SpawnGrid, StaticCollider, Terrain, UNITS_PER_METRE, XzBounds, ZoneContent, ZoneDefinition,
 };
 pub use corpse_loot::{LOOT_REACH_UNITS, LootClaim, LootView};
 pub use creature::{
@@ -97,7 +102,7 @@ pub use equipment::{
 pub use events::{ErrorCode, MAX_EVENTS_PER_PLAYER, ZoneEvent};
 pub use forced::{
     CHARGE_MAX_TICKS, CHARGE_SPEED_UNITS, FORCED_IMMUNITY_TICKS, ForcedMove, ForcedState,
-    KNOCKBACK_TICKS,
+    KNOCKBACK_TICKS, SHOVE_UNITS,
 };
 pub use guard::{
     GUARD_ARC_HALF_WIDTH, GUARD_ARC_OFFSET, GUARD_BREAK_IMPACT, GUARD_BREAK_TICKS,
@@ -112,10 +117,13 @@ pub use loot::{
     LOOT_CATALOG_REVISION, LootOutcome, LootRewards, LootRolls, LootSettlementError, LootTable,
     LootTableError, MAX_LOOT_OUTCOMES, loot_table, settle_loot,
 };
+pub use nav::NAV_CELL_UNITS;
+pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
 pub use projectile::{
     ARROW_SPEED_UNITS, BOLT_SPEED_UNITS, Flight, MAX_PROJECTILES, MAX_VISIBLE_PROJECTILES,
-    Projectile, ProjectileKind, ProjectileView, STUCK_IN_UNIT_TICKS, STUCK_TICKS,
+    MISSILE_FLIGHT_HEIGHT_UNITS, MISSILE_SPEED_UNITS, Projectile, ProjectileKind, ProjectileView,
+    STUCK_IN_UNIT_TICKS, STUCK_TICKS,
 };
 pub use projection::{
     AuraView, CastView, EntityFlags, EntitySnapshot, GuardView, ResourceView, TargetDetail,
@@ -127,6 +135,7 @@ pub use quest::{
     QUEST_CATALOG_REVISION, QUEST_REACH_UNITS, Quest, QuestContentError, QuestEntry, QuestId,
     QuestLog, QuestMarker, QuestObjective, QuestRewards, QuestSheet,
 };
+pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use routine::{
     DAWN, DAY_TICKS, DUSK, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
     NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,
@@ -138,6 +147,10 @@ pub use snapshot::{
 };
 pub use stance::{LANDING_RECOVERY_TICKS, LandingState, MeleeStance, OVERHEAD_LANDING_TICKS};
 pub use strike::{STRIKE_ARC_HALF_WIDTH, StrikeAim, StrikeHeight, StrikeSide, has_directed_mode};
+pub use structure::{
+    CanonicalPiece, MAX_PIECES, MAX_SITES, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceStage,
+    PieceView, REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
+};
 pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_CATALOG_REVISION, VENDOR_REACH_UNITS, VendorOffer, VendorStock,
     VendorStockError, VendorTradeError, sell_price, settle_purchase, settle_sale,
@@ -153,7 +166,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 25;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 27;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its
@@ -239,6 +252,12 @@ pub enum ZoneCommand {
     UseDoor {
         door: DoorId,
         open: bool,
+    },
+    /// Starts repairing a destructible piece (#305), or stops with `None`: held like a guard,
+    /// free, and it speeds up the piece's timed regrowth while the player stands within
+    /// reach. Any movement stops it.
+    Repair {
+        piece: Option<PieceId>,
     },
     /// Stops the player's own cast or channel.
     CancelCast,

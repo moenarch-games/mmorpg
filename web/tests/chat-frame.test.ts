@@ -32,7 +32,7 @@ test("the text rule matches core: bytes, control characters and Unicode whitespa
   // U+FEFF is not White_Space in Rust, so the line is valid there and here.
   expect(chatTextError("﻿")).toBeNull();
   expect(() => encodeCommand({ kind: "chat", channel: "say", text: "" })).toThrow();
-  expect(Buffer.from(encodeCommand({ kind: "chat", channel: "yell", text: "hi" })).toString("hex")).toBe("0c10010268" + "69");
+  expect(Buffer.from(encodeCommand({ kind: "chat", channel: "yell", text: "hi" })).toString("hex")).toBe("0d10010268" + "69");
 });
 
 test("the log names speakers, notes refusals and ignores stale or foreign projections", () => {
@@ -58,7 +58,7 @@ test("emote commands send typed emotes and received emotes read as actions", () 
   expect(parseChatInput("/Bow ")).toEqual({ command: { kind: "emote", emote: "bow" } });
   // An emote takes no text; anything after it is not an emote.
   expect("error" in parseChatInput("/wave hello")).toBe(true);
-  expect(Buffer.from(encodeCommand({ kind: "emote", emote: "point" })).toString("hex")).toBe("0c1105");
+  expect(Buffer.from(encodeCommand({ kind: "emote", emote: "point" })).toString("hex")).toBe("0d1105");
 
   const log = new ChatLog();
   log.receive(projection(1, [{ speaker: 1, channel: "emote", emote: "cheer" }, { speaker: 4, channel: "emote", emote: "laugh" }]));

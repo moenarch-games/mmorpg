@@ -160,6 +160,17 @@ pub fn gable() -> Geometry {
     g.face(&[[-1., 0., -1.], [-1., 0., 1.], [-1., 1., 0.]]);
     g
 }
+/// A ramp's wedge (#59) in the box x, z ∈ [-1, 1], y ∈ [0, 1]: a flat bottom, a vertical
+/// back face at z = 1 and a top rising from z = -1 at the ground to z = 1 at full height.
+pub fn wedge() -> Geometry {
+    let mut g = Geometry::default();
+    g.face(&[[-1., 0., -1.], [-1., 1., 1.], [1., 1., 1.], [1., 0., -1.]]);
+    g.face(&[[-1., 0., 1.], [1., 0., 1.], [1., 1., 1.], [-1., 1., 1.]]);
+    g.face(&[[-1., 0., -1.], [1., 0., -1.], [1., 0., 1.], [-1., 0., 1.]]);
+    g.face(&[[1., 0., -1.], [1., 1., 1.], [1., 0., 1.]]);
+    g.face(&[[-1., 0., -1.], [-1., 0., 1.], [-1., 1., 1.]]);
+    g
+}
 pub fn pyramid() -> Geometry {
     let mut g = Geometry::default();
     let c = [[-1., 0., -1.], [-1., 0., 1.], [1., 0., 1.], [1., 0., -1.]];

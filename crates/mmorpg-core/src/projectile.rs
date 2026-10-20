@@ -1,4 +1,4 @@
-//! Physical projectiles (#286, Atlas 5.2.71): arrows and crossbow bolts.
+//! Physical projectiles (#286, Atlas 5.2.71): arrows, crossbow bolts and magic missiles (#289).
 //!
 //! A target-based shot **tracks** its target: every tick it re-plans the ballistic arc that
 //! lands on the target's body centre after the remaining flight ticks, so it follows a moving
@@ -8,6 +8,10 @@
 //! stop it, and a Warden's raised shield turned toward it blocks it. The ability's effect lands
 //! only when the shot reaches a valid victim. Spent projectiles stay stuck where they hit — in a
 //! wall for [`STUCK_TICKS`], riding a unit for [`STUCK_IN_UNIT_TICKS`] — then vanish.
+//!
+//! A magic missile (Firebolt) ignores gravity: a target-based missile homes on its target in a
+//! straight line, so only something in the way stops it; one cast without a target flies
+//! straight along the facing and can miss or be dodged.
 //!
 //! Rapier gap noted for physics-engine parity: no continuous projectile body is used; a
 //! per-tick ray sweep stands in for CCD on a thin, fast body.
@@ -23,6 +27,8 @@ pub const MAX_VISIBLE_PROJECTILES: usize = 16;
 /// Flight speed of an arrow (54 m/s) and of a crossbow bolt (45 m/s), units per tick.
 pub const ARROW_SPEED_UNITS: f32 = 180.0;
 pub const BOLT_SPEED_UNITS: f32 = 150.0;
+/// Flight speed of a magic missile (30 m/s), units per tick: slow enough to sidestep.
+pub const MISSILE_SPEED_UNITS: f32 = 100.0;
 /// Gravity on a free projectile: 9.81 m/s² in units per tick².
 pub const PROJECTILE_GRAVITY_UNITS: f32 = 981.0 / 900.0;
 /// A projectile still flying after this many ticks (2 s) falls away.
@@ -34,12 +40,17 @@ pub const STUCK_IN_UNIT_TICKS: u16 = 30;
 /// Shots leave this far above the shooter's body centre (chest height). A level free shot
 /// drops to the ground about 32 m out.
 pub const LAUNCH_HEIGHT_UNITS: f32 = 20.0;
+/// A free missile flies level this high above the caster's feet (#289), low enough to meet
+/// wolf-sized creatures and humanoids alike.
+pub const MISSILE_FLIGHT_HEIGHT_UNITS: f32 = 50.0;
 
 /// What flies; the wire value is its code.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ProjectileKind {
     Arrow,
     Bolt,
+    /// A magic missile (#289): no gravity.
+    Missile,
 }
 
 impl ProjectileKind {
@@ -48,6 +59,7 @@ impl ProjectileKind {
         match self {
             Self::Arrow => 1,
             Self::Bolt => 2,
+            Self::Missile => 3,
         }
     }
 
@@ -56,6 +68,7 @@ impl ProjectileKind {
         match code {
             1 => Some(Self::Arrow),
             2 => Some(Self::Bolt),
+            3 => Some(Self::Missile),
             _ => None,
         }
     }
@@ -65,6 +78,7 @@ impl ProjectileKind {
         match self {
             Self::Arrow => "arrow",
             Self::Bolt => "bolt",
+            Self::Missile => "missile",
         }
     }
 
@@ -73,6 +87,17 @@ impl ProjectileKind {
         match self {
             Self::Arrow => ARROW_SPEED_UNITS,
             Self::Bolt => BOLT_SPEED_UNITS,
+            Self::Missile => MISSILE_SPEED_UNITS,
+        }
+    }
+
+    /// Downward acceleration in flight, units per tick²: arrows and bolts fall, missiles fly
+    /// straight.
+    #[must_use]
+    pub const fn gravity(self) -> f32 {
+        match self {
+            Self::Arrow | Self::Bolt => PROJECTILE_GRAVITY_UNITS,
+            Self::Missile => 0.0,
         }
     }
 }
@@ -157,14 +182,25 @@ pub fn orientation(velocity: [f32; 3]) -> (u16, i16) {
     (yaw, pitch)
 }
 
-/// The ballistic velocity that covers `delta` in `ticks` ticks under projectile gravity.
-fn ballistic(delta: [f32; 3], ticks: u16) -> [f32; 3] {
+/// The velocity that covers `delta` in `ticks` ticks under `gravity` (units per tick²).
+fn ballistic(delta: [f32; 3], ticks: u16, gravity: f32) -> [f32; 3] {
     let t = f32::from(ticks.max(1));
     [
         delta[0] / t,
-        delta[1] / t + PROJECTILE_GRAVITY_UNITS * (t - 1.0) / 2.0,
+        delta[1] / t + gravity * (t - 1.0) / 2.0,
         delta[2] / t,
     ]
+}
+
+/// A missile's step toward a target `delta` away: straight at it at `speed`, or onto it when
+/// closer than one step.
+fn homing(delta: [f32; 3], speed: f32) -> [f32; 3] {
+    let distance = delta[0].hypot(delta[1]).hypot(delta[2]);
+    if distance <= speed {
+        // The centre lies inside the body, so the sweep meets its surface on the way.
+        return delta;
+    }
+    scale(delta, speed / distance)
 }
 
 impl ZoneSimulation {
@@ -217,7 +253,11 @@ impl ZoneSimulation {
             owner,
             ability,
             position: from,
-            velocity: ballistic(delta, remaining),
+            velocity: if kind == ProjectileKind::Missile {
+                homing(delta, kind.speed())
+            } else {
+                ballistic(delta, remaining, kind.gravity())
+            },
             flight: Flight::Tracking { target, remaining },
             age: 0,
         });
@@ -232,7 +272,18 @@ impl ZoneSimulation {
         kind: ProjectileKind,
         ability: AbilityId,
     ) -> Result<(), ZoneError> {
-        let from = self.launch_point(owner)?;
+        let from = if kind == ProjectileKind::Missile {
+            let body = self
+                .world
+                .body(body_id(owner))
+                .ok_or_else(|| ZoneError::new("shooter physics body is missing"))?;
+            let [x, y, z] = body.exact_position();
+            #[allow(clippy::cast_precision_loss)]
+            let feet = y - body.half_extents().y as f32;
+            [x, feet + MISSILE_FLIGHT_HEIGHT_UNITS, z]
+        } else {
+            self.launch_point(owner)?
+        };
         let (x, z) = crate::trig::direction(facing);
         #[allow(clippy::cast_precision_loss)]
         let unit = |value: i32| value as f32 / crate::trig::TRIG_ONE as f32;
@@ -292,8 +343,12 @@ impl ZoneSimulation {
             if let Flight::Tracking { target, remaining } = projectile.flight {
                 match self.unit_centre(target).filter(|_| self.unit_alive(target)) {
                     Some(centre) => {
-                        projectile.velocity =
-                            ballistic(sub(centre, projectile.position), remaining);
+                        let delta = sub(centre, projectile.position);
+                        projectile.velocity = if projectile.kind == ProjectileKind::Missile {
+                            homing(delta, projectile.kind.speed())
+                        } else {
+                            ballistic(delta, remaining, projectile.kind.gravity())
+                        };
                         projectile.flight = Flight::Tracking {
                             target,
                             remaining: remaining.saturating_sub(1).max(1),
@@ -310,7 +365,7 @@ impl ZoneSimulation {
             let Some(hit) = hit else {
                 projectile.position = add(projectile.position, segment);
                 if projectile.flight == Flight::Free {
-                    projectile.velocity[1] -= PROJECTILE_GRAVITY_UNITS;
+                    projectile.velocity[1] -= projectile.kind.gravity();
                 }
                 self.projectiles.insert(id, projectile);
                 continue;
@@ -333,6 +388,9 @@ impl ZoneSimulation {
             self.projectiles.insert(id, projectile);
             if let Some(unit) = unit {
                 self.projectile_strikes(projectile, unit, now)?;
+            } else if let Some(piece) = self.piece_of_body(hit.body) {
+                // A shot into a destructible piece chips it (#305).
+                self.damage_piece(piece, crate::PROJECTILE_PIECE_DAMAGE, now)?;
             }
         }
         Ok(())

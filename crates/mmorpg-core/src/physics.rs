@@ -114,6 +114,12 @@ enum Kind {
     /// An upward half-space whose surface is at the body's `y`.
     Floor,
     Moving,
+    /// A fixed box the zone moves on a schedule (#56); its velocity is the displacement the
+    /// next step applies.
+    Platform,
+    /// A fixed wedge (#59) filling the lower half of its box, its top rising toward the
+    /// direction.
+    Ramp(crate::RampRise),
 }
 
 /// One body: a fixed box, or a moving unit's capsule with its authoritative `f32` state.
@@ -163,6 +169,36 @@ impl RigidBody {
             position: exact(Vec3i::new(0, y, 0)),
             velocity: [0.0; 3],
             half_extents: Vec3i::ZERO,
+        }
+    }
+
+    /// A fixed ramp (#59): a wedge in the box centred on `position`, its top rising toward
+    /// `rises`.
+    #[must_use]
+    pub const fn ramp(
+        id: BodyId,
+        position: Vec3i,
+        half_extents: Vec3i,
+        rises: crate::RampRise,
+    ) -> Self {
+        Self {
+            id,
+            kind: Kind::Ramp(rises),
+            position: exact(position),
+            velocity: [0.0; 3],
+            half_extents,
+        }
+    }
+
+    /// A moving platform's box (#56) centred on `position`, at rest.
+    #[must_use]
+    pub const fn platform(id: BodyId, position: Vec3i, half_extents: Vec3i) -> Self {
+        Self {
+            id,
+            kind: Kind::Platform,
+            position: exact(position),
+            velocity: [0.0; 3],
+            half_extents,
         }
     }
 
@@ -230,6 +266,12 @@ impl RigidBody {
 
     pub(crate) const fn is_moving(&self) -> bool {
         matches!(self.kind, Kind::Moving)
+    }
+
+    /// Whether it is a moving platform's box (#56).
+    #[must_use]
+    pub const fn is_platform(&self) -> bool {
+        matches!(self.kind, Kind::Platform)
     }
 }
 
@@ -468,6 +510,19 @@ impl World {
         dispatch!(self, &mut self.worlds, world => world.set_velocity(id, velocity))
     }
 
+    /// Moves platform `id`'s box (#56) to centre `to` during the next [`World::step`], before
+    /// or after the units (so it never runs into the ones it carries), carrying every unit
+    /// that stands on it and is not rising: the displacement is added to that unit's move.
+    pub fn move_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        dispatch!(self, &mut self.worlds, world => world.move_platform(id, to))
+    }
+
+    /// Places platform `id`'s box at centre `to` at once, carrying nothing: building or
+    /// restoring a zone.
+    pub fn place_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        dispatch!(self, &mut self.worlds, world => world.place_platform(id, to))
+    }
+
     /// Lays the authored ground as a heightfield identified as `id` (#159).
     pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
         dispatch!(self, &mut self.worlds, world => world.set_terrain(id, terrain));
@@ -501,6 +556,16 @@ impl World {
         dispatch!(self, &self.worlds, world => world.overlap_query(aabb))
     }
 
+    /// Every body whose shape intersects the box centred on `centre` (units) with
+    /// `half_extents`, in ID order: [`World::overlap_query`] off the whole-unit grid.
+    pub fn overlap_box(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        dispatch!(self, &self.worlds, world => world.overlap_box(centre, half_extents))
+    }
+
     /// Whether a body accepted by `blocks` lies on the segment from `origin` along
     /// `translation` (units), strictly before its end.
     pub fn segment_blocked(
@@ -524,6 +589,20 @@ impl World {
         dispatch!(self, &self.worlds, world => world.cast_ray(origin, translation, &hits))
     }
 
+    /// The first body accepted by `hits` that an upright capsule as wide and tall as
+    /// `half_extents`, centred on `origin`, meets when swept along `translation` (units), with
+    /// the fraction of the sweep and the contact normal (#57). A body it starts overlapping is
+    /// met at fraction 0. Equally near bodies are ordered by ID.
+    pub fn cast_shape(
+        &self,
+        origin: [f32; 3],
+        half_extents: Vec3i,
+        translation: [f32; 3],
+        hits: impl Fn(BodyId) -> bool,
+    ) -> Option<RayHit> {
+        dispatch!(self, &self.worlds, world => world.cast_shape(origin, half_extents, translation, &hits))
+    }
+
     /// Advances `debris` (#288) one tick: Rapier steps a world of the pieces still moving as
     /// dynamic bodies, the settled ones and the fixed geometry around them, rebuilt from the
     /// game's state in slice order like every step here. A piece that slows below the rest
@@ -539,6 +618,17 @@ impl World {
             Worlds::Rapier(world) => world.step_debris(debris, settle),
             #[cfg(feature = "physics-ab")]
             Worlds::Engine(world) => world.step_debris(debris, settle),
+        }
+    }
+
+    /// Advances movable props (#58) one tick: like debris, but upright (they slide, never
+    /// turn), stopped by units, and leaving out the props' own fixed boxes `exclude`. Runs on
+    /// Rapier whichever backend the world uses, excluded from [`World::spent_nanos`].
+    pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
+        match &self.worlds {
+            Worlds::Rapier(world) => world.step_props(props, exclude),
+            #[cfg(feature = "physics-ab")]
+            Worlds::Engine(world) => world.step_props(props, exclude),
         }
     }
 }
@@ -706,6 +796,390 @@ mod tests {
             }
         }
         assert!(stuck.is_empty(), "pairs deadlocked: {stuck:?}");
+    }
+
+    /// A ramp rising toward +X from the floor at x = -300 to `height` at x = 300, a dock box
+    /// behind its high end at the same height, and a unit at x = -600 walking +X for 200
+    /// ticks. Returns where the unit ends and its lowest grounded height while on the ramp.
+    fn walk_up_ramp(height: i32, run: i32) -> ([f32; 3], bool) {
+        let mut world = world();
+        world
+            .add_body(RigidBody::ramp(
+                BodyId(2),
+                Vec3i::new(0, height / 2, 0),
+                Vec3i::new(run / 2, height / 2, 200),
+                crate::RampRise::PosX,
+            ))
+            .unwrap();
+        world
+            .add_body(RigidBody::fixed(
+                BodyId(3),
+                Vec3i::new(run / 2 + 1_000, height / 2, 0),
+                Vec3i::new(1_000, height / 2, 200),
+            ))
+            .unwrap();
+        let unit = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                unit,
+                Vec3i::new(-run / 2 - 300, 90, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        let mut grounded = true;
+        for _ in 0..200 {
+            world
+                .set_velocity(
+                    unit,
+                    Vec3i::new(8, world.body(unit).unwrap().velocity().y, 0),
+                )
+                .unwrap();
+            world.step().unwrap();
+            let x = world.body(unit).unwrap().exact_position()[0];
+            #[allow(clippy::cast_precision_loss)]
+            if x.abs() < run as f32 / 2.0 - 40.0 {
+                grounded &= world.grounded(unit);
+            }
+        }
+        (world.body(unit).unwrap().exact_position(), grounded)
+    }
+
+    #[test]
+    fn a_unit_walks_up_a_shallow_ramp_onto_the_dock_but_not_up_a_steep_one() {
+        on_each_backend(a_unit_walks_up_a_shallow_ramp_onto_the_dock_but_not_up_a_steep_one_on);
+    }
+
+    fn a_unit_walks_up_a_shallow_ramp_onto_the_dock_but_not_up_a_steep_one_on() {
+        // 20°: 220 units over a 600-unit run. Grounded all the way up, then on the dock.
+        let (end, grounded) = walk_up_ramp(220, 600);
+        assert!(grounded, "grounded on the ramp");
+        assert!(
+            end[0] > 350.0 && (end[1] - 310.0).abs() < 0.5,
+            "on the dock: {end:?}"
+        );
+        // 60°: 208 units over 120. The unit cannot climb it and stays on the floor before it.
+        let (end, _) = walk_up_ramp(208, 120);
+        assert!(
+            end[0] < 0.0 && end[1] < 150.0,
+            "stopped by the steep ramp: {end:?}"
+        );
+    }
+
+    #[test]
+    fn a_unit_walks_down_and_across_a_ramp_on_its_surface() {
+        on_each_backend(a_unit_walks_down_and_across_a_ramp_on_its_surface_on);
+    }
+
+    fn a_unit_walks_down_and_across_a_ramp_on_its_surface_on() {
+        let mut world = world();
+        let ramp = crate::Ramp {
+            body: 2,
+            position: [0, 110, 0],
+            half_extents: [300, 110, 300],
+            rises: crate::RampRise::NegZ,
+        };
+        world
+            .add_body(RigidBody::ramp(
+                BodyId(2),
+                Vec3i::new(0, 110, 0),
+                Vec3i::new(300, 110, 300),
+                ramp.rises,
+            ))
+            .unwrap();
+        // Dropped onto the high end, then walking across (+X) and down (+Z).
+        let unit = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                unit,
+                Vec3i::new(-200, 400, -200),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        for velocity in [Vec3i::ZERO, Vec3i::new(6, 0, 0), Vec3i::new(0, 0, 6)] {
+            for _ in 0..60 {
+                let vertical = world.body(unit).unwrap().velocity().y;
+                world
+                    .set_velocity(unit, Vec3i::new(velocity.x, vertical, velocity.z))
+                    .unwrap();
+                world.step().unwrap();
+            }
+            let [x, y, z] = world.body(unit).unwrap().exact_position();
+            #[allow(clippy::cast_possible_truncation)]
+            let top = ramp.top_at(x.round() as i32, z.round() as i32).unwrap();
+            // The capsule's lowest point rests on the slope where it touches, a little uphill
+            // of its centre: within the capsule's radius times the slope.
+            #[allow(clippy::cast_possible_truncation)]
+            let feet = f64::from(y) - 90.0;
+            assert!(
+                feet >= top - 0.5 && feet <= top + 30.0 * (110.0 / 300.0) + 1.0,
+                "on the surface at {x} {z}: feet {feet}, top {top}"
+            );
+            assert!(world.grounded(unit), "grounded on the ramp at {x} {z}");
+        }
+    }
+
+    #[test]
+    fn a_body_wide_sweep_needs_a_gap_the_body_fits_through() {
+        on_each_backend(a_body_wide_sweep_needs_a_gap_the_body_fits_through_on);
+    }
+
+    /// Shape casts (#57): a capsule swept through gaps of different widths.
+    fn a_body_wide_sweep_needs_a_gap_the_body_fits_through_on() {
+        let statics = |id: BodyId| id.0 < 10;
+        let sweep = |gap: i32| {
+            let mut world = world();
+            // Two posts at x = 500 leaving `gap` units between them around z = 0.
+            for (id, side) in [(2, -1), (3, 1)] {
+                world
+                    .add_body(RigidBody::fixed(
+                        BodyId(id),
+                        Vec3i::new(500, 100, side * (gap / 2 + 50)),
+                        Vec3i::new(20, 100, 50),
+                    ))
+                    .unwrap();
+            }
+            let ray = world.cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], statics);
+            // A 30-unit-radius body, its bottom 30 units up, so the floor is never met.
+            let body = world.cast_shape(
+                [0.0, 150.0, 0.0],
+                Vec3i::new(30, 60, 30),
+                [1_000.0, 0.0, 0.0],
+                statics,
+            );
+            (ray, body)
+        };
+        let (ray, body) = sweep(40);
+        assert!(ray.is_none(), "a ray threads a 40-unit gap");
+        let body = body.expect("a 60-unit-wide body does not");
+        assert!((body.fraction - 0.45).abs() < 0.01, "{body:?}");
+        assert_eq!(body.body, BodyId(2), "equally near posts: the lower ID");
+        let (_, body) = sweep(80);
+        assert!(body.is_none(), "an 80-unit gap lets it through");
+        // Starting inside a post meets it at once.
+        let world = {
+            let mut world = world();
+            world
+                .add_body(RigidBody::fixed(
+                    BodyId(2),
+                    Vec3i::new(0, 100, 0),
+                    Vec3i::new(20, 100, 20),
+                ))
+                .unwrap();
+            world
+        };
+        let inside = world
+            .cast_shape(
+                [0.0, 150.0, 0.0],
+                Vec3i::new(30, 60, 30),
+                [500.0, 0.0, 0.0],
+                statics,
+            )
+            .unwrap();
+        assert_eq!(inside.fraction, 0.0);
+    }
+
+    #[test]
+    fn line_queries_cover_thin_touching_inside_tied_filtered_and_removed_bodies() {
+        on_each_backend(
+            line_queries_cover_thin_touching_inside_tied_filtered_and_removed_bodies_on,
+        );
+    }
+
+    /// Line-of-sight edge cases (#57) on the world's ray and segment queries.
+    fn line_queries_cover_thin_touching_inside_tied_filtered_and_removed_bodies_on() {
+        let mut world = world();
+        let all = |_: BodyId| true;
+        // A 2-unit-thin wall across x = 500, from z = -200 to 200.
+        let wall = RigidBody::fixed(BodyId(2), Vec3i::new(500, 100, 0), Vec3i::new(1, 100, 200));
+        world.add_body(wall).unwrap();
+        let along = Vec3i::new(1_000, 0, 0);
+        assert!(
+            world.segment_blocked(Vec3i::new(0, 100, 0), along, all),
+            "thin wall blocks"
+        );
+        assert!(
+            !world.segment_blocked(Vec3i::new(0, 100, 202), along, all),
+            "a line two units past its edge is clear"
+        );
+        assert!(
+            !world.segment_blocked(Vec3i::new(0, 100, 0), Vec3i::new(498, 0, 0), all),
+            "a line ending a unit short of it is clear"
+        );
+        // Touching: from a unit off either face, away is clear and into it is blocked; from
+        // inside, blocked at once.
+        assert!(!world.segment_blocked(Vec3i::new(502, 100, 0), along, all));
+        assert!(world.segment_blocked(Vec3i::new(498, 100, 0), along, all));
+        let inside = world
+            .cast_ray([500.0, 100.0, 0.0], [300.0, 0.0, 0.0], all)
+            .expect("a ray from inside hits");
+        assert_eq!((inside.body, inside.fraction), (BodyId(2), 0.0));
+        // Ties: a second box sharing the wall's near face; the lower ID wins on both backends.
+        world
+            .add_body(RigidBody::fixed(
+                BodyId(3),
+                Vec3i::new(510, 100, 0),
+                Vec3i::new(11, 50, 50),
+            ))
+            .unwrap();
+        let tie = world
+            .cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], all)
+            .unwrap();
+        assert_eq!(tie.body, BodyId(2));
+        assert!((tie.fraction - 0.499).abs() < 1.0e-4, "{tie:?}");
+        // Filters: skipping the wall finds the box behind it; units are skipped when excluded.
+        let behind = world
+            .cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], |id| id != BodyId(2))
+            .unwrap();
+        assert_eq!(behind.body, BodyId(3));
+        let unit = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                unit,
+                Vec3i::new(250, 90, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        assert_eq!(
+            world
+                .cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], all)
+                .unwrap()
+                .body,
+            unit
+        );
+        assert_eq!(
+            world
+                .cast_ray([0.0, 100.0, 0.0], [1_000.0, 0.0, 0.0], |id| id.0 < 10)
+                .unwrap()
+                .body,
+            BodyId(2)
+        );
+        // Removal and ID reuse: the wall's ID now names a box elsewhere.
+        assert!(world.remove_body(BodyId(2)).is_some());
+        assert!(world.remove_body(BodyId(3)).is_some());
+        assert!(!world.segment_blocked(Vec3i::new(0, 100, 0), along, |id| id.0 < 10));
+        world
+            .add_body(RigidBody::fixed(
+                BodyId(2),
+                Vec3i::new(500, 100, 600),
+                Vec3i::new(1, 100, 200),
+            ))
+            .unwrap();
+        assert!(!world.segment_blocked(Vec3i::new(0, 100, 0), along, |id| id.0 < 10));
+        assert!(world.segment_blocked(Vec3i::new(0, 100, 600), along, |id| id.0 < 10));
+    }
+
+    /// A lift pillar (#56) whose top rises from the floor to 300 units at 5 units a tick.
+    fn lift(world: &mut World) -> BodyId {
+        let lift = BodyId(5);
+        world
+            .add_body(RigidBody::platform(
+                lift,
+                Vec3i::new(0, -150, 0),
+                Vec3i::new(100, 150, 100),
+            ))
+            .unwrap();
+        lift
+    }
+
+    #[test]
+    fn a_platform_carries_its_rider_up_and_down_and_lets_it_walk_off() {
+        on_each_backend(a_platform_carries_its_rider_up_and_down_and_lets_it_walk_off_on);
+    }
+
+    fn a_platform_carries_its_rider_up_and_down_and_lets_it_walk_off_on() {
+        let mut world = world();
+        let lift = lift(&mut world);
+        let rider = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                rider,
+                Vec3i::new(0, 90, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        world.step().unwrap();
+        for tick in 1..=60 {
+            world
+                .move_platform(lift, Vec3i::new(0, -150 + 5 * tick, 0))
+                .unwrap();
+            world.step().unwrap();
+            let body = world.body(rider).unwrap();
+            assert!(
+                (body.exact_position()[1] - (90.0 + 5.0 * tick as f32)).abs() < 0.05,
+                "carried up at tick {tick}: {:?}",
+                body.exact_position()
+            );
+            assert!(world.grounded(rider));
+        }
+        for tick in (0..60).rev() {
+            world
+                .move_platform(lift, Vec3i::new(0, -150 + 5 * tick, 0))
+                .unwrap();
+            world.step().unwrap();
+            let y = world.body(rider).unwrap().exact_position()[1];
+            assert!(
+                (y - (90.0 + 5.0 * tick as f32)).abs() < 0.05,
+                "carried down at tick {tick}: {y}"
+            );
+        }
+        // Up again, then step off the top onto nothing: the rider falls to the floor.
+        for tick in 1..=60 {
+            world
+                .move_platform(lift, Vec3i::new(0, -150 + 5 * tick, 0))
+                .unwrap();
+            world.step().unwrap();
+        }
+        world.set_velocity(rider, Vec3i::new(10, 0, 0)).unwrap();
+        for _ in 0..90 {
+            world.step().unwrap();
+        }
+        let body = *world.body(rider).unwrap();
+        assert!(body.position().x > 150, "walked off: {:?}", body.position());
+        assert_eq!(body.position().y, 90, "and fell to the floor");
+    }
+
+    #[test]
+    fn a_rider_falls_when_its_platform_is_removed_and_a_jump_leaves_it() {
+        on_each_backend(a_rider_falls_when_its_platform_is_removed_and_a_jump_leaves_it_on);
+    }
+
+    fn a_rider_falls_when_its_platform_is_removed_and_a_jump_leaves_it_on() {
+        let mut world = world();
+        let lift = lift(&mut world);
+        world.place_platform(lift, Vec3i::new(0, 150, 0)).unwrap();
+        let rider = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                rider,
+                Vec3i::new(0, 390, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        world.step().unwrap();
+        assert!(world.grounded(rider));
+        // A jump while the platform sinks: the rider rises on its own, not carried down.
+        world.set_velocity(rider, Vec3i::new(0, 12, 0)).unwrap();
+        world.move_platform(lift, Vec3i::new(0, 145, 0)).unwrap();
+        world.step().unwrap();
+        assert!(world.body(rider).unwrap().exact_position()[1] > 390.0);
+        for _ in 0..40 {
+            world.step().unwrap();
+        }
+        assert!(world.grounded(rider));
+        assert!(world.remove_body(lift).is_some());
+        for _ in 0..60 {
+            world.step().unwrap();
+        }
+        assert_eq!(
+            world.body(rider).unwrap().position().y,
+            90,
+            "fell to the floor"
+        );
     }
 
     #[test]

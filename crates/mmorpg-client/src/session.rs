@@ -573,6 +573,7 @@ mod tests {
             doors: Vec::new(),
             projectiles: Vec::new(),
             debris: Vec::new(),
+            pieces: Vec::new(),
             content_revision: 6,
             acknowledged_sequence: 1,
             viewer_id: 1,

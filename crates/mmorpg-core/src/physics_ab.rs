@@ -100,6 +100,31 @@ impl ZoneSimulation {
             }))
     }
 
+    /// Whether `from`'s body fits along a charge at `to` (#57): the charge-path rule's shape cast.
+    pub fn charge_path_probe(&self, from: EntityRef, to: EntityRef) -> Result<bool, ZoneError> {
+        self.charge_path_clear(from, to)
+    }
+
+    /// Where creature `from` would steer to reach unit `to` (#307): `None` when its straight way
+    /// is clear, else its route's waypoint around the blockers.
+    pub fn route_probe(
+        &mut self,
+        from: EntityRef,
+        to: EntityRef,
+    ) -> Result<Option<[i32; 2]>, ZoneError> {
+        let body = *self
+            .world
+            .body(body_id(from))
+            .ok_or_else(|| ZoneError::new("routed unit physics body is missing"))?;
+        let goal = self.unit_position(to)?;
+        self.route_waypoint(
+            body.exact_position(),
+            body.half_extents(),
+            [goal[0], goal[2]],
+            crate::ai::creature_reach(to),
+        )
+    }
+
     /// The ground height gameplay reads at `(x, z)` (whole units, 0 on flat content).
     #[must_use]
     pub fn ground_probe(&self, x: i32, z: i32) -> i32 {

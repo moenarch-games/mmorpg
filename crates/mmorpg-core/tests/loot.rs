@@ -162,7 +162,7 @@ fn extreme_money_ranges_and_weights_never_overflow() {
 
 #[test]
 fn starter_tables_are_pinned_and_cover_every_hosted_template() {
-    assert_eq!(LOOT_CATALOG_REVISION, 3);
+    assert_eq!(LOOT_CATALOG_REVISION, 4);
     let gear = |id| item(1, ItemId::new(id), [1, 1]);
     let nothing = |weight| LootOutcome::Nothing { weight };
     let rows = [
@@ -183,6 +183,11 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         ([4, 9], vec![gear(2), gear(3), gear(7), nothing(3)]),
         ([25, 35], vec![gear(4), gear(5), gear(6), gear(3)]),
         ([4, 9], vec![gear(2), gear(7), gear(9), nothing(3)]),
+        // The hill ogre (#297).
+        (
+            [8, 16],
+            vec![gear(5), gear(8), item(1, FUR, [1, 2]), nothing(3)],
+        ),
     ];
     let content = greyhaven_vale::content();
     // Breakable props (#288) drop nothing and have no table.
@@ -198,7 +203,7 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         assert_eq!(table.outcomes(), outcomes);
         assert_eq!(*table, LootTable::new(money, &outcomes).unwrap());
     }
-    for unknown in [0, 9, 13, u16::MAX] {
+    for unknown in [0, 9, 14, u16::MAX] {
         assert!(loot_table(CreatureTemplateId::new(unknown)).is_none());
     }
 }

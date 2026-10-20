@@ -15,9 +15,32 @@ use support::classes;
 const TARGET: EntityRef = EntityRef::Creature(CreatureId::new(1));
 const ARCANIST: u8 = 2;
 
+/// What stands halfway between the caster and the boar (#57).
+#[derive(Clone, Copy, Debug)]
+enum Between {
+    Nothing,
+    /// A 2 m high wall.
+    Wall,
+    /// A 2-unit-thin plank, 2 m high.
+    Plank,
+    /// A ramp wedge (#59) whose top rises past the sight line.
+    Ramp,
+    /// A wall with a gap the sight line runs through.
+    Gap,
+}
+
 /// Flat ground, a neutral boar 25 m north of the spawn and, optionally, a
 /// 2 m high wall halfway between them. Classes need the bound ability catalog.
 fn content(wall: bool) -> Arc<ZoneContent> {
+    content_with(if wall {
+        Between::Wall
+    } else {
+        Between::Nothing
+    })
+}
+
+fn content_with(between: Between) -> Arc<ZoneContent> {
+    let wall = matches!(between, Between::Wall);
     let mut colliders = vec![StaticCollider {
         id: 1,
         position: [0, -50, 0],
@@ -30,6 +53,20 @@ fn content(wall: bool) -> Arc<ZoneContent> {
             half_extents: [400, 100, 20],
         });
     }
+    match between {
+        Between::Plank => colliders.push(StaticCollider {
+            id: 2,
+            position: [0, 100, 1_250],
+            half_extents: [400, 100, 1],
+        }),
+        // Two walls leaving a 1 m gap around the sight line at x = 0.
+        Between::Gap => colliders.extend([-1, 1].map(|side: i32| StaticCollider {
+            id: if side < 0 { 2 } else { 3 },
+            position: [side * 450, 100, 1_250],
+            half_extents: [400, 100, 20],
+        })),
+        Between::Nothing | Between::Wall | Between::Ramp => {}
+    }
     let definition = ZoneDefinition::with_spawn_grid(
         78,
         [0, -1, 0],
@@ -41,24 +78,38 @@ fn content(wall: bool) -> Arc<ZoneContent> {
         colliders,
     )
     .unwrap();
-    Arc::new(
-        ZoneContent::new(
-            definition,
-            ZoneAreas::default(),
-            vec![arena::boar()],
-            vec![arena::spawn(1, BOAR, [0, 2_500])],
-            Vec::new(),
-            arena::GRAVEYARD,
-        )
-        .unwrap()
-        .with_creature_abilities(ABILITY_CATALOG_REVISION, Vec::new())
-        .unwrap(),
+    let content = ZoneContent::new(
+        definition,
+        ZoneAreas::default(),
+        vec![arena::boar()],
+        vec![arena::spawn(1, BOAR, [0, 2_500])],
+        Vec::new(),
+        arena::GRAVEYARD,
     )
+    .unwrap()
+    .with_creature_abilities(ABILITY_CATALOG_REVISION, Vec::new())
+    .unwrap();
+    let ramps = match between {
+        // 3 m high at its far end, rising toward the boar: the sight line at about 1 m meets
+        // its slope.
+        Between::Ramp => vec![mmorpg_core::Ramp {
+            body: 9,
+            position: [0, 150, 1_250],
+            half_extents: [400, 150, 300],
+            rises: mmorpg_core::RampRise::PosZ,
+        }],
+        _ => Vec::new(),
+    };
+    Arc::new(content.with_ramps(ramps).unwrap())
 }
 
 /// The first-tick events of an arcanist that targets the boar and casts Firebolt.
 fn cast_firebolt(wall: bool) -> (ZoneSimulation, Vec<ZoneEvent>, u16) {
-    let mut zone = ZoneSimulation::with_content(ZoneId::new(9), content(wall)).unwrap();
+    cast_firebolt_with(content(wall))
+}
+
+fn cast_firebolt_with(content: Arc<ZoneContent>) -> (ZoneSimulation, Vec<ZoneEvent>, u16) {
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(9), content).unwrap();
     zone.add_player(1).unwrap();
     let mut zone = classes::at_level(zone, 1, 6);
     let commands = [
@@ -118,4 +169,31 @@ fn a_static_wall_blocks_a_ranged_ability_that_a_clear_line_allows() {
         clear.snapshot_for_player(1).unwrap().viewer.cast.is_some(),
         "the same cast starts with a clear line"
     );
+}
+
+/// Whether the Firebolt at the boar is refused for line of sight with `between` in the way.
+fn refused(between: Between) -> bool {
+    let (_, events, _) = cast_firebolt_with(content_with(between));
+    events.contains(&ZoneEvent::Error {
+        code: ErrorCode::LineOfSight,
+        target: Some(TARGET),
+    })
+}
+
+#[test]
+fn thin_planks_and_ramps_block_sight_and_a_gap_lets_it_through() {
+    let run = || {
+        for (between, blocked) in [
+            (Between::Nothing, false),
+            (Between::Plank, true),
+            (Between::Ramp, true),
+            (Between::Gap, false),
+        ] {
+            assert_eq!(refused(between), blocked, "{between:?}");
+        }
+    };
+    run();
+    // The same decisions on physics-engine (#57, physics-engine #330).
+    #[cfg(feature = "physics-ab")]
+    mmorpg_core::physics::using_backend(mmorpg_core::physics::Backend::Engine, run);
 }

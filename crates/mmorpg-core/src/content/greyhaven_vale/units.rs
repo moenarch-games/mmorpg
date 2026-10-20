@@ -29,6 +29,10 @@ pub mod templates {
     pub const BARREL: CreatureTemplateId = CreatureTemplateId::new(10);
     pub const EXPLOSIVE_BARREL: CreatureTemplateId = CreatureTemplateId::new(11);
     pub const FENCE: CreatureTemplateId = CreatureTemplateId::new(12);
+    /// A large creature (#297) that body-blocks, shoves and stomps.
+    pub const HILL_OGRE: CreatureTemplateId = CreatureTemplateId::new(13);
+    /// A movable crate (#58) that knockbacks and blasts slide.
+    pub const HEAVY_CRATE: CreatureTemplateId = CreatureTemplateId::new(14);
 }
 
 /// Default respawn time: 60 s.
@@ -53,6 +57,8 @@ const CRATE_BOX: [i32; 3] = [35, 35, 35];
 const BARREL_BOX: [i32; 3] = [30, 45, 30];
 /// A fence section runs along X at facing 0.
 const FENCE_BOX: [i32; 3] = [110, 50, 8];
+/// 1.4 m across and 2.8 m tall: a large creature (#297).
+const OGRE: [i32; 3] = [70, 140, 70];
 
 /// `(id, name, family, behaviour, levels, elite, health, health/level,
 /// damage, damage/level, swing ticks, respawn ticks, half extents)`.
@@ -73,9 +79,9 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 12] = {
+const TEMPLATES: [TemplateRow; 14] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
-    use CreatureFamily::{Boar, Marauder, Mirefin, Redbrand, Vermin, Wolf};
+    use CreatureFamily::{Boar, Marauder, Mirefin, Ogre, Redbrand, Vermin, Wolf};
     use crate::PropKind;
     use templates::*;
     [
@@ -92,6 +98,10 @@ const TEMPLATES: [TemplateRow; 12] = {
         (BARREL, "Barrel", CreatureFamily::Prop, Prop(PropKind::Barrel), [1, 1], false, 15, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, BARREL_BOX),
         (EXPLOSIVE_BARREL, "Blasting Powder Barrel", CreatureFamily::Prop, Prop(PropKind::ExplosiveBarrel), [1, 1], false, 10, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, BARREL_BOX),
         (FENCE, "Fence", CreatureFamily::Prop, Prop(PropKind::Fence), [1, 1], false, 18, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, FENCE_BOX),
+        // A large creature (#297): slow heavy swings, shoves and stomps.
+        (HILL_OGRE, "Hill Ogre", Ogre, Aggressive, [5, 5], false, 300, 0, [9, 15], 1, 84, RESPAWN_TICKS, OGRE),
+        // A movable prop (#58): knockbacks slide it; it breaks like a crate.
+        (HEAVY_CRATE, "Heavy Crate", CreatureFamily::Prop, Prop(PropKind::HeavyCrate), [1, 1], false, 30, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, CRATE_BOX),
     ]
 };
 
@@ -99,7 +109,7 @@ const TEMPLATES: [TemplateRow; 12] = {
 /// Greyhaven's smithy and houses, crates, barrels and fences at Millbrook Farm, and powder
 /// barrels in the Redbrand camp, set close enough to chain-react.
 #[rustfmt::skip]
-const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 17] = {
+const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 19] = {
     use templates::*;
     [
         // Greyhaven Outpost.
@@ -116,6 +126,9 @@ const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 17] = {
         (914, FENCE, [5_200, 3_600], 0),
         (915, FENCE, [5_430, 3_600], 0),
         (916, FENCE, [5_000, 3_730], 16_384),
+        // Millbrook Farm: two heavy crates south of the barn that knockbacks slide (#58).
+        (917, HEAVY_CRATE, [7_400, 3_200], 0),
+        (918, HEAVY_CRATE, [7_550, 3_200], 0),
         // Redbrand Hollow: powder barrels by the campfire and beside the western tents.
         (920, EXPLOSIVE_BARREL, [300, -9_000], 0),
         (921, EXPLOSIVE_BARREL, [370, -9_000], 0),
@@ -129,7 +142,7 @@ const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 17] = {
 /// 100s Wolfrun Woods, 200s Millbrook Farm, 300s Stillwater Lake, 400s
 /// Redbrand Hollow, 500s–800s the outer valley (#159).
 #[rustfmt::skip]
-const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 74] = {
+const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
     use templates::*;
     [
         // Wolfrun Woods: timber wolves on trunk-grid corners. Wolf 108 guards
@@ -216,6 +229,8 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 74] = {
         (700, YOUNG_BOAR, [3_600, 17_300], 16_384),
         (701, YOUNG_BOAR, [9_000, 16_850], 49_152),
         (702, GRAIN_RAT, [5_850, 17_300], 0),
+        // A hill ogre (#297) squats east of the ruined farmstead.
+        (710, HILL_OGRE, [7_450, 18_150], 32_768),
         // Eastwater Fen: mirefin lurkers in the wet ground.
         (800, MIREFIN_LURKER, [14_850, -7_100], 16_384),
         (801, MIREFIN_LURKER, [17_550, -4_400], 32_768),
@@ -334,6 +349,7 @@ pub fn creature_abilities() -> Vec<(CreatureTemplateId, crate::AbilityId)> {
             templates::REDBRAND_CROSSBOWMAN,
             crate::ability::ids::CROSSBOW_BOLT,
         ),
+        (templates::HILL_OGRE, crate::ability::ids::STOMP),
     ]
 }
 

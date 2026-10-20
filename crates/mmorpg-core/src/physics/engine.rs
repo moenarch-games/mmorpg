@@ -25,16 +25,12 @@
 //!
 //! - Characters meeting head-on use the engine's native sidestep instead of the Rapier
 //!   backend's `slide_around` workaround; characters do not push each other.
-//! - Grounded is the engine's own result: walkable static support within two contact offsets
-//!   after the last move, or snapped to (Rapier: any static ground within offset + 5 cm).
-//!   A body that was placed or added since its last move is answered by the same test as a
-//!   shape cast.
-//! - Engine gap: whether a character may snap to the ground on its next move is engine state
-//!   (its grounded result from the previous move) that a world rebuilt from game state cannot
-//!   restore, so a zone restored from a canonical snapshot can move a character walking
-//!   downhill differently on its first tick (Atlas 2.1.5). The adapter does not work around it.
-//! - Overlap queries see the terrain (Rapier skips box–heightfield pairs), and the terrain keeps
-//!   its flat cells (Rapier removes them and leaves them to the floor half-space).
+//! - Grounded is the engine's own result: walkable static support within the contact offset
+//!   plus 5 cm after the last move, or snapped to (Rapier: any static ground within offset +
+//!   5 cm). A body that was placed or added since its last move is answered by the same test
+//!   as a shape cast.
+//! - Overlap queries see the terrain (Rapier skips box–heightfield pairs). Flat terrain cells
+//!   are removed on both backends and left to the floor half-space.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -42,7 +38,7 @@ use std::fmt;
 use physics_engine::BodyId as EngineId;
 use physics_engine::approximate::{
     Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, HeightfieldDesc,
-    QueryFilter, QueryPose, RayCast, Shape, ShapeCast, Vector,
+    Quaternion, QueryFilter, QueryPose, RayCast, Shape, ShapeCast, Vector,
 };
 
 use super::{
@@ -52,6 +48,8 @@ use super::{
 
 /// The game's centimetres per metre: the engine's length unit.
 const UNITS_PER_METRE: f32 = 100.0;
+/// Ground within the contact offset plus this (5 cm) counts as support, as in Rapier.
+const GROUND_PREDICTION_UNITS: f32 = 5.0;
 /// A ceiling stops a rising body when it realizes less than this much (units) of its rise.
 const CEILING_TOLERANCE_UNITS: f32 = 1.0e-3;
 
@@ -161,7 +159,24 @@ impl World {
                 engine_body
             }
             Kind::Floor => Body::keyed(key, Shape::HalfSpace, vector(body.position), 0.0),
-            Kind::Fixed => Body::keyed(
+            // A ramp (#59) is the engine's wedge, which rises toward local -X, turned about Y
+            // toward the ramp's rise; along Z its local X extent is the box's Z extent.
+            Kind::Ramp(rises) => {
+                let [hx, hy, hz] = exact(body.half_extents);
+                let (half, turn) = match rises {
+                    crate::RampRise::NegX => (Vector(hx, hy, hz), 0.0),
+                    crate::RampRise::PosX => (Vector(hx, hy, hz), std::f32::consts::PI),
+                    crate::RampRise::PosZ => (Vector(hz, hy, hx), std::f32::consts::FRAC_PI_2),
+                    crate::RampRise::NegZ => (Vector(hz, hy, hx), -std::f32::consts::FRAC_PI_2),
+                };
+                let mut wedge = Body::keyed(key, Shape::Wedge(half), vector(body.position), 0.0);
+                let (sin, cos) = (turn / 2.0).sin_cos();
+                wedge.orientation = Quaternion(0.0, sin, 0.0, cos);
+                wedge
+            }
+            // A moving platform (#56) is a static box the adapter moves in place where the zone
+            // moves it; the adapter carries its riders.
+            Kind::Fixed | Kind::Platform => Body::keyed(
                 key,
                 Shape::Box(vector(exact(body.half_extents))),
                 vector(body.position),
@@ -240,6 +255,69 @@ impl World {
         Ok(())
     }
 
+    fn platform_mut(&mut self, id: BodyId) -> Result<&mut RigidBody, PhysicsError> {
+        self.bodies
+            .get_mut(&id)
+            .filter(|body| body.is_platform())
+            .ok_or_else(|| error(format!("platform body {} is missing", id.0)))
+    }
+
+    pub fn move_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        let platform = self.platform_mut(id)?;
+        let to = exact(to);
+        platform.velocity = [0, 1, 2].map(|axis| to[axis] - platform.position[axis]);
+        Ok(())
+    }
+
+    pub fn place_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
+        let platform = self.platform_mut(id)?;
+        let by = [0, 1, 2].map(|axis| exact(to)[axis] - platform.position[axis]);
+        self.shift_platform(id, by)
+    }
+
+    /// Moves platform `id`'s static box by `by`, in place (`set_static_position`).
+    fn shift_platform(&mut self, id: BodyId, by: [f32; 3]) -> Result<(), PhysicsError> {
+        let platform = self.platform_mut(id)?;
+        for (axis, delta) in platform.position.iter_mut().zip(by) {
+            *axis += delta;
+        }
+        platform.velocity = [0.0; 3];
+        let position = platform.position;
+        let handle = self.handles[&id];
+        self.engine
+            .set_static_position(handle, vector(position))
+            .map_err(|failure| engine_error("set_static_position", failure))
+    }
+
+    /// Whether moving `body` stands on platform `platform`: walkable top within the ground
+    /// prediction below it.
+    fn stands_on(&self, body: &RigidBody, platform: BodyId) -> bool {
+        let Some(&target) = self.handles.get(&platform) else {
+            return false;
+        };
+        let offset = self.settings.offset;
+        let predict = offset + GROUND_PREDICTION_UNITS;
+        let reach = predict + offset;
+        let cast = ShapeCast::new(
+            QueryPose::new(capsule(body.half_extents), lifted(body.position)),
+            Vector(0.0, -reach, 0.0),
+        );
+        let filter = QueryFilter {
+            exclude: Some(self.handles[&body.id]),
+            ..QueryFilter::default()
+        };
+        let mut hits = Vec::new();
+        self.engine
+            .cast_shape(cast, filter, &mut hits)
+            .expect("physics-engine platform support cast failed");
+        let min_up = self.settings.max_slope.cos();
+        hits.iter().any(|hit| {
+            hit.body == target
+                && (hit.starts_overlapping || hit.normal.1 >= min_up)
+                && hit.fraction * reach <= predict
+        })
+    }
+
     pub fn set_velocity(&mut self, id: BodyId, velocity: Vec3i) -> Result<(), PhysicsError> {
         let body = self
             .bodies
@@ -251,23 +329,40 @@ impl World {
     }
 
     /// Lays `terrain` as an engine heightfield: rows along +Z, columns along +X, heights
-    /// row-major as the content stores them.
+    /// row-major as the content stores them, with the flat cells removed like the Rapier
+    /// backend removes them.
     pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
         if let Some(ground) = self.ground.take() {
             self.engine.remove_body(ground.body);
             self.games.remove(&ground.body.to_bits());
         }
+        let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
+        // Flat cells are left to the floor half-space, as on the Rapier backend.
+        let removed_cells = (0..rows - 1)
+            .flat_map(|row| (0..columns - 1).map(move |column| (row, column)))
+            .map(|(row, column)| {
+                [
+                    (row, column),
+                    (row + 1, column),
+                    (row, column + 1),
+                    (row + 1, column + 1),
+                ]
+                .iter()
+                .all(|&(r, c)| terrain.heights[r * columns + c] == 0)
+            })
+            .collect();
         #[allow(clippy::cast_precision_loss)]
         let desc = HeightfieldDesc {
             origin: Vector(terrain.origin[0] as f32, 0.0, terrain.origin[1] as f32),
             cell_size: (terrain.step as f32, terrain.step as f32),
-            columns: usize::from(terrain.columns),
-            rows: usize::from(terrain.rows),
+            columns,
+            rows,
             heights: terrain
                 .heights
                 .iter()
                 .map(|&height| height as f32)
                 .collect(),
+            removed_cells: Some(removed_cells),
         };
         // Content validation already bounds the grid; an engine refusal is a broken invariant.
         let body = self
@@ -329,7 +424,50 @@ impl World {
     /// Advances one tick like the Rapier backend: gravity unless grounded and not rising, one
     /// character move per moving body (all in one batch), then landing or a ceiling ends the
     /// vertical velocity and the horizontal velocity becomes what the move realized.
+    ///
+    /// Moving platforms (#56) carry the units standing on them that are not rising, as on the
+    /// Rapier backend: a platform's displacement is added to each rider's move, a platform that
+    /// does not rise moves before the units and a rising one after them.
     pub fn step(&mut self) -> Result<StepStats, PhysicsError> {
+        let platforms: Vec<_> = self
+            .bodies
+            .values()
+            .filter(|body| body.is_platform() && body.velocity != [0.0; 3])
+            .map(|body| (body.id, body.velocity))
+            .collect();
+        let mut carried = BTreeMap::new();
+        for &(platform, displacement) in &platforms {
+            for body in self.bodies.values().filter(|body| body.is_moving()) {
+                if body.velocity[1] <= 0.0
+                    && !carried.contains_key(&body.id)
+                    && self.stands_on(body, platform)
+                {
+                    carried.insert(body.id, displacement);
+                }
+            }
+        }
+        for &(platform, displacement) in &platforms {
+            if displacement[1] <= 0.0 {
+                self.shift_platform(platform, displacement)?;
+            }
+        }
+        let stats = self.step_characters(&carried)?;
+        for &(platform, displacement) in &platforms {
+            if displacement[1] > 0.0 {
+                self.shift_platform(platform, displacement)?;
+            }
+        }
+        // A rider's grounded result predates its platform's rise: ask the geometry again.
+        for id in carried.keys() {
+            self.grounded.remove(id);
+        }
+        Ok(stats)
+    }
+
+    fn step_characters(
+        &mut self,
+        carried: &BTreeMap<BodyId, [f32; 3]>,
+    ) -> Result<StepStats, PhysicsError> {
         let mut moves = std::mem::take(&mut self.moves);
         moves.clear();
         let mut velocities = std::mem::take(&mut self.velocities);
@@ -344,9 +482,10 @@ impl World {
                 }
             }
             velocities.push((body.id, velocity));
+            let carry = carried.get(&body.id).copied().unwrap_or([0.0; 3]);
             moves.push(CharacterMove {
                 body: self.handles[&body.id],
-                desired: vector(velocity),
+                desired: vector([0, 1, 2].map(|axis| velocity[axis] + carry[axis])),
             });
         }
         let outcome = self.run_batch(&moves);
@@ -366,8 +505,10 @@ impl World {
             if moved != [0.0; 3] || result.depenetration != Vector::ZERO {
                 moved_bodies += 1;
             }
-            velocity[0] = moved[0];
-            velocity[2] = moved[2];
+            // The horizontal velocity is what the move realized, less what the platform carried.
+            let carry = carried.get(&id).copied().unwrap_or([0.0; 3]);
+            velocity[0] = moved[0] - carry[0];
+            velocity[2] = moved[2] - carry[2];
             if let Some(body) = self.bodies.get_mut(&id) {
                 body.velocity = velocity;
             }
@@ -383,7 +524,7 @@ impl World {
 
     /// Whether a moving body stands on static ground: its last move's engine result, or for a
     /// body placed or added since, the engine's grounded test as a downward shape cast
-    /// (walkable static support within two contact offsets).
+    /// (walkable static support within the contact offset plus 5 cm).
     pub fn grounded(&self, id: BodyId) -> bool {
         let Some(body) = self.bodies.get(&id).filter(|body| body.is_moving()) else {
             return false;
@@ -391,8 +532,10 @@ impl World {
         if let Some(&grounded) = self.grounded.get(&id) {
             return grounded;
         }
+        // The engine's (and Rapier's) ground prediction: offset + 5 cm.
         let offset = self.settings.offset;
-        let reach = offset + self.settings.snap_to_ground.unwrap_or(0.0) + offset;
+        let predict = offset + GROUND_PREDICTION_UNITS;
+        let reach = predict + offset;
         let cast = ShapeCast::new(
             QueryPose::new(capsule(body.half_extents), lifted(body.position)),
             Vector(0.0, -reach, 0.0),
@@ -415,14 +558,19 @@ impl World {
                         .and_then(|game| self.bodies.get(game))
                         .is_none_or(|body| !body.is_moving())
             })
-            .is_some_and(|hit| hit.normal.1 >= min_up && hit.fraction * reach <= 2.0 * offset)
+            .is_some_and(|hit| hit.normal.1 >= min_up && hit.fraction * reach <= predict)
     }
 
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
-        let pose = QueryPose::new(
-            Shape::Box(vector(exact(aabb.half_extents))),
-            vector(exact(aabb.center)),
-        );
+        self.overlap_box(exact(aabb.center), exact(aabb.half_extents))
+    }
+
+    pub fn overlap_box(
+        &self,
+        centre: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Result<Vec<BodyId>, PhysicsError> {
+        let pose = QueryPose::new(Shape::Box(vector(half_extents)), vector(centre));
         let mut hits = Vec::new();
         self.engine
             .overlap_shape(pose, QueryFilter::default(), &mut hits)
@@ -492,6 +640,35 @@ impl World {
         })
     }
 
+    pub fn cast_shape(
+        &self,
+        origin: [f32; 3],
+        half_extents: Vec3i,
+        translation: [f32; 3],
+        accept: impl Fn(BodyId) -> bool,
+    ) -> Option<RayHit> {
+        if translation == [0.0; 3] {
+            return None;
+        }
+        let cast = ShapeCast::new(
+            QueryPose::new(capsule(half_extents), vector(origin)),
+            vector(translation),
+        );
+        let mut hits = Vec::new();
+        self.engine
+            .cast_shape(cast, QueryFilter::default(), &mut hits)
+            .expect("physics-engine shape cast failed");
+        // Hits come ordered by fraction, then body order (game ID).
+        hits.iter().find_map(|hit| {
+            let id = self.games.get(&hit.body.to_bits()).copied()?;
+            accept(id).then_some(RayHit {
+                body: id,
+                fraction: hit.fraction,
+                normal: array(hit.normal),
+            })
+        })
+    }
+
     /// Debris stays on Rapier (physics-engine #330 parks dynamics): the shared Rapier debris
     /// step over this world's fixed bodies and terrain.
     pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
@@ -500,5 +677,14 @@ impl World {
             .as_ref()
             .map(|ground| (ground.id, &ground.terrain));
         super::rapier::step_debris(self.gravity, &self.bodies, ground, debris, settle)
+    }
+
+    /// Movable props (#58) slide on Rapier too, like debris: physics-engine parks dynamics.
+    pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
+        let ground = self
+            .ground
+            .as_ref()
+            .map(|ground| (ground.id, &ground.terrain));
+        super::rapier::step_props(self.gravity, &self.bodies, ground, props, exclude)
     }
 }

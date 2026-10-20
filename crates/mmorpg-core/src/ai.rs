@@ -3,7 +3,8 @@
 //! - **Idle**: aggressive creatures engage the nearest living player within
 //!   their aggro radius, found through the zone's spatial index. Otherwise
 //!   they wait 5–15 s (zone RNG), then walk to a random point within their
-//!   wander radius at walking speed.
+//!   wander radius at walking speed. Large creatures (#297) hold their
+//!   ground instead.
 //! - **Engaged**: the target is the threat leader. The creature steers
 //!   straight at it at run speed until it is inside melee reach and faces it;
 //!   combat swings on the swing timer. An empty threat table or straying
@@ -146,6 +147,7 @@ impl ZoneSimulation {
             .body(body)
             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
         let (position, vertical) = (current.position(), current.velocity().y);
+        let (centre, half) = (current.exact_position(), current.half_extents());
         let here = [position.x, position.z];
         let (idle, level) = (
             matches!(creature.ai, CreatureAi::Idle { .. }),
@@ -174,6 +176,15 @@ impl ZoneSimulation {
 
         let home = spawn.position;
         let leashed = distance_squared(home, here) > i64::from(LEASH_RADIUS_UNITS).pow(2);
+        // Walls, pieces and rubble in the way (#307): a route around them.
+        let ai = self.creatures.get(&id).map(|creature| creature.ai);
+        let route = match (ai, chase) {
+            (Some(CreatureAi::Engaged), Some((target, to))) if !leashed => {
+                self.route_waypoint(centre, half, to, creature_reach(target))?
+            }
+            (Some(CreatureAi::Evading { .. }), _) => self.route_waypoint(centre, half, home, 0)?,
+            _ => None,
+        };
         // An engaged creature that keeps fighting may cast its ability.
         let casting = match chase {
             Some((target, to)) if !leashed => self.try_creature_ability(id, target, here, to)?,
@@ -194,6 +205,9 @@ impl ZoneSimulation {
 
         let mut teleport_home = false;
         let (velocity, facing) = match creature.ai {
+            // Large creatures (#297) hold their ground while idle instead of wandering, so they
+            // draw nothing from the zone RNG until a fight.
+            CreatureAi::Idle { .. } if template.is_large() => ([0, 0], None),
             CreatureAi::Idle { .. } => wander(
                 &mut self.rng,
                 &mut creature.ai,
@@ -206,6 +220,13 @@ impl ZoneSimulation {
                 Some((_, to)) if casting => {
                     let (dx, dz) = offset(here, to);
                     ([0, 0], yaw_from_vector(dx, dz))
+                }
+                Some((_, _)) if route.is_some() => {
+                    let (dx, dz) = offset(here, route.unwrap_or(here));
+                    (
+                        steer(dx, dz, CREATURE_RUN_SPEED_UNITS_PER_TICK),
+                        yaw_from_vector(dx, dz),
+                    )
                 }
                 Some((target, to)) => {
                     let (dx, dz) = offset(here, to);
@@ -234,6 +255,7 @@ impl ZoneSimulation {
                     ([0, 0], None)
                 } else {
                     creature.ai = CreatureAi::Evading { ticks: ticks + 1 };
+                    let (dx, dz) = route.map_or((dx, dz), |waypoint| offset(here, waypoint));
                     (
                         steer(dx, dz, CREATURE_EVADE_SPEED_UNITS_PER_TICK),
                         yaw_from_vector(dx, dz),

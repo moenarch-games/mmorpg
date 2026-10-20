@@ -20,6 +20,14 @@ fn metres(units: [i32; 3]) -> [f64; 3] {
 /// The colour of `kind`'s piece `index`.
 fn piece_color(kind: PropKind, index: usize) -> u32 {
     match kind {
+        // A movable crate (#58) is darker banded timber.
+        PropKind::HeavyCrate => {
+            if index < 2 {
+                IRON
+            } else {
+                DARK_WOOD
+            }
+        }
         PropKind::Crate => {
             if index < 2 {
                 DARK_WOOD

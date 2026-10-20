@@ -750,6 +750,7 @@ async fn fragmented_projection_reaches_the_native_client() {
         doors: Vec::new(),
         projectiles: Vec::new(),
         debris: Vec::new(),
+        pieces: Vec::new(),
         loot: None,
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         zone_id,

@@ -631,6 +631,26 @@ impl Presentation {
         Some(self.toggle_door(door.id))
     }
 
+    /// The `Repair` of the first damaged destructible piece (#305) the viewer can reach, if any.
+    #[must_use]
+    pub fn reachable_repair(&self) -> Option<mmorpg_core::ZoneCommand> {
+        let snapshot = self.latest()?;
+        let feet = snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Player(self.player_id))?
+            .position;
+        let piece = snapshot.pieces.iter().find(|view| {
+            self.content
+                .pieces()
+                .iter()
+                .any(|piece| piece.id == view.piece && piece.within_repair_reach(feet))
+        })?;
+        Some(mmorpg_core::ZoneCommand::Repair {
+            piece: Some(piece.piece),
+        })
+    }
+
     /// The `UseDoor` that flips `door` from its latest presented state.
     #[must_use]
     pub fn toggle_door(&self, door: mmorpg_core::DoorId) -> mmorpg_core::ZoneCommand {
@@ -913,6 +933,7 @@ fn creature_color(family: CreatureFamily, hostile: bool) -> [f32; 3] {
         CreatureFamily::Mirefin => 0.16,
         CreatureFamily::Redbrand => 0.2,
         CreatureFamily::Prop => 0.24,
+        CreatureFamily::Ogre => 0.28,
     };
     if hostile {
         [0.78 - shade, 0.24 + shade * 0.5, 0.18]

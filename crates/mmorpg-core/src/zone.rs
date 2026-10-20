@@ -81,6 +81,8 @@ pub(crate) struct PlayerState {
     /// Ticks left of a directed strike's committed recovery; a guard raised
     /// meanwhile waits to protect (#156, Atlas 5.2.39, 5.2.41).
     pub(crate) strike_recovery: u16,
+    /// The destructible piece the player is repairing (#305).
+    pub(crate) repairing: Option<crate::PieceId>,
     pub(crate) last_sequence: u32,
     pub(crate) spawn_slot: u16,
     pub(crate) level: u8,
@@ -140,6 +142,7 @@ impl PlayerState {
             landing: crate::LandingState::default(),
             combo: None,
             strike_recovery: 0,
+            repairing: None,
             last_sequence: 0,
             spawn_slot,
             level: PLAYER_START_LEVEL,
@@ -228,6 +231,13 @@ pub struct ZoneSimulation {
     /// Pieces of broken props by ID (#288).
     pub(crate) debris: BTreeMap<u32, crate::Debris>,
     pub(crate) next_debris: u32,
+    /// Destructible pieces' health and last change (#305).
+    pub(crate) pieces: BTreeMap<crate::PieceId, crate::structure::PieceState>,
+    /// Navigation cell results (#307), derived from static geometry and dropped when it
+    /// changes; not canonical state.
+    pub(crate) nav_cache: crate::nav::NavCache,
+    /// Standing movable props' exact state (#58).
+    pub(crate) prop_motion: BTreeMap<CreatureId, crate::movable::PropMotion>,
 }
 
 impl ZoneSimulation {
@@ -272,9 +282,7 @@ impl ZoneSimulation {
         let spawn = definition.spawn_grid().feet(0).unwrap_or([0; 3]);
         for collider in definition.colliders() {
             // The flat ground the spawn grid stands on is a floor half-space at y = 0 (#271).
-            let [x, y, z] = collider.position;
-            let [hx, hy, hz] = collider.half_extents;
-            if y + hy == 0 && (x - spawn[0]).abs() <= hx && (z - spawn[2]).abs() <= hz {
+            if is_ground(collider, spawn) {
                 let id = crate::physics::BodyId(u64::from(collider.id));
                 world
                     .add_body(RigidBody::floor(id, 0))
@@ -303,6 +311,30 @@ impl ZoneSimulation {
                     crate::physics::BodyId(u64::from(door.body)),
                     vector(door.closed.position),
                     vector(door.closed.half_extents),
+                ))
+                .map_err(physics_error)?;
+        }
+        // Ramps (#59) are fixed wedges.
+        for ramp in content.ramps() {
+            world
+                .add_body(RigidBody::ramp(
+                    crate::physics::BodyId(u64::from(ramp.body)),
+                    vector(ramp.position),
+                    vector(ramp.half_extents),
+                    ramp.rises,
+                ))
+                .map_err(physics_error)?;
+        }
+        // Destructible pieces (#305) stand intact.
+        let pieces = Self::build_pieces(&mut world, &content)?;
+        // Platforms (#56) start at their tick-0 centre.
+        for platform in content.platforms() {
+            let [x, y, z] = platform.centre_at(0);
+            world
+                .add_body(RigidBody::platform(
+                    crate::physics::BodyId(u64::from(platform.body)),
+                    Vec3i::new(x, y, z),
+                    vector(platform.half_extents),
                 ))
                 .map_err(physics_error)?;
         }
@@ -340,6 +372,9 @@ impl ZoneSimulation {
             forced: BTreeMap::new(),
             debris: BTreeMap::new(),
             next_debris: 1,
+            pieces,
+            nav_cache: BTreeMap::new(),
+            prop_motion: BTreeMap::new(),
         })
     }
 
@@ -491,6 +526,7 @@ impl ZoneSimulation {
             // Queued so a guard pressed after a strike stays raised (5.2.37).
             ZoneCommand::Guard { lane } => Some(PlayerIntent::Guard(lane)),
             ZoneCommand::UseDoor { door, open } => Some(PlayerIntent::UseDoor { door, open }),
+            ZoneCommand::Repair { piece } => Some(PlayerIntent::Repair(piece)),
             ZoneCommand::SelectTarget(target) => Some(PlayerIntent::SelectTarget(target)),
             ZoneCommand::StartAttack => Some(PlayerIntent::StartAttack),
             ZoneCommand::Loot(claim) => Some(PlayerIntent::Loot(claim)),
@@ -573,8 +609,11 @@ impl ZoneSimulation {
     ///    wander, leash, evade and creature ability casts), which set
     ///    creature velocities; roots and stuns stop them, snares slow them;
     /// 3. player movement velocities and grounded jumps (dead and stunned
-    ///    players stand still); movement or a jump interrupts a cast;
-    /// 4. one physics step, then one debris step for broken props' pieces (#288);
+    ///    players stand still); movement or a jump interrupts a cast; large
+    ///    creatures shove smaller units in their way (#297) and forced moves
+    ///    set their units' velocities;
+    /// 4. moving platforms take their scheduled centre for this tick (#56), carrying their
+    ///    riders in one physics step, then one debris step for broken props' pieces (#288);
     /// 5. interest index maintenance from the new positions;
     /// 6. combat: global cooldowns, cooldowns and casts or channels (players,
     ///    then creatures), aura pulses and expiry in `(EntityRef, aura slot)`
@@ -601,10 +640,13 @@ impl ZoneSimulation {
         self.consume_intents()?;
         self.decide_creatures()?;
         self.drive_players()?;
+        self.shove_with_large_creatures()?;
         self.apply_forced_moves()?;
+        self.schedule_platforms(now, false)?;
         self.tick_work.physics = Some(self.world.step().map_err(physics_error)?);
         self.settle_forced_moves();
         self.advance_debris();
+        self.advance_movable_props()?;
         self.update_landings()?;
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
         for player in self.players.values_mut() {
@@ -616,6 +658,7 @@ impl ZoneSimulation {
         self.advance_auras(now)?;
         self.resolve_combat(now)?;
         self.update_timers(now)?;
+        self.regrow_pieces(now)?;
         self.advance_combos();
         self.advance_quest_objectives(now)?;
         self.tick = now;
@@ -642,6 +685,12 @@ impl ZoneSimulation {
             .collect();
         for player_id in moving {
             self.interrupt_cast(EntityRef::Player(player_id), None, None);
+        }
+        // Moving or jumping stops a repair (#305).
+        for player in self.players.values_mut() {
+            if player.forward != Axis::Zero || player.strafe != Axis::Zero || player.jump_pending {
+                player.repairing = None;
+            }
         }
         for (&player_id, state) in &self.players {
             let body_id = body_id(EntityRef::Player(player_id));
@@ -880,6 +929,27 @@ pub(crate) fn saturate_i8(value: i32) -> i8 {
 
 pub(crate) fn physics_error(error: crate::physics::PhysicsError) -> ZoneError {
     ZoneError::new(error.to_string())
+}
+
+/// Whether `collider` is the flat ground the spawn grid stands on (feet at `spawn`): its top at
+/// y = 0 under the spawn. It becomes the floor half-space, and the terrain shares its ID.
+fn is_ground(collider: &crate::StaticCollider, spawn: [i32; 3]) -> bool {
+    let [x, y, z] = collider.position;
+    let [hx, hy, hz] = collider.half_extents;
+    y + hy == 0 && (x - spawn[0]).abs() <= hx && (z - spawn[2]).abs() <= hz
+}
+
+impl ZoneSimulation {
+    /// The ground's body (#57): the floor half-space and the terrain rising from it.
+    pub(crate) fn ground_body(&self) -> Option<crate::physics::BodyId> {
+        let definition = self.content.definition();
+        let spawn = definition.spawn_grid().feet(0).unwrap_or([0; 3]);
+        definition
+            .colliders()
+            .iter()
+            .find(|collider| is_ground(collider, spawn))
+            .map(|collider| crate::physics::BodyId(u64::from(collider.id)))
+    }
 }
 
 #[cfg(test)]

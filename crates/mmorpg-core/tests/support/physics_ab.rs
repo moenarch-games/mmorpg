@@ -184,6 +184,353 @@ impl BotScenario {
 pub enum Workload {
     Bots(BotScenario),
     Greyhaven(Fixture),
+    /// The hill ogre (#297): body-blocking, shoving and stomping in Southmeadow Downs.
+    OgreBrawl,
+    /// The mill hoist (#56): a player rides the moving platform up and walks off at the top.
+    MillHoist,
+    /// Charges through Wolfrun Woods (#57): four level-6 Wardens charge at wolves among the
+    /// trunks; a charge needs a path as wide as the body (`World::cast_shape`).
+    ChargePath,
+    /// The Redbrand watch post (#305): an arcanist draws the camp's bandits past the post and
+    /// blasts them there, breaking pieces whose colliders leave both physical worlds.
+    WatchPost,
+    /// The mill dock's ramps (#59): one player walks up the cart ramp onto the dock and back
+    /// down and across it, another walks into the steep chute.
+    MillRamps,
+    /// Millbrook's heavy crates (#58): two Wardens Shield Bash them across the yard, then one
+    /// walks into a crate where it rests. The slides run on Rapier in both arms.
+    CrateShove,
+    /// Magic missiles in Wolfrun Woods (#289): four level-6 Arcanists Firebolt wolves among the
+    /// trunks (homing missiles), then cast free Firebolts along their facing into the woods.
+    Missiles,
+}
+
+/// The missile workload's length.
+pub const MISSILES_TICKS: usize = 300;
+
+/// The missile commands: Arcanists, wolves as targets, homing Firebolts, then free ones.
+fn missiles_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let wolves = [102, 103, 101, 107];
+    let firebolt = |target| ZoneCommand::UseAbility {
+        ability: mmorpg_core::ability::ids::FIREBOLT.get(),
+        target,
+    };
+    (1..=4)
+        .flat_map(|player: u32| {
+            let wolf = wolves[usize::try_from(player - 1).expect("four players")];
+            let facing = u16::try_from(player * 16_384 - 8_192).expect("a facing");
+            match tick {
+                0 => vec![(player, ZoneCommand::ChooseClass { class: 2, sex: 0 })],
+                1 => vec![(
+                    player,
+                    ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(wolf)))),
+                )],
+                2 => vec![(player, firebolt(None))],
+                150 => vec![
+                    (player, ZoneCommand::SelectTarget(None)),
+                    (
+                        player,
+                        ZoneCommand::Move {
+                            forward: 0,
+                            strafe: 0,
+                            facing,
+                        },
+                    ),
+                ],
+                151 => vec![(player, firebolt(None))],
+                _ => Vec::new(),
+            }
+        })
+        .collect()
+}
+
+/// The crate workload's length.
+pub const CRATE_SHOVE_TICKS: usize = 180;
+
+/// Two Wardens 2 m south of heavy crates 917 and 918.
+const CRATE_SHOVE_PLAYERS: [(u32, [f32; 2]); 2] =
+    [(1, [7_400.0, 3_000.0]), (2, [7_550.0, 3_000.0])];
+
+/// Two level-6 Wardens with full rage by the crates.
+fn crate_shove_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    let zone = placed_zone_at_level(&CRATE_SHOVE_PLAYERS, 6)?;
+    let mut state = zone.snapshot()?;
+    for player in &mut state.players {
+        player.combat.abilities.class = Some(mmorpg_core::ClassChoice {
+            class: mmorpg_core::PlayerClass::Warden,
+            sex: mmorpg_core::Sex::Female,
+        });
+        player.combat.abilities.resource = 100;
+    }
+    Ok(ZoneSimulation::from_snapshot(
+        state,
+        std::sync::Arc::clone(zone.content()),
+    )?)
+}
+
+/// The crate commands: Wardens facing north, the crates as targets, bashes, then player 2
+/// walks north into its crate.
+fn crate_shove_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let stand = |forward| ZoneCommand::Move {
+        forward,
+        strafe: 0,
+        facing: 0,
+    };
+    let crates = [(1, 917), (2, 918)];
+    crates
+        .into_iter()
+        .flat_map(|(player, prop)| match tick {
+            0 => vec![(player, stand(0))],
+            1 => vec![(
+                player,
+                ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(prop)))),
+            )],
+            2 => vec![(
+                player,
+                ZoneCommand::UseAbility {
+                    ability: mmorpg_core::ability::ids::SHIELD_BASH.get(),
+                    target: None,
+                },
+            )],
+            60 if player == 2 => vec![(player, stand(1))],
+            150 if player == 2 => vec![(player, stand(0))],
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+/// The charge workload's length.
+pub const CHARGE_PATH_TICKS: usize = 240;
+
+/// The Wardens by ID and feet XZ, on Wolfrun Woods trunk-grid corners near wolves.
+const CHARGE_PATH_PLAYERS: [(u32, [f32; 2]); 4] = [
+    (1, [-7_550.0, -2_700.0]),
+    (2, [-6_650.0, -2_250.0]),
+    (3, [-8_900.0, -2_700.0]),
+    (4, [-7_100.0, -900.0]),
+];
+
+/// The charge workload's commands: each Warden chooses its class, targets a wolf and charges.
+fn charge_path_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    // Wolves 102, 103, 101 and 107 (Greyhaven spawns).
+    let wolves = [102, 103, 101, 107];
+    (1..=4)
+        .flat_map(|player: u32| {
+            let wolf = wolves[usize::try_from(player - 1).expect("four players")];
+            match tick {
+                0 => vec![(player, ZoneCommand::ChooseClass { class: 0, sex: 0 })],
+                1 => vec![(
+                    player,
+                    ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(wolf)))),
+                )],
+                2 => vec![(
+                    player,
+                    ZoneCommand::UseAbility {
+                        ability: mmorpg_core::ability::ids::CHARGE.get(),
+                        target: None,
+                    },
+                )],
+                _ => Vec::new(),
+            }
+        })
+        .collect()
+}
+
+/// The watch post workload's length.
+pub const WATCH_POST_TICKS: usize = 420;
+
+/// The arcanist just north of the watch post, inside the camp, and a ranger beside it.
+const WATCH_POST_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [700.0, -7_350.0]), (2, [300.0, -7_400.0])];
+
+/// The watch post commands: classes, the nearest bandits as targets, Fire Blasts and arrows.
+fn watch_post_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let creature = |id| Some(EntityRef::Creature(CreatureId::new(id)));
+    let ability = |ability: mmorpg_core::AbilityId, target| ZoneCommand::UseAbility {
+        ability: ability.get(),
+        target,
+    };
+    use mmorpg_core::ability::ids;
+    match tick {
+        0 => vec![
+            (1, ZoneCommand::ChooseClass { class: 2, sex: 0 }),
+            (2, ZoneCommand::ChooseClass { class: 1, sex: 1 }),
+        ],
+        1 => vec![
+            (1, ZoneCommand::SelectTarget(creature(401))),
+            (2, ZoneCommand::SelectTarget(creature(400))),
+            (2, ZoneCommand::StartAttack),
+        ],
+        // The bandits run at them past the post; blast whoever is at the walls.
+        30 | 340 => vec![(1, ability(ids::FIRE_BLAST, creature(401)))],
+        60 | 120 | 200 => vec![(2, ability(ids::AIMED_SHOT, creature(400)))],
+        _ => Vec::new(),
+    }
+}
+
+/// The ramp walk's length.
+pub const MILL_RAMPS_TICKS: usize = 240;
+
+/// The ramp walk's players by ID and feet XZ.
+const MILL_RAMPS_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [7_300.0, 1_950.0]), (2, [8_250.0, 1_500.0])];
+
+/// The ramp walk's commands at `tick`.
+fn mill_ramps_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let walk = |facing| ZoneCommand::Move {
+        forward: 1,
+        strafe: 0,
+        facing,
+    };
+    let (east, west, plus_z, minus_z) = (16_384, 49_152, 0, 32_768);
+    match tick {
+        0 => vec![(1, walk(east)), (2, walk(plus_z))],
+        44 => vec![(1, walk(west))],
+        // Back on the ramp, across its slope.
+        60 => vec![(1, walk(plus_z))],
+        64 => vec![(1, walk(minus_z))],
+        72 => vec![(1, walk(west))],
+        120 => vec![(1, walk(east)), (2, walk(minus_z))],
+        150 => vec![
+            (
+                1,
+                ZoneCommand::Move {
+                    forward: 0,
+                    strafe: 0,
+                    facing: east,
+                },
+            ),
+            (
+                2,
+                ZoneCommand::Move {
+                    forward: 0,
+                    strafe: 0,
+                    facing: plus_z,
+                },
+            ),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+/// The mill hoist ride: one full cycle and a little more.
+pub const MILL_HOIST_TICKS: usize = 640;
+
+/// The hoist ride's commands: player 1 stands on the resting hoist from the start and walks
+/// north onto the windmill's gallery once the hoist is up.
+fn mill_hoist_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let top = mmorpg_core::greyhaven_vale::MILL_HOIST;
+    let up = usize::try_from(top.dwell + top.travel_ticks()).expect("ticks fit");
+    let walk = |forward| ZoneCommand::Move {
+        forward,
+        strafe: 0,
+        facing: 0,
+    };
+    if tick == up + 10 {
+        vec![(1, walk(1))]
+    } else if tick == up + 30 {
+        vec![(1, walk(0))]
+    } else {
+        Vec::new()
+    }
+}
+
+/// The hoist ride's initial zone: Greyhaven with player 1 on the resting hoist.
+fn mill_hoist_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    let content = mmorpg_core::greyhaven_vale::content();
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), std::sync::Arc::clone(&content))?;
+    zone.add_player(1)?;
+    let mut state = zone.snapshot()?;
+    let [x, _, z] = mmorpg_core::greyhaven_vale::MILL_HOIST.low;
+    #[allow(clippy::cast_precision_loss)]
+    let feet = [x as f32, 90.0, z as f32];
+    state.players[0].position = feet;
+    Ok(ZoneSimulation::from_snapshot(state, content)?)
+}
+
+/// The ogre brawl's script length.
+pub const OGRE_BRAWL_TICKS: usize = 360;
+/// The hill ogre and its spawn point (Greyhaven content).
+const OGRE: u32 = 710;
+const OGRE_AT: [f32; 2] = [7_450.0, 18_150.0];
+/// Yaws: 0 faces +Z, a quarter turn +X.
+const SOUTH: u16 = 32_768;
+const WEST: u16 = 49_152;
+
+/// The brawl's players by ID and feet XZ: 1 provokes the ogre from 3 m south and later runs
+/// on south past 2, who stands in the ogre's way; 3 walks into the ogre's side from the east.
+const OGRE_BRAWL_PLAYERS: [(u32, [f32; 2]); 3] = [
+    (1, [OGRE_AT[0], OGRE_AT[1] - 300.0]),
+    (2, [OGRE_AT[0] + 20.0, OGRE_AT[1] - 800.0]),
+    (3, [OGRE_AT[0] + 600.0, OGRE_AT[1]]),
+];
+
+/// The brawl's commands at `tick`, as `(player, command)`.
+fn ogre_brawl_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let walk = |facing| ZoneCommand::Move {
+        forward: 1,
+        strafe: 0,
+        facing,
+    };
+    let stand = |facing| ZoneCommand::Move {
+        forward: 0,
+        strafe: 0,
+        facing,
+    };
+    let ogre = Some(EntityRef::Creature(CreatureId::new(OGRE)));
+    match tick {
+        0 => vec![
+            (1, ZoneCommand::SelectTarget(ogre)),
+            (1, ZoneCommand::StartAttack),
+            (3, walk(WEST)),
+        ],
+        60 => vec![(1, walk(SOUTH)), (3, stand(WEST))],
+        110 => vec![(1, stand(0))],
+        200 => vec![(3, walk(WEST))],
+        240 => vec![(3, stand(WEST))],
+        _ => Vec::new(),
+    }
+}
+
+/// The ogre brawl's initial zone: Greyhaven with its three players placed by the ogre.
+fn ogre_brawl_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    placed_zone(&OGRE_BRAWL_PLAYERS)
+}
+
+/// [`placed_zone`] with every player at `level` and full health.
+fn placed_zone_at_level(
+    players: &[(u32, [f32; 2])],
+    level: u8,
+) -> Result<ZoneSimulation, Box<dyn Error>> {
+    let zone = placed_zone(players)?;
+    let mut state = zone.snapshot()?;
+    for player in &mut state.players {
+        player.combat.level = level;
+        player.combat.health = mmorpg_core::unit::player_max_health(level);
+    }
+    Ok(ZoneSimulation::from_snapshot(
+        state,
+        std::sync::Arc::clone(zone.content()),
+    )?)
+}
+
+/// Greyhaven with `players` placed at their feet XZ, standing on the ground.
+fn placed_zone(players: &[(u32, [f32; 2])]) -> Result<ZoneSimulation, Box<dyn Error>> {
+    let content = mmorpg_core::greyhaven_vale::content();
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), std::sync::Arc::clone(&content))?;
+    for &(player, _) in players {
+        zone.add_player(player)?;
+    }
+    let mut state = zone.snapshot()?;
+    for &(player, [x, z]) in players {
+        let snapshot = state
+            .players
+            .iter_mut()
+            .find(|snapshot| snapshot.player_id == player)
+            .ok_or("missing brawl player")?;
+        #[allow(clippy::cast_precision_loss)]
+        let y = zone.ground_probe(x as i32, z as i32) as f32 + 90.0;
+        snapshot.position = [x, y, z];
+    }
+    Ok(ZoneSimulation::from_snapshot(state, content)?)
 }
 
 impl Workload {
@@ -192,6 +539,13 @@ impl Workload {
         match self {
             Self::Bots(scenario) => &scenario.name,
             Self::Greyhaven(fixture) => fixture.name,
+            Self::OgreBrawl => "vale-ogre-brawl",
+            Self::MillHoist => "vale-mill-hoist",
+            Self::MillRamps => "vale-mill-ramps",
+            Self::ChargePath => "vale-charge-path",
+            Self::WatchPost => "vale-watch-post",
+            Self::CrateShove => "vale-crate-shove",
+            Self::Missiles => "vale-missiles",
         }
     }
 
@@ -200,6 +554,13 @@ impl Workload {
         match self {
             Self::Bots(scenario) => usize::try_from(scenario.ticks).expect("tick count fits"),
             Self::Greyhaven(_) => greyhaven_workload::TICKS,
+            Self::OgreBrawl => OGRE_BRAWL_TICKS,
+            Self::MillHoist => MILL_HOIST_TICKS,
+            Self::MillRamps => MILL_RAMPS_TICKS,
+            Self::ChargePath => CHARGE_PATH_TICKS,
+            Self::WatchPost => WATCH_POST_TICKS,
+            Self::CrateShove => CRATE_SHOVE_TICKS,
+            Self::Missiles => MISSILES_TICKS,
         }
     }
 }
@@ -219,6 +580,13 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
         .map(|source| BotScenario::parse(source).map(Workload::Bots))
         .collect::<Result<_, _>>()?;
     workloads.extend(greyhaven_workload::FIXTURES.map(Workload::Greyhaven));
+    workloads.push(Workload::OgreBrawl);
+    workloads.push(Workload::MillHoist);
+    workloads.push(Workload::MillRamps);
+    workloads.push(Workload::ChargePath);
+    workloads.push(Workload::WatchPost);
+    workloads.push(Workload::CrateShove);
+    workloads.push(Workload::Missiles);
     Ok(workloads)
 }
 
@@ -249,6 +617,13 @@ impl Run {
                 scenario.bots.len(),
             ),
             Workload::Greyhaven(fixture) => (greyhaven_workload::initial_zone(*fixture)?, 0),
+            Workload::OgreBrawl => (ogre_brawl_zone()?, 0),
+            Workload::MillHoist => (mill_hoist_zone()?, 0),
+            Workload::MillRamps => (placed_zone(&MILL_RAMPS_PLAYERS)?, 0),
+            Workload::ChargePath => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
+            Workload::WatchPost => (placed_zone_at_level(&WATCH_POST_PLAYERS, 6)?, 0),
+            Workload::CrateShove => (crate_shove_zone()?, 0),
+            Workload::Missiles => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
         };
         Ok(Self {
             zone,
@@ -307,6 +682,31 @@ impl Run {
             Workload::Greyhaven(fixture) => {
                 greyhaven_workload::commands(&mut self.zone, *fixture, self.tick)?;
             }
+            Workload::OgreBrawl
+            | Workload::MillHoist
+            | Workload::MillRamps
+            | Workload::ChargePath
+            | Workload::WatchPost
+            | Workload::CrateShove
+            | Workload::Missiles => {
+                let commands = match self.workload {
+                    Workload::OgreBrawl => ogre_brawl_commands(self.tick),
+                    Workload::MillHoist => mill_hoist_commands(self.tick),
+                    Workload::ChargePath => charge_path_commands(self.tick),
+                    Workload::WatchPost => watch_post_commands(self.tick),
+                    Workload::CrateShove => crate_shove_commands(self.tick),
+                    Workload::Missiles => missiles_commands(self.tick),
+                    _ => mill_ramps_commands(self.tick),
+                };
+                for (player, command) in commands {
+                    let sequence = self.next_sequence(player);
+                    let outcome = match self.zone.apply_command(player, sequence, command) {
+                        Ok(()) => "applied".to_owned(),
+                        Err(error) => format!("refused: {error}"),
+                    };
+                    self.outcomes.push(outcome);
+                }
+            }
             Workload::Bots(scenario) => {
                 let scenario = scenario.clone();
                 while let Some(step) = scenario.steps.get(self.next_step) {
@@ -319,6 +719,17 @@ impl Run {
             }
         }
         Ok(())
+    }
+
+    /// The next command sequence of a scripted (non-bot) player.
+    fn next_sequence(&mut self, player: PlayerId) -> u32 {
+        let index = usize::try_from(player).expect("player IDs fit") - 1;
+        if self.sequences.len() <= index {
+            self.sequences.resize(index + 1, 1);
+        }
+        let sequence = self.sequences[index];
+        self.sequences[index] += 1;
+        sequence
     }
 
     fn apply(&mut self, step: &Step) -> Result<(), Box<dyn Error>> {

@@ -6,10 +6,10 @@
  * classes by wire value, abilities by ability ID and quests by quest ID.
  * Combat numbers stay on the server.
  */
-export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand" | "prop";
+export type CreatureFamily = "wolf" | "boar" | "vermin" | "marauder" | "mirefin" | "redbrand" | "prop" | "ogre";
 export type CreatureBehaviour = "aggressive" | "neutral" | "prop";
 /** A breakable prop (#288). */
-export type PropKind = "crate" | "barrel" | "explosive_barrel" | "fence";
+export type PropKind = "crate" | "barrel" | "explosive_barrel" | "fence" | "heavy_crate";
 export type NpcRole = "quest_giver" | "vendor" | "spirit_healer" | "guard";
 
 export type CreatureTemplate = {
@@ -111,9 +111,9 @@ const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore"] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist"];
 const RESOURCES = ["rage", "focus", "mana"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
-const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop"];
+const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop", "ogre"];
 const BEHAVIOURS: readonly CreatureBehaviour[] = ["aggressive", "neutral", "prop"];
-const PROPS: readonly PropKind[] = ["crate", "barrel", "explosive_barrel", "fence"];
+const PROPS: readonly PropKind[] = ["crate", "barrel", "explosive_barrel", "fence", "heavy_crate"];
 const ROLES: readonly NpcRole[] = ["quest_giver", "vendor", "spirit_healer", "guard"];
 
 type Json = Record<string, unknown>;
@@ -290,7 +290,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       resource: oneOf(record.resource, RESOURCES, `class ${index} resource`),
     };
   });
-  if (root.abilityCatalogRevision !== "3") {
+  if (root.abilityCatalogRevision !== "5") {
     fail("unsupported ability catalog revision");
   }
   const abilities = list(root.abilities, "abilities", 255).map((value, index) => {

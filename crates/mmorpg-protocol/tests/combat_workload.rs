@@ -20,12 +20,20 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // The Greyfang cave (revision 14) adds eight rock boxes to every step's world. Snapshot v25
     // (#286) adds a projectile count byte to every projection. Content revision 15 (#288) stands 17
     // breakable props on fixed bodies in every step's world; projections show the props near
-    // the players after every other unit, and snapshot v26 adds a debris count byte.
+    // the players after every other unit, and snapshot v26 adds a debris count byte. Content
+    // revision 17 (#297) adds the hill ogre: one more creature for AI and physics every tick,
+    // and the spread fights' players stand by shifted spawns of the longer spawn table. Content
+    // revision 18 (#56) adds the mill hoist's platform body to every step's world, and
+    // revision 19 (#59) the mill's loading dock and its two ramps. Revision 20 (#305) adds the
+    // Redbrand watch post's three pieces to every step's world, and snapshot v27 a piece count
+    // byte to every projection. Creature navigation (#307) routes blocked chases around
+    // walls, which moves the spread and crowded fights. Revision 21 (#58) stands two heavy crates
+    // in every step's world, and the spread fights push and see them.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [26_640, 439_200, 220_128, 4_214_448],
-        [26_581, 436_261, 78_385, 1_275_848],
-        [26_640, 444_960, 358_196, 5_945_191],
-        [25_745, 455_585, 2_162_794, 24_434_854],
+        [27_000, 442_800, 220_128, 4_220_208],
+        [27_000, 439_920, 79_197, 1_328_344],
+        [27_000, 448_560, 386_013, 6_437_919],
+        [25_986, 459_066, 2_208_874, 24_458_435],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -62,13 +70,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert!(report.death_records > 0);
         } else {
             assert_eq!(report.event_records, 0);
-            assert_eq!(report.ai_evaluations, 74 * TICKS);
+            assert_eq!(report.ai_evaluations, 75 * TICKS);
         }
         if fixture.crowded {
             // Whole 14-byte events and 21-byte records beside the fixed part
             // and the door section, a 93-byte self sheet, an 18-byte copper-only
-            // corpse sheet and the projectile and debris counts fill all 1,077 bytes.
-            assert_eq!(report.max_projection_bytes, 1_077);
+            // corpse sheet, the projectile, debris and piece counts fill 1,076 of the 1,077
+            // bytes: no further 21-byte record fits.
+            assert_eq!(report.max_projection_bytes, 1_076);
             assert!(report.candidates_tested > 1_000_000);
         }
     }

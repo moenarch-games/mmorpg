@@ -54,6 +54,15 @@ pub(crate) struct Detonation {
     pub(crate) fallback: [i64; 2],
 }
 
+/// A large creature's stomp (#297).
+#[derive(Clone, Copy, Debug)]
+struct Stomp {
+    damage: [u16; 2],
+    bonus: u32,
+    radius: i32,
+    knockback: i32,
+}
+
 impl ZoneSimulation {
     /// A one-time class choice; the resource starts at the class's start value.
     /// Content that never bound the ability catalog keeps it out of its
@@ -131,6 +140,12 @@ impl ZoneSimulation {
                 }
                 if matches!(ability.range, AbilityRange::Units(_))
                     && !self.line_of_sight(EntityRef::Player(player_id), entity)?
+                {
+                    return Ok(Some((ErrorCode::LineOfSight, target)));
+                }
+                // A charge needs a path as wide as the charger's body (#57).
+                if matches!(ability.effect, AbilityEffect::Charge { .. })
+                    && !self.charge_path_clear(EntityRef::Player(player_id), entity)?
                 {
                     return Ok(Some((ErrorCode::LineOfSight, target)));
                 }
@@ -480,7 +495,10 @@ impl ZoneSimulation {
                 }
             }
             // Blizzard pulses while it channels; bandages are creature-only.
-            AbilityEffect::Blizzard { .. } | AbilityEffect::Bandage { .. } => {}
+            // Creature-only effects.
+            AbilityEffect::Blizzard { .. }
+            | AbilityEffect::Bandage { .. }
+            | AbilityEffect::Stomp { .. } => {}
         }
         Ok(())
     }
@@ -580,6 +598,43 @@ impl ZoneSimulation {
             }
             let push = i32::try_from(i64::from(knockback) * share / 1_000).unwrap_or(0);
             self.knock_away(victim, [centre[0], centre[2]], fallback, push)?;
+        }
+        // Destructible pieces (#305) take the blast's top roll, after the units it reached.
+        self.blast_pieces(centre, radius, u32::from(damage[1]) + bonus, now)
+    }
+
+    /// A large creature's stomp (#297): falloff damage and knockback, as a blast centred on the
+    /// creature, to every living player within reach that it can see.
+    fn stomp(&mut self, creature_id: CreatureId, stomp: Stomp) -> Result<(), ZoneError> {
+        let source = EntityRef::Creature(creature_id);
+        let centre = self.unit_position(source)?;
+        let facing = self
+            .creatures
+            .get(&creature_id)
+            .map_or(0, |creature| creature.facing);
+        let (x, z) = crate::trig::direction(facing);
+        let radius = stomp.radius.max(1);
+        for (victim, distance) in self.blast_victims(centre, radius, true)? {
+            let EntityRef::Player(player_id) = victim else {
+                continue;
+            };
+            // Linear falloff to half at the edge, in per-mille.
+            let share = 1_000 - 500 * distance / i64::from(radius);
+            let amount = self
+                .rng
+                .inclusive(u32::from(stomp.damage[0]), u32::from(stomp.damage[1]))
+                + stomp.bonus;
+            let amount = u32::try_from(i64::from(amount) * share / 1_000)
+                .unwrap_or(0)
+                .max(1);
+            self.creature_damages_player(creature_id, player_id, amount, false)?;
+            let push = i32::try_from(i64::from(stomp.knockback) * share / 1_000).unwrap_or(0);
+            self.knock_away(
+                victim,
+                [centre[0], centre[2]],
+                [i64::from(x), i64::from(z)],
+                push,
+            )?;
         }
         Ok(())
     }
@@ -1002,6 +1057,31 @@ impl ZoneSimulation {
                     },
                 );
             }
+            AbilityEffect::Stomp {
+                damage,
+                per_level,
+                radius,
+                knockback,
+            } => {
+                self.restart_creature_ability(creature_id, ability);
+                self.notify_units(
+                    [Some(source), None],
+                    ZoneEvent::AbilityUsed {
+                        source,
+                        target: None,
+                        ability: ability.id,
+                    },
+                );
+                self.stomp(
+                    creature_id,
+                    Stomp {
+                        damage,
+                        bonus: u32::from(scaled(0, per_level, level)),
+                        radius,
+                        knockback,
+                    },
+                )?;
+            }
             _ => {}
         }
         Ok(())
@@ -1088,6 +1168,13 @@ impl ZoneSimulation {
             return Ok(false);
         }
         let target = match ability.effect {
+            // A stomp (#297) lands around the creature once its leader stands within reach.
+            AbilityEffect::Stomp { radius, .. } => {
+                if distance_squared(here, leader_at) > i64::from(radius).pow(2) {
+                    return Ok(false);
+                }
+                None
+            }
             AbilityEffect::Bandage { below_percent, .. } => {
                 let max_health = u64::from(template.max_health(creature.level));
                 if u64::from(creature.health) * 100 >= max_health * u64::from(below_percent) {

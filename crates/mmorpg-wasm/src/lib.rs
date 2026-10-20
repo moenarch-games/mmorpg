@@ -263,6 +263,18 @@ pub fn content_catalog() -> String {
     catalog::hosted_catalog_json().to_owned()
 }
 
+/// The destructible pieces (#305) feet at `(x, z)` units can repair, in ID order.
+#[wasm_bindgen(js_name = reachablePieces)]
+#[must_use]
+pub fn reachable_pieces(x: i32, z: i32) -> Vec<u16> {
+    host::hosted_content()
+        .pieces()
+        .iter()
+        .filter(|piece| piece.within_repair_reach([x, 0, z]))
+        .map(|piece| piece.id.get())
+        .collect()
+}
+
 /// The ID of the named core area containing `(x, z)` in units, if any.
 #[wasm_bindgen(js_name = areaAt)]
 pub fn area_at(x: i32, z: i32) -> Option<u16> {

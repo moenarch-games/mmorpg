@@ -34,6 +34,9 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
             + content.npcs().len()
             + content.creature_spawns().len()
             + content.doors().len()
+            + content.platforms().len()
+            + content.ramps().len()
+            + content.pieces().len()
             + 1
     );
     assert!(physics.moved_bodies <= content.creature_spawns().len() + 1);
@@ -46,7 +49,7 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
         zone.advance_tick().unwrap();
         recovered.advance_tick().unwrap();
         // Counters describe one tick rather than accumulating or surviving a save.
-        assert_eq!(zone.tick_work().creature_ai_evaluations, 74);
+        assert_eq!(zone.tick_work().creature_ai_evaluations, 75);
         assert_eq!(zone.snapshot().unwrap(), recovered.snapshot().unwrap());
     }
 }

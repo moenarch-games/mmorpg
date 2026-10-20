@@ -283,7 +283,7 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 [[package]]
 name = "bvh-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=3f65da78e6a7abe3de9f82069b1f3a42a654e3d6#3f65da78e6a7abe3de9f82069b1f3a42a654e3d6"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=00b455280c9dfc98fee7f07b55b6d605e5bdc047#00b455280c9dfc98fee7f07b55b6d605e5bdc047"
 dependencies = [
  "spatial-kernels",
 ]
@@ -982,7 +982,7 @@ dependencies = [
 [[package]]
 name = "geometry-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=3f65da78e6a7abe3de9f82069b1f3a42a654e3d6#3f65da78e6a7abe3de9f82069b1f3a42a654e3d6"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=00b455280c9dfc98fee7f07b55b6d605e5bdc047#00b455280c9dfc98fee7f07b55b6d605e5bdc047"
 dependencies = [
  "spatial-kernels",
 ]
@@ -1482,7 +1482,7 @@ dependencies = [
 [[package]]
 name = "input-bindings-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/input-bindings.git?rev=8060662a5cdb6aa436688a35c0e5dbf568bfaa01#8060662a5cdb6aa436688a35c0e5dbf568bfaa01"
+source = "git+https://github.com/moritzbrantner/input-bindings.git?rev=9872c63b18b52842aba206b0ecef7a70dc8f1249#9872c63b18b52842aba206b0ecef7a70dc8f1249"
 dependencies = [
  "serde",
 ]
@@ -2650,7 +2650,7 @@ dependencies = [
 [[package]]
 name = "physics-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/physics-engine?rev=3a1b8413d2411cca4670965b20e3889bb2c8779a#3a1b8413d2411cca4670965b20e3889bb2c8779a"
+source = "git+https://github.com/moritzbrantner/physics-engine?rev=ae64adbdb2d1af74f89f5befe287a8029eeaa072#ae64adbdb2d1af74f89f5befe287a8029eeaa072"
 dependencies = [
  "bvh-kernels",
  "geometry-kernels",
@@ -3516,7 +3516,7 @@ dependencies = [
 [[package]]
 name = "spatial-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=3f65da78e6a7abe3de9f82069b1f3a42a654e3d6#3f65da78e6a7abe3de9f82069b1f3a42a654e3d6"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=00b455280c9dfc98fee7f07b55b6d605e5bdc047#00b455280c9dfc98fee7f07b55b6d605e5bdc047"
 
 [[package]]
 name = "spirv"

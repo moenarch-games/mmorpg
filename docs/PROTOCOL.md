@@ -10,35 +10,36 @@ Commands and projections travel inside the pinned `game-server` session frames (
 
 The shared fixture `fixtures/protocol/session-frames-v3.hex` pins these frames and the browser route contract: `crates/mmorpg-game-server/tests/session_frames.rs` renders it from the pinned encoders and decodes it with the pinned decoders, and the browser (`web/tests/session-frames.test.ts`) decodes and encodes the same bytes. A `game-server` pin bump that changes a frame fails in both languages.
 
-## Commands (wire version 12)
+## Commands (wire version 13)
 
 The shared session runtime supplies player identity, connection epoch and command sequence separately. Core rejects zero, stale and duplicate sequences without changing state.
 
 | Command | Bytes | Layout |
 | --- | ---: | --- |
-| Move | 6 | `[version = 12, tag = 1, forward: i8, strafe: i8, facing: u16]` |
-| Jump | 2 | `[version = 12, tag = 2]` |
-| SelectTarget | 7 | `[version = 12, tag = 3, kind: u8, id: u32]` |
-| StartAttack | 2 | `[version = 12, tag = 4]` |
-| StopAttack | 2 | `[version = 12, tag = 5]` |
-| ReleaseSpirit | 2 | `[version = 12, tag = 6]` |
-| MoveItem | 6 | `[version = 12, tag = 7, source_slot: u8, destination_slot: u8, quantity: u16]` |
-| Loot | 14 | `[version = 12, tag = 8, creature_id: u32, died_at: u64]` |
-| UseAbility | 8 | `[version = 12, tag = 9, ability: u8, kind: u8, id: u32]` |
-| CancelCast | 2 | `[version = 12, tag = 10]` |
-| ChooseClass | 4 | `[version = 12, tag = 11, class: u8, sex: u8]` |
-| EquipItem | 3 | `[version = 12, tag = 12, bag_slot: u8]` |
-| UnequipItem | 3 | `[version = 12, tag = 13, equipment_slot: u8]` |
-| BuyItem | 9 | `[version = 12, tag = 14, npc: u32, offer: u8, quantity: u16]` |
-| SellItem | 9 | `[version = 12, tag = 15, npc: u32, bag_slot: u8, quantity: u16]` |
-| Chat | 4 + n | `[version = 12, tag = 16, channel: u8, length: u8, text: n bytes]` |
-| Emote | 3 | `[version = 12, tag = 17, emote: u8]` |
-| AcceptQuest | 7 | `[version = 12, tag = 18, npc: u32, quest: u8]` |
-| CompleteQuest | 8 | `[version = 12, tag = 19, npc: u32, quest: u8, choice: u8]` |
-| AbandonQuest | 3 | `[version = 12, tag = 20, quest: u8]` |
-| DirectedStrike | 7 | `[version = 12, tag = 21, ability: u8, facing: u16, side: u8, height: u8]` |
-| Guard | 3 | `[version = 12, tag = 22, lane: u8]` |
-| UseDoor | 4 | `[version = 12, tag = 23, door: u8, open: u8]` |
+| Move | 6 | `[version = 13, tag = 1, forward: i8, strafe: i8, facing: u16]` |
+| Jump | 2 | `[version = 13, tag = 2]` |
+| SelectTarget | 7 | `[version = 13, tag = 3, kind: u8, id: u32]` |
+| StartAttack | 2 | `[version = 13, tag = 4]` |
+| StopAttack | 2 | `[version = 13, tag = 5]` |
+| ReleaseSpirit | 2 | `[version = 13, tag = 6]` |
+| MoveItem | 6 | `[version = 13, tag = 7, source_slot: u8, destination_slot: u8, quantity: u16]` |
+| Loot | 14 | `[version = 13, tag = 8, creature_id: u32, died_at: u64]` |
+| UseAbility | 8 | `[version = 13, tag = 9, ability: u8, kind: u8, id: u32]` |
+| CancelCast | 2 | `[version = 13, tag = 10]` |
+| ChooseClass | 4 | `[version = 13, tag = 11, class: u8, sex: u8]` |
+| EquipItem | 3 | `[version = 13, tag = 12, bag_slot: u8]` |
+| UnequipItem | 3 | `[version = 13, tag = 13, equipment_slot: u8]` |
+| BuyItem | 9 | `[version = 13, tag = 14, npc: u32, offer: u8, quantity: u16]` |
+| SellItem | 9 | `[version = 13, tag = 15, npc: u32, bag_slot: u8, quantity: u16]` |
+| Chat | 4 + n | `[version = 13, tag = 16, channel: u8, length: u8, text: n bytes]` |
+| Emote | 3 | `[version = 13, tag = 17, emote: u8]` |
+| AcceptQuest | 7 | `[version = 13, tag = 18, npc: u32, quest: u8]` |
+| CompleteQuest | 8 | `[version = 13, tag = 19, npc: u32, quest: u8, choice: u8]` |
+| AbandonQuest | 3 | `[version = 13, tag = 20, quest: u8]` |
+| DirectedStrike | 7 | `[version = 13, tag = 21, ability: u8, facing: u16, side: u8, height: u8]` |
+| Guard | 3 | `[version = 13, tag = 22, lane: u8]` |
+| UseDoor | 4 | `[version = 13, tag = 23, door: u8, open: u8]` |
+| Repair | 4 | `[version = 13, tag = 24, piece: u16]` (0 stops, else the piece ID + 1) |
 
 Version 12 adds `UseDoor` (tag 23); tags 1–22 retain their field layouts.
 
@@ -66,9 +67,11 @@ The twenty discrete intents (every command but `Move`, `Jump` and `Guard`) are q
 
 `UseDoor` asks for content door `door` to be open (`open` = 1) or closed (0) (#158). In tick step 1 a living player within 2.5 m (XZ) of the closed leaf's centre moves the door's leaf body to that box unless a unit's body overlaps it (`door blocked`); a dead player gets `you are dead`, an unknown door `invalid target`, a far one `out of range`. Asking for the state a door already has changes nothing and is not refused, so two players cannot toggle it against each other. A leaf that moved within the last 45 ticks (1.5 s) refuses players with `door busy`; a routine NPC opens a closed door on its path regardless. `open` values above 1 are malformed payloads.
 
+`Repair` starts repairing destructible piece `piece` (#305), or stops with 0. In tick step 1 a living player within 2.5 m (XZ) of the piece's box starts repairing it (`out of range` beyond, `invalid target` for an unknown piece, `you are dead` when dead); repair is free and, held until the player moves, jumps, dies, leaves reach or the piece is whole, counts four extra ticks toward the piece's regrowth every tick.
+
 `Loot` names a creature spawn and its observed death tick. Core checks life, owner, expiry, authoritative 3D reach and remaining rewards during the tick, then atomically settles money and items. Refusals preserve rewards; no client supplies reward amounts. See [LOOT.md](LOOT.md).
 
-Decoding is strict: exact lengths per tag, known tags only, `forward`/`strafe`, strike aim and guard lane codes in range, known entity kinds, ID 0 for the absent reference, and only version 12. Versions 1–11 are rejected.
+Decoding is strict: exact lengths per tag, known tags only, `forward`/`strafe`, strike aim and guard lane codes in range, known entity kinds, ID 0 for the absent reference, and only version 13. Versions 1–12 are rejected.
 
 The shared command fixture is `fixtures/protocol/commands-v12.hex`: one encoded command per line followed by its fields, covering every tag. `mmorpg-protocol` renders and verifies it, and the browser encoder (`web/src/command-wire.ts`) must produce the same bytes.
 
@@ -225,7 +228,7 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 6, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v26.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two projectiles (a flying arrow and a stuck bolt) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v26.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v25 fixtures remain as rejection evidence. `presentation-observation-v26.hex` covers the two neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot-v28.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v28.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v27 fixtures remain as rejection evidence. `presentation-observation-v28.hex` covers the two neutral observation records.
 
 ## Canonical scope
 
@@ -434,6 +437,21 @@ Wire and core schema version 20 add the viewer's combo phase (one byte after the
 ## Buffered guard: snapshot v21, command v11 unchanged
 
 Wire and core schema version 21 change only canonical state: a `Guard` command now becomes pending intent code 19 (2 bytes, the lane), consumed in order with strikes so the last-pressed gesture wins, and each player carries its directed strike's committed recovery (`u16`, at most `STRIKE_RECOVERY_TICKS` = 6) before its combo opening. A guard raised during that recovery is held but protects only when it ends; a release or stun before then discards it (Atlas 5.2.39, 5.2.41, #156). The player projection's layout is unchanged; its version moves with the shared constant. Version 20 and earlier snapshots/checkpoints and recovery bundles fail closed; `player-snapshot-v20.hex` remains as rejection evidence.
+
+## Magic missiles: snapshot v28
+
+Wire version 28 and core schema 27 (#289) add the projectile kind 3, a magic missile, to the
+player projection's and canonical snapshots' projectile records; layouts are unchanged. A
+missile ignores gravity: a tracking missile homes on its target at its own speed, a free one
+flies level along the caster's facing. Ability catalog revision 5 makes Firebolt (ID 9) carry a
+missile and lets it be cast without a target (along the facing), and the catalog bytes now
+include each ability's projectile kind (0 for none). A recovered cast may have no target when
+its ability aims freely. Commands are unchanged (v13). Version 27 snapshots and checkpoints
+fail closed; `player-snapshot-v27.hex` remains as rejection evidence.
+
+## Destructible structures: snapshot v27 and command v13
+
+Wire version 27 and core schema 26 (#305) add destructible structure pieces. After the doors, the player projection carries a piece count (`u8`, at most 6) and per piece that is not intact, in ascending ID order: ID (`u16`) and stage (`u8`: 1 damaged below two thirds of its health, 2 crumbling below one third, 3 destroyed); intact pieces are not sent. The fixed part grows to 115 bytes (`MAX_WIRE_ENTITIES` stays 45). Canonical snapshots append, after the debris, a count (`u8`) and per content piece its ID (`u16`), health (`u32`), last change tick (`u64`) and the regrowth ticks repair added since (`u32`); each player record gains the piece it is repairing (`u16`, 0 none, else ID + 1) after its strike recovery. Command version 13 adds `Repair` (tag 24) as pending intent code 21 (2 bytes, the piece reference). Content binds sites and pieces with `ZoneContent::with_structures` (fingerprint `mmorpg.zone-content/v11`); Greyhaven revision 20 adds the Redbrand watch post. Version 26 and earlier snapshots/checkpoints, version 12 and earlier commands and recovery bundles fail closed; `player-snapshot-v26.hex` and `commands-v12.hex` remain as rejection evidence.
 
 ## Breakable props and debris: snapshot v26
 

@@ -252,3 +252,24 @@ fn props_stand_as_their_pieces_and_debris_flies_with_a_powder_flash() {
         assert!(frame.draws.iter().any(|draw| draw.id == id), "{id}");
     }
 }
+
+#[test]
+fn the_mill_hoist_is_drawn_where_its_schedule_puts_it() {
+    // Content and the projection's tick place the hoist (#56); its top rises with the tick.
+    let hoist = greyhaven_vale::MILL_HOIST;
+    let mut scene = scene();
+    let top_y = |scene: &mut Scene| {
+        let frame = frame(scene, 0.);
+        let top = frame
+            .draws
+            .iter()
+            .find(|d| d.id == "platform-1-top")
+            .expect("the hoist is drawn");
+        top.model[13]
+    };
+    scene.snapshot.tick = 0;
+    let low = top_y(&mut scene);
+    scene.snapshot.tick = u64::from(hoist.dwell + hoist.travel_ticks());
+    let high = top_y(&mut scene);
+    assert!((high - low - 8.0).abs() < 0.01, "{low} -> {high}");
+}
