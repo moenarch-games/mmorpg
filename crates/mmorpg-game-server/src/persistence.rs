@@ -1,5 +1,6 @@
 //! Production persistence composition (TECH-003/004/005). Storage never owns game rules.
 mod checkpoints;
+mod hosted;
 #[cfg(feature = "postgres")]
 pub(crate) mod postgres;
 mod replication;
@@ -38,9 +39,11 @@ impl fmt::Display for InvalidGrantId {
 impl Error for InvalidGrantId {}
 
 /// Already-authorized core facts. No reward calculation occurs in storage.
+#[derive(Clone)]
 pub(crate) struct CharacterWrite {
     pub lease: CharacterLease,
     pub expected_revision: u64,
     pub record: CharacterRecord,
     pub grants: BTreeSet<GrantId>,
+    pub release: bool,
 }

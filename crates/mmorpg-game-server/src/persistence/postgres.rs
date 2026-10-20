@@ -14,7 +14,13 @@ use mmorpg_core::CharacterId;
 use postgres::{Client, Row, Transaction};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{sync::atomic::AtomicBool, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 const VERSION: i32 = 1;
 const MIGRATION: &str = include_str!("../../migrations/0001_journal.sql");
@@ -251,6 +257,7 @@ pub(crate) struct PostgresJournal {
     fence: StreamFence,
     limits: JournalLimits,
     replication: Option<ReplicaBarrier>,
+    cancelled: Arc<AtomicBool>,
 }
 impl PostgresJournal {
     pub(crate) fn connect_development(
@@ -281,6 +288,7 @@ impl PostgresJournal {
             fence,
             limits: limits.validate()?,
             replication: None,
+            cancelled: Arc::new(AtomicBool::new(false)),
         })
     }
     /// Production durability requires an explicitly named physical standby.
@@ -307,9 +315,27 @@ impl PostgresJournal {
         Ok(journal)
     }
 
+    pub(super) fn set_cancellation(&mut self, cancelled: Arc<AtomicBool>) {
+        self.cancelled = cancelled;
+    }
+    pub(super) fn cancel_tokens(&self) -> Vec<::postgres::CancelToken> {
+        let mut tokens = vec![self.entries.cancel_token()];
+        if let Some(replication) = &self.replication {
+            tokens.extend(replication.cancel_tokens());
+        }
+        tokens
+    }
+    fn check_cancelled(&self) -> Result<(), StoreError> {
+        if self.cancelled.load(Ordering::Acquire) {
+            Err(failure("persistence worker cancelled; outcome unresolved"))
+        } else {
+            Ok(())
+        }
+    }
     fn confirm_commit(&mut self) -> Result<(), StoreError> {
+        self.check_cancelled()?;
         if let Some(replication) = &mut self.replication {
-            replication.confirm(&AtomicBool::new(false))?;
+            replication.confirm(&self.cancelled)?;
         }
         Ok(())
     }
@@ -320,6 +346,7 @@ impl PostgresJournal {
             &mut CharacterStore<PostgresTransactionEntries<'_>>,
         ) -> Result<R, StoreError>,
     ) -> Result<R, StoreError> {
+        self.check_cancelled()?;
         let result = self.entries.transaction(|store| {
             store
                 .backend()
@@ -335,6 +362,7 @@ impl PostgresJournal {
         batch: &SnapshotCommitBatch,
         writes: &[CharacterWrite],
     ) -> Result<u64, StoreError> {
+        self.check_cancelled()?;
         let mut previous = None;
         for write in writes {
             if previous.is_some_and(|id| id >= &write.lease.character_id)
@@ -398,6 +426,7 @@ impl PostgresJournal {
                 }
                 previous = Some(&write.lease.character_id);
                 let revision = store.commit_at_revision(&write.lease, write.expected_revision, &write.record)?;
+                if write.release { store.release(&write.lease, None)?; }
                 for grant in &write.grants {
                     store.backend().with_sql(|transaction| {
                         let inserted = transaction.execute("INSERT INTO mmorpg_persistence.grants (grant_id,character_id,zone_id,world_id,timeline,journal_position,record_revision) VALUES ($1,$2,$3,$4::text::uuid,$5,$6,$7) ON CONFLICT DO NOTHING", &[
@@ -431,6 +460,7 @@ impl PostgresJournal {
         &mut self,
         verified: &super::checkpoints::VerifiedCheckpoint,
     ) -> Result<(), StoreError> {
+        self.check_cancelled()?;
         let reference = verified.reference();
         reference.validate(&self.fence)?;
         let encoded = serde_json::to_vec(reference).map_err(sql)?;
@@ -459,6 +489,7 @@ impl PostgresJournal {
         self.confirm_commit()
     }
     pub(crate) fn prune(&mut self) -> Result<(), StoreError> {
+        self.check_cancelled()?;
         self.entries.transaction(|store| store.backend().with_sql(|transaction| {
             let row = check_fence(transaction, &self.fence, true)?;
             let through: Option<i64> = row.get("checkpoint_position");
@@ -629,6 +660,7 @@ fn digest_commit(payload: [u8; 32], writes: &[CharacterWrite]) -> Result<[u8; 32
     digest.update(payload);
     digest.update((writes.len() as u64).to_be_bytes());
     for write in writes {
+        digest.update([u8::from(write.release)]);
         for value in [
             write.lease.generation,
             write.expected_revision,
@@ -791,6 +823,7 @@ mod tests {
             lease: acquired.lease,
             expected_revision: 0,
             record: record.clone(),
+            release: false,
             grants: [GrantId::new(format!("test/{zone_number}/reward")).unwrap()].into(),
         }];
         let snapshot = live.advance_tick().unwrap();

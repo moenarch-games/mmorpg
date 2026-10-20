@@ -136,7 +136,7 @@ impl ZoneGameServerAdapter {
             .map(|(_, records)| records)
     }
 
-    fn decode_stored_zone(
+    pub(crate) fn decode_stored_zone(
         payload: &[u8],
         content: std::sync::Arc<mmorpg_core::ZoneContent>,
     ) -> Result<(ZoneSimulation, Vec<StoredCharacter>), SimulationError> {
