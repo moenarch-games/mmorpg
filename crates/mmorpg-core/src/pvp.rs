@@ -12,6 +12,17 @@ impl ZoneSimulation {
             && self.players.contains_key(&victim)
     }
 
+    pub(crate) fn attackable_by_player(&self, attacker: PlayerId, target: EntityRef) -> bool {
+        match target {
+            EntityRef::Creature(id) => self.creatures.get(&id).is_some_and(|unit| unit.is_alive()),
+            EntityRef::Player(id) => {
+                self.players_are_hostile(attacker, id)
+                    && self.players.get(&id).is_some_and(|unit| unit.is_alive())
+            }
+            EntityRef::Npc(_) => false,
+        }
+    }
+
     /// Weapon impacts use the same shield geometry/momentum and stance as creature blows.
     pub(crate) fn player_melee_hits(
         &mut self,

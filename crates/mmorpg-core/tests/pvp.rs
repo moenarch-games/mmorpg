@@ -71,14 +71,25 @@ fn an_explicit_arena_weapon_ability_uses_shared_player_damage_and_safe_world_ref
 }
 
 fn two_players(policy: PlayerCombatPolicy) -> ZoneSimulation {
+    two_classes(policy, [0, 0])
+}
+
+fn two_classes(policy: PlayerCombatPolicy, classes: [u8; 2]) -> ZoneSimulation {
     use mmorpg_core::ZoneCommand;
     let content =
         Arc::new(Arc::unwrap_or_clone(greyhaven_vale::content()).with_player_combat(policy));
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
     for player in [1, 2] {
         zone.add_player(player).unwrap();
-        zone.apply_command(player, 1, ZoneCommand::ChooseClass { class: 0, sex: 0 })
-            .unwrap();
+        zone.apply_command(
+            player,
+            1,
+            ZoneCommand::ChooseClass {
+                class: classes[(player - 1) as usize],
+                sex: 0,
+            },
+        )
+        .unwrap();
     }
     zone.advance_tick().unwrap();
     let mut state = zone.snapshot().unwrap();
@@ -133,4 +144,84 @@ fn an_arena_weapon_hit_respects_the_existing_raised_shield() {
             ..
         }
     )));
+}
+
+#[test]
+fn arena_auto_attacks_use_the_existing_swing_clock() {
+    use mmorpg_core::{EntityRef, ZoneCommand};
+    for policy in [PlayerCombatPolicy::Safe, PlayerCombatPolicy::FreeForAll] {
+        let mut zone = two_players(policy);
+        let before = zone.snapshot_for_player(2).unwrap().viewer.health;
+        zone.apply_command(1, 2, ZoneCommand::SelectTarget(Some(EntityRef::Player(2))))
+            .unwrap();
+        zone.apply_command(1, 3, ZoneCommand::StartAttack).unwrap();
+        for _ in 0..150 {
+            zone.advance_tick().unwrap();
+        }
+        let after = zone.snapshot_for_player(2).unwrap();
+        assert_eq!(
+            after.viewer.health < before,
+            policy == PlayerCombatPolicy::FreeForAll
+        );
+    }
+}
+
+#[test]
+fn an_arena_firebolt_completes_its_cast_and_hits_through_a_real_projectile() {
+    use mmorpg_core::{EntityRef, StrikeHeight, ZoneCommand};
+    for guarding in [false, true] {
+        let mut zone = two_classes(PlayerCombatPolicy::FreeForAll, [2, 0]);
+        if guarding {
+            zone.apply_command(
+                2,
+                2,
+                ZoneCommand::Move {
+                    forward: 0,
+                    strafe: 0,
+                    facing: 49152,
+                },
+            )
+            .unwrap();
+            zone.apply_command(
+                2,
+                3,
+                ZoneCommand::Guard {
+                    lane: Some(StrikeHeight::High),
+                },
+            )
+            .unwrap();
+            zone.advance_tick().unwrap();
+        }
+        let before = zone.snapshot_for_player(2).unwrap().viewer.health;
+        zone.apply_command(
+            1,
+            2,
+            ZoneCommand::UseAbility {
+                ability: 9,
+                target: Some(EntityRef::Player(2)),
+            },
+        )
+        .unwrap();
+        let mut shot = false;
+        let mut damaged = false;
+        let mut blocked = false;
+        for _ in 0..120 {
+            zone.advance_tick().unwrap();
+            shot |= !zone.snapshot_for_player(1).unwrap().projectiles.is_empty();
+            let victim = zone.snapshot_for_player(2).unwrap();
+            damaged |= victim.viewer.health < before;
+            blocked |= victim.events.iter().any(|event| {
+                matches!(
+                    event,
+                    mmorpg_core::ZoneEvent::Blocked {
+                        source: EntityRef::Player(1),
+                        ..
+                    }
+                )
+            });
+        }
+        assert!(shot, "the projectile, not the cast, carries the hit");
+        assert_eq!(damaged, !guarding);
+        assert_eq!(blocked, guarding);
+    }
 }

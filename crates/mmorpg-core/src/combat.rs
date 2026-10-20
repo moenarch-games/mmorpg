@@ -233,6 +233,12 @@ impl ZoneSimulation {
             }
             PlayerIntent::StartAttack => match current_target {
                 None => Some((ErrorCode::NoTarget, None)),
+                Some(target @ EntityRef::Player(_))
+                    if self.attackable_by_player(player_id, target) =>
+                {
+                    self.update_player(player_id, |player| player.auto_attack = true);
+                    None
+                }
                 Some(target @ (EntityRef::Player(_) | EntityRef::Npc(_))) => {
                     Some((ErrorCode::NotAttackable, Some(target)))
                 }
@@ -415,19 +421,14 @@ impl ZoneSimulation {
         if !player.is_alive() || !player.auto_attack {
             return Ok(());
         }
-        let (target, creature_id) = match player.target {
-            Some(target @ EntityRef::Creature(creature_id)) => (target, creature_id),
+        let target = match player.target {
+            Some(target @ (EntityRef::Creature(_) | EntityRef::Player(_))) => target,
             _ => {
                 player.auto_attack = false;
                 return Ok(());
             }
         };
-        // The target's death stops auto-attack.
-        if !self
-            .creatures
-            .get(&creature_id)
-            .is_some_and(|creature| creature.is_alive())
-        {
+        if !self.attackable_by_player(player_id, target) {
             self.update_player(player_id, |player| player.auto_attack = false);
             return Ok(());
         }
@@ -469,25 +470,29 @@ impl ZoneSimulation {
             player.swing_timer = swing_ticks;
             player.combat_timer = COMBAT_LINGER_TICKS;
         });
-        self.attack_creature(player_id, creature_id, damage, now)
+        self.attack_unit(player_id, target, damage, now)
     }
 
     /// Resolves one player swing against a creature: evading creatures
     /// ignore it; otherwise the hit table decides, damage lands, the first
     /// damaging player taps the creature and threat rises by the damage.
-    fn attack_creature(
+    fn attack_unit(
         &mut self,
         player_id: PlayerId,
-        creature_id: CreatureId,
+        target: EntityRef,
         damage: [u16; 2],
         now: u64,
     ) -> Result<(), ZoneError> {
         let source = EntityRef::Player(player_id);
-        let target = EntityRef::Creature(creature_id);
-        let Some(creature) = self.creatures.get(&creature_id) else {
+        if !self.attackable_by_player(player_id, target) {
             return Ok(());
-        };
-        if matches!(creature.ai, CreatureAi::Evading { .. }) {
+        }
+        if let EntityRef::Creature(creature_id) = target
+            && self
+                .creatures
+                .get(&creature_id)
+                .is_some_and(|creature| matches!(creature.ai, CreatureAi::Evading { .. }))
+        {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
         }
@@ -511,6 +516,18 @@ impl ZoneSimulation {
         };
         match swing {
             Swing::Miss => {
+                let EntityRef::Creature(creature_id) = target else {
+                    if let EntityRef::Player(victim) = target {
+                        self.update_player(victim, |player| {
+                            player.combat_timer = COMBAT_LINGER_TICKS
+                        });
+                    }
+                    self.notify_units(
+                        [Some(source), Some(target)],
+                        ZoneEvent::Miss { source, target },
+                    );
+                    return Ok(());
+                };
                 let prop = self.is_prop(target);
                 let Some(creature) = self.creatures.get_mut(&creature_id) else {
                     return Ok(());
@@ -534,13 +551,7 @@ impl ZoneSimulation {
                         );
                     }
                 });
-                self.player_damages_creature(
-                    player_id,
-                    creature_id,
-                    u32::from(amount),
-                    critical,
-                    now,
-                )
+                self.player_melee_hits(player_id, target, u32::from(amount), critical, now)
             }
         }
     }

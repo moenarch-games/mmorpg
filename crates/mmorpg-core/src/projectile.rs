@@ -397,7 +397,7 @@ impl ZoneSimulation {
     }
 
     /// Whether a body stops a shot by `owner`: everything but its shooter, the shooter's own side
-    /// (players' shots pass players, creatures' shots pass creatures) and corpses.
+    /// (safe players' shots pass players; creatures' shots pass creatures) and corpses.
     pub(crate) fn projectile_meets(&self, owner: EntityRef, body: BodyId) -> bool {
         if body == body_id(owner) {
             return false;
@@ -405,8 +405,13 @@ impl ZoneSimulation {
         match entity_of(body) {
             None => true,
             Some(unit) => {
-                std::mem::discriminant(&unit) != std::mem::discriminant(&owner)
-                    && self.unit_alive(unit)
+                let opposing = match (owner, unit) {
+                    (EntityRef::Player(attacker), EntityRef::Player(victim)) => {
+                        self.players_are_hostile(attacker, victim)
+                    }
+                    _ => std::mem::discriminant(&unit) != std::mem::discriminant(&owner),
+                };
+                opposing && self.unit_alive(unit)
             }
         }
     }
@@ -433,6 +438,11 @@ impl ZoneSimulation {
         unit: EntityRef,
         now: u64,
     ) -> Result<(), ZoneError> {
+        if let (EntityRef::Player(attacker), EntityRef::Player(victim)) = (projectile.owner, unit)
+            && !self.players_are_hostile(attacker, victim)
+        {
+            return Ok(());
+        }
         let ability = crate::ability_by_id(projectile.ability)
             .ok_or_else(|| ZoneError::new("projectile names an unknown ability"))?;
         let from = sub(projectile.position, projectile.velocity);
@@ -454,7 +464,7 @@ impl ZoneSimulation {
             return Ok(());
         }
         match (projectile.owner, unit) {
-            (EntityRef::Player(player_id), EntityRef::Creature(_)) => {
+            (EntityRef::Player(player_id), EntityRef::Creature(_) | EntityRef::Player(_)) => {
                 if self.players.contains_key(&player_id) {
                     self.apply_player_effect(player_id, ability, Some(unit), now)?;
                 }

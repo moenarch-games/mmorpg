@@ -443,13 +443,13 @@ impl ZoneSimulation {
                 }
             }
             AbilityEffect::Bolt { damage, per_level } => {
-                if let Some(creature_id) = creature {
+                if let Some(victim) = target {
                     let amount = self
                         .rng
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + u32::from(scaled(0, per_level, level))
                         + bonus;
-                    self.player_damages_creature(player_id, creature_id, amount, false, now)?;
+                    self.player_damages_unit(player_id, victim, amount, false, now)?;
                 }
             }
             AbilityEffect::Nova { damage, radius, .. } => {
@@ -920,14 +920,9 @@ impl ZoneSimulation {
         now: u64,
     ) -> Result<(), ZoneError> {
         let source = EntityRef::Player(player_id);
-        let target_alive = match cast.target {
-            Some(EntityRef::Creature(creature_id)) => self
-                .creatures
-                .get(&creature_id)
-                .is_some_and(|creature| creature.is_alive()),
-            Some(_) => false,
-            None => true,
-        };
+        let target_alive = cast
+            .target
+            .is_none_or(|target| self.attackable_by_player(player_id, target));
         if !target_alive {
             self.notify_units(
                 [Some(source), None],
