@@ -1,4 +1,7 @@
 import * as THREE from "three";
+import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import type { ThreeSceneRenderer } from "@moritzbrantner/three-d-renderer";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EntityRef } from "../../entity-ref";
@@ -184,16 +187,21 @@ const LOADOUT_ITEMS: Readonly<Record<Exclude<Loadout, null>, readonly { key: str
   ],
 };
 
-type BundleEntry = { key: string; variant: string; path: string; attachments: { name: string; path: string }[] };
+type DownloadEntry = { key: string; variant: string; files: string[]; clips?: string };
 
-/** The `default` variant of `key` in a `gltf-resources-v1` bundle manifest. */
-function bundleEntry(manifest: unknown, key: string): BundleEntry {
-  const assets = (manifest as { assets?: unknown } | null)?.assets;
-  const entry = Array.isArray(assets) ? (assets as BundleEntry[]).find((asset) => asset.key === key && asset.variant === "default") : undefined;
-  if (!entry) {
-    throw new Error(`The Ranger bundle has no ${key} entry.`);
-  }
+/** Select the existing Dark archer default from the rolling download index. */
+function bundleEntry(index: unknown, key: string): DownloadEntry {
+  const value = index as { schema?: unknown; entries?: DownloadEntry[] } | null;
+  const entry = value?.schema === "asset-downloads-v1" && Array.isArray(value.entries)
+    ? value.entries.find((entry) => entry.key === key && entry.variant === "default") : undefined;
+  if (!entry) { throw new Error(`The Ranger download index has no ${key}/default entry.`); }
   return entry;
+}
+
+function entryFile(entry: DownloadEntry, suffix: string): string {
+  const files = entry.files.filter((file) => file.endsWith(suffix));
+  if (files.length !== 1) { throw new Error(`The Ranger entry ${entry.key} must declare one ${suffix} file.`); }
+  return files[0]!;
 }
 
 /** An item placed by its `grip` frame, as 3d-lab's attach did: holder = socket × grip⁻¹. */
@@ -218,27 +226,24 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     }
     return response.json();
   };
-  const manifest = await json("manifest.json");
+  const manifest = await json("humanoid-ranger-male.index.json");
   const entry = bundleEntry(manifest, "humanoid.ranger.male");
-  const attachment = (name: string) => {
-    const found = entry.attachments.find((candidate) => candidate.name === name);
-    if (!found) { throw new Error(`The Ranger bundle has no ${name} attachment.`); }
-    return json(found.path);
-  };
-  const [gltf, sockets, motions] = await Promise.all([
-    loader.loadAsync(url(entry.path)),
-    attachment("humanoid-sockets").then(socketsOf),
-    attachment("humanoid-clips").then(clipMotionsOf),
+  if (!entry.clips) { throw new Error("The Ranger download index has no shared clips."); }
+  const [gltf, animationLibrary, sockets, motions] = await Promise.all([
+    loader.loadAsync(url(entryFile(entry, ".gltf"))),
+    loader.loadAsync(url(entry.clips)),
+    json(entryFile(entry, ".humanoid-sockets.json")).then(socketsOf),
+    json(entryFile(entry, ".humanoid-clips.json")).then(clipMotionsOf),
   ]);
   const keys = [...new Set(Object.values(LOADOUT_ITEMS).flat().map((item) => item.key))];
   const items = new Map(await Promise.all(keys.map(async (key) => {
-    const scene = (await loader.loadAsync(url(bundleEntry(manifest, key).path))).scene;
+    const scene = (await loader.loadAsync(url(entryFile(bundleEntry(manifest, key), ".gltf")))).scene;
     scene.updateMatrixWorld(true);
     const grip = scene.getObjectByName("grip");
     if (!grip) { throw new Error(`The Ranger bundle's ${key} has no grip frame.`); }
     return [key, { scene, gripInverse: grip.matrixWorld.clone().invert() }] as const;
   })));
-  const sources = new Map(gltf.animations.map((clip) => [clip.name, clip]));
+  const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
   const instantiate = (loadout: Loadout): Posable => {
     const model = cloneSkinned(gltf.scene);
     for (const { key, socket } of loadout ? LOADOUT_ITEMS[loadout] : []) {
@@ -260,7 +265,8 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
 }
 
 export class QuaterniusUnits {
-  readonly #loader = new GLTFLoader();
+  readonly #loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  readonly #textures = new KTX2Loader().setTranscoderPath(`${import.meta.env.BASE_URL}basis/`);
   readonly #rest: RestClip;
   readonly #assets = new Map<QuaterniusKind, Asset | "loading" | "failed">();
   readonly #settled = new Map<QuaterniusKind, Promise<boolean>>();
@@ -270,6 +276,11 @@ export class QuaterniusUnits {
 
   constructor(rest: RestClip) {
     this.#rest = rest;
+  }
+
+  configureRenderer(renderer: ThreeSceneRenderer): void {
+    renderer.configureTextureLoader(this.#textures);
+    this.#loader.setKTX2Loader(this.#textures);
   }
 
   /** Starts loading `kind`; true once it can be drawn. */

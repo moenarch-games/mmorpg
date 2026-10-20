@@ -300,6 +300,7 @@ export class WorldView {
 
   constructor(renderer: ThreeSceneRenderer, camera: THREE.PerspectiveCamera, elements: WorldViewElements) {
     this.#renderer = renderer;
+    this.#models.configureRenderer(renderer);
     this.#camera = camera;
     this.#elements = elements;
     this.#reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
