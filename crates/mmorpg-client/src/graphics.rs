@@ -582,7 +582,9 @@ mod tests {
             ui::{GameUi, UiFrame, overlay::EguiPaint},
         };
         use mmorpg_core::{EntityRef, NpcId, ZoneCommand};
-        const SIZE: [u32; 2] = [1280, 720];
+        let high_dpi = std::env::var("MMORPG_NATIVE_ABILITY_ART_DPI").as_deref() == Ok("2");
+        let size = if high_dpi { [2560, 1440] } else { [1280, 720] };
+        let scale = if high_dpi { 2.0 } else { 1.0 };
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
             let content = greyhaven_vale::content();
@@ -669,7 +671,7 @@ mod tests {
                 choosing: false,
                 labels: presentation.labels(),
                 project: &|point| {
-                    project_to_viewport(view, SIZE, point).map(|[x, y]| egui::pos2(x, y))
+                    project_to_viewport(view, size, point).map(|[x, y]| egui::pos2(x, y))
                 },
                 eye: view.eye,
             };
@@ -678,13 +680,14 @@ mod tests {
                 "the presented units carry nameplate anchors"
             );
             let context = egui::Context::default();
+            context.set_pixels_per_point(scale);
             let mut paint = EguiPaint::default();
             // Passes advance time so window layout and fade-in animations settle.
             for pass in 0..10 {
                 let input = egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
-                        egui::vec2(SIZE[0] as f32, SIZE[1] as f32),
+                        egui::vec2(size[0] as f32 / scale, size[1] as f32 / scale),
                     )),
                     time: Some(f64::from(pass) * 0.1),
                     ..Default::default()
@@ -695,12 +698,14 @@ mod tests {
                 });
                 let _ = paint.prepare(&context, output);
             }
-            let bare = readback(&frame, &[], view, SIZE, None).await.unwrap();
-            let shown = readback(&frame, &[], view, SIZE, Some(&mut paint))
+            let bare = readback(&frame, &[], view, size, None).await.unwrap();
+            let shown = readback(&frame, &[], view, size, Some(&mut paint))
                 .await
                 .unwrap();
             save_frame(
-                if warden_art {
+                if warden_art && high_dpi {
+                    "warden-2x.ppm"
+                } else if warden_art {
                     "warden.ppm"
                 } else if settings_evidence {
                     "settings.ppm"
@@ -708,7 +713,7 @@ mod tests {
                     "interface.ppm"
                 },
                 &shown,
-                SIZE,
+                size,
             );
             let changed = bare
                 .as_chunks::<4>()

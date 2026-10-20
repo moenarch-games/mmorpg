@@ -27,7 +27,7 @@ bun web/scripts/package-warden-icons.ts /path/to/asset-tooling-warden-handoff --
 - Four Bun package tests cover stable ID mapping, missing images, corrupted/swapped bytes and retargeted producer metadata.
 - The existing real Chromium Warden combat proof checks the four loaded painted images plus the fifth Charge glyph, locked levels, Rage consumption on Heroic Strike, desktop/context-menu tooltip and a real touch long-press at 390×844 / DPR 2. It uses the actual WASM zone and normal action bar.
 - Independently verified and decoded all 20 producer PNGs from the consumer checkout without generation/network during verification. The actual [published producer review](https://moritzbrantner.github.io/asset-tooling/review/warden-icons/) displays approved 512/64/48/32 views; the served derivatives matched their approved hashes.
-- [Before/after evidence](reviews/warden-hotbar/README.md) distinguishes the existing public build from the local candidate build. Public game publication is verified separately after merge/deployment. Native reuse is the separate #171 task.
+- [Before/after evidence](reviews/warden-hotbar/README.md) distinguishes the existing public build from the local candidate build. Public game publication is verified separately after merge/deployment. The deployed public game passed the same focused Chromium proof after Pages deployment of `048a83015deaf13cbaf57a5472480dbe29ecb582`.
 
 ```sh
 (cd web && bun test tests/warden-icons.test.ts && bun run build)
@@ -35,3 +35,17 @@ uv run --with playwright==1.57.0 python scripts/smoke-browser.py BrowserAcceptan
 ```
 
 Shared convention source revision: `6cc05789dab39cee6758b288f83fb48b4ee6dbdb`.
+
+## Native reuse (#171)
+
+The native egui/wgpu HUD embeds the same selected 512 px PNG bytes. Its build checks the exact producer manifest, stable IDs, lengths and SHA-256 hashes. The existing egui texture manager receives four color and four grayscale locked textures once; repeated frames reuse them. The PNG decoder has 512×512 dimensions and a 4 MiB allocation limit. Runtime decode failures are cached and displayed beside the bar. No remote fetch or generation is involved.
+
+The four painted slots retain their labels, unlock levels, resource tint, cooldown overlays, cast selection and existing semantic slot actions. Charge and other classes retain their text faces.
+
+Native evidence uses the actual offscreen wgpu renderer and Greyhaven simulation, rather than a physical window: [1280×720](reviews/warden-hotbar/native-warden.png) and [2560×1440 at 2× scale](reviews/warden-hotbar/native-warden-2x.png). The existing native smoke run passed real host connection/reconnection, GPU HUD/world rendering and the two-client inn interaction. Focused control/HUD tests cover semantic keys and projected cooldown/cast state; the Warden slot-one proof starts with an authoritative nearby-enemy/rage fixture and applies Heroic Strike through the normal semantic slot mapping.
+
+```sh
+python3 scripts/smoke-native.py
+cargo test -p mmorpg-client --locked --test native_ability_art --test native_ability_controls --test combat_hud
+MMORPG_NATIVE_ABILITY_ART_EVIDENCE=1 MMORPG_NATIVE_ABILITY_ART_DPI=2 MMORPG_SMOKE_FRAME_DIR=artifacts/native-warden cargo test -p mmorpg-client --locked --lib the_egui_interface_paints_over_the_native_world -- --ignored --nocapture
+```
