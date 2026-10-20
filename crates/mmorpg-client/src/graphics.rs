@@ -170,7 +170,7 @@ fn scene_camera(view: CameraView, viewport: [u32; 2]) -> Result<PerspectiveCamer
         Vec3::new(view.eye[0], view.eye[1], view.eye[2]),
         Vec3::new(view.target[0], view.target[1], view.target[2]),
         Vec3::new(0.0, 1.0, 0.0),
-        50_f32.to_radians(),
+        view.field_of_view_degrees.to_radians(),
         viewport[0] as f32 / viewport[1] as f32,
         0.2,
         FAR_PLANE_METRES,
@@ -529,6 +529,7 @@ mod tests {
                 (
                     "relief",
                     CameraView {
+                        field_of_view_degrees: 50.0,
                         eye: [20.0, 8.0, 39.0],
                         target: [0.0, 0.0, 18.0],
                     },
@@ -536,6 +537,7 @@ mod tests {
                 (
                     "hub",
                     CameraView {
+                        field_of_view_degrees: 50.0,
                         eye: [5.0, 8.5, 31.0],
                         target: [-14.0, 3.0, 4.0],
                     },
@@ -720,6 +722,7 @@ mod tests {
             let scenery = greyhaven_vale_scenery();
             let world = WorldScene::new(&scenery);
             let view = CameraView {
+                field_of_view_degrees: 50.0,
                 eye: [5.0, 8.5, 31.0],
                 target: [-14.0, 3.0, 4.0],
             };

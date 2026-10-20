@@ -527,11 +527,12 @@ impl App {
         if disconnected {
             self.pad.retire("gamepadDisconnected");
         }
-        let pads: Vec<PadState> = if self.focused && !self.ui.chat_focused() {
-            gilrs.gamepads().map(|(_, pad)| read_pad(&pad)).collect()
-        } else {
-            Vec::new()
-        };
+        let pads: Vec<PadState> =
+            if self.focused && !self.ui.chat_focused() && !self.ui.settings.open {
+                gilrs.gamepads().map(|(_, pad)| read_pad(&pad)).collect()
+            } else {
+                Vec::new()
+            };
         let snapshot = self.presentation.latest();
         self.pad.set_panels(
             self.choosing || self.npc_context.npc.is_some() || self.ui.windows_open(snapshot),
@@ -595,6 +596,11 @@ impl App {
         self.controls.focus_lost();
         self.world_controls.reset();
         self.keys.clear();
+        self.orbit_buttons.clear();
+        self.guard_offset = None;
+        self.pad_guard = None;
+        self.pad.retire("inputContextChanged");
+        self.update_guard();
         self.update_movement();
     }
 
@@ -677,6 +683,7 @@ impl App {
         let mut raw = egui.state.take_egui_input(window);
         raw.events.append(&mut self.pad_ui);
         let mut intents = Vec::new();
+        let settings_was_open = self.ui.settings.open;
         let output = egui.context.run_pass(raw, |ctx| {
             intents = self.ui.show(ctx, &frame, &mut self.npc_context, now);
         });
@@ -685,6 +692,21 @@ impl App {
         for intent in intents {
             self.ui_intent(intent);
         }
+        if settings_was_open != self.ui.settings.open {
+            self.retire_held_input();
+        }
+        let preferences = &self.ui.settings.preferences;
+        if let (
+            Ok(settings_core::SettingValue::Integer(fov)),
+            Ok(settings_core::SettingValue::Number(sensitivity)),
+        ) = (
+            preferences.value(mmorpg_client::settings::FIELD_OF_VIEW),
+            preferences.value(mmorpg_client::settings::LOOK_SENSITIVITY),
+        ) {
+            self.camera
+                .set_preferences(*fov as f32, *sensitivity as f32);
+        }
+        self.presentation.set_reduced_motion(matches!(preferences.value(mmorpg_client::settings::REDUCE_MOTION), Ok(settings_core::SettingValue::Choice(value)) if value == "reduce"));
         let focused = self.ui.chat_focused();
         if focused && !self.chat_focused {
             self.retire_held_input();
@@ -786,7 +808,8 @@ impl ApplicationHandler for App {
             event,
             WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_)
         );
-        let chat_owns_keyboard = self.chat_focused || self.ui.chat_focused();
+        let chat_owns_keyboard =
+            self.chat_focused || self.ui.chat_focused() || self.ui.settings.open;
         let ui_consumed = match (self.egui.as_mut(), self.window.as_ref()) {
             (Some(egui), Some(window)) if !keyboard || chat_owns_keyboard => {
                 egui.state.on_window_event(window, &event).consumed

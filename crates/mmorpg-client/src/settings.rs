@@ -112,6 +112,13 @@ impl Preferences {
         Ok(())
     }
 
+    pub fn definition(&self, raw_id: &str) -> Result<&SettingDefinition, String> {
+        let (id, _) = self.known(raw_id)?;
+        self.registry
+            .get(&id)
+            .ok_or_else(|| format!("Unknown preference {raw_id}"))
+    }
+
     pub fn value(&self, raw_id: &str) -> Result<&SettingValue, String> {
         let (id, scope) = self.known(raw_id)?;
         self.scopes[&scope]

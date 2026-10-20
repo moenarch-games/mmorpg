@@ -9,6 +9,7 @@ pub mod chat;
 pub mod minimap;
 pub mod overlay;
 mod panels;
+pub mod settings;
 pub mod world_labels;
 
 use crate::{
@@ -135,6 +136,7 @@ enum LogTab {
 
 /// Interface state that is purely local presentation.
 pub struct GameUi {
+    pub settings: settings::SettingsWindow,
     pub sheets: Sheets,
     pub logs: Logs,
     minimap: MinimapLayers,
@@ -163,6 +165,7 @@ impl GameUi {
     #[must_use]
     pub fn new(scenery: &Scenery) -> Self {
         Self {
+            settings: settings::SettingsWindow::default(),
             sheets: Sheets::default(),
             logs: Logs::default(),
             minimap: MinimapLayers::new(scenery),
@@ -331,6 +334,9 @@ impl GameUi {
         now: Instant,
     ) -> Vec<UiIntent> {
         let mut intents = Vec::new();
+        if self.settings.show(ctx) {
+            return intents;
+        }
         if let Some(text) = frame.connection {
             banner(
                 ctx,
