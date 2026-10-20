@@ -294,4 +294,6 @@ The [saved relief authoring package](docs/RELIEF_AUTHORING.md) freezes the Outpo
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [ROADMAP.md](ROADMAP.md).
 
+Mode hosts can seed [temporary max-level character builds](docs/EPHEMERAL_CHARACTERS.md) without exporting arena outcomes to durable characters.
+
 Opt-in dedicated-zone combat is documented in [PvP combat](docs/PVP_COMBAT.md). Ordinary Greyhaven play stays safe; the first playable Battle Royale mode remains separate integration work.
