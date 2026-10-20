@@ -7,6 +7,8 @@ use std::fmt;
 use mmorpg_core::ZoneId;
 
 mod partition;
+mod permit;
+pub use permit::{LocalZonePermit, PermitError};
 
 pub use partition::{
     CapacityCondition, InteractionIsland, LayoutChange, LogicalZone, LogicalZoneConfig,

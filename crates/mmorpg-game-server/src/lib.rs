@@ -66,9 +66,36 @@ pub struct ZoneGameServerAdapter {
     parked_characters:
         std::collections::BTreeMap<game_server::PlayerId, character_admission::ParkedCharacter>,
     character_ownership: Option<Arc<std::fs::File>>,
+    authority: Option<Arc<mmorpg_control_plane::LocalZonePermit>>,
 }
 
 impl ZoneGameServerAdapter {
+    /// Attach before placing the runtime into a serving host. Offline replay
+    /// validation can use a fresh unguarded adapter; this live capability is
+    /// never serialized into canonical state or recorded as a gameplay input.
+    pub fn with_authority(
+        mut self,
+        permit: Arc<mmorpg_control_plane::LocalZonePermit>,
+    ) -> Result<Self, SimulationError> {
+        permit
+            .ensure_current(self.zone.zone_id())
+            .map_err(|error| SimulationError::new(error.to_string()))?;
+        self.authority = Some(permit);
+        Ok(self)
+    }
+    fn ensure_authority(&self) -> Result<(), SimulationError> {
+        if let Some(permit) = &self.authority {
+            permit
+                .ensure_current(self.zone.zone_id())
+                .map_err(|error| SimulationError::new(error.to_string()))?;
+        }
+        Ok(())
+    }
+    fn remove_bound_player(&mut self, player_id: game_server::PlayerId) -> bool {
+        self.characters.remove(&player_id);
+        self.parked_characters.remove(&player_id).is_some() || self.zone.remove_player(player_id)
+    }
+
     #[must_use]
     pub fn new(zone_id: ZoneId) -> Self {
         Self {
@@ -76,6 +103,7 @@ impl ZoneGameServerAdapter {
             characters: Default::default(),
             parked_characters: Default::default(),
             character_ownership: None,
+            authority: None,
         }
     }
 
@@ -90,6 +118,7 @@ impl ZoneGameServerAdapter {
             characters: Default::default(),
             parked_characters: Default::default(),
             character_ownership: None,
+            authority: None,
         })
     }
 
@@ -175,12 +204,23 @@ impl GameSimulation for ZoneGameServerAdapter {
     }
 
     fn add_player(&mut self, player_id: game_server::PlayerId) -> Result<(), SimulationError> {
+        self.ensure_authority()?;
         self.zone.add_player(player_id).map_err(map_zone_error)
     }
 
     fn remove_player(&mut self, player_id: game_server::PlayerId) -> bool {
-        self.characters.remove(&player_id);
-        self.parked_characters.remove(&player_id).is_some() || self.zone.remove_player(player_id)
+        if self.ensure_authority().is_err() {
+            return false;
+        }
+        self.remove_bound_player(player_id)
+    }
+
+    fn try_remove_player(
+        &mut self,
+        player_id: game_server::PlayerId,
+    ) -> Result<bool, SimulationError> {
+        self.ensure_authority()?;
+        Ok(self.remove_bound_player(player_id))
     }
 
     fn apply_command(
@@ -189,6 +229,7 @@ impl GameSimulation for ZoneGameServerAdapter {
         sequence: u32,
         payload: &[u8],
     ) -> Result<(), SimulationError> {
+        self.ensure_authority()?;
         if self.character_ownership.is_some() && !self.characters.contains_key(&player_id) {
             return Err(SimulationError::new(
                 "claim a durable character before gameplay",
@@ -209,10 +250,12 @@ impl GameSimulation for ZoneGameServerAdapter {
         player_id: game_server::PlayerId,
         payload: &[u8],
     ) -> Result<(), SimulationError> {
+        self.ensure_authority()?;
         self.admit_stored_character(player_id, payload)
     }
 
     fn advance_tick(&mut self) -> Result<(), SimulationError> {
+        self.ensure_authority()?;
         self.zone.advance_tick().map_err(map_zone_error)
     }
 
@@ -220,6 +263,7 @@ impl GameSimulation for ZoneGameServerAdapter {
         &mut self,
         checkpoint: &SimulationSnapshot,
     ) -> Result<(), SimulationError> {
+        self.ensure_authority()?;
         self.restore_character_checkpoint(checkpoint)
     }
 
@@ -228,6 +272,7 @@ impl GameSimulation for ZoneGameServerAdapter {
     }
 
     fn snapshot(&self) -> Result<SimulationSnapshot, SimulationError> {
+        self.ensure_authority()?;
         let snapshot = self.zone.snapshot().map_err(map_zone_error)?;
         let canonical = encode_canonical_snapshot(&snapshot).map_err(map_protocol_error)?;
         let payload = self.character_snapshot(canonical)?;
@@ -238,6 +283,7 @@ impl GameSimulation for ZoneGameServerAdapter {
         &self,
         player_id: game_server::PlayerId,
     ) -> Result<SimulationSnapshot, SimulationError> {
+        self.ensure_authority()?;
         if let Some(parked) = self.parked_characters.get(&player_id) {
             return Ok(parked.projection.clone());
         }
@@ -279,6 +325,43 @@ mod tests {
             strafe: 0,
             facing,
         }
+    }
+
+    #[test]
+    fn revoked_permit_rejects_simulation_mutation_and_projection() {
+        let zone = ZoneId::new(7);
+        let lease = mmorpg_control_plane::ZoneLease {
+            zone_id: zone,
+            host_id: mmorpg_control_plane::HostId::new("permit-adapter").unwrap(),
+            epoch: 1,
+            expires_at_tick: 100,
+        };
+        let permit = Arc::new(
+            mmorpg_control_plane::LocalZonePermit::from_confirmed_lease(
+                lease,
+                std::time::Instant::now(),
+                std::time::Duration::from_secs(60),
+            )
+            .unwrap(),
+        );
+        let mut adapter = ZoneGameServerAdapter::new(zone);
+        adapter.add_player(1).unwrap();
+        let before = adapter.zone.snapshot().unwrap();
+        let mut adapter = adapter.with_authority(Arc::clone(&permit)).unwrap();
+        permit.revoke().unwrap();
+        assert!(adapter.add_player(2).is_err());
+        assert!(adapter.try_remove_player(1).is_err());
+        assert!(!adapter.remove_player(1));
+        assert!(
+            adapter
+                .apply_command(1, 1, &encode_command(run(EAST)))
+                .is_err()
+        );
+        assert!(adapter.apply_host_input(1, &[1, 2]).is_err());
+        assert!(adapter.advance_tick().is_err());
+        assert!(adapter.snapshot().is_err());
+        assert!(adapter.snapshot_for(1).is_err());
+        assert_eq!(adapter.zone.snapshot().unwrap(), before);
     }
 
     #[test]

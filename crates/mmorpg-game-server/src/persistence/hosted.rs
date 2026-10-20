@@ -47,6 +47,7 @@ pub(crate) struct HostedPersistenceConfig {
     pub content: Arc<ZoneContent>,
     pub match_id: MatchId,
     pub startup: Startup,
+    pub authority: Option<Arc<mmorpg_control_plane::LocalZonePermit>>,
 }
 
 pub(crate) struct HostedPersistence {
@@ -99,6 +100,20 @@ impl HostedPersistence {
     pub(crate) async fn start(
         config: HostedPersistenceConfig,
     ) -> Result<(Arc<Self>, RecoveryImage, PersistenceWorker), PersistenceError> {
+        if matches!(&config.durability, Durability::Replicated { .. }) && config.authority.is_none()
+        {
+            return Err(error(
+                "replicated zone persistence requires a confirmed local authority permit",
+            ));
+        }
+        if let Some(permit) = &config.authority {
+            if !permit.lease().same_authority(&config.fence.lease) {
+                return Err(error("storage permit differs from journal authority"));
+            }
+            permit
+                .ensure_current(config.fence.lease.zone_id)
+                .map_err(error)?;
+        }
         if config.checkpoint_interval_ticks == 0 {
             return Err(error("checkpoint interval must be positive"));
         }
@@ -228,13 +243,24 @@ struct State {
     last_attempt_tick: u64,
     bindings: BTreeMap<CharacterId, Binding>,
     cancelled: Arc<AtomicBool>,
+    authority: Option<Arc<mmorpg_control_plane::LocalZonePermit>>,
 }
 impl State {
+    fn ensure_authority(&self) -> Result<(), PersistenceError> {
+        if let Some(permit) = &self.authority {
+            permit
+                .ensure_current(self.fence.lease.zone_id)
+                .map_err(error)?;
+        }
+        Ok(())
+    }
     fn claim(
         &mut self,
         id: CharacterId,
         player: game_server::PlayerId,
     ) -> Result<Acquired, StoreError> {
+        self.ensure_authority()
+            .map_err(|cause| StoreError::Backend(cause.to_string()))?;
         let holder = LeaseHolder {
             zone_id: self.fence.lease.zone_id,
             zone_epoch: self.fence.lease.epoch,
@@ -245,6 +271,8 @@ impl State {
         let acquired = self
             .journal
             .characters(|store| store.acquire(&id, holder))?;
+        self.ensure_authority()
+            .map_err(|cause| StoreError::Backend(cause.to_string()))?;
         self.bindings.insert(
             id,
             Binding {
@@ -256,6 +284,7 @@ impl State {
         Ok(acquired)
     }
     fn tick(&mut self, batch: SnapshotCommitBatch) -> Result<(), PersistenceError> {
+        self.ensure_authority()?;
         if batch.match_id != self.match_id || batch.snapshot.tick != batch.checkpoint.current_tick {
             return Err(error("commit batch differs from hosted zone/tick"));
         }
@@ -318,6 +347,7 @@ impl State {
             .journal
             .commit_tick(self.position, &batch, &writes)
             .map_err(error)?;
+        self.ensure_authority()?;
         for write in writes {
             if write.release {
                 self.bindings.remove(&write.lease.character_id);
@@ -342,9 +372,10 @@ impl State {
                 Err(CheckpointFailure::Fatal(error)) => return Err(error),
             }
         }
-        Ok(())
+        self.ensure_authority()
     }
     fn checkpoint(&mut self) -> Result<(), CheckpointFailure> {
+        self.ensure_authority().map_err(CheckpointFailure::Fatal)?;
         self.last_attempt_tick = self.last_image.current_tick;
         let prepared = self
             .objects
@@ -362,13 +393,14 @@ impl State {
             self.objects.upload(&prepared),
         )
         .map_err(checkpoint_error)?;
+        self.ensure_authority().map_err(CheckpointFailure::Fatal)?;
         self.journal
             .publish_checkpoint(&verified)
             .map_err(|cause| CheckpointFailure::Fatal(error(cause)))?;
         self.journal
             .prune()
             .map_err(|cause| CheckpointFailure::Fatal(error(cause)))?;
-        Ok(())
+        self.ensure_authority().map_err(CheckpointFailure::Fatal)
     }
 }
 enum CheckpointFailure {
@@ -554,6 +586,7 @@ fn initialize(
         checkpoint_interval: config.checkpoint_interval_ticks,
         last_attempt_tick: tick,
         bindings: BTreeMap::new(),
+        authority: config.authority,
         cancelled,
     };
     if bootstrap && !records.is_empty() {
@@ -582,6 +615,7 @@ fn initialize(
             CheckpointFailure::Fatal(cause) => cause,
         })?;
     }
+    state.ensure_authority()?;
     Ok(state)
 }
 
@@ -652,34 +686,45 @@ mod tests {
         };
         let mut genesis = MatchRuntime::new_with_replay_capture(adapter(), 30);
         let initial = genesis.checkpoint_replay().unwrap();
-        let make_config = |fence: StreamFence, startup| HostedPersistenceConfig {
-            primary_url: primary.clone(),
-            durability: Durability::Replicated {
-                standby_url: standby.clone(),
-            },
-            database_timeout: Duration::from_secs(5),
-            fence,
-            journal_limits: JournalLimits {
-                max_batch_bytes: 1024 * 1024,
-                max_retained_bytes: 4 * 1024 * 1024,
-                max_retained_batches: 100,
-                max_replay_ticks: 100,
-            },
-            s3: S3Config {
-                endpoint: endpoint.clone(),
-                bucket: bucket.clone(),
-                region: "us-east-1".into(),
-                allow_http: true,
-            },
-            checkpoint_limits: CheckpointLimits {
-                max_compressed_bytes: 1024 * 1024,
-                max_decoded_bytes: 4 * 1024 * 1024,
-                timeout: Duration::from_secs(5),
-            },
-            checkpoint_interval_ticks: 50,
-            content: Arc::clone(&content),
-            match_id: MatchId::new("hosted-test").unwrap(),
-            startup,
+        let make_config = |fence: StreamFence, startup| {
+            let authority = Arc::new(
+                mmorpg_control_plane::LocalZonePermit::from_confirmed_lease(
+                    fence.lease.clone(),
+                    std::time::Instant::now(),
+                    Duration::from_secs(60),
+                )
+                .unwrap(),
+            );
+            HostedPersistenceConfig {
+                primary_url: primary.clone(),
+                durability: Durability::Replicated {
+                    standby_url: standby.clone(),
+                },
+                database_timeout: Duration::from_secs(5),
+                fence,
+                journal_limits: JournalLimits {
+                    max_batch_bytes: 1024 * 1024,
+                    max_retained_bytes: 4 * 1024 * 1024,
+                    max_retained_batches: 100,
+                    max_replay_ticks: 100,
+                },
+                s3: S3Config {
+                    endpoint: endpoint.clone(),
+                    bucket: bucket.clone(),
+                    region: "us-east-1".into(),
+                    allow_http: true,
+                },
+                checkpoint_limits: CheckpointLimits {
+                    max_compressed_bytes: 1024 * 1024,
+                    max_decoded_bytes: 4 * 1024 * 1024,
+                    timeout: Duration::from_secs(5),
+                },
+                checkpoint_interval_ticks: 50,
+                content: Arc::clone(&content),
+                match_id: MatchId::new("hosted-test").unwrap(),
+                startup,
+                authority: Some(authority),
+            }
         };
         let (storage, ready, worker) = HostedPersistence::start(make_config(
             fence.clone(),
@@ -746,10 +791,9 @@ mod tests {
         })
         .await
         .unwrap();
-        let (storage, image, worker) =
-            HostedPersistence::start(make_config(successor, Startup::Recover))
-                .await
-                .unwrap();
+        let recovery_config = make_config(successor, Startup::Recover);
+        let recovered_authority = Arc::clone(recovery_config.authority.as_ref().unwrap());
+        let (storage, image, worker) = HostedPersistence::start(recovery_config).await.unwrap();
         let mut restored = MatchRuntime::restore_from_recovery(adapter(), image).unwrap();
         assert_eq!(restored.snapshot().unwrap(), snapshot);
         assert_eq!(
@@ -757,6 +801,8 @@ mod tests {
             live.advance_tick().unwrap()
         );
         storage.checkpoint().await.unwrap();
+        recovered_authority.revoke().unwrap();
+        assert!(storage.checkpoint().await.is_err());
         worker.shutdown().await.unwrap();
     }
 }
