@@ -105,7 +105,7 @@ impl ZoneSimulation {
             .filter(|combo| combo.is_open() && ability == crate::ability::ids::SHIELD_BASH.get());
         self.update_player(player_id, |player| player.combo = None);
         let target = match combo {
-            Some(combo) => Some(EntityRef::Creature(combo.target)),
+            Some(combo) => Some(combo.target),
             None => target,
         };
         let ability = match self.ready_ability(player_id, ability, false, combo.is_some()) {

@@ -753,7 +753,7 @@ impl ZoneSimulation {
                 Ok(())
             }
             Swing::Hit { amount, critical } => {
-                if self.block_player_melee(source, player_id, amount)? {
+                if self.block_player_melee(source, player_id, amount, None)? {
                     return Ok(());
                 }
                 // A Warden's stance exposes or braces it (#155).
@@ -769,9 +769,10 @@ impl ZoneSimulation {
         source: EntityRef,
         player_id: PlayerId,
         amount: u16,
+        strike_lane: Option<crate::StrikeHeight>,
     ) -> Result<bool, ZoneError> {
         let target = EntityRef::Player(player_id);
-        match self.guard_outcome(source, player_id, amount)? {
+        match self.guard_outcome(source, player_id, amount, strike_lane)? {
             GuardOutcome::Unguarded => {}
             GuardOutcome::Blocked(lane) => {
                 self.update_player(player_id, |player| {

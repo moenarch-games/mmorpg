@@ -19,7 +19,7 @@
 
 use crate::snapshot::PlayerIntent;
 use crate::zone::PlayerState;
-use crate::{CreatureId, ZoneSimulation, ability::ids};
+use crate::{EntityRef, ZoneSimulation, ability::ids};
 
 /// Committed impact after a confirming slash: 0.2 s.
 pub const COMBO_IMPACT_TICKS: u16 = 6;
@@ -29,8 +29,8 @@ pub const COMBO_WINDOW_TICKS: u16 = 18;
 /// A confirmed slash's follow-up opening.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ComboOpening {
-    /// The creature the slash damaged; the follow-up Bash may hit only it.
-    pub target: CreatureId,
+    /// The eligible unit the slash damaged; the follow-up Bash may hit only it.
+    pub target: EntityRef,
     /// Ticks since the slash, at most impact + window.
     pub elapsed: u16,
 }

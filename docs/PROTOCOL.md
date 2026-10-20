@@ -532,3 +532,17 @@ zero before discarding the old disposable journal. Identical retries are
 idempotent; an active/stale writer or conflicting reset is rejected. The backend
 must confirm replicated metadata before granting a successor. Ordinary recovery
 never substitutes this reset for missing/corrupt checkpoint or journal data.
+
+## Arena combo continuation: snapshot v30 (#339)
+
+Snapshot wire version 30 / core schema 29 extend the canonical combo opening's target
+from a creature ID to the existing five-byte optional entity reference. The record is
+still seven bytes: target kind + ID, then elapsed ticks (`u16`); an absent opening has
+an absent target and zero elapsed ticks. Eligible arena players can therefore be the
+confirmed directed-strike target and receive the existing buffered Shield Bash.
+Canonical validation checks arena eligibility and entity existence. Command version 13
+and the player projection payload layout are unchanged; snapshot headers advance with
+the shared version. Older snapshot/checkpoint versions fail closed. Arena opt-in is
+bound separately through the immutable content fingerprint; ordinary Greyhaven remains
+safe. Dedicated arena admission belongs to its host; this format does not implement
+in-world duels or alter their deferred nonlethal/isolation policy.

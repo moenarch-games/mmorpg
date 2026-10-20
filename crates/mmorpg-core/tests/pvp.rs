@@ -290,3 +290,89 @@ fn an_arena_damage_over_time_aura_restores_and_pulses_identically() {
     }
     assert!(zone.snapshot_for_player(2).unwrap().viewer.health < before);
 }
+
+#[test]
+fn directed_arena_strikes_use_the_aimed_guard_lane_and_restore_combo_followup() {
+    use mmorpg_core::{EntityRef, StrikeAim, StrikeHeight, StrikeSide, ZoneCommand};
+    for guarding in [false, true] {
+        let zone = two_players(PlayerCombatPolicy::FreeForAll);
+        let mut state = zone.snapshot().unwrap();
+        state.players[0].combat.level = 2;
+        let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+        if guarding {
+            zone.apply_command(
+                2,
+                2,
+                ZoneCommand::Move {
+                    forward: 0,
+                    strafe: 0,
+                    facing: 49152,
+                },
+            )
+            .unwrap();
+            zone.apply_command(
+                2,
+                3,
+                ZoneCommand::Guard {
+                    lane: Some(StrikeHeight::Middle),
+                },
+            )
+            .unwrap();
+            zone.advance_tick().unwrap();
+        }
+        let before = zone.snapshot_for_player(2).unwrap().viewer.health;
+        zone.apply_command(
+            1,
+            2,
+            ZoneCommand::DirectedStrike {
+                ability: 1,
+                facing: 16384,
+                aim: StrikeAim::new(StrikeSide::Centre, StrikeHeight::Middle),
+            },
+        )
+        .unwrap();
+        zone.advance_tick().unwrap();
+        let state = zone.snapshot().unwrap();
+        assert_eq!(
+            zone.snapshot_for_player(2).unwrap().viewer.health < before,
+            !guarding
+        );
+        assert_eq!(state.players[0].combat.combo.is_some(), !guarding);
+        if !guarding {
+            assert_eq!(
+                state.players[0].combat.combo.unwrap().target,
+                EntityRef::Player(2)
+            );
+            let mut restored =
+                ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+            for host in [&mut zone, &mut restored] {
+                host.apply_command(
+                    1,
+                    3,
+                    ZoneCommand::UseAbility {
+                        ability: 2,
+                        target: None,
+                    },
+                )
+                .unwrap();
+            }
+            let mut stunned = false;
+            for _ in 0..30 {
+                zone.advance_tick().unwrap();
+                restored.advance_tick().unwrap();
+                let state = zone.snapshot().unwrap();
+                stunned |= state.players[1]
+                    .combat
+                    .abilities
+                    .auras
+                    .iter()
+                    .any(|aura| aura.ability.get() == 2);
+                assert_eq!(state, restored.snapshot().unwrap());
+            }
+            assert!(
+                stunned,
+                "the existing buffered Bash follows the confirmed player target"
+            );
+        }
+    }
+}

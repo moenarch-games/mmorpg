@@ -868,12 +868,14 @@ impl ZoneSimulation {
             cast.and_then(|cast| cast.target).is_none_or(exists)
                 && auras.iter().all(|aura| exists(aura.caster))
         };
-        if self.players.values().any(|player| {
-            player
-                .combo
-                .is_some_and(|combo| !self.creatures.contains_key(&combo.target))
+        if self.players.iter().any(|(&attacker, player)| {
+            player.combo.is_some_and(|combo| match combo.target {
+                EntityRef::Creature(id) => !self.creatures.contains_key(&id),
+                EntityRef::Player(victim) => !self.players_are_hostile(attacker, victim),
+                EntityRef::Npc(_) => true,
+            })
         }) {
-            return Err(ZoneError::new("a combo follows up on an unknown creature"));
+            return Err(ZoneError::new("a combo follows up on an ineligible unit"));
         }
         // Players cast at creatures or explicitly eligible arena opponents; creatures at players.
         let player_targets = self

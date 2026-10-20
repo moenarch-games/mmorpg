@@ -32,12 +32,25 @@ impl ZoneSimulation {
         critical: bool,
         now: u64,
     ) -> Result<(), ZoneError> {
+        self.player_melee_hits_at(attacker, target, amount, critical, now, None)
+    }
+
+    pub(crate) fn player_melee_hits_at(
+        &mut self,
+        attacker: PlayerId,
+        target: EntityRef,
+        amount: u32,
+        critical: bool,
+        now: u64,
+        strike_lane: Option<crate::StrikeHeight>,
+    ) -> Result<(), ZoneError> {
         let amount = if let EntityRef::Player(victim) = target {
             if !self.players_are_hostile(attacker, victim)
                 || self.block_player_melee(
                     EntityRef::Player(attacker),
                     victim,
                     u16::try_from(amount).unwrap_or(u16::MAX),
+                    strike_lane,
                 )?
             {
                 return Ok(());
