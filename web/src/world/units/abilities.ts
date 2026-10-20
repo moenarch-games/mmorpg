@@ -4,7 +4,7 @@ import type { AbilityRecord, ContentCatalog } from "../catalog";
 
 /**
  * Ability input for the minimal presentation: slots 1–8 hold the viewer's class abilities in
- * catalog ID order (every class has four). The zone validates class, level, cooldowns, resource,
+ * catalog ID order (up to eight). The zone validates class, level, cooldowns, resource,
  * target and range; this module only names the ability. The action bar arrives with step 8b.
  */
 export function abilitySlots(snapshot: ZoneSnapshot, catalog: ContentCatalog): readonly AbilityRecord[] {

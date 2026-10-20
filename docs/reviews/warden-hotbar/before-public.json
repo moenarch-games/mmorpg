@@ -1,0 +1,29 @@
+{
+  "url": "https://moritzbrantner.github.io/mmorpg/?debug",
+  "gameAssets": [
+    "https://moritzbrantner.github.io/mmorpg/assets/game-CF7Z_x5c.css",
+    "https://moritzbrantner.github.io/mmorpg/assets/game-7PbKJPaI.js"
+  ],
+  "abilities": [
+    {
+      "ability": "1",
+      "state": "ready"
+    },
+    {
+      "ability": "2",
+      "state": "locked"
+    },
+    {
+      "ability": "3",
+      "state": "locked"
+    },
+    {
+      "ability": "4",
+      "state": "locked"
+    },
+    {
+      "ability": "17",
+      "state": "locked"
+    }
+  ]
+}
