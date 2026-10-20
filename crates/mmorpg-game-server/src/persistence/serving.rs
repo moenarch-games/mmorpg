@@ -6,6 +6,7 @@ use super::{
     global_worker::BackendWorker,
     hosted::{Durability, HostedPersistence, HostedPersistenceConfig, PersistenceWorker, Startup},
     postgres::JournalLimits,
+    zone_lifecycle::ZoneLifecycle,
 };
 use crate::{ZoneGameServerAdapter, zone_match_id};
 use game_server::{
@@ -403,6 +404,17 @@ pub async fn serve_postgres_character_host(
     let zone_standby = required("MMORPG_ZONE_STANDBY_URL")?;
     let database_timeout = millis("MMORPG_PERSISTENCE_TIMEOUT_MS", 5000)?;
     let commit_timeout = millis("MMORPG_COMMIT_TIMEOUT_MS", 25000)?;
+    let policy = crate::lifecycle::SuspensionPolicy::new(
+        Duration::from_secs(1),
+        Duration::from_secs(30),
+        Duration::from_secs(300),
+    )
+    .ok_or("invalid zone suspension policy")?;
+    let proposed_grace = match env::var("MMORPG_EMPTY_ZONE_GRACE_MS") {
+        Ok(value) => Some(Duration::from_millis(value.parse().map_err(message)?)),
+        Err(env::VarError::NotPresent) => None,
+        Err(cause) => return Err(cause.into()),
+    };
     let ttl = millis("MMORPG_GRANT_TTL_MS", 30000)?;
     let renew = millis("MMORPG_GRANT_RENEW_MS", 10000)?;
     let interval = number("MMORPG_CHECKPOINT_INTERVAL_TICKS", 300_u64)?;
@@ -470,7 +482,28 @@ pub async fn serve_postgres_character_host(
         commit_timeout,
         usize::try_from(limits.max_batch_bytes)?,
     )?;
-    let host = LiveMatchHost::with_persistence(matches, persistence)?;
+    let lifecycle = Arc::new(ZoneLifecycle::new(
+        stores.0.clone(),
+        permits
+            .iter()
+            .map(|permit| zone_match_id(permit.lease().zone_id).map(|id| (id, Arc::clone(permit))))
+            .collect::<std::result::Result<BTreeMap<_, _>, _>>()?,
+        policy,
+        proposed_grace,
+        commit_timeout,
+    ));
+    let host = LiveMatchHost::with_persistence(matches, persistence)?
+        .with_cold_admission(lifecycle.clone(), commit_timeout)?;
+    let upkeep_host = host.clone();
+    let upkeep = async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            lifecycle.maintain(&upkeep_host).await;
+        }
+    };
+    tokio::pin!(upkeep);
     let serial = Arc::new(
         stores
             .0
@@ -497,6 +530,7 @@ pub async fn serve_postgres_character_host(
     let mut failure = None;
     loop {
         tokio::select! {
+            ()=&mut upkeep=>{failure=Some("zone lifecycle worker stopped".into());stopping=true;let _=stop.try_send(());},
             result=&mut serving=>{if let Err(cause)=result{failure.get_or_insert_with(||cause.to_string());}break;},
             _=shutdown.recv(),if !stopping=>{stopping=true;let _=stop.try_send(());},
             result=backend.faults.changed(),if !stopping=>{failure=Some(if result.is_err(){"global backend worker stopped".into()}else{backend.faults.borrow().clone().unwrap_or_else(||"global backend failed".into())});stopping=true;let _=stop.try_send(());},

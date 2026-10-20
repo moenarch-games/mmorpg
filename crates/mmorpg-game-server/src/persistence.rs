@@ -8,6 +8,7 @@ mod hosted;
 #[cfg(feature = "postgres")]
 pub(crate) mod postgres;
 mod replication;
+mod zone_lifecycle;
 
 use mmorpg_characters::CharacterLease;
 use mmorpg_core::CharacterRecord;

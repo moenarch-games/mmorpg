@@ -3,6 +3,7 @@
 mod character_admission;
 mod dev_characters;
 mod dev_host;
+pub mod lifecycle;
 #[cfg(feature = "postgres")]
 pub mod persistence;
 pub use dev_characters::{DevCharacterService, DevCharacterStorage};
