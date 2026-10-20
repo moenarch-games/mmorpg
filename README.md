@@ -293,3 +293,5 @@ The [saved grass authoring package](docs/SCATTER_AUTHORING.md) freezes accepted 
 The [saved relief authoring package](docs/RELIEF_AUTHORING.md) freezes the Outpost heightfield and reproduces its saved flatten coverage through the same pinned producer. Both clients consume the saved result through shared scenery.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [ROADMAP.md](ROADMAP.md).
+
+Mode hosts can seed [temporary max-level character builds](docs/EPHEMERAL_CHARACTERS.md) without exporting arena outcomes to durable characters.
