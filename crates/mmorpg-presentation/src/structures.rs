@@ -20,6 +20,7 @@ pub struct Structures {
     seen: BTreeMap<PieceId, Seen>,
     cube: Arc<Geometry>,
     initialized: bool,
+    ground: BTreeMap<PieceId, f64>,
 }
 impl Structures {
     #[must_use]
@@ -29,6 +30,7 @@ impl Structures {
             seen: BTreeMap::new(),
             cube: Arc::new(box_shape()),
             initialized: false,
+            ground: pieces.iter().map(|piece| (piece.id, 0.0)).collect(),
         }
     }
 
@@ -42,7 +44,17 @@ impl Structures {
                 position[1] += scenery.height_at(position[0], position[2]);
             }
         }
-        Self::new(&pieces)
+        let mut presenter = Self::new(&pieces);
+        presenter.ground = pieces
+            .iter()
+            .map(|piece| {
+                (
+                    piece.id,
+                    f64::from(scenery.height_at(piece.position[0], piece.position[2])) / 100.0,
+                )
+            })
+            .collect();
+        presenter
     }
 
     /// `views` is the latest complete projection (intact pieces are omitted). Clock is cosmetic.
@@ -149,8 +161,8 @@ impl Structures {
                 if age < 2.0 && !reduced_motion {
                     for shard in 0..8 {
                         let angle = f64::from(shard) * 2.399;
-                        let travel = age.min(0.8);
-                        let ground = p[1] - h[1];
+                        let travel = age.min(1.2);
+                        let ground = self.ground[&piece.id];
                         let at = [
                             p[0] + angle.cos() * travel * 1.4,
                             (p[1] + travel * 1.5 - 4.0 * travel * travel).max(ground + 0.08),
