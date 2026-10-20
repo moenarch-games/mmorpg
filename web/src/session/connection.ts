@@ -1,3 +1,4 @@
+import type { ControlReply } from "./control-wire";
 /**
  * The transport seam of the online world source: one WebTransport session to
  * a zone host, reduced to what the game-server session protocol uses. The
@@ -17,6 +18,8 @@ export type SessionConnection = {
   send(datagram: Uint8Array): void;
   /** Closes the session from this side; idempotent. */
   close(): void;
+  /** Bounded reliable request; omitted by legacy/test connectors. */
+  control?(payload: Uint8Array): Promise<ControlReply>;
 };
 
 /**
