@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "target": "shared",
+      "definition": {
+        "id": "camera.field_of_view",
+        "kind": {
+          "type": "integer",
+          "min": 40,
+          "max": 90
+        },
+        "default": {
+          "type": "integer",
+          "value": 50
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "camera.field_of_view",
+        "metadata": {
+          "label_key": "settings.camera.field_of_view.label",
+          "category_key": "settings.category.camera",
+          "order": 10,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.fov"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.look_sensitivity",
+        "kind": {
+          "type": "number",
+          "min": 0.25,
+          "max": 3
+        },
+        "default": {
+          "type": "number",
+          "value": 1
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.look_sensitivity",
+        "metadata": {
+          "label_key": "settings.controls.look_sensitivity.label",
+          "category_key": "settings.category.controls",
+          "order": 10,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.mouse"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "accessibility.reduce_motion",
+        "kind": {
+          "type": "choice",
+          "options": [
+            "system",
+            "reduce",
+            "full"
+          ]
+        },
+        "default": {
+          "type": "choice",
+          "value": "system"
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "accessibility.reduce_motion",
+        "metadata": {
+          "label_key": "settings.accessibility.reduce_motion.label",
+          "category_key": "settings.category.accessibility",
+          "order": 10,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.animation"
+          ],
+          "description_key": "settings.accessibility.reduce_motion.description"
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.invert_vertical_look",
+        "kind": {
+          "type": "bool"
+        },
+        "default": {
+          "type": "bool",
+          "value": false
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.invert_vertical_look",
+        "metadata": {
+          "label_key": "settings.controls.invert_vertical_look.label",
+          "description_key": "settings.controls.invert_vertical_look.description",
+          "category_key": "settings.category.controls",
+          "order": 20,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.invert"
+          ]
+        }
+      }
+    }
+  ],
+  "categories": [
+    {
+      "key": "settings.category.camera",
+      "order": 10
+    },
+    {
+      "key": "settings.category.controls",
+      "order": 20
+    },
+    {
+      "key": "settings.category.accessibility",
+      "order": 30
+    }
+  ],
+  "text": {
+    "settings.category.camera": "Camera",
+    "settings.category.controls": "Controls",
+    "settings.category.accessibility": "Accessibility",
+    "settings.camera.field_of_view.label": "Field of view (\u00b0)",
+    "settings.camera.field_of_view.description": "Vertical field of view of the world camera.",
+    "settings.controls.invert_vertical_look.label": "Invert vertical look",
+    "settings.controls.invert_vertical_look.description": "Reverse vertical camera movement while looking around.",
+    "settings.controls.look_sensitivity.label": "Look sensitivity",
+    "settings.controls.look_sensitivity.description": "How far a mouse drag turns the camera (1 is the default).",
+    "settings.accessibility.reduce_motion.label": "Reduce motion",
+    "settings.accessibility.reduce_motion.description": "Reduces camera and environmental animation.",
+    "settings.choice.system": "Follow system",
+    "settings.choice.reduce": "Reduce",
+    "settings.choice.full": "Full motion",
+    "settings.search.fov": "field of view fov camera",
+    "settings.search.mouse": "mouse pointer look sensitivity",
+    "settings.search.animation": "motion animation accessibility",
+    "settings.search.invert": "invert reverse vertical look"
+  }
+}

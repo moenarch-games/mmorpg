@@ -73,7 +73,6 @@ pub fn run(
         input,
         characters,
         updates,
-        keys: HashSet::new(),
         camera: OrbitCamera::default(),
         orbit_buttons: HashSet::new(),
         cursor: None,
@@ -100,6 +99,8 @@ pub fn run(
         pad_ui: Vec::new(),
         focused: true,
         last_pad_sample: Instant::now(),
+        bindings_revision: 0,
+        modifiers: winit::keyboard::ModifiersState::empty(),
     };
     event_loop.run_app(&mut app)?;
     match app.error {
@@ -122,7 +123,6 @@ struct App {
     input: watch::Sender<PlayerInput>,
     characters: watch::Sender<Option<CharacterSelection>>,
     updates: watch::Receiver<NetworkUpdate>,
-    keys: HashSet<KeyCode>,
     camera: OrbitCamera,
     /// Held mouse buttons that orbit the camera while the cursor moves.
     orbit_buttons: HashSet<MouseButton>,
@@ -161,6 +161,8 @@ struct App {
     /// Pads act only while the window has focus.
     focused: bool,
     last_pad_sample: Instant,
+    bindings_revision: u64,
+    modifiers: winit::keyboard::ModifiersState,
 }
 
 /// Opens the platform's gamepads; a platform without gamepad support keeps
@@ -175,11 +177,6 @@ fn open_gamepads() -> Option<gilrs::Gilrs> {
     }
 }
 
-const FORWARD_KEYS: [KeyCode; 2] = [KeyCode::KeyW, KeyCode::ArrowUp];
-const BACKWARD_KEYS: [KeyCode; 2] = [KeyCode::KeyS, KeyCode::ArrowDown];
-const LEFT_KEYS: [KeyCode; 3] = [KeyCode::KeyA, KeyCode::KeyQ, KeyCode::ArrowLeft];
-const RIGHT_KEYS: [KeyCode; 3] = [KeyCode::KeyD, KeyCode::KeyE, KeyCode::ArrowRight];
-
 /// Movement intent from the held keys.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct HeldMovement {
@@ -192,7 +189,7 @@ struct HeldMovement {
 /// W/S run and backpedal, A/D or Q/E strafe, combined with the pad's left
 /// stick. Dead units cannot move, so the dead hold no movement whatever keys
 /// are down.
-fn held_movement(keys: &HashSet<KeyCode>, pad: PadMovement, dead: bool) -> HeldMovement {
+fn held_movement(keyboard: PadMovement, pad: PadMovement, dead: bool) -> HeldMovement {
     if dead {
         return HeldMovement {
             forward: 0,
@@ -200,17 +197,10 @@ fn held_movement(keys: &HashSet<KeyCode>, pad: PadMovement, dead: bool) -> HeldM
             steering: false,
         };
     }
-    let held = |group: &[KeyCode]| group.iter().any(|key| keys.contains(key));
-    let forward = i8::from(held(&FORWARD_KEYS)) - i8::from(held(&BACKWARD_KEYS));
-    let strafe = i8::from(held(&RIGHT_KEYS)) - i8::from(held(&LEFT_KEYS));
     HeldMovement {
-        forward: (forward + pad.forward).clamp(-1, 1),
-        strafe: (strafe + pad.strafe).clamp(-1, 1),
-        steering: held(&FORWARD_KEYS)
-            || held(&BACKWARD_KEYS)
-            || held(&LEFT_KEYS)
-            || held(&RIGHT_KEYS)
-            || pad.steering,
+        forward: (keyboard.forward + pad.forward).clamp(-1, 1),
+        strafe: (keyboard.strafe + pad.strafe).clamp(-1, 1),
+        steering: keyboard.steering || pad.steering,
     }
 }
 
@@ -292,7 +282,6 @@ impl App {
                     self.world_controls.set_interaction(true);
                     // A context owns the number keys until closed.
                     self.controls.focus_lost();
-                    self.keys.clear();
                     self.update_movement();
                 } else if let Some(command) = self.presentation.reachable_door() {
                     // Without a selected NPC, interact swings the door in reach (#158).
@@ -402,7 +391,7 @@ impl App {
             forward,
             strafe,
             steering,
-        } = held_movement(&self.keys, self.pad.movement(), self.dead());
+        } = held_movement(self.controls.movement(), self.pad.movement(), self.dead());
         let facing = steering.then(|| self.camera.facing());
         self.input.send_if_modified(|input| {
             let next = PlayerInput {
@@ -456,6 +445,14 @@ impl App {
     /// A slot use or cast cancel is an intent; the zone decides what happens.
     fn control(&mut self, action: ControlAction) {
         match action {
+            ControlAction::MoveForward
+            | ControlAction::MoveBackward
+            | ControlAction::MoveLeft
+            | ControlAction::MoveRight => {}
+            ControlAction::Jump => self.jump(),
+            ControlAction::TargetNext => self.combat_key(KeyCode::Tab),
+            ControlAction::ToggleAttack => self.combat_key(KeyCode::KeyF),
+            ControlAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             ControlAction::AbilitySlot(slot) => {
                 let ability = usize::from(slot)
                     .checked_sub(1)
@@ -527,14 +524,15 @@ impl App {
         if disconnected {
             self.pad.retire("gamepadDisconnected");
         }
-        let pads: Vec<PadState> = if self.focused && !self.ui.chat_focused() {
-            gilrs.gamepads().map(|(_, pad)| read_pad(&pad)).collect()
-        } else {
-            Vec::new()
-        };
+        let pads: Vec<PadState> = gilrs.gamepads().map(|(_, pad)| read_pad(&pad)).collect();
         let snapshot = self.presentation.latest();
-        self.pad.set_panels(
-            self.choosing || self.npc_context.npc.is_some() || self.ui.windows_open(snapshot),
+        self.pad.set_input_context(
+            self.ui.settings.open
+                || self.choosing
+                || self.npc_context.npc.is_some()
+                || self.ui.windows_open(snapshot),
+            self.ui.settings.open,
+            !self.focused || self.ui.chat_focused(),
         );
         for action in self.pad.sample(&pads) {
             self.pad_action(action);
@@ -545,7 +543,11 @@ impl App {
         if self.pad_guard.is_some() {
             dy = 0.0;
         }
-        if dx != 0.0 || dy != 0.0 {
+        if !self.ui.settings.open
+            && self.focused
+            && !self.ui.chat_focused()
+            && (dx != 0.0 || dy != 0.0)
+        {
             self.camera.orbit(dx, dy);
         }
         self.update_movement();
@@ -594,7 +596,11 @@ impl App {
     fn retire_held_input(&mut self) {
         self.controls.focus_lost();
         self.world_controls.reset();
-        self.keys.clear();
+        self.orbit_buttons.clear();
+        self.guard_offset = None;
+        self.pad_guard = None;
+        self.pad.retire("inputContextChanged");
+        self.update_guard();
         self.update_movement();
     }
 
@@ -624,6 +630,9 @@ impl App {
                 self.world_controls.set_interaction(false);
             }
             UiIntent::ChooseCharacter(id, class, sex, headwear) => {
+                self.retire_held_input();
+                self.ui.settings.bindings.select_character(Some(&id));
+                self.sync_bindings();
                 self.choosing = false;
                 self.presentation.set_preview(None);
                 self.presentation.set_default_appearance(class);
@@ -640,6 +649,37 @@ impl App {
                 }));
             }
         }
+    }
+
+    fn binding_modifiers(&self) -> input_bindings_core::Modifiers {
+        input_bindings_core::Modifiers {
+            ctrl: self.modifiers.control_key(),
+            alt: self.modifiers.alt_key(),
+            shift: self.modifiers.shift_key(),
+            meta: self.modifiers.super_key(),
+            alt_graph: false,
+        }
+    }
+
+    fn sync_bindings(&mut self) {
+        let revision = self.ui.settings.bindings.revision();
+        if revision == self.bindings_revision {
+            return;
+        }
+        let profile = self.ui.settings.bindings.profile().cloned();
+        self.retire_held_input();
+        if let Some(profile) = profile {
+            if let Err(error) = self
+                .controls
+                .set_profile(Some(profile.clone()))
+                .and_then(|()| self.world_controls.set_profile(profile.clone()))
+                .and_then(|()| self.pad.set_profile(profile))
+            {
+                self.ui.settings.bindings.problem(error);
+                return;
+            }
+        }
+        self.bindings_revision = revision;
     }
 
     /// Runs one egui pass over the latest projection and applies its intents.
@@ -677,6 +717,7 @@ impl App {
         let mut raw = egui.state.take_egui_input(window);
         raw.events.append(&mut self.pad_ui);
         let mut intents = Vec::new();
+        let settings_was_open = self.ui.settings.open;
         let output = egui.context.run_pass(raw, |ctx| {
             intents = self.ui.show(ctx, &frame, &mut self.npc_context, now);
         });
@@ -685,6 +726,28 @@ impl App {
         for intent in intents {
             self.ui_intent(intent);
         }
+        self.sync_bindings();
+        if settings_was_open != self.ui.settings.open {
+            self.retire_held_input();
+        }
+        let preferences = &self.ui.settings.preferences;
+        if let (
+            Ok(settings_core::SettingValue::Integer(fov)),
+            Ok(settings_core::SettingValue::Number(sensitivity)),
+        ) = (
+            preferences.value(mmorpg_client::settings::FIELD_OF_VIEW),
+            preferences.value(mmorpg_client::settings::LOOK_SENSITIVITY),
+        ) {
+            self.camera.set_preferences(
+                *fov as f32,
+                *sensitivity as f32,
+                matches!(
+                    preferences.value(mmorpg_client::settings::INVERT_VERTICAL_LOOK),
+                    Ok(settings_core::SettingValue::Bool(true))
+                ),
+            );
+        }
+        self.presentation.set_reduced_motion(matches!(preferences.value(mmorpg_client::settings::REDUCE_MOTION), Ok(settings_core::SettingValue::Choice(value)) if value == "reduce"));
         let focused = self.ui.chat_focused();
         if focused && !self.chat_focused {
             self.retire_held_input();
@@ -780,13 +843,30 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        let binding_modifiers = self.binding_modifiers();
+        if self.ui.settings.open
+            && let WindowEvent::KeyboardInput { event, .. } = &event
+            && event.state == ElementState::Pressed
+            && let PhysicalKey::Code(code) = event.physical_key
+            && self.ui.settings.bindings.capture_key_with_modifiers(
+                code,
+                event.repeat,
+                binding_modifiers.clone(),
+            )
+        {
+            return;
+        }
+        if matches!(event, WindowEvent::Focused(false)) {
+            self.ui.settings.bindings.cancel_capture();
+        }
         // The interface sees pointer and window events; the keyboard only while
         // the chat field owns it, so focused buttons never steal movement keys.
         let keyboard = matches!(
             event,
             WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_)
         );
-        let chat_owns_keyboard = self.chat_focused || self.ui.chat_focused();
+        let chat_owns_keyboard =
+            self.chat_focused || self.ui.chat_focused() || self.ui.settings.open;
         let ui_consumed = match (self.egui.as_mut(), self.window.as_ref()) {
             (Some(egui), Some(window)) if !keyboard || chat_owns_keyboard => {
                 egui.state.on_window_event(window, &event).consumed
@@ -799,11 +879,11 @@ impl ApplicationHandler for App {
                 && event.state == ElementState::Released
             {
                 self.controls.key_up(code);
-                self.keys.remove(&code);
             }
             return;
         }
         match event {
+            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::CloseRequested => {
                 self.stop();
                 event_loop.exit();
@@ -818,7 +898,6 @@ impl ApplicationHandler for App {
                 self.focused = false;
                 self.pad.retire("focusLost");
                 self.controls.focus_lost();
-                self.keys.clear();
                 self.retire_pointer();
                 self.update_movement();
             }
@@ -830,23 +909,32 @@ impl ApplicationHandler for App {
             } if ui_consumed => {}
             WindowEvent::MouseWheel { .. } if ui_consumed => {}
             WindowEvent::MouseInput { state, button, .. } => {
-                if matches!(button, MouseButton::Left | MouseButton::Right) {
-                    if state == ElementState::Pressed {
-                        self.orbit_buttons.insert(button);
-                        if button == MouseButton::Left {
-                            self.world_controls.pointer(true);
-                            self.pointer_origin = self.cursor;
-                        }
-                    } else {
-                        if button == MouseButton::Left {
-                            let click = self.world_controls.pointer(false)
-                                && self.pointer_origin.take().is_some();
-                            if click {
-                                self.select_pointer(event_loop);
-                            }
-                        }
-                        self.orbit_buttons.remove(&button);
+                let index = match button {
+                    MouseButton::Left => 0,
+                    MouseButton::Middle => 1,
+                    MouseButton::Right => 2,
+                    MouseButton::Back => 3,
+                    MouseButton::Forward => 4,
+                    MouseButton::Other(index) => index,
+                };
+                let selecting = self.world_controls.selecting();
+                let click = self.world_controls.pointer_button(
+                    index,
+                    state == ElementState::Pressed,
+                    binding_modifiers.clone(),
+                );
+                if state == ElementState::Pressed {
+                    if !selecting && self.world_controls.selecting() {
+                        self.pointer_origin = self.cursor;
                     }
+                    if matches!(button, MouseButton::Left | MouseButton::Right) {
+                        self.orbit_buttons.insert(button);
+                    }
+                } else {
+                    if click && self.pointer_origin.take().is_some() {
+                        self.select_pointer(event_loop);
+                    }
+                    self.orbit_buttons.remove(&button);
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -888,10 +976,11 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     let context_was_open = self.npc_context.npc.is_some();
                     let mut cancel_handled = false;
-                    for action in self.world_controls.key(
+                    for action in self.world_controls.key_with_modifiers(
                         code,
                         event.state == ElementState::Pressed,
                         event.repeat,
+                        binding_modifiers.clone(),
                     ) {
                         let handled = self.world_action(action);
                         // A handled cancel or door use consumes the key (Enter does not chat).
@@ -905,14 +994,17 @@ impl ApplicationHandler for App {
                     if context_was_open || context_opened || cancel_handled {
                         if event.state == ElementState::Released {
                             self.controls.key_up(code);
-                            self.keys.remove(&code);
                             self.update_movement();
                         }
                         return;
                     }
 
                     if event.state == ElementState::Pressed {
-                        let actions = self.controls.key_down(code, event.repeat);
+                        let actions = self.controls.key_down_with_modifiers(
+                            code,
+                            event.repeat,
+                            binding_modifiers.clone(),
+                        );
                         // Escape cancels a cast through the controls, otherwise a
                         // fresh press closes; a held Escape's repeats never close.
                         if code == KeyCode::Escape && actions.is_empty() {
@@ -930,21 +1022,6 @@ impl ApplicationHandler for App {
                         }
                     } else {
                         self.controls.key_up(code);
-                    }
-                    // Jump is edge-triggered: key repeat never queues more jumps.
-                    if code == KeyCode::Space
-                        && event.state == ElementState::Pressed
-                        && !event.repeat
-                    {
-                        self.jump();
-                    }
-                    if event.state == ElementState::Pressed && !event.repeat {
-                        self.combat_key(code);
-                    }
-                    if event.state == ElementState::Pressed {
-                        self.keys.insert(code);
-                    } else {
-                        self.keys.remove(&code);
                     }
                     self.update_movement();
                 }
@@ -1054,6 +1131,14 @@ impl ApplicationHandler for App {
 mod tests {
     use super::*;
 
+    fn keyboard(keys: &[KeyCode]) -> PadMovement {
+        let mut controls = NativeControls::new();
+        for key in keys {
+            controls.key_down(*key, false);
+        }
+        controls.movement()
+    }
+
     #[test]
     fn the_pad_stick_combines_with_held_keys() {
         let stick = PadMovement {
@@ -1061,9 +1146,9 @@ mod tests {
             strafe: -1,
             steering: true,
         };
-        let back: HashSet<_> = [KeyCode::KeyS].into_iter().collect();
+        let back = keyboard(&[KeyCode::KeyS]);
         assert_eq!(
-            held_movement(&back, stick, false),
+            held_movement(back, stick, false),
             HeldMovement {
                 forward: 0,
                 strafe: -1,
@@ -1071,21 +1156,21 @@ mod tests {
             }
         );
         assert_eq!(
-            held_movement(&HashSet::new(), stick, false),
+            held_movement(PadMovement::default(), stick, false),
             HeldMovement {
                 forward: 1,
                 strafe: -1,
                 steering: true
             }
         );
-        assert!(!held_movement(&HashSet::new(), stick, true).steering);
+        assert!(!held_movement(PadMovement::default(), stick, true).steering);
     }
 
     #[test]
     fn the_dead_hold_no_movement() {
-        let keys: HashSet<_> = [KeyCode::KeyW, KeyCode::KeyA].into_iter().collect();
+        let keys = keyboard(&[KeyCode::KeyW, KeyCode::KeyA]);
         assert_eq!(
-            held_movement(&keys, PadMovement::default(), false),
+            held_movement(keys, PadMovement::default(), false),
             HeldMovement {
                 forward: 1,
                 strafe: -1,
@@ -1093,18 +1178,16 @@ mod tests {
             }
         );
         assert_eq!(
-            held_movement(&keys, PadMovement::default(), true),
+            held_movement(keys, PadMovement::default(), true),
             HeldMovement {
                 forward: 0,
                 strafe: 0,
                 steering: false
             }
         );
-        let opposed: HashSet<_> = [KeyCode::KeyS, KeyCode::ArrowUp, KeyCode::KeyE]
-            .into_iter()
-            .collect();
+        let opposed = keyboard(&[KeyCode::KeyS, KeyCode::ArrowUp, KeyCode::KeyE]);
         assert_eq!(
-            held_movement(&opposed, PadMovement::default(), false),
+            held_movement(opposed, PadMovement::default(), false),
             HeldMovement {
                 forward: 0,
                 strafe: 1,

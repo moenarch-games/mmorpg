@@ -12,11 +12,20 @@ use input_bindings_core::{
     InputRuntimeOptions, InputStroke, KeyMatch, KeyStroke, Modifiers, Provenance, RepeatPolicy,
     RuntimeDecision, SemanticControlState, WhenExpr,
 };
+use std::collections::BTreeMap;
 use winit::keyboard::KeyCode;
 
 /// A semantic action the native client resolves from input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ControlAction {
+    MoveForward,
+    MoveBackward,
+    MoveLeft,
+    MoveRight,
+    Jump,
+    TargetNext,
+    ToggleAttack,
+    ReleaseSpirit,
     /// Action-bar slot 1–8.
     AbilitySlot(u8),
     /// Cancel the viewer's cast or channel.
@@ -39,7 +48,15 @@ pub enum Panel {
 
 impl ControlAction {
     /// Every control action in catalog order.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 22] = [
+        Self::MoveForward,
+        Self::MoveBackward,
+        Self::MoveLeft,
+        Self::MoveRight,
+        Self::Jump,
+        Self::TargetNext,
+        Self::ToggleAttack,
+        Self::ReleaseSpirit,
         Self::AbilitySlot(1),
         Self::AbilitySlot(2),
         Self::AbilitySlot(3),
@@ -61,6 +78,14 @@ impl ControlAction {
     #[must_use]
     pub fn id(self) -> &'static str {
         match self {
+            Self::MoveForward => "move.forward",
+            Self::MoveBackward => "move.back",
+            Self::MoveLeft => "move.strafeLeft",
+            Self::MoveRight => "move.strafeRight",
+            Self::Jump => "move.jump",
+            Self::TargetNext => "target.next",
+            Self::ToggleAttack => "combat.toggleAutoAttack",
+            Self::ReleaseSpirit => "player.releaseSpirit",
             Self::AbilitySlot(1) => "ability.slot1",
             Self::AbilitySlot(2) => "ability.slot2",
             Self::AbilitySlot(3) => "ability.slot3",
@@ -86,6 +111,14 @@ impl ControlAction {
     /// Title, context and default physical keys, as in the browser catalog.
     fn default_binding(self) -> (&'static str, &'static str, &'static [&'static str]) {
         match self {
+            Self::MoveForward => ("Move forward", GAMEPLAY, &["KeyW", "ArrowUp"]),
+            Self::MoveBackward => ("Move backward", GAMEPLAY, &["KeyS", "ArrowDown"]),
+            Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "KeyQ", "ArrowLeft"]),
+            Self::MoveRight => ("Strafe right", GAMEPLAY, &["KeyD", "KeyE", "ArrowRight"]),
+            Self::Jump => ("Jump", GAMEPLAY, &["Space"]),
+            Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),
+            Self::ToggleAttack => ("Toggle auto-attack", GAMEPLAY, &["KeyF"]),
+            Self::ReleaseSpirit => ("Release spirit", GAMEPLAY, &["KeyR"]),
             Self::AbilitySlot(1) => ("Ability 1", GAMEPLAY, &["Digit1"]),
             Self::AbilitySlot(2) => ("Ability 2", GAMEPLAY, &["Digit2"]),
             Self::AbilitySlot(3) => ("Ability 3", GAMEPLAY, &["Digit3"]),
@@ -166,6 +199,32 @@ fn stroke(key: KeyCode) -> InputStroke {
     physical(&format!("{key:?}"))
 }
 
+/// Preserve the activation stroke until its physical key releases, even when
+/// modifiers or contexts change before key-up. No binding resolution lives here.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct KeyboardSources(BTreeMap<KeyCode, InputStroke>);
+impl KeyboardSources {
+    pub(crate) fn down(&mut self, key: KeyCode, modifiers: Modifiers) -> InputStroke {
+        self.0
+            .entry(key)
+            .or_insert_with(|| {
+                InputStroke::Keyboard(KeyStroke {
+                    key: KeyMatch::Physical {
+                        value: format!("{key:?}"),
+                    },
+                    modifiers,
+                })
+            })
+            .clone()
+    }
+    pub(crate) fn up(&mut self, key: KeyCode) -> InputStroke {
+        self.0.remove(&key).unwrap_or_else(|| stroke(key))
+    }
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
 fn layer(id: &str) -> ContextLayer {
     ContextLayer {
         id: id.to_owned(),
@@ -179,6 +238,7 @@ pub struct NativeControls {
     runtime: InputRuntime,
     state: SemanticControlState,
     casting: bool,
+    sources: KeyboardSources,
 }
 
 impl Default for NativeControls {
@@ -194,7 +254,7 @@ impl NativeControls {
     #[must_use]
     pub fn new() -> Self {
         let mut runtime = InputRuntime::new(
-            native_action_registry(),
+            crate::bindings::action_registry(),
             None,
             InputRuntimeOptions::default(),
         );
@@ -209,7 +269,25 @@ impl NativeControls {
             runtime,
             state: SemanticControlState::new(),
             casting: false,
+            sources: KeyboardSources::default(),
         }
+    }
+
+    /// Apply a foundation-validated character profile and retire held actions.
+    pub fn set_profile(
+        &mut self,
+        profile: Option<input_bindings_core::Profile>,
+    ) -> Result<(), String> {
+        let report = input_bindings_core::validate_registry(
+            &crate::bindings::action_registry(),
+            profile.as_ref(),
+        );
+        if !report.valid || !report.diagnostics.is_empty() {
+            return Err(format!("Invalid control profile: {:?}", report.diagnostics));
+        }
+        let decision = self.runtime.update_profile(profile);
+        self.apply(&[decision]);
+        Ok(())
     }
 
     /// Follows the latest projection's cast: the non-blocking `casting` layer
@@ -231,7 +309,17 @@ impl NativeControls {
     /// A key went down; `repeat` is OS auto-repeat. Returns the presses this
     /// event dispatched, in order.
     pub fn key_down(&mut self, key: KeyCode, repeat: bool) -> Vec<ControlAction> {
-        let decisions = self.runtime.input_down(stroke(key), repeat, NO_CLOCK_MS);
+        self.key_down_with_modifiers(key, repeat, Modifiers::default())
+    }
+
+    pub fn key_down_with_modifiers(
+        &mut self,
+        key: KeyCode,
+        repeat: bool,
+        modifiers: Modifiers,
+    ) -> Vec<ControlAction> {
+        let stroke = self.sources.down(key, modifiers);
+        let decisions = self.runtime.input_down(stroke, repeat, NO_CLOCK_MS);
         self.apply(&decisions);
         self.state
             .drain_presses()
@@ -242,12 +330,14 @@ impl NativeControls {
 
     /// A key went up. Releases never use an action.
     pub fn key_up(&mut self, key: KeyCode) {
-        let decisions = self.runtime.input_up(&stroke(key), NO_CLOCK_MS);
+        let stroke = self.sources.up(key);
+        let decisions = self.runtime.input_up(&stroke, NO_CLOCK_MS);
         self.apply(&decisions);
     }
 
     /// The window lost focus: every held action is released.
     pub fn focus_lost(&mut self) {
+        self.sources.clear();
         let decision = self.runtime.reset("focusLost");
         self.apply(&[decision]);
     }
@@ -255,6 +345,22 @@ impl NativeControls {
     #[must_use]
     pub fn is_held(&self, action: ControlAction) -> bool {
         self.state.is_held(action.id())
+    }
+
+    /// Shared semantic held-state aggregation, independent of physical keys.
+    pub fn movement(&self) -> crate::gamepad::PadMovement {
+        crate::gamepad::PadMovement {
+            forward: self.state.axis("move.back", "move.forward"),
+            strafe: self.state.axis("move.strafeLeft", "move.strafeRight"),
+            steering: [
+                ControlAction::MoveForward,
+                ControlAction::MoveBackward,
+                ControlAction::MoveLeft,
+                ControlAction::MoveRight,
+            ]
+            .into_iter()
+            .any(|action| self.is_held(action)),
+        }
     }
 
     fn apply(&mut self, decisions: &[RuntimeDecision]) {

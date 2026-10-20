@@ -5,10 +5,12 @@
 //! existing intent ([`UiIntent`]) that the window turns into the same shared
 //! commands as the keyboard. The zone decides what happens; this module owns
 //! no gameplay legality, quest progress or inventory transactions.
+pub mod bindings;
 pub mod chat;
 pub mod minimap;
 pub mod overlay;
 mod panels;
+pub mod settings;
 pub mod world_labels;
 
 use crate::{
@@ -135,6 +137,7 @@ enum LogTab {
 
 /// Interface state that is purely local presentation.
 pub struct GameUi {
+    pub settings: settings::SettingsWindow,
     pub sheets: Sheets,
     pub logs: Logs,
     minimap: MinimapLayers,
@@ -163,6 +166,7 @@ impl GameUi {
     #[must_use]
     pub fn new(scenery: &Scenery) -> Self {
         Self {
+            settings: settings::SettingsWindow::default(),
             sheets: Sheets::default(),
             logs: Logs::default(),
             minimap: MinimapLayers::new(scenery),
@@ -331,6 +335,17 @@ impl GameUi {
         now: Instant,
     ) -> Vec<UiIntent> {
         let mut intents = Vec::new();
+        if frame.choosing {
+            let selected = self
+                .roster
+                .selected
+                .and_then(|index| self.roster.roster.characters.get(index))
+                .map(|character| character.id.clone());
+            self.settings.bindings.select_character(selected.as_deref());
+        }
+        if self.settings.show(ctx) {
+            return intents;
+        }
         if let Some(text) = frame.connection {
             banner(
                 ctx,

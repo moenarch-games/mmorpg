@@ -120,7 +120,7 @@ A rejected, expired, incompatible, or incomplete resume ends the session with an
 - This is a connected gameplay/graphics slice, not a production account system. Sessions are anonymous; account/character binding, persistent resume across application launches, and live zone handoff are pending.
 - The host remains standalone; do not run competing hosts for one zone without the planned distributed lease integration.
 - Players are asset-tooling's Ranger humanoid (Atlas 6.3.7) and wolves, vermin and boars Quaternius CC0 animals (`assets/quaternius/*.glb`, Atlas 6.3.6); humanoid creatures and NPCs keep procedural models. `scripts/fetch-bundles.sh` downloads the Ranger bundle once into ignored `web/public/characters/`; the client's `build.rs` embeds its glTF and declared resources and fails with that hint while it is missing. Models are imported once with the `gltf` crate (the bundle assembled into one GLB), base colours and base-colour texels become vertex colours, and `presentation/skinned.rs` samples idle/walk/run/attack/death clips and skins on the CPU into ordinary draws, so picking sees the posed mesh. Every class and sex shares the Ranger until more character bundles exist; a Warden also draws the bundle's sword and shield at the `humanoid-sockets` hand sockets (placement × joint × socket each frame), and a standing Warden holding guard plays `Idle_Shield_Loop` (no layered upper-body blend: walking keeps the walk clip, and only the viewer's own guard is projected); models are cosmetic and never change bodies or hits. Pages presents the same models with plain three.js (`GLTFLoader`, `AnimationMixer`, socket parenting; `web/src/world/units/quaternius-units.ts`), where a Ranger also carries the bundle's bow and quiver on its back (native does not draw those yet).
-- World/model/environment parity acceptance is documented in [NATIVE_WORLD_PARITY.md](acceptance/NATIVE_WORLD_PARITY.md); paired rendered review and native application checks are required before release. Native world clicking, selected-person quest/vendor windows, unit/target frames, action bar, bags, character pane, loot, chat, quest tracker/log and minimap are implemented with egui (#183); the keyboard context and title text remain. The local character roster with appearance persistence and turntable preview, floating combat text and world-space nameplates/quest markers are implemented (#183). Gamepad access is implemented (#183). The Settings menu (and rebinding) remains pending.
+- World/model/environment parity acceptance is documented in [NATIVE_WORLD_PARITY.md](acceptance/NATIVE_WORLD_PARITY.md); paired rendered review and native application checks are required before release. Native world clicking, selected-person quest/vendor windows, unit/target frames, action bar, bags, character pane, loot, chat, quest tracker/log and minimap are implemented with egui (#183); the keyboard context and title text remain. The local character roster with appearance persistence and turntable preview, floating combat text and world-space nameplates/quest markers are implemented (#183). Gamepad access is implemented (#183). The Settings menu and character-scoped rebinding are implemented; see [client Settings](#client-settings-and-character-controls).
 - The shared transport fragments oversized session snapshots and the client reassembles them per connection. The current v18 MMO projection policy still keeps at most 64 relevant units and packs as many 21-byte records as fit 1,077 bytes (46 without events, sheets, cooldowns or auras, 38 beside the largest self sheet); additional projected sections require a separate protocol and budget change.
 - The Greyhaven inn (#158) is asset-tooling's `greyhaven-inn-v1` bundle, which `scripts/fetch-bundles.sh` downloads into ignored `web/public/buildings/` and `build.rs` embeds. `mmorpg_presentation::buildings` places its entries, swings the door over 0.4 s toward the replicated state and hides the roof and ceiling while the viewer stands inside; both clients run it. A click on the door leaf (picked by its mesh) sends `UseDoor` to flip it, and Enter or gamepad Start with no NPC selected uses the door in reach; the zone decides.
 - The built-in Greyhaven Vale (content revision 10, with creatures, NPCs, items and equipment, loot rules, creature abilities, a vendor, the quest chain and the walk-in inn) and snapshot v22 change the standalone host's initial simulation state. Recovery bundles captured with earlier content or snapshot versions cannot be silently reused; arrange an explicit migration or fresh development state.
@@ -224,3 +224,45 @@ Operational limits are configurable, not performance ratchets:
 Lease/commit failures fence the host. Object-store failures retain the last verified checkpoint and bounded PostgreSQL journal; exceeding its configured bounds stops progression.
 Acknowledged economy depends on the designated standby's durable receipt and replay. Promotion must preserve that confirmed history and fence the former primary; automatic database failover is not implemented here.
 The focused `persistence_host` test exercises a real WebTransport claim, complete host-process loss, journal recovery, reconnect and durable logout against PostgreSQL plus RustFS, without a GPU.
+
+### Client Settings and character controls
+
+The **Settings** button at the bottom right opens a modal on character selection
+and in the world. Field of view, look sensitivity, vertical look inversion and
+reduced motion use the same versioned catalog as the browser. Changes apply
+immediately and save local delta-only User/Device snapshots; save failures remain
+visible. Settings blocks local gameplay input while the online zone continues.
+
+Select a roster character to edit its Controls. Keyboard recording (including
+modifiers), mouse buttons and controller buttons/stick directions share one
+`input-bindings` profile for that stable character identity. A new conflict must
+receive an explicit offered repair before it changes saved/runtime controls.
+Closing Settings or losing focus cancels unconfirmed recording. Profiles are
+local files beneath the configuration directory's `bindings/`, separate from
+ordinary Settings snapshots and authoritative character progression.
+
+A focused offscreen view uses the existing native renderer test:
+
+```sh
+MMORPG_NATIVE_SETTINGS_EVIDENCE=1 MMORPG_SMOKE_FRAME_DIR=target/settings-frames \
+cargo test -p mmorpg-client --locked --lib the_egui_interface_paints_over_the_native_world -- --ignored --nocapture
+```
+
+It emits `settings.ppm`; this demonstrates rendering, not OS focus or hardware
+input. Settings uses `content/settings/catalog.json` for platform applicability,
+category order, translated labels and canonical presentation metadata. Global
+search finds preferences across categories; category/global reset requires
+confirmation and preserves dormant imported entries. The current catalog exposes
+only real Immediate preferences; it adds no speculative restart/reconnect or
+renderer-quality controls.
+
+Expand **User preferences file** to export to a filesystem path or preview an
+import. **Replace User preferences** replaces only User overrides after a
+successful atomic save; Device preferences and character bindings remain intact.
+The browser exposes the same schema-v2 file through download/upload. Both clients
+retain same-scope entries for other platforms without applying or exposing them.
+
+Native snapshot files are `settings.user.json` and `settings.device.json` beneath
+the local configuration directory. Bindings remain separate portable
+`input-bindings` profiles keyed by the stable roster identity. There is no cloud
+sync or server preference authority.

@@ -1751,7 +1751,7 @@ dependencies = [
 [[package]]
 name = "input-bindings-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/input-bindings.git?rev=9872c63b18b52842aba206b0ecef7a70dc8f1249#9872c63b18b52842aba206b0ecef7a70dc8f1249"
+source = "git+https://github.com/moritzbrantner/input-bindings.git?rev=cf0d89f0cc048cec865682926b15acb1b273e589#cf0d89f0cc048cec865682926b15acb1b273e589"
 dependencies = [
  "serde",
 ]
@@ -2086,7 +2086,10 @@ dependencies = [
  "mmorpg-protocol",
  "mmorpg-scenery",
  "mmorpg-wasm",
+ "serde",
  "serde_json",
+ "settings-core",
+ "settings-presentation",
  "tempfile",
  "three-d-animation",
  "three-d-camera",
@@ -3770,6 +3773,26 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "settings-core"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/settings.git?rev=38c468c5d1a380416df630d7980be5f0d16631c2#38c468c5d1a380416df630d7980be5f0d16631c2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "settings-presentation"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/settings.git?rev=38c468c5d1a380416df630d7980be5f0d16631c2#38c468c5d1a380416df630d7980be5f0d16631c2"
+dependencies = [
+ "serde",
+ "settings-core",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

@@ -4,6 +4,7 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
     "paths": {
       "three": ["./node_modules/@types/three"],
       "react": ["./node_modules/@types/react"],

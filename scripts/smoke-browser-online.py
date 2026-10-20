@@ -113,7 +113,7 @@ class OnlineAcceptance(unittest.TestCase):
         certificate, key, cls.certificate_hash = development_certificate(Path(temporary.name))
         transport_port, status_port = free_port(socket.SOCK_DGRAM), free_port(socket.SOCK_STREAM)
         cls.route = f"https://127.0.0.1:{transport_port}/game/matches/zone-{ZONE_ID}"
-        environment = {key_: value for key_, value in os.environ.items() if key_ != "MMORPG_RECOVERY_DIR"}
+        environment = {key_: value for key_, value in os.environ.items() if key_ not in {"MMORPG_RECOVERY_DIR", "MMORPG_CHARACTER_DIR", "MMORPG_PERSISTENCE_MODE"}}
         environment.update({
             "MMORPG_ZONE_IDS": str(ZONE_ID),
             "MMORPG_PORT": str(transport_port),
@@ -328,6 +328,31 @@ class OnlineAcceptance(unittest.TestCase):
                 for page in pages:
                     page.keyboard.up("KeyW")
         return route
+
+    def test_settings_blocks_local_input_while_the_online_zone_keeps_advancing(self):
+        actor = self.open_player("settings-actor")
+        watcher = self.open_player("settings-watcher")
+        actor_id = self.projection(actor)["viewerId"]
+        self.wait_for(watcher, "id => window.__valeDebug.projection().entities.some(entity => entity.kind === 'player' && entity.id === id)", actor_id)
+        actor.keyboard.down("KeyW")
+        self.frames(actor, 6)
+        actor.locator("#world-settings").click()
+        expect(actor.locator("#settings-dialog")).to_be_visible()
+        opened = self.projection(actor)["tick"]
+        self.wait_for(actor, "tick => window.__valeDebug.projection().tick >= tick", opened + 8)
+        self.wait_for(watcher, "tick => window.__valeDebug.projection().tick >= tick", opened + 8)
+        stopped = self.seen(watcher, actor_id)["position"]
+        self.wait_for(watcher, "tick => window.__valeDebug.projection().tick >= tick", opened + 20)
+        still = self.seen(watcher, actor_id)["position"]
+        self.assertEqual([stopped[0], stopped[2]], [still[0], still[2]], "The other client sees the Settings player's movement stop")
+        actor.screenshot(path=str(ARTIFACTS / "settings-online.png"))
+        actor.locator("#settings-close").click()
+        closed = self.projection(actor)["tick"]
+        self.wait_for(watcher, "tick => window.__valeDebug.projection().tick >= tick", closed + 12)
+        resumed = self.seen(watcher, actor_id)["position"]
+        self.assertEqual([still[0], still[2]], [resumed[0], resumed[2]], "Closing Settings cannot resurrect the old held input")
+        actor.keyboard.up("KeyW")
+        self.evidence["settings"] = {"openedTick": opened, "closedTick": closed, "observerTick": self.projection(watcher)["tick"], "stopped": stopped, "afterClose": resumed}
 
     def test_remote_procedural_attack_cast_impact_and_departure(self):
         """Two real sessions observe ordinary attacks, accepted casts and confirmed impacts.
