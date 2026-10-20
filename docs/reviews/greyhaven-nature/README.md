@@ -12,6 +12,12 @@ Candidate — `greyhaven.nature.tree.broadleaf/default`, same game/renderer revi
 
 ![Proposed Quaternius broadleaf, left foreground beside the same path](candidate.png)
 
+## Denser, taller prototype
+
+A further Blender 5.2.2 LTS authoring experiment keeps the original trunk and adds two foliage-only copies rotated 120° and 240°. The game draws it at eight metres rather than the first five-metre fit, with the same `woods` camera, time and viewport. This is an actual browser-game render; default art is unchanged. This prototype is **not the published nature bundle**: source packaging and its reproducible consumer pin are still in progress, and PR #350 remains a draft during that revision. The original comparison and release identities below describe the first candidate.
+
+![Denser, eight-metre Blender prototype beside the same path](dense-prototype.png)
+
 ## Artifact actually shown
 
 - [Published nature bundle](https://github.com/moritzbrantner/asset-tooling/releases/tag/greyhaven-nature), producer revision `98c503750a013e38ebb9ce17f7333ee8841f03e8`.
