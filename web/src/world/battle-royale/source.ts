@@ -12,7 +12,6 @@ import {
 export class BattleRoyaleSource implements WorldSource {
   readonly #session: OnlineZoneSource;
   #match: MatchProjection | null = null;
-  #zoneTick: bigint | null = null;
 
   constructor(options: {
     route: SessionRoute;
@@ -33,19 +32,12 @@ export class BattleRoyaleSource implements WorldSource {
             throw new Error("The host sent another Battle Royale match.");
           }
           const zone = match.zone;
-          const zoneTick = zone.tick;
-          if (this.#zoneTick === zoneTick) {
-            // A finished match freezes its zone. Do not replay its final HUD events each host tick.
-            zone.events = [];
-            zone.chat = [];
-          }
-          this.#zoneTick = zoneTick;
           // Delivery acknowledges mode setup as well as character commands. Session time continues
           // after gameplay freezes; keep the original projection's wire bytes for the Rust presenter.
           zone.tick = match.tick;
           zone.acknowledgedSequence = match.acknowledgedSequence;
-          this.#match = match;
-          return zone;
+          if (!this.#match || match.tick > this.#match.tick) { this.#match = match; }
+          return { snapshot: zone, finished: match.phase === "finished" };
         },
       },
     });
@@ -55,7 +47,6 @@ export class BattleRoyaleSource implements WorldSource {
 
   join(character: JoinCharacter = DEFAULT_JOIN_CHARACTER): Promise<number> {
     this.#match = null;
-    this.#zoneTick = null;
     return this.#session.join(character);
   }
 

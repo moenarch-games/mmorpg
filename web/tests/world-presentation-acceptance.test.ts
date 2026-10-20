@@ -43,6 +43,9 @@ describe("shared renderer adoption", () => {
     expect(picker.pick(point, camera, [], [body], [blocker])).toBeNull();
     expect(picker.pick(point, camera, [], [body], [{ ...blocker, instances: [{ transform: { translation: [8, 1, 5] } }] }])).toEqual({ kind: "creature", id: 108 });
     expect(picker.pick(point, camera, [], [body], [{ ...blocker, visible: false }])).toEqual({ kind: "creature", id: 108 });
+    const player = { ...body, id: "unit-player-2-body" };
+    expect(picker.pick(point, camera, [], [player])).toBeNull();
+    expect(picker.pick(point, camera, [], [player], [], [], [], new Set([2]))).toEqual({ kind: "player", id: 2 });
     picker.reset();
   });
 });

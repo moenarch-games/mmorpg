@@ -46,6 +46,9 @@ import { committedArea, committedLevel, loadLocalWorld } from "./world/wasm-runt
 import { webTransportConnector } from "./session/webtransport";
 import { onlineChoice, type ZoneServer } from "./world/online-config";
 import { OnlineZoneSource } from "./world/online-zone-source";
+import { BattleRoyaleEntry, matchStatus } from "./world/battle-royale/entry";
+import { createArenaWorld, type ArenaWorld } from "./world/battle-royale/world";
+import "./world/battle-royale/style.css";
 import type { LinkState, ZoneWorld } from "./world/world-source";
 import { WorldView, webGpuProjection } from "./world/world-view";
 import { attackToggle, nextTabTarget } from "./world/units/targeting";
@@ -156,6 +159,58 @@ let worldFailure: string | null = null;
 /** The world a join is in flight for; selection stays put until it settles. */
 let joining: ZoneWorld | null = null;
 let jumps = 0;
+let arenaWorld: ArenaWorld | null = null;
+let arenaServer: ZoneServer | null = null;
+let arenaError: string | null = null;
+const arenaStatus = requireElement<HTMLElement>("#battle-royale-status");
+const arenaResult = requireElement<HTMLElement>("#battle-royale-result");
+const arenaProgress = requireElement<HTMLElement>("#battle-royale-progress");
+const arenaNext = requireElement<HTMLButtonElement>("#battle-royale-next");
+const arenaEntry = new BattleRoyaleEntry(
+  requireElement<HTMLSelectElement>("#activity-choice"),
+  requireElement<HTMLElement>("#battle-royale-setup"),
+  refreshArenaWorld,
+);
+
+function refreshArenaWorld(): void {
+  if (!world || joining || entryState.phase === "world") { return; }
+  arenaWorld = null;
+  arenaServer = null;
+  arenaError = null;
+  worldFailure = null;
+  document.body.dataset.activity = arenaEntry.selected ? "battle-royale" : "world";
+  try {
+    if (arenaEntry.selected) {
+      arenaServer = arenaEntry.server();
+      if (arenaServer) { arenaWorld = createArenaWorld(world, arenaServer, () => arenaEntry.equipment()); }
+    }
+  } catch (error) { arenaError = errorMessage(error); }
+  worldView.load(arenaWorld?.world ?? world);
+  onlineToggle.hidden = arenaEntry.selected || online.kind !== "online";
+  refreshSelectionPresentation();
+  updateEntryButton();
+}
+
+arenaNext.addEventListener("click", () => {
+  returnToCharacters();
+  arenaEntry.nextMatch();
+});
+
+function showArenaMatch(): void {
+  const match = arenaWorld?.source.match;
+  const viewerId = arenaWorld?.source.latestProjection()?.viewerId;
+  const showing = Boolean(match && viewerId !== undefined && activeWorld === arenaWorld?.world);
+  arenaStatus.hidden = !showing;
+  if (!showing || !match || viewerId === undefined) { return; }
+  const status = matchStatus(match, viewerId);
+  if (arenaResult.textContent !== status.result) { arenaResult.textContent = status.result; }
+  if (arenaProgress.textContent !== status.detail) { arenaProgress.textContent = status.detail; }
+  arenaNext.hidden = !status.canConfigure;
+  if (match.zone.viewer.dead) {
+    requireElement<HTMLElement>("#unit-status").textContent = "Eliminated from this match.";
+  }
+}
+
 
 function loadCreatedRoster(): CharacterPreview[] {
   try {
@@ -168,6 +223,7 @@ function loadCreatedRoster(): CharacterPreview[] {
 
 /** The committed level of a played local character, else the roster's level. */
 function displayLevel(character: CharacterPreview): number {
+  if (arenaEntry.selected) { return character.level; }
   if (!localCharacters || !world) {
     return character.level;
   }
@@ -192,7 +248,7 @@ function selectedCharacter(): CharacterPreview {
 }
 
 function previewCharacter(): CharacterPreview {
-  return creationDraft ? draftCharacterPreview(creationDraft) : selectedCharacter();
+  return creationDraft ? draftCharacterPreview(creationDraft) : arenaEntry.preview(selectedCharacter());
 }
 
 function defaultAppearanceForCharacter(character: CharacterPreview): CharacterAppearance {
@@ -737,11 +793,13 @@ function renderRoster(): void {
 
 /** The zone host "Enter World" joins, when online play is chosen. */
 function chosenServer(): ZoneServer | null {
+  if (arenaEntry.selected) { return arenaServer; }
   return online.kind === "online" && playOnlineInput.checked ? online.server : null;
 }
 
 /** The world "Enter World" joins; null while loading or when online play is misconfigured. */
 function chosenWorld(): ZoneWorld | null {
+  if (arenaEntry.selected) { return arenaWorld?.world ?? null; }
   if (online.kind === "invalid") {
     return null;
   }
@@ -749,6 +807,13 @@ function chosenWorld(): ZoneWorld | null {
 }
 
 function entryNote(character: CharacterPreview): string {
+  if (arenaEntry.selected) {
+    if (!world) { return worldLoadError ?? "Loading characters…"; }
+    if (arenaError) { return arenaError; }
+    if (!arenaWorld) { return "Enter a match server to play with friends."; }
+    if (joining) { return "Joining Battle Royale…"; }
+    return worldFailure ?? `Join Battle Royale at ${arenaServer?.label}`;
+  }
   const server = chosenServer();
   if (online.kind === "invalid") {
     return `Online play is misconfigured: ${online.message}`;
@@ -769,9 +834,17 @@ function entryNote(character: CharacterPreview): string {
 function updateEntryButton(): void {
   const server = chosenServer();
   enterWorldButton.disabled = chosenWorld() === null || joining !== null || !artReady();
-  enterWorldLabel.textContent = joining ? "Entering…" : "Enter World";
+  let entryLabel = "Enter World";
+  if (arenaEntry.selected) { entryLabel = "Join Battle Royale"; }
+  if (joining) { entryLabel = "Entering…"; }
+  enterWorldLabel.textContent = entryLabel;
   enterWorldNote.textContent = entryNote(selectedCharacter());
   playOnlineInput.disabled = joining !== null;
+  arenaEntry.setLocked(joining !== null || entryState.phase === "world");
+  if (arenaEntry.selected) {
+    selectionNote.textContent = "Hosted PvP. Choose a build before joining; change it after elimination or between matches.";
+    return;
+  }
   selectionNote.textContent = server
     ? `Online: the zone host at ${server.label} runs this world for every page that joins it. Hosts with character storage save your character progress.`
     : "Single-player demo: the shared Rust zone simulation runs in this browser. Character progress and the world are saved in this browser.";
@@ -985,7 +1058,7 @@ function renderSelection() {
 
 /** The viewer's own look for the shared unit presenter: class, sex and headwear. */
 function viewerLook(): ViewerLook {
-  const character = selectedCharacter();
+  const character = previewCharacter();
   return { classId: character.classId, sex: character.sex, headwear: characterAppearance.hat };
 }
 
@@ -1006,10 +1079,11 @@ function frame(now: number) {
   syncBindingProfile();
   if (entryState.phase === "world" && activeWorld) {
     // Settings pauses the browser-local zone; an online zone keeps running with input blocked.
-    const paused = settingsOpen && activeWorld !== onlineWorld;
+    const paused = settingsOpen && activeWorld !== onlineWorld && activeWorld !== arenaWorld?.world;
     try {
       worldView.frame(activeWorld, worldInput(), viewerLook(), paused ? 0 : deltaSeconds, now);
       showLinkState(activeWorld.source.linkState());
+      showArenaMatch();
       if (loading.entry !== null && loading.playableMs === null) {
         loading.playableMs = Math.round(now - loading.entry);
         console.info(`Greyhaven playable ${loading.playableMs} ms after Enter World; ${loading.bytesBeforeEntry} bytes fetched before entry.`);
@@ -1084,7 +1158,8 @@ async function enterWorld(): Promise<void> {
   updateEntryButton();
   try {
     const character = selectedCharacter();
-    await target.source.join({ id: character.id, classId: character.classId, sex: character.sex });
+    const entryCharacter = arenaEntry.selected ? arenaEntry.character(character) : character;
+    await target.source.join({ id: entryCharacter.id, classId: entryCharacter.classId, sex: entryCharacter.sex });
   } catch (error) {
     console.error(error);
     worldFailure = `Could not enter the world: ${errorMessage(error)}`;
@@ -1095,12 +1170,17 @@ async function enterWorld(): Promise<void> {
   }
   activeWorld = target;
   const worldNotice = world && target === world ? world.source.worldNotice : null;
-  worldMode.textContent = server
-    ? `Greyhaven Vale · online · ${server.label}`
-    : `Greyhaven Vale · local zone host${worldNotice ? ` · ${worldNotice}` : ""}`;
+  if (arenaEntry.selected) {
+    worldMode.textContent = `Battle Royale · ${server?.label}`;
+  } else if (server) {
+    worldMode.textContent = `Greyhaven Vale · online · ${server.label}`;
+  } else {
+    worldMode.textContent = `Greyhaven Vale · local zone host${worldNotice ? ` · ${worldNotice}` : ""}`;
+  }
   showLinkState("connected");
   turntable.cancel();
   entryState = next;
+  arenaEntry.setLocked(true);
   controls.retire("enteredWorld");
   worldView.enter(worldInput(), target.source.latestProjection());
   characterSelect.hidden = true;
@@ -1123,6 +1203,8 @@ function returnToCharacters(failure: string | null = null) {
     failure ??= `Could not leave the world cleanly: ${errorMessage(error)}`;
   }
   activeWorld = null;
+  arenaStatus.hidden = true;
+  arenaEntry.setLocked(false);
   showLinkState("connected");
   worldFailure = failure;
   entryState = initialEntryState(character);
@@ -1203,6 +1285,10 @@ canvas.addEventListener("wheel", (event) => {
 // One input path: keyboard and gamepad resolve to semantic actions through input-bindings.
 // Movement is sampled from held actions each frame; one-shot actions are intents the zone decides.
 function runAction(action: GameAction): void {
+  if (arenaEntry.selected && (action === "ui.toggleBags" || action === "ui.toggleVendor" ||
+    action === "ui.toggleQuestLog" || action === "ui.talk" || action === "player.releaseSpirit")) {
+    return;
+  }
   switch (action) {
     case "move.forward":
     case "move.back":
@@ -1389,7 +1475,8 @@ void loadPageWorld().then((loaded) => {
   refreshSelectionPresentation();
   renderRoster();
   onlineWorld = online.kind === "online" ? createOnlineWorld(loaded, online.server) : null;
-  updateEntryButton();
+  arenaEntry.ready(loaded.catalog);
+  refreshArenaWorld();
 }, (error: unknown) => {
   worldLoadError = errorMessage(error);
   updateEntryButton();

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { EntityState } from "../src/replication";
+import { decodeSnapshot, type EntityState } from "../src/replication";
+import { encodeCommand } from "../src/command-wire";
 import { parseSessionRoute } from "../src/session/route";
 import {
   CONNECT_TIMEOUT_MS,
@@ -408,5 +409,31 @@ test("a refused durable character claim never enters an anonymous character", as
   await expect(clock.until(source.join({ id: "claimed-ranger", classId: "ranger", sex: "female" }))).rejects.toThrow("refused this character");
   expect(requests.map((request) => [...request.slice(0, 3)])).toEqual([[1, 0], [1, 1, 3]]);
   expect(host.applied).toEqual([]);
+  expect(source.latestProjection()).toBeNull();
+});
+
+
+test("a completed activity retains its final projection without input or reconnect attempts", async () => {
+  const clock = new ManualClock();
+  const host = new FakeZoneHost(clock).start();
+  let finished = false;
+  const source = new OnlineZoneSource({
+    route: parseSessionRoute(host.url), contentRevision: 2n, connector: host.connector, clock,
+    activityProtocol: {
+      encodeCommand,
+      initialCommand: () => encodeCommand({ kind: "choose-class", classId: 0, sex: 1 }),
+      decodeProjection: (payload) => ({ snapshot: decodeSnapshot(payload), finished }),
+    },
+  });
+  await clock.until(source.join());
+  finished = true;
+  await frame(clock, source, TICK_MS);
+  const result = source.latestProjection();
+  expect(result).not.toBeNull();
+  await clock.advance(SNAPSHOT_TIMEOUT_MS * 2);
+  expect(source.advance()).toEqual([]);
+  expect(source.latestProjection()).toBe(result);
+  expect(source.sendCommand({ kind: "jump" })).toBeNull();
+  source.leave();
   expect(source.latestProjection()).toBeNull();
 });

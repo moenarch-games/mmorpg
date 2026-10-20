@@ -29,7 +29,7 @@ export const MAX_RECEIVED_PROJECTIONS = 30;
 export type ActivityProtocol = {
   encodeCommand(command: WorldCommand): Uint8Array;
   initialCommand(character: JoinCharacter): Uint8Array;
-  decodeProjection(payload: Uint8Array): ZoneSnapshot;
+  decodeProjection(payload: Uint8Array): { snapshot: ZoneSnapshot; finished: boolean };
 };
 
 export type OnlineZoneOptions = {
@@ -116,6 +116,7 @@ export class OnlineZoneSource implements WorldSource {
   /** The welcome of the current session: its player, epoch and one-time resume token. */
   #welcome: Welcome | null = null;
   #durable = false;
+  #finished = false;
   #resolveCharacterId: (localId: string) => Promise<string>;
   #outbox = new SequencedOutbox();
   readonly #history = new SnapshotBuffer();
@@ -183,6 +184,7 @@ export class OnlineZoneSource implements WorldSource {
 
   sendCommand(command: WorldCommand): number | null {
     this.#reportFailure();
+    if (this.#finished) { return null; }
     const phase = this.#phase;
     if (phase.kind === "reconnecting") {
       // Intent made during an interruption is dropped, never replayed after the resume.
@@ -201,7 +203,7 @@ export class OnlineZoneSource implements WorldSource {
   }
 
   advance(): readonly ZoneSnapshot[] {
-    if (this.#phase.kind === "connected") {
+    if (this.#phase.kind === "connected" && !this.#finished) {
       if (this.#clock.now() - this.#latestAt > SNAPSHOT_TIMEOUT_MS) {
         this.#resume("No projection arrived from the zone host for five seconds.");
       } else {
@@ -356,9 +358,8 @@ export class OnlineZoneSource implements WorldSource {
 
   /** Validates and presents one verified snapshot frame of the current session. */
   #project(welcome: Welcome, frame: SnapshotFrame): void {
-    const snapshot = this.#activityProtocol
-      ? this.#activityProtocol.decodeProjection(frame.payload)
-      : decodeSnapshot(frame.payload);
+    const activity = this.#activityProtocol?.decodeProjection(frame.payload);
+    const snapshot = activity ? activity.snapshot : decodeSnapshot(frame.payload);
     if (snapshot.contentRevision !== this.#contentRevision) {
       throw new Error(
         `The zone host runs content revision ${snapshot.contentRevision}, but this page loaded revision ${this.#contentRevision}. ` +
@@ -382,6 +383,7 @@ export class OnlineZoneSource implements WorldSource {
     if (!this.#history.push(snapshot)) {
       return;
     }
+    this.#finished = activity?.finished ?? false;
     this.#latest = snapshot;
     this.#latestAt = this.#clock.now();
     this.#received.push(snapshot);
@@ -403,6 +405,11 @@ export class OnlineZoneSource implements WorldSource {
       phase.cancelTimers();
       this.#phase = { kind: "connected" };
       this.#resumeAvailable = true;
+    }
+    if (this.#finished) {
+      // Retain the final projection for result presentation, with no more input or reconnects.
+      this.#closeLink();
+      this.#welcome = null;
     }
   }
 
@@ -507,6 +514,7 @@ export class OnlineZoneSource implements WorldSource {
 
   /** Sends whatever the outbox has due now on the current link. */
   #flush(): void {
+    if (this.#finished) { return; }
     const link = this.#link;
     if (!link) {
       return;
@@ -531,6 +539,7 @@ export class OnlineZoneSource implements WorldSource {
     this.#classSequence = null;
     this.#classAcknowledged = false;
     this.#durable = false;
+    this.#finished = false;
   }
 
   async #claimCharacter(link: Link): Promise<void> {

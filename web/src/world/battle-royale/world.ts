@@ -16,7 +16,7 @@ export type ArenaWorld = {
 };
 
 /** Values come from Rust admission defaults, not a second client-side gear catalog. */
-function equipmentSlots(ids: Uint16Array): ArenaEquipment {
+export function equipmentSlots(ids: ArrayLike<number>): ArenaEquipment {
   if (ids.length !== 6) { throw new Error("The arena build must have six equipment slots."); }
   const slot = (index: number): number | null => ids[index] === 0 ? null : ids[index]!;
   return [slot(0), slot(1), slot(2), slot(3), slot(4), slot(5)];
