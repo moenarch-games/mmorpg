@@ -1,7 +1,7 @@
 //! Native Settings controls over the shared validated preference session.
 use crate::{
     roster::config_dir,
-    settings::{FIELD_OF_VIEW, LOOK_SENSITIVITY, Preferences, REDUCE_MOTION},
+    settings::{FIELD_OF_VIEW, INVERT_VERTICAL_LOOK, LOOK_SENSITIVITY, Preferences, REDUCE_MOTION},
 };
 use settings_core::{SettingKind, SettingValue};
 use std::path::PathBuf;
@@ -97,6 +97,16 @@ impl SettingsWindow {
                         edits.push((id, None));
                     }
                 });
+            }
+            let mut inverted = matches!(
+                self.preferences.value(INVERT_VERTICAL_LOOK),
+                Ok(SettingValue::Bool(true))
+            );
+            if ui.checkbox(&mut inverted, "Invert vertical look").changed() {
+                edits.push((INVERT_VERTICAL_LOOK, Some(SettingValue::Bool(inverted))));
+            }
+            if ui.small_button("Reset look inversion").clicked() {
+                edits.push((INVERT_VERTICAL_LOOK, None));
             }
             let SettingValue::Choice(mut motion) = self
                 .preferences

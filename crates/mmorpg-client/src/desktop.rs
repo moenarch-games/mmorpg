@@ -100,6 +100,7 @@ pub fn run(
         focused: true,
         last_pad_sample: Instant::now(),
         bindings_revision: 0,
+        modifiers: winit::keyboard::ModifiersState::empty(),
     };
     event_loop.run_app(&mut app)?;
     match app.error {
@@ -161,6 +162,7 @@ struct App {
     focused: bool,
     last_pad_sample: Instant,
     bindings_revision: u64,
+    modifiers: winit::keyboard::ModifiersState,
 }
 
 /// Opens the platform's gamepads; a platform without gamepad support keeps
@@ -649,6 +651,16 @@ impl App {
         }
     }
 
+    fn binding_modifiers(&self) -> input_bindings_core::Modifiers {
+        input_bindings_core::Modifiers {
+            ctrl: self.modifiers.control_key(),
+            alt: self.modifiers.alt_key(),
+            shift: self.modifiers.shift_key(),
+            meta: self.modifiers.super_key(),
+            alt_graph: false,
+        }
+    }
+
     fn sync_bindings(&mut self) {
         let revision = self.ui.settings.bindings.revision();
         if revision == self.bindings_revision {
@@ -726,8 +738,14 @@ impl App {
             preferences.value(mmorpg_client::settings::FIELD_OF_VIEW),
             preferences.value(mmorpg_client::settings::LOOK_SENSITIVITY),
         ) {
-            self.camera
-                .set_preferences(*fov as f32, *sensitivity as f32);
+            self.camera.set_preferences(
+                *fov as f32,
+                *sensitivity as f32,
+                matches!(
+                    preferences.value(mmorpg_client::settings::INVERT_VERTICAL_LOOK),
+                    Ok(settings_core::SettingValue::Bool(true))
+                ),
+            );
         }
         self.presentation.set_reduced_motion(matches!(preferences.value(mmorpg_client::settings::REDUCE_MOTION), Ok(settings_core::SettingValue::Choice(value)) if value == "reduce"));
         let focused = self.ui.chat_focused();
@@ -825,11 +843,16 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        let binding_modifiers = self.binding_modifiers();
         if self.ui.settings.open
             && let WindowEvent::KeyboardInput { event, .. } = &event
             && event.state == ElementState::Pressed
             && let PhysicalKey::Code(code) = event.physical_key
-            && self.ui.settings.bindings.capture_key(code, event.repeat)
+            && self.ui.settings.bindings.capture_key_with_modifiers(
+                code,
+                event.repeat,
+                binding_modifiers.clone(),
+            )
         {
             return;
         }
@@ -860,6 +883,7 @@ impl ApplicationHandler for App {
             return;
         }
         match event {
+            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::CloseRequested => {
                 self.stop();
                 event_loop.exit();
@@ -943,10 +967,11 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     let context_was_open = self.npc_context.npc.is_some();
                     let mut cancel_handled = false;
-                    for action in self.world_controls.key(
+                    for action in self.world_controls.key_with_modifiers(
                         code,
                         event.state == ElementState::Pressed,
                         event.repeat,
+                        binding_modifiers.clone(),
                     ) {
                         let handled = self.world_action(action);
                         // A handled cancel or door use consumes the key (Enter does not chat).
@@ -966,7 +991,11 @@ impl ApplicationHandler for App {
                     }
 
                     if event.state == ElementState::Pressed {
-                        let actions = self.controls.key_down(code, event.repeat);
+                        let actions = self.controls.key_down_with_modifiers(
+                            code,
+                            event.repeat,
+                            binding_modifiers.clone(),
+                        );
                         // Escape cancels a cast through the controls, otherwise a
                         // fresh press closes; a held Escape's repeats never close.
                         if code == KeyCode::Escape && actions.is_empty() {

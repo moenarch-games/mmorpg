@@ -165,7 +165,14 @@ export class SettingsPanel {
     };
     const definition = preferences.definition(id);
     const kind = definition?.kind;
-    if (kind && (kind.type === "integer" || kind.type === "number")) {
+    if (kind?.type === "bool") {
+      const checkbox = document.createElement("input");
+      checkbox.id = inputId;
+      checkbox.type = "checkbox";
+      checkbox.checked = state.value.type === "bool" && state.value.value;
+      checkbox.addEventListener("change", () => commit({ type: "bool", value: checkbox.checked }));
+      control.append(checkbox);
+    } else if (kind && (kind.type === "integer" || kind.type === "number")) {
       const numeric = state.value.type === "integer" || state.value.type === "number" ? state.value.value : 0;
       const step = kind.type === "integer" ? "1" : "0.05";
       const exact = document.createElement("input");

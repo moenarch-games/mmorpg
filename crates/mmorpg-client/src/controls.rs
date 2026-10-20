@@ -12,6 +12,7 @@ use input_bindings_core::{
     InputRuntimeOptions, InputStroke, KeyMatch, KeyStroke, Modifiers, Provenance, RepeatPolicy,
     RuntimeDecision, SemanticControlState, WhenExpr,
 };
+use std::collections::BTreeMap;
 use winit::keyboard::KeyCode;
 
 /// A semantic action the native client resolves from input.
@@ -198,6 +199,32 @@ fn stroke(key: KeyCode) -> InputStroke {
     physical(&format!("{key:?}"))
 }
 
+/// Preserve the activation stroke until its physical key releases, even when
+/// modifiers or contexts change before key-up. No binding resolution lives here.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct KeyboardSources(BTreeMap<KeyCode, InputStroke>);
+impl KeyboardSources {
+    pub(crate) fn down(&mut self, key: KeyCode, modifiers: Modifiers) -> InputStroke {
+        self.0
+            .entry(key)
+            .or_insert_with(|| {
+                InputStroke::Keyboard(KeyStroke {
+                    key: KeyMatch::Physical {
+                        value: format!("{key:?}"),
+                    },
+                    modifiers,
+                })
+            })
+            .clone()
+    }
+    pub(crate) fn up(&mut self, key: KeyCode) -> InputStroke {
+        self.0.remove(&key).unwrap_or_else(|| stroke(key))
+    }
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
 fn layer(id: &str) -> ContextLayer {
     ContextLayer {
         id: id.to_owned(),
@@ -211,6 +238,7 @@ pub struct NativeControls {
     runtime: InputRuntime,
     state: SemanticControlState,
     casting: bool,
+    sources: KeyboardSources,
 }
 
 impl Default for NativeControls {
@@ -241,6 +269,7 @@ impl NativeControls {
             runtime,
             state: SemanticControlState::new(),
             casting: false,
+            sources: KeyboardSources::default(),
         }
     }
 
@@ -280,7 +309,17 @@ impl NativeControls {
     /// A key went down; `repeat` is OS auto-repeat. Returns the presses this
     /// event dispatched, in order.
     pub fn key_down(&mut self, key: KeyCode, repeat: bool) -> Vec<ControlAction> {
-        let decisions = self.runtime.input_down(stroke(key), repeat, NO_CLOCK_MS);
+        self.key_down_with_modifiers(key, repeat, Modifiers::default())
+    }
+
+    pub fn key_down_with_modifiers(
+        &mut self,
+        key: KeyCode,
+        repeat: bool,
+        modifiers: Modifiers,
+    ) -> Vec<ControlAction> {
+        let stroke = self.sources.down(key, modifiers);
+        let decisions = self.runtime.input_down(stroke, repeat, NO_CLOCK_MS);
         self.apply(&decisions);
         self.state
             .drain_presses()
@@ -291,12 +330,14 @@ impl NativeControls {
 
     /// A key went up. Releases never use an action.
     pub fn key_up(&mut self, key: KeyCode) {
-        let decisions = self.runtime.input_up(&stroke(key), NO_CLOCK_MS);
+        let stroke = self.sources.up(key);
+        let decisions = self.runtime.input_up(&stroke, NO_CLOCK_MS);
         self.apply(&decisions);
     }
 
     /// The window lost focus: every held action is released.
     pub fn focus_lost(&mut self) {
+        self.sources.clear();
         let decision = self.runtime.reset("focusLost");
         self.apply(&[decision]);
     }

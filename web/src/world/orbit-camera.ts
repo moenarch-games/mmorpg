@@ -31,6 +31,7 @@ export type CameraView = { eye: Vec3; target: Vec3 };
 export class OrbitCamera {
   /** World yaw the camera looks along: 0 toward +Z, increasing toward +X. */
   #yaw = 0;
+  #invertVerticalLook = false;
   #pitch = 0.36;
   #distance = 9;
   #targetDistance = 9;
@@ -44,6 +45,10 @@ export class OrbitCamera {
     return this.#targetDistance;
   }
 
+  setLookInversion(invert: boolean): void {
+    this.#invertVerticalLook = invert;
+  }
+
   /** Mouse drag: moving right turns the view right; moving down raises the eye. */
   orbit(dxPixels: number, dyPixels: number): void {
     if (!Number.isFinite(dxPixels) || !Number.isFinite(dyPixels)) {
@@ -52,7 +57,7 @@ export class OrbitCamera {
     const turn = dxPixels * ORBIT_RADIANS_PER_PIXEL;
     const fullTurn = 2 * Math.PI;
     this.#yaw = (((this.#yaw - turn) % fullTurn) + fullTurn) % fullTurn;
-    this.#pitch = Math.min(MAX_PITCH_RADIANS, Math.max(MIN_PITCH_RADIANS, this.#pitch + dyPixels * ORBIT_RADIANS_PER_PIXEL));
+    this.#pitch = Math.min(MAX_PITCH_RADIANS, Math.max(MIN_PITCH_RADIANS, this.#pitch + dyPixels * ORBIT_RADIANS_PER_PIXEL * (this.#invertVerticalLook ? -1 : 1)));
   }
 
   /** Positive wheel lines zoom in; the view follows smoothly in `update`. */

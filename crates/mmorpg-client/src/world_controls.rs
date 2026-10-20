@@ -100,6 +100,7 @@ pub struct WorldControls {
     runtime: InputRuntime,
     state: SemanticControlState,
     interaction: bool,
+    sources: crate::controls::KeyboardSources,
 }
 impl Default for WorldControls {
     fn default() -> Self {
@@ -124,6 +125,7 @@ impl WorldControls {
             runtime,
             state: SemanticControlState::new(),
             interaction: false,
+            sources: crate::controls::KeyboardSources::default(),
         }
     }
     pub fn set_profile(&mut self, profile: input_bindings_core::Profile) -> Result<(), String> {
@@ -150,16 +152,20 @@ impl WorldControls {
         self.state.apply_decisions(&[decision]);
     }
     pub fn key(&mut self, key: KeyCode, down: bool, repeat: bool) -> Vec<WorldAction> {
-        let stroke = InputStroke::Keyboard(KeyStroke {
-            key: KeyMatch::Physical {
-                value: format!("{key:?}"),
-            },
-            modifiers: Modifiers::default(),
-        });
+        self.key_with_modifiers(key, down, repeat, Modifiers::default())
+    }
+    pub fn key_with_modifiers(
+        &mut self,
+        key: KeyCode,
+        down: bool,
+        repeat: bool,
+        modifiers: Modifiers,
+    ) -> Vec<WorldAction> {
         let decisions = if down {
-            self.runtime.input_down(stroke, repeat, 0)
+            self.runtime
+                .input_down(self.sources.down(key, modifiers), repeat, 0)
         } else {
-            self.runtime.input_up(&stroke, 0)
+            self.runtime.input_up(&self.sources.up(key), 0)
         };
         self.state.apply_decisions(&decisions);
         self.state
@@ -184,6 +190,7 @@ impl WorldControls {
         !down && held
     }
     pub fn reset(&mut self) {
+        self.sources.clear();
         let decision = self.runtime.reset("focusLost");
         self.state.apply_decisions(&[decision]);
         self.state.drain_presses();

@@ -87,6 +87,14 @@ impl BindingPanel {
 
     /// Physical recording is platform input adaptation; editing semantics stay in core.
     pub fn capture_key(&mut self, key: KeyCode, repeat: bool) -> bool {
+        self.capture_key_with_modifiers(key, repeat, Modifiers::default())
+    }
+    pub fn capture_key_with_modifiers(
+        &mut self,
+        key: KeyCode,
+        repeat: bool,
+        modifiers: Modifiers,
+    ) -> bool {
         if self.capture.is_none() {
             return false;
         }
@@ -97,12 +105,25 @@ impl BindingPanel {
             self.capture = None;
             return true;
         }
+        if matches!(
+            key,
+            KeyCode::ShiftLeft
+                | KeyCode::ShiftRight
+                | KeyCode::ControlLeft
+                | KeyCode::ControlRight
+                | KeyCode::AltLeft
+                | KeyCode::AltRight
+                | KeyCode::SuperLeft
+                | KeyCode::SuperRight
+        ) {
+            return true;
+        }
         let mut binding = self.capture.take().expect("capture exists");
         binding.sequence = vec![InputStroke::Keyboard(KeyStroke {
             key: KeyMatch::Physical {
                 value: format!("{key:?}"),
             },
-            modifiers: Modifiers::default(),
+            modifiers,
         })];
         self.replace(binding);
         true
@@ -365,7 +386,7 @@ fn assignment_menu(
     if allowed.contains(&DeviceClass::Gamepad) {
         ui.menu_button("Controller button", |ui| {
             for button in 0..crate::gamepad::standard::BUTTONS {
-                if ui.button(format!("Button {button}")).clicked() {
+                if ui.button(controller_button_label(button as u16)).clicked() {
                     let mut binding = template.clone();
                     binding.sequence = vec![InputStroke::Device(DeviceStroke::GamepadButton {
                         button: button as u16,
@@ -377,24 +398,101 @@ fn assignment_menu(
                 }
             }
         });
+        ui.menu_button("Controller stick direction", |ui| {
+            for axis in 0..crate::gamepad::standard::AXES {
+                for direction in [
+                    input_bindings_core::AxisDirection::Negative,
+                    input_bindings_core::AxisDirection::Positive,
+                ] {
+                    let mut binding = template.clone();
+                    binding.sequence = vec![InputStroke::Device(DeviceStroke::GamepadAxis {
+                        axis: axis as u8,
+                        direction,
+                        threshold: 50,
+                        deadzone: 20,
+                        gamepad: None,
+                    })];
+                    if ui.button(sequence_label(&binding.sequence)).clicked() {
+                        *replacement = Some(binding);
+                        ui.close();
+                    }
+                }
+            }
+        });
     }
+}
+fn controller_button_label(button: u16) -> &'static str {
+    [
+        "South (A / Cross)",
+        "East (B / Circle)",
+        "West (X / Square)",
+        "North (Y / Triangle)",
+        "Left shoulder",
+        "Right shoulder",
+        "Left trigger",
+        "Right trigger",
+        "Select / View",
+        "Start / Menu",
+        "Left stick press",
+        "Right stick press",
+        "D-pad up",
+        "D-pad down",
+        "D-pad left",
+        "D-pad right",
+        "Home",
+    ]
+    .get(usize::from(button))
+    .copied()
+    .unwrap_or("Controller button")
 }
 fn sequence_label(sequence: &[InputStroke]) -> String {
     sequence
         .iter()
         .map(|stroke| match stroke {
-            InputStroke::Keyboard(key) => match &key.key {
-                KeyMatch::Physical { value } | KeyMatch::Logical { value } => value.clone(),
-            },
+            InputStroke::Keyboard(key) => {
+                let mut label = String::new();
+                for (active, name) in [
+                    (key.modifiers.ctrl, "Ctrl+"),
+                    (key.modifiers.alt, "Alt+"),
+                    (key.modifiers.shift, "Shift+"),
+                    (key.modifiers.meta, "Meta+"),
+                    (key.modifiers.alt_graph, "AltGr+"),
+                ] {
+                    if active {
+                        label.push_str(name);
+                    }
+                }
+                let (KeyMatch::Physical { value } | KeyMatch::Logical { value }) = &key.key;
+                label.push_str(
+                    value
+                        .strip_prefix("Key")
+                        .or_else(|| value.strip_prefix("Digit"))
+                        .unwrap_or(value),
+                );
+                label
+            }
             InputStroke::Device(DeviceStroke::MouseButton { button, .. }) => {
                 format!("Mouse {button}")
             }
             InputStroke::Device(DeviceStroke::GamepadButton { button, .. }) => {
-                format!("Controller button {button}")
+                controller_button_label(*button).to_owned()
             }
             InputStroke::Device(DeviceStroke::GamepadAxis {
                 axis, direction, ..
-            }) => format!("Controller axis {axis} {direction:?}"),
+            }) => {
+                let stick = if *axis < 2 {
+                    "Left stick"
+                } else {
+                    "Right stick"
+                };
+                let direction = match (*axis % 2, direction) {
+                    (0, input_bindings_core::AxisDirection::Negative) => "left",
+                    (0, input_bindings_core::AxisDirection::Positive) => "right",
+                    (_, input_bindings_core::AxisDirection::Negative) => "up",
+                    (_, input_bindings_core::AxisDirection::Positive) => "down",
+                };
+                format!("{stick} {direction}")
+            }
             _ => "Other input".into(),
         })
         .collect::<Vec<_>>()

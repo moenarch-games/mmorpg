@@ -16,6 +16,7 @@ import type {
 export const SETTING = {
   fieldOfView: "camera.field_of_view",
   lookSensitivity: "controls.look_sensitivity",
+  invertVerticalLook: "controls.invert_vertical_look",
   reduceMotion: "accessibility.reduce_motion",
 } as const;
 
@@ -38,6 +39,8 @@ export const SETTINGS_TEXT: Readonly<Record<string, string>> = {
   "settings.category.accessibility": "Accessibility",
   "settings.camera.field_of_view.label": "Field of view (°)",
   "settings.camera.field_of_view.description": "Vertical field of view of the world camera.",
+  "settings.controls.invert_vertical_look.label": "Invert vertical look",
+  "settings.controls.invert_vertical_look.description": "Reverse vertical camera movement while looking around.",
   "settings.controls.look_sensitivity.label": "Look sensitivity",
   "settings.controls.look_sensitivity.description": "How far a mouse drag turns the camera (1 is the default).",
   "settings.accessibility.reduce_motion.label": "Reduce motion",
@@ -51,6 +54,7 @@ export const SETTINGS_TEXT: Readonly<Record<string, string>> = {
 export type ClientPreferences = {
   fieldOfViewDegrees: number;
   lookSensitivity: number;
+  invertVerticalLook: boolean;
   reduceMotion: MotionPreference;
 };
 
@@ -71,6 +75,7 @@ export function clientPreferences(values: Readonly<Record<string, SettingValue>>
   return {
     fieldOfViewDegrees: numberValue(values[SETTING.fieldOfView], 50),
     lookSensitivity: numberValue(values[SETTING.lookSensitivity], 1),
+    invertVerticalLook: values[SETTING.invertVerticalLook]?.type === "bool" && values[SETTING.invertVerticalLook].value === true,
     reduceMotion: motion?.type === "choice" && isMotionPreference(motion.value) ? motion.value : "system",
   };
 }

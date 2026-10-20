@@ -224,3 +224,30 @@ Operational limits are configurable, not performance ratchets:
 Lease/commit failures fence the host. Object-store failures retain the last verified checkpoint and bounded PostgreSQL journal; exceeding its configured bounds stops progression.
 Acknowledged economy depends on the designated standby's durable receipt and replay. Promotion must preserve that confirmed history and fence the former primary; automatic database failover is not implemented here.
 The focused `persistence_host` test exercises a real WebTransport claim, complete host-process loss, journal recovery, reconnect and durable logout against PostgreSQL plus RustFS, without a GPU.
+
+### Client Settings and character controls
+
+The **Settings** button at the bottom right opens a modal on character selection
+and in the world. Field of view, look sensitivity, vertical look inversion and
+reduced motion use the same versioned catalog as the browser. Changes apply
+immediately and save local delta-only User/Device snapshots; save failures remain
+visible. Settings blocks local gameplay input while the online zone continues.
+
+Select a roster character to edit its Controls. Keyboard recording (including
+modifiers), mouse buttons and controller buttons/stick directions share one
+`input-bindings` profile for that stable character identity. A new conflict must
+receive an explicit offered repair before it changes saved/runtime controls.
+Closing Settings or losing focus cancels unconfirmed recording. Profiles are
+local files beneath the configuration directory's `bindings/`, separate from
+ordinary Settings snapshots and authoritative character progression.
+
+A focused offscreen view uses the existing native renderer test:
+
+```sh
+MMORPG_NATIVE_SETTINGS_EVIDENCE=1 MMORPG_SMOKE_FRAME_DIR=target/settings-frames \
+cargo test -p mmorpg-client --locked --lib the_egui_interface_paints_over_the_native_world -- --ignored --nocapture
+```
+
+It emits `settings.ppm`; this demonstrates rendering, not OS focus or hardware
+input. Native Settings profile import/export and the complete cross-client
+Settings workflow remain under #41.

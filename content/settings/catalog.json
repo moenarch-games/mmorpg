@@ -91,6 +91,34 @@
           "description_key": "settings.accessibility.reduce_motion.description"
         }
       }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "controls.invert_vertical_look",
+        "kind": {
+          "type": "bool"
+        },
+        "default": {
+          "type": "bool",
+          "value": false
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "controls.invert_vertical_look",
+        "metadata": {
+          "label_key": "settings.controls.invert_vertical_look.label",
+          "description_key": "settings.controls.invert_vertical_look.description",
+          "category_key": "settings.category.controls",
+          "order": 20,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.invert"
+          ]
+        }
+      }
     }
   ]
 }

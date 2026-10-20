@@ -318,6 +318,7 @@ function applyPreferences(preferences: ClientPreferences): void {
   camera.fov = preferences.fieldOfViewDegrees;
   camera.updateProjectionMatrix();
   worldView.setLookSensitivity(preferences.lookSensitivity);
+  worldView.setLookInversion(preferences.invertVerticalLook);
   worldView.setMotionPreference(preferences.reduceMotion);
   if (preferences.reduceMotion === "system") {
     delete document.documentElement.dataset.motion;

@@ -119,15 +119,29 @@ describe("client preferences over the shared settings session", () => {
   test("a changed field of view persists, reloads and resets", async () => {
     const storage = new MemoryStorage();
     const first = await Preferences.open(storage);
-    expect(first.values()).toEqual({ fieldOfViewDegrees: 50, lookSensitivity: 1, reduceMotion: "system" });
+    expect(first.values()).toEqual({ fieldOfViewDegrees: 50, lookSensitivity: 1, invertVerticalLook: false, reduceMotion: "system" });
     first.set(SETTING.fieldOfView, { type: "integer", value: 70 });
     first.set(SETTING.reduceMotion, { type: "choice", value: "reduce" });
     expect(() => first.set(SETTING.fieldOfView, { type: "integer", value: 400 })).toThrow();
 
     const second = await Preferences.open(storage);
     expect(second.problem).toBeNull();
-    expect(second.values()).toEqual({ fieldOfViewDegrees: 70, lookSensitivity: 1, reduceMotion: "reduce" });
+    expect(second.values()).toEqual({ fieldOfViewDegrees: 70, lookSensitivity: 1, invertVerticalLook: false, reduceMotion: "reduce" });
     second.resetAll();
     expect((await Preferences.open(storage)).values().fieldOfViewDegrees).toBe(50);
   });
+});
+
+test("look inversion persists through the shared catalog and reverses only vertical orbit", async () => {
+  const { OrbitCamera } = await import("../src/world/orbit-camera");
+  const storage = new MemoryStorage();
+  const preferences = await Preferences.open(storage);
+  preferences.set(SETTING.invertVerticalLook, { type: "bool", value: true });
+  expect((await Preferences.open(storage)).values().invertVerticalLook).toBe(true);
+  const normal = new OrbitCamera();
+  const inverted = new OrbitCamera();
+  inverted.setLookInversion(true);
+  normal.orbit(8, 5);
+  inverted.orbit(8, -5);
+  expect(inverted.view([0, 0, 0])).toEqual(normal.view([0, 0, 0]));
 });

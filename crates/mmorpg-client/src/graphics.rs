@@ -618,6 +618,14 @@ mod tests {
                 .extend(presentation.unit_draws(now, view).iter().cloned());
 
             let mut ui = GameUi::new(&scenery);
+            let settings_evidence =
+                std::env::var("MMORPG_NATIVE_SETTINGS_EVIDENCE").as_deref() == Ok("1");
+            if settings_evidence {
+                ui.settings.open = true;
+                ui.settings
+                    .bindings
+                    .select_character(Some("settings-evidence"));
+            }
             let names = |entity| presentation.unit_name(entity);
             // Cosmetic combat events float over the units they concern.
             let mut struck = projection.clone();
@@ -682,7 +690,15 @@ mod tests {
             let shown = readback(&frame, &[], view, SIZE, Some(&mut paint))
                 .await
                 .unwrap();
-            save_frame("interface.ppm", &shown, SIZE);
+            save_frame(
+                if settings_evidence {
+                    "settings.ppm"
+                } else {
+                    "interface.ppm"
+                },
+                &shown,
+                SIZE,
+            );
             let changed = bare
                 .as_chunks::<4>()
                 .0
