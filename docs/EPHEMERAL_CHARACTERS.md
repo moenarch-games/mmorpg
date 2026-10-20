@@ -59,7 +59,9 @@ host/runtime must provide the corresponding command/session lifetime. This API d
 add an in-round respawn rule, client loadout command or character lease.
 
 PvP eligibility is a separate arena content policy (#339); temporary setup does not
-silently make an ordinary zone hostile. Battle Royale match phases, between-life UI,
+silently make an ordinary zone hostile. A combat arena additionally selects
+`with_player_combat(PlayerCombatPolicy::FreeForAll)` before creating the zone. Both
+policy construction orders produce the same content identity, and recovery binds both. Battle Royale match phases, between-life UI,
 elimination/winner and real hosted play remain battle-royale #13 / MMORPG #341.
 
 ## Focused checks

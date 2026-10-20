@@ -122,3 +122,32 @@ fn admission_and_selection_fail_closed_before_mutating_ordinary_zones() {
             .is_err()
     );
 }
+
+#[test]
+fn temporary_arena_policies_compose_and_both_bind_recovery() {
+    use mmorpg_core::PlayerCombatPolicy;
+    let base = Arc::unwrap_or_clone(greyhaven_vale::content());
+    let first = base
+        .clone()
+        .with_player_combat(PlayerCombatPolicy::FreeForAll)
+        .with_character_persistence(CharacterPersistence::Ephemeral);
+    let second = base
+        .with_character_persistence(CharacterPersistence::Ephemeral)
+        .with_player_combat(PlayerCombatPolicy::FreeForAll);
+    assert_eq!(first, second);
+    let content = Arc::new(first);
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(100), Arc::clone(&content)).unwrap();
+    let build = EphemeralCharacterBuild::standard(choice(PlayerClass::Warden)).unwrap();
+    zone.admit_ephemeral(1, &build).unwrap();
+    zone.admit_ephemeral(2, &build).unwrap();
+    assert!(zone.players_are_hostile(1, 2));
+    let state = zone.snapshot().unwrap();
+    ZoneSimulation::from_snapshot(state.clone(), Arc::clone(&content)).unwrap();
+    let durable = Arc::new(
+        Arc::unwrap_or_clone(Arc::clone(&content))
+            .with_character_persistence(CharacterPersistence::Durable),
+    );
+    assert!(ZoneSimulation::from_snapshot(state.clone(), durable).is_err());
+    let safe = Arc::new(Arc::unwrap_or_clone(content).with_player_combat(PlayerCombatPolicy::Safe));
+    assert!(ZoneSimulation::from_snapshot(state, safe).is_err());
+}
