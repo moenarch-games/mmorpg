@@ -129,12 +129,15 @@ pub struct UnitPresenter {
     effects: effects::Effects,
     durations: BTreeMap<(Kind, String), f32>,
     ready: BTreeSet<Kind>,
+    structures: crate::structures::Structures,
 }
 
 impl UnitPresenter {
     #[must_use]
     pub fn new(player_id: u32, content: Arc<ZoneContent>, scenery: Arc<Scenery>) -> Self {
+        let structures = crate::structures::Structures::on_scenery(content.pieces(), &scenery);
         Self {
+            structures,
             player_id,
             content,
             scenery,
@@ -165,6 +168,8 @@ impl UnitPresenter {
         self.deaths.clear();
         self.effects.clear();
         self.resources = Resources::default();
+        self.structures =
+            crate::structures::Structures::on_scenery(self.content.pieces(), &self.scenery);
     }
 
     /// Observes a newly received projection; spell visuals start from its events.
@@ -393,7 +398,22 @@ impl UnitPresenter {
         }
         self.projectiles(&mut out.draws, snapshot);
         self.platforms(&mut out.draws, snapshot);
-        self.structure_pieces(&mut out.draws, snapshot);
+        let viewer = input
+            .units
+            .iter()
+            .find(|unit| unit.record.entity() == EntityRef::Player(self.player_id))
+            .map(|unit| {
+                let half = self.half(unit.record.entity(), &unit.record);
+                [
+                    f64::from(unit.centre[0]),
+                    f64::from(unit.centre[1] - half[1]),
+                    f64::from(unit.centre[2]),
+                ]
+            });
+        out.draws.extend(
+            self.structures
+                .frame(&snapshot.pieces, seconds, viewer, reduced),
+        );
         for view in &snapshot.debris {
             let centre = self.rendered(view.position);
             out.draws
@@ -401,44 +421,6 @@ impl UnitPresenter {
         }
         self.resources.retire_unused();
         out
-    }
-
-    /// Destructible pieces (#305) as their projected stage shows them: intact timber, darker and
-    /// sagging when damaged, a low slumped heap when crumbling, and only the authored rubble
-    /// (or nothing) once destroyed.
-    fn structure_pieces(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
-        let pieces = self.content.pieces().to_vec();
-        for piece in &pieces {
-            let stage = snapshot
-                .pieces
-                .iter()
-                .find(|view| view.piece == piece.id)
-                .map_or(mmorpg_core::PieceStage::Intact, |view| view.stage);
-            let id = format!("piece-{}", piece.id.get());
-            let (box_, colour) = match stage {
-                mmorpg_core::PieceStage::Intact => ((piece.position, piece.half_extents), 0x7a5a3a),
-                mmorpg_core::PieceStage::Damaged => {
-                    ((piece.position, piece.half_extents), 0x5e4630)
-                }
-                mmorpg_core::PieceStage::Crumbling => {
-                    let [x, y, z] = piece.position;
-                    let [hx, hy, hz] = piece.half_extents;
-                    (([x, y - hy / 3, z], [hx, hy - hy / 3, hz]), 0x4a3828)
-                }
-                mmorpg_core::PieceStage::Destroyed => match piece.rubble {
-                    Some(rubble) => (rubble, 0x6b6156),
-                    None => continue,
-                },
-            };
-            let centre = self.rendered(box_.0).map(f64::from);
-            let size = metres(box_.1).map(|half| 2. * f64::from(half));
-            draws.push(self.resources.primitive(
-                id,
-                Primitive::Box(size),
-                colour,
-                Frame { p: centre, q: IQ },
-            ));
-        }
     }
 
     /// Moving platforms (#56) where their schedule puts them at the projection's tick: a

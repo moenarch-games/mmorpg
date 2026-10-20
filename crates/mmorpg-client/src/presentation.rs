@@ -959,3 +959,24 @@ fn yaw_radians(steps: f32) -> f32 {
 fn metres(value: [i32; 3]) -> [f32; 3] {
     value.map(|component| component as f32 / UNITS_PER_METRE as f32)
 }
+
+#[cfg(test)]
+pub(crate) fn observed_imported_draws(count: usize, time: f32) -> Vec<crate::world::SceneDraw> {
+    use mmorpg_presentation::units::{imported::Kind, kit::Frame};
+    let model = &skinned::asset(Kind::Ranger).model;
+    (0..count)
+        .flat_map(|unit| {
+            model.draws(
+                &format!("observed-{unit}"),
+                Frame {
+                    p: [(unit % 10) as f64 * 2.0, 0.0, (unit / 10) as f64 * 2.0],
+                    q: [0.0, 0.0, 0.0, 1.0],
+                },
+                1.8,
+                Kind::Ranger.clips().idle,
+                time,
+                None,
+            )
+        })
+        .collect()
+}

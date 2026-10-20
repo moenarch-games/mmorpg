@@ -557,7 +557,7 @@ mod tests {
         });
     }
 
-    fn save_smoke_frame(name: &str, pixels: &[u8]) {
+    pub(super) fn save_smoke_frame(name: &str, pixels: &[u8]) {
         save_frame(name, pixels, SMOKE_SIZE);
     }
 
@@ -850,3 +850,11 @@ mod tests {
 #[cfg(test)]
 #[path = "../tests/support/world_gpu_acceptance.rs"]
 mod world_gpu_acceptance;
+
+#[cfg(test)]
+#[path = "../tests/support/skinned_allocation_observation.rs"]
+mod skinned_allocation_observation;
+
+#[cfg(test)]
+#[path = "../tests/support/structure_visuals.rs"]
+mod structure_visuals;
