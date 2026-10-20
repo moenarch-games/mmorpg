@@ -73,7 +73,7 @@ pub(crate) struct CheckpointReference {
     pub canonical_version: u16,
 }
 impl CheckpointReference {
-    fn validate(&self, fence: &StreamFence) -> Result<(), StoreError> {
+    pub(super) fn validate(&self, fence: &StreamFence) -> Result<(), StoreError> {
         if self.version != 1
             || self.zone_id != fence.lease.zone_id.get()
             || self.world_id != fence.world_id
@@ -429,8 +429,9 @@ impl PostgresJournal {
     /// SQL layer publishes metadata, never treats a successful PUT as a checkpoint.
     pub(crate) fn publish_checkpoint(
         &mut self,
-        reference: &CheckpointReference,
+        verified: &super::checkpoints::VerifiedCheckpoint,
     ) -> Result<(), StoreError> {
+        let reference = verified.reference();
         reference.validate(&self.fence)?;
         let encoded = serde_json::to_vec(reference).map_err(sql)?;
         self.entries.transaction(|store| store.backend().with_sql(|transaction| {
@@ -754,7 +755,11 @@ mod tests {
             content_fingerprint: 0,
             canonical_version: 1,
         };
-        journal.publish_checkpoint(&reference).unwrap();
+        journal
+            .publish_checkpoint(
+                &super::super::checkpoints::VerifiedCheckpoint::for_sql_test(reference.clone()),
+            )
+            .unwrap();
         assert_eq!(journal.checkpoint_reference().unwrap(), reference);
         let mut live = MatchRuntime::new_with_replay_capture(adapter(), 30);
         let character = CharacterId::new(format!("journal-test-{zone_number}")).unwrap();
@@ -828,9 +833,17 @@ mod tests {
             object_key: "test/checkpoint-1.zst".into(),
             ..reference
         };
-        journal.publish_checkpoint(&latest).unwrap();
+        journal
+            .publish_checkpoint(
+                &super::super::checkpoints::VerifiedCheckpoint::for_sql_test(latest.clone()),
+            )
+            .unwrap();
         journal.prune().unwrap();
-        journal.publish_checkpoint(&latest).unwrap();
+        journal
+            .publish_checkpoint(
+                &super::super::checkpoints::VerifiedCheckpoint::for_sql_test(latest.clone()),
+            )
+            .unwrap();
         assert_eq!(journal.grant_ids(Some(&character)).unwrap().len(), 1);
         let retained: i64 = coordinator
             .query_one(
