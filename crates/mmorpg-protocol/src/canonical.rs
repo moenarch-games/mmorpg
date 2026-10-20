@@ -1898,4 +1898,20 @@ mod tests {
             "snapshot content identity does not match the supplied zone content"
         );
     }
+    #[test]
+    fn canonical_combo_keeps_player_and_creature_target_kinds_distinct() {
+        for target in [
+            EntityRef::Player(2),
+            EntityRef::Creature(CreatureId::new(2)),
+        ] {
+            let mut state = snapshot();
+            state.players[0].combat.combo = Some(mmorpg_core::ComboOpening { target, elapsed: 3 });
+            let decoded =
+                decode_canonical_snapshot(&encode_canonical_snapshot(&state).unwrap()).unwrap();
+            assert_eq!(
+                decoded.players[0].combat.combo,
+                state.players[0].combat.combo
+            );
+        }
+    }
 }

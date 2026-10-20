@@ -35,6 +35,22 @@ fn an_explicit_arena_weapon_ability_uses_shared_player_damage_and_safe_world_ref
             policy == PlayerCombatPolicy::FreeForAll
         );
         assert!(!zone.players_are_hostile(1, 1));
+        let view = zone.snapshot_for_player(1).unwrap();
+        let opponent = view
+            .entities
+            .iter()
+            .find(|entity| entity.entity() == EntityRef::Player(2))
+            .unwrap();
+        assert_eq!(
+            opponent.flags.hostile,
+            policy == PlayerCombatPolicy::FreeForAll
+        );
+        assert_eq!(
+            opponent.flags.attackable,
+            policy == PlayerCombatPolicy::FreeForAll
+        );
+        assert!(!view.entities[0].flags.attackable);
+
         zone.apply_command(
             1,
             2,
