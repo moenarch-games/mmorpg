@@ -112,11 +112,11 @@ Start the complete local native development environment with:
 
 The launcher fetches the latest merged source and fast-forwards safely before building, then watches local Rust, shader, scenery and build-input edits and restarts the host and client. Each restart resets the disposable zone. Local edits and commits are preserved; an update that needs manual integration stops with an explanation. Use `--no-update` to work offline or intentionally run your current checkout, and `--no-watch` for a single interactive launch. Requires Python 3 in addition to Cargo, Git, curl and OpenSSL; see [native development](docs/NATIVE_CLIENT.md#interactive-play).
 
-## Greyhaven layout editor
+## Greyhaven world authoring (Blender)
 
-Run the separate Outpost authoring program with `cd web && bun run editor` (the same Rust/WASM/Bun prerequisites as the browser game). Select and drag houses or decoration on the top-down canvas, use exact metre coordinates or arrow-key nudges, add/remove prefabs, and inspect the live shared game geometry. **Save to repository & rebuild game** validates and writes the layout, then rebuilds the browser game; **Open game** plays the accepted layout. Native builds consume the same file. The published [editor preview](https://moritzbrantner.github.io/mmorpg/editor.html) supports JSON import/export; repository writes require the local program.
+The standalone HTML editor has been removed. For optional development-only Outpost placement editing, install **Blender 5.2.2 LTS** and run `bash scripts/dev-blender.sh open`. Move, add, duplicate or delete houses and decorative props in Blender, then save/close and run `bash scripts/dev-blender.sh export`. The exporter invokes the existing Rust collision/scenery validator before writing `content/greyhaven/outpost-layout.json`; rebuild the game to consume the changes. Blender is not a Cargo/Bun or runtime dependency.
 
-See [layout authoring](docs/WORLD_LAYOUT_EDITOR.md) for the first region, authority boundaries and validation. This is placement authoring for the Outpost, not terrain sculpting or an in-game live-world mutation interface.
+See [Blender layout authoring](docs/WORLD_LAYOUT_EDITOR.md) for supported objects, coordinate mapping, exact version and limitations. The editable source is the existing repository JSON, not the generated .blend file.
 
 ## Browser tech demo
 
