@@ -7,8 +7,7 @@
     "build": "bun install --frozen-lockfile && bun scripts/build-wasm.ts && tsc --noEmit && vite build",
     "build:wasm": "bun scripts/build-wasm.ts",
     "dev": "bun install --frozen-lockfile && bun scripts/build-wasm.ts && vite",
-    "test": "bun test",
-    "editor": "bun scripts/editor.ts"
+    "test": "bun test"
   },
   "dependencies": {
     "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#e8996d383d47dfaa05b684a68cc97f2bb9ed0170",
