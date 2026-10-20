@@ -1,6 +1,6 @@
 # Greyhaven broadleaf review
 
-This is the first environment comparison for [#346](https://github.com/moritzbrantner/mmorpg/issues/346), following Atlas 6.3.8. **The default game still uses the current procedural oak.** Reply on the issue or PR with **use**, **adjust** (which visual properties), or **reject**. Full tree/rock adoption remains [#49](https://github.com/moritzbrantner/mmorpg/issues/49).
+This is the first environment comparison for [#346](https://github.com/moritzbrantner/mmorpg/issues/346), following Atlas 6.3.8. **The default game still uses the current procedural oak.** **Owner feedback (2026-10-20):** the denser, taller prototype is better, but its leaf colours and the current lighting are unsatisfactory. Defer further tree iteration and adoption until lighting can be revisited; this is not approval to replace default art. Full tree/rock adoption remains [#49](https://github.com/moritzbrantner/mmorpg/issues/49).
 
 Both images are actual Chromium browser-game captures: existing `woods` camera, 1440 × 900, presentation time 120 seconds, reduced motion, identical paused authoritative projection. The HUD is hidden equally for readability. One oak left of the path changes; all other scenery stays current. The proposed broadleaf is visibly smaller and more detailed than the current crown; this review does not approve its scale or colour.
 
@@ -14,7 +14,7 @@ Candidate — `greyhaven.nature.tree.broadleaf/default`, same game/renderer revi
 
 ## Denser, taller prototype
 
-A further Blender 5.2.2 LTS authoring experiment keeps the original trunk and adds two foliage-only copies rotated 120° and 240°. The game draws it at eight metres rather than the first five-metre fit, with the same `woods` camera, time and viewport. This is an actual browser-game render; default art is unchanged. This prototype is **not the published nature bundle**: source packaging and its reproducible consumer pin are still in progress, and PR #350 remains a draft during that revision. The original comparison and release identities below describe the first candidate.
+A further Blender 5.2.2 LTS authoring experiment keeps the original trunk and adds two foliage-only copies rotated 120° and 240°. The game draws it at eight metres rather than the first five-metre fit, with the same `woods` camera, time and viewport. This is an actual browser-game render; default art is unchanged. This prototype is **not the published nature bundle**: its source packaging and consumer adoption are deferred with the owner’s lighting revisit. It is retained as experimental visual evidence, not as a reproducible published asset. The optional runtime toggle below continues to load the original published candidate. The original comparison and release identities below describe the first candidate.
 
 ![Denser, eight-metre Blender prototype beside the same path](dense-prototype.png)
 
