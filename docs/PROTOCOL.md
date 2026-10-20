@@ -476,3 +476,26 @@ Wire version 23 (#158) keeps the player projection layout and adds error codes 3
 ## Doors: snapshot v22 and command v12
 
 Wire and core schema version 22 add content doors (#158). `ZoneContent::with_doors` authors up to 16 doors, each a static collider-namespace body with a closed and an open leaf box; the Greyhaven inn's front door (door 1, content revision 10) is closed at zone start. The player projection carries every door's state after the self loot sheet (one count byte, then two bytes per door, so the fixed part grows from 111 to 112 bytes and `MAX_WIRE_ENTITIES` drops from 46 to 45). Canonical snapshots carry the same door list after the creatures, and recovery restores each open door's body; a content fingerprint with doors binds them (`mmorpg.zone-content/v7`). Command version 12 adds `UseDoor` (tag 23) as pending intent code 20 (2 bytes: door, open) and error code 30 `door blocked`. NPC services (vendors and quest givers) additionally need a clear head-height (1.6 m) sight line from the player to the NPC: static colliders and closed doors block it, a bar counter does not. Version 21 and earlier snapshots/checkpoints, version 11 and earlier commands and recovery bundles fail closed; `player-snapshot-v21.hex` and `commands-v11.hex` remain as rejection evidence.
+
+## Development character controls
+
+With `MMORPG_CHARACTER_DIR`, the host accepts these application payloads inside the
+existing game-server reliable-control envelope (version 1, maximum 4096 bytes):
+
+| Request | Response on success |
+| --- | --- |
+| `[1, 0]` — discover character storage | `[1, 1]` |
+| `[1, 1, appearance, CharacterId UTF-8 bytes…]` — claim the character | `[1, 1]` |
+| `[1, 2]` — commit and release the bound character | `[1, 2]` |
+
+Appearance uses the existing `1 + class × 2 + sex` encoding. The client sends no
+record or gameplay facts. A rejected capability permits the existing anonymous
+session path; a refused or interrupted claim fails entry without a fresh character
+fallback. Reconnect preserves the existing binding and command sequences.
+
+The host leases storage before submitting trusted host input `[1, 1, record…]`,
+where `record` uses the existing character-record codec. Input `[1, 2]` parks the
+exact bound record for logout. These inputs appear only in private replay/recovery;
+no client command or player-snapshot version changes. Private canonical snapshots
+with bindings use the `MMOC` v1 adapter envelope described in
+[the admission decision](adr/0003-development-character-admission.md).

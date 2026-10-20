@@ -9,7 +9,7 @@ use mmorpg_client::{
     hud::CombatHud,
     network::ClientSession,
     presentation::Presentation,
-    session::{NetworkUpdate, PlayerInput, run_session},
+    session::{CharacterSelection, NetworkUpdate, PlayerInput, run_session_with_characters},
     world::WorldScene,
 };
 use mmorpg_core::{PlayerClass, Sex, ZoneId, greyhaven_vale};
@@ -30,6 +30,7 @@ struct Options {
     /// Without `--class`, the window offers character selection.
     class: Option<PlayerClass>,
     sex: Sex,
+    character_id: Option<mmorpg_core::CharacterId>,
 }
 
 impl Options {
@@ -42,6 +43,7 @@ impl Options {
             frames: None,
             class: None,
             sex: Sex::Male,
+            character_id: None,
         };
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
@@ -67,6 +69,11 @@ impl Options {
                             .ok_or("--class must be warden, ranger or arcanist")?,
                     );
                 }
+                "--character-id" => {
+                    options.character_id = Some(mmorpg_core::CharacterId::new(
+                        args.next().ok_or("--character-id needs an ID")?,
+                    )?);
+                }
                 "--sex" => {
                     options.sex = match args.next().as_deref() {
                         Some("female") => Sex::Female,
@@ -87,6 +94,9 @@ impl Options {
         if !options.url.starts_with("https://") {
             return Err("WebTransport requires an https URL".into());
         }
+        if options.character_id.is_some() && options.class.is_none() {
+            return Err("--character-id requires --class".into());
+        }
         Ok(Some(options))
     }
 }
@@ -94,7 +104,7 @@ impl Options {
 fn main() -> Result<(), ClientError> {
     let Some(options) = Options::parse(std::env::args().skip(1))? else {
         println!(
-            "mmorpg-client [--url https://host:4433/game/matches/zone-1] [--zone 1] [--certificate cert.pem] [--class warden|ranger|arcanist] [--sex female|male] [--smoke] [--frames N]\nW/S move, A/D or Q/E strafe, Space jumps; Tab targets the nearest creature, F attacks, 1-8 use the class abilities, R releases a dead spirit; drag a mouse button to orbit, wheel zooms. Enter talks to a selected NPC or chats, B bags, C character, L quests. Escape cancels a cast, closes panels, otherwise quits. --smoke connects, chooses the class and verifies an offscreen GPU frame.\nWithout --certificate, system certificate trust is used. Without --class the window offers character selection (smoke uses a male Warden)."
+            "mmorpg-client [--url https://host:4433/game/matches/zone-1] [--zone 1] [--certificate cert.pem] [--class warden|ranger|arcanist] [--sex female|male] [--character-id ID] [--smoke] [--frames N]\nW/S move, A/D or Q/E strafe, Space jumps; Tab targets the nearest creature, F attacks, 1-8 use the class abilities, R releases a dead spirit; drag a mouse button to orbit, wheel zooms. Enter talks to a selected NPC or chats, B bags, C character, L quests. Escape cancels a cast, closes panels, otherwise quits. --smoke connects, chooses the class and verifies an offscreen GPU frame.\nWithout --certificate, system certificate trust is used. Without --class the window offers character selection (smoke uses a male Warden)."
         );
         return Ok(());
     };
@@ -115,13 +125,32 @@ fn main() -> Result<(), ClientError> {
         options.class.unwrap_or(PlayerClass::Warden).code(),
         options.sex.code(),
     );
+    let selected = (options.class.is_some() || options.smoke).then(|| CharacterSelection {
+        local_id: format!("cli-{}-{}", class_choice.0, class_choice.1),
+        class: mmorpg_core::ClassChoice {
+            class: options.class.unwrap_or(PlayerClass::Warden),
+            sex: options.sex,
+        },
+        global_id: options.character_id,
+    });
     if options.smoke {
         return runtime.block_on(async {
             // Choose the class until the zone confirms it (a datagram may be
             // lost), then render the resumed authoritative world.
+            let selected = selected.ok_or("missing smoke character")?;
+            let durable = if session.character_service_enabled().await? {
+                let id = match selected.global_id {
+                    Some(id) => id,
+                    None => mmorpg_client::online_identity::for_character(
+                        &mmorpg_client::roster::config_dir().ok_or("no character configuration directory")?,
+                        &selected.local_id,
+                    )?,
+                };
+                session.claim_character(&id, selected.class).await?
+            } else { false };
             let mut chosen = None;
             for _ in 0..90 {
-                session.send_choose_class(class_choice.0, class_choice.1)?;
+                if !durable { session.send_choose_class(class_choice.0, class_choice.1)?; }
                 chosen = session.receive_snapshot().await?.viewer.class;
                 if chosen.is_some() {
                     break;
@@ -137,6 +166,7 @@ fn main() -> Result<(), ClientError> {
             let now = Instant::now();
             let view = OrbitCamera::default().view(presentation.camera_target(now));
             let colors = render_offscreen(&world, &presentation.unit_draws(now, view), &hud, view).await?;
+            session.release_character().await?;
             println!("{{\"event\":\"client_smoke_passed\",\"player_id\":{player_id},\"class\":\"{}\",\"tick\":{tick},\"connection_epoch\":{connection_epoch},\"rendered_colors\":{colors}}}", class.name());
             Ok(())
         });
@@ -146,11 +176,18 @@ fn main() -> Result<(), ClientError> {
         class_choice: options.class.map(|_| class_choice),
         ..PlayerInput::default()
     });
+    let (character_sender, character_receiver) = watch::channel(selected);
     let (update_sender, update_receiver) = watch::channel(NetworkUpdate::Waiting);
     let (shutdown_sender, shutdown_receiver) = oneshot::channel();
     let mut task = runtime.spawn(async move {
-        if let Err(error) =
-            run_session(session, input_receiver, &update_sender, shutdown_receiver).await
+        if let Err(error) = run_session_with_characters(
+            session,
+            input_receiver,
+            character_receiver,
+            &update_sender,
+            shutdown_receiver,
+        )
+        .await
         {
             // The owning window observes this final state; no detached errors.
             update_sender.send_replace(NetworkUpdate::Failed(error.to_string()));
@@ -163,6 +200,7 @@ fn main() -> Result<(), ClientError> {
         content,
         world,
         input_sender,
+        character_sender,
         update_receiver,
         options.frames,
         options.class.map(|class| (class, options.sex)),
@@ -170,7 +208,7 @@ fn main() -> Result<(), ClientError> {
     // A closed worker already owns its connection cleanup.
     let _ = shutdown_sender.send(());
     runtime.block_on(async {
-        match tokio::time::timeout(Duration::from_secs(3), &mut task).await {
+        match tokio::time::timeout(Duration::from_secs(6), &mut task).await {
             Ok(result) => result?,
             Err(_) => {
                 task.abort();

@@ -7,6 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+getrandom = "=0.4.3"
 serde_json = "=1.0.154"
 gltf = { version = "=1.4.1", default-features = false, features = ["import", "utils", "names"] }
 game-server.workspace = true

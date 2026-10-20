@@ -387,3 +387,26 @@ describe("OnlineZoneSource", () => {
     expect(seen()).toBeUndefined();
   });
 });
+
+
+test("a refused durable character claim never enters an anonymous character", async () => {
+  const clock = new ManualClock();
+  const host = new FakeZoneHost(clock).start();
+  const requests: Uint8Array[] = [];
+  const source = new OnlineZoneSource({
+    route: parseSessionRoute(host.url), contentRevision: 2n, clock,
+    connector: (url, receive) => ({
+      ...host.connector(url, receive),
+      async control(payload) {
+        requests.push(payload);
+        return payload[1] === 0
+          ? { accepted: true, payload: new Uint8Array([1, 1]) }
+          : { accepted: false, payload: new Uint8Array() };
+      },
+    }),
+  });
+  await expect(clock.until(source.join({ id: "claimed-ranger", classId: "ranger", sex: "female" }))).rejects.toThrow("refused this character");
+  expect(requests.map((request) => [...request.slice(0, 3)])).toEqual([[1, 0], [1, 1, 3]]);
+  expect(host.applied).toEqual([]);
+  expect(source.latestProjection()).toBeNull();
+});

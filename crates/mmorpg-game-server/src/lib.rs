@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
 
+mod character_admission;
+mod dev_characters;
+mod dev_host;
+pub use dev_characters::{DevCharacterService, DevCharacterStorage};
+pub use dev_host::{DevelopmentCharacterHostConfig, serve_development_character_host};
 mod fenced_runtime;
 pub use fenced_runtime::{FencedRuntimeError, FencedZoneRuntime};
 
@@ -12,7 +17,7 @@ use std::sync::Arc;
 use mmorpg_core::{MAX_PLAYERS_PER_ZONE, TICK_HZ, ZoneContent, ZoneId, ZoneSimulation};
 use mmorpg_protocol::{decode_command, encode_canonical_snapshot, pack_snapshot};
 
-pub const PINNED_GAME_SERVER_REVISION: &str = "a3851dab9c1fb25dd31b465fb554ca475769caab";
+pub const PINNED_GAME_SERVER_REVISION: &str = "5283e51e8d8104d88898146fadf3250bb524d6db";
 pub const PINNED_PHYSICS_ENGINE_REVISION: &str = "1b98f84d409796b2a15b84f3fa4ed7f03a11f8bd";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,6 +60,10 @@ impl std::error::Error for ZoneHostBuildError {
 
 pub struct ZoneGameServerAdapter {
     zone: ZoneSimulation,
+    characters: std::collections::BTreeMap<game_server::PlayerId, mmorpg_core::CharacterId>,
+    parked_characters:
+        std::collections::BTreeMap<game_server::PlayerId, character_admission::ParkedCharacter>,
+    character_ownership: Option<Arc<std::fs::File>>,
 }
 
 impl ZoneGameServerAdapter {
@@ -62,6 +71,9 @@ impl ZoneGameServerAdapter {
     pub fn new(zone_id: ZoneId) -> Self {
         Self {
             zone: ZoneSimulation::new(zone_id),
+            characters: Default::default(),
+            parked_characters: Default::default(),
+            character_ownership: None,
         }
     }
 
@@ -73,6 +85,9 @@ impl ZoneGameServerAdapter {
     ) -> Result<Self, mmorpg_core::ZoneError> {
         Ok(Self {
             zone: ZoneSimulation::with_content(zone_id, content)?,
+            characters: Default::default(),
+            parked_characters: Default::default(),
+            character_ownership: None,
         })
     }
 
@@ -162,7 +177,8 @@ impl GameSimulation for ZoneGameServerAdapter {
     }
 
     fn remove_player(&mut self, player_id: game_server::PlayerId) -> bool {
-        self.zone.remove_player(player_id)
+        self.characters.remove(&player_id);
+        self.parked_characters.remove(&player_id).is_some() || self.zone.remove_player(player_id)
     }
 
     fn apply_command(
@@ -171,10 +187,27 @@ impl GameSimulation for ZoneGameServerAdapter {
         sequence: u32,
         payload: &[u8],
     ) -> Result<(), SimulationError> {
+        if self.character_ownership.is_some() && !self.characters.contains_key(&player_id) {
+            return Err(SimulationError::new(
+                "claim a durable character before gameplay",
+            ));
+        }
         let command = decode_command(payload).map_err(map_protocol_error)?;
+        if self.parked_characters.contains_key(&player_id) {
+            // Ignore in-flight gameplay after logout without interrupting its reply.
+            return Ok(());
+        }
         self.zone
             .apply_command(player_id, sequence, command)
             .map_err(map_zone_error)
+    }
+
+    fn apply_host_input(
+        &mut self,
+        player_id: game_server::PlayerId,
+        payload: &[u8],
+    ) -> Result<(), SimulationError> {
+        self.admit_stored_character(player_id, payload)
     }
 
     fn advance_tick(&mut self) -> Result<(), SimulationError> {
@@ -187,7 +220,8 @@ impl GameSimulation for ZoneGameServerAdapter {
 
     fn snapshot(&self) -> Result<SimulationSnapshot, SimulationError> {
         let snapshot = self.zone.snapshot().map_err(map_zone_error)?;
-        let payload = encode_canonical_snapshot(&snapshot).map_err(map_protocol_error)?;
+        let canonical = encode_canonical_snapshot(&snapshot).map_err(map_protocol_error)?;
+        let payload = self.character_snapshot(canonical)?;
         Ok(SimulationSnapshot::new(snapshot.tick, payload))
     }
 
@@ -195,6 +229,9 @@ impl GameSimulation for ZoneGameServerAdapter {
         &self,
         player_id: game_server::PlayerId,
     ) -> Result<SimulationSnapshot, SimulationError> {
+        if let Some(parked) = self.parked_characters.get(&player_id) {
+            return Ok(parked.projection.clone());
+        }
         let snapshot = self
             .zone
             .snapshot_for_player(player_id)

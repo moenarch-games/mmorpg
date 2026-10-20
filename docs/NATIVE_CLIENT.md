@@ -157,3 +157,25 @@ resumes the session and refuses a duplicate without changing copper or the bag.
 This API does not add a native loot-window control.
 
 Native world selection queries the last drawn model parts and the uploaded terrain, water and prop geometry through pinned `3d-lab::three_d_projective::picking`. The client retains EntityRef ownership; health bars and target markers are not selectable bodies. NPC context uses existing content and received quest/bag sheets, advertises navigation in the window title, and sends existing quest/vendor commands only after a deliberate action. The zone validates state, reach and settlement; refusals remain visible in the context. Focus/leave/cancel retires armed clicks through the shared input runtime; reconnect retires one-shot interactions along with the existing combat presses.
+
+## Durable development characters
+
+Set `MMORPG_CHARACTER_DIR` on the zone host to enable development/LAN character
+storage, for example:
+
+```sh
+MMORPG_CHARACTER_DIR=target/dev-characters ./scripts/dev-native.sh
+```
+
+The selected roster character claims its server record before gameplay starts.
+Its stable online identity is kept in `online-character-ids.json` beside the native
+roster; the file contains IDs only. A roster slot with an online identity is never
+reissued after deletion. Normal window exit commits/releases the character; network
+interruption uses the existing reconnect path. Anonymous hosts remain compatible.
+
+With `--class`, the native client uses a stable per-profile identity for that
+class/sex. `--character-id ID --class ranger` explicitly names a development record
+instead, for example to resume the same character from another trusted device.
+Claims are unauthenticated; this mode is for a single development/LAN host, not a
+public deployment. [Ownership and recovery](adr/0003-development-character-admission.md)
+remain server responsibilities.

@@ -1,3 +1,4 @@
+import { decodeControlReply, encodeControlRequest, MAX_CONTROL_PAYLOAD_BYTES } from "./control-wire";
 import type { SessionConnection, SessionConnector, SessionEnd } from "./connection";
 import { WELCOME_BYTES } from "./frames";
 
@@ -55,6 +56,53 @@ async function pumpDatagrams(transport: WebTransport, receive: (datagram: Uint8A
   }
 }
 
+/** Owns the stream and its timeout through completion or connection closure. */
+async function exchangeControl(transport: WebTransport, payload: Uint8Array) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const exchange = async () => {
+    await transport.ready;
+    const stream = await transport.createBidirectionalStream();
+    const send = stream.writable.getWriter();
+    const receive = stream.readable.getReader();
+    try {
+      await send.write(encodeControlRequest(payload));
+      await send.close();
+      const bytes = new Uint8Array(8 + MAX_CONTROL_PAYLOAD_BYTES);
+      let length = 0;
+      for (;;) {
+        const { value, done } = await receive.read();
+        if (done) { return decodeControlReply(bytes.slice(0, length)); }
+        if (length + value.length > bytes.length) {
+          throw new Error("Control response exceeds the protocol limit.");
+        }
+        bytes.set(value, length);
+        length += value.length;
+      }
+    } finally {
+      await Promise.allSettled([send.abort(), receive.cancel()]);
+      send.releaseLock();
+      receive.releaseLock();
+    }
+  };
+  try {
+    return await Promise.race([
+      exchange(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          try {
+            transport.close({ closeCode: 0, reason: "control request timed out" });
+          } catch {
+            // A transport that already failed is closed; the timeout still rejects.
+          }
+          reject(new Error("Character control request timed out."));
+        }, 5000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * The browser WebTransport adapter. With a certificate hash the browser
  * trusts exactly that self-signed development certificate (ECDSA, valid at
@@ -93,6 +141,9 @@ export function webTransportConnector(certificateHash: Uint8Array | null): Sessi
         } catch {
           // The session is not established or already closed; `closed` reports it.
         }
+      },
+      control(payload) {
+        return exchangeControl(transport, payload);
       },
       close() {
         if (!open) {

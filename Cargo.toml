@@ -21,7 +21,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
-game-server = { git = "https://github.com/moritzbrantner/game-server.git", rev = "13d01bdf589ae71a04a5a72332b3112aa779e8a3" }
+game-server = { git = "https://github.com/moritzbrantner/game-server.git", rev = "5283e51e8d8104d88898146fadf3250bb524d6db" }
 rapier3d = "=0.36.1"
 physics-engine = { git = "https://github.com/moritzbrantner/physics-engine", rev = "ae64adbdb2d1af74f89f5befe287a8029eeaa072" }
 mmorpg-core = { path = "crates/mmorpg-core" }

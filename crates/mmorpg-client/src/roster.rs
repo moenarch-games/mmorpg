@@ -4,8 +4,9 @@
 //!
 //! This is presentation choice only. The zone owns the class choice once a
 //! character enters the world; nothing here stores position, quests, items or
-//! any other world progress, and no field reaches the wire except the
-//! class/sex choice that the existing `ChooseClass` command already carries.
+//! any other world progress. Character hosts receive a persisted online alias
+//! for the local slot and its class/sex choice; anonymous hosts retain the
+//! existing `ChooseClass` path. Names and headwear remain presentation choices.
 use mmorpg_core::{PlayerClass, Sex};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -64,7 +65,7 @@ impl Headwear {
 /// One locally created character.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalCharacter {
-    /// `local-N`, the lowest free number when created.
+    /// `local-N`, the lowest free number not retired by an online identity.
     pub id: String,
     pub name: String,
     pub class: PlayerClass,
@@ -163,7 +164,7 @@ impl Roster {
         })
     }
 
-    /// Creates a character with the lowest free `local-N` ID and saves.
+    /// Creates a character with the lowest free, unretired `local-N` ID and saves.
     pub fn create(
         &mut self,
         name: &str,
@@ -182,9 +183,16 @@ impl Roster {
         {
             return Err("A character with that name already exists in this local roster.".into());
         }
+        let retired = self
+            .path
+            .as_ref()
+            .and_then(|path| path.parent())
+            .map(crate::online_identity::load)
+            .transpose()?
+            .unwrap_or_default();
         let id = (1..)
             .map(|n| format!("local-{n}"))
-            .find(|id| self.characters.iter().all(|c| &c.id != id))
+            .find(|id| !retired.contains_key(id) && self.characters.iter().all(|c| &c.id != id))
             .expect("a free slot exists below the slot limit");
         self.characters.push(LocalCharacter {
             id,

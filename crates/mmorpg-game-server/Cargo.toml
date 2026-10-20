@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 game-server.workspace = true
 mmorpg-core.workspace = true
+mmorpg-characters.workspace = true
 mmorpg-control-plane.workspace = true
 mmorpg-protocol.workspace = true
 tokio.workspace = true

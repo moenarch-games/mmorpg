@@ -30,6 +30,7 @@ export type OnlineZoneOptions = {
   /** The content revision of the scenery this page loaded; every projection must carry it. */
   contentRevision: bigint;
   connector: SessionConnector;
+  resolveCharacterId?: (localId: string) => Promise<string>;
   clock?: SessionClock;
 };
 
@@ -39,6 +40,7 @@ type Link = {
   readonly reassembler: SnapshotReassembler;
   /** The welcome this session was admitted or resumed with, once accepted. */
   welcome: Welcome | null;
+  admitting: boolean;
 };
 
 type Phase =
@@ -104,6 +106,8 @@ export class OnlineZoneSource implements WorldSource {
   #link: Link | null = null;
   /** The welcome of the current session: its player, epoch and one-time resume token. */
   #welcome: Welcome | null = null;
+  #durable = false;
+  #resolveCharacterId: (localId: string) => Promise<string>;
   #outbox = new SequencedOutbox();
   readonly #history = new SnapshotBuffer();
   #latest: ZoneSnapshot | null = null;
@@ -126,6 +130,7 @@ export class OnlineZoneSource implements WorldSource {
     this.#route = options.route;
     this.#contentRevision = options.contentRevision;
     this.#connector = options.connector;
+    this.#resolveCharacterId = options.resolveCharacterId ?? ((id) => Promise.resolve(id));
     this.#clock = options.clock ?? browserClock;
   }
 
@@ -162,7 +167,7 @@ export class OnlineZoneSource implements WorldSource {
       case "failed":
         break;
     }
-    this.#teardown();
+    this.#teardown(phase.kind === "connected");
     this.#phase = { kind: "idle" };
   }
 
@@ -226,7 +231,7 @@ export class OnlineZoneSource implements WorldSource {
         this.#receive(link, datagram);
       }
     });
-    const opened: Link = { connection, reassembler: new SnapshotReassembler(), welcome: null };
+    const opened: Link = { connection, reassembler: new SnapshotReassembler(), welcome: null, admitting: false };
     link = opened;
     this.#link = opened;
     void connection.welcome.then(
@@ -236,10 +241,19 @@ export class OnlineZoneSource implements WorldSource {
     void connection.closed.then((end) => this.#ended(opened, end));
   }
 
-  #closeLink(): void {
+  #closeLink(release = false): void {
     const link = this.#link;
     this.#link = null;
-    link?.connection.close();
+    if (link && release && this.#durable && link.connection.control) {
+      // The bounded exchange owns this retiring connection until persistence
+      // succeeds or fails; this source no longer receives its projections.
+      void link.connection.control(new Uint8Array([1, 2])).then(
+        () => link.connection.close(),
+        () => link.connection.close(),
+      );
+    } else {
+      link?.connection.close();
+    }
   }
 
   #welcomed(link: Link, bytes: Uint8Array): void {
@@ -261,15 +275,18 @@ export class OnlineZoneSource implements WorldSource {
     if (phase.kind === "joining") {
       link.welcome = welcome;
       this.#welcome = welcome;
-      // Like the native client, the admitted player chooses its class with its first command.
-      this.#outbox.submit(this.#classChoice(), "reliable");
-      try {
-        this.#flush();
-      } catch (error) {
-        this.#linkFailed(link, new Error(describe(error)));
-        return;
-      }
-      this.#classSequence = this.#outbox.awaiting;
+      link.admitting = Boolean(link.connection.control);
+      void this.#claimCharacter(link).then(() => {
+        if (link !== this.#link) { return; }
+        link.admitting = false;
+        if (!this.#durable) {
+          this.#outbox.submit(this.#classChoice(), "reliable");
+        }
+        try { this.#flush(); } catch (error) {
+          this.#linkFailed(link, new Error(describe(error)));
+        }
+        this.#classSequence = this.#outbox.awaiting;
+      }, (error: unknown) => this.#linkFailed(link, new Error(describe(error))));
       return;
     }
     if (phase.kind !== "reconnecting") {
@@ -306,7 +323,7 @@ export class OnlineZoneSource implements WorldSource {
 
   #receive(link: Link, datagram: Uint8Array): void {
     const welcome = link.welcome;
-    if (link !== this.#link || !welcome) {
+    if (link !== this.#link || !welcome || link.admitting) {
       // A datagram that overtook its session's welcome carries a tick the next one supersedes.
       return;
     }
@@ -488,8 +505,8 @@ export class OnlineZoneSource implements WorldSource {
   }
 
   /** Forgets the session: closes the link and clears presentation and sequencing. */
-  #teardown(): void {
-    this.#closeLink();
+  #teardown(release = false): void {
+    this.#closeLink(release);
     this.#welcome = null;
     this.#outbox = new SequencedOutbox();
     this.#history.reset();
@@ -501,6 +518,29 @@ export class OnlineZoneSource implements WorldSource {
     this.#received = [];
     this.#classSequence = null;
     this.#classAcknowledged = false;
+    this.#durable = false;
+  }
+
+  async #claimCharacter(link: Link): Promise<void> {
+    if (!link.connection.control) { return; }
+    const capability = await link.connection.control(new Uint8Array([1, 0]));
+    if (!capability.accepted) { return; }
+    if (!sameBytes(capability.payload, new Uint8Array([1, 1]))) {
+      throw new Error("The zone host has an unsupported character service.");
+    }
+    if (link !== this.#link) { return; }
+    const { classId, sex } = classChoiceCodes(this.#character);
+    const id = new TextEncoder().encode(await this.#resolveCharacterId(this.#character.id));
+    const request = new Uint8Array(3 + id.length);
+    request.set([1, 1, 1 + classId * 2 + sex]);
+    request.set(id, 3);
+    const claimed = await link.connection.control(request);
+    if (!claimed.accepted || !sameBytes(claimed.payload, new Uint8Array([1, 1]))) {
+      throw new Error("The zone host refused this character. It may already be in play.");
+    }
+    if (link !== this.#link) { return; }
+    this.#durable = true;
+    this.#classAcknowledged = true;
   }
 
   #classChoice(): Uint8Array {

@@ -6,7 +6,10 @@ use game_server::{
     serve_prepared_match_host_with_status_and_control_and_shutdown,
 };
 use mmorpg_core::ZoneId;
-use mmorpg_game_server::{build_zone_host, build_zone_matches};
+use mmorpg_game_server::{
+    DevelopmentCharacterHostConfig, build_zone_host, build_zone_matches,
+    serve_development_character_host,
+};
 use std::env;
 use std::error::Error;
 use std::fmt;
@@ -44,6 +47,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let certificate_pem = PathBuf::from(read_string("MMORPG_CERT_PEM", "cert.pem")?);
     let private_key_pem = PathBuf::from(read_string("MMORPG_KEY_PEM", "key.pem")?);
     let recovery_directory = read_optional_path("MMORPG_RECOVERY_DIR")?;
+    let character_directory = read_optional_path("MMORPG_CHARACTER_DIR")?;
     let route_prefix =
         BrowserRoutePrefix::new(read_string("MMORPG_ROUTE_PREFIX", DEFAULT_ROUTE_PREFIX)?)?;
 
@@ -59,7 +63,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     let status_config = MatchHostStatusConfig { port: status_port };
 
-    if let Some(directory) = recovery_directory {
+    if let Some(directory) = character_directory {
+        eprintln!("Development/LAN character claims enabled (unauthenticated).");
+        serve_development_character_host(
+            DevelopmentCharacterHostConfig {
+                directory,
+                recovery_directory,
+                zone_ids,
+                reconnect_grace_ticks,
+            },
+            transport_config,
+            status_config,
+            shutdown_receiver,
+        )
+        .await
+        .map_err(|error| ConfigError(error.to_string()))?;
+    } else if let Some(directory) = recovery_directory {
         let matches = build_zone_matches(zone_ids)?;
         let max_matches = matches.len();
         let prepared = prepare_match_host_for_recovery(
