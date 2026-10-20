@@ -76,6 +76,8 @@ export type Scenery = {
 /** What the WASM module exposes about static zone content. */
 export type SceneryContent = StaticSceneContent & {
   scenery(): string;
+  /** Review-only presentation; the host never calls this. */
+  reviewStaticSceneWithoutOak?(index: number): string;
   /** The shared unit presenter (#184) of one joined player. */
   UnitPresenter: new (player: number) => UnitPresenterHandle;
   /** The shared walk-in inn presenter (#158): door swing and interior look. */
@@ -103,6 +105,7 @@ export type SceneryProvider = {
   readonly scenery: Scenery;
   /** The shared static world both clients draw (#184), straight from the WASM owner. */
   readonly staticScene: StaticSceneContent;
+  readonly reviewWithoutOak?: (index: number) => StaticSceneContent;
   /** A fresh shared unit presenter for `player`. */
   unitPresenter(player: number): UnitPresenterHandle;
   /** The walk-in inn's bundle entries, its presenter, and the door feet at `(x, z)` units reach (0 none). */
@@ -374,6 +377,22 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     regionModels: (id) => regionModels.get(id) ?? [],
     scenery,
     staticScene: content,
+    ...(content.reviewStaticSceneWithoutOak ? {
+      reviewWithoutOak: (index: number): StaticSceneContent => {
+        const review = JSON.parse(content.reviewStaticSceneWithoutOak!(index)) as {
+          layout: string; vertices: number[]; indices: number[]; models: number[];
+        };
+        return {
+          staticScene: () => review.layout,
+          staticSceneVertices: () => Float32Array.from(review.vertices),
+          staticSceneIndices: () => Uint32Array.from(review.indices),
+          staticSceneModels: () => Float32Array.from(review.models),
+          staticSceneMotion: (seconds, animate) => content.staticSceneMotion(seconds, animate),
+          staticSceneShown: (viewer) => content.staticSceneShown(viewer),
+          surfaceY: (x, z) => content.surfaceY(x, z),
+        };
+      },
+    } : {}),
     unitPresenter: (player) => new content.UnitPresenter(player),
     inn: {
       entries: () => content.InnPresenter.entries(),
