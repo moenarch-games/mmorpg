@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title description">
+<title id="title">Greyhaven character selection - approved layout schematic</title>
+<desc id="description">Large character preview on the left, character roster with two collapsed accordions on the right, compact last location and Enter World action directly below the preview. No selected character card and no destination selector.</desc>
+<defs>
+  <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#14232b"/><stop offset="0.6" stop-color="#111820"/><stop offset="1" stop-color="#080f17"/></linearGradient>
+  <linearGradient id="stage" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#24383b"/><stop offset="1" stop-color="#101b25"/></linearGradient>
+  <linearGradient id="cta" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#efd38e"/><stop offset="1" stop-color="#b28a43"/></linearGradient>
+</defs>
+<rect width="1440" height="900" fill="url(#bg)"/>
+<path d="M0 680L260 250L430 640L660 180L920 760Z" fill="#233139" opacity=".26"/>
+<path d="M300 690L535 320L750 740L980 370L1220 900H0Z" fill="#28343c" opacity=".16"/>
+<path d="M25 125h801v574H25z" fill="url(#stage)" opacity=".36"/>
+<text x="30" y="39" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="600" fill="#9ea9aa">MMORPG / GREYHAVEN REALM</text>
+<text x="30" y="89" font-family="Georgia, serif" font-size="43" font-weight="400" fill="#e9e5db">Choose your character</text>
+<rect x="1258" y="23" width="135" height="39" rx="6" fill="#151e25" stroke="#525953" stroke-width="1.5"/>
+<text x="1292" y="48" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="500" fill="#e9e5db">Settings</text>
+<text x="36" y="155" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="600" fill="#9ea9aa">LIVE CHARACTER PREVIEW</text>
+
+<ellipse cx="440" cy="669" rx="343" ry="31" fill="#030709" opacity=".5"/>
+<ellipse cx="440" cy="657" rx="337" ry="60" fill="#33413d" stroke="#d9b76e" stroke-width="2"/>
+<ellipse cx="440" cy="653" rx="263" ry="42" fill="none" stroke="#967d50" stroke-width="2" opacity=".6"/>
+<path d="M405 279L465 279L495 330L525 479L503 592L381 592L359 479L383 330Z" fill="#324c45" stroke="#9d8053" stroke-width="5"/>
+<path d="M387 319L493 319L475 500L407 500Z" fill="#52675c" stroke="#c0a975" stroke-width="3"/>
+<path d="M390 352L489 352M396 406L484 406" stroke="#ad8b58" stroke-width="5"/>
+<rect x="366" y="331" width="42" height="207" rx="16" fill="#454c4e" stroke="#bb995e" stroke-width="4"/>
+<rect x="474" y="331" width="42" height="207" rx="16" fill="#454c4e" stroke="#bb995e" stroke-width="4"/>
+<path d="M397 590L397 632L432 632L438 588M446 587L450 631L486 631L486 590" fill="#453a31" stroke="#b7a081" stroke-width="4"/>
+<ellipse cx="440" cy="274" rx="52" ry="66" fill="#846c52" stroke="#b8aa86" stroke-width="4"/>
+<path d="M384 278Q385 182 440 189Q496 182 497 278L476 242Q443 227 410 245Z" fill="#52665a" stroke="#c4ad7e" stroke-width="4"/>
+<path d="M344 358L305 619" stroke="#dae0d4" stroke-width="12" stroke-linecap="round"/>
+<path d="M330 365L361 378" stroke="#d9b76e" stroke-width="8"/>
+<path d="M337 317L334 357" stroke="#9b6e4b" stroke-width="12"/>
+<text x="297" y="723" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="500" fill="#d9b76e">‹</text>
+<text x="366" y="720" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e9e5db">Drag to rotate</text>
+<text x="565" y="723" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="500" fill="#d9b76e">›</text>
+<text x="72" y="569" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#9ea9aa">Use the real packaged humanoid model</text>
+<text x="72" y="593" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#9ea9aa">and existing rotation/input logic</text>
+
+<rect x="863" y="84" width="544" height="408" rx="7" fill="#0f1820" stroke="#9b804f" stroke-width="1.5"/>
+<text x="886" y="118" font-family="Georgia, serif" font-size="23" font-weight="700" fill="#d9b76e">CHARACTERS (2)</text>
+<text x="1369" y="117" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="400" fill="#d9b76e">⌃</text>
+<text x="886" y="143" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#9ea9aa">Select a character</text>
+<rect x="880" y="163" width="509" height="92" rx="5" fill="#26302e" stroke="#d9b76e" stroke-width="1.5"/>
+<rect x="896" y="176" width="66" height="66" rx="5" fill="#35453f" stroke="#b49c68" stroke-width="1.5"/>
+<text x="912" y="213" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#e9e5db">AS</text>
+<text x="978" y="197" font-family="Georgia, serif" font-size="23" font-weight="500" fill="#e9e5db">Aelric Stormward</text>
+<text x="978" y="225" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#9ea9aa">Level 2 · Human · Warden</text>
+<text x="1364" y="211" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" fill="#d9b76e">›</text>
+<rect x="880" y="270" width="509" height="92" rx="5" fill="#172128" stroke="#495452" stroke-width="1.5"/>
+<rect x="896" y="283" width="66" height="66" rx="5" fill="#30443c" stroke="#62746a" stroke-width="1.5"/>
+<text x="919" y="321" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#e9e5db">S</text>
+<text x="978" y="307" font-family="Georgia, serif" font-size="23" font-weight="500" fill="#e9e5db">Sam</text>
+<text x="978" y="334" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#9ea9aa">Level 1 · Human · Ranger</text>
+<text x="1364" y="318" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" fill="#9ea9aa">›</text>
+<rect x="880" y="377" width="509" height="92" rx="5" fill="#172128" stroke="#495452" stroke-width="1.5"/>
+<rect x="896" y="390" width="66" height="66" rx="5" fill="#142027" stroke="#8a7655" stroke-width="1.5"/>
+<text x="917" y="436" font-family="Arial, Helvetica, sans-serif" font-size="35" font-weight="400" fill="#d9b76e">+</text>
+<text x="978" y="414" font-family="Georgia, serif" font-size="23" font-weight="500" fill="#e9e5db">Create character</text>
+<text x="978" y="442" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#9ea9aa">Choose class and sex</text>
+<text x="1364" y="427" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" fill="#9ea9aa">›</text>
+<rect x="863" y="505" width="544" height="94" rx="7" fill="#101a21" stroke="#827154" stroke-width="1.5"/>
+<text x="886" y="539" font-family="Georgia, serif" font-size="22" font-weight="700" fill="#d9b76e">APPEARANCE</text>
+<text x="1369" y="544" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="400" fill="#d9b76e">⌄</text>
+<text x="887" y="570" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#9ea9aa">Head: Wayfarer's Hood</text>
+<rect x="863" y="611" width="544" height="94" rx="7" fill="#101a21" stroke="#827154" stroke-width="1.5"/>
+<text x="886" y="645" font-family="Georgia, serif" font-size="22" font-weight="700" fill="#d9b76e">EQUIPMENT &amp; LOADOUT</text>
+<text x="1369" y="650" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="400" fill="#d9b76e">⌄</text>
+<text x="887" y="676" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#9ea9aa">6 starter equipment slots · Preview loadout</text>
+
+<rect x="35" y="759" width="791" height="115" rx="6" fill="#0e1820" stroke="#a58b58" stroke-width="1.5"/>
+<rect x="53" y="775" width="185" height="84" rx="4" fill="#2d444c" stroke="#667a74" stroke-width="1.5"/>
+<path d="M60 856L105 812L127 830L171 782L232 854Z" fill="#3a5a56"/>
+<path d="M123 854V804L148 791L169 804V854" fill="#172b35" stroke="#d9b76e" stroke-width="1.5"/>
+<text x="258" y="807" font-family="Georgia, serif" font-size="26" font-weight="500" fill="#e9e5db">Greyhaven Outpost</text>
+<text x="258" y="836" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#9ea9aa">Continue where you left off</text>
+<rect x="592" y="772" width="219" height="91" rx="6" fill="url(#cta)" stroke="#ffe0a1" stroke-width="1.5"/>
+<text x="613" y="828" font-family="Georgia, serif" font-size="23" font-weight="700" fill="#15130f">Enter World  →</text>
+</svg>
