@@ -88,6 +88,16 @@ enum Request {
     Checkpoint {
         reply: Reply<()>,
     },
+    Suspend {
+        image: RecoveryImage,
+        reply: Reply<()>,
+    },
+    ColdRestore {
+        reply: Reply<RecoveryImage>,
+    },
+    CanSuspend {
+        reply: Reply<bool>,
+    },
     AdmissionState {
         player: game_server::PlayerId,
         character: CharacterId,
@@ -194,10 +204,13 @@ impl HostedPersistence {
         let mutating = match &request {
             Request::AdmissionState { .. }
             | Request::ReleasedState { .. }
-            | Request::PendingCharacter { .. } => false,
+            | Request::PendingCharacter { .. }
+            | Request::ColdRestore { .. }
+            | Request::CanSuspend { .. } => false,
             Request::Tick { .. }
             | Request::Claim { .. }
             | Request::Checkpoint { .. }
+            | Request::Suspend { .. }
             | Request::CancelPending { .. }
             | Request::Stop => true,
         };
@@ -254,6 +267,24 @@ impl HostedPersistence {
     ) -> Result<(), PersistenceError> {
         self.request(|reply| Request::CancelPending { player, reply })
             .await
+    }
+
+    pub(crate) async fn can_suspend(&self) -> Result<bool, PersistenceError> {
+        self.request(|reply| Request::CanSuspend { reply }).await
+    }
+
+    /// Confirm the exact completed empty boundary before the runtime is released.
+    pub(crate) async fn confirm_suspension(
+        &self,
+        image: RecoveryImage,
+    ) -> Result<(), PersistenceError> {
+        self.request(|reply| Request::Suspend { image, reply })
+            .await
+    }
+
+    /// Read actual object-store and journal evidence, never a fresh-world fallback.
+    pub(crate) async fn cold_restore(&self) -> Result<RecoveryImage, PersistenceError> {
+        self.request(|reply| Request::ColdRestore { reply }).await
     }
 
     /// Lifecycle capture uses the last committed immutable image. The caller
@@ -517,6 +548,36 @@ impl State {
         }
         self.ensure_authority()
     }
+    fn cold_restore(&mut self) -> Result<RecoveryImage, PersistenceError> {
+        self.ensure_authority()?;
+        if !self.bindings.is_empty() {
+            return Err(error("cold restore requires released character leases"));
+        }
+        let reference = self.journal.checkpoint_reference().map_err(error)?;
+        let image = object_io(
+            &self.runtime,
+            &self.cancelled,
+            self.objects.load(
+                &self.fence,
+                &reference,
+                self.content.fingerprint(),
+                u16::from(mmorpg_protocol::SNAPSHOT_WIRE_VERSION),
+            ),
+        )
+        .map_err(error)?;
+        let (position, image) = self
+            .journal
+            .recover_suffix(&reference, image)
+            .map_err(error)?;
+        if position != self.position || image != self.last_image {
+            return Err(error(
+                "cold recovery differs from the committed suspension boundary",
+            ));
+        }
+        self.ensure_authority()?;
+        Ok(image)
+    }
+
     fn checkpoint(&mut self) -> Result<(), CheckpointFailure> {
         self.ensure_authority().map_err(CheckpointFailure::Fatal)?;
         self.last_attempt_tick = self.last_image.current_tick;
@@ -685,6 +746,38 @@ fn run(
                             );
                             let _ = reply.send(result.map_err(error));
                             failed
+                        }
+                        Request::CanSuspend { reply } => {
+                            let _ = reply
+                                .send(state.ensure_authority().map(|()| state.bindings.is_empty()));
+                            false
+                        }
+                        Request::ColdRestore { reply } => {
+                            let _ = reply.send(state.cold_restore());
+                            false
+                        }
+                        Request::Suspend { image, reply } => {
+                            if !state.bindings.is_empty() || !image.sessions.sessions.is_empty() {
+                                let _ = reply.send(Err(error(
+                                    "character claims or sessions still prevent suspension",
+                                )));
+                                false
+                            } else if image != state.last_image {
+                                let _ = reply.send(Err(error(
+                                    "suspension boundary differs from committed storage",
+                                )));
+                                true
+                            } else {
+                                let result = state.checkpoint();
+                                let failed = matches!(&result, Err(CheckpointFailure::Fatal(_)));
+                                let _ = reply.send(result.map_err(|cause| match cause {
+                                    CheckpointFailure::Unavailable => error(
+                                        "checkpoint object store unavailable; frozen zone retained",
+                                    ),
+                                    CheckpointFailure::Fatal(cause) => cause,
+                                }));
+                                failed
+                            }
                         }
                         Request::Checkpoint { reply } => {
                             let result = state.checkpoint();
