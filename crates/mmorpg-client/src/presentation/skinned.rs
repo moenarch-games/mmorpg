@@ -803,3 +803,46 @@ pub(super) fn asset(kind: Kind) -> &'static Asset {
             .expect("an imported unit model is valid glTF"),
     })
 }
+
+#[cfg(test)]
+mod allocation_observation {
+    use super::*;
+
+    #[test]
+    #[ignore = "manual allocation observation for issue #338"]
+    fn unchanged_imported_pose_rebuilds_mesh_identity() {
+        let model = &asset(Kind::Ranger).model;
+        for count in [1, 10, 50] {
+            let frame = || {
+                (0..count)
+                    .flat_map(|unit| {
+                        model.draws(
+                            &format!("observed-{unit}"),
+                            Frame {
+                                p: [0.0; 3],
+                                q: [0.0, 0.0, 0.0, 1.0],
+                            },
+                            1.8,
+                            Kind::Ranger.clips().idle,
+                            0.25,
+                            None,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let first = frame();
+            let second = frame();
+            assert_eq!(first.len(), second.len());
+            let replaced = first
+                .iter()
+                .zip(&second)
+                .filter(|(a, b)| a.resource_key == b.resource_key && !Arc::ptr_eq(&a.mesh, &b.mesh))
+                .count();
+            println!(
+                "unchanged_pose units={count} mesh_creations={} replaced_identities={replaced}",
+                second.len()
+            );
+            assert_eq!(replaced, second.len());
+        }
+    }
+}
