@@ -55,18 +55,16 @@ fn main() {
         .find(|file| file.ends_with(".humanoid-sockets.json"))
         .expect("character sockets")
         .to_owned();
-    let clips = character["clips"]
-        .as_str()
-        .expect("shared clips")
-        .to_owned();
-    let mut files = vec![
-        sockets.clone(),
-        format!("native/{}", clips.replace(".glb", ".native.glb")),
-    ];
-    let mut code = format!(
-        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {:?};\n",
-        format!("native/{}", clips.replace(".glb", ".native.glb"))
+    let clips = format!(
+        "native/{}",
+        character["clips"]
+            .as_str()
+            .expect("shared clips")
+            .replace(".glb", ".native.glb")
     );
+    let mut files = vec![sockets.clone(), clips.clone()];
+    let mut code =
+        format!("pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\n");
     for (name, key) in [
         ("CHARACTER", CHARACTER),
         ("SWORD", SWORD),

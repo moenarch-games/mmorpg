@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLS="${XDG_CACHE_HOME:-${HOME}/.cache}/mmorpg/ranger-tools"
-PROCESSOR_REV=bb18fe5e77eb377bf1940d94d3b2a1af1e16991d
+PROCESSOR_REV=c13e053800d0a296d9594f84d84e60a9c0f944ee
 PROCESSOR="${ASSET_TOOLING_ROOT:-${TOOLS}/asset-tooling-${PROCESSOR_REV}}"
 KTX="${ASSET_TOOLING_KTX:-ktx}"
 command -v bun >/dev/null || { echo 'Native asset preparation requires Bun.' >&2; exit 1; }
