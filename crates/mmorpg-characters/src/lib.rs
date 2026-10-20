@@ -102,6 +102,8 @@ pub enum StoreError {
     StaleLease,
     /// The record names another character than the lease.
     WrongCharacter,
+    /// An atomic composition was prepared from another committed revision.
+    RevisionConflict { expected: u64, actual: u64 },
     /// Persisted bytes are unreadable, of another version or inconsistent.
     Corrupt(String),
     /// The backend failed; nothing is known to have changed.
@@ -125,6 +127,10 @@ impl fmt::Display for StoreError {
             ),
             Self::StaleLease => formatter.write_str("the character lease is no longer current"),
             Self::WrongCharacter => formatter.write_str("the record belongs to another character"),
+            Self::RevisionConflict { expected, actual } => write!(
+                formatter,
+                "character revision changed: expected {expected}, found {actual}"
+            ),
             Self::Corrupt(message) => write!(formatter, "stored character is corrupt: {message}"),
             Self::Backend(message) => write!(formatter, "character storage failed: {message}"),
         }
@@ -206,7 +212,18 @@ impl<B: EntryBackend> CharacterStore<B> {
         lease: &CharacterLease,
         record: &CharacterRecord,
     ) -> Result<u64, StoreError> {
-        self.write(lease, Some(record), false)
+        self.write(lease, Some(record), false, None)
+    }
+
+    /// Commits only if the leased record is still at `expected_revision`.
+    /// Used when the character mutation and its journal/grant IDs share a transaction.
+    pub fn commit_at_revision(
+        &mut self,
+        lease: &CharacterLease,
+        expected_revision: u64,
+        record: &CharacterRecord,
+    ) -> Result<u64, StoreError> {
+        self.write(lease, Some(record), false, Some(expected_revision))
     }
 
     /// Commits `record`, if given, and returns the character to the store.
@@ -215,7 +232,7 @@ impl<B: EntryBackend> CharacterStore<B> {
         lease: &CharacterLease,
         record: Option<&CharacterRecord>,
     ) -> Result<u64, StoreError> {
-        self.write(lease, record, true)
+        self.write(lease, record, true, None)
     }
 
     /// The last committed record, without contacting the holding zone.
@@ -236,14 +253,23 @@ impl<B: EntryBackend> CharacterStore<B> {
         lease: &CharacterLease,
         record: Option<&CharacterRecord>,
         release: bool,
+        expected_revision: Option<u64>,
     ) -> Result<u64, StoreError> {
-        if record.is_some_and(|record| record.character_id != lease.character_id) {
-            return Err(StoreError::WrongCharacter);
-        }
         let mut revision = 0;
         self.transition(&lease.character_id, &mut |entry| {
+            if record.is_some_and(|record| record.character_id != lease.character_id) {
+                return Err(StoreError::WrongCharacter);
+            }
             if entry.lease != Some(lease.holder) || entry.generation != lease.generation {
                 return Err(StoreError::StaleLease);
+            }
+            if let Some(expected) = expected_revision
+                && entry.revision != expected
+            {
+                return Err(StoreError::RevisionConflict {
+                    expected,
+                    actual: entry.revision,
+                });
             }
             if let Some(record) = record {
                 entry.revision = entry

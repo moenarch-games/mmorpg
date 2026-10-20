@@ -132,3 +132,123 @@ fn corrupt_rows_fail_closed() {
         Err(StoreError::Corrupt(_))
     ));
 }
+
+#[test]
+fn character_and_journal_updates_commit_or_roll_back_together() {
+    let Some(url) = url() else { return };
+    let mut entries = PostgresEntries::connect(&url, TIMEOUT).unwrap();
+    entries
+        .transaction(|store| {
+            store.backend().with_sql(|transaction| {
+                transaction
+                    .batch_execute(
+                        "CREATE TEMP TABLE character_test_journal (id integer PRIMARY KEY)",
+                    )
+                    .map_err(|error| StoreError::Backend(error.to_string()))
+            })
+        })
+        .unwrap();
+    let character = fresh("pg-journal");
+    let acquired = entries
+        .transaction(|store| store.acquire(&character, holder(1, 1)))
+        .unwrap();
+    let saved = record(&character);
+    let insert_journal =
+        |store: &CharacterStore<mmorpg_characters::postgres::PostgresTransactionEntries<'_>>,
+         id: i32| {
+            store.backend().with_sql(|transaction| {
+                transaction
+                    .execute(
+                        "INSERT INTO character_test_journal (id) VALUES ($1)",
+                        &[&id],
+                    )
+                    .map_err(|error| StoreError::Backend(error.to_string()))?;
+                Ok(())
+            })
+        };
+    let aborted: Result<(), StoreError> = entries.transaction(|store| {
+        insert_journal(store, 1)?;
+        store.commit_at_revision(&acquired.lease, 0, &saved)?;
+        Err(StoreError::Backend("abort after both writes".into()))
+    });
+    assert!(aborted.is_err());
+    let observer = CharacterStore::new(PostgresEntries::connect(&url, TIMEOUT).unwrap());
+    assert_eq!(observer.committed(&character).unwrap(), None);
+    entries
+        .transaction(|store| {
+            store.backend().with_sql(|transaction| {
+                let count: i64 = transaction
+                    .query_one("SELECT count(*) FROM character_test_journal", &[])
+                    .map_err(|error| StoreError::Backend(error.to_string()))?
+                    .get(0);
+                assert_eq!(count, 0);
+                Ok(())
+            })?;
+            insert_journal(store, 1)?;
+            store.commit_at_revision(&acquired.lease, 0, &saved)
+        })
+        .unwrap();
+    assert_eq!(observer.committed(&character).unwrap().unwrap().revision, 1);
+
+    // A caller cannot accidentally commit the journal after ignoring a failed
+    // character compare-and-set in the same transaction.
+    let error = entries
+        .transaction(|store| {
+            insert_journal(store, 2)?;
+            let stale = store.commit_at_revision(&acquired.lease, 0, &saved);
+            assert_eq!(
+                stale,
+                Err(StoreError::RevisionConflict {
+                    expected: 0,
+                    actual: 1
+                })
+            );
+            Ok(())
+        })
+        .unwrap_err();
+    assert_eq!(
+        error,
+        StoreError::RevisionConflict {
+            expected: 0,
+            actual: 1
+        }
+    );
+    entries
+        .transaction(|store| {
+            store.backend().with_sql(|transaction| {
+                let ids: Vec<i32> = transaction
+                    .query("SELECT id FROM character_test_journal ORDER BY id", &[])
+                    .map_err(|error| StoreError::Backend(error.to_string()))?
+                    .into_iter()
+                    .map(|row| row.get(0))
+                    .collect();
+                assert_eq!(ids, [1]);
+                Ok(())
+            })
+        })
+        .unwrap();
+    assert_eq!(observer.committed(&character).unwrap().unwrap().revision, 1);
+
+    // PostgreSQL's COMMIT command can otherwise silently roll back an aborted
+    // transaction when SQL errors have been swallowed inside an application callback.
+    let swallowed = entries.transaction(|store| {
+        insert_journal(store, 3)?;
+        store.backend().with_sql(|transaction| {
+            assert!(transaction.simple_query("SELECT 1 / 0").is_err());
+            Ok(())
+        })
+    });
+    assert!(swallowed.is_err());
+    entries
+        .transaction(|store| {
+            store.backend().with_sql(|transaction| {
+                let count: i64 = transaction
+                    .query_one("SELECT count(*) FROM character_test_journal", &[])
+                    .map_err(|error| StoreError::Backend(error.to_string()))?
+                    .get(0);
+                assert_eq!(count, 1);
+                Ok(())
+            })
+        })
+        .unwrap();
+}
