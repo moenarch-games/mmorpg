@@ -7,7 +7,7 @@ use mmorpg_protocol::{
 
 use crate::{ZoneGameServerAdapter, map_protocol_error, map_zone_error};
 
-pub struct StoredCharacter {
+pub(crate) struct StoredCharacter {
     pub player: game_server::PlayerId,
     pub parked: bool,
     pub record: CharacterRecord,
@@ -98,16 +98,15 @@ impl ZoneGameServerAdapter {
         bytes.extend_from_slice(&canonical);
         bytes.extend_from_slice(&(self.characters.len() as u32).to_be_bytes());
         for (player, id) in &self.characters {
-            let record = match self.parked_characters.get(player) {
-                Some(record) => record.clone(),
-                None => self
-                    .zone
-                    .capture_character(*player, id.clone())
-                    .map_err(map_zone_error)?,
+            // Active durable facts already exist in the canonical zone bytes.
+            // Only parked (removed) bodies need a separate full record.
+            let parked = self.parked_characters.get(player);
+            let record = match parked {
+                Some(record) => encode_character_record(record).map_err(map_protocol_error)?,
+                None => id.as_str().as_bytes().to_vec(),
             };
-            let record = encode_character_record(&record).map_err(map_protocol_error)?;
             bytes.extend_from_slice(&player.to_be_bytes());
-            bytes.push(u8::from(self.parked_characters.contains_key(player)));
+            bytes.push(u8::from(parked.is_some()));
             bytes.extend_from_slice(&(record.len() as u32).to_be_bytes());
             bytes.extend_from_slice(&record);
         }
@@ -115,7 +114,9 @@ impl ZoneGameServerAdapter {
     }
 
     /// Private tick-boundary records for off-tick persistence, never a player projection.
-    pub fn stored_characters(payload: &[u8]) -> Result<Vec<StoredCharacter>, SimulationError> {
+    pub(crate) fn stored_characters(
+        payload: &[u8],
+    ) -> Result<Vec<StoredCharacter>, SimulationError> {
         if !payload.starts_with(b"MMOC") {
             decode_canonical_snapshot(payload).map_err(map_protocol_error)?;
             return Ok(Vec::new());
@@ -136,7 +137,12 @@ impl ZoneGameServerAdapter {
             )?))
         }
         let size = number(&mut bytes)? as usize;
-        decode_canonical_snapshot(take(&mut bytes, size)?).map_err(map_protocol_error)?;
+        let snapshot =
+            decode_canonical_snapshot(take(&mut bytes, size)?).map_err(map_protocol_error)?;
+        // This development service hosts Greyhaven. Reconstruct once off tick,
+        // using core's capture contract rather than mapping durable facts twice.
+        let zone = ZoneSimulation::from_snapshot(snapshot, mmorpg_core::greyhaven_vale::content())
+            .map_err(map_zone_error)?;
         let count = number(&mut bytes)? as usize;
         if count > mmorpg_core::MAX_PLAYERS_PER_ZONE {
             return Err(SimulationError::new("too many stored characters"));
@@ -149,8 +155,15 @@ impl ZoneGameServerAdapter {
                 return Err(SimulationError::new("invalid parked character flag"));
             }
             let size = number(&mut bytes)? as usize;
-            let record =
-                decode_character_record(take(&mut bytes, size)?).map_err(map_protocol_error)?;
+            let value = take(&mut bytes, size)?;
+            let record = if parked == 1 {
+                decode_character_record(value).map_err(map_protocol_error)?
+            } else {
+                let id = std::str::from_utf8(value)
+                    .map_err(|_| SimulationError::new("invalid character checkpoint identity"))?;
+                let id = CharacterId::new(id.to_owned()).map_err(map_zone_error)?;
+                zone.capture_character(player, id).map_err(map_zone_error)?
+            };
             records.push(StoredCharacter {
                 player,
                 parked: parked == 1,
