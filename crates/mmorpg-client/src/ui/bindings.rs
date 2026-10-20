@@ -195,7 +195,7 @@ impl BindingPanel {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Controls");
+        ui.heading("Key bindings");
         let Some(_) = &self.character else {
             ui.label("Select a roster character to edit its controls.");
             return;

@@ -2089,6 +2089,7 @@ dependencies = [
  "serde",
  "serde_json",
  "settings-core",
+ "settings-presentation",
  "tempfile",
  "three-d-animation",
  "three-d-camera",
@@ -3781,6 +3782,16 @@ source = "git+https://github.com/moritzbrantner/settings.git?rev=38c468c5d1a3804
 dependencies = [
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "settings-presentation"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/settings.git?rev=38c468c5d1a380416df630d7980be5f0d16631c2#38c468c5d1a380416df630d7980be5f0d16631c2"
+dependencies = [
+ "serde",
+ "settings-core",
  "thiserror 2.0.21",
 ]
 

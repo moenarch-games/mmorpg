@@ -1,6 +1,6 @@
 import type { SettingState, SettingValue } from "@moritzbrantner/settings-browser";
 import type { Profile } from "@moritzbrantner/input-bindings";
-import { SETTINGS_TEXT, type Preferences, type UserImportPreview } from "./preferences";
+import { SETTINGS_TEXT, settingCategories, type Preferences, type UserImportPreview } from "./preferences";
 
 /**
  * The one Settings modal (#41 Q9/Q11), reachable from character selection and in the world.
@@ -12,6 +12,9 @@ export type SettingsPanelElements = {
   dialog: HTMLDialogElement;
   close: HTMLButtonElement;
   categories: HTMLElement;
+  categorySelect: HTMLSelectElement;
+  search: HTMLInputElement;
+  resetCategory: HTMLButtonElement;
   content: HTMLElement;
   status: HTMLElement;
   resetAll: HTMLButtonElement;
@@ -43,6 +46,8 @@ export class SettingsPanel {
   #category: string | null = null;
   #returnFocus: HTMLElement | null = null;
   #importPreview: UserImportPreview | null = null;
+  readonly #advanced = new Set<string>();
+  #searchTarget: string | null = null;
   #unmountEditor: (() => void) | null = null;
 
   constructor(elements: SettingsPanelElements, options: SettingsPanelOptions) {
@@ -50,6 +55,9 @@ export class SettingsPanel {
     this.#options = options;
     elements.close.addEventListener("click", () => this.close());
     elements.resetAll.addEventListener("click", () => this.#resetAll());
+    elements.resetCategory.addEventListener("click", () => this.#resetCategory());
+    elements.search.addEventListener("input", () => this.#render());
+    elements.categorySelect.addEventListener("change", () => { this.#category = elements.categorySelect.value; this.#searchTarget = null; this.#render(); });
     elements.exportUser.disabled = true;
     elements.importUser.disabled = true;
     elements.exportUser.addEventListener("click", () => this.#exportUser());
@@ -105,11 +113,7 @@ export class SettingsPanel {
     if (!preferences) {
       return [];
     }
-    const ordered = [...preferences.presentation()].sort((left, right) => (left.metadata.order ?? 0) - (right.metadata.order ?? 0));
-    const categories = [...new Set(ordered.map((entry) => entry.metadata.category_key))];
-    // Fixed order: Camera, Controls, Accessibility, then anything else.
-    const preferred = ["settings.category.camera", CONTROLS_CATEGORY, "settings.category.accessibility"];
-    return [...preferred.filter((key) => categories.includes(key)), ...categories.filter((key) => !preferred.includes(key))];
+    return settingCategories(preferences.presentation());
   }
 
   #render(): void {
@@ -121,6 +125,8 @@ export class SettingsPanel {
     }
     status.textContent = preferences.problem ?? "";
     categories.hidden = this.#importPreview !== null;
+    this.#elements.categorySelect.hidden = this.#importPreview !== null;
+    this.#elements.search.disabled = this.#importPreview !== null;
     if (this.#importPreview) { this.#renderImport(preferences, this.#importPreview); return; }
     const keys = this.#categories();
     this.#category ??= keys[0] ?? null;
@@ -131,28 +137,66 @@ export class SettingsPanel {
       button.setAttribute("aria-current", String(key === this.#category));
       button.addEventListener("click", () => {
         this.#category = key;
+        this.#searchTarget = null;
         this.#render();
-        button.focus();
+        this.#elements.categories.querySelector<HTMLButtonElement>('[aria-current="true"]')?.focus();
       });
       return button;
     }));
+    this.#elements.categorySelect.replaceChildren(...keys.map((key) => {
+      const option = document.createElement("option"); option.value = key; option.textContent = text(key); return option;
+    }));
+    this.#elements.categorySelect.value = this.#category ?? "";
     const currentStates = preferences.states();
     this.#elements.resetAll.hidden = !currentStates.some((state) => state.overridden);
     const states = new Map(currentStates.map((state) => [state.id, state]));
-    const rows = preferences.presentation()
-      .filter((entry) => entry.metadata.category_key === this.#category)
-      .sort((left, right) => (left.metadata.order ?? 0) - (right.metadata.order ?? 0))
-      .flatMap((entry) => {
-        const state = states.get(entry.id);
-        return state && state.availability.status !== "hidden" ? [this.#row(preferences, entry.id, entry.metadata.label_key, entry.metadata.description_key, state)] : [];
-      });
     this.#unmountEditor?.();
     this.#unmountEditor = null;
-    content.replaceChildren(...rows);
-    if (this.#category === CONTROLS_CATEGORY) {
-      content.append(this.#bindingsSection());
+    const query = this.#elements.search.value.trim().toLowerCase();
+    this.#elements.resetCategory.hidden = Boolean(query);
+    const categoryIds = preferences.presentation().filter((entry) => entry.metadata.category_key === this.#category).map((entry) => entry.id);
+    this.#elements.resetCategory.disabled = !currentStates.some((state) => state.overridden && categoryIds.includes(state.id));
+    if (query) {
+      const results: HTMLElement[] = [];
+      for (const category of keys) {
+        const entries = preferences.presentation().filter((entry) => {
+          const metadata = entry.metadata;
+          const searchable = [entry.id, text(metadata.label_key), text(metadata.description_key ?? ""), ...(metadata.search_keys ?? []).map(text)].join(" ").toLowerCase();
+          return metadata.category_key === category && states.get(entry.id)?.availability.status !== "hidden" && searchable.includes(query);
+        });
+        if (entries.length === 0) continue;
+        const heading = document.createElement("h3"); heading.textContent = text(category); results.push(heading);
+        for (const entry of entries) {
+          const button = document.createElement("button"); button.type = "button"; button.textContent = text(entry.metadata.label_key);
+          button.addEventListener("click", () => {
+            this.#category = category; this.#searchTarget = entry.id; this.#elements.search.value = "";
+            if (entry.metadata.discoverability === "advanced") this.#advanced.add(category);
+            this.#render();
+            document.getElementById(`setting-${entry.id.replaceAll(".", "-")}`)?.focus();
+          }); results.push(button);
+        }
+      }
+      if (results.length === 0) { const empty = document.createElement("p"); empty.setAttribute("role", "status"); empty.textContent = "No matching settings."; results.push(empty); }
+      content.replaceChildren(...results);
+      return;
     }
+    const entries = preferences.presentation().filter((entry) => entry.metadata.category_key === this.#category);
+    const row = (entry: (typeof entries)[number]): HTMLElement[] => {
+      const state = states.get(entry.id);
+      return state && state.availability.status !== "hidden" ? [this.#row(preferences, entry.id, entry.metadata.label_key, entry.metadata.description_key, state)] : [];
+    };
+    content.replaceChildren(...entries.filter((entry) => !entry.metadata.discoverability || entry.metadata.discoverability === "primary" || entry.id === this.#searchTarget && entry.metadata.discoverability === "search_only").flatMap(row));
+    const advanced = entries.filter((entry) => entry.metadata.discoverability === "advanced");
+    if (advanced.length > 0) {
+      const disclosure = document.createElement("details"); const summary = document.createElement("summary"); summary.textContent = "Advanced";
+      const category = this.#category ?? "";
+      disclosure.open = this.#advanced.has(category);
+      disclosure.addEventListener("toggle", () => { if (disclosure.open) this.#advanced.add(category); else this.#advanced.delete(category); });
+      disclosure.append(summary, ...advanced.flatMap(row)); content.append(disclosure);
+    }
+    if (this.#category === CONTROLS_CATEGORY) content.append(this.#bindingsSection());
   }
+
 
   #row(preferences: Preferences, id: string, labelKey: string, descriptionKey: string | undefined, state: SettingState): HTMLElement {
     const row = document.createElement("div");
@@ -326,6 +370,7 @@ export class SettingsPanel {
     this.#unmountEditor?.();
     this.#unmountEditor = null;
     this.#elements.resetAll.hidden = true;
+    this.#elements.resetCategory.hidden = true;
     const section = document.createElement("section");
     const title = document.createElement("h3");
     title.textContent = "Preview User preferences replacement";
@@ -362,6 +407,17 @@ export class SettingsPanel {
     section.append(title, explanation, changes, diagnostics, confirm, cancel);
     this.#elements.content.replaceChildren(section);
     confirm.focus();
+  }
+
+  #resetCategory(): void {
+    const preferences = this.#preferences;
+    if (!preferences || !this.#category) return;
+    const entries = preferences.presentation().filter((entry) => entry.metadata.category_key === this.#category);
+    const changed = new Set(preferences.states().filter((state) => state.overridden).map((state) => state.id));
+    const targets = entries.filter((entry) => changed.has(entry.id));
+    if (targets.length === 0 || !window.confirm(`Reset ${text(this.#category)} preferences to defaults?\n\n${targets.map((entry) => text(entry.metadata.label_key)).join("\n")}\n\nKey bindings are not changed.`)) return;
+    preferences.resetMany(targets.map((entry) => entry.id));
+    this.#render();
   }
 
   #resetAll(): void {

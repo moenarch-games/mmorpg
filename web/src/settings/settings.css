@@ -32,7 +32,14 @@
 
 .settings-header { border-bottom: 1px solid var(--settings-border); }
 .settings-footer { border-top: 1px solid var(--settings-border); }
-.settings-footer:has(.settings-status:empty):has(#settings-reset-all[hidden]) { display: none; }
+/* Import/export stays reachable even while every preference uses defaults. */
+.settings-footer { flex-wrap: wrap; }
+.settings-footer .settings-status { flex: 1 1 100%; margin: 0; }
+.settings-dialog [hidden] { display: none !important; }
+.settings-header { flex-wrap: wrap; }
+.settings-search { flex: 1 1 12rem; min-width: 0; }
+.settings-search input { width: min(16rem, 100%); }
+.settings-category-select { display: none; }
 .settings-header h2 { margin: 0; color: var(--gold-bright); font-size: 1.15rem; }
 
 .settings-header button,
@@ -252,14 +259,8 @@
 
 @media (max-width: 800px) {
   .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .settings-categories {
-    flex-direction: row;
-    overflow-x: auto;
-    padding: .6rem;
-    border-right: 0;
-    border-bottom: 1px solid var(--settings-border);
-  }
-  .settings-categories button { white-space: nowrap; }
+  .settings-categories { display: none; }
+  .settings-category-select { display: block; margin: .6rem; min-width: 0; width: calc(100% - 1.2rem); }
   .settings-content { padding: .85rem; }
   .settings-row { grid-template-columns: minmax(0, 1fr); }
   .settings-bindings-host .ib-filter-grid.is-open { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -278,5 +279,7 @@
 :root[data-motion="reduce"] .combat-text-entry { animation: none; }
 
 .settings-profile-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-.settings-profile-tools input { max-width: 16rem; }
+.settings-profile-tools { min-width: 0; max-width: 100%; }
+.settings-profile-tools label { min-width: 0; max-width: 100%; }
+.settings-profile-tools input { width: 14rem; max-width: 100%; }
 .settings-import-diagnostics { white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -120,5 +120,39 @@
         }
       }
     }
-  ]
+  ],
+  "categories": [
+    {
+      "key": "settings.category.camera",
+      "order": 10
+    },
+    {
+      "key": "settings.category.controls",
+      "order": 20
+    },
+    {
+      "key": "settings.category.accessibility",
+      "order": 30
+    }
+  ],
+  "text": {
+    "settings.category.camera": "Camera",
+    "settings.category.controls": "Controls",
+    "settings.category.accessibility": "Accessibility",
+    "settings.camera.field_of_view.label": "Field of view (\u00b0)",
+    "settings.camera.field_of_view.description": "Vertical field of view of the world camera.",
+    "settings.controls.invert_vertical_look.label": "Invert vertical look",
+    "settings.controls.invert_vertical_look.description": "Reverse vertical camera movement while looking around.",
+    "settings.controls.look_sensitivity.label": "Look sensitivity",
+    "settings.controls.look_sensitivity.description": "How far a mouse drag turns the camera (1 is the default).",
+    "settings.accessibility.reduce_motion.label": "Reduce motion",
+    "settings.accessibility.reduce_motion.description": "Reduces camera and environmental animation.",
+    "settings.choice.system": "Follow system",
+    "settings.choice.reduce": "Reduce",
+    "settings.choice.full": "Full motion",
+    "settings.search.fov": "field of view fov camera",
+    "settings.search.mouse": "mouse pointer look sensitivity",
+    "settings.search.animation": "motion animation accessibility",
+    "settings.search.invert": "invert reverse vertical look"
+  }
 }

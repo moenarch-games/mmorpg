@@ -33,22 +33,14 @@ export const SETTINGS_DEFINITIONS = browserEntries.map((entry) => entry.definiti
 export const SETTINGS_PRESENTATION = browserEntries.map((entry) => entry.presentation) as readonly PresentationEntry[];
 
 /** English strings for the catalog's localization keys. */
-export const SETTINGS_TEXT: Readonly<Record<string, string>> = {
-  "settings.category.camera": "Camera",
-  "settings.category.controls": "Controls",
-  "settings.category.accessibility": "Accessibility",
-  "settings.camera.field_of_view.label": "Field of view (°)",
-  "settings.camera.field_of_view.description": "Vertical field of view of the world camera.",
-  "settings.controls.invert_vertical_look.label": "Invert vertical look",
-  "settings.controls.invert_vertical_look.description": "Reverse vertical camera movement while looking around.",
-  "settings.controls.look_sensitivity.label": "Look sensitivity",
-  "settings.controls.look_sensitivity.description": "How far a mouse drag turns the camera (1 is the default).",
-  "settings.accessibility.reduce_motion.label": "Reduce motion",
-  "settings.accessibility.reduce_motion.description": "Reduces camera and environmental animation.",
-  "settings.choice.system": "Follow system",
-  "settings.choice.reduce": "Reduce",
-  "settings.choice.full": "Full motion",
-};
+export const SETTINGS_TEXT: Readonly<Record<string, string>> = catalog.text;
+
+/** Consumer category order and platform filtering share the canonical manifest. */
+export function settingCategories(presentation: readonly PresentationEntry[]): string[] {
+  const applicable = new Set(presentation.map((entry) => entry.metadata.category_key));
+  return [...catalog.categories].sort((left, right) => left.order - right.order || (left.key < right.key ? -1 : left.key > right.key ? 1 : 0))
+    .filter((category) => applicable.has(category.key)).map((category) => category.key);
+}
 
 /** The effective values the client applies. */
 export type ClientPreferences = {
@@ -164,6 +156,11 @@ export class Preferences {
 
   reset(id: string): void {
     this.#session.reset(id);
+    this.#committed();
+  }
+
+  resetMany(ids: readonly string[]): void {
+    this.#session.resetMany(ids);
     this.#committed();
   }
 

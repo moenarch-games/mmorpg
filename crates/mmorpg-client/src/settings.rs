@@ -28,11 +28,19 @@ enum Target {
 struct Entry {
     target: Target,
     definition: SettingDefinition,
+    presentation: settings_presentation::PresentationEntry,
+}
+#[derive(Deserialize)]
+struct Category {
+    key: String,
+    order: i32,
 }
 #[derive(Deserialize)]
 struct Catalog {
     schema_version: u32,
     entries: Vec<Entry>,
+    categories: Vec<Category>,
+    text: BTreeMap<String, String>,
 }
 #[derive(Clone)]
 struct Scope {
@@ -63,6 +71,9 @@ pub struct UserImport {
 /// typed edits and imported snapshots, and preserves inactive portable entries.
 pub struct Preferences {
     registry: SettingsRegistry,
+    presentation: settings_presentation::PresentationRegistry,
+    categories: Vec<String>,
+    text: BTreeMap<String, String>,
     scopes: BTreeMap<SettingScope, Scope>,
 }
 impl Preferences {
@@ -73,14 +84,49 @@ impl Preferences {
         }
         let mut registry = SettingsRegistry::new();
         let mut ids = BTreeSet::new();
+        let mut presentation_entries = Vec::new();
         for entry in catalog.entries {
             if !ids.insert(entry.definition.id.clone()) {
                 return Err(format!("Duplicate setting {}", entry.definition.id));
             }
             if matches!(entry.target, Target::Shared | Target::Native) {
                 registry.register(entry.definition).map_err(message)?;
+                presentation_entries.push(entry.presentation);
             }
         }
+        let presentation = settings_presentation::PresentationRegistry::from_entries(
+            &registry,
+            presentation_entries,
+        )
+        .map_err(message)?;
+        let mut categories = catalog.categories;
+        let keys = categories
+            .iter()
+            .map(|category| category.key.as_str())
+            .collect::<BTreeSet<_>>();
+        if keys.len() != categories.len()
+            || presentation
+                .ordered_entries()
+                .iter()
+                .any(|entry| !keys.contains(entry.metadata.category_key.as_str()))
+        {
+            return Err("Invalid Settings category manifest".into());
+        }
+        categories.sort_by(|left, right| {
+            left.order
+                .cmp(&right.order)
+                .then_with(|| left.key.cmp(&right.key))
+        });
+        let categories = categories
+            .into_iter()
+            .filter(|category| {
+                presentation
+                    .ordered_entries()
+                    .iter()
+                    .any(|entry| entry.metadata.category_key.as_str() == category.key)
+            })
+            .map(|category| category.key)
+            .collect();
         let scopes = [SettingScope::User, SettingScope::Device]
             .into_iter()
             .map(|scope| {
@@ -93,7 +139,13 @@ impl Preferences {
                 ))
             })
             .collect::<Result<_, String>>()?;
-        Ok(Self { registry, scopes })
+        Ok(Self {
+            registry,
+            scopes,
+            presentation,
+            categories,
+            text: catalog.text,
+        })
     }
 
     /// Load each durable scope independently. Unreadable data keeps safe defaults
@@ -124,7 +176,7 @@ impl Preferences {
         Ok(())
     }
 
-    fn save_scope(&self, directory: &Path, scope: SettingScope) -> Result<(), String> {
+    pub fn save_scope(&self, directory: &Path, scope: SettingScope) -> Result<(), String> {
         let name = durable_scopes()
             .into_iter()
             .find(|(known, _)| *known == scope)
@@ -201,6 +253,36 @@ impl Preferences {
         atomic_write(&directory.join("settings.user.json"), json.as_bytes())?;
         self.scopes
             .insert(SettingScope::User, preview.candidate.clone());
+        Ok(())
+    }
+
+    pub fn presentation(&self) -> Vec<settings_presentation::PresentationEntry> {
+        self.presentation.ordered_entries()
+    }
+    pub fn categories(&self) -> &[String] {
+        &self.categories
+    }
+    pub fn text<'a>(&'a self, key: &'a str) -> &'a str {
+        self.text.get(key).map(String::as_str).unwrap_or(key)
+    }
+
+    pub fn overridden(&self, id: &str) -> Result<bool, String> {
+        let (id, scope) = self.known(id)?;
+        Ok(self.scopes[&scope].state.override_value(&id).is_some())
+    }
+    pub fn reset_many(&mut self, ids: &[String]) -> Result<(), String> {
+        let targets = ids
+            .iter()
+            .map(|id| self.known(id))
+            .collect::<Result<Vec<_>, _>>()?;
+        for (id, scope) in targets {
+            self.scopes
+                .get_mut(&scope)
+                .expect("known scope")
+                .state
+                .reset(&self.registry, &id)
+                .map_err(message)?;
+        }
         Ok(())
     }
 
@@ -311,6 +393,54 @@ fn message(error: impl std::fmt::Display) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn category_reset_uses_shared_metadata_and_preserves_other_categories_and_dormant_entries() {
+        let mut preferences = Preferences::new().unwrap();
+        preferences
+            .import(
+                SettingScope::User,
+                include_str!("../../../fixtures/settings/user-profile-v2.json"),
+            )
+            .unwrap();
+        assert_eq!(
+            preferences.categories(),
+            &[
+                "settings.category.camera",
+                "settings.category.controls",
+                "settings.category.accessibility"
+            ]
+        );
+        let controls = preferences
+            .presentation()
+            .into_iter()
+            .filter(|entry| entry.metadata.category_key.as_str() == "settings.category.controls")
+            .map(|entry| entry.id.to_string())
+            .collect::<Vec<_>>();
+        preferences.reset_many(&controls).unwrap();
+        assert_eq!(
+            preferences.value(LOOK_SENSITIVITY).unwrap(),
+            &SettingValue::Number(1.0)
+        );
+        assert_eq!(
+            preferences.value(INVERT_VERTICAL_LOOK).unwrap(),
+            &SettingValue::Bool(false)
+        );
+        assert_eq!(
+            preferences.value(FIELD_OF_VIEW).unwrap(),
+            &SettingValue::Integer(70)
+        );
+        assert_eq!(
+            preferences.value(REDUCE_MOTION).unwrap(),
+            &SettingValue::Choice("reduce".into())
+        );
+        assert!(
+            preferences
+                .export(SettingScope::User)
+                .unwrap()
+                .contains("other_platform.preference")
+        );
+    }
+
     #[test]
     fn native_scope_files_reload_and_corrupt_user_data_keeps_defaults() {
         let directory = tempfile::tempdir().unwrap();

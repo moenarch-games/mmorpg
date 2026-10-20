@@ -238,9 +238,11 @@
       <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
         <header class="settings-header">
           <h2 id="settings-title">Settings</h2>
+          <label class="settings-search">Search settings <input id="settings-search" type="search" autocomplete="off"></label>
           <button id="settings-close" type="button">Close</button>
         </header>
         <div class="settings-body">
+          <select id="settings-category-select" class="settings-category-select" aria-label="Settings category"></select>
           <nav id="settings-categories" class="settings-categories" aria-label="Settings categories"></nav>
           <section id="settings-content" class="settings-content"></section>
         </div>
@@ -250,6 +252,7 @@
             <button id="settings-export-user" type="button">Export User preferences</button>
             <label>Import User preferences <input id="settings-import-user" type="file" accept="application/json,.json"></label>
           </div>
+          <button id="settings-reset-category" type="button">Reset category</button>
           <button id="settings-reset-all" type="button">Reset all settings</button>
         </footer>
       </dialog>
