@@ -14,7 +14,7 @@ pub use units::{
     MAX_CREATURE_TEMPLATES, MAX_NPCS, MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc, NpcRole,
     PropKind,
 };
-pub use zone_content::ZoneContent;
+pub use zone_content::{CharacterPersistence, ZoneContent};
 
 use crate::entity::PLAYER_BODY_BASE;
 use crate::{MAX_PLAYERS_PER_ZONE, PLAYER_HALF_EXTENTS_UNITS, ZoneError};

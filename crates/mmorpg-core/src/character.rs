@@ -107,6 +107,7 @@ impl ZoneSimulation {
         player_id: PlayerId,
         character_id: CharacterId,
     ) -> Result<CharacterRecord, ZoneError> {
+        self.require_durable_characters()?;
         let player = self
             .players
             .get(&player_id)
@@ -146,6 +147,7 @@ impl ZoneSimulation {
         player_id: PlayerId,
         class: ClassChoice,
     ) -> Result<(), ZoneError> {
+        self.require_durable_characters()?;
         self.add_player(player_id)?;
         if self
             .choose_class(player_id, class.class.code(), class.sex.code())
@@ -166,6 +168,7 @@ impl ZoneSimulation {
         player_id: PlayerId,
         record: &CharacterRecord,
     ) -> Result<(), ZoneError> {
+        self.require_durable_characters()?;
         if self.players.contains_key(&player_id) {
             return Err(ZoneError::new("player already exists in zone"));
         }
@@ -212,6 +215,15 @@ impl ZoneSimulation {
         state.global_cooldown = record.global_cooldown;
         state.cooldowns = record.cooldowns.clone();
         self.players.insert(player_id, state);
+        Ok(())
+    }
+
+    fn require_durable_characters(&self) -> Result<(), ZoneError> {
+        if self.content.character_persistence() == crate::CharacterPersistence::Ephemeral {
+            return Err(ZoneError::new(
+                "ephemeral zones cannot import or capture durable character records",
+            ));
+        }
         Ok(())
     }
 

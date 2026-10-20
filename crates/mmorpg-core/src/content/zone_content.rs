@@ -19,6 +19,15 @@ use crate::{
     PLAYER_HALF_EXTENTS_UNITS, VendorStock, ZoneAreas, ZoneError,
 };
 
+/// Whether this zone may import/export durable character records.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CharacterPersistence {
+    #[default]
+    Durable,
+    /// Session-local builds only; durable records must never receive match outcomes.
+    Ephemeral,
+}
+
 /// Immutable, validated zone content, shared between zones through `Arc`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZoneContent {
@@ -29,6 +38,7 @@ pub struct ZoneContent {
     npcs: Vec<Npc>,
     graveyard: [i32; 2],
     fingerprint: u64,
+    character_persistence: CharacterPersistence,
     rng_seed: u64,
     loot_revision: u64,
     loot_tables: Vec<(CreatureTemplateId, LootTable)>,
@@ -134,6 +144,7 @@ impl ZoneContent {
             npcs,
             graveyard,
             fingerprint: 0,
+            character_persistence: CharacterPersistence::Durable,
             rng_seed: 0,
             loot_revision: 0,
             loot_tables: Vec::new(),
@@ -169,6 +180,7 @@ impl ZoneContent {
             npcs: Vec::new(),
             graveyard: [feet[0], feet[2]],
             fingerprint: 0,
+            character_persistence: CharacterPersistence::Durable,
             rng_seed: 0,
             loot_revision: 0,
             loot_tables: Vec::new(),
@@ -189,6 +201,18 @@ impl ZoneContent {
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
         content
+    }
+
+    #[must_use]
+    pub fn with_character_persistence(mut self, policy: CharacterPersistence) -> Self {
+        self.character_persistence = policy;
+        self.fingerprint = self.compute_fingerprint();
+        self
+    }
+
+    #[must_use]
+    pub const fn character_persistence(&self) -> CharacterPersistence {
+        self.character_persistence
     }
 
     #[must_use]
@@ -707,6 +731,17 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_structure_fingerprint();
+        if self.character_persistence == CharacterPersistence::Durable {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/ephemeral-characters-v1");
+        hash.u64(fingerprint);
+        hash.finish()
+    }
+
+    fn compute_structure_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_ramp_fingerprint();
         if self.pieces.is_empty() {
             return fingerprint;
