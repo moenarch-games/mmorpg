@@ -34,9 +34,29 @@ struct Catalog {
     schema_version: u32,
     entries: Vec<Entry>,
 }
+#[derive(Clone)]
 struct Scope {
     state: SettingsState,
     preserved: PreservedEntries,
+}
+
+/// A display-only change computed from foundation-owned values and overrides.
+#[derive(Clone, Debug)]
+pub struct UserPreferenceChange {
+    pub id: String,
+    pub before: SettingValue,
+    pub after: SettingValue,
+    pub operation: &'static str,
+    pub apply_mode: settings_core::ApplyMode,
+}
+
+/// An isolated, validated replacement. Confirmation rechecks its baseline and
+/// persists only User before installing it; a failed save leaves it retryable.
+pub struct UserImport {
+    pub changes: Vec<UserPreferenceChange>,
+    pub diagnostics: Vec<String>,
+    baseline: String,
+    candidate: Scope,
 }
 
 /// One native preference session. The shared foundation validates definitions,
@@ -98,18 +118,89 @@ impl Preferences {
     /// Persist delta-only User and Device snapshots to separate atomic targets.
     /// A failed replacement leaves the previous complete snapshot recoverable.
     pub fn save(&self, directory: &Path) -> Result<(), String> {
-        std::fs::create_dir_all(directory).map_err(message)?;
-        for (scope, name) in durable_scopes() {
-            let json = self.export(scope)?;
-            let mut temporary = tempfile::NamedTempFile::new_in(directory).map_err(message)?;
-            temporary.write_all(json.as_bytes()).map_err(message)?;
-            temporary.as_file().sync_all().map_err(message)?;
-            temporary.persist(directory.join(name)).map_err(message)?;
+        for (scope, _) in durable_scopes() {
+            self.save_scope(directory, scope)?;
         }
-        #[cfg(unix)]
-        std::fs::File::open(directory)
-            .and_then(|dir| dir.sync_all())
-            .map_err(message)?;
+        Ok(())
+    }
+
+    fn save_scope(&self, directory: &Path, scope: SettingScope) -> Result<(), String> {
+        let name = durable_scopes()
+            .into_iter()
+            .find(|(known, _)| *known == scope)
+            .map(|(_, name)| name)
+            .ok_or("Unsupported durable scope")?;
+        atomic_write(&directory.join(name), self.export(scope)?.as_bytes())
+    }
+
+    pub fn export_user_file(&self, path: &Path) -> Result<(), String> {
+        atomic_write(path, self.export(SettingScope::User)?.as_bytes())
+    }
+
+    pub fn preview_user_import(&self, json: &str) -> Result<UserImport, String> {
+        let report =
+            import_scope_json(&self.registry, SettingScope::User, json).map_err(message)?;
+        let baseline = self.export(SettingScope::User)?;
+        let before = &self.scopes[&SettingScope::User].state;
+        let after = &report.state;
+        let changes = self
+            .registry
+            .iter()
+            .filter(|(_, definition)| definition.scope == SettingScope::User)
+            .filter_map(|(id, definition)| {
+                let before_override = before.override_value(id);
+                let after_override = after.override_value(id);
+                if before_override == after_override {
+                    return None;
+                }
+                Some(UserPreferenceChange {
+                    id: id.to_string(),
+                    before: before.effective_value(&self.registry, id)?.clone(),
+                    after: after.effective_value(&self.registry, id)?.clone(),
+                    operation: if after_override.is_none() {
+                        "Reset to default"
+                    } else if before_override.is_none() {
+                        "Add override"
+                    } else {
+                        "Change override"
+                    },
+                    apply_mode: definition.apply_mode,
+                })
+            })
+            .collect();
+        Ok(UserImport {
+            changes,
+            diagnostics: report
+                .diagnostics
+                .iter()
+                .map(|item| format!("{item:?}"))
+                .collect(),
+            baseline,
+            candidate: Scope {
+                state: report.state,
+                preserved: report.preserved_entries,
+            },
+        })
+    }
+
+    pub fn confirm_user_import(
+        &mut self,
+        preview: &UserImport,
+        directory: &Path,
+    ) -> Result<(), String> {
+        if self.export(SettingScope::User)? != preview.baseline {
+            return Err("User preferences changed; preview the import again.".into());
+        }
+        let json = export_scope_json(
+            &self.registry,
+            &preview.candidate.state,
+            SettingScope::User,
+            &preview.candidate.preserved,
+        )
+        .map_err(message)?;
+        atomic_write(&directory.join("settings.user.json"), json.as_bytes())?;
+        self.scopes
+            .insert(SettingScope::User, preview.candidate.clone());
         Ok(())
     }
 
@@ -190,6 +281,23 @@ impl Preferences {
         Ok((id, definition.scope))
     }
 }
+fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent).map_err(message)?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(message)?;
+    temporary.write_all(contents).map_err(message)?;
+    temporary.as_file().sync_all().map_err(message)?;
+    temporary.persist(path).map_err(message)?;
+    #[cfg(unix)]
+    std::fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(message)?;
+    Ok(())
+}
+
 fn durable_scopes() -> [(SettingScope, &'static str); 2] {
     [
         (SettingScope::User, "settings.user.json"),
@@ -267,6 +375,149 @@ mod tests {
         assert!(
             restored
                 .set(FIELD_OF_VIEW, SettingValue::Integer(200))
+                .is_err()
+        );
+    }
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+    #[test]
+    fn the_shared_portable_profile_preserves_dormant_entries_through_resets() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut preferences = Preferences::new().unwrap();
+        preferences.import(SettingScope::User, r#"{"schema_version":2,"scope":"user","overrides":{"old.platform.preference":{"type":"text","value":"drop"}}}"#).unwrap();
+        let json = include_str!("../../../fixtures/settings/user-profile-v2.json");
+        let preview = preferences.preview_user_import(json).unwrap();
+        assert!(
+            !preview.diagnostics.is_empty(),
+            "unknown platform entry remains visible in preview diagnostics"
+        );
+        preferences
+            .confirm_user_import(&preview, directory.path())
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                &preferences.export(SettingScope::User).unwrap()
+            )
+            .unwrap(),
+            serde_json::from_str::<serde_json::Value>(json).unwrap()
+        );
+        for id in [
+            FIELD_OF_VIEW,
+            LOOK_SENSITIVITY,
+            INVERT_VERTICAL_LOOK,
+            REDUCE_MOTION,
+        ] {
+            preferences.reset(id).unwrap();
+        }
+        let exported = preferences.export(SettingScope::User).unwrap();
+        assert!(exported.contains("other_platform.preference"));
+        assert!(!exported.contains("old.platform.preference"));
+        assert!(!exported.contains(FIELD_OF_VIEW));
+    }
+
+    #[test]
+    fn user_import_is_isolated_replaces_user_deltas_and_leaves_device_bytes_alone() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut destination = Preferences::new().unwrap();
+        destination
+            .set(FIELD_OF_VIEW, SettingValue::Integer(65))
+            .unwrap();
+        destination.save(directory.path()).unwrap();
+        let device_before = std::fs::read(directory.path().join("settings.device.json")).unwrap();
+        let mut source = Preferences::new().unwrap();
+        source
+            .set(LOOK_SENSITIVITY, SettingValue::Number(2.0))
+            .unwrap();
+        let preview = destination
+            .preview_user_import(&source.export(SettingScope::User).unwrap())
+            .unwrap();
+        assert!(
+            preview
+                .changes
+                .iter()
+                .any(|change| change.id == FIELD_OF_VIEW && change.operation == "Reset to default")
+        );
+        assert_eq!(
+            destination.value(FIELD_OF_VIEW).unwrap(),
+            &SettingValue::Integer(65)
+        );
+        assert_eq!(
+            Preferences::load(directory.path())
+                .unwrap()
+                .0
+                .value(FIELD_OF_VIEW)
+                .unwrap(),
+            &SettingValue::Integer(65)
+        );
+        destination
+            .confirm_user_import(&preview, directory.path())
+            .unwrap();
+        assert_eq!(
+            destination.value(FIELD_OF_VIEW).unwrap(),
+            &SettingValue::Integer(50)
+        );
+        assert_eq!(
+            destination.value(LOOK_SENSITIVITY).unwrap(),
+            &SettingValue::Number(2.0)
+        );
+        assert_eq!(
+            std::fs::read(directory.path().join("settings.device.json")).unwrap(),
+            device_before
+        );
+        assert_eq!(
+            Preferences::load(directory.path())
+                .unwrap()
+                .0
+                .value(LOOK_SENSITIVITY)
+                .unwrap(),
+            &SettingValue::Number(2.0)
+        );
+    }
+
+    #[test]
+    fn failed_save_and_stale_preview_leave_live_user_preferences_unchanged() {
+        let mut destination = Preferences::new().unwrap();
+        let mut source = Preferences::new().unwrap();
+        source
+            .set(FIELD_OF_VIEW, SettingValue::Integer(70))
+            .unwrap();
+        let preview = destination
+            .preview_user_import(&source.export(SettingScope::User).unwrap())
+            .unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let blocker = directory.path().join("not-a-directory");
+        std::fs::write(&blocker, "block").unwrap();
+        assert!(destination.confirm_user_import(&preview, &blocker).is_err());
+        assert_eq!(
+            destination.value(FIELD_OF_VIEW).unwrap(),
+            &SettingValue::Integer(50)
+        );
+        destination
+            .confirm_user_import(&preview, directory.path())
+            .unwrap();
+        assert_eq!(
+            destination.value(FIELD_OF_VIEW).unwrap(),
+            &SettingValue::Integer(70)
+        );
+        destination
+            .set(FIELD_OF_VIEW, SettingValue::Integer(60))
+            .unwrap();
+        assert!(
+            destination
+                .confirm_user_import(&preview, directory.path())
+                .is_err()
+        );
+        assert_eq!(
+            destination.value(FIELD_OF_VIEW).unwrap(),
+            &SettingValue::Integer(60)
+        );
+        assert!(destination.preview_user_import("broken").is_err());
+        assert!(
+            destination
+                .preview_user_import(&source.export(SettingScope::Device).unwrap())
                 .is_err()
         );
     }

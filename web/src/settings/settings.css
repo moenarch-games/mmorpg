@@ -276,3 +276,7 @@
 /* An explicit Reduce motion setting; the system preference keeps its own media rules. */
 :root[data-motion="reduce"] .sky-clouds,
 :root[data-motion="reduce"] .combat-text-entry { animation: none; }
+
+.settings-profile-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.settings-profile-tools input { max-width: 16rem; }
+.settings-import-diagnostics { white-space: pre-wrap; overflow-wrap: anywhere; }

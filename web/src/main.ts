@@ -360,6 +360,8 @@ const settingsPanel = new SettingsPanel({
   content: requireElement<HTMLElement>("#settings-content"),
   status: requireElement<HTMLElement>("#settings-status"),
   resetAll: requireElement<HTMLButtonElement>("#settings-reset-all"),
+  exportUser: requireElement<HTMLButtonElement>("#settings-export-user"),
+  importUser: requireElement<HTMLInputElement>("#settings-import-user"),
 }, {
   preferences,
   bindings: () => {

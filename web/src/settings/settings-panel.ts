@@ -1,6 +1,6 @@
 import type { SettingState, SettingValue } from "@moritzbrantner/settings-browser";
 import type { Profile } from "@moritzbrantner/input-bindings";
-import { SETTINGS_TEXT, type Preferences } from "./preferences";
+import { SETTINGS_TEXT, type Preferences, type UserImportPreview } from "./preferences";
 
 /**
  * The one Settings modal (#41 Q9/Q11), reachable from character selection and in the world.
@@ -15,6 +15,8 @@ export type SettingsPanelElements = {
   content: HTMLElement;
   status: HTMLElement;
   resetAll: HTMLButtonElement;
+  exportUser: HTMLButtonElement;
+  importUser: HTMLInputElement;
 };
 
 export type CharacterBindings = {
@@ -40,6 +42,7 @@ export class SettingsPanel {
   #preferences: Preferences | null = null;
   #category: string | null = null;
   #returnFocus: HTMLElement | null = null;
+  #importPreview: UserImportPreview | null = null;
   #unmountEditor: (() => void) | null = null;
 
   constructor(elements: SettingsPanelElements, options: SettingsPanelOptions) {
@@ -47,10 +50,16 @@ export class SettingsPanel {
     this.#options = options;
     elements.close.addEventListener("click", () => this.close());
     elements.resetAll.addEventListener("click", () => this.#resetAll());
+    elements.exportUser.disabled = true;
+    elements.importUser.disabled = true;
+    elements.exportUser.addEventListener("click", () => this.#exportUser());
+    elements.importUser.addEventListener("change", () => { void this.#importUser(); });
     // Escape (cancel) and form-method closes all come through `close`.
     elements.dialog.addEventListener("close", () => this.#closed());
     options.preferences.then((preferences) => {
       this.#preferences = preferences;
+      elements.exportUser.disabled = false;
+      elements.importUser.disabled = false;
       if (this.open) {
         this.#render();
       }
@@ -82,6 +91,8 @@ export class SettingsPanel {
   }
 
   #closed(): void {
+    this.#preferences?.cancelUserImport();
+    this.#importPreview = null;
     this.#unmountEditor?.();
     this.#unmountEditor = null;
     this.#options.onOpenChange(false);
@@ -109,6 +120,8 @@ export class SettingsPanel {
       return;
     }
     status.textContent = preferences.problem ?? "";
+    categories.hidden = this.#importPreview !== null;
+    if (this.#importPreview) { this.#renderImport(preferences, this.#importPreview); return; }
     const keys = this.#categories();
     this.#category ??= keys[0] ?? null;
     categories.replaceChildren(...keys.map((key) => {
@@ -267,6 +280,88 @@ export class SettingsPanel {
       host.textContent = `The binding editor could not load: ${error instanceof Error ? error.message : String(error)}`;
     });
     return section;
+  }
+
+  #exportUser(): void {
+    if (!this.#preferences) return;
+    const file = new Blob([this.#preferences.exportUserProfile()], { type: "application/json" });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "mmorpg-user-preferences.json";
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  async #importUser(): Promise<void> {
+    const preferences = this.#preferences;
+    const file = this.#elements.importUser.files?.[0];
+    if (!preferences || !file) return;
+    this.#importPreview = null;
+    preferences.cancelUserImport();
+    this.#unmountEditor?.();
+    this.#unmountEditor = null;
+    this.#elements.content.textContent = "Checking User preferences…";
+    this.#elements.categories.hidden = true;
+    this.#elements.resetAll.hidden = true;
+    this.#elements.importUser.disabled = true;
+    this.#elements.status.textContent = "Checking User preferences…";
+    try {
+      const json = await file.text();
+      if (!this.open) return;
+      const preview = await preferences.previewUserImport(json);
+      if (!this.open) { preferences.cancelUserImport(); return; }
+      this.#importPreview = preview;
+      this.#render();
+    } catch (error) {
+      this.#render();
+      this.#elements.status.textContent = `Import failed: ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      this.#elements.importUser.value = "";
+      this.#elements.importUser.disabled = false;
+    }
+  }
+
+  #renderImport(preferences: Preferences, preview: UserImportPreview): void {
+    this.#unmountEditor?.();
+    this.#unmountEditor = null;
+    this.#elements.resetAll.hidden = true;
+    const section = document.createElement("section");
+    const title = document.createElement("h3");
+    title.textContent = "Preview User preferences replacement";
+    const explanation = document.createElement("p");
+    explanation.textContent = "Replace all User overrides, including entries retained for another platform. Missing entries reset to defaults. Device settings and character key bindings stay unchanged.";
+    const changes = document.createElement("ul");
+    changes.append(...preview.changes.map((change) => {
+      const item = document.createElement("li");
+      const entry = preferences.presentation().find((entry) => entry.id === change.id);
+      const label = entry ? text(entry.metadata.label_key) : change.id;
+      item.textContent = `${change.operation}: ${label} — ${change.before.value} → ${change.after.value} (${change.applyMode})`;
+      return item;
+    }));
+    const diagnostics = document.createElement("pre");
+    diagnostics.className = "settings-import-diagnostics";
+    diagnostics.textContent = preview.diagnostics.join("\n");
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.textContent = "Replace User preferences";
+    confirm.addEventListener("click", () => {
+      try {
+        preferences.confirmUserImport(preview);
+        this.#importPreview = null;
+        this.#render();
+        this.#elements.status.textContent = "User preferences replaced and saved.";
+      } catch (error) {
+        this.#elements.status.textContent = `Import was not completed: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    });
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Cancel import";
+    cancel.addEventListener("click", () => { preferences.cancelUserImport(); this.#importPreview = null; this.#render(); });
+    section.append(title, explanation, changes, diagnostics, confirm, cancel);
+    this.#elements.content.replaceChildren(section);
+    confirm.focus();
   }
 
   #resetAll(): void {

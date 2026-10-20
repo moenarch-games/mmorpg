@@ -72,13 +72,26 @@ function isMotionPreference(value: unknown): value is MotionPreference {
 
 export function clientPreferences(values: Readonly<Record<string, SettingValue>>): ClientPreferences {
   const motion = values[SETTING.reduceMotion];
+  const inverted = values[SETTING.invertVerticalLook];
   return {
     fieldOfViewDegrees: numberValue(values[SETTING.fieldOfView], 50),
     lookSensitivity: numberValue(values[SETTING.lookSensitivity], 1),
-    invertVerticalLook: values[SETTING.invertVerticalLook]?.type === "bool" && values[SETTING.invertVerticalLook].value === true,
+    invertVerticalLook: inverted?.type === "bool" && inverted.value === true,
     reduceMotion: motion?.type === "choice" && isMotionPreference(motion.value) ? motion.value : "system",
   };
 }
+
+export type UserPreferenceChange = {
+  readonly id: string;
+  readonly before: SettingValue;
+  readonly after: SettingValue;
+  readonly operation: "Add override" | "Change override" | "Reset to default";
+  readonly applyMode: SettingDefinition["apply_mode"];
+};
+export type UserImportPreview = {
+  readonly changes: readonly UserPreferenceChange[];
+  readonly diagnostics: readonly string[];
+};
 
 /**
  * The settings session plus its local `User` snapshot (#41 Q4: local storage, no account sync).
@@ -88,6 +101,9 @@ export class Preferences {
   readonly #session: BrowserSettingsSession;
   readonly #storage: PreferenceStorage | null;
   readonly #listeners = new Set<(preferences: ClientPreferences) => void>();
+  #pendingImport: { preview: UserImportPreview; candidate: BrowserSettingsSession; baseline: string } | null = null;
+  #importGeneration = 0;
+  #lastPublished: ClientPreferences | null = null;
   /** Why the stored snapshot was not loaded, or the last save failed. */
   problem: string | null = null;
 
@@ -156,10 +172,68 @@ export class Preferences {
     this.#committed();
   }
 
+  exportUserProfile(): string {
+    return this.#session.exportScope("user");
+  }
+
+  /** Parse/migrate in an isolated canonical session; live and stored values stay unchanged. */
+  async previewUserImport(json: string): Promise<UserImportPreview> {
+    this.cancelUserImport();
+    const generation = this.#importGeneration;
+    const baseline = this.exportUserProfile();
+    const { createSettingsSession } = await import("@moritzbrantner/settings-browser");
+    const candidate = await createSettingsSession(SETTINGS_DEFINITIONS, SETTINGS_PRESENTATION);
+    try {
+      const diagnostics = candidate.importScope("user", json);
+      if (generation !== this.#importGeneration || this.exportUserProfile() !== baseline) {
+        throw new Error("Preferences changed or import was cancelled; preview the file again.");
+      }
+      const before = new Map(this.states().map((state) => [state.id, state]));
+      const changes: UserPreferenceChange[] = candidate.settingStates().flatMap((after) => {
+        const definition = this.definition(after.id);
+        const previous = before.get(after.id);
+        if (definition?.scope !== "user" || !previous ||
+          (JSON.stringify(previous.value) === JSON.stringify(after.value) && previous.overridden === after.overridden)) return [];
+        return [{ id: after.id, before: previous.value, after: after.value,
+          operation: !after.overridden ? "Reset to default" : previous.overridden ? "Change override" : "Add override",
+          applyMode: definition.apply_mode }];
+      });
+      const preview: UserImportPreview = { changes, diagnostics };
+      this.#pendingImport = { preview, candidate, baseline };
+      return preview;
+    } catch (error) {
+      candidate.dispose();
+      throw error;
+    }
+  }
+
+  /** Persist once before replacing live User; Device, bindings and other scopes stay intact. */
+  confirmUserImport(preview: UserImportPreview): void {
+    const pending = this.#pendingImport;
+    if (!pending || pending.preview !== preview || pending.baseline !== this.exportUserProfile()) {
+      throw new Error("User preferences changed; preview the import again.");
+    }
+    if (!this.#storage) throw new Error("User preferences cannot be saved on this device.");
+    const snapshot = pending.candidate.exportScope("user");
+    this.#storage.setItem(USER_SNAPSHOT_KEY, snapshot);
+    this.#session.importScope("user", snapshot);
+    this.cancelUserImport();
+    this.problem = null;
+    this.#notify();
+  }
+
+  cancelUserImport(): void {
+    this.#importGeneration += 1;
+    this.#pendingImport?.candidate.dispose();
+    this.#pendingImport = null;
+  }
+
   /** Calls `listener` now and after every committed change. */
   subscribe(listener: (preferences: ClientPreferences) => void): () => void {
     this.#listeners.add(listener);
-    listener(this.values());
+    const values = this.values();
+    this.#lastPublished = values;
+    listener(values);
     return () => this.#listeners.delete(listener);
   }
 
@@ -170,7 +244,13 @@ export class Preferences {
     } catch (error) {
       this.problem = `Settings apply now but could not be saved: ${error instanceof Error ? error.message : String(error)}`;
     }
+    this.#notify();
+  }
+
+  #notify(): void {
     const values = this.values();
+    if (this.#lastPublished && JSON.stringify(this.#lastPublished) === JSON.stringify(values)) return;
+    this.#lastPublished = values;
     for (const listener of this.#listeners) {
       listener(values);
     }
