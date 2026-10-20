@@ -547,3 +547,50 @@ fn a_physics_wall_stops_targeted_melee_auto_attacks_and_directed_arena_sweeps() 
     assert_eq!(zone.snapshot_for_player(2).unwrap().viewer.health, health);
     assert!(zone.snapshot().unwrap().players[0].combat.combo.is_none());
 }
+
+#[test]
+fn a_charge_at_an_arena_player_restores_and_uses_existing_forced_movement() {
+    use mmorpg_core::{EntityRef, ZoneCommand};
+    let content = Arc::new(
+        Arc::unwrap_or_clone(support::arena::arena(vec![], vec![], vec![]))
+            .with_creature_abilities(mmorpg_core::ABILITY_CATALOG_REVISION, vec![])
+            .unwrap()
+            .with_player_combat(PlayerCombatPolicy::FreeForAll),
+    );
+    let zone = two_classes_on(content, [0, 0]);
+    let mut state = zone.snapshot().unwrap();
+    state.players[0].combat.level = 3;
+    state.players[1].position = mmorpg_core::physics::from_units([900, 90, -2000]);
+    let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+    let before = zone.snapshot().unwrap().players[1].position;
+    zone.apply_command(
+        1,
+        2,
+        ZoneCommand::UseAbility {
+            ability: 17,
+            target: Some(EntityRef::Player(2)),
+        },
+    )
+    .unwrap();
+    zone.advance_tick().unwrap();
+    let state = zone.snapshot().unwrap();
+    assert!(
+        state
+            .forced
+            .iter()
+            .any(|(unit, state)| *unit == EntityRef::Player(1) && state.moving.is_some())
+    );
+    let mut restored = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+    for _ in 0..40 {
+        zone.advance_tick().unwrap();
+        restored.advance_tick().unwrap();
+        assert_eq!(zone.snapshot().unwrap(), restored.snapshot().unwrap());
+    }
+    assert_ne!(
+        zone.snapshot().unwrap().players[1].position,
+        before,
+        "source={:?} forced={:?}",
+        zone.snapshot().unwrap().players[0].position,
+        zone.snapshot().unwrap().forced
+    );
+}
