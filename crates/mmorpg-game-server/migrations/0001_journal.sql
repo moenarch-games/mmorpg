@@ -69,6 +69,7 @@ GRANT UPDATE (last_position, last_tick, retained_bytes, retained_batches,
 GRANT SELECT, INSERT, DELETE ON mmorpg_persistence.journal TO mmorpg_zone_journal;
 GRANT SELECT, INSERT ON mmorpg_persistence.grants TO mmorpg_zone_journal;
 GRANT SELECT, INSERT, UPDATE ON mmorpg_persistence.streams TO mmorpg_zone_coordinator;
+GRANT DELETE ON mmorpg_persistence.journal TO mmorpg_zone_coordinator;
 GRANT mmorpg_characters_store TO mmorpg_zone_journal;
 
 -- Cluster identity is read to reject an unrelated database as a replication witness.

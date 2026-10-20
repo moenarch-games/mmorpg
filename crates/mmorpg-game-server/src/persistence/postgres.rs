@@ -243,13 +243,76 @@ pub(crate) fn record_retirement(
     client: &mut Client,
     fence: &StreamFence,
 ) -> Result<(), StoreError> {
-    let changed = client.execute("UPDATE mmorpg_persistence.streams SET retired=true WHERE zone_id=$1 AND writer_host=$2 AND writer_epoch=$3 AND timeline=$4 AND world_id=$5::text::uuid AND NOT retired", &[
+    let changed = client.execute("UPDATE mmorpg_persistence.streams SET retired=true WHERE zone_id=$1 AND writer_host=$2 AND writer_epoch=$3 AND timeline=$4 AND world_id=$5::text::uuid", &[
         &i64::from(fence.lease.zone_id.get()), &fence.lease.host_id.as_str(), &integer(fence.lease.epoch)?, &integer(fence.timeline)?, &fence.world_id,
     ]).map_err(sql)?;
     if changed != 1 {
         return Err(failure("stale retirement fence"));
     }
     Ok(())
+}
+
+/// Coordinator-only explicit reset after acknowledged source retirement. This
+/// commits only persistence metadata: it grants no new live ownership. Confirm
+/// replication before granting a successor lease. Economic records and grant
+/// receipts remain outside the reset, under the original stable world UUID.
+pub(crate) fn reset_retired_world(
+    client: &mut Client,
+    previous: &StreamFence,
+    verified: &super::checkpoints::VerifiedWorldReset,
+) -> Result<StreamFence, StoreError> {
+    let next = StreamFence {
+        timeline: previous
+            .timeline
+            .checked_add(1)
+            .ok_or_else(|| failure("world timelines exhausted"))?,
+        ..previous.clone()
+    };
+    let reference = verified.checkpoint().reference();
+    reference.validate(&next)?;
+    if reference.position != 0 {
+        return Err(failure("world reset checkpoint must start a new journal"));
+    }
+    let encoded = serde_json::to_vec(reference).map_err(sql)?;
+    let mut transaction = client.transaction().map_err(sql)?;
+    transaction
+        .batch_execute("SET LOCAL synchronous_commit=on")
+        .map_err(sql)?;
+    let row = transaction.query_opt("SELECT *,world_id::text AS world_key FROM mmorpg_persistence.streams WHERE zone_id=$1 FOR UPDATE", &[&i64::from(previous.lease.zone_id.get())]).map_err(sql)?.ok_or_else(|| failure("unknown zone journal"))?;
+    if !row.get::<_, bool>("retired")
+        || row.get::<_, String>("writer_host") != previous.lease.host_id.as_str()
+        || unsigned(row.get("writer_epoch"))? != previous.lease.epoch
+        || row.get::<_, String>("world_key") != previous.world_id
+    {
+        return Err(failure(
+            "world reset requires confirmed retirement of the expected writer",
+        ));
+    }
+    let timeline = unsigned(row.get("timeline"))?;
+    if timeline == next.timeline {
+        if row.get::<_, Option<Vec<u8>>>("checkpoint_ref").as_deref() != Some(encoded.as_slice()) {
+            return Err(failure("conflicting world reset retry"));
+        }
+    } else if timeline == previous.timeline {
+        transaction.execute("UPDATE mmorpg_persistence.streams SET timeline=$2,last_position=0,last_tick=$3,retained_bytes=0,retained_batches=0,checkpoint_position=0,checkpoint_tick=$3,checkpoint_ref=$4 WHERE zone_id=$1", &[
+            &i64::from(previous.lease.zone_id.get()), &integer(next.timeline)?, &integer(reference.tick)?, &encoded,
+        ]).map_err(sql)?;
+        // The verified new reference and removal of disposable world history
+        // are one transaction. Grant receipts and durable characters are untouched.
+        transaction
+            .execute(
+                "DELETE FROM mmorpg_persistence.journal WHERE zone_id=$1 AND timeline<$2",
+                &[
+                    &i64::from(previous.lease.zone_id.get()),
+                    &integer(next.timeline)?,
+                ],
+            )
+            .map_err(sql)?;
+    } else {
+        return Err(failure("world reset timeline changed"));
+    }
+    transaction.commit().map_err(sql)?;
+    Ok(next)
 }
 
 pub(crate) struct PostgresJournal {
@@ -1004,11 +1067,77 @@ mod tests {
             .unwrap()
             .get(0);
         assert_eq!(retained, 0);
+        let reset_reference = CheckpointReference {
+            timeline: fence.timeline + 1,
+            position: 0,
+            tick: 0,
+            object_key: "test/reset.zst".into(),
+            sha256: [2; 32],
+            ..latest
+        };
+        let reset = super::super::checkpoints::VerifiedWorldReset::for_sql_test(reset_reference);
+        assert!(reset_retired_world(&mut coordinator, &fence, &reset).is_err());
+        record_retirement(&mut coordinator, &fence).unwrap();
         record_retirement(&mut coordinator, &fence).unwrap();
         assert!(journal.commit_tick(0, &batch, &[]).is_err());
+        let next = reset_retired_world(&mut coordinator, &fence, &reset).unwrap();
+        assert_eq!(
+            reset_retired_world(&mut coordinator, &fence, &reset).unwrap(),
+            next
+        );
+        if let Ok(standby) = std::env::var("MMORPG_POSTGRES_STANDBY_URL") {
+            let mut barrier =
+                ReplicaBarrier::connect(&url, &standby, Duration::from_secs(5)).unwrap();
+            barrier.confirm(&AtomicBool::new(false)).unwrap();
+        }
         let successor =
             install_writer(&mut coordinator, ZoneLease { epoch: 2, ..lease }, 1).unwrap();
         assert_eq!(successor.world_id, fence.world_id);
+        assert_eq!(successor.timeline, fence.timeline + 1);
         assert!(journal.checkpoint_reference().is_err());
+        let mut restarted = if let Ok(standby) = std::env::var("MMORPG_POSTGRES_STANDBY_URL") {
+            PostgresJournal::connect_replicated(
+                &url,
+                &standby,
+                successor,
+                Duration::from_secs(5),
+                limits,
+            )
+            .unwrap()
+        } else {
+            PostgresJournal::connect_development(&url, successor, Duration::from_secs(5), limits)
+                .unwrap()
+        };
+        assert_eq!(
+            restarted
+                .reward_receipts(&character, &lives, 4)
+                .unwrap()
+                .len(),
+            3
+        );
+        let reacquired = restarted
+            .characters(|store| {
+                store.acquire(
+                    &character,
+                    LeaseHolder {
+                        zone_id: zone,
+                        zone_epoch: 2,
+                    },
+                )
+            })
+            .unwrap();
+        let mut duplicate = writes[0].clone();
+        duplicate.lease = reacquired.lease;
+        duplicate.expected_revision = reacquired.revision;
+        duplicate.record.copper += 123;
+        // Even a stale/weaker world that attempts the grant again cannot commit
+        // another mutation: grant receipts survive the discarded journal timeline.
+        assert!(restarted.commit_tick(0, &batch, &[duplicate]).is_err());
+        let committed = restarted
+            .characters(|store| store.committed(&character))
+            .unwrap()
+            .unwrap();
+        assert_eq!((committed.revision, committed.record.copper), (1, 123));
+        assert_eq!(restarted.checkpoint_reference().unwrap().position, 0);
     }
 }

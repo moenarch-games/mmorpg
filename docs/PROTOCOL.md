@@ -520,3 +520,12 @@ admission input activates its body; duplicate pages are idempotent and emit no
 new grant. Personal receipts survive the staged placeholder-body replacement.
 Queries retain only current/future creature lives, plus character-global quest
 completion, and fail closed if the configured receipt bound is exceeded.
+
+An explicit weaker-world reset requires confirmed retirement of the expected
+writer and a compatible verified checkpoint without player sessions or durable
+character bindings. It retains the world UUID, character records and all grant
+receipts, advances the journal timeline once, and atomically publishes position
+zero before discarding the old disposable journal. Identical retries are
+idempotent; an active/stale writer or conflicting reset is rejected. The backend
+must confirm replicated metadata before granting a successor. Ordinary recovery
+never substitutes this reset for missing/corrupt checkpoint or journal data.

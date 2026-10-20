@@ -90,6 +90,25 @@ pub(crate) struct PreparedCheckpoint {
 pub(crate) struct VerifiedCheckpoint {
     reference: CheckpointReference,
 }
+
+pub(crate) struct PreparedWorldReset {
+    checkpoint: PreparedCheckpoint,
+}
+pub(crate) struct VerifiedWorldReset {
+    checkpoint: VerifiedCheckpoint,
+}
+impl VerifiedWorldReset {
+    pub(super) fn checkpoint(&self) -> &VerifiedCheckpoint {
+        &self.checkpoint
+    }
+    #[cfg(test)]
+    pub(super) fn for_sql_test(reference: CheckpointReference) -> Self {
+        Self {
+            checkpoint: VerifiedCheckpoint::for_sql_test(reference),
+        }
+    }
+}
+
 impl VerifiedCheckpoint {
     pub(crate) fn reference(&self) -> &CheckpointReference {
         &self.reference
@@ -147,6 +166,66 @@ impl CheckpointObjects {
         Ok(Self {
             store,
             limits: limits.validate()?,
+        })
+    }
+
+    /// Explicit reset preparation, never a fallback for failed recovery. The
+    /// source writer must be retired separately before publishing this object.
+    /// Reuse the same world UUID so already committed grants keep their identity.
+    pub(crate) fn prepare_world_reset(
+        &self,
+        previous: &StreamFence,
+        content: Arc<mmorpg_core::ZoneContent>,
+        image: &RecoveryImage,
+    ) -> Result<PreparedWorldReset, CheckpointError> {
+        if !image.sessions.sessions.is_empty() {
+            return Err(invalid("world reset checkpoint must contain no sessions"));
+        }
+        let restored = game_server::MatchRuntime::restore_from_recovery(
+            crate::ZoneGameServerAdapter::with_content(
+                previous.lease.zone_id,
+                Arc::clone(&content),
+            )
+            .map_err(invalid)?,
+            image.clone(),
+        )
+        .map_err(invalid)?;
+        let snapshot = restored.snapshot().map_err(invalid)?;
+        let (zone, characters) = crate::ZoneGameServerAdapter::decode_stored_zone(
+            &snapshot.payload,
+            Arc::clone(&content),
+        )
+        .map_err(invalid)?;
+        if !characters.is_empty()
+            || !zone.snapshot().map_err(invalid)?.players.is_empty()
+            || zone.reward_history().is_none()
+        {
+            return Err(invalid(
+                "world reset requires an empty world with reward tracking",
+            ));
+        }
+        let next = StreamFence {
+            timeline: previous
+                .timeline
+                .checked_add(1)
+                .ok_or_else(|| invalid("world timelines exhausted"))?,
+            ..previous.clone()
+        };
+        let checkpoint = self.prepare(
+            &next,
+            0,
+            content.fingerprint(),
+            u16::from(mmorpg_protocol::SNAPSHOT_WIRE_VERSION),
+            image,
+        )?;
+        Ok(PreparedWorldReset { checkpoint })
+    }
+    pub(crate) async fn upload_world_reset(
+        &self,
+        prepared: &PreparedWorldReset,
+    ) -> Result<VerifiedWorldReset, CheckpointError> {
+        Ok(VerifiedWorldReset {
+            checkpoint: self.upload(&prepared.checkpoint).await?,
         })
     }
 
@@ -461,5 +540,38 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(rejected, Err(CheckpointError::Invalid(_))));
+        let mut initial = adapter();
+        initial.zone_mut().enable_reward_tracking(64, 16).unwrap();
+        let mut initial = MatchRuntime::new_with_replay_capture(initial, 30);
+        let reset_image = initial.checkpoint_replay().unwrap();
+        let reset = objects
+            .prepare_world_reset(&fence, greyhaven_vale::content(), &reset_image)
+            .unwrap();
+        let verified = objects.upload_world_reset(&reset).await.unwrap();
+        let next = StreamFence {
+            timeline: fence.timeline + 1,
+            ..fence.clone()
+        };
+        assert_eq!(verified.checkpoint().reference().world_id, fence.world_id);
+        assert_eq!(verified.checkpoint().reference().position, 0);
+        assert_eq!(
+            objects
+                .load(
+                    &next,
+                    verified.checkpoint().reference(),
+                    fingerprint,
+                    version
+                )
+                .await
+                .unwrap(),
+            reset_image
+        );
+        initial.admit(game_server::ReconnectToken([9; 16])).unwrap();
+        let occupied = initial.checkpoint_replay().unwrap();
+        assert!(
+            objects
+                .prepare_world_reset(&fence, greyhaven_vale::content(), &occupied)
+                .is_err()
+        );
     }
 }
