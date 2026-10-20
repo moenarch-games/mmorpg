@@ -5,6 +5,7 @@
 //! existing intent ([`UiIntent`]) that the window turns into the same shared
 //! commands as the keyboard. The zone decides what happens; this module owns
 //! no gameplay legality, quest progress or inventory transactions.
+mod ability_art;
 pub mod bindings;
 pub mod chat;
 pub mod minimap;
@@ -137,6 +138,7 @@ enum LogTab {
 
 /// Interface state that is purely local presentation.
 pub struct GameUi {
+    ability_art: ability_art::AbilityArt,
     pub settings: settings::SettingsWindow,
     pub sheets: Sheets,
     pub logs: Logs,
@@ -166,6 +168,7 @@ impl GameUi {
     #[must_use]
     pub fn new(scenery: &Scenery) -> Self {
         Self {
+            ability_art: ability_art::AbilityArt::default(),
             settings: settings::SettingsWindow::default(),
             sheets: Sheets::default(),
             logs: Logs::default(),
@@ -758,13 +761,41 @@ impl GameUi {
                     ui.horizontal(|ui| {
                         let slots = frame.hud.map(|hud| hud.slots.as_slice()).unwrap_or(&[]);
                         for (index, slot) in slots.iter().enumerate() {
-                            let name = ability_by_id(mmorpg_core::AbilityId::new(slot.ability))
-                                .map_or("?", |a| a.name);
-                            let button = egui::Button::new(
-                                RichText::new(format!("{}\n{name}", index + 1)).size(12.0),
-                            )
+                            let definition =
+                                ability_by_id(mmorpg_core::AbilityId::new(slot.ability));
+                            let name = definition.map_or("?", |ability| ability.name);
+                            let locked = definition
+                                .is_some_and(|ability| snapshot.viewer.level < ability.level);
+                            let label = if locked {
+                                format!(
+                                    "{}\n{name}\nLv {}",
+                                    index + 1,
+                                    definition.map_or(1, |ability| ability.level)
+                                )
+                            } else {
+                                format!("{}\n{name}", index + 1)
+                            };
+                            let text = RichText::new(label).size(12.0);
+                            let image = self.ability_art.image(ctx, slot.ability, locked);
+                            let button = match image {
+                                Some(image) => egui::Button::image_and_text(image, text)
+                                    .image_tint_follows_text_color(false),
+                                None => egui::Button::new(text),
+                            }
                             .min_size(Vec2::new(86.0, 46.0))
                             .selected(slot.casting);
+                            let short = !locked
+                                && definition.is_some_and(|ability| {
+                                    snapshot
+                                        .viewer
+                                        .resource
+                                        .is_some_and(|resource| resource.value < ability.cost)
+                                });
+                            let button = if short {
+                                button.fill(Color32::from_rgb(30, 50, 95))
+                            } else {
+                                button
+                            };
                             let response = ui.add_enabled(!snapshot.viewer.dead, button);
                             if let Some(cooldown) = slot.cooldown {
                                 let share = if cooldown.total == 0 {
@@ -804,6 +835,20 @@ impl GameUi {
                             if response.clicked() {
                                 intents.push(UiIntent::AbilitySlot(index as u8 + 1));
                             }
+                            response.on_hover_text(if locked {
+                                format!(
+                                    "{name} · unlocks at level {}",
+                                    definition.map_or(1, |ability| ability.level)
+                                )
+                            } else {
+                                name.to_owned()
+                            });
+                        }
+                        if let Some(problem) = self.ability_art.problem() {
+                            ui.colored_label(
+                                Color32::LIGHT_RED,
+                                format!("Ability artwork unavailable: {problem}"),
+                            );
                         }
                         ui.separator();
                         ui.vertical(|ui| {
