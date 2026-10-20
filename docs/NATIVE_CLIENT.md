@@ -179,3 +179,48 @@ instead, for example to resume the same character from another trusted device.
 Claims are unauthenticated; this mode is for a single development/LAN host, not a
 public deployment. [Ownership and recovery](adr/0003-development-character-admission.md)
 remain server responsibilities.
+
+## PostgreSQL journals and S3 checkpoints
+
+Build the host with `cargo run -p mmorpg-game-server --features postgres --locked --bin mmorpg-zone-host`.
+`MMORPG_PERSISTENCE_MODE` selects the storage composition; setting it on a build without that feature fails explicitly.
+It cannot be combined with `MMORPG_CHARACTER_DIR` or `MMORPG_RECOVERY_DIR`.
+Both clients keep their existing character-claim protocol. Identity remains the existing unauthenticated development/LAN contract; this does not select a public authentication service or deploy a fleet.
+
+Configure distinct login roles granted the migration-created roles below, on one PostgreSQL deployment with a physical standby:
+
+| Environment variable | Connection / role |
+| --- | --- |
+| `MMORPG_COORDINATOR_DATABASE_URL` | Primary, `mmorpg_zone_coordinator` |
+| `MMORPG_COORDINATOR_STANDBY_URL` | Designated physical standby, coordinator role |
+| `MMORPG_CHARACTER_STANDBY_URL` | Same standby, read-only `mmorpg_character_profiles` |
+| `MMORPG_ZONE_DATABASE_URL` | Primary, `mmorpg_zone_journal` |
+| `MMORPG_ZONE_STANDBY_URL` | Same standby, zone-journal role |
+| `MMORPG_HOST_ID` | Host/process identity; reacquisition always advances its zone epoch |
+| `MMORPG_CHECKPOINT_S3_ENDPOINT`, `MMORPG_CHECKPOINT_S3_BUCKET` | S3-compatible checkpoint destination; provision the bucket first |
+
+Credentials follow the S3 SDK's provider chain, including `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`.
+`MMORPG_CHECKPOINT_S3_REGION` defaults to `us-east-1`; local HTTP needs explicit `MMORPG_CHECKPOINT_ALLOW_HTTP=1`.
+The initial tested provider is RustFS `1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b`.
+
+Use `MMORPG_PERSISTENCE_MODE=migrate` with `MMORPG_MIGRATION_DATABASE_URL` pointing to a privileged migration connection before starting the host. Normal startup never changes schemas.
+Then use `bootstrap` for a new stream, and `recover` for subsequent starts. Bootstrap refuses an existing checkpoint; recovery never silently creates or resets a world.
+Graceful termination checkpoints committed state, stops/join storage workers, then retires ownership. A crashed host needs explicit `retire` after its process is stopped: configure one zone, `MMORPG_EXPECTED_ZONE_EPOCH`, and `MMORPG_CONFIRM_SOURCE_STOPPED=1`.
+`reset` also requires that confirmation and already-retired assignments; it publishes a verified empty-world checkpoint in a new timeline while preserving character records, world identity and grant receipts.
+`profile` with `MMORPG_PROFILE_CHARACTER` prints committed character progression from the standby without starting or locating a zone host.
+
+Operational limits are configurable, not performance ratchets:
+
+| Setting | Default |
+| --- | ---: |
+| `MMORPG_GRANT_TTL_MS` / `MMORPG_GRANT_RENEW_MS` | 30000 / 10000 |
+| `MMORPG_PERSISTENCE_TIMEOUT_MS` / `MMORPG_CHECKPOINT_TIMEOUT_MS` / `MMORPG_COMMIT_TIMEOUT_MS` | 5000 / 5000 / 25000 |
+| `MMORPG_CHECKPOINT_INTERVAL_TICKS` | 300 |
+| `MMORPG_JOURNAL_MAX_BATCH_BYTES` / `MMORPG_JOURNAL_MAX_RETAINED_BYTES` | 16777216 / 67108864 |
+| `MMORPG_JOURNAL_MAX_BATCHES` / `MMORPG_JOURNAL_MAX_REPLAY_TICKS` | 900 / 900 |
+| `MMORPG_CHECKPOINT_MAX_COMPRESSED_BYTES` / `MMORPG_CHECKPOINT_MAX_DECODED_BYTES` | 16777216 / 67108864 |
+| `MMORPG_MAX_REWARD_RECEIPTS` / `MMORPG_MAX_TICK_GRANTS` | 1024 / 128 |
+
+Lease/commit failures fence the host. Object-store failures retain the last verified checkpoint and bounded PostgreSQL journal; exceeding its configured bounds stops progression.
+Acknowledged economy depends on the designated standby's durable receipt and replay. Promotion must preserve that confirmed history and fence the former primary; automatic database failover is not implemented here.
+The focused `persistence_host` test exercises a real WebTransport claim, complete host-process loss, journal recovery, reconnect and durable logout against PostgreSQL plus RustFS, without a GPU.

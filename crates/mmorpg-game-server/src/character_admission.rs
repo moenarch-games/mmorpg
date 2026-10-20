@@ -54,6 +54,17 @@ impl ZoneGameServerAdapter {
         player: game_server::PlayerId,
         payload: &[u8],
     ) -> Result<(), SimulationError> {
+        if payload == [1, 4] {
+            if self.characters.contains_key(&player) {
+                return Err(SimulationError::new(
+                    "cannot clear receipts of an active character",
+                ));
+            }
+            return self
+                .zone
+                .clear_loaded_reward_receipts(player)
+                .map_err(map_zone_error);
+        }
         if let Some(bytes) = payload.strip_prefix(&[1, 3]) {
             if self.characters.contains_key(&player) {
                 return Err(SimulationError::new(
@@ -350,6 +361,14 @@ mod tests {
             assert!(input.len() <= game_server::MAX_COMMAND_PAYLOAD_BYTES);
             live.submit_host_input(first.player_id, &input).unwrap();
             live.submit_host_input(first.player_id, &input).unwrap();
+        }
+        live.submit_host_input(first.player_id, &[1, 4]).unwrap();
+        for key in keys {
+            live.submit_host_input(
+                first.player_id,
+                &ZoneGameServerAdapter::reward_receipt_input(key).unwrap(),
+            )
+            .unwrap();
         }
         let admission = ZoneGameServerAdapter::character_admission_input(&record()).unwrap();
         live.submit_host_input(first.player_id, &admission).unwrap();

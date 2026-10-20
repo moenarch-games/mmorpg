@@ -33,9 +33,13 @@ pub(crate) struct ClaimedCharacter {
 }
 
 pub(crate) enum Durability {
-    Development,
-    Replicated { standby_url: String },
-    Production { standby_url: String },
+    #[cfg(test)]
+    Replicated {
+        standby_url: String,
+    },
+    Production {
+        standby_url: String,
+    },
 }
 pub(crate) enum Startup {
     Bootstrap(RecoveryImage),
@@ -84,6 +88,23 @@ enum Request {
     Checkpoint {
         reply: Reply<()>,
     },
+    AdmissionState {
+        player: game_server::PlayerId,
+        character: CharacterId,
+        reply: Reply<bool>,
+    },
+    ReleasedState {
+        player: game_server::PlayerId,
+        reply: Reply<bool>,
+    },
+    PendingCharacter {
+        player: game_server::PlayerId,
+        reply: Reply<Option<CharacterId>>,
+    },
+    CancelPending {
+        player: game_server::PlayerId,
+        reply: Reply<()>,
+    },
     Stop,
 }
 
@@ -94,10 +115,11 @@ enum Request {
 struct Pending<'a> {
     service: &'a HostedPersistence,
     complete: bool,
+    mutating: bool,
 }
 impl Drop for Pending<'_> {
     fn drop(&mut self) {
-        if !self.complete {
+        if !self.complete && self.mutating {
             self.service.cancel();
         }
     }
@@ -106,11 +128,7 @@ impl HostedPersistence {
     pub(crate) async fn start(
         config: HostedPersistenceConfig,
     ) -> Result<(Arc<Self>, RecoveryImage, PersistenceWorker), PersistenceError> {
-        if matches!(
-            &config.durability,
-            Durability::Replicated { .. } | Durability::Production { .. }
-        ) && config.authority.is_none()
-        {
+        if config.authority.is_none() {
             return Err(error(
                 "replicated zone persistence requires a confirmed local authority permit",
             ));
@@ -171,12 +189,24 @@ impl HostedPersistence {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(error("zone persistence is fenced"));
         }
+        let (reply, response) = oneshot::channel();
+        let request = make(reply);
+        let mutating = match &request {
+            Request::AdmissionState { .. }
+            | Request::ReleasedState { .. }
+            | Request::PendingCharacter { .. } => false,
+            Request::Tick { .. }
+            | Request::Claim { .. }
+            | Request::Checkpoint { .. }
+            | Request::CancelPending { .. }
+            | Request::Stop => true,
+        };
         let mut pending = Pending {
             service: self,
             complete: false,
+            mutating,
         };
-        let (reply, response) = oneshot::channel();
-        self.requests.send(make(reply)).await.map_err(error)?;
+        self.requests.send(request).await.map_err(error)?;
         let result = response.await.map_err(error)?;
         pending.complete = true;
         result
@@ -189,6 +219,43 @@ impl HostedPersistence {
         self.request(|reply| Request::Claim { id, player, reply })
             .await
     }
+    pub(crate) fn is_fenced(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+    pub(crate) async fn admitted(
+        &self,
+        player: game_server::PlayerId,
+        character: CharacterId,
+    ) -> Result<bool, PersistenceError> {
+        self.request(|reply| Request::AdmissionState {
+            player,
+            character,
+            reply,
+        })
+        .await
+    }
+    pub(crate) async fn released(
+        &self,
+        player: game_server::PlayerId,
+    ) -> Result<bool, PersistenceError> {
+        self.request(|reply| Request::ReleasedState { player, reply })
+            .await
+    }
+    pub(crate) async fn pending_character(
+        &self,
+        player: game_server::PlayerId,
+    ) -> Result<Option<CharacterId>, PersistenceError> {
+        self.request(|reply| Request::PendingCharacter { player, reply })
+            .await
+    }
+    pub(crate) async fn cancel_pending(
+        &self,
+        player: game_server::PlayerId,
+    ) -> Result<(), PersistenceError> {
+        self.request(|reply| Request::CancelPending { player, reply })
+            .await
+    }
+
     /// Lifecycle capture uses the last committed immutable image. The caller
     /// drains/stops the live host before requesting its final checkpoint.
     pub(crate) async fn checkpoint(&self) -> Result<(), PersistenceError> {
@@ -276,17 +343,22 @@ impl State {
             zone_id: self.fence.lease.zone_id,
             zone_epoch: self.fence.lease.epoch,
         };
-        if self.bindings.contains_key(&id)
-            || self
-                .bindings
-                .values()
-                .any(|binding| binding.player == player)
+        if self
+            .bindings
+            .get(&id)
+            .is_some_and(|binding| binding.player != player)
+            || self.bindings.values().any(|binding| {
+                binding.player == player && binding.acquired.lease.character_id != id
+            })
         {
             return Err(StoreError::Leased(holder));
         }
-        let acquired = self
-            .journal
-            .characters(|store| store.acquire(&id, holder))?;
+        let acquired = if let Some(binding) = self.bindings.get(&id) {
+            binding.acquired.clone()
+        } else {
+            self.journal
+                .characters(|store| store.acquire(&id, holder))?
+        };
         self.ensure_authority()
             .map_err(|cause| StoreError::Backend(cause.to_string()))?;
         let receipts = if let Some(maximum) = self.receipt_limit {
@@ -297,15 +369,29 @@ impl State {
         };
         self.ensure_authority()
             .map_err(|cause| StoreError::Backend(cause.to_string()))?;
-        self.bindings.insert(
-            id,
-            Binding {
-                player,
-                acquired: acquired.clone(),
-                seen: false,
-            },
-        );
+        self.bindings.entry(id).or_insert_with(|| Binding {
+            player,
+            acquired: acquired.clone(),
+            seen: false,
+        });
         Ok(ClaimedCharacter { acquired, receipts })
+    }
+    fn cancel_pending(&mut self, player: game_server::PlayerId) -> Result<(), StoreError> {
+        let found = self
+            .bindings
+            .iter()
+            .find(|(_, binding)| binding.player == player);
+        let Some((id, binding)) = found else {
+            return Ok(());
+        };
+        if binding.seen {
+            return Err(StoreError::StaleLease);
+        }
+        self.journal
+            .characters(|store| store.release(&binding.acquired.lease, None))?;
+        let id = id.clone();
+        self.bindings.remove(&id);
+        Ok(())
     }
     fn tick(&mut self, batch: SnapshotCommitBatch) -> Result<(), PersistenceError> {
         self.ensure_authority()?;
@@ -483,12 +569,7 @@ fn run(
     ready: Reply<RecoveryImage>,
 ) {
     let journal = match &config.durability {
-        Durability::Development => PostgresJournal::connect_development(
-            &config.primary_url,
-            config.fence.clone(),
-            config.database_timeout,
-            config.journal_limits,
-        ),
+        #[cfg(test)]
         Durability::Replicated { standby_url } => PostgresJournal::connect_replicated(
             &config.primary_url,
             standby_url,
@@ -564,6 +645,47 @@ fn run(
                             let _ = reply.send(result.map_err(error));
                             failed
                         }
+                        Request::AdmissionState {
+                            player,
+                            character,
+                            reply,
+                        } => {
+                            let result = state
+                                .bindings
+                                .get(&character)
+                                .filter(|binding| binding.player == player)
+                                .map(|binding| binding.seen)
+                                .ok_or_else(|| {
+                                    error("character admission no longer owns its lease")
+                                });
+                            let _ = reply.send(result);
+                            false
+                        }
+                        Request::ReleasedState { player, reply } => {
+                            let _ = reply.send(Ok(!state
+                                .bindings
+                                .values()
+                                .any(|binding| binding.player == player)));
+                            false
+                        }
+                        Request::PendingCharacter { player, reply } => {
+                            let id = state
+                                .bindings
+                                .iter()
+                                .find(|(_, binding)| binding.player == player && !binding.seen)
+                                .map(|(id, _)| id.clone());
+                            let _ = reply.send(Ok(id));
+                            false
+                        }
+                        Request::CancelPending { player, reply } => {
+                            let result = state.cancel_pending(player);
+                            let failed = matches!(
+                                &result,
+                                Err(StoreError::Backend(_) | StoreError::Corrupt(_))
+                            );
+                            let _ = reply.send(result.map_err(error));
+                            failed
+                        }
                         Request::Checkpoint { reply } => {
                             let result = state.checkpoint();
                             let failed = matches!(&result, Err(CheckpointFailure::Fatal(_)));
@@ -601,7 +723,10 @@ fn initialize(
         .build()
         .map_err(error)?;
     let (position, image, bootstrap) = match config.startup {
-        Startup::Bootstrap(image) => (0, image, true),
+        Startup::Bootstrap(image) => {
+            journal.ensure_uninitialized().map_err(error)?;
+            (0, image, true)
+        }
         Startup::Recover => {
             let reference = journal.checkpoint_reference().map_err(error)?;
             let image = object_io(
@@ -637,11 +762,7 @@ fn initialize(
     let (zone, records) =
         ZoneGameServerAdapter::decode_stored_zone(&snapshot.payload, Arc::clone(&config.content))
             .map_err(error)?;
-    if matches!(
-        &config.durability,
-        Durability::Replicated { .. } | Durability::Production { .. }
-    ) && zone.reward_history().is_none()
-    {
+    if zone.reward_history().is_none() {
         return Err(error(
             "replicated persistence requires canonical reward tracking",
         ));
@@ -817,8 +938,15 @@ mod tests {
         let acquired = storage.claim(character.clone(), 1).await.unwrap();
         assert!(acquired.acquired.record.is_none());
         assert!(acquired.receipts.is_empty());
-        // A rejected duplicate claim is a routine refusal, not a storage failure.
-        assert!(storage.claim(character.clone(), 1).await.is_err());
+        assert_eq!(
+            storage
+                .claim(character.clone(), 1)
+                .await
+                .unwrap()
+                .acquired
+                .lease,
+            acquired.acquired.lease
+        );
         let mut character_zone =
             ZoneSimulation::with_content(fence.lease.zone_id, Arc::clone(&content)).unwrap();
         character_zone

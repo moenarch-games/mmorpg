@@ -8,7 +8,7 @@
 //! module owns no replication topology, placement policy, transport or gameplay.
 use crate::{HostId, ZoneLease};
 use mmorpg_core::ZoneId;
-use postgres::{CancelToken, Client, Config, NoTls, Row, Transaction};
+use postgres::{CancelToken, Client, Config, GenericClient, NoTls, Row, Transaction};
 use std::{
     error::Error,
     fmt,
@@ -159,9 +159,16 @@ impl PostgresZoneDirectory {
         &mut self,
         zone: ZoneId,
     ) -> Result<Option<StoredAssignment>, DirectoryStoreError> {
-        self.client.query_opt("SELECT zone_id,host_id,epoch,floor(extract(epoch FROM expires_at)*1000)::bigint AS expiry,retired FROM mmorpg_coordination.zones WHERE zone_id=$1", &[&i64::from(zone.get())])
-            .map_err(backend)?.map(|row| Ok(StoredAssignment { lease: read_lease(&row)?, retired: row.get("retired") })).transpose()
+        read_assignment(&mut self.client, zone)
     }
+}
+
+pub fn read_assignment(
+    client: &mut impl GenericClient,
+    zone: ZoneId,
+) -> Result<Option<StoredAssignment>, DirectoryStoreError> {
+    client.query_opt("SELECT zone_id,host_id,epoch,floor(extract(epoch FROM expires_at)*1000)::bigint AS expiry,retired FROM mmorpg_coordination.zones WHERE zone_id=$1", &[&i64::from(zone.get())])
+        .map_err(backend)?.map(|row| Ok(StoredAssignment { lease: read_lease(&row)?, retired: row.get("retired") })).transpose()
 }
 
 pub fn migrate(client: &mut Client) -> Result<(), DirectoryStoreError> {

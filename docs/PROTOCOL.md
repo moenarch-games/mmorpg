@@ -518,6 +518,9 @@ version-1 reward receipt (at most 16 bytes). These inputs come from the fenced
 storage worker, never a client command. Load every receipt before the character
 admission input activates its body; duplicate pages are idempotent and emit no
 new grant. Personal receipts survive the staged placeholder-body replacement.
+Host-input family version 1, tag 4 clears only an unbound session's personal
+receipt cache before cancelling or switching a pending character claim; it
+rejects an active character and preserves globally consumed world receipts.
 Queries retain only current/future creature lives, plus character-global quest
 completion, and fail closed if the configured receipt bound is exceeded.
 

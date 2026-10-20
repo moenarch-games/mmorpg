@@ -63,6 +63,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     let status_config = MatchHostStatusConfig { port: status_port };
 
+    #[cfg(feature = "postgres")]
+    if env::var_os("MMORPG_PERSISTENCE_MODE").is_some() {
+        if character_directory.is_some() || recovery_directory.is_some() {
+            return Err(ConfigError("PostgreSQL persistence cannot be combined with file character/recovery directories".into()).into());
+        }
+        eprintln!(
+            "PostgreSQL persistence selected; character admission uses trusted development/LAN identities."
+        );
+        mmorpg_game_server::persistence::serve_postgres_character_host(
+            zone_ids,
+            reconnect_grace_ticks,
+            transport_config,
+            status_config,
+            shutdown_receiver,
+        )
+        .await
+        .map_err(|cause| ConfigError(cause.to_string()))?;
+        return Ok(());
+    }
+    #[cfg(not(feature = "postgres"))]
+    if env::var_os("MMORPG_PERSISTENCE_MODE").is_some() {
+        return Err(
+            ConfigError("MMORPG_PERSISTENCE_MODE requires the postgres feature".into()).into(),
+        );
+    }
     if let Some(directory) = character_directory {
         eprintln!("Development/LAN character claims enabled (unauthenticated).");
         serve_development_character_host(

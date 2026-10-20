@@ -59,6 +59,9 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mmorpg_zone_coordinator') THEN
     CREATE ROLE mmorpg_zone_coordinator NOLOGIN;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mmorpg_character_profiles') THEN
+    CREATE ROLE mmorpg_character_profiles NOLOGIN;
+  END IF;
 END $$;
 GRANT USAGE ON SCHEMA mmorpg_persistence TO mmorpg_zone_journal, mmorpg_zone_coordinator;
 GRANT SELECT ON mmorpg_persistence.migrations TO mmorpg_zone_journal, mmorpg_zone_coordinator;
@@ -70,6 +73,7 @@ GRANT SELECT, INSERT, DELETE ON mmorpg_persistence.journal TO mmorpg_zone_journa
 GRANT SELECT, INSERT ON mmorpg_persistence.grants TO mmorpg_zone_journal;
 GRANT SELECT, INSERT, UPDATE ON mmorpg_persistence.streams TO mmorpg_zone_coordinator;
 GRANT DELETE ON mmorpg_persistence.journal TO mmorpg_zone_coordinator;
+GRANT SELECT (zone_id, timeline) ON mmorpg_persistence.journal TO mmorpg_zone_coordinator;
 GRANT mmorpg_characters_store TO mmorpg_zone_journal;
 
 -- Cluster identity is read to reject an unrelated database as a replication witness.
@@ -82,4 +86,6 @@ GRANT mmorpg_zone_fence_reader TO mmorpg_zone_journal;
 
 -- Global profile reads verify the physical standby identity before reading a
 -- repeatable-read snapshot; this grants no coordination or character mutations.
-GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system(),pg_catalog.pg_control_checkpoint() TO mmorpg_characters_store;
+GRANT USAGE ON SCHEMA mmorpg_characters TO mmorpg_character_profiles;
+GRANT SELECT ON mmorpg_characters.entries,mmorpg_characters.migrations TO mmorpg_character_profiles;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system(),pg_catalog.pg_control_checkpoint() TO mmorpg_character_profiles;

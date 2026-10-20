@@ -196,6 +196,7 @@ pub(crate) fn migrate(client: &mut Client) -> Result<(), StoreError> {
 
 /// Coordinator-only mirror of an already granted lease. An installed writer
 /// cannot be replaced until the coordinator has confirmed and recorded retirement.
+#[cfg(test)]
 pub(crate) fn install_writer(
     client: &mut Client,
     lease: ZoneLease,
@@ -248,6 +249,7 @@ pub(super) fn install_writer_in(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn record_retirement(
     client: &mut Client,
     fence: &StreamFence,
@@ -413,6 +415,22 @@ impl PostgresJournal {
             })
         })?;
         Ok(journal)
+    }
+
+    pub(super) fn ensure_uninitialized(&mut self) -> Result<(), StoreError> {
+        self.entries.transaction(|store| {
+            store.backend().with_sql(|transaction| {
+                let row = check_fence(transaction, &self.fence, false, self.directory_fencing)?;
+                if row.get::<_, i64>("last_position") != 0
+                    || row.get::<_, Option<Vec<u8>>>("checkpoint_ref").is_some()
+                {
+                    return Err(failure(
+                        "bootstrap requires a new stream; use recovery or explicit reset",
+                    ));
+                }
+                Ok(())
+            })
+        })
     }
 
     pub(super) fn set_cancellation(&mut self, cancelled: Arc<AtomicBool>) {
@@ -750,6 +768,7 @@ impl PostgresJournal {
         }))
     }
 
+    #[cfg(test)]
     pub(crate) fn grant_ids(
         &mut self,
         character: Option<&CharacterId>,

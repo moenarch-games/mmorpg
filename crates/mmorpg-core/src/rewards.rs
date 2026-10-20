@@ -289,6 +289,17 @@ impl crate::ZoneSimulation {
         }
         history.load(player, key)
     }
+    /// The adapter uses this only while a session is still an unbound placeholder.
+    pub fn clear_loaded_reward_receipts(&mut self, player: PlayerId) -> Result<(), ZoneError> {
+        if !self.players.contains_key(&player) {
+            return Err(ZoneError::new("receipt player is absent"));
+        }
+        self.rewards
+            .as_mut()
+            .ok_or_else(|| ZoneError::new("reward tracking is disabled"))?
+            .remove_player(player);
+        Ok(())
+    }
     pub fn creature_lives(&self) -> impl Iterator<Item = (CreatureId, u64)> + '_ {
         self.creatures
             .iter()

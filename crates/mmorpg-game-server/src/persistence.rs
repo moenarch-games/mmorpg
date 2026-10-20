@@ -1,6 +1,9 @@
 //! Production persistence composition (TECH-003/004/005). Storage never owns game rules.
 mod backend;
 mod checkpoints;
+mod global_worker;
+mod serving;
+pub use serving::serve_postgres_character_host;
 mod hosted;
 #[cfg(feature = "postgres")]
 pub(crate) mod postgres;

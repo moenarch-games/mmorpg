@@ -19,6 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Clone)]
 pub(crate) struct BackendConfig {
     pub coordinator_primary_url: String,
     pub coordinator_standby_url: String,
@@ -46,7 +47,7 @@ pub(crate) struct GlobalBackend {
     coordinator: Client,
     replication: ReplicaBarrier,
     profiles: PostgresEntries,
-    cancelled: AtomicBool,
+    cancelled: Arc<AtomicBool>,
     fenced: bool,
 }
 impl GlobalBackend {
@@ -82,9 +83,97 @@ impl GlobalBackend {
             coordinator,
             replication,
             profiles,
-            cancelled: AtomicBool::new(false),
+            cancelled: Arc::new(AtomicBool::new(false)),
             fenced: false,
         })
+    }
+    pub(super) fn set_cancellation(&mut self, flag: Arc<AtomicBool>) {
+        self.cancelled = flag;
+    }
+    pub(super) fn cancel_tokens(&self) -> Vec<::postgres::CancelToken> {
+        let mut tokens = vec![
+            self.coordinator.cancel_token(),
+            self.profiles.cancel_token(),
+        ];
+        tokens.extend(self.replication.cancel_tokens());
+        tokens
+    }
+    pub(crate) fn assignment(
+        &mut self,
+        zone: ZoneId,
+    ) -> Result<Option<directory::StoredAssignment>, StoreError> {
+        directory::read_assignment(&mut self.coordinator, zone).map_err(error)
+    }
+    pub(crate) fn retired_fence(
+        &mut self,
+        zone: ZoneId,
+        expected_epoch: Option<u64>,
+    ) -> Result<StreamFence, StoreError> {
+        let assignment = self
+            .assignment(zone)?
+            .ok_or_else(|| error("zone has no directory assignment"))?;
+        if !assignment.retired
+            || expected_epoch.is_some_and(|epoch| epoch != assignment.lease.epoch)
+        {
+            return Err(error("expected zone writer is not confirmed retired"));
+        }
+        let row = self.coordinator.query_one("SELECT writer_host,writer_epoch,world_id::text,timeline,retired FROM mmorpg_persistence.streams WHERE zone_id=$1", &[&i64::from(zone.get())]).map_err(error)?;
+        if !row.get::<_, bool>(4)
+            || row.get::<_, String>(0) != assignment.lease.host_id.as_str()
+            || row.get::<_, i64>(1) != i64::try_from(assignment.lease.epoch).map_err(error)?
+        {
+            return Err(error("retired directory and journal assignments disagree"));
+        }
+        Ok(StreamFence {
+            lease: assignment.lease,
+            world_id: row.get(2),
+            timeline: u64::try_from(row.get::<_, i64>(3)).map_err(error)?,
+        })
+    }
+    /// Explicit operator path after the source process is stopped. It cannot
+    /// resume a persisted assignment or infer retirement from lease expiry.
+    pub(crate) fn confirm_stopped_assignment(
+        &mut self,
+        zone: ZoneId,
+        expected_epoch: u64,
+    ) -> Result<(), StoreError> {
+        let assignment = self
+            .assignment(zone)?
+            .ok_or_else(|| error("unknown zone assignment"))?;
+        if assignment.lease.epoch != expected_epoch {
+            return Err(error("zone epoch changed"));
+        }
+        let row = self
+            .coordinator
+            .query_one(
+                "SELECT world_id::text,timeline FROM mmorpg_persistence.streams WHERE zone_id=$1",
+                &[&i64::from(zone.get())],
+            )
+            .map_err(error)?;
+        let fence = StreamFence {
+            lease: assignment.lease,
+            world_id: row.get(0),
+            timeline: u64::try_from(row.get::<_, i64>(1)).map_err(error)?,
+        };
+        let mut transaction = self.coordinator.transaction().map_err(error)?;
+        directory::retire_in(&mut transaction, &fence.lease).map_err(error)?;
+        postgres::record_retirement_in(&mut transaction, &fence)?;
+        if let Err(cause) = transaction.commit() {
+            self.fenced = true;
+            return Err(error(cause));
+        }
+        self.confirm()
+    }
+    pub(crate) fn reset_retired(
+        &mut self,
+        previous: &StreamFence,
+        checkpoint: &super::checkpoints::VerifiedWorldReset,
+    ) -> Result<StreamFence, StoreError> {
+        self.ready()?;
+        self.retired_fence(previous.lease.zone_id, Some(previous.lease.epoch))?;
+        let next = postgres::reset_retired_world(&mut self.coordinator, previous, checkpoint)?;
+        self.confirm()?;
+        Ok(next)
     }
     fn ready(&self) -> Result<(), StoreError> {
         if self.fenced {
@@ -251,7 +340,7 @@ mod tests {
         let config = BackendConfig {
             coordinator_primary_url: role(&primary, "mmorpg_zone_coordinator"),
             coordinator_standby_url: role(&standby, "mmorpg_zone_coordinator"),
-            character_standby_url: role(&standby, "mmorpg_characters_store"),
+            character_standby_url: role(&standby, "mmorpg_character_profiles"),
             timeout: Duration::from_secs(5),
         };
         let mut backend = GlobalBackend::connect(config).unwrap();
@@ -339,6 +428,19 @@ mod tests {
         let profile = backend.committed_character(&character).unwrap().unwrap();
         assert_eq!(profile.record, record);
         assert_eq!(profile.revision, 1);
+        let mut query_only = admin.transaction().unwrap();
+        query_only
+            .batch_execute("SET LOCAL ROLE mmorpg_character_profiles")
+            .unwrap();
+        assert!(
+            query_only
+                .execute(
+                    "UPDATE mmorpg_characters.entries SET entry=entry WHERE character_id=$1",
+                    &[&character.as_str()]
+                )
+                .is_err()
+        );
+        query_only.rollback().unwrap();
         backend.retire_after_stop(&grant).unwrap();
         assert!(grant.permit().ensure_current(zone).is_err());
         assert!(journal.characters(|_| Ok(())).is_err());

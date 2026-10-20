@@ -28,5 +28,8 @@ futures-util = { version = "=0.3.34", optional = true }
 [features]
 postgres = ["dep:postgres", "dep:serde", "dep:serde_json", "dep:sha2", "mmorpg-characters/postgres", "mmorpg-control-plane/postgres", "dep:object_store", "dep:zstd", "dep:futures-util"]
 
+[dev-dependencies]
+wtransport = { version = "=0.7.2", default-features = false, features = ["ring", "self-signed"] }
+
 [lints]
 workspace = true

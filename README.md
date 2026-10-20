@@ -15,7 +15,7 @@ Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decis
 | Command/snapshot wire encoding | `mmorpg-protocol` |
 | Session ticks, reconnects, replay/recovery, WebTransport | `game-server` |
 | Zone placement, lease fencing, host routing, handoff metadata | `mmorpg-control-plane` |
-| Durable character records and exclusive character leases | `mmorpg-characters` (file entries for development/LAN, browser `localStorage` entries; PostgreSQL pending) |
+| Durable character records and exclusive character leases | `mmorpg-characters` (file entries for development/LAN, browser `localStorage` entries; optional PostgreSQL adapter) |
 | Adapter from a zone simulation into `game-server` | `mmorpg-game-server` |
 | Presentation scenery: props, roads, water, relief, terrain grid (clients only) | `mmorpg-scenery` |
 | Native graphics | `mmorpg-client`: wgpu/winit adapter over pinned `3d-lab` mesh/camera models |
@@ -90,7 +90,7 @@ The workspace provides:
 - [headless deterministic scenario runners](docs/SCENARIOS.md) for scripted bots against the real zone host path, including a Wolfrun Woods hunt that fights, dies and releases its spirit, and for control-plane lease/handoff sequences with invariant checks after every step;
 - architecture and roadmap documents that keep future persistence and orchestration choices replaceable.
 
-The control-plane implementation in this slice is a **reference model**, not yet a production distributed consensus system. Host registration is placement eligibility only: a missed heartbeat blocks new assignment to that host but does not revoke an already-issued zone lease. Existing lease deadlines and fencing epochs remain the authority boundary. The model makes ownership, liveness-sensitive placement, epoch fencing and handoff idempotence executable ahead of the [selected PostgreSQL production directory](docs/ARCHITECTURE.md#tech-001--postgresql-for-production-zone-ownership) and any future orchestration infrastructure.
+The control-plane implementation in this slice is a **reference model**, not yet a production distributed consensus system. Host registration is placement eligibility only: a missed heartbeat blocks new assignment to that host but does not revoke an already-issued zone lease. Existing lease deadlines and fencing epochs remain the authority boundary. The model makes ownership, liveness-sensitive placement, epoch fencing and handoff idempotence executable alongside the [optional PostgreSQL directory and durable host adapter](docs/ARCHITECTURE.md#tech-001--postgresql-for-production-zone-ownership) and any future orchestration infrastructure.
 
 ## Native multiplayer client
 
