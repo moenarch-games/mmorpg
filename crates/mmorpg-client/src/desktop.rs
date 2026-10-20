@@ -909,23 +909,32 @@ impl ApplicationHandler for App {
             } if ui_consumed => {}
             WindowEvent::MouseWheel { .. } if ui_consumed => {}
             WindowEvent::MouseInput { state, button, .. } => {
-                if matches!(button, MouseButton::Left | MouseButton::Right) {
-                    if state == ElementState::Pressed {
-                        self.orbit_buttons.insert(button);
-                        if button == MouseButton::Left {
-                            self.world_controls.pointer(true);
-                            self.pointer_origin = self.cursor;
-                        }
-                    } else {
-                        if button == MouseButton::Left {
-                            let click = self.world_controls.pointer(false)
-                                && self.pointer_origin.take().is_some();
-                            if click {
-                                self.select_pointer(event_loop);
-                            }
-                        }
-                        self.orbit_buttons.remove(&button);
+                let index = match button {
+                    MouseButton::Left => 0,
+                    MouseButton::Middle => 1,
+                    MouseButton::Right => 2,
+                    MouseButton::Back => 3,
+                    MouseButton::Forward => 4,
+                    MouseButton::Other(index) => index,
+                };
+                let selecting = self.world_controls.selecting();
+                let click = self.world_controls.pointer_button(
+                    index,
+                    state == ElementState::Pressed,
+                    binding_modifiers.clone(),
+                );
+                if state == ElementState::Pressed {
+                    if !selecting && self.world_controls.selecting() {
+                        self.pointer_origin = self.cursor;
                     }
+                    if matches!(button, MouseButton::Left | MouseButton::Right) {
+                        self.orbit_buttons.insert(button);
+                    }
+                } else {
+                    if click && self.pointer_origin.take().is_some() {
+                        self.select_pointer(event_loop);
+                    }
+                    self.orbit_buttons.remove(&button);
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {

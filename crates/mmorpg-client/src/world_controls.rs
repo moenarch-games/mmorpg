@@ -101,6 +101,7 @@ pub struct WorldControls {
     state: SemanticControlState,
     interaction: bool,
     sources: crate::controls::KeyboardSources,
+    pointer_sources: std::collections::BTreeMap<u16, InputStroke>,
 }
 impl Default for WorldControls {
     fn default() -> Self {
@@ -126,6 +127,7 @@ impl WorldControls {
             state: SemanticControlState::new(),
             interaction: false,
             sources: crate::controls::KeyboardSources::default(),
+            pointer_sources: std::collections::BTreeMap::new(),
         }
     }
     pub fn set_profile(&mut self, profile: input_bindings_core::Profile) -> Result<(), String> {
@@ -179,20 +181,97 @@ impl WorldControls {
             .collect()
     }
     pub fn pointer(&mut self, down: bool) -> bool {
-        let held = self.state.is_held("world.select");
-        let decisions = if down {
-            self.runtime.input_down(mouse(), false, 0)
+        self.pointer_button(0, down, Modifiers::default())
+    }
+    pub fn selecting(&self) -> bool {
+        self.state.is_held("world.select")
+    }
+    pub fn pointer_button(&mut self, button: u16, down: bool, modifiers: Modifiers) -> bool {
+        let held = self.selecting();
+        let stroke = if down {
+            self.pointer_sources
+                .entry(button)
+                .or_insert_with(|| {
+                    InputStroke::Device(DeviceStroke::MouseButton { button, modifiers })
+                })
+                .clone()
         } else {
-            self.runtime.input_up(&mouse(), 0)
+            self.pointer_sources.remove(&button).unwrap_or_else(|| {
+                InputStroke::Device(DeviceStroke::MouseButton { button, modifiers })
+            })
+        };
+        let decisions = if down {
+            self.runtime.input_down(stroke, false, 0)
+        } else {
+            self.runtime.input_up(&stroke, 0)
         };
         self.state.apply_decisions(&decisions);
         self.state.drain_presses();
-        !down && held
+        !down && held && !self.selecting()
     }
     pub fn reset(&mut self) {
         self.sources.clear();
+        self.pointer_sources.clear();
         let decision = self.runtime.reset("focusLost");
         self.state.apply_decisions(&[decision]);
         self.state.drain_presses();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn selection_uses_the_rebound_button_and_keeps_its_original_modifiers_until_release() {
+        let registry = crate::bindings::action_registry();
+        let mut binding = registry
+            .actions
+            .iter()
+            .find(|action| action.id == "world.select")
+            .unwrap()
+            .defaults[0]
+            .clone();
+        binding.sequence = vec![InputStroke::Device(DeviceStroke::MouseButton {
+            button: 2,
+            modifiers: Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        })];
+        let mut controls = WorldControls::new();
+        controls
+            .set_profile(input_bindings_core::Profile {
+                id: "character:a".into(),
+                patches: vec![input_bindings_core::BindingPatch::Replace {
+                    binding_id: binding.id.clone(),
+                    binding,
+                }],
+            })
+            .unwrap();
+        controls.pointer_button(0, true, Modifiers::default());
+        assert!(!controls.selecting());
+        assert!(!controls.pointer_button(0, false, Modifiers::default()));
+        controls.pointer_button(
+            2,
+            true,
+            Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        );
+        assert!(controls.selecting());
+        assert!(!controls.pointer_button(0, false, Modifiers::default()));
+        assert!(controls.pointer_button(2, false, Modifiers::default()));
+        assert!(!controls.selecting());
+        controls.pointer_button(
+            2,
+            true,
+            Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        );
+        controls.reset();
+        assert!(!controls.pointer_button(2, false, Modifiers::default()));
     }
 }
