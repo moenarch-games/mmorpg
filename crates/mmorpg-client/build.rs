@@ -4,6 +4,9 @@
 //! resources the manifest declares and the character's `humanoid-sockets`
 //! descriptor; and the Greyhaven inn's drawn entries (#158). Acquisition stays
 //! in that script; the build only reads local files.
+#[path = "build/warden_icons.rs"]
+mod warden_icons;
+
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -23,6 +26,10 @@ const INN: [&str; 5] = [
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("cargo sets it"));
+    let art = manifest_dir.join("../../web/assets/warden-icons");
+    println!("cargo:rerun-if-changed={}", art.display());
+    warden_icons::validate(&art)
+        .unwrap_or_else(|cause| panic!("Warden artwork validation failed: {cause}"));
     let bundle = manifest_dir.join("../../web/public/characters/humanoid.ranger.male");
     for watched in ["RELEASE", "manifest.json"] {
         println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
