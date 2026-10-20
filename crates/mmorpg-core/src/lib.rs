@@ -41,6 +41,7 @@ mod platform;
 mod progression;
 mod projectile;
 mod projection;
+mod pvp;
 mod quest;
 mod ramp;
 mod rewards;
@@ -81,8 +82,9 @@ pub use content::{
     CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
     LARGE_CREATURE_HALF_WIDTH_UNITS, MAX_CONTENT_COORDINATE_UNITS, MAX_CREATURE_HALF_EXTENT_UNITS,
     MAX_CREATURE_SPAWNS, MAX_CREATURE_TEMPLATES, MAX_NPCS, MAX_STATIC_COLLIDERS,
-    MAX_TERRAIN_HEIGHT_UNITS, MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc, NpcRole, PropKind,
-    SpawnGrid, StaticCollider, Terrain, UNITS_PER_METRE, XzBounds, ZoneContent, ZoneDefinition,
+    MAX_TERRAIN_HEIGHT_UNITS, MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc, NpcRole,
+    PlayerCombatPolicy, PropKind, SpawnGrid, StaticCollider, Terrain, UNITS_PER_METRE, XzBounds,
+    ZoneContent, ZoneDefinition,
 };
 pub use corpse_loot::{LOOT_REACH_UNITS, LootClaim, LootView};
 pub use creature::{
@@ -168,7 +170,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 28;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 29;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its

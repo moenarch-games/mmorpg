@@ -293,3 +293,5 @@ The [saved grass authoring package](docs/SCATTER_AUTHORING.md) freezes accepted 
 The [saved relief authoring package](docs/RELIEF_AUTHORING.md) freezes the Outpost heightfield and reproduces its saved flatten coverage through the same pinned producer. Both clients consume the saved result through shared scenery.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [ROADMAP.md](ROADMAP.md).
+
+Opt-in dedicated-zone combat is documented in [PvP combat](docs/PVP_COMBAT.md). Ordinary Greyhaven play stays safe; the first playable Battle Royale mode remains separate integration work.

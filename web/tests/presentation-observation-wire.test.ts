@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot } from "../src/replication";
 
 test("new observation fixture decodes the same source/target/outcome in browser and Rust", () => {
-  const hex = readFileSync(new URL("../../fixtures/protocol/presentation-observation-v29.hex", import.meta.url), "utf8").trim();
+  const hex = readFileSync(new URL("../../fixtures/protocol/presentation-observation-v30.hex", import.meta.url), "utf8").trim();
   const bytes = Uint8Array.from(Buffer.from(hex, "hex"));
   expect(decodeSnapshot(bytes).events).toEqual([
     { kind: "attack-performed", source: { kind: "player", id: 2 }, target: { kind: "creature", id: 101 } },

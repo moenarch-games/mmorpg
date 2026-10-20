@@ -105,7 +105,7 @@ impl ZoneSimulation {
             .filter(|combo| combo.is_open() && ability == crate::ability::ids::SHIELD_BASH.get());
         self.update_player(player_id, |player| player.combo = None);
         let target = match combo {
-            Some(combo) => Some(EntityRef::Creature(combo.target)),
+            Some(combo) => Some(combo.target),
             None => target,
         };
         let ability = match self.ready_ability(player_id, ability, false, combo.is_some()) {
@@ -122,13 +122,19 @@ impl ZoneSimulation {
             if target.is_none() && ability.aims_freely() {
                 None
             } else {
-                let Some(entity @ EntityRef::Creature(creature_id)) = target else {
+                let Some(entity) = target else {
                     return Ok(Some((ErrorCode::InvalidTarget, target)));
                 };
-                let alive = self
-                    .creatures
-                    .get(&creature_id)
-                    .is_some_and(|creature| creature.is_alive());
+                let alive = match entity {
+                    EntityRef::Creature(id) => {
+                        self.creatures.get(&id).is_some_and(|unit| unit.is_alive())
+                    }
+                    EntityRef::Player(id) => {
+                        self.players_are_hostile(player_id, id)
+                            && self.players.get(&id).is_some_and(|unit| unit.is_alive())
+                    }
+                    EntityRef::Npc(_) => false,
+                };
                 if !alive || !self.visible_to(player_id, entity)? {
                     return Ok(Some((ErrorCode::InvalidTarget, target)));
                 }
@@ -138,7 +144,8 @@ impl ZoneSimulation {
                 {
                     return Ok(Some((ErrorCode::OutOfRange, target)));
                 }
-                if matches!(ability.range, AbilityRange::Units(_))
+                if (matches!(ability.range, AbilityRange::Units(_))
+                    || matches!(entity, EntityRef::Player(_)))
                     && !self.line_of_sight(EntityRef::Player(player_id), entity)?
                 {
                     return Ok(Some((ErrorCode::LineOfSight, target)));
@@ -351,10 +358,6 @@ impl ZoneSimulation {
         let fallback = [i64::from(x), i64::from(z)];
         let (melee, bonus) = (player.melee_damage(), u32::from(player.damage_bonus()));
         let source = EntityRef::Player(player_id);
-        let creature = match target {
-            Some(EntityRef::Creature(creature_id)) => Some(creature_id),
-            _ => None,
-        };
         let aura = |amount: u16| {
             ability.aura().map(|spec| Aura {
                 ability: ability.id,
@@ -365,10 +368,10 @@ impl ZoneSimulation {
         };
         match ability.effect {
             AbilityEffect::WeaponStrike { .. } => {
-                if let Some(creature_id) = creature {
+                if let Some(victim) = target {
                     let amount = self.weapon_strike_amount(player_id, ability.effect);
                     let amount = self.stance_damage(player_id, target, amount)?;
-                    self.player_damages_creature(player_id, creature_id, amount, false, now)?;
+                    self.player_melee_hits(player_id, victim, amount, false, now)?;
                 }
             }
             AbilityEffect::Bash {
@@ -376,22 +379,13 @@ impl ZoneSimulation {
                 knockback,
                 ..
             } => {
-                if let Some(creature_id) = creature {
-                    self.interrupt_cast(
-                        EntityRef::Creature(creature_id),
-                        Some(source),
-                        Some(lockout_ticks),
-                    );
+                if let Some(victim) = target {
+                    self.interrupt_cast(victim, Some(source), Some(lockout_ticks));
                     if let Some(stun) = aura(0) {
-                        self.hostile_aura(player_id, creature_id, stun)?;
+                        self.hostile_aura(player_id, victim, stun)?;
                     }
                     let from = self.player_position(player_id)?;
-                    self.knock_away(
-                        EntityRef::Creature(creature_id),
-                        [from.x, from.z],
-                        fallback,
-                        knockback,
-                    )?;
+                    self.knock_away(victim, [from.x, from.z], fallback, knockback)?;
                 }
             }
             AbilityEffect::HealOverTime { percent, .. } => {
@@ -401,34 +395,32 @@ impl ZoneSimulation {
                 }
             }
             AbilityEffect::Cleave { extra, radius } => {
-                if let Some(creature_id) = creature {
-                    let centre = self.unit_position(EntityRef::Creature(creature_id))?;
-                    let mut victims = vec![creature_id];
+                if let Some(victim) = target {
+                    let centre = self.unit_position(victim)?;
+                    let mut victims = vec![victim];
                     victims.extend(
-                        self.living_creatures_near([centre[0], centre[2]], radius)?
+                        self.living_hostiles_near(player_id, [centre[0], centre[2]], radius)?
                             .into_iter()
-                            .filter(|&other| other != creature_id)
+                            .filter(|&other| other != victim)
                             .take(usize::from(extra)),
                     );
                     for victim in victims {
                         let amount = self.weapon_roll(melee);
                         let amount = self.stance_damage(player_id, target, amount)?;
-                        self.player_damages_creature(player_id, victim, amount, false, now)?;
+                        self.player_melee_hits(player_id, victim, amount, false, now)?;
                     }
                 }
             }
             AbilityEffect::DamageOverTime {
                 base, per_level, ..
             } => {
-                if let (Some(creature_id), Some(aura)) =
-                    (creature, aura(scaled(base, per_level, level)))
-                {
-                    self.hostile_aura(player_id, creature_id, aura)?;
+                if let (Some(victim), Some(aura)) = (target, aura(scaled(base, per_level, level))) {
+                    self.hostile_aura(player_id, victim, aura)?;
                 }
             }
             AbilityEffect::Snare { percent, .. } => {
-                if let (Some(creature_id), Some(aura)) = (creature, aura(percent)) {
-                    self.hostile_aura(player_id, creature_id, aura)?;
+                if let (Some(victim), Some(aura)) = (target, aura(percent)) {
+                    self.hostile_aura(player_id, victim, aura)?;
                 }
             }
             AbilityEffect::Haste { percent, .. } => {
@@ -437,23 +429,23 @@ impl ZoneSimulation {
                 }
             }
             AbilityEffect::Bolt { damage, per_level } => {
-                if let Some(creature_id) = creature {
+                if let Some(victim) = target {
                     let amount = self
                         .rng
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + u32::from(scaled(0, per_level, level))
                         + bonus;
-                    self.player_damages_creature(player_id, creature_id, amount, false, now)?;
+                    self.player_damages_unit(player_id, victim, amount, false, now)?;
                 }
             }
             AbilityEffect::Nova { damage, radius, .. } => {
                 let centre = self.player_position(player_id)?;
-                for victim in self.living_creatures_near([centre.x, centre.z], radius)? {
+                for victim in self.living_hostiles_near(player_id, [centre.x, centre.z], radius)? {
                     let amount = self
                         .rng
                         .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                         + bonus;
-                    self.player_damages_creature(player_id, victim, amount, false, now)?;
+                    self.player_damages_unit(player_id, victim, amount, false, now)?;
                     if let Some(root) = aura(0) {
                         self.hostile_aura(player_id, victim, root)?;
                     }
@@ -561,6 +553,33 @@ impl ZoneSimulation {
         Ok(found)
     }
 
+    /// Eligible opponents and creatures, in stable entity order. Safe-world creature order is unchanged.
+    fn living_hostiles_near(
+        &self,
+        attacker: PlayerId,
+        centre: [i32; 2],
+        radius: i32,
+    ) -> Result<Vec<EntityRef>, ZoneError> {
+        let mut found = Vec::new();
+        for (&victim, player) in &self.players {
+            if self.players_are_hostile(attacker, victim) && player.is_alive() {
+                let unit = EntityRef::Player(victim);
+                let position = self.unit_position(unit)?;
+                if distance_squared(centre, [position[0], position[2]]) <= i64::from(radius).pow(2)
+                    && self.line_of_sight(EntityRef::Player(attacker), unit)?
+                {
+                    found.push(unit);
+                }
+            }
+        }
+        found.extend(
+            self.living_creatures_near(centre, radius)?
+                .into_iter()
+                .map(EntityRef::Creature),
+        );
+        Ok(found)
+    }
+
     /// One explosion (#287, #288): every victim the centre can see within `radius` takes
     /// `damage` (inclusive) + `bonus` and is knocked `knockback` units away, both falling off
     /// linearly to half at the edge; walls between centre and victim shield it. Creatures and
@@ -577,7 +596,17 @@ impl ZoneSimulation {
             knockback,
             fallback,
         } = blast;
-        for (victim, distance) in self.blast_victims(centre, radius, source.is_some())? {
+        for (victim, distance) in self.blast_victims(
+            centre,
+            radius,
+            source.is_some()
+                || self.content.player_combat_policy() == crate::PlayerCombatPolicy::FreeForAll,
+        )? {
+            if source.is_none()
+                && matches!(victim, EntityRef::Player(id) if !self.players_are_hostile(attacker, id))
+            {
+                continue;
+            }
             // Linear falloff to half at the edge, in per-mille.
             let share = 1_000 - 500 * distance / i64::from(radius.max(1));
             let amount = self
@@ -593,6 +622,15 @@ impl ZoneSimulation {
                 }
                 (EntityRef::Player(player_id), Some(barrel)) => {
                     self.creature_damages_player(barrel, player_id, amount, false)?;
+                }
+                (EntityRef::Player(victim), None) => {
+                    self.player_damages_unit(
+                        attacker,
+                        EntityRef::Player(victim),
+                        amount,
+                        false,
+                        now,
+                    )?;
                 }
                 _ => continue,
             }
@@ -692,18 +730,19 @@ impl ZoneSimulation {
     fn hostile_aura(
         &mut self,
         player_id: PlayerId,
-        creature_id: CreatureId,
+        target: EntityRef,
         aura: Aura,
     ) -> Result<(), ZoneError> {
         let source = EntityRef::Player(player_id);
-        let target = EntityRef::Creature(creature_id);
-        let Some(creature) = self.creatures.get(&creature_id) else {
-            return Ok(());
-        };
-        if !creature.is_alive() {
+        if !self.attackable_by_player(player_id, target) {
             return Ok(());
         }
-        if matches!(creature.ai, CreatureAi::Evading { .. }) {
+        if let EntityRef::Creature(creature_id) = target
+            && self
+                .creatures
+                .get(&creature_id)
+                .is_some_and(|creature| matches!(creature.ai, CreatureAi::Evading { .. }))
+        {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
         }
@@ -714,13 +753,21 @@ impl ZoneSimulation {
             self.interrupt_cast(target, Some(source), None);
         }
         self.put_aura(target, aura);
-        if let Some(creature) = self.creatures.get_mut(&creature_id) {
+        if let EntityRef::Creature(creature_id) = target
+            && let Some(creature) = self.creatures.get_mut(&creature_id)
+        {
             creature.combat_timer = COMBAT_LINGER_TICKS;
+        }
+        if let EntityRef::Player(victim) = target {
+            self.update_player(victim, |player| player.combat_timer = COMBAT_LINGER_TICKS);
         }
         self.update_player(player_id, |player| {
             player.combat_timer = COMBAT_LINGER_TICKS;
         });
-        self.engage(creature_id, source, true)
+        if let EntityRef::Creature(creature_id) = target {
+            self.engage(creature_id, source, true)?;
+        }
+        Ok(())
     }
 
     fn ability_kind(&self, ability: AbilityId) -> Option<AuraKind> {
@@ -886,12 +933,12 @@ impl ZoneSimulation {
                     Some(point),
                 ) => {
                     if period > 0 && cast.elapsed % period == 0 {
-                        for victim in self.living_creatures_near(point, radius)? {
+                        for victim in self.living_hostiles_near(player_id, point, radius)? {
                             let amount = self
                                 .rng
                                 .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                                 + u32::from(scaled(0, per_level, level));
-                            self.player_damages_creature(player_id, victim, amount, false, now)?;
+                            self.player_damages_unit(player_id, victim, amount, false, now)?;
                         }
                     }
                 }
@@ -914,14 +961,9 @@ impl ZoneSimulation {
         now: u64,
     ) -> Result<(), ZoneError> {
         let source = EntityRef::Player(player_id);
-        let target_alive = match cast.target {
-            Some(EntityRef::Creature(creature_id)) => self
-                .creatures
-                .get(&creature_id)
-                .is_some_and(|creature| creature.is_alive()),
-            Some(_) => false,
-            None => true,
-        };
+        let target_alive = cast
+            .target
+            .is_none_or(|target| self.attackable_by_player(player_id, target));
         if !target_alive {
             self.notify_units(
                 [Some(source), None],
@@ -1308,6 +1350,15 @@ impl ZoneSimulation {
         now: u64,
     ) -> Result<(), ZoneError> {
         match (kind, unit, aura.caster) {
+            (AuraKind::DamageOverTime, EntityRef::Player(victim), EntityRef::Player(attacker)) => {
+                self.player_damages_unit(
+                    attacker,
+                    EntityRef::Player(victim),
+                    u32::from(amount),
+                    false,
+                    now,
+                )
+            }
             (
                 AuraKind::DamageOverTime,
                 EntityRef::Creature(creature_id),

@@ -1,9 +1,9 @@
 //! The Warden's first combo (#157, Atlas 5.2.39–5.2.51): a directed Heroic
-//! Strike that deals positive health damage to a creature opens a
-//! follow-up for the existing Shield Bash on exactly that creature.
+//! Strike that deals positive health damage to a opponent opens a
+//! follow-up for the existing Shield Bash on exactly that opponent.
 //!
 //! - **Confirmation:** only the directed (mouse-aimed) Heroic Strike, and only
-//!   when the struck creature actually loses health after absorbs (5.2.49).
+//!   when the struck opponent actually loses health after absorbs (5.2.49).
 //!   A miss, a whiff or a fully absorbed blow opens nothing and clears an
 //!   earlier opening.
 //! - **Phases:** the committed impact lasts [`COMBO_IMPACT_TICKS`]; a Shield
@@ -11,7 +11,7 @@
 //!   5.2.41). The follow-up window then stays open for
 //!   [`COMBO_WINDOW_TICKS`]; afterwards the opening expires.
 //! - **Follow-up:** a Shield Bash resolving while the window is open targets
-//!   the struck creature whatever is selected (5.2.47), may ignore only the
+//!   the struck opponent whatever is selected (5.2.47), may ignore only the
 //!   global cooldown the slash started (5.2.51) and otherwise obeys every
 //!   Shield Bash rule: unlock, Rage, its own cooldown, range, line of sight
 //!   and refusals. It consumes the opening once and starts its own global
@@ -19,7 +19,7 @@
 
 use crate::snapshot::PlayerIntent;
 use crate::zone::PlayerState;
-use crate::{CreatureId, ZoneSimulation, ability::ids};
+use crate::{EntityRef, ZoneSimulation, ability::ids};
 
 /// Committed impact after a confirming slash: 0.2 s.
 pub const COMBO_IMPACT_TICKS: u16 = 6;
@@ -29,8 +29,8 @@ pub const COMBO_WINDOW_TICKS: u16 = 18;
 /// A confirmed slash's follow-up opening.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ComboOpening {
-    /// The creature the slash damaged; the follow-up Bash may hit only it.
-    pub target: CreatureId,
+    /// The eligible unit the slash damaged; the follow-up Bash may hit only it.
+    pub target: EntityRef,
     /// Ticks since the slash, at most impact + window.
     pub elapsed: u16,
 }
@@ -52,7 +52,7 @@ impl ComboOpening {
 pub enum ComboPhase {
     /// The slash is still landing; a Shield Bash waits.
     Impact,
-    /// Shield Bash now follows up on the struck creature.
+    /// Shield Bash now follows up on the struck opponent.
     Open,
 }
 

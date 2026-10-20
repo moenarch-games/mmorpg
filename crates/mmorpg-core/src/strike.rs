@@ -1,6 +1,6 @@
 //! Directed strikes (#154): the Warden's pointer-aimed execution mode of
 //! Heroic Strike. The client submits facing and a high/middle/low,
-//! left/centre/right aim; the zone resolves which creature the sword's
+//! left/centre/right aim; the zone resolves which eligible unit the sword's
 //! physical sweep covers (Atlas 5.2.27, 5.2.53).
 //!
 //! **Coverage** is a horizontal arc and a vertical band:
@@ -10,12 +10,12 @@
 //!   [`PLAYER_REACH_UNITS`] (XZ centre distance), the same melee reach as the
 //!   selected-target strike;
 //! - the band is a height range above the Warden's feet ([`StrikeHeight`]);
-//!   a creature is covered when its physics body's vertical extent overlaps
+//!   a unit is covered when its physics body's vertical extent overlaps
 //!   it, so a high slash passes over a wolf and a low one under nothing;
 //! - static content colliders block the sweep through the Rapier physics world
 //!   ray query that line of sight uses.
 //!
-//! The nearest covered living creature (ties in `EntityRef` order) takes the
+//! The nearest covered living unit (ties in `EntityRef` order) takes the
 //! ability's weapon-strike damage; there is no cleave. A sweep that covers
 //! nobody still swings: it pays the shared Rage cost and starts the shared
 //! global cooldown like the selected-target mode (one ability, Atlas 5.2.53),
@@ -25,9 +25,7 @@ use crate::ability::{AbilityEffect, AbilityId, ids};
 use crate::ai::distance_squared;
 use crate::trig::{self, YAW_EIGHTH_TURN, YAW_QUARTER_TURN};
 use crate::unit::PLAYER_REACH_UNITS;
-use crate::{
-    CreatureId, EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError, ZoneSimulation,
-};
+use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError, ZoneSimulation};
 
 /// Half the horizontal arc one directed strike sweeps (30°).
 pub const STRIKE_ARC_HALF_WIDTH: u16 = YAW_QUARTER_TURN / 3;
@@ -168,7 +166,7 @@ impl ZoneSimulation {
         });
         self.pay_and_cool_down(player_id, ability);
         let victim = self.strike_coverage(player_id, facing, aim)?;
-        let target = victim.map(EntityRef::Creature);
+        let target = victim;
         self.notify_units(
             [Some(source), target],
             crate::ZoneEvent::StrikeSwept {
@@ -178,18 +176,18 @@ impl ZoneSimulation {
                 aim,
             },
         );
-        if let (Some(creature_id), AbilityEffect::WeaponStrike { .. }) = (victim, ability.effect) {
+        if let (Some(victim), AbilityEffect::WeaponStrike { .. }) = (victim, ability.effect) {
             let amount = self.weapon_strike_amount(player_id, ability.effect);
             let amount = self.stance_damage(player_id, target, amount)?;
-            let before = self.creature_health(creature_id);
-            self.player_damages_creature(player_id, creature_id, amount, false, now)?;
+            let before = self.struck_health(victim);
+            self.player_melee_hits_at(player_id, victim, amount, false, now, Some(aim.height))?;
             // Only positive health damage after absorbs opens the combo (#157).
             if ability.id == crate::ability::ids::HEROIC_STRIKE
-                && self.creature_health(creature_id) < before
+                && self.struck_health(victim) < before
             {
                 self.update_player(player_id, |player| {
                     player.combo = Some(crate::ComboOpening {
-                        target: creature_id,
+                        target: victim,
                         elapsed: 0,
                     });
                 });
@@ -198,36 +196,31 @@ impl ZoneSimulation {
         Ok(None)
     }
 
-    fn creature_health(&self, creature_id: CreatureId) -> u32 {
-        self.creatures
-            .get(&creature_id)
-            .map_or(0, |creature| creature.health)
+    fn struck_health(&self, target: EntityRef) -> u32 {
+        match target {
+            EntityRef::Creature(id) => self.creatures.get(&id).map_or(0, |unit| unit.health),
+            EntityRef::Player(id) => self.players.get(&id).map_or(0, |unit| unit.health),
+            EntityRef::Npc(_) => 0,
+        }
     }
 
-    /// The living creature a sweep from the player's body covers: nearest
+    /// The eligible living unit a sweep from the player's body covers: nearest
     /// first, then in `EntityRef` order; `None` is a whiff.
     pub(crate) fn strike_coverage(
         &self,
         player_id: PlayerId,
         facing: u16,
         aim: StrikeAim,
-    ) -> Result<Option<CreatureId>, ZoneError> {
+    ) -> Result<Option<EntityRef>, ZoneError> {
         let origin = self.player_position(player_id)?;
         let feet = origin.y - PLAYER_HALF_EXTENTS_UNITS[1];
         let [band_low, band_high] = aim.height.band();
         let (dir_x, dir_z) = trig::direction(aim.side.arc_centre(facing));
         let min_cos = i64::from(trig::cos(STRIKE_ARC_HALF_WIDTH));
         let reach = i64::from(PLAYER_REACH_UNITS).pow(2);
-        let mut best: Option<(i64, CreatureId)> = None;
+        let mut best: Option<(i64, EntityRef)> = None;
         for entity in self.interest.near(origin.x, origin.z, PLAYER_REACH_UNITS) {
-            let EntityRef::Creature(creature_id) = entity else {
-                continue;
-            };
-            if !self
-                .creatures
-                .get(&creature_id)
-                .is_some_and(|creature| creature.is_alive())
-            {
+            if !self.attackable_by_player(player_id, entity) {
                 continue;
             }
             let body = self
@@ -236,7 +229,7 @@ impl ZoneSimulation {
                 .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
             let (centre, half) = (body.position(), body.half_extents());
             let distance = distance_squared([origin.x, origin.z], [centre.x, centre.z]);
-            if distance > reach || best.is_some_and(|(nearest, _)| distance >= nearest) {
+            if distance > reach || best.is_some_and(|best| (distance, entity) >= best) {
                 continue;
             }
             // |v| cos(angle to the arc centre) >= |v| cos(half width), both
@@ -255,8 +248,8 @@ impl ZoneSimulation {
             if !self.line_of_sight(EntityRef::Player(player_id), entity)? {
                 continue;
             }
-            best = Some((distance, creature_id));
+            best = Some((distance, entity));
         }
-        Ok(best.map(|(_, creature_id)| creature_id))
+        Ok(best.map(|(_, entity)| entity))
     }
 }

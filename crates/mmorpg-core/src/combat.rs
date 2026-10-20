@@ -233,6 +233,12 @@ impl ZoneSimulation {
             }
             PlayerIntent::StartAttack => match current_target {
                 None => Some((ErrorCode::NoTarget, None)),
+                Some(target @ EntityRef::Player(_))
+                    if self.attackable_by_player(player_id, target) =>
+                {
+                    self.update_player(player_id, |player| player.auto_attack = true);
+                    None
+                }
                 Some(target @ (EntityRef::Player(_) | EntityRef::Npc(_))) => {
                     Some((ErrorCode::NotAttackable, Some(target)))
                 }
@@ -415,19 +421,14 @@ impl ZoneSimulation {
         if !player.is_alive() || !player.auto_attack {
             return Ok(());
         }
-        let (target, creature_id) = match player.target {
-            Some(target @ EntityRef::Creature(creature_id)) => (target, creature_id),
+        let target = match player.target {
+            Some(target @ (EntityRef::Creature(_) | EntityRef::Player(_))) => target,
             _ => {
                 player.auto_attack = false;
                 return Ok(());
             }
         };
-        // The target's death stops auto-attack.
-        if !self
-            .creatures
-            .get(&creature_id)
-            .is_some_and(|creature| creature.is_alive())
-        {
+        if !self.attackable_by_player(player_id, target) {
             self.update_player(player_id, |player| player.auto_attack = false);
             return Ok(());
         }
@@ -449,7 +450,18 @@ impl ZoneSimulation {
             .body(body_id(target))
             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?
             .position();
-        if distance_squared([from.x, from.z], [to.x, to.z]) > i64::from(PLAYER_REACH_UNITS).pow(2) {
+        let refusal = if distance_squared([from.x, from.z], [to.x, to.z])
+            > i64::from(PLAYER_REACH_UNITS).pow(2)
+        {
+            Some(ErrorCode::OutOfRange)
+        } else if matches!(target, EntityRef::Player(_))
+            && !self.line_of_sight(EntityRef::Player(player_id), target)?
+        {
+            Some(ErrorCode::LineOfSight)
+        } else {
+            None
+        };
+        if let Some(code) = refusal {
             // Out of range holds the ready swing; the error is throttled.
             if error_ready {
                 self.update_player(player_id, |player| {
@@ -458,7 +470,7 @@ impl ZoneSimulation {
                 self.notify(
                     player_id,
                     ZoneEvent::Error {
-                        code: ErrorCode::OutOfRange,
+                        code,
                         target: Some(target),
                     },
                 );
@@ -469,25 +481,28 @@ impl ZoneSimulation {
             player.swing_timer = swing_ticks;
             player.combat_timer = COMBAT_LINGER_TICKS;
         });
-        self.attack_creature(player_id, creature_id, damage, now)
+        self.attack_unit(player_id, target, damage, now)
     }
 
-    /// Resolves one player swing against a creature: evading creatures
-    /// ignore it; otherwise the hit table decides, damage lands, the first
-    /// damaging player taps the creature and threat rises by the damage.
-    fn attack_creature(
+    /// Resolves a player swing through the shared hit table and stance rules.
+    /// Creatures retain evasion/tap/threat; arena opponents use player shields and damage.
+    fn attack_unit(
         &mut self,
         player_id: PlayerId,
-        creature_id: CreatureId,
+        target: EntityRef,
         damage: [u16; 2],
         now: u64,
     ) -> Result<(), ZoneError> {
         let source = EntityRef::Player(player_id);
-        let target = EntityRef::Creature(creature_id);
-        let Some(creature) = self.creatures.get(&creature_id) else {
+        if !self.attackable_by_player(player_id, target) {
             return Ok(());
-        };
-        if matches!(creature.ai, CreatureAi::Evading { .. }) {
+        }
+        if let EntityRef::Creature(creature_id) = target
+            && self
+                .creatures
+                .get(&creature_id)
+                .is_some_and(|creature| matches!(creature.ai, CreatureAi::Evading { .. }))
+        {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
         }
@@ -511,6 +526,18 @@ impl ZoneSimulation {
         };
         match swing {
             Swing::Miss => {
+                let EntityRef::Creature(creature_id) = target else {
+                    if let EntityRef::Player(victim) = target {
+                        self.update_player(victim, |player| {
+                            player.combat_timer = COMBAT_LINGER_TICKS
+                        });
+                    }
+                    self.notify_units(
+                        [Some(source), Some(target)],
+                        ZoneEvent::Miss { source, target },
+                    );
+                    return Ok(());
+                };
                 let prop = self.is_prop(target);
                 let Some(creature) = self.creatures.get_mut(&creature_id) else {
                     return Ok(());
@@ -534,13 +561,7 @@ impl ZoneSimulation {
                         );
                     }
                 });
-                self.player_damages_creature(
-                    player_id,
-                    creature_id,
-                    u32::from(amount),
-                    critical,
-                    now,
-                )
+                self.player_melee_hits(player_id, target, u32::from(amount), critical, now)
             }
         }
     }
@@ -615,7 +636,27 @@ impl ZoneSimulation {
         amount: u32,
         critical: bool,
     ) -> Result<(), ZoneError> {
-        let source = EntityRef::Creature(creature_id);
+        self.damage_player(
+            EntityRef::Creature(creature_id),
+            player_id,
+            amount,
+            critical,
+        )
+    }
+
+    /// Shared player damage resolution for eligible hostile sources.
+    pub(crate) fn damage_player(
+        &mut self,
+        source: EntityRef,
+        player_id: PlayerId,
+        amount: u32,
+        critical: bool,
+    ) -> Result<(), ZoneError> {
+        if let EntityRef::Player(attacker) = source
+            && !self.players_are_hostile(attacker, player_id)
+        {
+            return Ok(());
+        }
         let target = EntityRef::Player(player_id);
         if !self
             .players
@@ -722,43 +763,58 @@ impl ZoneSimulation {
                 Ok(())
             }
             Swing::Hit { amount, critical } => {
-                match self.guard_outcome(source, player_id, amount)? {
-                    GuardOutcome::Unguarded => {}
-                    GuardOutcome::Blocked(lane) => {
-                        self.update_player(player_id, |player| {
-                            player.combat_timer = COMBAT_LINGER_TICKS;
-                        });
-                        self.guard_feedback(
-                            player_id,
-                            ZoneEvent::Blocked {
-                                source,
-                                target,
-                                lane,
-                                amount,
-                            },
-                        );
-                        return Ok(());
-                    }
-                    GuardOutcome::Broken(lane) => {
-                        self.update_player(player_id, |player| {
-                            player.guard.broken = crate::GUARD_BREAK_TICKS;
-                        });
-                        self.guard_feedback(
-                            player_id,
-                            ZoneEvent::GuardBroken {
-                                source,
-                                target,
-                                lane,
-                                ticks: crate::GUARD_BREAK_TICKS,
-                            },
-                        );
-                    }
+                if self.block_player_melee(source, player_id, amount, None)? {
+                    return Ok(());
                 }
                 // A Warden's stance exposes or braces it (#155).
                 let amount = self.stance_exposure(player_id, u32::from(amount))?;
                 self.creature_damages_player(creature_id, player_id, amount, critical)
             }
         }
+    }
+
+    /// Shared shield impact and feedback for creature and player melee attacks.
+    pub(crate) fn block_player_melee(
+        &mut self,
+        source: EntityRef,
+        player_id: PlayerId,
+        amount: u16,
+        strike_lane: Option<crate::StrikeHeight>,
+    ) -> Result<bool, ZoneError> {
+        let target = EntityRef::Player(player_id);
+        match self.guard_outcome(source, player_id, amount, strike_lane)? {
+            GuardOutcome::Unguarded => {}
+            GuardOutcome::Blocked(lane) => {
+                self.update_player(player_id, |player| {
+                    player.combat_timer = COMBAT_LINGER_TICKS;
+                });
+                self.guard_feedback(
+                    player_id,
+                    ZoneEvent::Blocked {
+                        source,
+                        target,
+                        lane,
+                        amount,
+                    },
+                );
+                return Ok(true);
+            }
+            GuardOutcome::Broken(lane) => {
+                self.update_player(player_id, |player| {
+                    player.guard.broken = crate::GUARD_BREAK_TICKS;
+                });
+                self.guard_feedback(
+                    player_id,
+                    ZoneEvent::GuardBroken {
+                        source,
+                        target,
+                        lane,
+                        ticks: crate::GUARD_BREAK_TICKS,
+                    },
+                );
+            }
+        }
+        Ok(false)
     }
 
     /// A guard outcome for the defender and the players who see both units.

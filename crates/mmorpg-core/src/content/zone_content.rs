@@ -19,6 +19,17 @@ use crate::{
     PLAYER_HALF_EXTENTS_UNITS, VendorStock, ZoneAreas, ZoneError,
 };
 
+/// Player-origin combat eligibility for an explicitly admitted zone instance.
+/// Shared-world zones are safe by default. Dedicated arena admission belongs to its host.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PlayerCombatPolicy {
+    #[default]
+    Safe,
+    /// Every distinct admitted player may fight every other admitted player.
+    /// This does not implement in-world duels or their nonlethal/isolation rules.
+    FreeForAll,
+}
+
 /// Immutable, validated zone content, shared between zones through `Arc`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZoneContent {
@@ -29,6 +40,7 @@ pub struct ZoneContent {
     npcs: Vec<Npc>,
     graveyard: [i32; 2],
     fingerprint: u64,
+    player_combat: PlayerCombatPolicy,
     rng_seed: u64,
     loot_revision: u64,
     loot_tables: Vec<(CreatureTemplateId, LootTable)>,
@@ -134,6 +146,7 @@ impl ZoneContent {
             npcs,
             graveyard,
             fingerprint: 0,
+            player_combat: PlayerCombatPolicy::Safe,
             rng_seed: 0,
             loot_revision: 0,
             loot_tables: Vec::new(),
@@ -169,6 +182,7 @@ impl ZoneContent {
             npcs: Vec::new(),
             graveyard: [feet[0], feet[2]],
             fingerprint: 0,
+            player_combat: PlayerCombatPolicy::Safe,
             rng_seed: 0,
             loot_revision: 0,
             loot_tables: Vec::new(),
@@ -189,6 +203,20 @@ impl ZoneContent {
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
         content
+    }
+
+    /// Explicitly opts an isolated zone instance into player combat. The content fingerprint
+    /// binds recovery to this policy, so restoring safe content cannot enable arena attacks.
+    #[must_use]
+    pub fn with_player_combat(mut self, policy: PlayerCombatPolicy) -> Self {
+        self.player_combat = policy;
+        self.fingerprint = self.compute_fingerprint();
+        self
+    }
+
+    #[must_use]
+    pub const fn player_combat_policy(&self) -> PlayerCombatPolicy {
+        self.player_combat
     }
 
     #[must_use]
@@ -707,6 +735,18 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_structure_fingerprint();
+        if self.player_combat == PlayerCombatPolicy::Safe {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/player-combat-v1");
+        hash.u64(fingerprint);
+        hash.u8(1);
+        hash.finish()
+    }
+
+    fn compute_structure_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_ramp_fingerprint();
         if self.pieces.is_empty() {
             return fingerprint;

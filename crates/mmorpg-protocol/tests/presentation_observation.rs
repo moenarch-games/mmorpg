@@ -40,17 +40,17 @@ fn observation_records_round_trip_without_reinterpreting_previous_snapshot_versi
     let bytes = encode_snapshot(&view).unwrap();
     let expected = mmorpg_core::golden::golden_hex(
         mmorpg_core::golden::workspace_root()
-            .join("fixtures/protocol/presentation-observation-v29.hex"),
+            .join("fixtures/protocol/presentation-observation-v30.hex"),
         &bytes,
     );
     assert_eq!(bytes, expected);
     assert_eq!(decode_snapshot(&bytes).unwrap(), view);
     assert_eq!(
-        SNAPSHOT_WIRE_VERSION, 29,
-        "one intentional migration from baseline28"
+        SNAPSHOT_WIRE_VERSION, 30,
+        "one intentional migration from baseline29"
     );
     // Use the current encoder for the new schema; old version is explicitly rejected.
-    let old = include_str!("../../../fixtures/protocol/player-snapshot-v27.hex");
+    let old = include_str!("../../../fixtures/protocol/player-snapshot-v29.hex");
     let old: Vec<u8> = old
         .trim()
         .as_bytes()
