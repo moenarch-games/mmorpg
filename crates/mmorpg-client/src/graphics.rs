@@ -852,5 +852,9 @@ mod tests {
 mod world_gpu_acceptance;
 
 #[cfg(test)]
+#[path = "../tests/support/skinned_allocation_observation.rs"]
+mod skinned_allocation_observation;
+
+#[cfg(test)]
 #[path = "../tests/support/structure_visuals.rs"]
 mod structure_visuals;

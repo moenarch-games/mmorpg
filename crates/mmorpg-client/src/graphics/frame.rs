@@ -55,6 +55,8 @@ struct GpuMesh {
     indices: wgpu::Buffer,
     count: u32,
     source: Weak<Mesh>,
+    #[cfg(test)]
+    uploaded_bytes: u64,
 }
 struct Draw {
     key: String,
@@ -127,6 +129,9 @@ impl GpuMesh {
             }),
             count: u32::try_from(indices.len())?,
             source: Arc::downgrade(mesh),
+            #[cfg(test)]
+            uploaded_bytes: (vertices.len() * mem::size_of::<Vertex>()
+                + indices.len() * mem::size_of::<u32>()) as u64,
         })
     }
 }
@@ -167,6 +172,8 @@ pub(super) struct FrameRenderer {
     instances: wgpu::Buffer,
     capacity: usize,
     meshes: BTreeMap<String, GpuMesh>,
+    #[cfg(test)]
+    observation: [u64; 3],
 }
 impl FrameRenderer {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, samples: u32) -> Self {
@@ -373,8 +380,15 @@ impl FrameRenderer {
             instances: instance_buffer(device, 1),
             capacity: 1,
             meshes: BTreeMap::new(),
+            #[cfg(test)]
+            observation: [0; 3],
         }
     }
+    #[cfg(test)]
+    pub(super) fn observation(&self) -> ([u64; 3], usize) {
+        (self.observation, self.meshes.len())
+    }
+
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -426,8 +440,18 @@ impl FrameRenderer {
                 .get(&draw.resource_key)
                 .is_none_or(|g| !g.source.ptr_eq(&Arc::downgrade(&draw.mesh)))
             {
-                self.meshes
-                    .insert(draw.resource_key.clone(), GpuMesh::upload(device, draw)?);
+                let uploaded = GpuMesh::upload(device, draw)?;
+                #[cfg(test)]
+                {
+                    self.observation[0] += 2;
+                    self.observation[2] += uploaded.uploaded_bytes;
+                }
+                self.meshes.insert(draw.resource_key.clone(), uploaded);
+            } else {
+                #[cfg(test)]
+                {
+                    self.observation[1] += 1;
+                }
             }
             let m = draw.model.elements;
             let det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2])
