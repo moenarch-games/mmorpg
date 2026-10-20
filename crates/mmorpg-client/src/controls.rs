@@ -226,7 +226,7 @@ impl NativeControls {
     #[must_use]
     pub fn new() -> Self {
         let mut runtime = InputRuntime::new(
-            native_action_registry(),
+            crate::bindings::action_registry(),
             None,
             InputRuntimeOptions::default(),
         );
@@ -249,8 +249,10 @@ impl NativeControls {
         &mut self,
         profile: Option<input_bindings_core::Profile>,
     ) -> Result<(), String> {
-        let report =
-            input_bindings_core::validate_registry(&native_action_registry(), profile.as_ref());
+        let report = input_bindings_core::validate_registry(
+            &crate::bindings::action_registry(),
+            profile.as_ref(),
+        );
         if !report.valid || !report.diagnostics.is_empty() {
             return Err(format!("Invalid control profile: {:?}", report.diagnostics));
         }

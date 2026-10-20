@@ -622,6 +622,27 @@ impl App {
                 self.world_controls.set_interaction(false);
             }
             UiIntent::ChooseCharacter(id, class, sex, headwear) => {
+                self.retire_held_input();
+                let profile = config_dir()
+                    .ok_or_else(|| "No configuration directory for character bindings".to_owned())
+                    .and_then(|directory| mmorpg_client::bindings::load(&directory, &id));
+                let profile = match profile {
+                    Ok(profile) => profile,
+                    Err(error) => {
+                        eprintln!("Character bindings: {error}; using defaults.");
+                        mmorpg_client::bindings::default_profile(&id)
+                    }
+                };
+                // One validated character profile drives keyboard, world and controller adapters.
+                if let Err(error) = self
+                    .controls
+                    .set_profile(Some(profile.clone()))
+                    .and_then(|()| self.world_controls.set_profile(profile.clone()))
+                    .and_then(|()| self.pad.set_profile(profile))
+                {
+                    eprintln!("Could not activate character bindings: {error}");
+                    return;
+                }
                 self.choosing = false;
                 self.presentation.set_preview(None);
                 self.presentation.set_default_appearance(class);

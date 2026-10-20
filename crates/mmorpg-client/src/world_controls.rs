@@ -64,6 +64,37 @@ fn mouse() -> InputStroke {
         modifiers: Modifiers::default(),
     })
 }
+pub fn world_action_registry() -> ActionRegistry {
+    ActionRegistry {
+        actions: WorldAction::ALL
+            .into_iter()
+            .map(|action| {
+                let (id, context, stroke) = action.definition();
+                ActionDefinition {
+                    id: id.into(),
+                    title: id.into(),
+                    description: None,
+                    category_path: Vec::new(),
+                    repeat_policy: RepeatPolicy::Never,
+                    allowed_devices: vec![if action == WorldAction::Select {
+                        DeviceClass::Mouse
+                    } else {
+                        DeviceClass::Keyboard
+                    }],
+                    defaults: vec![Binding {
+                        id: format!("{id}.0"),
+                        action: id.into(),
+                        sequence: vec![stroke],
+                        when: WhenExpr::Context { id: context.into() },
+                        priority: 0,
+                    }],
+                    provenance: None,
+                }
+            })
+            .collect(),
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct WorldControls {
     runtime: InputRuntime,
@@ -78,34 +109,7 @@ impl Default for WorldControls {
 impl WorldControls {
     #[must_use]
     pub fn new() -> Self {
-        let registry = ActionRegistry {
-            actions: WorldAction::ALL
-                .into_iter()
-                .map(|action| {
-                    let (id, context, stroke) = action.definition();
-                    ActionDefinition {
-                        id: id.into(),
-                        title: id.into(),
-                        description: None,
-                        category_path: Vec::new(),
-                        repeat_policy: RepeatPolicy::Never,
-                        allowed_devices: vec![if action == WorldAction::Select {
-                            DeviceClass::Mouse
-                        } else {
-                            DeviceClass::Keyboard
-                        }],
-                        defaults: vec![Binding {
-                            id: format!("{id}.0"),
-                            action: id.into(),
-                            sequence: vec![stroke],
-                            when: WhenExpr::Context { id: context.into() },
-                            priority: 0,
-                        }],
-                        provenance: None,
-                    }
-                })
-                .collect(),
-        };
+        let registry = crate::bindings::action_registry();
         let mut runtime = InputRuntime::new(registry, None, InputRuntimeOptions::default());
         assert!(
             runtime.validation_report().valid,
@@ -122,6 +126,14 @@ impl WorldControls {
             interaction: false,
         }
     }
+    pub fn set_profile(&mut self, profile: input_bindings_core::Profile) -> Result<(), String> {
+        crate::bindings::validate_profile(&profile)?;
+        let decision = self.runtime.update_profile(Some(profile));
+        self.state.apply_decisions(&[decision]);
+        self.state.drain_presses();
+        Ok(())
+    }
+
     pub fn set_interaction(&mut self, active: bool) {
         if self.interaction == active {
             return;

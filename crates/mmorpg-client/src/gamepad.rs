@@ -360,7 +360,7 @@ impl PadControls {
     /// If the native pad catalog does not validate.
     #[must_use]
     pub fn new() -> Self {
-        let registry = pad_action_registry();
+        let registry = crate::bindings::action_registry();
         let mut triggers: Vec<(InputStroke, bool)> = Vec::new();
         for action in &registry.actions {
             for binding in &action.defaults {
@@ -394,6 +394,23 @@ impl PadControls {
             self.casting = casting;
             self.restack();
         }
+    }
+
+    pub fn set_profile(&mut self, profile: input_bindings_core::Profile) -> Result<(), String> {
+        crate::bindings::validate_profile(&profile)?;
+        let decision = self.runtime.update_profile(Some(profile));
+        self.state.apply_decisions(&[decision]);
+        self.state.drain_presses();
+        // Await physical release before admitting a held control under its new mapping.
+        self.triggers.clear();
+        for binding in self.runtime.effective_bindings() {
+            for stroke in &binding.sequence {
+                if !self.triggers.iter().any(|(known, _)| known == stroke) {
+                    self.triggers.push((stroke.clone(), true));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The `panels` layer is on top while an interface window is open.
