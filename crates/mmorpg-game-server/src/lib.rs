@@ -15,7 +15,7 @@ use std::sync::Arc;
 use mmorpg_core::{MAX_PLAYERS_PER_ZONE, TICK_HZ, ZoneContent, ZoneId, ZoneSimulation};
 use mmorpg_protocol::{decode_command, encode_canonical_snapshot, pack_snapshot};
 
-pub const PINNED_GAME_SERVER_REVISION: &str = "15fe7afd3e16c7da92477b13377a79d4eadd6ba4";
+pub const PINNED_GAME_SERVER_REVISION: &str = "aa972500f12e8ab899a100a468476595b96c7438";
 pub const PINNED_PHYSICS_ENGINE_REVISION: &str = "1b98f84d409796b2a15b84f3fa4ed7f03a11f8bd";
 
 #[derive(Clone, Debug, Eq, PartialEq)]

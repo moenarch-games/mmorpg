@@ -103,6 +103,49 @@ impl DevCharacterStorage {
         })
     }
 
+    /// Reacquires restored bindings while the prepared host is still stopped.
+    pub fn restore_snapshot(&mut self, id: &MatchId, payload: &[u8]) -> Result<(), String> {
+        for stored in ZoneGameServerAdapter::stored_characters(payload).map_err(message)? {
+            let key = (id.clone(), stored.player);
+            self.persist(key, stored)?;
+        }
+        Ok(())
+    }
+
+    fn persist(
+        &mut self,
+        key: Key,
+        stored: crate::character_admission::StoredCharacter,
+    ) -> Result<(), String> {
+        if self.released.contains(&key) {
+            return Ok(());
+        }
+        let lease = if let Some(lease) = self.leases.get(&key) {
+            lease.clone()
+        } else {
+            let holder = LeaseHolder {
+                zone_id: stored.record.location.zone_id,
+                zone_epoch: self.epoch,
+            };
+            let acquired = self
+                .store
+                .acquire(&stored.record.character_id, holder)
+                .map_err(message)?;
+            self.leases.insert(key.clone(), acquired.lease.clone());
+            acquired.lease
+        };
+        if stored.parked {
+            self.store
+                .release(&lease, Some(&stored.record))
+                .map_err(message)?;
+            self.leases.remove(&key);
+            self.released.insert(key);
+        } else {
+            self.store.commit(&lease, &stored.record).map_err(message)?;
+        }
+        Ok(())
+    }
+
     pub fn ownership(&self) -> Arc<File> {
         Arc::clone(&self.ownership)
     }
@@ -145,36 +188,7 @@ impl DevCharacterService {
             for stored in self.snapshot(&status.id)? {
                 let key = (status.id.clone(), stored.player);
                 live.insert(key.clone());
-                if storage.released.contains(&key) {
-                    continue;
-                }
-                let lease = if let Some(lease) = storage.leases.get(&key) {
-                    lease.clone()
-                } else {
-                    let holder = LeaseHolder {
-                        zone_id: stored.record.location.zone_id,
-                        zone_epoch: storage.epoch,
-                    };
-                    let acquired = storage
-                        .store
-                        .acquire(&stored.record.character_id, holder)
-                        .map_err(message)?;
-                    storage.leases.insert(key.clone(), acquired.lease.clone());
-                    acquired.lease
-                };
-                if stored.parked {
-                    storage
-                        .store
-                        .release(&lease, Some(&stored.record))
-                        .map_err(message)?;
-                    storage.leases.remove(&key);
-                    storage.released.insert(key);
-                } else {
-                    storage
-                        .store
-                        .commit(&lease, &stored.record)
-                        .map_err(message)?;
-                }
+                storage.persist(key, stored)?;
             }
         }
         // Abruptly lost sessions keep their last periodic commit. Stronger reward
@@ -195,6 +209,26 @@ impl DevCharacterService {
             storage.leases.remove(&key);
         }
         storage.released.retain(|key| live.contains(key));
+        Ok(())
+    }
+
+    /// Commits the final snapshots captured from graceful recovery after serving
+    /// stops, then returns all character leases offline.
+    pub fn finish_snapshots(&self, snapshots: Vec<(MatchId, Vec<u8>)>) -> Result<(), String> {
+        let mut storage = self.storage.lock().map_err(message)?;
+        for (id, payload) in snapshots {
+            storage.restore_snapshot(&id, &payload)?;
+        }
+        let keys: Vec<_> = storage.leases.keys().cloned().collect();
+        for key in keys {
+            let lease = storage
+                .leases
+                .get(&key)
+                .ok_or("missing final character lease")?
+                .clone();
+            storage.store.release(&lease, None).map_err(message)?;
+            storage.leases.remove(&key);
+        }
         Ok(())
     }
 
