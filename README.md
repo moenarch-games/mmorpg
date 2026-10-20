@@ -210,7 +210,7 @@ Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative du
 
 - `rapier3d`: `=0.36.1` (crates.io, default features)
 - `physics-engine`: git rev `ae64adbdb2d1af74f89f5befe287a8029eeaa072`, optional in `mmorpg-core` behind the test/bench-only `physics-ab` feature ([physics backend A/B](docs/PHYSICS_AB.md)); never in production or WASM builds
-- `game-server`: `aa972500f12e8ab899a100a468476595b96c7438`
+- `game-server`: `5283e51e8d8104d88898146fadf3250bb524d6db`
 - `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `235774615f1367065093deb6988f5217bdf4d7e1`
 - reusable validation workflow: `45042e56be120b438096e774027637cac0280075`
 

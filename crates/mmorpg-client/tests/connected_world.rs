@@ -38,11 +38,20 @@ struct LocalHost {
     certificate: PathBuf,
     url: String,
     shutdown: tokio::sync::mpsc::Sender<()>,
-    task: tokio::task::JoinHandle<Result<(), game_server::MatchHostTransportError>>,
+    task: tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+}
+
+enum HostMode {
+    Anonymous(MatchHost<ZoneGameServerAdapter>),
+    Persistent(PathBuf),
 }
 
 impl LocalHost {
     fn start(host: MatchHost<ZoneGameServerAdapter>, zone_id: ZoneId) -> Self {
+        Self::start_mode(HostMode::Anonymous(host), zone_id)
+    }
+
+    fn start_mode(mode: HostMode, zone_id: ZoneId) -> Self {
         let temporary = tempfile::tempdir().unwrap();
         let certificate = temporary.path().join("cert.pem");
         let key = temporary.path().join("key.pem");
@@ -71,18 +80,35 @@ impl LocalHost {
         let port = reservation.local_addr().unwrap().port();
         let (shutdown, receiver) = tokio::sync::mpsc::channel(1);
         drop(reservation);
-        let task = tokio::spawn(serve_match_host_with_shutdown(
-            host,
-            MatchHostWebTransportConfig {
-                port,
-                certificate_pem: certificate.clone(),
-                private_key_pem: key,
-                route_prefix: BrowserRoutePrefix::new("/game").unwrap(),
-                allowed_origins: None,
-                drain_grace: Duration::from_millis(10),
-            },
-            receiver,
-        ));
+        let config = MatchHostWebTransportConfig {
+            port,
+            certificate_pem: certificate.clone(),
+            private_key_pem: key,
+            route_prefix: BrowserRoutePrefix::new("/game").unwrap(),
+            allowed_origins: None,
+            drain_grace: Duration::from_millis(10),
+        };
+        let task = tokio::spawn(async move {
+            match mode {
+                HostMode::Anonymous(host) => serve_match_host_with_shutdown(host, config, receiver)
+                    .await
+                    .map_err(|error| Box::<dyn std::error::Error + Send + Sync>::from(error)),
+                HostMode::Persistent(directory) => {
+                    mmorpg_game_server::serve_development_character_host(
+                        mmorpg_game_server::DevelopmentCharacterHostConfig {
+                            directory,
+                            recovery_directory: None,
+                            zone_ids: vec![zone_id],
+                            reconnect_grace_ticks: 20,
+                        },
+                        config,
+                        game_server::MatchHostStatusConfig { port: 0 },
+                        receiver,
+                    )
+                    .await
+                }
+            }
+        });
         Self {
             temporary,
             certificate,
@@ -1074,4 +1100,64 @@ async fn assert_stays_at_rest(
             return Ok(());
         }
     }
+}
+
+#[tokio::test]
+async fn durable_character_resumes_after_logout_and_host_restart() -> Result<(), ClientError> {
+    use mmorpg_core::{CharacterId, ClassChoice};
+    let directory = tempfile::tempdir()?;
+    let zone = ZoneId::new(1);
+    let revision = greyhaven_vale::content().revision();
+    let character = CharacterId::new("persistent-native-ranger")?;
+    let class = ClassChoice::from_appearance(3).unwrap();
+    let first = LocalHost::start_mode(HostMode::Persistent(directory.path().to_owned()), zone);
+    let mut client =
+        ClientSession::connect(&first.url, Some(&first.certificate), zone, revision).await?;
+    assert!(client.claim_character(&character, class).await?);
+    let initial = client.receive_snapshot().await?;
+    client.send_move(1, 0, EAST)?;
+    let mut moved = initial.clone();
+    for _ in 0..6 {
+        moved = client.receive_snapshot().await?;
+    }
+    client.send_move(0, 0, EAST)?;
+    while moved.acknowledged_sequence < 2 {
+        moved = client.receive_snapshot().await?;
+    }
+    let position = moved
+        .entities
+        .iter()
+        .find(|unit| unit.kind == EntityKind::Player && unit.id == moved.viewer_id)
+        .unwrap()
+        .position;
+    assert_ne!(
+        position,
+        initial
+            .entities
+            .iter()
+            .find(|unit| unit.kind == EntityKind::Player && unit.id == initial.viewer_id)
+            .unwrap()
+            .position
+    );
+    client.release_character().await?;
+    drop(client);
+    first.stop().await;
+
+    let second = LocalHost::start_mode(HostMode::Persistent(directory.path().to_owned()), zone);
+    let mut client =
+        ClientSession::connect(&second.url, Some(&second.certificate), zone, revision).await?;
+    assert!(client.claim_character(&character, class).await?);
+    let restored = client.receive_snapshot().await?;
+    assert_eq!(restored.viewer.class, Some(class));
+    let actual = restored
+        .entities
+        .iter()
+        .find(|unit| unit.kind == EntityKind::Player && unit.id == restored.viewer_id)
+        .unwrap()
+        .position;
+    assert_eq!([actual[0], actual[2]], [position[0], position[2]]);
+    client.release_character().await?;
+    drop(client);
+    second.stop().await;
+    Ok(())
 }

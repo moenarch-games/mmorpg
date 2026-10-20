@@ -264,6 +264,7 @@ pub async fn run_session(
     let mut heartbeat = tokio::time::interval(RESEND_INTERVAL);
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut outbox = Outbox::new(*input.borrow_and_update(), Instant::now());
+    outbox.class_confirmed = session.has_durable_character();
     let mut last_snapshot = Instant::now();
     let mut last_tick = None;
     loop {

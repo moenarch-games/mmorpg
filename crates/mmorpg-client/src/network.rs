@@ -115,6 +115,7 @@ pub struct ClientSession {
     resume_available: bool,
     zone_id: ZoneId,
     content_revision: u64,
+    durable_character: bool,
 }
 
 impl ClientSession {
@@ -151,10 +152,80 @@ impl ClientSession {
                 resume_available: true,
                 zone_id,
                 content_revision,
+                durable_character: false,
             })
         })
         .await
         .map_err(|_| "connection or welcome timed out")?
+    }
+
+    async fn character_control(
+        &self,
+        payload: &[u8],
+    ) -> Result<game_server::ControlResponse, ClientError> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let (mut send, mut receive) = self.connection.open_bi().await?.await?;
+            send.write_all(&game_server::encode_control_request(payload)?)
+                .await?;
+            send.finish().await?;
+            let mut header = [0_u8; game_server::CONTROL_HEADER_BYTES];
+            receive.read_exact(&mut header).await?;
+            let length = usize::from(u16::from_be_bytes([header[6], header[7]]));
+            if length > game_server::MAX_CONTROL_PAYLOAD_BYTES {
+                return Err::<_, ClientError>("oversized character control response".into());
+            }
+            let mut frame = header.to_vec();
+            frame.resize(header.len() + length, 0);
+            receive.read_exact(&mut frame[header.len()..]).await?;
+            let mut trailing = [0_u8; 1];
+            if receive.read(&mut trailing).await?.is_some() {
+                return Err("trailing character control response bytes".into());
+            }
+            Ok(game_server::decode_control_response(&frame)?)
+        })
+        .await
+        .map_err(|_| "character control request timed out")?
+    }
+
+    /// A server-side lease claim in explicit development/LAN trust mode.
+    /// A rejected capability means an anonymous host; a failed claim never falls back.
+    pub async fn claim_character(
+        &mut self,
+        id: &mmorpg_core::CharacterId,
+        class: mmorpg_core::ClassChoice,
+    ) -> Result<bool, ClientError> {
+        let capability = self.character_control(&[1, 0]).await?;
+        if !capability.accepted {
+            return Ok(false);
+        }
+        if capability.payload != [1, 1] {
+            return Err("unsupported character service".into());
+        }
+        let mut request = vec![1, 1, class.appearance() as u8];
+        request.extend_from_slice(id.as_str().as_bytes());
+        let result = self.character_control(&request).await?;
+        if !result.accepted || result.payload != [1, 1] {
+            return Err("the zone host refused this character; it may already be in play".into());
+        }
+        self.durable_character = true;
+        Ok(true)
+    }
+
+    #[must_use]
+    pub const fn has_durable_character(&self) -> bool {
+        self.durable_character
+    }
+
+    /// Explicit logout; interrupted paths retain the session for reconnect instead.
+    pub async fn release_character(&mut self) -> Result<(), ClientError> {
+        if self.durable_character {
+            let result = self.character_control(&[1, 2]).await?;
+            if !result.accepted || result.payload != [1, 2] {
+                return Err("the zone host did not confirm character logout".into());
+            }
+            self.durable_character = false;
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -369,9 +440,13 @@ impl ClientSession {
                     .accept(&datagram)
                     .map_err(|error| SessionError::InvalidData(error.into()))?;
                 if let Some(frame) = frame {
-                    return self
+                    let snapshot = self
                         .decode_snapshot(frame)
-                        .map_err(SessionError::InvalidData);
+                        .map_err(SessionError::InvalidData)?;
+                    if self.durable_character && snapshot.viewer.class.is_none() {
+                        continue;
+                    }
+                    return Ok(snapshot);
                 }
             }
         })

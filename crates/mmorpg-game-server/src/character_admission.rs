@@ -56,10 +56,9 @@ impl ZoneGameServerAdapter {
         };
         let record = decode_character_record(bytes).map_err(map_protocol_error)?;
         if self.characters.contains_key(&player)
-            || self
-                .characters
-                .values()
-                .any(|id| id == &record.character_id)
+            || self.characters.iter().any(|(session, id)| {
+                id == &record.character_id && !self.parked_characters.contains_key(session)
+            })
         {
             return Err(SimulationError::new(
                 "character or session is already bound",
