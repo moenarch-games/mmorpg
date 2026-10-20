@@ -155,7 +155,7 @@ The launcher reuses or creates the ECDSA P-256 development certificate under `ta
 - **Session.** `OnlineZoneSource` (`web/src/world/online-zone-source.ts`) reads the welcome (player, tick rate, connection epoch, reconnect token), sends command frames with strictly increasing sequences, reassembles and verifies snapshot frames and fragments per connection (`web/src/session/`, a port of the pinned `SnapshotReassembler`), and decodes projections with the same decoder as the local zone. Movement is held intent the page resends every 50 ms, like the native client; a jump or any other discrete intent is resent byte for byte until a projection acknowledges it, and no later command overtakes it meanwhile, so the host's stale-sequence rule cannot drop it unseen.
 - **Fail closed.** Every projection must carry the page's zone, player and the content revision of the scenery the page loaded. A mismatch or a malformed frame leaves the world with the reason under **Enter World** rather than drawing a different world.
 - **Interruptions.** A lost connection or five seconds without projections triggers one bounded resume with the in-memory token while the last scene stays visible and the top bar shows **Reconnecting…**; Characters or Escape cancels it. The resume keeps the player and command sequencing, starts stopped until acknowledged, drops intents made meanwhile and resets interpolation for the new connection epoch. A refused or expired resume ends the session; a new player is never substituted. Tokens stay in memory: they never appear in the page URL or the page's messages (a browser's network console may still show a failed resume request).
-- **Leaving.** Characters, Escape or closing the tab ends the session; the host keeps the character for its reconnect grace (five seconds in the launcher), then removes it. Sessions are anonymous. The page joins with the character's class and sex (its first command is `ChooseClass`, like the native client); the look stays presentation-only, and nothing is saved.
+- **Leaving.** Characters, Escape or closing the tab ends the session; the host keeps the character for its reconnect grace (five seconds in the launcher), then removes it. Without character storage, sessions remain anonymous and choose class/sex with `ChooseClass`. With `MMORPG_CHARACTER_DIR`, the selected character instead claims its durable server record before entering; explicit Characters/Exit commits and releases it. Closing a tab abruptly retains its latest periodic commit. Appearance remains presentation-only.
 
 `python3 scripts/smoke-browser-online.py` proves it end to end with the production bundle: it starts a real host with a disposable certificate on OS-selected ports, opens two Chromium pages in online mode, runs one character and checks the other page sees it move in its own decoded projections, then closes the running page and checks its unit disappears after the host's one-second grace.
 
@@ -204,7 +204,7 @@ and atomic 16-slot bags. Player-owned bags, queued moves and recoverable self sh
 
 [Starter loot rules](docs/LOOT.md) define validated weighted rewards and deterministic rolling. Core generates corpse rewards once, fences claims by owner/death/reach, and atomically credits money and bags with replay/recovery coverage. The browser Loot window displays the complete selected-corpse sheet, sends the fenced claim and shows refusals.
 
-Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative durable state; queries read it. Do not introduce event sourcing by default. Zone hot loops must not synchronously depend on a distributed database. `mmorpg-characters` is the durable character boundary (#30): a versioned `CharacterRecord` captured from and admitted into a zone, stored with an exclusive lease held by one zone at one control-plane epoch; every commit names its lease and fails closed once a newer epoch of the zone or a release superseded it. Its development backend is a directory of atomically replaced, OS-locked entry files; PostgreSQL (TECH-002) and zone-host admission remain pending. Zone checkpoint storage is a separate upcoming boundary.
+Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative durable state; queries read it. Do not introduce event sourcing by default. Zone hot loops must not synchronously depend on a distributed database. `mmorpg-characters` is the durable character boundary (#30): a versioned `CharacterRecord` captured from and admitted into a zone, stored with an exclusive lease held by one zone at one control-plane epoch; every commit names its lease and fails closed once a newer epoch of the zone or a release superseded it. Its development backend is a directory of atomically replaced, OS-locked entry files; the optional PostgreSQL backend follows TECH-002, and development/LAN zone-host admission is available with `MMORPG_CHARACTER_DIR`. Zone checkpoint storage is a separate upcoming boundary.
 
 ## Pinned foundations
 
@@ -266,9 +266,21 @@ The host uses one WebTransport listener (port `4433` by default) and routes sess
 - `/status` reports host capacity and per-zone readiness;
 - `/matches/zone-<id>/readyz` and `/matches/zone-<id>/status` expose a single zone's operational projection.
 
+`MMORPG_CHARACTER_DIR=target/dev-characters` enables unauthenticated development/LAN
+character claims from both clients. The host owns exclusive character leases and
+commits outside the tick; a second process cannot open the same local directory.
+Clients persist globally distinct online IDs for their local roster slots. This
+mode uses whole-host graceful recovery at `MMORPG_RECOVERY_DIR`, or by default
+`<character-directory>/zone-recovery`, reacquires restored leases before serving,
+and commits final records from stopped recovery before releasing them. Content or
+schema incompatibility fails closed; choose an explicit development reset or
+migration rather than silently discarding saved data. Production authentication,
+fleet ownership and strong reward journaling remain separate work.
+See [the admission decision](docs/adr/0003-development-character-admission.md).
+
 When `MMORPG_RECOVERY_DIR` is set, graceful `SIGINT`/`SIGTERM` shutdown writes one atomic recovery bundle for the complete configured zone set. Restarting with the same zones restores simulation, command-sequence, and reconnect state, then consumes the old bundle. A missing zone, an extra zone, or corrupt recovery data fails startup closed instead of partially restoring a host. Durable crash recovery remains a separate persistence boundary.
 
-These endpoints consume `game-server` host state and never mutate or redefine zone gameplay authority. Configuration is explicit through `MMORPG_ZONE_IDS`, `MMORPG_PORT`, `MMORPG_STATUS_PORT`, `MMORPG_CERT_PEM`, `MMORPG_KEY_PEM`, `MMORPG_RECOVERY_DIR`, `MMORPG_ROUTE_PREFIX`, `MMORPG_RECONNECT_GRACE_TICKS`, and `MMORPG_DRAIN_GRACE_MS`; recovery is opt-in, while invalid configured values fail startup instead of silently falling back.
+These endpoints consume `game-server` host state and never mutate or redefine zone gameplay authority. Configuration is explicit through `MMORPG_ZONE_IDS`, `MMORPG_PORT`, `MMORPG_STATUS_PORT`, `MMORPG_CERT_PEM`, `MMORPG_KEY_PEM`, `MMORPG_RECOVERY_DIR`, `MMORPG_CHARACTER_DIR`, `MMORPG_ROUTE_PREFIX`, `MMORPG_RECONNECT_GRACE_TICKS`, and `MMORPG_DRAIN_GRACE_MS`; recovery is opt-in, while invalid configured values fail startup instead of silently falling back.
 
 The [saved grass authoring package](docs/SCATTER_AUTHORING.md) freezes accepted Outpost placements and reproduces their exclusion-mask filtering through pinned asset-tooling. Both clients consume its saved selection through shared scenery.
 

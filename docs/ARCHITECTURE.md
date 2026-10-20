@@ -13,7 +13,13 @@ The scaling unit is an authoritative zone. Each zone runs one deterministic phys
 | Partitioning | `LogicalZone` reference model (#146): contiguous column strips per host, boundaries that move around interaction islands, coalescing instead of splitting an island, read-only ghosts, one tick barrier, fixed-timestep time dilation, zone-level command sequences across migration, declared timer clock domains | Partition-local `ZoneSimulation` hosting, ghost replication transport, island reporting from core, live entity migration |
 | Transport | Shared sessions, reconnect, WebTransport, multi-zone host, graceful recovery | Authentication, durable character binding, fleet routing |
 | Graphics | Native wgpu/winit and browser Three.js presentation of Greyhaven scenery, class/sex looks, normalized Ranger asset, procedural creature/NPC models, terrain/roads/water and instanced props; cosmetic lighting/fog/day-night and viewer ability poses/effects; native live WebTransport and bounded interpolation; browser WASM local host or development WebTransport host; targeting/ability intents and projected combat status | Remaining native interface parity (#183: roster persistence/preview, combat text, nameplates, gamepad, settings), shared presentation generation (#184), nameplates (#22 step 7b), other authored avatars, richer effects and prediction/reconciliation |
-| Persistence | Canonical snapshot of physics, units, creature AI, RNG and events that references its content by revision and fingerprint; shared graceful runtime recovery | Durable checkpoints, content availability for checkpoints, PostgreSQL character backend and zone-host character admission (#30), fenced persistence writes |
+| Persistence | Canonical snapshot of physics, units, creature AI, RNG and events that references its content by revision and fingerprint; shared graceful runtime recovery | Durable checkpoints, content availability for checkpoints, production routed character admission, fleet-fenced persistence writes |
+
+Development/LAN durable admission (#30) is available through `MMORPG_CHARACTER_DIR`:
+the FileEntries/CharacterStore boundary leases records, trusted replayable inputs
+bind them to sessions, and a process-held directory lock prevents concurrent local
+hosts. Prepared recovery reacquires leases before ticking. This does not implement
+production distributed zone ownership; see [ADR 0003](adr/0003-development-character-admission.md).
 
 `mmorpg-zone-host` is currently a **standalone host**. It builds ordinary `MatchRuntime`s without acquiring leases. Running two copies with the same zone IDs does not provide distributed authority. `FencedZoneRuntime` is executable reference composition, exercised with two competing owners, not a networked consensus implementation. Production fleet deployment remains gated on the missing ownership and persistence capabilities above.
 
