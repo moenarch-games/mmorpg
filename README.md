@@ -145,6 +145,8 @@ The [opt-in broadleaf comparison](docs/reviews/greyhaven-nature/README.md) shows
 
 The [browser Warden hotbar](docs/WARDEN_ABILITY_ART.md) uses four owner-approved painted icons from asset-tooling, with build-time content checks and separate gameplay/UI overlays.
 
+The browser also offers the first [Battle Royale PvP activity](docs/BATTLE_ROYALE.md): temporary max-level builds, real hosted MMORPG combat, results and between-life reconfiguration. Pages serves the client; a compatible Battle Royale host runs the match.
+
 ## Browser online mode
 
 The same page can join a real zone host instead of its local zone, over WebTransport with the `game-server` session protocol: the browser counterpart of the native client, and the transport swap [ADR 0002](docs/adr/0002-browser-embeds-zone-simulation.md) kept open. It is a development and self-hosting mode; the GitHub Pages build stays offline.

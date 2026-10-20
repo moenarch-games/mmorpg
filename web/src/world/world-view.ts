@@ -267,6 +267,7 @@ export class WorldView {
   #pendingNpc: { target: EntityRef; sequence: number } | null = null;
   #scene: SceneryScene | null = null;
   #catalog: ContentCatalog | null = null;
+  #zoneName = ZONE_NAME;
   /** The unit nodes of the last frame, for debug readouts. */
   #lastUnitNodes: readonly RendererSceneNode[] = [];
   #lastEffectNodes: readonly RendererSceneNode[] = [];
@@ -372,6 +373,7 @@ export class WorldView {
     this.#picking.reset();
     const started = performance.now();
     this.#catalog = world.catalog;
+    this.#zoneName = world.name ?? ZONE_NAME;
     this.#bags.load(world.catalog);
     this.#character.load(world.catalog);
     this.#loot.load(world.catalog);
@@ -750,7 +752,7 @@ export class WorldView {
       projected.push(projectedUnit(entity, placement, catalog));
       if (entity.kind === "player" && entity.entityId === projection.viewerId) {
         self = { focus: [unit.feet[0], unit.centreY, unit.feet[2]], x: unit.feet[0], feetY: unit.feet[1], z: unit.feet[2], facing: unit.yaw };
-        this.#showArea(scenery.areaAt(entity.position[0], entity.position[2])?.name ?? ZONE_NAME);
+        this.#showArea(scenery.areaAt(entity.position[0], entity.position[2])?.name ?? this.#zoneName);
       } else {
         others.push(this.#minimapUnit(entity, unitsPerMetre));
       }
@@ -947,7 +949,10 @@ export class WorldView {
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         1 - ((event.clientY - rect.top) / rect.height) * 2,
       );
-      const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), this.#inn?.pickables());
+      const attackablePlayers = new Set(this.#lastProjection?.entities
+        .filter((entity) => entity.kind === "player" && entity.flags.attackable && !entity.flags.dead)
+        .map((entity) => entity.entityId) ?? []);
+      const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), this.#inn?.pickables(), attackablePlayers);
       this.#pendingNpc = null;
       // A click on the door leaf asks the zone to swing it; the zone checks reach (#158).
       if (picked?.kind === "door") {

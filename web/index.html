@@ -124,6 +124,10 @@
           </section>
 
           <footer id="selection-actions" class="selection-actions">
+            <label class="activity-choice">Activity
+              <select id="activity-choice"><option value="world">Greyhaven Vale</option><option value="battle-royale">Battle Royale PvP</option></select>
+            </label>
+            <section id="battle-royale-setup" class="arena-setup" aria-label="Battle Royale setup" hidden></section>
             <div class="world-destination"><small>Destination</small><strong id="character-location">Greyhaven Outpost</strong></div>
             <label id="online-toggle" class="online-toggle" hidden>
               <input id="play-online" type="checkbox" />
@@ -136,6 +140,11 @@
         </div>
       </section>
 
+      <section id="battle-royale-status" class="arena-status" aria-label="Battle Royale match" hidden>
+        <strong id="battle-royale-result" role="status"></strong>
+        <span id="battle-royale-progress"></span>
+        <button id="battle-royale-next" type="button" hidden>Change build / next match</button>
+      </section>
       <header class="topbar" data-world-ui hidden>
         <p id="world-mode" class="eyebrow">Greyhaven Vale · local zone host</p>
         <p id="connection-status" class="connection-status" role="status" aria-live="polite"></p>
@@ -225,7 +234,8 @@
       </section>
       <section id="debug-overlay" class="debug-overlay" aria-label="Debug statistics" hidden></section>
       <section class="hud" data-world-ui aria-label="Controls" hidden>
-        <p><kbd>WASD</kbd> move · <kbd>Space</kbd> jump · <kbd>Tab</kbd> target · <kbd>1</kbd>–<kbd>4</kbd> abilities · <kbd>Esc</kbd> cancels a cast · <kbd>F</kbd> or right-click attack · left-drag look · right-drag turn · wheel zoom · <kbd>B</kbd> bags · <kbd>C</kbd> character · <kbd>V</kbd> vendor · <kbd>T</kbd> talk · <kbd>L</kbd> quests · <kbd>Enter</kbd> chat · <kbd>F3</kbd> stats · <kbd>Esc</kbd> characters</p>
+        <p id="world-controls"><kbd>WASD</kbd> move · <kbd>Space</kbd> jump · <kbd>Tab</kbd> target · <kbd>1</kbd>–<kbd>4</kbd> abilities · <kbd>Esc</kbd> cancels a cast · <kbd>F</kbd> or right-click attack · left-drag look · right-drag turn · wheel zoom · <kbd>B</kbd> bags · <kbd>C</kbd> character · <kbd>V</kbd> vendor · <kbd>T</kbd> talk · <kbd>L</kbd> quests · <kbd>Enter</kbd> chat · <kbd>F3</kbd> stats · <kbd>Esc</kbd> characters</p>
+        <p id="arena-controls"><kbd>WASD</kbd> move · <kbd>Space</kbd> jump · <kbd>Tab</kbd> target · <kbd>1</kbd>–<kbd>5</kbd> abilities · <kbd>F</kbd> attack · hold <kbd>Z</kbd> guard · wheel zoom · <kbd>C</kbd> character</p>
         <p id="objective" class="quest-tracker" aria-label="Quest objectives" aria-live="polite">No active quests.</p>
         <p id="quest-notice" class="quest-notice" role="status" aria-live="polite" hidden></p>
         <p id="unit-status" aria-live="polite"></p>

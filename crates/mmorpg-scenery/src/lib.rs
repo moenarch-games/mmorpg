@@ -422,7 +422,7 @@ pub struct Scenery {
     pub roads: Vec<Road>,
     pub water: Vec<Water>,
     farmland: Vec<Rect>,
-    relief: Relief,
+    relief: Option<Relief>,
     /// The physical ground units walk on (#159); `None` is flat ground at y = 0.
     ground: Option<mmorpg_core::Terrain>,
     authored_outpost_relief: bool,
@@ -663,7 +663,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         roads,
         water,
         farmland: vec![FARMLAND],
-        relief,
+        relief: Some(relief),
         ground: definition.terrain().cloned(),
         authored_outpost_relief: false,
     };
@@ -680,6 +680,21 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
 }
 
 impl Scenery {
+    /// An undecorated flat presentation for a host's flat arena. Never used by a host.
+    #[must_use]
+    pub fn flat(content_revision: u64) -> Self {
+        Self {
+            content_revision,
+            props: Vec::new(),
+            roads: Vec::new(),
+            water: Vec::new(),
+            farmland: Vec::new(),
+            relief: None,
+            ground: None,
+            authored_outpost_relief: false,
+        }
+    }
+
     /// The physical ground's height at an XZ position, in units (#159): what units stand on.
     #[must_use]
     pub fn ground_at(&self, x: i32, z: i32) -> i32 {
@@ -703,7 +718,9 @@ impl Scenery {
         {
             return height;
         }
-        self.relief.height_at(x, z)
+        self.relief
+            .as_ref()
+            .map_or(0, |relief| relief.height_at(x, z))
     }
 
     /// Heights and biome colours over ±[`TERRAIN_EXTENT_UNITS`] every

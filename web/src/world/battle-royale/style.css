@@ -1,0 +1,25 @@
+.activity-choice { display: flex; align-items: center; gap: .7rem; }
+.activity-choice select, .arena-setup select, .arena-setup input { color: inherit; background: #17231f; border: 1px solid #718d84; border-radius: .25rem; padding: .4rem; min-width: 0; }
+.arena-setup { width: 100%; display: grid; gap: .6rem; text-align: left; }
+.arena-setup[hidden], .arena-status[hidden] { display: none; }
+.arena-setup label { display: grid; gap: .25rem; font-size: .85rem; }
+.arena-character-fields, .arena-setup fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.arena-setup fieldset { border: 1px solid #718d84; padding: .6rem; }
+.arena-setup p { font-size: .8rem; margin: 0; }
+.arena-status { position: fixed; z-index: 9; top: 5.5rem; left: 50%; transform: translateX(-50%); display: grid; gap: .25rem; text-align: center; padding: .6rem 1rem; color: #ecf1e8; background: #17231feb; border: 1px solid #718d84; pointer-events: auto; }
+.arena-status span { font-size: .85rem; }
+.arena-status button { color: inherit; background: #314e41; border: 1px solid #718d84; padding: .45rem; }
+@media (max-width: 600px) { .arena-status { top: 6rem; max-width: 85vw; } }
+body[data-activity="battle-royale"] .equipment-slot button,
+body[data-activity="battle-royale"] #loot-toggle,
+body[data-activity="battle-royale"] #bags-toggle,
+body[data-activity="battle-royale"] #vendor-toggle,
+body[data-activity="battle-royale"] #quest-log-toggle { display: none; }
+
+#arena-controls { display: none; }
+body[data-activity="battle-royale"] #arena-controls { display: block; }
+body[data-activity="battle-royale"] #world-controls,
+body[data-activity="battle-royale"] #objective,
+body[data-activity="battle-royale"] #copper-status,
+body[data-activity="battle-royale"] #experience-status,
+body[data-activity="battle-royale"] #experience-bar { display: none; }
