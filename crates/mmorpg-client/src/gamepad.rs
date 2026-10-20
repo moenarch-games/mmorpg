@@ -346,6 +346,8 @@ pub struct PadControls {
     triggers: Vec<(InputStroke, bool)>,
     casting: bool,
     panels: bool,
+    settings: bool,
+    inactive: bool,
 }
 
 impl Default for PadControls {
@@ -385,6 +387,8 @@ impl PadControls {
             triggers,
             casting: false,
             panels: false,
+            settings: false,
+            inactive: false,
         }
     }
 
@@ -413,6 +417,27 @@ impl PadControls {
         Ok(())
     }
 
+    /// Settings is a blocking gameplay context with interface navigation above it.
+    /// Inactive windows/chat block every pad action. Continue sampling physical
+    /// states so a control must actually release before it can activate again.
+    pub fn set_input_context(&mut self, panels: bool, settings: bool, inactive: bool) {
+        if (self.panels, self.settings, self.inactive) == (panels, settings, inactive) {
+            return;
+        }
+        let held = self
+            .triggers
+            .iter()
+            .map(|(_, active)| *active)
+            .collect::<Vec<_>>();
+        self.panels = panels;
+        self.settings = settings;
+        self.inactive = inactive;
+        self.restack();
+        for ((_, active), previous) in self.triggers.iter_mut().zip(held) {
+            *active = previous;
+        }
+    }
+
     /// The `panels` layer is on top while an interface window is open.
     pub fn set_panels(&mut self, open: bool) {
         if open != self.panels {
@@ -426,8 +451,20 @@ impl PadControls {
         if self.casting {
             stack.push(layer(CASTING));
         }
+        if self.settings {
+            stack.push(ContextLayer {
+                id: "settings".into(),
+                blocks_lower: true,
+            });
+        }
         if self.panels {
             stack.push(layer(PANELS));
+        }
+        if self.inactive {
+            stack.push(ContextLayer {
+                id: "inactive".into(),
+                blocks_lower: true,
+            });
         }
         let decision = self.runtime.set_context_stack(Some(stack));
         self.settle(&[decision]);
@@ -441,10 +478,13 @@ impl PadControls {
         self.state.apply_decisions(decisions);
         self.state.drain_presses();
         for (stroke, active) in &mut self.triggers {
-            if matches!(
-                stroke,
-                InputStroke::Device(DeviceStroke::GamepadAxis { .. })
-            ) {
+            if !self.settings
+                && !self.inactive
+                && matches!(
+                    stroke,
+                    InputStroke::Device(DeviceStroke::GamepadAxis { .. })
+                )
+            {
                 *active = false;
             }
         }
@@ -746,6 +786,23 @@ mod tests {
             controls.sample(&[left_stick(0.0, -1.0), pressed(standard::RB)]),
             [PadAction::TargetNext]
         );
+    }
+
+    #[test]
+    fn settings_blocks_gameplay_and_held_inputs_wait_for_release_after_close() {
+        let mut controls = PadControls::new();
+        let mut held = left_stick(0.0, -1.0);
+        held.buttons[usize::from(standard::RB)] = 1.0;
+        assert_eq!(controls.sample(&[held]), [PadAction::TargetNext]);
+        controls.set_input_context(true, true, false);
+        assert!(controls.sample(&[held]).is_empty());
+        assert_eq!(controls.movement().forward, 0);
+        controls.set_input_context(false, false, false);
+        assert!(controls.sample(&[held]).is_empty());
+        assert_eq!(controls.movement().forward, 0);
+        controls.sample(&[pad()]);
+        assert_eq!(controls.sample(&[held]), [PadAction::TargetNext]);
+        assert_eq!(controls.movement().forward, 1);
     }
 
     #[test]

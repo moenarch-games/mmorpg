@@ -520,15 +520,15 @@ impl App {
         if disconnected {
             self.pad.retire("gamepadDisconnected");
         }
-        let pads: Vec<PadState> =
-            if self.focused && !self.ui.chat_focused() && !self.ui.settings.open {
-                gilrs.gamepads().map(|(_, pad)| read_pad(&pad)).collect()
-            } else {
-                Vec::new()
-            };
+        let pads: Vec<PadState> = gilrs.gamepads().map(|(_, pad)| read_pad(&pad)).collect();
         let snapshot = self.presentation.latest();
-        self.pad.set_panels(
-            self.choosing || self.npc_context.npc.is_some() || self.ui.windows_open(snapshot),
+        self.pad.set_input_context(
+            self.ui.settings.open
+                || self.choosing
+                || self.npc_context.npc.is_some()
+                || self.ui.windows_open(snapshot),
+            self.ui.settings.open,
+            !self.focused || self.ui.chat_focused(),
         );
         for action in self.pad.sample(&pads) {
             self.pad_action(action);
@@ -539,7 +539,11 @@ impl App {
         if self.pad_guard.is_some() {
             dy = 0.0;
         }
-        if dx != 0.0 || dy != 0.0 {
+        if !self.ui.settings.open
+            && self.focused
+            && !self.ui.chat_focused()
+            && (dx != 0.0 || dy != 0.0)
+        {
             self.camera.orbit(dx, dy);
         }
         self.update_movement();
