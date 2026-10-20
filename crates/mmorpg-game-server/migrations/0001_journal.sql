@@ -61,3 +61,6 @@ GRANT SELECT, INSERT, DELETE ON mmorpg_persistence.journal TO mmorpg_zone_journa
 GRANT SELECT, INSERT ON mmorpg_persistence.grants TO mmorpg_zone_journal;
 GRANT SELECT, INSERT, UPDATE ON mmorpg_persistence.streams TO mmorpg_zone_coordinator;
 GRANT mmorpg_characters_store TO mmorpg_zone_journal;
+
+-- Cluster identity is read to reject an unrelated database as a replication witness.
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system(), pg_catalog.pg_control_checkpoint() TO mmorpg_zone_journal;

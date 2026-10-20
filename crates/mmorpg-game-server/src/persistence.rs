@@ -1,6 +1,7 @@
 //! Production persistence composition (TECH-003/004/005). Storage never owns game rules.
 #[cfg(feature = "postgres")]
 pub(crate) mod postgres;
+mod replication;
 
 use mmorpg_characters::CharacterLease;
 use mmorpg_core::CharacterRecord;

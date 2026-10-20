@@ -1,7 +1,7 @@
 //! Synchronous PostgreSQL composition; callers run this on owned blocking workers.
 //! Epoch installation belongs to a separately privileged coordinator, after an
 //! actual grant/confirmed retirement. This module never chooses a zone owner.
-use super::{CharacterWrite, GrantId};
+use super::{CharacterWrite, GrantId, replication::ReplicaBarrier};
 use game_server::{
     ReconnectToken, RecoverableSession, RecoveryImage, ReplayLog, SessionRecoverySnapshot,
     SnapshotCommitBatch,
@@ -14,7 +14,7 @@ use mmorpg_core::CharacterId;
 use postgres::{Client, Row, Transaction};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::time::Duration;
+use std::{sync::atomic::AtomicBool, time::Duration};
 
 const VERSION: i32 = 1;
 const MIGRATION: &str = include_str!("../../migrations/0001_journal.sql");
@@ -250,9 +250,10 @@ pub(crate) struct PostgresJournal {
     entries: PostgresEntries,
     fence: StreamFence,
     limits: JournalLimits,
+    replication: Option<ReplicaBarrier>,
 }
 impl PostgresJournal {
-    pub(crate) fn connect(
+    pub(crate) fn connect_development(
         url: &str,
         fence: StreamFence,
         timeout: Duration,
@@ -279,20 +280,54 @@ impl PostgresJournal {
             entries,
             fence,
             limits: limits.validate()?,
+            replication: None,
         })
     }
+    /// Production durability requires an explicitly named physical standby.
+    /// A successful call confirms every preceding mutation on that standby;
+    /// there is no fallback to development/local durability.
+    pub(crate) fn connect_replicated(
+        primary_url: &str,
+        standby_url: &str,
+        fence: StreamFence,
+        timeout: Duration,
+        limits: JournalLimits,
+    ) -> Result<Self, StoreError> {
+        let mut journal = Self::connect_development(primary_url, fence, timeout, limits)?;
+        journal.entries.transaction(|store| {
+            store.backend().with_sql(|transaction| {
+                transaction
+                    .batch_execute("SET synchronous_commit=on")
+                    .map_err(sql)
+            })
+        })?;
+        let mut replication = ReplicaBarrier::connect(primary_url, standby_url, timeout)?;
+        replication.confirm(&AtomicBool::new(false))?;
+        journal.replication = Some(replication);
+        Ok(journal)
+    }
+
+    fn confirm_commit(&mut self) -> Result<(), StoreError> {
+        if let Some(replication) = &mut self.replication {
+            replication.confirm(&AtomicBool::new(false))?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn characters<R>(
         &mut self,
         operation: impl FnOnce(
             &mut CharacterStore<PostgresTransactionEntries<'_>>,
         ) -> Result<R, StoreError>,
     ) -> Result<R, StoreError> {
-        self.entries.transaction(|store| {
+        let result = self.entries.transaction(|store| {
             store
                 .backend()
                 .with_sql(|transaction| check_fence(transaction, &self.fence, true).map(|_| ()))?;
             operation(store)
-        })
+        })?;
+        self.confirm_commit()?;
+        Ok(result)
     }
     pub(crate) fn commit_tick(
         &mut self,
@@ -385,7 +420,9 @@ impl PostgresJournal {
                 Ok(())
             })?;
             Ok(position)
-        })
+        })?;
+        self.confirm_commit()?;
+        Ok(position)
     }
 
     /// The object upload/readback verifier is the only production caller. This
@@ -417,7 +454,8 @@ impl PostgresJournal {
                 &i64::from(self.fence.lease.zone_id.get()), &integer(reference.position)?, &integer(reference.tick)?, &encoded,
             ]).map_err(sql)?;
             Ok(())
-        }))
+        }))?;
+        self.confirm_commit()
     }
     pub(crate) fn prune(&mut self) -> Result<(), StoreError> {
         self.entries.transaction(|store| store.backend().with_sql(|transaction| {
@@ -430,7 +468,8 @@ impl PostgresJournal {
             let count: i64 = removed.get(0); let bytes: i64 = removed.get(1);
             transaction.execute("UPDATE mmorpg_persistence.streams SET retained_batches=retained_batches-$2,retained_bytes=retained_bytes-$3 WHERE zone_id=$1", &[&i64::from(self.fence.lease.zone_id.get()), &count, &bytes]).map_err(sql)?;
             Ok(())
-        }))
+        }))?;
+        self.confirm_commit()
     }
     /// Capture a stable reference before object I/O. Recovery verifies that it
     /// is still current when reading the suffix, so concurrent pruning cannot
@@ -684,8 +723,24 @@ mod tests {
             max_retained_batches: 2,
             max_replay_ticks: 2,
         };
-        let mut journal =
-            PostgresJournal::connect(&url, fence.clone(), Duration::from_secs(5), limits).unwrap();
+        let mut journal = if let Ok(standby) = std::env::var("MMORPG_POSTGRES_STANDBY_URL") {
+            PostgresJournal::connect_replicated(
+                &url,
+                &standby,
+                fence.clone(),
+                Duration::from_secs(5),
+                limits,
+            )
+            .unwrap()
+        } else {
+            PostgresJournal::connect_development(
+                &url,
+                fence.clone(),
+                Duration::from_secs(5),
+                limits,
+            )
+            .unwrap()
+        };
         let reference = CheckpointReference {
             version: 1,
             zone_id: zone.get(),
@@ -752,6 +807,15 @@ mod tests {
             .unwrap();
         assert_eq!(committed.record, record);
         assert_eq!(committed.revision, 1);
+        if let Ok(standby) = std::env::var("MMORPG_POSTGRES_STANDBY_URL") {
+            let profiles = CharacterStore::new(
+                PostgresEntries::connect(&standby, Duration::from_secs(5)).unwrap(),
+            );
+            assert_eq!(
+                profiles.committed(&character).unwrap().unwrap().record,
+                record
+            );
+        }
         let (position, recovered) = journal.recover_suffix(&reference, image.clone()).unwrap();
         assert_eq!(position, 1);
         let restored = MatchRuntime::restore_from_recovery(adapter(), recovered).unwrap();
