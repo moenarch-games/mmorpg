@@ -89,7 +89,11 @@ async function exchangeControl(transport: WebTransport, payload: Uint8Array) {
       exchange(),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-          transport.close({ closeCode: 0, reason: "control request timed out" });
+          try {
+            transport.close({ closeCode: 0, reason: "control request timed out" });
+          } catch {
+            // A transport that already failed is closed; the timeout still rejects.
+          }
           reject(new Error("Character control request timed out."));
         }, 5000);
       }),

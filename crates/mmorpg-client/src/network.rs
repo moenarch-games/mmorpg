@@ -116,6 +116,7 @@ pub struct ClientSession {
     zone_id: ZoneId,
     content_revision: u64,
     durable_character: bool,
+    character_service: Option<bool>,
 }
 
 impl ClientSession {
@@ -153,6 +154,7 @@ impl ClientSession {
                 zone_id,
                 content_revision,
                 durable_character: false,
+                character_service: None,
             })
         })
         .await
@@ -187,6 +189,19 @@ impl ClientSession {
         .map_err(|_| "character control request timed out")?
     }
 
+    /// Discover once per session; an unavailable exchange never becomes anonymous entry.
+    pub async fn character_service_enabled(&mut self) -> Result<bool, ClientError> {
+        if let Some(enabled) = self.character_service {
+            return Ok(enabled);
+        }
+        let capability = self.character_control(&[1, 0]).await?;
+        if capability.accepted && capability.payload != [1, 1] {
+            return Err("unsupported character service".into());
+        }
+        self.character_service = Some(capability.accepted);
+        Ok(capability.accepted)
+    }
+
     /// A server-side lease claim in explicit development/LAN trust mode.
     /// A rejected capability means an anonymous host; a failed claim never falls back.
     pub async fn claim_character(
@@ -194,12 +209,8 @@ impl ClientSession {
         id: &mmorpg_core::CharacterId,
         class: mmorpg_core::ClassChoice,
     ) -> Result<bool, ClientError> {
-        let capability = self.character_control(&[1, 0]).await?;
-        if !capability.accepted {
+        if !self.character_service_enabled().await? {
             return Ok(false);
-        }
-        if capability.payload != [1, 1] {
-            return Err("unsupported character service".into());
         }
         let mut request = vec![1, 1, class.appearance() as u8];
         request.extend_from_slice(id.as_str().as_bytes());

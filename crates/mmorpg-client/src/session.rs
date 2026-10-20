@@ -255,6 +255,55 @@ impl Outbox {
     }
 }
 
+/// A roster choice, separate from high-frequency held input.
+#[derive(Clone, Debug)]
+pub struct CharacterSelection {
+    pub local_id: String,
+    pub class: mmorpg_core::ClassChoice,
+    pub global_id: Option<mmorpg_core::CharacterId>,
+}
+
+pub async fn run_session_with_characters(
+    mut session: ClientSession,
+    input: watch::Receiver<PlayerInput>,
+    mut characters: watch::Receiver<Option<CharacterSelection>>,
+    updates: &watch::Sender<NetworkUpdate>,
+    mut shutdown: oneshot::Receiver<()>,
+) -> Result<(), ClientError> {
+    let enabled = tokio::select! {
+        _ = &mut shutdown => return Ok(()),
+        enabled = session.character_service_enabled() => enabled?,
+    };
+    if !enabled {
+        return run_session(session, input, updates, shutdown).await;
+    }
+    let selected = loop {
+        if let Some(selected) = characters.borrow_and_update().clone() {
+            break selected;
+        }
+        tokio::select! {
+            _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
+            changed = characters.changed() => { changed.map_err(|_| "character selection closed")?; }
+        }
+    };
+    let id = match selected.global_id {
+        Some(id) => id,
+        None => {
+            let directory =
+                crate::roster::config_dir().ok_or("no character configuration directory")?;
+            tokio::task::spawn_blocking(move || {
+                crate::online_identity::for_character(&directory, &selected.local_id)
+            })
+            .await??
+        }
+    };
+    tokio::select! {
+        _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
+        claimed = session.claim_character(&id, selected.class) => { claimed?; }
+    }
+    run_session(session, input, updates, shutdown).await
+}
+
 pub async fn run_session(
     mut session: ClientSession,
     mut input: watch::Receiver<PlayerInput>,
@@ -270,7 +319,7 @@ pub async fn run_session(
     loop {
         let failure = tokio::select! {
             biased;
-            _ = &mut shutdown => return Ok(()),
+            _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
             _ = heartbeat.tick() => {
                 if last_snapshot.elapsed() > Duration::from_secs(5) {
                     Some(SessionError::SnapshotTimeout)
@@ -288,7 +337,7 @@ pub async fn run_session(
                     outbox.changes(current, Instant::now()).deliver(&mut session).err()
                 }
                 // The owning window has closed; it also requests shutdown.
-                Err(_) => return Ok(()),
+                Err(_) => { session.release_character().await?; return Ok(()); },
             },
             snapshot = session.receive_snapshot() => match snapshot {
                 Ok(snapshot) => {
@@ -306,7 +355,7 @@ pub async fn run_session(
         if let Some(error) = failure {
             let recoverable = tokio::select! {
                 biased;
-                _ = &mut shutdown => return Ok(()),
+                _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
                 recoverable = session.can_reconnect(&error) => recoverable,
             };
             if !recoverable {
@@ -315,7 +364,7 @@ pub async fn run_session(
             updates.send_replace(NetworkUpdate::Reconnecting);
             let snapshot = tokio::select! {
                 biased;
-                _ = &mut shutdown => return Ok(()),
+                _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
                 snapshot = session.reconnect() => snapshot?,
             };
             outbox.observe(&snapshot);

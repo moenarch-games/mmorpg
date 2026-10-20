@@ -12,7 +12,8 @@ export type LinkState = "connected" | "reconnecting";
 /** The class and sex a new player chooses on entry; the zone takes the choice once. */
 /**
  * The character to enter as. `id` names the durable character; a local zone
- * leases and resumes it, while an online zone host does not read it yet.
+ * leases and resumes it. Online clients resolve a persistent alias for the
+ * roster slot and claim the host's durable record when character storage is enabled.
  */
 export type JoinCharacter = { id: string; classId: "warden" | "ranger" | "arcanist"; sex: "female" | "male" };
 
@@ -41,7 +42,8 @@ export type WorldSource = {
    * Enters the world as a new player and resolves to its ID once the first
    * projection addressed to it arrived. Rejects while joined. A join that
    * rejects leaves the source unjoined, so entry can be retried. The new player
-   * chooses `character`'s class and sex before any other command.
+   * chooses `character`'s class and sex before gameplay; a returning durable
+   * character uses its leased server record.
    */
   join(character?: JoinCharacter): Promise<number>;
   /**

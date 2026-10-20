@@ -1,3 +1,4 @@
+import { onlineCharacterId, hasOnlineCharacterId } from "./world/online-character-identity";
 import * as THREE from "three";
 import {
   createThreeSceneRenderer,
@@ -766,8 +767,8 @@ function updateEntryButton(): void {
   enterWorldNote.textContent = entryNote(selectedCharacter());
   playOnlineInput.disabled = joining !== null;
   selectionNote.textContent = server
-    ? `Online: the zone host at ${server.label} runs this world for every page that joins it. World progress is not saved; returning to characters leaves the zone.`
-    : "Single-player demo: the shared Rust zone simulation runs in this browser. World progress is not saved yet; returning to characters leaves the zone.";
+    ? `Online: the zone host at ${server.label} runs this world for every page that joins it. Hosts with character storage save your character progress.`
+    : "Single-player demo: the shared Rust zone simulation runs in this browser. Character progress and the world are saved in this browser.";
 }
 
 /** A zone host world over WebTransport, drawn with the scenery the page loaded. */
@@ -779,6 +780,7 @@ function createOnlineWorld(local: LocalWorld, server: ZoneServer): ZoneWorld {
       // Projections must come from the content revision this scenery shows.
       contentRevision: local.scenery.scenery.contentRevision,
       connector: webTransportConnector(server.certificateHash),
+      resolveCharacterId: (id) => navigator.locks.request("mmorpg-online-character-ids", () => onlineCharacterId(window.localStorage, id)),
     }),
   };
 }
@@ -921,7 +923,7 @@ function finishCharacterCreation(): void {
     const character = createCharacterPreview(
       creationDraft,
       characters,
-      (id) => hasRetainedCharacterSaves(window.localStorage, id),
+      (id) => hasRetainedCharacterSaves(window.localStorage, id) || hasOnlineCharacterId(window.localStorage, id),
     );
     characters = [...characters, character];
     const persisted = persistCreatedRoster();

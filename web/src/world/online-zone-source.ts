@@ -30,6 +30,7 @@ export type OnlineZoneOptions = {
   /** The content revision of the scenery this page loaded; every projection must carry it. */
   contentRevision: bigint;
   connector: SessionConnector;
+  resolveCharacterId?: (localId: string) => Promise<string>;
   clock?: SessionClock;
 };
 
@@ -106,6 +107,7 @@ export class OnlineZoneSource implements WorldSource {
   /** The welcome of the current session: its player, epoch and one-time resume token. */
   #welcome: Welcome | null = null;
   #durable = false;
+  #resolveCharacterId: (localId: string) => Promise<string>;
   #outbox = new SequencedOutbox();
   readonly #history = new SnapshotBuffer();
   #latest: ZoneSnapshot | null = null;
@@ -128,6 +130,7 @@ export class OnlineZoneSource implements WorldSource {
     this.#route = options.route;
     this.#contentRevision = options.contentRevision;
     this.#connector = options.connector;
+    this.#resolveCharacterId = options.resolveCharacterId ?? ((id) => Promise.resolve(id));
     this.#clock = options.clock ?? browserClock;
   }
 
@@ -527,7 +530,7 @@ export class OnlineZoneSource implements WorldSource {
     }
     if (link !== this.#link) { return; }
     const { classId, sex } = classChoiceCodes(this.#character);
-    const id = new TextEncoder().encode(this.#character.id);
+    const id = new TextEncoder().encode(await this.#resolveCharacterId(this.#character.id));
     const request = new Uint8Array(3 + id.length);
     request.set([1, 1, 1 + classId * 2 + sex]);
     request.set(id, 3);

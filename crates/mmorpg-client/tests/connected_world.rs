@@ -1161,3 +1161,57 @@ async fn durable_character_resumes_after_logout_and_host_restart() -> Result<(),
     second.stop().await;
     Ok(())
 }
+
+#[tokio::test]
+async fn durable_character_selection_worker_claims_before_gameplay_and_logs_out()
+-> Result<(), ClientError> {
+    use mmorpg_client::session::{CharacterSelection, run_session_with_characters};
+    use mmorpg_core::{CharacterId, ClassChoice};
+    let directory = tempfile::tempdir()?;
+    let zone = ZoneId::new(1);
+    let local = LocalHost::start_mode(HostMode::Persistent(directory.path().to_owned()), zone);
+    let session = ClientSession::connect(
+        &local.url,
+        Some(&local.certificate),
+        zone,
+        greyhaven_vale::content().revision(),
+    )
+    .await?;
+    let (input_sender, input) = watch::channel(PlayerInput {
+        forward: 1,
+        class_choice: Some((1, 0)),
+        ..PlayerInput::default()
+    });
+    let (_selection, characters) = watch::channel(Some(CharacterSelection {
+        local_id: "local-1".into(),
+        class: ClassChoice::from_appearance(3).unwrap(),
+        global_id: Some(CharacterId::new("worker-ranger")?),
+    }));
+    let (updates, mut received) = watch::channel(NetworkUpdate::Waiting);
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        run_session_with_characters(session, input, characters, &updates, stopped).await
+    });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            received.changed().await.unwrap();
+            match &*received.borrow_and_update() {
+                NetworkUpdate::Snapshot {
+                    snapshot, refusal, ..
+                } if snapshot.acknowledged_sequence > 0 => {
+                    assert_eq!(snapshot.viewer.class, ClassChoice::from_appearance(3));
+                    assert!(refusal.is_none());
+                    break;
+                }
+                NetworkUpdate::Failed(error) => panic!("{error}"),
+                _ => {}
+            }
+        }
+    })
+    .await?;
+    stop.send(()).unwrap();
+    task.await??;
+    drop(input_sender);
+    local.stop().await;
+    Ok(())
+}

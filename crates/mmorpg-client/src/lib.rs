@@ -8,6 +8,7 @@ pub mod graphics;
 pub mod hud;
 pub mod interaction;
 pub mod network;
+pub mod online_identity;
 pub mod picking;
 pub mod presentation;
 pub mod roster;

@@ -1,4 +1,4 @@
-use mmorpg_client::session::{NetworkUpdate, PlayerInput};
+use mmorpg_client::session::{CharacterSelection, NetworkUpdate, PlayerInput};
 use mmorpg_client::{
     ClientError,
     camera::{CameraView, OrbitCamera},
@@ -42,6 +42,7 @@ pub fn run(
     content: Arc<ZoneContent>,
     world: WorldScene,
     input: watch::Sender<PlayerInput>,
+    characters: watch::Sender<Option<CharacterSelection>>,
     updates: watch::Receiver<NetworkUpdate>,
     frames: Option<u32>,
     character: Option<(PlayerClass, Sex)>,
@@ -70,6 +71,7 @@ pub fn run(
         connection_epoch: None,
         last_refusal: None,
         input,
+        characters,
         updates,
         keys: HashSet::new(),
         camera: OrbitCamera::default(),
@@ -118,6 +120,7 @@ struct App {
     connection_epoch: Option<u32>,
     last_refusal: Option<(u32, mmorpg_client::session::RefusalReceipt)>,
     input: watch::Sender<PlayerInput>,
+    characters: watch::Sender<Option<CharacterSelection>>,
     updates: watch::Receiver<NetworkUpdate>,
     keys: HashSet<KeyCode>,
     camera: OrbitCamera,
@@ -620,7 +623,7 @@ impl App {
                 self.npc_context.close();
                 self.world_controls.set_interaction(false);
             }
-            UiIntent::ChooseCharacter(class, sex, headwear) => {
+            UiIntent::ChooseCharacter(id, class, sex, headwear) => {
                 self.choosing = false;
                 self.presentation.set_preview(None);
                 self.presentation.set_default_appearance(class);
@@ -630,6 +633,11 @@ impl App {
                 self.input.send_modify(|input| {
                     input.class_choice = Some((class.code(), sex.code()));
                 });
+                self.characters.send_replace(Some(CharacterSelection {
+                    local_id: id,
+                    class: mmorpg_core::ClassChoice { class, sex },
+                    global_id: None,
+                }));
             }
         }
     }

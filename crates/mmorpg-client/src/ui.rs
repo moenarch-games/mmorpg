@@ -27,7 +27,7 @@ use mmorpg_scenery::Scenery;
 use std::time::{Duration, Instant};
 
 /// What an interface control asks the window to do.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UiIntent {
     /// One deliberate shared command (quest, vendor, bag, equipment, loot, chat).
     Command(ZoneCommand),
@@ -43,7 +43,7 @@ pub enum UiIntent {
     /// Close the NPC context.
     CloseContext,
     /// The chosen class, sex and local headwear to enter the world with.
-    ChooseCharacter(PlayerClass, Sex, Headwear),
+    ChooseCharacter(String, PlayerClass, Sex, Headwear),
 }
 
 /// The latest self sheets: an omitted newer sheet is pending, never empty.
@@ -552,6 +552,7 @@ impl GameUi {
             self.roster.name_focused = false;
             self.character_name = Some(character.name.clone());
             intents.push(UiIntent::ChooseCharacter(
+                character.id.clone(),
                 character.class,
                 character.sex,
                 character.headwear,

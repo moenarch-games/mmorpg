@@ -266,7 +266,12 @@ impl DevCharacterService {
         let acquired = storage.store.acquire(&character, holder).map_err(message)?;
         let admission = (|| {
             let record = match acquired.record {
-                Some(record) => record,
+                Some(record) => {
+                    if record.class != class {
+                        return Err("stored character does not match the selected class/sex".into());
+                    }
+                    record
+                }
                 None => {
                     let mut zone = ZoneSimulation::with_content(zone, greyhaven_vale::content())
                         .map_err(message)?;

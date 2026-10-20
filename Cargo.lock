@@ -1801,6 +1801,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "game-server",
+ "getrandom 0.4.3",
  "gilrs",
  "gltf",
  "input-bindings-core",
