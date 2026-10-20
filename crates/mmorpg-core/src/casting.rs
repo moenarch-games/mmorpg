@@ -374,7 +374,7 @@ impl ZoneSimulation {
                 if let Some(victim) = target {
                     let amount = self.weapon_strike_amount(player_id, ability.effect);
                     let amount = self.stance_damage(player_id, target, amount)?;
-                    self.player_damages_unit(player_id, victim, amount, false, now)?;
+                    self.player_melee_hits(player_id, victim, amount, false, now)?;
                 }
             }
             AbilityEffect::Bash {

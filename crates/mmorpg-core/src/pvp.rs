@@ -12,6 +12,32 @@ impl ZoneSimulation {
             && self.players.contains_key(&victim)
     }
 
+    /// Weapon impacts use the same shield geometry/momentum and stance as creature blows.
+    pub(crate) fn player_melee_hits(
+        &mut self,
+        attacker: PlayerId,
+        target: EntityRef,
+        amount: u32,
+        critical: bool,
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        let amount = if let EntityRef::Player(victim) = target {
+            if !self.players_are_hostile(attacker, victim)
+                || self.block_player_melee(
+                    EntityRef::Player(attacker),
+                    victim,
+                    u16::try_from(amount).unwrap_or(u16::MAX),
+                )?
+            {
+                return Ok(());
+            }
+            self.stance_exposure(victim, amount)?
+        } else {
+            amount
+        };
+        self.player_damages_unit(attacker, target, amount, critical, now)
+    }
+
     /// The same player-origin hit resolver for creatures and eligible arena opponents.
     pub(crate) fn player_damages_unit(
         &mut self,

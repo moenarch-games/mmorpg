@@ -742,43 +742,57 @@ impl ZoneSimulation {
                 Ok(())
             }
             Swing::Hit { amount, critical } => {
-                match self.guard_outcome(source, player_id, amount)? {
-                    GuardOutcome::Unguarded => {}
-                    GuardOutcome::Blocked(lane) => {
-                        self.update_player(player_id, |player| {
-                            player.combat_timer = COMBAT_LINGER_TICKS;
-                        });
-                        self.guard_feedback(
-                            player_id,
-                            ZoneEvent::Blocked {
-                                source,
-                                target,
-                                lane,
-                                amount,
-                            },
-                        );
-                        return Ok(());
-                    }
-                    GuardOutcome::Broken(lane) => {
-                        self.update_player(player_id, |player| {
-                            player.guard.broken = crate::GUARD_BREAK_TICKS;
-                        });
-                        self.guard_feedback(
-                            player_id,
-                            ZoneEvent::GuardBroken {
-                                source,
-                                target,
-                                lane,
-                                ticks: crate::GUARD_BREAK_TICKS,
-                            },
-                        );
-                    }
+                if self.block_player_melee(source, player_id, amount)? {
+                    return Ok(());
                 }
                 // A Warden's stance exposes or braces it (#155).
                 let amount = self.stance_exposure(player_id, u32::from(amount))?;
                 self.creature_damages_player(creature_id, player_id, amount, critical)
             }
         }
+    }
+
+    /// Shared shield impact and feedback for creature and player melee attacks.
+    pub(crate) fn block_player_melee(
+        &mut self,
+        source: EntityRef,
+        player_id: PlayerId,
+        amount: u16,
+    ) -> Result<bool, ZoneError> {
+        let target = EntityRef::Player(player_id);
+        match self.guard_outcome(source, player_id, amount)? {
+            GuardOutcome::Unguarded => {}
+            GuardOutcome::Blocked(lane) => {
+                self.update_player(player_id, |player| {
+                    player.combat_timer = COMBAT_LINGER_TICKS;
+                });
+                self.guard_feedback(
+                    player_id,
+                    ZoneEvent::Blocked {
+                        source,
+                        target,
+                        lane,
+                        amount,
+                    },
+                );
+                return Ok(true);
+            }
+            GuardOutcome::Broken(lane) => {
+                self.update_player(player_id, |player| {
+                    player.guard.broken = crate::GUARD_BREAK_TICKS;
+                });
+                self.guard_feedback(
+                    player_id,
+                    ZoneEvent::GuardBroken {
+                        source,
+                        target,
+                        lane,
+                        ticks: crate::GUARD_BREAK_TICKS,
+                    },
+                );
+            }
+        }
+        Ok(false)
     }
 
     /// A guard outcome for the defender and the players who see both units.
