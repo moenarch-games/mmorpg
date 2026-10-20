@@ -19,6 +19,15 @@ use crate::{
     PLAYER_HALF_EXTENTS_UNITS, VendorStock, ZoneAreas, ZoneError,
 };
 
+/// Whether this zone may import/export durable character records.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CharacterPersistence {
+    #[default]
+    Durable,
+    /// Session-local builds only; durable records must never receive match outcomes.
+    Ephemeral,
+}
+
 /// Player-origin combat eligibility for an explicitly admitted zone instance.
 /// Shared-world zones are safe by default. Dedicated arena admission belongs to its host.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -40,6 +49,7 @@ pub struct ZoneContent {
     npcs: Vec<Npc>,
     graveyard: [i32; 2],
     fingerprint: u64,
+    character_persistence: CharacterPersistence,
     player_combat: PlayerCombatPolicy,
     rng_seed: u64,
     loot_revision: u64,
@@ -146,6 +156,7 @@ impl ZoneContent {
             npcs,
             graveyard,
             fingerprint: 0,
+            character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
             rng_seed: 0,
             loot_revision: 0,
@@ -182,6 +193,7 @@ impl ZoneContent {
             npcs: Vec::new(),
             graveyard: [feet[0], feet[2]],
             fingerprint: 0,
+            character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
             rng_seed: 0,
             loot_revision: 0,
@@ -217,6 +229,18 @@ impl ZoneContent {
     #[must_use]
     pub const fn player_combat_policy(&self) -> PlayerCombatPolicy {
         self.player_combat
+    }
+
+    #[must_use]
+    pub fn with_character_persistence(mut self, policy: CharacterPersistence) -> Self {
+        self.character_persistence = policy;
+        self.fingerprint = self.compute_fingerprint();
+        self
+    }
+
+    #[must_use]
+    pub const fn character_persistence(&self) -> CharacterPersistence {
+        self.character_persistence
     }
 
     #[must_use]
@@ -735,6 +759,17 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_player_combat_fingerprint();
+        if self.character_persistence == CharacterPersistence::Durable {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/ephemeral-characters-v1");
+        hash.u64(fingerprint);
+        hash.finish()
+    }
+
+    fn compute_player_combat_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_structure_fingerprint();
         if self.player_combat == PlayerCombatPolicy::Safe {
             return fingerprint;

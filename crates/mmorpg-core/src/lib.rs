@@ -23,6 +23,7 @@ mod corpse_loot;
 mod creature;
 mod door;
 mod entity;
+mod ephemeral;
 mod equipment;
 mod events;
 mod forced;
@@ -79,7 +80,7 @@ pub use class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use combo::{COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboOpening, ComboPhase};
 pub use content::greyhaven_vale::{self, greyhaven_vale_definition};
 pub use content::{
-    CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
+    CharacterPersistence, CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
     LARGE_CREATURE_HALF_WIDTH_UNITS, MAX_CONTENT_COORDINATE_UNITS, MAX_CREATURE_HALF_EXTENT_UNITS,
     MAX_CREATURE_SPAWNS, MAX_CREATURE_TEMPLATES, MAX_NPCS, MAX_STATIC_COLLIDERS,
     MAX_TERRAIN_HEIGHT_UNITS, MAX_UNIT_NAME_BYTES, MAX_WANDER_RADIUS_UNITS, Npc, NpcRole,
@@ -98,6 +99,7 @@ pub use door::{
     MAX_DOORS, NPC_SIGHT_HEIGHT_UNITS,
 };
 pub use entity::{CreatureId, CreatureTemplateId, EntityKind, EntityRef, NpcId};
+pub use ephemeral::EphemeralCharacterBuild;
 pub use equipment::{
     EQUIPMENT_SLOTS, Equipment, EquipmentSlot, HEALTH_PER_STAMINA, ItemStats, MAX_EQUIPPED_STAMINA,
     PRIMARY_STAT_PER_DAMAGE, StatTotals,

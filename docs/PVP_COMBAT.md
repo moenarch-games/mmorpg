@@ -74,7 +74,7 @@ Existing PvE combat/ability/trace, forced-movement, combo and directed-strike ch
 Canonical codec checks preserve both target kinds. Rust-generated v30 projection fixtures
 are decoded by the browser; v29 remains rejection evidence.
 
-This is the reusable combat capability. Max-level temporary builds remain #340;
+This is the reusable combat capability. [Temporary max-level builds](EPHEMERAL_CHARACTERS.md) use the separate ephemeral character admission API (#340);
 Battle Royale runtime composition remains battle-royale #13; client entry remains #341.
 No playable Battle Royale match or large-player performance claim is made here.
 
