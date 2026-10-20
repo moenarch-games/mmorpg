@@ -43,6 +43,7 @@ mod projectile;
 mod projection;
 mod quest;
 mod ramp;
+mod rewards;
 pub mod rng;
 mod routine;
 mod snapshot;
@@ -136,6 +137,7 @@ pub use quest::{
     QuestLog, QuestMarker, QuestObjective, QuestRewards, QuestSheet,
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
+pub use rewards::{RewardGrant, RewardHistory, RewardKey};
 pub use routine::{
     DAWN, DAY_TICKS, DUSK, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
     NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,
@@ -166,7 +168,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 27;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 28;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its

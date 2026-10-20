@@ -2,7 +2,7 @@
 //! PostgreSQL clients for their entire lifetime, including destruction. It never
 //! holds a simulation/runtime lock or computes gameplay outcomes.
 use super::{
-    CharacterWrite,
+    CharacterWrite, GrantId,
     checkpoints::{CheckpointError, CheckpointLimits, CheckpointObjects, S3Config},
     postgres::{JournalLimits, PostgresJournal, StreamFence},
 };
@@ -310,6 +310,26 @@ impl State {
                 records.insert(id, stored);
             }
         }
+        let mut emitted = BTreeMap::<game_server::PlayerId, BTreeSet<GrantId>>::new();
+        if let Some(history) = zone.reward_history() {
+            let recipients: BTreeMap<_, _> = records
+                .values()
+                .map(|stored| (stored.player, &stored.record.character_id))
+                .collect();
+            for grant in &history.grants {
+                let character = recipients
+                    .get(&grant.player)
+                    .ok_or_else(|| error("reward recipient has no durable character identity"))?;
+                let id = GrantId::for_reward(
+                    &self.fence.world_id,
+                    self.fence.lease.zone_id,
+                    character,
+                    grant.key,
+                )
+                .map_err(error)?;
+                emitted.entry(grant.player).or_default().insert(id);
+            }
+        }
         let mut writes = Vec::new();
         for (id, stored) in &records {
             if !stored.parked
@@ -330,18 +350,29 @@ impl State {
             let record = stored
                 .map(|stored| &stored.record)
                 .or(binding.acquired.record.as_ref());
+            let mut grants = emitted.remove(&binding.player).unwrap_or_default();
             if let Some(record) = record {
-                if release || binding.acquired.record.as_ref() != Some(record) {
+                if binding.acquired.record.is_none() {
+                    grants.insert(
+                        GrantId::new(format!("character/{}/creation", id.as_str()))
+                            .map_err(error)?,
+                    );
+                }
+                if release || binding.acquired.record.as_ref() != Some(record) || !grants.is_empty()
+                {
                     writes.push(CharacterWrite {
                         lease: binding.acquired.lease.clone(),
                         expected_revision: binding.acquired.revision,
                         record: record.clone(),
-                        grants: BTreeSet::new(),
+                        grants,
                         release,
                     });
                 }
             }
             binding.seen |= stored.is_some();
+        }
+        if !emitted.is_empty() {
+            return Err(error("reward recipient has no active storage lease"));
         }
         self.position = self
             .journal
@@ -570,9 +601,16 @@ fn initialize(
     )
     .map_err(error)?;
     let snapshot = restored.snapshot().map_err(error)?;
-    let (_, records) =
+    let (zone, records) =
         ZoneGameServerAdapter::decode_stored_zone(&snapshot.payload, Arc::clone(&config.content))
             .map_err(error)?;
+    if matches!(&config.durability, Durability::Replicated { .. })
+        && zone.reward_history().is_none()
+    {
+        return Err(error(
+            "replicated persistence requires canonical reward tracking",
+        ));
+    }
     let tick = image.current_tick;
     let mut state = State {
         journal,
@@ -682,7 +720,11 @@ mod tests {
         .unwrap();
         let content = greyhaven_vale::content();
         let adapter = || {
-            ZoneGameServerAdapter::with_content(fence.lease.zone_id, Arc::clone(&content)).unwrap()
+            let mut adapter =
+                ZoneGameServerAdapter::with_content(fence.lease.zone_id, Arc::clone(&content))
+                    .unwrap();
+            adapter.zone_mut().enable_reward_tracking(256, 64).unwrap();
+            adapter
         };
         let mut genesis = MatchRuntime::new_with_replay_capture(adapter(), 30);
         let initial = genesis.checkpoint_replay().unwrap();

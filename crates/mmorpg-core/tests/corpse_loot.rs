@@ -447,3 +447,71 @@ fn binding_and_generating_loot_leave_combat_ai_physics_and_their_rng_unchanged()
     }
     assert!(saw_corpse);
 }
+
+#[test]
+fn durable_receipts_block_rewards_after_weaker_world_reset() {
+    use mmorpg_core::RewardKey;
+    let mut zone = fixture(Some(rule(2, true)));
+    zone.enable_reward_tracking(64, 16).unwrap();
+    let initial_world = zone.snapshot().unwrap();
+    let claim = kill(&mut zone);
+    command(&mut zone, 1, ZoneCommand::Loot(claim));
+    zone.advance_tick().unwrap();
+    let durable = zone.snapshot().unwrap().players.remove(0);
+    let consumed: Vec<_> = zone
+        .reward_history()
+        .unwrap()
+        .world
+        .iter()
+        .copied()
+        .chain(
+            zone.reward_history()
+                .unwrap()
+                .players
+                .values()
+                .flatten()
+                .copied(),
+        )
+        .collect();
+    assert!(
+        consumed
+            .iter()
+            .any(|key| matches!(key, RewardKey::LootMoney { .. }))
+    );
+    let content = Arc::clone(zone.content());
+    // Preserve the global economy while restoring older world/transient state.
+    let mut weaker = initial_world.clone();
+    weaker.players[0].inventory = durable.inventory.clone();
+    weaker.players[0].copper = durable.copper;
+    weaker.players[0].combat.level = durable.combat.level;
+    weaker.players[0].combat.experience = durable.combat.experience;
+    let mut reset = ZoneSimulation::from_snapshot(weaker, Arc::clone(&content)).unwrap();
+    for key in consumed {
+        reset.load_reward_receipt(1, key).unwrap();
+    }
+    let repeated = kill(&mut reset);
+    assert_eq!(
+        reset.snapshot().unwrap().players[0].combat.experience,
+        durable.combat.experience
+    );
+    command(&mut reset, 1, ZoneCommand::Loot(repeated));
+    reset.advance_tick().unwrap();
+    let after = reset.snapshot().unwrap().players.remove(0);
+    assert_eq!(
+        (after.copper, after.inventory),
+        (durable.copper, durable.inventory.clone())
+    );
+    assert!(reset.reward_history().unwrap().grants.is_empty());
+    // The next legitimate life is a new entitlement, even for the same character.
+    let mut next = reset.snapshot().unwrap();
+    next.creatures[0] = initial_world.creatures[0].clone();
+    next.creatures[0].generation += 1;
+    let mut next = ZoneSimulation::from_snapshot(next, content).unwrap();
+    let fresh = kill(&mut next);
+    command(&mut next, 1, ZoneCommand::Loot(fresh));
+    next.advance_tick().unwrap();
+    assert_eq!(
+        next.snapshot().unwrap().players[0].copper,
+        durable.copper + 2
+    );
+}

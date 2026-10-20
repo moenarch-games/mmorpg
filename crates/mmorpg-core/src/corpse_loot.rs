@@ -70,7 +70,39 @@ impl ZoneSimulation {
         if distance > i128::from(LOOT_REACH_UNITS).pow(2) {
             return Ok(Eligibility::Refused(ErrorCode::OutOfRange));
         }
-        let Some(rewards) = creature.loot.filter(|rewards| has_rewards(*rewards)) else {
+        let rewards = creature.loot.map(|mut rewards| {
+            let life = creature.generation;
+            let id = claim.creature;
+            if !crate::rewards::allowed(
+                &self.rewards,
+                player_id,
+                crate::RewardKey::LootMoney { creature: id, life },
+            ) {
+                rewards.money = 0;
+            }
+            if !crate::rewards::allowed(
+                &self.rewards,
+                player_id,
+                crate::RewardKey::LootItem { creature: id, life },
+            ) {
+                rewards.item = None;
+            }
+            if rewards.quest_item.is_some_and(|stack| {
+                !crate::rewards::allowed(
+                    &self.rewards,
+                    player_id,
+                    crate::RewardKey::LootQuestItem {
+                        creature: id,
+                        life,
+                        item: stack.item(),
+                    },
+                )
+            }) {
+                rewards.quest_item = None;
+            }
+            rewards
+        });
+        let Some(rewards) = rewards.filter(|rewards| has_rewards(*rewards)) else {
             return Ok(Eligibility::Refused(ErrorCode::EmptyLoot));
         };
         Ok(Eligibility::Available(LootView { claim, rewards }))
@@ -140,6 +172,38 @@ impl ZoneSimulation {
             player.inventory_changed_at = self.tick + 1;
         }
         creature.loot = None;
+        let life = creature.generation;
+        if view.rewards.money != 0 {
+            crate::rewards::record(
+                &mut self.rewards,
+                player_id,
+                crate::RewardKey::LootMoney {
+                    creature: claim.creature,
+                    life,
+                },
+            )?;
+        }
+        if view.rewards.item.is_some() {
+            crate::rewards::record(
+                &mut self.rewards,
+                player_id,
+                crate::RewardKey::LootItem {
+                    creature: claim.creature,
+                    life,
+                },
+            )?;
+        }
+        if let Some(stack) = view.rewards.quest_item {
+            crate::rewards::record(
+                &mut self.rewards,
+                player_id,
+                crate::RewardKey::LootQuestItem {
+                    creature: claim.creature,
+                    life,
+                    item: stack.item(),
+                },
+            )?;
+        }
         if let Some(stack) = view.rewards.quest_item {
             self.report_collected(player_id, stack.item());
         }

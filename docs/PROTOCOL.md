@@ -499,3 +499,16 @@ exact bound record for logout. These inputs appear only in private replay/recove
 no client command or player-snapshot version changes. Private canonical snapshots
 with bindings use the `MMOC` v1 adapter envelope described in
 [the admission decision](adr/0003-development-character-admission.md).
+
+## Durable reward receipts: snapshot v29
+
+Wire version 29 and core schema 28 (#40) add a nonzero `u64` creature-life
+generation to each canonical creature and an optional canonical reward history.
+The history contains configured receipt/tick limits, ordered consumed world and
+per-player receipt sets, and this tick's ordered grants. XP and quest credit are
+per character; corpse money/items are finite world entitlements. Respawn advances
+the life generation; restoring older world state reloads durable receipts before
+activation. These fields never enter player projections; their layout is unchanged.
+Commands remain v13. Older v28 snapshots/checkpoints fail closed, and their fixtures
+are retained as compatibility evidence. Reward storage and admission are composed
+by the host, with no database I/O inside core ticks.

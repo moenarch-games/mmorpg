@@ -837,6 +837,7 @@ impl ZoneSimulation {
         creature.loot = creature.tapped_by.and(loot);
         let tapper = creature.tapped_by;
         let level = creature.level;
+        let generation = creature.generation;
         let died = ZoneEvent::Died {
             entity,
             killer: Some(killer),
@@ -852,8 +853,15 @@ impl ZoneSimulation {
         if let Some(player_id) = tapper
             && self.kill_credit_eligible(player_id, [position.x, position.y, position.z])?
         {
-            self.reward_kill_experience(player_id, level)?;
-            self.credit_kill(player_id, template, now);
+            let key = crate::RewardKey::KillExperience {
+                creature: creature_id,
+                life: generation,
+            };
+            if crate::rewards::allowed(&self.rewards, player_id, key) {
+                self.reward_kill_experience(player_id, level)?;
+                crate::rewards::record(&mut self.rewards, player_id, key)?;
+            }
+            self.credit_kill(player_id, template, creature_id, generation, now)?;
         }
         Ok(())
     }

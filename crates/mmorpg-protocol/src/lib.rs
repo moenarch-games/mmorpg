@@ -15,6 +15,7 @@ mod inventory;
 mod loot;
 mod projection;
 mod quest;
+mod rewards;
 mod wire;
 
 pub use canonical::{decode_canonical_snapshot, encode_canonical_snapshot};
@@ -30,7 +31,7 @@ pub use projection::{
 use std::error::Error;
 use std::fmt;
 
-pub const SNAPSHOT_WIRE_VERSION: u8 = 28;
+pub const SNAPSHOT_WIRE_VERSION: u8 = 29;
 
 /// Smallest WebTransport datagram payload measured over the pinned stack:
 /// QUIC's 1,200-byte initial MTU before path MTU discovery, observed as 1,161
