@@ -9,6 +9,7 @@ use std::path::PathBuf;
 pub struct SettingsWindow {
     pub open: bool,
     pub preferences: Preferences,
+    pub bindings: super::bindings::BindingPanel,
     directory: Option<PathBuf>,
     problem: Option<String>,
 }
@@ -33,6 +34,7 @@ impl Default for SettingsWindow {
         Self {
             open: false,
             preferences,
+            bindings: super::bindings::BindingPanel::default(),
             directory,
             problem,
         }
@@ -137,6 +139,8 @@ impl SettingsWindow {
                     Err(error) => self.problem = Some(error),
                 }
             }
+            ui.separator();
+            self.bindings.show(ui);
             if let Some(problem) = &self.problem {
                 ui.colored_label(egui::Color32::LIGHT_RED, problem);
             }
@@ -146,6 +150,9 @@ impl SettingsWindow {
         });
         if response.should_close() {
             self.open = false;
+        }
+        if !self.open {
+            self.bindings.cancel_capture();
         }
         self.open
     }

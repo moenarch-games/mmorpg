@@ -99,6 +99,7 @@ pub fn run(
         pad_ui: Vec::new(),
         focused: true,
         last_pad_sample: Instant::now(),
+        bindings_revision: 0,
     };
     event_loop.run_app(&mut app)?;
     match app.error {
@@ -159,6 +160,7 @@ struct App {
     /// Pads act only while the window has focus.
     focused: bool,
     last_pad_sample: Instant,
+    bindings_revision: u64,
 }
 
 /// Opens the platform's gamepads; a platform without gamepad support keeps
@@ -627,26 +629,8 @@ impl App {
             }
             UiIntent::ChooseCharacter(id, class, sex, headwear) => {
                 self.retire_held_input();
-                let profile = config_dir()
-                    .ok_or_else(|| "No configuration directory for character bindings".to_owned())
-                    .and_then(|directory| mmorpg_client::bindings::load(&directory, &id));
-                let profile = match profile {
-                    Ok(profile) => profile,
-                    Err(error) => {
-                        eprintln!("Character bindings: {error}; using defaults.");
-                        mmorpg_client::bindings::default_profile(&id)
-                    }
-                };
-                // One validated character profile drives keyboard, world and controller adapters.
-                if let Err(error) = self
-                    .controls
-                    .set_profile(Some(profile.clone()))
-                    .and_then(|()| self.world_controls.set_profile(profile.clone()))
-                    .and_then(|()| self.pad.set_profile(profile))
-                {
-                    eprintln!("Could not activate character bindings: {error}");
-                    return;
-                }
+                self.ui.settings.bindings.select_character(Some(&id));
+                self.sync_bindings();
                 self.choosing = false;
                 self.presentation.set_preview(None);
                 self.presentation.set_default_appearance(class);
@@ -663,6 +647,27 @@ impl App {
                 }));
             }
         }
+    }
+
+    fn sync_bindings(&mut self) {
+        let revision = self.ui.settings.bindings.revision();
+        if revision == self.bindings_revision {
+            return;
+        }
+        let profile = self.ui.settings.bindings.profile().cloned();
+        self.retire_held_input();
+        if let Some(profile) = profile {
+            if let Err(error) = self
+                .controls
+                .set_profile(Some(profile.clone()))
+                .and_then(|()| self.world_controls.set_profile(profile.clone()))
+                .and_then(|()| self.pad.set_profile(profile))
+            {
+                self.ui.settings.bindings.problem(error);
+                return;
+            }
+        }
+        self.bindings_revision = revision;
     }
 
     /// Runs one egui pass over the latest projection and applies its intents.
@@ -709,6 +714,7 @@ impl App {
         for intent in intents {
             self.ui_intent(intent);
         }
+        self.sync_bindings();
         if settings_was_open != self.ui.settings.open {
             self.retire_held_input();
         }
@@ -819,6 +825,17 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        if self.ui.settings.open
+            && let WindowEvent::KeyboardInput { event, .. } = &event
+            && event.state == ElementState::Pressed
+            && let PhysicalKey::Code(code) = event.physical_key
+            && self.ui.settings.bindings.capture_key(code, event.repeat)
+        {
+            return;
+        }
+        if matches!(event, WindowEvent::Focused(false)) {
+            self.ui.settings.bindings.cancel_capture();
+        }
         // The interface sees pointer and window events; the keyboard only while
         // the chat field owns it, so focused buttons never steal movement keys.
         let keyboard = matches!(

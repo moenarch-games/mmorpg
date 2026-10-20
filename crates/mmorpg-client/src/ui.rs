@@ -5,6 +5,7 @@
 //! existing intent ([`UiIntent`]) that the window turns into the same shared
 //! commands as the keyboard. The zone decides what happens; this module owns
 //! no gameplay legality, quest progress or inventory transactions.
+pub mod bindings;
 pub mod chat;
 pub mod minimap;
 pub mod overlay;
@@ -334,6 +335,14 @@ impl GameUi {
         now: Instant,
     ) -> Vec<UiIntent> {
         let mut intents = Vec::new();
+        if frame.choosing {
+            let selected = self
+                .roster
+                .selected
+                .and_then(|index| self.roster.roster.characters.get(index))
+                .map(|character| character.id.clone());
+            self.settings.bindings.select_character(selected.as_deref());
+        }
         if self.settings.show(ctx) {
             return intents;
         }

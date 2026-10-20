@@ -246,6 +246,7 @@ impl NativeApplication {
             pad_ui: Vec::new(),
             focused: true,
             last_pad_sample: Instant::now(),
+            bindings_revision: 0,
             egui: None,
             choosing: false,
             chat_focused: false,
