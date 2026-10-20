@@ -144,7 +144,8 @@ impl ZoneSimulation {
                 {
                     return Ok(Some((ErrorCode::OutOfRange, target)));
                 }
-                if matches!(ability.range, AbilityRange::Units(_))
+                if (matches!(ability.range, AbilityRange::Units(_))
+                    || matches!(entity, EntityRef::Player(_)))
                     && !self.line_of_sight(EntityRef::Player(player_id), entity)?
                 {
                     return Ok(Some((ErrorCode::LineOfSight, target)));

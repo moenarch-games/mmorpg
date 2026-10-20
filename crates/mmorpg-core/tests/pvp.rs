@@ -1,4 +1,5 @@
 //! Explicit arena policy stays outside ordinary safe-world combat.
+mod support;
 use mmorpg_core::{PlayerCombatPolicy, ZoneContent, ZoneId, ZoneSimulation, greyhaven_vale};
 use std::sync::Arc;
 
@@ -91,9 +92,13 @@ fn two_players(policy: PlayerCombatPolicy) -> ZoneSimulation {
 }
 
 fn two_classes(policy: PlayerCombatPolicy, classes: [u8; 2]) -> ZoneSimulation {
-    use mmorpg_core::ZoneCommand;
     let content =
         Arc::new(Arc::unwrap_or_clone(greyhaven_vale::content()).with_player_combat(policy));
+    two_classes_on(content, classes)
+}
+
+fn two_classes_on(content: Arc<ZoneContent>, classes: [u8; 2]) -> ZoneSimulation {
+    use mmorpg_core::ZoneCommand;
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
     for player in [1, 2] {
         zone.add_player(player).unwrap();
@@ -391,4 +396,154 @@ fn directed_arena_strikes_use_the_aimed_guard_lane_and_restore_combo_followup() 
             );
         }
     }
+}
+
+#[test]
+fn area_roots_affect_eligible_opponents_without_harming_the_caster_or_safe_players() {
+    use mmorpg_core::ZoneCommand;
+    for policy in [PlayerCombatPolicy::Safe, PlayerCombatPolicy::FreeForAll] {
+        let zone = two_classes(policy, [2, 0]);
+        let mut state = zone.snapshot().unwrap();
+        state.players[0].combat.level = 2;
+        let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+        let caster = zone.snapshot_for_player(1).unwrap().viewer.health;
+        let victim = zone.snapshot_for_player(2).unwrap().viewer.health;
+        zone.apply_command(
+            1,
+            2,
+            ZoneCommand::UseAbility {
+                ability: 10,
+                target: None,
+            },
+        )
+        .unwrap();
+        zone.advance_tick().unwrap();
+        let state = zone.snapshot().unwrap();
+        assert_eq!(state.players[0].combat.health, caster);
+        assert!(state.players[0].combat.abilities.auras.is_empty());
+        assert_eq!(
+            state.players[1].combat.health < victim,
+            policy == PlayerCombatPolicy::FreeForAll
+        );
+        assert_eq!(
+            state.players[1]
+                .combat
+                .abilities
+                .auras
+                .iter()
+                .any(|aura| aura.ability.get() == 10),
+            policy == PlayerCombatPolicy::FreeForAll
+        );
+    }
+}
+
+#[test]
+fn arena_death_reports_the_player_killer_and_restores_without_pve_rewards() {
+    use mmorpg_core::{EntityRef, ZoneCommand, ZoneEvent};
+    let zone = two_players(PlayerCombatPolicy::FreeForAll);
+    let mut state = zone.snapshot().unwrap();
+    state.players[1].combat.health = 1;
+    let progress = (state.players[0].combat.experience, state.players[0].copper);
+    let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+    zone.apply_command(
+        1,
+        2,
+        ZoneCommand::UseAbility {
+            ability: 1,
+            target: Some(EntityRef::Player(2)),
+        },
+    )
+    .unwrap();
+    zone.advance_tick().unwrap();
+    let victim = zone.snapshot_for_player(2).unwrap();
+    assert!(victim.viewer.dead);
+    assert!(victim.events.iter().any(|event| matches!(
+        event,
+        ZoneEvent::Died {
+            entity: EntityRef::Player(2),
+            killer: Some(EntityRef::Player(1))
+        }
+    )));
+    let state = zone.snapshot().unwrap();
+    assert_eq!(
+        (state.players[0].combat.experience, state.players[0].copper),
+        progress
+    );
+    ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+}
+
+#[test]
+fn a_physics_wall_stops_targeted_melee_auto_attacks_and_directed_arena_sweeps() {
+    use mmorpg_core::{
+        EntityRef, StaticCollider, StrikeAim, StrikeHeight, StrikeSide, ZoneAreas, ZoneCommand,
+        ZoneDefinition,
+    };
+    let ground = support::arena::ground();
+    let mut colliders = ground.colliders().to_vec();
+    colliders.push(StaticCollider {
+        id: 2,
+        position: [50, 150, -2000],
+        half_extents: [5, 150, 400],
+    });
+    let definition = ZoneDefinition::with_spawn_grid(
+        ground.revision(),
+        ground.gravity(),
+        ground.spawn_grid(),
+        colliders,
+    )
+    .unwrap();
+    let content = Arc::new(
+        ZoneContent::new(
+            definition,
+            ZoneAreas::default(),
+            vec![],
+            vec![],
+            vec![],
+            [0, 0],
+        )
+        .unwrap()
+        .with_creature_abilities(mmorpg_core::ABILITY_CATALOG_REVISION, vec![])
+        .unwrap()
+        .with_player_combat(PlayerCombatPolicy::FreeForAll),
+    );
+    let mut zone = two_classes_on(content, [0, 0]);
+    let health = zone.snapshot_for_player(2).unwrap().viewer.health;
+    zone.apply_command(
+        1,
+        2,
+        ZoneCommand::UseAbility {
+            ability: 1,
+            target: Some(EntityRef::Player(2)),
+        },
+    )
+    .unwrap();
+    zone.advance_tick().unwrap();
+    let attacker = zone.snapshot_for_player(1).unwrap();
+    assert_eq!(attacker.viewer.resource.unwrap().value, 40);
+    assert!(attacker.events.iter().any(|event| matches!(
+        event,
+        mmorpg_core::ZoneEvent::Error {
+            code: mmorpg_core::ErrorCode::LineOfSight,
+            ..
+        }
+    )));
+    zone.apply_command(1, 3, ZoneCommand::SelectTarget(Some(EntityRef::Player(2))))
+        .unwrap();
+    zone.apply_command(1, 4, ZoneCommand::StartAttack).unwrap();
+    for _ in 0..10 {
+        zone.advance_tick().unwrap();
+    }
+    zone.apply_command(
+        1,
+        5,
+        ZoneCommand::DirectedStrike {
+            ability: 1,
+            facing: 16384,
+            aim: StrikeAim::new(StrikeSide::Centre, StrikeHeight::Middle),
+        },
+    )
+    .unwrap();
+    zone.advance_tick().unwrap();
+    assert_eq!(zone.snapshot_for_player(2).unwrap().viewer.health, health);
+    assert!(zone.snapshot().unwrap().players[0].combat.combo.is_none());
 }

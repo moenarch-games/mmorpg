@@ -450,7 +450,18 @@ impl ZoneSimulation {
             .body(body_id(target))
             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?
             .position();
-        if distance_squared([from.x, from.z], [to.x, to.z]) > i64::from(PLAYER_REACH_UNITS).pow(2) {
+        let refusal = if distance_squared([from.x, from.z], [to.x, to.z])
+            > i64::from(PLAYER_REACH_UNITS).pow(2)
+        {
+            Some(ErrorCode::OutOfRange)
+        } else if matches!(target, EntityRef::Player(_))
+            && !self.line_of_sight(EntityRef::Player(player_id), target)?
+        {
+            Some(ErrorCode::LineOfSight)
+        } else {
+            None
+        };
+        if let Some(code) = refusal {
             // Out of range holds the ready swing; the error is throttled.
             if error_ready {
                 self.update_player(player_id, |player| {
@@ -459,7 +470,7 @@ impl ZoneSimulation {
                 self.notify(
                     player_id,
                     ZoneEvent::Error {
-                        code: ErrorCode::OutOfRange,
+                        code,
                         target: Some(target),
                     },
                 );
