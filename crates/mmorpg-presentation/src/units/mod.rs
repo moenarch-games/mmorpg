@@ -312,6 +312,7 @@ impl UnitPresenter {
                             .unwrap_or(0.)
                     },
                     loc.forward.hypot(loc.right),
+                    loc.vertical,
                     dead,
                     seconds,
                     input.dt,

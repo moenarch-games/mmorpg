@@ -24,6 +24,15 @@ pub struct Clips {
     pub death: &'static str,
     /// A standing raised shield, for a model that carries one (#156).
     pub guard: Option<&'static str>,
+    pub jump: Option<JumpClips>,
+}
+
+/// In-place authored traversal; these clips never move the presentation root.
+#[derive(Clone, Copy, Debug)]
+pub struct JumpClips {
+    pub start: &'static str,
+    pub airborne: &'static str,
+    pub land: &'static str,
 }
 
 impl Kind {
@@ -54,6 +63,11 @@ impl Kind {
                 attack: "Sword_Attack",
                 death: "Death01",
                 guard: Some("Idle_Shield_Loop"),
+                jump: Some(JumpClips {
+                    start: "Jump_Start",
+                    airborne: "Jump_Loop",
+                    land: "Jump_Land",
+                }),
             },
             Self::Wolf => Clips {
                 idle: "Idle",
@@ -62,6 +76,7 @@ impl Kind {
                 attack: "Attack",
                 death: "Death",
                 guard: None,
+                jump: None,
             },
             Self::Rat => Clips {
                 idle: "Rat_Idle",
@@ -70,6 +85,7 @@ impl Kind {
                 attack: "Rat_Attack",
                 death: "Rat_Death",
                 guard: None,
+                jump: None,
             },
             // The farm pig has no attack clip; its jump reads as a charge.
             Self::Pig => Clips {
@@ -79,6 +95,7 @@ impl Kind {
                 attack: "Jump",
                 death: "Death",
                 guard: None,
+                jump: None,
             },
         }
     }
@@ -119,6 +136,17 @@ pub struct Playback {
     clip: &'static str,
     time: f32,
     attack_until: f64,
+    flight: Flight,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+enum Flight {
+    #[default]
+    Ground,
+    Rising,
+    Airborne,
+    Falling,
+    Landing,
 }
 
 impl Playback {
@@ -135,16 +163,56 @@ impl Playback {
         clips: Clips,
         duration: impl Fn(&str) -> f32,
         speed: f64,
+        vertical_speed: f64,
         dead: bool,
         now: f64,
         dt: f64,
         reduced: bool,
         guarding: bool,
     ) -> (&'static str, f32) {
+        // The projection already supplies cosmetic vertical velocity. Retain the
+        // flight phase through the apex instead of treating its zero velocity as
+        // a landing. This is a visual cue, not a grounded/physics decision.
+        self.flight = if dead {
+            Flight::Ground
+        } else if vertical_speed > 0.3 {
+            match self.flight {
+                Flight::Rising | Flight::Airborne => self.flight,
+                _ => Flight::Rising,
+            }
+        } else if vertical_speed < -0.3 {
+            Flight::Falling
+        } else {
+            match self.flight {
+                Flight::Falling if reduced => Flight::Ground,
+                Flight::Falling => Flight::Landing,
+                Flight::Landing if self.time >= duration(self.clip) => Flight::Ground,
+                other => other,
+            }
+        };
+        if let Some(jump) = clips.jump
+            && matches!(self.flight, Flight::Rising)
+            && self.clip == jump.start
+            && self.time >= duration(jump.start)
+        {
+            self.flight = Flight::Airborne;
+        }
+        let jump = clips.jump.and_then(|jump| {
+            let (clip, once) = match self.flight {
+                Flight::Ground => return None,
+                Flight::Rising if !reduced => (jump.start, true),
+                Flight::Rising | Flight::Airborne | Flight::Falling => (jump.airborne, false),
+                Flight::Landing if !reduced => (jump.land, true),
+                Flight::Landing => return None,
+            };
+            (duration(clip) > 0.).then_some((clip, 1., once))
+        });
         let (clip, rate, once) = if dead {
             (clips.death, 1., true)
         } else if now < self.attack_until && !reduced {
             (clips.attack, 1., true)
+        } else if let Some(jump) = jump {
+            jump
         } else if speed > 3.2 {
             (clips.run, (speed / 5.).clamp(0.7, 1.5), false)
         } else if speed > 0.25 {
@@ -228,54 +296,95 @@ mod tests {
         let mut playback = Playback::default();
         assert_eq!(
             playback
-                .advance(clips, one, 0., false, 0., 0.1, false, true)
+                .advance(clips, one, 0., 0., false, 0., 0.1, false, true)
                 .0,
             "Idle_Shield_Loop"
         );
         assert_eq!(
             playback
-                .advance(clips, one, 1., false, 0., 0.1, false, true)
+                .advance(clips, one, 1., 0., false, 0., 0.1, false, true)
                 .0,
             "Walk_Loop"
         );
         assert_eq!(
             Playback::default()
-                .advance(Kind::Wolf.clips(), one, 0., false, 0., 0.1, false, true)
+                .advance(Kind::Wolf.clips(), one, 0., 0., false, 0., 0.1, false, true)
                 .0,
             "Idle"
         );
         let mut playback = Playback::default();
         assert_eq!(
             playback
-                .advance(clips, one, 0., false, 0., 0.1, false, false)
+                .advance(clips, one, 0., 0., false, 0., 0.1, false, false)
                 .0,
             "Idle_Loop"
         );
         assert_eq!(
             playback
-                .advance(clips, one, 4., false, 0., 0.1, false, false)
+                .advance(clips, one, 4., 0., false, 0., 0.1, false, false)
                 .0,
             "Jog_Fwd_Loop"
         );
         playback.attack(1., 0.);
         assert_eq!(
             playback
-                .advance(clips, one, 4., false, 0.1, 0.1, false, false)
+                .advance(clips, one, 4., 0., false, 0.1, 0.1, false, false)
                 .0,
             "Sword_Attack"
         );
-        playback.advance(clips, one, 0., true, 1., 0.1, false, false);
+        playback.advance(clips, one, 0., 0., true, 1., 0.1, false, false);
         assert_eq!(
-            playback.advance(clips, one, 0., true, 5., 5., false, false),
+            playback.advance(clips, one, 0., 0., true, 5., 5., false, false),
             ("Death01", 1.)
         );
         let mut frozen = Playback::default();
-        frozen.advance(clips, one, 0., false, 0., 0.1, true, false);
+        frozen.advance(clips, one, 0., 0., false, 0., 0.1, true, false);
         assert_eq!(
             frozen
-                .advance(clips, one, 0., false, 1., 0.5, true, false)
+                .advance(clips, one, 0., 0., false, 1., 0.5, true, false)
                 .1,
             0.
+        );
+    }
+    #[test]
+    fn authored_jump_tracks_ascent_apex_descent_and_landing() {
+        let mut playback = Playback::default();
+        let clips = Kind::Ranger.clips();
+        let duration = |_: &str| 0.2;
+        let mut pose = |vertical, dt| {
+            playback.advance(clips, duration, 0., vertical, false, 0., dt, false, false)
+        };
+        assert_eq!(pose(4.8, 0.1).0, "Jump_Start");
+        pose(3., 0.2);
+        assert_eq!(pose(1., 0.1).0, "Jump_Loop");
+        assert_eq!(pose(0., 0.1).0, "Jump_Loop");
+        assert_eq!(pose(-2., 0.1).0, "Jump_Loop");
+        assert_eq!(pose(0., 0.1).0, "Jump_Land");
+        pose(0., 0.2);
+        assert_eq!(pose(0., 0.1).0, "Idle_Loop");
+    }
+
+    #[test]
+    fn jump_respects_missing_clips_reduced_motion_and_death() {
+        let mut playback = Playback::default();
+        let clips = Kind::Ranger.clips();
+        let missing = |name: &str| if name.starts_with("Jump_") { 0. } else { 1. };
+        assert_eq!(
+            playback
+                .advance(clips, missing, 4., 4.8, false, 0., 0.1, false, false)
+                .0,
+            "Jog_Fwd_Loop"
+        );
+        let one = |_: &str| 1.;
+        assert_eq!(
+            playback.advance(clips, one, 0., -2., false, 0., 0.1, true, false),
+            ("Jump_Loop", 0.)
+        );
+        assert_eq!(
+            playback
+                .advance(clips, one, 0., -2., true, 0., 0.1, false, false)
+                .0,
+            "Death01"
         );
     }
 }
