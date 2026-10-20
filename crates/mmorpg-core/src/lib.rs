@@ -41,6 +41,7 @@ mod platform;
 mod progression;
 mod projectile;
 mod projection;
+mod pvp;
 mod quest;
 mod ramp;
 mod rewards;

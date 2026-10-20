@@ -122,13 +122,19 @@ impl ZoneSimulation {
             if target.is_none() && ability.aims_freely() {
                 None
             } else {
-                let Some(entity @ EntityRef::Creature(creature_id)) = target else {
+                let Some(entity) = target else {
                     return Ok(Some((ErrorCode::InvalidTarget, target)));
                 };
-                let alive = self
-                    .creatures
-                    .get(&creature_id)
-                    .is_some_and(|creature| creature.is_alive());
+                let alive = match entity {
+                    EntityRef::Creature(id) => {
+                        self.creatures.get(&id).is_some_and(|unit| unit.is_alive())
+                    }
+                    EntityRef::Player(id) => {
+                        self.players_are_hostile(player_id, id)
+                            && self.players.get(&id).is_some_and(|unit| unit.is_alive())
+                    }
+                    EntityRef::Npc(_) => false,
+                };
                 if !alive || !self.visible_to(player_id, entity)? {
                     return Ok(Some((ErrorCode::InvalidTarget, target)));
                 }
@@ -365,10 +371,10 @@ impl ZoneSimulation {
         };
         match ability.effect {
             AbilityEffect::WeaponStrike { .. } => {
-                if let Some(creature_id) = creature {
+                if let Some(victim) = target {
                     let amount = self.weapon_strike_amount(player_id, ability.effect);
                     let amount = self.stance_damage(player_id, target, amount)?;
-                    self.player_damages_creature(player_id, creature_id, amount, false, now)?;
+                    self.player_damages_unit(player_id, victim, amount, false, now)?;
                 }
             }
             AbilityEffect::Bash {

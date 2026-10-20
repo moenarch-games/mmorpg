@@ -1,0 +1,37 @@
+//! Mode-neutral opt-in player combat. Arena hosts own admission; core owns outcomes.
+use crate::{EntityRef, PlayerCombatPolicy, PlayerId, ZoneError, ZoneSimulation};
+
+impl ZoneSimulation {
+    /// Whether two distinct currently admitted players belong to an explicitly hostile zone.
+    /// Self-effects remain governed by their abilities. This does not create a duel.
+    #[must_use]
+    pub fn players_are_hostile(&self, attacker: PlayerId, victim: PlayerId) -> bool {
+        attacker != victim
+            && self.content.player_combat_policy() == PlayerCombatPolicy::FreeForAll
+            && self.players.contains_key(&attacker)
+            && self.players.contains_key(&victim)
+    }
+
+    /// The same player-origin hit resolver for creatures and eligible arena opponents.
+    pub(crate) fn player_damages_unit(
+        &mut self,
+        attacker: PlayerId,
+        target: EntityRef,
+        amount: u32,
+        critical: bool,
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        match target {
+            EntityRef::Creature(creature) => {
+                self.player_damages_creature(attacker, creature, amount, critical, now)
+            }
+            EntityRef::Player(victim) if self.players_are_hostile(attacker, victim) => {
+                self.update_player(attacker, |player| {
+                    player.combat_timer = crate::unit::COMBAT_LINGER_TICKS
+                });
+                self.damage_player(EntityRef::Player(attacker), victim, amount, critical)
+            }
+            _ => Ok(()),
+        }
+    }
+}

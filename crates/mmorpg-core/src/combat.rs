@@ -615,7 +615,27 @@ impl ZoneSimulation {
         amount: u32,
         critical: bool,
     ) -> Result<(), ZoneError> {
-        let source = EntityRef::Creature(creature_id);
+        self.damage_player(
+            EntityRef::Creature(creature_id),
+            player_id,
+            amount,
+            critical,
+        )
+    }
+
+    /// Shared player damage resolution for eligible hostile sources.
+    pub(crate) fn damage_player(
+        &mut self,
+        source: EntityRef,
+        player_id: PlayerId,
+        amount: u32,
+        critical: bool,
+    ) -> Result<(), ZoneError> {
+        if let EntityRef::Player(attacker) = source
+            && !self.players_are_hostile(attacker, player_id)
+        {
+            return Ok(());
+        }
         let target = EntityRef::Player(player_id);
         if !self
             .players
