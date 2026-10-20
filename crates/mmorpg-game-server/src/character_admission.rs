@@ -132,6 +132,21 @@ impl ZoneGameServerAdapter {
             decode_canonical_snapshot(payload).map_err(map_protocol_error)?;
             return Ok(Vec::new());
         }
+        Self::decode_stored_zone(payload, mmorpg_core::greyhaven_vale::content())
+            .map(|(_, records)| records)
+    }
+
+    fn decode_stored_zone(
+        payload: &[u8],
+        content: std::sync::Arc<mmorpg_core::ZoneContent>,
+    ) -> Result<(ZoneSimulation, Vec<StoredCharacter>), SimulationError> {
+        if !payload.starts_with(b"MMOC") {
+            let snapshot = decode_canonical_snapshot(payload).map_err(map_protocol_error)?;
+            return Ok((
+                ZoneSimulation::from_snapshot(snapshot, content).map_err(map_zone_error)?,
+                Vec::new(),
+            ));
+        }
         let mut bytes = payload
             .strip_prefix(b"MMOC\x01")
             .ok_or_else(|| SimulationError::new("unsupported character checkpoint"))?;
@@ -150,17 +165,23 @@ impl ZoneGameServerAdapter {
         let size = number(&mut bytes)? as usize;
         let snapshot =
             decode_canonical_snapshot(take(&mut bytes, size)?).map_err(map_protocol_error)?;
-        // This development service hosts Greyhaven. Reconstruct once off tick,
-        // using core's capture contract rather than mapping durable facts twice.
-        let zone = ZoneSimulation::from_snapshot(snapshot, mmorpg_core::greyhaven_vale::content())
-            .map_err(map_zone_error)?;
+        // Reconstruct once off tick using core's canonical restore/capture contract.
+        let zone = ZoneSimulation::from_snapshot(snapshot, content).map_err(map_zone_error)?;
         let count = number(&mut bytes)? as usize;
         if count > mmorpg_core::MAX_PLAYERS_PER_ZONE {
             return Err(SimulationError::new("too many stored characters"));
         }
         let mut records = Vec::with_capacity(count);
+        let mut previous_player = 0;
+        let mut active_characters = std::collections::BTreeSet::new();
         for _ in 0..count {
             let player = number(&mut bytes)?;
+            if player <= previous_player {
+                return Err(SimulationError::new(
+                    "stored character identities are not strictly ordered",
+                ));
+            }
+            previous_player = player;
             let parked = take(&mut bytes, 1)?[0];
             if parked > 1 {
                 return Err(SimulationError::new("invalid parked character flag"));
@@ -175,6 +196,11 @@ impl ZoneGameServerAdapter {
                 let id = CharacterId::new(id.to_owned()).map_err(map_zone_error)?;
                 zone.capture_character(player, id).map_err(map_zone_error)?
             };
+            if parked == 0 && !active_characters.insert(record.character_id.clone()) {
+                return Err(SimulationError::new(
+                    "character is bound to multiple live sessions",
+                ));
+            }
             records.push(StoredCharacter {
                 player,
                 parked: parked == 1,
@@ -184,7 +210,53 @@ impl ZoneGameServerAdapter {
         if !bytes.is_empty() {
             return Err(SimulationError::new("trailing character checkpoint bytes"));
         }
-        Ok(records)
+        Ok((zone, records))
+    }
+
+    pub(super) fn restore_character_checkpoint(
+        &mut self,
+        checkpoint: &game_server::SimulationSnapshot,
+    ) -> Result<(), SimulationError> {
+        let content = self.zone.content().clone();
+        let (zone, records) = Self::decode_stored_zone(&checkpoint.payload, content.clone())?;
+        if zone.current_tick() != checkpoint.tick || zone.zone_id() != self.zone.zone_id() {
+            return Err(SimulationError::new(
+                "checkpoint tick or zone differs from its recovery context",
+            ));
+        }
+        let mut characters = std::collections::BTreeMap::new();
+        let mut parked_characters = std::collections::BTreeMap::new();
+        for stored in records {
+            characters.insert(stored.player, stored.record.character_id.clone());
+            if stored.parked {
+                // Recreate only the retired session's derived presentation cache.
+                // This temporary view never enters authoritative world state.
+                let mut view = ZoneSimulation::from_snapshot(
+                    zone.snapshot().map_err(map_zone_error)?,
+                    content.clone(),
+                )
+                .map_err(map_zone_error)?;
+                view.admit_character(stored.player, &stored.record)
+                    .map_err(map_zone_error)?;
+                let projection = view
+                    .snapshot_for_player(stored.player)
+                    .map_err(map_zone_error)?;
+                let payload = mmorpg_protocol::pack_snapshot(&projection)
+                    .map_err(map_protocol_error)?
+                    .payload;
+                parked_characters.insert(
+                    stored.player,
+                    ParkedCharacter {
+                        record: stored.record,
+                        projection: game_server::SimulationSnapshot::new(projection.tick, payload),
+                    },
+                );
+            }
+        }
+        self.zone = zone;
+        self.characters = characters;
+        self.parked_characters = parked_characters;
+        Ok(())
     }
 }
 
@@ -284,5 +356,59 @@ mod tests {
         )
         .unwrap();
         assert_eq!(verified.final_snapshot, snapshot);
+    }
+    #[test]
+    fn canonical_checkpoint_restores_character_bindings_physics_and_parked_sessions() {
+        let adapter = || {
+            ZoneGameServerAdapter::with_content(ZoneId::new(1), greyhaven_vale::content()).unwrap()
+        };
+        let mut live = MatchRuntime::new_with_replay_capture(adapter(), 30);
+        let lease = live.admit(ReconnectToken([1; 16])).unwrap();
+        let input = ZoneGameServerAdapter::character_admission_input(&record()).unwrap();
+        live.submit_host_input(lease.player_id, &input).unwrap();
+        for _ in 0..5 {
+            live.advance_tick().unwrap();
+        }
+        let image = live.checkpoint_replay().unwrap();
+        let mut restored = MatchRuntime::restore_from_recovery(adapter(), image).unwrap();
+        let resumed = restored
+            .reconnect(ReconnectToken([1; 16]), ReconnectToken([2; 16]))
+            .unwrap();
+        let movement = mmorpg_protocol::encode_command(mmorpg_core::ZoneCommand::Move {
+            forward: 1,
+            strafe: 0,
+            facing: 16384,
+        });
+        live.submit_command(lease.player_id, lease.connection_epoch, 1, &movement)
+            .unwrap();
+        restored
+            .submit_command(resumed.player_id, resumed.connection_epoch, 1, &movement)
+            .unwrap();
+        for _ in 0..3 {
+            assert_eq!(
+                live.advance_tick().unwrap(),
+                restored.advance_tick().unwrap()
+            );
+        }
+        live.submit_host_input(lease.player_id, &[1, 2]).unwrap();
+        let snapshot = live.snapshot().unwrap();
+        let mut parked = adapter();
+        parked.restore_checkpoint(&snapshot).unwrap();
+        assert_eq!(parked.snapshot().unwrap(), snapshot);
+        assert!(parked.snapshot_for(lease.player_id).is_ok());
+        assert_eq!(
+            parked.character_id(lease.player_id),
+            Some(&record().character_id)
+        );
+
+        // A well-hashed envelope still cannot change the authoritative tick/zone context.
+        let before = parked.snapshot().unwrap();
+        let wrong_tick =
+            game_server::SimulationSnapshot::new(snapshot.tick + 1, snapshot.payload.clone());
+        assert!(parked.restore_checkpoint(&wrong_tick).is_err());
+        assert_eq!(parked.snapshot().unwrap(), before);
+        let mut other_zone =
+            ZoneGameServerAdapter::with_content(ZoneId::new(2), greyhaven_vale::content()).unwrap();
+        assert!(other_zone.restore_checkpoint(&snapshot).is_err());
     }
 }

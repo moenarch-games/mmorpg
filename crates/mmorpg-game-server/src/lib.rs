@@ -17,7 +17,7 @@ use std::sync::Arc;
 use mmorpg_core::{MAX_PLAYERS_PER_ZONE, TICK_HZ, ZoneContent, ZoneId, ZoneSimulation};
 use mmorpg_protocol::{decode_command, encode_canonical_snapshot, pack_snapshot};
 
-pub const PINNED_GAME_SERVER_REVISION: &str = "5283e51e8d8104d88898146fadf3250bb524d6db";
+pub const PINNED_GAME_SERVER_REVISION: &str = "f9da1f462f0b0c7f87bbd17588a979df4745c00b";
 pub const PINNED_PHYSICS_ENGINE_REVISION: &str = "1b98f84d409796b2a15b84f3fa4ed7f03a11f8bd";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -212,6 +212,13 @@ impl GameSimulation for ZoneGameServerAdapter {
 
     fn advance_tick(&mut self) -> Result<(), SimulationError> {
         self.zone.advance_tick().map_err(map_zone_error)
+    }
+
+    fn restore_checkpoint(
+        &mut self,
+        checkpoint: &SimulationSnapshot,
+    ) -> Result<(), SimulationError> {
+        self.restore_character_checkpoint(checkpoint)
     }
 
     fn snapshot_scope(&self) -> SnapshotScope {
