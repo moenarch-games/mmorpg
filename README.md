@@ -208,11 +208,13 @@ and atomic 16-slot bags. Player-owned bags, queued moves and recoverable self sh
 
 Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative durable state; queries read it. Do not introduce event sourcing by default. Zone hot loops must not synchronously depend on a distributed database. `mmorpg-characters` is the durable character boundary (#30): a versioned `CharacterRecord` captured from and admitted into a zone, stored with an exclusive lease held by one zone at one control-plane epoch; every commit names its lease and fails closed once a newer epoch of the zone or a release superseded it. Its development backend is a directory of atomically replaced, OS-locked entry files; the optional PostgreSQL backend follows TECH-002, and development/LAN zone-host admission is available with `MMORPG_CHARACTER_DIR`. Zone checkpoint storage is a separate upcoming boundary.
 
+The PostgreSQL/S3 host now [suspends empty zones and cold-restores them on admission](docs/ZONE_LIFECYCLE.md), with a bounded 30-second default grace and frozen gameplay time. Development file hosts and the browser-local host remain resident.
+
 ## Pinned foundations
 
 - `rapier3d`: `=0.36.1` (crates.io, default features)
 - `physics-engine`: git rev `ae64adbdb2d1af74f89f5befe287a8029eeaa072`, optional in `mmorpg-core` behind the test/bench-only `physics-ab` feature ([physics backend A/B](docs/PHYSICS_AB.md)); never in production or WASM builds
-- `game-server`: `f9da1f462f0b0c7f87bbd17588a979df4745c00b`
+- `game-server`: `a3cdf8c8bf915167988de2ef5e1f9b39cf847d13`
 - `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `235774615f1367065093deb6988f5217bdf4d7e1`
 - reusable validation workflow: `45042e56be120b438096e774027637cac0280075`
 
