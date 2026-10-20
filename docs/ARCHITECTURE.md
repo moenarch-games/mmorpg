@@ -427,3 +427,7 @@ and 3D reach, then atomically settle money and items before consuming rewards.
 Projections repeat copper and complete optional loot state; bag state retains its
 existing change/periodic resend policy. Adapters only carry sequenced commands
 and bounded projections. See [LOOT.md](LOOT.md). The browser Loot panel reads the received sheet and copper, rechecks queued claims through `LootState`, and selects owned corpses through existing target intents. Every intermediate source projection reaches both economy caches before the newest frame is drawn. Opening Bags closes Loot and vice versa; leave/reset clears both.
+
+## Durable empty-zone lifecycle
+
+The PostgreSQL/S3 host implements bounded empty residence, verified checkpoint suspension and cold direct-route admission through the shared runtime hooks. Default resume freezes all authoritative time; optional subsystem transitions require explicit input and remain opt-in. See [the implementation and scope](ZONE_LIFECYCLE.md) and [ADR 0004](adr/0004-durable-zone-suspension.md).

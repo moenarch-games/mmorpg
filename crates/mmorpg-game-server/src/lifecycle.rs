@@ -2,12 +2,19 @@
 //! No subsystem opts into offline progression merely because a zone was unloaded.
 use std::time::Duration;
 
+/// Advisory semantic input from the zone/content owner, never permission to advance it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SuspensionHints {
+    pub expected_return_after: Option<Duration>,
+}
+
 /// Zone-supplied bounds; the host chooses a proposal from runtime conditions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SuspensionPolicy {
     minimum: Duration,
     base: Duration,
     maximum: Duration,
+    pub hints: SuspensionHints,
 }
 impl SuspensionPolicy {
     pub fn new(minimum: Duration, base: Duration, maximum: Duration) -> Option<Self> {
@@ -15,6 +22,7 @@ impl SuspensionPolicy {
             minimum,
             base,
             maximum,
+            hints: SuspensionHints::default(),
         })
     }
 
@@ -96,6 +104,13 @@ mod tests {
         assert_eq!(
             policy.effective_grace(Some(Duration::MAX)),
             Duration::from_secs(300)
+        );
+        let mut hinted = policy;
+        hinted.hints.expected_return_after = Some(Duration::from_secs(60));
+        assert_eq!(hinted.effective_grace(None), Duration::from_secs(30));
+        assert_eq!(
+            hinted.effective_grace(hinted.hints.expected_return_after),
+            Duration::from_secs(60)
         );
         let mut empty = EmptyGrace::default();
         assert!(!empty.due(Duration::ZERO, 0, policy.effective_grace(None)));

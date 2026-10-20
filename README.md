@@ -208,6 +208,8 @@ and atomic 16-slot bags. Player-owned bags, queued moves and recoverable self sh
 
 Use lightweight CQRS/CQS at service boundaries: commands mutate authoritative durable state; queries read it. Do not introduce event sourcing by default. Zone hot loops must not synchronously depend on a distributed database. `mmorpg-characters` is the durable character boundary (#30): a versioned `CharacterRecord` captured from and admitted into a zone, stored with an exclusive lease held by one zone at one control-plane epoch; every commit names its lease and fails closed once a newer epoch of the zone or a release superseded it. Its development backend is a directory of atomically replaced, OS-locked entry files; the optional PostgreSQL backend follows TECH-002, and development/LAN zone-host admission is available with `MMORPG_CHARACTER_DIR`. Zone checkpoint storage is a separate upcoming boundary.
 
+The PostgreSQL/S3 host now [suspends empty zones and cold-restores them on admission](docs/ZONE_LIFECYCLE.md), with a bounded 30-second default grace and frozen gameplay time. Development file hosts and the browser-local host remain resident.
+
 ## Pinned foundations
 
 - `rapier3d`: `=0.36.1` (crates.io, default features)
