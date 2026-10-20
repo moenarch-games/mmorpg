@@ -129,6 +129,14 @@ describe("targeting input", () => {
     expect(nextTabTarget(view([]))).toBeNull();
   });
 
+  test("Tab includes arena opponents but excludes safe and dead players", () => {
+    const opponent = { ...playerEntity(8, [50, 90, 0]), flags: { ...NO_FLAGS, hostile: true, attackable: true } };
+    const safe = playerEntity(9, [1, 90, 0]);
+    const dead = { ...opponent, entityId: 10, flags: { ...opponent.flags, dead: true } };
+    expect(nextTabTarget(view([creature(108, 100, 0), opponent, safe, dead]))).toEqual({ kind: "player", id: 8 });
+    expect(nextTabTarget(view([opponent, safe, dead], { target: { kind: "player", id: 8 } }))).toEqual({ kind: "player", id: 8 });
+  });
+
   test("F toggles auto-attack", () => {
     expect(attackToggle(view([]))).toEqual({ kind: "start-attack" });
     expect(attackToggle(view([], { autoAttacking: true }))).toEqual({ kind: "stop-attack" });

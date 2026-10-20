@@ -13,7 +13,7 @@ export type SessionRoute = {
   origin: string;
   prefix: string;
   matchId: string;
-  /** The zone the match hosts, from the MMO's `zone-<id>` match naming. */
+  /** The hosted zone: its `zone-<id>` suffix, or zone 100 for a Battle Royale arena. */
   zoneId: number;
 };
 
@@ -35,7 +35,7 @@ function validPrefix(prefix: string): boolean {
     prefix.slice(1).split("/").every((segment) => ROUTE_SEGMENT.test(segment));
 }
 
-export function parseSessionRoute(value: string): SessionRoute {
+export function parseSessionRoute(value: string, kind: "zone" | "battle-royale" = "zone"): SessionRoute {
   let url: URL;
   try {
     url = new URL(value);
@@ -65,9 +65,16 @@ export function parseSessionRoute(value: string): SessionRoute {
     throw new SessionRouteError("The zone host address must end with a match ID, not a longer route.");
   }
   const zone = ZONE_MATCH_ID.exec(matchId);
-  const zoneId = zone ? Number(zone[1]) : Number.NaN;
+  let zoneId = Number.NaN;
+  if (kind === "battle-royale" && /^br-[0-9a-f]{16}$/.test(matchId)) {
+    zoneId = 100;
+  } else if (kind === "zone" && zone) {
+    zoneId = Number(zone[1]);
+  }
   if (!Number.isInteger(zoneId) || zoneId > 0xffff_ffff) {
-    throw new SessionRouteError("The zone host match must be a zone (zone-<id>).");
+    throw new SessionRouteError(kind === "zone"
+      ? "The zone host match must be a zone (zone-<id>)."
+      : "The Battle Royale host match must use br- followed by 16 lowercase hex digits.");
   }
   return { url: url.href, origin: url.origin, prefix, matchId, zoneId };
 }

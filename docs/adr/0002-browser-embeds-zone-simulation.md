@@ -38,3 +38,12 @@ This is not MMO authority in the browser. It has no zone fencing, no handoff, no
 - Browser tests that need the simulation build the WASM module first; pure decoder and UI tests stay independent.
 - Local demo saves (#40) compose the durable character record (#30), accessed through core query/command APIs, with matching canonical zone/world checkpoints. They restore through those shared APIs, not by reaching into simulation internals.
 - Online play from the browser needs a zone host the page can reach over WebTransport: a publicly trusted certificate, or for development a short-lived ECDSA certificate whose SHA-256 hash the page is given. It adds no MMO authority to the browser: the host alone runs the zone, and a browser session is as anonymous as a native one.
+
+
+Implementation notes (#341): Battle Royale is an explicit hosted activity, using
+`OnlineZoneSource` for the same session delivery/reconnect behavior and a mode envelope
+around the shared zone projection. Its setup never opens the durable character
+service. The existing Rust/Three.js character presentation and input render the real
+match; the flat arena has client-only scenery through the same static-scene owner.
+The default Greyhaven local host and its persistence remain unchanged. See
+[the activity contract](../BATTLE_ROYALE.md).

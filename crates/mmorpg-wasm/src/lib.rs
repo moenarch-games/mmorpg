@@ -23,6 +23,7 @@
 //! [ADR 0002]: https://github.com/moritzbrantner/mmorpg/blob/main/docs/adr/0002-browser-embeds-zone-simulation.md
 #![forbid(unsafe_code)]
 
+pub mod arena_presentation;
 pub mod catalog;
 pub mod host;
 pub mod scenery;
@@ -369,6 +370,16 @@ impl UnitPresenter {
     #[wasm_bindgen(constructor)]
     pub fn new(player: u32) -> Self {
         Self(units::Units::new(player))
+    }
+
+    /// The same character presenter on the flat Battle Royale presentation.
+    #[wasm_bindgen(js_name = forArena)]
+    pub fn for_arena(player: u32) -> Self {
+        Self(units::Units::with_content(
+            player,
+            arena_presentation::content(),
+            arena_presentation::shared_scenery(),
+        ))
     }
 
     #[wasm_bindgen(js_name = modelReady)]

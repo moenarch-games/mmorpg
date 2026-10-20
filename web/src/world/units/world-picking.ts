@@ -5,10 +5,12 @@ import type { EntityRef } from "../../entity-ref";
 /**
  * Presentation picking over the exact nodes submitted to the renderer. Three.js owns
  * ray/mesh intersection; the result is only an identity for a zone selection intent.
- * Scenery and other players occlude units, while cosmetic target rings are not bodies.
+ * Scenery and non-attackable players occlude units, while cosmetic target rings are not bodies.
  */
 /** What a click lands on first: a unit, a door leaf (#158), or nothing selectable. */
 export type Picked = EntityRef | { kind: "door"; id: number };
+
+const NO_ATTACKABLE_PLAYERS: ReadonlySet<number> = new Set();
 
 export class WorldPicking {
   readonly #raycaster = new THREE.Raycaster();
@@ -38,6 +40,7 @@ export class WorldPicking {
     instanceBatches: readonly RendererInstanceBatch[] = [],
     models: readonly { entity: EntityRef; object: THREE.Object3D }[] = [],
     buildings: readonly { door: number | null; object: THREE.Object3D }[] = [],
+    attackablePlayers: ReadonlySet<number> = NO_ATTACKABLE_PLAYERS,
   ): Picked | null {
     this.#raycaster.setFromCamera(point, camera);
     this.#raycaster.near = camera.near;
@@ -58,9 +61,9 @@ export class WorldPicking {
             continue;
           }
           this.#raycaster.far = hit.distance;
-          const identity = /^unit-(creature|npc)-(\d+)-/.exec(node.id);
+          const identity = /^unit-(player|creature|npc)-(\d+)-/.exec(node.id);
           const kind = identity?.[1];
-          target = identity && (kind === "creature" || kind === "npc")
+          target = identity && (kind === "creature" || kind === "npc" || (kind === "player" && attackablePlayers.has(Number(identity[2]))))
             ? { kind, id: Number(identity[2]) }
             : null;
         }
@@ -74,7 +77,7 @@ export class WorldPicking {
       for (const hit of this.#raycaster.intersectObject(object, true)) {
         if (hit.distance < this.#raycaster.far) {
           this.#raycaster.far = hit.distance;
-          target = entity.kind === "creature" || entity.kind === "npc" ? entity : null;
+          target = entity.kind !== "player" || attackablePlayers.has(entity.id) ? entity : null;
         }
       }
     }
