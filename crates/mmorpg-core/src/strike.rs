@@ -1,6 +1,6 @@
 //! Directed strikes (#154): the Warden's pointer-aimed execution mode of
 //! Heroic Strike. The client submits facing and a high/middle/low,
-//! left/centre/right aim; the zone resolves which creature the sword's
+//! left/centre/right aim; the zone resolves which eligible unit the sword's
 //! physical sweep covers (Atlas 5.2.27, 5.2.53).
 //!
 //! **Coverage** is a horizontal arc and a vertical band:
@@ -10,12 +10,12 @@
 //!   [`PLAYER_REACH_UNITS`] (XZ centre distance), the same melee reach as the
 //!   selected-target strike;
 //! - the band is a height range above the Warden's feet ([`StrikeHeight`]);
-//!   a creature is covered when its physics body's vertical extent overlaps
+//!   a unit is covered when its physics body's vertical extent overlaps
 //!   it, so a high slash passes over a wolf and a low one under nothing;
 //! - static content colliders block the sweep through the Rapier physics world
 //!   ray query that line of sight uses.
 //!
-//! The nearest covered living creature (ties in `EntityRef` order) takes the
+//! The nearest covered living unit (ties in `EntityRef` order) takes the
 //! ability's weapon-strike damage; there is no cleave. A sweep that covers
 //! nobody still swings: it pays the shared Rage cost and starts the shared
 //! global cooldown like the selected-target mode (one ability, Atlas 5.2.53),
@@ -204,7 +204,7 @@ impl ZoneSimulation {
         }
     }
 
-    /// The living creature a sweep from the player's body covers: nearest
+    /// The eligible living unit a sweep from the player's body covers: nearest
     /// first, then in `EntityRef` order; `None` is a whiff.
     pub(crate) fn strike_coverage(
         &self,

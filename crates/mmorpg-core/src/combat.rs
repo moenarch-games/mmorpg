@@ -484,9 +484,8 @@ impl ZoneSimulation {
         self.attack_unit(player_id, target, damage, now)
     }
 
-    /// Resolves one player swing against a creature: evading creatures
-    /// ignore it; otherwise the hit table decides, damage lands, the first
-    /// damaging player taps the creature and threat rises by the damage.
+    /// Resolves a player swing through the shared hit table and stance rules.
+    /// Creatures retain evasion/tap/threat; arena opponents use player shields and damage.
     fn attack_unit(
         &mut self,
         player_id: PlayerId,

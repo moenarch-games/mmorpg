@@ -53,11 +53,11 @@ and fail closed in this one. The player projection payload layout is unchanged.
 
 ## Focused evidence and remaining delivery
 
-`cargo test -p mmorpg-core --locked --test pvp` covers twelve deterministic two-player
+`cargo test -p mmorpg-core --locked --test pvp` covers thirteen deterministic two-player
 checks: explicit policy and safe refusal, projection eligibility, weapon hit/guard,
 auto-attacks, a real Firebolt projectile/guard, area root isolation, death attribution,
 physical wall coverage, and exact recovery of a cast, poison, directed-strike combo and
-charge. The charge check found and fixed shared tick ordering: knockback created during
+charge, plus valid continuation when an opponent retires during a cast/combo/charge. The charge check found and fixed shared tick ordering: knockback created during
 forced-move processing now receives its first velocity before stopped-motion detection.
 Existing PvE combat/ability/trace, forced-movement, combo and directed-strike checks pass.
 Canonical codec checks preserve both target kinds. Rust-generated v30 projection fixtures

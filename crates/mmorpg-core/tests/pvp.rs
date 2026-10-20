@@ -594,3 +594,39 @@ fn a_charge_at_an_arena_player_restores_and_uses_existing_forced_movement() {
         zone.snapshot().unwrap().forced
     );
 }
+
+#[test]
+fn retirement_during_arena_cast_combo_or_charge_leaves_valid_continuation() {
+    use mmorpg_core::{EntityRef, StrikeAim, StrikeHeight, StrikeSide, ZoneCommand};
+    for mode in 0..3 {
+        let zone = two_classes(
+            PlayerCombatPolicy::FreeForAll,
+            [if mode == 0 { 2 } else { 0 }, 0],
+        );
+        let mut state = zone.snapshot().unwrap();
+        state.players[0].combat.level = 3;
+        if mode == 2 {
+            state.players[1].position = mmorpg_core::physics::from_units([900, 90, -2000]);
+        }
+        let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+        let command = if mode == 1 {
+            ZoneCommand::DirectedStrike {
+                ability: 1,
+                facing: 16384,
+                aim: StrikeAim::new(StrikeSide::Centre, StrikeHeight::Middle),
+            }
+        } else {
+            ZoneCommand::UseAbility {
+                ability: if mode == 0 { 9 } else { 17 },
+                target: Some(EntityRef::Player(2)),
+            }
+        };
+        zone.apply_command(1, 2, command).unwrap();
+        zone.advance_tick().unwrap();
+        assert!(zone.remove_player(2));
+        let state = zone.snapshot().unwrap();
+        assert!(state.players[0].combat.abilities.cast.is_none());
+        assert!(state.players[0].combat.combo.is_none());
+        ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+    }
+}

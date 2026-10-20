@@ -388,6 +388,25 @@ impl ZoneSimulation {
         }
     }
 
+    /// Retirement removes the unit's own move and cancels charges aimed at it.
+    pub(crate) fn forget_forced_unit(&mut self, departed: EntityRef) {
+        self.forced.remove(&departed);
+        let chargers: Vec<_> = self
+            .forced
+            .iter()
+            .filter_map(|(&unit, state)| {
+                state
+                    .moving
+                    .and_then(|moving| moving.charge)
+                    .is_some_and(|(target, _)| target == departed)
+                    .then_some(unit)
+            })
+            .collect();
+        for unit in chargers {
+            self.end_forced_move(unit);
+        }
+    }
+
     /// The forced-movement states, for canonical snapshots.
     pub(crate) fn forced_states(&self) -> Vec<(EntityRef, ForcedState)> {
         self.forced

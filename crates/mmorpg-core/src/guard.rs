@@ -147,7 +147,7 @@ impl crate::ZoneSimulation {
         Ok((along >= length * i64::from(trig::cos(GUARD_ARC_HALF_WIDTH))).then_some(lane))
     }
 
-    /// Resolves a creature's rolled `amount` against the player's guard.
+    /// Resolves a melee impact against the player's guard, with an optional aimed lane.
     pub(crate) fn guard_outcome(
         &self,
         attacker: EntityRef,
