@@ -875,18 +875,22 @@ impl ZoneSimulation {
         }) {
             return Err(ZoneError::new("a combo follows up on an unknown creature"));
         }
-        // Players cast at creatures and creatures at players.
+        // Players cast at creatures or explicitly eligible arena opponents; creatures at players.
         let player_targets = self
             .players
-            .values()
-            .filter_map(|player| player.cast?.target);
+            .iter()
+            .filter_map(|(&id, player)| Some((id, player.cast?.target?)));
         let creature_targets = self
             .creatures
             .values()
             .filter_map(|creature| creature.cast?.target);
         if player_targets
             .into_iter()
-            .any(|target| !matches!(target, EntityRef::Creature(_)))
+            .any(|(attacker, target)| match target {
+                EntityRef::Creature(_) => false,
+                EntityRef::Player(victim) => !self.players_are_hostile(attacker, victim),
+                EntityRef::Npc(_) => true,
+            })
             || creature_targets
                 .clone()
                 .any(|target| !matches!(target, EntityRef::Player(_)))
@@ -940,6 +944,7 @@ impl ZoneSimulation {
                     unit == aura.caster
                 } else {
                     matches!(unit, EntityRef::Creature(_))
+                        || matches!(unit, EntityRef::Player(victim) if self.players_are_hostile(caster_id, victim))
                 }
         };
         let units = self

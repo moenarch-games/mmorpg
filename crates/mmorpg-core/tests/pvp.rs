@@ -225,3 +225,68 @@ fn an_arena_firebolt_completes_its_cast_and_hits_through_a_real_projectile() {
         assert_eq!(blocked, guarding);
     }
 }
+
+#[test]
+fn an_arena_cast_restores_and_continues_identically() {
+    use mmorpg_core::{EntityRef, ZoneCommand};
+    let mut zone = two_classes(PlayerCombatPolicy::FreeForAll, [2, 0]);
+    zone.apply_command(
+        1,
+        2,
+        ZoneCommand::UseAbility {
+            ability: 9,
+            target: Some(EntityRef::Player(2)),
+        },
+    )
+    .unwrap();
+    for _ in 0..15 {
+        zone.advance_tick().unwrap();
+    }
+    assert!(zone.snapshot_for_player(1).unwrap().viewer.cast.is_some());
+    let mut restored =
+        ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), Arc::clone(zone.content()))
+            .unwrap();
+    for _ in 0..100 {
+        zone.advance_tick().unwrap();
+        restored.advance_tick().unwrap();
+        assert_eq!(zone.snapshot().unwrap(), restored.snapshot().unwrap());
+    }
+}
+
+#[test]
+fn an_arena_damage_over_time_aura_restores_and_pulses_identically() {
+    use mmorpg_core::{EntityRef, ZoneCommand};
+    let zone = two_classes(PlayerCombatPolicy::FreeForAll, [1, 0]);
+    let mut state = zone.snapshot().unwrap();
+    state.players[0].combat.level = 2;
+    let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+    zone.apply_command(
+        1,
+        2,
+        ZoneCommand::UseAbility {
+            ability: 6,
+            target: Some(EntityRef::Player(2)),
+        },
+    )
+    .unwrap();
+    for _ in 0..30 {
+        zone.advance_tick().unwrap();
+    }
+    let state = zone.snapshot().unwrap();
+    assert!(
+        state.players[1]
+            .combat
+            .abilities
+            .auras
+            .iter()
+            .any(|aura| aura.ability.get() == 6)
+    );
+    let mut restored = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
+    let before = zone.snapshot_for_player(2).unwrap().viewer.health;
+    for _ in 0..100 {
+        zone.advance_tick().unwrap();
+        restored.advance_tick().unwrap();
+        assert_eq!(zone.snapshot().unwrap(), restored.snapshot().unwrap());
+    }
+    assert!(zone.snapshot_for_player(2).unwrap().viewer.health < before);
+}
