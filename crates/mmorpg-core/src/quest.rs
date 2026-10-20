@@ -656,6 +656,12 @@ impl ZoneSimulation {
         if !objectives_done(definition, &entry, &player.inventory) {
             return Ok(Some((ErrorCode::QuestIncomplete, target)));
         }
+        let grant = crate::RewardKey::QuestCompletion {
+            quest: definition.id,
+        };
+        if !crate::rewards::allowed(&self.rewards, player_id, grant) {
+            return Ok(Some((ErrorCode::InvalidQuest, target)));
+        }
         // Stage bag and copper; any refusal leaves both and the log intact.
         let mut bag = player.inventory.clone();
         for objective in &definition.objectives {
@@ -707,6 +713,7 @@ impl ZoneSimulation {
             },
         );
         self.grant_experience(player_id, definition.rewards.experience)?;
+        crate::rewards::record(&mut self.rewards, player_id, grant)?;
         Ok(None)
     }
 
@@ -716,11 +723,13 @@ impl ZoneSimulation {
         &mut self,
         player_id: PlayerId,
         template: CreatureTemplateId,
+        creature: crate::CreatureId,
+        life: u64,
         now: u64,
-    ) {
+    ) -> Result<(), ZoneError> {
         let content = std::sync::Arc::clone(&self.content);
         let Some(player) = self.players.get_mut(&player_id) else {
-            return;
+            return Ok(());
         };
         let mut changed = false;
         for entry in &mut player.quests.entries {
@@ -735,6 +744,17 @@ impl ZoneSimulation {
                     && wanted == template
                     && entry.progress[index] < count
                 {
+                    let key = crate::RewardKey::KillObjective {
+                        creature,
+                        life,
+                        quest: quest.id,
+                        objective: u8::try_from(index)
+                            .map_err(|_| ZoneError::new("quest objective index overflow"))?,
+                    };
+                    if !crate::rewards::allowed(&self.rewards, player_id, key) {
+                        continue;
+                    }
+                    crate::rewards::record(&mut self.rewards, player_id, key)?;
                     entry.progress[index] += 1;
                     changed = true;
                     push_event(
@@ -751,6 +771,7 @@ impl ZoneSimulation {
         if changed {
             player.quests_changed_at = now;
         }
+        Ok(())
     }
 
     /// Progress events for collect objectives of `item` after the bag

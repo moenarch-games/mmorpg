@@ -52,6 +52,7 @@ pub(crate) enum Life {
 /// Authoritative state of one creature; template and spawn come from content.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CreatureState {
+    pub(crate) generation: u64,
     pub(crate) level: u8,
     pub(crate) health: u32,
     pub(crate) facing: u16,
@@ -178,6 +179,11 @@ impl ZoneSimulation {
     /// (Re)spawns a creature at its spawn point: a new level roll and first
     /// wander delay from the zone RNG, full health, no threat or tap.
     pub(crate) fn spawn_creature(&mut self, id: CreatureId) -> Result<(), ZoneError> {
+        let generation = self
+            .creatures
+            .get(&id)
+            .map_or(Some(1), |previous| previous.generation.checked_add(1))
+            .ok_or_else(|| ZoneError::new("creature life identities exhausted"))?;
         let content = Arc::clone(&self.content);
         let (spawn, template) = Self::creature_content(&content, id)?;
         // A prop (#288) or a large creature (#297), which holds its ground while idle, stands
@@ -217,9 +223,13 @@ impl ZoneSimulation {
                 crate::physics::from_units([position.x, position.y, position.z]),
             );
         }
+        if let Some(rewards) = &mut self.rewards {
+            rewards.spawned(id, generation);
+        }
         self.creatures.insert(
             id,
             CreatureState {
+                generation,
                 level,
                 health: template.max_health(level),
                 facing: spawn.facing,

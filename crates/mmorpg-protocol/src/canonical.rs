@@ -91,6 +91,7 @@ pub fn encode_canonical_snapshot(
     encode_forced(&mut payload, &snapshot.forced)?;
     encode_debris(&mut payload, snapshot.next_debris, &snapshot.debris)?;
     encode_pieces(&mut payload, &snapshot.pieces)?;
+    crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
     Ok(payload)
 }
 
@@ -380,6 +381,7 @@ fn encode_creature(
     creature: &CanonicalCreatureSnapshot,
 ) -> Result<(), ProtocolError> {
     payload.extend_from_slice(&creature.creature_id.get().to_be_bytes());
+    payload.extend_from_slice(&creature.generation.to_be_bytes());
     payload.push(creature.level);
     payload.extend_from_slice(&creature.health.to_be_bytes());
     payload.extend_from_slice(&creature.facing.to_be_bytes());
@@ -460,8 +462,10 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let forced = decode_forced(payload, &mut offset)?;
     let (next_debris, debris) = decode_debris(payload, &mut offset)?;
     let pieces = decode_pieces(payload, &mut offset)?;
+    let rewards = crate::rewards::decode_history(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
+        rewards,
         schema_version,
         zone_id,
         tick,
@@ -816,6 +820,10 @@ fn decode_creature(
     offset: &mut usize,
 ) -> Result<CanonicalCreatureSnapshot, ProtocolError> {
     let creature_id = CreatureId::new(u32::from_be_bytes(take(payload, offset)?));
+    let generation = u64::from_be_bytes(take(payload, offset)?);
+    if generation == 0 {
+        return Err(ProtocolError::new("invalid creature life identity"));
+    }
     let level = read_u8(payload, offset)?;
     let health = u32::from_be_bytes(take(payload, offset)?);
     let facing = u16::from_be_bytes(take(payload, offset)?);
@@ -882,6 +890,7 @@ fn decode_creature(
         auras: decode_auras(payload, offset)?,
     };
     Ok(CanonicalCreatureSnapshot {
+        generation,
         creature_id,
         level,
         health,
@@ -1216,6 +1225,7 @@ mod tests {
     fn snapshot() -> CanonicalZoneSnapshot {
         let wolf = EntityRef::Creature(CreatureId::new(4));
         CanonicalZoneSnapshot {
+            rewards: None,
             debris: vec![mmorpg_core::Debris {
                 id: 7,
                 kind: mmorpg_core::PropKind::Fence,
@@ -1400,6 +1410,7 @@ mod tests {
             ],
             creatures: vec![
                 CanonicalCreatureSnapshot {
+                    generation: 1,
                     loot: None,
                     creature_id: CreatureId::new(4),
                     level: 1,
@@ -1419,6 +1430,7 @@ mod tests {
                     abilities: CanonicalCreatureAbilities::default(),
                 },
                 CanonicalCreatureSnapshot {
+                    generation: 1,
                     loot: None,
                     creature_id: CreatureId::new(5),
                     level: 1,
@@ -1438,6 +1450,7 @@ mod tests {
                     abilities: CanonicalCreatureAbilities::default(),
                 },
                 CanonicalCreatureSnapshot {
+                    generation: 1,
                     loot: None,
                     creature_id: CreatureId::new(6),
                     level: 1,
@@ -1457,6 +1470,7 @@ mod tests {
                     abilities: CanonicalCreatureAbilities::default(),
                 },
                 CanonicalCreatureSnapshot {
+                    generation: 1,
                     loot: None,
                     creature_id: CreatureId::new(7),
                     level: 1,
@@ -1822,7 +1836,7 @@ mod tests {
         };
         let encoded = encode_canonical_snapshot(&without_players).unwrap();
         let creature = 16 + 32 + 2 + 2;
-        let life = creature + 4 + 1 + 4 + 2 + 24;
+        let life = creature + 4 + 8 + 1 + 4 + 2 + 24;
         let ai = life + 9;
         for (offset, value, message) in [
             (life, 4, "malformed creature life cycle"),
