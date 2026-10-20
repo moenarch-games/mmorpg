@@ -206,7 +206,9 @@ impl NativeApplication {
             }
         });
         let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        let (characters, _selected_character) = watch::channel(None);
         let app = App {
+            characters,
             runtime,
             window: None,
             renderer: None,
