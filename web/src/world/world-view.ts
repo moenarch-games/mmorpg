@@ -267,6 +267,7 @@ export class WorldView {
   #pendingNpc: { target: EntityRef; sequence: number } | null = null;
   #scene: SceneryScene | null = null;
   #catalog: ContentCatalog | null = null;
+  #zoneName = ZONE_NAME;
   /** The unit nodes of the last frame, for debug readouts. */
   #lastUnitNodes: readonly RendererSceneNode[] = [];
   #lastEffectNodes: readonly RendererSceneNode[] = [];
@@ -371,6 +372,7 @@ export class WorldView {
     this.#picking.reset();
     const started = performance.now();
     this.#catalog = world.catalog;
+    this.#zoneName = world.name ?? ZONE_NAME;
     this.#bags.load(world.catalog);
     this.#character.load(world.catalog);
     this.#loot.load(world.catalog);
@@ -749,7 +751,7 @@ export class WorldView {
       projected.push(projectedUnit(entity, placement, catalog));
       if (entity.kind === "player" && entity.entityId === projection.viewerId) {
         self = { focus: [unit.feet[0], unit.centreY, unit.feet[2]], x: unit.feet[0], feetY: unit.feet[1], z: unit.feet[2], facing: unit.yaw };
-        this.#showArea(scenery.areaAt(entity.position[0], entity.position[2])?.name ?? ZONE_NAME);
+        this.#showArea(scenery.areaAt(entity.position[0], entity.position[2])?.name ?? this.#zoneName);
       } else {
         others.push(this.#minimapUnit(entity, unitsPerMetre));
       }

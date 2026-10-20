@@ -25,12 +25,20 @@ export const INTERPOLATION_DELAY_TICKS = 2;
  */
 export const MAX_RECEIVED_PROJECTIONS = 30;
 
+/** An ephemeral activity reuses session/reconnect delivery while supplying its game envelope. */
+export type ActivityProtocol = {
+  encodeCommand(command: WorldCommand): Uint8Array;
+  initialCommand(character: JoinCharacter): Uint8Array;
+  decodeProjection(payload: Uint8Array): ZoneSnapshot;
+};
+
 export type OnlineZoneOptions = {
   route: SessionRoute;
   /** The content revision of the scenery this page loaded; every projection must carry it. */
   contentRevision: bigint;
   connector: SessionConnector;
   resolveCharacterId?: (localId: string) => Promise<string>;
+  activityProtocol?: ActivityProtocol;
   clock?: SessionClock;
 };
 
@@ -102,6 +110,7 @@ export class OnlineZoneSource implements WorldSource {
   readonly #contentRevision: bigint;
   readonly #connector: SessionConnector;
   readonly #clock: SessionClock;
+  readonly #activityProtocol: ActivityProtocol | null;
   #phase: Phase = { kind: "idle" };
   #link: Link | null = null;
   /** The welcome of the current session: its player, epoch and one-time resume token. */
@@ -132,6 +141,7 @@ export class OnlineZoneSource implements WorldSource {
     this.#connector = options.connector;
     this.#resolveCharacterId = options.resolveCharacterId ?? ((id) => Promise.resolve(id));
     this.#clock = options.clock ?? browserClock;
+    this.#activityProtocol = options.activityProtocol ?? null;
   }
 
   join(character: JoinCharacter = DEFAULT_JOIN_CHARACTER): Promise<number> {
@@ -181,7 +191,7 @@ export class OnlineZoneSource implements WorldSource {
     if (phase.kind !== "connected") {
       throw new Error("Join the world before sending commands.");
     }
-    const payload = encodeCommand(command);
+    const payload = this.#encodeCommand(command);
     if (command.kind === "move") {
       this.#facing = command.facing;
     }
@@ -303,7 +313,7 @@ export class OnlineZoneSource implements WorldSource {
     this.#resetHistory = true;
     // Start the resumed connection stopped, keeping the last facing; nothing queued before is replayed,
     // except a class choice no projection acknowledged yet, which goes out first.
-    const stop = encodeCommand({ kind: "move", forward: 0, strafe: 0, facing: this.#facing });
+    const stop = this.#encodeCommand({ kind: "move", forward: 0, strafe: 0, facing: this.#facing });
     const classPending = !this.#classAcknowledged;
     this.#outbox.restart(classPending ? this.#classChoice() : stop);
     if (classPending) {
@@ -346,7 +356,9 @@ export class OnlineZoneSource implements WorldSource {
 
   /** Validates and presents one verified snapshot frame of the current session. */
   #project(welcome: Welcome, frame: SnapshotFrame): void {
-    const snapshot = decodeSnapshot(frame.payload);
+    const snapshot = this.#activityProtocol
+      ? this.#activityProtocol.decodeProjection(frame.payload)
+      : decodeSnapshot(frame.payload);
     if (snapshot.contentRevision !== this.#contentRevision) {
       throw new Error(
         `The zone host runs content revision ${snapshot.contentRevision}, but this page loaded revision ${this.#contentRevision}. ` +
@@ -522,7 +534,7 @@ export class OnlineZoneSource implements WorldSource {
   }
 
   async #claimCharacter(link: Link): Promise<void> {
-    if (!link.connection.control) { return; }
+    if (this.#activityProtocol || !link.connection.control) { return; }
     const capability = await link.connection.control(new Uint8Array([1, 0]));
     if (!capability.accepted) { return; }
     if (!sameBytes(capability.payload, new Uint8Array([1, 1]))) {
@@ -543,7 +555,14 @@ export class OnlineZoneSource implements WorldSource {
     this.#classAcknowledged = true;
   }
 
+  #encodeCommand(command: WorldCommand): Uint8Array {
+    return this.#activityProtocol ? this.#activityProtocol.encodeCommand(command) : encodeCommand(command);
+  }
+
   #classChoice(): Uint8Array {
+    if (this.#activityProtocol) {
+      return this.#activityProtocol.initialCommand(this.#character);
+    }
     const { classId, sex } = classChoiceCodes(this.#character);
     return encodeCommand({ kind: "choose-class", classId, sex });
   }

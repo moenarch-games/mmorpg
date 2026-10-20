@@ -127,12 +127,20 @@ fn hex(color: [f32; 3]) -> String {
 impl Units {
     #[must_use]
     pub fn new(player_id: u32) -> Self {
+        Self::with_content(
+            player_id,
+            hosted_content(),
+            Arc::new(hosted_scenery().clone()),
+        )
+    }
+
+    pub(crate) fn with_content(
+        player_id: u32,
+        content: Arc<mmorpg_core::ZoneContent>,
+        scenery: Arc<mmorpg_scenery::Scenery>,
+    ) -> Self {
         Self {
-            presenter: UnitPresenter::new(
-                player_id,
-                hosted_content(),
-                Arc::new(hosted_scenery().clone()),
-            ),
+            presenter: UnitPresenter::new(player_id, content, scenery),
             latest: None,
             sent: BTreeSet::new(),
             headwear: BTreeMap::new(),
