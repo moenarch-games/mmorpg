@@ -8,6 +8,8 @@ use mmorpg_core::ZoneId;
 
 mod partition;
 mod permit;
+#[cfg(feature = "postgres")]
+pub mod postgres;
 pub use permit::{LocalZonePermit, PermitError};
 
 pub use partition::{

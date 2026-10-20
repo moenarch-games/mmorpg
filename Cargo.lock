@@ -2105,6 +2105,7 @@ name = "mmorpg-control-plane"
 version = "0.1.0"
 dependencies = [
  "mmorpg-core",
+ "postgres",
 ]
 
 [[package]]
