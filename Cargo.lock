@@ -1852,6 +1852,10 @@ dependencies = [
  "mmorpg-control-plane",
  "mmorpg-core",
  "mmorpg-protocol",
+ "postgres",
+ "serde",
+ "serde_json",
+ "sha2",
  "tokio",
 ]
 

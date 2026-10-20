@@ -3,6 +3,8 @@
 mod character_admission;
 mod dev_characters;
 mod dev_host;
+#[cfg(feature = "postgres")]
+pub mod persistence;
 pub use dev_characters::{DevCharacterService, DevCharacterStorage};
 pub use dev_host::{DevelopmentCharacterHostConfig, serve_development_character_host};
 mod fenced_runtime;
