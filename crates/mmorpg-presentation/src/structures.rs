@@ -32,6 +32,19 @@ impl Structures {
         }
     }
 
+    /// Lift authored pieces and rubble by the same presentation relief as units.
+    #[must_use]
+    pub fn on_scenery(pieces: &[StructurePiece], scenery: &mmorpg_scenery::Scenery) -> Self {
+        let mut pieces = pieces.to_vec();
+        for piece in &mut pieces {
+            piece.position[1] += scenery.height_at(piece.position[0], piece.position[2]);
+            if let Some((position, _)) = &mut piece.rubble {
+                position[1] += scenery.height_at(position[0], position[2]);
+            }
+        }
+        Self::new(&pieces)
+    }
+
     /// `views` is the latest complete projection (intact pieces are omitted). Clock is cosmetic.
     /// A cold first frame snaps; only observed state changes emit debris/rebuild motion.
     #[must_use]
