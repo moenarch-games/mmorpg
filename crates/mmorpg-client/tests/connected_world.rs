@@ -106,6 +106,7 @@ impl LocalHost {
                         receiver,
                     )
                     .await
+                    .inspect_err(|error| eprintln!("development host failed: {error}"))
                 }
             }
         });
@@ -1113,16 +1114,30 @@ async fn durable_character_resumes_after_logout_and_host_restart() -> Result<(),
     let first = LocalHost::start_mode(HostMode::Persistent(directory.path().to_owned()), zone);
     let mut client =
         ClientSession::connect(&first.url, Some(&first.certificate), zone, revision).await?;
-    assert!(client.claim_character(&character, class).await?);
-    let initial = client.receive_snapshot().await?;
+    assert!(
+        client
+            .claim_character(&character, class)
+            .await
+            .map_err(|error| format!("claim durable character: {error}"))?
+    );
+    let initial = client
+        .receive_snapshot()
+        .await
+        .map_err(|error| format!("receive durable snapshot: {error}"))?;
     client.send_move(1, 0, EAST)?;
     let mut moved = initial.clone();
     for _ in 0..6 {
-        moved = client.receive_snapshot().await?;
+        moved = client
+            .receive_snapshot()
+            .await
+            .map_err(|error| format!("receive durable snapshot: {error}"))?;
     }
     client.send_move(0, 0, EAST)?;
     while moved.acknowledged_sequence < 2 {
-        moved = client.receive_snapshot().await?;
+        moved = client
+            .receive_snapshot()
+            .await
+            .map_err(|error| format!("receive durable snapshot: {error}"))?;
     }
     let position = moved
         .entities
@@ -1139,15 +1154,26 @@ async fn durable_character_resumes_after_logout_and_host_restart() -> Result<(),
             .unwrap()
             .position
     );
-    client.release_character().await?;
+    client
+        .release_character()
+        .await
+        .map_err(|error| format!("release durable character: {error}"))?;
     drop(client);
     first.stop().await;
 
     let second = LocalHost::start_mode(HostMode::Persistent(directory.path().to_owned()), zone);
     let mut client =
         ClientSession::connect(&second.url, Some(&second.certificate), zone, revision).await?;
-    assert!(client.claim_character(&character, class).await?);
-    let restored = client.receive_snapshot().await?;
+    assert!(
+        client
+            .claim_character(&character, class)
+            .await
+            .map_err(|error| format!("claim durable character: {error}"))?
+    );
+    let restored = client
+        .receive_snapshot()
+        .await
+        .map_err(|error| format!("receive durable snapshot: {error}"))?;
     assert_eq!(restored.viewer.class, Some(class));
     let actual = restored
         .entities
@@ -1156,7 +1182,10 @@ async fn durable_character_resumes_after_logout_and_host_restart() -> Result<(),
         .unwrap()
         .position;
     assert_eq!([actual[0], actual[2]], [position[0], position[2]]);
-    client.release_character().await?;
+    client
+        .release_character()
+        .await
+        .map_err(|error| format!("release durable character: {error}"))?;
     drop(client);
     second.stop().await;
     Ok(())
