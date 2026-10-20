@@ -589,8 +589,17 @@ mod tests {
             let mut zone =
                 ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
             zone.add_player(1).unwrap();
-            zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 1, sex: 0 })
-                .unwrap();
+            let warden_art =
+                std::env::var("MMORPG_NATIVE_ABILITY_ART_EVIDENCE").as_deref() == Ok("1");
+            zone.apply_command(
+                1,
+                1,
+                ZoneCommand::ChooseClass {
+                    class: if warden_art { 0 } else { 1 },
+                    sex: 0,
+                },
+            )
+            .unwrap();
             zone.apply_command(
                 1,
                 2,
@@ -691,7 +700,9 @@ mod tests {
                 .await
                 .unwrap();
             save_frame(
-                if settings_evidence {
+                if warden_art {
+                    "warden.ppm"
+                } else if settings_evidence {
                     "settings.ppm"
                 } else {
                     "interface.ppm"
@@ -730,7 +741,14 @@ mod tests {
             zone.advance_tick().unwrap();
             let projection = zone.snapshot_for_player(1).unwrap();
             let hud = CombatHud::from_projection(&projection);
-            assert_eq!(hud.slots.len(), 4, "the Arcanist kit fills the bar");
+            assert_eq!(
+                hud.slots
+                    .iter()
+                    .map(|slot| slot.ability)
+                    .collect::<Vec<_>>(),
+                [9, 10, 11, 12, 16],
+                "the complete Arcanist kit fills the bar"
+            );
             let mut drained = hud.clone();
             if let Some(resource) = &mut drained.resource {
                 resource.value /= 2;
