@@ -35,6 +35,7 @@ pub(crate) struct ClaimedCharacter {
 pub(crate) enum Durability {
     Development,
     Replicated { standby_url: String },
+    Production { standby_url: String },
 }
 pub(crate) enum Startup {
     Bootstrap(RecoveryImage),
@@ -105,7 +106,10 @@ impl HostedPersistence {
     pub(crate) async fn start(
         config: HostedPersistenceConfig,
     ) -> Result<(Arc<Self>, RecoveryImage, PersistenceWorker), PersistenceError> {
-        if matches!(&config.durability, Durability::Replicated { .. }) && config.authority.is_none()
+        if matches!(
+            &config.durability,
+            Durability::Replicated { .. } | Durability::Production { .. }
+        ) && config.authority.is_none()
         {
             return Err(error(
                 "replicated zone persistence requires a confirmed local authority permit",
@@ -492,6 +496,13 @@ fn run(
             config.database_timeout,
             config.journal_limits,
         ),
+        Durability::Production { standby_url } => PostgresJournal::connect_production(
+            &config.primary_url,
+            standby_url,
+            config.fence.clone(),
+            config.database_timeout,
+            config.journal_limits,
+        ),
     };
     let mut journal = match journal {
         Ok(journal) => journal,
@@ -626,8 +637,10 @@ fn initialize(
     let (zone, records) =
         ZoneGameServerAdapter::decode_stored_zone(&snapshot.payload, Arc::clone(&config.content))
             .map_err(error)?;
-    if matches!(&config.durability, Durability::Replicated { .. })
-        && zone.reward_history().is_none()
+    if matches!(
+        &config.durability,
+        Durability::Replicated { .. } | Durability::Production { .. }
+    ) && zone.reward_history().is_none()
     {
         return Err(error(
             "replicated persistence requires canonical reward tracking",

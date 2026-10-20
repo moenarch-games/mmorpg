@@ -1,4 +1,5 @@
 //! Production persistence composition (TECH-003/004/005). Storage never owns game rules.
+mod backend;
 mod checkpoints;
 mod hosted;
 #[cfg(feature = "postgres")]

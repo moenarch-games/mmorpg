@@ -40,3 +40,5 @@ END
 $$;
 REVOKE ALL ON FUNCTION mmorpg_coordination.lock_current_writer(bigint,bigint,text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION mmorpg_coordination.lock_current_writer(bigint,bigint,text) TO mmorpg_zone_fence_reader,mmorpg_zone_directory;
+
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system(),pg_catalog.pg_control_checkpoint() TO mmorpg_zone_directory;

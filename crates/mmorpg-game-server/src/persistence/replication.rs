@@ -12,7 +12,7 @@
 //! Global progression queries use the confirmed standby, because local primary
 //! visibility can precede the completion of this acknowledgement barrier.
 use mmorpg_characters::StoreError;
-use postgres::{CancelToken, Client, Config, NoTls};
+use postgres::{CancelToken, Client, Config, GenericClient, NoTls, Transaction};
 use std::{
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -63,6 +63,18 @@ impl ReplicaBarrier {
     /// it is never permission to publish or continue advancing the simulation.
     pub(super) fn cancel_tokens(&self) -> [CancelToken; 2] {
         [self.primary.cancel_token(), self.standby.cancel_token()]
+    }
+
+    pub(super) fn ensure_standby_snapshot(
+        &self,
+        transaction: &mut Transaction<'_>,
+    ) -> Result<(), StoreError> {
+        // Caller starts REPEATABLE READ READ ONLY before any query. Promotion
+        // after this role check cannot add later primary writes to that snapshot.
+        if identity(transaction, true)? != self.identity {
+            return Err(failure("profile endpoint is not the confirmed standby"));
+        }
+        Ok(())
     }
 
     pub(super) fn confirm(&mut self, cancelled: &AtomicBool) -> Result<(), StoreError> {
@@ -136,7 +148,7 @@ fn connect(url: &str, timeout: Duration) -> Result<Client, StoreError> {
     Ok(client)
 }
 
-fn identity(client: &mut Client, standby: bool) -> Result<ClusterIdentity, StoreError> {
+fn identity(client: &mut impl GenericClient, standby: bool) -> Result<ClusterIdentity, StoreError> {
     let row = client.query_one(
         "SELECT pg_is_in_recovery(),current_setting('fsync'),current_setting('full_page_writes'),system_identifier::text,timeline_id FROM pg_control_system() CROSS JOIN pg_control_checkpoint()", &[]
     ).map_err(sql)?;

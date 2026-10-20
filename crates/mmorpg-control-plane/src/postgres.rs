@@ -15,7 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 1;
 const MIGRATION: &str = include_str!("../migrations/0001_directory.sql");
 
 #[derive(Debug)]
@@ -107,7 +107,7 @@ impl PostgresZoneDirectory {
             )
             .map_err(backend)?
             .get(0);
-        if version != Some(VERSION) {
+        if version != Some(SCHEMA_VERSION) {
             return Err(backend("unsupported directory schema"));
         }
         Ok(Self { client })
@@ -186,11 +186,11 @@ pub fn migrate(client: &mut Client) -> Result<(), DirectoryStoreError> {
             transaction
                 .execute(
                     "INSERT INTO mmorpg_coordination.migrations (version) VALUES ($1)",
-                    &[&VERSION],
+                    &[&SCHEMA_VERSION],
                 )
                 .map_err(backend)?;
         }
-        Some(VERSION) => {}
+        Some(SCHEMA_VERSION) => {}
         Some(_) => return Err(backend("unsupported directory schema")),
     }
     transaction.commit().map_err(backend)
@@ -239,7 +239,12 @@ pub fn acquire_in(
         }
         _ => return Err(DirectoryStoreError::Conflict),
     }
-    read_grant(transaction, zone, requested_at, ttl)
+    read_grant(
+        transaction,
+        zone,
+        requested_at,
+        Duration::from_millis(millis.try_into().map_err(backend)?),
+    )
 }
 
 pub fn renew_in(
@@ -268,7 +273,12 @@ pub fn renew_in(
     if changed != 1 {
         return Err(DirectoryStoreError::Expired);
     }
-    read_grant(transaction, previous.lease.zone_id, requested_at, ttl)
+    read_grant(
+        transaction,
+        previous.lease.zone_id,
+        requested_at,
+        Duration::from_millis(millis.try_into().map_err(backend)?),
+    )
 }
 
 pub fn retire_in(

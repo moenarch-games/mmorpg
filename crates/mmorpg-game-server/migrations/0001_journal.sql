@@ -74,3 +74,12 @@ GRANT mmorpg_characters_store TO mmorpg_zone_journal;
 
 -- Cluster identity is read to reject an unrelated database as a replication witness.
 GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system(), pg_catalog.pg_control_checkpoint() TO mmorpg_zone_journal;
+
+-- The global backend composes independent directory and journal owners. Zone
+-- journal writers can only invoke the directory's read-only fence operation.
+GRANT mmorpg_zone_directory TO mmorpg_zone_coordinator;
+GRANT mmorpg_zone_fence_reader TO mmorpg_zone_journal;
+
+-- Global profile reads verify the physical standby identity before reading a
+-- repeatable-read snapshot; this grants no coordination or character mutations.
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system(),pg_catalog.pg_control_checkpoint() TO mmorpg_characters_store;

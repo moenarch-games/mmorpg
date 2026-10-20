@@ -22,7 +22,7 @@ use std::{
     time::Duration,
 };
 
-const VERSION: i32 = 1;
+pub(crate) const SCHEMA_VERSION: i32 = 1;
 const MIGRATION: &str = include_str!("../../migrations/0001_journal.sql");
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -161,6 +161,7 @@ impl SessionEnvelope {
 }
 
 pub(crate) fn migrate(client: &mut Client) -> Result<(), StoreError> {
+    mmorpg_control_plane::postgres::migrate(client).map_err(sql)?;
     mmorpg_characters::postgres::migrate(client)?;
     let mut transaction = client.transaction().map_err(sql)?;
     transaction
@@ -183,11 +184,11 @@ pub(crate) fn migrate(client: &mut Client) -> Result<(), StoreError> {
             transaction
                 .execute(
                     "INSERT INTO mmorpg_persistence.migrations VALUES ($1)",
-                    &[&VERSION],
+                    &[&SCHEMA_VERSION],
                 )
                 .map_err(sql)?;
         }
-        Some(VERSION) => {}
+        Some(SCHEMA_VERSION) => {}
         Some(_) => return Err(corrupt("unsupported persistence schema")),
     }
     transaction.commit().map_err(sql)
@@ -200,10 +201,19 @@ pub(crate) fn install_writer(
     lease: ZoneLease,
     expected_epoch: u64,
 ) -> Result<StreamFence, StoreError> {
+    let mut transaction = client.transaction().map_err(sql)?;
+    let fence = install_writer_in(&mut transaction, lease, expected_epoch)?;
+    transaction.commit().map_err(sql)?;
+    Ok(fence)
+}
+pub(super) fn install_writer_in(
+    transaction: &mut Transaction<'_>,
+    lease: ZoneLease,
+    expected_epoch: u64,
+) -> Result<StreamFence, StoreError> {
     if lease.epoch == 0 || lease.epoch <= expected_epoch {
         return Err(failure("writer epoch must advance"));
     }
-    let mut transaction = client.transaction().map_err(sql)?;
     let zone = i64::from(lease.zone_id.get());
     transaction
         .execute(
@@ -231,19 +241,26 @@ pub(crate) fn install_writer(
             &[&zone],
         )
         .map_err(sql)?;
-    let fence = StreamFence {
+    Ok(StreamFence {
         lease,
         world_id: row.get(0),
         timeline: unsigned(row.get(1))?,
-    };
-    transaction.commit().map_err(sql)?;
-    Ok(fence)
+    })
 }
+
 pub(crate) fn record_retirement(
     client: &mut Client,
     fence: &StreamFence,
 ) -> Result<(), StoreError> {
-    let changed = client.execute("UPDATE mmorpg_persistence.streams SET retired=true WHERE zone_id=$1 AND writer_host=$2 AND writer_epoch=$3 AND timeline=$4 AND world_id=$5::text::uuid", &[
+    let mut transaction = client.transaction().map_err(sql)?;
+    record_retirement_in(&mut transaction, fence)?;
+    transaction.commit().map_err(sql)
+}
+pub(super) fn record_retirement_in(
+    transaction: &mut Transaction<'_>,
+    fence: &StreamFence,
+) -> Result<(), StoreError> {
+    let changed = transaction.execute("UPDATE mmorpg_persistence.streams SET retired=true WHERE zone_id=$1 AND writer_host=$2 AND writer_epoch=$3 AND timeline=$4 AND world_id=$5::text::uuid", &[
         &i64::from(fence.lease.zone_id.get()), &fence.lease.host_id.as_str(), &integer(fence.lease.epoch)?, &integer(fence.timeline)?, &fence.world_id,
     ]).map_err(sql)?;
     if changed != 1 {
@@ -321,6 +338,7 @@ pub(crate) struct PostgresJournal {
     limits: JournalLimits,
     replication: Option<ReplicaBarrier>,
     cancelled: Arc<AtomicBool>,
+    directory_fencing: bool,
 }
 impl PostgresJournal {
     pub(crate) fn connect_development(
@@ -339,10 +357,10 @@ impl PostgresJournal {
                     )
                     .map_err(sql)?
                     .get(0);
-                if version != Some(VERSION) {
+                if version != Some(SCHEMA_VERSION) {
                     return Err(corrupt("unsupported persistence schema"));
                 }
-                check_fence(transaction, &fence, false)?;
+                check_fence(transaction, &fence, false, false)?;
                 Ok(())
             })
         })?;
@@ -352,6 +370,7 @@ impl PostgresJournal {
             limits: limits.validate()?,
             replication: None,
             cancelled: Arc::new(AtomicBool::new(false)),
+            directory_fencing: false,
         })
     }
     /// Production durability requires an explicitly named physical standby.
@@ -375,6 +394,24 @@ impl PostgresJournal {
         let mut replication = ReplicaBarrier::connect(primary_url, standby_url, timeout)?;
         replication.confirm(&AtomicBool::new(false))?;
         journal.replication = Some(replication);
+        Ok(journal)
+    }
+
+    pub(crate) fn connect_production(
+        primary_url: &str,
+        standby_url: &str,
+        fence: StreamFence,
+        timeout: Duration,
+        limits: JournalLimits,
+    ) -> Result<Self, StoreError> {
+        let mut journal =
+            Self::connect_replicated(primary_url, standby_url, fence, timeout, limits)?;
+        journal.directory_fencing = true;
+        journal.entries.transaction(|store| {
+            store.backend().with_sql(|transaction| {
+                check_fence(transaction, &journal.fence, false, true).map(|_| ())
+            })
+        })?;
         Ok(journal)
     }
 
@@ -411,9 +448,9 @@ impl PostgresJournal {
     ) -> Result<R, StoreError> {
         self.check_cancelled()?;
         let result = self.entries.transaction(|store| {
-            store
-                .backend()
-                .with_sql(|transaction| check_fence(transaction, &self.fence, true).map(|_| ()))?;
+            store.backend().with_sql(|transaction| {
+                check_fence(transaction, &self.fence, true, self.directory_fencing).map(|_| ())
+            })?;
             operation(store)
         })?;
         self.confirm_commit()?;
@@ -465,7 +502,7 @@ impl PostgresJournal {
         }
         let limits = self.limits;
         self.entries.transaction(|store| {
-            let row = store.backend().with_sql(|transaction| check_fence(transaction, &self.fence, true))?;
+            let row = store.backend().with_sql(|transaction| check_fence(transaction, &self.fence, true, self.directory_fencing))?;
             let last_position = unsigned(row.get("last_position"))?;
             if last_position == position {
                 let same = store.backend().with_sql(|transaction| Ok(transaction.query_opt("SELECT commit_digest FROM mmorpg_persistence.journal WHERE zone_id=$1 AND timeline=$2 AND position=$3", &[
@@ -534,7 +571,7 @@ impl PostgresJournal {
         reference.validate(&self.fence)?;
         let encoded = serde_json::to_vec(reference).map_err(sql)?;
         self.entries.transaction(|store| store.backend().with_sql(|transaction| {
-            let stream = check_fence(transaction, &self.fence, true)?;
+            let stream = check_fence(transaction, &self.fence, true, self.directory_fencing)?;
             let position = unsigned(stream.get("last_position"))?;
             let previous: Option<i64> = stream.get("checkpoint_position");
             if previous == Some(integer(reference.position)?) {
@@ -560,7 +597,7 @@ impl PostgresJournal {
     pub(crate) fn prune(&mut self) -> Result<(), StoreError> {
         self.check_cancelled()?;
         self.entries.transaction(|store| store.backend().with_sql(|transaction| {
-            let row = check_fence(transaction, &self.fence, true)?;
+            let row = check_fence(transaction, &self.fence, true, self.directory_fencing)?;
             let through: Option<i64> = row.get("checkpoint_position");
             let through = through.ok_or_else(|| failure("cannot prune without a committed checkpoint"))?;
             let removed = transaction.query_one("WITH removed AS (DELETE FROM mmorpg_persistence.journal WHERE zone_id=$1 AND timeline=$2 AND position <= $3 RETURNING byte_length) SELECT count(*)::bigint,coalesce(sum(byte_length),0)::bigint FROM removed", &[
@@ -578,7 +615,7 @@ impl PostgresJournal {
     pub(crate) fn checkpoint_reference(&mut self) -> Result<CheckpointReference, StoreError> {
         self.entries.transaction(|store| {
             store.backend().with_sql(|transaction| {
-                let row = check_fence(transaction, &self.fence, false)?;
+                let row = check_fence(transaction, &self.fence, false, self.directory_fencing)?;
                 let bytes: Option<Vec<u8>> = row.get("checkpoint_ref");
                 let reference: CheckpointReference = serde_json::from_slice(
                     &bytes.ok_or_else(|| failure("zone has no committed checkpoint"))?,
@@ -610,7 +647,7 @@ impl PostgresJournal {
             return Err(corrupt("checkpoint object tick differs from reference"));
         }
         self.entries.transaction(|store| store.backend().with_sql(|transaction| {
-            let stream = check_fence(transaction, &self.fence, false)?;
+            let stream = check_fence(transaction, &self.fence, false, self.directory_fencing)?;
             let encoded = serde_json::to_vec(reference).map_err(sql)?;
             if stream.get::<_, Option<Vec<u8>>>("checkpoint_ref").as_deref() != Some(encoded.as_slice()) {
                 return Err(failure("checkpoint changed while fetching object; retry recovery"));
@@ -686,7 +723,7 @@ impl PostgresJournal {
             .map(integer)
             .collect::<Result<_, _>>()?;
         self.entries.transaction(|store| store.backend().with_sql(|transaction| {
-            check_fence(transaction, &self.fence, false)?;
+            check_fence(transaction, &self.fence, false, self.directory_fencing)?;
             let rows = transaction.query(
                 "SELECT grant_id,character_id,world_id::text,zone_id,source_creature,source_life,world_owned,CASE WHEN octet_length(reward_key)::bigint<=$7 THEN reward_key ELSE NULL END AS key FROM mmorpg_persistence.grants WHERE reward_key IS NOT NULL AND ((world_id=$1::text::uuid AND zone_id=$2 AND (world_owned OR character_id=$3) AND EXISTS (SELECT 1 FROM unnest($4::bigint[],$5::bigint[]) AS lives(creature,life) WHERE source_creature=lives.creature AND source_life>=lives.life)) OR (character_id=$3 AND source_creature IS NULL)) ORDER BY grant_id LIMIT $6",
                 &[&self.fence.world_id, &i64::from(self.fence.lease.zone_id.get()), &character.as_str(), &creatures, &generations, &(i64::from(maximum)+1), &integer(mmorpg_protocol::MAX_REWARD_RECEIPT_BYTES as u64)?],
@@ -718,7 +755,7 @@ impl PostgresJournal {
         character: Option<&CharacterId>,
     ) -> Result<Vec<GrantId>, StoreError> {
         self.entries.transaction(|store| store.backend().with_sql(|transaction| {
-            check_fence(transaction, &self.fence, false)?;
+            check_fence(transaction, &self.fence, false, self.directory_fencing)?;
             let key = character.map(CharacterId::as_str);
             transaction.query("SELECT grant_id FROM mmorpg_persistence.grants WHERE world_id=$1::text::uuid AND ($2::text IS NULL OR character_id=$2) ORDER BY grant_id", &[&self.fence.world_id, &key]).map_err(sql)?.into_iter().map(|row| GrantId::new(row.get::<_, String>(0)).map_err(sql)).collect()
         }))
@@ -729,7 +766,11 @@ fn check_fence(
     transaction: &mut Transaction<'_>,
     fence: &StreamFence,
     write: bool,
+    directory_fencing: bool,
 ) -> Result<Row, StoreError> {
+    if directory_fencing {
+        mmorpg_control_plane::postgres::ensure_writer_in(transaction, &fence.lease).map_err(sql)?;
+    }
     let query = if write {
         "SELECT *,world_id::text AS world_key FROM mmorpg_persistence.streams WHERE zone_id=$1 FOR UPDATE"
     } else {

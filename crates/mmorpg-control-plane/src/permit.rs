@@ -79,6 +79,8 @@ impl LocalZonePermit {
             }),
         })
     }
+    /// Original grant identity. Renewals update the shared local deadline;
+    /// callers must use `ensure_current`, never this copy's expiry field.
     #[must_use]
     pub fn lease(&self) -> &ZoneLease {
         &self.lease
