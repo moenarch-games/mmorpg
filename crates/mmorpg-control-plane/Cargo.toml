@@ -9,5 +9,10 @@ publish.workspace = true
 [dependencies]
 mmorpg-core.workspace = true
 
+postgres = { workspace = true, optional = true }
+
+[features]
+postgres = ["dep:postgres"]
+
 [lints]
 workspace = true

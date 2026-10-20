@@ -210,6 +210,7 @@ pub struct ZoneTickWork {
 }
 
 pub struct ZoneSimulation {
+    pub(crate) rewards: Option<crate::RewardHistory>,
     pub(crate) zone_id: ZoneId,
     pub(crate) tick: u64,
     pub(crate) world: World,
@@ -375,6 +376,7 @@ impl ZoneSimulation {
             pieces,
             nav_cache: BTreeMap::new(),
             prop_motion: BTreeMap::new(),
+            rewards: None,
         })
     }
 
@@ -449,6 +451,9 @@ impl ZoneSimulation {
     pub fn remove_player(&mut self, player_id: PlayerId) -> bool {
         if self.players.remove(&player_id).is_none() {
             return false;
+        }
+        if let Some(rewards) = &mut self.rewards {
+            rewards.remove_player(player_id);
         }
         let entity = EntityRef::Player(player_id);
         self.world.remove_body(body_id(entity));
@@ -632,6 +637,9 @@ impl ZoneSimulation {
             .tick
             .checked_add(1)
             .ok_or_else(|| ZoneError::new("zone tick overflow"))?;
+        if let Some(rewards) = &mut self.rewards {
+            rewards.begin_tick();
+        }
         self.tick_work = ZoneTickWork::default();
         for player in self.players.values_mut() {
             player.events.clear();

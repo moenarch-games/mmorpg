@@ -499,3 +499,36 @@ exact bound record for logout. These inputs appear only in private replay/recove
 no client command or player-snapshot version changes. Private canonical snapshots
 with bindings use the `MMOC` v1 adapter envelope described in
 [the admission decision](adr/0003-development-character-admission.md).
+
+## Durable reward receipts: snapshot v29
+
+Wire version 29 and core schema 28 (#40) add a nonzero `u64` creature-life
+generation to each canonical creature and an optional canonical reward history.
+The history contains configured receipt/tick limits, ordered consumed world and
+per-player receipt sets, and this tick's ordered grants. XP and quest credit are
+per character; corpse money/items are finite world entitlements. Respawn advances
+the life generation; restoring older world state reloads durable receipts before
+activation. These fields never enter player projections; their layout is unchanged.
+Commands remain v13. Older v28 snapshots/checkpoints fail closed, and their fixtures
+are retained as compatibility evidence. Reward storage and admission are composed
+by the host, with no database I/O inside core ticks.
+
+Trusted receipt admission uses host-input family version 1, tag 3, followed by a
+version-1 reward receipt (at most 16 bytes). These inputs come from the fenced
+storage worker, never a client command. Load every receipt before the character
+admission input activates its body; duplicate pages are idempotent and emit no
+new grant. Personal receipts survive the staged placeholder-body replacement.
+Host-input family version 1, tag 4 clears only an unbound session's personal
+receipt cache before cancelling or switching a pending character claim; it
+rejects an active character and preserves globally consumed world receipts.
+Queries retain only current/future creature lives, plus character-global quest
+completion, and fail closed if the configured receipt bound is exceeded.
+
+An explicit weaker-world reset requires confirmed retirement of the expected
+writer and a compatible verified checkpoint without player sessions or durable
+character bindings. It retains the world UUID, character records and all grant
+receipts, advances the journal timeline once, and atomically publishes position
+zero before discarding the old disposable journal. Identical retries are
+idempotent; an active/stale writer or conflicting reset is rejected. The backend
+must confirm replicated metadata before granting a successor. Ordinary recovery
+never substitutes this reset for missing/corrupt checkpoint or journal data.

@@ -245,6 +245,7 @@ pub struct CanonicalPlayerSnapshot {
 /// `velocity` is zero unless it is alive.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CanonicalCreatureSnapshot {
+    pub generation: u64,
     pub creature_id: CreatureId,
     pub level: u8,
     pub health: u32,
@@ -267,6 +268,7 @@ pub struct CanonicalCreatureSnapshot {
 /// content referenced by identity.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CanonicalZoneSnapshot {
+    pub rewards: Option<crate::RewardHistory>,
     pub schema_version: u16,
     pub zone_id: ZoneId,
     pub tick: u64,
@@ -381,6 +383,7 @@ impl ZoneSimulation {
                     }
                 };
                 Ok(CanonicalCreatureSnapshot {
+                    generation: creature.generation,
                     creature_id,
                     level: creature.level,
                     health: creature.health,
@@ -403,6 +406,7 @@ impl ZoneSimulation {
             })
             .collect::<Result<Vec<_>, ZoneError>>()?;
         Ok(CanonicalZoneSnapshot {
+            rewards: self.rewards.clone(),
             schema_version: SNAPSHOT_SCHEMA_VERSION,
             zone_id: self.zone_id,
             tick: self.tick,
@@ -509,6 +513,35 @@ impl ZoneSimulation {
         // tick left them.
         zone.place_routine_npcs(false)?;
         zone.schedule_platforms(zone.tick, true)?;
+        if let Some(rewards) = &snapshot.rewards {
+            rewards.validate()?;
+            if rewards
+                .players
+                .keys()
+                .any(|player| !zone.players.contains_key(player))
+                || rewards
+                    .grants
+                    .iter()
+                    .any(|grant| !zone.players.contains_key(&grant.player))
+            {
+                return Err(ZoneError::new("reward history references an absent player"));
+            }
+            for key in rewards
+                .world
+                .iter()
+                .chain(rewards.players.values().flatten())
+            {
+                if key
+                    .creature_life()
+                    .is_some_and(|(id, _)| !zone.creatures.contains_key(&id))
+                {
+                    return Err(ZoneError::new(
+                        "reward history references an unknown creature",
+                    ));
+                }
+            }
+        }
+        zone.rewards = snapshot.rewards;
         zone.validate_references()?;
         zone.rebuild_interest()?;
         Ok(zone)
@@ -658,6 +691,9 @@ impl ZoneSimulation {
     }
 
     fn restore_creature(&mut self, record: CanonicalCreatureSnapshot) -> Result<(), ZoneError> {
+        if record.generation == 0 {
+            return Err(ZoneError::new("creature life identity must be nonzero"));
+        }
         let content = Arc::clone(&self.content);
         let expected = content
             .creature_spawns()
@@ -801,6 +837,7 @@ impl ZoneSimulation {
         self.creatures.insert(
             record.creature_id,
             CreatureState {
+                generation: record.generation,
                 level: record.level,
                 health: record.health,
                 facing: record.facing,
