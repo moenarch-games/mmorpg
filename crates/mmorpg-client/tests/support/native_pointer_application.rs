@@ -225,7 +225,6 @@ impl NativeApplication {
             last_refusal: None,
             input,
             updates,
-            keys: HashSet::new(),
             camera: OrbitCamera::default(),
             orbit_buttons: HashSet::new(),
             cursor: None,

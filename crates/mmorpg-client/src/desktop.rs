@@ -73,7 +73,6 @@ pub fn run(
         input,
         characters,
         updates,
-        keys: HashSet::new(),
         camera: OrbitCamera::default(),
         orbit_buttons: HashSet::new(),
         cursor: None,
@@ -122,7 +121,6 @@ struct App {
     input: watch::Sender<PlayerInput>,
     characters: watch::Sender<Option<CharacterSelection>>,
     updates: watch::Receiver<NetworkUpdate>,
-    keys: HashSet<KeyCode>,
     camera: OrbitCamera,
     /// Held mouse buttons that orbit the camera while the cursor moves.
     orbit_buttons: HashSet<MouseButton>,
@@ -175,11 +173,6 @@ fn open_gamepads() -> Option<gilrs::Gilrs> {
     }
 }
 
-const FORWARD_KEYS: [KeyCode; 2] = [KeyCode::KeyW, KeyCode::ArrowUp];
-const BACKWARD_KEYS: [KeyCode; 2] = [KeyCode::KeyS, KeyCode::ArrowDown];
-const LEFT_KEYS: [KeyCode; 3] = [KeyCode::KeyA, KeyCode::KeyQ, KeyCode::ArrowLeft];
-const RIGHT_KEYS: [KeyCode; 3] = [KeyCode::KeyD, KeyCode::KeyE, KeyCode::ArrowRight];
-
 /// Movement intent from the held keys.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct HeldMovement {
@@ -192,7 +185,7 @@ struct HeldMovement {
 /// W/S run and backpedal, A/D or Q/E strafe, combined with the pad's left
 /// stick. Dead units cannot move, so the dead hold no movement whatever keys
 /// are down.
-fn held_movement(keys: &HashSet<KeyCode>, pad: PadMovement, dead: bool) -> HeldMovement {
+fn held_movement(keyboard: PadMovement, pad: PadMovement, dead: bool) -> HeldMovement {
     if dead {
         return HeldMovement {
             forward: 0,
@@ -200,17 +193,10 @@ fn held_movement(keys: &HashSet<KeyCode>, pad: PadMovement, dead: bool) -> HeldM
             steering: false,
         };
     }
-    let held = |group: &[KeyCode]| group.iter().any(|key| keys.contains(key));
-    let forward = i8::from(held(&FORWARD_KEYS)) - i8::from(held(&BACKWARD_KEYS));
-    let strafe = i8::from(held(&RIGHT_KEYS)) - i8::from(held(&LEFT_KEYS));
     HeldMovement {
-        forward: (forward + pad.forward).clamp(-1, 1),
-        strafe: (strafe + pad.strafe).clamp(-1, 1),
-        steering: held(&FORWARD_KEYS)
-            || held(&BACKWARD_KEYS)
-            || held(&LEFT_KEYS)
-            || held(&RIGHT_KEYS)
-            || pad.steering,
+        forward: (keyboard.forward + pad.forward).clamp(-1, 1),
+        strafe: (keyboard.strafe + pad.strafe).clamp(-1, 1),
+        steering: keyboard.steering || pad.steering,
     }
 }
 
@@ -292,7 +278,6 @@ impl App {
                     self.world_controls.set_interaction(true);
                     // A context owns the number keys until closed.
                     self.controls.focus_lost();
-                    self.keys.clear();
                     self.update_movement();
                 } else if let Some(command) = self.presentation.reachable_door() {
                     // Without a selected NPC, interact swings the door in reach (#158).
@@ -402,7 +387,7 @@ impl App {
             forward,
             strafe,
             steering,
-        } = held_movement(&self.keys, self.pad.movement(), self.dead());
+        } = held_movement(self.controls.movement(), self.pad.movement(), self.dead());
         let facing = steering.then(|| self.camera.facing());
         self.input.send_if_modified(|input| {
             let next = PlayerInput {
@@ -456,6 +441,14 @@ impl App {
     /// A slot use or cast cancel is an intent; the zone decides what happens.
     fn control(&mut self, action: ControlAction) {
         match action {
+            ControlAction::MoveForward
+            | ControlAction::MoveBackward
+            | ControlAction::MoveLeft
+            | ControlAction::MoveRight => {}
+            ControlAction::Jump => self.jump(),
+            ControlAction::TargetNext => self.combat_key(KeyCode::Tab),
+            ControlAction::ToggleAttack => self.combat_key(KeyCode::KeyF),
+            ControlAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             ControlAction::AbilitySlot(slot) => {
                 let ability = usize::from(slot)
                     .checked_sub(1)
@@ -595,7 +588,6 @@ impl App {
     fn retire_held_input(&mut self) {
         self.controls.focus_lost();
         self.world_controls.reset();
-        self.keys.clear();
         self.orbit_buttons.clear();
         self.guard_offset = None;
         self.pad_guard = None;
@@ -822,7 +814,6 @@ impl ApplicationHandler for App {
                 && event.state == ElementState::Released
             {
                 self.controls.key_up(code);
-                self.keys.remove(&code);
             }
             return;
         }
@@ -841,7 +832,6 @@ impl ApplicationHandler for App {
                 self.focused = false;
                 self.pad.retire("focusLost");
                 self.controls.focus_lost();
-                self.keys.clear();
                 self.retire_pointer();
                 self.update_movement();
             }
@@ -928,7 +918,6 @@ impl ApplicationHandler for App {
                     if context_was_open || context_opened || cancel_handled {
                         if event.state == ElementState::Released {
                             self.controls.key_up(code);
-                            self.keys.remove(&code);
                             self.update_movement();
                         }
                         return;
@@ -953,21 +942,6 @@ impl ApplicationHandler for App {
                         }
                     } else {
                         self.controls.key_up(code);
-                    }
-                    // Jump is edge-triggered: key repeat never queues more jumps.
-                    if code == KeyCode::Space
-                        && event.state == ElementState::Pressed
-                        && !event.repeat
-                    {
-                        self.jump();
-                    }
-                    if event.state == ElementState::Pressed && !event.repeat {
-                        self.combat_key(code);
-                    }
-                    if event.state == ElementState::Pressed {
-                        self.keys.insert(code);
-                    } else {
-                        self.keys.remove(&code);
                     }
                     self.update_movement();
                 }
@@ -1077,6 +1051,14 @@ impl ApplicationHandler for App {
 mod tests {
     use super::*;
 
+    fn keyboard(keys: &[KeyCode]) -> PadMovement {
+        let mut controls = NativeControls::new();
+        for key in keys {
+            controls.key_down(*key, false);
+        }
+        controls.movement()
+    }
+
     #[test]
     fn the_pad_stick_combines_with_held_keys() {
         let stick = PadMovement {
@@ -1084,9 +1066,9 @@ mod tests {
             strafe: -1,
             steering: true,
         };
-        let back: HashSet<_> = [KeyCode::KeyS].into_iter().collect();
+        let back = keyboard(&[KeyCode::KeyS]);
         assert_eq!(
-            held_movement(&back, stick, false),
+            held_movement(back, stick, false),
             HeldMovement {
                 forward: 0,
                 strafe: -1,
@@ -1094,21 +1076,21 @@ mod tests {
             }
         );
         assert_eq!(
-            held_movement(&HashSet::new(), stick, false),
+            held_movement(PadMovement::default(), stick, false),
             HeldMovement {
                 forward: 1,
                 strafe: -1,
                 steering: true
             }
         );
-        assert!(!held_movement(&HashSet::new(), stick, true).steering);
+        assert!(!held_movement(PadMovement::default(), stick, true).steering);
     }
 
     #[test]
     fn the_dead_hold_no_movement() {
-        let keys: HashSet<_> = [KeyCode::KeyW, KeyCode::KeyA].into_iter().collect();
+        let keys = keyboard(&[KeyCode::KeyW, KeyCode::KeyA]);
         assert_eq!(
-            held_movement(&keys, PadMovement::default(), false),
+            held_movement(keys, PadMovement::default(), false),
             HeldMovement {
                 forward: 1,
                 strafe: -1,
@@ -1116,18 +1098,16 @@ mod tests {
             }
         );
         assert_eq!(
-            held_movement(&keys, PadMovement::default(), true),
+            held_movement(keys, PadMovement::default(), true),
             HeldMovement {
                 forward: 0,
                 strafe: 0,
                 steering: false
             }
         );
-        let opposed: HashSet<_> = [KeyCode::KeyS, KeyCode::ArrowUp, KeyCode::KeyE]
-            .into_iter()
-            .collect();
+        let opposed = keyboard(&[KeyCode::KeyS, KeyCode::ArrowUp, KeyCode::KeyE]);
         assert_eq!(
-            held_movement(&opposed, PadMovement::default(), false),
+            held_movement(opposed, PadMovement::default(), false),
             HeldMovement {
                 forward: 0,
                 strafe: 1,

@@ -17,6 +17,14 @@ use winit::keyboard::KeyCode;
 /// A semantic action the native client resolves from input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ControlAction {
+    MoveForward,
+    MoveBackward,
+    MoveLeft,
+    MoveRight,
+    Jump,
+    TargetNext,
+    ToggleAttack,
+    ReleaseSpirit,
     /// Action-bar slot 1–8.
     AbilitySlot(u8),
     /// Cancel the viewer's cast or channel.
@@ -39,7 +47,15 @@ pub enum Panel {
 
 impl ControlAction {
     /// Every control action in catalog order.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 22] = [
+        Self::MoveForward,
+        Self::MoveBackward,
+        Self::MoveLeft,
+        Self::MoveRight,
+        Self::Jump,
+        Self::TargetNext,
+        Self::ToggleAttack,
+        Self::ReleaseSpirit,
         Self::AbilitySlot(1),
         Self::AbilitySlot(2),
         Self::AbilitySlot(3),
@@ -61,6 +77,14 @@ impl ControlAction {
     #[must_use]
     pub fn id(self) -> &'static str {
         match self {
+            Self::MoveForward => "move.forward",
+            Self::MoveBackward => "move.back",
+            Self::MoveLeft => "move.strafeLeft",
+            Self::MoveRight => "move.strafeRight",
+            Self::Jump => "move.jump",
+            Self::TargetNext => "target.next",
+            Self::ToggleAttack => "combat.toggleAutoAttack",
+            Self::ReleaseSpirit => "player.releaseSpirit",
             Self::AbilitySlot(1) => "ability.slot1",
             Self::AbilitySlot(2) => "ability.slot2",
             Self::AbilitySlot(3) => "ability.slot3",
@@ -86,6 +110,14 @@ impl ControlAction {
     /// Title, context and default physical keys, as in the browser catalog.
     fn default_binding(self) -> (&'static str, &'static str, &'static [&'static str]) {
         match self {
+            Self::MoveForward => ("Move forward", GAMEPLAY, &["KeyW", "ArrowUp"]),
+            Self::MoveBackward => ("Move backward", GAMEPLAY, &["KeyS", "ArrowDown"]),
+            Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "KeyQ", "ArrowLeft"]),
+            Self::MoveRight => ("Strafe right", GAMEPLAY, &["KeyD", "KeyE", "ArrowRight"]),
+            Self::Jump => ("Jump", GAMEPLAY, &["Space"]),
+            Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),
+            Self::ToggleAttack => ("Toggle auto-attack", GAMEPLAY, &["KeyF"]),
+            Self::ReleaseSpirit => ("Release spirit", GAMEPLAY, &["KeyR"]),
             Self::AbilitySlot(1) => ("Ability 1", GAMEPLAY, &["Digit1"]),
             Self::AbilitySlot(2) => ("Ability 2", GAMEPLAY, &["Digit2"]),
             Self::AbilitySlot(3) => ("Ability 3", GAMEPLAY, &["Digit3"]),
@@ -212,6 +244,21 @@ impl NativeControls {
         }
     }
 
+    /// Apply a foundation-validated character profile and retire held actions.
+    pub fn set_profile(
+        &mut self,
+        profile: Option<input_bindings_core::Profile>,
+    ) -> Result<(), String> {
+        let report =
+            input_bindings_core::validate_registry(&native_action_registry(), profile.as_ref());
+        if !report.valid || !report.diagnostics.is_empty() {
+            return Err(format!("Invalid control profile: {:?}", report.diagnostics));
+        }
+        let decision = self.runtime.update_profile(profile);
+        self.apply(&[decision]);
+        Ok(())
+    }
+
     /// Follows the latest projection's cast: the non-blocking `casting` layer
     /// is on top while the viewer casts. A context change retires held
     /// actions, so an unchanged value leaves the runtime alone.
@@ -255,6 +302,22 @@ impl NativeControls {
     #[must_use]
     pub fn is_held(&self, action: ControlAction) -> bool {
         self.state.is_held(action.id())
+    }
+
+    /// Shared semantic held-state aggregation, independent of physical keys.
+    pub fn movement(&self) -> crate::gamepad::PadMovement {
+        crate::gamepad::PadMovement {
+            forward: self.state.axis("move.back", "move.forward"),
+            strafe: self.state.axis("move.strafeLeft", "move.strafeRight"),
+            steering: [
+                ControlAction::MoveForward,
+                ControlAction::MoveBackward,
+                ControlAction::MoveLeft,
+                ControlAction::MoveRight,
+            ]
+            .into_iter()
+            .any(|action| self.is_held(action)),
+        }
     }
 
     fn apply(&mut self, decisions: &[RuntimeDecision]) {

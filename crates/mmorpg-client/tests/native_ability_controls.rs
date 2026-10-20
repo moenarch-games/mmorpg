@@ -330,3 +330,42 @@ fn z_holds_the_shield_guard() {
     controls.key_up(KeyCode::KeyZ);
     assert!(!controls.is_held(ControlAction::Guard));
 }
+
+#[test]
+fn a_character_rebind_moves_through_semantic_state_and_retires_the_old_hold() {
+    use input_bindings_core::{BindingPatch, KeyMatch, Profile};
+    let mut controls = mmorpg_client::controls::NativeControls::new();
+    controls.key_down(winit::keyboard::KeyCode::KeyW, false);
+    assert_eq!(controls.movement().forward, 1);
+    let registry = mmorpg_client::controls::native_action_registry();
+    let mut binding = registry
+        .actions
+        .iter()
+        .find(|action| action.id == "move.forward")
+        .unwrap()
+        .defaults[0]
+        .clone();
+    let input_bindings_core::InputStroke::Keyboard(stroke) = &mut binding.sequence[0] else {
+        panic!("keyboard default")
+    };
+    stroke.key = KeyMatch::Physical {
+        value: "KeyJ".into(),
+    };
+    controls
+        .set_profile(Some(Profile {
+            id: "character-a".into(),
+            patches: vec![BindingPatch::Replace {
+                binding_id: binding.id.clone(),
+                binding,
+            }],
+        }))
+        .unwrap();
+    assert_eq!(controls.movement().forward, 0);
+    controls.key_up(winit::keyboard::KeyCode::KeyW);
+    controls.key_down(winit::keyboard::KeyCode::KeyW, false);
+    assert_eq!(controls.movement().forward, 0);
+    controls.key_down(winit::keyboard::KeyCode::KeyJ, false);
+    assert_eq!(controls.movement().forward, 1);
+    controls.focus_lost();
+    assert_eq!(controls.movement().forward, 0);
+}
