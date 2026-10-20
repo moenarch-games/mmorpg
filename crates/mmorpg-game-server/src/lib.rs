@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod character_admission;
 mod fenced_runtime;
 pub use fenced_runtime::{FencedRuntimeError, FencedZoneRuntime};
 
@@ -12,7 +13,7 @@ use std::sync::Arc;
 use mmorpg_core::{MAX_PLAYERS_PER_ZONE, TICK_HZ, ZoneContent, ZoneId, ZoneSimulation};
 use mmorpg_protocol::{decode_command, encode_canonical_snapshot, pack_snapshot};
 
-pub const PINNED_GAME_SERVER_REVISION: &str = "a3851dab9c1fb25dd31b465fb554ca475769caab";
+pub const PINNED_GAME_SERVER_REVISION: &str = "15fe7afd3e16c7da92477b13377a79d4eadd6ba4";
 pub const PINNED_PHYSICS_ENGINE_REVISION: &str = "1b98f84d409796b2a15b84f3fa4ed7f03a11f8bd";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,6 +56,7 @@ impl std::error::Error for ZoneHostBuildError {
 
 pub struct ZoneGameServerAdapter {
     zone: ZoneSimulation,
+    characters: std::collections::BTreeMap<game_server::PlayerId, mmorpg_core::CharacterId>,
 }
 
 impl ZoneGameServerAdapter {
@@ -62,6 +64,7 @@ impl ZoneGameServerAdapter {
     pub fn new(zone_id: ZoneId) -> Self {
         Self {
             zone: ZoneSimulation::new(zone_id),
+            characters: Default::default(),
         }
     }
 
@@ -73,6 +76,7 @@ impl ZoneGameServerAdapter {
     ) -> Result<Self, mmorpg_core::ZoneError> {
         Ok(Self {
             zone: ZoneSimulation::with_content(zone_id, content)?,
+            characters: Default::default(),
         })
     }
 
@@ -162,6 +166,7 @@ impl GameSimulation for ZoneGameServerAdapter {
     }
 
     fn remove_player(&mut self, player_id: game_server::PlayerId) -> bool {
+        self.characters.remove(&player_id);
         self.zone.remove_player(player_id)
     }
 
@@ -177,6 +182,14 @@ impl GameSimulation for ZoneGameServerAdapter {
             .map_err(map_zone_error)
     }
 
+    fn apply_host_input(
+        &mut self,
+        player_id: game_server::PlayerId,
+        payload: &[u8],
+    ) -> Result<(), SimulationError> {
+        self.admit_stored_character(player_id, payload)
+    }
+
     fn advance_tick(&mut self) -> Result<(), SimulationError> {
         self.zone.advance_tick().map_err(map_zone_error)
     }
@@ -187,7 +200,18 @@ impl GameSimulation for ZoneGameServerAdapter {
 
     fn snapshot(&self) -> Result<SimulationSnapshot, SimulationError> {
         let snapshot = self.zone.snapshot().map_err(map_zone_error)?;
-        let payload = encode_canonical_snapshot(&snapshot).map_err(map_protocol_error)?;
+        let mut payload = encode_canonical_snapshot(&snapshot).map_err(map_protocol_error)?;
+        // Private adapter metadata must be verified as well as gameplay. Logs
+        // without durable admissions keep their previous canonical bytes.
+        if !self.characters.is_empty() {
+            payload.extend_from_slice(b"MMOC\x01");
+            payload.extend_from_slice(&(self.characters.len() as u32).to_be_bytes());
+            for (player, character) in &self.characters {
+                payload.extend_from_slice(&player.to_be_bytes());
+                payload.push(character.as_str().len() as u8);
+                payload.extend_from_slice(character.as_str().as_bytes());
+            }
+        }
         Ok(SimulationSnapshot::new(snapshot.tick, payload))
     }
 
