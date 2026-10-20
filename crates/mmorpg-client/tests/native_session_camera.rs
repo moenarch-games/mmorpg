@@ -38,7 +38,11 @@ fn browser_view(focus: [f32; 3], heading: f32, world: &WorldScene) -> CameraView
         target[2] - heading.cos() * horizontal,
     ];
     eye[1] = eye[1].max(world.surface_y(eye[0], eye[2]) + 0.35);
-    CameraView { eye, target }
+    CameraView {
+        eye,
+        target,
+        field_of_view_degrees: 50.0,
+    }
 }
 fn close(a: CameraView, b: CameraView) {
     for (x, y) in a

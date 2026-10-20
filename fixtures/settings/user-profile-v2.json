@@ -1,0 +1,11 @@
+{
+  "schema_version": 2,
+  "scope": "user",
+  "overrides": {
+    "accessibility.reduce_motion": { "type": "choice", "value": "reduce" },
+    "camera.field_of_view": { "type": "integer", "value": 70 },
+    "controls.invert_vertical_look": { "type": "bool", "value": true },
+    "controls.look_sensitivity": { "type": "number", "value": 2.0 },
+    "other_platform.preference": { "type": "text", "value": "retained" }
+  }
+}

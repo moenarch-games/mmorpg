@@ -16,6 +16,7 @@ const ZOOM_STEP: f32 = 0.88;
 /// Eye and look-at point for one rendered frame, in metres.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CameraView {
+    pub field_of_view_degrees: f32,
     pub eye: [f32; 3],
     pub target: [f32; 3],
 }
@@ -25,6 +26,9 @@ pub struct CameraView {
 /// eye above the pivot.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OrbitCamera {
+    field_of_view_degrees: f32,
+    look_sensitivity: f32,
+    invert_vertical_look: bool,
     yaw: f32,
     pitch: f32,
     distance: f32,
@@ -34,6 +38,9 @@ impl Default for OrbitCamera {
     /// Starts behind a character facing yaw 0.
     fn default() -> Self {
         Self {
+            field_of_view_degrees: 50.0,
+            look_sensitivity: 1.0,
+            invert_vertical_look: false,
             yaw: 0.0,
             pitch: 0.36,
             distance: 9.0,
@@ -42,11 +49,29 @@ impl Default for OrbitCamera {
 }
 
 impl OrbitCamera {
+    /// Apply already-validated client preferences to camera presentation.
+    pub fn set_preferences(
+        &mut self,
+        field_of_view_degrees: f32,
+        look_sensitivity: f32,
+        invert_vertical_look: bool,
+    ) {
+        self.field_of_view_degrees = field_of_view_degrees;
+        self.look_sensitivity = look_sensitivity;
+        self.invert_vertical_look = invert_vertical_look;
+    }
+
     /// Mouse drag: moving right turns the view right; moving down raises the eye.
     pub fn orbit(&mut self, dx_pixels: f64, dy_pixels: f64) {
-        let turn = (dx_pixels as f32) * ORBIT_RADIANS_PER_PIXEL;
+        let dy_pixels = if self.invert_vertical_look {
+            -dy_pixels
+        } else {
+            dy_pixels
+        };
+        let turn = (dx_pixels as f32) * ORBIT_RADIANS_PER_PIXEL * self.look_sensitivity;
         self.yaw = (self.yaw - turn).rem_euclid(std::f32::consts::TAU);
-        self.pitch = (self.pitch + (dy_pixels as f32) * ORBIT_RADIANS_PER_PIXEL)
+        self.pitch = (self.pitch
+            + (dy_pixels as f32) * ORBIT_RADIANS_PER_PIXEL * self.look_sensitivity)
             .clamp(MIN_PITCH_RADIANS, MAX_PITCH_RADIANS);
     }
 
@@ -102,6 +127,7 @@ impl OrbitCamera {
         let target = [focus[0], focus[1] + PIVOT_HEIGHT_METRES, focus[2]];
         let horizontal = self.distance * self.pitch.cos();
         CameraView {
+            field_of_view_degrees: self.field_of_view_degrees,
             eye: [
                 target[0] - self.yaw.sin() * horizontal,
                 target[1] + self.distance * self.pitch.sin(),
@@ -153,6 +179,31 @@ mod tests {
             0.0,
         );
         assert!(camera.facing().abs_diff(16_384) <= 2, "{}", camera.facing());
+    }
+
+    #[test]
+    fn preferences_change_projection_and_look_without_moving_the_focus() {
+        let mut normal = OrbitCamera::default();
+        let mut sensitive = normal;
+        sensitive.set_preferences(70.0, 2.0, false);
+        normal.orbit(10.0, 0.0);
+        sensitive.orbit(5.0, 0.0);
+        assert_eq!(normal.view([0.0; 3]).eye, sensitive.view([0.0; 3]).eye);
+        assert_eq!(sensitive.view([0.0; 3]).field_of_view_degrees, 70.0);
+        assert_eq!(
+            normal.view([0.0; 3]).target,
+            sensitive.view([0.0; 3]).target
+        );
+    }
+
+    #[test]
+    fn inverted_look_reverses_vertical_motion_without_reversing_heading() {
+        let mut normal = OrbitCamera::default();
+        let mut inverted = normal;
+        inverted.set_preferences(50.0, 1.0, true);
+        normal.orbit(8.0, 5.0);
+        inverted.orbit(8.0, -5.0);
+        assert_eq!(normal.view([0.0; 3]), inverted.view([0.0; 3]));
     }
 
     #[test]

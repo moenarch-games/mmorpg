@@ -355,6 +355,10 @@ export class WorldView {
     this.#motion = motion;
   }
 
+  setLookInversion(invert: boolean): void {
+    this.#orbit.setLookInversion(invert);
+  }
+
   /** Applies the Settings look sensitivity to later camera drags. */
   setLookSensitivity(multiplier: number): void {
     if (Number.isFinite(multiplier) && multiplier > 0) {

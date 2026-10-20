@@ -64,11 +64,44 @@ fn mouse() -> InputStroke {
         modifiers: Modifiers::default(),
     })
 }
+pub fn world_action_registry() -> ActionRegistry {
+    ActionRegistry {
+        actions: WorldAction::ALL
+            .into_iter()
+            .map(|action| {
+                let (id, context, stroke) = action.definition();
+                ActionDefinition {
+                    id: id.into(),
+                    title: id.into(),
+                    description: None,
+                    category_path: Vec::new(),
+                    repeat_policy: RepeatPolicy::Never,
+                    allowed_devices: vec![if action == WorldAction::Select {
+                        DeviceClass::Mouse
+                    } else {
+                        DeviceClass::Keyboard
+                    }],
+                    defaults: vec![Binding {
+                        id: format!("{id}.0"),
+                        action: id.into(),
+                        sequence: vec![stroke],
+                        when: WhenExpr::Context { id: context.into() },
+                        priority: 0,
+                    }],
+                    provenance: None,
+                }
+            })
+            .collect(),
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct WorldControls {
     runtime: InputRuntime,
     state: SemanticControlState,
     interaction: bool,
+    sources: crate::controls::KeyboardSources,
+    pointer_sources: std::collections::BTreeMap<u16, InputStroke>,
 }
 impl Default for WorldControls {
     fn default() -> Self {
@@ -78,34 +111,7 @@ impl Default for WorldControls {
 impl WorldControls {
     #[must_use]
     pub fn new() -> Self {
-        let registry = ActionRegistry {
-            actions: WorldAction::ALL
-                .into_iter()
-                .map(|action| {
-                    let (id, context, stroke) = action.definition();
-                    ActionDefinition {
-                        id: id.into(),
-                        title: id.into(),
-                        description: None,
-                        category_path: Vec::new(),
-                        repeat_policy: RepeatPolicy::Never,
-                        allowed_devices: vec![if action == WorldAction::Select {
-                            DeviceClass::Mouse
-                        } else {
-                            DeviceClass::Keyboard
-                        }],
-                        defaults: vec![Binding {
-                            id: format!("{id}.0"),
-                            action: id.into(),
-                            sequence: vec![stroke],
-                            when: WhenExpr::Context { id: context.into() },
-                            priority: 0,
-                        }],
-                        provenance: None,
-                    }
-                })
-                .collect(),
-        };
+        let registry = crate::bindings::action_registry();
         let mut runtime = InputRuntime::new(registry, None, InputRuntimeOptions::default());
         assert!(
             runtime.validation_report().valid,
@@ -120,8 +126,18 @@ impl WorldControls {
             runtime,
             state: SemanticControlState::new(),
             interaction: false,
+            sources: crate::controls::KeyboardSources::default(),
+            pointer_sources: std::collections::BTreeMap::new(),
         }
     }
+    pub fn set_profile(&mut self, profile: input_bindings_core::Profile) -> Result<(), String> {
+        crate::bindings::validate_profile(&profile)?;
+        let decision = self.runtime.update_profile(Some(profile));
+        self.state.apply_decisions(&[decision]);
+        self.state.drain_presses();
+        Ok(())
+    }
+
     pub fn set_interaction(&mut self, active: bool) {
         if self.interaction == active {
             return;
@@ -138,16 +154,20 @@ impl WorldControls {
         self.state.apply_decisions(&[decision]);
     }
     pub fn key(&mut self, key: KeyCode, down: bool, repeat: bool) -> Vec<WorldAction> {
-        let stroke = InputStroke::Keyboard(KeyStroke {
-            key: KeyMatch::Physical {
-                value: format!("{key:?}"),
-            },
-            modifiers: Modifiers::default(),
-        });
+        self.key_with_modifiers(key, down, repeat, Modifiers::default())
+    }
+    pub fn key_with_modifiers(
+        &mut self,
+        key: KeyCode,
+        down: bool,
+        repeat: bool,
+        modifiers: Modifiers,
+    ) -> Vec<WorldAction> {
         let decisions = if down {
-            self.runtime.input_down(stroke, repeat, 0)
+            self.runtime
+                .input_down(self.sources.down(key, modifiers), repeat, 0)
         } else {
-            self.runtime.input_up(&stroke, 0)
+            self.runtime.input_up(&self.sources.up(key), 0)
         };
         self.state.apply_decisions(&decisions);
         self.state
@@ -161,19 +181,97 @@ impl WorldControls {
             .collect()
     }
     pub fn pointer(&mut self, down: bool) -> bool {
-        let held = self.state.is_held("world.select");
-        let decisions = if down {
-            self.runtime.input_down(mouse(), false, 0)
+        self.pointer_button(0, down, Modifiers::default())
+    }
+    pub fn selecting(&self) -> bool {
+        self.state.is_held("world.select")
+    }
+    pub fn pointer_button(&mut self, button: u16, down: bool, modifiers: Modifiers) -> bool {
+        let held = self.selecting();
+        let stroke = if down {
+            self.pointer_sources
+                .entry(button)
+                .or_insert_with(|| {
+                    InputStroke::Device(DeviceStroke::MouseButton { button, modifiers })
+                })
+                .clone()
         } else {
-            self.runtime.input_up(&mouse(), 0)
+            self.pointer_sources.remove(&button).unwrap_or_else(|| {
+                InputStroke::Device(DeviceStroke::MouseButton { button, modifiers })
+            })
+        };
+        let decisions = if down {
+            self.runtime.input_down(stroke, false, 0)
+        } else {
+            self.runtime.input_up(&stroke, 0)
         };
         self.state.apply_decisions(&decisions);
         self.state.drain_presses();
-        !down && held
+        !down && held && !self.selecting()
     }
     pub fn reset(&mut self) {
+        self.sources.clear();
+        self.pointer_sources.clear();
         let decision = self.runtime.reset("focusLost");
         self.state.apply_decisions(&[decision]);
         self.state.drain_presses();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn selection_uses_the_rebound_button_and_keeps_its_original_modifiers_until_release() {
+        let registry = crate::bindings::action_registry();
+        let mut binding = registry
+            .actions
+            .iter()
+            .find(|action| action.id == "world.select")
+            .unwrap()
+            .defaults[0]
+            .clone();
+        binding.sequence = vec![InputStroke::Device(DeviceStroke::MouseButton {
+            button: 2,
+            modifiers: Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        })];
+        let mut controls = WorldControls::new();
+        controls
+            .set_profile(input_bindings_core::Profile {
+                id: "character:a".into(),
+                patches: vec![input_bindings_core::BindingPatch::Replace {
+                    binding_id: binding.id.clone(),
+                    binding,
+                }],
+            })
+            .unwrap();
+        controls.pointer_button(0, true, Modifiers::default());
+        assert!(!controls.selecting());
+        assert!(!controls.pointer_button(0, false, Modifiers::default()));
+        controls.pointer_button(
+            2,
+            true,
+            Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        );
+        assert!(controls.selecting());
+        assert!(!controls.pointer_button(0, false, Modifiers::default()));
+        assert!(controls.pointer_button(2, false, Modifiers::default()));
+        assert!(!controls.selecting());
+        controls.pointer_button(
+            2,
+            true,
+            Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        );
+        controls.reset();
+        assert!(!controls.pointer_button(2, false, Modifiers::default()));
     }
 }

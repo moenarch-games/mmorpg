@@ -38,6 +38,7 @@ fn submitted_frame_mesh_material_transform_and_environment_change_actual_pixels(
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let world = WorldScene::new(&mmorpg_scenery::greyhaven_vale_scenery());
         let view = CameraView {
+            field_of_view_degrees: 50.0,
             eye: [0.0, 12.0, 28.0],
             target: [0.0, 2.0, 0.0],
         };
@@ -141,7 +142,11 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
             ("hollow", [6.0, 14.0, -64.0], [0.0, 3.0, -98.0]),
         ] {
             for (phase, seconds) in [("day", 0.0), ("night", 600.0)] {
-                let mut view = CameraView { eye, target };
+                let mut view = CameraView {
+                    eye,
+                    target,
+                    field_of_view_degrees: 50.0,
+                };
                 view.eye[1] = view.eye[1].max(world.surface_y(eye[0], eye[2]) + 0.35);
                 eprintln!(
                     "GALLERY_CAMERA {{\"name\":\"{name}-{phase}\",\"eye\":{:?},\"target\":{:?}}}",
@@ -161,6 +166,7 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
             let half = prop.half_extents.map(|v| v as f32 / 100.0);
             let distance = half.into_iter().fold(2.0_f32, f32::max) * 3.0 + 4.0;
             let mut view = CameraView {
+                field_of_view_degrees: 50.0,
                 eye: [x + distance, base + half[1] + distance * 0.7, z + distance],
                 target: [x, base + half[1], z],
             };
@@ -295,6 +301,7 @@ fn current_creature_and_npc_model_images_reach_native_gpu() {
             presentation.set_reduced_motion(true);
             presentation.push(projection, now).unwrap();
             let view = CameraView {
+                field_of_view_degrees: 50.0,
                 eye: [5.0, 3.0, 7.0],
                 target: [2.5, 0.9, 0.0],
             };
@@ -313,6 +320,7 @@ fn empty_frame_renders_submitted_background_without_hidden_css_sky() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let world = WorldScene::new(&mmorpg_scenery::greyhaven_vale_scenery());
         let view = CameraView {
+            field_of_view_degrees: 50.0,
             eye: [0.0, 4.0, 9.0],
             target: [0.0, 1.0, 0.0],
         };

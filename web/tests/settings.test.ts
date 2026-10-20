@@ -119,15 +119,80 @@ describe("client preferences over the shared settings session", () => {
   test("a changed field of view persists, reloads and resets", async () => {
     const storage = new MemoryStorage();
     const first = await Preferences.open(storage);
-    expect(first.values()).toEqual({ fieldOfViewDegrees: 50, lookSensitivity: 1, reduceMotion: "system" });
+    expect(first.values()).toEqual({ fieldOfViewDegrees: 50, lookSensitivity: 1, invertVerticalLook: false, reduceMotion: "system" });
     first.set(SETTING.fieldOfView, { type: "integer", value: 70 });
     first.set(SETTING.reduceMotion, { type: "choice", value: "reduce" });
     expect(() => first.set(SETTING.fieldOfView, { type: "integer", value: 400 })).toThrow();
 
     const second = await Preferences.open(storage);
     expect(second.problem).toBeNull();
-    expect(second.values()).toEqual({ fieldOfViewDegrees: 70, lookSensitivity: 1, reduceMotion: "reduce" });
+    expect(second.values()).toEqual({ fieldOfViewDegrees: 70, lookSensitivity: 1, invertVerticalLook: false, reduceMotion: "reduce" });
     second.resetAll();
     expect((await Preferences.open(storage)).values().fieldOfViewDegrees).toBe(50);
   });
+});
+
+test("look inversion persists through the shared catalog and reverses only vertical orbit", async () => {
+  const { OrbitCamera } = await import("../src/world/orbit-camera");
+  const storage = new MemoryStorage();
+  const preferences = await Preferences.open(storage);
+  preferences.set(SETTING.invertVerticalLook, { type: "bool", value: true });
+  expect((await Preferences.open(storage)).values().invertVerticalLook).toBe(true);
+  const normal = new OrbitCamera();
+  const inverted = new OrbitCamera();
+  inverted.setLookInversion(true);
+  normal.orbit(8, 5);
+  inverted.orbit(8, -5);
+  expect(inverted.view([0, 0, 0])).toEqual(normal.view([0, 0, 0]));
+});
+
+test("User profile preview is isolated and confirmed import replaces destination-only overrides", async () => {
+  const storage = new MemoryStorage();
+  const destination = await Preferences.open(storage);
+  destination.set(SETTING.fieldOfView, { type: "integer", value: 65 });
+  const source = await Preferences.open(new MemoryStorage());
+  source.set(SETTING.lookSensitivity, { type: "number", value: 2 });
+  const preview = await destination.previewUserImport(source.exportUserProfile());
+  expect(preview.changes.some((change) => change.id === SETTING.fieldOfView && change.operation === "Reset to default")).toBe(true);
+  expect(destination.values().fieldOfViewDegrees).toBe(65);
+  expect((await Preferences.open(storage)).values().fieldOfViewDegrees).toBe(65);
+  destination.confirmUserImport(preview);
+  expect(destination.values().fieldOfViewDegrees).toBe(50);
+  expect((await Preferences.open(storage)).values().lookSensitivity).toBe(2);
+});
+
+test("cancelled imports, invalid documents and failed durable writes do not change live preferences", async () => {
+  const storage = new MemoryStorage();
+  const destination = await Preferences.open(storage);
+  const source = await Preferences.open(new MemoryStorage());
+  source.set(SETTING.fieldOfView, { type: "integer", value: 70 });
+  const cancelled = await destination.previewUserImport(source.exportUserProfile());
+  destination.cancelUserImport();
+  expect(() => destination.confirmUserImport(cancelled)).toThrow();
+  expect(destination.values().fieldOfViewDegrees).toBe(50);
+  await expect(destination.previewUserImport("broken")).rejects.toThrow();
+  const failing = await Preferences.open({ getItem: () => null, setItem: () => { throw new Error("storage unavailable"); } });
+  const pending = await failing.previewUserImport(source.exportUserProfile());
+  expect(() => failing.confirmUserImport(pending)).toThrow("storage unavailable");
+  expect(failing.values().fieldOfViewDegrees).toBe(50);
+});
+
+test("the shared portable profile round-trips across clients and dormant entries survive resets", async () => {
+  const { default: portable } = await import("../../fixtures/settings/user-profile-v2.json");
+  const preferences = await Preferences.open(new MemoryStorage());
+  const preview = await preferences.previewUserImport(JSON.stringify(portable));
+  expect(preview.diagnostics.length).toBeGreaterThan(0);
+  preferences.confirmUserImport(preview);
+  expect(JSON.parse(preferences.exportUserProfile())).toEqual(portable);
+  preferences.resetAll();
+  expect(JSON.parse(preferences.exportUserProfile()).overrides).toEqual({ "other_platform.preference": portable.overrides["other_platform.preference"] });
+});
+
+test("a confirmed import with unchanged effective preferences does not reconfigure the client", async () => {
+  const preferences = await Preferences.open(new MemoryStorage());
+  let applied = 0;
+  preferences.subscribe(() => { applied += 1; });
+  const preview = await preferences.previewUserImport(preferences.exportUserProfile());
+  preferences.confirmUserImport(preview);
+  expect(applied).toBe(1);
 });

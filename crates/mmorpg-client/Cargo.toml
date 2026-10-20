@@ -8,7 +8,11 @@ publish.workspace = true
 
 [dependencies]
 getrandom = "=0.4.3"
+tempfile = "=3.27.0"
 serde_json = "=1.0.154"
+serde = { version = "=1.0.229", features = ["derive"] }
+settings-presentation = { git = "https://github.com/moritzbrantner/settings.git", rev = "38c468c5d1a380416df630d7980be5f0d16631c2" }
+settings-core = { git = "https://github.com/moritzbrantner/settings.git", rev = "38c468c5d1a380416df630d7980be5f0d16631c2" }
 gltf = { version = "=1.4.1", default-features = false, features = ["import", "utils", "names"] }
 game-server.workspace = true
 mmorpg-core.workspace = true
@@ -30,14 +34,13 @@ three-d-camera = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "
 three-d-animation = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "235774615f1367065093deb6988f5217bdf4d7e1" }
 three-d-projective = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "235774615f1367065093deb6988f5217bdf4d7e1" }
 gilrs = "=0.11.2"
-input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "9872c63b18b52842aba206b0ecef7a70dc8f1249" }
+input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "cf0d89f0cc048cec865682926b15acb1b273e589" }
 
 [build-dependencies]
 serde_json = "=1.0.154"
 
 [dev-dependencies]
 mmorpg-wasm = { path = "../mmorpg-wasm" }
-tempfile = "=3.27.0"
 mmorpg-game-server = { path = "../mmorpg-game-server" }
 wtransport = { version = "=0.7.2", default-features = false, features = ["ring", "self-signed", "quinn"] }
 

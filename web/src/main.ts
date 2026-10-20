@@ -318,6 +318,7 @@ function applyPreferences(preferences: ClientPreferences): void {
   camera.fov = preferences.fieldOfViewDegrees;
   camera.updateProjectionMatrix();
   worldView.setLookSensitivity(preferences.lookSensitivity);
+  worldView.setLookInversion(preferences.invertVerticalLook);
   worldView.setMotionPreference(preferences.reduceMotion);
   if (preferences.reduceMotion === "system") {
     delete document.documentElement.dataset.motion;
@@ -356,9 +357,14 @@ const settingsPanel = new SettingsPanel({
   dialog: requireElement<HTMLDialogElement>("#settings-dialog"),
   close: requireElement<HTMLButtonElement>("#settings-close"),
   categories: requireElement<HTMLElement>("#settings-categories"),
+  categorySelect: requireElement<HTMLSelectElement>("#settings-category-select"),
+  search: requireElement<HTMLInputElement>("#settings-search"),
+  resetCategory: requireElement<HTMLButtonElement>("#settings-reset-category"),
   content: requireElement<HTMLElement>("#settings-content"),
   status: requireElement<HTMLElement>("#settings-status"),
   resetAll: requireElement<HTMLButtonElement>("#settings-reset-all"),
+  exportUser: requireElement<HTMLButtonElement>("#settings-export-user"),
+  importUser: requireElement<HTMLInputElement>("#settings-import-user"),
 }, {
   preferences,
   bindings: () => {
