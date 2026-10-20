@@ -1638,18 +1638,29 @@ class BrowserAcceptance(unittest.TestCase):
 
     def assert_action_bar(self, locked_levels):
         slots = self.page.locator("#class-hud .action-slot")
-        expect(slots).to_have_count(4)
-        self.assertEqual(slots.locator(".slot-key").all_inner_texts(), ["1", "2", "3", "4"])
+        expect(slots).to_have_count(len(locked_levels) + 1)
+        self.assertEqual(slots.locator(".slot-key").all_inner_texts(), [str(i) for i in range(1, len(locked_levels) + 2)])
         states = slots.evaluate_all("els => els.map(el => el.dataset.state)")
         self.assertEqual(states[0] in ("ready", "cooldown"), True, f"Slot 1 is learned at level 1: {states}")
-        self.assertEqual(states[1:], ["locked"] * 3, f"Higher abilities are not learned yet: {states}")
+        self.assertEqual(states[1:], ["locked"] * len(locked_levels), f"Higher abilities are not learned yet: {states}")
         self.assertEqual(slots.locator(".slot-unlock").all_inner_texts()[1:], locked_levels)
 
     def test_warden_action_bar_rage_and_combat_text(self):
         """A level-1 Warden fights a wolf: auto-attack builds rage, key 1 spends it on Heroic Strike."""
         self.open("?debug")
         self.enter_beside_wolf()
-        self.assert_action_bar(["Lv 2", "Lv 4", "Lv 6"])
+        self.assert_action_bar(["Lv 2", "Lv 4", "Lv 6", "Lv 3"])
+        self.page.wait_for_function("Array.from(document.querySelectorAll('.action-slot .slot-icon img')).length === 4 && Array.from(document.querySelectorAll('.action-slot .slot-icon img')).every(i => i.complete && i.naturalWidth > 0)")
+        for identity in [1, 2, 3, 4]:
+            image = self.page.locator(f'.action-slot[data-ability="{identity}"] .slot-icon img')
+            expect(image).to_have_count(1)
+            self.assertIn(f"warden-{identity}-64", image.evaluate("i => i.currentSrc"))
+        expect(self.page.locator('.action-slot[data-ability="17"] .slot-icon svg')).to_have_count(1)
+        self.assertEqual(self.page.locator('.action-slot').first.get_attribute('data-resource'), 'short')
+        self.page.screenshot(path=str(ARTIFACTS / "warden-approved-desktop.png"))
+        self.page.locator('.action-slot[data-ability="2"]').click(button="right")
+        expect(self.page.locator("[data-part=tooltip]")).to_contain_text("Shield Bash")
+        self.page.mouse.move(0, 0)
         expect(self.page.locator("[data-part=player-resource-text]")).to_contain_text(re.compile(r"Rage \d+ / 100"))
         self.page.keyboard.press("KeyF")
         # The wolf closes in and two swings land within four seconds: hits build rage and combat
@@ -1675,6 +1686,28 @@ class BrowserAcceptance(unittest.TestCase):
             self.page.set_viewport_size({"width": width, "height": height})
             self.frames(3)
             self.page.screenshot(path=str(ARTIFACTS / f"class-kit-warden-{width}x{height}.png"))
+
+        # One real touch/high-DPI layout with the same approved artwork and long-press tooltip.
+        mobile = self.browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True, reduced_motion="reduce")
+        try:
+            page = mobile.new_page()
+            page.on("pageerror", lambda error: self.errors.append(str(error)))
+            page.goto(self.url + "?debug")
+            page.get_by_role("button", name=re.compile("^Enter World")).click()
+            expect(page.locator(".hud")).to_be_visible()
+            page.wait_for_function("Array.from(document.querySelectorAll('.action-slot .slot-icon img')).length === 4 && Array.from(document.querySelectorAll('.action-slot .slot-icon img')).every(i => i.complete && i.naturalWidth > 0)")
+            self.assertEqual(page.locator('.action-slot .slot-unlock').all_inner_texts()[1:], ["Lv 2", "Lv 4", "Lv 6", "Lv 3"])
+            for identity in [1, 2, 3, 4]:
+                self.assertIn(f"warden-{identity}-512", page.locator(f'.action-slot[data-ability="{identity}"] img').evaluate("i => i.currentSrc"))
+            page.screenshot(path=str(ARTIFACTS / "warden-approved-mobile-2x.png"))
+            button = page.locator('.action-slot[data-ability="3"]').bounding_box()
+            touch = mobile.new_cdp_session(page)
+            touch.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": button["x"] + button["width"] / 2, "y": button["y"] + button["height"] / 2}]})
+            expect(page.locator("[data-part=tooltip]")).to_contain_text("Rallying Cry")
+            touch.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+            page.screenshot(path=str(ARTIFACTS / "warden-approved-touch-tooltip.png"))
+        finally:
+            mobile.close()
 
     def set_pad(self, trigger, stick_y):
         """Replaces the page's gamepads with one standard pad holding LT at `trigger` and the right

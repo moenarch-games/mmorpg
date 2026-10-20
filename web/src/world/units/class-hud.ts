@@ -1,7 +1,7 @@
 import { findEntity, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type ResourceKind, type StrikeAim, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { abilitySlots } from "./abilities";
-import { auraPolarity, glyphOf } from "./ability-presentation";
+import { artworkOf, auraPolarity, glyphOf } from "./ability-presentation";
 import { cooldownSeconds, resourceName, slotState, sweepDegrees, targetDistanceUnits, tooltipText, type SlotState } from "./ability-state";
 import { auraLabel, auraTimer, sortAuras } from "./aura-display";
 import { castBarView } from "./cast-bar";
@@ -293,7 +293,21 @@ export class ClassHud {
       button.setAttribute("aria-label", `${ability?.name ?? "Ability"} (key ${KEYBIND_LABELS[index]})`);
       const icon = document.createElement("span");
       icon.className = "slot-icon";
-      icon.append(glyphElement(glyph, accent));
+      const artwork = artworkOf(id);
+      if (artwork) {
+        const image = document.createElement("img");
+        image.src = artwork.regular;
+        image.srcset = `${artwork.regular} 1x, ${artwork.highDpi} 2x`;
+        image.alt = "";
+        image.setAttribute("aria-hidden", "true");
+        image.draggable = false;
+        image.decoding = "async";
+        image.width = 64;
+        image.height = 64;
+        icon.append(image);
+      } else {
+        icon.append(glyphElement(glyph, accent));
+      }
       const sweep = document.createElement("span");
       sweep.className = "slot-sweep";
       const keybind = document.createElement("kbd");

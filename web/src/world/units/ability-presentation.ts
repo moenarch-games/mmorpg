@@ -92,6 +92,20 @@ export function glyphOf(ability: number): { glyph: string; accent: `#${string}` 
   return entry ?? { glyph: ORB, accent: "#9aa4ad" };
 }
 
+export type AbilityArtwork = { regular: string; highDpi: string };
+
+/** Exact owner-approved Warden derivatives, bundled by Vite; no runtime service. */
+const WARDEN_ARTWORK: ReadonlyMap<number, AbilityArtwork> = new Map([
+  [1, { regular: new URL("../../../assets/warden-icons/warden-1-64.png", import.meta.url).href, highDpi: new URL("../../../assets/warden-icons/warden-1-512.png", import.meta.url).href }],
+  [2, { regular: new URL("../../../assets/warden-icons/warden-2-64.png", import.meta.url).href, highDpi: new URL("../../../assets/warden-icons/warden-2-512.png", import.meta.url).href }],
+  [3, { regular: new URL("../../../assets/warden-icons/warden-3-64.png", import.meta.url).href, highDpi: new URL("../../../assets/warden-icons/warden-3-512.png", import.meta.url).href }],
+  [4, { regular: new URL("../../../assets/warden-icons/warden-4-64.png", import.meta.url).href, highDpi: new URL("../../../assets/warden-icons/warden-4-512.png", import.meta.url).href }],
+ ]);
+
+export function artworkOf(ability: number): AbilityArtwork | null {
+  return WARDEN_ARTWORK.get(ability) ?? null;
+}
+
 /** The catalog abilities this table does not describe (empty when complete). */
 export function undescribedAbilities(catalog: ContentCatalog): readonly AbilityRecord[] {
   return [...catalog.abilities.values()].filter((ability) => !ABILITY_PRESENTATION.has(ability.id));

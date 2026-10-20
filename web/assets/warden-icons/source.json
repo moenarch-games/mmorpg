@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/moritzbrantner/asset-tooling",
+  "commit": "11b19021779349fbb2b465956b5ff609b48f0fc5",
+  "bundle": "review/warden-icons/approved",
+  "profile": "approved-png-v1",
+  "manifestSha256": "a59d54c4191a07de613769726ad1c41513f5256f0289281fb0b000e7fcdeddc5",
+  "manifestByteLength": 53124,
+  "packagedVariants": ["64", "512"],
+  "attribution": "Original owner-selected artwork generated through ComfyUI with FLUX.2 [klein] 4B (Black Forest Labs, Apache-2.0). Exact approval, model revisions, workflow and derivative provenance are retained in producer-manifest.json. This consumer packages only the selected display derivatives; it does not claim to be the complete producer bundle."
+}
