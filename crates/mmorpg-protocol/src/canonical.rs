@@ -278,14 +278,8 @@ fn encode_player(
     payload.push(u8::from(landing.attacked_airborne));
     payload.extend_from_slice(&combat.strike_recovery.to_be_bytes());
     payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
-    match combat.combo {
-        None => payload.extend_from_slice(&[0; 7]),
-        Some(combo) => {
-            payload.push(1);
-            payload.extend_from_slice(&combo.target.get().to_be_bytes());
-            payload.extend_from_slice(&combo.elapsed.to_be_bytes());
-        }
-    }
+    encode_entity_ref(payload, combat.combo.map(|combo| combo.target));
+    payload.extend_from_slice(&combat.combo.map_or(0, |combo| combo.elapsed).to_be_bytes());
     payload.extend_from_slice(&player.chat_ready_at.to_be_bytes());
     payload.push(encode_u8_count(
         player.chat.len(),
@@ -749,15 +743,14 @@ fn decode_player(
     };
     let strike_recovery = u16::from_be_bytes(take(payload, offset)?);
     let repairing = crate::wire::decode_piece(u16::from_be_bytes(take(payload, offset)?));
-    let has_combo = read_bool(payload, offset)?;
-    let combo_target = CreatureId::new(u32::from_be_bytes(take(payload, offset)?));
+    let combo_target = decode_entity_ref(payload, offset)?;
     let combo_elapsed = u16::from_be_bytes(take(payload, offset)?);
-    let combo = if has_combo {
+    let combo = if let Some(target) = combo_target {
         Some(mmorpg_core::ComboOpening {
-            target: combo_target,
+            target,
             elapsed: combo_elapsed,
         })
-    } else if combo_target.get() != 0 || combo_elapsed != 0 {
+    } else if combo_elapsed != 0 {
         return Err(ProtocolError::new("absent combo has nonzero fields"));
     } else {
         None
@@ -1377,7 +1370,7 @@ mod tests {
                             attacked_airborne: false,
                         },
                         combo: Some(mmorpg_core::ComboOpening {
-                            target: CreatureId::new(1),
+                            target: EntityRef::Creature(CreatureId::new(1)),
                             elapsed: 3,
                         }),
                         strike_recovery: 4,
@@ -1904,5 +1897,21 @@ mod tests {
                 .message(),
             "snapshot content identity does not match the supplied zone content"
         );
+    }
+    #[test]
+    fn canonical_combo_keeps_player_and_creature_target_kinds_distinct() {
+        for target in [
+            EntityRef::Player(2),
+            EntityRef::Creature(CreatureId::new(2)),
+        ] {
+            let mut state = snapshot();
+            state.players[0].combat.combo = Some(mmorpg_core::ComboOpening { target, elapsed: 3 });
+            let decoded =
+                decode_canonical_snapshot(&encode_canonical_snapshot(&state).unwrap()).unwrap();
+            assert_eq!(
+                decoded.players[0].combat.combo,
+                state.players[0].combat.combo
+            );
+        }
     }
 }

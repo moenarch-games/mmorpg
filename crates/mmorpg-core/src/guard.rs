@@ -147,12 +147,13 @@ impl crate::ZoneSimulation {
         Ok((along >= length * i64::from(trig::cos(GUARD_ARC_HALF_WIDTH))).then_some(lane))
     }
 
-    /// Resolves a creature's rolled `amount` against the player's guard.
+    /// Resolves a melee impact against the player's guard, with an optional aimed lane.
     pub(crate) fn guard_outcome(
         &self,
         attacker: EntityRef,
         player_id: PlayerId,
         amount: u16,
+        strike_lane: Option<StrikeHeight>,
     ) -> Result<GuardOutcome, ZoneError> {
         let Some(lane) = self.guard_lane(player_id)? else {
             return Ok(GuardOutcome::Unguarded);
@@ -169,7 +170,7 @@ impl crate::ZoneSimulation {
         let feet = to.y - PLAYER_HALF_EXTENTS_UNITS[1];
         // Three quarters up the attacker's body.
         let contact = from.y - half.y + 2 * half.y * 3 / 4 - feet;
-        if lane_of(contact) != lane {
+        if strike_lane.unwrap_or_else(|| lane_of(contact)) != lane {
             return Ok(GuardOutcome::Unguarded);
         }
         // The bearing from the defender to the attacker against the arc.

@@ -461,6 +461,7 @@ impl ZoneSimulation {
             self.interest_work.bucket_removes += 1;
         }
         self.forget_caster(entity);
+        self.forget_forced_unit(entity);
         for creature in self.creatures.values_mut() {
             creature.forget(entity);
             // A cast at a departed player resolves against nobody.
@@ -476,6 +477,13 @@ impl ZoneSimulation {
             }
         }
         for player in self.players.values_mut() {
+            if player.cast.is_some_and(|cast| cast.target == Some(entity)) {
+                player.cast = None;
+            }
+            if player.combo.is_some_and(|combo| combo.target == entity) {
+                player.combo = None;
+            }
+
             if player.target == Some(entity) {
                 player.target = None;
                 player.auto_attack = false;

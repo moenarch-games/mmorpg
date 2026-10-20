@@ -304,8 +304,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 29;
-const SCHEMA_VERSION = 28;
+const WIRE_VERSION = 30;
+const SCHEMA_VERSION = 29;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;

@@ -294,7 +294,7 @@ impl ZoneSimulation {
     /// charge that reached its target ends and knocks it back.
     pub(crate) fn apply_forced_moves(&mut self) -> Result<(), ZoneError> {
         let units: Vec<_> = self.forced.keys().copied().collect();
-        for unit in units {
+        for (index, &unit) in units.iter().enumerate() {
             if !self.unit_alive_now(unit) {
                 self.forced.remove(&unit);
                 continue;
@@ -326,30 +326,47 @@ impl ZoneSimulation {
                 let reach = i64::from(crate::unit::PLAYER_REACH_UNITS);
                 if delta[0] * delta[0] + delta[1] * delta[1] <= reach * reach {
                     self.end_forced_move(unit);
-                    self.knock_back(target, delta, knockback);
+                    if self.knock_back(target, delta, knockback)
+                        && !units[index + 1..].contains(&target)
+                        && let Some(moving) = self
+                            .forced
+                            .get_mut(&target)
+                            .and_then(|state| state.moving.as_mut())
+                    {
+                        // A charge can create a move after this pass captured its keys.
+                        // Drive its first tick before physics and the stopped-motion check.
+                        moving.remaining = moving.remaining.saturating_sub(1);
+                        let velocity = moving.velocity;
+                        self.drive_forced_velocity(target, velocity)?;
+                    }
                     continue;
                 }
                 moving.velocity = scaled(delta, CHARGE_SPEED_UNITS).unwrap_or([0, 0]);
             }
             moving.remaining -= 1;
-            let body = body_id(unit);
-            let vertical = self
-                .world
-                .body(body)
-                .ok_or_else(|| ZoneError::new("forced unit physics body is missing"))?
-                .velocity()
-                .y;
-            self.world
-                .set_velocity(
-                    body,
-                    Vec3i::new(moving.velocity[0], vertical, moving.velocity[1]),
-                )
-                .map_err(crate::zone::physics_error)?;
+            self.drive_forced_velocity(unit, moving.velocity)?;
             if let Some(state) = self.forced.get_mut(&unit) {
                 state.moving = Some(moving);
             }
         }
         Ok(())
+    }
+
+    fn drive_forced_velocity(
+        &mut self,
+        unit: EntityRef,
+        velocity: [i32; 2],
+    ) -> Result<(), ZoneError> {
+        let body = body_id(unit);
+        let vertical = self
+            .world
+            .body(body)
+            .ok_or_else(|| ZoneError::new("forced unit physics body is missing"))?
+            .velocity()
+            .y;
+        self.world
+            .set_velocity(body, Vec3i::new(velocity[0], vertical, velocity[1]))
+            .map_err(crate::zone::physics_error)
     }
 
     /// After the physics step: a forced move the world stopped (a wall) ends early.
@@ -367,6 +384,25 @@ impl ZoneSimulation {
             })
             .collect();
         for unit in stopped {
+            self.end_forced_move(unit);
+        }
+    }
+
+    /// Retirement removes the unit's own move and cancels charges aimed at it.
+    pub(crate) fn forget_forced_unit(&mut self, departed: EntityRef) {
+        self.forced.remove(&departed);
+        let chargers: Vec<_> = self
+            .forced
+            .iter()
+            .filter_map(|(&unit, state)| {
+                state
+                    .moving
+                    .and_then(|moving| moving.charge)
+                    .is_some_and(|(target, _)| target == departed)
+                    .then_some(unit)
+            })
+            .collect();
+        for unit in chargers {
             self.end_forced_move(unit);
         }
     }

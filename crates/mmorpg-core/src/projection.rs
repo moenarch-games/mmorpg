@@ -390,6 +390,9 @@ impl ZoneSimulation {
                     level: player.level,
                     health_percent: health_percent(player.health, player.max_health()),
                     flags: EntityFlags {
+                        hostile: self.players_are_hostile(viewer, player_id),
+                        attackable: self.players_are_hostile(viewer, player_id)
+                            && player.is_alive(),
                         dead: !player.is_alive(),
                         in_combat: player.combat_timer > 0 || threatened.contains(&player_id),
                         targets_viewer,
