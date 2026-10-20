@@ -143,6 +143,8 @@ The standalone host, the native client and the browser's WASM local host share t
 
 The [opt-in broadleaf comparison](docs/reviews/greyhaven-nature/README.md) shows current and proposed scenery at the same real game camera; default art stays unchanged pending owner feedback.
 
+The [browser Warden hotbar](docs/WARDEN_ABILITY_ART.md) uses four owner-approved painted icons from asset-tooling, with build-time content checks and separate gameplay/UI overlays.
+
 ## Browser online mode
 
 The same page can join a real zone host instead of its local zone, over WebTransport with the `game-server` session protocol: the browser counterpart of the native client, and the transport swap [ADR 0002](docs/adr/0002-browser-embeds-zone-simulation.md) kept open. It is a development and self-hosting mode; the GitHub Pages build stays offline.
