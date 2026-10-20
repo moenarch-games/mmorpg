@@ -45,6 +45,17 @@ entity references and player-killer identity. Match phases, storm, elimination, 
 rewards and between-life loadout policy remain the consuming mode's responsibility.
 Do not mirror player health or physics into a competing match simulation.
 
+For a mode hazard such as Battle Royale's storm, the trusted host calls
+`apply_environmental_damage(player, amount)` on the zone. The mode owns eligibility,
+tick ordering and replay of these calls. The zone subtracts direct health damage,
+bypassing armor, guard and absorption, suppresses calm regeneration and uses normal
+death cleanup. It returns actual health lost; unknown players fail before mutation,
+and zero damage or dead players do nothing. This grants no attack credit, rage or
+rewards. Updated health is visible in the normal projection; lethal damage emits
+the existing `Died { killer: None }`, without a fabricated source or attack event.
+This host API adds no client command or snapshot field. Match recovery must retain
+the mode state that determines future hazard calls as well as the complete zone.
+
 The content fingerprint binds the arena policy: restoring arena state with safe content
 fails closed. Casts, poison auras, forced movement and player-target combo openings retain
 complete continuation. Snapshot wire v30 / schema 29 encode combo targets as entity

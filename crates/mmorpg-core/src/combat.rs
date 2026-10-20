@@ -644,6 +644,38 @@ impl ZoneSimulation {
         )
     }
 
+    /// Applies direct environmental health loss on behalf of the authoritative host.
+    ///
+    /// A mode owns hazard eligibility and scheduling (and must replay those calls).
+    /// This is not a player command. Damage bypasses armor, guard and absorption;
+    /// it grants no attack credit, rage or rewards. Projections expose the updated
+    /// health, and lethal damage uses normal death cleanup with an unknown killer.
+    /// Unknown players fail before mutation; zero damage and dead players are no-ops.
+    /// Returns health actually lost, clamped to remaining health.
+    pub fn apply_environmental_damage(
+        &mut self,
+        player_id: PlayerId,
+        amount: u32,
+    ) -> Result<u32, ZoneError> {
+        let player = self
+            .players
+            .get_mut(&player_id)
+            .ok_or_else(|| ZoneError::new("unknown player"))?;
+        let dealt = amount.min(player.health);
+        if dealt == 0 {
+            return Ok(0);
+        }
+        player.health -= dealt;
+        player.combat_timer = COMBAT_LINGER_TICKS;
+        player.calm_ticks = 0;
+        if player.health == 0 {
+            self.player_dies(player_id, None)?;
+        } else {
+            self.break_roots(EntityRef::Player(player_id));
+        }
+        Ok(dealt)
+    }
+
     /// Shared player damage resolution for eligible hostile sources.
     pub(crate) fn damage_player(
         &mut self,
@@ -696,7 +728,7 @@ impl ZoneSimulation {
         );
         self.observe_damage(source, target, dealt, critical);
         if dead {
-            return self.player_dies(player_id, source);
+            return self.player_dies(player_id, Some(source));
         }
         self.break_roots(target);
         Ok(())
@@ -924,7 +956,11 @@ impl ZoneSimulation {
 
     /// A dead player keeps its body where it fell, stops attacking, lets go
     /// of its held movement and pending jump, and leaves every threat table.
-    fn player_dies(&mut self, player_id: PlayerId, killer: EntityRef) -> Result<(), ZoneError> {
+    fn player_dies(
+        &mut self,
+        player_id: PlayerId,
+        killer: Option<EntityRef>,
+    ) -> Result<(), ZoneError> {
         let entity = EntityRef::Player(player_id);
         let body = body_id(entity);
         let vertical = self
@@ -966,13 +1002,7 @@ impl ZoneSimulation {
             player.jump_pending = false;
             player.guard = crate::GuardState::default();
         });
-        self.notify(
-            player_id,
-            ZoneEvent::Died {
-                entity,
-                killer: Some(killer),
-            },
-        );
+        self.notify(player_id, ZoneEvent::Died { entity, killer });
         Ok(())
     }
 
