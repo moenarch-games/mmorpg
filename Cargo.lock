@@ -1847,6 +1847,7 @@ name = "mmorpg-game-server"
 version = "0.1.0"
 dependencies = [
  "game-server",
+ "mmorpg-characters",
  "mmorpg-control-plane",
  "mmorpg-core",
  "mmorpg-protocol",

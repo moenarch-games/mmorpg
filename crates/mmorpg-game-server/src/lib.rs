@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 mod character_admission;
+mod dev_characters;
+pub use dev_characters::{DevCharacterService, DevCharacterStorage};
 mod fenced_runtime;
 pub use fenced_runtime::{FencedRuntimeError, FencedZoneRuntime};
 
@@ -57,6 +59,9 @@ impl std::error::Error for ZoneHostBuildError {
 pub struct ZoneGameServerAdapter {
     zone: ZoneSimulation,
     characters: std::collections::BTreeMap<game_server::PlayerId, mmorpg_core::CharacterId>,
+    parked_characters:
+        std::collections::BTreeMap<game_server::PlayerId, mmorpg_core::CharacterRecord>,
+    character_ownership: Option<Arc<std::fs::File>>,
 }
 
 impl ZoneGameServerAdapter {
@@ -65,6 +70,8 @@ impl ZoneGameServerAdapter {
         Self {
             zone: ZoneSimulation::new(zone_id),
             characters: Default::default(),
+            parked_characters: Default::default(),
+            character_ownership: None,
         }
     }
 
@@ -77,6 +84,8 @@ impl ZoneGameServerAdapter {
         Ok(Self {
             zone: ZoneSimulation::with_content(zone_id, content)?,
             characters: Default::default(),
+            parked_characters: Default::default(),
+            character_ownership: None,
         })
     }
 
@@ -167,7 +176,7 @@ impl GameSimulation for ZoneGameServerAdapter {
 
     fn remove_player(&mut self, player_id: game_server::PlayerId) -> bool {
         self.characters.remove(&player_id);
-        self.zone.remove_player(player_id)
+        self.parked_characters.remove(&player_id).is_some() || self.zone.remove_player(player_id)
     }
 
     fn apply_command(
@@ -176,6 +185,11 @@ impl GameSimulation for ZoneGameServerAdapter {
         sequence: u32,
         payload: &[u8],
     ) -> Result<(), SimulationError> {
+        if self.character_ownership.is_some() && !self.characters.contains_key(&player_id) {
+            return Err(SimulationError::new(
+                "claim a durable character before gameplay",
+            ));
+        }
         let command = decode_command(payload).map_err(map_protocol_error)?;
         self.zone
             .apply_command(player_id, sequence, command)
@@ -200,18 +214,8 @@ impl GameSimulation for ZoneGameServerAdapter {
 
     fn snapshot(&self) -> Result<SimulationSnapshot, SimulationError> {
         let snapshot = self.zone.snapshot().map_err(map_zone_error)?;
-        let mut payload = encode_canonical_snapshot(&snapshot).map_err(map_protocol_error)?;
-        // Private adapter metadata must be verified as well as gameplay. Logs
-        // without durable admissions keep their previous canonical bytes.
-        if !self.characters.is_empty() {
-            payload.extend_from_slice(b"MMOC\x01");
-            payload.extend_from_slice(&(self.characters.len() as u32).to_be_bytes());
-            for (player, character) in &self.characters {
-                payload.extend_from_slice(&player.to_be_bytes());
-                payload.push(character.as_str().len() as u8);
-                payload.extend_from_slice(character.as_str().as_bytes());
-            }
-        }
+        let canonical = encode_canonical_snapshot(&snapshot).map_err(map_protocol_error)?;
+        let payload = self.character_snapshot(canonical)?;
         Ok(SimulationSnapshot::new(snapshot.tick, payload))
     }
 
