@@ -1811,7 +1811,9 @@ dependencies = [
  "mmorpg-protocol",
  "mmorpg-scenery",
  "mmorpg-wasm",
+ "serde",
  "serde_json",
+ "settings-core",
  "tempfile",
  "three-d-animation",
  "three-d-camera",
@@ -3359,6 +3361,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "settings-core"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/settings.git?rev=38c468c5d1a380416df630d7980be5f0d16631c2#38c468c5d1a380416df630d7980be5f0d16631c2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

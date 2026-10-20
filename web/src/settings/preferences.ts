@@ -1,3 +1,4 @@
+import catalog from "../../../content/settings/catalog.json";
 import type {
   BrowserSettingsSession,
   PresentationEntry,
@@ -21,63 +22,14 @@ export const SETTING = {
 export const MOTION_CHOICES = ["system", "reduce", "full"] as const;
 export type MotionPreference = (typeof MOTION_CHOICES)[number];
 
-export const SETTINGS_DEFINITIONS: readonly SettingDefinition[] = [
-  {
-    id: SETTING.fieldOfView,
-    kind: { type: "integer", min: 40, max: 90 },
-    default: { type: "integer", value: 50 },
-    scope: "user",
-    apply_mode: "immediate",
-  },
-  {
-    id: SETTING.lookSensitivity,
-    kind: { type: "number", min: 0.25, max: 3 },
-    default: { type: "number", value: 1 },
-    scope: "user",
-    apply_mode: "immediate",
-  },
-  {
-    id: SETTING.reduceMotion,
-    kind: { type: "choice", options: [...MOTION_CHOICES] },
-    default: { type: "choice", value: "system" },
-    scope: "user",
-    apply_mode: "immediate",
-  },
-];
+if (catalog.schema_version !== 1) throw new Error("Unsupported MMORPG settings catalog");
+const browserEntries = catalog.entries.filter((entry) => entry.target === "shared" || entry.target === "browser");
 
-export const SETTINGS_PRESENTATION: readonly PresentationEntry[] = [
-  {
-    id: SETTING.fieldOfView,
-    metadata: {
-      label_key: "settings.camera.field_of_view.label",
-      category_key: "settings.category.camera",
-      order: 10,
-      discoverability: "primary",
-      search_keys: ["settings.search.fov"],
-    },
-  },
-  {
-    id: SETTING.lookSensitivity,
-    metadata: {
-      label_key: "settings.controls.look_sensitivity.label",
-      category_key: "settings.category.controls",
-      order: 10,
-      discoverability: "primary",
-      search_keys: ["settings.search.mouse"],
-    },
-  },
-  {
-    id: SETTING.reduceMotion,
-    metadata: {
-      label_key: "settings.accessibility.reduce_motion.label",
-      description_key: "settings.accessibility.reduce_motion.description",
-      category_key: "settings.category.accessibility",
-      order: 10,
-      discoverability: "primary",
-      search_keys: ["settings.search.animation"],
-    },
-  },
-];
+// The checked-in catalog is shared with native's settings-core adapter. The
+// foundation validates definitions when opening a session; this assertion only
+// bridges JSON's widened string types to its public discriminated unions.
+export const SETTINGS_DEFINITIONS = browserEntries.map((entry) => entry.definition) as readonly SettingDefinition[];
+export const SETTINGS_PRESENTATION = browserEntries.map((entry) => entry.presentation) as readonly PresentationEntry[];
 
 /** English strings for the catalog's localization keys. */
 export const SETTINGS_TEXT: Readonly<Record<string, string>> = {

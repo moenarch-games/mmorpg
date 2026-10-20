@@ -9,6 +9,8 @@ publish.workspace = true
 [dependencies]
 getrandom = "=0.4.3"
 serde_json = "=1.0.154"
+serde = { version = "=1.0.229", features = ["derive"] }
+settings-core = { git = "https://github.com/moritzbrantner/settings.git", rev = "38c468c5d1a380416df630d7980be5f0d16631c2" }
 gltf = { version = "=1.4.1", default-features = false, features = ["import", "utils", "names"] }
 game-server.workspace = true
 mmorpg-core.workspace = true
