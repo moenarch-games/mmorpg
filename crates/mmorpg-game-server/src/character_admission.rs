@@ -7,6 +7,13 @@ use mmorpg_protocol::{
 
 use crate::{ZoneGameServerAdapter, map_protocol_error, map_zone_error};
 
+pub(super) struct ParkedCharacter {
+    pub record: CharacterRecord,
+    // Keeps transport snapshots valid while off-tick logout storage finishes.
+    // It is derived on replay, and never restores a live authoritative body.
+    pub projection: game_server::SimulationSnapshot,
+}
+
 pub(crate) struct StoredCharacter {
     pub player: game_server::PlayerId,
     pub parked: bool,
@@ -47,8 +54,10 @@ impl ZoneGameServerAdapter {
                 .zone
                 .capture_character(player, id)
                 .map_err(map_zone_error)?;
+            let projection = game_server::GameSimulation::snapshot_for(self, player)?;
             self.zone.remove_player(player);
-            self.parked_characters.insert(player, record);
+            self.parked_characters
+                .insert(player, ParkedCharacter { record, projection });
             return Ok(());
         }
         let Some(bytes) = payload.strip_prefix(&[1, 1]) else {
@@ -102,7 +111,9 @@ impl ZoneGameServerAdapter {
             // Only parked (removed) bodies need a separate full record.
             let parked = self.parked_characters.get(player);
             let record = match parked {
-                Some(record) => encode_character_record(record).map_err(map_protocol_error)?,
+                Some(parked) => {
+                    encode_character_record(&parked.record).map_err(map_protocol_error)?
+                }
                 None => id.as_str().as_bytes().to_vec(),
             };
             bytes.extend_from_slice(&player.to_be_bytes());
@@ -242,8 +253,27 @@ mod tests {
         let record = record();
         let input = ZoneGameServerAdapter::character_admission_input(&record).unwrap();
         runtime.submit_host_input(lease.player_id, &input).unwrap();
+        let last_projection = runtime.snapshot_for(lease.player_id).unwrap();
         runtime.submit_host_input(lease.player_id, &[1, 2]).unwrap();
+        // A heartbeat already in transit must not interrupt the pending logout.
+        runtime
+            .submit_command(
+                lease.player_id,
+                lease.connection_epoch,
+                1,
+                &mmorpg_protocol::encode_command(mmorpg_core::ZoneCommand::Move {
+                    forward: 1,
+                    strafe: 0,
+                    facing: 0,
+                }),
+            )
+            .unwrap();
         let snapshot = runtime.advance_tick().unwrap();
+        // Storage may still be committing when the next transport snapshot runs.
+        assert_eq!(
+            runtime.snapshot_for(lease.player_id).unwrap(),
+            last_projection
+        );
         let stored = ZoneGameServerAdapter::stored_characters(&snapshot.payload).unwrap();
         assert_eq!(stored.len(), 1);
         assert!(stored[0].parked);

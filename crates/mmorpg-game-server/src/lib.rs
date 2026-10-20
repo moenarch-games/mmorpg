@@ -62,7 +62,7 @@ pub struct ZoneGameServerAdapter {
     zone: ZoneSimulation,
     characters: std::collections::BTreeMap<game_server::PlayerId, mmorpg_core::CharacterId>,
     parked_characters:
-        std::collections::BTreeMap<game_server::PlayerId, mmorpg_core::CharacterRecord>,
+        std::collections::BTreeMap<game_server::PlayerId, character_admission::ParkedCharacter>,
     character_ownership: Option<Arc<std::fs::File>>,
 }
 
@@ -193,6 +193,10 @@ impl GameSimulation for ZoneGameServerAdapter {
             ));
         }
         let command = decode_command(payload).map_err(map_protocol_error)?;
+        if self.parked_characters.contains_key(&player_id) {
+            // Ignore in-flight gameplay after logout without interrupting its reply.
+            return Ok(());
+        }
         self.zone
             .apply_command(player_id, sequence, command)
             .map_err(map_zone_error)
@@ -225,6 +229,9 @@ impl GameSimulation for ZoneGameServerAdapter {
         &self,
         player_id: game_server::PlayerId,
     ) -> Result<SimulationSnapshot, SimulationError> {
+        if let Some(parked) = self.parked_characters.get(&player_id) {
+            return Ok(parked.projection.clone());
+        }
         let snapshot = self
             .zone
             .snapshot_for_player(player_id)
