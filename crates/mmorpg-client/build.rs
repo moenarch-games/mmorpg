@@ -1,9 +1,7 @@
-//! Embeds asset-tooling's bundles from the unpacked releases that
-//! `scripts/fetch-bundles.sh` places in `web/public`: the Ranger humanoid
-//! (Atlas 6.3.7) character, the Warden's sword and shield entries with the
-//! resources the manifest declares and the character's `humanoid-sockets`
-//! descriptor; and the Greyhaven inn's drawn entries (#158). Acquisition stays
-//! in that script; the build only reads local files.
+//! Embeds locally acquired assets; builds perform no network acquisition.
+//! Ranger default models and the shared clip library are standard GLBs prepared by
+//! asset-tooling (`scripts/prepare-ranger-native.sh`), with original socket metadata.
+//! The Greyhaven inn retains its existing manifest/resource embedding path.
 #[path = "build/warden_icons.rs"]
 mod warden_icons;
 
@@ -31,63 +29,53 @@ fn main() {
     warden_icons::validate(&art)
         .unwrap_or_else(|cause| panic!("Warden artwork validation failed: {cause}"));
     let bundle = manifest_dir.join("../../web/public/characters/humanoid.ranger.male");
-    for watched in ["RELEASE", "manifest.json"] {
-        println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
-    }
-    let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
-        panic!("the Ranger character bundle is missing ({error}); run scripts/fetch-bundles.sh")
-    });
-    let manifest: serde_json::Value =
-        serde_json::from_str(&manifest).expect("the bundle manifest is JSON");
-    let entry = |key: &str| {
-        manifest["assets"]
-            .as_array()
-            .and_then(|assets| {
-                assets
-                    .iter()
-                    .find(|asset| asset["key"] == key && asset["variant"] == "default")
-            })
-            .unwrap_or_else(|| panic!("the bundle declares {key}"))
-            .clone()
-    };
-    let mut files = Vec::new();
-    let mut code = String::new();
+    println!(
+        "cargo:rerun-if-changed={}",
+        bundle.join("RELEASE").display()
+    );
+    let index = bundle.join("humanoid-ranger-male.index.json");
+    println!("cargo:rerun-if-changed={}", index.display());
+    let index: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(index)
+            .expect("Ranger downloads are missing; run scripts/fetch-bundles.sh"),
+    )
+    .expect("Ranger download index is JSON");
+    assert_eq!(index["schema"], "asset-downloads-v1");
+    let character = index["entries"]
+        .as_array()
+        .expect("download entries")
+        .iter()
+        .find(|entry| entry["key"] == CHARACTER && entry["variant"] == "default")
+        .expect("default character entry");
+    let sockets = character["files"]
+        .as_array()
+        .expect("entry files")
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .find(|file| file.ends_with(".humanoid-sockets.json"))
+        .expect("character sockets")
+        .to_owned();
+    let clips = character["clips"]
+        .as_str()
+        .expect("shared clips")
+        .to_owned();
+    let mut files = vec![
+        sockets.clone(),
+        format!("native/{}", clips.replace(".glb", ".native.glb")),
+    ];
+    let mut code = format!(
+        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {:?};\n",
+        format!("native/{}", clips.replace(".glb", ".native.glb"))
+    );
     for (name, key) in [
         ("CHARACTER", CHARACTER),
         ("SWORD", SWORD),
         ("SHIELD", SHIELD),
     ] {
-        let entry = entry(key);
-        let path = entry["path"]
-            .as_str()
-            .expect("the entry names its glTF")
-            .to_owned();
+        let path = format!("native/{key}.default.native.glb");
         code.push_str(&format!("pub const {name}: &str = {path:?};\n"));
         files.push(path);
-        for resource in entry["resources"]
-            .as_array()
-            .expect("the entry lists resources")
-        {
-            files.push(
-                resource["path"]
-                    .as_str()
-                    .expect("a resource path")
-                    .to_owned(),
-            );
-        }
     }
-    let sockets = entry(CHARACTER)["attachments"]
-        .as_array()
-        .and_then(|attachments| {
-            attachments
-                .iter()
-                .find(|attachment| attachment["name"] == "humanoid-sockets")
-        })
-        .and_then(|attachment| attachment["path"].as_str())
-        .expect("the character carries its humanoid-sockets descriptor")
-        .to_owned();
-    code.push_str(&format!("pub const SOCKETS: &str = {sockets:?};\n"));
-    files.push(sockets);
     write("ranger_bundle.rs", &bundle, code, files);
     inn(&manifest_dir.join("../../web/public/buildings/greyhaven.inn"));
 }
@@ -134,7 +122,7 @@ fn write(name: &str, bundle: &Path, mut code: String, mut files: Vec<String>) {
         let absolute = bundle
             .join(file)
             .canonicalize()
-            .unwrap_or_else(|error| panic!("bundle file {file} is missing ({error})"));
+            .unwrap_or_else(|error| panic!("bundle file {file} is missing ({error}); run scripts/fetch-bundles.sh and scripts/prepare-ranger-native.sh"));
         code.push_str(&format!(
             "    ({file:?}, include_bytes!({:?})),\n",
             absolute.display().to_string()

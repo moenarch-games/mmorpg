@@ -1,5 +1,11 @@
-import { readFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync } from "node:fs";
 import { defineConfig, searchForWorkspaceRoot } from "vite";
+
+// Use the transcoder shipped with the pinned Three.js KTX2Loader.
+mkdirSync(new URL("./public/basis/", import.meta.url), { recursive: true });
+for (const name of ["basis_transcoder.js", "basis_transcoder.wasm"]) {
+  cpSync(new URL(`./node_modules/three/examples/jsm/libs/basis/${name}`, import.meta.url), new URL(`./public/basis/${name}`, import.meta.url));
+}
 
 const certificate = process.env.MMORPG_DEV_WEB_HTTPS_CERT;
 const privateKey = process.env.MMORPG_DEV_WEB_HTTPS_KEY;
@@ -20,7 +26,7 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      input: { game: "index.html" },
+      input: { game: "index.html", rangerLoader: "ranger-loader.html" },
       output: {
         manualChunks(id) {
           if (id.endsWith("/three/build/three.core.js")) return "three-core";

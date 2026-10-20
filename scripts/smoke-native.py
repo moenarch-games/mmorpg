@@ -29,6 +29,7 @@ def main():
     root = Path(__file__).resolve().parent.parent
     # The client build embeds the asset-tooling Ranger and inn bundles; fetching is idempotent.
     subprocess.run([str(root / "scripts" / "fetch-bundles.sh")], cwd=root, check=True, timeout=600)
+    subprocess.run([str(root / "scripts" / "prepare-ranger-native.sh")], cwd=root, check=True, timeout=600)
     subprocess.run(["cargo", "build", "--locked", "-p", "mmorpg-client", "-p", "mmorpg-game-server"], cwd=root, check=True, timeout=600)
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--locked", "--format-version", "1"], cwd=root, timeout=30))
     suffix = ".exe" if os.name == "nt" else ""

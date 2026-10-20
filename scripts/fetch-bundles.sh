@@ -28,5 +28,5 @@ fetch() {
   echo "Fetched ${tag} into ${dest}"
 }
 
-fetch humanoid-ranger-male-v7 humanoid.ranger.male characters/humanoid.ranger.male
+python3 "${ROOT_DIR}/scripts/fetch-ranger.py"
 fetch greyhaven-inn-v1 greyhaven.inn buildings/greyhaven.inn

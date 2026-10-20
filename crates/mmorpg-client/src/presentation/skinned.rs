@@ -177,6 +177,14 @@ pub(super) struct Model {
 
 impl Model {
     pub fn parse(bytes: &[u8], rest_clip: &str) -> Result<Self, gltf::Error> {
+        Self::parse_with_clips(bytes, rest_clip, None)
+    }
+
+    fn parse_with_clips(
+        bytes: &[u8],
+        rest_clip: &str,
+        library: Option<&[u8]>,
+    ) -> Result<Self, gltf::Error> {
         let (document, buffers, images) = gltf::import_slice(bytes)?;
         let count = document.nodes().len();
         let mut rest = Vec::with_capacity(count);
@@ -268,11 +276,30 @@ impl Model {
             }
         }
         let mut clips = BTreeMap::new();
-        for animation in document.animations() {
+        let library = library.map(gltf::import_slice).transpose()?;
+        let (animation_document, animation_buffers) = library
+            .as_ref()
+            .map(|(document, buffers, _)| (document, buffers))
+            .unwrap_or((&document, &buffers));
+        for animation in animation_document.animations() {
             let mut channels = Vec::new();
             let mut duration = 0_f32;
             for channel in animation.channels() {
-                let reader = channel.reader(|b| Some(&buffers[b.index()]));
+                let node = if library.is_some() {
+                    let name = channel
+                        .target()
+                        .node()
+                        .name()
+                        .expect("shared animation targets a named joint");
+                    document
+                        .nodes()
+                        .find(|node| node.name() == Some(name))
+                        .expect("shared animation joint exists in the character")
+                        .index()
+                } else {
+                    channel.target().node().index()
+                };
+                let reader = channel.reader(|b| Some(&animation_buffers[b.index()]));
                 let (Some(times), Some(outputs)) = (reader.read_inputs(), reader.read_outputs())
                 else {
                     continue;
@@ -298,7 +325,7 @@ impl Model {
                 }
                 duration = duration.max(*times.last().unwrap_or(&0.));
                 channels.push(Channel {
-                    node: channel.target().node().index(),
+                    node,
                     path,
                     step: interpolation == gltf::animation::Interpolation::Step,
                     times,
@@ -740,8 +767,8 @@ impl Equipment {
             )
             .expect("the sockets descriptor is JSON");
             let item = |entry: &str, socket_id: &str| {
-                let model = Model::parse(&bundle_glb(entry, ranger_bundle::FILES), "")
-                    .expect("a bundle item is valid glTF");
+                let model =
+                    Model::parse(ranger_file(entry), "").expect("a bundle item is valid glTF");
                 let (joint, matrix) = socket(&descriptor, socket_id);
                 (model, joint, matrix)
             };
@@ -778,12 +805,20 @@ impl Equipment {
     }
 }
 
+fn ranger_file(path: &str) -> &'static [u8] {
+    ranger_bundle::FILES
+        .iter()
+        .find(|(name, _)| *name == path)
+        .map(|(_, bytes)| *bytes)
+        .expect("prepared Ranger file is embedded")
+}
+
 /// The model file of an imported unit kind: asset-tooling's Ranger humanoid for players
 /// (Atlas 6.3.7) and the bundled Quaternius CC0 animals (Atlas 6.3.6; see
 /// `assets/quaternius/PROVENANCE.md`).
 fn source(kind: Kind) -> std::borrow::Cow<'static, [u8]> {
     match kind {
-        Kind::Ranger => bundle_glb(ranger_bundle::CHARACTER, ranger_bundle::FILES).into(),
+        Kind::Ranger => ranger_file(ranger_bundle::CHARACTER).into(),
         Kind::Wolf => bundled!("Wolf.glb").into(),
         Kind::Rat => bundled!("Rat.glb").into(),
         Kind::Pig => bundled!("Pig.glb").into(),
@@ -799,9 +834,36 @@ pub(super) fn asset(kind: Kind) -> &'static Asset {
         .position(|candidate| *candidate == kind)
         .expect("every kind is listed");
     slots[index].get_or_init(|| Asset {
-        model: Model::parse(&source(kind), kind.clips().idle)
-            .expect("an imported unit model is valid glTF"),
+        model: Model::parse_with_clips(
+            &source(kind),
+            kind.clips().idle,
+            matches!(kind, Kind::Ranger).then(|| ranger_file(ranger_bundle::CLIPS)),
+        )
+        .expect("an imported unit model is valid glTF"),
     })
+}
+
+#[cfg(test)]
+mod rolling_ranger_tests {
+    use super::*;
+
+    #[test]
+    fn shared_ranger_clips_bind_to_character_joints() {
+        let model = &asset(Kind::Ranger).model;
+        let clip = &model.clips["Walk_Loop"];
+        assert!(clip.duration > 0.);
+        assert!(!clip.channels.is_empty());
+        assert!(
+            clip.channels
+                .iter()
+                .all(|channel| channel.node < model.rest.len())
+        );
+        assert!(model.height > 0.);
+        assert_ne!(
+            model.skin("Walk_Loop", 0.),
+            model.skin("Walk_Loop", clip.duration * 0.25)
+        );
+    }
 }
 
 #[cfg(test)]
