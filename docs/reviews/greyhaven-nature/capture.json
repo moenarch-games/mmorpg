@@ -1,0 +1,65 @@
+{
+  "camera": "woods",
+  "presentationSeconds": 120,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "candidate": {
+    "enabled": true,
+    "loaded": true,
+    "key": "greyhaven.nature.tree.broadleaf/default",
+    "placementIndex": 208,
+    "placement": {
+      "kind": "tree-oak",
+      "position": [
+        -5991,
+        0,
+        1027
+      ],
+      "yaw": 0,
+      "scale": 1,
+      "halfExtents": [
+        37,
+        250,
+        37
+      ],
+      "collider": {
+        "id": 1115,
+        "center": [
+          -5991,
+          250,
+          1027
+        ],
+        "halfExtents": [
+          37,
+          250,
+          37
+        ]
+      }
+    },
+    "matrix": [
+      0.6882515947964977,
+      0,
+      0,
+      0,
+      0,
+      0.6882515947964977,
+      0,
+      0,
+      0,
+      0,
+      0.6882515947964977,
+      0,
+      -59.91,
+      0,
+      10.27,
+      1
+    ]
+  },
+  "self": {
+    "x": -15.5,
+    "z": 12.5,
+    "facing": 0
+  }
+}

@@ -295,6 +295,27 @@ pub fn static_scene() -> String {
     static_scene::layout().to_owned()
 }
 
+/// Review-only static presentation with one oak omitted before spatial batching.
+/// The hosted scenery and simulation remain untouched. No animation belongs to an oak.
+#[wasm_bindgen(js_name = reviewStaticSceneWithoutOak)]
+pub fn review_static_scene_without_oak(index: usize) -> Result<String, JsValue> {
+    let mut scenery = scenery::hosted_scenery().clone();
+    if !scenery.props.get(index).is_some_and(|prop| {
+        prop.kind == mmorpg_scenery::PropKind::Tree(mmorpg_scenery::TreeVariant::Oak)
+    }) {
+        return Err(JsValue::from_str(
+            "The review placement must be an existing oak",
+        ));
+    }
+    scenery.props.remove(index);
+    let scene = mmorpg_presentation::StaticScene::new(&scenery);
+    let (layout, vertices, indices, models) = static_scene::encode(&scene);
+    serde_json::to_string(&serde_json::json!({
+        "layout": layout, "vertices": vertices, "indices": indices, "models": models,
+    }))
+    .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
 /// Positions, normals and optional colours of every static-scene geometry.
 #[wasm_bindgen(js_name = staticSceneVertices)]
 pub fn static_scene_vertices() -> Vec<f32> {

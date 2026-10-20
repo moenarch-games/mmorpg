@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { loadStaticBundle } from "./static-bundle";
 import type { InnPresenterHandle } from "./scenery";
 
 /** The unpacked `greyhaven-inn-v1` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
@@ -39,26 +39,7 @@ export class InnBuilding {
   }
 
   async #load(): Promise<void> {
-    const url = (path: string) => new URL(path, new URL(INN_BUNDLE, window.location.href)).href;
-    const response = await fetch(url("manifest.json"));
-    if (!response.ok) {
-      throw new Error(`Inn bundle manifest is missing (${response.status}); run scripts/fetch-bundles.sh.`);
-    }
-    const assets = ((await response.json()) as { assets?: { key: string; variant: string; path: string }[] }).assets ?? [];
-    const loader = new GLTFLoader();
-    const roots: THREE.Object3D[] = [];
-    for (const key of this.#entries) {
-      const entry = assets.find((asset) => asset.key === key && asset.variant === "default");
-      if (!entry) {
-        throw new Error(`The inn bundle has no ${key} entry.`);
-      }
-      // Plain three.js loading of the bundle's glTF (asset-tooling Atlas 7.1.1, #244).
-      const root = (await loader.loadAsync(url(entry.path))).scene;
-      root.name = key;
-      root.matrixAutoUpdate = false;
-      roots.push(root);
-    }
-    this.#roots = roots;
+    this.#roots = await loadStaticBundle(INN_BUNDLE, this.#entries);
     this.#changed = true;
     if (this.#frame) { this.#place(this.#frame); }
   }

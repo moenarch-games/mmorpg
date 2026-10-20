@@ -28,6 +28,7 @@ import {
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
 import { ImpactEffects, impactCues } from "./impact-effects";
 import { InnBuilding, INN_DOOR } from "./inn-building";
+import { NatureReview } from "./nature-review";
 import { SkyLayer } from "./sky";
 import { SharedUnits, type ImportedModelKind, type ViewerLook } from "./unit-presenter";
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
@@ -230,6 +231,7 @@ export class WorldView {
   readonly #models = new QuaterniusUnits((kind) => this.#restClip(kind));
   /** The walk-in inn (#158), drawn from its asset-tooling bundle once loaded. */
   #inn: InnBuilding | null = null;
+  #natureReview: NatureReview | null = null;
   #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
@@ -378,6 +380,7 @@ export class WorldView {
     this.#presentationFingerprint = scenery.presentationFingerprint;
     this.#reliefAt = world.scenery.reliefAt;
     this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
+    this.#natureReview = new NatureReview(world.scenery, this.#scene);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new InnBuilding(world.scenery.inn.presenter(), world.scenery.inn.entries());
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
@@ -515,7 +518,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), this.#impacts.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root] });
     }
   }
 
@@ -809,8 +812,9 @@ export class WorldView {
     this.#lastCamera = camera;
     const models = this.#models.roots();
     const inn = this.#inn?.roots() ?? { roots: [], changed: false };
-    if (models.changed || inn.changed || !this.#impacts.root.parent) {
-      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, this.#impacts.root] });
+    const nature = this.#natureReview?.roots() ?? { roots: [], changed: false };
+    if (models.changed || inn.changed || nature.changed || !this.#impacts.root.parent) {
+      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, ...nature.roots, this.#impacts.root] });
     }
     this.#lastWork = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
@@ -1017,6 +1021,14 @@ export class WorldView {
         vertexColoredNodes: this.#lastSceneryNodes.filter((node) => node.geometry.kind === "mesh" && node.geometry.colors?.length).length,
         emissiveNodes: this.#lastSceneryNodes.filter((node) => node.emissive !== undefined).length,
       }),
+      /** Explicit review only: no setting is persisted, and ordinary entry keeps current art. */
+      setNatureCandidate: async (enabled: boolean) => {
+        if (!this.#natureReview) { throw new Error("Enter the world before reviewing scenery."); }
+        this.#scene = await this.#natureReview.setEnabled(enabled);
+        this.#sceneryFrame = new SceneryFrame(this.#scene);
+        return this.#natureReview.observe();
+      },
+      natureCandidate: () => this.#natureReview?.observe() ?? null,
       viewpoints: Object.keys(DEBUG_VIEWPOINTS),
       flyTo: (name: string) => {
         const viewpoint = DEBUG_VIEWPOINTS[name];

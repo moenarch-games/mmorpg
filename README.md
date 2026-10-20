@@ -141,6 +141,8 @@ Building the page or the native client first needs the asset-tooling bundles: `s
 
 The standalone host, the native client and the browser's WASM local host share the Rust Greyhaven Vale content (`mmorpg_core::greyhaven_vale`). Snapshot schema/wire version 15 carries the viewer's own state (with class, resource, cast, cooldowns, auras and melee range), its target's target, cast and auras, the self sheet (bag, equipment, stat totals and the quest log with completed quests and quest-NPC markers), bounded feedback events, heard chat lines and emotes and compact, priority-ordered unit records within a one-datagram byte budget, and command wire version 9 carries `Move`, `Jump`, `SelectTarget`, `StartAttack`, `StopAttack`, `ReleaseSpirit`, `MoveItem`, death-fenced `Loot`, `UseAbility`, `CancelCast`, `ChooseClass`, `EquipItem`, `UnequipItem`, `BuyItem`, `SellItem`, `Chat`, `Emote`, `AcceptQuest`, `CompleteQuest` and `AbandonQuest`; v14 and earlier snapshots, v8 and earlier commands and old recovery bundles require an explicit migration decision. See [the wire specification](docs/PROTOCOL.md).
 
+The [opt-in broadleaf comparison](docs/reviews/greyhaven-nature/README.md) shows current and proposed scenery at the same real game camera; default art stays unchanged pending owner feedback.
+
 ## Browser online mode
 
 The same page can join a real zone host instead of its local zone, over WebTransport with the `game-server` session protocol: the browser counterpart of the native client, and the transport swap [ADR 0002](docs/adr/0002-browser-embeds-zone-simulation.md) kept open. It is a development and self-hosting mode; the GitHub Pages build stays offline.
