@@ -48,4 +48,56 @@ describe("shared renderer adoption", () => {
     expect(picker.pick(point, camera, [], [player], [], [], [], new Set([2]))).toEqual({ kind: "player", id: 2 });
     picker.reset();
   });
+}
+  test("assisted selection catches a near miss but never selects through opaque geometry", () => {
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.set(0, 1, 10);
+    camera.lookAt(0, 1, 0);
+    camera.updateMatrixWorld(true);
+    const body: RendererSceneNode = { id: "unit-creature-108-body", geometry: { kind: "box", size: [1, 2, 1] },
+      color: "#ffffff", transform: { translation: [0, 1, 0] } };
+    const wall: RendererSceneNode = { id: "wall", geometry: { kind: "box", size: [2, 3, 1] },
+      color: "#777777", transform: { translation: [0, 1, 5] } };
+    const picker = new WorldPicking();
+    const nearMiss = new THREE.Vector2(0.11, 0);
+    const viewport = { width: 800, height: 800 };
+    const pick = (scenery: RendererSceneNode[], units: RendererSceneNode[] = [body]) =>
+      picker.pick(nearMiss, camera, scenery, units, [], [], [], new Set(), viewport);
+    expect(picker.pick(nearMiss, camera, [], [body])).toBeNull(); // Exact geometry misses.
+    expect(pick([])).toEqual({ kind: "creature", id: 108 });
+    expect(pick([wall])).toBeNull();
+    expect(pick([], [{ ...wall, id: "unit-player-2-body" }, body])).toBeNull();
+    expect(picker.pick(new THREE.Vector2(0.5, 0), camera, [], [body], [], [], [], new Set(), viewport)).toBeNull();
+    picker.reset();
+  });
+
+  test("direct hits beat nearby proxies; imported models and doors also have assisted hitboxes", () => {
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.set(0, 1, 10);
+    camera.lookAt(0, 1, 0);
+    camera.updateMatrixWorld(true);
+    const visible: RendererSceneNode = { id: "unit-creature-108-body", geometry: { kind: "box", size: [1, 2, 1] },
+      color: "#ffffff", transform: { translation: [0, 1, 0] } };
+    const nearby: RendererSceneNode = { ...visible, id: "unit-npc-2-body", transform: { translation: [0.55, 1, 5] } };
+    const viewport = { width: 800, height: 800 };
+    const picker = new WorldPicking();
+    expect(picker.pick(new THREE.Vector2(0, 0), camera, [], [visible, nearby], [], [], [], new Set(), viewport))
+      .toEqual({ kind: "creature", id: 108 });
+
+    const model = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2, 0.2), new THREE.MeshBasicMaterial());
+    model.position.set(0, 1, 0);
+    model.updateMatrixWorld(true);
+    const entity = { kind: "npc" as const, id: 7 };
+    const models = [{ entity, object: model }];
+    expect(picker.pick(new THREE.Vector2(0.035, 0), camera, [], [], [], models)).toBeNull();
+    expect(picker.pick(new THREE.Vector2(0.035, 0), camera, [], [], [], models, [], new Set(), viewport))
+      .toEqual(entity);
+    expect(picker.pick(new THREE.Vector2(0.035, 0), camera, [nearby], [], [], models, [], new Set(), viewport))
+      .toBeNull();
+
+    const door = { door: 1, object: model };
+    expect(picker.pick(new THREE.Vector2(0.035, 0), camera, [], [], [], [], [door], new Set(), viewport))
+      .toEqual({ kind: "door", id: 1 });
+    picker.reset();
+  });
 });
