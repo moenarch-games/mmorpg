@@ -123,7 +123,7 @@ fn slots_hold_the_projected_class_kit_in_catalog_order() {
     for (class, expected) in [
         (PlayerClass::Warden, &[1, 2, 3, 4, 17][..]),
         (PlayerClass::Ranger, &[5, 6, 7, 8, 19, 20]),
-        (PlayerClass::Arcanist, &[9, 10, 11, 12, 16]),
+        (PlayerClass::Arcanist, &[9, 10, 11, 12, 16, 21, 22, 23]),
     ] {
         let hud = CombatHud::from_projection(&received(&viewer_of(class)));
         assert_eq!(slot_ids(&hud), expected, "{class:?}");
@@ -317,7 +317,7 @@ fn a_channel_drains_and_marks_its_slot() {
     let casting: Vec<_> = hud.slots.iter().map(|slot| slot.casting).collect();
     assert_eq!(
         casting,
-        [false, false, false, true, false],
+        [false, false, false, true, false, false, false, false],
         "only Blizzard's slot"
     );
 }
@@ -391,9 +391,9 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
     assert_close(hud.cast_fill(), 0.25, "Firebolt 15 of 60 ticks");
     assert_eq!(hud.resource, projection.viewer.resource);
     assert_close(hud.resource_fill(), 1.0, "a cast pays on completion");
-    assert_eq!(slot_ids(&hud), [9, 10, 11, 12, 16]);
+    assert_eq!(slot_ids(&hud), [9, 10, 11, 12, 16, 21, 22, 23]);
     let casting: Vec<_> = hud.slots.iter().map(|slot| slot.casting).collect();
-    assert_eq!(casting, [true, false, false, false, false]);
+    assert_eq!(casting, [true, false, false, false, false, false, false, false]);
     let global = projection.viewer.global_cooldown;
     assert!(global > 0, "fixture: the global cooldown is running");
     for slot in &hud.slots {

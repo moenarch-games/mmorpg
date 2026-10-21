@@ -1031,14 +1031,16 @@ mod tests {
                 assert!(aura.period == 0 || aura.duration % aura.period == 0);
             }
             if let CastTime::Channel(ticks) = ability.cast {
-                let AbilityEffect::Blizzard { period, .. } = ability.effect else {
-                    panic!("only Blizzard channels");
+                let (AbilityEffect::Blizzard { period, .. } | AbilityEffect::Beam { period, .. }) =
+                    ability.effect
+                else {
+                    panic!("only Blizzard and Lightning Beam channel");
                 };
                 assert_eq!(ticks % period, 0);
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(21)), None);
+        assert_eq!(ability_by_id(AbilityId::new(24)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG

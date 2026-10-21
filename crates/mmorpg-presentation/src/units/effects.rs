@@ -24,6 +24,12 @@ enum Visual {
     Bubble,
     Shards,
     Swing,
+    /// Frost Breath (#292): a spray fanning out along the caster's facing.
+    Cone,
+    /// Lightning Beam (#292): held along the caster's facing while it channels.
+    Beam,
+    /// Chain Lightning (#292): arcs from the caster through each victim in turn.
+    Chain,
     Impact {
         critical: bool,
     },
@@ -58,6 +64,8 @@ struct Effect {
     source: EntityRef,
     target: Option<EntityRef>,
     ground: Option<V>,
+    /// The units a chain struck, in order; for a beam, its farthest victim.
+    chain: Vec<EntityRef>,
     start: f64,
     /// Seconds a timed effect lives; `None` while it follows a cast, aura or guard.
     duration: Option<f64>,
@@ -88,6 +96,11 @@ const SWEEP_SECONDS: f64 = 0.34;
 const BLOCK_SECONDS: f64 = 0.45;
 const IMPACT_SECONDS: f64 = 0.32;
 const BLIZZARD: u8 = 12;
+const LIGHTNING_BEAM: u8 = 22;
+/// The beam's reach and the cone's, metres (the zone's 20 m and 8 m).
+const BEAM_METRES: f64 = 20.;
+const CONE_METRES: f64 = 8.;
+const CONE_HALF_ANGLE: f64 = PI / 6.;
 const BARRIER: u8 = 11;
 /// The zone's guard coverage is centred 30° toward the shield (left) side of the facing.
 const GUARD_SIDE: f64 = PI / 6.;
@@ -123,6 +136,9 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         13 => (Some(Stance::Staff), Some(Visual::Projectile), 0x7d9a4a),
         14 => (Some(Stance::Staff), None, 0xe7dcc0),
         15 => (Some(Stance::Bow), None, 0x8a6a4a),
+        21 => (Some(Stance::Staff), Some(Visual::Cone), 0x9fdcff),
+        22 => (Some(Stance::Staff), Some(Visual::Beam), 0xc8dcff),
+        23 => (Some(Stance::Staff), Some(Visual::Chain), 0xb9a8ff),
         _ => (None, None, 0xffffff),
     }
 }
@@ -132,6 +148,8 @@ fn timed(visual: Visual) -> Option<f64> {
         Visual::Projectile => Some(0.4),
         Visual::Ring => Some(0.65),
         Visual::Swing => Some(0.28),
+        Visual::Cone => Some(0.45),
+        Visual::Chain => Some(0.5),
         _ => None,
     }
 }
@@ -170,6 +188,7 @@ impl Effects {
             source,
             target,
             ground: None,
+            chain: Vec::new(),
             start: now,
             duration,
         });
@@ -197,6 +216,16 @@ impl Effects {
             if let Some(effect) = self.effects.last_mut() {
                 effect.ground = Some(a.feet);
             }
+        }
+    }
+
+    fn beam(&mut self, source: EntityRef, now: f64) {
+        if !self
+            .effects
+            .iter()
+            .any(|e| e.visual == Visual::Beam && e.source == source)
+        {
+            self.add(Visual::Beam, LIGHTNING_BEAM, source, None, None, now);
         }
     }
 
@@ -267,6 +296,9 @@ impl Effects {
                     }
                     if id == BLIZZARD {
                         self.shards(source, target, now, anchors);
+                    }
+                    if id == LIGHTNING_BEAM {
+                        self.beam(source, now);
                     }
                 }
                 ZoneEvent::AbilityUsed {
@@ -398,6 +430,34 @@ impl Effects {
                 _ => {}
             }
         }
+        // Chain and beam victims, in the zone's order: every unit their caster damaged this tick.
+        for event in &s.events {
+            if let ZoneEvent::DamageDealt {
+                source,
+                target,
+                amount,
+                ..
+            }
+            | ZoneEvent::DamageObserved {
+                source,
+                target,
+                amount,
+                ..
+            } = *event
+                && amount > 0
+                && let Some(effect) = self.effects.iter_mut().rev().find(|e| {
+                    e.source == source
+                        && ((e.visual == Visual::Chain && e.start == now)
+                            || e.visual == Visual::Beam)
+                })
+            {
+                if effect.visual == Visual::Beam {
+                    effect.chain = vec![target];
+                } else if !effect.chain.contains(&target) {
+                    effect.chain.push(target);
+                }
+            }
+        }
         // Death wins even when the same projection also contains an accepted attempt.
         for entity in &self.dead {
             self.actions.remove(entity);
@@ -444,10 +504,18 @@ impl Effects {
             if e.visual == Visual::Shards {
                 return casts.get(&e.source).is_some_and(|c| c.ability == BLIZZARD);
             }
+            if e.visual == Visual::Beam {
+                return casts
+                    .get(&e.source)
+                    .is_some_and(|c| c.ability == LIGHTNING_BEAM);
+            }
             e.source == viewer && barrier
         });
         if cast.is_some_and(|c| c.channel && c.ability.get() == BLIZZARD) && !s.viewer.dead {
             self.shards(viewer, s.viewer.target, now, anchors);
+        }
+        if cast.is_some_and(|c| c.channel && c.ability.get() == LIGHTNING_BEAM) && !s.viewer.dead {
+            self.beam(viewer, now);
         }
         // The raised shield follows the zone's guard: its lane, and protecting, suspended or broken.
         let shown = if s.viewer.dead {
@@ -671,6 +739,94 @@ impl Effects {
                                 0.85,
                                 false,
                             );
+                        }
+                    }
+                }
+                Visual::Cone => {
+                    if let Some(s) = source {
+                        let reach = CONE_METRES * (1. - (1. - t) * (1. - t));
+                        for i in 0..7 {
+                            let a =
+                                s.yaw - CONE_HALF_ANGLE + CONE_HALF_ANGLE * 2. * f64::from(i) / 6.;
+                            for k in 0..4 {
+                                let d = reach * (f64::from(k) + 1.) / 4.;
+                                add(
+                                    &format!("cone-{i}-{k}"),
+                                    Primitive::Box([0.22 + d * 0.06, 0.12, 0.22 + d * 0.06]),
+                                    if k == 3 { 0xffffff } else { color },
+                                    [
+                                        s.feet[0] + a.sin() * d,
+                                        s.centre + 0.2 - d * 0.04,
+                                        s.feet[2] + a.cos() * d,
+                                    ],
+                                    qa(1, a),
+                                    (0.85 * (1. - t)) as f32,
+                                    true,
+                                );
+                            }
+                        }
+                    }
+                }
+                Visual::Beam => {
+                    if let Some(s) = source {
+                        // As far as its farthest victim, or its full reach.
+                        let length = e
+                            .chain
+                            .first()
+                            .and_then(|v| anchors.get(v))
+                            .map_or(BEAM_METRES, |v| {
+                                (v.feet[0] - s.feet[0]).hypot(v.feet[2] - s.feet[2])
+                            });
+                        let flicker = 0.85 + 0.15 * (age * 40.).sin();
+                        for k in 0..10 {
+                            let d = length * (f64::from(k) + 0.5) / 10.;
+                            add(
+                                &format!("beam-{k}"),
+                                Primitive::Box([
+                                    0.14 * flicker,
+                                    0.14 * flicker,
+                                    length / 10. + 0.05,
+                                ]),
+                                if k % 3 == 0 { 0xffffff } else { color },
+                                [
+                                    s.feet[0] + s.yaw.sin() * d,
+                                    s.centre + 0.3,
+                                    s.feet[2] + s.yaw.cos() * d,
+                                ],
+                                qa(1, s.yaw),
+                                0.9,
+                                true,
+                            );
+                        }
+                    }
+                }
+                Visual::Chain => {
+                    if let Some(s) = source {
+                        let mut from = [s.feet[0], s.centre + 0.3, s.feet[2]];
+                        for (j, victim) in e.chain.iter().enumerate() {
+                            let Some(v) = anchors.get(victim) else {
+                                continue;
+                            };
+                            let to = [v.feet[0], v.centre, v.feet[2]];
+                            let yaw = (to[0] - from[0]).atan2(to[2] - from[2]);
+                            for k in 0..8 {
+                                let u = (f64::from(k) + 0.5) / 8.;
+                                let jitter = ((f64::from(k) * 1.7 + age * 30.).sin()) * 0.25;
+                                add(
+                                    &format!("chain-{j}-{k}"),
+                                    Primitive::Box([0.1, 0.1, 0.5]),
+                                    if k % 2 == 0 { 0xffffff } else { color },
+                                    [
+                                        lerp(from[0], to[0], u) + yaw.cos() * jitter,
+                                        lerp(from[1], to[1], u) + jitter * 0.5,
+                                        lerp(from[2], to[2], u) - yaw.sin() * jitter,
+                                    ],
+                                    qa(1, yaw),
+                                    (0.95 * (1. - t)) as f32,
+                                    true,
+                                );
+                            }
+                            from = to;
                         }
                     }
                 }

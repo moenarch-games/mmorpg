@@ -440,6 +440,21 @@ mod tests {
     }
 
     #[test]
+    fn the_arcanist_pack_starts_a_level_6_arcanist_before_the_marauders() {
+        assert_eq!(
+            Scenario::from_name("arcanist-pack"),
+            Some(Scenario::ArcanistPack)
+        );
+        let (host, player) = LocalZoneHost::scenario(Scenario::ArcanistPack, 0).unwrap();
+        let start = own_position(&host, player);
+        assert_eq!([start[0], start[2]], [7_300, 9_300]);
+        let viewer = decode_snapshot(&host.projection(player).unwrap())
+            .unwrap()
+            .viewer;
+        assert_eq!(viewer.level, 6);
+    }
+
+    #[test]
     fn a_world_checkpoint_resumes_the_world_without_its_players() {
         let mut host = LocalZoneHost::new().unwrap();
         let player = host.join_as(0, 1).unwrap();
