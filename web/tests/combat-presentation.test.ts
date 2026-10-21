@@ -3,7 +3,7 @@ import type { EntityState, ZoneEvent, ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
 import { abilitySlots, cancelCast, useAbilitySlot } from "../src/world/units/abilities";
 import { CombatHud, FEEDBACK_MS, combatStatus, eventText, unitName } from "../src/world/units/combat-hud";
-import { CLICK_SLOP_PIXELS, SecondaryClick, attackToggle, nextTabTarget } from "../src/world/units/targeting";
+import { CLICK_SLOP_PIXELS, TOUCH_CLICK_SLOP_PIXELS, PointerClick, SecondaryClick, attackToggle, nextTabTarget } from "../src/world/units/targeting";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -167,6 +167,23 @@ describe("targeting input", () => {
     clicks.down(pointer("pointerdown", 2));
     clicks.reset();
     expect(clicks.end(pointer("pointerup", 2))).toBe(false);
+  });
+
+  test("touch tap tolerates deliberate small movement but a touch drag does not click", () => {
+    const clicks = new PointerClick(0);
+    const pointer = (type: string, x: number) => ({
+      type, pointerId: 1, button: 0, clientX: x, clientY: 20, pointerType: "touch",
+    });
+    clicks.down(pointer("pointerdown", 20));
+    clicks.move(pointer("pointermove", 20 + TOUCH_CLICK_SLOP_PIXELS));
+    expect(clicks.end(pointer("pointerup", 20 + TOUCH_CLICK_SLOP_PIXELS))).toBe(true);
+    clicks.down(pointer("pointerdown", 20));
+    clicks.move(pointer("pointermove", 21 + TOUCH_CLICK_SLOP_PIXELS));
+    expect(clicks.end(pointer("pointerup", 20))).toBe(false);
+    // A normal mouse still uses the smaller movement budget.
+    clicks.down({ ...pointer("pointerdown", 20), pointerType: "mouse" });
+    clicks.move(pointer("pointermove", 21 + CLICK_SLOP_PIXELS));
+    expect(clicks.end(pointer("pointerup", 20))).toBe(false);
   });
 });
 

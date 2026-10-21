@@ -12,6 +12,13 @@ export type Picked = EntityRef | { kind: "door"; id: number };
 
 const NO_ATTACKABLE_PLAYERS: ReadonlySet<number> = new Set();
 
+/** An invisible, presentation-only box for forgiving clicks on small visible objects. */
+type PickProxy = { target: Picked; bounds: THREE.Box3 };
+type PickViewport = { width: number; height: number; pointerType?: string };
+
+const MOUSE_PICK_MARGIN_PIXELS = 8;
+const TOUCH_PICK_MARGIN_PIXELS = 16;
+
 export class WorldPicking {
   readonly #raycaster = new THREE.Raycaster();
   readonly #material = new THREE.MeshBasicMaterial();
@@ -41,11 +48,13 @@ export class WorldPicking {
     models: readonly { entity: EntityRef; object: THREE.Object3D }[] = [],
     buildings: readonly { door: number | null; object: THREE.Object3D }[] = [],
     attackablePlayers: ReadonlySet<number> = NO_ATTACKABLE_PLAYERS,
+    viewport?: PickViewport,
   ): Picked | null {
     this.#raycaster.setFromCamera(point, camera);
     this.#raycaster.near = camera.near;
     this.#raycaster.far = camera.far;
     let target: Picked | null = null;
+    const proxies = new Map<string, PickProxy>();
     // Test bodies first, so subsequent scenery queries stop at the closest body.
     for (const nodes of [units, scenery]) {
       for (const node of nodes) {
@@ -54,6 +63,19 @@ export class WorldPicking {
         }
         this.#material.side = node.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
         this.#place(node);
+        const identity = /^unit-(player|creature|npc)-(\d+)-/.exec(node.id);
+        const kind = identity?.[1];
+        const selected: EntityRef | null = identity && (kind === "creature" || kind === "npc" || (kind === "player" && attackablePlayers.has(Number(identity[2]))))
+          ? { kind: kind as EntityRef["kind"], id: Number(identity[2]) }
+          : null;
+        // Prefer the torso and head; weapons, health bars and target rings must not enlarge a hitbox.
+        if (viewport && selected && (node.id.endsWith("-body") || node.id.endsWith("-head"))) {
+          const geometry = this.#mesh.geometry;
+          if (!geometry.boundingBox) { geometry.computeBoundingBox(); }
+          if (geometry.boundingBox) {
+            this.#addProxy(proxies, selected, geometry.boundingBox.clone().applyMatrix4(this.#mesh.matrixWorld));
+          }
+        }
         const intersections: THREE.Intersection[] = [];
         this.#mesh.raycast(this.#raycaster, intersections);
         for (const hit of intersections) {
@@ -61,11 +83,7 @@ export class WorldPicking {
             continue;
           }
           this.#raycaster.far = hit.distance;
-          const identity = /^unit-(player|creature|npc)-(\d+)-/.exec(node.id);
-          const kind = identity?.[1];
-          target = identity && (kind === "creature" || kind === "npc" || (kind === "player" && attackablePlayers.has(Number(identity[2]))))
-            ? { kind, id: Number(identity[2]) }
-            : null;
+          target = selected;
         }
       }
     }
@@ -74,6 +92,9 @@ export class WorldPicking {
       object.traverse((child) => {
         if (child instanceof THREE.SkinnedMesh) { child.computeBoundingSphere(); }
       });
+      if (viewport && object.visible && (entity.kind !== "player" || attackablePlayers.has(entity.id))) {
+        this.#addProxy(proxies, entity, new THREE.Box3().setFromObject(object));
+      }
       for (const hit of this.#raycaster.intersectObject(object, true)) {
         if (hit.distance < this.#raycaster.far) {
           this.#raycaster.far = hit.distance;
@@ -83,6 +104,9 @@ export class WorldPicking {
     }
     // Imported buildings occlude like scenery; their door leaf is itself a target.
     for (const { door, object } of buildings) {
+      if (viewport && door !== null && object.visible) {
+        this.#addProxy(proxies, { kind: "door", id: door }, new THREE.Box3().setFromObject(object));
+      }
       for (const hit of this.#raycaster.intersectObject(object, true)) {
         if (hit.distance < this.#raycaster.far) {
           this.#raycaster.far = hit.distance;
@@ -107,7 +131,65 @@ export class WorldPicking {
         }
       }
     }
-    return target;
+    // Exact geometry always wins. On a miss, assist only with targets in front of
+    // the closest actual ray hit, so solid scenery and ineligible units still occlude.
+    return target ?? (viewport ? this.#assistedPick(point, camera, viewport, proxies, this.#raycaster.far) : null);
+  }
+
+  #addProxy(proxies: Map<string, PickProxy>, target: Picked, bounds: THREE.Box3): void {
+    if (bounds.isEmpty()) { return; }
+    const key = target.kind + ":" + target.id;
+    const previous = proxies.get(key);
+    if (previous) { previous.bounds.union(bounds); }
+    else { proxies.set(key, { target, bounds }); }
+  }
+
+  /** Only near misses on visible projected bounds qualify; never substitute a distant NPC. */
+  #assistedPick(
+    point: THREE.Vector2,
+    camera: THREE.PerspectiveCamera,
+    viewport: PickViewport,
+    proxies: ReadonlyMap<string, PickProxy>,
+    obstructionDistance: number,
+  ): Picked | null {
+    const { width, height } = viewport;
+    if (!(width > 0 && height > 0) || Math.abs(point.x) > 1 || Math.abs(point.y) > 1) { return null; }
+    const cursorX = (point.x + 1) * width / 2;
+    const cursorY = (1 - point.y) * height / 2;
+    const margin = viewport.pointerType === "touch" ? TOUCH_PICK_MARGIN_PIXELS : MOUSE_PICK_MARGIN_PIXELS;
+    let best: { target: Picked; miss: number; distance: number; centre: number } | null = null;
+    const corner = new THREE.Vector3();
+    const centre = new THREE.Vector3();
+    for (const { target, bounds } of proxies.values()) {
+      bounds.getCenter(centre);
+      const distance = centre.distanceTo(camera.position);
+      if (distance >= obstructionDistance || distance > camera.far) { continue; }
+      centre.project(camera);
+      if (centre.z < -1 || centre.z > 1) { continue; }
+      const centrePixels = Math.hypot((centre.x + 1) * width / 2 - cursorX, (1 - centre.y) * height / 2 - cursorY);
+      let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+      for (const x of [bounds.min.x, bounds.max.x]) {
+        for (const y of [bounds.min.y, bounds.max.y]) {
+          for (const z of [bounds.min.z, bounds.max.z]) {
+            corner.set(x, y, z).project(camera);
+            const screenX = (corner.x + 1) * width / 2;
+            const screenY = (1 - corner.y) * height / 2;
+            left = Math.min(left, screenX);
+            right = Math.max(right, screenX);
+            top = Math.min(top, screenY);
+            bottom = Math.max(bottom, screenY);
+          }
+        }
+      }
+      const miss = Math.hypot(Math.max(left - cursorX, 0, cursorX - right), Math.max(top - cursorY, 0, cursorY - bottom));
+      if (miss > margin) { continue; }
+      if (!best || miss < best.miss - 0.01
+        || (Math.abs(miss - best.miss) <= 0.01 && (distance < best.distance - 0.01
+          || (Math.abs(distance - best.distance) <= 0.01 && centrePixels < best.centre)))) {
+        best = { target, miss, distance, centre: centrePixels };
+      }
+    }
+    return best?.target ?? null;
   }
 
   #place(node: RendererSceneNode): void {

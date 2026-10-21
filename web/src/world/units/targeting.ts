@@ -32,29 +32,33 @@ export function attackToggle(snapshot: ZoneSnapshot): WorldCommand {
   return snapshot.viewer.autoAttacking ? { kind: "stop-attack" } : { kind: "start-attack" };
 }
 
-/** Moving the pointer this far turns a right click into a turn drag. */
-export const CLICK_SLOP_PIXELS = 4;
+/** Small hand movements should not cancel an intentional click. */
+export const CLICK_SLOP_PIXELS = 6;
+export const TOUCH_CLICK_SLOP_PIXELS = 12;
 
 /** The pointer fields a click tracker reads; a `PointerEvent` in the page. */
-export type PointerSample = { type: string; pointerId: number; button: number; clientX: number; clientY: number };
+export type PointerSample = { type: string; pointerId: number; button: number; clientX: number; clientY: number; pointerType?: string };
 
 /**
  * Tells a click from a camera drag: a matching-button press that ends
- * with `pointerup` within `CLICK_SLOP_PIXELS` of where it started is a click.
+ * with `pointerup` within the mouse/touch movement tolerance is a click.
  * Anything else stays a drag or cancellation.
  */
 export class PointerClick {
-  #press: { pointerId: number; x: number; y: number } | null = null;
+  #press: { pointerId: number; x: number; y: number; slop: number } | null = null;
 
   constructor(readonly button: 0 | 2) {}
 
   down(event: PointerSample): void {
-    this.#press = event.button === this.button ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY } : null;
+    this.#press = event.button === this.button ? {
+      pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+      slop: event.pointerType === "touch" ? TOUCH_CLICK_SLOP_PIXELS : CLICK_SLOP_PIXELS,
+    } : null;
   }
 
   move(event: PointerSample): void {
     const press = this.#press;
-    if (press?.pointerId === event.pointerId && Math.hypot(event.clientX - press.x, event.clientY - press.y) > CLICK_SLOP_PIXELS) {
+    if (press?.pointerId === event.pointerId && Math.hypot(event.clientX - press.x, event.clientY - press.y) > press.slop) {
       this.#press = null;
     }
   }
