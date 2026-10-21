@@ -11,21 +11,11 @@
     <main id="app">
       <div id="sky" class="sky" aria-hidden="true" hidden><div class="sky-clouds"></div></div>
       <canvas id="world" tabindex="-1" aria-label="3D MMORPG character and world preview"></canvas>
-      <section id="character-select" class="character-select" data-hat="wayfarer-hood" aria-labelledby="character-name">
+      <section id="character-select" class="character-select" data-hat="wayfarer-hood" aria-labelledby="selection-title">
         <div class="selection-brand">
           <p class="eyebrow">MMORPG / Greyhaven realm</p>
-          <p class="selection-title">Choose your character</p>
+          <p id="selection-title" class="selection-title">Choose your character</p>
         </div>
-
-        <section class="character-details" aria-label="Selected character">
-          <div class="character-identity">
-            <p class="selection-kicker">Selected character</p>
-            <h1 id="character-name">Aelric Stormward</h1>
-            <p id="character-subtitle" class="character-subtitle">Level 18 · Male Human Warden</p>
-          </div>
-          <div class="equipment-heading"><span>Equipped</span><span class="preview-label">preview loadout</span></div>
-          <div id="equipment-list" class="equipment-list"></div>
-        </section>
 
         <section class="character-inspector" aria-label="Inspect your character">
           <div id="preview-surface" class="preview-surface" tabindex="0" role="slider"
@@ -35,16 +25,37 @@
             <p id="character-stage-fallback" class="preview-loading">Loading 3D preview…</p>
           </div>
           <div class="turntable-controls" role="group" aria-label="Turn character">
-            <button id="rotate-left" type="button" aria-label="Rotate character left">← Turn left</button>
+            <button id="rotate-left" type="button" aria-label="Rotate character left">←</button>
             <button id="reset-rotation" type="button">Reset view</button>
-            <button id="rotate-right" type="button" aria-label="Rotate character right">Turn right →</button>
+            <button id="rotate-right" type="button" aria-label="Rotate character right">→</button>
           </div>
-          <p id="turntable-hint" class="turntable-hint">Drag to turn · Focus preview and use ← → · Home resets<br />Inspection is presentation only; it does not change in-world facing.</p>
+          <p id="turntable-hint" class="turntable-hint">Drag to turn · ← → with the preview focused · Home resets</p>
         </section>
 
+        <footer id="selection-actions" class="selection-actions continuation-panel" aria-label="Continue">
+          <div class="world-destination"><small>Last location</small><strong id="character-location">Greyhaven Outpost</strong><span id="continuation-copy">Continue where you left off</span></div>
+          <div class="continuation-controls">
+            <button id="enter-world" class="enter-world" type="button" disabled><span id="enter-world-label">Enter World</span><small id="enter-world-note">Loading the zone simulation…</small></button>
+            <div class="continuation-secondary">
+              <label class="activity-choice">Activity
+                <select id="activity-choice"><option value="world">Greyhaven Vale</option><option value="battle-royale">Battle Royale PvP</option></select>
+              </label>
+              <label id="online-toggle" class="online-toggle" hidden>
+                <input id="play-online" type="checkbox" />
+                <span>Play online <small id="online-server"></small></span>
+              </label>
+              <button id="selection-settings" class="selection-settings" type="button" aria-haspopup="dialog">Settings</button>
+            </div>
+          </div>
+          <section id="battle-royale-setup" class="arena-setup" aria-label="Battle Royale setup" hidden></section>
+          <p id="selection-note" class="selection-note">Single-player demo: the shared Rust zone simulation runs in this browser. Character progress and the world are saved in this browser.</p>
+        </footer>
+
         <div class="selection-sidebar">
-          <aside id="roster-panel" class="roster-panel" aria-label="Character roster and customization">
-            <p class="panel-label">Characters</p>
+          <div id="roster-panel" class="selection-sections">
+          <section class="selection-section" aria-label="Characters">
+            <h2 class="section-heading"><button id="characters-toggle" class="section-toggle" type="button" aria-expanded="true" aria-controls="characters-panel"><span class="section-title">Characters</span><span id="character-name" class="section-summary">Aelric Stormward</span><span class="section-chevron" aria-hidden="true"></span></button></h2>
+            <div id="characters-panel" class="section-panel">
             <div id="character-roster" class="character-roster">
               <button class="roster-character is-selected" type="button" data-character-id="aelric-stormward" aria-pressed="true">
                 <span class="roster-portrait">AS</span>
@@ -57,7 +68,12 @@
               <span class="roster-copy"><strong>Create character</strong><small>Choose class and sex</small></span>
             </button>
             <p id="roster-status" class="roster-status" role="status" aria-live="polite"></p>
-            <div class="customization-block">
+            </div>
+          </section>
+
+          <section class="selection-section" aria-label="Appearance">
+            <h2 class="section-heading"><button id="appearance-toggle" class="section-toggle" type="button" aria-expanded="false" aria-controls="appearance-panel"><span class="section-title">Appearance</span><span id="appearance-summary" class="section-summary"></span><span class="section-chevron" aria-hidden="true"></span></button></h2>
+            <div id="appearance-panel" class="section-panel customization-block" hidden>
               <div class="customization-heading"><p class="panel-label">Head style</p><span>Preview appearance</span></div>
               <div class="hat-options" aria-label="Choose a hat">
                 <button class="hat-option is-selected" type="button" data-hat-style="wayfarer-hood" aria-pressed="true"><span class="hat-icon hat-icon--hood" aria-hidden="true"></span><span>Hood</span></button>
@@ -83,7 +99,17 @@
                 <p id="save-status" class="save-status" aria-live="polite">Not saved yet.</p>
               </details>
             </div>
-          </aside>
+          </section>
+
+          <section class="selection-section" aria-label="Equipment and loadout">
+            <h2 class="section-heading"><button id="equipment-toggle" class="section-toggle" type="button" aria-expanded="false" aria-controls="equipment-panel"><span class="section-title">Equipment &amp; Loadout</span><span id="equipment-summary" class="section-summary"></span><span class="section-chevron" aria-hidden="true"></span></button></h2>
+            <div id="equipment-panel" class="section-panel" hidden>
+              <p id="character-subtitle" class="character-subtitle">Level 18 · Male Human Warden</p>
+              <div class="equipment-heading"><span>Equipped</span><span class="preview-label">read-only preview</span></div>
+              <div id="equipment-list" class="equipment-list"></div>
+            </div>
+          </section>
+          </div>
 
           <section id="character-creation" class="character-creation" aria-labelledby="character-creation-title" hidden>
             <form id="character-creation-form">
@@ -136,20 +162,6 @@
             </form>
           </section>
 
-          <footer id="selection-actions" class="selection-actions">
-            <label class="activity-choice">Activity
-              <select id="activity-choice"><option value="world">Greyhaven Vale</option><option value="battle-royale">Battle Royale PvP</option></select>
-            </label>
-            <section id="battle-royale-setup" class="arena-setup" aria-label="Battle Royale setup" hidden></section>
-            <div class="world-destination"><small>Destination</small><strong id="character-location">Greyhaven Outpost</strong></div>
-            <label id="online-toggle" class="online-toggle" hidden>
-              <input id="play-online" type="checkbox" />
-              <span>Play online <small id="online-server"></small></span>
-            </label>
-            <button id="enter-world" class="enter-world" type="button" disabled><span id="enter-world-label">Enter World</span><small id="enter-world-note">Loading the zone simulation…</small></button>
-            <button id="selection-settings" class="selection-settings" type="button" aria-haspopup="dialog">Settings</button>
-            <p id="selection-note" class="selection-note">Single-player demo: the shared Rust zone simulation runs in this browser. World progress is not saved yet; returning to characters leaves the zone.</p>
-          </footer>
         </div>
       </section>
 

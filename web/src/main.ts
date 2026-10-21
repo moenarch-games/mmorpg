@@ -10,6 +10,8 @@ import {
   defaultAppearanceForClass,
   equipmentForAppearance,
   hatOption,
+  HAIR_COLOR_OPTIONS,
+  HAIR_OPTIONS,
   isHairColor,
   isHairStyle,
   isHatStyle,
@@ -94,6 +96,18 @@ const saveStatus = requireElement<HTMLElement>("#save-status");
 const equipmentList = requireElement<HTMLElement>("#equipment-list");
 const characterName = requireElement<HTMLElement>("#character-name");
 const characterSubtitle = requireElement<HTMLElement>("#character-subtitle");
+const continuationCopy = requireElement<HTMLElement>("#continuation-copy");
+const appearanceSummary = requireElement<HTMLElement>("#appearance-summary");
+const equipmentSummary = requireElement<HTMLElement>("#equipment-summary");
+// The selection sections (#362) open and close independently; toggling changes nothing else.
+for (const toggle of document.querySelectorAll<HTMLButtonElement>(".section-toggle")) {
+  const panel = requireElement<HTMLElement>(`#${toggle.getAttribute("aria-controls")}`);
+  toggle.addEventListener("click", () => {
+    const expanded = toggle.getAttribute("aria-expanded") !== "true";
+    toggle.setAttribute("aria-expanded", String(expanded));
+    panel.hidden = !expanded;
+  });
+}
 const characterLocation = requireElement<HTMLElement>("#character-location");
 const fallbackCharacter = requireElement<HTMLElement>("#character-stage-fallback");
 const previewSurface = requireElement<HTMLElement>("#preview-surface");
@@ -723,8 +737,15 @@ function renderCharacterDetails(character: CharacterPreview, appearance: Charact
   characterName.textContent = character.name;
   const sex = character.sex === "male" ? "Male" : "Female";
   characterSubtitle.textContent = `Level ${displayLevel(character)} · ${sex} ${character.race} ${character.className}`;
-  characterLocation.textContent = character.location;
+  const continuation = continuationLabel();
+  characterLocation.textContent = continuation.area;
+  continuationCopy.textContent = continuation.copy;
+  appearanceSummary.textContent = [
+    hatOption(appearance.hat).name,
+    appearance.hair === "bald" ? "Bald" : `${hairName(appearance.hair)}, ${hairColorName(appearance.hairColor)}`,
+  ].join(" · ");
   const equipment = equipmentForAppearance(character, appearance);
+  equipmentSummary.textContent = equipment.find((item) => item.slot === "Main hand")?.name ?? "";
   equipmentList.replaceChildren(...equipment.map((item) => {
     const article = document.createElement("article");
     article.className = "equipment-item";
@@ -741,6 +762,9 @@ function renderCharacterDetails(character: CharacterPreview, appearance: Charact
     return article;
   }));
 }
+
+const hairName = (style: CharacterAppearance["hair"]) => HAIR_OPTIONS.find((option) => option.id === style)?.name ?? style;
+const hairColorName = (color: CharacterAppearance["hairColor"]) => HAIR_COLOR_OPTIONS.find((option) => option.id === color)?.name ?? color;
 
 /** Marks the chosen hat, hairstyle and hair colour in the Appearance pickers. */
 function syncAppearanceButtons(): void {
@@ -1057,15 +1081,21 @@ function finishCharacterCreation(): void {
   }
 }
 
+/** The framed height around the figure standing at y 0.1, and its centre. */
+const PREVIEW_SPAN = 3.05;
+const PREVIEW_CENTRE_Y = 1.5;
+
 function layoutPreview() {
   if (entryState.phase !== "character-selection") return;
   const width = Math.max(canvas.clientWidth, 1);
   const height = Math.max(canvas.clientHeight, 1);
   const rect = previewSurface.getBoundingClientRect();
-  const displayHeight = Math.max(1, Math.min(rect.height * 0.8, rect.width * 1.1));
-  const distance = 3.4 * height / (2 * Math.tan(THREE.MathUtils.degToRad(24)) * displayHeight);
-  previewCamera.position.set(4.5, 1.25, 7.1).normalize().multiplyScalar(distance).add(new THREE.Vector3(-1.2, 1.5, 0));
-  previewCamera.lookAt(-1.2, 1.5, 0);
+  // The figure (PREVIEW_HEIGHT plus headroom for hats) fills most of the preview's height (#362 owner
+  // review); narrow layouts are bounded by the width instead.
+  const displayHeight = Math.max(1, Math.min(rect.height * 0.9, rect.width * 1.9));
+  const distance = PREVIEW_SPAN * height / (2 * Math.tan(THREE.MathUtils.degToRad(24)) * displayHeight);
+  previewCamera.position.set(4.5, 1.25, 7.1).normalize().multiplyScalar(distance).add(new THREE.Vector3(-1.2, PREVIEW_CENTRE_Y, 0));
+  previewCamera.lookAt(-1.2, PREVIEW_CENTRE_Y, 0);
   previewCamera.setViewOffset(width, height, width / 2 - (rect.left + rect.width / 2), height / 2 - (rect.top + rect.height / 2), width, height);
   previewCamera.updateMatrixWorld(true);
 }
@@ -1079,14 +1109,20 @@ function resize() {
   layoutPreview();
 }
 
+/** The turntable's real humanoid (#362) faces the preview camera at zero turn. */
+const PREVIEW_FACING = Math.atan2(4.5, 7.1) + Math.PI;
+const PREVIEW_HEIGHT = 2.7;
+const previewStart = performance.now();
+
 function renderSelection() {
-  renderer.render({
-    camera: {
-      viewMatrix: [...previewCamera.matrixWorldInverse.elements] as Matrix4Values,
-      projectionMatrix: webGpuProjection(previewCamera),
-    },
-    nodes: [...selectionStageNodes, ...selectionCharacterNodes()],
-  });
+  const camera = {
+    viewMatrix: [...previewCamera.matrixWorldInverse.elements] as Matrix4Values,
+    projectionMatrix: webGpuProjection(previewCamera),
+  };
+  // The real Ranger once it loaded; the procedural figure while it loads or if it failed.
+  const real = worldView.selectionPreview(viewerLook(), [-1.2, 0.1, 0], PREVIEW_FACING + turntable.yaw, PREVIEW_HEIGHT,
+    (performance.now() - previewStart) / 1000, camera);
+  renderer.render({ camera, nodes: real ? selectionStageNodes : [...selectionStageNodes, ...selectionCharacterNodes()] });
 }
 
 /** The viewer's own look for the shared unit presenter: class, sex and headwear. */
@@ -1153,6 +1189,27 @@ function fetchedBytes(): number {
 
 /** Greyhaven Outpost, where new characters start. */
 const OUTPOST_AREA = 1;
+
+/**
+ * The read-only continuation label (#362): the selected local character's committed area, the
+ * outpost for a first entry, or neutral copy where the page cannot know it (online, before load).
+ * It never chooses where Enter World spawns.
+ */
+function continuationLabel(): { area: string; copy: string } {
+  const neutral = { area: "Your last location", copy: "Continue where you left off" };
+  if (arenaEntry.selected) { return { area: "Battle Royale", copy: "Join a hosted match" }; }
+  if (scenario) { return { area: `Review scenario ${scenario.name}`, copy: "A fresh, unsaved world" }; }
+  if (chosenServer() || !world || !localCharacters) { return neutral; }
+  let committed: number | null = null;
+  try {
+    committed = creationDraft ? null : committedArea(localCharacters, selectedCharacter().id);
+  } catch {
+    return neutral;
+  }
+  const area = world.catalog.areas.get(committed ?? OUTPOST_AREA);
+  if (!area) { return neutral; }
+  return committed === null ? { area, copy: "Begin your journey" } : { area, copy: "Continue where you left off" };
+}
 
 /** The area the selected character enters in: its committed location's, else the outpost. */
 function startArea(): number {
