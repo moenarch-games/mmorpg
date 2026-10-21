@@ -92,7 +92,7 @@ describe("shared renderer adoption", () => {
     expect(picker.pick(new THREE.Vector2(0.035, 0), camera, [], [], [], models)).toBeNull();
     expect(picker.pick(new THREE.Vector2(0.035, 0), camera, [], [], [], models, [], new Set(), viewport))
       .toEqual(entity);
-    expect(picker.pick(new THREE.Vector2(0.035, 0), camera, [nearby], [], [], models, [], new Set(), viewport))
+    expect(picker.pick(new THREE.Vector2(0.035, 0), camera, [{ ...nearby, id: "wall" }], [], [], models, [], new Set(), viewport))
       .toBeNull();
 
     const door = { door: 1, object: model };
