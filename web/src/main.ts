@@ -654,6 +654,9 @@ function previewHatNodes(
   localPoint: LocalPoint,
   rotationQuaternion: RotationQuaternion,
 ): RendererSceneNode[] {
+  if (hat === "none") {
+    return [];
+  }
   if (hat === "wayfarer-hood") {
     return [{
       id: "preview-hat-hood",
@@ -1059,7 +1062,7 @@ function renderSelection() {
 /** The viewer's own look for the shared unit presenter: class, sex and headwear. */
 function viewerLook(): ViewerLook {
   const character = previewCharacter();
-  return { classId: character.classId, sex: character.sex, headwear: characterAppearance.hat };
+  return { classId: character.classId, sex: character.sex, headwear: characterAppearance.hat === "none" ? null : characterAppearance.hat };
 }
 
 function worldInput() {

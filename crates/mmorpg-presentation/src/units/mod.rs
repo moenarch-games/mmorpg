@@ -36,8 +36,6 @@ use player::{Hat, Look};
 const HEALTH_BAR_WIDTH: f32 = 1.0;
 const HEALTH_BAR_BACKGROUND: [f32; 3] = [0.12, 0.12, 0.14];
 const HEALTH_BAR_FILL: [f32; 3] = [0.18, 0.9, 0.25];
-/// About the skull radius of the bundled chibi-proportioned characters.
-const SKULL_RADIUS_PER_HEIGHT: f64 = 0.12;
 
 /// A unit as sampled for this frame: its record and interpolated rendered pose.
 #[derive(Clone, Debug)]
@@ -501,29 +499,6 @@ impl UnitPresenter {
                 offset(tip, [0., 0., -0.04]),
             ));
         }
-    }
-
-    /// The viewer's headwear on an imported model's posed head (`centre`, `radius` in
-    /// metres) turned by `yaw`; `height` is the model's collision height.
-    pub fn headwear(
-        &mut self,
-        id: &str,
-        look: Look,
-        centre: V,
-        yaw: f64,
-        radius: f64,
-        height: f64,
-    ) -> Vec<Draw> {
-        player::headwear(
-            &mut self.resources,
-            id,
-            look,
-            Frame {
-                p: centre,
-                q: qa(1, yaw),
-            },
-            radius.min(SKULL_RADIUS_PER_HEIGHT * height),
-        )
     }
 
     /// Alive, or dead with its fall progress: only a witnessed life-to-death transition falls;

@@ -425,20 +425,6 @@ impl UnitPresenter {
             .map_err(|error| JsError::new(&error))
     }
 
-    pub fn headwear(
-        &mut self,
-        id: &str,
-        x: f64,
-        y: f64,
-        z: f64,
-        yaw: f64,
-        radius: f64,
-    ) -> Result<String, JsError> {
-        self.0
-            .headwear(id, [x, y, z], yaw, radius)
-            .map_err(|error| JsError::new(&error))
-    }
-
     /// Model matrices of the last call's draws, 16 floats each.
     pub fn models(&self) -> Vec<f32> {
         self.0.buffers.models.clone()

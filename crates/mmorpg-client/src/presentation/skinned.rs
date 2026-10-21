@@ -5,6 +5,7 @@ use crate::world::{DrawMaterial, SceneDraw};
 use mmorpg_presentation::units::{
     imported::Kind,
     kit::{Frame, model},
+    player::Hat,
 };
 use std::{
     collections::BTreeMap,
@@ -146,6 +147,8 @@ impl Channel {
 }
 
 struct Primitive {
+    /// The glTF node drawing it, so a look can hide named parts (the Ranger's hood).
+    node: Option<String>,
     double_sided: bool,
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
@@ -265,6 +268,7 @@ impl Model {
                     _ => vec![[(0, 1.), (0, 0.), (0, 0.), (0, 0.)]; positions.len()],
                 };
                 primitives.push(Primitive {
+                    node: node.name().map(str::to_owned),
                     double_sided: primitive.material().double_sided(),
                     positions,
                     normals,
@@ -492,7 +496,9 @@ impl Model {
         Some(joint)
     }
 
-    /// Draws for one posed instance standing at `root`, scaled to `height` metres.
+    /// Draws for one posed instance standing at `root`, scaled to `height` metres, without
+    /// the primitives of the `hidden` glTF nodes.
+    #[allow(clippy::too_many_arguments)]
     pub fn draws(
         &self,
         id: &str,
@@ -501,8 +507,9 @@ impl Model {
         clip: &str,
         time: f32,
         tint: Option<f32>,
+        hidden: &[String],
     ) -> Vec<SceneDraw> {
-        self.draws_placed(id, self.placement(root, height), clip, time, tint)
+        self.draws_filtered(id, self.placement(root, height), clip, time, tint, hidden)
     }
 
     /// Draws for one posed instance under an explicit model-to-world `placement`.
@@ -514,10 +521,23 @@ impl Model {
         time: f32,
         tint: Option<f32>,
     ) -> Vec<SceneDraw> {
+        self.draws_filtered(id, placement, clip, time, tint, &[])
+    }
+
+    fn draws_filtered(
+        &self,
+        id: &str,
+        placement: three_d_animation::Mat4,
+        clip: &str,
+        time: f32,
+        tint: Option<f32>,
+        hidden: &[String],
+    ) -> Vec<SceneDraw> {
         self.skin(clip, time)
             .into_iter()
             .zip(&self.primitives)
             .enumerate()
+            .filter(|(_, (_, p))| p.node.as_ref().is_none_or(|node| !hidden.contains(node)))
             .filter_map(|(index, ((positions, normals), p))| {
                 let colors = match tint {
                     Some(f) => p
@@ -754,33 +774,68 @@ fn socket(descriptor: &serde_json::Value, id: &str) -> (&'static str, three_d_an
 }
 
 impl Equipment {
-    /// The sword in the right hand and the shield in the left, imported once.
+    /// Bundle items imported once, each held at its `humanoid-sockets` socket.
+    fn of(items: &[(&str, &str)]) -> Self {
+        let descriptor: serde_json::Value =
+            serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
+                .expect("the sockets descriptor is JSON");
+        Self {
+            items: items
+                .iter()
+                .map(|&(entry, socket_id)| {
+                    let model =
+                        Model::parse(ranger_file(entry), "").expect("a bundle item is valid glTF");
+                    let (joint, matrix) = socket(&descriptor, socket_id);
+                    (model, joint, matrix)
+                })
+                .collect(),
+        }
+    }
+
+    /// The sword in the right hand and the shield in the left.
     pub fn sword_and_shield() -> &'static Self {
         static EQUIPMENT: OnceLock<Equipment> = OnceLock::new();
         EQUIPMENT.get_or_init(|| {
-            let descriptor: serde_json::Value = serde_json::from_slice(
-                ranger_bundle::FILES
-                    .iter()
-                    .find(|(name, _)| *name == ranger_bundle::SOCKETS)
-                    .map(|(_, bytes)| *bytes)
-                    .expect("the bundle embeds its sockets"),
-            )
-            .expect("the sockets descriptor is JSON");
-            let item = |entry: &str, socket_id: &str| {
-                let model =
-                    Model::parse(ranger_file(entry), "").expect("a bundle item is valid glTF");
-                let (joint, matrix) = socket(&descriptor, socket_id);
-                (model, joint, matrix)
-            };
-            Self {
-                items: vec![
-                    item(ranger_bundle::SWORD, "hand_r.weapon"),
-                    item(ranger_bundle::SHIELD, "hand_l.shield"),
-                ],
-            }
+            Self::of(&[
+                (ranger_bundle::SWORD, "hand_r.weapon"),
+                (ranger_bundle::SHIELD, "hand_l.shield"),
+            ])
         })
     }
 
+    /// The authored headwear item worn on the head (#374); the hood is the character's own part.
+    pub fn headwear(hat: Hat) -> Option<&'static Self> {
+        static CAP: OnceLock<Equipment> = OnceLock::new();
+        static HELM: OnceLock<Equipment> = OnceLock::new();
+        match hat {
+            Hat::Hood => None,
+            Hat::Cap => Some(CAP.get_or_init(|| Self::of(&[(ranger_bundle::CAP, "head.armor")]))),
+            Hat::Helm => {
+                Some(HELM.get_or_init(|| Self::of(&[(ranger_bundle::HELM, "head.armor")])))
+            }
+        }
+    }
+}
+
+/// The glTF nodes of the Ranger's toggleable hood (`humanoid-appearance` part `outfit.hood`).
+pub fn hood_nodes() -> &'static [String] {
+    static NODES: OnceLock<Vec<String>> = OnceLock::new();
+    NODES.get_or_init(|| {
+        let appearance: serde_json::Value =
+            serde_json::from_slice(ranger_file(ranger_bundle::APPEARANCE))
+                .expect("the appearance descriptor is JSON");
+        appearance["parts"]
+            .as_array()
+            .and_then(|parts| parts.iter().find(|part| part["id"] == "outfit.hood"))
+            .and_then(|hood| hood["nodes"].as_array())
+            .expect("the appearance declares the outfit.hood part")
+            .iter()
+            .map(|node| node.as_str().expect("a hood node name").to_owned())
+            .collect()
+    })
+}
+
+impl Equipment {
     /// Draws of the items held by a character posed at `placement` in `clip`.
     pub fn draws(
         &self,
@@ -888,6 +943,7 @@ mod allocation_observation {
                             Kind::Ranger.clips().idle,
                             0.25,
                             None,
+                            &[],
                         )
                     })
                     .collect::<Vec<_>>()

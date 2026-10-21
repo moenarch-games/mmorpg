@@ -11,7 +11,7 @@ DEST = ROOT / "web/public/characters/humanoid.ranger.male"
 RELEASE = "humanoid-ranger-male"
 URL = f"https://github.com/moritzbrantner/asset-tooling/releases/download/{RELEASE}/"
 KEYS = {"humanoid.ranger.male", "equipment.sword.arming", "equipment.shield.heater",
-        "equipment.bow.long", "equipment.quiver.back"}
+        "equipment.bow.long", "equipment.quiver.back", "equipment.cap.ranger", "equipment.helm.ironcrest"}
 
 
 def acquire():

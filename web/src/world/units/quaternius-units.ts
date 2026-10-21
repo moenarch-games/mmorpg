@@ -10,6 +10,17 @@ import type { ImportedModelKind, ImportedRequest } from "../unit-presenter";
 type QuaterniusKind = ImportedModelKind;
 /** What a player model carries: a Warden's sword and shield (#156), a Ranger's bow and quiver (#244), or nothing. */
 type Loadout = "sword-and-shield" | "bow-and-quiver" | null;
+/**
+ * The viewer's headwear (#374): an authored item on the `head.armor` socket, the bundle's own hood,
+ * or none. Units without a viewer style keep the bundle's default look.
+ */
+export type Headwear = "wayfarer-hood" | "ranger-cap" | "ironcrest-helm" | "none";
+const HEADWEAR_ITEMS: Readonly<Record<Headwear, readonly { key: string; socket: string }[]>> = {
+  "wayfarer-hood": [],
+  "ranger-cap": [{ key: "equipment.cap.ranger", socket: "head.armor" }],
+  "ironcrest-helm": [{ key: "equipment.helm.ironcrest", socket: "head.armor" }],
+  none: [],
+};
 /** The rest (idle) clip a model is measured in, from the shared presenter's clip table. */
 export type RestClip = (kind: QuaterniusKind) => string;
 
@@ -39,18 +50,17 @@ type Asset = {
   clips: Map<string, number>;
   /** Clip roles and strike contact times by name, from the bundle's `humanoid-clips` (Ranger only). */
   motions?: ReadonlyMap<string, ClipMotion>;
-  instantiate(loadout: Loadout): Posable;
+  instantiate(loadout: Loadout, headwear: Headwear | null): Posable;
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
   floor: number;
   height: number;
   centre: [number, number];
-  /** The `Head` joint's rest head centre in the joint's frame and the head radius, model space. */
-  head: { offset: THREE.Vector3; radius: number } | null;
 };
 
 type Instance = {
   kind: QuaterniusKind;
   loadout: Loadout;
+  headwear: Headwear | null;
   root: THREE.Group;
   posable: Posable;
   clip: string;
@@ -63,44 +73,24 @@ type Instance = {
 
 const point = new THREE.Vector3();
 
-/** Rest bounds and head of a model posed at the start of its idle clip. */
-function measure(posable: Posable, idle: string): Pick<Asset, "floor" | "height" | "centre" | "head"> {
+/** Rest bounds of a model posed at the start of its idle clip. */
+function measure(posable: Posable, idle: string): Pick<Asset, "floor" | "height" | "centre"> {
   posable.pose(idle, 0);
   const probe = posable.model;
   probe.updateMatrixWorld(true);
   const box = new THREE.Box3();
-  const headBox = new THREE.Box3();
-  const headJoint = probe.getObjectByName("Head") ?? null;
   probe.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) { return; }
     const position = object.geometry.getAttribute("position");
-    const skinIndex = object instanceof THREE.SkinnedMesh ? object.geometry.getAttribute("skinIndex") : undefined;
-    const skinWeight = object instanceof THREE.SkinnedMesh ? object.geometry.getAttribute("skinWeight") : undefined;
     for (let i = 0; i < position.count; i++) {
       object.getVertexPosition(i, point);
-      point.applyMatrix4(object.matrixWorld);
-      box.expandByPoint(point);
-      if (headJoint && object instanceof THREE.SkinnedMesh && skinIndex && skinWeight) {
-        let best = 0;
-        let bone = -1;
-        for (let k = 0; k < 4; k++) {
-          const weight = skinWeight.getComponent(i, k);
-          if (weight > best) { best = weight; bone = skinIndex.getComponent(i, k); }
-        }
-        if (object.skeleton.bones[bone] === headJoint) { headBox.expandByPoint(point); }
-      }
+      box.expandByPoint(point.applyMatrix4(object.matrixWorld));
     }
   });
   if (box.isEmpty()) {
-    return { floor: 0, height: 1, centre: [0, 0], head: null };
+    return { floor: 0, height: 1, centre: [0, 0] };
   }
-  let head: Asset["head"] = null;
-  if (headJoint && !headBox.isEmpty()) {
-    const centre = headBox.getCenter(new THREE.Vector3());
-    const size = headBox.getSize(new THREE.Vector3());
-    head = { offset: headJoint.worldToLocal(centre), radius: Math.max(size.x, size.y, size.z) / 2 };
-  }
-  return { floor: box.min.y, height: box.max.y - box.min.y, centre: [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2], head };
+  return { floor: box.min.y, height: box.max.y - box.min.y, centre: [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2] };
 }
 
 /** `model` posed by clip name and time through its own `AnimationMixer`. */
@@ -217,6 +207,16 @@ function attachItem(model: THREE.Object3D, item: THREE.Object3D, gripInverse: TH
   joint.add(holder);
 }
 
+/** The mesh nodes of the bundle's toggleable hood (`humanoid-appearance` part `outfit.hood`). */
+function hoodNodes(appearance: unknown): string[] {
+  const parts = (appearance as { parts?: { id?: unknown; nodes?: unknown }[] }).parts;
+  const hood = Array.isArray(parts) ? parts.find((part) => part.id === "outfit.hood") : undefined;
+  if (!hood || !Array.isArray(hood.nodes) || !hood.nodes.every((node) => typeof node === "string")) {
+    throw new Error("The Ranger's humanoid-appearance has no outfit.hood part.");
+  }
+  return hood.nodes;
+}
+
 async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   const url = (path: string) => new URL(path, new URL(RANGER_BUNDLE, window.location.href)).href;
   const json = async (path: string): Promise<unknown> => {
@@ -235,7 +235,8 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     json(entryFile(entry, ".humanoid-sockets.json")).then(socketsOf),
     json(entryFile(entry, ".humanoid-clips.json")).then(clipMotionsOf),
   ]);
-  const keys = [...new Set(Object.values(LOADOUT_ITEMS).flat().map((item) => item.key))];
+  const keys = [...new Set([...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key))];
+  const hood = hoodNodes(await json(entryFile(entry, ".humanoid-appearance.json")));
   const items = new Map(await Promise.all(keys.map(async (key) => {
     const scene = (await loader.loadAsync(url(entryFile(bundleEntry(manifest, key), ".gltf")))).scene;
     scene.updateMatrixWorld(true);
@@ -244,9 +245,16 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     return [key, { scene, gripInverse: grip.matrixWorld.clone().invert() }] as const;
   })));
   const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
-  const instantiate = (loadout: Loadout): Posable => {
+  const instantiate = (loadout: Loadout, headwear: Headwear | null): Posable => {
     const model = cloneSkinned(gltf.scene);
-    for (const { key, socket } of loadout ? LOADOUT_ITEMS[loadout] : []) {
+    // The bundle's hood is on by default; any other chosen headwear replaces it.
+    const hooded = headwear === null || headwear === "wayfarer-hood";
+    for (const name of hood) {
+      const node = model.getObjectByName(name);
+      if (!node) { throw new Error(`The Ranger has no hood node ${name}.`); }
+      node.visible = hooded;
+    }
+    for (const { key, socket } of [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(headwear ? HEADWEAR_ITEMS[headwear] : [])]) {
       const item = items.get(key);
       const place = sockets.get(socket);
       if (!item || !place) {
@@ -258,7 +266,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     return mixerPosable(model, sources);
   };
   const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
-  const probe = instantiate(null);
+  const probe = instantiate(null, null);
   const measured = measure(probe, rest);
   probe.dispose();
   return { clips, motions, instantiate, ...measured };
@@ -317,7 +325,7 @@ export class QuaterniusUnits {
   }
 
   /** Poses every requested unit and drops the instances of units not requested. */
-  update(units: readonly ImportedRequest[]): void {
+  update(units: readonly ImportedRequest[], viewerHeadwear: Headwear): void {
     const seen = new Set<string>();
     for (const unit of units) {
       const asset = this.#assets.get(unit.kind);
@@ -325,11 +333,12 @@ export class QuaterniusUnits {
       seen.add(unit.id);
       const loadout: Loadout = unit.swordAndShield ? "sword-and-shield" : unit.bowAndQuiver ? "bow-and-quiver" : null;
       let instance = this.#instances.get(unit.id);
-      if (instance && (instance.kind !== unit.kind || instance.loadout !== loadout)) {
+      const headwear = unit.headwear && unit.kind === "Ranger" ? viewerHeadwear : null;
+      if (instance && (instance.kind !== unit.kind || instance.loadout !== loadout || instance.headwear !== headwear)) {
         this.#drop(unit.id, instance);
         instance = undefined;
       }
-      instance ??= this.#create(unit, loadout, asset);
+      instance ??= this.#create(unit, loadout, headwear, asset);
       this.#pose(instance, asset, unit);
     }
     for (const [id, instance] of this.#instances) {
@@ -337,8 +346,8 @@ export class QuaterniusUnits {
     }
   }
 
-  #create(unit: ImportedRequest, loadout: Loadout, asset: Asset): Instance {
-    const posable = asset.instantiate(loadout);
+  #create(unit: ImportedRequest, loadout: Loadout, headwear: Headwear | null, asset: Asset): Instance {
+    const posable = asset.instantiate(loadout, headwear);
     const { model } = posable;
     const materials: Instance["materials"] = [];
     model.traverse((object) => {
@@ -358,7 +367,7 @@ export class QuaterniusUnits {
     root.name = `${unit.id}-model`;
     root.add(model);
     const instance: Instance = {
-      kind: unit.kind, loadout, root, posable,
+      kind: unit.kind, loadout, headwear, root, posable,
       clip: "", time: 0, materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity,
     };
     this.#instances.set(unit.id, instance);
@@ -424,15 +433,7 @@ export class QuaterniusUnits {
     return typeof asset === "object" ? asset.motions?.get(instance.clip) : undefined;
   }
 
-  /** The posed head centre (metres, world) and radius of a drawn unit, for explicit headwear. */
-  head(id: string): { centre: [number, number, number]; radius: number } | null {
-    const instance = this.#instances.get(id);
-    const asset = instance ? this.#assets.get(instance.kind) : undefined;
-    if (!instance?.head || typeof asset !== "object" || !asset.head) { return null; }
-    instance.root.updateMatrixWorld(true);
-    const centre = instance.head.localToWorld(point.copy(asset.head.offset));
-    return { centre: [centre.x, centre.y, centre.z], radius: asset.head.radius * instance.root.scale.x };
-  }
+
 
   /** The roots to draw, and whether the set changed since the last call. */
   roots(): { roots: THREE.Object3D[]; changed: boolean } {

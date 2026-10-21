@@ -24,6 +24,7 @@ describe("character customization prototype", () => {
       "wayfarer-hood",
       "ranger-cap",
       "ironcrest-helm",
+      "none",
     ]);
   });
 
