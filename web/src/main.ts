@@ -1081,15 +1081,21 @@ function finishCharacterCreation(): void {
   }
 }
 
+/** The framed height around the figure standing at y 0.1, and its centre. */
+const PREVIEW_SPAN = 3.05;
+const PREVIEW_CENTRE_Y = 1.5;
+
 function layoutPreview() {
   if (entryState.phase !== "character-selection") return;
   const width = Math.max(canvas.clientWidth, 1);
   const height = Math.max(canvas.clientHeight, 1);
   const rect = previewSurface.getBoundingClientRect();
-  const displayHeight = Math.max(1, Math.min(rect.height * 0.8, rect.width * 1.1));
-  const distance = 3.4 * height / (2 * Math.tan(THREE.MathUtils.degToRad(24)) * displayHeight);
-  previewCamera.position.set(4.5, 1.25, 7.1).normalize().multiplyScalar(distance).add(new THREE.Vector3(-1.2, 1.5, 0));
-  previewCamera.lookAt(-1.2, 1.5, 0);
+  // The figure (PREVIEW_HEIGHT plus headroom for hats) fills most of the preview's height (#362 owner
+  // review); narrow layouts are bounded by the width instead.
+  const displayHeight = Math.max(1, Math.min(rect.height * 0.9, rect.width * 1.9));
+  const distance = PREVIEW_SPAN * height / (2 * Math.tan(THREE.MathUtils.degToRad(24)) * displayHeight);
+  previewCamera.position.set(4.5, 1.25, 7.1).normalize().multiplyScalar(distance).add(new THREE.Vector3(-1.2, PREVIEW_CENTRE_Y, 0));
+  previewCamera.lookAt(-1.2, PREVIEW_CENTRE_Y, 0);
   previewCamera.setViewOffset(width, height, width / 2 - (rect.left + rect.width / 2), height / 2 - (rect.top + rect.height / 2), width, height);
   previewCamera.updateMatrixWorld(true);
 }
