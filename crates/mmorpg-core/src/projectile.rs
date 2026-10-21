@@ -353,7 +353,13 @@ impl ZoneSimulation {
     /// The upward launch speed (units per tick) that arcs a free `kind` shot from `from` along
     /// `ahead` through the nearest hostile unit's centre within [`AIM_ASSIST_RANGE_UNITS`] and
     /// about 8° of it; level (0) without one. Ties go to the lower entity.
-    fn aim_rise(&self, owner: EntityRef, from: [f32; 3], ahead: [f32; 2], kind: ProjectileKind) -> f32 {
+    fn aim_rise(
+        &self,
+        owner: EntityRef,
+        from: [f32; 3],
+        ahead: [f32; 2],
+        kind: ProjectileKind,
+    ) -> f32 {
         #[allow(clippy::cast_possible_truncation)]
         let here = [from[0].round() as i32, from[2].round() as i32];
         let mut best: Option<(f32, [f32; 3])> = None;

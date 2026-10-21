@@ -155,7 +155,10 @@ fn a_ricochet_shot_mirrors_off_a_wall_into_a_wolf_out_of_line() {
 fn a_free_arrow_pitches_down_to_meet_a_close_wolf_instead_of_sailing_over_it() {
     // 6 m ahead: a level arrow from chest height would pass over the wolf's back.
     let (_, events) = shoot(content(None, &[[0, 600]]), NORTHWARD, ids::AIMED_SHOT);
-    assert!(damage_to(&events, wolf(1)) > 0, "the arrow struck the close wolf");
+    assert!(
+        damage_to(&events, wolf(1)) > 0,
+        "the arrow struck the close wolf"
+    );
 }
 
 #[test]
