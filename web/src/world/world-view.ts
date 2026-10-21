@@ -46,7 +46,7 @@ import { nearestAnimal, projectedUnit, type ProjectedUnit } from "./units/projec
 import { ProgressionHud } from "./units/progression-hud";
 import { PointerClick, SecondaryClick, attackToggle } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
-import { QuaterniusUnits } from "./units/quaternius-units";
+import { QuaterniusUnits, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
 import type { ZoneWorld } from "./world-source";
 
@@ -757,7 +757,7 @@ export class WorldView {
         others.push(this.#minimapUnit(entity, unitsPerMetre));
       }
     }
-    this.#models.update(presented.imported);
+    this.#models.update(presented.imported, viewerHeadwear(look));
     const intensity = animate ? "strong" : "subtle";
     this.#impacts.preload(intensity);
     for (const received of receivedProjections) {
@@ -768,10 +768,6 @@ export class WorldView {
     }
     this.#impacts.update(now);
     const unitNodes = presented.nodes.filter((node) => !node.id.startsWith("fx-"));
-    for (const imported of presented.imported) {
-      const head = imported.headwear ? this.#models.head(imported.id) : null;
-      if (head) { unitNodes.push(...units.headwear(imported.id, head.centre, imported.yaw, head.radius)); }
-    }
     if (!self) {
       throw new Error("The projection is missing the viewer's own unit.");
     }
@@ -1094,4 +1090,10 @@ export class WorldView {
 /** The `use-door` that flips `door` from its latest projected state. */
 function doorToggle(projection: ZoneSnapshot, door: number): WorldCommand {
   return { kind: "use-door", door, open: !projection.doors.some((view) => view.door === door && view.open) };
+}
+
+/** The viewer's chosen headwear for the imported Ranger (#374); no choice is no hat. */
+function viewerHeadwear(look: ViewerLook): Headwear {
+  const style = look.headwear;
+  return style === "wayfarer-hood" || style === "ranger-cap" || style === "ironcrest-helm" ? style : "none";
 }

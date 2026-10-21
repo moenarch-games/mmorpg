@@ -7,19 +7,12 @@
 //! stands, and the imported models (with chosen clip and time) the page skins itself.
 //! Presentation only: the local zone host never reads it.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::{collections::BTreeSet, sync::Arc};
 
 use mmorpg_core::{ClassChoice, CreatureId, EntityKind, EntityRef, NpcId, ZoneSnapshot};
 use mmorpg_presentation::{
     Draw,
-    units::{
-        FrameInput, SampledUnit, UnitPresenter, Viewer,
-        imported::Kind,
-        player::{Hat, Look},
-    },
+    units::{FrameInput, SampledUnit, UnitPresenter, Viewer, imported::Kind, player::Hat},
 };
 use serde::Serialize;
 
@@ -101,8 +94,6 @@ pub struct Units {
     latest: Option<ZoneSnapshot>,
     /// Resources the page holds: those drawn in the previous frame.
     sent: BTreeSet<String>,
-    /// The viewer's headwear look and model height per imported unit of the last frame.
-    headwear: BTreeMap<String, (Look, f64)>,
     pub buffers: Buffers,
 }
 
@@ -143,7 +134,6 @@ impl Units {
             presenter: UnitPresenter::new(player_id, content, scenery),
             latest: None,
             sent: BTreeSet::new(),
-            headwear: BTreeMap::new(),
             buffers: Buffers::default(),
         }
     }
@@ -178,7 +168,6 @@ impl Units {
         self.presenter.reset();
         self.latest = None;
         self.sent.clear();
-        self.headwear.clear();
     }
 
     /// One frame. `units` holds `[kind (0 player, 1 creature, 2 npc), id, x, y, z, facing]`
@@ -258,14 +247,10 @@ impl Units {
             .iter()
             .map(|draw| self.entry(draw, &previous, &mut geometries))
             .collect();
-        self.headwear.clear();
         let imported = frame
             .imported
             .iter()
             .map(|unit| {
-                if let Some(look) = unit.headwear {
-                    self.headwear.insert(unit.id.clone(), (look, unit.height));
-                }
                 let yaw = frame
                     .units
                     .iter()
@@ -307,41 +292,6 @@ impl Units {
             geometries,
             units,
             imported,
-        })
-        .map_err(|error| error.to_string())
-    }
-
-    /// The viewer's headwear on imported unit `id`'s posed head, after the page skinned it.
-    ///
-    /// # Errors
-    ///
-    /// When the last frame gave `id` no headwear.
-    pub fn headwear(
-        &mut self,
-        id: &str,
-        centre: [f64; 3],
-        yaw: f64,
-        radius: f64,
-    ) -> Result<String, String> {
-        let (look, height) = *self
-            .headwear
-            .get(id)
-            .ok_or_else(|| format!("{id} wears no headwear this frame"))?;
-        let draws = self
-            .presenter
-            .headwear(id, look, centre, yaw, radius, height);
-        self.buffers = Buffers::default();
-        let previous = self.sent.clone();
-        let mut geometries = Vec::new();
-        let draws: Vec<_> = draws
-            .iter()
-            .map(|draw| self.entry(draw, &previous, &mut geometries))
-            .collect();
-        serde_json::to_string(&FrameLayout {
-            draws,
-            geometries,
-            units: Vec::new(),
-            imported: Vec::new(),
         })
         .map_err(|error| error.to_string())
     }

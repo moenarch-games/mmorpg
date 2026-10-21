@@ -463,6 +463,16 @@ impl Presentation {
         for imported in &frame.imported {
             let asset = &skinned::asset(imported.kind).model;
             let placement = asset.placement(imported.root, imported.height);
+            // The viewer's chosen headwear (#374): an authored item on `head.armor`, the
+            // Ranger's own hood, or none; everyone else keeps the bundle's hooded default.
+            let hat = imported.headwear.map(|look| look.hat);
+            let hooded = matches!(hat, None | Some(Some(player::Hat::Hood)));
+            let hidden: &[String] =
+                if imported.kind == mmorpg_presentation::units::imported::Kind::Ranger && !hooded {
+                    skinned::hood_nodes()
+                } else {
+                    &[]
+                };
             let mut body = asset.draws(
                 &imported.id,
                 imported.root,
@@ -470,7 +480,18 @@ impl Presentation {
                 imported.clip,
                 imported.time,
                 imported.tint,
+                hidden,
             );
+            if let Some(items) = hat.flatten().and_then(skinned::Equipment::headwear) {
+                body.extend(items.draws(
+                    &format!("{}-head", imported.id),
+                    asset,
+                    placement,
+                    imported.clip,
+                    imported.time,
+                    imported.tint,
+                ));
+            }
             if imported.sword_and_shield {
                 body.extend(skinned::Equipment::sword_and_shield().draws(
                     &imported.id,
@@ -496,23 +517,6 @@ impl Presentation {
                     let scale = f64::from(m[0].hypot(m[1]).hypot(m[2]));
                     (p, f64::from(radius) * scale)
                 });
-            if let (Some(look), Some((p, radius))) = (imported.headwear, head) {
-                let yaw = frame
-                    .units
-                    .iter()
-                    .find(|unit| unit.entity == imported.entity)
-                    .map_or(0., |unit| unit.yaw);
-                for draw in self.units_presenter.headwear(
-                    &imported.id,
-                    look,
-                    p,
-                    yaw,
-                    radius,
-                    imported.height,
-                ) {
-                    body.push(self.lowering.draw(&draw));
-                }
-            }
             if let (Some(unit), Some((p, radius))) = (
                 frame
                     .units
@@ -976,6 +980,7 @@ pub(crate) fn observed_imported_draws(count: usize, time: f32) -> Vec<crate::wor
                 Kind::Ranger.clips().idle,
                 time,
                 None,
+                &[],
             )
         })
         .collect()

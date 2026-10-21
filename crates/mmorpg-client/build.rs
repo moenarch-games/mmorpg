@@ -13,6 +13,9 @@ use std::{
 const CHARACTER: &str = "humanoid.ranger.male";
 const SWORD: &str = "equipment.sword.arming";
 const SHIELD: &str = "equipment.shield.heater";
+/// The authored headwear on `head.armor` (#374).
+const CAP: &str = "equipment.cap.ranger";
+const HELM: &str = "equipment.helm.ironcrest";
 /// The inn entries the clients draw (`mmorpg_presentation::buildings::INN_ENTRIES`).
 const INN: [&str; 5] = [
     "greyhaven.inn.shell",
@@ -55,6 +58,14 @@ fn main() {
         .find(|file| file.ends_with(".humanoid-sockets.json"))
         .expect("character sockets")
         .to_owned();
+    let appearance = character["files"]
+        .as_array()
+        .expect("entry files")
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .find(|file| file.ends_with(".humanoid-appearance.json"))
+        .expect("character appearance")
+        .to_owned();
     let clips = format!(
         "native/{}",
         character["clips"]
@@ -62,13 +73,16 @@ fn main() {
             .expect("shared clips")
             .replace(".glb", ".native.glb")
     );
-    let mut files = vec![sockets.clone(), clips.clone()];
-    let mut code =
-        format!("pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\n");
+    let mut files = vec![sockets.clone(), clips.clone(), appearance.clone()];
+    let mut code = format!(
+        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\npub const APPEARANCE: &str = {appearance:?};\n"
+    );
     for (name, key) in [
         ("CHARACTER", CHARACTER),
         ("SWORD", SWORD),
         ("SHIELD", SHIELD),
+        ("CAP", CAP),
+        ("HELM", HELM),
     ] {
         let path = format!("native/{key}.default.native.glb");
         code.push_str(&format!("pub const {name}: &str = {path:?};\n"));

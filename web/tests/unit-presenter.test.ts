@@ -49,10 +49,8 @@ describe("the shared unit presenter in the browser", () => {
     units.modelReady("Ranger", [["Idle_Loop", 2], ["Walk_Loop", 1], ["Jog_Fwd_Loop", 1], ["Sword_Attack", 1], ["Death01", 1], ["Idle_Shield_Loop", 1]]);
     const frame = units.frame(world.source.sample(), { seconds: 0, dt: 0, reducedMotion: false, barYaw: 0, look });
     const viewer = frame.imported.find((unit) => unit.entity.id === projection.viewerId)!;
+    // The imported model itself wears the viewer's headwear (#374); no procedural hat is drawn.
     expect(viewer).toMatchObject({ kind: "Ranger", clip: "Idle_Loop", swordAndShield: true, headwear: true, tint: null });
-    const helm = units.headwear(viewer.id, [viewer.feet[0], viewer.feet[1] + 1.6, viewer.feet[2]], viewer.yaw, 0.2);
-    expect(helm.length).toBeGreaterThan(0);
-    expect(helm.every((node) => node.id.startsWith(viewer.id))).toBe(true);
   });
 
   test("the viewer look maps to the appearance code the presenter reads", () => {

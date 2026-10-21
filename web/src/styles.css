@@ -568,7 +568,7 @@ kbd {
 
 .hat-options {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: .45rem;
 }
 
@@ -645,12 +645,20 @@ kbd {
   background: #627a58;
 }
 .hat-icon--cap::after {
-  top: 1.18rem;
-  width: 2.45rem;
-  height: .25rem;
+  top: 1.12rem;
+  width: 1.65rem;
+  height: .3rem;
+  border-radius: .12rem;
+  background: #6b4a2c;
+  box-shadow: -.62rem -.62rem 0 -.08rem #e2dccb;
+}
+
+.hat-icon--none::before {
+  top: .2rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px dashed #8f9a95;
   border-radius: 50%;
-  background: #7f966e;
-  box-shadow: .45rem .08rem 0 -.05rem #7f966e;
 }
 
 .hat-icon--helm::before {

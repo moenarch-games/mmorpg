@@ -43,5 +43,5 @@ if [[ ! -d "${PROCESSOR}/node_modules" ]]; then
 fi
 ASSET_TOOLING_KTX="${KTX}" bun "${PROCESSOR}/scripts/prepare-native-downloads.ts" \
   --index "${ROOT_DIR}/web/public/characters/humanoid.ranger.male/humanoid-ranger-male.index.json" \
-  --entries humanoid.ranger.male/default,equipment.sword.arming/default,equipment.shield.heater/default \
+  --entries humanoid.ranger.male/default,equipment.sword.arming/default,equipment.shield.heater/default,equipment.cap.ranger/default,equipment.helm.ironcrest/default \
   --out "${ROOT_DIR}/web/public/characters/humanoid.ranger.male/native"

@@ -11,11 +11,24 @@ DEST = ROOT / "web/public/characters/humanoid.ranger.male"
 RELEASE = "humanoid-ranger-male"
 URL = f"https://github.com/moritzbrantner/asset-tooling/releases/download/{RELEASE}/"
 KEYS = {"humanoid.ranger.male", "equipment.sword.arming", "equipment.shield.heater",
-        "equipment.bow.long", "equipment.quiver.back"}
+        "equipment.bow.long", "equipment.quiver.back", "equipment.cap.ranger", "equipment.helm.ironcrest"}
+
+
+def complete():
+    """The local copy is this release and holds every file of the selected entries."""
+    if not (DEST / "RELEASE").is_file() or (DEST / "RELEASE").read_text().strip() != RELEASE:
+        return False
+    try:
+        index = json.loads((DEST / (RELEASE + ".index.json")).read_text())
+    except (OSError, ValueError):
+        return False
+    entries = [entry for entry in index.get("entries", []) if entry.get("key") in KEYS and entry.get("variant") == "default"]
+    return {entry["key"] for entry in entries} == KEYS and all((DEST / name).is_file() for entry in entries for name in entry["files"])
 
 
 def acquire():
-    if (DEST / "RELEASE").is_file() and (DEST / "RELEASE").read_text().strip() == RELEASE:
+    # The rolling release gains entries; a copy missing a selected one is fetched again.
+    if complete():
         return
     DEST.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".ranger-", dir=DEST.parent) as temporary:

@@ -129,18 +129,6 @@ const METAL: u32 = 0xb8bec4;
 const DARK_METAL: u32 = 0x6d7378;
 const LEATHER: u32 = 0x6a4a30;
 const BOOTS: u32 = 0x4c3828;
-/// Explicit headwear over an imported model's head centre; imported models bring their own hair.
-pub fn headwear(resources: &mut Resources, id: &str, l: Look, head: Frame, r: f64) -> Vec<Draw> {
-    let mut p = Parts {
-        id,
-        resources,
-        draws: Vec::new(),
-    };
-    if l.hat.is_some() {
-        hat(&mut p, l, head, r);
-    }
-    p.draws
-}
 fn hat(p: &mut Parts, l: Look, head: Frame, r: f64) {
     let hair = if l.female { 0x8a5632 } else { 0x4a3222 };
     match l.hat {

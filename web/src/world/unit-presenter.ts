@@ -15,7 +15,6 @@ export type UnitPresenterHandle = {
   reset(): void;
   frame(units: Float64Array, seconds: number, dt: number, reducedMotion: boolean, barYaw: number,
     choice: number, headwear: string, previewYaw: number): string;
-  headwear(id: string, x: number, y: number, z: number, yaw: number, radius: number): string;
   models(): Float32Array;
   vertices(): Float32Array;
   indices(): Uint32Array;
@@ -53,7 +52,7 @@ export type ImportedRequest = {
   swordAndShield: boolean;
   /** A Ranger carries the bundle's bow and quiver on its back (#244). */
   bowAndQuiver: boolean;
-  /** The living viewer wears headwear on the posed head: call `headwear` after skinning. */
+  /** The living viewer: its imported model wears the viewer's chosen headwear (#374). */
   headwear: boolean;
 };
 
@@ -136,11 +135,7 @@ export class SharedUnits {
     };
   }
 
-  /** The viewer's headwear on imported unit `id`'s posed head (metres), after it was skinned. */
-  headwear(id: string, centre: readonly [number, number, number], yaw: number, radius: number): RendererSceneNode[] {
-    const layout = JSON.parse(this.#handle.headwear(id, centre[0], centre[1], centre[2], yaw, radius)) as Layout;
-    return this.#nodes(layout, this.#geometries);
-  }
+
 
   /** Renderer nodes of one call; `kept` collects the geometry still in use. */
   #nodes(layout: Layout, kept: Map<string, IndexedMeshGeometry>): RendererSceneNode[] {

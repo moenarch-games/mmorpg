@@ -4,6 +4,7 @@ export const HAT_OPTIONS = [
   { id: "wayfarer-hood", name: "Wayfarer's Hood", accent: "#b7c6bd" },
   { id: "ranger-cap", name: "Ranger's Cap", accent: "#6f875f" },
   { id: "ironcrest-helm", name: "Ironcrest Helm", accent: "#858e91" },
+  { id: "none", name: "No hat", accent: "#5b625f" },
 ] as const;
 
 export type HatStyle = (typeof HAT_OPTIONS)[number]["id"];
