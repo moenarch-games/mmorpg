@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
+use crate::scenario::Scenario;
 use mmorpg_characters::{CharacterLease, CharacterStore, EntryBackend, LeaseHolder, StoreError};
 use mmorpg_core::{
     CharacterId, ClassChoice, PlayerId, ZoneContent, ZoneDefinition, ZoneError, ZoneId,
@@ -148,6 +149,30 @@ impl LocalZoneHost {
             return Err(error);
         }
         Ok(player_id)
+    }
+
+    /// A fresh world for the review scenario (#371): its reseeded content
+    /// and its ephemeral character admitted as player 1, whose commands start
+    /// at sequence 1. The character holds no lease, so `save` and `exit`
+    /// refuse it; it lives and ends with this host.
+    pub fn scenario(scenario: Scenario, seed: u64) -> Result<(Self, PlayerId), LocalZoneError> {
+        let content = scenario.content(seed);
+        let record = scenario.record(&content)?;
+        let zone =
+            ZoneSimulation::with_content(LOCAL_ZONE_ID, content).map_err(LocalZoneError::Zone)?;
+        let mut host = Self {
+            zone,
+            next_player_id: 1,
+            last_sequences: BTreeMap::new(),
+            characters: BTreeMap::new(),
+        };
+        let player_id = host.next_player_id;
+        host.zone
+            .admit_character(player_id, &record)
+            .map_err(LocalZoneError::Zone)?;
+        host.next_player_id += 1;
+        host.last_sequences.insert(player_id, 0);
+        Ok((host, player_id))
     }
 
     /// Resumes the world of a [`Self::world_checkpoint`]: the hosted content
@@ -366,6 +391,34 @@ mod tests {
             .find(|entity| entity.kind == EntityKind::Player && entity.id == player_id)
             .unwrap()
             .position
+    }
+
+    #[test]
+    fn a_scenario_starts_by_the_ogre_and_replays_from_its_seed() {
+        assert_eq!(
+            Scenario::from_name("ogre-combat"),
+            Some(Scenario::OgreCombat)
+        );
+        assert_eq!(Scenario::from_name("greyfang-combat"), None);
+        let play = |seed| {
+            let (mut host, player) = LocalZoneHost::scenario(Scenario::OgreCombat, seed).unwrap();
+            assert_eq!(player, 1);
+            let start = own_position(&host, player);
+            assert_eq!([start[0], start[2]], [7_450, 16_650]);
+            // Walk into the ogre's aggro radius and let the fight run.
+            host.submit(player, 1, &run(0)).unwrap();
+            for _ in 0..150 {
+                host.tick().unwrap();
+            }
+            host.projection(player).unwrap()
+        };
+        assert_eq!(play(7), play(7), "the same seed replays the same fight");
+        let (host, player) = LocalZoneHost::scenario(Scenario::OgreCombat, 0).unwrap();
+        let viewer = decode_snapshot(&host.projection(player).unwrap())
+            .unwrap()
+            .viewer;
+        assert_eq!(viewer.level, 5);
+        assert_eq!(viewer.health, viewer.max_health);
     }
 
     #[test]
