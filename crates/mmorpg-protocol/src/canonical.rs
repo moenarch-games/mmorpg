@@ -920,7 +920,8 @@ const FREE: u8 = 2;
 const STUCK: u8 = 3;
 
 /// Projectiles (#286): the next ID (`u32`), a `u16` count, then per projectile its ID
-/// (`u32`), kind, owner, ability, exact position and velocity, age (`u16`) and flight.
+/// (`u32`), kind, owner, ability, exact position and velocity, age (`u16`), bounces (`u8`) and
+/// the units it pierced (#291), and flight.
 fn encode_projectiles(
     payload: &mut Vec<u8>,
     next: u32,
@@ -943,6 +944,10 @@ fn encode_projectiles(
             payload.extend_from_slice(&component.to_be_bytes());
         }
         payload.extend_from_slice(&projectile.age.to_be_bytes());
+        payload.push(projectile.bounces);
+        for unit in projectile.struck {
+            encode_entity_ref(payload, unit);
+        }
         match projectile.flight {
             mmorpg_core::Flight::Tracking { target, remaining } => {
                 payload.push(TRACKING);
@@ -989,6 +994,14 @@ fn decode_projectiles(
         let position = crate::wire::read_f32_vector(payload, offset)?;
         let velocity = crate::wire::read_f32_vector(payload, offset)?;
         let age = u16::from_be_bytes(take(payload, offset)?);
+        let bounces = crate::wire::read_u8(payload, offset)?;
+        if bounces > mmorpg_core::RICOCHET_BOUNCES {
+            return Err(ProtocolError::new("a projectile bounced too often"));
+        }
+        let mut struck = [None; mmorpg_core::PIERCE_HITS - 1];
+        for unit in &mut struck {
+            *unit = decode_entity_ref(payload, offset)?;
+        }
         let flight = match crate::wire::read_u8(payload, offset)? {
             TRACKING => mmorpg_core::Flight::Tracking {
                 target: decode_entity_ref(payload, offset)?
@@ -1012,6 +1025,8 @@ fn decode_projectiles(
             velocity,
             flight,
             age,
+            struck,
+            bounces,
         });
     }
     Ok((next, projectiles))
@@ -1268,6 +1283,8 @@ mod tests {
                         remaining: 4,
                     },
                     age: 2,
+                    struck: [Some(wolf), None],
+                    bounces: 0,
                 },
                 mmorpg_core::Projectile {
                     id: 8,
@@ -1282,6 +1299,8 @@ mod tests {
                         remaining: 29,
                     },
                     age: 6,
+                    struck: [None; 2],
+                    bounces: 1,
                 },
             ],
             loot_rng_state: 0,

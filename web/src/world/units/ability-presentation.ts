@@ -63,6 +63,8 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [16, { range: RANGED, description: "An explosion at your target that burns and hurls back every creature nearby; walls shield those behind them.", glyph: FLAME, accent: "#ff5a2a", visual: "ring", pose: "cast" }],
   [17, { range: { units: 1_500 }, description: "Rush at your target and knock it back on arrival; walls stop the charge.", glyph: FOOT, accent: "#c98a4a", visual: null, pose: "swing" }],
   [18, { range: "self", description: "A ground-shaking stomp that hurts and hurls back every player nearby; walls shield those behind them.", glyph: FOOT, accent: "#8a7a5a", visual: "ring", pose: "swing" }],
+  [19, { range: RANGED, description: "Looses an arrow along your facing that pierces up to three enemies in a line, each hit weaker. Walls and raised shields stop it.", glyph: ARROW, accent: "#d8c27a", visual: null, pose: "draw" }],
+  [20, { range: RANGED, description: "Looses an arrow along your facing that bounces off walls up to twice before striking the first enemy it meets.", glyph: ARROW, accent: "#a8c87a", visual: null, pose: "draw" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

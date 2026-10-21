@@ -118,8 +118,9 @@ impl ZoneSimulation {
         };
         let target = if ability.needs_target() {
             let target = target.or(player.target);
-            // Aimed Shot without a target flies freely along the facing (#286).
-            if target.is_none() && ability.aims_freely() {
+            // Aimed Shot without a target flies freely along the facing (#286); aimed specials
+            // always do (#291).
+            if (target.is_none() && ability.aims_freely()) || ability.shot() != crate::Shot::Plain {
                 None
             } else {
                 let Some(entity) = target else {
@@ -349,6 +350,19 @@ impl ZoneSimulation {
         target: Option<EntityRef>,
         now: u64,
     ) -> Result<(), ZoneError> {
+        self.apply_player_effect_scaled(player_id, ability, target, 100, now)
+    }
+
+    /// [`Self::apply_player_effect`] with a weapon strike dealing `percent` of its damage (a
+    /// piercing shot's later hits, #291).
+    pub(crate) fn apply_player_effect_scaled(
+        &mut self,
+        player_id: PlayerId,
+        ability: &Ability,
+        target: Option<EntityRef>,
+        percent: u32,
+        now: u64,
+    ) -> Result<(), ZoneError> {
         let Some(player) = self.players.get(&player_id) else {
             return Ok(());
         };
@@ -369,7 +383,8 @@ impl ZoneSimulation {
         match ability.effect {
             AbilityEffect::WeaponStrike { .. } => {
                 if let Some(victim) = target {
-                    let amount = self.weapon_strike_amount(player_id, ability.effect);
+                    let amount =
+                        self.weapon_strike_amount(player_id, ability.effect) * percent / 100;
                     let amount = self.stance_damage(player_id, target, amount)?;
                     self.player_melee_hits(player_id, victim, amount, false, now)?;
                 }

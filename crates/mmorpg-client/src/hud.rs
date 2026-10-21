@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn class_kits_hold_the_catalog_order() {
         assert_eq!(class_kit(PlayerClass::Warden), [1, 2, 3, 4, 17]);
-        assert_eq!(class_kit(PlayerClass::Ranger), [5, 6, 7, 8]);
+        assert_eq!(class_kit(PlayerClass::Ranger), [5, 6, 7, 8, 19, 20]);
         assert_eq!(class_kit(PlayerClass::Arcanist), [9, 10, 11, 12, 16]);
     }
 

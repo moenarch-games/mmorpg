@@ -305,7 +305,7 @@ export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
 const WIRE_VERSION = 30;
-const SCHEMA_VERSION = 29;
+const SCHEMA_VERSION = 30;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -403,6 +403,9 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [16, { castTicks: 45, channel: false, cooldown: 300, aura: null, auraTicks: 0 }],
   [17, instant(450)],
   [18, { castTicks: 30, channel: false, cooldown: 360, aura: null, auraTicks: 0 }],
+  // Aimed specials (#291): Piercing Shot and Ricochet Shot.
+  [19, instant(300)],
+  [20, instant(240)],
 ]);
 /** Mana: 110 + 22 per level above 1; rage and focus: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

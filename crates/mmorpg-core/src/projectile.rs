@@ -13,12 +13,27 @@
 //! straight line, so only something in the way stops it; one cast without a target flies
 //! straight along the facing and can miss or be dodged.
 //!
+//! Aimed specials (#291) change what a meeting does: a Piercing Shot passes through up to
+//! [`PIERCE_HITS`] enemies in a line, each later hit weaker ([`PIERCE_DAMAGE_PERCENT`]), and a
+//! Ricochet Shot mirrors off walls, props and terrain up to [`RICOCHET_BOUNCES`] times about
+//! the hit's surface normal. Walls stop a piercing shot; raised shields stop both.
+//!
 //! Rapier gap noted for physics-engine parity: no continuous projectile body is used; a
 //! per-tick ray sweep stands in for CCD on a thin, fast body.
 
+use crate::ability::Shot;
 use crate::entity::{EntityRef, body_id, entity_of};
 use crate::physics::BodyId;
 use crate::{AbilityId, ZoneError, ZoneEvent, ZoneSimulation};
+
+/// A Piercing Shot strikes at most this many enemies (#291) …
+pub const PIERCE_HITS: usize = 3;
+/// … each for this share of the shot's damage, in hit order.
+pub const PIERCE_DAMAGE_PERCENT: [u32; PIERCE_HITS] = [100, 70, 50];
+/// A Ricochet Shot mirrors off surfaces at most this many times (#291).
+pub const RICOCHET_BOUNCES: u8 = 2;
+/// A bounced shot restarts this far off the surface along its normal, units.
+const BOUNCE_CLEARANCE_UNITS: f32 = 1.0;
 
 /// At most this many projectiles fly or stick in one zone; the oldest goes first.
 pub const MAX_PROJECTILES: usize = 256;
@@ -131,6 +146,10 @@ pub struct Projectile {
     pub flight: Flight,
     /// Ticks flown.
     pub age: u16,
+    /// Units a piercing shot already struck and now passes (#291).
+    pub struck: [Option<EntityRef>; PIERCE_HITS - 1],
+    /// Surfaces a ricochet shot already bounced off (#291).
+    pub bounces: u8,
 }
 
 impl Projectile {
@@ -138,6 +157,20 @@ impl Projectile {
     pub const fn is_stuck(&self) -> bool {
         matches!(self.flight, Flight::Stuck { .. })
     }
+
+    /// How it treats what it meets: its ability's shot.
+    #[must_use]
+    pub fn shot(&self) -> Shot {
+        crate::ability_by_id(self.ability).map_or(Shot::Plain, crate::Ability::shot)
+    }
+
+    fn passes(&self, unit: EntityRef) -> bool {
+        self.struck.contains(&Some(unit))
+    }
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 /// What a viewer sees of a projectile: where it is and where it points.
@@ -260,6 +293,8 @@ impl ZoneSimulation {
             },
             flight: Flight::Tracking { target, remaining },
             age: 0,
+            struck: [None; PIERCE_HITS - 1],
+            bounces: 0,
         });
         Ok(())
     }
@@ -297,6 +332,8 @@ impl ZoneSimulation {
             velocity: [unit(x) * speed, 0.0, unit(z) * speed],
             flight: Flight::Free,
             age: 0,
+            struck: [None; PIERCE_HITS - 1],
+            bounces: 0,
         });
         Ok(())
     }
@@ -361,6 +398,7 @@ impl ZoneSimulation {
             let segment = projectile.velocity;
             let hit = self.world.cast_ray(projectile.position, segment, |body| {
                 self.projectile_meets(projectile.owner, body)
+                    && entity_of(body).is_none_or(|unit| !projectile.passes(unit))
             });
             let Some(hit) = hit else {
                 projectile.position = add(projectile.position, segment);
@@ -373,6 +411,47 @@ impl ZoneSimulation {
             let point = add(projectile.position, scale(segment, hit.fraction));
             projectile.position = point;
             let unit = entity_of(hit.body);
+            let shot = projectile.shot();
+            // A ricochet mirrors off a surface (not a unit) while it has bounces left.
+            if unit.is_none() && shot == Shot::Ricochet && projectile.bounces < RICOCHET_BOUNCES {
+                let n = hit.normal;
+                let along = dot(projectile.velocity, n);
+                projectile.velocity = sub(projectile.velocity, scale(n, 2.0 * along));
+                projectile.position = add(point, scale(n, BOUNCE_CLEARANCE_UNITS));
+                projectile.bounces += 1;
+                self.projectiles.insert(id, projectile);
+                if let Some(piece) = self.piece_of_body(hit.body) {
+                    self.damage_piece(piece, crate::PROJECTILE_PIECE_DAMAGE, now)?;
+                }
+                continue;
+            }
+            // A piercing shot passes each enemy it lands on until its last hit.
+            if let Some(victim) = unit
+                && shot == Shot::Pierce
+            {
+                let struck = projectile.struck.iter().flatten().count();
+                let percent = PIERCE_DAMAGE_PERCENT[struck];
+                let landed = self.projectile_strikes(projectile, victim, percent, now)?;
+                if landed && struck + 1 < PIERCE_HITS {
+                    projectile.struck[struck] = Some(victim);
+                    self.projectiles.insert(id, projectile);
+                    continue;
+                }
+                projectile.flight = match self.unit_centre(victim) {
+                    Some(centre) => Flight::Stuck {
+                        unit: Some(victim),
+                        offset: sub(point, centre),
+                        remaining: STUCK_IN_UNIT_TICKS,
+                    },
+                    None => Flight::Stuck {
+                        unit: None,
+                        offset: point,
+                        remaining: STUCK_TICKS,
+                    },
+                };
+                self.projectiles.insert(id, projectile);
+                continue;
+            }
             projectile.flight = match unit.and_then(|unit| Some((unit, self.unit_centre(unit)?))) {
                 Some((unit, centre)) => Flight::Stuck {
                     unit: Some(unit),
@@ -387,7 +466,7 @@ impl ZoneSimulation {
             };
             self.projectiles.insert(id, projectile);
             if let Some(unit) = unit {
-                self.projectile_strikes(projectile, unit, now)?;
+                self.projectile_strikes(projectile, unit, 100, now)?;
             } else if let Some(piece) = self.piece_of_body(hit.body) {
                 // A shot into a destructible piece chips it (#305).
                 self.damage_piece(piece, crate::PROJECTILE_PIECE_DAMAGE, now)?;
@@ -431,17 +510,19 @@ impl ZoneSimulation {
     }
 
     /// `projectile` reached `unit`: a raised shield turned toward it blocks it; otherwise its
-    /// ability lands on a valid victim (the tracked target, or anything a free shot meets).
+    /// ability lands on a valid victim (the tracked target, or anything a free shot meets) at
+    /// `percent` of its damage. Returns whether it landed on a hostile victim.
     fn projectile_strikes(
         &mut self,
         projectile: Projectile,
         unit: EntityRef,
+        percent: u32,
         now: u64,
-    ) -> Result<(), ZoneError> {
+    ) -> Result<bool, ZoneError> {
         if let (EntityRef::Player(attacker), EntityRef::Player(victim)) = (projectile.owner, unit)
             && !self.players_are_hostile(attacker, victim)
         {
-            return Ok(());
+            return Ok(false);
         }
         let ability = crate::ability_by_id(projectile.ability)
             .ok_or_else(|| ZoneError::new("projectile names an unknown ability"))?;
@@ -461,12 +542,12 @@ impl ZoneSimulation {
                     amount: 0,
                 },
             );
-            return Ok(());
+            return Ok(false);
         }
         match (projectile.owner, unit) {
             (EntityRef::Player(player_id), EntityRef::Creature(_) | EntityRef::Player(_)) => {
                 if self.players.contains_key(&player_id) {
-                    self.apply_player_effect(player_id, ability, Some(unit), now)?;
+                    self.apply_player_effect_scaled(player_id, ability, Some(unit), percent, now)?;
                 }
             }
             (EntityRef::Creature(creature_id), EntityRef::Player(player_id)) => {
@@ -479,9 +560,9 @@ impl ZoneSimulation {
                 }
             }
             // Cover: an NPC in the way takes the shot without effect.
-            _ => {}
+            _ => return Ok(false),
         }
-        Ok(())
+        Ok(true)
     }
 
     /// The projectiles a viewer at `centre` sees, nearest first.

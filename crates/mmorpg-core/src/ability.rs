@@ -8,7 +8,7 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 5;
+pub const ABILITY_CATALOG_REVISION: u64 = 6;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
@@ -308,10 +308,23 @@ impl Ability {
     }
 
     /// Whether the ability may also fly freely along the facing without a target: Aimed Shot
-    /// (#286) and Firebolt (#289).
+    /// (#286), Firebolt (#289) and the aimed specials.
     #[must_use]
     pub const fn aims_freely(&self) -> bool {
-        self.id.0 == ids::AIMED_SHOT.0 || self.id.0 == ids::FIREBOLT.0
+        self.id.0 == ids::AIMED_SHOT.0
+            || self.id.0 == ids::FIREBOLT.0
+            || !matches!(self.shot(), Shot::Plain)
+    }
+
+    /// How its projectile treats what it meets (#291). Aimed specials ignore any selected target
+    /// and always fly along the facing.
+    #[must_use]
+    pub const fn shot(&self) -> Shot {
+        match self.id.0 {
+            19 => Shot::Pierce,
+            20 => Shot::Ricochet,
+            _ => Shot::Plain,
+        }
     }
 
     /// Whether the ability needs a hostile unit target (otherwise it is
@@ -385,10 +398,25 @@ pub mod ids {
     pub const FIRE_BLAST: AbilityId = AbilityId::new(16);
     pub const CHARGE: AbilityId = AbilityId::new(17);
     pub const STOMP: AbilityId = AbilityId::new(18);
+    pub const PIERCING_SHOT: AbilityId = AbilityId::new(19);
+    pub const RICOCHET_SHOT: AbilityId = AbilityId::new(20);
+}
+
+/// How a projectile treats what it meets (#291).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Shot {
+    /// Stops at the first thing it meets.
+    Plain,
+    /// Passes through up to [`crate::PIERCE_HITS`] enemies in a line, each later hit weaker;
+    /// walls and raised shields stop it.
+    Pierce,
+    /// Mirrors off walls, props and terrain up to [`crate::RICOCHET_BOUNCES`] times and stops
+    /// at the first unit.
+    Ricochet,
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 18] = [
+pub const ABILITY_CATALOG: [Ability; 20] = [
     ability(
         1,
         "Heroic Strike",
@@ -671,6 +699,43 @@ pub const ABILITY_CATALOG: [Ability; 18] = [
             knockback: 300,
         },
     ),
+    // Aimed specials (#291): always loosed along the facing, they fly physically and can miss.
+    shot(
+        ability(
+            19,
+            "Piercing Shot",
+            RANGER,
+            3,
+            35,
+            CastTime::Instant,
+            300,
+            RANGED,
+            AbilityEffect::WeaponStrike {
+                numerator: 2,
+                denominator: 1,
+                bonus: 10,
+            },
+        ),
+        crate::ProjectileKind::Arrow,
+    ),
+    shot(
+        ability(
+            20,
+            "Ricochet Shot",
+            RANGER,
+            5,
+            30,
+            CastTime::Instant,
+            240,
+            RANGED,
+            AbilityEffect::WeaponStrike {
+                numerator: 3,
+                denominator: 2,
+                bonus: 8,
+            },
+        ),
+        crate::ProjectileKind::Arrow,
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -845,7 +910,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(19)), None);
+        assert_eq!(ability_by_id(AbilityId::new(21)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG

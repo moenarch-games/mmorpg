@@ -60,7 +60,7 @@ mod zone;
 pub use ability::{
     ABILITY_CATALOG, ABILITY_CATALOG_REVISION, Ability, AbilityEffect, AbilityId, AbilityRange,
     AbilityUser, AuraKind, AuraSpec, CastTime, GLOBAL_COOLDOWN_TICKS, MAX_AURAS, MAX_COOLDOWNS,
-    ability_by_id,
+    Shot, ability_by_id,
 };
 pub use areas::{Area, AreaId, MAX_AREA_NAME_BYTES, MAX_ZONE_AREAS, ZoneAreas};
 pub use aura::{Aura, CastState, Cooldown};
@@ -127,8 +127,8 @@ pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
 pub use progression::{MAX_PLAYER_LEVEL, experience_to_next_level, kill_experience};
 pub use projectile::{
     ARROW_SPEED_UNITS, BOLT_SPEED_UNITS, Flight, MAX_PROJECTILES, MAX_VISIBLE_PROJECTILES,
-    MISSILE_FLIGHT_HEIGHT_UNITS, MISSILE_SPEED_UNITS, Projectile, ProjectileKind, ProjectileView,
-    STUCK_IN_UNIT_TICKS, STUCK_TICKS,
+    MISSILE_FLIGHT_HEIGHT_UNITS, MISSILE_SPEED_UNITS, PIERCE_DAMAGE_PERCENT, PIERCE_HITS,
+    Projectile, ProjectileKind, ProjectileView, RICOCHET_BOUNCES, STUCK_IN_UNIT_TICKS, STUCK_TICKS,
 };
 pub use projection::{
     AuraView, CastView, EntityFlags, EntitySnapshot, GuardView, ResourceView, TargetDetail,
@@ -172,7 +172,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 29;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 30;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its
