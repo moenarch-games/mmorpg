@@ -1,5 +1,7 @@
 # Headless scenarios
 
+> **Interactive review scenarios (#371)** are a separate, manual tool: open the browser game with `?scenario=ogre-combat&seed=7` (local: `cd web && bun run dev`, then `http://localhost:5173/mmorpg/?scenario=ogre-combat&seed=7`; or the same query on GitHub Pages). It skips character selection and drops a level 5 Warden 15 m from the Southmeadow Hill Ogre in a fresh local world; **Reset scenario** or F9 restarts it from the same seed, and nothing is saved. Scenarios are defined in `crates/mmorpg-wasm/src/scenario.rs`; the badge in the top bar names scenario, seed and content revision for bug reports.
+
 `mmorpg-scenarios` runs scripted multiplayer and control-plane scenarios without a GPU, network, wall clock or randomness. Use it to check server-side behavior that `scripts/smoke-native.py` can only reach through a GPU window.
 
 ```sh
