@@ -42,7 +42,8 @@ import {
 import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { committedArea, committedLevel, loadLocalWorld } from "./world/wasm-runtime";
+import { committedArea, committedLevel, createScenarioWorld, loadLocalWorld } from "./world/wasm-runtime";
+import { scenarioChoice, type ScenarioChoice, type ScenarioSource } from "./world/scenario-source";
 import { webTransportConnector } from "./session/webtransport";
 import { onlineChoice, type ZoneServer } from "./world/online-config";
 import { OnlineZoneSource } from "./world/online-zone-source";
@@ -160,6 +161,17 @@ let worldFailure: string | null = null;
 let joining: ZoneWorld | null = null;
 let jumps = 0;
 let arenaWorld: ArenaWorld | null = null;
+// A review scenario (#371, `?scenario=<name>&seed=<n>`) skips selection and enters a fresh,
+// unsaved local world in that situation; F9 or Reset scenario restarts it from the same seed.
+let scenario: ScenarioChoice | null = null;
+let scenarioWorld: { world: ZoneWorld; source: ScenarioSource; area: number | null } | null = null;
+let scenarioAutoEntered = false;
+try {
+  scenario = scenarioChoice(window.location.search);
+} catch (error) {
+  worldLoadError = errorMessage(error);
+}
+const scenarioReset = requireElement<HTMLButtonElement>("#scenario-reset");
 let arenaServer: ZoneServer | null = null;
 let arenaError: string | null = null;
 const arenaStatus = requireElement<HTMLElement>("#battle-royale-status");
@@ -802,6 +814,7 @@ function chosenServer(): ZoneServer | null {
 
 /** The world "Enter World" joins; null while loading or when online play is misconfigured. */
 function chosenWorld(): ZoneWorld | null {
+  if (scenario) { return scenarioWorld?.world ?? null; }
   if (arenaEntry.selected) { return arenaWorld?.world ?? null; }
   if (online.kind === "invalid") {
     return null;
@@ -816,6 +829,9 @@ function entryNote(character: CharacterPreview): string {
     if (!arenaWorld) { return "Enter a match server to play with friends."; }
     if (joining) { return "Joining Battle Royale…"; }
     return worldFailure ?? `Join Battle Royale at ${arenaServer?.label}`;
+  }
+  if (scenario && !scenarioWorld) {
+    return worldLoadError ?? `Loading review scenario ${scenario.name}…`;
   }
   const server = chosenServer();
   if (online.kind === "invalid") {
@@ -835,6 +851,10 @@ function entryNote(character: CharacterPreview): string {
 }
 
 function updateEntryButton(): void {
+  if (scenarioWorld && !scenarioAutoEntered && entryState.phase !== "world" && !joining && artReady()) {
+    scenarioAutoEntered = true;
+    void enterWorld();
+  }
   const server = chosenServer();
   enterWorldButton.disabled = chosenWorld() === null || joining !== null || !artReady();
   let entryLabel = "Enter World";
@@ -1087,6 +1107,7 @@ function frame(now: number) {
       worldView.frame(activeWorld, worldInput(), viewerLook(), paused ? 0 : deltaSeconds, now);
       showLinkState(activeWorld.source.linkState());
       showArenaMatch();
+      showScenarioStatus();
       if (loading.entry !== null && loading.playableMs === null) {
         loading.playableMs = Math.round(now - loading.entry);
         console.info(`Greyhaven playable ${loading.playableMs} ms after Enter World; ${loading.bytesBeforeEntry} bytes fetched before entry.`);
@@ -1122,6 +1143,9 @@ const OUTPOST_AREA = 1;
 
 /** The area the selected character enters in: its committed location's, else the outpost. */
 function startArea(): number {
+  if (scenarioWorld) {
+    return scenarioWorld.area ?? OUTPOST_AREA;
+  }
   if (!localCharacters || creationDraft) {
     return OUTPOST_AREA;
   }
@@ -1173,7 +1197,9 @@ async function enterWorld(): Promise<void> {
   }
   activeWorld = target;
   const worldNotice = world && target === world ? world.source.worldNotice : null;
-  if (arenaEntry.selected) {
+  if (scenario) {
+    worldMode.textContent = `Review scenario ${scenario.name} · seed ${scenario.seed} · content rev ${world?.scenery.scenery.contentRevision} · nothing is saved`;
+  } else if (arenaEntry.selected) {
     worldMode.textContent = `Battle Royale · ${server?.label}`;
   } else if (server) {
     worldMode.textContent = `Greyhaven Vale · online · ${server.label}`;
@@ -1190,12 +1216,37 @@ async function enterWorld(): Promise<void> {
   for (const element of worldUi) {
     element.hidden = false;
   }
+  scenarioReset.hidden = !scenario;
   lastTime = performance.now();
   canvas.focus();
 }
 
+/** Restarts the review scenario from its seed: a fresh zone, character and encounter. */
+async function resetScenario(): Promise<void> {
+  if (!scenarioWorld || activeWorld !== scenarioWorld.world || entryState.phase !== "world") {
+    return;
+  }
+  worldView.leave();
+  await scenarioWorld.source.reset();
+  worldView.enter(worldInput(), scenarioWorld.source.latestProjection());
+  lastTime = performance.now();
+  canvas.focus();
+}
+
+/** A dead scenario character is offered the reset instead of the long run back. */
+function showScenarioStatus(): void {
+  if (activeWorld && activeWorld === scenarioWorld?.world && activeWorld.source.latestProjection()?.viewer.dead) {
+    requireElement<HTMLElement>("#unit-status").textContent = "You died. Press F9 or Reset scenario to fight again.";
+  }
+}
+
 /** Back to selection; `failure` says why when the world was left after an error. */
 function returnToCharacters(failure: string | null = null) {
+  if (scenario && !failure) {
+    // Leaving a review scenario is leaving review: the ordinary page has no scenario.
+    window.location.search = "";
+    return;
+  }
   turntable.cancel();
   const character = selectedCharacter();
   try {
@@ -1248,6 +1299,13 @@ saveCharacterButton.addEventListener("click", saveCurrentCharacter);
 loadCharacterButton.addEventListener("click", loadSavedCharacter);
 enterWorldButton.addEventListener("click", () => void enterWorld());
 returnButton.addEventListener("click", () => returnToCharacters());
+scenarioReset.addEventListener("click", () => void resetScenario());
+window.addEventListener("keydown", (event) => {
+  if (scenario && event.key === "F9" && !event.repeat) {
+    event.preventDefault();
+    void resetScenario();
+  }
+});
 createCharacterButton.addEventListener("click", openCharacterCreation);
 for (const button of cancelCreationButtons) {
   button.addEventListener("click", cancelCharacterCreation);
@@ -1480,6 +1538,14 @@ void loadPageWorld().then((loaded) => {
   onlineWorld = online.kind === "online" ? createOnlineWorld(loaded, online.server) : null;
   arenaEntry.ready(loaded.catalog);
   refreshArenaWorld();
+  if (scenario) {
+    try {
+      scenarioWorld = createScenarioWorld(loaded, scenario);
+    } catch (error) {
+      worldLoadError = `Review scenario ${scenario.name}: ${errorMessage(error)}`;
+    }
+    updateEntryButton();
+  }
 }, (error: unknown) => {
   worldLoadError = errorMessage(error);
   updateEntryButton();

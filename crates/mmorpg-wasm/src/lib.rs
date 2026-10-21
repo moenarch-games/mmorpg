@@ -26,6 +26,7 @@
 pub mod arena_presentation;
 pub mod catalog;
 pub mod host;
+pub mod scenario;
 pub mod scenery;
 pub mod static_scene;
 pub mod units;
@@ -35,6 +36,7 @@ use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex};
 use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 
 use crate::host::{LOCAL_ZONE_ID, LocalZoneHost, SubmitOutcome};
+use crate::scenario::Scenario;
 
 #[wasm_bindgen]
 extern "C" {
@@ -144,6 +146,7 @@ pub fn region_models() -> String {
 #[wasm_bindgen]
 pub struct LocalZone {
     host: LocalZoneHost,
+    scenario_player: Option<u32>,
 }
 
 #[wasm_bindgen]
@@ -153,6 +156,7 @@ impl LocalZone {
     pub fn new() -> Result<LocalZone, JsError> {
         Ok(Self {
             host: LocalZoneHost::new().map_err(js_error)?,
+            scenario_player: None,
         })
     }
 
@@ -162,7 +166,28 @@ impl LocalZone {
     pub fn from_checkpoint(bytes: &[u8]) -> Result<LocalZone, JsError> {
         Ok(Self {
             host: LocalZoneHost::from_world_checkpoint(bytes).map_err(js_error)?,
+            scenario_player: None,
         })
+    }
+
+    /// A fresh world in the named review scenario (#371), `seed` mixed into
+    /// its RNG; throws for an unknown name. Its ephemeral character is
+    /// already in: [`LocalZone::scenario_player`]. Nothing is stored.
+    #[wasm_bindgen(js_name = forScenario)]
+    pub fn for_scenario(name: &str, seed: u64) -> Result<LocalZone, JsError> {
+        let scenario = Scenario::from_name(name)
+            .ok_or_else(|| JsError::new(&format!("unknown scenario {name:?}")))?;
+        let (host, player) = LocalZoneHost::scenario(scenario, seed).map_err(js_error)?;
+        Ok(Self {
+            host,
+            scenario_player: Some(player),
+        })
+    }
+
+    /// The scenario character's player ID; undefined outside a scenario.
+    #[wasm_bindgen(getter, js_name = scenarioPlayer)]
+    pub fn scenario_player(&self) -> Option<u32> {
+        self.scenario_player
     }
 
     /// The world without its players, to save beside the character records.
@@ -282,6 +307,14 @@ pub fn area_at(x: i32, z: i32) -> Option<u16> {
     scenery::hosted_areas()
         .area_at(x, z)
         .map(|area| area.id().get())
+}
+
+/// The area a review scenario (#371) starts in, so the page can load its art
+/// first; undefined for an unknown name or a start outside every area.
+#[wasm_bindgen(js_name = scenarioArea)]
+pub fn scenario_area(name: &str) -> Option<u16> {
+    let ([x, z], _) = Scenario::from_name(name)?.location();
+    area_at(x, z)
 }
 
 /// Presentation relief at `(x, z)` in units; clients raise units by it.
