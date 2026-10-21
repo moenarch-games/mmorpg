@@ -290,7 +290,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       resource: oneOf(record.resource, RESOURCES, `class ${index} resource`),
     };
   });
-  if (root.abilityCatalogRevision !== "6") {
+  if (root.abilityCatalogRevision !== "7") {
     fail("unsupported ability catalog revision");
   }
   const abilities = list(root.abilities, "abilities", 255).map((value, index) => {

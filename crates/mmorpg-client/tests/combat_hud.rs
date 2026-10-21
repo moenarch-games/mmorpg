@@ -393,7 +393,10 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
     assert_close(hud.resource_fill(), 1.0, "a cast pays on completion");
     assert_eq!(slot_ids(&hud), [9, 10, 11, 12, 16, 21, 22, 23]);
     let casting: Vec<_> = hud.slots.iter().map(|slot| slot.casting).collect();
-    assert_eq!(casting, [true, false, false, false, false, false, false, false]);
+    assert_eq!(
+        casting,
+        [true, false, false, false, false, false, false, false]
+    );
     let global = projection.viewer.global_cooldown;
     assert!(global > 0, "fixture: the global cooldown is running");
     for slot in &hud.slots {

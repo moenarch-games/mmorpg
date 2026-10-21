@@ -468,7 +468,9 @@ export class WorldView {
     this.cancelDirectedStrike();
     this.#guardHold.end();
     this.#orbit = new OrbitCamera();
-    this.#movementFacing = this.#orbit.facing();
+    // Keep the zone's facing: the first intent must not turn a character that entered facing elsewhere.
+    const own = projection?.entities.find((entity) => entity.kind === "player" && entity.entityId === projection.viewerId);
+    this.#movementFacing = own?.facing ?? this.#orbit.facing();
     this.#endDrag();
     this.#outbox.reset(this.#input(input));
     this.#resetUnits();

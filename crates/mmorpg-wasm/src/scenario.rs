@@ -23,8 +23,8 @@ pub enum Scenario {
     /// A level 6 Ranger at the eastern edge of Wolfrun Woods, facing the wolf pack among the
     /// trunks, to try Piercing and Ricochet Shot (#291).
     RangerRange,
-    /// A level 6 Arcanist south of the Millbrook field marauders, facing them across the
-    /// fence, to try Frost Breath, Lightning Beam and Chain Lightning (#292).
+    /// A level 8 Arcanist at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
+    /// Frost Breath, Lightning Beam and Chain Lightning (#292).
     ArcanistPack,
 }
 
@@ -68,7 +68,9 @@ impl Scenario {
     const fn level(self) -> u8 {
         match self {
             Self::OgreCombat => 5,
-            Self::RangerRange | Self::ArcanistPack => 6,
+            Self::RangerRange => 6,
+            // Lightning Beam unlocks at level 8.
+            Self::ArcanistPack => 8,
         }
     }
 
@@ -79,8 +81,8 @@ impl Scenario {
             Self::OgreCombat => ([7_450, 16_650], 0),
             // The nearest wolves stand about 18 m west, beyond aggro range; facing west.
             Self::RangerRange => ([-3_500, -3_400], 49_152),
-            // The marauders' southern row stands at z 8 000; 13 m south, facing north.
-            Self::ArcanistPack => ([7_300, 9_300], 32_768),
+            // Beside the ranger range, nearer the pack's middle; facing west.
+            Self::ArcanistPack => ([-4_000, -2_200], 49_152),
         }
     }
 

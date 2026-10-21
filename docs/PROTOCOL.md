@@ -500,6 +500,10 @@ no client command or player-snapshot version changes. Private canonical snapshot
 with bindings use the `MMOC` v1 adapter envelope described in
 [the admission decision](adr/0003-development-character-admission.md).
 
+## Cones, beams and chains: ability catalog 7
+
+Ability catalog revision 7 (#292) adds Frost Breath (21), Lightning Beam (22, a channel) and Chain Lightning (23) for Arcanists. No wire or schema change: clients draw the cone from the caster's facing, the beam along it to its farthest damaged victim, and the chain through the caster's damage events in order.
+
 ## Trick shots: core schema 30
 
 Core schema 30 (#291) adds to each canonical projectile its ricochet bounce count (`u8`, at most 2) and the two units a piercing shot already passed (two optional entity refs), after its age. Ability catalog revision 6 adds Piercing Shot (19) and Ricochet Shot (20). Player projections keep their wire layout: projectiles are still drawn from position and heading, so bounces and pass-throughs need no new fields. Schema 29 snapshots and checkpoints fail closed.
