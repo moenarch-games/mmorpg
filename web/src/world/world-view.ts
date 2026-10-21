@@ -551,6 +551,27 @@ export class WorldView {
     this.#overlay.hide();
   }
 
+  /**
+   * The selection turntable (#362): the real Ranger in its idle clip standing at `feet`, dressed as
+   * the viewer would enter (class loadout, headwear, hair), through the same imported-model path as
+   * the world. False before a world loaded, while the model loads or after it failed; the page then
+   * draws its procedural preview. Entering the world drops it like any unit no longer projected.
+   */
+  selectionPreview(look: ViewerLook, feet: [number, number, number], yaw: number, height: number, seconds: number,
+    camera: RendererCamera): boolean {
+    if (!this.#regions || !this.#models.ready("Ranger")) { return false; }
+    const clip = this.#restClip("Ranger");
+    const length = this.#models.clipLength("Ranger", clip) ?? 1;
+    this.#models.update([{
+      id: "selection-preview", kind: "Ranger", entity: { kind: "player", id: 0 }, feet, yaw, heightMetres: height,
+      clip, time: seconds % length, tint: null,
+      swordAndShield: look.classId === "warden", bowAndQuiver: look.classId === "ranger", headwear: true,
+    }], { headwear: viewerHeadwear(look), hair: viewerHair(look) });
+    const { roots, changed } = this.#models.roots();
+    if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
+    return true;
+  }
+
   /** Queues an intent for the next frame; the zone decides what happens. */
   queueIntent(intent: Intent, onSent?: (sequence: number | null) => void): void {
     this.#intents.push({ intent, onSent });

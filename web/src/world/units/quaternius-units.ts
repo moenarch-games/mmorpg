@@ -467,6 +467,12 @@ export class QuaterniusUnits {
     this.#rootsChanged = true;
   }
 
+  /** The length in seconds of a loaded model's clip, or null before it loaded. */
+  clipLength(kind: QuaterniusKind, clip: string): number | null {
+    const asset = this.#assets.get(kind);
+    return typeof asset === "object" ? asset.clips.get(clip) ?? null : null;
+  }
+
   /** Whether `id` drew an imported model this frame. */
   has(id: string): boolean {
     return this.#instances.has(id);
