@@ -32,6 +32,10 @@ pub const PIERCE_HITS: usize = 3;
 pub const PIERCE_DAMAGE_PERCENT: [u32; PIERCE_HITS] = [100, 70, 50];
 /// A Ricochet Shot mirrors off surfaces at most this many times (#291).
 pub const RICOCHET_BOUNCES: u8 = 2;
+/// A free arrow or bolt pitches to meet the nearest hostile unit within this distance …
+pub const AIM_ASSIST_RANGE_UNITS: i32 = 3_000;
+/// … whose centre lies within this angle of the facing (about 8°, as its cosine).
+const AIM_ASSIST_COS: f32 = 0.990;
 /// A bounced shot restarts this far off the surface along its normal, units.
 const BOUNCE_CLEARANCE_UNITS: f32 = 1.0;
 
@@ -323,19 +327,56 @@ impl ZoneSimulation {
         #[allow(clippy::cast_precision_loss)]
         let unit = |value: i32| value as f32 / crate::trig::TRIG_ONE as f32;
         let speed = kind.speed();
+        let ahead = [unit(x), unit(z)];
+        // An arrow leaves at chest height; aimed at a short creature it would sail over it, so
+        // it pitches to arc through the nearest hostile body centre straight ahead (#291).
+        let rise = if kind.gravity() > 0.0 {
+            self.aim_rise(owner, from, ahead, kind)
+        } else {
+            0.0
+        };
         self.add_projectile(Projectile {
             id: 0,
             kind,
             owner,
             ability,
             position: from,
-            velocity: [unit(x) * speed, 0.0, unit(z) * speed],
+            velocity: [ahead[0] * speed, rise, ahead[1] * speed],
             flight: Flight::Free,
             age: 0,
             struck: [None; PIERCE_HITS - 1],
             bounces: 0,
         });
         Ok(())
+    }
+
+    /// The upward launch speed (units per tick) that arcs a free `kind` shot from `from` along
+    /// `ahead` through the nearest hostile unit's centre within [`AIM_ASSIST_RANGE_UNITS`] and
+    /// about 8° of it; level (0) without one. Ties go to the lower entity.
+    fn aim_rise(&self, owner: EntityRef, from: [f32; 3], ahead: [f32; 2], kind: ProjectileKind) -> f32 {
+        #[allow(clippy::cast_possible_truncation)]
+        let here = [from[0].round() as i32, from[2].round() as i32];
+        let mut best: Option<(f32, [f32; 3])> = None;
+        for unit in self.interest.near(here[0], here[1], AIM_ASSIST_RANGE_UNITS) {
+            if !self.projectile_meets(owner, body_id(unit)) {
+                continue;
+            }
+            let Some(centre) = self.unit_centre(unit) else {
+                continue;
+            };
+            let delta = sub(centre, from);
+            let distance = delta[0].hypot(delta[2]);
+            #[allow(clippy::cast_precision_loss)]
+            let in_range = distance > 0.0 && distance <= AIM_ASSIST_RANGE_UNITS as f32;
+            let along = (delta[0] * ahead[0] + delta[2] * ahead[1]) / distance;
+            if in_range && along >= AIM_ASSIST_COS && best.is_none_or(|(near, _)| distance < near) {
+                best = Some((distance, delta));
+            }
+        }
+        best.map_or(0.0, |(distance, delta)| {
+            let ticks = (distance / kind.speed()).max(1.0);
+            delta[1] / ticks + kind.gravity() * (ticks - 1.0) / 2.0
+        })
     }
 
     /// Every projectile flies, sticks or vanishes, in ID order.
