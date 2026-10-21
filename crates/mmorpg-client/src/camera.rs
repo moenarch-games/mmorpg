@@ -42,8 +42,8 @@ impl Default for OrbitCamera {
             look_sensitivity: 1.0,
             invert_vertical_look: false,
             yaw: 0.0,
-            pitch: 0.36,
-            distance: 9.0,
+            pitch: 0.42,
+            distance: 12.0,
         }
     }
 }
