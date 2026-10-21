@@ -1,40 +1,27 @@
-/* Keep controls beside (not on top of) the renderer-owned character. */
+/*
+ * Approved selection layout (#362, docs/CHARACTER_SELECTION.md): a large real-character preview
+ * with a compact continuation panel beneath it on the left, three independently collapsible
+ * sections on the right. Controls sit beside, never on top of, the renderer-owned character.
+ */
 .character-select {
   display: grid;
-  grid-template: "brand brand brand" auto "details preview sidebar" minmax(0, 1fr) / minmax(13rem, .9fr) minmax(17rem, 1.5fr) minmax(18rem, 1fr);
+  grid-template:
+    "brand sidebar" auto
+    "preview sidebar" minmax(0, 1fr)
+    "actions sidebar" auto / minmax(0, 1.7fr) minmax(19rem, 25rem);
   height: 100dvh;
   padding: clamp(.85rem, 2vw, 2rem);
-  gap: 1.1rem;
+  gap: .9rem 1.4rem;
   overflow: auto;
 }
-.selection-brand { grid-area: brand; position: static; }
-.character-details {
-  grid-area: details;
-  position: relative;
-  inset: auto;
-  width: auto;
-  max-height: 100%;
-  overflow: auto;
-  align-self: end;
-}
-.selection-sidebar {
-  grid-area: sidebar;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  min-width: 0;
-  overflow: auto;
-  pointer-events: auto;
-}
-.selection-sidebar .roster-panel,
-.selection-sidebar .selection-actions {
+/* Panels flow in the grid; the absolute placement of the older layout no longer applies. */
+.character-select :is(.selection-brand, .roster-panel, .selection-actions) {
   position: relative;
   inset: auto;
   width: auto;
   transform: none;
-  flex: none;
 }
-.selection-sidebar .selection-actions { margin-top: auto; }
+.selection-brand { grid-area: brand; }
 .character-inspector {
   grid-area: preview;
   display: flex;
@@ -45,7 +32,7 @@
 }
 .preview-surface {
   flex: 1;
-  min-height: 12rem;
+  min-height: 14rem;
   border-radius: 1rem;
   cursor: grab;
   touch-action: pan-y;
@@ -54,7 +41,104 @@
 .preview-surface[data-dragging="true"] { cursor: grabbing; }
 .preview-surface:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: -3px; }
 .turntable-controls { display: flex; justify-content: center; flex-wrap: wrap; gap: .5rem; }
-.turntable-controls button,
+.turntable-hint { margin: .35rem 0 0; text-align: center; font-size: .72rem; color: #a9b8af; }
+
+/* The compact continuation panel: last location, Enter World, then the secondary controls. */
+.character-select .selection-actions {
+  grid-area: actions;
+  justify-self: start;
+  width: min(100%, 36rem);
+  padding: .85rem 1rem;
+}
+.continuation-panel .world-destination { margin-bottom: .6rem; }
+.continuation-panel .world-destination span { color: #aab8b0; font-size: .74rem; }
+.continuation-controls { display: flex; flex-wrap: wrap; align-items: stretch; gap: .6rem; }
+.continuation-controls .enter-world { flex: 1 1 13rem; margin: 0; }
+.continuation-secondary { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.continuation-secondary .activity-choice { display: flex; align-items: center; gap: .4rem; font-size: .72rem; color: #aab8b0; }
+.continuation-secondary .selection-settings { width: auto; margin: 0; padding: .45rem .8rem; }
+.selection-note { margin: .55rem 0 0; font-size: .68rem; color: #a3b1a7; }
+
+/* The sections: each header is a real button; only its own panel opens or closes. */
+.selection-sidebar {
+  grid-area: sidebar;
+  display: flex;
+  flex-direction: column;
+  gap: .7rem;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  pointer-events: auto;
+}
+.selection-sections { display: flex; flex-direction: column; gap: .7rem; }
+.character-select .roster-panel { padding: 0; border: 0; background: none; box-shadow: none; backdrop-filter: none; }
+.character-select .roster-panel::before { content: none; }
+.selection-section {
+  border: 1px solid var(--panel-border);
+  background: linear-gradient(145deg, rgb(17 25 28 / 92%), rgb(7 12 15 / 90%));
+  box-shadow: 0 18px 60px rgb(0 0 0 / 32%);
+  backdrop-filter: blur(18px);
+}
+.section-heading { margin: 0; }
+.section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .8rem 1rem;
+  border: 0;
+  background: none;
+  color: #e9e2cd;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.section-toggle:hover { background: rgb(255 255 255 / 4%); }
+.section-toggle:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: -2px; }
+.section-title {
+  flex: none;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .98rem;
+  letter-spacing: .04em;
+}
+.section-summary {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: #9faea6;
+  font-size: .7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.section-chevron {
+  flex: none;
+  width: .5rem;
+  height: .5rem;
+  border-right: 2px solid var(--gold);
+  border-bottom: 2px solid var(--gold);
+  transform: rotate(45deg) translateY(-.15rem);
+  transition: transform .15s ease;
+}
+.section-toggle[aria-expanded="true"] .section-chevron { transform: rotate(-135deg) translateY(-.1rem); }
+.section-panel { padding: 0 1rem 1rem; }
+.section-panel[hidden] { display: none; }
+.character-select .section-panel .panel-label { display: block; }
+.character-select .new-character { display: flex; }
+.section-panel .character-subtitle { margin: 0 0 .2rem; }
+.section-panel .equipment-heading { margin-top: .4rem; }
+
+.turntable-controls button {
+  min-height: 2.75rem;
+  padding: .5rem .8rem;
+  border: 1px solid var(--panel-border);
+  border-radius: .3rem;
+  background: #182522;
+  color: #edf4ee;
+  font: inherit;
+  font-size: .8rem;
+  cursor: pointer;
+}
+.turntable-controls button:hover { background: #30453d; }
 #bags-toggle,
 #character-toggle,
 #vendor-toggle,
@@ -70,7 +154,6 @@
   font-size: .8rem;
   cursor: pointer;
 }
-.turntable-controls button:hover,
 #bags-toggle:hover,
 #character-toggle:hover,
 #vendor-toggle:hover,
@@ -83,33 +166,25 @@
 #quest-log-toggle:focus-visible,
 #return-to-characters:focus-visible,
 .appearance-storage summary:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
-.turntable-hint { text-align: center; font-size: .75rem; color: #c1cec6; line-height: 1.5; }
 .appearance-storage { margin-top: .8rem; font-size: .75rem; color: #aabbb1; }
 .appearance-storage summary { cursor: pointer; padding: .4rem 0; }
 .world-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
 .preview-loading { margin: auto; text-align: center; }
-.selection-note { font-size: .7rem; color: #a3b1a7; }
 
 @media (max-width: 1000px) {
   .character-select {
-    /* Content-sized rows must not collapse the equipment panel below a tall sidebar. */
-    grid-template: "brand" max-content "preview" minmax(min-content, clamp(22rem, 48vh, 28rem)) "sidebar" max-content "details" max-content / minmax(0, 1fr);
+    /* One column: the character first, then how to continue, then the sections. */
+    grid-template: "brand" max-content "preview" clamp(18rem, 46vh, 26rem) "actions" max-content "sidebar" max-content / minmax(0, 1fr);
     align-content: start;
-    pointer-events: auto;
     overscroll-behavior: contain;
   }
-  .character-inspector { min-height: 0; }
-  .selection-sidebar { overflow: visible; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .selection-sidebar .selection-actions { margin: 0; align-self: start; }
-  .character-details { max-height: none; overflow: visible; align-self: stretch; }
-  .equipment-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .selection-note { display: block; }
+  .character-select .selection-actions { justify-self: stretch; width: auto; }
+  .selection-sidebar { overflow: visible; }
   .selection-title { font-size: 1.6rem; }
-  .selection-sidebar .panel-label { display: block; }
 }
 @media (max-width: 600px) {
-  .selection-sidebar { grid-template-columns: minmax(0, 1fr); }
   .equipment-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .continuation-controls .enter-world { flex-basis: 100%; }
   /* Rows of buttons beside the minimap; a single column would reach the unit frames. */
   .world-toolbar { gap: .3rem; align-items: stretch; }
 }

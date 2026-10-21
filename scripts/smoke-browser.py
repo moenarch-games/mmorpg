@@ -1556,7 +1556,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "character-creation-roster.png"))
 
     def assert_selection_layout(self):
-        selectors = [".selection-brand", "#preview-surface", ".turntable-controls", ".roster-panel", ".selection-actions", ".character-details"]
+        selectors = [".selection-brand", "#preview-surface", ".turntable-controls", "#roster-panel", ".selection-actions"]
         boxes = {selector: self.page.locator(selector).bounding_box() for selector in selectors}
         (ARTIFACTS / f"{self._testMethodName}-layout.json").write_text(json.dumps(boxes, indent=2))
         for i, name in enumerate(selectors):
