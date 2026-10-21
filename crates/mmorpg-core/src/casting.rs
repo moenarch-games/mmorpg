@@ -174,10 +174,15 @@ impl ZoneSimulation {
             CastTime::Cast(ticks) | CastTime::Channel(ticks) => {
                 let point = if ability.cast.is_channel() {
                     self.pay_and_cool_down(player_id, ability);
-                    let entity =
-                        target.ok_or_else(|| ZoneError::new("a channel needs a target"))?;
-                    let position = self.unit_position(entity)?;
-                    Some([position[0], position[2]])
+                    // A beam's point is where it ends now; a ground channel's is its target's feet.
+                    if let AbilityEffect::Beam { length, .. } = ability.effect {
+                        Some(self.trace_beam(player_id, length)?.end)
+                    } else {
+                        let entity =
+                            target.ok_or_else(|| ZoneError::new("a channel needs a target"))?;
+                        let position = self.unit_position(entity)?;
+                        Some([position[0], position[2]])
+                    }
                 } else {
                     None
                 };
@@ -501,9 +506,47 @@ impl ZoneSimulation {
                     self.charge(source, target, knockback);
                 }
             }
-            // Blizzard pulses while it channels; bandages are creature-only.
-            // Creature-only effects.
+            AbilityEffect::Cone {
+                damage,
+                per_level,
+                range,
+                half_angle,
+                percent,
+                ..
+            } => {
+                for victim in self.cone_victims(player_id, range, half_angle)? {
+                    let amount = self
+                        .rng
+                        .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+                        + u32::from(scaled(0, per_level, level))
+                        + bonus;
+                    self.player_damages_unit(player_id, victim, amount, false, now)?;
+                    if let Some(snare) = aura(percent) {
+                        self.hostile_aura(player_id, victim, snare)?;
+                    }
+                }
+            }
+            AbilityEffect::Chain {
+                damage,
+                per_level,
+                jumps,
+                radius,
+            } => {
+                if let Some(first) = target {
+                    for victim in self.chain_victims(player_id, first, jumps, radius)? {
+                        let amount = self
+                            .rng
+                            .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+                            + u32::from(scaled(0, per_level, level))
+                            + bonus;
+                        self.player_damages_unit(player_id, victim, amount, false, now)?;
+                    }
+                }
+            }
+            // Blizzard and Lightning Beam pulse while they channel; bandages and stomps are
+            // creature-only.
             AbilityEffect::Blizzard { .. }
+            | AbilityEffect::Beam { .. }
             | AbilityEffect::Bandage { .. }
             | AbilityEffect::Stomp { .. } => {}
         }
@@ -955,6 +998,28 @@ impl ZoneSimulation {
                                 + u32::from(scaled(0, per_level, level));
                             self.player_damages_unit(player_id, victim, amount, false, now)?;
                         }
+                    }
+                }
+                (
+                    AbilityEffect::Beam {
+                        damage,
+                        per_level,
+                        length,
+                        period,
+                    },
+                    Some(_),
+                ) => {
+                    // The beam follows the caster's facing every tick; its point is where it ends.
+                    let trace = self.trace_beam(player_id, length)?;
+                    if !done {
+                        self.update_player(player_id, |player| {
+                            if let Some(cast) = &mut player.cast {
+                                cast.point = Some(trace.end);
+                            }
+                        });
+                    }
+                    if period > 0 && cast.elapsed % period == 0 {
+                        self.beam_pulse(player_id, &trace, damage, per_level, level, now)?;
                     }
                 }
                 _ if done => self.complete_player_cast(player_id, ability, cast, now)?,

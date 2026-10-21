@@ -48,6 +48,7 @@ mod ramp;
 mod rewards;
 pub mod rng;
 mod routine;
+mod shapes;
 mod snapshot;
 mod stance;
 mod strike;
