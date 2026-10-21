@@ -85,7 +85,7 @@ An entity reference is 5 bytes: kind (`u8`) then ID (`u32`). Kind 1 is a player 
 | --- | --- | --- |
 | 0 | 1 | Wire version: 30 |
 | 1 | 1 | Scope: 1 canonical, 2 player-visible |
-| 2 | 2 | Core schema version: 29 |
+| 2 | 2 | Core schema version: 30 |
 | 4 | 4 | Zone ID |
 | 8 | 8 | Simulation tick |
 
@@ -499,6 +499,10 @@ exact bound record for logout. These inputs appear only in private replay/recove
 no client command or player-snapshot version changes. Private canonical snapshots
 with bindings use the `MMOC` v1 adapter envelope described in
 [the admission decision](adr/0003-development-character-admission.md).
+
+## Trick shots: core schema 30
+
+Core schema 30 (#291) adds to each canonical projectile its ricochet bounce count (`u8`, at most 2) and the two units a piercing shot already passed (two optional entity refs), after its age. Ability catalog revision 6 adds Piercing Shot (19) and Ricochet Shot (20). Player projections keep their wire layout: projectiles are still drawn from position and heading, so bounces and pass-throughs need no new fields. Schema 29 snapshots and checkpoints fail closed.
 
 ## Durable reward receipts: snapshot v29
 

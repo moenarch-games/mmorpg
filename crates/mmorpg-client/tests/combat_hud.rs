@@ -122,7 +122,7 @@ fn assert_close(actual: Option<f32>, expected: f32, what: &str) {
 fn slots_hold_the_projected_class_kit_in_catalog_order() {
     for (class, expected) in [
         (PlayerClass::Warden, &[1, 2, 3, 4, 17][..]),
-        (PlayerClass::Ranger, &[5, 6, 7, 8]),
+        (PlayerClass::Ranger, &[5, 6, 7, 8, 19, 20]),
         (PlayerClass::Arcanist, &[9, 10, 11, 12, 16]),
     ] {
         let hud = CombatHud::from_projection(&received(&viewer_of(class)));

@@ -422,6 +422,24 @@ mod tests {
     }
 
     #[test]
+    fn the_ranger_range_starts_a_level_6_ranger_near_the_wolf_pack() {
+        assert_eq!(
+            Scenario::from_name("ranger-range"),
+            Some(Scenario::RangerRange)
+        );
+        let (host, player) = LocalZoneHost::scenario(Scenario::RangerRange, 0).unwrap();
+        let start = own_position(&host, player);
+        assert_eq!([start[0], start[2]], [-3_500, -3_400]);
+        assert_eq!(
+            decode_snapshot(&host.projection(player).unwrap())
+                .unwrap()
+                .viewer
+                .level,
+            6
+        );
+    }
+
+    #[test]
     fn a_world_checkpoint_resumes_the_world_without_its_players() {
         let mut host = LocalZoneHost::new().unwrap();
         let player = host.join_as(0, 1).unwrap();

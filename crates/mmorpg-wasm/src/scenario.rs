@@ -20,10 +20,13 @@ use crate::host::{LOCAL_ZONE_ID, LocalZoneError, hosted_content};
 pub enum Scenario {
     /// A level 5 Warden 15 m north of the Southmeadow Hill Ogre (#297), facing it.
     OgreCombat,
+    /// A level 6 Ranger at the eastern edge of Wolfrun Woods, facing the wolf pack among the
+    /// trunks, to try Piercing and Ricochet Shot (#291).
+    RangerRange,
 }
 
 impl Scenario {
-    pub const ALL: [Self; 1] = [Self::OgreCombat];
+    pub const ALL: [Self; 2] = [Self::OgreCombat, Self::RangerRange];
 
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
@@ -36,6 +39,7 @@ impl Scenario {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OgreCombat => "ogre-combat",
+            Self::RangerRange => "ranger-range",
         }
     }
 
@@ -45,6 +49,10 @@ impl Scenario {
                 class: PlayerClass::Warden,
                 sex: Sex::Female,
             },
+            Self::RangerRange => ClassChoice {
+                class: PlayerClass::Ranger,
+                sex: Sex::Male,
+            },
         }
     }
 
@@ -52,6 +60,7 @@ impl Scenario {
     const fn level(self) -> u8 {
         match self {
             Self::OgreCombat => 5,
+            Self::RangerRange => 6,
         }
     }
 
@@ -60,6 +69,8 @@ impl Scenario {
         match self {
             // The ogre stands at (7 450, 18 150), outside its 10 m aggro radius.
             Self::OgreCombat => ([7_450, 16_650], 0),
+            // The nearest wolves stand about 18 m west, beyond aggro range; facing west.
+            Self::RangerRange => ([-3_500, -3_400], 49_152),
         }
     }
 
