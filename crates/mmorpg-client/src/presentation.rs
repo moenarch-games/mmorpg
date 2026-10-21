@@ -482,6 +482,18 @@ impl Presentation {
                 imported.tint,
                 hidden,
             );
+            if imported.kind == mmorpg_presentation::units::imported::Kind::Ranger
+                && hat.is_some_and(|hat| !skinned::hides_hair(hat))
+            {
+                body.extend(skinned::Equipment::hair().draws(
+                    &format!("{}-hair", imported.id),
+                    asset,
+                    placement,
+                    imported.clip,
+                    imported.time,
+                    imported.tint,
+                ));
+            }
             if let Some(items) = hat.flatten().and_then(skinned::Equipment::headwear) {
                 body.extend(items.draws(
                     &format!("{}-head", imported.id),

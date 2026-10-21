@@ -8,15 +8,36 @@ export const HAT_OPTIONS = [
 ] as const;
 
 export type HatStyle = (typeof HAT_OPTIONS)[number]["id"];
-export type CharacterAppearance = { hat: HatStyle };
 
-export const DEFAULT_CHARACTER_APPEARANCE: CharacterAppearance = { hat: "wayfarer-hood" };
+/** Hairstyles (#376): the Ranger bundle's `hair.*` entries, or none. */
+export const HAIR_OPTIONS = [
+  { id: "buzzed", name: "Buzzed" },
+  { id: "parted", name: "Parted" },
+  { id: "long", name: "Long" },
+  { id: "bald", name: "Bald" },
+] as const;
+export type HairStyle = (typeof HAIR_OPTIONS)[number]["id"];
+
+/** Hair colours: the bundle's `tint.*` entries. */
+export const HAIR_COLOR_OPTIONS = [
+  { id: "black", name: "Black", swatch: "#1f1c1a" },
+  { id: "brown", name: "Brown", swatch: "#6b4426" },
+  { id: "blond", name: "Blond", swatch: "#c9a55e" },
+] as const;
+export type HairColor = (typeof HAIR_COLOR_OPTIONS)[number]["id"];
+
+export type CharacterAppearance = { hat: HatStyle; hair: HairStyle; hairColor: HairColor };
+
+/** Saves from before hair (#376) read with this hair. */
+const DEFAULT_HAIR = { hair: "parted", hairColor: "brown" } as const;
+
+export const DEFAULT_CHARACTER_APPEARANCE: CharacterAppearance = { hat: "wayfarer-hood", ...DEFAULT_HAIR };
 
 export function defaultAppearanceForClass(classId: CharacterClassId): CharacterAppearance {
   switch (classId) {
-    case "warden": return { hat: "ironcrest-helm" };
-    case "ranger": return { hat: "ranger-cap" };
-    case "arcanist": return { hat: "wayfarer-hood" };
+    case "warden": return { hat: "ironcrest-helm", ...DEFAULT_HAIR };
+    case "ranger": return { hat: "ranger-cap", ...DEFAULT_HAIR };
+    case "arcanist": return { hat: "wayfarer-hood", ...DEFAULT_HAIR };
   }
 }
 const SAVE_SCHEMA_VERSION = 1;
@@ -38,6 +59,14 @@ export function rotateYawOffset(yaw: number, x: number, z: number): [number, num
 
 export function isHatStyle(value: unknown): value is HatStyle {
   return HAT_OPTIONS.some((option) => option.id === value);
+}
+
+export function isHairStyle(value: unknown): value is HairStyle {
+  return HAIR_OPTIONS.some((option) => option.id === value);
+}
+
+export function isHairColor(value: unknown): value is HairColor {
+  return HAIR_COLOR_OPTIONS.some((option) => option.id === value);
 }
 
 export function hatOption(style: HatStyle) {
@@ -67,6 +96,9 @@ export function saveCharacter(
   appearance: CharacterAppearance,
 ): SavedCharacterV1 {
   hatOption(appearance.hat);
+  if (!isHairStyle(appearance.hair) || !isHairColor(appearance.hairColor)) {
+    throw new Error("Character hair is invalid");
+  }
   const saved: SavedCharacterV1 = {
     schemaVersion: SAVE_SCHEMA_VERSION,
     characterId,
@@ -96,11 +128,15 @@ export function loadCharacter(storage: CharacterStorage, characterId: string): S
   if (!isRecord(value.appearance) || !isHatStyle(value.appearance.hat)) {
     throw new Error("Saved character appearance is invalid");
   }
+  const { hair = DEFAULT_HAIR.hair, hairColor = DEFAULT_HAIR.hairColor } = value.appearance;
+  if (!isHairStyle(hair) || !isHairColor(hairColor)) {
+    throw new Error("Saved character hair is invalid");
+  }
 
   return {
     schemaVersion: SAVE_SCHEMA_VERSION,
     characterId,
-    appearance: { hat: value.appearance.hat },
+    appearance: { hat: value.appearance.hat, hair, hairColor },
   };
 }
 

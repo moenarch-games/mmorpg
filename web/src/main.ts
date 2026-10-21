@@ -10,6 +10,8 @@ import {
   defaultAppearanceForClass,
   equipmentForAppearance,
   hatOption,
+  isHairColor,
+  isHairStyle,
   isHatStyle,
   loadCharacter,
   saveCharacter,
@@ -112,6 +114,8 @@ const selectionActions = requireElement<HTMLElement>("#selection-actions");
 const classInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="characterClass"]')];
 const sexInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="characterSex"]')];
 const hatButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-hat-style]")];
+const hairButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-hair-style]")];
+const hairColorButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-hair-color]")];
 const worldUi = [...document.querySelectorAll<HTMLElement>("[data-world-ui]")];
 
 // A transparent canvas: the CSS sky shows through behind the world.
@@ -738,15 +742,25 @@ function renderCharacterDetails(character: CharacterPreview, appearance: Charact
   }));
 }
 
+/** Marks the chosen hat, hairstyle and hair colour in the Appearance pickers. */
+function syncAppearanceButtons(): void {
+  const mark = (buttons: HTMLButtonElement[], selectedOf: (button: HTMLButtonElement) => boolean) => {
+    for (const button of buttons) {
+      const selected = selectedOf(button);
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    }
+  };
+  mark(hatButtons, (button) => button.dataset.hatStyle === characterAppearance.hat);
+  mark(hairButtons, (button) => button.dataset.hairStyle === characterAppearance.hair);
+  mark(hairColorButtons, (button) => button.dataset.hairColor === characterAppearance.hairColor);
+}
+
 function applyAppearance(nextAppearance: CharacterAppearance, message: string) {
   characterAppearance = { ...nextAppearance };
   characterSelect.dataset.hat = characterAppearance.hat;
   renderCharacterDetails(previewCharacter(), characterAppearance);
-  for (const button of hatButtons) {
-    const selected = button.dataset.hatStyle === characterAppearance.hat;
-    button.classList.toggle("is-selected", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  }
+  syncAppearanceButtons();
   saveStatus.textContent = message;
 }
 
@@ -900,11 +914,7 @@ function refreshSelectionPresentation(): void {
   characterSelect.dataset.sex = character.sex;
   characterSelect.dataset.characterClass = character.classId;
   renderCharacterDetails(character, characterAppearance);
-  for (const button of hatButtons) {
-    const selected = button.dataset.hatStyle === characterAppearance.hat;
-    button.classList.toggle("is-selected", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  }
+  syncAppearanceButtons();
 }
 
 function selectCharacter(characterId: string): void {
@@ -1082,7 +1092,10 @@ function renderSelection() {
 /** The viewer's own look for the shared unit presenter: class, sex and headwear. */
 function viewerLook(): ViewerLook {
   const character = previewCharacter();
-  return { classId: character.classId, sex: character.sex, headwear: characterAppearance.hat === "none" ? null : characterAppearance.hat };
+  return {
+    classId: character.classId, sex: character.sex, headwear: characterAppearance.hat === "none" ? null : characterAppearance.hat,
+    hair: characterAppearance.hair, hairColor: characterAppearance.hairColor,
+  };
 }
 
 function worldInput() {
@@ -1292,7 +1305,19 @@ for (const button of hatButtons) {
     if (!isHatStyle(style)) {
       return;
     }
-    applyAppearance({ hat: style }, `Unsaved change · ${hatOption(style).name}`);
+    applyAppearance({ ...characterAppearance, hat: style }, `Unsaved change · ${hatOption(style).name}`);
+  });
+}
+for (const button of hairButtons) {
+  button.addEventListener("click", () => {
+    const hair = button.dataset.hairStyle;
+    if (isHairStyle(hair)) { applyAppearance({ ...characterAppearance, hair }, `Unsaved change · ${button.textContent} hair`); }
+  });
+}
+for (const button of hairColorButtons) {
+  button.addEventListener("click", () => {
+    const hairColor = button.dataset.hairColor;
+    if (isHairColor(hairColor)) { applyAppearance({ ...characterAppearance, hairColor }, `Unsaved change · ${button.title} hair`); }
   });
 }
 saveCharacterButton.addEventListener("click", saveCurrentCharacter);

@@ -21,6 +21,19 @@ const HEADWEAR_ITEMS: Readonly<Record<Headwear, readonly { key: string; socket: 
   "ironcrest-helm": [{ key: "equipment.helm.ironcrest", socket: "head.armor" }],
   none: [],
 };
+/** The viewer's hair (#376): a bundle hairstyle (or bald) in one of its tints. */
+export type Hair = { style: "buzzed" | "parted" | "long" | "bald"; color: "black" | "brown" | "blond" };
+const HAIR_ENTRIES: Readonly<Record<Exclude<Hair["style"], "bald">, string>> = {
+  buzzed: "hair.buzzed", parted: "hair.simple-parted", long: "hair.long",
+};
+/** The tintable texture variant every hairstyle is fetched in. */
+const HAIR_VARIANT = "hair-1";
+/**
+ * How the viewer's Ranger is dressed: carried items, headwear and hair. Units without a viewer
+ * look (`headwear` and `hair` null) keep the bundle's default: the hood up, no hair.
+ */
+type Dress = { loadout: Loadout; headwear: Headwear | null; hair: Hair | null };
+const dressKey = (dress: Dress) => JSON.stringify(dress);
 /** The rest (idle) clip a model is measured in, from the shared presenter's clip table. */
 export type RestClip = (kind: QuaterniusKind) => string;
 
@@ -50,7 +63,7 @@ type Asset = {
   clips: Map<string, number>;
   /** Clip roles and strike contact times by name, from the bundle's `humanoid-clips` (Ranger only). */
   motions?: ReadonlyMap<string, ClipMotion>;
-  instantiate(loadout: Loadout, headwear: Headwear | null): Posable;
+  instantiate(dress: Dress): Posable;
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
   floor: number;
   height: number;
@@ -59,8 +72,7 @@ type Asset = {
 
 type Instance = {
   kind: QuaterniusKind;
-  loadout: Loadout;
-  headwear: Headwear | null;
+  dress: string;
   root: THREE.Group;
   posable: Posable;
   clip: string;
@@ -180,11 +192,11 @@ const LOADOUT_ITEMS: Readonly<Record<Exclude<Loadout, null>, readonly { key: str
 type DownloadEntry = { key: string; variant: string; files: string[]; clips?: string };
 
 /** Select the existing Dark archer default from the rolling download index. */
-function bundleEntry(index: unknown, key: string): DownloadEntry {
+function bundleEntry(index: unknown, key: string, variant = "default"): DownloadEntry {
   const value = index as { schema?: unknown; entries?: DownloadEntry[] } | null;
   const entry = value?.schema === "asset-downloads-v1" && Array.isArray(value.entries)
-    ? value.entries.find((entry) => entry.key === key && entry.variant === "default") : undefined;
-  if (!entry) { throw new Error(`The Ranger download index has no ${key}/default entry.`); }
+    ? value.entries.find((entry) => entry.key === key && entry.variant === variant) : undefined;
+  if (!entry) { throw new Error(`The Ranger download index has no ${key}/${variant} entry.`); }
   return entry;
 }
 
@@ -207,14 +219,51 @@ function attachItem(model: THREE.Object3D, item: THREE.Object3D, gripInverse: TH
   joint.add(holder);
 }
 
-/** The mesh nodes of the bundle's toggleable hood (`humanoid-appearance` part `outfit.hood`). */
-function hoodNodes(appearance: unknown): string[] {
-  const parts = (appearance as { parts?: { id?: unknown; nodes?: unknown }[] }).parts;
-  const hood = Array.isArray(parts) ? parts.find((part) => part.id === "outfit.hood") : undefined;
-  if (!hood || !Array.isArray(hood.nodes) || !hood.nodes.every((node) => typeof node === "string")) {
+/** What the bundle's `humanoid-appearance` says about the head: hood, hair tints and what headwear hides. */
+type HeadLook = {
+  /** The mesh nodes of the toggleable hood (part `outfit.hood`). */
+  hood: string[];
+  /** Tint base colours by colour id (`tint.<color>`). */
+  tints: Map<string, [number, number, number]>;
+  /** Materials a hairstyle's tint applies to, by hair entry. */
+  hairMaterials: Map<string, string[]>;
+  /** The eyebrow nodes and materials that follow the hair tint. */
+  eyebrows: { nodes: string[]; materials: string[] };
+  /** What each headwear entry hides (`outfit.hood`, `hair`). */
+  hides: Map<string, string[]>;
+};
+
+function headLook(appearance: unknown): HeadLook {
+  type Named = { id?: unknown; entry?: unknown; nodes?: unknown; tintMaterials?: unknown; hides?: unknown; baseColorFactor?: unknown };
+  const value = appearance as { parts?: Named[]; tints?: Named[]; hair?: Named[]; headwear?: Named[]; eyebrows?: Named & { followsHairTint?: unknown } };
+  const strings = (list: unknown): string[] => (Array.isArray(list) && list.every((item) => typeof item === "string") ? list : []);
+  const hood = value.parts?.find((part) => part.id === "outfit.hood");
+  if (!hood || strings(hood.nodes).length === 0) {
     throw new Error("The Ranger's humanoid-appearance has no outfit.hood part.");
   }
-  return hood.nodes;
+  const tints = new Map((value.tints ?? []).flatMap((tint) => {
+    const c = tint.baseColorFactor;
+    return typeof tint.id === "string" && Array.isArray(c) ? [[tint.id, [Number(c[0]), Number(c[1]), Number(c[2])] as [number, number, number]] as const] : [];
+  }));
+  const hairMaterials = new Map((value.hair ?? []).flatMap((hair) => (typeof hair.entry === "string" ? [[hair.entry, strings(hair.tintMaterials)] as const] : [])));
+  const eyebrows = value.eyebrows?.followsHairTint === true
+    ? { nodes: strings(value.eyebrows.nodes), materials: strings(value.eyebrows.tintMaterials) } : { nodes: [], materials: [] };
+  const hides = new Map((value.headwear ?? []).flatMap((item) => (typeof item.entry === "string" ? [[item.entry, strings(item.hides)] as const] : [])));
+  return { hood: strings(hood.nodes), tints, hairMaterials, eyebrows, hides };
+}
+
+/** Gives `object`'s meshes their own copies of the `names` materials, coloured `color` (linear). */
+function tintMaterials(object: THREE.Object3D, names: readonly string[], color: readonly [number, number, number]): void {
+  object.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) { return; }
+    const tint = (material: THREE.Material): THREE.Material => {
+      if (!names.includes(material.name) || !(material instanceof THREE.MeshStandardMaterial)) { return material; }
+      const copy = material.clone();
+      copy.color.setRGB(color[0], color[1], color[2], THREE.LinearSRGBColorSpace);
+      return copy;
+    };
+    child.material = Array.isArray(child.material) ? child.material.map(tint) : tint(child.material);
+  });
 }
 
 async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
@@ -236,37 +285,54 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     json(entryFile(entry, ".humanoid-clips.json")).then(clipMotionsOf),
   ]);
   const keys = [...new Set([...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key))];
-  const hood = hoodNodes(await json(entryFile(entry, ".humanoid-appearance.json")));
-  const items = new Map(await Promise.all(keys.map(async (key) => {
-    const scene = (await loader.loadAsync(url(entryFile(bundleEntry(manifest, key), ".gltf")))).scene;
+  const look = headLook(await json(entryFile(entry, ".humanoid-appearance.json")));
+  const load = async (key: string, variant?: string) => {
+    const scene = (await loader.loadAsync(url(entryFile(bundleEntry(manifest, key, variant), ".gltf")))).scene;
     scene.updateMatrixWorld(true);
+    // Hairstyles are authored in rest model space with no grip: their origin is the socket's.
     const grip = scene.getObjectByName("grip");
-    if (!grip) { throw new Error(`The Ranger bundle's ${key} has no grip frame.`); }
-    return [key, { scene, gripInverse: grip.matrixWorld.clone().invert() }] as const;
-  })));
+    if (!grip && variant === undefined) { throw new Error(`The Ranger bundle's ${key} has no grip frame.`); }
+    return [key, { scene, gripInverse: grip ? grip.matrixWorld.clone().invert() : new THREE.Matrix4() }] as const;
+  };
+  const items = new Map(await Promise.all([
+    ...keys.map((key) => load(key)),
+    ...Object.values(HAIR_ENTRIES).map((key) => load(key, HAIR_VARIANT)),
+  ]));
   const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
-  const instantiate = (loadout: Loadout, headwear: Headwear | null): Posable => {
+  const instantiate = ({ loadout, headwear, hair }: Dress): Posable => {
     const model = cloneSkinned(gltf.scene);
     // The bundle's hood is on by default; any other chosen headwear replaces it.
     const hooded = headwear === null || headwear === "wayfarer-hood";
-    for (const name of hood) {
+    for (const name of look.hood) {
       const node = model.getObjectByName(name);
       if (!node) { throw new Error(`The Ranger has no hood node ${name}.`); }
       node.visible = hooded;
     }
-    for (const { key, socket } of [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(headwear ? HEADWEAR_ITEMS[headwear] : [])]) {
+    const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(headwear ? HEADWEAR_ITEMS[headwear] : [])];
+    const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
+    const hairKey = hair && hair.style !== "bald" && !hairHidden ? HAIR_ENTRIES[hair.style] : null;
+    const tint = hair ? look.tints.get(`tint.${hair.color}`) : undefined;
+    for (const { key, socket } of [...worn, ...(hairKey ? [{ key: hairKey, socket: "head.hair" }] : [])]) {
       const item = items.get(key);
       const place = sockets.get(socket);
       if (!item || !place) {
         throw new Error(`The Ranger bundle has no ${key} for socket ${socket}.`);
       }
       // The bow is skinned to its own grip/nock joints; SkeletonUtils clones those too.
-      attachItem(model, cloneSkinned(item.scene), item.gripInverse, place);
+      const clone = cloneSkinned(item.scene);
+      if (key === hairKey && tint) { tintMaterials(clone, look.hairMaterials.get(key) ?? [], tint); }
+      attachItem(model, clone, item.gripInverse, place);
+    }
+    if (tint) {
+      for (const name of look.eyebrows.nodes) {
+        const node = model.getObjectByName(name);
+        if (node) { tintMaterials(node, look.eyebrows.materials, tint); }
+      }
     }
     return mixerPosable(model, sources);
   };
   const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
-  const probe = instantiate(null, null);
+  const probe = instantiate({ loadout: null, headwear: null, hair: null });
   const measured = measure(probe, rest);
   probe.dispose();
   return { clips, motions, instantiate, ...measured };
@@ -325,7 +391,7 @@ export class QuaterniusUnits {
   }
 
   /** Poses every requested unit and drops the instances of units not requested. */
-  update(units: readonly ImportedRequest[], viewerHeadwear: Headwear): void {
+  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair }): void {
     const seen = new Set<string>();
     for (const unit of units) {
       const asset = this.#assets.get(unit.kind);
@@ -333,12 +399,13 @@ export class QuaterniusUnits {
       seen.add(unit.id);
       const loadout: Loadout = unit.swordAndShield ? "sword-and-shield" : unit.bowAndQuiver ? "bow-and-quiver" : null;
       let instance = this.#instances.get(unit.id);
-      const headwear = unit.headwear && unit.kind === "Ranger" ? viewerHeadwear : null;
-      if (instance && (instance.kind !== unit.kind || instance.loadout !== loadout || instance.headwear !== headwear)) {
+      const dressed = unit.headwear && unit.kind === "Ranger";
+      const dress: Dress = { loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null };
+      if (instance && (instance.kind !== unit.kind || instance.dress !== dressKey(dress))) {
         this.#drop(unit.id, instance);
         instance = undefined;
       }
-      instance ??= this.#create(unit, loadout, headwear, asset);
+      instance ??= this.#create(unit, dress, asset);
       this.#pose(instance, asset, unit);
     }
     for (const [id, instance] of this.#instances) {
@@ -346,8 +413,8 @@ export class QuaterniusUnits {
     }
   }
 
-  #create(unit: ImportedRequest, loadout: Loadout, headwear: Headwear | null, asset: Asset): Instance {
-    const posable = asset.instantiate(loadout, headwear);
+  #create(unit: ImportedRequest, dress: Dress, asset: Asset): Instance {
+    const posable = asset.instantiate(dress);
     const { model } = posable;
     const materials: Instance["materials"] = [];
     model.traverse((object) => {
@@ -367,7 +434,7 @@ export class QuaterniusUnits {
     root.name = `${unit.id}-model`;
     root.add(model);
     const instance: Instance = {
-      kind: unit.kind, loadout, headwear, root, posable,
+      kind: unit.kind, dress: dressKey(dress), root, posable,
       clip: "", time: 0, materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity,
     };
     this.#instances.set(unit.id, instance);

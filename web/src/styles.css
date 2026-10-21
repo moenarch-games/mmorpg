@@ -588,6 +588,48 @@ kbd {
 
 .hat-option:hover { background: rgb(255 255 255 / 6%); }
 .hat-option:focus-visible { outline: 2px solid #e5cf86; outline-offset: 2px; }
+.hair-options {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .45rem;
+}
+
+.hair-option {
+  min-width: 0;
+  padding: .45rem .3rem;
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 3%);
+  color: #b9c4be;
+  font-size: .67rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.hair-colors {
+  display: flex;
+  gap: .55rem;
+  margin-top: .5rem;
+}
+
+.hair-color {
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 2px solid rgb(255 255 255 / 14%);
+  border-radius: 50%;
+  background: var(--swatch);
+  cursor: pointer;
+}
+
+.hair-option:hover, .hair-color:hover { background-color: rgb(255 255 255 / 6%); }
+.hair-color:hover { background: var(--swatch); filter: brightness(1.15); }
+.hair-option:focus-visible, .hair-color:focus-visible { outline: 2px solid #e5cf86; outline-offset: 2px; }
+.hair-option.is-selected {
+  border-color: rgb(208 177 96 / 58%);
+  color: #f0e5c9;
+  box-shadow: inset 0 -2px var(--gold);
+}
+.hair-color.is-selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgb(208 177 96 / 35%); }
+
 .hat-option.is-selected {
   border-color: rgb(208 177 96 / 58%);
   background: linear-gradient(180deg, rgb(183 148 70 / 18%), rgb(255 255 255 / 3%));

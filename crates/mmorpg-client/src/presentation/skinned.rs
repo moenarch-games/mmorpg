@@ -149,6 +149,8 @@ impl Channel {
 struct Primitive {
     /// The glTF node drawing it, so a look can hide named parts (the Ranger's hood).
     node: Option<String>,
+    /// Its material's name, so a hair tint can recolour it.
+    material: Option<String>,
     double_sided: bool,
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
@@ -269,6 +271,7 @@ impl Model {
                 };
                 primitives.push(Primitive {
                     node: node.name().map(str::to_owned),
+                    material: primitive.material().name().map(str::to_owned),
                     double_sided: primitive.material().double_sided(),
                     positions,
                     normals,
@@ -494,6 +497,18 @@ impl Model {
         let mut joint = three_d_animation::Mat4::IDENTITY;
         joint.elements = self.globals(clip, time)[index];
         Some(joint)
+    }
+
+    /// Recolours the `names` materials by a linear base colour factor, like the browser's tint.
+    fn tint(&mut self, names: &[String], factor: [f32; 3]) {
+        let factor = factor.map(srgb);
+        for p in &mut self.primitives {
+            if p.material.as_ref().is_some_and(|name| names.contains(name)) {
+                for c in &mut p.colors {
+                    *c = Color3::new(c.r * factor[0], c.g * factor[1], c.b * factor[2]);
+                }
+            }
+        }
     }
 
     /// Draws for one posed instance standing at `root`, scaled to `height` metres, without
@@ -817,14 +832,78 @@ impl Equipment {
     }
 }
 
+/// The Ranger's `humanoid-appearance` descriptor.
+fn appearance() -> &'static serde_json::Value {
+    static APPEARANCE: OnceLock<serde_json::Value> = OnceLock::new();
+    APPEARANCE.get_or_init(|| {
+        serde_json::from_slice(ranger_file(ranger_bundle::APPEARANCE))
+            .expect("the appearance descriptor is JSON")
+    })
+}
+
+fn strings(value: &serde_json::Value) -> Vec<String> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item.as_str().map(str::to_owned))
+        .collect()
+}
+
+/// Whether the viewer's headwear hides the hair (#376): the hood, or an item whose
+/// `humanoid-appearance` headwear entry lists `hair`.
+pub fn hides_hair(hat: Option<Hat>) -> bool {
+    let entry = match hat {
+        None => return false,
+        Some(Hat::Hood) => return true,
+        Some(Hat::Cap) => ranger_bundle::CAP_KEY,
+        Some(Hat::Helm) => ranger_bundle::HELM_KEY,
+    };
+    appearance()["headwear"]
+        .as_array()
+        .and_then(|items| items.iter().find(|item| item["entry"] == entry))
+        .is_some_and(|item| {
+            strings(&item["hides"])
+                .iter()
+                .any(|hidden| hidden == "hair")
+        })
+}
+
+impl Equipment {
+    /// The starter hair (#376: Parted, Brown) on `head.hair`; native has no hair picker.
+    pub fn hair() -> &'static Self {
+        static HAIR: OnceLock<Equipment> = OnceLock::new();
+        HAIR.get_or_init(|| {
+            let mut hair = Self::of(&[(ranger_bundle::HAIR, "head.hair")]);
+            let look = appearance();
+            let materials = look["hair"]
+                .as_array()
+                .and_then(|styles| {
+                    styles
+                        .iter()
+                        .find(|style| style["entry"] == ranger_bundle::HAIR_KEY)
+                })
+                .map(|style| strings(&style["tintMaterials"]))
+                .unwrap_or_default();
+            let tint = look["tints"]
+                .as_array()
+                .and_then(|tints| tints.iter().find(|tint| tint["id"] == "tint.brown"))
+                .and_then(|tint| tint["baseColorFactor"].as_array())
+                .map(|c| std::array::from_fn(|i| c[i].as_f64().unwrap_or(1.) as f32))
+                .expect("the appearance declares tint.brown");
+            for (model, _, _) in &mut hair.items {
+                model.tint(&materials, tint);
+            }
+            hair
+        })
+    }
+}
+
 /// The glTF nodes of the Ranger's toggleable hood (`humanoid-appearance` part `outfit.hood`).
 pub fn hood_nodes() -> &'static [String] {
     static NODES: OnceLock<Vec<String>> = OnceLock::new();
     NODES.get_or_init(|| {
-        let appearance: serde_json::Value =
-            serde_json::from_slice(ranger_file(ranger_bundle::APPEARANCE))
-                .expect("the appearance descriptor is JSON");
-        appearance["parts"]
+        appearance()["parts"]
             .as_array()
             .and_then(|parts| parts.iter().find(|part| part["id"] == "outfit.hood"))
             .and_then(|hood| hood["nodes"].as_array())

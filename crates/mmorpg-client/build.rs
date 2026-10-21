@@ -16,6 +16,9 @@ const SHIELD: &str = "equipment.shield.heater";
 /// The authored headwear on `head.armor` (#374).
 const CAP: &str = "equipment.cap.ranger";
 const HELM: &str = "equipment.helm.ironcrest";
+/// The starter hair (#376) in its tintable texture variant.
+const HAIR: &str = "hair.simple-parted";
+const HAIR_VARIANT: &str = "hair-1";
 /// The inn entries the clients draw (`mmorpg_presentation::buildings::INN_ENTRIES`).
 const INN: [&str; 5] = [
     "greyhaven.inn.shell",
@@ -88,6 +91,11 @@ fn main() {
         code.push_str(&format!("pub const {name}: &str = {path:?};\n"));
         files.push(path);
     }
+    let hair = format!("native/{HAIR}.{HAIR_VARIANT}.native.glb");
+    code.push_str(&format!(
+        "pub const HAIR: &str = {hair:?};\npub const HAIR_KEY: &str = {HAIR:?};\npub const CAP_KEY: &str = {CAP:?};\npub const HELM_KEY: &str = {HELM:?};\n"
+    ));
+    files.push(hair);
     write("ranger_bundle.rs", &bundle, code, files);
     inn(&manifest_dir.join("../../web/public/buildings/greyhaven.inn"));
 }
