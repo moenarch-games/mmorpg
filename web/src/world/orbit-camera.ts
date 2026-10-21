@@ -32,9 +32,9 @@ export class OrbitCamera {
   /** World yaw the camera looks along: 0 toward +Z, increasing toward +X. */
   #yaw = 0;
   #invertVerticalLook = false;
-  #pitch = 0.36;
-  #distance = 9;
-  #targetDistance = 9;
+  #pitch = 0.42;
+  #distance = 12;
+  #targetDistance = 12;
 
   /** The distance the view uses now; it approaches `targetDistance` in `update`. */
   get distance(): number {
