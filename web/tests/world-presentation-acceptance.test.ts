@@ -48,7 +48,7 @@ describe("shared renderer adoption", () => {
     expect(picker.pick(point, camera, [], [player], [], [], [], new Set([2]))).toEqual({ kind: "player", id: 2 });
     picker.reset();
   });
-}
+
   test("assisted selection catches a near miss but never selects through opaque geometry", () => {
     const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
     camera.position.set(0, 1, 10);
