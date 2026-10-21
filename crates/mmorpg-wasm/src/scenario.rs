@@ -86,12 +86,17 @@ impl Scenario {
         let id = CharacterId::new(format!("scenario-{}", self.name())).map_err(zone_error)?;
         let mut record = template.capture_character(1, id).map_err(zone_error)?;
         let ([x, z], facing) = self.location();
+        // Outer-valley hills are physical (#159): stand on the authored ground, not inside it.
+        let ground = content
+            .definition()
+            .terrain()
+            .map_or(0, |terrain| terrain.height_at(x, z));
         record.level = self.level();
         record.experience = 0;
         record.health = player_max_health(record.level) + record.equipment.totals().bonus_health();
         record.location = CharacterLocation {
             zone_id: LOCAL_ZONE_ID,
-            position: [x, PLAYER_HALF_EXTENTS_UNITS[1], z],
+            position: [x, ground + PLAYER_HALF_EXTENTS_UNITS[1], z],
             facing,
         };
         Ok(record)
