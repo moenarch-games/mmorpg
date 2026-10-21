@@ -59,7 +59,11 @@ export type ImportedRequest = {
 export type UnitFrameNodes = { nodes: RendererSceneNode[]; units: PresentedUnit[]; imported: ImportedRequest[] };
 
 /** The viewer's own look: class and sex as an appearance code, and headwear. */
-export type ViewerLook = { classId: "warden" | "ranger" | "arcanist" | null; sex: "female" | "male"; headwear: string | null };
+export type ViewerLook = {
+  classId: "warden" | "ranger" | "arcanist" | null; sex: "female" | "male"; headwear: string | null;
+  /** The viewer's hairstyle and colour (#376); hidden under the hood and helm. */
+  hair?: "buzzed" | "parted" | "long" | "bald"; hairColor?: "black" | "brown" | "blond";
+};
 
 type DrawEntry = { id: string; key: string; model: number; color: Color; emissive: Color | null; opacity: number; unlit: boolean; doubleSided: boolean };
 type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };

@@ -10,8 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / "web/public/characters/humanoid.ranger.male"
 RELEASE = "humanoid-ranger-male"
 URL = f"https://github.com/moritzbrantner/asset-tooling/releases/download/{RELEASE}/"
-KEYS = {"humanoid.ranger.male", "equipment.sword.arming", "equipment.shield.heater",
-        "equipment.bow.long", "equipment.quiver.back", "equipment.cap.ranger", "equipment.helm.ironcrest"}
+# Selected entries by key and variant: the default character and equipment, and the hairstyles'
+# tintable `hair-1` texture variant (#376).
+SELECTED = {key: "default" for key in ("humanoid.ranger.male", "equipment.sword.arming", "equipment.shield.heater",
+                                       "equipment.bow.long", "equipment.quiver.back", "equipment.cap.ranger",
+                                       "equipment.helm.ironcrest")}
+SELECTED.update({key: "hair-1" for key in ("hair.buzzed", "hair.simple-parted", "hair.long")})
+KEYS = set(SELECTED)
 
 
 def complete():
@@ -22,7 +27,7 @@ def complete():
         index = json.loads((DEST / (RELEASE + ".index.json")).read_text())
     except (OSError, ValueError):
         return False
-    entries = [entry for entry in index.get("entries", []) if entry.get("key") in KEYS and entry.get("variant") == "default"]
+    entries = [entry for entry in index.get("entries", []) if SELECTED.get(entry.get("key")) == entry.get("variant")]
     return {entry["key"] for entry in entries} == KEYS and all((DEST / name).is_file() for entry in entries for name in entry["files"])
 
 
@@ -45,7 +50,7 @@ def acquire():
         index = json.loads((directory / index_name).read_text())
         if index["schema"] != "asset-downloads-v1" or index["release"] != RELEASE:
             raise ValueError("unsupported Ranger index")
-        entries = [entry for entry in index["entries"] if entry["key"] in KEYS and entry["variant"] == "default"]
+        entries = [entry for entry in index["entries"] if SELECTED.get(entry["key"]) == entry["variant"]]
         if len(entries) != len(KEYS) or {entry["key"] for entry in entries} != KEYS:
             raise ValueError("index must declare every selected default entry exactly once")
         files = {"export.ref.json"}

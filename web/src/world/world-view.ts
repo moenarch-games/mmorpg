@@ -46,7 +46,7 @@ import { nearestAnimal, projectedUnit, type ProjectedUnit } from "./units/projec
 import { ProgressionHud } from "./units/progression-hud";
 import { PointerClick, SecondaryClick, attackToggle } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
-import { QuaterniusUnits, type Headwear } from "./units/quaternius-units";
+import { QuaterniusUnits, type Hair, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
 import type { ZoneWorld } from "./world-source";
 
@@ -757,7 +757,7 @@ export class WorldView {
         others.push(this.#minimapUnit(entity, unitsPerMetre));
       }
     }
-    this.#models.update(presented.imported, viewerHeadwear(look));
+    this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look) });
     const intensity = animate ? "strong" : "subtle";
     this.#impacts.preload(intensity);
     for (const received of receivedProjections) {
@@ -1096,4 +1096,9 @@ function doorToggle(projection: ZoneSnapshot, door: number): WorldCommand {
 function viewerHeadwear(look: ViewerLook): Headwear {
   const style = look.headwear;
   return style === "wayfarer-hood" || style === "ranger-cap" || style === "ironcrest-helm" ? style : "none";
+}
+
+/** The viewer's hair (#376); a look without a choice keeps the starter hair. */
+function viewerHair(look: ViewerLook): Hair {
+  return { style: look.hair ?? "parted", color: look.hairColor ?? "brown" };
 }
