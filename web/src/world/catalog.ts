@@ -67,10 +67,13 @@ export type AbilityRecord = {
   aura: number | null;
 };
 
-/** `target` is a creature template (kill), an item (collect, dropped by template `source`), an NPC (talk) or an area (explore). */
+/**
+ * `target` is a creature template (kill), an item (collect, dropped by template `source`), an NPC (talk),
+ * an area (explore) or an item (retrieve, granted by swimming into area `source`, #274).
+ */
 export type QuestObjectiveRecord =
   | { kind: "kill" | "talk" | "explore"; target: number; count: number }
-  | { kind: "collect"; target: number; source: number; count: number };
+  | { kind: "collect" | "retrieve"; target: number; source: number; count: number };
 
 export type QuestRecord = {
   id: number;
@@ -107,7 +110,7 @@ export type ContentCatalog = {
 
 const FORMAT = "mmorpg.catalog";
 const VERSION = 7;
-const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore"] as const;
+const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve"] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist"];
 const RESOURCES = ["rage", "focus", "mana"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
@@ -234,7 +237,7 @@ export function decodeCatalog(json: string): ContentCatalog {
     const record = object(value, ["id", "name"], `area ${index}`);
     return { id: int(record.id, `area ${index} id`, 0, 0xffff), name: text(record.name, `area ${index} name`) };
   });
-  if (root.itemCatalogRevision !== "3") {
+  if (root.itemCatalogRevision !== "4") {
     fail("unsupported item catalog revision");
   }
   const items = list(root.items, "items", 256).map((value, index): ItemRecord => {
@@ -256,7 +259,7 @@ export function decodeCatalog(json: string): ContentCatalog {
     };
   });
   const itemsById = byId(items, "item");
-  if (root.vendorCatalogRevision !== "0" && root.vendorCatalogRevision !== "2") {
+  if (root.vendorCatalogRevision !== "0" && root.vendorCatalogRevision !== "3") {
     fail("unsupported vendor catalog revision");
   }
   const vendors = list(root.vendors, "vendors", 256).map((value, index): VendorRecord & { id: number } => {
@@ -313,7 +316,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       aura: record.aura === null ? null : int(record.aura, `${name} aura`, 1, 7),
     };
   });
-  if (root.questCatalogRevision !== "0" && root.questCatalogRevision !== "1") {
+  if (root.questCatalogRevision !== "0" && root.questCatalogRevision !== "2") {
     fail("unsupported quest catalog revision");
   }
   const npcsById = byId(npcs, "npc");
@@ -344,8 +347,15 @@ export function decodeCatalog(json: string): ContentCatalog {
         }
         return { kind, target, source: int(objective.source, `${label} source`, 0, 0xffff), count };
       }
+      if (kind === "retrieve") {
+        const area = int(objective.source, `${label} area`, 0, 0xffff);
+        if (!itemsById.has(target) || !areas.some((candidate) => candidate.id === area)) {
+          fail(`${label} names an unknown item or area`);
+        }
+        return { kind, target, source: area, count };
+      }
       if (objective.source !== null) {
-        fail(`${label} has a source only when it collects`);
+        fail(`${label} has a source only when it collects or retrieves`);
       }
       return { kind, target, count };
     });
@@ -379,7 +389,7 @@ export function decodeCatalog(json: string): ContentCatalog {
     quests: byId(quests, "quest"),
     classes: byId(classes, "class"),
     abilities: byId(abilities, "ability"),
-    itemCatalogRevision: 3n,
+    itemCatalogRevision: 4n,
     items: itemsById,
     vendors: new Map([...byId(vendors, "vendor")].map(([id, { npc, offers }]) => [id, { npc, offers }])),
     contentRevision,

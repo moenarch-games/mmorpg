@@ -49,6 +49,7 @@ const IDLE: u8 = 1;
 const ENGAGED: u8 = 2;
 const EVADING: u8 = 3;
 const RALLYING: u8 = 4;
+const TRAILING: u8 = 5;
 
 pub fn encode_canonical_snapshot(
     snapshot: &CanonicalZoneSnapshot,
@@ -398,12 +399,17 @@ fn encode_creature(
         CreatureAi::Engaged => (ENGAGED, 0, None),
         CreatureAi::Evading { ticks } => (EVADING, ticks, None),
         CreatureAi::Rallying { ticks, point } => (RALLYING, ticks, Some(point)),
+        CreatureAi::Trailing { ticks, .. } => (TRAILING, ticks, None),
     };
     payload.push(ai);
     payload.extend_from_slice(&timer.to_be_bytes());
     payload.push(u8::from(destination.is_some()));
     for component in destination.unwrap_or([0; 2]) {
         payload.extend_from_slice(&component.to_be_bytes());
+    }
+    // A trailing creature (#274) names the player it follows.
+    if let CreatureAi::Trailing { player, .. } = creature.ai {
+        payload.extend_from_slice(&player.to_be_bytes());
     }
     payload.push(encode_u8_count(
         creature.threat.len(),
@@ -873,6 +879,10 @@ fn decode_creature(
         (ENGAGED, 0, None) => CreatureAi::Engaged,
         (EVADING, ticks, None) => CreatureAi::Evading { ticks },
         (RALLYING, ticks, Some(point)) => CreatureAi::Rallying { ticks, point },
+        (TRAILING, ticks, None) => CreatureAi::Trailing {
+            player: u32::from_be_bytes(take(payload, offset)?),
+            ticks,
+        },
         _ => return Err(ProtocolError::new("malformed creature AI state")),
     };
     let threat_count = decode_u8_count(
@@ -1753,6 +1763,15 @@ mod tests {
         let mut trailing = encoded.clone();
         trailing.push(0);
         assert!(decode_canonical_snapshot(&trailing).is_err());
+        // A lurker trailing a diver (#274) names the player it follows.
+        let mut trailer = snapshot.clone();
+        trailer.creatures[0].ai = CreatureAi::Trailing {
+            player: 7,
+            ticks: 120,
+        };
+        let bytes = encode_canonical_snapshot(&trailer).unwrap();
+        assert_eq!(bytes.len(), encoded.len() + 4);
+        assert_eq!(decode_canonical_snapshot(&bytes).unwrap(), trailer);
         // Header 16, identity 24, then the first player record.
         let jump_flag = 16 + 32 + 2 + 32;
         assert_eq!(encoded[jump_flag], 1);
@@ -1942,7 +1961,7 @@ mod tests {
         let equipment = 16 + 32 + 2 + 44 + 80;
         assert_eq!(encoded[equipment..equipment + 2], [0, 3]);
         for (slot, item, message) in [
-            (0, 11, "unknown item"),
+            (0, 12, "unknown item"),
             (1, 2, "item cannot be equipped there"),
             (2, 1, "item cannot be equipped there"),
         ] {

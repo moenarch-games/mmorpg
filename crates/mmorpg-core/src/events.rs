@@ -213,6 +213,9 @@ pub enum ZoneEvent {
     },
     /// The player turned `quest` in.
     QuestCompleted { quest: crate::QuestId },
+    /// The aquatic creature `source` that trailed the submerged player lost interest and
+    /// swims home (#274).
+    LostInterest { source: EntityRef },
 }
 
 impl ZoneEvent {
@@ -259,7 +262,8 @@ impl ZoneEvent {
             | Self::AuraRemoved { .. }
             | Self::Interrupted { .. }
             | Self::Absorbed { .. }
-            | Self::Blocked { .. } => 1,
+            | Self::Blocked { .. }
+            | Self::LostInterest { .. } => 1,
             Self::Miss { .. }
             | Self::Evade { .. }
             | Self::AttackPerformed { .. }

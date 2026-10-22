@@ -13,6 +13,10 @@ impl ZoneSimulation {
     }
 
     pub(crate) fn attackable_by_player(&self, attacker: PlayerId, target: EntityRef) -> bool {
+        // No combat into, out of or between submerged units (#274).
+        if self.combat_blocked(EntityRef::Player(attacker), target) {
+            return false;
+        }
         match target {
             EntityRef::Creature(id) => self.creatures.get(&id).is_some_and(|unit| unit.is_alive()),
             EntityRef::Player(id) => {

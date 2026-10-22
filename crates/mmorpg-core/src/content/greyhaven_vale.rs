@@ -20,6 +20,7 @@ pub mod cave;
 pub mod inn;
 pub mod layout;
 pub mod quests;
+pub mod shrine;
 pub mod units;
 
 /// Content revision of this zone. Revision 1 was the former test outpost;
@@ -37,8 +38,10 @@ pub mod units;
 /// (#59); revision 20 adds the Redbrand watch post, a destructible structure (#305); revision 21
 /// adds two heavy crates at Millbrook Farm, movable props (#58); revision 22 makes Garrick
 /// Redbrand a shared boss with his Redbrand Whirl and a 2 min respawn (#276); revision 23
-/// deepens Stillwater Lake into a 9 m basin under an authoritative water volume (#274).
-pub const REVISION: u64 = 23;
+/// deepens Stillwater Lake into a 9 m basin under an authoritative water volume (#274);
+/// revision 24 sinks the Sunken Shrine and its flooded cave into it, with quest 10 and the
+/// swimming lurkers (#274).
+pub const REVISION: u64 = 24;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -122,6 +125,12 @@ pub mod ids {
     /// The Greyfang cave's rock walls and roof slab (#159).
     pub const CAVE_WALLS: RangeInclusive<u32> = 540..=546;
     pub const CAVE_ROOF: u32 = 547;
+    /// The Sunken Shrine (#274): its ruins and altar, its cave's rock walls and roof slabs.
+    /// Stand-in boxes until the asset-tooling shrine kit (#345) maps these ranges.
+    pub const SHRINE_RUINS: RangeInclusive<u32> = 550..=557;
+    pub const SHRINE_ALTAR: u32 = 557;
+    pub const SHRINE_CAVE_WALLS: RangeInclusive<u32> = 560..=562;
+    pub const SHRINE_CAVE_ROOF: RangeInclusive<u32> = 570..=586;
 
     /// Trunks, numbered in generation order from the start: Wolfrun Woods
     /// first, then the outer woods (#159).
@@ -137,10 +146,12 @@ pub const GREYFANG_RIDGE: AreaId = AreaId::new(6);
 pub const SOUTHMEADOW_DOWNS: AreaId = AreaId::new(7);
 pub const HOLLOWPINE_REACH: AreaId = AreaId::new(8);
 pub const EASTWATER_FEN: AreaId = AreaId::new(9);
+/// The Sunken Shrine's altar chamber (#274), the relic's retrieve area.
+pub const SUNKEN_SHRINE: AreaId = AreaId::new(10);
 
 /// The five subzones as `(id, name, half-open bounds)`, like every other
 /// rectangle in this module. Bounds are disjoint.
-const AREA_TABLE: [(AreaId, &str, XzBounds); 9] = [
+const AREA_TABLE: [(AreaId, &str, XzBounds); 10] = [
     (
         OUTPOST,
         "Greyhaven Outpost",
@@ -212,6 +223,14 @@ const AREA_TABLE: [(AreaId, &str, XzBounds); 9] = [
         XzBounds {
             min: [12_000, -12_000],
             max: [20_800, 12_000],
+        },
+    ),
+    (
+        SUNKEN_SHRINE,
+        "Sunken Shrine",
+        XzBounds {
+            min: shrine::ALTAR_CHAMBER.0,
+            max: shrine::ALTAR_CHAMBER.1,
         },
     ),
 ];
@@ -366,7 +385,8 @@ static STRUCTURES: [Footprint; 84] = [
     (213, [4_990, 5_610], [5_010, 8_390], 110),
     (214, [9_590, 5_610], [9_610, 8_390], 110),
     // Stillwater Lake: rocks outside the walkable shallow water.
-    (300, [7_900, -5_280], [8_100, -5_120], 150),
+    // North of the Sunken Shrine's cave (#274).
+    (300, [7_900, -4_680], [8_100, -4_520], 150),
     (301, [7_080, -7_390], [7_320, -7_210], 180),
     (302, [4_920, -7_470], [5_080, -7_330], 100),
     (303, [3_500, -6_800], [3_700, -6_600], 160),
@@ -490,6 +510,7 @@ pub fn stillwater_lake() -> crate::WaterVolume {
         centre: lake::CENTRE,
         radii: lake::RADII,
         surface: lake::SURFACE,
+        air_pockets: Vec::new(),
     }
 }
 
@@ -531,6 +552,9 @@ pub fn terrain() -> Terrain {
                 // The cave floor stays flat inside its hillside.
                 if cave::GREYFANG.flattens(x, z) {
                     0
+                } else if shrine::flattens(x, z) {
+                    // The Sunken Shrine's plaza and cave floor (#274).
+                    shrine::FLOOR_Y
                 } else {
                     hill_height(x, z) - lake_depth(x, z)
                 }
@@ -819,6 +843,11 @@ fn colliders() -> Vec<StaticCollider> {
     }));
     colliders.extend(inn::colliders(*ids::INN_PARTS.start()));
     colliders.extend(cave::GREYFANG.colliders(*ids::CAVE_WALLS.start()));
+    colliders.extend(shrine::ruins(*ids::SHRINE_RUINS.start()));
+    colliders.extend(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()));
+    colliders.extend(shrine::roof(*ids::SHRINE_CAVE_ROOF.start(), |x, z| {
+        hill_height(x, z) - lake_depth(x, z)
+    }));
     colliders.extend(trees());
     colliders
 }
@@ -954,7 +983,7 @@ pub fn content_with_definition(
             .with_ramps(MILL_RAMPS.to_vec())?
             .with_structures(structure_sites(), watch_post())?
             .with_routines(units::routines(), units::closed_at_night())?
-            .with_waters(vec![stillwater_lake()])?,
+            .with_waters(vec![stillwater_lake(), shrine::cave_water()])?,
     ))
 }
 

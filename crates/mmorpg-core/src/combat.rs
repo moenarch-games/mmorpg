@@ -248,6 +248,12 @@ impl ZoneSimulation {
                         .get(&creature_id)
                         .map(|creature| creature.life)
                     {
+                        // Not across the water's surface (#274).
+                        Some(Life::Alive)
+                            if self.combat_blocked(EntityRef::Player(player_id), target) =>
+                        {
+                            Some((ErrorCode::NotAttackable, Some(target)))
+                        }
                         Some(Life::Alive) => {
                             self.update_player(player_id, |player| player.auto_attack = true);
                             None
@@ -583,7 +589,7 @@ impl ZoneSimulation {
         let Some(creature) = self.creatures.get(&creature_id) else {
             return Ok(());
         };
-        if !creature.is_alive() {
+        if !creature.is_alive() || self.combat_blocked(source, target) {
             return Ok(());
         }
         if matches!(creature.ai, CreatureAi::Evading { .. }) {
@@ -704,6 +710,7 @@ impl ZoneSimulation {
             .players
             .get(&player_id)
             .is_some_and(|player| player.is_alive())
+            || self.combat_blocked(source, target)
         {
             return Ok(());
         }
@@ -782,7 +789,9 @@ impl ZoneSimulation {
             .position();
         let to = self.player_position(player_id)?;
         let reach = i64::from(creature_reach(target));
-        if distance_squared([from.x, from.z], [to.x, to.z]) > reach * reach {
+        if distance_squared([from.x, from.z], [to.x, to.z]) > reach * reach
+            || self.combat_blocked(source, target)
+        {
             return Ok(());
         }
         self.notify_observers(

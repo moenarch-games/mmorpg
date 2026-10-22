@@ -159,7 +159,9 @@ export type ZoneEvent =
   /** Objective `objective` (its index) of `quest` reached `count`. */
   | { kind: "quest-progress"; quest: number; objective: number; count: number }
   /** The viewer turned `quest` in. */
-  | { kind: "quest-completed"; quest: number };
+  | { kind: "quest-completed"; quest: number }
+  /** The trailing lurker `source` lost interest in the diving viewer and swims home (#274). */
+  | { kind: "lost-interest"; source: EntityRef };
 
 /** Item catalog revision 3, validated against the core's immutable stack limits. */
 export type InventorySlot = { itemId: number; quantity: number } | null;
@@ -309,8 +311,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 32;
-const SCHEMA_VERSION = 32;
+const WIRE_VERSION = 33;
+const SCHEMA_VERSION = 33;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -363,7 +365,7 @@ type ItemShape = { maxStack: number; slot: number | null; stats: readonly [numbe
 const bagItem = (maxStack: number): ItemShape => ({ maxStack, slot: null, stats: [0, 0, 0, 0] });
 const gear = (slot: number, ...stats: [number, number, number, number]): ItemShape => ({ maxStack: 1, slot, stats });
 /**
- * Item catalog revision 3 by ID: stack limit, equipment slot index and stamina/strength/agility/intellect;
+ * Item catalog revision 4 by ID: stack limit, equipment slot index and stamina/strength/agility/intellect;
  * `local-zone-wasm.test.ts` holds it to the WASM catalog export.
  */
 export const ITEM_SHAPES: ReadonlyMap<number, ItemShape> = new Map([
@@ -377,6 +379,7 @@ export const ITEM_SHAPES: ReadonlyMap<number, ItemShape> = new Map([
   [8, gear(4, 1, 0, 0, 0)],
   [9, gear(5, 1, 0, 2, 0)],
   [10, bagItem(10)],
+  [11, bagItem(1)],
 ]);
 const CLASSES: readonly ClassId[] = ["warden", "ranger", "arcanist"];
 const RESOURCES: readonly ResourceKind[] = ["rage", "focus", "mana"];
@@ -568,6 +571,13 @@ function decodeEvent(reader: Reader): ZoneEvent {
         throw new Error("Malformed event record");
       }
       return { kind: "strike-swept", source, target, ability, aim: { side, height } };
+    }
+    case 21: {
+      if (flags !== 0 || source === null || target !== null) {
+        throw new Error("Malformed event record");
+      }
+      noAmount();
+      return { kind: "lost-interest", source };
     }
     case 19:
     case 20: {

@@ -204,6 +204,10 @@ impl Logs {
                 ZoneEvent::Evade { target, .. } => {
                     (LineKind::Combat, format!("{} evades.", who(target)))
                 }
+                // A trailing lurker gave up on the diver (#274).
+                ZoneEvent::LostInterest { .. } => {
+                    (LineKind::Combat, "The lurker loses interest.".into())
+                }
                 ZoneEvent::Healed {
                     target,
                     ability: id,

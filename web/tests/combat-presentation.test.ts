@@ -31,7 +31,7 @@ describe("content catalog", () => {
     expect(catalog.creatureTemplates.get(2)?.behaviour).toBe("neutral");
     expect(catalog.npcs.get(6)?.role).toBe("guard");
     expect(catalog.areas.get(1)).toBe("Greyhaven Outpost");
-    expect(catalog.itemCatalogRevision).toBe(3n);
+    expect(catalog.itemCatalogRevision).toBe(4n);
     expect([...catalog.items.values()].slice(0, 2)).toEqual([
       { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
       { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2 },
@@ -67,7 +67,7 @@ describe("content catalog", () => {
     expect(broken((json) => { (json.items as Record<string, unknown>[])[0]!.id = 0; })).toThrow("item 0 id");
     expect(broken((json) => { json.vendorCatalogRevision = "1"; })).toThrow("vendor catalog revision");
     const quests = (json: Record<string, unknown>) => json.quests as Record<string, unknown>[];
-    expect(broken((json) => { json.questCatalogRevision = "2"; })).toThrow("quest catalog revision");
+    expect(broken((json) => { json.questCatalogRevision = "1"; })).toThrow("quest catalog revision");
     expect(broken((json) => { json.questCatalogRevision = "0"; })).toThrow("without a quest catalog");
     expect(broken((json) => { quests(json)[0]!.giver = 3; })).toThrow("quest giver");
     expect(broken((json) => { quests(json)[0]!.id = 33; })).toThrow("quest 0 id");

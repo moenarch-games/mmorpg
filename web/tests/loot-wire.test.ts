@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { decodeSnapshot } from "../src/replication";
 
-const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v32.hex", import.meta.url), "utf8").trim(), "hex"));
+const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v33.hex", import.meta.url), "utf8").trim(), "hex"));
 
 describe("Rust/browser corpse loot contract", () => {
   test("reads the complete fenced sheet and repeated balance from Rust's golden bytes", () => {
@@ -27,7 +27,7 @@ describe("Rust/browser corpse loot contract", () => {
     const presence = 59 + 40 + 12 + 93 + 16;
     for (const [offset, value] of [
       [presence, 2], [presence + 4, 109], [presence + 12, 100], [presence + 17, 2], [presence + 19, 9], [presence + 21, 0],
-      [presence + 22, 2], [presence + 24, 11], [presence + 26, 0], [presence + 26, 2],
+      [presence + 22, 2], [presence + 24, 12], [presence + 26, 0], [presence + 26, 2],
     ]) {
       if (offset === undefined || value === undefined) {
         throw new Error("Missing malformed fixture field");

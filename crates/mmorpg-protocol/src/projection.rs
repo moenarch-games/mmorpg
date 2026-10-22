@@ -1109,10 +1109,7 @@ mod tests {
                     source: VIEWER,
                     target: WOLF,
                 },
-                ZoneEvent::Evade {
-                    source: VIEWER,
-                    target: WOLF,
-                },
+                ZoneEvent::LostInterest { source: WOLF },
                 ZoneEvent::Died {
                     entity: WOLF,
                     killer: Some(VIEWER),
@@ -1319,7 +1316,7 @@ mod tests {
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
         mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v32.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v33.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
     }
@@ -1390,7 +1387,7 @@ mod tests {
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
         // The previous version's fixture is rejected, never reinterpreted.
         let legacy = hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v31.hex"
+            "../../../fixtures/protocol/player-snapshot-v32.hex"
         ));
         assert_eq!(
             decode_snapshot(&legacy).unwrap_err().to_string(),
@@ -1474,7 +1471,7 @@ mod tests {
         snapshot.target_detail = TargetDetail::default();
         let bytes = encode_snapshot(&snapshot).unwrap();
         let expected = mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v32.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v33.hex"),
             &bytes,
         );
         assert_eq!(bytes, expected);
@@ -1492,7 +1489,7 @@ mod tests {
             (presence + 19, 9),
             (presence + 21, 0),
             (presence + 22, 2),
-            (presence + 24, 11),
+            (presence + 24, 12),
             (presence + 26, 0),
             // A quest drop of two units.
             (presence + 26, 2),
@@ -1749,7 +1746,7 @@ mod tests {
         assert!(decode_snapshot(&invalid_flag).is_err());
         for (slot, item, quantity) in [
             (0, 0_u16, 3_u16),
-            (0, 11, 1),
+            (0, 12, 1),
             (0, 1, 0),
             (0, 1, 21),
             (1, 2, 2),
@@ -1780,7 +1777,7 @@ mod tests {
         assert_eq!(encoded[EQUIPMENT..EQUIPMENT + 2], [0, 4], "the wand");
         // Slot 0 holds the wand; slot 1 (off hand) is empty.
         for (offset, item, message) in [
-            (EQUIPMENT, 11_u16, "unknown item"),
+            (EQUIPMENT, 12_u16, "unknown item"),
             (EQUIPMENT, 1, "item cannot be equipped there"),
             (EQUIPMENT + 2, 6, "item cannot be equipped there"),
         ] {

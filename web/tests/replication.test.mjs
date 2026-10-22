@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v32.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v33.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({
@@ -49,7 +49,7 @@ describe("Rust/browser snapshot contract", () => {
     const invalidFlag = fixture.slice();
     invalidFlag[INVENTORY + 8] = 2;
     expect(() => decodeSnapshot(invalidFlag)).toThrow("Reserved");
-    for (const [slot, item, quantity] of [[0, 0, 3], [0, 11, 1], [0, 1, 0], [0, 1, 21], [1, 2, 2]]) {
+    for (const [slot, item, quantity] of [[0, 0, 3], [0, 12, 1], [0, 1, 0], [0, 1, 21], [1, 2, 2]]) {
       const bytes = fixture.slice();
       const view = new DataView(bytes.buffer);
       view.setUint16(INVENTORY + 9 + slot * 4, item);
@@ -122,7 +122,7 @@ describe("Rust/browser snapshot contract", () => {
         { kind: "damage-dealt", source: VIEWER, target: WOLF, amount: 7, critical: true },
         { kind: "damage-taken", source: WOLF, target: VIEWER, amount: 3, critical: false },
         { kind: "miss", source: VIEWER, target: WOLF },
-        { kind: "evade", source: VIEWER, target: WOLF },
+        { kind: "lost-interest", source: WOLF },
         { kind: "died", entity: WOLF, killer: VIEWER },
         { kind: "error", code: "out-of-range", target: WOLF },
         { kind: "strike-swept", source: { kind: "player", id: 7 }, target: { kind: "creature", id: 108 }, ability: 1, aim: { side: "left", height: "high" } },
@@ -276,7 +276,7 @@ describe("Rust/browser snapshot contract", () => {
     expect(() => decodeSnapshot(fewer)).toThrow("count");
     expect(() => decodeSnapshot(new Uint8Array([...fixture, 0]))).toThrow();
     expect(() => decodeSnapshot(new Uint8Array(1_078))).toThrow("budget");
-    for (const version of [9, 13, 29, 31]) {
+    for (const version of [9, 13, 29, 31, 32]) {
       const legacy = readFileSync(new URL(`../../fixtures/protocol/player-snapshot-v${version}.hex`, import.meta.url), "utf8").trim();
       expect(() => decodeSnapshot(Uint8Array.from(Buffer.from(legacy, "hex")))).toThrow("version");
     }

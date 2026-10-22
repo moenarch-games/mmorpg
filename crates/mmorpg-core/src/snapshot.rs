@@ -109,6 +109,9 @@ pub enum CreatureAi {
     Evading { ticks: u16 },
     /// Holding a boss's rally `point` for `ticks` more ticks after the boss fell (#276).
     Rallying { ticks: u16, point: [i32; 2] },
+    /// An aquatic creature following submerged `player` for `ticks` more ticks, without
+    /// combat (#274).
+    Trailing { player: crate::PlayerId, ticks: u16 },
 }
 
 /// A creature's life cycle; the tick numbers are those of its death.
@@ -740,6 +743,8 @@ impl ZoneSimulation {
             || wanders_off
             || matches!(record.ai, CreatureAi::Rallying { point, .. }
                 if !point.into_iter().all(within_content_range))
+            || matches!(record.ai, CreatureAi::Trailing { ticks, .. }
+                if ticks > crate::water::TRAIL_TICKS)
         {
             return Err(ZoneError::new(
                 "creature position or wander destination is out of range",

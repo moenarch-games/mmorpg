@@ -2,7 +2,7 @@
 //! and drowning in the deepened basin.
 use std::sync::Arc;
 
-use mmorpg_core::greyhaven_vale::{self, lake, lake_depth, terrain};
+use mmorpg_core::greyhaven_vale::{self, lake, lake_depth, shrine, terrain};
 use mmorpg_core::water::{
     BREATH_MAX_TICKS, BREATH_REFILL_PER_TICK, DROWN_INTERVAL_TICKS, FLOAT_DEPTH_UNITS,
 };
@@ -56,6 +56,14 @@ fn the_basin_is_about_nine_metres_deep_with_walkable_banks() {
                 continue;
             }
             deepest = deepest.max(-height(column, row));
+            // The Sunken Shrine's sunken plaza and cave floor drop away under its walls.
+            let step = terrain::STEP;
+            if [[x, z], [x + step, z], [x, z + step]]
+                .iter()
+                .any(|&[x, z]| shrine::flattens(x, z))
+            {
+                continue;
+            }
             for next in [height(column + 1, row), height(column, row + 1)] {
                 let rise = (next - height(column, row)).abs();
                 // Steeper than the hills, but within the controller's 45° climb (tan 40°).

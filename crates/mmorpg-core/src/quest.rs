@@ -6,7 +6,9 @@
 //! talking to an NPC and exploring a named area. Kill, talk and explore
 //! progress is stored in the log; collect progress is the bag's count of the
 //! item, so selling or moving it changes progress and the turn-in consumes
-//! it. Quest items drop only while a quest still needs them.
+//! it. Quest items drop only while a quest still needs them. Retrieve objectives
+//! (#274) grant their item when the player swims into their area without one;
+//! like collect, their progress is the bag's count.
 
 use std::{error::Error, fmt};
 
@@ -17,8 +19,9 @@ use crate::{
     item_template,
 };
 
-/// Revision of the quest rules and the hosted Greyhaven chain.
-pub const QUEST_CATALOG_REVISION: u64 = 1;
+/// Revision of the quest rules and the hosted Greyhaven chain. Revision 2 adds retrieve
+/// objectives and *The Sunken Shrine* (#274).
+pub const QUEST_CATALOG_REVISION: u64 = 2;
 /// Quest IDs are `1..=MAX_QUESTS`, so completed quests fit a `u32` mask.
 pub const MAX_QUESTS: usize = 32;
 /// A player's quest log holds at most this many active quests.
@@ -81,6 +84,9 @@ pub enum QuestObjective {
     Talk { npc: NpcId },
     /// Enter `area`.
     Explore { area: AreaId },
+    /// Swim into `area`, which grants one `item` while the bag holds none (#274); progress
+    /// is the bag's count, and the turn-in consumes it.
+    Retrieve { item: ItemId, area: AreaId },
 }
 
 impl QuestObjective {
@@ -89,11 +95,11 @@ impl QuestObjective {
     pub const fn required(self) -> u8 {
         match self {
             Self::Kill { count, .. } | Self::Collect { count, .. } => count,
-            Self::Talk { .. } | Self::Explore { .. } => 1,
+            Self::Talk { .. } | Self::Explore { .. } | Self::Retrieve { .. } => 1,
         }
     }
 
-    /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore.
+    /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -101,6 +107,16 @@ impl QuestObjective {
             Self::Collect { .. } => 2,
             Self::Talk { .. } => 3,
             Self::Explore { .. } => 4,
+            Self::Retrieve { .. } => 5,
+        }
+    }
+
+    /// The bag item whose count is this objective's progress, if any.
+    #[must_use]
+    pub const fn carried_item(self) -> Option<ItemId> {
+        match self {
+            Self::Collect { item, .. } | Self::Retrieve { item, .. } => Some(item),
+            _ => None,
         }
     }
 }
@@ -213,9 +229,9 @@ pub(crate) fn validate_quests(
                 } => {
                     // Progress is the bag's count of the item, so one item backs one
                     // objective, and the count must fit in a full bag of its stacks.
-                    let repeated = quest.objectives[..index].iter().any(|earlier| {
-                        matches!(*earlier, QuestObjective::Collect { item: other, .. } if other == item)
-                    });
+                    let repeated = quest.objectives[..index]
+                        .iter()
+                        .any(|earlier| earlier.carried_item() == Some(item));
                     count > 0
                         && !repeated
                         && item_template(item).is_some_and(|template| {
@@ -231,6 +247,18 @@ pub(crate) fn validate_quests(
                     .areas()
                     .iter()
                     .any(|candidate| candidate.id() == area),
+                QuestObjective::Retrieve { item, area } => {
+                    let repeated = quest.objectives[..index]
+                        .iter()
+                        .any(|earlier| earlier.carried_item() == Some(item));
+                    !repeated
+                        && item_template(item).is_some_and(|template| template.slot.is_none())
+                        && content
+                            .areas()
+                            .areas()
+                            .iter()
+                            .any(|candidate| candidate.id() == area)
+                }
             };
             if !valid {
                 return Err(QuestContentError::InvalidObjective);
@@ -339,11 +367,12 @@ pub struct QuestSheet {
 fn progress(quest: &Quest, entry: &QuestEntry, bag: &Inventory) -> [u8; MAX_QUEST_OBJECTIVES] {
     let mut current = [0; MAX_QUEST_OBJECTIVES];
     for (index, objective) in quest.objectives.iter().enumerate() {
-        current[index] = match *objective {
-            QuestObjective::Collect { item, count, .. } => {
+        current[index] = match objective.carried_item() {
+            Some(item) => {
+                let count = objective.required();
                 u8::try_from(bag.count(item).min(u32::from(count))).unwrap_or(count)
             }
-            _ => entry.progress[index].min(objective.required()),
+            None => entry.progress[index].min(objective.required()),
         };
     }
     current
@@ -462,8 +491,8 @@ pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), 
         }
         for (index, &stored) in entry.progress.iter().enumerate() {
             let limit = match quest.objectives.get(index) {
-                Some(QuestObjective::Collect { .. }) | None => 0,
-                Some(objective) => objective.required(),
+                Some(objective) if objective.carried_item().is_none() => objective.required(),
+                _ => 0,
             };
             if stored > limit {
                 return invalid();
@@ -665,8 +694,10 @@ impl ZoneSimulation {
         // Stage bag and copper; any refusal leaves both and the log intact.
         let mut bag = player.inventory.clone();
         for objective in &definition.objectives {
-            if let QuestObjective::Collect { item, count, .. } = *objective
-                && bag.remove_item(item, u16::from(count)).is_err()
+            if let Some(item) = objective.carried_item()
+                && bag
+                    .remove_item(item, u16::from(objective.required()))
+                    .is_err()
             {
                 return Ok(Some((ErrorCode::QuestIncomplete, target)));
             }
@@ -822,13 +853,31 @@ impl ZoneSimulation {
             if !player.is_alive() {
                 continue;
             }
-            // Pending talk and explore objectives as (entry, objective).
+            // Pending talk and explore objectives as (entry, objective), and retrieved items.
             let mut reached = Vec::new();
+            let mut retrieved = Vec::new();
             for (slot, entry) in player.quests.entries.iter().enumerate() {
                 let Some(quest) = content.quest(entry.quest) else {
                     continue;
                 };
                 for (index, objective) in quest.objectives.iter().enumerate() {
+                    if let QuestObjective::Retrieve { item, area } = *objective {
+                        let at = self.player_position(player_id)?;
+                        let inside = content
+                            .areas()
+                            .areas()
+                            .iter()
+                            .find(|candidate| candidate.id() == area)
+                            .is_some_and(|candidate| candidate.contains(at.x, at.z));
+                        if inside
+                            && player.inventory.count(item) == 0
+                            && !retrieved.iter().any(|&(_, _, other)| other == item)
+                            && self.player_water_mode(at).swims()
+                        {
+                            retrieved.push((quest.id, index, item));
+                        }
+                        continue;
+                    }
                     if entry.progress[index] > 0 {
                         continue;
                     }
@@ -841,19 +890,40 @@ impl ZoneSimulation {
                                 .area_at(at.x, at.z)
                                 .is_some_and(|candidate| candidate.id() == area)
                         }
-                        QuestObjective::Kill { .. } | QuestObjective::Collect { .. } => false,
+                        QuestObjective::Kill { .. }
+                        | QuestObjective::Collect { .. }
+                        | QuestObjective::Retrieve { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));
                     }
                 }
             }
-            if reached.is_empty() {
+            if reached.is_empty() && retrieved.is_empty() {
                 continue;
             }
             let Some(player) = self.players.get_mut(&player_id) else {
                 continue;
             };
+            // A full bag leaves the item at the altar until there is room.
+            for (quest, index, item) in retrieved {
+                let Some(revision) = player.inventory_revision.checked_add(1) else {
+                    continue;
+                };
+                if player.inventory.insert(item, 1).is_err() {
+                    continue;
+                }
+                player.inventory_revision = revision;
+                player.inventory_changed_at = now;
+                push_event(
+                    &mut player.events,
+                    ZoneEvent::QuestProgress {
+                        quest,
+                        objective: u8::try_from(index).unwrap_or(u8::MAX),
+                        count: 1,
+                    },
+                );
+            }
             for (slot, quest, index) in reached {
                 player.quests.entries[slot].progress[index] = 1;
                 push_event(

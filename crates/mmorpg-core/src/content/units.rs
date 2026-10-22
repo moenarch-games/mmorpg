@@ -59,6 +59,12 @@ impl CreatureFamily {
             Self::Ogre => "ogre",
         }
     }
+
+    /// Aquatic families swim in deep water and trail submerged players (#274).
+    #[must_use]
+    pub const fn swims(self) -> bool {
+        matches!(self, Self::Mirefin)
+    }
 }
 
 /// What a breakable prop is (#288).

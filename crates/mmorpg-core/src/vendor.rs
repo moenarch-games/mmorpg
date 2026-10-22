@@ -11,8 +11,8 @@ use crate::{
 };
 
 /// Revision of the vendor rules: the sale values below and the hosted stock.
-/// Revision 2 prices the Wolf Pelt (item catalog 3).
-pub const VENDOR_CATALOG_REVISION: u64 = 2;
+/// Revision 2 prices the Wolf Pelt (item catalog 3); revision 3 the Sunken Relic (item catalog 4).
+pub const VENDOR_CATALOG_REVISION: u64 = 3;
 /// A vendor offers at most this many items.
 pub const MAX_VENDOR_OFFERS: usize = 8;
 /// Inclusive horizontal (XZ) distance from a vendor's feet to the player (5 m).
@@ -96,7 +96,7 @@ pub const fn sell_price(item: ItemId) -> u32 {
         5 => 5,
         6 | 7 => 4,
         8 | 9 => 3,
-        10 => 1,
+        10 | 11 => 1,
         _ => 0,
     }
 }
@@ -287,7 +287,7 @@ mod tests {
             assert!(sell_price(item.id) > 0, "{} has no sale value", item.name);
         }
         assert_eq!(sell_price(ItemId::new(0)), 0);
-        assert_eq!(sell_price(ItemId::new(11)), 0);
+        assert_eq!(sell_price(ItemId::new(12)), 0);
         for offer in starter_vendor_stock().offers() {
             assert!(offer.price > sell_price(offer.item));
         }
