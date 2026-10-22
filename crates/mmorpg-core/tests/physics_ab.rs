@@ -279,7 +279,12 @@ fn check_invariants(
                         && before.body.exact_velocity() == [0.0; 3]
                 })
             });
-            if rested && unit.body.exact_velocity() == [0.0; 3] && !unit.grounded {
+            // A swimming unit (#274) floats without ground under it.
+            if rested
+                && unit.body.exact_velocity() == [0.0; 3]
+                && !unit.grounded
+                && !unit.body.swimming()
+            {
                 return Err(format!("{:?} rests ungrounded at tick {tick}", unit.unit));
             }
         }
