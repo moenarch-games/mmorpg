@@ -227,7 +227,12 @@ impl App {
             return;
         }
         let Some(cursor) = self.cursor else { return };
-        let result = self.renderer.as_ref().map(|r| r.pick([cursor.x, cursor.y]));
+        let scale = self.window.as_ref().map_or(1., |w| w.scale_factor());
+        let margin = mmorpg_client::picking::NEAR_MISS_PIXELS * scale;
+        let result = self
+            .renderer
+            .as_ref()
+            .map(|r| r.pick([cursor.x, cursor.y], margin));
         let picked = match result {
             Some(Ok(picked)) => picked,
             Some(Err(error)) => {

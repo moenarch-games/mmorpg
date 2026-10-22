@@ -165,7 +165,10 @@ fn color_texture(
     })
 }
 
-fn scene_camera(view: CameraView, viewport: [u32; 2]) -> Result<PerspectiveCamera, ClientError> {
+pub(crate) fn scene_camera(
+    view: CameraView,
+    viewport: [u32; 2],
+) -> Result<PerspectiveCamera, ClientError> {
     Ok(PerspectiveCamera::new(
         Vec3::new(view.eye[0], view.eye[1], view.eye[2]),
         Vec3::new(view.target[0], view.target[1], view.target[2]),
@@ -254,8 +257,13 @@ impl WindowRenderer {
         [self.config.width, self.config.height]
     }
 
-    /// Pick only the actual last successfully presented frame and viewport.
-    pub fn pick(&self, pixel: [f64; 2]) -> Result<Option<crate::picking::Picked>, ClientError> {
+    /// Pick only the actual last successfully presented frame and viewport; a click
+    /// within `margin` physical pixels of a creature, NPC or door may still select it.
+    pub fn pick(
+        &self,
+        pixel: [f64; 2],
+        margin: f64,
+    ) -> Result<Option<crate::picking::Picked>, ClientError> {
         let Some(view) = self.last_view else {
             return Ok(None);
         };
@@ -264,16 +272,21 @@ impl WindowRenderer {
         }
         use three_d_projective::picking::{PickError, PickRay};
         let viewport = [self.config.width, self.config.height];
-        let ray = match PickRay::from_viewport(
-            scene_camera(view, viewport)?.view_projection_matrix(),
-            viewport,
-            pixel,
-        ) {
+        let view_projection = scene_camera(view, viewport)?.view_projection_matrix();
+        let ray = match PickRay::from_viewport(view_projection, viewport, pixel) {
             Ok(ray) => ray,
             Err(PickError::InvalidViewport | PickError::InvalidViewportPoint) => return Ok(None),
             Err(e) => return Err(e.into()),
         };
-        self.picking.select_frame(ray)
+        self.picking.select_frame(
+            ray,
+            Some(crate::picking::PickScreen {
+                view_projection,
+                viewport,
+                pixel,
+                margin,
+            }),
+        )
     }
     pub fn resize(&mut self, width: u32, height: u32) {
         self.last_view = None;
