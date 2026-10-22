@@ -68,6 +68,7 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [22, { range: "self", description: "Channel a lightning beam along your facing for 2 s: it strikes every enemy on its line until a wall or raised shield. Turn to steer it.", glyph: BOLT, accent: "#c8dcff", visual: null, pose: "cast" }],
   [23, { range: RANGED, description: "Lightning strikes your target, then jumps twice to the nearest enemies within 8 m it can see.", glyph: BOLT, accent: "#b9a8ff", visual: null, pose: "cast" }],
   [20, { range: RANGED, description: "Looses an arrow along your facing that bounces off walls up to twice before striking the first enemy it meets.", glyph: ARROW, accent: "#a8c87a", visual: null, pose: "draw" }],
+  [24, { range: "self", description: "Garrick winds up for 1.5 s, then whirls his blade around him: step out of the 4 m ring or be hurt and thrown back.", glyph: CLEAVE, accent: "#d8452c", visual: "ring", pose: "swing" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

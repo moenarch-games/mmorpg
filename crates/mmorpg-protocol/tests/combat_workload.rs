@@ -28,10 +28,11 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Redbrand watch post's three pieces to every step's world, and snapshot v27 a piece count
     // byte to every projection. Creature navigation (#307) routes blocked chases around
     // walls, which moves the spread and crowded fights. Revision 21 (#58) stands two heavy crates
-    // in every step's world, and the spread fights push and see them.
+    // in every step's world, and the spread fights push and see them. Revision 22 (#276) gives
+    // Garrick his telegraphed Redbrand Whirl, whose cast events the camp fight's players see.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [27_000, 442_800, 220_128, 4_220_208],
-        [27_000, 439_920, 79_197, 1_328_344],
+        [27_000, 439_920, 79_197, 1_329_527],
         [27_000, 448_560, 386_013, 6_437_919],
         [25_986, 459_066, 2_208_874, 24_458_435],
     ];

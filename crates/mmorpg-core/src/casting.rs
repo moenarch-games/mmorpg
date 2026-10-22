@@ -723,6 +723,14 @@ impl ZoneSimulation {
             let amount = u32::try_from(i64::from(amount) * share / 1_000)
                 .unwrap_or(0)
                 .max(1);
+            // A boss's special hits harder under a larger attempt's profile (#276).
+            let amount = match self.creatures.get(&creature_id) {
+                Some(creature) => {
+                    let (spawn, _) = Self::creature_content(&self.content, creature_id)?;
+                    creature.scale_damage(&self.content, spawn.template, amount)
+                }
+                None => amount,
+            };
             self.creature_damages_player(creature_id, player_id, amount, false)?;
             let push = i32::try_from(i64::from(stomp.knockback) * share / 1_000).unwrap_or(0);
             self.knock_away(
@@ -1165,7 +1173,7 @@ impl ZoneSimulation {
                 let Some(creature) = self.creatures.get_mut(&creature_id) else {
                     return Ok(());
                 };
-                let max_health = template.max_health(creature.level);
+                let max_health = creature.max_health(&content, template);
                 let healed = percent_of(max_health, u32::from(percent))
                     .min(max_health.saturating_sub(creature.health));
                 creature.health += healed;
@@ -1298,7 +1306,7 @@ impl ZoneSimulation {
                 None
             }
             AbilityEffect::Bandage { below_percent, .. } => {
-                let max_health = u64::from(template.max_health(creature.level));
+                let max_health = u64::from(creature.max_health(&content, template));
                 if u64::from(creature.health) * 100 >= max_health * u64::from(below_percent) {
                     return Ok(false);
                 }
@@ -1484,6 +1492,12 @@ impl ZoneSimulation {
                     .any(|entry| entry.entity == healed_unit)
             {
                 creature.add_threat(healer, healed / 2);
+                // Healing a player a boss fights is meaningful contribution (#276, 5.1.74).
+                if let (EntityRef::Player(healer), Some(encounter)) =
+                    (healer, creature.encounter.as_mut())
+                {
+                    encounter.contribute(healer);
+                }
             }
         }
         self.notify_units(

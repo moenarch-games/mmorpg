@@ -107,6 +107,8 @@ pub enum CreatureAi {
     Engaged,
     /// Running home for `ticks` ticks so far.
     Evading { ticks: u16 },
+    /// Holding a boss's rally `point` for `ticks` more ticks after the boss fell (#276).
+    Rallying { ticks: u16, point: [i32; 2] },
 }
 
 /// A creature's life cycle; the tick numbers are those of its death.
@@ -262,6 +264,8 @@ pub struct CanonicalCreatureSnapshot {
     pub tapped_by: Option<PlayerId>,
     pub loot: Option<crate::LootRewards>,
     pub abilities: CanonicalCreatureAbilities,
+    /// A fighting boss's attempt (#276): locked participants and contributors.
+    pub encounter: Option<crate::BossEncounter>,
 }
 
 /// Everything authoritative about a zone at a tick boundary, with its
@@ -402,6 +406,7 @@ impl ZoneSimulation {
                         cast: creature.cast,
                         auras: creature.auras.clone(),
                     },
+                    encounter: creature.encounter.clone(),
                 })
             })
             .collect::<Result<Vec<_>, ZoneError>>()?;
@@ -721,13 +726,15 @@ impl ZoneSimulation {
                 .into_iter()
                 .all(within_content_range)
             || wanders_off
+            || matches!(record.ai, CreatureAi::Rallying { point, .. }
+                if !point.into_iter().all(within_content_range))
         {
             return Err(ZoneError::new(
                 "creature position or wander destination is out of range",
             ));
         }
         if !(template.min_level..=template.max_level).contains(&record.level)
-            || record.health > template.max_health(record.level)
+            || record.health > scaled_max_health(&content, template, &record)
             || record.threat.len() > MAX_THREAT_ENTRIES
             || record
                 .threat
@@ -828,6 +835,21 @@ impl ZoneSimulation {
         if !matches!(record.ai, CreatureAi::Engaged) && !record.threat.is_empty() {
             return Err(ZoneError::new("only engaged creatures have threat"));
         }
+        if let Some(encounter) = &record.encounter {
+            let ordered = |players: &[crate::PlayerId]| {
+                players.len() <= crate::MAX_ENCOUNTER_PLAYERS
+                    && players.windows(2).all(|pair| pair[0] < pair[1])
+            };
+            if content.boss(spawn.template).is_none()
+                || record.life != CreatureLife::Alive
+                || record.ai != CreatureAi::Engaged
+                || encounter.participants.is_empty()
+                || !ordered(&encounter.participants)
+                || !ordered(&encounter.contributors)
+            {
+                return Err(ZoneError::new("only a fighting boss has an encounter"));
+            }
+        }
         validate_creature_abilities(
             &record.abilities,
             content.creature_ability(spawn.template),
@@ -851,6 +873,7 @@ impl ZoneSimulation {
                 ability_timer: record.abilities.ability_timer,
                 cast: record.abilities.cast,
                 auras: record.abilities.auras,
+                encounter: record.encounter,
             },
         );
         Ok(())
@@ -1108,6 +1131,19 @@ pub(crate) fn validate_player_abilities(
         return Err(ZoneError::new("a dead Warden has no rage"));
     }
     Ok(())
+}
+
+/// The record's maximum health under its boss attempt, if any (#276).
+fn scaled_max_health(
+    content: &crate::ZoneContent,
+    template: &crate::CreatureTemplate,
+    record: &CanonicalCreatureSnapshot,
+) -> u32 {
+    let base = template.max_health(record.level);
+    match (content.boss(template.id), &record.encounter) {
+        (Some(rules), Some(encounter)) => encounter.scale_health(rules, base),
+        _ => base,
+    }
 }
 
 fn validate_creature_abilities(

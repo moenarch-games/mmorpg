@@ -1311,7 +1311,7 @@ mod tests {
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
         mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v30.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v31.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
     }
@@ -1465,7 +1465,7 @@ mod tests {
         snapshot.target_detail = TargetDetail::default();
         let bytes = encode_snapshot(&snapshot).unwrap();
         let expected = mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v30.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v31.hex"),
             &bytes,
         );
         assert_eq!(bytes, expected);
