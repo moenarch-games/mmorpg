@@ -47,7 +47,7 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
         experience: 100, copper: 5, choices: [],
       },
     ],
-    abilityCatalogRevision: "6",
+    abilityCatalogRevision: "7",
     abilities: [
       { id: 1, name: "Heroic Strike", user: "warden", level: 1, cost: 15, castTicks: 0, channel: false, cooldown: 0, aura: null },
       { id: 2, name: "Shield Bash", user: "warden", level: 2, cost: 10, castTicks: 0, channel: false, cooldown: 360, aura: 6 },

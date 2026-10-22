@@ -406,6 +406,10 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   // Aimed specials (#291): Piercing Shot and Ricochet Shot.
   [19, instant(300)],
   [20, instant(240)],
+  // Arcanist cones, beams and chains (#292).
+  [21, instant(300, "snare", 90)],
+  [22, { castTicks: 60, channel: true, cooldown: 600, aura: null, auraTicks: 0 }],
+  [23, { castTicks: 45, channel: false, cooldown: 360, aura: null, auraTicks: 0 }],
 ]);
 /** Mana: 110 + 22 per level above 1; rage and focus: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

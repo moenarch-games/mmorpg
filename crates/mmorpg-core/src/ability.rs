@@ -8,7 +8,7 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 6;
+pub const ABILITY_CATALOG_REVISION: u64 = 7;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
@@ -244,6 +244,33 @@ pub enum AbilityEffect {
         radius: i32,
         knockback: i32,
     },
+    /// A breath in front of the caster (#292): `damage` + `per_level` to every hostile unit it
+    /// can see within `range` and `half_angle` degrees of its facing, then a snare of `percent`.
+    Cone {
+        damage: [u16; 2],
+        per_level: u16,
+        range: i32,
+        half_angle: u16,
+        percent: u16,
+        duration: u16,
+    },
+    /// A channelled beam along the caster's current facing (#292): every `period` ticks,
+    /// `damage` + `per_level` to every hostile unit on the line up to `length`, which the first
+    /// wall or a raised shield turned toward it stops.
+    Beam {
+        damage: [u16; 2],
+        per_level: u16,
+        length: i32,
+        period: u16,
+    },
+    /// Lightning at the target that jumps `jumps` times to the nearest unhit hostile unit within
+    /// `radius` that the last victim can see (#292), at full `damage` + `per_level` each.
+    Chain {
+        damage: [u16; 2],
+        per_level: u16,
+        jumps: u8,
+        radius: i32,
+    },
 }
 
 /// One catalog row.
@@ -275,7 +302,9 @@ impl Ability {
             AbilityEffect::DamageOverTime {
                 duration, period, ..
             } => (AuraKind::DamageOverTime, duration, period),
-            AbilityEffect::Snare { duration, .. } => (AuraKind::Snare, duration, 0),
+            AbilityEffect::Snare { duration, .. } | AbilityEffect::Cone { duration, .. } => {
+                (AuraKind::Snare, duration, 0)
+            }
             AbilityEffect::Haste { duration, .. } => (AuraKind::Haste, duration, 0),
             AbilityEffect::Nova { root_ticks, .. } => (AuraKind::Root, root_ticks, 0),
             AbilityEffect::Absorb { duration, .. } => (AuraKind::Absorb, duration, 0),
@@ -286,7 +315,9 @@ impl Ability {
             | AbilityEffect::Bandage { .. }
             | AbilityEffect::Blast { .. }
             | AbilityEffect::Charge { .. }
-            | AbilityEffect::Stomp { .. } => return None,
+            | AbilityEffect::Stomp { .. }
+            | AbilityEffect::Beam { .. }
+            | AbilityEffect::Chain { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -400,6 +431,9 @@ pub mod ids {
     pub const STOMP: AbilityId = AbilityId::new(18);
     pub const PIERCING_SHOT: AbilityId = AbilityId::new(19);
     pub const RICOCHET_SHOT: AbilityId = AbilityId::new(20);
+    pub const FROST_BREATH: AbilityId = AbilityId::new(21);
+    pub const LIGHTNING_BEAM: AbilityId = AbilityId::new(22);
+    pub const CHAIN_LIGHTNING: AbilityId = AbilityId::new(23);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -416,7 +450,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 20] = [
+pub const ABILITY_CATALOG: [Ability; 23] = [
     ability(
         1,
         "Heroic Strike",
@@ -736,6 +770,57 @@ pub const ABILITY_CATALOG: [Ability; 20] = [
         ),
         crate::ProjectileKind::Arrow,
     ),
+    // Cones, beams and chains (#292).
+    ability(
+        21,
+        "Frost Breath",
+        ARCANIST,
+        5,
+        35,
+        CastTime::Instant,
+        300,
+        AbilityRange::SelfCentred,
+        AbilityEffect::Cone {
+            damage: [6, 9],
+            per_level: 2,
+            range: 800,
+            half_angle: 30,
+            percent: 40,
+            duration: 90,
+        },
+    ),
+    ability(
+        22,
+        "Lightning Beam",
+        ARCANIST,
+        8,
+        50,
+        CastTime::Channel(60),
+        600,
+        AbilityRange::SelfCentred,
+        AbilityEffect::Beam {
+            damage: [4, 6],
+            per_level: 1,
+            length: 2_000,
+            period: 15,
+        },
+    ),
+    ability(
+        23,
+        "Chain Lightning",
+        ARCANIST,
+        7,
+        45,
+        CastTime::Cast(45),
+        360,
+        RANGED,
+        AbilityEffect::Chain {
+            damage: [10, 14],
+            per_level: 3,
+            jumps: 2,
+            radius: 800,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -879,6 +964,49 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 radius,
                 knockback,
             ],
+            AbilityEffect::Cone {
+                damage,
+                per_level,
+                range,
+                half_angle,
+                percent,
+                duration,
+            } => vec![
+                16,
+                damage[0].into(),
+                damage[1].into(),
+                per_level.into(),
+                range,
+                half_angle.into(),
+                percent.into(),
+                duration.into(),
+            ],
+            AbilityEffect::Beam {
+                damage,
+                per_level,
+                length,
+                period,
+            } => vec![
+                17,
+                damage[0].into(),
+                damage[1].into(),
+                per_level.into(),
+                length,
+                period.into(),
+            ],
+            AbilityEffect::Chain {
+                damage,
+                per_level,
+                jumps,
+                radius,
+            } => vec![
+                18,
+                damage[0].into(),
+                damage[1].into(),
+                per_level.into(),
+                jumps.into(),
+                radius,
+            ],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -903,14 +1031,16 @@ mod tests {
                 assert!(aura.period == 0 || aura.duration % aura.period == 0);
             }
             if let CastTime::Channel(ticks) = ability.cast {
-                let AbilityEffect::Blizzard { period, .. } = ability.effect else {
-                    panic!("only Blizzard channels");
+                let (AbilityEffect::Blizzard { period, .. } | AbilityEffect::Beam { period, .. }) =
+                    ability.effect
+                else {
+                    panic!("only Blizzard and Lightning Beam channel");
                 };
                 assert_eq!(ticks % period, 0);
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(21)), None);
+        assert_eq!(ability_by_id(AbilityId::new(24)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG
