@@ -202,6 +202,14 @@ class RegionArt {
     return { loaded: pieces.filter((piece) => this.#settled.has(piece)).length, total: pieces.length };
   }
 
+  /**
+   * Whether area `id` can be entered: only the inn blocks entry, and only in its own area (#395).
+   * Units enter as procedural stand-ins and swap to their models once those settle.
+   */
+  entryReady(id: number): boolean {
+    return id !== this.#innArea || this.#settled.has("inn");
+  }
+
   /** Fetches the area at `at` and every area within the streaming radius of it. */
   approach(at: [number, number] | null, areas: readonly { id: number; minXz: readonly [number, number]; maxXz: readonly [number, number] }[]): void {
     if (!at) { return; }
@@ -1023,6 +1031,11 @@ export class WorldView {
   /** How many of area `id`'s art pieces have settled (loaded or failed) out of how many. */
   artProgress(id: number | null): { loaded: number; total: number } {
     return this.#regions?.progress(id) ?? { loaded: 0, total: 0 };
+  }
+
+  /** Whether area `id`'s entry-blocking art (its inn, if any) has settled; false before the world loads. */
+  entryArtReady(id: number): boolean {
+    return this.#regions?.entryReady(id) ?? false;
   }
 
   /** Called whenever another art piece settles. */
