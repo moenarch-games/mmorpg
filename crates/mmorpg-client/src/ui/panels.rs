@@ -49,7 +49,9 @@ fn objective_text(objective: QuestObjective, content: &ZoneContent) -> String {
                 .creature_template(template)
                 .map_or("Creatures", |t| t.name.as_str())
         ),
-        QuestObjective::Collect { item, .. } => item_name(item).to_owned(),
+        QuestObjective::Collect { item, .. } | QuestObjective::Retrieve { item, .. } => {
+            item_name(item).to_owned()
+        }
         QuestObjective::Talk { npc } => format!(
             "Speak to {}",
             content

@@ -3,7 +3,7 @@
 //! units walk on structures, roads, the plaza or water.
 use std::collections::BTreeMap;
 
-use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_GRID, SPAWN_PLAZA, ids};
+use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_GRID, SPAWN_PLAZA, ids, shrine};
 use mmorpg_core::{Area, MAX_PLAYERS_PER_ZONE, StaticCollider, greyhaven_vale_definition};
 use mmorpg_scenery::{
     Biome, FAR_PEAK_UNITS, FAR_TERRAIN_EXTENT_UNITS, LAKE_BED_COLOR, MOUNTAIN_PEAK_UNITS,
@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0xa36d_c369_aa42_3980;
+const STABLE_HASH: u64 = 0x6aca_cdbc_c2bd_518b;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -102,7 +102,7 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
         format!("{:#018x}", greyhaven_vale::content().fingerprint()),
         recorded.trim()
     );
-    assert_eq!(scenery.content_revision, 23);
+    assert_eq!(scenery.content_revision, 24);
 }
 
 #[test]
@@ -168,7 +168,15 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
         for collider in &structures {
             // The cave's roof slab rests on its walls.
             let cave = |id: u32| id == ids::CAVE_ROOF || ids::CAVE_WALLS.contains(&id);
-            let roofed = cave(collider.id) && prop.collider.is_some_and(cave);
+            // The Sunken Shrine's roof slabs cover its walls and altar, and its arch's lintel
+            // rests on its pillars (#274).
+            let sunken = |id: u32| {
+                ids::SHRINE_RUINS.contains(&id)
+                    || ids::SHRINE_CAVE_WALLS.contains(&id)
+                    || ids::SHRINE_CAVE_ROOF.contains(&id)
+            };
+            let roofed = (cave(collider.id) && prop.collider.is_some_and(cave))
+                || (sunken(collider.id) && prop.collider.is_some_and(sunken));
             if prop.collider != Some(collider.id) && !roofed {
                 assert!(
                     !area.intersects(footprint(collider)),
@@ -193,7 +201,16 @@ fn walkable_water_has_no_colliders() {
         greyhaven_vale::area_at(lake.centre[0], lake.centre[1]).map(Area::id),
         Some(greyhaven_vale::STILLWATER_LAKE)
     );
-    for collider in vale_colliders().iter().filter(|c| !is_terrain(c)) {
+    // The Sunken Shrine (#274) lies on the deep lake's floor, not in its walkable shallows.
+    let sunken = |id: u32| {
+        ids::SHRINE_RUINS.contains(&id)
+            || ids::SHRINE_CAVE_WALLS.contains(&id)
+            || ids::SHRINE_CAVE_ROOF.contains(&id)
+    };
+    for collider in vale_colliders()
+        .iter()
+        .filter(|c| !is_terrain(c) && !sunken(c.id))
+    {
         // The nearest footprint point to the centre is the clamped centre.
         let rect = footprint(collider);
         let nearest = [
@@ -280,10 +297,12 @@ fn relief_is_gentle_inside_and_encloses_the_vale_with_mountains() {
             let (vertex, _) = grid.vertex(column, row).unwrap();
             let height = vertex[1];
             // Stillwater Lake's basin (#274) sinks the ground up to 9 m under the water.
+            // The Sunken Shrine's cave floor (#274) runs on under the shore, roofed.
             let floor = if scenery
                 .water
                 .iter()
                 .any(|water| water.contains(vertex[0], vertex[2]))
+                || shrine::flattens(vertex[0], vertex[2])
             {
                 -WALKABLE_RELIEF_UNITS - 900
             } else {

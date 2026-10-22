@@ -3,7 +3,7 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
   return {
     format: "mmorpg.catalog",
     version: 7,
-    itemCatalogRevision: "3",
+    itemCatalogRevision: "4",
     items: [
       { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
       { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2 },
@@ -29,9 +29,9 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
       { id: 1, name: "ranger", resource: "focus" },
       { id: 2, name: "arcanist", resource: "mana" },
     ],
-    vendorCatalogRevision: "2",
+    vendorCatalogRevision: "3",
     vendors: [{ npc: 3, offers: [{ item: 2, price: 9 }] }],
-    questCatalogRevision: "1",
+    questCatalogRevision: "2",
     quests: [
       {
         id: 1, name: "Trouble in the Woods", text: "Slay six wolves.", giver: 1, ender: 1, prerequisite: null,

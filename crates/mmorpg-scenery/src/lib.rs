@@ -451,6 +451,13 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::FENCES.contains(&id) => PropKind::Fence,
         _ if ids::CLIFFS.contains(&id) || ids::CAVE_WALLS.contains(&id) => PropKind::Cliff,
         ids::CAVE_ROOF => PropKind::CaveRoof,
+        // The Sunken Shrine (#274): collider-box stand-ins. The asset-tooling shrine kit (#345)
+        // swaps in here by giving these ID ranges its own kinds; the colliders stay.
+        _ if ids::SHRINE_CAVE_ROOF.contains(&id) => PropKind::CaveRoof,
+        ids::SHRINE_ALTAR => PropKind::Waystone,
+        _ if ids::SHRINE_RUINS.contains(&id) || ids::SHRINE_CAVE_WALLS.contains(&id) => {
+            PropKind::Cliff
+        }
         _ if ids::TENTS.contains(&id) => PropKind::Tent,
         _ if ids::CRATES.contains(&id) => PropKind::Crate,
         ids::WATCHTOWER => PropKind::Keep,

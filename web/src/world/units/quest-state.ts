@@ -29,6 +29,8 @@ export function objectiveLabel(objective: QuestObjectiveRecord, catalog: Content
       return `Speak with ${catalog.npcs.get(objective.target)?.name ?? "someone"}`;
     case "explore":
       return `Explore ${catalog.areas.get(objective.target) ?? "the area"}`;
+    case "retrieve":
+      return catalog.items.get(objective.target)?.name ?? "Item";
     default: {
       const unknown: never = objective;
       throw new Error(`Unknown objective ${String(unknown)}`);
@@ -40,7 +42,7 @@ function objectiveView(objective: QuestObjectiveRecord, current: number, catalog
   const required = objective.count;
   const label = objectiveLabel(objective, catalog);
   const done = current >= required;
-  const text = objective.kind === "kill" || objective.kind === "collect"
+  const text = objective.kind === "kill" || objective.kind === "collect" || objective.kind === "retrieve"
     ? `${label}: ${Math.min(current, required)}/${required}`
     : `${label}${done ? " (done)" : ""}`;
   return { text, current, required, done };

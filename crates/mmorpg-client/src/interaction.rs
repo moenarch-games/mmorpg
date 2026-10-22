@@ -311,6 +311,15 @@ pub fn quest_brief(quest: &mmorpg_core::Quest, content: &ZoneContent) -> String 
                     .find(|a| a.id() == area)
                     .map_or("the objective area", |a| a.name())
             ),
+            QuestObjective::Retrieve { item, area } => format!(
+                "Retrieve the {} from {}. ",
+                item_name(item),
+                mmorpg_core::greyhaven_vale::areas()
+                    .areas()
+                    .iter()
+                    .find(|a| a.id() == area)
+                    .map_or("the objective area", |a| a.name())
+            ),
         });
     }
     text
