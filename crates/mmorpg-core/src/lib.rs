@@ -166,7 +166,7 @@ pub use vendor::{
     VendorStockError, VendorTradeError, sell_price, settle_purchase, settle_sale,
     starter_vendor_stock,
 };
-pub use water::{Breath, WaterMode, WaterVolume};
+pub use water::{AirPocket, Breath, WaterMode, WaterVolume};
 pub use zone::{MAX_PENDING_INTENTS, ZoneSimulation, ZoneTickWork};
 
 use std::error::Error;
@@ -177,7 +177,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 32;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 33;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its

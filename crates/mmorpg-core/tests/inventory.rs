@@ -37,7 +37,7 @@ fn totals(bag: &Inventory) -> [u32; 2] {
 fn catalog_and_stack_import_fail_closed_at_boundaries() {
     assert_eq!(item_template(FUR).unwrap().name, "Torn Fur");
     assert_eq!(item_template(DAGGER).unwrap().name, "Worn Dagger");
-    for id in [0, 11, u16::MAX] {
+    for id in [0, 12, u16::MAX] {
         assert!(item_template(ItemId::new(id)).is_none());
         assert_eq!(
             ItemStack::new(ItemId::new(id), 1),

@@ -1,7 +1,7 @@
 //! The outer valley's hills (#159): authored terrain the zone's Rapier physics walks units on.
 use std::sync::Arc;
 
-use mmorpg_core::greyhaven_vale::{self, cave::GREYFANG, hill_height, terrain};
+use mmorpg_core::greyhaven_vale::{self, cave::GREYFANG, hill_height, shrine, terrain};
 use mmorpg_core::{ZoneCommand, ZoneId, ZoneSimulation};
 
 /// World-axis heading of forward movement toward +X.
@@ -37,8 +37,9 @@ fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
             ];
             let height =
                 grid.heights[usize::try_from(row * i32::from(grid.columns) + column).unwrap()];
-            // Stillwater Lake's basin (#274) is the one dip in the original valley.
-            let basin = |x: i32| greyhaven_vale::lake_depth(x, z) > 0;
+            // Stillwater Lake's basin and the Sunken Shrine's cave under its shore (#274) are the
+            // only dips in the original valley.
+            let basin = |x: i32| greyhaven_vale::lake_depth(x, z) > 0 || shrine::flattens(x, z);
             if x.abs().max(z.abs()) <= 12_500 && !basin(x) {
                 assert_eq!(height, 0, "the original valley stays flat at {x}, {z}");
             }

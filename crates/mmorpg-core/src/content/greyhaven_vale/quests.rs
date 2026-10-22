@@ -1,4 +1,4 @@
-//! The Greyhaven chain (quest catalog 1): nine quests from the outpost's
+//! The Greyhaven chain (quest catalog 2): ten quests from the outpost's
 //! three quest givers, from the Wolfrun Woods to Garrick Redbrand and back.
 //!
 //! Marshal Elden Greywatch (NPC 1) sends new characters against the wolves
@@ -6,7 +6,7 @@
 //! pelts and worries about her missing farmhand; Farmer Osric Mill (NPC 4)
 //! asks for help against the marauders. Each quest unlocks the next.
 
-use super::{REDBRAND_HOLLOW, STILLWATER_LAKE};
+use super::{REDBRAND_HOLLOW, STILLWATER_LAKE, SUNKEN_SHRINE};
 use crate::{ItemId, NpcId, Quest, QuestId, QuestObjective, QuestRewards};
 
 use super::units::templates::{
@@ -29,6 +29,11 @@ pub const MIREFIN_MENACE: QuestId = QuestId::new(6);
 pub const INTO_REDBRAND_HOLLOW: QuestId = QuestId::new(7);
 pub const GARRICK_REDBRAND_QUEST: QuestId = QuestId::new(8);
 pub const RETURN_TO_GREYHAVEN: QuestId = QuestId::new(9);
+/// A side quest beside *Mirefin Menace* (#274): dive for the relic in the Sunken Shrine.
+pub const THE_SUNKEN_SHRINE: QuestId = QuestId::new(10);
+
+/// The relic on the Sunken Shrine's altar (#274).
+pub const SUNKEN_RELIC: ItemId = ItemId::new(11);
 
 /// `(id, name, text, giver, ender, prerequisite, objectives, experience,
 /// copper, reward choices)`.
@@ -50,7 +55,7 @@ const fn kill(template: crate::CreatureTemplateId, count: u8) -> QuestObjective 
 }
 
 #[rustfmt::skip]
-const QUESTS: [QuestRow; 9] = [
+const QUESTS: [QuestRow; 10] = [
     (
         TROUBLE_IN_THE_WOODS, "Trouble in the Woods",
         "Timber wolves prowl the Wolfrun Trail west of the gate. Thin the pack: slay six of them.",
@@ -102,6 +107,12 @@ const QUESTS: [QuestRow; 9] = [
         "The vale is safe again. Tell Tanner Hilda Brook that Greyhaven stands, and take her thanks.",
         MARSHAL, TANNER, Some(GARRICK_REDBRAND_QUEST),
         &[QuestObjective::Talk { npc: TANNER }], 300, 100, &[4, 3, 5],
+    ),
+    (
+        THE_SUNKEN_SHRINE, "The Sunken Shrine",
+        "Old stones lie at the bottom of Stillwater Lake, and a flooded cave runs east from them. Dive down, bring back the relic from its altar, and mind your breath.",
+        MARSHAL, MARSHAL, Some(SCOUT_THE_LAKE),
+        &[QuestObjective::Retrieve { item: SUNKEN_RELIC, area: SUNKEN_SHRINE }], 300, 25, &[],
     ),
 ];
 

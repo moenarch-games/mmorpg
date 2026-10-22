@@ -856,6 +856,11 @@ impl ZoneContent {
             hash.i32s(&water.centre);
             hash.i32s(&water.radii);
             hash.i32(water.surface);
+            hash.len(water.air_pockets.len());
+            for pocket in &water.air_pockets {
+                hash.i32s(&pocket.min);
+                hash.i32s(&pocket.max);
+            }
         }
         hash.finish()
     }
@@ -1027,6 +1032,10 @@ impl ZoneContent {
                     }
                     crate::QuestObjective::Talk { npc } => hash.u32(npc.get()),
                     crate::QuestObjective::Explore { area } => hash.u16(area.get()),
+                    crate::QuestObjective::Retrieve { item, area } => {
+                        hash.u16(item.get());
+                        hash.u16(area.get());
+                    }
                 }
             }
             hash.u32(quest.rewards.experience);
