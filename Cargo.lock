@@ -312,7 +312,7 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 [[package]]
 name = "bvh-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=00b455280c9dfc98fee7f07b55b6d605e5bdc047#00b455280c9dfc98fee7f07b55b6d605e5bdc047"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=61a218d873893aa2dbc6fe9b4f1b32ecb2e078ae#61a218d873893aa2dbc6fe9b4f1b32ecb2e078ae"
 dependencies = [
  "spatial-kernels",
 ]
@@ -1082,7 +1082,7 @@ dependencies = [
 [[package]]
 name = "game-server"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/game-server.git?rev=a87f46c6b494c8087b63ee4f47e9933c1778974b#a87f46c6b494c8087b63ee4f47e9933c1778974b"
+source = "git+https://github.com/moritzbrantner/game-server.git?rev=532b503904b36970761c36f78c43283930a679a9#532b503904b36970761c36f78c43283930a679a9"
 dependencies = [
  "ring",
  "tokio",
@@ -1103,7 +1103,7 @@ dependencies = [
 [[package]]
 name = "geometry-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=00b455280c9dfc98fee7f07b55b6d605e5bdc047#00b455280c9dfc98fee7f07b55b6d605e5bdc047"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=61a218d873893aa2dbc6fe9b4f1b32ecb2e078ae#61a218d873893aa2dbc6fe9b4f1b32ecb2e078ae"
 dependencies = [
  "spatial-kernels",
 ]
@@ -1751,7 +1751,7 @@ dependencies = [
 [[package]]
 name = "input-bindings-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/input-bindings.git?rev=cf0d89f0cc048cec865682926b15acb1b273e589#cf0d89f0cc048cec865682926b15acb1b273e589"
+source = "git+https://github.com/moritzbrantner/input-bindings.git?rev=2c3c64902eaa72f266d3c1310715d54c82e353c2#2c3c64902eaa72f266d3c1310715d54c82e353c2"
 dependencies = [
  "serde",
 ]
@@ -2980,7 +2980,7 @@ dependencies = [
 [[package]]
 name = "physics-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/physics-engine?rev=2a9af2d3f84ae9f15cc817797d27d61fd8f52384#2a9af2d3f84ae9f15cc817797d27d61fd8f52384"
+source = "git+https://github.com/moritzbrantner/physics-engine?rev=ad5bcbf4f04294fff050d7d41af13937b234f481#ad5bcbf4f04294fff050d7d41af13937b234f481"
 dependencies = [
  "bvh-kernels",
  "geometry-kernels",
@@ -3780,7 +3780,7 @@ dependencies = [
 [[package]]
 name = "settings-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/settings.git?rev=38c468c5d1a380416df630d7980be5f0d16631c2#38c468c5d1a380416df630d7980be5f0d16631c2"
+source = "git+https://github.com/moritzbrantner/settings.git?rev=9aa67cd3e538d7c80de4d1eb84568776fd8d8535#9aa67cd3e538d7c80de4d1eb84568776fd8d8535"
 dependencies = [
  "serde",
  "serde_json",
@@ -3790,7 +3790,7 @@ dependencies = [
 [[package]]
 name = "settings-presentation"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/settings.git?rev=38c468c5d1a380416df630d7980be5f0d16631c2#38c468c5d1a380416df630d7980be5f0d16631c2"
+source = "git+https://github.com/moritzbrantner/settings.git?rev=9aa67cd3e538d7c80de4d1eb84568776fd8d8535#9aa67cd3e538d7c80de4d1eb84568776fd8d8535"
 dependencies = [
  "serde",
  "settings-core",
@@ -3954,7 +3954,7 @@ dependencies = [
 [[package]]
 name = "spatial-kernels"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-kernels?rev=00b455280c9dfc98fee7f07b55b6d605e5bdc047#00b455280c9dfc98fee7f07b55b6d605e5bdc047"
+source = "git+https://github.com/moritzbrantner/rust-kernels?rev=61a218d873893aa2dbc6fe9b4f1b32ecb2e078ae#61a218d873893aa2dbc6fe9b4f1b32ecb2e078ae"
 
 [[package]]
 name = "spin"
@@ -4124,7 +4124,7 @@ dependencies = [
 [[package]]
 name = "three-d-animation"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=235774615f1367065093deb6988f5217bdf4d7e1#235774615f1367065093deb6988f5217bdf4d7e1"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=c850bda5f37f65f79655469625baf5f1644ac2a0#c850bda5f37f65f79655469625baf5f1644ac2a0"
 dependencies = [
  "three-d-core",
 ]
@@ -4132,7 +4132,7 @@ dependencies = [
 [[package]]
 name = "three-d-camera"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=235774615f1367065093deb6988f5217bdf4d7e1#235774615f1367065093deb6988f5217bdf4d7e1"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=c850bda5f37f65f79655469625baf5f1644ac2a0#c850bda5f37f65f79655469625baf5f1644ac2a0"
 dependencies = [
  "three-d-animation",
  "three-d-core",
@@ -4141,12 +4141,12 @@ dependencies = [
 [[package]]
 name = "three-d-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=235774615f1367065093deb6988f5217bdf4d7e1#235774615f1367065093deb6988f5217bdf4d7e1"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=c850bda5f37f65f79655469625baf5f1644ac2a0#c850bda5f37f65f79655469625baf5f1644ac2a0"
 
 [[package]]
 name = "three-d-projective"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=235774615f1367065093deb6988f5217bdf4d7e1#235774615f1367065093deb6988f5217bdf4d7e1"
+source = "git+https://github.com/moritzbrantner/3d-lab.git?rev=c850bda5f37f65f79655469625baf5f1644ac2a0#c850bda5f37f65f79655469625baf5f1644ac2a0"
 dependencies = [
  "three-d-animation",
  "three-d-core",
