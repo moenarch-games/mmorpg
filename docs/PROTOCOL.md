@@ -231,7 +231,7 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 6, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v32.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v32.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v31 fixtures remain as rejection evidence. `presentation-observation-v32.hex` covers the two neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot-v33.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind but the evade (the 16-event cap keeps the lurker's lost interest instead), two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v33.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v32 fixtures remain as rejection evidence. `presentation-observation-v33.hex` covers the two neutral observation records.
 
 ## Canonical scope
 
@@ -579,3 +579,15 @@ submerged) from its projected position and the content's water volumes, as the z
 now reserves the trailing debris count byte when it plans the entity prefix, so a kept observation
 never names an entity that did not fit. Snapshot v31 / schema 31 payloads and command v13 fail
 closed.
+
+## The Sunken Shrine: snapshot v33 / core schema 33 (#274)
+
+Greyhaven revision 24 sinks a ruined shrine and a flooded 64 m cave into Stillwater Lake; water
+volumes may carry authored air-pocket boxes, where a head is not submerged. The canonical creature
+AI gains `Trailing` (code 5): its ticks left (at most 180) in the timer field, no destination, and
+then the trailed player's `u32` ID. Event kind 21 is `LostInterest`: flags 0, the creature as the
+source, no target and amount 0, sent to the player a trailing lurker gave up on. Item catalog 4
+adds the Sunken Relic (11), vendor catalog 3 prices it, and quest catalog 2 adds the retrieve
+objective (code 5: an item granted by swimming into an area) and quest 10, *The Sunken Shrine*.
+No combat reaches into, out of or between submerged units. Commands stay v14. Snapshot v32 /
+schema 32 payloads fail closed.
