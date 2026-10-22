@@ -236,7 +236,11 @@ fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain)
         Vector::new(width / UNITS_PER_METRE, 1.0, depth / UNITS_PER_METRE),
     );
     // Flat cells are left to the floor half-space, whose exact queries keep resting bodies
-    // still; parry's heightfield contacts let them sink by fractions of a unit (#159).
+    // still; parry's heightfield contacts let them sink by fractions of a unit (#159). Flat cells
+    // next to a basin stay: a body straddling its edge has the floor opened under it (#274).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    let cell_centre =
+        |index: usize, origin: i32| origin + index as i32 * terrain.step + terrain.step / 2;
     for row in 0..rows - 1 {
         for column in 0..columns - 1 {
             let flat = [
@@ -247,7 +251,14 @@ fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain)
             ]
             .iter()
             .all(|&(r, c)| terrain.heights[r * columns + c] == 0);
-            if flat {
+            let by_basin = || {
+                let (x, z) = (
+                    cell_centre(column, terrain.origin[0]),
+                    cell_centre(row, terrain.origin[1]),
+                );
+                terrain.low_within(x, z, terrain.step) < 0
+            };
+            if flat && !by_basin() {
                 field.set_cell_status(
                     row,
                     column,
@@ -440,13 +451,16 @@ impl World {
         Ok(())
     }
 
-    /// The floor half-space's collider, when the body at `position` stands over terrain that
-    /// dips below it (a lake basin, #274): there only the heightfield is ground.
-    fn open_floor(&self, position: [f32; 3]) -> Option<ColliderHandle> {
+    /// The floor half-space's collider, when `body` at `position` stands over terrain that dips
+    /// below it (a lake basin, #274): there only the heightfield is ground. Every grid cell
+    /// under the body's footprint counts, since the triangulated heightfield may dip below zero
+    /// anywhere in a cell with a sample below it; elsewhere it never dips under the floor.
+    fn open_floor(&self, body: &RigidBody, position: [f32; 3]) -> Option<ColliderHandle> {
         let ground = self.ground.as_ref()?;
         #[allow(clippy::cast_possible_truncation)]
         let (x, z) = (position[0].round() as i32, position[2].round() as i32);
-        if ground.terrain.height_at(x, z) >= 0 {
+        let reach = body.half_extents.x.max(body.half_extents.z) + 1;
+        if ground.terrain.low_within(x, z, reach) >= 0 {
             return None;
         }
         self.handles.get(&ground.id).map(|handles| handles.collider)
@@ -723,7 +737,7 @@ impl World {
             &self.world.colliders,
             Self::without_open_floor(
                 QueryFilter::default().exclude_rigid_body(handle),
-                self.open_floor(body.position),
+                self.open_floor(body, body.position),
             ),
         );
         let movement = self.controller.move_shape(
@@ -749,7 +763,7 @@ impl World {
         self.support_gap(
             body,
             position,
-            Self::without_open_floor(QueryFilter::only_fixed(), self.open_floor(position)),
+            Self::without_open_floor(QueryFilter::only_fixed(), self.open_floor(body, position)),
         )
     }
 

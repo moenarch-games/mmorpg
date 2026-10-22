@@ -31,11 +31,12 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // in every step's world, and the spread fights push and see them. Revision 22 (#276) gives
     // Garrick his telegraphed Redbrand Whirl, whose cast events the camp fight's players see.
     // Revision 23 (#274) deepens Stillwater Lake, so its creatures stop at the basin, and
-    // snapshot v32 adds the viewer's two breath bytes to every projection.
+    // snapshot v32 adds the viewer's two breath bytes to every projection; the basin's edge
+    // keeps its flat cells in the heightfield, which moves the crowded fight a little.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [27_000, 442_800, 220_128, 4_231_728],
         [27_000, 439_920, 79_320, 1_335_287],
-        [26_941, 448_501, 384_303, 6_352_410],
+        [26_941, 448_501, 385_876, 6_368_958],
         [26_045, 459_125, 2_216_266, 24_492_501],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
