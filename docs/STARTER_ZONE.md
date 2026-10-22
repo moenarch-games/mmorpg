@@ -135,7 +135,7 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 
 ### Quests
 
-- Objective kinds: kill N of template, collect N items (drops), talk to NPC, explore area.
+- Objective kinds: kill N of template, collect N items (drops), talk to NPC, explore area, retrieve an item by swimming into an area (#274).
 - The quest log holds at most 10 entries. Accept and turn-in happen at NPCs, and prerequisites form chains. Rewards: XP, money, one item choice.
 - NPC markers are per-player: `!` available, `?` complete, grey `?` in progress.
 - Chain: *Trouble in the Woods* (kill 6 wolves) → *Pelts for the Tanner* (collect 5 wolf pelts) → *The Missing Farmhand* (talk at Millbrook) → *Marauders in the Fields* (kill 8 marauders) → *Scout the Lake* (explore) → *Mirefin Menace* (kill 6 lurkers) → *Into Redbrand Hollow* (kill 10 bandits) → *Garrick Redbrand* (named boss) → *Return to Greyhaven*.
@@ -153,6 +153,7 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 | 7 Into Redbrand Hollow | Marshal → Marshal | explore Redbrand Hollow, 10 Redbrand Bandits | 450 XP, 40 copper, Padded Tunic or Militia Shortsword |
 | 8 Garrick Redbrand | Marshal → Marshal | Garrick Redbrand | 600 XP, 60 copper |
 | 9 Return to Greyhaven | Marshal → Tanner | talk to Tanner Hilda Brook | 300 XP, 100 copper, Apprentice Wand, Militia Shortsword or Pine Buckler |
+| 10 The Sunken Shrine | Marshal → Marshal | retrieve the Sunken Relic from the shrine's altar (after *Scout the Lake*, beside *Mirefin Menace*) | 300 XP, 25 copper |
 
 - Accepting and turning in need a living player within 5 m (XZ) of the NPC's feet, like the vendor; abandoning works anywhere, also while dead, and loses the quest's progress.
 - A talk objective completes when the player stands within that same 5 m of the NPC; an explore objective when the player stands inside the named area. Both are checked for living players after movement each tick.
@@ -203,3 +204,5 @@ Each step is one issue and one PR, validated by the full gate from `AGENTS.md`. 
 16. **Zone chat and emotes** (#31): bounded, rate-limited `/say`, `/yell` and emotes as zone-local events. *Chat landed* (#68): `/say` (20 m) and `/yell` (60 m) lines, one per speaker per second and at most four per player per tick, snapshot v12/command v7 and the browser chat frame. *Emotes landed* (#69): `/wave`, `/bow`, `/cheer`, `/laugh` and `/point` as chat channel 2, snapshot v13/command v8.
 
 Steps 3 and 12 (renderer work) run in parallel with gameplay steps. Later steps may be re-sliced when evidence says so. Any foundation defect found on the way is fixed upstream and pinned here.
+
+*The Sunken Shrine* (#274 part 2, content revision 24, quest catalog 2): a ruined shrine (broken walls and an arch) lies on a sunken plaza at the bottom of Stillwater Lake. A 64 m box-collider cave runs east from its floor, under the lake and on under the shore, to an altar chamber; an authored air pocket halfway refills breath, since one breath does not last the round trip. Swimming into the altar chamber with quest 10 active grants the Sunken Relic (item 11), which the Marshal takes for 300 XP and 25 copper. The eight Mirefin Lurkers stay killable in the shallows, but swimmers start no fights: an idle lurker follows a submerged player within 8 m for 6 s without combat, then loses interest ("The lurker loses interest") and swims home, and an engaged lurker drops a player who dives. No combat reaches into, out of or between submerged units. The visuals are collider-box stand-ins (rock walls, cave roofs, a standing stone for the altar) until the asset-tooling shrine kit (#345) maps the `ids::SHRINE_*` ranges in `mmorpg-scenery`'s `visual_kind`. Review it with `?scenario=sunken-shrine`.
