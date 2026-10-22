@@ -146,5 +146,5 @@ export function movementInput(
   drag: DragMode = "none",
 ): MovementInput {
   const facing = drag === "turn" ? cameraFacing : drag === "orbit" ? lastFacing : held.steering ? cameraFacing : lastFacing;
-  return { forward: held.forward, strafe: held.strafe, facing, jumps, rise: held.rise };
+  return { forward: held.forward, strafe: held.strafe, facing, jumps, ...(held.rise === undefined ? {} : { rise: held.rise }) };
 }
