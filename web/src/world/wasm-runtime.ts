@@ -2,6 +2,7 @@ import init, * as generated from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { LocalCharacters } from "./local-characters";
 import { createLocalWorld, type LocalWorld } from "./local-world";
 import { ScenarioSource, type ScenarioChoice } from "./scenario-source";
+import { markStartup } from "../startup-marks";
 import type { ZoneWorld } from "./world-source";
 
 /**
@@ -9,8 +10,12 @@ import type { ZoneWorld } from "./world-source";
  * local world over this browser's character storage.
  */
 export async function loadLocalWorld(characters: LocalCharacters): Promise<LocalWorld> {
+  markStartup("wasm-fetch");
   await init();
-  return createLocalWorld(generated, characters);
+  markStartup("wasm-ready");
+  const world = createLocalWorld(generated, characters);
+  markStartup("world-created");
+  return world;
 }
 
 /** The area id of a stored local character's committed location, or null (#240). */
