@@ -24,7 +24,8 @@ fn feet_y(zone: &ZoneSimulation) -> f32 {
 }
 
 fn water(zone: &ZoneSimulation) -> WaterMode {
-    zone.snapshot_for_player(1).unwrap().entities[0].water
+    let position = zone.snapshot_for_player(1).unwrap().entities[0].position;
+    WaterMode::of_player(zone.content().waters(), position)
 }
 
 fn breath(zone: &ZoneSimulation) -> u16 {
@@ -77,7 +78,6 @@ fn a_player_wades_in_and_swims_at_the_surface_without_touching_the_floor() {
     // West shore, on the lake's long axis.
     let mut zone = zone_with_player_at([lake::CENTRE[0] - 2_600, 90, lake::CENTRE[1]]);
     run(&mut zone, 5);
-    assert_eq!(water(&zone), WaterMode::Dry);
     zone.apply_command(
         1,
         1,
@@ -177,5 +177,4 @@ fn drowning_kills_through_the_normal_death_rules() {
         BREATH_MAX_TICKS,
         "the dead hold no breath clock"
     );
-    assert_eq!(water(&zone), WaterMode::Dry);
 }

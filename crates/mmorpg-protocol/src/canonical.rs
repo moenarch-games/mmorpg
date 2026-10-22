@@ -108,6 +108,9 @@ fn encode_player(
     payload.extend_from_slice(&player.forward.to_be_bytes());
     payload.extend_from_slice(&player.strafe.to_be_bytes());
     payload.push(u8::from(player.jump_pending));
+    payload.extend_from_slice(&player.rise.to_be_bytes());
+    payload.extend_from_slice(&player.breath.remaining.to_be_bytes());
+    payload.extend_from_slice(&player.breath.drowning.to_be_bytes());
     payload.extend_from_slice(&player.last_sequence.to_be_bytes());
     payload.extend_from_slice(&player.spawn_slot.to_be_bytes());
     payload.extend_from_slice(&player.inventory_revision.to_be_bytes());
@@ -551,6 +554,11 @@ fn decode_player(
         1 => true,
         _ => return Err(ProtocolError::new("jump flag must be 0 or 1")),
     };
+    let rise = i8::from_be_bytes(take(payload, offset)?);
+    let breath = mmorpg_core::Breath {
+        remaining: u16::from_be_bytes(take(payload, offset)?),
+        drowning: u16::from_be_bytes(take(payload, offset)?),
+    };
     let last_sequence = u32::from_be_bytes(take(payload, offset)?);
     let spawn_slot = u16::from_be_bytes(take(payload, offset)?);
     let inventory_revision = u64::from_be_bytes(take(payload, offset)?);
@@ -795,6 +803,8 @@ fn decode_player(
         forward,
         strafe,
         jump_pending,
+        rise,
+        breath,
         last_sequence,
         spawn_slot,
         inventory,
@@ -1366,6 +1376,11 @@ mod tests {
                     forward: -1,
                     strafe: 1,
                     jump_pending: true,
+                    rise: -1,
+                    breath: mmorpg_core::Breath {
+                        remaining: 0,
+                        drowning: 7,
+                    },
                     last_sequence: 81,
                     spawn_slot: 3,
                     inventory: {
@@ -1448,6 +1463,8 @@ mod tests {
                     forward: 0,
                     strafe: 0,
                     jump_pending: false,
+                    rise: 0,
+                    breath: mmorpg_core::Breath::FULL,
                     last_sequence: 0,
                     spawn_slot: 0,
                     inventory: mmorpg_core::Inventory::default(),
@@ -1690,7 +1707,7 @@ mod tests {
         // flag without a point and an aura without a caster.
         // The intent count follows the player's timers; the seven intents
         // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes, then the dropped flag and two events.
-        let intents = 16 + 32 + 2 + 158;
+        let intents = 16 + 32 + 2 + 163;
         let player_abilities = intents + 1 + (7 + 7 + 6 + 6 + 3 + 2 + 2) + 1 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
         let cast = player_abilities + 1 + 8 + 1 + 2 * 3;
@@ -1863,7 +1880,7 @@ mod tests {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
         // Player 7's auto-attack flag follows its target reference.
         let player = 16 + 32 + 2;
-        let auto_attack = player + 39 + 96 + 1 + 4 + 4 + 5;
+        let auto_attack = player + 44 + 96 + 1 + 4 + 4 + 5;
         let intents = auto_attack + 1 + 8;
         let mut cases = vec![
             (auto_attack, 2, "boolean field must be 0 or 1"),
@@ -1922,7 +1939,7 @@ mod tests {
     fn canonical_equipment_rejects_unknown_and_misplaced_items() {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
         // Player 7's equipment follows its 80-byte inventory block.
-        let equipment = 16 + 32 + 2 + 39 + 80;
+        let equipment = 16 + 32 + 2 + 44 + 80;
         assert_eq!(encoded[equipment..equipment + 2], [0, 3]);
         for (slot, item, message) in [
             (0, 11, "unknown item"),

@@ -110,6 +110,7 @@ pub fn exhaustive_projection(
             // Only Wardens have a melee stance.
             stance: None,
             combo: None,
+            breath: mmorpg_core::water::BREATH_MAX_TICKS,
         },
         cooldowns: Vec::new(),
         auras: Vec::new(),

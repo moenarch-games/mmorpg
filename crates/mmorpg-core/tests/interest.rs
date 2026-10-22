@@ -98,7 +98,6 @@ fn assert_matches_exhaustive(zone: &ZoneSimulation) {
                 facing: candidate.facing,
                 level: 1,
                 health_percent: 100,
-                water: mmorpg_core::WaterMode::Dry,
                 flags: EntityFlags::default(),
             })
             .collect();

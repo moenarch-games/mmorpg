@@ -105,6 +105,21 @@ impl WaterMode {
         }
     }
 
+    /// The mode of a player body centred at `centre` (units). Clients derive the modes of
+    /// projected players this way from their authoritative positions and the content's
+    /// volumes.
+    #[must_use]
+    pub fn of_player(waters: &[WaterVolume], centre: [i32; 3]) -> Self {
+        Self::of_feet(
+            waters,
+            [
+                centre[0],
+                centre[1] - PLAYER_HALF_EXTENTS_UNITS[1],
+                centre[2],
+            ],
+        )
+    }
+
     /// Swimming, at the surface or under it.
     #[must_use]
     pub const fn swims(self) -> bool {
@@ -239,10 +254,7 @@ impl crate::ZoneSimulation {
 
     /// The water mode of a player body centred at `centre`.
     pub(crate) fn player_water_mode(&self, centre: crate::physics::Vec3i) -> WaterMode {
-        WaterMode::of_feet(
-            self.content().waters(),
-            [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z],
-        )
+        WaterMode::of_player(self.content().waters(), [centre.x, centre.y, centre.z])
     }
 
     /// After the physics step: each living player's breath advances in its water mode, and

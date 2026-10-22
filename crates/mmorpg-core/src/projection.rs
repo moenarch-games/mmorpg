@@ -56,8 +56,6 @@ pub struct EntitySnapshot {
     pub level: u8,
     /// Rounded up, so living units never show 0.
     pub health_percent: u8,
-    /// A player's water mode (#274); creatures and NPCs do not swim yet.
-    pub water: crate::WaterMode,
     pub flags: EntityFlags,
 }
 
@@ -394,11 +392,6 @@ impl ZoneSimulation {
                     facing: player.facing,
                     level: player.level,
                     health_percent: health_percent(player.health, player.max_health()),
-                    water: if player.is_alive() {
-                        self.player_water_mode(position)
-                    } else {
-                        crate::WaterMode::Dry
-                    },
                     flags: EntityFlags {
                         hostile: self.players_are_hostile(viewer, player_id),
                         attackable: self.players_are_hostile(viewer, player_id)
@@ -444,7 +437,6 @@ impl ZoneSimulation {
                         creature.health,
                         creature.max_health(&self.content, template),
                     ),
-                    water: crate::WaterMode::Dry,
                     flags: EntityFlags {
                         dead: !alive,
                         in_combat: alive
@@ -481,7 +473,6 @@ impl ZoneSimulation {
                     facing: placement.facing,
                     level: npc.level,
                     health_percent: 100,
-                    water: crate::WaterMode::Dry,
                     flags: EntityFlags::default(),
                 }
             }

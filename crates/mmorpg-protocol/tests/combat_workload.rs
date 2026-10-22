@@ -30,11 +30,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // walls, which moves the spread and crowded fights. Revision 21 (#58) stands two heavy crates
     // in every step's world, and the spread fights push and see them. Revision 22 (#276) gives
     // Garrick his telegraphed Redbrand Whirl, whose cast events the camp fight's players see.
+    // Revision 23 (#274) deepens Stillwater Lake, so its creatures stop at the basin, and
+    // snapshot v32 adds the viewer's two breath bytes to every projection.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [27_000, 442_800, 220_128, 4_220_208],
-        [27_000, 439_920, 79_197, 1_329_527],
-        [27_000, 448_560, 386_013, 6_437_919],
-        [25_986, 459_066, 2_208_874, 24_458_435],
+        [27_000, 442_800, 220_128, 4_231_728],
+        [27_000, 439_920, 79_320, 1_335_287],
+        [26_941, 448_501, 384_303, 6_352_410],
+        [26_045, 459_125, 2_216_266, 24_492_501],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -76,9 +78,9 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
         if fixture.crowded {
             // Whole 14-byte events and 21-byte records beside the fixed part
             // and the door section, a 93-byte self sheet, an 18-byte copper-only
-            // corpse sheet, the projectile, debris and piece counts fill 1,076 of the 1,077
+            // corpse sheet, the projectile, debris and piece counts fill 1,074 of the 1,077
             // bytes: no further 21-byte record fits.
-            assert_eq!(report.max_projection_bytes, 1_076);
+            assert_eq!(report.max_projection_bytes, 1_074);
             assert!(report.candidates_tested > 1_000_000);
         }
     }

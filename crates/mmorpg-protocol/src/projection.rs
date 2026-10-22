@@ -34,9 +34,9 @@ const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
 pub const CAST_RECORD_BYTES: usize = 1 + 1 + 2 + 2;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
 /// range, the guard (lane code, protecting flag, break ticks), the melee
-/// stance and combo phase codes, then the cooldown and aura counts.
+/// stance and combo phase codes, breath ticks (#274), then the cooldown and aura counts.
 const SELF_ABILITY_BYTES: usize =
-    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 1 + 1;
+    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 1 + 1;
 /// Four `u16` stat totals: stamina, strength, agility and intellect.
 const STAT_TOTALS_BYTES: usize = 4 * 2;
 /// The self sheet's fixed part: bag, equipment and stat totals; the quest
@@ -89,7 +89,7 @@ pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// facing, level, health percent and flags.
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 6 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events, sheets, cooldowns or auras:
-/// (1,077 − 114) / 21 = 45.
+/// (1,077 − 117) / 21 = 45.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -195,6 +195,7 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     payload.extend_from_slice(&viewer.guard.broken.to_be_bytes());
     payload.push(viewer.stance.map_or(0, mmorpg_core::MeleeStance::code));
     payload.push(viewer.combo.map_or(0, mmorpg_core::ComboPhase::code));
+    payload.extend_from_slice(&viewer.breath.to_be_bytes());
     payload.push(encode_u8_count(
         snapshot.cooldowns.len(),
         MAX_COOLDOWNS,
@@ -259,7 +260,8 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
         / PROJECTILE_RECORD_BYTES)
         .min(MAX_WIRE_PROJECTILES)
         .min(snapshot.projectiles.len());
-    let reserved = reserved + 1 + projectiles * PROJECTILE_RECORD_BYTES;
+    // The projectile count and records, then the debris count byte.
+    let reserved = reserved + 1 + projectiles * PROJECTILE_RECORD_BYTES + 1;
     let planned = (MAX_PLAYER_PROJECTION_BYTES.saturating_sub(reserved) / ENTITY_RECORD_BYTES)
         .min(MAX_WIRE_ENTITIES)
         .min(snapshot.entities.len());
@@ -627,6 +629,10 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
                 .ok_or_else(|| ProtocolError::new("viewer combo phase is invalid"))?,
         ),
     };
+    let breath = u16::from_be_bytes(take(payload, &mut offset)?);
+    if breath > mmorpg_core::water::BREATH_MAX_TICKS {
+        return Err(ProtocolError::new("viewer breath is out of range"));
+    }
     let cooldown_count = decode_u8_count(
         payload,
         &mut offset,
@@ -831,6 +837,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
             guard,
             stance,
             combo,
+            breath,
         },
         cooldowns,
         auras,
@@ -1052,6 +1059,7 @@ mod tests {
                 // Only a Warden has a melee stance or combo.
                 stance: None,
                 combo: None,
+                breath: mmorpg_core::water::BREATH_MAX_TICKS,
             },
             cooldowns: vec![
                 Cooldown {
@@ -1311,7 +1319,7 @@ mod tests {
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
         mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v31.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v32.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
     }
@@ -1323,7 +1331,8 @@ mod tests {
     const GUARD: usize = DAMAGE + 4;
     const STANCE: usize = GUARD + 4;
     const COMBO: usize = STANCE + 1;
-    const COOLDOWNS: usize = COMBO + 1;
+    const BREATH: usize = COMBO + 1;
+    const COOLDOWNS: usize = BREATH + 2;
     const AURAS: usize = COOLDOWNS + 1 + 2 * COOLDOWN_RECORD_BYTES;
     const TARGET_OF_TARGET: usize = AURAS + 1 + AURA_RECORD_BYTES;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
@@ -1381,7 +1390,7 @@ mod tests {
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
         // The previous version's fixture is rejected, never reinterpreted.
         let legacy = hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v25.hex"
+            "../../../fixtures/protocol/player-snapshot-v31.hex"
         ));
         assert_eq!(
             decode_snapshot(&legacy).unwrap_err().to_string(),
@@ -1465,7 +1474,7 @@ mod tests {
         snapshot.target_detail = TargetDetail::default();
         let bytes = encode_snapshot(&snapshot).unwrap();
         let expected = mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v31.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v32.hex"),
             &bytes,
         );
         assert_eq!(bytes, expected);
@@ -1835,7 +1844,7 @@ mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (115, 14, 21)
+            (117, 14, 21)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 45);
         let viewer_id = u32::MAX;
@@ -1927,6 +1936,7 @@ mod tests {
                 guard: GuardView::default(),
                 stance: None,
                 combo: None,
+                breath: mmorpg_core::water::BREATH_MAX_TICKS,
             },
             cooldowns: Vec::new(),
             auras: Vec::new(),
