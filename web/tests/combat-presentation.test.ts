@@ -31,7 +31,7 @@ describe("content catalog", () => {
     expect(catalog.creatureTemplates.get(2)?.behaviour).toBe("neutral");
     expect(catalog.npcs.get(6)?.role).toBe("guard");
     expect(catalog.areas.get(1)).toBe("Greyhaven Outpost");
-    expect(catalog.itemCatalogRevision).toBe(4n);
+    expect(catalog.itemCatalogRevision).toBe(5n);
     expect([...catalog.items.values()].slice(0, 2)).toEqual([
       { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
       { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2 },

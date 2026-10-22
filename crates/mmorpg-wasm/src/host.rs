@@ -471,6 +471,22 @@ mod tests {
     }
 
     #[test]
+    fn the_redbrand_cavern_starts_before_the_cave_with_quest_11_accepted() {
+        assert_eq!(
+            Scenario::from_name("redbrand-cavern"),
+            Some(Scenario::RedbrandCavern)
+        );
+        let (host, player) = LocalZoneHost::scenario(Scenario::RedbrandCavern, 0).unwrap();
+        let start = own_position(&host, player);
+        assert_eq!([start[0], start[2]], [5_800, -12_000]);
+        let quests = decode_snapshot(&host.projection(player).unwrap())
+            .unwrap()
+            .quests
+            .unwrap();
+        assert_eq!(quests.entries[0].quest.get(), 11);
+    }
+
+    #[test]
     fn a_world_checkpoint_resumes_the_world_without_its_players() {
         let mut host = LocalZoneHost::new().unwrap();
         let player = host.join_as(0, 1).unwrap();

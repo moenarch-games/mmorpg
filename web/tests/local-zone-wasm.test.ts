@@ -64,13 +64,13 @@ describe("WASM local zone host", () => {
       run(source, 1);
     }
     const before = source.latestProjection()!;
-    expect(before.viewer).toMatchObject({ copper: 0, health: 32, experience: 50 });
+    expect(before.viewer).toMatchObject({ copper: 0, health: 34, experience: 50 });
     loot.update(before);
     const sheet = loot.sheet;
     if (sheet === null) {
       throw new Error("Missing authoritative corpse sheet");
     }
-    expect(sheet).toEqual({ creatureId: 108, diedAt: 915n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
+    expect(sheet).toEqual({ creatureId: 108, diedAt: 1010n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
     source.sendCommand({ kind: "loot", creatureId: sheet.creatureId, diedAt: sheet.diedAt + 1n });
     run(source, 1);
     expect(source.latestProjection()?.events).toContainEqual({ kind: "error", code: "invalid-loot", target: { kind: "creature", id: 108 } });
@@ -148,7 +148,7 @@ describe("WASM local zone host", () => {
         }
       }
     }
-    expect(provider.scenery.contentRevision).toBe(24n);
+    expect(provider.scenery.contentRevision).toBe(25n);
   });
   test("multi-tick frames retain intermediate bag sheets and refusal feedback", async () => {
     const { source } = createLocalWorld(wasm, testCharacters());
@@ -283,10 +283,10 @@ describe("WASM local zone host", () => {
     const zone = new wasm.LocalZone() as InstanceType<typeof wasm.LocalZone> & { zoneId(): number };
     const { entries } = testCharacters();
     expect(zone.zoneId()).toBe(1);
-    expect(zone.contentRevision()).toBe(24n);
+    expect(zone.contentRevision()).toBe(25n);
     const player = zone.enter(entries, "local-1", 2, 0, 1n);
     const projection = decodeSnapshot(zone.projection(player));
-    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: 24n, viewerId: player, acknowledgedSequence: 0 });
+    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: 25n, viewerId: player, acknowledgedSequence: 0 });
     // A new character has made its class choice on entry.
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, autoAttacking: false, target: null,
@@ -390,7 +390,7 @@ describe("WASM local zone host", () => {
 
   test("scenery and areas come from the same content as the zone", async () => {
     const { source, scenery } = createLocalWorld(wasm, testCharacters());
-    expect(scenery.scenery.contentRevision).toBe(24n);
+    expect(scenery.scenery.contentRevision).toBe(25n);
     expect(scenery.scenery.source).toBe("mmorpg-scenery");
     expect(scenery.scenery.playerHalfExtents).toEqual([30, 90, 30]);
     await source.join();
@@ -435,8 +435,8 @@ describe("WASM local zone host", () => {
     const actual = provider.scenery.props.filter((prop) => prop.kind === "grass-tuft" && prop.position[0] >= -3500 && prop.position[0] <= 3500 && prop.position[2] >= -1300 && prop.position[2] <= 5300);
     expect(actual).toEqual(expected);
     expect(actual.length).toBe(55);
-    expect(provider.scenery.presentationFingerprint).toBe("a8d3e21dacae5aa0");
-    expect(provider.scenery.contentRevision).toBe(24n);
+    expect(provider.scenery.presentationFingerprint).toBe("eef5115496bad45f");
+    expect(provider.scenery.contentRevision).toBe(25n);
   });
 
   test("the vale's static scene models every prop within a bounded node and vertex budget", () => {
@@ -459,10 +459,10 @@ describe("WASM local zone host", () => {
 describe("WASM local zone combat intents", () => {
   test("the catalog names the hosted units and matches the zone's content", () => {
     const { catalog } = createLocalWorld(wasm, testCharacters());
-    expect(catalog.contentRevision).toBe(24n);
+    expect(catalog.contentRevision).toBe(25n);
     expect([...catalog.items.values()].map((item) => item.name)).toEqual([
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
-      "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic",
+      "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl",
     ]);
     // The decoder's item table matches the catalog the zone binds.
     const slots = ["mainHand", "offHand", "head", "chest", "legs", "feet"];
@@ -476,7 +476,7 @@ describe("WASM local zone combat intents", () => {
     }
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
-      "Redbrand Crossbowman", "Crate", "Barrel", "Blasting Powder Barrel", "Fence", "Hill Ogre", "Heavy Crate",
+      "Redbrand Crossbowman", "Crate", "Barrel", "Blasting Powder Barrel", "Fence", "Hill Ogre", "Heavy Crate", "Redbrand Brute",
     ]);
     expect(catalog.creatureTemplates.get(11)?.prop).toBe("explosive_barrel");
     expect(catalog.creatureTemplates.get(13)?.family).toBe("ogre");
@@ -568,7 +568,7 @@ describe("WASM local zone combat intents", () => {
     expect(quests.marker(1)).toBe("available");
     expect([...catalog.quests.values()].map((quest) => quest.name)).toEqual([
       "Trouble in the Woods", "Pelts for the Tanner", "The Missing Farmhand", "Marauders in the Fields", "Scout the Lake",
-      "Mirefin Menace", "Into Redbrand Hollow", "Garrick Redbrand", "Return to Greyhaven", "The Sunken Shrine",
+      "Mirefin Menace", "Into Redbrand Hollow", "Garrick Redbrand", "Return to Greyhaven", "The Sunken Shrine", "Deeper into the Hollow",
     ]);
     // From spawn slot 0, run west along the plaza to 3.5 m from the Marshal.
     source.sendCommand({ kind: "move", forward: 1, strafe: 0, facing: 49_152 });

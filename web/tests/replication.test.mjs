@@ -49,7 +49,7 @@ describe("Rust/browser snapshot contract", () => {
     const invalidFlag = fixture.slice();
     invalidFlag[INVENTORY + 8] = 2;
     expect(() => decodeSnapshot(invalidFlag)).toThrow("Reserved");
-    for (const [slot, item, quantity] of [[0, 0, 3], [0, 12, 1], [0, 1, 0], [0, 1, 21], [1, 2, 2]]) {
+    for (const [slot, item, quantity] of [[0, 0, 3], [0, 15, 1], [0, 1, 0], [0, 1, 21], [1, 2, 2]]) {
       const bytes = fixture.slice();
       const view = new DataView(bytes.buffer);
       view.setUint16(INVENTORY + 9 + slot * 4, item);
@@ -247,7 +247,7 @@ describe("Rust/browser snapshot contract", () => {
       [QUESTS + 9, 9, "too many markers"],
       [QUESTS + 12, 4, "Inconsistent quest marker"],
       [QUESTS + 14, 1, "Inconsistent quest marker"],
-      [EVENTS + 1 + 7 * 14 + 1, 25, "Unknown ability"],
+      [EVENTS + 1 + 7 * 14 + 1, 26, "Unknown ability"],
       [EVENTS + 1 + 7 * 14 + 1, 0, "Unknown ability"],
       [EVENTS + 1 + 8 * 14 + 13, 1, "Malformed"],
       [EVENTS + 1 + 13 * 14 + 1, 1, "flags"],

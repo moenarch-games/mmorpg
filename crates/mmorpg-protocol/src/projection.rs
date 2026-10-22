@@ -1489,7 +1489,7 @@ mod tests {
             (presence + 19, 9),
             (presence + 21, 0),
             (presence + 22, 2),
-            (presence + 24, 12),
+            (presence + 24, 15),
             (presence + 26, 0),
             // A quest drop of two units.
             (presence + 26, 2),
@@ -1746,7 +1746,7 @@ mod tests {
         assert!(decode_snapshot(&invalid_flag).is_err());
         for (slot, item, quantity) in [
             (0, 0_u16, 3_u16),
-            (0, 12, 1),
+            (0, 15, 1),
             (0, 1, 0),
             (0, 1, 21),
             (1, 2, 2),
@@ -1777,7 +1777,7 @@ mod tests {
         assert_eq!(encoded[EQUIPMENT..EQUIPMENT + 2], [0, 4], "the wand");
         // Slot 0 holds the wand; slot 1 (off hand) is empty.
         for (offset, item, message) in [
-            (EQUIPMENT, 12_u16, "unknown item"),
+            (EQUIPMENT, 15_u16, "unknown item"),
             (EQUIPMENT, 1, "item cannot be equipped there"),
             (EQUIPMENT + 2, 6, "item cannot be equipped there"),
         ] {

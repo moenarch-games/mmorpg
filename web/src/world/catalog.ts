@@ -237,7 +237,7 @@ export function decodeCatalog(json: string): ContentCatalog {
     const record = object(value, ["id", "name"], `area ${index}`);
     return { id: int(record.id, `area ${index} id`, 0, 0xffff), name: text(record.name, `area ${index} name`) };
   });
-  if (root.itemCatalogRevision !== "4") {
+  if (root.itemCatalogRevision !== "5") {
     fail("unsupported item catalog revision");
   }
   const items = list(root.items, "items", 256).map((value, index): ItemRecord => {
@@ -259,7 +259,7 @@ export function decodeCatalog(json: string): ContentCatalog {
     };
   });
   const itemsById = byId(items, "item");
-  if (root.vendorCatalogRevision !== "0" && root.vendorCatalogRevision !== "3") {
+  if (root.vendorCatalogRevision !== "0" && root.vendorCatalogRevision !== "4") {
     fail("unsupported vendor catalog revision");
   }
   const vendors = list(root.vendors, "vendors", 256).map((value, index): VendorRecord & { id: number } => {
@@ -293,7 +293,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       resource: oneOf(record.resource, RESOURCES, `class ${index} resource`),
     };
   });
-  if (root.abilityCatalogRevision !== "8") {
+  if (root.abilityCatalogRevision !== "9") {
     fail("unsupported ability catalog revision");
   }
   const abilities = list(root.abilities, "abilities", 255).map((value, index) => {
@@ -316,7 +316,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       aura: record.aura === null ? null : int(record.aura, `${name} aura`, 1, 7),
     };
   });
-  if (root.questCatalogRevision !== "0" && root.questCatalogRevision !== "2") {
+  if (root.questCatalogRevision !== "0" && root.questCatalogRevision !== "3") {
     fail("unsupported quest catalog revision");
   }
   const npcsById = byId(npcs, "npc");
@@ -389,7 +389,7 @@ export function decodeCatalog(json: string): ContentCatalog {
     quests: byId(quests, "quest"),
     classes: byId(classes, "class"),
     abilities: byId(abilities, "ability"),
-    itemCatalogRevision: 4n,
+    itemCatalogRevision: 5n,
     items: itemsById,
     vendors: new Map([...byId(vendors, "vendor")].map(([id, { npc, offers }]) => [id, { npc, offers }])),
     contentRevision,

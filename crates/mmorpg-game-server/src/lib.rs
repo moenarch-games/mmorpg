@@ -529,7 +529,7 @@ mod tests {
         let canonical = decode_canonical_snapshot(&expected).unwrap();
         assert_eq!(
             canonical.creatures.len(),
-            94,
+            100,
             "the vale's creatures are hosted"
         );
         assert_eq!(

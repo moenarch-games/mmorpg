@@ -257,6 +257,7 @@ pub fn humanoid(
     family: Option<CreatureFamily>,
     role: Option<NpcRole>,
     elite: bool,
+    shielded: bool,
     accent: u32,
     loc: Locomotion,
     action: Option<Action>,
@@ -499,7 +500,40 @@ pub fn humanoid(
                 offset(spine, [0., 0.02 * sy, 0.]),
             );
             sword(&mut p);
-            shield(&mut p, 0x7a2a22);
+            if shielded {
+                // The Redbrand Brute (#160), recoloured: an iron helm and breastplate and a
+                // tall iron-rimmed shield held across its front.
+                p.bx(
+                    "helm",
+                    [0.3 * sx, 0.12 * sy, 0.3 * sz],
+                    0x5b6067,
+                    offset(head, [0., 0.1 * sy, 0.]),
+                );
+                p.bx(
+                    "breastplate",
+                    [0.46 * sx, 0.3 * sy, 0.08 * sz],
+                    0x5b6067,
+                    offset(spine, [0., 0.4 * sy, 0.13 * sz]),
+                );
+                p.bx(
+                    "tower-shield",
+                    [0.36 * sx, 0.62 * sy, 0.05 * sz],
+                    0x4a2a22,
+                    child(
+                        fore[0],
+                        [-0.05 * sx, -0.1 * sy, 0.14 * sz],
+                        tilt(0., 0., 0.),
+                    ),
+                );
+                p.bx(
+                    "shield-rim",
+                    [0.4 * sx, 0.06 * sy, 0.06 * sz],
+                    0x8a9097,
+                    child(fore[0], [-0.05 * sx, 0.2 * sy, 0.15 * sz], tilt(0., 0., 0.)),
+                );
+            } else {
+                shield(&mut p, 0x7a2a22);
+            }
             if elite {
                 p.bx(
                     "cloak",

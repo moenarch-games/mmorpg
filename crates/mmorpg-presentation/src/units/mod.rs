@@ -632,6 +632,7 @@ impl UnitPresenter {
                 family,
                 role,
                 template.is_some_and(|t| t.elite),
+                template.is_some_and(|t| self.content.is_shielded(t.id)),
                 accent,
                 loc,
                 // NPCs keep their idle; only creatures act.

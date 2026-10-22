@@ -157,6 +157,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
         position: [feet[0] - 180, feet[2]],
         facing: 0,
         wander_radius: 0,
+        levels: None,
     };
     let table = LootTable::new(
         [2, 2],

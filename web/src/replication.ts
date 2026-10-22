@@ -380,6 +380,10 @@ export const ITEM_SHAPES: ReadonlyMap<number, ItemShape> = new Map([
   [9, gear(5, 1, 0, 2, 0)],
   [10, bagItem(10)],
   [11, bagItem(1)],
+  // Level 6 rewards of *Deeper into the Hollow* (#160).
+  [12, gear(0, 2, 5, 0, 0)],
+  [13, gear(3, 2, 0, 4, 0)],
+  [14, gear(2, 2, 0, 0, 4)],
 ]);
 const CLASSES: readonly ClassId[] = ["warden", "ranger", "arcanist"];
 const RESOURCES: readonly ResourceKind[] = ["rage", "focus", "mana"];
@@ -419,6 +423,8 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [22, { castTicks: 60, channel: true, cooldown: 600, aura: null, auraTicks: 0 }],
   [23, { castTicks: 45, channel: false, cooldown: 360, aura: null, auraTicks: 0 }],
   [24, { castTicks: 45, channel: false, cooldown: 450, aura: null, auraTicks: 0 }],
+  // The Redbrand Brute's Overhead Smash (#160).
+  [25, { castTicks: 60, channel: false, cooldown: 450, aura: null, auraTicks: 0 }],
 ]);
 /** Mana: 110 + 22 per level above 1; rage and focus: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

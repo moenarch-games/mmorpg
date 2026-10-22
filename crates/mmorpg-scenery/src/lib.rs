@@ -451,6 +451,9 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::FENCES.contains(&id) => PropKind::Fence,
         _ if ids::CLIFFS.contains(&id) || ids::CAVE_WALLS.contains(&id) => PropKind::Cliff,
         ids::CAVE_ROOF => PropKind::CaveRoof,
+        // The sealed threshold to the deeper cave (#160): a log barricade stand-in until the
+        // asset-tooling kit gives it its own kind.
+        ids::CAVE_THRESHOLD => PropKind::PalisadeSegment,
         // The Sunken Shrine (#274): collider-box stand-ins. The asset-tooling shrine kit (#345)
         // swaps in here by giving these ID ranges its own kinds; the colliders stay.
         _ if ids::SHRINE_CAVE_ROOF.contains(&id) => PropKind::CaveRoof,
