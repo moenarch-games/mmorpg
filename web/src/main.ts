@@ -879,14 +879,16 @@ function entryNote(character: CharacterPreview): string {
   if (!world) {
     return worldLoadError ? `The zone simulation could not load: ${worldLoadError}` : "Loading the zone simulation…";
   }
-  if (!artReady()) {
-    const { loaded, total } = worldView.artProgress(startArea());
+  const { loaded, total } = worldView.artProgress(startArea());
+  if (!entryArtReady()) {
     return `Loading Greyhaven… ${loaded} of ${total} pieces`;
   }
   if (joining) {
     return server ? `Connecting to ${server.label}…` : `Joining with ${character.name}…`;
   }
-  return worldFailure ?? (server ? `Join ${server.label} with ${character.name}` : `Start ${character.name} in Greyhaven Outpost`);
+  if (worldFailure) { return worldFailure; }
+  const start = server ? `Join ${server.label} with ${character.name}` : `Start ${character.name} in Greyhaven Outpost`;
+  return artReady() ? start : `${start} · art loading ${loaded} of ${total}`;
 }
 
 function updateEntryButton(): void {
@@ -895,9 +897,8 @@ function updateEntryButton(): void {
     void enterWorld();
   }
   const server = chosenServer();
-  const ready = artReady();
-  if (ready) { markStartup("art-settled"); }
-  enterWorldButton.disabled = chosenWorld() === null || joining !== null || !ready;
+  if (artReady()) { markStartup("art-settled"); }
+  enterWorldButton.disabled = chosenWorld() === null || joining !== null || !entryArtReady();
   if (!enterWorldButton.disabled) { markStartup("enter-enabled"); }
   let entryLabel = "Enter World";
   if (arenaEntry.selected) { entryLabel = "Join Battle Royale"; }
@@ -1232,8 +1233,8 @@ function startArea(): number {
 }
 
 /**
- * Whether the starting area's art has settled (loaded or failed to its fallback); fetching it
- * starts here, so it streams while the player is still choosing (#240).
+ * Whether all of the starting area's art has settled (loaded or failed to its fallback); fetching
+ * it starts here, so it streams while the player is still choosing (#240).
  */
 function artReady(): boolean {
   const area = startArea();
@@ -1242,10 +1243,20 @@ function artReady(): boolean {
   return total > 0 && loaded >= total;
 }
 
+/**
+ * Whether the starting area's entry-blocking art has settled: only the inn, where it stands.
+ * The Ranger and creatures enter as procedural stand-ins and swap in once loaded (#395).
+ */
+function entryArtReady(): boolean {
+  const area = startArea();
+  worldView.prefetchRegion(area);
+  return worldView.entryArtReady(area);
+}
+
 /** Joins the chosen world, then switches the page to it. Never rejects: failures are shown on the selection screen. */
 async function enterWorld(): Promise<void> {
   const target = chosenWorld();
-  if (creationDraft || !target || entryState.phase === "world" || joining || !artReady()) {
+  if (creationDraft || !target || entryState.phase === "world" || joining || !entryArtReady()) {
     return;
   }
   markStartup("entry-click");
