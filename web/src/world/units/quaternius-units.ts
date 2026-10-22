@@ -288,6 +288,13 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   const look = headLook(await json(entryFile(entry, ".humanoid-appearance.json")));
   const load = async (key: string, variant?: string) => {
     const scene = (await loader.loadAsync(url(entryFile(bundleEntry(manifest, key, variant), ".gltf")))).scene;
+    if (key === "hair.long") {
+      // The long locks are authored lower than the buzzed scalp in the same asset.
+      // Lift only the locks so the scalp stays seated on the head.hair socket.
+      const locks = scene.getObjectByName("Hair_Long");
+      if (!locks) { throw new Error("The Ranger's long-hair asset has no Hair_Long node."); }
+      locks.position.y += 0.1;
+    }
     scene.updateMatrixWorld(true);
     // Hairstyles are authored in rest model space with no grip: their origin is the socket's.
     const grip = scene.getObjectByName("grip");
