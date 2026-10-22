@@ -4,7 +4,7 @@ import { encodeCommand, STRIKE_HEIGHTS, STRIKE_SIDES, type Axis, type WorldComma
 import { entityKindFromCode } from "../src/entity-ref";
 import { EMOTES } from "../src/replication";
 
-const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v13.hex", import.meta.url), "utf8");
+const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v14.hex", import.meta.url), "utf8");
 
 function axis(raw: string | undefined): Axis {
   const value = Number(raw);
@@ -29,6 +29,8 @@ function command(fields: readonly string[]): WorldCommand {
     }
     case "jump":
       return { kind: "jump" };
+    case "rise":
+      return { kind: "rise", rise: axis(first) };
     case "select_target": {
       const kind = entityKindFromCode(Number(first));
       return { kind: "select-target", target: kind === null ? null : { kind, id: Number(second) } };
@@ -102,7 +104,7 @@ describe("Rust/browser command contract", () => {
     const kinds = new Set(commands.map(({ command }) => command.kind));
     expect([...kinds].sort()).toEqual([
       "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "complete-quest", "directed-strike", "emote", "equip-item", "guard", "jump",
-      "loot", "move", "move-item", "release-spirit", "repair", "select-target", "sell-item", "start-attack", "stop-attack", "unequip-item",
+      "loot", "move", "move-item", "release-spirit", "repair", "rise", "select-target", "sell-item", "start-attack", "stop-attack", "unequip-item",
       "use-ability", "use-door",
     ]);
     expect(commands.filter(({ command }) => command.kind === "move").length).toBeGreaterThanOrEqual(4);

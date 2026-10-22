@@ -72,7 +72,12 @@ export type ViewerState = {
   stance: MeleeStance | null;
   /** A pending sword → Shield Bash follow-up (#157): the slash still landing, or the window open. */
   combo: ComboPhase | null;
+  /** Ticks of breath left (#274), {@link BREATH_MAX_TICKS} when full; at 0 a submerged player drowns. */
+  breath: number;
 };
+
+/** A full breath: 30 s submerged (`water::BREATH_MAX_TICKS`). */
+export const BREATH_MAX_TICKS = 900;
 
 /** Wire order of combo phase codes 1–2 (`ComboPhase::code`). */
 export const COMBO_PHASES = ["impact", "open"] as const;
@@ -304,19 +309,19 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 31;
-const SCHEMA_VERSION = 31;
+const WIRE_VERSION = 32;
+const SCHEMA_VERSION = 32;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
 /**
- * Common prefix 16, revision 8, acknowledged sequence 4, viewer 4, self 27, self abilities 26 (class,
- * resource, global cooldown, cast, melee damage range, guard, melee stance, combo phase, two list counts), target 12 (target-of-target,
+ * Common prefix 16, revision 8, acknowledged sequence 4, viewer 4, self 27, self abilities 28 (class,
+ * resource, global cooldown, cast, melee damage range, guard, melee stance, combo phase, breath, two list counts), target 12 (target-of-target,
  * its cast, aura count), sheet revision 8/presence 1, loot presence 1, door, piece, event, chat, entity, projectile and debris counts.
  * The sheet (bag, equipment, stat totals, quests) and the corpse sheet follow their presence bytes;
  * two bytes per door follow its count.
  */
-const FIXED_BYTES = 115;
+const FIXED_BYTES = 117;
 const ENTITY_BYTES = 21;
 const MAX_EVENTS = 16;
 /** (1 077 − 115) / 21: records that fit without events, sheets, doors, cooldowns or auras. */
@@ -842,6 +847,10 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   if ((comboCode !== 0 && combo === null) || (combo !== null && (dead || classChoice?.classId !== "warden"))) {
     throw new Error("Invalid viewer combo phase");
   }
+  const breath = reader.u16();
+  if (breath > BREATH_MAX_TICKS) {
+    throw new Error("Invalid viewer breath");
+  }
   const cooldownCount = reader.u8();
   if (cooldownCount > MAX_COOLDOWNS) {
     throw new Error("Snapshot has too many cooldowns");
@@ -1062,7 +1071,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     zoneId, tick, contentRevision, acknowledgedSequence, viewerId,
     viewer: {
       copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, autoAttacking, target,
-      classChoice, resource, cast, globalCooldown, damage, guard, stance, combo,
+      classChoice, resource, cast, globalCooldown, damage, guard, stance, combo, breath,
     },
     cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors, pieces,
     events, chat, entities, projectiles, debris,

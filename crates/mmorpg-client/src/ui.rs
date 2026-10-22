@@ -626,6 +626,25 @@ impl GameUi {
                             Color32::from_rgb(140, 80, 200),
                         );
                     }
+                    // Breath (#274): shown only while it is spent; red once drowning.
+                    let full = mmorpg_core::water::BREATH_MAX_TICKS;
+                    if viewer.breath < full {
+                        let seconds = viewer.breath.div_ceil(mmorpg_core::TICK_HZ);
+                        let (text, color) = if viewer.breath == 0 {
+                            ("Drowning!".to_owned(), Color32::from_rgb(220, 60, 50))
+                        } else {
+                            (
+                                format!("Breath {seconds} s"),
+                                Color32::from_rgb(90, 170, 230),
+                            )
+                        };
+                        bar(
+                            ui,
+                            fraction(u32::from(viewer.breath), u32::from(full)),
+                            text,
+                            color,
+                        );
+                    }
                     ui.horizontal(|ui| {
                         ui.label(format!("{} copper", viewer.copper));
                         if viewer.in_combat {

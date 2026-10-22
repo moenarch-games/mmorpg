@@ -1,6 +1,6 @@
 /**
- * Command wire version 13, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
- * `fixtures/protocol/commands-v13.hex` holds both encoders to the same bytes.
+ * Command wire version 14, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
+ * `fixtures/protocol/commands-v14.hex` holds both encoders to the same bytes.
  * The session supplies player identity and sequence separately.
  */
 import { entityKindCode, isU32, type EntityRef } from "./entity-ref";
@@ -14,6 +14,8 @@ export type WorldCommand =
   | { kind: "move"; forward: Axis; strafe: Axis; facing: number }
   | { kind: "loot"; creatureId: number; diedAt: bigint }
   | { kind: "jump" }
+  /** Held swim ascent (`1`), descent (`-1`) or neither (#274); the zone ignores it out of the water. */
+  | { kind: "rise"; rise: Axis }
   /** Selects a unit, or clears the selection with `null`. */
   | { kind: "select-target"; target: EntityRef | null }
   | { kind: "start-attack" }
@@ -50,7 +52,7 @@ export type WorldCommand =
   /** Starts repairing a destructible piece (#305), or stops with `null`. */
   | { kind: "repair"; piece: number | null };
 
-const COMMAND_WIRE_VERSION = 13;
+const COMMAND_WIRE_VERSION = 14;
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
 const SELECT_TARGET_TAG = 3;
@@ -75,6 +77,7 @@ const DIRECTED_STRIKE_TAG = 21;
 const GUARD_TAG = 22;
 const USE_DOOR_TAG = 23;
 const REPAIR_TAG = 24;
+const RISE_TAG = 25;
 const YAW_STEPS = 65_536;
 
 function isAxis(value: number): value is Axis {
@@ -143,6 +146,11 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
     }
     case "jump":
       return Uint8Array.of(COMMAND_WIRE_VERSION, JUMP_TAG);
+    case "rise":
+      if (!isAxis(command.rise)) {
+        throw new RangeError("rise must be -1, 0 or 1");
+      }
+      return Uint8Array.of(COMMAND_WIRE_VERSION, RISE_TAG, command.rise & 0xff);
     case "select-target": {
       const payload = new Uint8Array(7);
       const view = new DataView(payload.buffer);

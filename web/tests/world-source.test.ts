@@ -101,9 +101,9 @@ describe("LocalZoneSource", () => {
     // The default is a male Warden.
     expect(zone.joins).toEqual([[first, "local-2", 2, 0], [second, "default-warden", 0, 1]]);
     expect(zone.submitted).toEqual([
-      { player: first, sequence: 1, bytes: "0d0101ff4000" },
+      { player: first, sequence: 1, bytes: "0e0101ff4000" },
       { player: first, sequence: 2, bytes: Buffer.from(encodeCommand({ kind: "jump" })).toString("hex") },
-      { player: second, sequence: 1, bytes: "0d02" },
+      { player: second, sequence: 1, bytes: "0e02" },
     ]);
     expect(zone.left).toEqual([first]);
   });
@@ -152,7 +152,7 @@ describe("LocalZoneSource", () => {
       zone.viewerOverride = null;
       expect(await source.join()).toBe(2);
       source.sendCommand({ kind: "jump" });
-      expect(zone.submitted).toEqual([{ player: 2, sequence: 1, bytes: "0d02" }]);
+      expect(zone.submitted).toEqual([{ player: 2, sequence: 1, bytes: "0e02" }]);
     }
   });
 });
@@ -211,6 +211,15 @@ describe("movement outbox", () => {
     outbox.update(input({ forward: 1 }), 0);
     outbox.reset(input({ jumps: 5 }));
     expect(outbox.update(input({ jumps: 5 }), 1)).toEqual([{ kind: "move", forward: 0, strafe: 0, facing: 0 }]);
+  });
+
+  test("the held swim rise goes out on each change (#274)", () => {
+    const outbox = new MovementOutbox(input());
+    outbox.update(input(), 0);
+    expect(outbox.update(input({ rise: 1 }), 1)).toEqual([{ kind: "rise", rise: 1 }]);
+    expect(outbox.update(input({ rise: 1 }), 2)).toEqual([]);
+    expect(outbox.update(input({ rise: -1 }), 3)).toEqual([{ kind: "rise", rise: -1 }]);
+    expect(outbox.update(input({ rise: -1 }), 4, true)).toEqual([{ kind: "rise", rise: 0 }]);
   });
 });
 

@@ -294,6 +294,8 @@ export class GameControls {
       steering: ["move.forward", "move.back", "move.strafeLeft", "move.strafeRight"].some((id) =>
         state.isHeld(id),
       ),
+      // Held Jump ascends while swimming, held Descend descends (#274).
+      rise: state.axis("move.descend", "move.jump"),
     };
   }
 }

@@ -100,6 +100,8 @@ const MOVE_BACK: &str = "move.back";
 const MOVE_LEFT: &str = "move.strafeLeft";
 const MOVE_RIGHT: &str = "move.strafeRight";
 const GUARD: &str = "combat.guard";
+const JUMP: &str = "move.jump";
+const DESCEND: &str = "move.descend";
 
 fn button(index: u16) -> InputStroke {
     InputStroke::Device(DeviceStroke::GamepadButton {
@@ -135,12 +137,7 @@ fn catalog() -> Vec<Entry> {
         (MOVE_BACK, GAMEPLAY, vec![stick(1, Positive)], None),
         (MOVE_LEFT, GAMEPLAY, vec![stick(0, Negative)], None),
         (MOVE_RIGHT, GAMEPLAY, vec![stick(0, Positive)], None),
-        (
-            "move.jump",
-            GAMEPLAY,
-            vec![button(A)],
-            Some(PadAction::Jump),
-        ),
+        (JUMP, GAMEPLAY, vec![button(A)], Some(PadAction::Jump)),
         (
             "target.next",
             GAMEPLAY,
@@ -527,6 +524,12 @@ impl PadControls {
     #[must_use]
     pub fn guarding(&self) -> bool {
         self.state.is_held(GUARD)
+    }
+
+    /// Held swim rise (#274): A ascends, B descends.
+    #[must_use]
+    pub fn rise(&self) -> i8 {
+        self.state.axis(DESCEND, JUMP)
     }
 
     /// Movement held on the pad, as the keyboard's held movement.

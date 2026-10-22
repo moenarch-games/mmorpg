@@ -10,6 +10,8 @@ export type MovementInput = {
   strafe: Axis;
   facing: number;
   jumps: number;
+  /** Held swim ascent or descent (#274); absent means neither. */
+  rise?: Axis;
 };
 
 /** Periodic resend of the current intent, like the native client's heartbeat. */
@@ -31,6 +33,8 @@ export class MovementOutbox {
   #sent: SentMove | null = null;
   #sentAt = Number.NEGATIVE_INFINITY;
   #jumps: number;
+  /** The swim rise last sent; a reset resends only a held one, as the native client. */
+  #rise: Axis = 0;
 
   constructor(input: MovementInput) {
     this.#jumps = input.jumps;
@@ -39,6 +43,7 @@ export class MovementOutbox {
   /** Starts a new session: only current input counts, earlier presses are dropped. */
   reset(input: MovementInput): void {
     this.#jumps = input.jumps;
+    this.#rise = 0;
     this.#sent = null;
     this.#sentAt = Number.NEGATIVE_INFINITY;
   }
@@ -52,6 +57,12 @@ export class MovementOutbox {
       if (!dead) {
         commands.push({ kind: "jump" });
       }
+    }
+    // The held swim rise goes out on each change, like the native client's (#274).
+    const rise: Axis = dead ? 0 : held.rise ?? 0;
+    if (rise !== this.#rise) {
+      this.#rise = rise;
+      commands.push({ kind: "rise", rise });
     }
     const sent = this.#sent;
     const elapsed = nowMs - this.#sentAt;

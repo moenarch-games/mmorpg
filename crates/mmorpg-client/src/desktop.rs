@@ -208,7 +208,7 @@ fn held_movement(keyboard: PadMovement, pad: PadMovement, dead: bool) -> HeldMov
 /// Pointer travel (physical pixels) from the middle lane before the guard moves high or low.
 const GUARD_LANE_THRESHOLD_PX: f64 = 24.;
 const PIXELS_PER_WHEEL_LINE: f64 = 40.0;
-const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps · click selects · N cycles NPC · Enter talks to the selected NPC, opens or closes a door in reach, or chats · click a door to open or close it · B bags · C character · L quests · Tab target · F attack · 1-8 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump, X attack, RB target, d-pad abilities, LB NPC, Start talk or door, B back, hold LT to guard (right stick up/down aims), L3 character, RT quests";
+const CONTROL_HINTS: &str = "W/S move · A/D or Q/E strafe · Space jumps (hold to swim up) · click selects · N cycles NPC · Enter talks to the selected NPC, opens or closes a door in reach, or chats · click a door to open or close it · B bags · C character · L quests · Tab target · F attack · 1-8 abilities · drag to orbit · wheel zooms · Esc cancels a cast, closes panels or quits · gamepad: sticks move and look, A jump (hold to swim up), X attack, RB target, d-pad abilities, LB NPC, Start talk or door, B back, hold LT to guard (right stick up/down aims), L3 character, RT quests";
 
 impl App {
     fn retire_pointer(&mut self) {
@@ -398,10 +398,18 @@ impl App {
             steering,
         } = held_movement(self.controls.movement(), self.pad.movement(), self.dead());
         let facing = steering.then(|| self.camera.facing());
+        // Held Jump ascends and held Descend descends while swimming (#274); the zone ignores
+        // the rise out of the water.
+        let rise = if self.dead() {
+            0
+        } else {
+            (self.controls.rise() + self.pad.rise()).clamp(-1, 1)
+        };
         self.input.send_if_modified(|input| {
             let next = PlayerInput {
                 forward,
                 strafe,
+                rise,
                 facing: facing.unwrap_or(input.facing),
                 ..*input
             };

@@ -46,6 +46,9 @@ pub struct PlayerInput {
     /// The held shield guard lane (#156); `None` once released. Held like
     /// movement: the session sends each change and resends it after a reconnect.
     pub guard: Option<mmorpg_core::StrikeHeight>,
+    /// Held swim ascent (`1`), descent (`-1`) or neither (#274). Held like the guard: the
+    /// session sends each change and resends a held one after a reconnect.
+    pub rise: i8,
 }
 
 /// Latest received refusal, retained across coalesced GUI updates in one epoch.
@@ -85,6 +88,7 @@ struct Outgoing {
     interaction: Option<ZoneCommand>,
     jump: bool,
     guard: Option<Option<mmorpg_core::StrikeHeight>>,
+    rise: Option<i8>,
     movement: Option<(i8, i8, u16)>,
 }
 
@@ -116,6 +120,9 @@ impl Outgoing {
         }
         if self.jump {
             session.send_jump()?;
+        }
+        if let Some(rise) = self.rise {
+            session.send_command(ZoneCommand::Rise(rise))?;
         }
         if let Some((forward, strafe, facing)) = self.movement {
             session.send_move(forward, strafe, facing)?;
@@ -163,6 +170,8 @@ struct Outbox {
     class_confirmed: bool,
     /// The guard lane last sent; `None` before any or after a resume.
     sent_guard: Option<Option<mmorpg_core::StrikeHeight>>,
+    /// The swim rise last sent; `None` after a resume.
+    sent_rise: Option<i8>,
 }
 
 impl Outbox {
@@ -173,7 +182,17 @@ impl Outbox {
             presses: Presses::of(input),
             class_confirmed: false,
             sent_guard: Some(None),
+            sent_rise: Some(0),
         }
+    }
+
+    /// The swim rise to send when it differs from the last one sent. After a resume only a
+    /// held rise is resent, as with the guard.
+    fn rise(&mut self, input: PlayerInput) -> Option<i8> {
+        let sent = self.sent_rise.unwrap_or(0);
+        let resumed = self.sent_rise.is_none();
+        self.sent_rise = Some(input.rise);
+        (sent != input.rise || (resumed && input.rise != 0)).then_some(input.rise)
     }
 
     /// Reads a received projection: once it shows a class, the choice is
@@ -230,6 +249,7 @@ impl Outbox {
                 .flatten(),
             jump: pressed.jumps != handled.jumps,
             guard: self.guard(input),
+            rise: self.rise(input),
             movement,
         }
     }
@@ -241,6 +261,7 @@ impl Outbox {
         Outgoing {
             choose: input.class_choice.filter(|_| !self.class_confirmed),
             guard: self.guard(input),
+            rise: self.rise(input),
             movement: Some(self.movement(input, now)),
             ..Outgoing::default()
         }
@@ -252,6 +273,8 @@ impl Outbox {
         self.sent = None;
         // The next heartbeat re-raises a held guard on the resumed connection.
         self.sent_guard = None;
+        // … and resends the swim rise.
+        self.sent_rise = None;
     }
 }
 

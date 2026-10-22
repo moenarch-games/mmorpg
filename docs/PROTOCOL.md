@@ -10,36 +10,39 @@ Commands and projections travel inside the pinned `game-server` session frames (
 
 The shared fixture `fixtures/protocol/session-frames-v3.hex` pins these frames and the browser route contract: `crates/mmorpg-game-server/tests/session_frames.rs` renders it from the pinned encoders and decodes it with the pinned decoders, and the browser (`web/tests/session-frames.test.ts`) decodes and encodes the same bytes. A `game-server` pin bump that changes a frame fails in both languages.
 
-## Commands (wire version 13)
+## Commands (wire version 14)
 
 The shared session runtime supplies player identity, connection epoch and command sequence separately. Core rejects zero, stale and duplicate sequences without changing state.
 
 | Command | Bytes | Layout |
 | --- | ---: | --- |
-| Move | 6 | `[version = 13, tag = 1, forward: i8, strafe: i8, facing: u16]` |
-| Jump | 2 | `[version = 13, tag = 2]` |
-| SelectTarget | 7 | `[version = 13, tag = 3, kind: u8, id: u32]` |
-| StartAttack | 2 | `[version = 13, tag = 4]` |
-| StopAttack | 2 | `[version = 13, tag = 5]` |
-| ReleaseSpirit | 2 | `[version = 13, tag = 6]` |
-| MoveItem | 6 | `[version = 13, tag = 7, source_slot: u8, destination_slot: u8, quantity: u16]` |
-| Loot | 14 | `[version = 13, tag = 8, creature_id: u32, died_at: u64]` |
-| UseAbility | 8 | `[version = 13, tag = 9, ability: u8, kind: u8, id: u32]` |
-| CancelCast | 2 | `[version = 13, tag = 10]` |
-| ChooseClass | 4 | `[version = 13, tag = 11, class: u8, sex: u8]` |
-| EquipItem | 3 | `[version = 13, tag = 12, bag_slot: u8]` |
-| UnequipItem | 3 | `[version = 13, tag = 13, equipment_slot: u8]` |
-| BuyItem | 9 | `[version = 13, tag = 14, npc: u32, offer: u8, quantity: u16]` |
-| SellItem | 9 | `[version = 13, tag = 15, npc: u32, bag_slot: u8, quantity: u16]` |
-| Chat | 4 + n | `[version = 13, tag = 16, channel: u8, length: u8, text: n bytes]` |
-| Emote | 3 | `[version = 13, tag = 17, emote: u8]` |
-| AcceptQuest | 7 | `[version = 13, tag = 18, npc: u32, quest: u8]` |
-| CompleteQuest | 8 | `[version = 13, tag = 19, npc: u32, quest: u8, choice: u8]` |
-| AbandonQuest | 3 | `[version = 13, tag = 20, quest: u8]` |
-| DirectedStrike | 7 | `[version = 13, tag = 21, ability: u8, facing: u16, side: u8, height: u8]` |
-| Guard | 3 | `[version = 13, tag = 22, lane: u8]` |
-| UseDoor | 4 | `[version = 13, tag = 23, door: u8, open: u8]` |
-| Repair | 4 | `[version = 13, tag = 24, piece: u16]` (0 stops, else the piece ID + 1) |
+| Move | 6 | `[version = 14, tag = 1, forward: i8, strafe: i8, facing: u16]` |
+| Jump | 2 | `[version = 14, tag = 2]` |
+| SelectTarget | 7 | `[version = 14, tag = 3, kind: u8, id: u32]` |
+| StartAttack | 2 | `[version = 14, tag = 4]` |
+| StopAttack | 2 | `[version = 14, tag = 5]` |
+| ReleaseSpirit | 2 | `[version = 14, tag = 6]` |
+| MoveItem | 6 | `[version = 14, tag = 7, source_slot: u8, destination_slot: u8, quantity: u16]` |
+| Loot | 14 | `[version = 14, tag = 8, creature_id: u32, died_at: u64]` |
+| UseAbility | 8 | `[version = 14, tag = 9, ability: u8, kind: u8, id: u32]` |
+| CancelCast | 2 | `[version = 14, tag = 10]` |
+| ChooseClass | 4 | `[version = 14, tag = 11, class: u8, sex: u8]` |
+| EquipItem | 3 | `[version = 14, tag = 12, bag_slot: u8]` |
+| UnequipItem | 3 | `[version = 14, tag = 13, equipment_slot: u8]` |
+| BuyItem | 9 | `[version = 14, tag = 14, npc: u32, offer: u8, quantity: u16]` |
+| SellItem | 9 | `[version = 14, tag = 15, npc: u32, bag_slot: u8, quantity: u16]` |
+| Chat | 4 + n | `[version = 14, tag = 16, channel: u8, length: u8, text: n bytes]` |
+| Emote | 3 | `[version = 14, tag = 17, emote: u8]` |
+| AcceptQuest | 7 | `[version = 14, tag = 18, npc: u32, quest: u8]` |
+| CompleteQuest | 8 | `[version = 14, tag = 19, npc: u32, quest: u8, choice: u8]` |
+| AbandonQuest | 3 | `[version = 14, tag = 20, quest: u8]` |
+| DirectedStrike | 7 | `[version = 14, tag = 21, ability: u8, facing: u16, side: u8, height: u8]` |
+| Guard | 3 | `[version = 14, tag = 22, lane: u8]` |
+| UseDoor | 4 | `[version = 14, tag = 23, door: u8, open: u8]` |
+| Repair | 4 | `[version = 14, tag = 24, piece: u16]` (0 stops, else the piece ID + 1) |
+| Rise | 3 | `[version = 14, tag = 25, rise: i8]` (1 ascends, -1 descends, 0 neither) |
+
+Version 14 adds `Rise` (tag 25, #274): held swim intent like `Move`, kept until the next `Rise`. It acts only while the player swims (feet more than 1.3 m under a water volume's surface) and is otherwise ignored; values outside -1..=1 are malformed payloads.
 
 Version 12 adds `UseDoor` (tag 23); tags 1–22 retain their field layouts.
 
@@ -228,7 +231,7 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 6, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v31.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v31.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v30 fixtures remain as rejection evidence. `presentation-observation-v31.hex` covers the two neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot-v32.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind, two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v32.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v31 fixtures remain as rejection evidence. `presentation-observation-v32.hex` covers the two neutral observation records.
 
 ## Canonical scope
 
@@ -563,3 +566,16 @@ the locked participants and the contributors, each a `u8` count (at most 64) and
 in the timer field and its rally point in the destination field. Ability catalog revision 8 adds
 Redbrand Whirl (24). Player projections keep their layout; only the version bytes change.
 Snapshot v30 / schema 30 payloads fail closed.
+
+## Water, swimming and breath: snapshot v32 / core schema 32 / command v14 (#274)
+
+Greyhaven revision 23 gives Stillwater Lake an authoritative water volume (an XZ ellipse with a
+flat surface) over a 9 m basin. Each canonical player gains, after its jump flag, the held `rise`
+(`i8`, -1..=1) and its breath clock: the `u16` breath ticks left (at most 900, 30 s) and the `u16`
+drowning tick counter. The player projection's self-ability section gains the viewer's `u16`
+breath ticks after the combo phase code (fixed part 117 bytes); values above 900 are malformed.
+Entity records keep their layout: clients derive a player's water mode (dry, wading, swimming,
+submerged) from its projected position and the content's water volumes, as the zone does. Packing
+now reserves the trailing debris count byte when it plans the entity prefix, so a kept observation
+never names an entity that did not fit. Snapshot v31 / schema 31 payloads and command v13 fail
+closed.

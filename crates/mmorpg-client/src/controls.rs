@@ -363,6 +363,12 @@ impl NativeControls {
         }
     }
 
+    /// Held swim rise (#274): Jump ascends, Descend descends.
+    #[must_use]
+    pub fn rise(&self) -> i8 {
+        self.state.axis("move.descend", "move.jump")
+    }
+
     fn apply(&mut self, decisions: &[RuntimeDecision]) {
         self.state.apply_decisions(decisions);
     }
