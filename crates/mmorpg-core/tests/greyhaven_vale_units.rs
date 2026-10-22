@@ -12,7 +12,7 @@ use mmorpg_core::{
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.revision(), 21);
+    assert_eq!(content.revision(), 22);
     assert_eq!(content.rng_seed(), 0x3cbc_808b_be89_b29c);
     assert_eq!(
         content.definition(),
@@ -139,7 +139,7 @@ fn templates_follow_the_design_contract() {
                 0,
                 [8, 14],
                 72,
-                9_000
+                3_600
             ),
             (
                 "Redbrand Crossbowman",

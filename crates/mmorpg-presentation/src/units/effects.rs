@@ -30,6 +30,12 @@ enum Visual {
     Beam,
     /// Chain Lightning (#292): arcs from the caster through each victim in turn.
     Chain,
+    /// A creature special's danger footprint (#276, Atlas 6.6.29–6.6.31): the true ring it will
+    /// strike, held while the zone's wind-up lasts, then a brief burst when it resolves.
+    Danger {
+        radius: f64,
+        burst: bool,
+    },
     Impact {
         critical: bool,
     },
@@ -95,6 +101,7 @@ const ACTION_SECONDS: f64 = 0.3;
 const SWEEP_SECONDS: f64 = 0.34;
 const BLOCK_SECONDS: f64 = 0.45;
 const IMPACT_SECONDS: f64 = 0.32;
+const DANGER_BURST_SECONDS: f64 = 0.35;
 const BLIZZARD: u8 = 12;
 const LIGHTNING_BEAM: u8 = 22;
 /// The beam's reach and the cone's, metres (the zone's 20 m and 8 m).
@@ -136,10 +143,22 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         13 => (Some(Stance::Staff), Some(Visual::Projectile), 0x7d9a4a),
         14 => (Some(Stance::Staff), None, 0xe7dcc0),
         15 => (Some(Stance::Bow), None, 0x8a6a4a),
+        18 => (Some(Stance::Sword), None, 0x8a7a5a),
         21 => (Some(Stance::Staff), Some(Visual::Cone), 0x9fdcff),
         22 => (Some(Stance::Staff), Some(Visual::Beam), 0xc8dcff),
         23 => (Some(Stance::Staff), Some(Visual::Chain), 0xb9a8ff),
+        24 => (Some(Stance::Sword), None, 0xd8452c),
         _ => (None, None, 0xffffff),
+    }
+}
+
+/// The self-centred creature specials with a reliable ring footprint, in metres: Stomp's 3.5 m
+/// and Redbrand Whirl's 4 m (the zone's radii).
+fn danger_radius(id: u8) -> Option<f64> {
+    match id {
+        18 => Some(3.5),
+        24 => Some(4.),
+        _ => None,
     }
 }
 
@@ -297,6 +316,13 @@ impl Effects {
                     if id == BLIZZARD {
                         self.shards(source, target, now, anchors);
                     }
+                    if let Some(radius) = danger_radius(id) {
+                        let warning = Visual::Danger {
+                            radius,
+                            burst: false,
+                        };
+                        self.add(warning, id, source, None, None, now);
+                    }
                     if id == LIGHTNING_BEAM {
                         self.beam(source, now);
                     }
@@ -330,6 +356,13 @@ impl Effects {
                         && let Some(duration) = timed(visual)
                     {
                         self.add(visual, id, source, target, Some(duration), now);
+                    }
+                    if let Some(radius) = danger_radius(id) {
+                        let burst = Visual::Danger {
+                            radius,
+                            burst: true,
+                        };
+                        self.add(burst, id, source, None, Some(DANGER_BURST_SECONDS), now);
                     }
                 }
                 ZoneEvent::StrikeSwept {
@@ -698,6 +731,32 @@ impl Effects {
                                 qa(1, a + PI / 2.),
                                 0.8,
                                 false,
+                            );
+                        }
+                    }
+                }
+                Visual::Danger { radius, burst } => {
+                    if let Some(s) = source {
+                        // The warning pulses gently; the burst flares and fades at the edge.
+                        let opacity = if burst {
+                            0.9 * (1. - t) as f32
+                        } else {
+                            (0.45 + 0.15 * (age * 6.).sin()) as f32
+                        };
+                        for i in 0..28 {
+                            let a = f64::from(i) / 28. * TAU;
+                            add(
+                                &format!("danger-{i}"),
+                                Primitive::Box([0.5, 0.05, 0.12]),
+                                color,
+                                [
+                                    s.feet[0] + a.sin() * radius,
+                                    s.feet[1] + 0.06,
+                                    s.feet[2] + a.cos() * radius,
+                                ],
+                                qa(1, a + PI / 2.),
+                                opacity,
+                                true,
                             );
                         }
                     }

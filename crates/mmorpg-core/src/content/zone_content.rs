@@ -56,6 +56,7 @@ pub struct ZoneContent {
     loot_tables: Vec<(CreatureTemplateId, LootTable)>,
     ability_revision: u64,
     creature_abilities: Vec<(CreatureTemplateId, AbilityId)>,
+    bosses: Vec<crate::BossRules>,
     vendor_revision: u64,
     vendors: Vec<(NpcId, VendorStock)>,
     quest_revision: u64,
@@ -163,6 +164,7 @@ impl ZoneContent {
             loot_tables: Vec::new(),
             ability_revision: 0,
             creature_abilities: Vec::new(),
+            bosses: Vec::new(),
             vendor_revision: 0,
             vendors: Vec::new(),
             quest_revision: 0,
@@ -200,6 +202,7 @@ impl ZoneContent {
             loot_tables: Vec::new(),
             ability_revision: 0,
             creature_abilities: Vec::new(),
+            bosses: Vec::new(),
             vendor_revision: 0,
             vendors: Vec::new(),
             quest_revision: 0,
@@ -430,6 +433,38 @@ impl ZoneContent {
             .binary_search_by_key(&template, |(template, _)| *template)
             .ok()
             .map(|index| self.creature_abilities[index].1)
+    }
+
+    /// Marks creature templates as shared outdoor bosses (#276) with their encounter rules.
+    pub fn with_bosses(mut self, mut bosses: Vec<crate::BossRules>) -> Result<Self, ZoneError> {
+        bosses.sort_by_key(|rules| rules.template);
+        if bosses
+            .windows(2)
+            .any(|pair| pair[0].template == pair[1].template)
+        {
+            return Err(ZoneError::new("duplicate boss template id"));
+        }
+        if bosses.iter().any(|rules| {
+            self.creature_template(rules.template).is_none()
+                || rules.engage_radius <= 0
+                || rules.reaction_radius <= 0
+        }) {
+            return Err(ZoneError::new(
+                "boss names an unknown template or has no radius",
+            ));
+        }
+        self.bosses = bosses;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The boss rules of `template`, if it is a boss.
+    #[must_use]
+    pub fn boss(&self, template: CreatureTemplateId) -> Option<&crate::BossRules> {
+        self.bosses
+            .binary_search_by_key(&template, |rules| rules.template)
+            .ok()
+            .map(|index| &self.bosses[index])
     }
 
     /// Binds vendor stock to NPCs with the `Vendor` role and the vendor
@@ -999,6 +1034,21 @@ impl ZoneContent {
         for (template, ability) in &self.creature_abilities {
             hash.u16(template.get());
             hash.u8(ability.get());
+        }
+        // Bosses (#276) join the identity only when content has any, so other zones keep theirs.
+        if !self.bosses.is_empty() {
+            hash.bytes(b"bosses");
+            hash.len(self.bosses.len());
+            for rules in &self.bosses {
+                hash.u16(rules.template.get());
+                hash.u16(rules.health_percent_per_extra);
+                hash.u16(rules.damage_percent_per_extra);
+                hash.i32(rules.engage_radius);
+                hash.i32(rules.reaction_radius);
+                hash.u16(rules.reaction_ticks);
+                hash.i32(rules.rally_point[0]);
+                hash.i32(rules.rally_point[1]);
+            }
         }
         hash.finish()
     }
