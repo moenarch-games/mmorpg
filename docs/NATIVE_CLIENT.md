@@ -73,6 +73,7 @@ Controls:
 | W / S (or ↑ / ↓) | Run forward / backpedal |
 | A / D, Q / E (or ← / →) | Strafe left / right |
 | Space | Jump (only from the ground) |
+| X | Swim down while held (#274); held Space swims up |
 | Tab | Select the nearest living attackable creature; press again to cycle outward |
 | F | Start auto-attacking the target, or stop |
 | R | Release your spirit while dead |

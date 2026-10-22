@@ -254,7 +254,7 @@ fn unbound_keys_use_nothing() {
         KeyCode::Digit0,
         KeyCode::Digit9,
         KeyCode::Numpad1,
-        KeyCode::KeyX,
+        KeyCode::KeyJ,
         KeyCode::Backquote,
         KeyCode::F12,
     ] {

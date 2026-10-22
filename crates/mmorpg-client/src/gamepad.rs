@@ -138,6 +138,8 @@ fn catalog() -> Vec<Entry> {
         (MOVE_LEFT, GAMEPLAY, vec![stick(0, Negative)], None),
         (MOVE_RIGHT, GAMEPLAY, vec![stick(0, Positive)], None),
         (JUMP, GAMEPLAY, vec![button(A)], Some(PadAction::Jump)),
+        // Held while swimming (#274): A ascends, R3 descends.
+        (DESCEND, GAMEPLAY, vec![button(R3)], None),
         (
             "target.next",
             GAMEPLAY,
@@ -526,7 +528,7 @@ impl PadControls {
         self.state.is_held(GUARD)
     }
 
-    /// Held swim rise (#274): A ascends, B descends.
+    /// Held swim rise (#274): A ascends, R3 descends.
     #[must_use]
     pub fn rise(&self) -> i8 {
         self.state.axis(DESCEND, JUMP)

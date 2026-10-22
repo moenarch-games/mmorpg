@@ -88,9 +88,9 @@ describe("directed Heroic Strike input", () => {
     expect(actionBindingLabels("combat.directedStrike", profile([]))).toEqual(["G"]);
     const remapped = profile([
       { op: "remove", bindingId: "combat.directedStrike.0" },
-      { op: "add", binding: { id: "custom.strike", action: "combat.directedStrike", sequence: [{ key: { kind: "physical", value: "KeyX" } }], when: { op: "context", id: "gameplay" } } },
+      { op: "add", binding: { id: "custom.strike", action: "combat.directedStrike", sequence: [{ key: { kind: "physical", value: "KeyJ" } }], when: { op: "context", id: "gameplay" } } },
     ]);
-    expect(actionBindingLabels("combat.directedStrike", remapped)).toEqual(["X"]);
+    expect(actionBindingLabels("combat.directedStrike", remapped)).toEqual(["J"]);
     expect(actionBindingLabels("combat.directedStrike", profile([{ op: "remove", bindingId: "combat.directedStrike.0" }]))).toEqual([]);
     // G also bound to jump in the same context: ambiguous, so no shortcut is claimed.
     const conflict = profile([
