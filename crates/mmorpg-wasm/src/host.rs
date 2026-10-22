@@ -455,6 +455,22 @@ mod tests {
     }
 
     #[test]
+    fn the_sunken_shrine_starts_on_the_lake_shore_with_the_quest_accepted() {
+        assert_eq!(
+            Scenario::from_name("sunken-shrine"),
+            Some(Scenario::SunkenShrine)
+        );
+        let (host, player) = LocalZoneHost::scenario(Scenario::SunkenShrine, 0).unwrap();
+        let start = own_position(&host, player);
+        assert_eq!([start[0], start[2]], [3_000, -5_400]);
+        let quests = decode_snapshot(&host.projection(player).unwrap())
+            .unwrap()
+            .quests
+            .unwrap();
+        assert_eq!(quests.entries[0].quest.get(), 10);
+    }
+
+    #[test]
     fn a_world_checkpoint_resumes_the_world_without_its_players() {
         let mut host = LocalZoneHost::new().unwrap();
         let player = host.join_as(0, 1).unwrap();

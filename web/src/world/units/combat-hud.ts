@@ -183,11 +183,13 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
       const quest = catalog.quests.get(event.quest);
       const objective = quest?.objectives[event.objective];
       return objective
-        ? `${quest!.name}: ${objectiveLabel(objective, catalog)} ${objective.kind === "kill" || objective.kind === "collect" ? `${event.count}/${objective.count}` : "done"}.`
+        ? `${quest!.name}: ${objectiveLabel(objective, catalog)} ${objective.kind === "kill" || objective.kind === "collect" || objective.kind === "retrieve" ? `${event.count}/${objective.count}` : "done"}.`
         : "Quest progress.";
     }
     case "quest-completed":
       return `${catalog.quests.get(event.quest)?.name ?? "Quest"} completed.`;
+    case "lost-interest":
+      return "The lurker loses interest.";
   }
 }
 

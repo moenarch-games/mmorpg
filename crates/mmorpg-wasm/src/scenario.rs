@@ -26,10 +26,19 @@ pub enum Scenario {
     /// A level 8 Arcanist at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
     /// Frost Breath, Lightning Beam and Chain Lightning (#292).
     ArcanistPack,
+    /// A level 5 Warden on Stillwater Lake's west shore with *The Sunken Shrine* accepted,
+    /// facing the lake: dive to the shrine, swim the cave past its air pocket to the altar,
+    /// and meet the lurkers on the way (#274).
+    SunkenShrine,
 }
 
 impl Scenario {
-    pub const ALL: [Self; 3] = [Self::OgreCombat, Self::RangerRange, Self::ArcanistPack];
+    pub const ALL: [Self; 4] = [
+        Self::OgreCombat,
+        Self::RangerRange,
+        Self::ArcanistPack,
+        Self::SunkenShrine,
+    ];
 
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
@@ -44,12 +53,13 @@ impl Scenario {
             Self::OgreCombat => "ogre-combat",
             Self::RangerRange => "ranger-range",
             Self::ArcanistPack => "arcanist-pack",
+            Self::SunkenShrine => "sunken-shrine",
         }
     }
 
     const fn class(self) -> ClassChoice {
         match self {
-            Self::OgreCombat => ClassChoice {
+            Self::OgreCombat | Self::SunkenShrine => ClassChoice {
                 class: PlayerClass::Warden,
                 sex: Sex::Female,
             },
@@ -67,7 +77,7 @@ impl Scenario {
     /// The ogre is level 5, so the Warden is too.
     const fn level(self) -> u8 {
         match self {
-            Self::OgreCombat => 5,
+            Self::OgreCombat | Self::SunkenShrine => 5,
             Self::RangerRange => 6,
             // Lightning Beam unlocks at level 8.
             Self::ArcanistPack => 8,
@@ -83,6 +93,8 @@ impl Scenario {
             Self::RangerRange => ([-3_500, -3_400], 49_152),
             // Beside the ranger range, nearer the pack's middle; facing west.
             Self::ArcanistPack => ([-4_000, -2_200], 49_152),
+            // On the west shore, on the lake's long axis; facing east over the water.
+            Self::SunkenShrine => ([3_000, -5_400], 16_384),
         }
     }
 
@@ -116,6 +128,19 @@ impl Scenario {
             .map_or(0, |terrain| terrain.height_at(x, z));
         record.level = self.level();
         record.experience = 0;
+        if self == Self::SunkenShrine {
+            use mmorpg_core::greyhaven_vale::quests::{SCOUT_THE_LAKE, THE_SUNKEN_SHRINE};
+            // The chain through *Scout the Lake* turned in; the shrine quest accepted.
+            record.quests = mmorpg_core::QuestLog {
+                entries: vec![mmorpg_core::QuestEntry {
+                    quest: THE_SUNKEN_SHRINE,
+                    progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
+                }],
+                completed: (1..=SCOUT_THE_LAKE.get())
+                    .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
+                    .fold(0, |mask, bit| mask | bit),
+            };
+        }
         record.health = player_max_health(record.level) + record.equipment.totals().bonus_health();
         record.location = CharacterLocation {
             zone_id: LOCAL_ZONE_ID,
