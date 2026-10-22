@@ -68,6 +68,7 @@ pub struct ZoneContent {
     pieces: Vec<crate::StructurePiece>,
     routines: Vec<crate::NpcRoutine>,
     closed_at_night: Vec<NpcId>,
+    waters: Vec<crate::WaterVolume>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -176,6 +177,7 @@ impl ZoneContent {
             pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
+            waters: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -214,6 +216,7 @@ impl ZoneContent {
             pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
+            waters: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -694,6 +697,29 @@ impl ZoneContent {
         Ok(self)
     }
 
+    /// Binds authored water volumes (#274), at most [`crate::water::MAX_WATER_VOLUMES`],
+    /// in authoring order; volumes must not share a name.
+    pub fn with_waters(mut self, waters: Vec<crate::WaterVolume>) -> Result<Self, ZoneError> {
+        if waters.len() > crate::water::MAX_WATER_VOLUMES {
+            return Err(ZoneError::new("zone water volume capacity reached"));
+        }
+        for (index, water) in waters.iter().enumerate() {
+            water.validate()?;
+            if waters[..index].iter().any(|other| other.name == water.name) {
+                return Err(ZoneError::new("duplicate water volume name"));
+            }
+        }
+        self.waters = waters;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Water volumes (#274).
+    #[must_use]
+    pub fn waters(&self) -> &[crate::WaterVolume] {
+        &self.waters
+    }
+
     /// Destructible sites in ID order (#305).
     #[must_use]
     pub fn sites(&self) -> &[crate::StructureSite] {
@@ -805,7 +831,7 @@ impl ZoneContent {
     }
 
     fn compute_player_combat_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_structure_fingerprint();
+        let fingerprint = self.compute_water_fingerprint();
         if self.player_combat == PlayerCombatPolicy::Safe {
             return fingerprint;
         }
@@ -813,6 +839,24 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/player-combat-v1");
         hash.u64(fingerprint);
         hash.u8(1);
+        hash.finish()
+    }
+
+    fn compute_water_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_structure_fingerprint();
+        if self.waters.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/water-v1");
+        hash.u64(fingerprint);
+        hash.len(self.waters.len());
+        for water in &self.waters {
+            hash.text(&water.name);
+            hash.i32s(&water.centre);
+            hash.i32s(&water.radii);
+            hash.i32(water.surface);
+        }
         hash.finish()
     }
 

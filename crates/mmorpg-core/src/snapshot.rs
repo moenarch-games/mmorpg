@@ -224,6 +224,10 @@ pub struct CanonicalPlayerSnapshot {
     pub forward: i8,
     pub strafe: i8,
     pub jump_pending: bool,
+    /// Held swim ascent or descent, `-1..=1` (#274).
+    pub rise: i8,
+    /// Breath and drowning clock (#274).
+    pub breath: crate::Breath,
     pub last_sequence: u32,
     pub spawn_slot: u16,
     pub copper: u32,
@@ -316,6 +320,8 @@ impl ZoneSimulation {
                     forward: state.forward.get(),
                     strafe: state.strafe.get(),
                     jump_pending: state.jump_pending,
+                    rise: state.rise.get(),
+                    breath: state.breath,
                     last_sequence: state.last_sequence,
                     spawn_slot: state.spawn_slot,
                     copper: state.copper,
@@ -559,6 +565,10 @@ impl ZoneSimulation {
     ) -> Result<(), ZoneError> {
         let forward = Axis::new(player.forward)?;
         let strafe = Axis::new(player.strafe)?;
+        let rise = Axis::new(player.rise)?;
+        if !player.breath.is_valid() {
+            return Err(ZoneError::new("player breath is out of range"));
+        }
         if usize::from(player.spawn_slot) >= MAX_PLAYERS_PER_ZONE {
             return Err(ZoneError::new("player spawn slot is out of range"));
         }
@@ -603,10 +613,10 @@ impl ZoneSimulation {
         // v11 checkpoint may still carry it: recovery lets go of it, exactly as
         // death now does, instead of refusing a checkpoint of the same format.
         let alive = combat.health > 0;
-        let (forward, strafe, jump_pending) = if alive {
-            (forward, strafe, player.jump_pending)
+        let (forward, strafe, rise, jump_pending) = if alive {
+            (forward, strafe, rise, player.jump_pending)
         } else {
-            (Axis::Zero, Axis::Zero, false)
+            (Axis::Zero, Axis::Zero, Axis::Zero, false)
         };
         if combat.abilities.class.is_some() && self.content.ability_revision() == 0 {
             return Err(ZoneError::new(
@@ -652,6 +662,8 @@ impl ZoneSimulation {
                 forward,
                 strafe,
                 jump_pending,
+                rise,
+                breath: player.breath,
                 guard,
                 landing: combat.landing,
                 combo: combat.combo,

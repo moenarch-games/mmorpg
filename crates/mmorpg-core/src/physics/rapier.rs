@@ -430,6 +430,38 @@ impl World {
         Ok(())
     }
 
+    pub fn set_swimming(&mut self, id: BodyId, swimming: bool) -> Result<(), PhysicsError> {
+        let body = self
+            .bodies
+            .get_mut(&id)
+            .filter(|body| body.is_moving())
+            .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
+        body.swimming = swimming;
+        Ok(())
+    }
+
+    /// The floor half-space's collider, when the body at `position` stands over terrain that
+    /// dips below it (a lake basin, #274): there only the heightfield is ground.
+    fn open_floor(&self, position: [f32; 3]) -> Option<ColliderHandle> {
+        let ground = self.ground.as_ref()?;
+        #[allow(clippy::cast_possible_truncation)]
+        let (x, z) = (position[0].round() as i32, position[2].round() as i32);
+        if ground.terrain.height_at(x, z) >= 0 {
+            return None;
+        }
+        self.handles.get(&ground.id).map(|handles| handles.collider)
+    }
+
+    fn without_open_floor(
+        filter: QueryFilter<'_>,
+        floor: Option<ColliderHandle>,
+    ) -> QueryFilter<'_> {
+        match floor {
+            Some(floor) => filter.exclude_collider(floor),
+            None => filter,
+        }
+    }
+
     /// Rebuilds the Rapier world from the bodies in ID order. Rapier's broad phase depends on
     /// the history of insertions, removals and moves, and the controller breaks exact ties
     /// between equally near contacts by its traversal order; rebuilding first makes each
@@ -532,8 +564,10 @@ impl World {
             // into the ground, which the controller answers with a nudge back up. A body just
             // above the ground settles onto it.
             let mut settle = 0.0;
-            match self.ground_gap(&body, body.position) {
-                Some(gap) if velocity[1] <= 0.0 => {
+            match (!body.swimming).then(|| self.ground_gap(&body, body.position)) {
+                // A swimmer (#274) keeps the vertical velocity the zone gave it.
+                None => {}
+                Some(Some(gap)) if velocity[1] <= 0.0 => {
                     velocity[1] = 0.0;
                     if gap > GAP_TOLERANCE_UNITS {
                         settle = -gap;
@@ -687,7 +721,10 @@ impl World {
             &self.queries,
             &self.world.bodies,
             &self.world.colliders,
-            QueryFilter::default().exclude_rigid_body(handle),
+            Self::without_open_floor(
+                QueryFilter::default().exclude_rigid_body(handle),
+                self.open_floor(body.position),
+            ),
         );
         let movement = self.controller.move_shape(
             self.world.integration_parameters.dt,
@@ -709,7 +746,11 @@ impl World {
     /// How far (units) static ground within the support reach lies below `body` at
     /// `position`, beyond the controller's contact offset.
     fn ground_gap(&self, body: &RigidBody, position: [f32; 3]) -> Option<f32> {
-        self.support_gap(body, position, QueryFilter::only_fixed())
+        self.support_gap(
+            body,
+            position,
+            Self::without_open_floor(QueryFilter::only_fixed(), self.open_floor(position)),
+        )
     }
 
     /// [`Self::ground_gap`] against the colliders `filter` admits.

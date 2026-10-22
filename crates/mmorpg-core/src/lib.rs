@@ -57,6 +57,7 @@ mod structure;
 pub mod trig;
 pub mod unit;
 mod vendor;
+pub mod water;
 mod zone;
 
 pub use ability::{
@@ -165,6 +166,7 @@ pub use vendor::{
     VendorStockError, VendorTradeError, sell_price, settle_purchase, settle_sale,
     starter_vendor_stock,
 };
+pub use water::{Breath, WaterMode, WaterVolume};
 pub use zone::{MAX_PENDING_INTENTS, ZoneSimulation, ZoneTickWork};
 
 use std::error::Error;
@@ -219,6 +221,9 @@ pub enum ZoneCommand {
     },
     /// Edge-triggered jump, honoured on the next tick only when grounded.
     Jump,
+    /// Held swim ascent (`1`), descent (`-1`) or neither (`0`) (#274); it only acts while
+    /// the player swims.
+    Rise(i8),
     /// Selects a unit, or clears the selection with `None`.
     SelectTarget(Option<EntityRef>),
     /// Claim all remaining rewards from one fenced corpse death.

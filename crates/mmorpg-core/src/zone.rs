@@ -72,6 +72,10 @@ pub(crate) struct PlayerState {
     pub(crate) forward: Axis,
     pub(crate) strafe: Axis,
     pub(crate) jump_pending: bool,
+    /// Held swim ascent (+1) or descent (-1) (#274).
+    pub(crate) rise: Axis,
+    /// Breath and drowning clock (#274).
+    pub(crate) breath: crate::Breath,
     /// The held shield guard and its break recovery (#156).
     pub(crate) guard: crate::GuardState,
     /// Airborne state and landing recovery; Warden melee waits it out (#155).
@@ -138,6 +142,8 @@ impl PlayerState {
             forward: Axis::Zero,
             strafe: Axis::Zero,
             jump_pending: false,
+            rise: Axis::Zero,
+            breath: crate::Breath::FULL,
             guard: crate::GuardState::default(),
             landing: crate::LandingState::default(),
             combo: None,
@@ -531,6 +537,13 @@ impl ZoneSimulation {
                 }
                 None
             }
+            ZoneCommand::Rise(rise) => {
+                let rise = Axis::new(rise)?;
+                if alive {
+                    player.rise = rise;
+                }
+                None
+            }
             // Resolved during the next tick against the pre-step world.
             ZoneCommand::Jump => {
                 player.jump_pending = alive;
@@ -664,6 +677,7 @@ impl ZoneSimulation {
         self.advance_debris();
         self.advance_movable_props()?;
         self.update_landings()?;
+        self.update_breath()?;
         // A jump intent is consumed by the tick that evaluated it, grounded or not.
         for player in self.players.values_mut() {
             player.jump_pending = false;
@@ -695,6 +709,7 @@ impl ZoneSimulation {
                 state.cast.is_some()
                     && (state.forward != Axis::Zero
                         || state.strafe != Axis::Zero
+                        || state.rise != Axis::Zero
                         || state.jump_pending)
             })
             .map(|(&player_id, _)| player_id)
@@ -718,12 +733,25 @@ impl ZoneSimulation {
             // this pass observes the same pre-step positions regardless of order.
             let alive = state.is_alive();
             let stunned = crate::aura::has_kind(&state.auras, crate::AuraKind::Stun);
-            let vertical_velocity =
-                if alive && !stunned && state.jump_pending && is_grounded(&self.world, body)? {
-                    JUMP_VELOCITY_UNITS_PER_TICK
-                } else {
-                    body.velocity().y
-                };
+            // A living swimmer (#274) has no gravity: held rise intent moves it up or down,
+            // and the surface holds it with its head out of the water.
+            let centre = body.position();
+            let swim_depth = alive
+                .then(|| {
+                    crate::water::swim_depth(
+                        self.content.waters(),
+                        [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z],
+                    )
+                })
+                .flatten();
+            let vertical_velocity = if let Some(depth) = swim_depth {
+                let rise = if stunned { 0 } else { state.rise.get() };
+                crate::water::swim_vertical_velocity(depth, rise)
+            } else if alive && !stunned && state.jump_pending && is_grounded(&self.world, body)? {
+                JUMP_VELOCITY_UNITS_PER_TICK
+            } else {
+                body.velocity().y
+            };
             // A protecting guard slows movement (#156): ready and grounded.
             let guarding =
                 crate::guard::guard_ready(state).is_some() && is_grounded(&self.world, body)?;
@@ -733,6 +761,9 @@ impl ZoneSimulation {
                 if guarding {
                     percent = percent * crate::GUARD_SPEED_PERCENT / 100;
                 }
+                if swim_depth.is_some() {
+                    percent = percent * crate::water::SWIM_SPEED_PERCENT / 100;
+                }
                 let [x, z] = crate::aura::scale_velocity([free.x, free.z], percent);
                 Vec3i::new(x, 0, z)
             } else {
@@ -741,6 +772,9 @@ impl ZoneSimulation {
             velocity.y = vertical_velocity;
             self.world
                 .set_velocity(body_id, velocity)
+                .map_err(physics_error)?;
+            self.world
+                .set_swimming(body_id, swim_depth.is_some())
                 .map_err(physics_error)?;
         }
         Ok(())

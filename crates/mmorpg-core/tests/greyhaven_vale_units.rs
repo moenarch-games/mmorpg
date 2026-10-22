@@ -12,7 +12,7 @@ use mmorpg_core::{
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.revision(), 22);
+    assert_eq!(content.revision(), 23);
     assert_eq!(content.rng_seed(), 0x3cbc_808b_be89_b29c);
     assert_eq!(
         content.definition(),
@@ -378,9 +378,15 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         // within 0.15 m of the analytic hills.
         let [x, y, z] = mmorpg_core::physics::to_units(creature.position);
         assert_eq!([x, z], spawn.position);
-        let ground = greyhaven_vale::hill_height(x, z);
+        // In Stillwater Lake (#274) the basin's grid samples shape the ground; its steeper
+        // banks put the heightfield triangles up to 0.5 m from the bilinear samples.
+        let (ground, tolerance) = if greyhaven_vale::stillwater_lake().contains(x, z) {
+            (greyhaven_vale::terrain().height_at(x, z), 50)
+        } else {
+            (greyhaven_vale::hill_height(x, z), 15)
+        };
         assert!(
-            (y - ground - template.half_extents[1]).abs() <= 15,
+            (y - ground - template.half_extents[1]).abs() <= tolerance,
             "{:?} at {y} on {ground}",
             spawn.id
         );

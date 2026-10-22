@@ -176,7 +176,7 @@ fn standalone_settlement_has_no_live_zone_or_content_effect() {
     )
     .unwrap();
     assert_eq!(zone.snapshot().unwrap(), before);
-    assert_eq!(zone.content().revision(), 22);
+    assert_eq!(zone.content().revision(), 23);
     assert_eq!(
         zone.content().fingerprint(),
         greyhaven_vale::content().fingerprint()

@@ -37,14 +37,20 @@ fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
             ];
             let height =
                 grid.heights[usize::try_from(row * i32::from(grid.columns) + column).unwrap()];
-            if x.abs().max(z.abs()) <= 12_500 {
+            // Stillwater Lake's basin (#274) is the one dip in the original valley.
+            let basin = |x: i32| greyhaven_vale::lake_depth(x, z) > 0;
+            if x.abs().max(z.abs()) <= 12_500 && !basin(x) {
                 assert_eq!(height, 0, "the original valley stays flat at {x}, {z}");
             }
             tallest = tallest.max(height);
             // The cave's floor drops away under its walls, where nothing walks.
             let walled =
                 |x: i32| GREYFANG.flattens(x, z) || GREYFANG.flattens(x + terrain::STEP, z);
-            if column + 1 < i32::from(grid.columns) && !walled(x) {
+            if column + 1 < i32::from(grid.columns)
+                && !walled(x)
+                && !basin(x)
+                && !basin(x + terrain::STEP)
+            {
                 let next = grid.heights
                     [usize::try_from(row * i32::from(grid.columns) + column + 1).unwrap()];
                 steepest = steepest.max(i64::from((next - height).abs()));

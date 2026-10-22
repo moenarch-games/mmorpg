@@ -36,8 +36,9 @@ pub mod units;
 /// hoist, a moving platform (#56); revision 19 adds the mill's loading dock and its ramps
 /// (#59); revision 20 adds the Redbrand watch post, a destructible structure (#305); revision 21
 /// adds two heavy crates at Millbrook Farm, movable props (#58); revision 22 makes Garrick
-/// Redbrand a shared boss with his Redbrand Whirl and a 2 min respawn (#276).
-pub const REVISION: u64 = 22;
+/// Redbrand a shared boss with his Redbrand Whirl and a 2 min respawn (#276); revision 23
+/// deepens Stillwater Lake into a 9 m basin under an authoritative water volume (#274).
+pub const REVISION: u64 = 23;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -480,6 +481,44 @@ pub fn hill_height(x: i32, z: i32) -> i32 {
     i32::try_from(terrain::HILL_UNITS * noise * weight / (1_024 * 1_024)).unwrap_or(0)
 }
 
+/// Stillwater Lake's authoritative water (#274): the ellipse the clients draw, its surface
+/// 0.15 m above the flat ground.
+#[must_use]
+pub fn stillwater_lake() -> crate::WaterVolume {
+    crate::WaterVolume {
+        name: "Stillwater Lake".to_owned(),
+        centre: lake::CENTRE,
+        radii: lake::RADII,
+        surface: lake::SURFACE,
+    }
+}
+
+/// Stillwater Lake's basin (#274).
+pub mod lake {
+    pub const CENTRE: [i32; 2] = [5_500, -5_500];
+    pub const RADII: [i32; 2] = [2_200, 1_600];
+    pub const SURFACE: i32 = 15;
+    /// The basin falls linearly from the shallow rim to this depth (9 m) at the centre …
+    pub const DEPTH: i64 = 900;
+    /// … starting at this fraction of the ellipse (Q10): the outer fifth stays ankle-deep.
+    pub const RIM_Q10: i64 = 819;
+}
+
+/// How far (units) the lake basin lowers the ground at `(x, z)`.
+#[must_use]
+pub fn lake_depth(x: i32, z: i32) -> i32 {
+    let dx = i128::from(x) - i128::from(lake::CENTRE[0]);
+    let dz = i128::from(z) - i128::from(lake::CENTRE[1]);
+    let (rx, rz) = (i128::from(lake::RADII[0]), i128::from(lake::RADII[1]));
+    // The normalised ellipse distance in Q10.
+    let squared = (dx * dx * rz * rz + dz * dz * rx * rx) * (1 << 20) / (rx * rx * rz * rz);
+    let distance = i64::try_from(squared.isqrt()).unwrap_or(i64::MAX);
+    if distance >= lake::RIM_Q10 {
+        return 0;
+    }
+    i32::try_from(lake::DEPTH * (lake::RIM_Q10 - distance) / lake::RIM_Q10).unwrap_or(0)
+}
+
 /// The outer valley's terrain grid (#159), sampled from [`hill_height`].
 #[must_use]
 pub fn terrain() -> Terrain {
@@ -493,7 +532,7 @@ pub fn terrain() -> Terrain {
                 if cave::GREYFANG.flattens(x, z) {
                     0
                 } else {
-                    hill_height(x, z)
+                    hill_height(x, z) - lake_depth(x, z)
                 }
             })
         })
@@ -914,7 +953,8 @@ pub fn content_with_definition(
             .with_platforms(vec![MILL_HOIST])?
             .with_ramps(MILL_RAMPS.to_vec())?
             .with_structures(structure_sites(), watch_post())?
-            .with_routines(units::routines(), units::closed_at_night())?,
+            .with_routines(units::routines(), units::closed_at_night())?
+            .with_waters(vec![stillwater_lake()])?,
     ))
 }
 
