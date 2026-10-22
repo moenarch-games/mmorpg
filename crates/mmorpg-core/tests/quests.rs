@@ -349,8 +349,8 @@ fn content_validates_quests_and_binds_them_to_its_identity() {
     assert!(base.with_quests(0, quests()).is_err(), "revision zero");
 
     let hosted = greyhaven_vale::content();
-    assert_eq!(hosted.revision(), 24);
-    assert_eq!(hosted.quests().len(), 10);
+    assert_eq!(hosted.revision(), 25);
+    assert_eq!(hosted.quests().len(), 11);
     assert_eq!(hosted.rng_seed(), greyhaven_vale::RNG_SEED);
 }
 

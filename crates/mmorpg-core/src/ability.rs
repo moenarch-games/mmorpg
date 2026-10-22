@@ -8,7 +8,7 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 8;
+pub const ABILITY_CATALOG_REVISION: u64 = 9;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
@@ -244,6 +244,16 @@ pub enum AbilityEffect {
         radius: i32,
         knockback: i32,
     },
+    /// A creature's overhead smash (#160): `damage` + `per_level` to every living player it can
+    /// see within `range` and `half_angle` degrees of its facing, each knocked `knockback`
+    /// units away from it. The caster keeps its facing through the wind-up.
+    Smash {
+        damage: [u16; 2],
+        per_level: u16,
+        range: i32,
+        half_angle: u16,
+        knockback: i32,
+    },
     /// A breath in front of the caster (#292): `damage` + `per_level` to every hostile unit it
     /// can see within `range` and `half_angle` degrees of its facing, then a snare of `percent`.
     Cone {
@@ -316,6 +326,7 @@ impl Ability {
             | AbilityEffect::Blast { .. }
             | AbilityEffect::Charge { .. }
             | AbilityEffect::Stomp { .. }
+            | AbilityEffect::Smash { .. }
             | AbilityEffect::Beam { .. }
             | AbilityEffect::Chain { .. } => return None,
         };
@@ -435,6 +446,8 @@ pub mod ids {
     pub const LIGHTNING_BEAM: AbilityId = AbilityId::new(22);
     pub const CHAIN_LIGHTNING: AbilityId = AbilityId::new(23);
     pub const REDBRAND_WHIRL: AbilityId = AbilityId::new(24);
+    /// The Redbrand Brute's slow, telegraphed overhead smash (#160).
+    pub const OVERHEAD_SMASH: AbilityId = AbilityId::new(25);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -451,7 +464,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 24] = [
+pub const ABILITY_CATALOG: [Ability; 25] = [
     ability(
         1,
         "Heroic Strike",
@@ -840,6 +853,26 @@ pub const ABILITY_CATALOG: [Ability; 24] = [
             knockback: 200,
         },
     ),
+    // The Redbrand Brute's overhead smash (#160): a 2 s wind-up with its facing locked, then a
+    // heavy blow in a 3.5 m arc ahead of it that knocks its victims back 2 m. Stepping aside,
+    // behind it or out of reach avoids it.
+    ability(
+        25,
+        "Overhead Smash",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(60),
+        450,
+        AbilityRange::Melee,
+        AbilityEffect::Smash {
+            damage: [16, 22],
+            per_level: 0,
+            range: 350,
+            half_angle: 50,
+            knockback: 200,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -983,6 +1016,21 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 radius,
                 knockback,
             ],
+            AbilityEffect::Smash {
+                damage,
+                per_level,
+                range,
+                half_angle,
+                knockback,
+            } => vec![
+                19,
+                damage[0].into(),
+                damage[1].into(),
+                per_level.into(),
+                range,
+                half_angle.into(),
+                knockback,
+            ],
             AbilityEffect::Cone {
                 damage,
                 per_level,
@@ -1059,7 +1107,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(25)), None);
+        assert_eq!(ability_by_id(AbilityId::new(26)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG

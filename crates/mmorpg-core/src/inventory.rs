@@ -6,8 +6,9 @@ use std::{error::Error, fmt};
 use crate::equipment::{EquipmentSlot, ItemStats};
 
 pub const INVENTORY_SLOTS: usize = 16;
-/// Revision 3 adds the Wolf Pelt quest item (#25); revision 4 the Sunken Relic (#274).
-pub const ITEM_CATALOG_REVISION: u64 = 4;
+/// Revision 3 adds the Wolf Pelt quest item (#25); revision 4 the Sunken Relic (#274); revision 5
+/// the three level 6 rewards of *Deeper into the Hollow* (#160).
+pub const ITEM_CATALOG_REVISION: u64 = 5;
 /// Re-send unchanged bags every ten ticks so a lost change self-heals.
 pub const INVENTORY_RESEND_TICKS: u64 = 10;
 
@@ -41,7 +42,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 11] = [
+pub const ITEM_CATALOG: [ItemTemplate; 14] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -158,6 +159,43 @@ pub const ITEM_CATALOG: [ItemTemplate; 11] = [
         max_stack: 1,
         slot: None,
         stats: ItemStats::NONE,
+    },
+    // Level 6 rewards of *Deeper into the Hollow* (#160), one per class's primary stat.
+    ItemTemplate {
+        id: ItemId::new(12),
+        name: "Brute-Breaker Mace",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        stats: ItemStats {
+            stamina: 2,
+            strength: 5,
+            agility: 0,
+            intellect: 0,
+        },
+    },
+    ItemTemplate {
+        id: ItemId::new(13),
+        name: "Greyfang Scout Jerkin",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::Chest),
+        stats: ItemStats {
+            stamina: 2,
+            strength: 0,
+            agility: 4,
+            intellect: 0,
+        },
+    },
+    ItemTemplate {
+        id: ItemId::new(14),
+        name: "Hollow-Delver's Cowl",
+        max_stack: 1,
+        slot: Some(EquipmentSlot::Head),
+        stats: ItemStats {
+            stamina: 2,
+            strength: 0,
+            agility: 0,
+            intellect: 4,
+        },
     },
 ];
 

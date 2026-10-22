@@ -21,6 +21,7 @@ fn wandering_wolf(template: CreatureTemplate) -> Arc<ZoneContent> {
         vec![template],
         vec![CreatureSpawn {
             wander_radius: WANDER_RADIUS,
+            levels: None,
             ..arena::spawn(1, WOLF, HOME)
         }],
         vec![],

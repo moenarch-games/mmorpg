@@ -33,6 +33,9 @@ pub mod templates {
     pub const HILL_OGRE: CreatureTemplateId = CreatureTemplateId::new(13);
     /// A movable crate (#58) that knockbacks and blasts slide.
     pub const HEAVY_CRATE: CreatureTemplateId = CreatureTemplateId::new(14);
+    /// The Greyfang cavern's heavy shield-bearers (#160): slow overhead smashes, and arrows
+    /// and bolts at their front stop on their shields.
+    pub const REDBRAND_BRUTE: CreatureTemplateId = CreatureTemplateId::new(15);
 }
 
 /// Default respawn time: 60 s.
@@ -53,6 +56,8 @@ const RAT: [i32; 3] = [25, 20, 25];
 const HUMANOID: [i32; 3] = [30, 90, 30];
 const LURKER: [i32; 3] = [35, 80, 35];
 const GARRICK: [i32; 3] = [40, 100, 40];
+/// A broad-shouldered Redbrand, still smaller than a large creature (#160).
+const BRUTE: [i32; 3] = [38, 96, 38];
 const CRATE_BOX: [i32; 3] = [35, 35, 35];
 const BARREL_BOX: [i32; 3] = [30, 45, 30];
 /// A fence section runs along X at facing 0.
@@ -79,7 +84,7 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 14] = {
+const TEMPLATES: [TemplateRow; 15] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
     use CreatureFamily::{Boar, Marauder, Mirefin, Ogre, Redbrand, Vermin, Wolf};
     use crate::PropKind;
@@ -102,8 +107,29 @@ const TEMPLATES: [TemplateRow; 14] = {
         (HILL_OGRE, "Hill Ogre", Ogre, Aggressive, [5, 5], false, 300, 0, [9, 15], 1, 84, RESPAWN_TICKS, OGRE),
         // A movable prop (#58): knockbacks slide it; it breaks like a crate.
         (HEAVY_CRATE, "Heavy Crate", CreatureFamily::Prop, Prop(PropKind::HeavyCrate), [1, 1], false, 30, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, CRATE_BOX),
+        // The Greyfang cavern's shield-bearer (#160): twice a level 5 bandit's health, heavier
+        // and slower blows, and an Overhead Smash.
+        (REDBRAND_BRUTE, "Redbrand Brute", Redbrand, Aggressive, [5, 5], false, 215, 0, [7, 12], 0, 84, RESPAWN_TICKS, BRUTE),
     ]
 };
+
+/// The Greyfang cavern (#160) as `(spawn id, template, feet XZ, facing, levels)`: Redbrands
+/// at levels 4–5 hold the outer cavern and the inner chamber, a Brute in each; the inner
+/// Brute guards the sealed threshold. They wander only [`CAVERN_WANDER_RADIUS_UNITS`].
+#[rustfmt::skip]
+const CAVERN: [(u32, CreatureTemplateId, [i32; 2], u16, [u8; 2]); 6] = {
+    use templates::*;
+    [
+        (650, REDBRAND_BRUTE, [6_100, -13_700], 0, [5, 5]),
+        (651, REDBRAND_BANDIT, [5_300, -13_500], 0, [4, 5]),
+        (652, REDBRAND_CROSSBOWMAN, [5_100, -14_100], 16_384, [4, 5]),
+        (653, REDBRAND_CROSSBOWMAN, [6_500, -14_100], 49_152, [4, 5]),
+        (654, REDBRAND_BANDIT, [7_450, -13_450], 49_152, [4, 5]),
+        (655, REDBRAND_BRUTE, [7_650, -13_800], 49_152, [5, 5]),
+    ]
+};
+/// Cavern Redbrands keep to their rock.
+pub const CAVERN_WANDER_RADIUS_UNITS: i32 = 200;
 
 /// Breakable props (#288) as `(spawn id, template, feet XZ, facing)`: crates and barrels by
 /// Greyhaven's smithy and houses, crates, barrels and fences at Millbrook Farm, and powder
@@ -308,7 +334,20 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
             position,
             facing,
             wander_radius: WANDER_RADIUS_UNITS,
+            levels: None,
         })
+        .chain(
+            CAVERN
+                .iter()
+                .map(|&(id, template, position, facing, levels)| CreatureSpawn {
+                    id: CreatureId::new(id),
+                    template,
+                    position,
+                    facing,
+                    wander_radius: CAVERN_WANDER_RADIUS_UNITS,
+                    levels: Some(levels),
+                }),
+        )
         .chain(
             PROPS
                 .iter()
@@ -318,6 +357,7 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
                     position,
                     facing,
                     wander_radius: 0,
+                    levels: None,
                 }),
         )
         .collect()
@@ -354,7 +394,17 @@ pub fn creature_abilities() -> Vec<(CreatureTemplateId, crate::AbilityId)> {
             crate::ability::ids::CROSSBOW_BOLT,
         ),
         (templates::HILL_OGRE, crate::ability::ids::STOMP),
+        (
+            templates::REDBRAND_BRUTE,
+            crate::ability::ids::OVERHEAD_SMASH,
+        ),
     ]
+}
+
+/// The Redbrand Brute's shield stops arrows and bolts at its front (#160).
+#[must_use]
+pub fn shielded() -> Vec<CreatureTemplateId> {
+    vec![templates::REDBRAND_BRUTE]
 }
 
 /// Garrick Redbrand is the shared outdoor boss (#276): +60% health and +10% damage per extra

@@ -57,6 +57,7 @@ pub fn spawn(id: u32, template: CreatureTemplateId, position: [i32; 2]) -> Creat
         position,
         facing: 0,
         wander_radius: 0,
+        levels: None,
     }
 }
 

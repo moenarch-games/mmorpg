@@ -40,8 +40,9 @@ pub mod units;
 /// Redbrand a shared boss with his Redbrand Whirl and a 2 min respawn (#276); revision 23
 /// deepens Stillwater Lake into a 9 m basin under an authoritative water volume (#274);
 /// revision 24 sinks the Sunken Shrine and its flooded cave into it, with quest 10 and the
-/// swimming lurkers (#274).
-pub const REVISION: u64 = 24;
+/// swimming lurkers (#274); revision 25 garrisons the Greyfang cave as Redbrand Hollow's outer
+/// cavern with Redbrand Brutes, seals its deeper threshold and adds quest 11 (#160).
+pub const REVISION: u64 = 25;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -125,6 +126,8 @@ pub mod ids {
     /// The Greyfang cave's rock walls and roof slab (#159).
     pub const CAVE_WALLS: RangeInclusive<u32> = 540..=546;
     pub const CAVE_ROOF: u32 = 547;
+    /// The sealed threshold to Redbrand Hollow's deeper cave, in the inner chamber (#160).
+    pub const CAVE_THRESHOLD: u32 = 548;
     /// The Sunken Shrine (#274): its ruins and altar, its cave's rock walls and roof slabs.
     /// Stand-in boxes until the asset-tooling shrine kit (#345) maps these ranges.
     pub const SHRINE_RUINS: RangeInclusive<u32> = 550..=557;
@@ -843,6 +846,7 @@ fn colliders() -> Vec<StaticCollider> {
     }));
     colliders.extend(inn::colliders(*ids::INN_PARTS.start()));
     colliders.extend(cave::GREYFANG.colliders(*ids::CAVE_WALLS.start()));
+    colliders.push(cave::threshold(ids::CAVE_THRESHOLD));
     colliders.extend(shrine::ruins(*ids::SHRINE_RUINS.start()));
     colliders.extend(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()));
     colliders.extend(shrine::roof(*ids::SHRINE_CAVE_ROOF.start(), |x, z| {
@@ -976,6 +980,7 @@ pub fn content_with_definition(
             .with_loot_tables(crate::LOOT_CATALOG_REVISION, tables)?
             .with_creature_abilities(crate::ABILITY_CATALOG_REVISION, units::creature_abilities())?
             .with_bosses(units::bosses())?
+            .with_shielded(units::shielded())?
             .with_vendors(crate::VENDOR_CATALOG_REVISION, units::vendors())?
             .with_quests(crate::QUEST_CATALOG_REVISION, quests::quests())?
             .with_doors(vec![inn::door(ids::INN_DOOR)])?

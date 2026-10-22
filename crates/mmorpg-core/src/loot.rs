@@ -5,7 +5,7 @@ use std::{error::Error, fmt, sync::LazyLock};
 
 use crate::{CreatureTemplateId, Inventory, InventoryError, ItemId, ItemStack, item_template};
 
-pub const LOOT_CATALOG_REVISION: u64 = 4;
+pub const LOOT_CATALOG_REVISION: u64 = 5;
 pub const MAX_LOOT_OUTCOMES: usize = 4;
 
 /// One weighted outcome: no ordinary item, or one bounded stack.
@@ -210,8 +210,9 @@ impl fmt::Display for LootTableError {
 impl Error for LootTableError {}
 
 /// Authored starter rewards; revision 2 adds the equipment drops of humanoids, revision 3
-/// the Redbrand crossbowmen (#286), revision 4 the hill ogre (#297).
-static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 9]> = LazyLock::new(|| {
+/// the Redbrand crossbowmen (#286), revision 4 the hill ogre (#297), revision 5 the Redbrand Brute
+/// (#160).
+static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 10]> = LazyLock::new(|| {
     use crate::greyhaven_vale::units::templates::*;
     let fur = |weight, quantity| LootOutcome::Item {
         weight,
@@ -273,6 +274,18 @@ static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 9]> = LazyLock::new(|
                     gear(buckler, 1),
                     gear(trousers, 1),
                     fur(1, [1, 2]),
+                    nothing(3),
+                ],
+            ),
+        ),
+        (
+            REDBRAND_BRUTE,
+            table(
+                [8, 14],
+                &[
+                    gear(buckler, 1),
+                    gear(shortsword, 1),
+                    gear(tunic, 1),
                     nothing(3),
                 ],
             ),

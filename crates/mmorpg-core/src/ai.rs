@@ -311,10 +311,24 @@ impl ZoneSimulation {
                 spawn.wander_radius,
             ),
             CreatureAi::Engaged => match chase {
-                // A casting creature stands and faces its target.
+                // A casting creature stands and faces its target; a smash (#160) keeps the
+                // facing it wound up with, so stepping aside dodges it.
                 Some((_, to)) if casting => {
+                    let locked = creature.cast.is_some_and(|cast| {
+                        cast.elapsed > 0
+                            && crate::ability_by_id(cast.ability).is_some_and(|ability| {
+                                matches!(ability.effect, crate::AbilityEffect::Smash { .. })
+                            })
+                    });
                     let (dx, dz) = offset(here, to);
-                    ([0, 0], yaw_from_vector(dx, dz))
+                    (
+                        [0, 0],
+                        if locked {
+                            None
+                        } else {
+                            yaw_from_vector(dx, dz)
+                        },
+                    )
                 }
                 Some((_, _)) if route.is_some() => {
                     let (dx, dz) = offset(here, route.unwrap_or(here));

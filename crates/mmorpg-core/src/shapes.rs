@@ -64,18 +64,64 @@ impl ZoneSimulation {
         range: i32,
         half_angle: u16,
     ) -> Result<Vec<EntityRef>, ZoneError> {
-        let caster = EntityRef::Player(player_id);
         let facing = self
             .players
             .get(&player_id)
             .ok_or_else(|| ZoneError::new("unknown player"))?
             .facing;
+        self.units_in_cone(
+            EntityRef::Player(player_id),
+            facing,
+            range,
+            half_angle,
+            |unit| self.hostile_to(player_id, unit),
+        )
+    }
+
+    /// A creature's cone (the Redbrand Brute's Overhead Smash, #160): living players it can see
+    /// within `range` and `half_angle` degrees of its facing, in `EntityRef` order.
+    pub(crate) fn creature_cone_victims(
+        &self,
+        creature_id: crate::CreatureId,
+        range: i32,
+        half_angle: u16,
+    ) -> Result<Vec<EntityRef>, ZoneError> {
+        let facing = self
+            .creatures
+            .get(&creature_id)
+            .ok_or_else(|| ZoneError::new("unknown creature"))?
+            .facing;
+        self.units_in_cone(
+            EntityRef::Creature(creature_id),
+            facing,
+            range,
+            half_angle,
+            |unit| match unit {
+                EntityRef::Player(id) => self
+                    .players
+                    .get(&id)
+                    .is_some_and(|player| player.is_alive()),
+                _ => false,
+            },
+        )
+    }
+
+    /// Units passing `wanted` that `caster` can see within `range` and `half_angle` degrees of
+    /// `facing`, in `EntityRef` order.
+    fn units_in_cone(
+        &self,
+        caster: EntityRef,
+        facing: u16,
+        range: i32,
+        half_angle: u16,
+        wanted: impl Fn(EntityRef) -> bool,
+    ) -> Result<Vec<EntityRef>, ZoneError> {
         let forward = ahead(facing);
         let min_cos = f32::from(half_angle).to_radians().cos();
         let centre = self.unit_position(caster)?;
         let mut found = Vec::new();
         for unit in self.interest.near(centre[0], centre[2], range) {
-            if !self.hostile_to(player_id, unit) {
+            if !wanted(unit) {
                 continue;
             }
             let position = self.unit_position(unit)?;
