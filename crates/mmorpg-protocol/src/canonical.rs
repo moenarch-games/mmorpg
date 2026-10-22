@@ -8,8 +8,8 @@ use mmorpg_core::{
     CanonicalPlayerAbilities, CanonicalPlayerCombat, CanonicalPlayerSnapshot,
     CanonicalZoneSnapshot, CastState, ClassChoice, Cooldown, CreatureAi, CreatureId, CreatureLife,
     EntityRef, MAX_AURAS, MAX_CHAT_PER_TICK, MAX_COOLDOWNS, MAX_CREATURE_SPAWNS,
-    MAX_EVENTS_PER_PLAYER, MAX_PENDING_INTENTS, MAX_PLAYERS_PER_ZONE, MAX_THREAT_ENTRIES,
-    PlayerIntent, ThreatEntry,
+    MAX_ENCOUNTER_PLAYERS, MAX_EVENTS_PER_PLAYER, MAX_PENDING_INTENTS, MAX_PLAYERS_PER_ZONE,
+    MAX_THREAT_ENTRIES, PlayerIntent, ThreatEntry,
 };
 
 use crate::ProtocolError;
@@ -48,6 +48,7 @@ const DESPAWNED: u8 = 3;
 const IDLE: u8 = 1;
 const ENGAGED: u8 = 2;
 const EVADING: u8 = 3;
+const RALLYING: u8 = 4;
 
 pub fn encode_canonical_snapshot(
     snapshot: &CanonicalZoneSnapshot,
@@ -393,6 +394,7 @@ fn encode_creature(
         CreatureAi::Idle { timer, destination } => (IDLE, timer, destination),
         CreatureAi::Engaged => (ENGAGED, 0, None),
         CreatureAi::Evading { ticks } => (EVADING, ticks, None),
+        CreatureAi::Rallying { ticks, point } => (RALLYING, ticks, Some(point)),
     };
     payload.push(ai);
     payload.extend_from_slice(&timer.to_be_bytes());
@@ -420,7 +422,21 @@ fn encode_creature(
     let abilities = &creature.abilities;
     payload.extend_from_slice(&abilities.ability_timer.to_be_bytes());
     encode_cast(payload, abilities.cast);
-    encode_auras(payload, &abilities.auras)
+    encode_auras(payload, &abilities.auras)?;
+    payload.push(u8::from(creature.encounter.is_some()));
+    if let Some(encounter) = &creature.encounter {
+        for players in [&encounter.participants, &encounter.contributors] {
+            payload.push(encode_u8_count(
+                players.len(),
+                MAX_ENCOUNTER_PLAYERS,
+                "boss encounter exceeds its capacity",
+            )?);
+            for player in players {
+                payload.extend_from_slice(&player.to_be_bytes());
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot, ProtocolError> {
@@ -846,6 +862,7 @@ fn decode_creature(
         (IDLE, timer, destination) => CreatureAi::Idle { timer, destination },
         (ENGAGED, 0, None) => CreatureAi::Engaged,
         (EVADING, ticks, None) => CreatureAi::Evading { ticks },
+        (RALLYING, ticks, Some(point)) => CreatureAi::Rallying { ticks, point },
         _ => return Err(ProtocolError::new("malformed creature AI state")),
     };
     let threat_count = decode_u8_count(
@@ -882,6 +899,27 @@ fn decode_creature(
         cast: decode_cast(payload, offset)?,
         auras: decode_auras(payload, offset)?,
     };
+    let encounter = if read_bool(payload, offset)? {
+        let mut lists = [Vec::new(), Vec::new()];
+        for players in &mut lists {
+            let count = decode_u8_count(
+                payload,
+                offset,
+                MAX_ENCOUNTER_PLAYERS,
+                "boss encounter exceeds its capacity",
+            )?;
+            for _ in 0..count {
+                players.push(u32::from_be_bytes(take(payload, offset)?));
+            }
+        }
+        let [participants, contributors] = lists;
+        Some(mmorpg_core::BossEncounter {
+            participants,
+            contributors,
+        })
+    } else {
+        None
+    };
     Ok(CanonicalCreatureSnapshot {
         generation,
         creature_id,
@@ -898,6 +936,7 @@ fn decode_creature(
         tapped_by,
         loot,
         abilities,
+        encounter,
     })
 }
 
@@ -1440,6 +1479,10 @@ mod tests {
                     combat_timer: 150,
                     tapped_by: Some(7),
                     abilities: CanonicalCreatureAbilities::default(),
+                    encounter: Some(mmorpg_core::BossEncounter {
+                        participants: vec![7],
+                        contributors: vec![7],
+                    }),
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
@@ -1460,6 +1503,7 @@ mod tests {
                     combat_timer: 0,
                     tapped_by: Some(8),
                     abilities: CanonicalCreatureAbilities::default(),
+                    encounter: None,
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
@@ -1480,6 +1524,7 @@ mod tests {
                     combat_timer: 0,
                     tapped_by: None,
                     abilities: CanonicalCreatureAbilities::default(),
+                    encounter: None,
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
@@ -1497,6 +1542,7 @@ mod tests {
                     combat_timer: 0,
                     tapped_by: None,
                     abilities: CanonicalCreatureAbilities::default(),
+                    encounter: None,
                 },
             ],
             pieces: vec![mmorpg_core::CanonicalPiece {

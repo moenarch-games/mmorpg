@@ -8,7 +8,10 @@ use crate::physics::{RigidBody, Vec3i};
 use crate::entity::body_id;
 use crate::snapshot::{CreatureAi, ThreatEntry};
 use crate::zone::{physics_error, vector};
-use crate::{CreatureId, CreatureSpawn, CreatureTemplate, EntityRef, ZoneError, ZoneSimulation};
+use crate::{
+    CreatureId, CreatureSpawn, CreatureTemplate, CreatureTemplateId, EntityRef, ZoneError,
+    ZoneSimulation,
+};
 
 /// Creatures chase at 19 units per tick (5.7 m/s), slower than a running player.
 pub const CREATURE_RUN_SPEED_UNITS_PER_TICK: i32 = 19;
@@ -70,11 +73,39 @@ pub(crate) struct CreatureState {
     pub(crate) cast: Option<crate::CastState>,
     /// Auras in slot order.
     pub(crate) auras: Vec<crate::Aura>,
+    /// A boss's current attempt (#276): locked scaling and contributors.
+    pub(crate) encounter: Option<crate::BossEncounter>,
 }
 
 impl CreatureState {
     pub(crate) const fn is_alive(&self) -> bool {
         matches!(self.life, Life::Alive)
+    }
+
+    /// Maximum health under a boss attempt's locked profile (#276), else the template's.
+    pub(crate) fn max_health(
+        &self,
+        content: &crate::ZoneContent,
+        template: &crate::CreatureTemplate,
+    ) -> u32 {
+        let base = template.max_health(self.level);
+        match (content.boss(template.id), &self.encounter) {
+            (Some(rules), Some(encounter)) => encounter.scale_health(rules, base),
+            _ => base,
+        }
+    }
+
+    /// `amount` of its damage under a boss attempt's locked profile (#276).
+    pub(crate) fn scale_damage(
+        &self,
+        content: &crate::ZoneContent,
+        template: CreatureTemplateId,
+        amount: u32,
+    ) -> u32 {
+        match (content.boss(template), &self.encounter) {
+            (Some(rules), Some(encounter)) => encounter.scale_damage(rules, amount),
+            _ => amount,
+        }
     }
 
     /// The unit that currently leads the threat table: highest threat, ties
@@ -246,6 +277,7 @@ impl ZoneSimulation {
                 ability_timer: 0,
                 cast: None,
                 auras: Vec::new(),
+                encounter: None,
             },
         );
         Ok(())

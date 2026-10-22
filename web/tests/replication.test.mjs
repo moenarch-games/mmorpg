@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v30.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v31.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({
@@ -245,7 +245,7 @@ describe("Rust/browser snapshot contract", () => {
       [QUESTS + 9, 9, "too many markers"],
       [QUESTS + 12, 4, "Inconsistent quest marker"],
       [QUESTS + 14, 1, "Inconsistent quest marker"],
-      [EVENTS + 1 + 7 * 14 + 1, 24, "Unknown ability"],
+      [EVENTS + 1 + 7 * 14 + 1, 25, "Unknown ability"],
       [EVENTS + 1 + 7 * 14 + 1, 0, "Unknown ability"],
       [EVENTS + 1 + 8 * 14 + 13, 1, "Malformed"],
       [EVENTS + 1 + 13 * 14 + 1, 1, "flags"],

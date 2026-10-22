@@ -304,8 +304,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 30;
-const SCHEMA_VERSION = 30;
+const WIRE_VERSION = 31;
+const SCHEMA_VERSION = 31;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -410,6 +410,7 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [21, instant(300, "snare", 90)],
   [22, { castTicks: 60, channel: true, cooldown: 600, aura: null, auraTicks: 0 }],
   [23, { castTicks: 45, channel: false, cooldown: 360, aura: null, auraTicks: 0 }],
+  [24, { castTicks: 45, channel: false, cooldown: 450, aura: null, auraTicks: 0 }],
 ]);
 /** Mana: 110 + 22 per level above 1; rage and focus: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

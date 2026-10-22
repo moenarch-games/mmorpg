@@ -8,7 +8,7 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 7;
+pub const ABILITY_CATALOG_REVISION: u64 = 8;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
@@ -434,6 +434,7 @@ pub mod ids {
     pub const FROST_BREATH: AbilityId = AbilityId::new(21);
     pub const LIGHTNING_BEAM: AbilityId = AbilityId::new(22);
     pub const CHAIN_LIGHTNING: AbilityId = AbilityId::new(23);
+    pub const REDBRAND_WHIRL: AbilityId = AbilityId::new(24);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -450,7 +451,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 23] = [
+pub const ABILITY_CATALOG: [Ability; 24] = [
     ability(
         1,
         "Heroic Strike",
@@ -821,6 +822,24 @@ pub const ABILITY_CATALOG: [Ability; 23] = [
             radius: 800,
         },
     ),
+    // Garrick Redbrand's one telegraphed special (#276, Atlas 5.2.14): a 1.5 s wind-up, then a
+    // spinning sweep around him; stepping out of its ring avoids it.
+    ability(
+        24,
+        "Redbrand Whirl",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(45),
+        450,
+        AbilityRange::SelfCentred,
+        AbilityEffect::Stomp {
+            damage: [16, 22],
+            per_level: 0,
+            radius: 400,
+            knockback: 200,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1040,7 +1059,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(24)), None);
+        assert_eq!(ability_by_id(AbilityId::new(25)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG
