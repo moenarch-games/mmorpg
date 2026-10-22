@@ -35,6 +35,7 @@ import {
 } from "./character-selection";
 import "./styles.css";
 import { frameDeltaSeconds } from "./demo-clock";
+import { markStartup, startupMarks } from "./startup-marks";
 import { installCharacterTurntable } from "./character-turntable";
 import {
   characterRosterStorageKey,
@@ -496,7 +497,7 @@ for (const button of [requireElement<HTMLButtonElement>("#world-settings"), requ
 // Debug-only camera and public-source hooks for deterministic acceptance; `?debug` enables them.
 if (new URLSearchParams(window.location.search).has("debug")) {
   Object.assign(window, { __valeDebug: { ...worldView.debugApi(), worldSource: () => (activeWorld ?? chosenWorld())?.source ?? null,
-    loadingReport: () => ({ ...loading, startArea: startArea(), art: worldView.artProgress(startArea()), allArt: worldView.artProgress(null) }) } });
+    loadingReport: () => ({ ...loading, marks: startupMarks(), startArea: startArea(), art: worldView.artProgress(startArea()), allArt: worldView.artProgress(null) }) } });
 }
 
 const selectionStageNodes: RendererSceneNode[] = [
@@ -894,7 +895,10 @@ function updateEntryButton(): void {
     void enterWorld();
   }
   const server = chosenServer();
-  enterWorldButton.disabled = chosenWorld() === null || joining !== null || !artReady();
+  const ready = artReady();
+  if (ready) { markStartup("art-settled"); }
+  enterWorldButton.disabled = chosenWorld() === null || joining !== null || !ready;
+  if (!enterWorldButton.disabled) { markStartup("enter-enabled"); }
   let entryLabel = "Enter World";
   if (arenaEntry.selected) { entryLabel = "Join Battle Royale"; }
   if (joining) { entryLabel = "Entering…"; }
@@ -1159,6 +1163,7 @@ function frame(now: number) {
       showScenarioStatus();
       if (loading.entry !== null && loading.playableMs === null) {
         loading.playableMs = Math.round(now - loading.entry);
+        markStartup("first-frame");
         console.info(`Greyhaven playable ${loading.playableMs} ms after Enter World; ${loading.bytesBeforeEntry} bytes fetched before entry.`);
       }
     } catch (error) {
@@ -1243,6 +1248,7 @@ async function enterWorld(): Promise<void> {
   if (creationDraft || !target || entryState.phase === "world" || joining || !artReady()) {
     return;
   }
+  markStartup("entry-click");
   loading.entry = performance.now();
   loading.bytesBeforeEntry = fetchedBytes();
   loading.playableMs = null;
@@ -1257,6 +1263,7 @@ async function enterWorld(): Promise<void> {
     const character = selectedCharacter();
     const entryCharacter = arenaEntry.selected ? arenaEntry.character(character) : character;
     await target.source.join({ id: entryCharacter.id, classId: entryCharacter.classId, sex: entryCharacter.sex });
+    markStartup("joined");
   } catch (error) {
     console.error(error);
     worldFailure = `Could not enter the world: ${errorMessage(error)}`;
@@ -1614,9 +1621,11 @@ function loadPageWorld(): Promise<LocalWorld> {
 worldView.onArtProgress = updateEntryButton;
 void loadPageWorld().then((loaded) => {
   worldView.load(loaded);
+  markStartup("view-loaded");
   world = loaded;
   refreshSelectionPresentation();
   renderRoster();
+  markStartup("picker-ready");
   onlineWorld = online.kind === "online" ? createOnlineWorld(loaded, online.server) : null;
   arenaEntry.ready(loaded.catalog);
   refreshArenaWorld();
