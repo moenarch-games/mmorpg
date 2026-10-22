@@ -38,11 +38,11 @@ gilrs = "=0.11.2"
 input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "2c3c64902eaa72f266d3c1310715d54c82e353c2" }
 
 [build-dependencies]
-sha2 = "=0.11.0"
+sha2 = "=0.11.1"
 serde_json = "=1.0.154"
 
 [dev-dependencies]
-sha2 = "=0.11.0"
+sha2 = "=0.11.1"
 mmorpg-wasm = { path = "../mmorpg-wasm" }
 mmorpg-game-server = { path = "../mmorpg-game-server" }
 wtransport = { version = "=0.7.2", default-features = false, features = ["ring", "self-signed", "quinn"] }
