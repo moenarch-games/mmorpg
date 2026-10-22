@@ -40,6 +40,7 @@ const DAMAGE_OBSERVED: u8 = 17;
 const STRIKE_SWEPT: u8 = 18;
 const BLOCKED: u8 = 19;
 const GUARD_BROKEN: u8 = 20;
+const LOST_INTEREST: u8 = 21;
 const CRITICAL_FLAG: u8 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -341,6 +342,7 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             u16::from_be_bytes([objective, count]),
         ),
         ZoneEvent::QuestCompleted { quest } => (QUEST_COMPLETED, quest.get(), None, None, 0),
+        ZoneEvent::LostInterest { source } => (LOST_INTEREST, 0, Some(source), None, 0),
     };
     payload.push(kind);
     payload.push(flags);
@@ -539,6 +541,14 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                     count,
                 }
             }
+        }
+        LOST_INTEREST => {
+            damage(false)?;
+            let source = source.ok_or_else(invalid)?;
+            if target.is_some() || amount != 0 {
+                return Err(invalid());
+            }
+            ZoneEvent::LostInterest { source }
         }
         _ => return Err(ProtocolError::new("unknown event kind")),
     })
