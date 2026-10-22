@@ -432,7 +432,7 @@ impl ZoneSimulation {
                     level: creature.level,
                     health_percent: health_percent(
                         creature.health,
-                        template.max_health(creature.level),
+                        creature.max_health(&self.content, template),
                     ),
                     flags: EntityFlags {
                         dead: !alive,

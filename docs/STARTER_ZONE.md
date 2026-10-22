@@ -64,7 +64,7 @@ Map north is −Z (the Redbrand cliffs); yaw 0 faces +Z. Content revision 5 (`mm
 | Field Marauder | Marauder | 2–3 | 60 (+16) | 3–6 | 66 | aggressive |
 | Mirefin Lurker | Mirefin | 3 | 70 | 3–6 | 60 | aggressive |
 | Redbrand Bandit | Redbrand | 3–5 | 75 (+16) | 4–7 | 66 | aggressive |
-| Garrick Redbrand | Redbrand | 5 elite | 420 | 8–14 | 72 | aggressive, 5 min respawn |
+| Garrick Redbrand | Redbrand | 5 elite | 420 | 8–14 | 72 | aggressive, shared boss (#276): 2 min respawn |
 | Hill Ogre | Ogre | 5 | 300 | 9–15 | 84 | aggressive, large (#297) |
 
 Creatures respawn 60 s after death unless noted and wander within 6 m of their spawn point. These numbers are a starting point for tuning.
@@ -159,7 +159,7 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 - Collect progress is the bag's count of the item (capped at the required count), so selling, moving or a full bag change it, and the turn-in consumes exactly the required units. The quest item (Wolf Pelt, item catalog 3) drops as one unit on the corpse of the source template's creature when its tapper still needs more at the moment it dies, beside the ordinary loot and without drawing from the loot stream; it is claimed with the corpse. A quest item stays in the bag after an abandon.
 - Markers rank `?` (a quest ending here is complete) over `!` (a quest starting here is available) over grey `?` (a quest ending here is active). They are computed from the log, the bag and the content for every quest giver and ender and sent with the sheet, not per entity record.
 - Quest XP uses the same level-up path as kill XP; the reward choice is one unit of the chosen item and must be valid when choices exist (0 otherwise). A turn-in that cannot place the item or credit the copper changes nothing.
-- Garrick Redbrand is the chain's boss as authored in revision 3; his own ability kit is not part of this step.
+- Garrick Redbrand is the chain's boss as authored in revision 3. Since revision 22 (#276) he is a shared outdoor boss: his first engagement locks +60% health and +10% damage per extra participant already fighting the camp (up to five), every player who damages him or heals someone he fights earns the kill objective, he resets fully after an evade, his camp rallies at the mine mouth for 20 s when he falls, his corpse stays until he returns 2 min later, and he telegraphs Redbrand Whirl (a 1.5 s wind-up, then a 4 m ring that hurts and knocks back).
 - Browser: Talk (T) opens the dialog of the selected or nearest projected quest NPC (quests offered, ready with the reward choice, or in progress), Quests (L) the log with Abandon, the HUD tracks every active objective, and `!`/`?` markers float over NPCs on screen. Progress the zone confirms between two received sheets briefly highlights its tracker line, a small non-blocking notice reports a completed objective or quest, and the ender's `?` pulses when it becomes ready (#164); the first sheet after a reset or reconnect only synchronizes, so nothing is announced twice. The native client decodes the quest sheet but does not present it yet.
 
 ### Player-scoped projection

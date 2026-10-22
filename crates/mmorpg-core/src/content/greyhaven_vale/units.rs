@@ -37,8 +37,8 @@ pub mod templates {
 
 /// Default respawn time: 60 s.
 pub const RESPAWN_TICKS: u32 = 1_800;
-/// Garrick Redbrand respawns after 5 min.
-pub const GARRICK_RESPAWN_TICKS: u32 = 9_000;
+/// Garrick Redbrand returns 2 min after his death (#276, Atlas 5.1.75); his corpse stays until then.
+pub const GARRICK_RESPAWN_TICKS: u32 = 3_600;
 /// A broken prop stands again after 5 min, once its spot is clear (#288).
 pub const PROP_RESPAWN_TICKS: u32 = 9_000;
 /// Idle creatures wander within 6 m of their spawn point.
@@ -335,11 +335,14 @@ pub(super) fn npcs() -> Vec<Npc> {
         .collect()
 }
 
-/// Creature abilities of this revision: Garrick's kit belongs to the quests
-/// and boss step.
+/// Creature abilities of this revision.
 #[must_use]
 pub fn creature_abilities() -> Vec<(CreatureTemplateId, crate::AbilityId)> {
     vec![
+        (
+            templates::GARRICK_REDBRAND,
+            crate::ability::ids::REDBRAND_WHIRL,
+        ),
         (templates::MIREFIN_LURKER, crate::ability::ids::MUCK_BOLT),
         (
             templates::REDBRAND_BANDIT,
@@ -351,6 +354,21 @@ pub fn creature_abilities() -> Vec<(CreatureTemplateId, crate::AbilityId)> {
         ),
         (templates::HILL_OGRE, crate::ability::ids::STOMP),
     ]
+}
+
+/// Garrick Redbrand is the shared outdoor boss (#276): +60% health and +10% damage per extra
+/// participant (up to five), and his camp rallies at the mine mouth for 20 s when he falls.
+#[must_use]
+pub fn bosses() -> Vec<crate::BossRules> {
+    vec![crate::BossRules {
+        template: templates::GARRICK_REDBRAND,
+        health_percent_per_extra: 60,
+        damage_percent_per_extra: 10,
+        engage_radius: 2_500,
+        reaction_radius: 3_000,
+        reaction_ticks: 600,
+        rally_point: [0, -10_100],
+    }]
 }
 
 /// Innkeeper Bram Tolliver (NPC 3) sells the starter stock.

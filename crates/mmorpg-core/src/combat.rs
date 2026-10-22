@@ -590,6 +590,10 @@ impl ZoneSimulation {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
         }
+        // A resting boss locks its attempt's profile before the first damage resolves (#276).
+        if creature.ai != CreatureAi::Engaged && self.is_boss(creature_id)? {
+            self.engage(creature_id, source, true)?;
+        }
         let amount = self.absorb(target, source, amount);
         self.update_player(player_id, |player| {
             player.combat_timer = COMBAT_LINGER_TICKS;
@@ -605,6 +609,12 @@ impl ZoneSimulation {
         if !prop {
             creature.add_threat(source, dealt);
             creature.tapped_by.get_or_insert(player_id);
+        }
+        // Damage is meaningful contribution to a boss attempt (#276, 5.1.74).
+        if dealt > 0
+            && let Some(encounter) = creature.encounter.as_mut()
+        {
+            encounter.contribute(player_id);
         }
         let dead = creature.health == 0;
         self.notify(
@@ -780,7 +790,17 @@ impl ZoneSimulation {
             &BTreeSet::new(),
             ZoneEvent::AttackPerformed { source, target },
         );
-        let swing = roll_swing(&mut self.rng, template.damage_at(level));
+        let swing = match roll_swing(&mut self.rng, template.damage_at(level)) {
+            // A boss hits harder under a larger attempt's profile (#276).
+            Swing::Hit { amount, critical } => Swing::Hit {
+                amount: self.creatures.get(&creature_id).map_or(amount, |creature| {
+                    u16::try_from(creature.scale_damage(&content, template.id, u32::from(amount)))
+                        .unwrap_or(u16::MAX)
+                }),
+                critical,
+            },
+            Swing::Miss => Swing::Miss,
+        };
         if let Some(creature) = self.creatures.get_mut(&creature_id) {
             creature.swing_timer = template.swing_ticks;
             creature.combat_timer = COMBAT_LINGER_TICKS;
@@ -923,6 +943,11 @@ impl ZoneSimulation {
         creature.combat_timer = 0;
         creature.reset_abilities();
         creature.loot = creature.tapped_by.and(loot);
+        let contributors = creature
+            .encounter
+            .take()
+            .map(|encounter| encounter.contributors)
+            .unwrap_or_default();
         let tapper = creature.tapped_by;
         let level = creature.level;
         let generation = creature.generation;
@@ -951,7 +976,59 @@ impl ZoneSimulation {
             }
             self.credit_kill(player_id, template, creature_id, generation, now)?;
         }
+        // Every meaningful boss contributor earns the kill objective, across parties
+        // (#276, 5.1.74); `credit_kill` records each life once per quest log.
+        for player_id in contributors {
+            if Some(player_id) != tapper
+                && self.kill_credit_eligible(player_id, [position.x, position.y, position.z])?
+            {
+                self.credit_kill(player_id, template, creature_id, generation, now)?;
+            }
+        }
+        if let Some(rules) = self.content.boss(template).copied() {
+            self.boss_falls(&rules, [position.x, position.z])?;
+        }
         Ok(())
+    }
+
+    /// The camp reacts to its boss's actual death (#276, 5.1.79): idle creatures of its family
+    /// within the reaction radius run most of the way to the rally point and hold it.
+    fn boss_falls(&mut self, rules: &crate::BossRules, at: [i32; 2]) -> Result<(), ZoneError> {
+        let content = Arc::clone(&self.content);
+        let family = content
+            .creature_template(rules.template)
+            .map(|template| template.family);
+        for entity in self.interest.near(at[0], at[1], rules.reaction_radius) {
+            let EntityRef::Creature(other) = entity else {
+                continue;
+            };
+            let (spawn, template) = Self::creature_content(&content, other)?;
+            if Some(template.family) != family || template.id == rules.template {
+                continue;
+            }
+            let Some(creature) = self.creatures.get_mut(&other) else {
+                continue;
+            };
+            if !creature.is_alive() || !matches!(creature.ai, CreatureAi::Idle { .. }) {
+                continue;
+            }
+            let home = spawn.position;
+            let point = [
+                home[0] + (rules.rally_point[0] - home[0]) * 2 / 3,
+                home[1] + (rules.rally_point[1] - home[1]) * 2 / 3,
+            ];
+            creature.ai = CreatureAi::Rallying {
+                ticks: rules.reaction_ticks,
+                point,
+            };
+        }
+        Ok(())
+    }
+
+    /// Whether the creature's template is a boss (#276).
+    pub(crate) fn is_boss(&self, creature_id: CreatureId) -> Result<bool, ZoneError> {
+        let (spawn, _) = Self::creature_content(&self.content, creature_id)?;
+        Ok(self.content.boss(spawn.template).is_some())
     }
 
     /// A dead player keeps its body where it fell, stops attacking, lets go
@@ -1061,7 +1138,19 @@ impl ZoneSimulation {
                 continue;
             };
             let entity = EntityRef::Creature(creature_id);
+            // A boss's corpse stays at its camp until it returns (#276, 5.1.75); its loot still
+            // expires with the ordinary corpse window.
+            let (spawn, template) = Self::creature_content(&content, creature_id)?;
+            let lingers = |died_at: u64| {
+                content.boss(spawn.template).is_some()
+                    && now < died_at.saturating_add(u64::from(template.respawn_ticks))
+            };
             if let Life::Corpse { died_at, .. } = creature.life
+                && now >= died_at.saturating_add(u64::from(CORPSE_TICKS))
+                && lingers(died_at)
+            {
+                creature.loot = None;
+            } else if let Life::Corpse { died_at, .. } = creature.life
                 && now >= died_at.saturating_add(u64::from(CORPSE_TICKS))
             {
                 creature.life = Life::Despawned { died_at };

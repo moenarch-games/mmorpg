@@ -17,6 +17,7 @@
 //! the assist radius engage the same target (one level, no chains). Steering
 //! sets body velocity only; physics resolves obstacles and contact.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::physics::Vec3i;
@@ -94,6 +95,8 @@ fn steer(dx: i32, dz: i32, speed: i32) -> [i32; 2] {
 /// truncating integer steering can neither stall it just outside the reach
 /// nor leave it there: a step of at least this length always moves it.
 const CHASE_CLOSE_IN_UNITS: i64 = 10;
+/// A creature that held a boss's rally walks home within this many ticks (#276).
+const RALLY_RETURN_TICKS: u16 = 600;
 
 /// Chase velocity toward a target `(dx, dz)` away: run speed while beyond
 /// `reach`, then a last step that ends inside it, and zero once inside.
@@ -183,6 +186,9 @@ impl ZoneSimulation {
                 self.route_waypoint(centre, half, to, creature_reach(target))?
             }
             (Some(CreatureAi::Evading { .. }), _) => self.route_waypoint(centre, half, home, 0)?,
+            (Some(CreatureAi::Rallying { point, .. }), _) => {
+                self.route_waypoint(centre, half, point, 0)?
+            }
             _ => None,
         };
         // An engaged creature that keeps fighting may cast its ability.
@@ -199,6 +205,11 @@ impl ZoneSimulation {
             creature.tapped_by = None;
             creature.combat_timer = 0;
             creature.reset_abilities();
+            // A boss's attempt ends here (#276, 5.1.77): its profile and contributors go, and
+            // it rests at full unscaled health only once home.
+            if creature.encounter.take().is_some() {
+                creature.health = creature.health.min(template.max_health(creature.level));
+            }
         }
         let speed = crate::aura::speed_percent(&creature.auras);
         let stunned = crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun);
@@ -237,6 +248,29 @@ impl ZoneSimulation {
                 }
                 None => ([0, 0], None),
             },
+            // Rallying after its boss fell (#276): run to the rally point, hold it, then walk home.
+            CreatureAi::Rallying { ticks: 0, .. } => {
+                creature.ai = CreatureAi::Idle {
+                    timer: RALLY_RETURN_TICKS,
+                    destination: Some(home),
+                };
+                ([0, 0], None)
+            }
+            CreatureAi::Rallying { ticks, point } => {
+                creature.ai = CreatureAi::Rallying {
+                    ticks: ticks - 1,
+                    point,
+                };
+                if distance_squared(here, point) <= i64::from(ARRIVAL_RADIUS_UNITS).pow(2) {
+                    ([0, 0], None)
+                } else {
+                    let (dx, dz) = route.map_or_else(|| offset(here, point), |to| offset(here, to));
+                    (
+                        steer(dx, dz, CREATURE_RUN_SPEED_UNITS_PER_TICK),
+                        yaw_from_vector(dx, dz),
+                    )
+                }
+            }
             CreatureAi::Evading { ticks } => {
                 let (dx, dz) = offset(here, home);
                 let arrived =
@@ -332,11 +366,15 @@ impl ZoneSimulation {
         if !creature.is_alive() || matches!(creature.ai, CreatureAi::Evading { .. }) {
             return Ok(());
         }
-        let was_idle = matches!(creature.ai, CreatureAi::Idle { .. });
+        let was_idle = matches!(
+            creature.ai,
+            CreatureAi::Idle { .. } | CreatureAi::Rallying { .. }
+        );
         creature.add_threat(target, 0);
         creature.ai = CreatureAi::Engaged;
         if was_idle {
             self.arm_creature_ability(id)?;
+            self.lock_encounter(id, target)?;
         }
         if !(was_idle && assist) {
             return Ok(());
@@ -376,6 +414,66 @@ impl ZoneSimulation {
                 self.engage(other, target, false)?;
             }
         }
+        Ok(())
+    }
+}
+
+impl ZoneSimulation {
+    /// A resting boss's first engagement (#276, 5.1.76): snapshots the players actually fighting
+    /// it, the puller and those already in a threat table of its family within the engage
+    /// radius, and locks its scaled health for the attempt before any damage resolves.
+    fn lock_encounter(&mut self, id: CreatureId, target: EntityRef) -> Result<(), ZoneError> {
+        let content = Arc::clone(&self.content);
+        let (spawn, template) = Self::creature_content(&content, id)?;
+        let Some(rules) = content.boss(spawn.template) else {
+            return Ok(());
+        };
+        let here = self.unit_position(EntityRef::Creature(id))?;
+        let mut participants = BTreeSet::new();
+        if let EntityRef::Player(player) = target {
+            participants.insert(player);
+        }
+        for entity in self.interest.near(here[0], here[2], rules.engage_radius) {
+            let EntityRef::Creature(other) = entity else {
+                continue;
+            };
+            let Some(fighter) = self.creatures.get(&other) else {
+                continue;
+            };
+            if other == id || !fighter.is_alive() || fighter.ai != CreatureAi::Engaged {
+                continue;
+            }
+            let (_, other_template) = Self::creature_content(&content, other)?;
+            if other_template.family != template.family {
+                continue;
+            }
+            participants.extend(
+                fighter
+                    .threat
+                    .iter()
+                    .filter_map(|entry| match entry.entity {
+                        EntityRef::Player(player) => Some(player),
+                        _ => None,
+                    }),
+            );
+        }
+        let Some(creature) = self.creatures.get_mut(&id) else {
+            return Ok(());
+        };
+        if participants.is_empty() {
+            return Ok(());
+        }
+        let base = template.max_health(creature.level);
+        let encounter = crate::BossEncounter {
+            participants: participants
+                .into_iter()
+                .take(crate::MAX_ENCOUNTER_PLAYERS)
+                .collect(),
+            contributors: Vec::new(),
+        };
+        let scaled = encounter.scale_health(rules, base);
+        creature.health = creature.health.saturating_add(scaled.saturating_sub(base));
+        creature.encounter = Some(encounter);
         Ok(())
     }
 }
