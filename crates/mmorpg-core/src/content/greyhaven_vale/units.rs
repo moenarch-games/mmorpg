@@ -187,15 +187,15 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (227, FIELD_MARAUDER, [9_200, 7_200], 0),
         (228, FIELD_MARAUDER, [5_800, 8_000], 16_384),
         (229, FIELD_MARAUDER, [7_800, 8_000], 49_152),
-        // Stillwater Lake: mirefin lurkers in and around the shallow water.
-        (300, MIREFIN_LURKER, [4_200, -5_200], 16_384),
+        // Stillwater Lake: mirefin lurkers on the shallow rim, clear of the deep basin (#274).
+        (300, MIREFIN_LURKER, [4_200, -4_600], 16_384),
         (301, MIREFIN_LURKER, [5_000, -4_300], 32_768),
         (302, MIREFIN_LURKER, [6_200, -4_400], 32_768),
         (303, MIREFIN_LURKER, [7_200, -5_000], 49_152),
         (304, MIREFIN_LURKER, [7_000, -6_300], 57_344),
         (305, MIREFIN_LURKER, [5_800, -6_800], 0),
-        (306, MIREFIN_LURKER, [4_600, -6_300], 8_192),
-        (307, MIREFIN_LURKER, [5_500, -5_500], 24_576),
+        (306, MIREFIN_LURKER, [4_280, -6_580], 8_192),
+        (307, MIREFIN_LURKER, [7_400, -5_600], 24_576),
         // Redbrand Hollow: the bandit camp between the cliffs.
         (400, REDBRAND_BANDIT, [-1_000, -7_800], 0),
         (401, REDBRAND_BANDIT, [1_000, -7_800], 0),

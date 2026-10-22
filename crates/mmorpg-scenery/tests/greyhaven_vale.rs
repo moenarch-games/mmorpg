@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0xc152_8a39_6796_a0f5;
+const STABLE_HASH: u64 = 0xa36d_c369_aa42_3980;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -102,7 +102,7 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
         format!("{:#018x}", greyhaven_vale::content().fingerprint()),
         recorded.trim()
     );
-    assert_eq!(scenery.content_revision, 22);
+    assert_eq!(scenery.content_revision, 23);
 }
 
 #[test]
@@ -279,7 +279,17 @@ fn relief_is_gentle_inside_and_encloses_the_vale_with_mountains() {
         for column in 0..grid.columns {
             let (vertex, _) = grid.vertex(column, row).unwrap();
             let height = vertex[1];
-            assert!((-WALKABLE_RELIEF_UNITS..=MOUNTAIN_PEAK_UNITS).contains(&height));
+            // Stillwater Lake's basin (#274) sinks the ground up to 9 m under the water.
+            let floor = if scenery
+                .water
+                .iter()
+                .any(|water| water.contains(vertex[0], vertex[2]))
+            {
+                -WALKABLE_RELIEF_UNITS - 900
+            } else {
+                -WALKABLE_RELIEF_UNITS
+            };
+            assert!((floor..=MOUNTAIN_PEAK_UNITS).contains(&height));
             if beyond_playable(vertex[0], vertex[2]) >= 4_000 {
                 assert!(height >= 1_500, "({}, {}) = {height}", vertex[0], vertex[2]);
             }

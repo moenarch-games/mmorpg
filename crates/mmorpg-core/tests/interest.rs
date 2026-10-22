@@ -41,6 +41,8 @@ fn zone_at(positions: &[[i32; 3]]) -> ZoneSimulation {
             forward: 0,
             strafe: 0,
             jump_pending: false,
+            rise: 0,
+            breath: mmorpg_core::Breath::FULL,
             last_sequence: 3,
             spawn_slot: u16::try_from(slot).unwrap(),
             inventory: mmorpg_core::Inventory::default(),

@@ -305,6 +305,17 @@ impl UnitPresenter {
             if let Some(kind) = self.imported_kind(entity, &unit.record) {
                 // Only the viewer's guard is projected; a held one raises the shield (#156).
                 let guarding = viewer && snapshot.viewer.guard.raised.is_some();
+                // Swimmers (#274) have no swim clips yet: the in-place fallback (Atlas 6.6.41)
+                // treads with the idle clip and strokes with the walk, never a jump or fall
+                // from ascending or descending. The mode is the zone's, from the projected
+                // position and the content's water volumes.
+                let swimming = matches!(entity, EntityRef::Player(_))
+                    && mmorpg_core::WaterMode::of_player(
+                        self.content.waters(),
+                        unit.record.position,
+                    )
+                    .swims();
+                let vertical = if swimming { 0. } else { loc.vertical };
                 let durations = &self.durations;
                 let (clip, time) = self.playbacks.entry(entity).or_default().advance(
                     kind.clips(),
@@ -315,7 +326,7 @@ impl UnitPresenter {
                             .unwrap_or(0.)
                     },
                     loc.forward.hypot(loc.right),
-                    loc.vertical,
+                    vertical,
                     dead,
                     seconds,
                     input.dt,

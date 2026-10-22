@@ -304,6 +304,8 @@ impl ZoneSimulation {
         {
             creature.facing = facing;
         }
+        // Creatures do not swim (#274): they stop where the water gets too deep to wade.
+        let velocity = self.keep_out_of_deep_water(here, velocity);
         if teleport_home {
             self.world
                 .set_position(

@@ -236,7 +236,11 @@ fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain)
         Vector::new(width / UNITS_PER_METRE, 1.0, depth / UNITS_PER_METRE),
     );
     // Flat cells are left to the floor half-space, whose exact queries keep resting bodies
-    // still; parry's heightfield contacts let them sink by fractions of a unit (#159).
+    // still; parry's heightfield contacts let them sink by fractions of a unit (#159). Flat cells
+    // next to a basin stay: a body straddling its edge has the floor opened under it (#274).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    let cell_centre =
+        |index: usize, origin: i32| origin + index as i32 * terrain.step + terrain.step / 2;
     for row in 0..rows - 1 {
         for column in 0..columns - 1 {
             let flat = [
@@ -247,7 +251,14 @@ fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain)
             ]
             .iter()
             .all(|&(r, c)| terrain.heights[r * columns + c] == 0);
-            if flat {
+            let by_basin = || {
+                let (x, z) = (
+                    cell_centre(column, terrain.origin[0]),
+                    cell_centre(row, terrain.origin[1]),
+                );
+                terrain.low_within(x, z, terrain.step) < 0
+            };
+            if flat && !by_basin() {
                 field.set_cell_status(
                     row,
                     column,
@@ -430,6 +441,41 @@ impl World {
         Ok(())
     }
 
+    pub fn set_swimming(&mut self, id: BodyId, swimming: bool) -> Result<(), PhysicsError> {
+        let body = self
+            .bodies
+            .get_mut(&id)
+            .filter(|body| body.is_moving())
+            .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
+        body.swimming = swimming;
+        Ok(())
+    }
+
+    /// The floor half-space's collider, when `body` at `position` stands over terrain that dips
+    /// below it (a lake basin, #274): there only the heightfield is ground. Every grid cell
+    /// under the body's footprint counts, since the triangulated heightfield may dip below zero
+    /// anywhere in a cell with a sample below it; elsewhere it never dips under the floor.
+    fn open_floor(&self, body: &RigidBody, position: [f32; 3]) -> Option<ColliderHandle> {
+        let ground = self.ground.as_ref()?;
+        #[allow(clippy::cast_possible_truncation)]
+        let (x, z) = (position[0].round() as i32, position[2].round() as i32);
+        let reach = body.half_extents.x.max(body.half_extents.z) + 1;
+        if ground.terrain.low_within(x, z, reach) >= 0 {
+            return None;
+        }
+        self.handles.get(&ground.id).map(|handles| handles.collider)
+    }
+
+    fn without_open_floor(
+        filter: QueryFilter<'_>,
+        floor: Option<ColliderHandle>,
+    ) -> QueryFilter<'_> {
+        match floor {
+            Some(floor) => filter.exclude_collider(floor),
+            None => filter,
+        }
+    }
+
     /// Rebuilds the Rapier world from the bodies in ID order. Rapier's broad phase depends on
     /// the history of insertions, removals and moves, and the controller breaks exact ties
     /// between equally near contacts by its traversal order; rebuilding first makes each
@@ -532,8 +578,10 @@ impl World {
             // into the ground, which the controller answers with a nudge back up. A body just
             // above the ground settles onto it.
             let mut settle = 0.0;
-            match self.ground_gap(&body, body.position) {
-                Some(gap) if velocity[1] <= 0.0 => {
+            match (!body.swimming).then(|| self.ground_gap(&body, body.position)) {
+                // A swimmer (#274) keeps the vertical velocity the zone gave it.
+                None => {}
+                Some(Some(gap)) if velocity[1] <= 0.0 => {
                     velocity[1] = 0.0;
                     if gap > GAP_TOLERANCE_UNITS {
                         settle = -gap;
@@ -687,7 +735,10 @@ impl World {
             &self.queries,
             &self.world.bodies,
             &self.world.colliders,
-            QueryFilter::default().exclude_rigid_body(handle),
+            Self::without_open_floor(
+                QueryFilter::default().exclude_rigid_body(handle),
+                self.open_floor(body, body.position),
+            ),
         );
         let movement = self.controller.move_shape(
             self.world.integration_parameters.dt,
@@ -709,7 +760,11 @@ impl World {
     /// How far (units) static ground within the support reach lies below `body` at
     /// `position`, beyond the controller's contact offset.
     fn ground_gap(&self, body: &RigidBody, position: [f32; 3]) -> Option<f32> {
-        self.support_gap(body, position, QueryFilter::only_fixed())
+        self.support_gap(
+            body,
+            position,
+            Self::without_open_floor(QueryFilter::only_fixed(), self.open_floor(body, position)),
+        )
     }
 
     /// [`Self::ground_gap`] against the colliders `filter` admits.

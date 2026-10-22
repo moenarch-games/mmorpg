@@ -146,6 +146,17 @@ fn boxes(zone: &ZoneSimulation) -> Vec<([f32; 3], [f32; 3])> {
     boxes
 }
 
+/// Whether the floor half-space is open at `(x, z)`: over terrain that dips below it (Stillwater
+/// Lake's basin, #274) only the heightfield is ground, which the sink check covers. Mirrors the
+/// Rapier backend: it opens under a footprint over any terrain cell with a sample below zero.
+fn open_floor(zone: &ZoneSimulation, x: f32, z: f32, radius: f32) -> bool {
+    #[allow(clippy::cast_possible_truncation)]
+    let (x, z, reach) = (x.round() as i32, z.round() as i32, radius.ceil() as i32 + 1);
+    zone.definition()
+        .terrain()
+        .is_some_and(|terrain| terrain.low_within(x, z, reach) < 0)
+}
+
 /// Whether `unit`'s capsule overlaps a content box, door leaf, prop or the terrain beyond the
 /// tolerances (the ground's authored overlap excepted).
 fn embedded(zone: &ZoneSimulation, unit: &UnitBody, boxes: &[([f32; 3], [f32; 3])]) -> bool {
@@ -163,10 +174,12 @@ fn embedded(zone: &ZoneSimulation, unit: &UnitBody, boxes: &[([f32; 3], [f32; 3]
     if y + CONTACT_OFFSET_UNITS - half[1].max(radius) < ground - authored - 2.0 {
         return true;
     }
+    let open = open_floor(zone, x, z, radius);
     boxes.iter().any(|&(box_centre, box_half)| {
         let ground = box_centre[1] + box_half[1] <= 0.0;
-        capsule_box_gap([x, y + CONTACT_OFFSET_UNITS, z], half, box_centre, box_half)
-            < -(PENETRATION_TOLERANCE_UNITS + if ground { authored } else { 0.0 })
+        !(ground && open)
+            && capsule_box_gap([x, y + CONTACT_OFFSET_UNITS, z], half, box_centre, box_half)
+                < -(PENETRATION_TOLERANCE_UNITS + if ground { authored } else { 0.0 })
     })
 }
 
@@ -202,9 +215,13 @@ fn check_invariants(
             let centre = [x, y + CONTACT_OFFSET_UNITS, z];
             let mut deepest = None;
             let mut closest = f32::INFINITY;
+            let open = open_floor(zone, x, z, radius);
             for &(box_centre, box_half) in &boxes {
-                let gap = capsule_box_gap(centre, half, box_centre, box_half);
                 let ground = box_centre[1] + box_half[1] <= 0.0;
+                if ground && open {
+                    continue;
+                }
+                let gap = capsule_box_gap(centre, half, box_centre, box_half);
                 let allowed = PENETRATION_TOLERANCE_UNITS + if ground { authored } else { 0.0 };
                 if gap < -allowed && deepest.is_none_or(|(depth, _)| -gap > depth) {
                     deepest = Some((-gap, (box_centre, box_half)));
@@ -218,8 +235,9 @@ fn check_invariants(
                     check.placed_inside.insert(unit.unit);
                 } else if !check.placed_inside.contains(&unit.unit) {
                     return Err(format!(
-                        "{:?} penetrates box {box_centre:?}±{box_half:?} by {depth} at tick {tick}",
-                        unit.unit
+                        "{:?} at {:?} penetrates box {box_centre:?}±{box_half:?} by {depth} at tick {tick}",
+                        unit.unit,
+                        [x, y, z]
                     ));
                 }
             }
@@ -227,11 +245,12 @@ fn check_invariants(
                 check.closest = check.closest.min(closest);
             }
             #[allow(clippy::cast_possible_truncation)]
-            let ground = zone
+            let terrain = zone
                 .physics()
                 .terrain_height(x.round() as i32, z.round() as i32)
-                .unwrap_or(0.0)
-                .max(0.0);
+                .unwrap_or(0.0);
+            // The floor half-space holds units at y = 0 except where it is open.
+            let ground = if open { terrain } else { terrain.max(0.0) };
             let bottom = centre[1] - half[1].max(radius);
             // The terrain sample is the ray height at the rounded column, so allow for its
             // slope over half a unit. The Greyhaven fixture puts every player's feet at y = 0,
@@ -242,8 +261,9 @@ fn check_invariants(
             }
             if sunk && !check.placed_inside.contains(&unit.unit) {
                 return Err(format!(
-                    "{:?} sinks {} below the ground at tick {tick}",
+                    "{:?} at {:?} (half {half:?}) sinks {} below the ground {ground} at tick {tick}",
                     unit.unit,
+                    [x, y, z],
                     ground - bottom
                 ));
             }
@@ -442,7 +462,8 @@ fn creature_divergence(a: &Trace, b: &Trace) -> (f32, usize, Option<u64>) {
 /// Query decisions on one state, by probe: the same probes on both backends must agree.
 #[derive(Debug, Default, PartialEq)]
 struct Decisions {
-    /// Units embedded in a box or hill (placed there by a fixture): grounded is not compared for them.
+    /// Units embedded in a box or hill (placed there by a fixture), or over the lake basin's
+    /// open floor (a Rapier-only workaround, #274): grounded is not compared for them.
     embedded: usize,
     grounded: BTreeMap<String, bool>,
     sight: BTreeMap<String, bool>,
@@ -464,7 +485,11 @@ fn decisions(zone: &mut ZoneSimulation) -> Result<Decisions> {
         let position = unit.body.position();
         let (x, z) = (position.x, position.z);
         // Inside a box or hill, "ground" is whichever face the penetration normal picks.
-        if embedded(zone, unit, &boxes) {
+        let half = unit.body.half_extents();
+        #[allow(clippy::cast_precision_loss)]
+        let radius = half.x.max(half.z) as f32;
+        let [ex, _, ez] = unit.body.exact_position();
+        if embedded(zone, unit, &boxes) || open_floor(zone, ex, ez, radius) {
             decisions.embedded += 1;
         } else {
             decisions

@@ -15,6 +15,7 @@ export const HEALTHY_VIEWER: ViewerState = {
   guard: { raised: null, protecting: false, broken: 0 },
   stance: null,
   combo: null,
+  breath: 900,
 };
 
 /** Nothing equipped. */

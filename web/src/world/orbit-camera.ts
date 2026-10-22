@@ -118,8 +118,11 @@ export class OrbitCamera {
   }
 }
 
-/** Held movement as semantic axes: run/backpedal, strafe, and whether any movement is held. */
-export type HeldIntent = { forward: Axis; strafe: Axis; steering: boolean };
+/**
+ * Held movement as semantic axes: run/backpedal, strafe, whether any movement is held, and the
+ * held swim ascent (Jump) or descent (#274); an absent `rise` means neither.
+ */
+export type HeldIntent = { forward: Axis; strafe: Axis; steering: boolean; rise?: Axis };
 
 export const IDLE_INTENT: HeldIntent = { forward: 0, strafe: 0, steering: false };
 
@@ -143,5 +146,5 @@ export function movementInput(
   drag: DragMode = "none",
 ): MovementInput {
   const facing = drag === "turn" ? cameraFacing : drag === "orbit" ? lastFacing : held.steering ? cameraFacing : lastFacing;
-  return { forward: held.forward, strafe: held.strafe, facing, jumps };
+  return { forward: held.forward, strafe: held.strafe, facing, jumps, ...(held.rise === undefined ? {} : { rise: held.rise }) };
 }

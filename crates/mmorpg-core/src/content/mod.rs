@@ -88,6 +88,30 @@ impl Terrain {
         i32::try_from((top * (step - fz) + bottom * fz) / (step * step)).unwrap_or(0)
     }
 
+    /// The lowest sample of the grid cells within `reach` units of `(x, z)` (a square): their
+    /// ground, triangulated or bilinear, never dips below it.
+    #[must_use]
+    pub fn low_within(&self, x: i32, z: i32, reach: i32) -> i32 {
+        let columns = i64::from(self.columns);
+        let rows = i64::from(self.rows);
+        let step = i64::from(self.step);
+        let cell = |value: i64, origin: i32, count: i64| {
+            ((value - i64::from(origin)).clamp(0, (count - 1) * step) / step).min(count - 2)
+        };
+        let span = |value: i32, origin: i32, count: i64| {
+            let (value, reach) = (i64::from(value), i64::from(reach.max(0)));
+            cell(value - reach, origin, count)..=cell(value + reach, origin, count) + 1
+        };
+        let mut low = i32::MAX;
+        for row in span(z, self.origin[1], rows) {
+            for column in span(x, self.origin[0], columns) {
+                let index = usize::try_from(row * columns + column).unwrap_or(0);
+                low = low.min(self.heights[index]);
+            }
+        }
+        low
+    }
+
     fn validate(&self) -> Result<(), ZoneError> {
         let samples = usize::from(self.columns) * usize::from(self.rows);
         let far = |origin: i32, count: u16| {

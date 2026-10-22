@@ -1455,6 +1455,7 @@ function runAction(action: GameAction): void {
     case "move.back":
     case "move.strafeLeft":
     case "move.strafeRight":
+    case "move.descend":
       return;
     case "move.jump":
       // The outbox sends one Jump per counted press; the zone decides whether it lifts off.

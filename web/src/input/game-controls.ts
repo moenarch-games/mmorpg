@@ -20,6 +20,7 @@ export const GAME_ACTIONS = [
   "move.strafeLeft",
   "move.strafeRight",
   "move.jump",
+  "move.descend",
   "target.next",
   "combat.toggleAutoAttack",
   "ability.slot1",
@@ -144,6 +145,8 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
       stick(0, "positive"),
     ]),
     action("move.jump", "Jump", "gameplay", [key("Space"), button(0)]),
+    // Held while swimming (#274): Space or A ascends (held Jump), X or R3 descends.
+    action("move.descend", "Swim down (hold)", "gameplay", [key("KeyX"), button(11)]),
     action("target.next", "Target next", "gameplay", [key("Tab"), button(5)]),
     action("combat.toggleAutoAttack", "Toggle auto-attack", "gameplay", [key("KeyF"), button(2)]),
     action("ability.slot1", "Ability 1", "gameplay", [key("Digit1"), button(12)]),
@@ -294,6 +297,8 @@ export class GameControls {
       steering: ["move.forward", "move.back", "move.strafeLeft", "move.strafeRight"].some((id) =>
         state.isHeld(id),
       ),
+      // Held Jump ascends while swimming, held Descend descends (#274).
+      rise: state.axis("move.descend", "move.jump"),
     };
   }
 }

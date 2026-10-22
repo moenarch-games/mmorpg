@@ -136,6 +136,8 @@ pub struct ViewerState {
     pub stance: Option<crate::MeleeStance>,
     /// A pending sword → Shield Bash follow-up (#157).
     pub combo: Option<crate::ComboPhase>,
+    /// Ticks of breath left, [`crate::water::BREATH_MAX_TICKS`] when full (#274).
+    pub breath: u16,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -294,6 +296,7 @@ impl ZoneSimulation {
                     },
                     stance: self.melee_stance(player_id, viewer.target)?,
                     combo: Self::combo_phase(viewer),
+                    breath: viewer.breath.remaining,
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),

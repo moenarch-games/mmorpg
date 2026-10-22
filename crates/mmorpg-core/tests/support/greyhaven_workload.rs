@@ -88,6 +88,8 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
             forward: 0,
             strafe: 0,
             jump_pending: false,
+            rise: 0,
+            breath: mmorpg_core::Breath::FULL,
             last_sequence: 0,
             spawn_slot: u16::try_from(index)?,
             inventory: mmorpg_core::Inventory::default(),

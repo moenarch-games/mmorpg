@@ -23,6 +23,8 @@ pub enum ControlAction {
     MoveLeft,
     MoveRight,
     Jump,
+    /// Held while swimming: descend (#274).
+    Descend,
     TargetNext,
     ToggleAttack,
     ReleaseSpirit,
@@ -48,12 +50,13 @@ pub enum Panel {
 
 impl ControlAction {
     /// Every control action in catalog order.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::MoveForward,
         Self::MoveBackward,
         Self::MoveLeft,
         Self::MoveRight,
         Self::Jump,
+        Self::Descend,
         Self::TargetNext,
         Self::ToggleAttack,
         Self::ReleaseSpirit,
@@ -83,6 +86,7 @@ impl ControlAction {
             Self::MoveLeft => "move.strafeLeft",
             Self::MoveRight => "move.strafeRight",
             Self::Jump => "move.jump",
+            Self::Descend => "move.descend",
             Self::TargetNext => "target.next",
             Self::ToggleAttack => "combat.toggleAutoAttack",
             Self::ReleaseSpirit => "player.releaseSpirit",
@@ -115,7 +119,8 @@ impl ControlAction {
             Self::MoveBackward => ("Move backward", GAMEPLAY, &["KeyS", "ArrowDown"]),
             Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "KeyQ", "ArrowLeft"]),
             Self::MoveRight => ("Strafe right", GAMEPLAY, &["KeyD", "KeyE", "ArrowRight"]),
-            Self::Jump => ("Jump", GAMEPLAY, &["Space"]),
+            Self::Jump => ("Jump (hold to swim up)", GAMEPLAY, &["Space"]),
+            Self::Descend => ("Swim down (hold)", GAMEPLAY, &["KeyX"]),
             Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),
             Self::ToggleAttack => ("Toggle auto-attack", GAMEPLAY, &["KeyF"]),
             Self::ReleaseSpirit => ("Release spirit", GAMEPLAY, &["KeyR"]),
@@ -361,6 +366,12 @@ impl NativeControls {
             .into_iter()
             .any(|action| self.is_held(action)),
         }
+    }
+
+    /// Held swim rise (#274): Jump ascends, Descend descends.
+    #[must_use]
+    pub fn rise(&self) -> i8 {
+        self.state.axis("move.descend", "move.jump")
     }
 
     fn apply(&mut self, decisions: &[RuntimeDecision]) {
