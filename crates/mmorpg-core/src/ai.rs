@@ -13,6 +13,11 @@
 //!   arrival reset to full health and idle. A creature still away after
 //!   10 s is moved home through the physics API.
 //!
+//! - **Trailing** (#274): an idle aquatic creature follows a submerged player
+//!   within 8 m for 6 s without combat, then loses interest and evades home.
+//!   Swimming players are never aggro candidates, and an engaged creature
+//!   drops every target it cannot fight across the water's surface.
+//!
 //! When a creature engages from idle, idle creatures of its family within
 //! the assist radius engage the same target (one level, no chains). Steering
 //! sets body velocity only; physics resolves obstacles and contact.
@@ -163,6 +168,57 @@ impl ZoneSimulation {
         {
             self.engage(id, EntityRef::Player(player), true)?;
         }
+        // Aquatic creatures (#274) trail a submerged player nearby instead, without combat.
+        let aquatic = template.family.swims();
+        if aquatic
+            && matches!(
+                self.creatures.get(&id).map(|creature| creature.ai),
+                Some(CreatureAi::Idle { .. })
+            )
+            && let Some(player) = self.trail_candidate([position.x, position.y, position.z])?
+            && let Some(creature) = self.creatures.get_mut(&id)
+        {
+            creature.ai = CreatureAi::Trailing {
+                player,
+                ticks: crate::water::TRAIL_TICKS,
+            };
+        }
+        // No combat into, out of or between submerged units (#274): an engaged creature drops
+        // every target it cannot fight, and evades once none is left.
+        if let Some(creature) = self.creatures.get(&id)
+            && creature.ai == CreatureAi::Engaged
+        {
+            let blocked: Vec<EntityRef> = creature
+                .threat
+                .iter()
+                .map(|entry| entry.entity)
+                .filter(|&entity| self.combat_blocked(EntityRef::Creature(id), entity))
+                .collect();
+            if !blocked.is_empty()
+                && let Some(creature) = self.creatures.get_mut(&id)
+            {
+                creature
+                    .threat
+                    .retain(|entry| !blocked.contains(&entry.entity));
+            }
+        }
+        // The trailed player's body while it is still worth following.
+        let trail = match self.creatures.get(&id).map(|creature| creature.ai) {
+            Some(CreatureAi::Trailing { player, ticks }) => {
+                let follows = ticks > 0
+                    && self
+                        .players
+                        .get(&player)
+                        .is_some_and(|state| state.is_alive())
+                    && self.submerged(EntityRef::Player(player));
+                if follows {
+                    Some(self.player_position(player)?)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
 
         // Read the chase target before mutating; dead or departed players
         // already left every threat table.
@@ -215,7 +271,35 @@ impl ZoneSimulation {
         let stunned = crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun);
 
         let mut teleport_home = false;
+        let mut lost_interest = None;
         let (velocity, facing) = match creature.ai {
+            // Trailing (#274): follow the submerged player, keeping clear of it, until the
+            // time runs out or it surfaces, dies or leaves; then swim home.
+            CreatureAi::Trailing { player, ticks } => match trail {
+                Some(at) => {
+                    creature.ai = CreatureAi::Trailing {
+                        player,
+                        ticks: ticks - 1,
+                    };
+                    let to = [at.x, at.z];
+                    let (dx, dz) = offset(here, to);
+                    let near = distance_squared(here, to)
+                        <= i64::from(crate::water::TRAIL_KEEP_UNITS).pow(2);
+                    (
+                        if near {
+                            [0, 0]
+                        } else {
+                            steer(dx, dz, crate::water::TRAIL_SPEED_UNITS_PER_TICK)
+                        },
+                        yaw_from_vector(dx, dz),
+                    )
+                }
+                None => {
+                    creature.ai = CreatureAi::Evading { ticks: 0 };
+                    lost_interest = Some(player);
+                    ([0, 0], None)
+                }
+            },
             // Large creatures (#297) hold their ground while idle instead of wandering, so they
             // draw nothing from the zone RNG until a fight.
             CreatureAi::Idle { .. } if template.is_large() => ([0, 0], None),
@@ -304,8 +388,27 @@ impl ZoneSimulation {
         {
             creature.facing = facing;
         }
-        // Creatures do not swim (#274): they stop where the water gets too deep to wade.
-        let velocity = self.keep_out_of_deep_water(here, velocity);
+        if let Some(player) = lost_interest {
+            self.notify(
+                player,
+                crate::ZoneEvent::LostInterest {
+                    source: EntityRef::Creature(id),
+                },
+            );
+        }
+        // Land creatures do not swim (#274): they stop where the water gets too deep to wade.
+        // Aquatic ones swim with no gravity, at the surface or down to a trailed player.
+        let (velocity, vertical) = if aquatic {
+            let feet = [position.x, position.y - half.y, position.z];
+            let goal = trail.map(|at| at.y - PLAYER_HALF_EXTENTS_UNITS[1]);
+            let swim = self.creature_swim(feet, 2 * half.y, goal);
+            self.world
+                .set_swimming(body, swim.is_some())
+                .map_err(physics_error)?;
+            (velocity, swim.unwrap_or(vertical))
+        } else {
+            (self.keep_out_of_deep_water(here, velocity), vertical)
+        };
         if teleport_home {
             self.world
                 .set_position(
@@ -336,7 +439,9 @@ impl ZoneSimulation {
             let Some(player) = self.players.get(&player_id) else {
                 continue;
             };
-            if !player.is_alive() {
+            // Swimmers start no fights (#274): deep water is the lurkers' noncombat encounter,
+            // and submerged players are out of combat's reach.
+            if !player.is_alive() || self.unit_water_mode(entity).swims() {
                 continue;
             }
             let position = self.player_position(player_id)?;
@@ -370,7 +475,7 @@ impl ZoneSimulation {
         }
         let was_idle = matches!(
             creature.ai,
-            CreatureAi::Idle { .. } | CreatureAi::Rallying { .. }
+            CreatureAi::Idle { .. } | CreatureAi::Rallying { .. } | CreatureAi::Trailing { .. }
         );
         creature.add_threat(target, 0);
         creature.ai = CreatureAi::Engaged;

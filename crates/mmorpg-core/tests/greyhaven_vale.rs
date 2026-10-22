@@ -78,7 +78,11 @@ fn content_is_a_bounded_deterministic_revision() {
             // inside the playable square.
             // Out on the hills they stand on the terrain, sunk 0.3 m below their lowest corner (#159).
             // The cave's roof rests on its walls.
-            if !ids::INN_PARTS.contains(&collider.id) && collider.id != ids::CAVE_ROOF {
+            // The Sunken Shrine (#274) stands on its flattened floor 9 m down.
+            if !ids::INN_PARTS.contains(&collider.id)
+                && collider.id != ids::CAVE_ROOF
+                && !(550..=586).contains(&collider.id)
+            {
                 let ground = definition.terrain().map_or(0, |terrain| {
                     [min, [max[0], min[1]], max, [min[0], max[1]]]
                         .iter()
@@ -299,7 +303,8 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
             "Greyfang Ridge",
             "Southmeadow Downs",
             "Hollowpine Reach",
-            "Eastwater Fen"
+            "Eastwater Fen",
+            "Sunken Shrine"
         ]
     );
     // Area bounds are inclusive; as half-open rectangles they compare with

@@ -6,8 +6,8 @@ use std::{error::Error, fmt};
 use crate::equipment::{EquipmentSlot, ItemStats};
 
 pub const INVENTORY_SLOTS: usize = 16;
-/// Revision 3 adds the Wolf Pelt quest item (#25).
-pub const ITEM_CATALOG_REVISION: u64 = 3;
+/// Revision 3 adds the Wolf Pelt quest item (#25); revision 4 the Sunken Relic (#274).
+pub const ITEM_CATALOG_REVISION: u64 = 4;
 /// Re-send unchanged bags every ten ticks so a lost change self-heals.
 pub const INVENTORY_RESEND_TICKS: u64 = 10;
 
@@ -41,7 +41,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 10] = [
+pub const ITEM_CATALOG: [ItemTemplate; 11] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -149,6 +149,13 @@ pub const ITEM_CATALOG: [ItemTemplate; 10] = [
         id: ItemId::new(10),
         name: "Wolf Pelt",
         max_stack: 10,
+        slot: None,
+        stats: ItemStats::NONE,
+    },
+    ItemTemplate {
+        id: ItemId::new(11),
+        name: "Sunken Relic",
+        max_stack: 1,
         slot: None,
         stats: ItemStats::NONE,
     },

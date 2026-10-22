@@ -423,7 +423,7 @@ fn vendor_stock_is_validated() {
         Err(VendorStockError::OfferCount)
     );
     assert_eq!(
-        VendorStock::new(&[offer(11, 1)]),
+        VendorStock::new(&[offer(12, 1)]),
         Err(VendorStockError::UnknownItem)
     );
     assert_eq!(

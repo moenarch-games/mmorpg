@@ -9,8 +9,12 @@
 //! is submerged and spends breath; out of it, breath refills. At zero breath a submerged
 //! player takes [`DROWN_DAMAGE_PERCENT`] of their maximum health every
 //! [`DROWN_INTERVAL_TICKS`] through the environmental damage path.
+//!
+//! The Sunken Shrine (#274 part 2): a volume may hold authored [`AirPocket`] boxes; a head
+//! inside one is not submerged, so breath refills there. No combat reaches into, out of or
+//! between submerged units (Atlas 5.1.43), and aquatic creatures swim like players.
 
-use crate::{PLAYER_HALF_EXTENTS_UNITS, ZoneError};
+use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError};
 
 /// Feet this far below the surface swim instead of wading (1.3 m).
 pub const SWIM_DEPTH_UNITS: i32 = 130;
@@ -30,6 +34,39 @@ pub const DROWN_DAMAGE_PERCENT: u32 = 10;
 pub const DROWN_INTERVAL_TICKS: u16 = 30;
 /// At most this many water volumes per zone.
 pub const MAX_WATER_VOLUMES: usize = 8;
+/// An idle aquatic creature notices a submerged player this close (8 m) …
+pub const TRAIL_NOTICE_UNITS: i32 = 800;
+/// … follows it for this long (6 s), then loses interest and swims home.
+pub const TRAIL_TICKS: u16 = 180;
+/// A trailing creature keeps this far from the player (2 m) and never touches it.
+pub const TRAIL_KEEP_UNITS: i32 = 200;
+/// A trailing creature swims at 3.3 m/s, slower than a swimming player (3.9 m/s).
+pub const TRAIL_SPEED_UNITS_PER_TICK: i32 = 11;
+
+/// The vertical velocity (units/tick) of a swimming creature whose feet are `depth` units
+/// below the surface, heading for feet `goal` units down: never above the floating depth.
+#[must_use]
+pub fn creature_swim_velocity(depth: i32, goal: i32) -> i32 {
+    (depth - goal.max(FLOAT_DEPTH_UNITS)).clamp(-SWIM_RISE_UNITS_PER_TICK, SWIM_RISE_UNITS_PER_TICK)
+}
+
+/// At most this many air pockets per water volume.
+pub const MAX_AIR_POCKETS: usize = 4;
+
+/// An authored breathable box inside a water volume (#274): a head inside it is not
+/// submerged. Bounds are inclusive, in units.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AirPocket {
+    pub min: [i32; 3],
+    pub max: [i32; 3],
+}
+
+impl AirPocket {
+    #[must_use]
+    pub fn contains(&self, point: [i32; 3]) -> bool {
+        (0..3).all(|axis| (self.min[axis]..=self.max[axis]).contains(&point[axis]))
+    }
+}
 
 /// An authored body of water: an axis-aligned ellipse with a flat surface.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,6 +77,8 @@ pub struct WaterVolume {
     pub radii: [i32; 2],
     /// Surface height in units.
     pub surface: i32,
+    /// Breathable boxes under the surface (#274).
+    pub air_pockets: Vec<AirPocket>,
 }
 
 impl WaterVolume {
@@ -57,6 +96,14 @@ impl WaterVolume {
             return Err(ZoneError::new(
                 "water volumes need a name and positive radii",
             ));
+        }
+        if self.air_pockets.len() > MAX_AIR_POCKETS
+            || self
+                .air_pockets
+                .iter()
+                .any(|pocket| (0..3).any(|axis| pocket.min[axis] > pocket.max[axis]))
+        {
+            return Err(ZoneError::new("water volume air pockets are invalid"));
         }
         if self
             .centre
@@ -90,15 +137,28 @@ impl WaterMode {
     /// The mode of a player-sized unit whose feet are at `feet` (units).
     #[must_use]
     pub fn of_feet(waters: &[WaterVolume], feet: [i32; 3]) -> Self {
+        Self::of_body(waters, feet, 2 * PLAYER_HALF_EXTENTS_UNITS[1])
+    }
+
+    /// The mode of a unit `height` units tall whose feet are at `feet` (units): the first
+    /// volume over its feet decides, and a head inside any air pocket (#274) is not submerged.
+    #[must_use]
+    pub fn of_body(waters: &[WaterVolume], feet: [i32; 3], height: i32) -> Self {
         let Some(water) = waters.iter().find(|water| water.contains(feet[0], feet[2])) else {
             return Self::Dry;
         };
         let depth = water.surface - feet[1];
+        let head = [feet[0], feet[1] + height, feet[2]];
         if depth <= 0 {
             Self::Dry
         } else if depth <= SWIM_DEPTH_UNITS {
             Self::Wading
-        } else if depth > 2 * PLAYER_HALF_EXTENTS_UNITS[1] {
+        } else if depth > height
+            && !waters
+                .iter()
+                .flat_map(|water| &water.air_pockets)
+                .any(|pocket| pocket.contains(head))
+        {
             Self::Submerged
         } else {
             Self::Swimming
@@ -252,9 +312,86 @@ impl crate::ZoneSimulation {
         }
     }
 
+    /// The vertical velocity of an aquatic creature `height` tall with its feet at `feet`, if
+    /// it swims there (#274): toward feet at `goal` (units, absolute) when it follows a
+    /// player, else up to the floating depth.
+    pub(crate) fn creature_swim(
+        &self,
+        feet: [i32; 3],
+        height: i32,
+        goal: Option<i32>,
+    ) -> Option<i32> {
+        let waters = self.content().waters();
+        if !WaterMode::of_body(waters, feet, height).swims() {
+            return None;
+        }
+        let surface = waters
+            .iter()
+            .find(|water| water.contains(feet[0], feet[2]))?
+            .surface;
+        let goal = goal.map_or(FLOAT_DEPTH_UNITS, |goal| surface - goal);
+        Some(creature_swim_velocity(surface - feet[1], goal))
+    }
+
     /// The water mode of a player body centred at `centre`.
     pub(crate) fn player_water_mode(&self, centre: crate::physics::Vec3i) -> WaterMode {
         WaterMode::of_player(self.content().waters(), [centre.x, centre.y, centre.z])
+    }
+
+    /// The water mode of a unit's body; NPCs and missing bodies are dry.
+    pub(crate) fn unit_water_mode(&self, unit: EntityRef) -> WaterMode {
+        if self.content().waters().is_empty() || matches!(unit, EntityRef::Npc(_)) {
+            return WaterMode::Dry;
+        }
+        let Some(body) = self.world.body(crate::entity::body_id(unit)) else {
+            return WaterMode::Dry;
+        };
+        let (centre, half) = (body.position(), body.half_extents());
+        WaterMode::of_body(
+            self.content().waters(),
+            [centre.x, centre.y - half.y, centre.z],
+            2 * half.y,
+        )
+    }
+
+    /// Whether a unit is under water (#274).
+    pub(crate) fn submerged(&self, unit: EntityRef) -> bool {
+        self.unit_water_mode(unit) == WaterMode::Submerged
+    }
+
+    /// No combat into, out of or between submerged units (#274, Atlas 5.1.43).
+    pub(crate) fn combat_blocked(&self, source: EntityRef, target: EntityRef) -> bool {
+        self.submerged(source) || self.submerged(target)
+    }
+
+    /// The nearest submerged living player within [`TRAIL_NOTICE_UNITS`] of `here` (3D),
+    /// ties to the lowest ID: what an idle aquatic creature trails (#274).
+    pub(crate) fn trail_candidate(&self, here: [i32; 3]) -> Result<Option<PlayerId>, ZoneError> {
+        let mut best: Option<(i64, PlayerId)> = None;
+        for entity in self.interest.near(here[0], here[2], TRAIL_NOTICE_UNITS) {
+            let EntityRef::Player(player_id) = entity else {
+                continue;
+            };
+            if !self
+                .players
+                .get(&player_id)
+                .is_some_and(|player| player.is_alive())
+                || !self.submerged(entity)
+            {
+                continue;
+            }
+            let at = self.player_position(player_id)?;
+            let distance = [at.x - here[0], at.y - here[1], at.z - here[2]]
+                .iter()
+                .map(|&axis| i64::from(axis).pow(2))
+                .sum::<i64>();
+            if distance <= i64::from(TRAIL_NOTICE_UNITS).pow(2)
+                && best.is_none_or(|best| (distance, player_id) < best)
+            {
+                best = Some((distance, player_id));
+            }
+        }
+        Ok(best.map(|(_, player_id)| player_id))
     }
 
     /// After the physics step: each living player's breath advances in its water mode, and
@@ -298,6 +435,10 @@ mod tests {
             centre: [0, 0],
             radii: [1_000, 500],
             surface: 15,
+            air_pockets: vec![AirPocket {
+                min: [300, -400, -100],
+                max: [500, -200, 100],
+            }],
         }]
     }
 
@@ -319,6 +460,15 @@ mod tests {
             WaterMode::Submerged
         );
         assert!(!waters[0].contains(0, 501));
+        // A head inside the air pocket breathes.
+        assert_eq!(
+            WaterMode::of_feet(&waters, [400, -500, 0]),
+            WaterMode::Swimming
+        );
+        assert_eq!(
+            WaterMode::of_feet(&waters, [700, -500, 0]),
+            WaterMode::Submerged
+        );
     }
 
     #[test]
