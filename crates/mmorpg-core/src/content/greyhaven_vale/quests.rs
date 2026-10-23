@@ -1,4 +1,4 @@
-//! The Greyhaven chain (quest catalog 2): ten quests from the outpost's
+//! The Greyhaven chain (quest catalog 3): eleven quests from the outpost's
 //! three quest givers, from the Wolfrun Woods to Garrick Redbrand and back.
 //!
 //! Marshal Elden Greywatch (NPC 1) sends new characters against the wolves
@@ -10,7 +10,7 @@ use super::{REDBRAND_HOLLOW, STILLWATER_LAKE, SUNKEN_SHRINE};
 use crate::{ItemId, NpcId, Quest, QuestId, QuestObjective, QuestRewards};
 
 use super::units::templates::{
-    FIELD_MARAUDER, GARRICK_REDBRAND, MIREFIN_LURKER, REDBRAND_BANDIT, TIMBER_WOLF,
+    FIELD_MARAUDER, GARRICK_REDBRAND, MIREFIN_LURKER, REDBRAND_BANDIT, REDBRAND_BRUTE, TIMBER_WOLF,
 };
 
 pub const MARSHAL: NpcId = NpcId::new(1);
@@ -31,6 +31,10 @@ pub const GARRICK_REDBRAND_QUEST: QuestId = QuestId::new(8);
 pub const RETURN_TO_GREYHAVEN: QuestId = QuestId::new(9);
 /// A side quest beside *Mirefin Menace* (#274): dive for the relic in the Sunken Shrine.
 pub const THE_SUNKEN_SHRINE: QuestId = QuestId::new(10);
+
+/// After Garrick (#160): break the Redbrands holding the Greyfang cavern and find the sealed
+/// way deeper.
+pub const DEEPER_INTO_THE_HOLLOW: QuestId = QuestId::new(11);
 
 /// The relic on the Sunken Shrine's altar (#274).
 pub const SUNKEN_RELIC: ItemId = ItemId::new(11);
@@ -55,7 +59,7 @@ const fn kill(template: crate::CreatureTemplateId, count: u8) -> QuestObjective 
 }
 
 #[rustfmt::skip]
-const QUESTS: [QuestRow; 10] = [
+const QUESTS: [QuestRow; 11] = [
     (
         TROUBLE_IN_THE_WOODS, "Trouble in the Woods",
         "Timber wolves prowl the Wolfrun Trail west of the gate. Thin the pack: slay six of them.",
@@ -113,6 +117,12 @@ const QUESTS: [QuestRow; 10] = [
         "Old stones lie at the bottom of Stillwater Lake, and a flooded cave runs east from them. Dive down, bring back the relic from its altar, and mind your breath.",
         MARSHAL, MARSHAL, Some(SCOUT_THE_LAKE),
         &[QuestObjective::Retrieve { item: SUNKEN_RELIC, area: SUNKEN_SHRINE }], 300, 25, &[],
+    ),
+    (
+        DEEPER_INTO_THE_HOLLOW, "Deeper into the Hollow",
+        "Garrick is gone, but his men still hold the Greyfang cave east of the hollow, and shield-bearing brutes guard a sealed way deeper. Break two Redbrand Brutes and see what they guard.",
+        MARSHAL, MARSHAL, Some(RETURN_TO_GREYHAVEN),
+        &[kill(REDBRAND_BRUTE, 2)], 700, 70, &[12, 13, 14],
     ),
 ];
 

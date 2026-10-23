@@ -34,12 +34,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // snapshot v32 adds the viewer's two breath bytes to every projection; the basin's edge
     // keeps its flat cells in the heightfield, which moves the crowded fight a little.
     // Revision 24 (#274) adds the Sunken Shrine's 28 boxes to every step's world, and its
-    // lurkers swim, which shifts the zone RNG and so the fights' creatures.
+    // lurkers swim, which shifts the zone RNG and so the fights' creatures. Revision 25 (#160)
+    // garrisons the Greyfang cave with six more creatures for AI and physics every tick and
+    // adds its sealed threshold box, which shifts the zone RNG and the fights again.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [27_000, 452_880, 223_712, 4_231_728],
-        [27_000, 450_000, 80_140, 1_335_287],
-        [27_000, 458_640, 389_620, 6_428_143],
-        [26_045, 469_146, 2_229_082, 24_492_902],
+        [29_160, 455_400, 224_640, 4_231_728],
+        [29_160, 452_520, 80_140, 1_335_287],
+        [29_042, 461_042, 389_620, 6_428_143],
+        [28_205, 471_725, 2_229_082, 24_493_481],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -76,14 +78,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert!(report.death_records > 0);
         } else {
             assert_eq!(report.event_records, 0);
-            assert_eq!(report.ai_evaluations, 75 * TICKS);
+            assert_eq!(report.ai_evaluations, 81 * TICKS);
         }
         if fixture.crowded {
             // Whole 14-byte events and 21-byte records beside the fixed part
             // and the door section, a 93-byte self sheet, an 18-byte copper-only
-            // corpse sheet, the projectile, debris and piece counts fill 1,075 of the 1,077
+            // corpse sheet, the projectile, debris and piece counts fill 1,074 of the 1,077
             // bytes: no further 21-byte record fits.
-            assert_eq!(report.max_projection_bytes, 1_075);
+            assert_eq!(report.max_projection_bytes, 1_074);
             assert!(report.candidates_tested > 1_000_000);
         }
     }

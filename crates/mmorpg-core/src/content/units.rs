@@ -261,6 +261,18 @@ pub struct CreatureSpawn {
     pub facing: u16,
     /// Idle creatures wander within this XZ distance of `position`.
     pub wander_radius: i32,
+    /// An inclusive level range inside the template's that this spawn rolls instead (#160),
+    /// e.g. the Greyfang cavern's tougher Redbrands; `None` rolls the template's whole range.
+    pub levels: Option<[u8; 2]>,
+}
+
+impl CreatureSpawn {
+    /// The inclusive level range this spawn rolls.
+    #[must_use]
+    pub fn level_range(&self, template: &CreatureTemplate) -> [u8; 2] {
+        self.levels
+            .unwrap_or([template.min_level, template.max_level])
+    }
 }
 
 /// What an NPC does for players; later steps give each role behaviour.

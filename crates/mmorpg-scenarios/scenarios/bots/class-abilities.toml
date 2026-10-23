@@ -310,7 +310,7 @@ action = "cancel_cast"
 # Rage comes from swings dealt and taken: too little at first, then a Heroic
 # Strike, and the global cooldown holds the next one.
 [[steps]]
-tick = 470
+tick = 460
 bot = "warden"
 action = "use_ability"
 ability = 1
@@ -453,7 +453,7 @@ tick = 451
 kind = "event"
 bot = "warden"
 event = "error:not_enough_resource"
-tick = 471
+tick = 461
 
 [[expect]]
 kind = "resource"
@@ -572,13 +572,13 @@ tick = 739
 kind = "resource"
 bot = "warden"
 resource = 9
-tick = 734
+tick = 799
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 7
-tick = 735
+tick = 800
 
 # #27: a visible recipient observes other actors without receiving their damage credit.
 [[expect]]

@@ -223,9 +223,8 @@ impl ZoneSimulation {
         let (level, wait) = if template.prop().is_some() || template.is_large() {
             (template.min_level, 0)
         } else {
-            let level = self
-                .rng
-                .inclusive(u32::from(template.min_level), u32::from(template.max_level));
+            let [low, high] = spawn.level_range(template);
+            let level = self.rng.inclusive(u32::from(low), u32::from(high));
             let wait = self.rng.inclusive(
                 u32::from(WANDER_WAIT_TICKS[0]),
                 u32::from(WANDER_WAIT_TICKS[1]),

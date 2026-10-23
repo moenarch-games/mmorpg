@@ -27,7 +27,7 @@ describe("Rust/browser corpse loot contract", () => {
     const presence = 59 + 40 + 12 + 93 + 16;
     for (const [offset, value] of [
       [presence, 2], [presence + 4, 109], [presence + 12, 100], [presence + 17, 2], [presence + 19, 9], [presence + 21, 0],
-      [presence + 22, 2], [presence + 24, 12], [presence + 26, 0], [presence + 26, 2],
+      [presence + 22, 2], [presence + 24, 15], [presence + 26, 0], [presence + 26, 2],
     ]) {
       if (offset === undefined || value === undefined) {
         throw new Error("Missing malformed fixture field");

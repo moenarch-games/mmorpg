@@ -30,14 +30,19 @@ pub enum Scenario {
     /// facing the lake: dive to the shrine, swim the cave past its air pocket to the altar,
     /// and meet the lurkers on the way (#274).
     SunkenShrine,
+    /// A level 6 Warden before the Greyfang cave mouth with *Deeper into the Hollow* accepted,
+    /// facing in: Redbrand Bandits, Crossbowmen and two shield-bearing Brutes hold the outer
+    /// cavern and the inner chamber with its sealed threshold (#160).
+    RedbrandCavern,
 }
 
 impl Scenario {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::OgreCombat,
         Self::RangerRange,
         Self::ArcanistPack,
         Self::SunkenShrine,
+        Self::RedbrandCavern,
     ];
 
     #[must_use]
@@ -54,12 +59,13 @@ impl Scenario {
             Self::RangerRange => "ranger-range",
             Self::ArcanistPack => "arcanist-pack",
             Self::SunkenShrine => "sunken-shrine",
+            Self::RedbrandCavern => "redbrand-cavern",
         }
     }
 
     const fn class(self) -> ClassChoice {
         match self {
-            Self::OgreCombat | Self::SunkenShrine => ClassChoice {
+            Self::OgreCombat | Self::SunkenShrine | Self::RedbrandCavern => ClassChoice {
                 class: PlayerClass::Warden,
                 sex: Sex::Female,
             },
@@ -78,7 +84,7 @@ impl Scenario {
     const fn level(self) -> u8 {
         match self {
             Self::OgreCombat | Self::SunkenShrine => 5,
-            Self::RangerRange => 6,
+            Self::RangerRange | Self::RedbrandCavern => 6,
             // Lightning Beam unlocks at level 8.
             Self::ArcanistPack => 8,
         }
@@ -95,6 +101,8 @@ impl Scenario {
             Self::ArcanistPack => ([-4_000, -2_200], 49_152),
             // On the west shore, on the lake's long axis; facing east over the water.
             Self::SunkenShrine => ([3_000, -5_400], 16_384),
+            // On the flat foot of Greyfang Ridge, 8 m south of the cave mouth; facing north into it.
+            Self::RedbrandCavern => ([5_800, -12_000], 32_768),
         }
     }
 
@@ -137,6 +145,21 @@ impl Scenario {
                     progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
                 }],
                 completed: (1..=SCOUT_THE_LAKE.get())
+                    .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
+                    .fold(0, |mask, bit| mask | bit),
+            };
+        }
+        if self == Self::RedbrandCavern {
+            use mmorpg_core::greyhaven_vale::quests::{
+                DEEPER_INTO_THE_HOLLOW, RETURN_TO_GREYHAVEN,
+            };
+            // The Garrick chain through *Return to Greyhaven* turned in; quest 11 accepted.
+            record.quests = mmorpg_core::QuestLog {
+                entries: vec![mmorpg_core::QuestEntry {
+                    quest: DEEPER_INTO_THE_HOLLOW,
+                    progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
+                }],
+                completed: (1..=RETURN_TO_GREYHAVEN.get())
                     .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
                     .fold(0, |mask, bit| mask | bit),
             };

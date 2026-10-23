@@ -344,7 +344,7 @@ mod tests {
         let content = hosted_content();
         assert_eq!(value["format"], CATALOG_FORMAT);
         assert_eq!(value["version"], CATALOG_FORMAT_VERSION);
-        assert_eq!(value["itemCatalogRevision"], "4");
+        assert_eq!(value["itemCatalogRevision"], "5");
         let stats = |stamina, strength, agility, intellect| json!({"stamina": stamina, "strength": strength, "agility": agility, "intellect": intellect});
         let item = |id, name, slot, stats| {
             let max_stack = match id {
@@ -374,12 +374,25 @@ mod tests {
                 item(9, "Worn Boots", json!("feet"), stats(1, 0, 2, 0)),
                 item(10, "Wolf Pelt", Value::Null, stats(0, 0, 0, 0)),
                 item(11, "Sunken Relic", Value::Null, stats(0, 0, 0, 0)),
+                item(
+                    12,
+                    "Brute-Breaker Mace",
+                    json!("mainHand"),
+                    stats(2, 5, 0, 0)
+                ),
+                item(
+                    13,
+                    "Greyfang Scout Jerkin",
+                    json!("chest"),
+                    stats(2, 0, 4, 0)
+                ),
+                item(14, "Hollow-Delver's Cowl", json!("head"), stats(2, 0, 0, 4)),
             ])
         );
-        assert_eq!(value["vendorCatalogRevision"], "3");
-        assert_eq!(value["questCatalogRevision"], "2");
+        assert_eq!(value["vendorCatalogRevision"], "4");
+        assert_eq!(value["questCatalogRevision"], "3");
         let quests = value["quests"].as_array().unwrap();
-        assert_eq!(quests.len(), 10);
+        assert_eq!(quests.len(), 11);
         assert_eq!(
             quests[1],
             json!({
@@ -402,6 +415,11 @@ mod tests {
             quests[9]["objectives"],
             json!([{"kind": "retrieve", "target": 11, "source": 10, "count": 1}])
         );
+        assert_eq!(
+            quests[10]["objectives"],
+            json!([{"kind": "kill", "target": 15, "source": null, "count": 2}])
+        );
+        assert_eq!(quests[10]["choices"], json!([12, 13, 14]));
         let offer = |item, price| json!({"item": item, "price": price});
         assert_eq!(
             value["vendors"],
@@ -446,7 +464,7 @@ mod tests {
                 {"id": 2, "name": "arcanist", "resource": "mana"}
             ])
         );
-        assert_eq!(value["abilityCatalogRevision"], "8");
+        assert_eq!(value["abilityCatalogRevision"], "9");
         assert_eq!(
             value["abilities"][8],
             json!({

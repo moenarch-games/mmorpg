@@ -793,7 +793,7 @@ fn recovery_rejects_aura_amounts_no_player_level_reaches() {
     assert_eq!(checkpoint.players[0].combat.abilities.auras[0].amount, 44);
     assert!(restore(ids::ARCANE_BARRIER, 599, 92).is_ok());
     // Serpent Sting at level 10: 30 + 4 × 9 = 66; Rallying Cry: 30 % of
-    // 185 + 8 stamina × 5 = 225, rounded up: 68.
+    // 185 + 10 stamina × 5 = 235, rounded up: 71.
     // (Amounts are checked before reachability, so these Arcanist-borne
     // records still fail on their amount alone.)
     for (ability, remaining, amount) in [
@@ -801,7 +801,7 @@ fn recovery_rejects_aura_amounts_no_player_level_reaches() {
         (ids::ARCANE_BARRIER, 599, u16::MAX),
         (ids::ARCANE_BARRIER, 599, 0),
         (ids::SERPENT_STING, 449, 67),
-        (ids::RALLYING_CRY, 299, 69),
+        (ids::RALLYING_CRY, 299, 72),
         (ids::RALLYING_CRY, 299, 0),
         (ids::FROST_NOVA, 179, 1),
     ] {

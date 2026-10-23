@@ -57,6 +57,7 @@ pub struct ZoneContent {
     ability_revision: u64,
     creature_abilities: Vec<(CreatureTemplateId, AbilityId)>,
     bosses: Vec<crate::BossRules>,
+    shielded: Vec<CreatureTemplateId>,
     vendor_revision: u64,
     vendors: Vec<(NpcId, VendorStock)>,
     quest_revision: u64,
@@ -127,6 +128,13 @@ impl ZoneContent {
             {
                 return Err(ZoneError::new("creature wander radius is out of range"));
             }
+            if let Some([low, high]) = spawn.levels
+                && (low > high || low < template.min_level || high > template.max_level)
+            {
+                return Err(ZoneError::new(
+                    "creature spawn levels leave the template's range",
+                ));
+            }
             let body = standing_body(spawn.position, template.body_half_extents(spawn.facing));
             validate_unit_body(&definition, body, &unit_boxes, &fixed_boxes)?;
             unit_boxes.push(body);
@@ -166,6 +174,7 @@ impl ZoneContent {
             ability_revision: 0,
             creature_abilities: Vec::new(),
             bosses: Vec::new(),
+            shielded: Vec::new(),
             vendor_revision: 0,
             vendors: Vec::new(),
             quest_revision: 0,
@@ -205,6 +214,7 @@ impl ZoneContent {
             ability_revision: 0,
             creature_abilities: Vec::new(),
             bosses: Vec::new(),
+            shielded: Vec::new(),
             vendor_revision: 0,
             vendors: Vec::new(),
             quest_revision: 0,
@@ -459,6 +469,31 @@ impl ZoneContent {
         self.bosses = bosses;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
+    }
+
+    /// Marks creature templates that carry a raised shield (#160): arrows and bolts flying at
+    /// their front stop on it.
+    pub fn with_shielded(
+        mut self,
+        mut templates: Vec<CreatureTemplateId>,
+    ) -> Result<Self, ZoneError> {
+        templates.sort();
+        templates.dedup();
+        if templates
+            .iter()
+            .any(|&template| self.creature_template(template).is_none())
+        {
+            return Err(ZoneError::new("shielded names an unknown template"));
+        }
+        self.shielded = templates;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Whether creatures of `template` block frontal shots with a shield (#160).
+    #[must_use]
+    pub fn is_shielded(&self, template: CreatureTemplateId) -> bool {
+        self.shielded.binary_search(&template).is_ok()
     }
 
     /// The boss rules of `template`, if it is a boss.
@@ -1103,6 +1138,14 @@ impl ZoneContent {
                 hash.i32(rules.rally_point[1]);
             }
         }
+        // Shielded templates (#160) likewise join only where authored.
+        if !self.shielded.is_empty() {
+            hash.bytes(b"shielded");
+            hash.len(self.shielded.len());
+            for template in &self.shielded {
+                hash.u16(template.get());
+            }
+        }
         hash.finish()
     }
 
@@ -1229,6 +1272,12 @@ impl ZoneContent {
             hash.i32s(&spawn.position);
             hash.u16(spawn.facing);
             hash.i32(spawn.wander_radius);
+            // Spawn level ranges (#160) join the identity only where authored.
+            if let Some([low, high]) = spawn.levels {
+                hash.bytes(b"levels");
+                hash.u8(low);
+                hash.u8(high);
+            }
         }
         hash.len(self.npcs.len());
         for npc in &self.npcs {
@@ -1483,6 +1532,7 @@ mod tests {
             position,
             facing: 0,
             wander_radius: 600,
+            levels: None,
         }
     }
 

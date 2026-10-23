@@ -2,8 +2,10 @@
 //! east of Redbrand Hollow. A 4 m mouth in its south wall opens on the flat foot of the ridge;
 //! inside, an outer cavern joins a smaller inner chamber through a 4 m passage.
 //!
-//! Everything is authored as [`Cave`] data so a later cave reuses it unchanged; #160 grows this
-//! one into Redbrand Hollow's shared outer cavern. Rock walls and one roof slab are fixed
+//! Everything is authored as [`Cave`] data so a later cave reuses it unchanged. #160 makes it
+//! Redbrand Hollow's shared outer cavern: Redbrands hold both chambers, and a sealed
+//! [`THRESHOLD`] in the inner chamber marks the way to the deeper, party-private cave that
+//! later work opens. Rock walls and one roof slab are fixed
 //! boxes standing on y = 0. The terrain is flattened to y = 0 over every [`Cave::floors`] rect
 //! (each edge on the 4 m terrain grid), so the hillside rises behind the walls while the floor
 //! inside stays flat. Clients cut the roof away while the viewer stands under it, like the inn.
@@ -56,6 +58,30 @@ impl Cave {
                 self.roof_thickness,
             )))
             .collect()
+    }
+}
+
+/// The sealed threshold to Redbrand Hollow's deeper cave (#160): a 4 m wide, 3.5 m tall
+/// barricade against the inner chamber's east wall, as a `(min, max)` XZ footprint standing on
+/// y = 0. It stays shut until the party-private depths open behind it; a stand-in box until the
+/// asset-tooling kit gives it its own look.
+pub const THRESHOLD: ([i32; 2], [i32; 2]) = ([7_930, -14_000], [7_990, -13_600]);
+/// The threshold's height.
+pub const THRESHOLD_HEIGHT: i32 = 350;
+
+/// The sealed threshold as a collider with `id`.
+#[must_use]
+pub fn threshold(id: u32) -> StaticCollider {
+    let (min, max) = THRESHOLD;
+    let half = [
+        (max[0] - min[0]) / 2,
+        THRESHOLD_HEIGHT / 2,
+        (max[1] - min[1]) / 2,
+    ];
+    StaticCollider {
+        id,
+        position: [min[0] + half[0], half[1], min[1] + half[2]],
+        half_extents: half,
     }
 }
 

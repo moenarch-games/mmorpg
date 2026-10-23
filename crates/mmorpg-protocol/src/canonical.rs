@@ -1961,7 +1961,7 @@ mod tests {
         let equipment = 16 + 32 + 2 + 44 + 80;
         assert_eq!(encoded[equipment..equipment + 2], [0, 3]);
         for (slot, item, message) in [
-            (0, 12, "unknown item"),
+            (0, 15, "unknown item"),
             (1, 2, "item cannot be equipped there"),
             (2, 1, "item cannot be equipped there"),
         ] {

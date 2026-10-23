@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0x6aca_cdbc_c2bd_518b;
+const STABLE_HASH: u64 = 0xd7c0_7209_a80e_5de2;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -102,7 +102,7 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
         format!("{:#018x}", greyhaven_vale::content().fingerprint()),
         recorded.trim()
     );
-    assert_eq!(scenery.content_revision, 24);
+    assert_eq!(scenery.content_revision, 25);
 }
 
 #[test]
@@ -167,7 +167,9 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
         let area = prop.footprint();
         for collider in &structures {
             // The cave's roof slab rests on its walls.
-            let cave = |id: u32| id == ids::CAVE_ROOF || ids::CAVE_WALLS.contains(&id);
+            let cave = |id: u32| {
+                id == ids::CAVE_ROOF || id == ids::CAVE_THRESHOLD || ids::CAVE_WALLS.contains(&id)
+            };
             // The Sunken Shrine's roof slabs cover its walls and altar, and its arch's lintel
             // rests on its pillars (#274).
             let sunken = |id: u32| {

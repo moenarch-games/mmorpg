@@ -548,7 +548,8 @@ impl ZoneSimulation {
             AbilityEffect::Blizzard { .. }
             | AbilityEffect::Beam { .. }
             | AbilityEffect::Bandage { .. }
-            | AbilityEffect::Stomp { .. } => {}
+            | AbilityEffect::Stomp { .. }
+            | AbilityEffect::Smash { .. } => {}
         }
         Ok(())
     }
@@ -1211,6 +1212,43 @@ impl ZoneSimulation {
                         knockback,
                     },
                 )?;
+            }
+            // The Redbrand Brute's Overhead Smash (#160): whoever still stands in the arc ahead
+            // of it when the wind-up ends takes the blow and is knocked back.
+            AbilityEffect::Smash {
+                damage,
+                per_level,
+                range,
+                half_angle,
+                knockback,
+            } => {
+                self.restart_creature_ability(creature_id, ability);
+                self.notify_units(
+                    [Some(source), None],
+                    ZoneEvent::AbilityUsed {
+                        source,
+                        target: None,
+                        ability: ability.id,
+                    },
+                );
+                let centre = self.unit_position(source)?;
+                let facing = self
+                    .creatures
+                    .get(&creature_id)
+                    .map_or(0, |creature| creature.facing);
+                let (x, z) = crate::trig::direction(facing);
+                let fallback = [i64::from(x), i64::from(z)];
+                for victim in self.creature_cone_victims(creature_id, range, half_angle)? {
+                    let EntityRef::Player(player_id) = victim else {
+                        continue;
+                    };
+                    let amount = self
+                        .rng
+                        .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+                        + u32::from(scaled(0, per_level, level));
+                    self.creature_damages_player(creature_id, player_id, amount, false)?;
+                    self.knock_away(victim, [centre[0], centre[2]], fallback, knockback)?;
+                }
             }
             _ => {}
         }
