@@ -61,7 +61,7 @@ This deliberately avoids shared mutable physics across machines. Horizontal scal
 
 The workspace provides:
 
-- a Rust 1.98 workspace and reusable validation workflow;
+- a stable-Rust workspace and reusable validation workflow;
 - a deterministic zone simulation with embedded Rapier physics (capsule units on `KinematicCharacterController`, #271);
 - validated immutable collision content, gravity, and velocity-preserving physical recovery;
 - stale-command rejection and bounded per-zone player capacity;
@@ -237,7 +237,7 @@ cargo build --workspace --all-features --locked
 cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked
 ```
 
-For the browser client, from `web/` using Bun 1.4.2 (needs the pinned `wasm-bindgen` CLI above):
+For the browser client, from `web/` using the latest Bun (needs the pinned `wasm-bindgen` CLI above):
 
 ```sh
 bun install --frozen-lockfile
