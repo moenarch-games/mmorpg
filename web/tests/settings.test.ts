@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { contextStack, GAME_ACTION_REGISTRY, GameControls, type ControlScreen, type GameAction } from "../src/input/game-controls";
 import { bindingProfileKey, loadBindingProfile, saveBindingProfile } from "../src/settings/binding-profiles";
 import { Preferences, SETTING } from "../src/settings/preferences";
+import { SettingsPanel, type SettingsPanelElements } from "../src/settings/settings-panel";
 
 class MemoryStorage {
   readonly items = new Map<string, string>();
@@ -85,6 +86,24 @@ test("all game actions have useful categories in the bindings editor", () => {
     expect(action.categoryPath?.length).toBeGreaterThan(0);
     expect(action.categoryPath).not.toContain("Other");
   }
+});
+
+test("the binding editor starts loading at initialization, before the Controls menu is opened", () => {
+  const names = ["dialog", "close", "categories", "categorySelect", "search", "resetCategory", "content", "status", "resetAll", "exportUser", "importUser"];
+  const elements = Object.fromEntries(names.map((name) => [name, { addEventListener() {}, disabled: false }])) as unknown as SettingsPanelElements;
+  let editorLoads = 0;
+  let characterReads = 0;
+  new SettingsPanel(elements, {
+    preferences: new Promise<Preferences>(() => {}),
+    bindings: () => { characterReads += 1; throw new Error("The profile is only needed when the editor mounts"); },
+    onOpenChange() {},
+    loadBindingsEditor: () => {
+      editorLoads += 1;
+      return Promise.resolve({ mountBindingsEditor: () => () => {} });
+    },
+  });
+  expect(editorLoads).toBe(1);
+  expect(characterReads).toBe(0);
 });
 
 describe("per-character binding profiles (#41 Q21)", () => {
