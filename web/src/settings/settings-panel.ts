@@ -34,10 +34,12 @@ export type SettingsPanelOptions = {
   preferences: Promise<Preferences>;
   bindings: () => CharacterBindings;
   onOpenChange: (open: boolean) => void;
+  loadBindingsEditor?: () => Promise<Pick<typeof import("./bindings-editor"), "mountBindingsEditor">>;
 };
 
 const CONTROLS_CATEGORY = "settings.category.controls";
 const text = (key: string): string => SETTINGS_TEXT[key] ?? key;
+type LoadedBindingsEditor = { mount: typeof import("./bindings-editor")["mountBindingsEditor"] } | { error: string };
 
 export class SettingsPanel {
   readonly #elements: SettingsPanelElements;
@@ -49,10 +51,21 @@ export class SettingsPanel {
   readonly #advanced = new Set<string>();
   #searchTarget: string | null = null;
   #unmountEditor: (() => void) | null = null;
+  #loadedBindingsEditor: LoadedBindingsEditor | null = null;
+  readonly #bindingsEditorReady: Promise<LoadedBindingsEditor>;
 
   constructor(elements: SettingsPanelElements, options: SettingsPanelOptions) {
     this.#elements = elements;
     this.#options = options;
+    // The action catalog and character profiles are local. Warm the separate React editor
+    // while the game starts instead of fetching its chunk on the first Controls visit.
+    this.#bindingsEditorReady = (options.loadBindingsEditor ?? (() => import("./bindings-editor")))().then(
+      ({ mountBindingsEditor }): LoadedBindingsEditor => ({ mount: mountBindingsEditor }),
+      (error: unknown): LoadedBindingsEditor => ({ error: error instanceof Error ? error.message : String(error) }),
+    ).then((loaded) => {
+      this.#loadedBindingsEditor = loaded;
+      return loaded;
+    });
     elements.close.addEventListener("click", () => this.close());
     elements.resetAll.addEventListener("click", () => this.#resetAll());
     elements.resetCategory.addEventListener("click", () => this.#resetCategory());
@@ -308,21 +321,28 @@ export class SettingsPanel {
     section.setAttribute("aria-label", `Key bindings for ${bindings.characterName}`);
     const host = document.createElement("div");
     host.className = "settings-bindings-host";
-    host.textContent = "Loading the binding editor…";
     section.append(host);
     let cancelled = false;
     this.#unmountEditor = () => {
       cancelled = true;
     };
-    void import("./bindings-editor").then(({ mountBindingsEditor }) => {
+    const showEditor = (loaded: LoadedBindingsEditor) => {
       if (cancelled) {
         return;
       }
+      if ("error" in loaded) {
+        host.textContent = `The binding editor could not load: ${loaded.error}`;
+        return;
+      }
       host.textContent = "";
-      this.#unmountEditor = mountBindingsEditor(host, bindings);
-    }, (error: unknown) => {
-      host.textContent = `The binding editor could not load: ${error instanceof Error ? error.message : String(error)}`;
-    });
+      this.#unmountEditor = loaded.mount(host, bindings);
+    };
+    if (this.#loadedBindingsEditor) {
+      showEditor(this.#loadedBindingsEditor);
+    } else {
+      host.textContent = "Loading the binding editor…";
+      void this.#bindingsEditorReady.then(showEditor);
+    }
     return section;
   }
 
