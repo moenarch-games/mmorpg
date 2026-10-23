@@ -142,7 +142,7 @@ jobs:
       packages: read
     uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@16cd27876a7f21645999432e4993ee2afa68fa6e
     with:
-      bun_version: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && '1.4.3' || '' }}
+      bun_version: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'latest' || '' }}
       node_version: ""
       install_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cd web && bun install --frozen-lockfile' || '' }}
       cache_bun: false
