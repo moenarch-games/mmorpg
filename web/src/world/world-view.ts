@@ -49,6 +49,7 @@ import { WorldPicking } from "./units/world-picking";
 import { QuaterniusUnits, type Hair, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
 import type { ZoneWorld } from "./world-source";
+import { touchContext, type TouchContext } from "../input/touch-layout";
 
 /**
  * The in-world presentation: static scenery, animated units, the orbit
@@ -288,6 +289,9 @@ export class WorldView {
   #buildMs = 0;
   #orbit = new OrbitCamera();
   #drag: Drag | null = null;
+  /** Fingers on the canvas, and the spread of a two-finger pinch zoom in progress (#434). */
+  readonly #touches = new Map<number, { x: number; y: number }>();
+  #pinch: number | null = null;
   /** A held shield guard whose lane follows the pointer (#156). */
   readonly #guardHold = new ShieldGuardHold();
   /** A held directed Heroic Strike being aimed with the pointer (#154). */
@@ -645,6 +649,53 @@ export class WorldView {
     this.#quests.toggleLog();
   }
 
+  /** Which touch context buttons apply now (#434), from the last received projection. */
+  touchContext(): TouchContext {
+    const projection = this.#lastProjection;
+    const at = projection?.entities[0]?.position;
+    const damaged = new Set(projection?.pieces.map((view) => view.piece) ?? []);
+    return touchContext(projection, {
+      isVendor: (npc) => this.#catalog?.vendors.has(npc) ?? false,
+      doorInReach: at ? this.#reachableDoor(at[0], at[2]) !== 0 : false,
+      repairInReach: at ? this.#reachablePieces(at[0], at[2]).some((id) => damaged.has(id)) : false,
+    });
+  }
+
+  /**
+   * The touch interact button: open the loot of a corpse in reach, select the nearest NPC (its
+   * vendor or quest dialog opens once the zone accepts the selection, as after a click), or
+   * otherwise the keyboard Interact (doors and repairs).
+   */
+  touchInteract(): void {
+    const context = this.touchContext();
+    if (context.interact === "loot") {
+      if (!this.#loot.open) {
+        this.#loot.toggle();
+      }
+      return;
+    }
+    const npc = context.npc;
+    if (npc && (context.interact === "vendor" || context.interact === "talk")) {
+      this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === "npc" && entity.entityId === npc.id)
+        ? { kind: "select-target", target: npc } : null, (sequence) => {
+        if (sequence !== null) {
+          this.#pendingNpc = { target: npc, sequence };
+        }
+      });
+      return;
+    }
+    this.interact();
+  }
+
+  /** The hotbar as the touch face buttons mirror it. */
+  get hotbarKey(): string {
+    return this.#classHud.slotKey;
+  }
+
+  hotbarFaces(): { name: string; source: HTMLButtonElement }[] {
+    return this.#classHud.slotFaces();
+  }
+
   closeQuestDialog(): boolean { return this.#quests.closeDialog(); }
 
   closeQuestLog(): boolean { return this.#quests.closeLog(); }
@@ -916,6 +967,20 @@ export class WorldView {
   pointerDown(event: PointerEvent): void {
     // A click or drag supersedes an aimed strike that has not been released.
     this.cancelDirectedStrike();
+    if (event.pointerType === "touch") {
+      this.#touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      // A second finger turns the look drag into a pinch zoom; neither finger selects.
+      if (this.#touches.size === 2 && this.#drag) {
+        try {
+          this.#elements.canvas.setPointerCapture(event.pointerId);
+        } catch {
+          // The pinch still tracks the finger while it stays over the canvas.
+        }
+        this.#primaryClick.reset();
+        this.#pinch = this.#touchSpread();
+        return;
+      }
+    }
     if (this.#drag || (event.button !== 0 && event.button !== 2)) {
       return;
     }
@@ -924,7 +989,8 @@ export class WorldView {
     } catch {
       return;
     }
-    const mode = event.button === 2 ? "turn" : "orbit";
+    // A finger drag looks and turns the character with the view (#434); a tap still selects.
+    const mode = event.button === 2 || event.pointerType === "touch" ? "turn" : "orbit";
     this.#drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, mode };
     this.#secondaryClick.down(event);
     this.#primaryClick.down(event);
@@ -950,6 +1016,17 @@ export class WorldView {
     }
     this.#secondaryClick.move(event);
     this.#primaryClick.move(event);
+    if (this.#touches.has(event.pointerId)) {
+      this.#touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.#pinch !== null) {
+        const spread = this.#touchSpread();
+        if (spread > 0 && this.#pinch > 0) {
+          this.#orbit.zoomBy(spread / this.#pinch);
+        }
+        this.#pinch = spread;
+        return;
+      }
+    }
     const drag = this.#drag;
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
@@ -961,6 +1038,15 @@ export class WorldView {
   }
 
   pointerEnd(event: PointerEvent): void {
+    if (this.#touches.delete(event.pointerId) && this.#pinch !== null) {
+      // Lifting either pinch finger ends the gesture; the other finger must lift before a new drag.
+      this.#pinch = null;
+      if (this.#elements.canvas.hasPointerCapture(event.pointerId)) {
+        this.#elements.canvas.releasePointerCapture(event.pointerId);
+      }
+      this.#endDrag();
+      return;
+    }
     if (this.#drag?.pointerId !== event.pointerId) {
       return;
     }
@@ -1004,7 +1090,15 @@ export class WorldView {
     }
   }
 
+  /** The distance between the first two fingers on the canvas, in CSS pixels. */
+  #touchSpread(): number {
+    const [first, second] = [...this.#touches.values()];
+    return first && second ? Math.hypot(first.x - second.x, first.y - second.y) : 0;
+  }
+
   #endDrag(): void {
+    this.#touches.clear();
+    this.#pinch = null;
     this.#primaryClick.reset();
     this.#secondaryClick.reset();
     const drag = this.#drag;

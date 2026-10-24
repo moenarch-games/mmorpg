@@ -67,6 +67,13 @@ export class OrbitCamera {
     }
   }
 
+  /** A pinch: spreading the fingers by `scale` brings the camera that much closer. */
+  zoomBy(scale: number): void {
+    if (Number.isFinite(scale) && scale > 0) {
+      this.#targetDistance = Math.min(MAX_DISTANCE_METRES, Math.max(MIN_DISTANCE_METRES, this.#targetDistance / scale));
+    }
+  }
+
   /** Advances smooth zoom; `instant` (reduced motion) jumps to the target. */
   update(deltaSeconds: number, instant = false): void {
     const remaining = this.#targetDistance - this.#distance;

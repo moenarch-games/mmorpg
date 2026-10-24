@@ -67,10 +67,13 @@ import type { ViewerLook } from "./world/unit-presenter";
 import { Preferences, type ClientPreferences } from "./settings/preferences";
 import { SettingsPanel } from "./settings/settings-panel";
 import { defaultBindingProfile, loadBindingProfile, saveBindingProfile } from "./settings/binding-profiles";
+import { TouchControls, trackInputMode } from "./input/touch-controls";
+import { mergeHeld } from "./input/touch-layout";
 import "./character-selection-layout.css";
 import "./character-creation.css";
 import "./class-hud.css";
 import "./settings/settings.css";
+import "./touch-controls.css";
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -390,6 +393,29 @@ const controls = new GameControls({
       : { phase: "selection", creating: creationDraft !== null || joining !== null, settingsOpen },
   onAction: (action) => runAction(action),
   onHold: (action, phase) => runHold(action, phase),
+});
+// Touch (#434): the same semantic actions from a thumbstick, face-button chords and context buttons.
+trackInputMode(document.documentElement, window);
+const chatFrame = requireElement<HTMLElement>("#chat");
+const touchControls = new TouchControls(requireElement<HTMLElement>("#touch-controls"), {
+  onAction: (action) => {
+    if (entryState.phase === "world" && !settingsOpen) {
+      runAction(action);
+    }
+  },
+  onInteract: () => worldView.touchInteract(),
+  onSettings: () => requireElement<HTMLButtonElement>("#world-settings").click(),
+  // On phones chat is collapsed to this button; it shows while its field has focus.
+  onChat: () => {
+    chatFrame.dataset.touchOpen = "true";
+    worldView.openChat();
+  },
+  context: () => worldView.touchContext(),
+  facesKey: () => worldView.hotbarKey,
+  faces: () => worldView.hotbarFaces(),
+});
+chatFrame.addEventListener("focusout", () => {
+  delete chatFrame.dataset.touchOpen;
 });
 
 function browserStorage(): Storage | null {
@@ -1143,7 +1169,7 @@ function viewerLook(): ViewerLook {
 
 function worldInput() {
   const pads = typeof navigator.getGamepads === "function" ? navigator.getGamepads() : [];
-  return { held: controls.heldIntent(), jumps, padGuard: padGuardLane(pads) };
+  return { held: mergeHeld(controls.heldIntent(), touchControls.heldIntent()), jumps, padGuard: padGuardLane(pads) };
 }
 
 function errorMessage(error: unknown): string {
@@ -1161,6 +1187,7 @@ function frame(now: number) {
     const paused = settingsOpen && activeWorld !== onlineWorld && activeWorld !== arenaWorld?.world;
     try {
       worldView.frame(activeWorld, worldInput(), viewerLook(), paused ? 0 : deltaSeconds, now);
+      touchControls.update();
       showLinkState(activeWorld.source.linkState());
       showArenaMatch();
       showScenarioStatus();
@@ -1353,6 +1380,7 @@ function returnToCharacters(failure: string | null = null) {
   worldFailure = failure;
   entryState = initialEntryState(character);
   controls.retire("leftWorld");
+  touchControls.reset();
   worldView.leave();
   characterSelect.hidden = false;
   for (const element of worldUi) {
@@ -1575,10 +1603,14 @@ document.addEventListener("click", (event) => {
     canvas.focus({ preventScroll: true });
   }
 });
-window.addEventListener("blur", () => worldView.cancelPointer());
+window.addEventListener("blur", () => {
+  worldView.cancelPointer();
+  touchControls.reset();
+});
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     worldView.cancelPointer();
+    touchControls.reset();
   }
 });
 window.addEventListener("resize", resize);
