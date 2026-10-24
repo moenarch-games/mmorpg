@@ -57,7 +57,7 @@ impl Headwear {
         match class {
             PlayerClass::Warden => Self::IroncrestHelm,
             PlayerClass::Ranger => Self::RangerCap,
-            PlayerClass::Arcanist => Self::WayfarerHood,
+            PlayerClass::Arcanist | PlayerClass::Necromancer => Self::WayfarerHood,
         }
     }
 }

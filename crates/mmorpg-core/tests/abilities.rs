@@ -178,7 +178,7 @@ fn players_choose_a_class_once_and_need_one_for_abilities() {
     assert_eq!(unchosen.entities[0].appearance, 0);
 
     fight.use_ability(ids::HEROIC_STRIKE);
-    fight.send(ZoneCommand::ChooseClass { class: 3, sex: 0 });
+    fight.send(ZoneCommand::ChooseClass { class: 4, sex: 0 });
     fight.send(ZoneCommand::ChooseClass { class: 0, sex: 2 });
     fight.tick();
     assert_eq!(
@@ -1091,4 +1091,104 @@ fn content_without_the_ability_catalog_refuses_classes() {
             .message(),
         "a class player needs content that binds the ability catalog"
     );
+}
+
+#[test]
+fn a_necromancer_bolts_curses_drains_life_and_wards_itself() {
+    // A wolf that bites for 3 so the drain has health to restore.
+    let content = classes::arena(
+        vec![arena::wolf(400, [3, 3])],
+        vec![arena::spawn(1, WOLF, [0, 2_500])],
+    );
+    let mut fight = Fight::with_class(content, 6, 3);
+    assert_eq!(
+        fight.resource(),
+        220,
+        "mana like the Arcanist: 110 + 22 × 5"
+    );
+    fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
+
+    // Shadow Bolt: a 60-tick cast that launches a shadow missile.
+    fight.use_ability(ids::SHADOW_BOLT);
+    fight.until(70, |fight| fight.view().viewer.cast.is_none());
+    assert!(
+        fight
+            .zone
+            .snapshot()
+            .unwrap()
+            .projectiles
+            .iter()
+            .any(|projectile| projectile.kind == mmorpg_core::ProjectileKind::Shadow)
+    );
+    let bolted = fight.land();
+    assert!(
+        !fight
+            .since(bolted, |event| damage_dealt_to(event, TARGET).is_some())
+            .is_empty()
+    );
+
+    // Corruption: an instant shadow missile that leaves a damage-over-time curse.
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.use_ability(ids::CORRUPTION);
+    fight.tick();
+    fight.land();
+    fight.tick();
+    assert!(
+        fight.view().target_detail.auras.iter().any(|aura| {
+            aura.ability == ids::CORRUPTION && aura.kind == AuraKind::DamageOverTime
+        })
+    );
+
+    // Drain Life: once the wolf has bitten, a 90-tick channel that heals by what it drains.
+    fight.until(600, |fight| {
+        fight.me().combat.health < fight.view().viewer.max_health
+            && fight.me().combat.abilities.global_cooldown == 0
+    });
+    let before = fight.resource();
+    fight.use_ability(ids::DRAIN_LIFE);
+    fight.tick();
+    let channelled = fight.zone.current_tick();
+    assert_eq!(fight.resource(), before - 45);
+    let cast = fight.view().viewer.cast.unwrap();
+    assert!(cast.channel && cast.total == 90);
+    fight.ticks(90);
+    let heals = fight.since(channelled, |event| {
+        matches!(event, ZoneEvent::Healed { ability, source, .. }
+            if *ability == ids::DRAIN_LIFE && *source == PLAYER)
+    });
+    assert!(!heals.is_empty(), "the drain heals its caster");
+
+    // Bone Shield: an absorb ward on the caster.
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.use_ability(ids::BONE_SHIELD);
+    fight.tick();
+    assert!(
+        fight
+            .view()
+            .auras
+            .iter()
+            .any(|aura| { aura.ability == ids::BONE_SHIELD && aura.kind == AuraKind::Absorb })
+    );
+}
+
+#[test]
+fn drain_life_breaks_when_its_target_dies() {
+    let content = classes::arena(
+        vec![arena::wolf(1, [1, 1])],
+        vec![arena::spawn(1, WOLF, [0, 2_500])],
+    );
+    let mut fight = Fight::with_class(content, 6, 3);
+    fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
+    fight.use_ability(ids::DRAIN_LIFE);
+    fight.ticks(31);
+    assert!(
+        fight.creature(FIRST).health == 0,
+        "the first pulse kills the wolf"
+    );
+    fight.ticks(30);
+    assert!(fight.since(0, |event| matches!(
+        event,
+        ZoneEvent::Interrupted { ability, target, .. } if *ability == ids::DRAIN_LIFE && *target == PLAYER
+    )).len() == 1);
+    assert_eq!(fight.view().viewer.cast, None);
 }

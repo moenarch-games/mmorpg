@@ -45,6 +45,15 @@ const CLASS_VISUALS: Record<CharacterClassId, Omit<CharacterVisualProfile,
     weapon: "staff",
     weaponColor: "#bd895f",
   },
+  // Violet-black robes and a bone-white staff (#301), the in-world look's colours.
+  necromancer: {
+    bodyColor: "#3d3548",
+    chestColor: "#2c2536",
+    shoulderColor: "#4b3e5e",
+    cloakColor: "#1f1a28",
+    weapon: "staff",
+    weaponColor: "#e6dfc8",
+  },
 };
 
 const SEX_FRAME: Record<CharacterSex, Pick<CharacterVisualProfile,
