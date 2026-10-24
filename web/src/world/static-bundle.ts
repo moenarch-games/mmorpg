@@ -1,7 +1,10 @@
 import type { Object3D } from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-/** The `default` glTF of each of `keys` in the gltf-resources bundle at `base`, loaded with plain three.js. */
+/**
+ * The glTF of each of `keys` in the gltf-resources bundle at `base`, loaded with plain three.js: a
+ * key names its `default` variant, `<key>/<variant>` another one.
+ */
 export async function loadBundleGltfs(base: string, keys: readonly string[]): Promise<GLTF[]> {
   const url = (path: string) => new URL(path, new URL(base, window.location.href)).href;
   const response = await fetch(url("manifest.json"));
@@ -11,9 +14,10 @@ export async function loadBundleGltfs(base: string, keys: readonly string[]): Pr
   const assets = ((await response.json()) as { assets?: { key: string; variant: string; path: string }[] }).assets ?? [];
   const loader = new GLTFLoader();
   return Promise.all(keys.map(async (key) => {
-    const entry = assets.find((asset) => asset.key === key && asset.variant === "default");
+    const [name, variant = "default"] = key.split("/");
+    const entry = assets.find((asset) => asset.key === name && asset.variant === variant);
     if (!entry) {
-      throw new Error(`The static bundle has no ${key}/default entry.`);
+      throw new Error(`The static bundle has no ${name}/${variant} entry.`);
     }
     return loader.loadAsync(url(entry.path));
   }));

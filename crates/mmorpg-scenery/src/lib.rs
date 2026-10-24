@@ -33,6 +33,7 @@
 mod geometry;
 pub mod layout;
 mod outpost_grass;
+pub mod outpost_kit;
 mod outpost_relief;
 pub mod shrine;
 
@@ -442,6 +443,8 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
     let kind = match id {
         ids::KEEP => PropKind::Keep,
         ids::INN => PropKind::Inn,
+        // The smithy and house 105 are drawn by asset-tooling's Outpost kit (#420) at
+        // [`outpost_kit::placements`], their blockouts only while the kit is not drawn.
         ids::SMITHY => PropKind::Smithy,
         ids::WELL => PropKind::Well,
         ids::WAYSTONE => PropKind::Waystone,

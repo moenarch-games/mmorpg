@@ -180,7 +180,9 @@ impl WorldScene {
             .animated
             .iter()
             .zip(self.scene.motion(seconds, animate))
-            .zip(self.scene.shown(viewer))
+            // The native build embeds the Outpost kit (#420), which the presentation draws, so
+            // the static scene never shows its buildings' blockouts.
+            .zip(self.scene.shown(viewer, true))
             .filter_map(|(placed, shown)| shown.then_some(placed))
         {
             for draw in part {

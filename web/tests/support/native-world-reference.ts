@@ -80,7 +80,7 @@ function draw(node: RendererSceneNode, id = node.id) {
 const scenes: unknown[] = [];
 for (const request of input.requests) {
   if (request.kind === "world") {
-    const frame = new SceneryFrame(staticScene).nodes(request.eye, { seconds: request.seconds, animate: request.animate });
+    const frame = new SceneryFrame(staticScene).nodes(request.eye, { seconds: request.seconds, animate: request.animate, outpostKit: true });
     const draws = frame.nodes.filter((node) => node.visible !== false).map((node) => draw(node));
     for (const batch of frame.instanceBatches) {
       if (batch.visible === false) { continue; }
