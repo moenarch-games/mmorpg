@@ -61,12 +61,14 @@ impl Options {
                 "--class" => {
                     let name = args
                         .next()
-                        .ok_or("--class needs warden, ranger or arcanist")?;
+                        .ok_or("--class needs warden, ranger, arcanist, necromancer or rogue")?;
                     options.class = Some(
                         PlayerClass::ALL
                             .into_iter()
                             .find(|class| class.name() == name)
-                            .ok_or("--class must be warden, ranger or arcanist")?,
+                            .ok_or(
+                                "--class must be warden, ranger, arcanist, necromancer or rogue",
+                            )?,
                     );
                 }
                 "--character-id" => {
@@ -235,7 +237,7 @@ mod tests {
             vec!["--certificate"],
             vec!["--zone", "invalid"],
             vec!["--frames", "0"],
-            vec!["--class", "rogue"],
+            vec!["--class", "bard"],
             vec!["--class"],
             vec!["--sex", "other"],
         ] {

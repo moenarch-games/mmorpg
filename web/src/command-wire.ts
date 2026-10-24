@@ -29,7 +29,7 @@ export type WorldCommand =
   /** Holds the shield guard in `lane`, or lowers it with `null` (#156); the zone decides what it blocks. */
   | { kind: "guard"; lane: StrikeHeight | null }
   | { kind: "cancel-cast" }
-  /** Class 0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer; sex 0 female, 1 male. The zone refuses invalid values. */
+  /** Class 0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue; sex 0 female, 1 male. The zone refuses invalid values. */
   | { kind: "choose-class"; classId: number; sex: number }
   /** Equips the item in a bag slot, swapping any item already in its equipment slot. */
   | { kind: "equip-item"; bagSlot: number }

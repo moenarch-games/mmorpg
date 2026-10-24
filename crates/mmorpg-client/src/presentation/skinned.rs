@@ -818,6 +818,12 @@ impl Equipment {
         })
     }
 
+    /// The sword alone in the right hand: the Rogue's blade (#302).
+    pub fn blade() -> &'static Self {
+        static EQUIPMENT: OnceLock<Equipment> = OnceLock::new();
+        EQUIPMENT.get_or_init(|| Self::of(&[(ranger_bundle::SWORD, "hand_r.weapon")]))
+    }
+
     /// The authored headwear item worn on the head (#374); the hood is the character's own part.
     pub fn headwear(hat: Hat) -> Option<&'static Self> {
         static CAP: OnceLock<Equipment> = OnceLock::new();

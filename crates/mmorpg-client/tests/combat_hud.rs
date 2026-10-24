@@ -95,7 +95,7 @@ fn viewer_of(class: PlayerClass) -> ZoneSnapshot {
 const fn resource_kind(class: PlayerClass) -> ResourceKind {
     match class {
         PlayerClass::Warden => ResourceKind::Rage,
-        PlayerClass::Ranger => ResourceKind::Focus,
+        PlayerClass::Ranger | PlayerClass::Rogue => ResourceKind::Focus,
         PlayerClass::Arcanist | PlayerClass::Necromancer => ResourceKind::Mana,
     }
 }

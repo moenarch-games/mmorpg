@@ -52,6 +52,8 @@ export type ImportedRequest = {
   swordAndShield: boolean;
   /** A Ranger carries the bundle's bow and quiver on its back (#244). */
   bowAndQuiver: boolean;
+  /** A Rogue carries the bundle's sword alone as its blade (#302). */
+  blade: boolean;
   /** The living viewer: its imported model wears the viewer's chosen headwear (#374). */
   headwear: boolean;
 };
@@ -60,7 +62,7 @@ export type UnitFrameNodes = { nodes: RendererSceneNode[]; units: PresentedUnit[
 
 /** The viewer's own look: class and sex as an appearance code, and headwear. */
 export type ViewerLook = {
-  classId: "warden" | "ranger" | "arcanist" | "necromancer" | null; sex: "female" | "male"; headwear: string | null;
+  classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | null; sex: "female" | "male"; headwear: string | null;
   /** The viewer's hairstyle and colour (#376); hidden under the hood and helm. */
   hair?: "buzzed" | "parted" | "long" | "bald"; hairColor?: "black" | "brown" | "blond";
 };
@@ -69,11 +71,11 @@ type DrawEntry = { id: string; key: string; model: number; color: Color; emissiv
 type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number;
-  height: number; clip: string; time: number; tint: number | null; swordAndShield: boolean; bowAndQuiver: boolean; headwear: boolean };
+  height: number; clip: string; time: number; tint: number | null; swordAndShield: boolean; bowAndQuiver: boolean; blade: boolean; headwear: boolean };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2 };
-const CLASS_CODE = { warden: 0, ranger: 1, arcanist: 2, necromancer: 3 } as const;
+const CLASS_CODE = { warden: 0, ranger: 1, arcanist: 2, necromancer: 3, rogue: 4 } as const;
 
 function triples(values: Float32Array, start: number, count: number): [number, number, number][] {
   const out: [number, number, number][] = new Array(count);
@@ -134,7 +136,7 @@ export class SharedUnits {
       })),
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw,
-        heightMetres: unit.height, clip: unit.clip, time: unit.time, tint: unit.tint, swordAndShield: unit.swordAndShield, bowAndQuiver: unit.bowAndQuiver, headwear: unit.headwear,
+        heightMetres: unit.height, clip: unit.clip, time: unit.time, tint: unit.tint, swordAndShield: unit.swordAndShield, bowAndQuiver: unit.bowAndQuiver, blade: unit.blade, headwear: unit.headwear,
       })),
     };
   }

@@ -259,6 +259,7 @@ mod tests {
             [9, 10, 11, 12, 16, 21, 22, 23]
         );
         assert_eq!(class_kit(PlayerClass::Necromancer), [26, 27, 28, 29]);
+        assert_eq!(class_kit(PlayerClass::Rogue), [30, 31, 32, 33]);
     }
 
     #[test]

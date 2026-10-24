@@ -36,7 +36,7 @@ export type EntityState = {
   flags: EntityFlags;
 };
 
-export type ClassId = "warden" | "ranger" | "arcanist" | "necromancer";
+export type ClassId = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue";
 export type ResourceKind = "rage" | "focus" | "mana";
 export type ClassChoice = { classId: ClassId; sex: "female" | "male" };
 export type ResourceState = { kind: ResourceKind; value: number; max: number };
@@ -311,8 +311,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 34;
-const SCHEMA_VERSION = 34;
+const WIRE_VERSION = 35;
+const SCHEMA_VERSION = 35;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -385,9 +385,9 @@ export const ITEM_SHAPES: ReadonlyMap<number, ItemShape> = new Map([
   [13, gear(3, 2, 0, 4, 0)],
   [14, gear(2, 2, 0, 0, 4)],
 ]);
-const CLASSES: readonly ClassId[] = ["warden", "ranger", "arcanist", "necromancer"];
+const CLASSES: readonly ClassId[] = ["warden", "ranger", "arcanist", "necromancer", "rogue"];
 const RESOURCES: readonly ResourceKind[] = ["rage", "focus", "mana"];
-const CLASS_RESOURCES: Readonly<Record<ClassId, ResourceKind>> = { warden: "rage", ranger: "focus", arcanist: "mana", necromancer: "mana" };
+const CLASS_RESOURCES: Readonly<Record<ClassId, ResourceKind>> = { warden: "rage", ranger: "focus", arcanist: "mana", necromancer: "mana", rogue: "focus" };
 const AURA_KINDS: readonly AuraKind[] = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
 
 type AbilityShape = { castTicks: number; channel: boolean; cooldown: number; aura: AuraKind | null; auraTicks: number };
@@ -431,6 +431,11 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [27, instant(0, "damage-over-time", 450)],
   [28, { castTicks: 90, channel: true, cooldown: 300, aura: null, auraTicks: 0 }],
   [29, instant(900, "absorb", 600)],
+  // The Rogue (#302): Sinister Strike, Poisoned Blade, Gouge and Adrenaline Rush.
+  [30, instant(0)],
+  [31, instant(0, "damage-over-time", 450)],
+  [32, instant(360, "stun", 60)],
+  [33, instant(900, "haste", 300)],
 ]);
 /** Mana: 110 + 22 per level above 1; rage and focus: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

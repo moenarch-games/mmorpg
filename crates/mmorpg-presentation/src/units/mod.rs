@@ -87,6 +87,8 @@ pub struct ImportedUnit {
     pub sword_and_shield: bool,
     /// A Ranger carries the bundle's bow and quiver on its back (#244).
     pub bow_and_quiver: bool,
+    /// A Rogue carries the bundle's sword alone as its blade (#302), until a dagger asset exists.
+    pub blade: bool,
     /// The living viewer wears their headwear on the posed head (see [`UnitPresenter::headwear`]).
     pub headwear: Option<Look>,
 }
@@ -351,6 +353,8 @@ impl UnitPresenter {
                         && class.is_some_and(|c| c.class == PlayerClass::Warden),
                     bow_and_quiver: matches!(entity, EntityRef::Player(_))
                         && class.is_some_and(|c| c.class == PlayerClass::Ranger),
+                    blade: matches!(entity, EntityRef::Player(_))
+                        && class.is_some_and(|c| c.class == PlayerClass::Rogue),
                     headwear: (viewer && !dead).then(|| {
                         Look::new(
                             input.viewer.choice.map_or(0, |c| c.class.code()),

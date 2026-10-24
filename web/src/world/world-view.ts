@@ -579,7 +579,7 @@ export class WorldView {
     this.#models.update([{
       id: "selection-preview", kind: "Ranger", entity: { kind: "player", id: 0 }, feet, yaw, heightMetres: height,
       clip, time: seconds % length, tint: null,
-      swordAndShield: look.classId === "warden", bowAndQuiver: look.classId === "ranger", headwear: true,
+      swordAndShield: look.classId === "warden", bowAndQuiver: look.classId === "ranger", blade: look.classId === "rogue", headwear: true,
     }], { headwear: viewerHeadwear(look), hair: viewerHair(look) });
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
