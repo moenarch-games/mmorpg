@@ -543,10 +543,11 @@ impl ZoneSimulation {
                     }
                 }
             }
-            // Blizzard and Lightning Beam pulse while they channel; bandages and stomps are
-            // creature-only.
+            // Blizzard, Lightning Beam and Drain Life pulse while they channel; bandages and
+            // stomps are creature-only.
             AbilityEffect::Blizzard { .. }
             | AbilityEffect::Beam { .. }
+            | AbilityEffect::Drain { .. }
             | AbilityEffect::Bandage { .. }
             | AbilityEffect::Stomp { .. }
             | AbilityEffect::Smash { .. } => {}
@@ -1031,6 +1032,19 @@ impl ZoneSimulation {
                         self.beam_pulse(player_id, &trace, damage, per_level, level, now)?;
                     }
                 }
+                (
+                    AbilityEffect::Drain {
+                        damage,
+                        per_level,
+                        period,
+                    },
+                    Some(_),
+                ) => {
+                    if period > 0 && cast.elapsed % period == 0 {
+                        let roll = [damage[0], damage[1]].map(|d| scaled(d, per_level, level));
+                        self.drain_pulse(player_id, ability, cast.target, roll, now)?;
+                    }
+                }
                 _ if done => self.complete_player_cast(player_id, ability, cast, now)?,
                 _ => {}
             }
@@ -1040,6 +1054,57 @@ impl ZoneSimulation {
             self.advance_creature_cast(creature_id)?;
         }
         Ok(())
+    }
+
+    /// One Drain Life pulse (#301): damage to the channel's target, and the caster heals by the
+    /// health it lost. A target that died, left sight or range breaks the channel instead.
+    fn drain_pulse(
+        &mut self,
+        player_id: PlayerId,
+        ability: &Ability,
+        target: Option<EntityRef>,
+        damage: [u16; 2],
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        let source = EntityRef::Player(player_id);
+        let reach = i64::from(ability.range.reach().unwrap_or(0));
+        let holds = match target {
+            Some(target) if self.attackable_by_player(player_id, target) => {
+                self.unit_distance_squared(source, target)? <= reach.pow(2)
+                    && self.line_of_sight(source, target)?
+            }
+            _ => false,
+        };
+        let Some(target) = target.filter(|_| holds) else {
+            self.update_player(player_id, |player| player.cast = None);
+            self.notify_units(
+                [Some(source), None],
+                ZoneEvent::Interrupted {
+                    source: None,
+                    target: source,
+                    ability: ability.id,
+                },
+            );
+            return Ok(());
+        };
+        let before = self.unit_health(target);
+        let amount = self
+            .rng
+            .inclusive(u32::from(damage[0]), u32::from(damage[1]));
+        self.player_damages_unit(player_id, target, amount, false, now)?;
+        let drained = before.saturating_sub(self.unit_health(target));
+        if drained > 0 {
+            self.heal_player(player_id, source, ability.id, drained);
+        }
+        Ok(())
+    }
+
+    fn unit_health(&self, unit: EntityRef) -> u32 {
+        match unit {
+            EntityRef::Player(id) => self.players.get(&id).map_or(0, |player| player.health),
+            EntityRef::Creature(id) => self.creatures.get(&id).map_or(0, |unit| unit.health),
+            EntityRef::Npc(_) => 0,
+        }
     }
 
     fn complete_player_cast(

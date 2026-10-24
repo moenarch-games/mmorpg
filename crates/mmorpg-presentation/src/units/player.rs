@@ -17,11 +17,14 @@ pub struct Look {
     pub shoulder: u32,
     pub cloak: u32,
     pub weapon: u32,
+    /// The glowing orb atop a staff.
+    pub orb: u32,
     pub hat: Option<Hat>,
 }
 impl Look {
     pub fn new(class: u8, female: bool, hat: Option<Hat>, other: bool) -> Self {
-        let (stance, body, chest, shoulder, cloak, weapon) = match class {
+        const ARCANE_ORB: u32 = 0x9fe8ff;
+        let (stance, body, chest, shoulder, cloak, weapon, orb) = match class {
             1 => (
                 Stance::Bow,
                 0x748465,
@@ -29,6 +32,7 @@ impl Look {
                 0x788868,
                 0x465a42,
                 0xa88355,
+                ARCANE_ORB,
             ),
             2 => (
                 Stance::Staff,
@@ -37,6 +41,17 @@ impl Look {
                 0x8580a0,
                 0x4d4d69,
                 0xbd895f,
+                ARCANE_ORB,
+            ),
+            // The Necromancer (#301): violet-black robes, a bone-white staff and a green orb.
+            3 => (
+                Stance::Staff,
+                0x3d3548,
+                0x2c2536,
+                0x4b3e5e,
+                0x1f1a28,
+                0xe6dfc8,
+                0x7dff8a,
             ),
             _ => (
                 Stance::Sword,
@@ -45,6 +60,7 @@ impl Look {
                 0x6e8f84,
                 0x425c56,
                 0xd3d6cf,
+                ARCANE_ORB,
             ),
         };
         if other {
@@ -56,6 +72,7 @@ impl Look {
                 shoulder: 0x9aa0a4,
                 cloak: 0x5d6468,
                 weapon: 0xd3d6cf,
+                orb: ARCANE_ORB,
                 hat: None,
             }
         } else {
@@ -67,6 +84,7 @@ impl Look {
                 shoulder,
                 cloak,
                 weapon,
+                orb,
                 hat,
             }
         }
@@ -571,7 +589,7 @@ fn gear(p: &mut Parts, l: Look, root: Frame, hands: [Frame; 2], fore: [Frame; 2]
                 [0.034, 0.07, 0.034],
             );
             for (n, c, r) in [
-                ("staff-orb", 0x9fe8ff, 0.075),
+                ("staff-orb", l.orb, 0.075),
                 ("staff-orb-core", 0xffffff, 0.04),
             ] {
                 p.part(n, "blob", c, offset(staff, [0., 1.12, 0.]), [r; 3]);

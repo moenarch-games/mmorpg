@@ -1821,6 +1821,7 @@ fn class_code(name: &str) -> u8 {
         "warden" => 0,
         "ranger" => 1,
         "arcanist" => 2,
+        "necromancer" => 3,
         _ => u8::MAX,
     }
 }

@@ -107,13 +107,13 @@ impl StatTotals {
 
     /// Damage added to the player melee range and direct spell hits: half
     /// the class's primary stat, rounded down. Wardens and players without a
-    /// class use strength, Rangers agility and Arcanists intellect.
+    /// class use strength, Rangers agility, Arcanists and Necromancers intellect.
     #[must_use]
     pub const fn damage_bonus(self, class: Option<PlayerClass>) -> u16 {
         let primary = match class {
             None | Some(PlayerClass::Warden) => self.strength,
             Some(PlayerClass::Ranger) => self.agility,
-            Some(PlayerClass::Arcanist) => self.intellect,
+            Some(PlayerClass::Arcanist | PlayerClass::Necromancer) => self.intellect,
         };
         primary / PRIMARY_STAT_PER_DAMAGE
     }

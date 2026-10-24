@@ -28,11 +28,12 @@ function memory() {
   };
 }
 
-test("offers exactly three classes with distinct starter roles and equipment", () => {
+test("offers the four classes with distinct starter roles and equipment", () => {
   assert.deepEqual(CHARACTER_CLASSES.map(({ id, name }) => ({ id, name })), [
     { id: "warden", name: "Warden" },
     { id: "ranger", name: "Ranger" },
     { id: "arcanist", name: "Arcanist" },
+    { id: "necromancer", name: "Necromancer" },
   ]);
   for (const definition of CHARACTER_CLASSES) {
     assert.ok(definition.summary.length > 0);

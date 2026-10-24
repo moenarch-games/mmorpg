@@ -1316,7 +1316,7 @@ mod tests {
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
         mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v33.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v34.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
     }
@@ -1387,7 +1387,7 @@ mod tests {
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
         // The previous version's fixture is rejected, never reinterpreted.
         let legacy = hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v32.hex"
+            "../../../fixtures/protocol/player-snapshot-v33.hex"
         ));
         assert_eq!(
             decode_snapshot(&legacy).unwrap_err().to_string(),
@@ -1471,7 +1471,7 @@ mod tests {
         snapshot.target_detail = TargetDetail::default();
         let bytes = encode_snapshot(&snapshot).unwrap();
         let expected = mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v33.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v34.hex"),
             &bytes,
         );
         assert_eq!(bytes, expected);
@@ -1548,7 +1548,7 @@ mod tests {
             (53, 0b1000, "reserved flag bits are set"),
             (53, 0b111, "viewer state is inconsistent"),
             (54, 9, "unknown entity kind"),
-            (CLASS, 7, "viewer ability state is inconsistent"),
+            (CLASS, 9, "viewer ability state is inconsistent"),
             (CLASS, 1, "viewer resource is inconsistent"),
             (CLASS + 1, 1, "viewer resource is inconsistent"),
             (CLASS + 4, 0xff, "viewer resource is inconsistent"),
