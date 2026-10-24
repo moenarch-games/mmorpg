@@ -2,10 +2,17 @@
 //! run and backpedal speeds, grounded jumps, and fail-closed sequencing.
 use std::sync::Arc;
 
+use mmorpg_core::physics::SUBUNITS_PER_UNIT;
 use mmorpg_core::{
-    BACKPEDAL_SPEED_UNITS_PER_TICK, JUMP_VELOCITY_UNITS_PER_TICK, PLAYER_HALF_EXTENTS_UNITS,
-    RUN_SPEED_UNITS_PER_TICK, StaticCollider, ZoneCommand, ZoneDefinition, ZoneId, ZoneSimulation,
+    BACKPEDAL_SPEED_SUBUNITS_PER_TICK, JUMP_VELOCITY_SUBUNITS_PER_TICK, PLAYER_HALF_EXTENTS_UNITS,
+    RUN_SPEED_SUBUNITS_PER_TICK, StaticCollider, ZoneCommand, ZoneDefinition, ZoneId,
+    ZoneSimulation,
 };
+
+// Snapshots carry units per tick; the speeds are whole units at 30 Hz.
+const RUN_SPEED_UNITS_PER_TICK: i32 = RUN_SPEED_SUBUNITS_PER_TICK / SUBUNITS_PER_UNIT;
+const BACKPEDAL_SPEED_UNITS_PER_TICK: i32 = BACKPEDAL_SPEED_SUBUNITS_PER_TICK / SUBUNITS_PER_UNIT;
+const JUMP_VELOCITY_UNITS_PER_TICK: i32 = JUMP_VELOCITY_SUBUNITS_PER_TICK / SUBUNITS_PER_UNIT;
 
 const REST_Y: i32 = PLAYER_HALF_EXTENTS_UNITS[1];
 

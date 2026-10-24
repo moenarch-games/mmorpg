@@ -99,6 +99,27 @@ pub const fn checked_scale(magnitude: i32, unit: i32) -> Option<i32> {
     }
 }
 
+/// [`checked_scale`] of a magnitude in subunits ([`crate::physics::SUBUNITS_PER_UNIT`]),
+/// rounded half away from zero to whole units and returned in subunits: one division, so a
+/// whole-unit magnitude gives exactly [`checked_scale`]'s result (#379 PR 2).
+#[must_use]
+pub const fn checked_scale_to_units(magnitude: i32, unit: i32) -> Option<i32> {
+    let subunits = crate::physics::SUBUNITS_PER_UNIT as i64;
+    let product = magnitude as i64 * unit as i64;
+    let divisor = TRIG_ONE as i64 * subunits;
+    let half = divisor / 2;
+    let rounded = if product >= 0 {
+        (product + half) / divisor
+    } else {
+        (product - half) / divisor
+    } * subunits;
+    if rounded < i32::MIN as i64 || rounded > i32::MAX as i64 {
+        None
+    } else {
+        Some(rounded as i32)
+    }
+}
+
 /// Floor of the square root: the largest `r` with `r² ≤ value`, exact for
 /// every `u64`. Integer normalisation divides by it, so no floating point
 /// decides a length.
@@ -349,5 +370,23 @@ mod tests {
         assert_eq!(checked_scale(i32::MAX, TRIG_ONE + 1), None);
         assert_eq!(checked_scale(i32::MIN, i32::MIN), None);
         assert_eq!(checked_scale(1, i32::MIN), Some(-32_768));
+    }
+
+    #[test]
+    fn whole_unit_scaling_of_subunits_matches_whole_units() {
+        let s = crate::physics::SUBUNITS_PER_UNIT;
+        for yaw in (0..=u16::MAX).step_by(997) {
+            let (x, z) = direction(yaw);
+            for speed in [13, 21, -21] {
+                for unit in [x, z] {
+                    assert_eq!(
+                        checked_scale_to_units(speed * s, unit),
+                        checked_scale(speed, unit).map(|v| v * s)
+                    );
+                }
+            }
+        }
+        // A half-unit speed (60 Hz) still rounds to whole units until PR 3.
+        assert_eq!(checked_scale_to_units(21 * s / 2, TRIG_ONE), Some(11 * s));
     }
 }

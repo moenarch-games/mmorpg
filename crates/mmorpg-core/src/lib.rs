@@ -224,6 +224,27 @@ pub const fn units_per_tick_squared(units_per_second_squared: i32) -> i32 {
     units_per_second_squared / ticks_squared
 }
 
+/// Subunits ([`physics::SUBUNITS_PER_UNIT`]) per tick of a speed authored in units per second:
+/// the velocities the zone hands physics. One that is not a whole number of subunits per tick
+/// fails to compile in const contexts.
+#[must_use]
+pub const fn subunits_per_tick(units_per_second: i32) -> i32 {
+    let subunits = units_per_second * physics::SUBUNITS_PER_UNIT;
+    assert!(
+        subunits % TICK_HZ as i32 == 0,
+        "speed is not a whole number of subunits per tick"
+    );
+    subunits / TICK_HZ as i32
+}
+
+/// `subunits` truncated toward zero to whole units, in subunits. The steering and speed-scaling
+/// rules truncate to whole units per tick as they did before the fixed point, which keeps 30 Hz
+/// results identical (#379 PR 2); PR 3 lets them keep the subunits.
+#[must_use]
+pub const fn whole_units(subunits: i32) -> i32 {
+    subunits / physics::SUBUNITS_PER_UNIT * physics::SUBUNITS_PER_UNIT
+}
+
 /// [`units_per_tick`] for the `f32` projectile motion, which needs no whole units.
 #[must_use]
 pub const fn f32_units_per_tick(units_per_second: f32) -> f32 {
@@ -250,13 +271,14 @@ pub const MAX_VISIBLE_ENTITIES: usize = 64;
 pub const PLAYER_HALF_EXTENTS_UNITS: [i32; 3] = [30, 90, 30];
 /// Horizontal speed for forward, strafe and forward-diagonal intent (6.3 m/s).
 pub const RUN_SPEED_UNITS_PER_SECOND: i32 = 630;
-pub const RUN_SPEED_UNITS_PER_TICK: i32 = units_per_tick(RUN_SPEED_UNITS_PER_SECOND);
+pub const RUN_SPEED_SUBUNITS_PER_TICK: i32 = subunits_per_tick(RUN_SPEED_UNITS_PER_SECOND);
 /// Horizontal speed whenever intent has a backward component (3.9 m/s).
 pub const BACKPEDAL_SPEED_UNITS_PER_SECOND: i32 = 390;
-pub const BACKPEDAL_SPEED_UNITS_PER_TICK: i32 = units_per_tick(BACKPEDAL_SPEED_UNITS_PER_SECOND);
+pub const BACKPEDAL_SPEED_SUBUNITS_PER_TICK: i32 =
+    subunits_per_tick(BACKPEDAL_SPEED_UNITS_PER_SECOND);
 /// Upward velocity a grounded jump sets before physics applies gravity (4.8 m/s).
 pub const JUMP_VELOCITY_UNITS_PER_SECOND: i32 = 480;
-pub const JUMP_VELOCITY_UNITS_PER_TICK: i32 = units_per_tick(JUMP_VELOCITY_UNITS_PER_SECOND);
+pub const JUMP_VELOCITY_SUBUNITS_PER_TICK: i32 = subunits_per_tick(JUMP_VELOCITY_UNITS_PER_SECOND);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ZoneId(u32);
 

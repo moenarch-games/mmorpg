@@ -45,7 +45,7 @@ use physics_engine::approximate::{
 use super::rapier::{DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, TICKS_PER_SECOND, nearby};
 use super::{
     Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, RayHit, RigidBody,
-    StepStats, Vec3i, error, exact,
+    StepStats, Vec3i, error, exact, from_subunits,
 };
 
 /// The game's centimetres per metre: the engine's length unit.
@@ -128,7 +128,7 @@ impl fmt::Debug for World {
 }
 
 impl World {
-    /// An empty world; `gravity` is in units per tick squared and stays the game's: the
+    /// An empty world; `gravity` is in subunits per tick squared and stays the game's: the
     /// engine never integrates (every body is static or a character).
     pub fn new(gravity: Vec3i) -> Self {
         let engine = physics_engine::approximate::World::new(Config {
@@ -142,7 +142,7 @@ impl World {
             ..engine.character_settings()
         };
         Self {
-            gravity: exact(gravity),
+            gravity: from_subunits(gravity),
             engine,
             settings,
             bodies: BTreeMap::new(),
@@ -339,7 +339,7 @@ impl World {
             .get_mut(&id)
             .filter(|body| body.is_moving())
             .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
-        body.velocity = exact(velocity);
+        body.velocity = from_subunits(velocity);
         Ok(())
     }
 

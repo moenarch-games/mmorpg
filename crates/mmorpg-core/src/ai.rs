@@ -103,6 +103,11 @@ const CHASE_CLOSE_IN_UNITS: i64 = 10;
 /// A creature that held a boss's rally walks home within this many ticks (#276).
 const RALLY_RETURN_TICKS: u16 = crate::ticks_from_ms(20_000);
 
+/// Whole units per tick (the creature steering's resolution) as the subunits physics takes.
+const fn subunits(units: i32) -> i32 {
+    units * crate::physics::SUBUNITS_PER_UNIT
+}
+
 /// Chase velocity toward a target `(dx, dz)` away: run speed while beyond
 /// `reach`, then a last step that ends inside it, and zero once inside.
 fn chase_velocity(dx: i32, dz: i32, reach: i32) -> [i32; 2] {
@@ -419,6 +424,7 @@ impl ZoneSimulation {
             self.world
                 .set_swimming(body, swim.is_some())
                 .map_err(physics_error)?;
+            let swim = swim.map(|units| units * crate::physics::SUBUNITS_PER_UNIT);
             (velocity, swim.unwrap_or(vertical))
         } else {
             (self.keep_out_of_deep_water(here, velocity), vertical)
@@ -436,7 +442,10 @@ impl ZoneSimulation {
                 .map_err(physics_error)?;
         }
         self.world
-            .set_velocity(body, Vec3i::new(velocity[0], vertical, velocity[1]))
+            .set_velocity(
+                body,
+                Vec3i::new(subunits(velocity[0]), vertical, subunits(velocity[1])),
+            )
             .map_err(physics_error)
     }
 

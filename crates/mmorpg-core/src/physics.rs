@@ -8,7 +8,10 @@
 //!
 //! The game speaks centimetre units in `f32`: a moving body's position and velocity (units
 //! per tick) are authoritative here and go into canonical snapshots exactly; gameplay rules
-//! and projections read a rounded whole-unit view ([`RigidBody::position`]).
+//! and projections read a rounded whole-unit view ([`RigidBody::position`]). Velocities and
+//! gravity cross this boundary in fixed-point subunits ([`SUBUNITS_PER_UNIT`] per unit, #379
+//! PR 2), which `f32` holds exactly, so faster ticks keep fractional per-tick speeds and gravity.
+//! The wire and canonical snapshots keep units.
 //!
 //! Rapier (`physics/rapier.rs`) is the only backend in every production and WASM build. With
 //! the non-default `physics-ab` feature (the `physics_ab` test and example only,
@@ -149,6 +152,29 @@ const fn exact(value: Vec3i) -> [f32; 3] {
     [value.x as f32, value.y as f32, value.z as f32]
 }
 
+/// Subunits per unit: velocities (per tick) and gravity (per tick²) cross the physics boundary
+/// in this fixed point (#379 PR 2), so 60 Hz half-speeds and gravity are exact. A power of two:
+/// subunit values convert to `f32` units exactly. Positions stay `f32` units inside physics and
+/// whole units in gameplay rules and on the wire.
+pub const SUBUNITS_PER_UNIT: i32 = 256;
+
+/// Subunits as exact `f32` units.
+#[allow(clippy::cast_precision_loss)]
+const fn from_subunits(value: Vec3i) -> [f32; 3] {
+    let scale = SUBUNITS_PER_UNIT as f32;
+    [
+        value.x as f32 / scale,
+        value.y as f32 / scale,
+        value.z as f32 / scale,
+    ]
+}
+
+/// `f32` units rounded to whole subunits.
+fn to_subunits(value: [f32; 3]) -> Vec3i {
+    #[allow(clippy::cast_precision_loss)]
+    round(value.map(|axis| axis * SUBUNITS_PER_UNIT as f32))
+}
+
 impl RigidBody {
     /// A fixed box centred on `position`.
     #[must_use]
@@ -209,7 +235,7 @@ impl RigidBody {
         }
     }
 
-    /// A moving unit at a whole-unit position and velocity.
+    /// A moving unit at a whole-unit position and a velocity in subunits per tick.
     #[must_use]
     pub const fn dynamic(
         id: BodyId,
@@ -217,7 +243,7 @@ impl RigidBody {
         velocity: Vec3i,
         half_extents: Vec3i,
     ) -> Self {
-        Self::moving(id, exact(position), exact(velocity), half_extents)
+        Self::moving(id, exact(position), from_subunits(velocity), half_extents)
     }
 
     /// A moving unit at an exact position and velocity (recovery).
@@ -255,9 +281,15 @@ impl RigidBody {
         round(self.position)
     }
 
-    /// The velocity rounded to whole units per tick.
+    /// The velocity in subunits per tick ([`SUBUNITS_PER_UNIT`]).
     #[must_use]
     pub fn velocity(&self) -> Vec3i {
+        to_subunits(self.velocity)
+    }
+
+    /// The velocity rounded to whole units per tick, as projections and whole-unit rules see it.
+    #[must_use]
+    pub fn velocity_units(&self) -> Vec3i {
         round(self.velocity)
     }
 
@@ -446,7 +478,7 @@ macro_rules! dispatch {
 }
 
 impl World {
-    /// An empty world; `gravity` is in units per tick squared.
+    /// An empty world; `gravity` is in subunits per tick squared ([`SUBUNITS_PER_UNIT`]).
     #[must_use]
     pub fn new(gravity: Vec3i) -> Self {
         #[cfg(feature = "physics-ab")]
@@ -520,6 +552,7 @@ impl World {
         dispatch!(self, &mut self.worlds, world => world.set_position(id, position))
     }
 
+    /// Sets a moving body's velocity, in subunits per tick ([`SUBUNITS_PER_UNIT`]).
     pub fn set_velocity(&mut self, id: BodyId, velocity: Vec3i) -> Result<(), PhysicsError> {
         dispatch!(self, &mut self.worlds, world => world.set_velocity(id, velocity))
     }
@@ -645,6 +678,9 @@ impl World {
 mod tests {
     use super::*;
 
+    /// Whole units per tick (squared) as the subunits velocities and gravity take.
+    const S: i32 = SUBUNITS_PER_UNIT;
+
     const BODY: Vec3i = Vec3i::new(30, 90, 30);
 
     /// Runs `test` on Rapier and, with `physics-ab`, again on physics-engine.
@@ -655,7 +691,7 @@ mod tests {
     }
 
     fn world() -> World {
-        let mut world = World::new(Vec3i::new(0, -1, 0));
+        let mut world = World::new(Vec3i::new(0, -S, 0));
         world.add_body(RigidBody::floor(BodyId(1), 0)).unwrap();
         world
     }
@@ -705,7 +741,7 @@ mod tests {
         );
         assert_eq!(body.exact_velocity()[1], 0.0);
         assert!(world.grounded(unit));
-        world.set_velocity(unit, Vec3i::new(10, 0, 0)).unwrap();
+        world.set_velocity(unit, Vec3i::new(10 * S, 0, 0)).unwrap();
         for _ in 0..60 {
             world.step().unwrap();
         }
@@ -725,7 +761,7 @@ mod tests {
             .add_body(RigidBody::dynamic(
                 BodyId(10),
                 Vec3i::new(-200, 90, 0),
-                Vec3i::new(10, 0, 0),
+                Vec3i::new(10 * S, 0, 0),
                 BODY,
             ))
             .unwrap();
@@ -733,14 +769,14 @@ mod tests {
             .add_body(RigidBody::dynamic(
                 BodyId(11),
                 Vec3i::new(200, 90, 0),
-                Vec3i::new(-10, 0, 0),
+                Vec3i::new(-10 * S, 0, 0),
                 BODY,
             ))
             .unwrap();
         for _ in 0..60 {
             for (id, vx) in [(10, 10), (11, -10)] {
                 world
-                    .set_velocity(BodyId(id), Vec3i::new(vx, 0, 0))
+                    .set_velocity(BodyId(id), Vec3i::new(vx * S, 0, 0))
                     .unwrap();
             }
             world.step().unwrap();
@@ -789,8 +825,8 @@ mod tests {
                         ))
                         .unwrap();
                     for _ in 0..120 {
-                        world.set_velocity(a, Vec3i::new(speed, 0, 0)).unwrap();
-                        world.set_velocity(b, Vec3i::new(-speed, 0, 0)).unwrap();
+                        world.set_velocity(a, Vec3i::new(speed * S, 0, 0)).unwrap();
+                        world.set_velocity(b, Vec3i::new(-speed * S, 0, 0)).unwrap();
                         world.step().unwrap();
                     }
                     let (pa, pb) = (
@@ -840,7 +876,7 @@ mod tests {
             world
                 .set_velocity(
                     unit,
-                    Vec3i::new(8, world.body(unit).unwrap().velocity().y, 0),
+                    Vec3i::new(8 * S, world.body(unit).unwrap().velocity().y, 0),
                 )
                 .unwrap();
             world.step().unwrap();
@@ -905,7 +941,11 @@ mod tests {
                 BODY,
             ))
             .unwrap();
-        for velocity in [Vec3i::ZERO, Vec3i::new(6, 0, 0), Vec3i::new(0, 0, 6)] {
+        for velocity in [
+            Vec3i::ZERO,
+            Vec3i::new(6 * S, 0, 0),
+            Vec3i::new(0, 0, 6 * S),
+        ] {
             for _ in 0..60 {
                 let vertical = world.body(unit).unwrap().velocity().y;
                 world
@@ -1141,7 +1181,7 @@ mod tests {
                 .unwrap();
             world.step().unwrap();
         }
-        world.set_velocity(rider, Vec3i::new(10, 0, 0)).unwrap();
+        world.set_velocity(rider, Vec3i::new(10 * S, 0, 0)).unwrap();
         for _ in 0..90 {
             world.step().unwrap();
         }
@@ -1171,7 +1211,7 @@ mod tests {
         world.step().unwrap();
         assert!(world.grounded(rider));
         // A jump while the platform sinks: the rider rises on its own, not carried down.
-        world.set_velocity(rider, Vec3i::new(0, 12, 0)).unwrap();
+        world.set_velocity(rider, Vec3i::new(0, 12 * S, 0)).unwrap();
         world.move_platform(lift, Vec3i::new(0, 145, 0)).unwrap();
         world.step().unwrap();
         assert!(world.body(rider).unwrap().exact_position()[1] > 390.0);
@@ -1201,7 +1241,7 @@ mod tests {
             .add_body(RigidBody::dynamic(
                 BodyId(10),
                 Vec3i::new(0, 90, 0),
-                Vec3i::new(3, 0, 1),
+                Vec3i::new(3 * S, 0, S),
                 BODY,
             ))
             .unwrap();
@@ -1209,7 +1249,7 @@ mod tests {
             .add_body(RigidBody::dynamic(
                 BodyId(11),
                 Vec3i::new(100, 90, 0),
-                Vec3i::new(-3, 0, 0),
+                Vec3i::new(-3 * S, 0, 0),
                 BODY,
             ))
             .unwrap();

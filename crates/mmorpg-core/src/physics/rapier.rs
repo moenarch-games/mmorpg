@@ -25,7 +25,7 @@ use rapier3d::prelude::{
 use super::queries::UprightShapes;
 use super::{
     Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, RayHit, RigidBody,
-    StepStats, Vec3i, error, exact, round,
+    StepStats, Vec3i, error, exact, from_subunits,
 };
 
 /// Centimetre units per metre.
@@ -89,7 +89,7 @@ impl fmt::Debug for World {
 
 impl Clone for World {
     fn clone(&self) -> Self {
-        let mut world = Self::new(round(self.gravity));
+        let mut world = Self::new(Vec3i::ZERO);
         world.gravity = self.gravity;
         world.bodies = self.bodies.clone();
         world.ground = self.ground.clone();
@@ -276,11 +276,11 @@ fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain)
 }
 
 impl World {
-    /// An empty world; `gravity` is in units per tick squared.
+    /// An empty world; `gravity` is in subunits per tick squared.
     #[must_use]
     pub fn new(gravity: Vec3i) -> Self {
         Self {
-            gravity: exact(gravity),
+            gravity: from_subunits(gravity),
             ground: None,
             world: empty_world(),
             queries: UprightShapes.chain(DefaultQueryDispatcher),
@@ -437,7 +437,7 @@ impl World {
             .get_mut(&id)
             .filter(|body| body.is_moving())
             .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
-        body.velocity = exact(velocity);
+        body.velocity = from_subunits(velocity);
         Ok(())
     }
 
