@@ -77,7 +77,7 @@ fn the_cave_is_flooded_dark_to_its_end_and_breathable_only_in_its_pocket() {
     }
     // The shore over the cave is dry ground, roofed flush with it.
     assert_eq!(
-        WaterMode::of_player(content.waters(), [10_000, 90, CAVE_Z]),
+        WaterMode::of_player(content.waters(), [10_000, shrine::SHORE_Y + 90, CAVE_Z]),
         WaterMode::Dry
     );
     let roof = content
@@ -86,7 +86,7 @@ fn the_cave_is_flooded_dark_to_its_end_and_breathable_only_in_its_pocket() {
         .iter()
         .find(|collider| collider.id == greyhaven_vale::ids::SHRINE_CAVE_ROOF.start() + 10)
         .unwrap();
-    assert_eq!(roof.position[1] + roof.half_extents[1], 0);
+    assert_eq!(roof.position[1] + roof.half_extents[1], shrine::SHORE_Y);
 }
 
 #[test]
@@ -183,7 +183,7 @@ fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it()
 
 #[test]
 fn walking_over_the_altar_on_the_shore_retrieves_nothing() {
-    let mut zone = zone_with_player_at([11_800, 95, CAVE_Z], true);
+    let mut zone = zone_with_player_at([11_800, shrine::SHORE_Y + 95, CAVE_Z], true);
     run(&mut zone, 30);
     assert_eq!(water(&zone), WaterMode::Dry);
     assert_eq!(relics(&zone), 0);
@@ -191,14 +191,18 @@ fn walking_over_the_altar_on_the_shore_retrieves_nothing() {
 
 /// The player submerged over the plaza and lurker 303 in the water 4 m away.
 fn lurker_beside_a_diver() -> ZoneSimulation {
-    let zone = zone_with_player_at([5_400, -600, CAVE_Z], false);
+    let zone = zone_with_player_at([5_400, shrine::FLOOR_Y + 300, CAVE_Z], false);
     let mut state = zone.snapshot().unwrap();
     let lurker = state
         .creatures
         .iter_mut()
         .find(|creature| creature.creature_id == LURKER)
         .unwrap();
-    lurker.position = [5_400.0, -600.0, CAVE_Z as f32 + 400.0];
+    lurker.position = [
+        5_400.0,
+        (shrine::FLOOR_Y + 300) as f32,
+        CAVE_Z as f32 + 400.0,
+    ];
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
 }
 

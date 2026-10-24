@@ -1,6 +1,7 @@
 //! Greyhaven's village basin (#423): Millbrook Farm's terrace stands 11 m above the Outpost's
 //! valley floor behind a cliff no unit climbs, reached up the Millbrook Climb and left down the
-//! Millbrook Steps, both walked on the zone's own physics.
+//! Millbrook Steps; Stillwater Lake shares the terrace, up the Lakeshore Climb and along the
+//! Stillwater Rim Trail from the farm. All walked on the zone's own physics.
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{self, basin};
@@ -168,4 +169,85 @@ fn farm_folk_and_creatures_stand_on_the_terrace() {
     for rat in rats {
         assert!(rat.position[1] > basin::TERRACE_Y, "{rat:?}");
     }
+}
+
+#[test]
+fn the_lake_and_the_shrine_lie_in_the_terrace() {
+    use greyhaven_vale::{lake, shrine};
+    let definition = greyhaven_vale::greyhaven_vale_definition();
+    // The lake's west shore and the shore over the flooded cave stand on the terrace …
+    assert_eq!(definition.ground_at(3_200, -5_600), basin::TERRACE_Y);
+    assert_eq!(definition.ground_at(10_000, -4_400), basin::TERRACE_Y);
+    // … the water lies just above it and the shrine's floor 9 m below.
+    assert_eq!(lake::SURFACE, basin::TERRACE_Y + 15);
+    assert_eq!(definition.ground_at(5_000, -5_400), shrine::FLOOR_Y);
+    assert_eq!(shrine::FLOOR_Y, basin::TERRACE_Y - 900);
+    // The south cliff over the basin: the terrace, then the floor one cell on.
+    assert_eq!(definition.ground_at(2_000, -2_400), 0);
+    assert_eq!(definition.ground_at(2_000, -2_800), basin::TERRACE_Y);
+}
+
+#[test]
+fn a_player_walks_up_the_lakeshore_climb_to_the_lake() {
+    let mut zone = player_at([0, -2_800]);
+    settle(&mut zone);
+    assert!(feet(&zone)[1].abs() < 10.0);
+    let trail = walk(
+        &mut zone,
+        &[
+            [1_400, -2_800],
+            [1_400, -6_200],
+            [2_600, -6_200],
+            [2_600, -3_200],
+            [3_400, -3_200],
+            [3_400, -4_800],
+        ],
+    );
+    let shore = feet(&zone);
+    assert!(
+        (shore[1] - basin::TERRACE_Y as f32).abs() < 30.0,
+        "on the lake shore: {shore:?}"
+    );
+    assert!(
+        trail
+            .iter()
+            .any(|at| at[2] < -6_000.0 && (at[1] - basin::LAKE_LANDING_Y as f32).abs() < 30.0)
+    );
+}
+
+#[test]
+fn the_rim_trail_joins_the_farm_and_the_lake_on_top() {
+    let mut zone = player_at([6_400, 3_300]);
+    settle(&mut zone);
+    let trail = walk(&mut zone, &[[6_400, -2_400], [5_600, -3_600]]);
+    assert!(
+        trail
+            .iter()
+            .all(|at| (at[1] - basin::TERRACE_Y as f32).abs() < 30.0),
+        "the trail stays on the terrace"
+    );
+}
+
+#[test]
+fn the_lake_terrace_cliff_cannot_be_walked_up() {
+    let mut zone = player_at([6_000, -9_000]);
+    settle(&mut zone);
+    for sequence in 1..=240 {
+        zone.apply_command(
+            1,
+            sequence,
+            ZoneCommand::Move {
+                forward: 1,
+                strafe: 0,
+                facing: 0,
+            },
+        )
+        .unwrap();
+        zone.advance_tick().unwrap();
+    }
+    let at = feet(&zone);
+    assert!(
+        at[2] < -8_100.0 && at[1] < 400.0,
+        "the cliff holds the player at its foot: {at:?}"
+    );
 }

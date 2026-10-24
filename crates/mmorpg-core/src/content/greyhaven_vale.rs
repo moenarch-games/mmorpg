@@ -46,8 +46,10 @@ pub mod units;
 /// cavern with Redbrand Brutes, seals its deeper threshold and adds quest 11 (#160); revision 26
 /// rebuilds the Sunken Shrine on asset-tooling's shrine kit and widens its air pocket into
 /// the kit's 8 × 8 m room (#431); revision 27 lifts Millbrook Farm onto an 11 m terrace above
-/// the Outpost's basin, reached by the Millbrook Climb and the Millbrook Steps (#423).
-pub const REVISION: u64 = 27;
+/// the Outpost's basin, reached by the Millbrook Climb and the Millbrook Steps (#423); revision
+/// 28 lifts Stillwater Lake and the Sunken Shrine onto the same terrace, reached up the
+/// Lakeshore Climb and joined to the farm by the Stillwater Rim Trail (#423).
+pub const REVISION: u64 = 28;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -277,14 +279,28 @@ pub struct Road {
     pub points: &'static [[i32; 2]],
 }
 
-static ROADS: [Road; 9] = [
+static ROADS: [Road; 10] = [
     Road {
         name: "Hollow Road",
         points: &[[0, 1_200], [0, -1_000], [0, -4_000], [0, -8_600]],
     },
     Road {
         name: "Lakeshore Path",
-        points: &[[0, -4_000], [2_500, -4_800], [3_200, -4_900]],
+        // Up the Lakeshore Climb (#423): the west cliff's ledge, the landing, the cutting.
+        points: &[
+            [0, -2_800],
+            [1_400, -2_800],
+            [1_400, -6_200],
+            [2_600, -6_200],
+            [2_600, -3_200],
+            [3_400, -3_200],
+            [3_400, -4_900],
+        ],
+    },
+    Road {
+        // Along the terrace's rim from the farmyard to the lake's south shore (#423).
+        name: "Stillwater Rim Trail",
+        points: &[[6_400, 3_300], [6_400, -2_400], [5_600, -3_600]],
     },
     Road {
         name: "Millbrook Road",
@@ -526,7 +542,7 @@ pub fn hill_height(x: i32, z: i32) -> i32 {
 }
 
 /// Stillwater Lake's authoritative water (#274): the ellipse the clients draw, its surface
-/// 0.15 m above the flat ground.
+/// 0.15 m above the lake terrace's ground (#423).
 #[must_use]
 pub fn stillwater_lake() -> crate::WaterVolume {
     crate::WaterVolume {
@@ -542,11 +558,14 @@ pub fn stillwater_lake() -> crate::WaterVolume {
 pub mod lake {
     pub const CENTRE: [i32; 2] = [5_500, -5_500];
     pub const RADII: [i32; 2] = [2_200, 1_600];
-    pub const SURFACE: i32 = 15;
+    /// The shore: the terrace the lake lies in (#423).
+    pub const SHORE_Y: i32 = super::basin::TERRACE_Y;
+    pub const SURFACE: i32 = SHORE_Y + 15;
     /// The basin falls linearly from the shallow rim to this depth (9 m) at the centre …
     pub const DEPTH: i64 = 900;
-    /// … starting at this fraction of the ellipse (Q10): the outer fifth stays ankle-deep.
-    pub const RIM_Q10: i64 = 819;
+    /// … starting at this fraction of the ellipse (Q10): the outer 30 % stays ankle-deep and
+    /// level, where the lurkers wade (#423).
+    pub const RIM_Q10: i64 = 717;
 }
 
 /// How far (units) the lake basin lowers the ground at `(x, z)`.
@@ -562,6 +581,13 @@ pub fn lake_depth(x: i32, z: i32) -> i32 {
         return 0;
     }
     i32::try_from(lake::DEPTH * (lake::RIM_Q10 - distance) / lake::RIM_Q10).unwrap_or(0)
+}
+
+/// The ground wherever no cave flattens it: the hills (#159), the basin's terraces and their
+/// ways down (#423), less the lake's basin (#274).
+fn open_ground(x: i32, z: i32) -> i32 {
+    let hill = hill_height(x, z);
+    basin::height_at(x, z).map_or(hill, |terrace| terrace.max(hill)) - lake_depth(x, z)
 }
 
 /// The outer valley's terrain grid (#159), sampled from [`hill_height`].
@@ -580,10 +606,7 @@ pub fn terrain() -> Terrain {
                     // The Sunken Shrine's plaza and cave floor (#274).
                     shrine::FLOOR_Y
                 } else {
-                    // Millbrook Farm's terrace and its two ways down (#423).
-                    let hill = hill_height(x, z);
-                    basin::height_at(x, z).map_or(hill, |terrace| terrace.max(hill))
-                        - lake_depth(x, z)
+                    open_ground(x, z)
                 }
             })
         })
@@ -866,9 +889,7 @@ fn colliders() -> Vec<StaticCollider> {
     colliders.push(cave::threshold(ids::CAVE_THRESHOLD));
     colliders.extend(shrine::ruins(*ids::SHRINE_RUINS.start()));
     colliders.extend(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()));
-    colliders.extend(shrine::roof(*ids::SHRINE_CAVE_ROOF.start(), |x, z| {
-        hill_height(x, z) - lake_depth(x, z)
-    }));
+    colliders.extend(shrine::roof(*ids::SHRINE_CAVE_ROOF.start(), open_ground));
     colliders.extend(trees());
     colliders
 }

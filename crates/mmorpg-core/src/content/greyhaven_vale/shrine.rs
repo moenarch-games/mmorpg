@@ -18,8 +18,10 @@
 
 use crate::{AirPocket, StaticCollider, WaterVolume};
 
+/// The shore over the cave: the lake terrace's ground (#423).
+pub const SHORE_Y: i32 = super::basin::TERRACE_Y;
 /// The plaza and cave floor height: the lake's 9 m deep centre.
-pub const FLOOR_Y: i32 = -900;
+pub const FLOOR_Y: i32 = SHORE_Y - 900;
 /// Clear height of the cave under its roof (3 m).
 pub const CLEAR: i32 = 300;
 /// Clear height of the air-pocket room under its vault (5 m).
@@ -92,7 +94,7 @@ pub fn cave_water() -> WaterVolume {
         name: "Sunken Shrine Cave".to_owned(),
         centre: [8_800, CAVE_Z],
         radii: [3_600, 800],
-        surface: 0,
+        surface: SHORE_Y,
         air_pockets: vec![AIR_POCKET],
     }
 }
