@@ -42,6 +42,14 @@ all = { level = "warn", priority = -1 }
 
 # Dependencies (Rapier, parry, nalgebra, wgpu, ...) are optimized in dev and test builds: the
 # deterministic simulation tests and scenarios spend most of their time inside the physics step.
-# Workspace crates stay at opt-level 0 for fast incremental rebuilds.
+# Workspace crates stay at opt-level 0 in dev builds for fast incremental rebuilds.
 [profile.dev.package."*"]
 opt-level = 2
+
+# Test builds (cargo test / nextest) also optimize the workspace crates: the zone, quest-chain,
+# scenario and physics A/B tests are whole-simulation runs that take minutes at opt-level 0.
+# Overflow checks and debug assertions stay on (they follow the dev profile, not opt-level), and
+# line tables keep test backtraces readable while shrinking link time and the CI cache.
+[profile.test]
+opt-level = 1
+debug = "line-tables-only"

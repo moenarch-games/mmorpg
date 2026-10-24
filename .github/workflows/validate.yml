@@ -21,6 +21,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read
     outputs:
       pages-validation: ${{ steps.pages-scope.outputs.pages-validation }}
       allow-skipped: ${{ steps.pages-scope.outputs.allow-skipped }}
@@ -76,6 +77,17 @@ jobs:
                   Cargo.toml|Cargo.lock|rust-toolchain*|.cargo/*|crates/*|content/*|web/assets/*) rust_changed=true ;;
                 esac
               done
+            fi
+          fi
+          # The merge queue fast-forwards main to the exact commit its merge_group run validated, so
+          # the push run for that commit would repeat the same Rust validation. A push that changes
+          # the Cargo cache key still runs it: main's run seeds the shared Cargo cache that later PR
+          # and merge_group runs restore.
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$rust_changed" == "true" && -f "$RUNNER_TEMP/changed-files" ]]; then
+            queued="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/validate.yml/runs?event=merge_group&head_sha=${GITHUB_SHA}&status=success" --jq '.total_count')"
+            if (( queued > 0 )) && ! grep -qzE '^(Cargo\.toml|Cargo\.lock|rust-toolchain.*|\.cargo/.*|crates/[^/]+/Cargo\.toml)$' "$RUNNER_TEMP/changed-files"; then
+              echo "merge_group already validated ${GITHUB_SHA}; skipping the repeated Rust validation"
+              rust_changed=false
             fi
           fi
           printf 'docs_only=%s\n' "$docs_only" >> "$GITHUB_OUTPUT"
@@ -142,7 +154,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@16cd27876a7f21645999432e4993ee2afa68fa6e
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@2ec8d067031d4e9d093701f23a00b0ddcaef42d8
     with:
       bun_version: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'latest' || '' }}
       node_version: ""
@@ -157,8 +169,10 @@ jobs:
       # Ordinary Rust PRs run the workspace tests too. GPU tests are #[ignore]d, and the native/Pages
       # reference tests (they build the WASM page with Bun and wasm-bindgen) stay in full validation.
       # The merge-blocking physics backend A/B test (physics-engine #330) needs the test-only
-      # `physics-ab` feature; full validation's --all-features run includes it.
-      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run --workspace --locked -E "not (test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content) | test(~pages_reference_inventory_covers_current_world_scope))" && cargo nextest run -p mmorpg-core --features physics-ab --test physics_ab --locked' || '') }}
+      # `physics-ab` feature; full validation's --all-features run includes it. It runs alongside the
+      # workspace suite (it waits for the build lock, then uses the cores the suite's long-tail tests
+      # leave idle); either failure fails the step.
+      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run --workspace --locked -E "not (test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content) | test(~pages_reference_inventory_covers_current_world_scope))" & suite=$!; cargo nextest run -p mmorpg-core --features physics-ab --test physics_ab --locked; wait "$suite"' || '') }}
       build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'cargo check --workspace --locked') || '' }}
 
   pages-validation:
