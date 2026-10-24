@@ -198,6 +198,20 @@ export class ClassHud {
     }
   }
 
+  /** Changes whenever the hotbar's abilities do, for mirrors such as the touch face buttons. */
+  get slotKey(): string {
+    return this.#slotKey;
+  }
+
+  /** Each hotbar slot's ability name and a copy of its icon (touch face buttons, #434). */
+  slotFaces(): { name: string; icon: Node }[] {
+    return this.#slots.map((slot) => {
+      const name = this.#catalog?.abilities.get(Number(slot.button.dataset.ability))?.name ?? "Ability";
+      const icon = slot.button.querySelector(".slot-icon")?.cloneNode(true) ?? document.createElement("span");
+      return { name, icon };
+    });
+  }
+
   /** Clears everything for a new session. */
   reset(): void {
     this.#cancelLongPress();
