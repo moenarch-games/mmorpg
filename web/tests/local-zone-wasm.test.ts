@@ -389,6 +389,24 @@ describe("WASM local zone host", () => {
     expect(sampled?.position[0]).toBeLessThan(before);
   });
 
+  test("the ambient cat, dog and rodent pace by the inn and at Millbrook Farm (#419)", () => {
+    const { scenery } = createLocalWorld(wasm, testCharacters());
+    const { ambient } = scenery;
+    expect(ambient.entries).toEqual(["greyhaven.ambient.cat", "greyhaven.ambient.dog", "greyhaven.ambient.rodent"]);
+    expect(ambient.clips).toEqual(["Idle", "Walk"]);
+    expect(ambient.anchors.map(([x, z]) => scenery.areaAt(x, z)?.name)).toEqual(["Greyhaven Outpost", "Millbrook Farm", "Millbrook Farm"]);
+    const frame = ambient.frame(12, true);
+    expect(frame.length).toBe(3 * 18);
+    // Reduced motion holds each animal idle at its first waypoint, on the relief.
+    const still = ambient.frame(99, false);
+    ambient.anchors.forEach(([x, z], index) => {
+      expect(still[index * 18 + 12]).toBeCloseTo(x / 100, 4);
+      expect(still[index * 18 + 14]).toBeCloseTo(z / 100, 4);
+      expect(still[index * 18 + 13]).toBeCloseTo(scenery.reliefAt(x, z) / 100, 4);
+      expect(still[index * 18 + 16]).toBe(0);
+    });
+  });
+
   test("scenery and areas come from the same content as the zone", async () => {
     const { source, scenery } = createLocalWorld(wasm, testCharacters());
     expect(scenery.scenery.contentRevision).toBe(26n);

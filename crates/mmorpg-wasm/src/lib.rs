@@ -628,6 +628,51 @@ pub fn shrine_kit_models() -> Vec<f32> {
         .collect()
 }
 
+/// Greyhaven's ambient animal entries (#419), in [`ambient_animal_frame`] order.
+#[wasm_bindgen(js_name = ambientAnimalEntries)]
+#[must_use]
+pub fn ambient_animal_entries() -> Vec<String> {
+    mmorpg_presentation::ambient::entries()
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The ambient animals' clip names, indexed by each pose's clip float.
+#[wasm_bindgen(js_name = ambientAnimalClips)]
+#[must_use]
+pub fn ambient_animal_clips() -> Vec<String> {
+    mmorpg_presentation::ambient::CLIPS
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Feet of each ambient animal's first waypoint in units, `x, z` pairs.
+#[wasm_bindgen(js_name = ambientAnimalAnchors)]
+#[must_use]
+pub fn ambient_animal_anchors() -> Vec<i32> {
+    mmorpg_presentation::ambient::anchors()
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+/// Per ambient animal at `seconds`: 16 column-major model floats, the clip index and the clip
+/// time. Without `animate` (reduced motion) each holds still.
+#[wasm_bindgen(js_name = ambientAnimalFrame)]
+#[must_use]
+pub fn ambient_animal_frame(seconds: f64, animate: bool) -> Vec<f32> {
+    mmorpg_presentation::ambient::poses(scenery::hosted_scenery(), seconds, animate)
+        .iter()
+        .flat_map(|pose| {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+            let tail = [pose.clip as f32, pose.time as f32];
+            pose.model.into_iter().chain(tail)
+        })
+        .collect()
+}
+
 impl Default for InnPresenter {
     fn default() -> Self {
         Self::new()
