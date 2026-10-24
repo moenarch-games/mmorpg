@@ -102,6 +102,8 @@ pub struct Presentation {
     shrine: Vec<crate::world::SceneDraw>,
     /// The Outpost kit buildings' modules (#420), placed once.
     outpost: Vec<crate::world::SceneDraw>,
+    /// The market square's settlement props (#421), placed once.
+    settlement: Vec<crate::world::SceneDraw>,
 }
 
 impl Presentation {
@@ -144,6 +146,19 @@ impl Presentation {
                     })
             })
             .collect();
+        let settlement = mmorpg_presentation::settlement_props::parts(&scenery)
+            .iter()
+            .flat_map(|part| {
+                skinned::settlement_draws(part.entry)
+                    .iter()
+                    .map(|draw| crate::world::SceneDraw {
+                        model: three_d_animation::Mat4 {
+                            elements: part.model,
+                        },
+                        ..draw.clone()
+                    })
+            })
+            .collect();
         let mut units_presenter =
             UnitPresenter::new(player_id, Arc::clone(&content), Arc::new(scenery.clone()));
         for kind in Kind::ALL {
@@ -172,6 +187,7 @@ impl Presentation {
             last_inn: now,
             shrine,
             outpost,
+            settlement,
         })
     }
 
@@ -634,6 +650,7 @@ impl Presentation {
         self.append_inn(&mut frame.draws, now);
         frame.draws.extend(self.shrine.iter().cloned());
         frame.draws.extend(self.outpost.iter().cloned());
+        frame.draws.extend(self.settlement.iter().cloned());
         self.append_ambient(&mut frame.draws, now);
         frame
     }

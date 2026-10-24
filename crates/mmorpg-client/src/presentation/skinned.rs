@@ -690,6 +690,33 @@ pub(super) fn outpost_draws(entry: &str) -> &'static [SceneDraw] {
         .map_or(&[], |(_, draws)| draws.as_slice())
 }
 
+/// The market square's settlement props and their resources, embedded by `build.rs` (#421).
+mod settlement_bundle {
+    include!(concat!(env!("OUT_DIR"), "/settlement_bundle.rs"));
+}
+
+/// A settlement prop's draws (in the prop frame) of `entry`, every entry imported once and
+/// shared by each placement.
+pub(super) fn settlement_draws(entry: &str) -> &'static [SceneDraw] {
+    static DRAWS: OnceLock<Vec<(&'static str, Vec<SceneDraw>)>> = OnceLock::new();
+    DRAWS
+        .get_or_init(|| {
+            settlement_bundle::ENTRIES
+                .iter()
+                .map(|&(entry, path)| {
+                    let model = Model::parse(&bundle_glb(path, settlement_bundle::FILES), "")
+                        .expect("a settlement prop entry is valid glTF");
+                    let draws =
+                        model.draws_placed(entry, three_d_animation::Mat4::IDENTITY, "", 0., None);
+                    (entry, draws)
+                })
+                .collect()
+        })
+        .iter()
+        .find(|(key, _)| *key == entry)
+        .map_or(&[], |(_, draws)| draws.as_slice())
+}
+
 /// Greyhaven's ambient animals and their resources, embedded by `build.rs` (#419).
 mod ambient_bundle {
     include!(concat!(env!("OUT_DIR"), "/ambient_bundle.rs"));

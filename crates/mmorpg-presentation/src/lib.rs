@@ -18,6 +18,7 @@ pub mod buildings;
 pub mod geometry;
 pub mod outpost_kit;
 mod props;
+pub mod settlement_props;
 pub mod shrine;
 pub mod structures;
 mod terrain;
@@ -96,9 +97,42 @@ pub enum Motion {
         min: [f64; 2],
         max: [f64; 2],
     },
-    /// The procedural blockout of an Outpost kit building (#420), standing at `frame`: drawn
+    /// The procedural stand-in for an asset-tooling `kit`'s models, standing at `frame`: drawn
     /// only while the client does not draw the kit (not yet loaded, or failed to load).
-    Fallback { frame: Affine },
+    Fallback { frame: Affine, kit: Kit },
+}
+
+/// An asset-tooling bundle the clients draw over a procedural fallback.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Kit {
+    /// The Outpost kit buildings (#420); their blockouts are the fallback.
+    Outpost,
+    /// The market square's settlement props (#421); boxes of their collision proxies are the
+    /// fallback.
+    SettlementProps,
+}
+
+/// Which kits a client draws; the static scene hides a drawn kit's fallback.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Kits {
+    pub outpost: bool,
+    pub settlement_props: bool,
+}
+
+impl Kits {
+    /// Every kit drawn: the native client embeds them all.
+    pub const ALL: Self = Self {
+        outpost: true,
+        settlement_props: true,
+    };
+
+    #[must_use]
+    pub const fn draws(self, kit: Kit) -> bool {
+        match kit {
+            Kit::Outpost => self.outpost,
+            Kit::SettlementProps => self.settlement_props,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -176,23 +210,23 @@ impl StaticScene {
 
     /// Whether each animated part is drawn for the `viewer`'s feet (metres), one per
     /// [`Self::animated`] entry: a cave roof is cut away while the viewer stands under it, and
-    /// an Outpost kit building's blockout (#420) is hidden while the client draws the kit
-    /// (`outpost_kit`).
+    /// a kit's fallback ([`Motion::Fallback`]) is hidden while the client draws that kit
+    /// (`kits`).
     #[must_use]
-    pub fn shown(&self, viewer: Option<[f64; 3]>, outpost_kit: bool) -> Vec<bool> {
+    pub fn shown(&self, viewer: Option<[f64; 3]>, kits: Kits) -> Vec<bool> {
         self.animated
             .iter()
             .map(|part| match part.motion {
                 Motion::Roof { at, min, max } => !viewer.is_some_and(|[x, y, z]| {
                     (min[0]..=max[0]).contains(&x) && (min[1]..=max[1]).contains(&z) && y < at[1]
                 }),
-                Motion::Fallback { .. } => !outpost_kit,
+                Motion::Fallback { kit, .. } => !kits.draws(kit),
                 _ => true,
             })
             .collect()
     }
 
-    /// Visible static draws, water and placed animated parts for one camera eye; `outpost_kit`
+    /// Visible static draws, water and placed animated parts for one camera eye; `kits`
     /// as for [`Self::shown`].
     #[must_use]
     pub fn frame(
@@ -201,7 +235,7 @@ impl StaticScene {
         animate: bool,
         eye: [f32; 3],
         viewer: Option<[f64; 3]>,
-        outpost_kit: bool,
+        kits: Kits,
     ) -> Vec<Draw> {
         let mut draws: Vec<_> = self
             .groups
@@ -214,7 +248,7 @@ impl StaticScene {
             .animated
             .iter()
             .zip(self.motion(seconds, animate))
-            .zip(self.shown(viewer, outpost_kit))
+            .zip(self.shown(viewer, kits))
             .filter_map(|(placed, shown)| shown.then_some(placed))
         {
             draws.extend(part.draws.iter().map(|draw| Draw {
@@ -228,7 +262,7 @@ impl StaticScene {
 
 fn motion(motion: Motion, t: f64, animate: bool) -> Affine {
     match motion {
-        Motion::Fallback { frame } => frame,
+        Motion::Fallback { frame, .. } => frame,
         Motion::Roof { at, .. } => translate(at[0], at[1], at[2]),
         Motion::Sail { hub, yaw } => {
             compose(&[translate(hub[0], hub[1], hub[2]), ry(yaw), rz(t * 0.45)])
