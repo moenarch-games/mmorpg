@@ -534,6 +534,9 @@ impl GameUi {
                             PlayerClass::Rogue => {
                                 "A dagger fighter who poisons and stuns with focus."
                             }
+                            PlayerClass::Cleric => {
+                                "A holy caster who smites, heals and shields allies with faith."
+                            }
                         });
                         ui.label("Body");
                         ui.horizontal(|ui| {
@@ -941,6 +944,7 @@ fn class_title(class: PlayerClass) -> &'static str {
         PlayerClass::Arcanist => "Arcanist",
         PlayerClass::Necromancer => "Necromancer",
         PlayerClass::Rogue => "Rogue",
+        PlayerClass::Cleric => "Cleric",
     }
 }
 
@@ -996,6 +1000,7 @@ const fn resource_color(kind: ResourceKind) -> Color32 {
         ResourceKind::Rage => Color32::from_rgb(200, 40, 30),
         ResourceKind::Focus => Color32::from_rgb(220, 180, 50),
         ResourceKind::Mana => Color32::from_rgb(50, 100, 230),
+        ResourceKind::Faith => Color32::from_rgb(240, 215, 140),
     }
 }
 

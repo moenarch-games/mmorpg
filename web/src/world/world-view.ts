@@ -1062,10 +1062,12 @@ export class WorldView {
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         1 - ((event.clientY - rect.top) / rect.height) * 2,
       );
-      const attackablePlayers = new Set(this.#lastProjection?.entities
-        .filter((entity) => entity.kind === "player" && entity.flags.attackable && !entity.flags.dead)
+      // Every other living player is selectable: a foe to attack or a friend to heal and shield (#303).
+      const viewerId = this.#lastProjection?.viewerId;
+      const selectablePlayers = new Set(this.#lastProjection?.entities
+        .filter((entity) => entity.kind === "player" && entity.entityId !== viewerId && !entity.flags.dead)
         .map((entity) => entity.entityId) ?? []);
-      const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), this.#inn?.pickables(), attackablePlayers, { width: rect.width, height: rect.height, pointerType: event.pointerType });
+      const picked = this.#picking.pick(point, this.#camera, this.#lastSceneryNodes, this.#lastUnitNodes, this.#lastInstanceBatches, this.#models.pickables(), this.#inn?.pickables(), selectablePlayers, { width: rect.width, height: rect.height, pointerType: event.pointerType });
       this.#pendingNpc = null;
       // A click on the door leaf asks the zone to swing it; the zone checks reach (#158).
       if (picked?.kind === "door") {

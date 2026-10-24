@@ -243,6 +243,7 @@ const fn resource_color(kind: ResourceKind) -> [f32; 3] {
         ResourceKind::Rage => [0.8, 0.12, 0.1],
         ResourceKind::Focus => [0.9, 0.75, 0.2],
         ResourceKind::Mana => [0.15, 0.35, 0.9],
+        ResourceKind::Faith => [0.95, 0.85, 0.55],
     }
 }
 
@@ -260,6 +261,7 @@ mod tests {
         );
         assert_eq!(class_kit(PlayerClass::Necromancer), [26, 27, 28, 29]);
         assert_eq!(class_kit(PlayerClass::Rogue), [30, 31, 32, 33]);
+        assert_eq!(class_kit(PlayerClass::Cleric), [34, 35, 36, 37]);
     }
 
     #[test]

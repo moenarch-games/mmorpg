@@ -15,15 +15,15 @@ export type LinkState = "connected" | "reconnecting";
  * leases and resumes it. Online clients resolve a persistent alias for the
  * roster slot and claim the host's durable record when character storage is enabled.
  */
-export type JoinCharacter = { id: string; classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue"; sex: "female" | "male" };
+export type JoinCharacter = { id: string; classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric"; sex: "female" | "male" };
 
 /** The default entry character: a male Warden, like the native client. */
 export const DEFAULT_JOIN_CHARACTER: JoinCharacter = { id: "default-warden", classId: "warden", sex: "male" };
 
-/** Wire values of a class choice (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue; 0 female, 1 male). */
+/** Wire values of a class choice (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue, 5 Cleric; 0 female, 1 male). */
 export function classChoiceCodes(character: JoinCharacter): { classId: number; sex: number } {
   return {
-    classId: ["warden", "ranger", "arcanist", "necromancer", "rogue"].indexOf(character.classId),
+    classId: ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric"].indexOf(character.classId),
     sex: character.sex === "female" ? 0 : 1,
   };
 }

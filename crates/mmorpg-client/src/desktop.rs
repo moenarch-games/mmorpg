@@ -252,10 +252,13 @@ impl App {
             _ => None,
         };
         if let Some(target) = target {
-            // Only a current visible creature/NPC can become a requested target.
+            // Only a current visible creature, NPC or other player can become a requested
+            // target; another player may be a friend to heal or shield (#303).
             if self.presentation.latest().is_some_and(|s| {
                 s.entities.iter().any(|e| {
-                    e.entity() == target && matches!(e.kind, EntityKind::Creature | EntityKind::Npc)
+                    e.entity() == target
+                        && (matches!(e.kind, EntityKind::Creature | EntityKind::Npc)
+                            || (e.kind == EntityKind::Player && e.id != s.viewer_id))
                 })
             }) {
                 self.npc_context.close();

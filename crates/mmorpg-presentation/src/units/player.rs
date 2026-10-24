@@ -65,6 +65,16 @@ impl Look {
                 0xc4c9cc,
                 ARCANE_ORB,
             ),
+            // The Cleric (#303): white robes with gold trim, a white staff and a gold orb.
+            5 => (
+                Stance::Staff,
+                0xe8e4da,
+                0xf2efe6,
+                0xd9b44a,
+                0xc9a23e,
+                0xf4f1e8,
+                0xffd65a,
+            ),
             _ => (
                 Stance::Sword,
                 0x718d84,

@@ -39,7 +39,8 @@ export function defaultAppearanceForClass(classId: CharacterClassId): CharacterA
     case "ranger": return { hat: "ranger-cap", ...DEFAULT_HAIR };
     case "arcanist":
     case "necromancer":
-    case "rogue": return { hat: "wayfarer-hood", ...DEFAULT_HAIR };
+    case "rogue":
+    case "cleric": return { hat: "wayfarer-hood", ...DEFAULT_HAIR };
   }
 }
 const SAVE_SCHEMA_VERSION = 1;

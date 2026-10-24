@@ -40,10 +40,13 @@ pub enum Scenario {
     /// A level 6 Rogue at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
     /// Sinister Strike, Poisoned Blade, Gouge and Adrenaline Rush (#302).
     RogueMelee,
+    /// A level 6 Cleric at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
+    /// Smite, Renew, Holy Beam and Divine Shield (#303).
+    ClericHoly,
 }
 
 impl Scenario {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::OgreCombat,
         Self::RangerRange,
         Self::ArcanistPack,
@@ -51,6 +54,7 @@ impl Scenario {
         Self::RedbrandCavern,
         Self::NecromancerDrain,
         Self::RogueMelee,
+        Self::ClericHoly,
     ];
 
     #[must_use]
@@ -70,6 +74,7 @@ impl Scenario {
             Self::RedbrandCavern => "redbrand-cavern",
             Self::NecromancerDrain => "necromancer-drain",
             Self::RogueMelee => "rogue-melee",
+            Self::ClericHoly => "cleric-holy",
         }
     }
 
@@ -95,6 +100,10 @@ impl Scenario {
                 class: PlayerClass::Rogue,
                 sex: Sex::Female,
             },
+            Self::ClericHoly => ClassChoice {
+                class: PlayerClass::Cleric,
+                sex: Sex::Male,
+            },
         }
     }
 
@@ -102,11 +111,12 @@ impl Scenario {
     const fn level(self) -> u8 {
         match self {
             Self::OgreCombat | Self::SunkenShrine => 5,
-            // Bone Shield and Adrenaline Rush unlock at level 6.
+            // Bone Shield, Adrenaline Rush and Divine Shield unlock at level 6.
             Self::RangerRange
             | Self::RedbrandCavern
             | Self::NecromancerDrain
-            | Self::RogueMelee => 6,
+            | Self::RogueMelee
+            | Self::ClericHoly => 6,
             // Lightning Beam unlocks at level 8.
             Self::ArcanistPack => 8,
         }
@@ -120,8 +130,8 @@ impl Scenario {
             // The nearest wolves stand about 18 m west, beyond aggro range; facing west.
             Self::RangerRange => ([-3_500, -3_400], 49_152),
             // Beside the ranger range, nearer the pack's middle; facing west.
-            // The Necromancer and the Rogue review from the same spot.
-            Self::ArcanistPack | Self::NecromancerDrain | Self::RogueMelee => {
+            // The Necromancer, the Rogue and the Cleric review from the same spot.
+            Self::ArcanistPack | Self::NecromancerDrain | Self::RogueMelee | Self::ClericHoly => {
                 ([-4_000, -2_200], 49_152)
             }
             // On the west shore, on the lake's long axis; facing east over the water.
