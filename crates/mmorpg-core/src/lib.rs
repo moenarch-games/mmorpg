@@ -177,7 +177,7 @@ pub type PlayerId = u32;
 pub const TICK_HZ: u16 = 30;
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 35;
+pub const SNAPSHOT_SCHEMA_VERSION: u16 = 36;
 /// Inclusive XZ radius of player-scoped relevance (45 m).
 pub const INTEREST_RADIUS_UNITS: i32 = 4_500;
 /// Deterministic relevance cap of one player projection: the viewer, its
@@ -275,7 +275,7 @@ pub enum ZoneCommand {
     },
     /// Stops the player's own cast or channel.
     CancelCast,
-    /// Chooses the class (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue) and sex
+    /// Chooses the class (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue, 5 Cleric) and sex
     /// (0 female, 1 male) once. Invalid or repeated choices are refused in the tick.
     ChooseClass {
         class: u8,

@@ -8,7 +8,7 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 11;
+pub const ABILITY_CATALOG_REVISION: u64 = 12;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
@@ -74,6 +74,10 @@ pub enum AbilityRange {
     SelfCentred,
     Melee,
     Units(i32),
+    /// A supportive ability (#303): it lands on the selected friendly (non-hostile, living)
+    /// player within this XZ centre distance and line of sight, or on the caster when no other
+    /// player is selected.
+    Friendly(i32),
 }
 
 impl AbilityRange {
@@ -83,7 +87,7 @@ impl AbilityRange {
         match self {
             Self::SelfCentred => None,
             Self::Melee => Some(PLAYER_REACH_UNITS),
-            Self::Units(units) => Some(units),
+            Self::Units(units) | Self::Friendly(units) => Some(units),
         }
     }
 }
@@ -379,10 +383,19 @@ impl Ability {
     }
 
     /// Whether the ability needs a hostile unit target (otherwise it is
-    /// centred on the caster and ignores any target).
+    /// centred on the caster or lands on a friendly player or the caster).
     #[must_use]
     pub const fn needs_target(&self) -> bool {
-        !matches!(self.range, AbilityRange::SelfCentred)
+        !matches!(
+            self.range,
+            AbilityRange::SelfCentred | AbilityRange::Friendly(_)
+        )
+    }
+
+    /// Whether it lands on a selected friendly player or the caster (#303).
+    #[must_use]
+    pub const fn is_friendly(&self) -> bool {
+        matches!(self.range, AbilityRange::Friendly(_))
     }
 }
 
@@ -428,6 +441,9 @@ const RANGER: AbilityUser = AbilityUser::Class(PlayerClass::Ranger);
 const ARCANIST: AbilityUser = AbilityUser::Class(PlayerClass::Arcanist);
 const NECROMANCER: AbilityUser = AbilityUser::Class(PlayerClass::Necromancer);
 const ROGUE: AbilityUser = AbilityUser::Class(PlayerClass::Rogue);
+const CLERIC: AbilityUser = AbilityUser::Class(PlayerClass::Cleric);
+/// Heals and shields reach a friendly player as far as ranged spells reach a hostile one.
+const FRIENDLY: AbilityRange = AbilityRange::Friendly(3_000);
 const RANGED: AbilityRange = AbilityRange::Units(3_000);
 
 pub mod ids {
@@ -467,6 +483,10 @@ pub mod ids {
     pub const POISONED_BLADE: AbilityId = AbilityId::new(31);
     pub const GOUGE: AbilityId = AbilityId::new(32);
     pub const ADRENALINE_RUSH: AbilityId = AbilityId::new(33);
+    pub const SMITE: AbilityId = AbilityId::new(34);
+    pub const RENEW: AbilityId = AbilityId::new(35);
+    pub const HOLY_BEAM: AbilityId = AbilityId::new(36);
+    pub const DIVINE_SHIELD: AbilityId = AbilityId::new(37);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -483,7 +503,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 33] = [
+pub const ABILITY_CATALOG: [Ability; 37] = [
     ability(
         1,
         "Heroic Strike",
@@ -1023,6 +1043,72 @@ pub const ABILITY_CATALOG: [Ability; 33] = [
             duration: 300,
         },
     ),
+    // The Cleric (#303) on faith: Smite costs nothing and builds faith, so a fresh Cleric can
+    // always act; Renew and Divine Shield land on a selected friendly player or the caster.
+    // Numbers follow the Arcanist and Necromancer. Knockback blasts follow later.
+    shot(
+        ability(
+            34,
+            "Smite",
+            CLERIC,
+            1,
+            0,
+            CastTime::Cast(60),
+            0,
+            RANGED,
+            AbilityEffect::Bolt {
+                damage: [10, 14],
+                per_level: 3,
+            },
+        ),
+        crate::ProjectileKind::Holy,
+    ),
+    ability(
+        35,
+        "Renew",
+        CLERIC,
+        2,
+        25,
+        CastTime::Instant,
+        0,
+        FRIENDLY,
+        AbilityEffect::HealOverTime {
+            percent: 25,
+            duration: 450,
+            period: 90,
+        },
+    ),
+    ability(
+        36,
+        "Holy Beam",
+        CLERIC,
+        4,
+        40,
+        CastTime::Channel(60),
+        600,
+        AbilityRange::SelfCentred,
+        AbilityEffect::Beam {
+            damage: [4, 6],
+            per_level: 1,
+            length: 2_000,
+            period: 15,
+        },
+    ),
+    ability(
+        37,
+        "Divine Shield",
+        CLERIC,
+        6,
+        35,
+        CastTime::Instant,
+        600,
+        FRIENDLY,
+        AbilityEffect::Absorb {
+            base: 20,
+            per_level: 8,
+            duration: 600,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1068,6 +1154,8 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
             AbilityRange::SelfCentred => -1,
             AbilityRange::Melee => 0,
             AbilityRange::Units(units) => units,
+            // Friendly reach is encoded below every hostile one (#303).
+            AbilityRange::Friendly(units) => i32::MIN + units,
         };
         bytes.extend_from_slice(&range.to_be_bytes());
         let fields: Vec<i32> = match ability.effect {
@@ -1269,7 +1357,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(34)), None);
+        assert_eq!(ability_by_id(AbilityId::new(38)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG
