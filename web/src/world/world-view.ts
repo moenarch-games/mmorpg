@@ -28,6 +28,7 @@ import {
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
 import { ImpactEffects, impactCues } from "./impact-effects";
 import { InnBuilding, INN_DOOR } from "./inn-building";
+import { ArtPrefetch } from "./art-prefetch";
 import { NatureReview } from "./nature-review";
 import { SkyLayer } from "./sky";
 import { SharedUnits, type ImportedModelKind, type ViewerLook } from "./unit-presenter";
@@ -155,27 +156,41 @@ function entitiesSelf(projection: ZoneSnapshot): [number, number] | null {
   return self ? [self.position[0], self.position[2]] : null;
 }
 
+type Bounds = { minXz: readonly [number, number]; maxXz: readonly [number, number] };
+type AreaBounds = Bounds & { id: number };
+
+/** Squared XZ gap between two boxes (0 when they touch or overlap). */
+function boxGapSquared(a: Bounds, b: Bounds): number {
+  const dx = Math.max(a.minXz[0] - b.maxXz[0], 0, b.minXz[0] - a.maxXz[0]);
+  const dz = Math.max(a.minXz[1] - b.maxXz[1], 0, b.minXz[1] - a.maxXz[1]);
+  return dx * dx + dz * dz;
+}
+
 /**
  * Greyhaven's art in pieces (#240): the Ranger, each creature model and the inn load once on
  * first need. A region needs the Ranger, its creatures' models and, for the area the inn stands
- * in, the inn. A failed piece settles too; its units keep their procedural stand-ins.
+ * in, the inn. A failed piece settles too; its units keep their procedural stand-ins. Selection
+ * orders the loads by intent (#412, `ArtPrefetch`).
  */
 class RegionArt {
   readonly #world: ZoneWorld;
-  readonly #models: QuaterniusUnits;
-  readonly #inn: InnBuilding;
-  readonly #onProgress: () => void;
-  readonly #settled = new Set<string>();
-  readonly #started = new Set<string>();
   readonly #innArea: number | null;
+  readonly #prefetch: ArtPrefetch;
 
   constructor(world: ZoneWorld, models: QuaterniusUnits, inn: InnBuilding, onProgress: () => void) {
     this.#world = world;
-    this.#models = models;
-    this.#inn = inn;
-    this.#onProgress = onProgress;
     const innProp = world.scenery.scenery.props.find((prop) => prop.kind === "inn");
     this.#innArea = innProp ? world.scenery.areaAt(innProp.position[0], innProp.position[2])?.id ?? null : null;
+    // Bundle glTF files share textures; three's file cache serves a repeat from memory instead
+    // of downloading it again, and is emptied whenever no piece is loading.
+    THREE.Cache.enabled = true;
+    this.#prefetch = new ArtPrefetch(
+      (piece) => (piece === "inn" ? inn.load() : models.preload(piece as ImportedModelKind)),
+      (idle) => {
+        if (idle) { THREE.Cache.clear(); }
+        onProgress();
+      },
+    );
   }
 
   /** The pieces area `id` needs (every piece for `null`). */
@@ -186,21 +201,29 @@ class RegionArt {
     return ["Ranger", ...this.#world.scenery.regionModels(id), ...(id === this.#innArea ? ["inn"] : [])];
   }
 
+  /** Starts area `id`'s pieces now (every area's for `null`). */
   fetch(id: number | null): void {
-    for (const piece of this.#pieces(id)) {
-      if (this.#started.has(piece)) { continue; }
-      this.#started.add(piece);
-      const loading = piece === "inn" ? this.#inn.load() : this.#models.preload(piece as ImportedModelKind);
-      void loading.then(() => {
-        this.#settled.add(piece);
-        this.#onProgress();
-      });
-    }
+    this.#prefetch.request(this.#pieces(id));
+  }
+
+  /**
+   * Selection's plan (#412): area `entry`'s pieces now; once they settled, `others` (other
+   * characters' saved areas, most likely first), then the areas within streaming reach of `entry`.
+   * A later plan replaces the queued remainder.
+   */
+  plan(entry: number, others: readonly number[]): void {
+    const areas = this.#world.scenery.scenery.areas;
+    const home = areas.find((area) => area.id === entry);
+    const near = home ? areas.filter((area) => area.id !== entry && boxGapSquared(area, home) <= STREAM_RADIUS_UNITS ** 2) : [];
+    this.#prefetch.plan({
+      foreground: this.#pieces(entry),
+      background: [...others, ...near.map((area) => area.id)].flatMap((id) => this.#pieces(id)),
+    });
   }
 
   progress(id: number | null): { loaded: number; total: number } {
     const pieces = this.#pieces(id);
-    return { loaded: pieces.filter((piece) => this.#settled.has(piece)).length, total: pieces.length };
+    return { loaded: pieces.filter((piece) => this.#prefetch.settled(piece)).length, total: pieces.length };
   }
 
   /**
@@ -208,16 +231,14 @@ class RegionArt {
    * Units enter as procedural stand-ins and swap to their models once those settle.
    */
   entryReady(id: number): boolean {
-    return id !== this.#innArea || this.#settled.has("inn");
+    return id !== this.#innArea || this.#prefetch.settled("inn");
   }
 
   /** Fetches the area at `at` and every area within the streaming radius of it. */
-  approach(at: [number, number] | null, areas: readonly { id: number; minXz: readonly [number, number]; maxXz: readonly [number, number] }[]): void {
+  approach(at: [number, number] | null, areas: readonly AreaBounds[]): void {
     if (!at) { return; }
     for (const area of areas) {
-      const dx = Math.max(area.minXz[0] - at[0], 0, at[0] - area.maxXz[0]);
-      const dz = Math.max(area.minXz[1] - at[1], 0, at[1] - area.maxXz[1]);
-      if (dx * dx + dz * dz <= STREAM_RADIUS_UNITS ** 2) {
+      if (boxGapSquared(area, { minXz: at, maxXz: at }) <= STREAM_RADIUS_UNITS ** 2) {
         this.fetch(area.id);
       }
     }
@@ -1119,9 +1140,12 @@ export class WorldView {
     this.#orbit.zoom(-lines);
   }
 
-  /** Starts fetching the art pieces of area `id` (or every area's, for `null`). */
-  prefetchRegion(id: number | null): void {
-    this.#regions?.fetch(id);
+  /**
+   * Prefetches by selection intent (#412): area `entry`'s art now; then, one piece at a time,
+   * `others` (other characters' saved areas) and `entry`'s neighbours.
+   */
+  prefetchSelection(entry: number, others: readonly number[]): void {
+    this.#regions?.plan(entry, others);
   }
 
   /** How many of area `id`'s art pieces have settled (loaded or failed) out of how many. */
