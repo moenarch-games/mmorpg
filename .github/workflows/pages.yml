@@ -112,12 +112,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
         with:
           path: web/dist
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
     needs: build
     runs-on: ubuntu-latest
     permissions:
