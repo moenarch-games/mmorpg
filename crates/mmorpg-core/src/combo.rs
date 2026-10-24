@@ -16,15 +16,19 @@
 //!   Shield Bash rule: unlock, Rage, its own cooldown, range, line of sight
 //!   and refusals. It consumes the opening once and starts its own global
 //!   cooldown. Any other ability use or death clears the opening.
+//!
+//! The timing and conditions are the [`crate::action`] graph's
+//! `SlashToShieldBash` edge; this module keeps the opening's runtime state.
 
-use crate::snapshot::PlayerIntent;
 use crate::zone::PlayerState;
-use crate::{EntityRef, ZoneSimulation, ability::ids};
+use crate::{EntityRef, ZoneSimulation, action};
 
-/// Committed impact after a confirming slash: 0.2 s.
-pub const COMBO_IMPACT_TICKS: u16 = 6;
-/// The Shield Bash follow-up window after the impact: 0.6 s.
-pub const COMBO_WINDOW_TICKS: u16 = 18;
+/// Committed impact after a confirming slash: the action graph's
+/// slash → Shield Bash opening offset, 0.2 s.
+pub const COMBO_IMPACT_TICKS: u16 = crate::action::SLASH_TO_SHIELD_BASH.open_after_ticks();
+/// The Shield Bash follow-up window after the impact: the edge's actionable
+/// duration, 0.6 s.
+pub const COMBO_WINDOW_TICKS: u16 = crate::action::SLASH_TO_SHIELD_BASH.actionable_ticks();
 
 /// A confirmed slash's follow-up opening.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -75,15 +79,6 @@ impl ComboPhase {
     }
 }
 
-pub(crate) const fn is_shield_bash(intent: &PlayerIntent) -> bool {
-    matches!(intent, PlayerIntent::UseAbility { ability, .. } if *ability == ids::SHIELD_BASH.get())
-}
-
-/// A Shield Bash requested during the committed impact waits for the window.
-pub(crate) fn waits_for_window(state: &PlayerState, intent: &PlayerIntent) -> bool {
-    is_shield_bash(intent) && state.combo.is_some_and(|combo| !combo.is_open())
-}
-
 impl ZoneSimulation {
     /// The viewer's combo phase, if a follow-up is pending.
     pub(crate) fn combo_phase(state: &PlayerState) -> Option<ComboPhase> {
@@ -101,12 +96,16 @@ impl ZoneSimulation {
     pub(crate) fn advance_combos(&mut self) {
         for player in self.players.values_mut() {
             // A stun before the strike recovery ends discards a pending guard.
-            if player.strike_recovery > 0 {
-                player.strike_recovery -= 1;
-                if crate::aura::has_kind(&player.auras, crate::AuraKind::Stun) {
-                    player.guard.raised = None;
-                }
+            if action::rule_applying(
+                player,
+                action::ActionInput::GuardProtection,
+                action::Interaction::Cancel,
+            )
+            .is_some()
+            {
+                player.guard.raised = None;
             }
+            player.strike_recovery = player.strike_recovery.saturating_sub(1);
             player.combo = player.combo.and_then(|combo| {
                 let aged = ComboOpening {
                     elapsed: combo.elapsed + 1,

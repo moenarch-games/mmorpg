@@ -22,17 +22,20 @@
 use crate::physics::RigidBody;
 
 use crate::entity::body_id;
-use crate::snapshot::PlayerIntent;
 use crate::zone::{PlayerState, is_grounded};
 use crate::{
-    EntityRef, PlayerClass, PlayerId, RUN_SPEED_UNITS_PER_TICK, ZoneError, ZoneSimulation,
-    ability::ids,
+    EntityRef, PlayerClass, PlayerId, RUN_SPEED_UNITS_PER_TICK, ZoneError, ZoneSimulation, action,
 };
 
-/// Recovery after an ordinary landing: 0.3 s.
-pub const LANDING_RECOVERY_TICKS: u16 = 9;
-/// Recovery after landing from a melee action made in the air: 0.5 s.
-pub const OVERHEAD_LANDING_TICKS: u16 = 15;
+/// Recovery after an ordinary landing: the action graph's `Landing`
+/// recovery, 0.3 s.
+pub const LANDING_RECOVERY_TICKS: u16 = action::recovery_ticks(action::ActionId::Landing);
+/// Recovery after landing from a melee action made in the air: the graph's
+/// `AttackedAirborne` landing modifier, 0.5 s.
+pub const OVERHEAD_LANDING_TICKS: u16 = action::modified_recovery_ticks(
+    action::ActionId::Landing,
+    action::Condition::AttackedAirborne,
+);
 /// Horizontal speed (units per tick) from which a run at the target charges.
 const CHARGE_SPEED_UNITS_PER_TICK: i64 = RUN_SPEED_UNITS_PER_TICK as i64 * 3 / 4;
 /// Below this horizontal speed a grounded Warden is planted.
@@ -134,22 +137,6 @@ fn is_warden(state: &PlayerState) -> bool {
     state
         .class
         .is_some_and(|choice| choice.class == PlayerClass::Warden)
-}
-
-/// Whether `intent` is a Warden melee action that waits out a landing.
-pub(crate) fn waits_for_landing(state: &PlayerState, intent: &PlayerIntent) -> bool {
-    if !is_warden(state) || state.landing.recovery == 0 {
-        return false;
-    }
-    match intent {
-        PlayerIntent::UseAbility { ability, .. } => {
-            [ids::HEROIC_STRIKE, ids::SHIELD_BASH, ids::CLEAVE]
-                .iter()
-                .any(|id| id.get() == *ability)
-        }
-        PlayerIntent::DirectedStrike { .. } => true,
-        _ => false,
-    }
 }
 
 impl ZoneSimulation {

@@ -8,6 +8,7 @@
 //! Rapier, embedded in [`physics`] (#271); wire formats live in `mmorpg-protocol`.
 
 pub mod ability;
+pub mod action;
 mod ai;
 mod areas;
 mod aura;
@@ -175,6 +176,21 @@ use std::fmt;
 pub type PlayerId = u32;
 
 pub const TICK_HZ: u16 = 30;
+
+/// Converts an authored duration to whole authoritative ticks at
+/// [`TICK_HZ`]. A duration that is not a whole number of ticks fails to
+/// compile in const contexts.
+#[must_use]
+pub const fn ticks_from_ms(ms: u32) -> u16 {
+    let scaled = ms as u64 * TICK_HZ as u64;
+    assert!(
+        scaled.is_multiple_of(1_000),
+        "duration is not a whole number of ticks"
+    );
+    let ticks = scaled / 1_000;
+    assert!(ticks <= u16::MAX as u64, "duration is too long");
+    ticks as u16
+}
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
 pub const SNAPSHOT_SCHEMA_VERSION: u16 = 35;

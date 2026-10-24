@@ -38,13 +38,15 @@ impl ZoneSimulation {
                 ),
                 None => continue,
             };
-            // Warden melee waits out a landing in the queue (#155).
+            // Intents the action graph holds or buffers wait in the queue:
+            // Warden melee during landing recovery (#155), a Shield Bash
+            // before the combo opens (#157).
             let mut waiting = Vec::new();
             for intent in intents {
-                let waits = self.players.get(&player_id).is_some_and(|player| {
-                    crate::stance::waits_for_landing(player, &intent)
-                        || crate::combo::waits_for_window(player, &intent)
-                });
+                let waits = self
+                    .players
+                    .get(&player_id)
+                    .is_some_and(|player| crate::action::waits(player, &intent));
                 if waits {
                     waiting.push(intent);
                 } else {
@@ -443,7 +445,12 @@ impl ZoneSimulation {
         };
         // A stunned or landing player's ready swing waits.
         if player.swing_timer > 0
-            || player.landing.recovery > 0
+            || crate::action::rule_applying(
+                player,
+                crate::action::ActionInput::WardenMelee,
+                crate::action::Interaction::Hold,
+            )
+            .is_some()
             || crate::aura::has_kind(&player.auras, crate::AuraKind::Stun)
         {
             return Ok(());
