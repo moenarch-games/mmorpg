@@ -180,9 +180,9 @@ impl WorldScene {
             .animated
             .iter()
             .zip(self.scene.motion(seconds, animate))
-            // The native build embeds the Outpost kit (#420), which the presentation draws, so
-            // the static scene never shows its buildings' blockouts.
-            .zip(self.scene.shown(viewer, true))
+            // The native build embeds the Outpost kit (#420) and the settlement props (#421),
+            // which the presentation draws, so the static scene never shows their fallbacks.
+            .zip(self.scene.shown(viewer, mmorpg_presentation::Kits::ALL))
             .filter_map(|(placed, shown)| shown.then_some(placed))
         {
             for draw in part {

@@ -216,12 +216,12 @@ pub fn motion(seconds: f64, animate: bool) -> Vec<f32> {
 }
 
 /// Per animated part 1 (drawn) or 0 (cut away, a cave roof over the `viewer`'s feet in
-/// metres; empty without a viewer), or an Outpost kit blockout while `outpost_kit` is drawn.
+/// metres; empty without a viewer), or a kit's fallback while `kits` draws that kit.
 #[must_use]
-pub fn shown(viewer: &[f64], outpost_kit: bool) -> Vec<u8> {
+pub fn shown(viewer: &[f64], kits: mmorpg_presentation::Kits) -> Vec<u8> {
     let viewer = (viewer.len() == 3).then(|| [viewer[0], viewer[1], viewer[2]]);
     hosted_static_scene()
-        .shown(viewer, outpost_kit)
+        .shown(viewer, kits)
         .into_iter()
         .map(u8::from)
         .collect()
