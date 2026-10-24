@@ -157,6 +157,11 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         27 => (Some(Stance::Staff), Some(Visual::Projectile), 0x7dff8a),
         28 => (Some(Stance::Staff), Some(Visual::Drain), 0x6fe07a),
         29 => (Some(Stance::Staff), Some(Visual::Bubble), 0xe6dfc8),
+        // The Rogue (#302): steel and poison-green dagger swings, a gouge and a rush.
+        30 => (Some(Stance::Sword), Some(Visual::Swing), 0xc4c9cc),
+        31 => (Some(Stance::Sword), Some(Visual::Swing), 0x8fd14f),
+        32 => (Some(Stance::Sword), None, 0xd9b26a),
+        33 => (None, None, 0xf2d24e),
         _ => (None, None, 0xffffff),
     }
 }

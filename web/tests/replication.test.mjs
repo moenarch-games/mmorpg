@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v34.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v35.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({
@@ -202,7 +202,7 @@ describe("Rust/browser snapshot contract", () => {
       [53, 0b1000, "Reserved"],
       [53, 0b111, "Inconsistent"],
       [54, 9, "kind"],
-      [CLASS, 9, "ability state"],
+      [CLASS, 11, "ability state"],
       [CLASS, 1, "resource"],
       [CLASS + 1, 1, "resource"],
       [CLASS + 4, 0xff, "resource"],
@@ -247,7 +247,7 @@ describe("Rust/browser snapshot contract", () => {
       [QUESTS + 9, 9, "too many markers"],
       [QUESTS + 12, 4, "Inconsistent quest marker"],
       [QUESTS + 14, 1, "Inconsistent quest marker"],
-      [EVENTS + 1 + 7 * 14 + 1, 30, "Unknown ability"],
+      [EVENTS + 1 + 7 * 14 + 1, 34, "Unknown ability"],
       [EVENTS + 1 + 7 * 14 + 1, 0, "Unknown ability"],
       [EVENTS + 1 + 8 * 14 + 13, 1, "Malformed"],
       [EVENTS + 1 + 13 * 14 + 1, 1, "flags"],
@@ -276,7 +276,7 @@ describe("Rust/browser snapshot contract", () => {
     expect(() => decodeSnapshot(fewer)).toThrow("count");
     expect(() => decodeSnapshot(new Uint8Array([...fixture, 0]))).toThrow();
     expect(() => decodeSnapshot(new Uint8Array(1_078))).toThrow("budget");
-    for (const version of [9, 13, 29, 31, 32, 33]) {
+    for (const version of [9, 13, 29, 31, 32, 33, 34]) {
       const legacy = readFileSync(new URL(`../../fixtures/protocol/player-snapshot-v${version}.hex`, import.meta.url), "utf8").trim();
       expect(() => decodeSnapshot(Uint8Array.from(Buffer.from(legacy, "hex")))).toThrow("version");
     }

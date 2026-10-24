@@ -9,7 +9,7 @@ import type { ImportedModelKind, ImportedRequest } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
 /** What a player model carries: a Warden's sword and shield (#156), a Ranger's bow and quiver (#244), or nothing. */
-type Loadout = "sword-and-shield" | "bow-and-quiver" | null;
+type Loadout = "sword-and-shield" | "bow-and-quiver" | "blade" | null;
 /**
  * The viewer's headwear (#374): an authored item on the `head.armor` socket, the bundle's own hood,
  * or none. Units without a viewer style keep the bundle's default look.
@@ -183,6 +183,7 @@ const LOADOUT_ITEMS: Readonly<Record<Exclude<Loadout, null>, readonly { key: str
     { key: "equipment.sword.arming", socket: "hand_r.weapon" },
     { key: "equipment.shield.heater", socket: "hand_l.shield" },
   ],
+  "blade": [{ key: "equipment.sword.arming", socket: "hand_r.weapon" }],
   "bow-and-quiver": [
     { key: "equipment.bow.long", socket: "back.bow.stowed" },
     { key: "equipment.quiver.back", socket: "back.quiver" },
@@ -404,7 +405,7 @@ export class QuaterniusUnits {
       const asset = this.#assets.get(unit.kind);
       if (typeof asset !== "object") { continue; }
       seen.add(unit.id);
-      const loadout: Loadout = unit.swordAndShield ? "sword-and-shield" : unit.bowAndQuiver ? "bow-and-quiver" : null;
+      const loadout: Loadout = unit.swordAndShield ? "sword-and-shield" : unit.bowAndQuiver ? "bow-and-quiver" : unit.blade ? "blade" : null;
       let instance = this.#instances.get(unit.id);
       const dressed = unit.headwear && unit.kind === "Ranger";
       const dress: Dress = { loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null };

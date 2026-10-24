@@ -1,6 +1,6 @@
 import type { CharacterClassId, CharacterPreview, CharacterSex } from "./character-selection";
 
-export type CharacterWeaponStyle = "sword" | "bow" | "staff";
+export type CharacterWeaponStyle = "sword" | "dagger" | "bow" | "staff";
 
 export type CharacterVisualProfile = {
   bodyRadius: number;
@@ -53,6 +53,15 @@ const CLASS_VISUALS: Record<CharacterClassId, Omit<CharacterVisualProfile,
     cloakColor: "#1f1a28",
     weapon: "staff",
     weaponColor: "#e6dfc8",
+  },
+  // Charcoal and dark leather with a steel dagger (#302), the in-world look's colours.
+  rogue: {
+    bodyColor: "#45413d",
+    chestColor: "#3a2e26",
+    shoulderColor: "#4f4038",
+    cloakColor: "#2a2826",
+    weapon: "dagger",
+    weaponColor: "#c4c9cc",
   },
 };
 

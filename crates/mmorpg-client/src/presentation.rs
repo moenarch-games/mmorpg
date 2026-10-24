@@ -364,7 +364,9 @@ impl Presentation {
         self.headwear = Some(match class {
             PlayerClass::Warden => player::Hat::Helm,
             PlayerClass::Ranger => player::Hat::Cap,
-            PlayerClass::Arcanist | PlayerClass::Necromancer => player::Hat::Hood,
+            PlayerClass::Arcanist | PlayerClass::Necromancer | PlayerClass::Rogue => {
+                player::Hat::Hood
+            }
         });
     }
 
@@ -504,8 +506,15 @@ impl Presentation {
                     imported.tint,
                 ));
             }
-            if imported.sword_and_shield {
-                body.extend(skinned::Equipment::sword_and_shield().draws(
+            let weapon = if imported.sword_and_shield {
+                Some(skinned::Equipment::sword_and_shield())
+            } else if imported.blade {
+                Some(skinned::Equipment::blade())
+            } else {
+                None
+            };
+            if let Some(weapon) = weapon {
+                body.extend(weapon.draws(
                     &imported.id,
                     asset,
                     placement,

@@ -531,6 +531,9 @@ impl GameUi {
                             PlayerClass::Necromancer => {
                                 "A shadow caster who drains life and spends mana."
                             }
+                            PlayerClass::Rogue => {
+                                "A dagger fighter who poisons and stuns with focus."
+                            }
                         });
                         ui.label("Body");
                         ui.horizontal(|ui| {
@@ -937,6 +940,7 @@ fn class_title(class: PlayerClass) -> &'static str {
         PlayerClass::Ranger => "Ranger",
         PlayerClass::Arcanist => "Arcanist",
         PlayerClass::Necromancer => "Necromancer",
+        PlayerClass::Rogue => "Rogue",
     }
 }
 
