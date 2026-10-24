@@ -398,7 +398,7 @@ enum Worlds {
 /// The zone's physical world, on Rapier unless `physics-ab` selects physics-engine.
 pub struct World {
     worlds: Worlds,
-    /// Nanoseconds spent in this world's calls, debris excluded (`physics-ab` timing).
+    /// Nanoseconds spent in this world's calls (`physics-ab` timing).
     #[cfg(feature = "physics-ab")]
     spent: std::sync::atomic::AtomicU64,
 }
@@ -485,7 +485,7 @@ impl World {
     }
 
     /// Wall-clock nanoseconds spent in this world's calls since it was created: the whole
-    /// physics path of the zone (steps, queries and body updates), debris excluded.
+    /// physics path of the zone (steps, queries and body updates), debris and props included.
     #[cfg(feature = "physics-ab")]
     #[must_use]
     pub fn spent_nanos(&self) -> u64 {
@@ -623,33 +623,21 @@ impl World {
         dispatch!(self, &self.worlds, world => world.cast_shape(origin, half_extents, translation, &hits))
     }
 
-    /// Advances `debris` (#288) one tick: Rapier steps a world of the pieces still moving as
+    /// Advances `debris` (#288) one tick: the backend steps a world of the pieces still moving as
     /// dynamic bodies, the settled ones and the fixed geometry around them, rebuilt from the
     /// game's state in slice order like every step here. A piece that slows below the rest
     /// thresholds settles once `settle` allows it. Returns how many pieces moved.
     ///
-    /// Debris always runs on Rapier, whichever backend the world uses (physics-engine #330
-    /// parks dynamics), and is excluded from [`World::spent_nanos`].
-    ///
     /// Rapier gap (#288): rebuilding each tick drops the solver's warm-start contact impulses,
     /// so a resting stack jitters; pieces settle into fixed obstacles instead of sleeping.
     pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
-        match &self.worlds {
-            Worlds::Rapier(world) => world.step_debris(debris, settle),
-            #[cfg(feature = "physics-ab")]
-            Worlds::Engine(world) => world.step_debris(debris, settle),
-        }
+        dispatch!(self, &self.worlds, world => world.step_debris(debris, settle))
     }
 
     /// Advances movable props (#58) one tick: like debris, but upright (they slide, never
-    /// turn), stopped by units, and leaving out the props' own fixed boxes `exclude`. Runs on
-    /// Rapier whichever backend the world uses, excluded from [`World::spent_nanos`].
+    /// turn), stopped by units, and leaving out the props' own fixed boxes `exclude`.
     pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
-        match &self.worlds {
-            Worlds::Rapier(world) => world.step_props(props, exclude),
-            #[cfg(feature = "physics-ab")]
-            Worlds::Engine(world) => world.step_props(props, exclude),
-        }
+        dispatch!(self, &self.worlds, world => world.step_props(props, exclude))
     }
 }
 
