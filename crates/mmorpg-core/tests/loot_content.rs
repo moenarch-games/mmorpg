@@ -109,7 +109,7 @@ fn malformed_bindings_fail_closed() {
 #[test]
 fn every_authored_reward_field_changes_identity_and_refuses_old_recovery() {
     let original = bound(1, vec![(WOLF, rule())]);
-    assert_eq!(original.fingerprint(), 0xbe74_8a12_ef91_dadf);
+    assert_eq!(original.fingerprint(), 0xdcae_37b7_0035_cb10);
     let mut zone =
         ZoneSimulation::with_content(ZoneId::new(1), Arc::new(original.clone())).unwrap();
     zone.add_player(1).unwrap();
@@ -185,7 +185,7 @@ fn every_authored_reward_field_changes_identity_and_refuses_old_recovery() {
 fn opt_in_binding_preserves_live_content_and_complete_simulation_continuation() {
     let current = Arc::new(unbound());
     assert_eq!(current.revision(), 4);
-    assert_eq!(current.fingerprint(), 0x2188_a948_d317_1734);
+    assert_eq!(current.fingerprint(), 0x915e_e7ed_9693_fb7b);
     assert_eq!(current.loot_revision(), 0);
     assert!(current.loot_tables().is_empty());
     let authored = Arc::new(bound(1, vec![(WOLF, rule())]));

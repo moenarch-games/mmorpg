@@ -356,7 +356,7 @@ ability = 5
 
 # The Warden stops swinging so that the Firebolt lands the killing blow.
 [[steps]]
-tick = 530
+tick = 525
 bot = "warden"
 action = "stop_attack"
 
@@ -571,13 +571,13 @@ tick = 739
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 9
+resource = 3
 tick = 799
 
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 7
+resource = 1
 tick = 800
 
 # #27: a visible recipient observes other actors without receiving their damage credit.

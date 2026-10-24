@@ -834,6 +834,15 @@ impl Scenery {
             .unwrap_or(i64::MAX)
     }
 
+    /// Whether the physical ground around `(x, z)` rises more than 1 m per metre (45°) on
+    /// either axis: a face no unit walks up.
+    fn cliff_at(&self, x: i32, z: i32) -> bool {
+        const REACH: i32 = 200;
+        let rise = |a: i32, b: i32| (a - b).abs() > 2 * REACH;
+        rise(self.ground_at(x + REACH, z), self.ground_at(x - REACH, z))
+            || rise(self.ground_at(x, z + REACH), self.ground_at(x, z - REACH))
+    }
+
     /// Biome of a terrain vertex whose relief is `height`.
     fn biome_at(&self, x: i32, z: i32, height: i32) -> Biome {
         let point = [x, z];
@@ -857,6 +866,10 @@ impl Scenery {
         }
         if SPAWN_PLAZA.contains(x, z) {
             return Biome::Plaza;
+        }
+        // Bare rock on cliff faces too steep to walk (#423), such as the farm terrace's.
+        if self.cliff_at(x, z) {
+            return Biome::Rock;
         }
         if self.farmland.iter().any(|field| field.distance(point) == 0) {
             return Biome::Farmland;

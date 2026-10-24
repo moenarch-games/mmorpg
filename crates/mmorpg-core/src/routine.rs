@@ -190,7 +190,12 @@ impl ZoneSimulation {
             self.world
                 .replace_body(crate::physics::RigidBody::fixed(
                     crate::entity::body_id(entity),
-                    crate::zone::vector([x, crate::PLAYER_HALF_EXTENTS_UNITS[1], z]),
+                    crate::zone::vector([
+                        x,
+                        self.content.definition().ground_at(x, z)
+                            + crate::PLAYER_HALF_EXTENTS_UNITS[1],
+                        z,
+                    ]),
                     crate::zone::PLAYER_HALF_EXTENTS,
                 ))
                 .map_err(|error| ZoneError::new(format!("npc body update failed: {error}")))?;

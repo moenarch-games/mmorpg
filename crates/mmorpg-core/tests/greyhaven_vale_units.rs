@@ -12,7 +12,7 @@ use mmorpg_core::{
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.revision(), 25);
+    assert_eq!(content.revision(), 26);
     assert_eq!(content.rng_seed(), 0x3cbc_808b_be89_b29c);
     assert_eq!(
         content.definition(),
@@ -402,7 +402,8 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
             // The Greyfang cavern's garrison (#160) stands on its flattened floor.
             (greyhaven_vale::terrain().height_at(x, z), 15)
         } else {
-            (greyhaven_vale::hill_height(x, z), 15)
+            // Hills and Millbrook Farm's terrace (#423).
+            (greyhaven_vale::terrain().height_at(x, z), 15)
         };
         assert!(
             (y - ground - template.half_extents[1]).abs() <= tolerance,

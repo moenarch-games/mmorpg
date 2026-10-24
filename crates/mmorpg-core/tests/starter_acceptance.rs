@@ -12,7 +12,7 @@ use mmorpg_core::{
 /// Ten seconds of ticks per fight; far more than any marauder needs.
 const MAX_TICKS: u64 = 30 * 60 * 20;
 /// Among the grain rats south of Millbrook's barn, out of the marauders' aggro.
-const START: [i32; 3] = [8_000, 90, 3_000];
+const START: [i32; 3] = [8_000, greyhaven_vale::basin::TERRACE_Y + 90, 3_000];
 /// Rats north of this line forage within the marauders' aggro radius.
 const RAT_LINE_Z: i32 = 4_600;
 const GRAIN_RAT: u16 = 3;
