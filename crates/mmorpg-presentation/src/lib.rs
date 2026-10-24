@@ -16,6 +16,7 @@ pub mod ambient;
 pub mod batching;
 pub mod buildings;
 pub mod geometry;
+pub mod outpost_kit;
 mod props;
 pub mod shrine;
 pub mod structures;
@@ -95,6 +96,9 @@ pub enum Motion {
         min: [f64; 2],
         max: [f64; 2],
     },
+    /// The procedural blockout of an Outpost kit building (#420), standing at `frame`: drawn
+    /// only while the client does not draw the kit (not yet loaded, or failed to load).
+    Fallback { frame: Affine },
 }
 
 #[derive(Clone, Debug)]
@@ -171,21 +175,25 @@ impl StaticScene {
     }
 
     /// Whether each animated part is drawn for the `viewer`'s feet (metres), one per
-    /// [`Self::animated`] entry: a cave roof is cut away while the viewer stands under it.
+    /// [`Self::animated`] entry: a cave roof is cut away while the viewer stands under it, and
+    /// an Outpost kit building's blockout (#420) is hidden while the client draws the kit
+    /// (`outpost_kit`).
     #[must_use]
-    pub fn shown(&self, viewer: Option<[f64; 3]>) -> Vec<bool> {
+    pub fn shown(&self, viewer: Option<[f64; 3]>, outpost_kit: bool) -> Vec<bool> {
         self.animated
             .iter()
             .map(|part| match part.motion {
                 Motion::Roof { at, min, max } => !viewer.is_some_and(|[x, y, z]| {
                     (min[0]..=max[0]).contains(&x) && (min[1]..=max[1]).contains(&z) && y < at[1]
                 }),
+                Motion::Fallback { .. } => !outpost_kit,
                 _ => true,
             })
             .collect()
     }
 
-    /// Visible static draws, water and placed animated parts for one camera eye.
+    /// Visible static draws, water and placed animated parts for one camera eye; `outpost_kit`
+    /// as for [`Self::shown`].
     #[must_use]
     pub fn frame(
         &self,
@@ -193,6 +201,7 @@ impl StaticScene {
         animate: bool,
         eye: [f32; 3],
         viewer: Option<[f64; 3]>,
+        outpost_kit: bool,
     ) -> Vec<Draw> {
         let mut draws: Vec<_> = self
             .groups
@@ -205,7 +214,7 @@ impl StaticScene {
             .animated
             .iter()
             .zip(self.motion(seconds, animate))
-            .zip(self.shown(viewer))
+            .zip(self.shown(viewer, outpost_kit))
             .filter_map(|(placed, shown)| shown.then_some(placed))
         {
             draws.extend(part.draws.iter().map(|draw| Draw {
@@ -219,6 +228,7 @@ impl StaticScene {
 
 fn motion(motion: Motion, t: f64, animate: bool) -> Affine {
     match motion {
+        Motion::Fallback { frame } => frame,
         Motion::Roof { at, .. } => translate(at[0], at[1], at[2]),
         Motion::Sail { hub, yaw } => {
             compose(&[translate(hub[0], hub[1], hub[2]), ry(yaw), rz(t * 0.45)])

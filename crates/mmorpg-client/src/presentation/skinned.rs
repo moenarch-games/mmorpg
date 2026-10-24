@@ -662,6 +662,34 @@ pub(super) fn shrine_draws(key: &str) -> &'static [SceneDraw] {
         .map_or(&[], |(_, draws)| draws.as_slice())
 }
 
+/// The Outpost building kit's modules, roof variants and resources, embedded by `build.rs`
+/// (#420).
+mod outpost_bundle {
+    include!(concat!(env!("OUT_DIR"), "/outpost_bundle.rs"));
+}
+
+/// The Outpost kit's draws (in the module frame) of `entry` (`<key>` or `<key>/<variant>`),
+/// every entry imported once.
+pub(super) fn outpost_draws(entry: &str) -> &'static [SceneDraw] {
+    static DRAWS: OnceLock<Vec<(&'static str, Vec<SceneDraw>)>> = OnceLock::new();
+    DRAWS
+        .get_or_init(|| {
+            outpost_bundle::ENTRIES
+                .iter()
+                .map(|&(entry, path)| {
+                    let model = Model::parse(&bundle_glb(path, outpost_bundle::FILES), "")
+                        .expect("an Outpost kit entry is valid glTF");
+                    let draws =
+                        model.draws_placed(entry, three_d_animation::Mat4::IDENTITY, "", 0., None);
+                    (entry, draws)
+                })
+                .collect()
+        })
+        .iter()
+        .find(|(key, _)| *key == entry)
+        .map_or(&[], |(_, draws)| draws.as_slice())
+}
+
 /// Greyhaven's ambient animals and their resources, embedded by `build.rs` (#419).
 mod ambient_bundle {
     include!(concat!(env!("OUT_DIR"), "/ambient_bundle.rs"));

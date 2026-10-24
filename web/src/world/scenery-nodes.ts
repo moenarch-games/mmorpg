@@ -31,7 +31,7 @@ export type StaticSceneContent = {
   staticSceneIndices(): Uint32Array;
   staticSceneModels(): Float32Array;
   staticSceneMotion(seconds: number, animate: boolean): Float32Array;
-  staticSceneShown(viewer: Float64Array): Uint8Array;
+  staticSceneShown(viewer: Float64Array, outpostKit: boolean): Uint8Array;
   surfaceY(x: number, z: number): number;
 };
 
@@ -50,8 +50,11 @@ export type SceneryScene = {
   animated: readonly (readonly AnimatedNode[])[];
   /** One column-major matrix (16 floats) per animated part at a cosmetic clock. */
   motion(seconds: number, animate: boolean): Float32Array;
-  /** Per animated part 1 (drawn) or 0: a cave roof is cut away while `viewer` (feet, metres) stands under it. */
-  shown(viewer: readonly [number, number, number] | null): Uint8Array;
+  /**
+   * Per animated part 1 (drawn) or 0: a cave roof is cut away while `viewer` (feet, metres) stands under it, and an
+   * Outpost kit building's blockout (#420) is hidden while the kit is drawn (`outpostKit`).
+   */
+  shown(viewer: readonly [number, number, number] | null, outpostKit: boolean): Uint8Array;
   stats: SceneryStats;
   /** The rendered terrain height in metres at `(x, z)` metres. */
   surfaceY(x: number, z: number): number;
@@ -175,7 +178,7 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     water,
     animated,
     motion: (seconds, animate) => content.staticSceneMotion(seconds, animate),
-    shown: (viewer) => content.staticSceneShown(Float64Array.from(viewer ?? [])),
+    shown: (viewer, outpostKit) => content.staticSceneShown(Float64Array.from(viewer ?? []), outpostKit),
     stats: {
       staticNodes: batches.length + instanceBatches.length,
       staticVertices: layout.geometries.reduce((sum, entry) => sum + entry.vertexCount, 0),
@@ -194,9 +197,10 @@ export function batchVisible(batch: Bounds, eyeX: number, eyeZ: number): boolean
 
 /**
  * Cosmetic animation input; without motion every part holds its rest pose. Cave roofs are cut
- * away while `viewer` (feet, metres) stands under them (#159).
+ * away while `viewer` (feet, metres) stands under them (#159); the Outpost kit buildings' blockouts (#420) stay
+ * drawn until `outpostKit` says the kit is.
  */
-export type SceneryMotion = { seconds: number; animate: boolean; viewer?: readonly [number, number, number] | null };
+export type SceneryMotion = { seconds: number; animate: boolean; viewer?: readonly [number, number, number] | null; outpostKit?: boolean };
 
 /** Per-frame renderer nodes: static batches (far detail hidden), water and animated parts. */
 export class SceneryFrame {
@@ -220,7 +224,7 @@ export class SceneryFrame {
     });
     nodes.push(...this.#scene.water);
     const matrices = this.#scene.motion(motion.seconds, motion.animate);
-    const shown = this.#scene.shown(motion.viewer ?? null);
+    const shown = this.#scene.shown(motion.viewer ?? null, motion.outpostKit ?? false);
     this.#scene.animated.forEach((part, index) => {
       const modelMatrix = Array.from(matrices.subarray(index * 16, index * 16 + 16)) as Matrix4Values;
       const visible = shown[index] !== 0;

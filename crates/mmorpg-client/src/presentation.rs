@@ -100,6 +100,8 @@ pub struct Presentation {
     last_inn: Instant,
     /// The Sunken Shrine's kit modules (#431), placed once.
     shrine: Vec<crate::world::SceneDraw>,
+    /// The Outpost kit buildings' modules (#420), placed once.
+    outpost: Vec<crate::world::SceneDraw>,
 }
 
 impl Presentation {
@@ -120,6 +122,19 @@ impl Presentation {
             .iter()
             .flat_map(|part| {
                 skinned::shrine_draws(part.key)
+                    .iter()
+                    .map(|draw| crate::world::SceneDraw {
+                        model: three_d_animation::Mat4 {
+                            elements: part.model,
+                        },
+                        ..draw.clone()
+                    })
+            })
+            .collect();
+        let outpost = mmorpg_presentation::outpost_kit::parts(&scenery)
+            .iter()
+            .flat_map(|part| {
+                skinned::outpost_draws(part.entry)
                     .iter()
                     .map(|draw| crate::world::SceneDraw {
                         model: three_d_animation::Mat4 {
@@ -156,6 +171,7 @@ impl Presentation {
             inn,
             last_inn: now,
             shrine,
+            outpost,
         })
     }
 
@@ -617,6 +633,7 @@ impl Presentation {
         frame.draws.extend(self.unit_draws(now, view));
         self.append_inn(&mut frame.draws, now);
         frame.draws.extend(self.shrine.iter().cloned());
+        frame.draws.extend(self.outpost.iter().cloned());
         self.append_ambient(&mut frame.draws, now);
         frame
     }
