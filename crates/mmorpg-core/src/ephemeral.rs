@@ -24,7 +24,7 @@ impl EphemeralCharacterBuild {
     /// There are currently no item-level or class equipment restrictions in this catalog.
     pub fn standard(class: ClassChoice) -> Result<Self, InventoryError> {
         let weapon = match class.class {
-            PlayerClass::Warden => 3,
+            PlayerClass::Warden | PlayerClass::Rogue => 3,
             PlayerClass::Ranger => 2,
             PlayerClass::Arcanist | PlayerClass::Necromancer => 4,
         };

@@ -1,4 +1,4 @@
-//! Player classes and their resources: Warden rage, Ranger focus and
+//! Player classes and their resources: Warden rage, Ranger and Rogue focus and
 //! Arcanist and Necromancer mana. A player chooses a class once; until then it keeps the
 //! class-agnostic baseline without a resource or abilities. All integer.
 
@@ -34,14 +34,18 @@ pub enum PlayerClass {
     Arcanist,
     /// Shadow bolts, curses and life drain (#301); summoned minions follow in #295.
     Necromancer,
+    /// Dagger strikes, poison and stuns on focus (#302); thrown weapons, traps and dashes
+    /// follow in #290, #300 and #294.
+    Rogue,
 }
 
 impl PlayerClass {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Warden,
         Self::Ranger,
         Self::Arcanist,
         Self::Necromancer,
+        Self::Rogue,
     ];
 
     #[must_use]
@@ -51,6 +55,7 @@ impl PlayerClass {
             1 => Some(Self::Ranger),
             2 => Some(Self::Arcanist),
             3 => Some(Self::Necromancer),
+            4 => Some(Self::Rogue),
             _ => None,
         }
     }
@@ -62,6 +67,7 @@ impl PlayerClass {
             Self::Ranger => 1,
             Self::Arcanist => 2,
             Self::Necromancer => 3,
+            Self::Rogue => 4,
         }
     }
 
@@ -73,6 +79,7 @@ impl PlayerClass {
             Self::Ranger => "ranger",
             Self::Arcanist => "arcanist",
             Self::Necromancer => "necromancer",
+            Self::Rogue => "rogue",
         }
     }
 
@@ -80,7 +87,7 @@ impl PlayerClass {
     pub const fn resource(self) -> ResourceKind {
         match self {
             Self::Warden => ResourceKind::Rage,
-            Self::Ranger => ResourceKind::Focus,
+            Self::Ranger | Self::Rogue => ResourceKind::Focus,
             Self::Arcanist | Self::Necromancer => ResourceKind::Mana,
         }
     }
@@ -130,7 +137,7 @@ impl ClassChoice {
     /// Inverse of [`Self::appearance`]; `None` for 0 and unknown codes.
     #[must_use]
     pub const fn from_appearance(code: u16) -> Option<Self> {
-        if code == 0 || code > 8 {
+        if code == 0 || code > 10 {
             return None;
         }
         let index = code - 1;
@@ -270,11 +277,12 @@ mod tests {
                 codes.push(choice.appearance());
             }
         }
-        assert_eq!(codes, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(codes, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         assert_eq!(ClassChoice::from_appearance(0), None);
-        assert_eq!(ClassChoice::from_appearance(9), None);
-        assert_eq!(PlayerClass::from_code(4), None);
+        assert_eq!(ClassChoice::from_appearance(11), None);
+        assert_eq!(PlayerClass::from_code(5), None);
         assert_eq!(PlayerClass::Necromancer.resource(), ResourceKind::Mana);
+        assert_eq!(PlayerClass::Rogue.resource(), ResourceKind::Focus);
         assert_eq!(Sex::from_code(2), None);
     }
 

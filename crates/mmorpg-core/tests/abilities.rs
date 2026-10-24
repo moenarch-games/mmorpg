@@ -36,7 +36,7 @@ impl Fight {
         }
     }
 
-    /// A fight whose player chose `class` (0 Warden, 1 Ranger, 2 Arcanist).
+    /// A fight whose player chose `class` (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue).
     fn with_class(content: Arc<ZoneContent>, level: u8, class: u8) -> Self {
         let mut fight = Self::new(content, level);
         fight.send(ZoneCommand::ChooseClass { class, sex: 1 });
@@ -178,7 +178,7 @@ fn players_choose_a_class_once_and_need_one_for_abilities() {
     assert_eq!(unchosen.entities[0].appearance, 0);
 
     fight.use_ability(ids::HEROIC_STRIKE);
-    fight.send(ZoneCommand::ChooseClass { class: 4, sex: 0 });
+    fight.send(ZoneCommand::ChooseClass { class: 5, sex: 0 });
     fight.send(ZoneCommand::ChooseClass { class: 0, sex: 2 });
     fight.tick();
     assert_eq!(
@@ -1191,4 +1191,63 @@ fn drain_life_breaks_when_its_target_dies() {
         ZoneEvent::Interrupted { ability, target, .. } if *ability == ids::DRAIN_LIFE && *target == PLAYER
     )).len() == 1);
     assert_eq!(fight.view().viewer.cast, None);
+}
+
+#[test]
+fn a_rogue_strikes_poisons_gouges_and_rushes_on_focus() {
+    // A sturdy wolf 2 m west of the spawn row, in melee reach.
+    let content = classes::arena(
+        vec![arena::wolf(400, [1, 1])],
+        vec![arena::spawn(1, WOLF, [-200, 0])],
+    );
+    let mut fight = Fight::with_class(content, 6, 4);
+    assert_eq!(fight.resource(), 100, "focus starts full, like the Ranger");
+    fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
+
+    // Sinister Strike: an instant melee weapon strike for 25 focus.
+    fight.use_ability(ids::SINISTER_STRIKE);
+    let struck = fight.zone.current_tick() + 1;
+    fight.tick();
+    assert_eq!(fight.resource(), 75);
+    assert!(
+        !fight
+            .since(struck, |event| damage_dealt_to(event, TARGET).is_some())
+            .is_empty()
+    );
+
+    // Poisoned Blade: a damage-over-time poison on the target.
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.use_ability(ids::POISONED_BLADE);
+    fight.tick();
+    assert!(fight.view().target_detail.auras.iter().any(|aura| {
+        aura.ability == ids::POISONED_BLADE && aura.kind == AuraKind::DamageOverTime
+    }));
+
+    // Gouge: a stun without knockback.
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    let before = fight.creature(FIRST).position;
+    fight.use_ability(ids::GOUGE);
+    fight.tick();
+    assert!(
+        fight
+            .view()
+            .target_detail
+            .auras
+            .iter()
+            .any(|aura| aura.ability == ids::GOUGE && aura.kind == AuraKind::Stun)
+    );
+    fight.ticks(10);
+    assert_eq!(fight.creature(FIRST).position, before, "stunned in place");
+
+    // Adrenaline Rush hastes the Rogue's swings.
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.use_ability(ids::ADRENALINE_RUSH);
+    fight.tick();
+    assert!(
+        fight
+            .view()
+            .auras
+            .iter()
+            .any(|aura| aura.ability == ids::ADRENALINE_RUSH && aura.kind == AuraKind::Haste)
+    );
 }
