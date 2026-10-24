@@ -48,8 +48,7 @@ opt-level = 2
 
 # Test builds (cargo test / nextest) also optimize the workspace crates: the zone, quest-chain,
 # scenario and physics A/B tests are whole-simulation runs that take minutes at opt-level 0.
-# Overflow checks and debug assertions stay on (they follow the dev profile, not opt-level), and
-# line tables keep test backtraces readable while shrinking link time and the CI cache.
+# Overflow checks and debug assertions stay on (they follow the dev profile, not opt-level).
+# Dependencies keep the dev override above, so test and dev builds share their compiled deps.
 [profile.test]
 opt-level = 1
-debug = "line-tables-only"
