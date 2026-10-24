@@ -537,6 +537,9 @@ impl GameUi {
                             PlayerClass::Cleric => {
                                 "A holy caster who smites, heals and shields allies with faith."
                             }
+                            PlayerClass::Druid => {
+                                "A nature caster who roots foes and heals allies with mana."
+                            }
                         });
                         ui.label("Body");
                         ui.horizontal(|ui| {
@@ -945,6 +948,7 @@ fn class_title(class: PlayerClass) -> &'static str {
         PlayerClass::Necromancer => "Necromancer",
         PlayerClass::Rogue => "Rogue",
         PlayerClass::Cleric => "Cleric",
+        PlayerClass::Druid => "Druid",
     }
 }
 

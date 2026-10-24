@@ -60,7 +60,8 @@ impl Headwear {
             PlayerClass::Arcanist
             | PlayerClass::Necromancer
             | PlayerClass::Rogue
-            | PlayerClass::Cleric => Self::WayfarerHood,
+            | PlayerClass::Cleric
+            | PlayerClass::Druid => Self::WayfarerHood,
         }
     }
 }

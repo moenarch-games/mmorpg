@@ -4,7 +4,7 @@ export type EquipmentItem = {
   accent: string;
 };
 
-export type CharacterClassId = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric";
+export type CharacterClassId = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid";
 export type CharacterSex = "male" | "female";
 
 export type CharacterClassDefinition = {
@@ -91,6 +91,19 @@ export const CHARACTER_CLASSES: readonly CharacterClassDefinition[] = [
       { slot: "Hands", name: "Linen Wraps", accent: "#f2efe6" },
       { slot: "Feet", name: "Pilgrim Sandals", accent: "#c9a23e" },
       { slot: "Main hand", name: "Sunlit Staff", accent: "#f4f1e8" },
+    ],
+  },
+  {
+    id: "druid",
+    name: "Druid",
+    summary: "Nature caster who roots foes and heals allies",
+    starterEquipment: [
+      { slot: "Head", name: "Wayfarer's Hood", accent: "#b7c6bd" },
+      { slot: "Shoulders", name: "Barkweave Mantle", accent: "#6f5a3a" },
+      { slot: "Chest", name: "Mossweave Robe", accent: "#5e6b3e" },
+      { slot: "Hands", name: "Leaf Wraps", accent: "#4d5a33" },
+      { slot: "Feet", name: "Root-Bound Boots", accent: "#3e3626" },
+      { slot: "Main hand", name: "Gnarled Staff", accent: "#4a3524" },
     ],
   },
 ];
