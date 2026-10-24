@@ -12,8 +12,8 @@ getrandom = "=0.4.3"
 tempfile = "=3.27.0"
 serde_json = "=1.0.154"
 serde = { version = "=1.0.229", features = ["derive"] }
-settings-presentation = { git = "https://github.com/moritzbrantner/settings.git", rev = "e31ec362b6f47eb8dbc70a321a8a633dbd6356ef" }
-settings-core = { git = "https://github.com/moritzbrantner/settings.git", rev = "e31ec362b6f47eb8dbc70a321a8a633dbd6356ef" }
+settings-presentation = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }
+settings-core = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }
 gltf = { version = "=1.4.1", default-features = false, features = ["import", "utils", "names"] }
 game-server.workspace = true
 mmorpg-core.workspace = true
@@ -30,12 +30,12 @@ egui-wgpu = { version = "=0.37.0", default-features = false }
 egui-winit = { version = "=0.37.0", default-features = false, features = ["x11", "wayland"] }
 bytemuck = { version = "=1.25.2", features = ["derive"] }
 tobj = { version = "=4.0.5", default-features = false, features = ["use_f64"] }
-three-d-core = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "c850bda5f37f65f79655469625baf5f1644ac2a0" }
-three-d-camera = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "c850bda5f37f65f79655469625baf5f1644ac2a0" }
-three-d-animation = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "c850bda5f37f65f79655469625baf5f1644ac2a0" }
-three-d-projective = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "c850bda5f37f65f79655469625baf5f1644ac2a0" }
+three-d-core = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "77122d13dbd06789dcce05473b0528e61ad69a44" }
+three-d-camera = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "77122d13dbd06789dcce05473b0528e61ad69a44" }
+three-d-animation = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "77122d13dbd06789dcce05473b0528e61ad69a44" }
+three-d-projective = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "77122d13dbd06789dcce05473b0528e61ad69a44" }
 gilrs = "=0.11.2"
-input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "fb886035c5d64657cf035d84a7b69b371ff4e0d0" }
+input-bindings-core = { git = "https://github.com/moritzbrantner/input-bindings.git", rev = "9884cf8c857779d399bc901323d95d42a54022cd" }
 
 [build-dependencies]
 sha2 = "=0.11.1"
