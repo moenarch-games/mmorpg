@@ -355,7 +355,8 @@ impl ZoneSimulation {
                     body_id(entity),
                     Vec3i::new(
                         npc.position[0],
-                        PLAYER_HALF_EXTENTS_UNITS[1],
+                        definition.ground_at(npc.position[0], npc.position[1])
+                            + PLAYER_HALF_EXTENTS_UNITS[1],
                         npc.position[1],
                     ),
                     PLAYER_HALF_EXTENTS,

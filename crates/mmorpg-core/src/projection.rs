@@ -466,7 +466,10 @@ impl ZoneSimulation {
                     appearance: u16::try_from(npc_id.get()).unwrap_or(u16::MAX),
                     position: [
                         placement.position[0],
-                        PLAYER_HALF_EXTENTS_UNITS[1],
+                        self.content
+                            .definition()
+                            .ground_at(placement.position[0], placement.position[1])
+                            + PLAYER_HALF_EXTENTS_UNITS[1],
                         placement.position[1],
                     ],
                     velocity: [placement.velocity[0], 0, placement.velocity[1]],
