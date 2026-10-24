@@ -9,7 +9,7 @@
 //!   (about 1:5, 11°).
 //! - **Millbrook Steps**, a steeper footpath (about 1:3.6, 15°): south from the farmyard down a
 //!   second ledge to the valley floor, a return that does not use the road.
-//! - **The Lakeshore Climb**, the Lakeshore Path (about 1:6, then 1:5): from the Hollow Road
+//! - **The Lakeshore Climb**, the Lakeshore Path (about 1:6, then 1:4.5): from the Hollow Road
 //!   north along a ledge in the lake terrace's west cliff, round a landing and back south up a
 //!   cutting onto the lake's west shore.
 //!
@@ -34,7 +34,7 @@ pub const EAST_SLOPE: [i32; 2] = [12_800, 16_400];
 pub const LAKE_WEST_CLIFF: [i32; 2] = [1_600, 2_000];
 /// The lake terrace's northern cliff (Z): floor, then terrace. West of [`HOLLOW_WALL_X`] it
 /// stops short of Redbrand Hollow's camp, behind the Lakeshore Climb's landing …
-pub const LAKE_NORTH_CLIFF: [i32; 2] = [-7_600, -7_200];
+pub const LAKE_NORTH_CLIFF: [i32; 2] = [-6_800, -6_400];
 /// … and east of it, behind the Hollow's eastern rock wall, it reaches further north.
 pub const LAKE_FAR_NORTH_CLIFF: [i32; 2] = [-8_400, -8_000];
 /// The X from which the lake terrace takes [`LAKE_FAR_NORTH_CLIFF`]: the far side of the
@@ -103,24 +103,24 @@ pub const STEPS: [Lane; 2] = [
     },
 ];
 
-/// Height of the Lakeshore Climb's landing (6.4 m).
-pub const LAKE_LANDING_Y: i32 = 640;
+/// Height of the Lakeshore Climb's landing (5.6 m).
+pub const LAKE_LANDING_Y: i32 = 560;
 
 /// The Lakeshore Climb: the west cliff's ledge, the landing and the cutting, in that order.
 pub const LAKESHORE: [Lane; 3] = [
     Lane {
-        min: [1_200, -6_800],
+        min: [1_200, -6_000],
         max: [1_600, -2_800],
         heights: [LAKE_LANDING_Y, 0],
     },
     Lane {
-        min: [1_200, -7_200],
-        max: [2_800, -6_800],
+        min: [1_200, -6_400],
+        max: [2_800, -6_000],
         heights: [LAKE_LANDING_Y, LAKE_LANDING_Y],
     },
     Lane {
-        min: [2_400, -6_800],
-        max: [2_800, -4_400],
+        min: [2_400, -6_000],
+        max: [2_800, -3_600],
         heights: [LAKE_LANDING_Y, TERRACE_Y],
     },
 ];

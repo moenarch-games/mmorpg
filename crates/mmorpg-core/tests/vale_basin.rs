@@ -196,10 +196,10 @@ fn a_player_walks_up_the_lakeshore_climb_to_the_lake() {
         &mut zone,
         &[
             [1_400, -2_800],
-            [1_400, -7_000],
-            [2_600, -7_000],
-            [2_600, -4_000],
-            [3_400, -4_000],
+            [1_400, -6_200],
+            [2_600, -6_200],
+            [2_600, -3_200],
+            [3_400, -3_200],
             [3_400, -4_800],
         ],
     );
@@ -211,7 +211,7 @@ fn a_player_walks_up_the_lakeshore_climb_to_the_lake() {
     assert!(
         trail
             .iter()
-            .any(|at| at[2] < -6_800.0 && (at[1] - basin::LAKE_LANDING_Y as f32).abs() < 30.0)
+            .any(|at| at[2] < -6_000.0 && (at[1] - basin::LAKE_LANDING_Y as f32).abs() < 30.0)
     );
 }
 

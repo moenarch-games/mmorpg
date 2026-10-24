@@ -290,10 +290,10 @@ static ROADS: [Road; 10] = [
         points: &[
             [0, -2_800],
             [1_400, -2_800],
-            [1_400, -7_000],
-            [2_600, -7_000],
-            [2_600, -4_000],
-            [3_400, -4_000],
+            [1_400, -6_200],
+            [2_600, -6_200],
+            [2_600, -3_200],
+            [3_400, -3_200],
             [3_400, -4_900],
         ],
     },
@@ -563,8 +563,9 @@ pub mod lake {
     pub const SURFACE: i32 = SHORE_Y + 15;
     /// The basin falls linearly from the shallow rim to this depth (9 m) at the centre …
     pub const DEPTH: i64 = 900;
-    /// … starting at this fraction of the ellipse (Q10): the outer fifth stays ankle-deep.
-    pub const RIM_Q10: i64 = 819;
+    /// … starting at this fraction of the ellipse (Q10): the outer 30 % stays ankle-deep and
+    /// level, where the lurkers wade (#423).
+    pub const RIM_Q10: i64 = 717;
 }
 
 /// How far (units) the lake basin lowers the ground at `(x, z)`.

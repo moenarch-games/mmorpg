@@ -214,15 +214,15 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (228, FIELD_MARAUDER, [5_800, 8_000], 16_384),
         (229, FIELD_MARAUDER, [7_800, 8_000], 49_152),
         // Stillwater Lake: mirefin lurkers on the shallow rim, clear of the deep basin and the
-        // Sunken Shrine's cave (#274).
-        (300, MIREFIN_LURKER, [4_300, -4_400], 16_384),
-        (301, MIREFIN_LURKER, [5_000, -4_300], 32_768),
-        (302, MIREFIN_LURKER, [6_200, -4_400], 32_768),
-        (303, MIREFIN_LURKER, [7_000, -4_500], 49_152),
-        (304, MIREFIN_LURKER, [7_000, -6_300], 57_344),
-        (305, MIREFIN_LURKER, [5_800, -6_800], 0),
-        (306, MIREFIN_LURKER, [4_280, -6_580], 8_192),
-        (307, MIREFIN_LURKER, [6_400, -6_700], 24_576),
+        // Sunken Shrine's cave (#274), out on the level rim (#423).
+        (300, MIREFIN_LURKER, [4_200, -4_310], 16_384),
+        (301, MIREFIN_LURKER, [4_890, -4_050], 32_768),
+        (302, MIREFIN_LURKER, [6_380, -4_120], 32_768),
+        (303, MIREFIN_LURKER, [7_040, -4_470], 49_152),
+        (304, MIREFIN_LURKER, [7_190, -6_400], 57_344),
+        (305, MIREFIN_LURKER, [5_850, -7_000], 0),
+        (306, MIREFIN_LURKER, [4_200, -6_650], 8_192),
+        (307, MIREFIN_LURKER, [6_500, -6_830], 24_576),
         // Redbrand Hollow: the bandit camp between the cliffs.
         (400, REDBRAND_BANDIT, [-1_000, -7_800], 0),
         (401, REDBRAND_BANDIT, [1_000, -7_800], 0),
