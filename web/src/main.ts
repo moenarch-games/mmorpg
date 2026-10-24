@@ -1266,12 +1266,31 @@ function startArea(): number {
 }
 
 /**
+ * Orders art loading by selection intent (#412): the selected character and its entry area first,
+ * then the other roster characters' saved areas and the entry area's neighbours in the background.
+ */
+function prefetchSelection(area: number): void {
+  const others: number[] = [];
+  if (localCharacters && !scenarioWorld) {
+    for (const character of characters) {
+      if (!creationDraft && character.id === selectedCharacterId()) { continue; }
+      try {
+        others.push(committedArea(localCharacters, character.id) ?? OUTPOST_AREA);
+      } catch {
+        // An unreadable save enters at the outpost, which is already planned.
+      }
+    }
+  }
+  worldView.prefetchSelection(area, [...new Set(others)].filter((id) => id !== area));
+}
+
+/**
  * Whether all of the starting area's art has settled (loaded or failed to its fallback); fetching
  * it starts here, so it streams while the player is still choosing (#240).
  */
 function artReady(): boolean {
   const area = startArea();
-  worldView.prefetchRegion(area);
+  prefetchSelection(area);
   const { loaded, total } = worldView.artProgress(area);
   return total > 0 && loaded >= total;
 }
@@ -1282,7 +1301,7 @@ function artReady(): boolean {
  */
 function entryArtReady(): boolean {
   const area = startArea();
-  worldView.prefetchRegion(area);
+  prefetchSelection(area);
   return worldView.entryArtReady(area);
 }
 
