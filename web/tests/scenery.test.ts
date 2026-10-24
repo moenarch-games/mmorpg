@@ -81,6 +81,9 @@ describe("scenery provider and local world", () => {
     areaAt: () => areaId,
     reliefAt: (x: number, z: number) => x + z,
     regionModels: () => JSON.stringify([{ area: 1, models: [] }, { area: 2, models: ["Wolf", "Pig"] }]),
+    shrineKitEntries: () => [],
+    shrineKitKeys: () => [],
+    shrineKitModels: () => new Float32Array(),
   });
 
   test("routes area and relief queries to the WASM owners", () => {

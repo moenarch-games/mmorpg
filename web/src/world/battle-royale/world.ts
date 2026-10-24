@@ -43,6 +43,7 @@ export function createArenaWorld(
     },
     unitPresenter: (player) => UnitPresenter.forArena(player),
     inn: { entries: () => [], presenter: () => ({ frame: () => emptyMotion }), reachableDoor: () => 0 },
+    shrine: { entries: [], placements: [] },
     importedRestClip: (kind) => local.scenery.importedRestClip(kind),
     areaAt: () => null,
     reachablePieces: () => [],

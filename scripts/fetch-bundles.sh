@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Downloads the asset-tooling bundles the clients draw, once each: the Ranger
 # humanoid (Atlas 6.3.7) into web/public/characters/humanoid.ranger.male and the
-# Greyhaven inn (#158) into web/public/buildings/greyhaven.inn, where the browser
+# Greyhaven inn (#158) into web/public/buildings/greyhaven.inn and the Sunken Shrine kit
+# (#431) into web/public/scenery/shrine.kit, where the browser
 # serves them and the native client build embeds them. Idempotent: an existing
 # download of the same release is kept. The directories are ignored build input,
 # never committed.
@@ -28,5 +29,30 @@ fetch() {
   echo "Fetched ${tag} into ${dest}"
 }
 
+# The rolling shrine-kit release (#431) is pinned by its tar sha256 and the consumer's copy of
+# its export.ref.json (asset-tooling docs/asset-bundles.md); a replaced release fails here.
+fetch_pinned() {
+  local tag="$1" name="$2" dest="${ROOT_DIR}/web/public/$3" sha="$4" ref="${ROOT_DIR}/$5"
+  if [[ -f "${dest}/SHA256" && "$(cat "${dest}/SHA256")" == "${sha}" ]]; then
+    return 0
+  fi
+  local work
+  work="$(mktemp -d)"
+  curl -fsSL --retry 3 --max-time 300 -o "${work}/bundle.tar" \
+    "https://github.com/moritzbrantner/asset-tooling/releases/download/${tag}/${name}.tar"
+  printf '%s  %s\n' "${sha}" "${work}/bundle.tar" | sha256sum --check --status
+  mkdir "${work}/bundle"
+  tar -xf "${work}/bundle.tar" -C "${work}/bundle"
+  cmp -s "${ref}" "${work}/bundle/export.ref.json"
+  printf '%s\n' "${sha}" > "${work}/bundle/SHA256"
+  rm -rf -- "${dest}"
+  mkdir -p -- "$(dirname -- "${dest}")"
+  mv -- "${work}/bundle" "${dest}"
+  rm -rf -- "${work}"
+  echo "Fetched ${tag} into ${dest}"
+}
+
 python3 "${ROOT_DIR}/scripts/fetch-ranger.py"
 fetch greyhaven-inn-v1 greyhaven.inn buildings/greyhaven.inn
+fetch_pinned shrine-kit shrine.kit scenery/shrine.kit \
+  a1938eb814e570cec9ad4c50fde54b62d260c40d80d9416eed0961e8572255db web/assets/shrine-kit/export.ref.json

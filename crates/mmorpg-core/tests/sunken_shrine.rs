@@ -67,6 +67,14 @@ fn the_cave_is_flooded_dark_to_its_end_and_breathable_only_in_its_pocket() {
     assert_eq!(mode(7_000), WaterMode::Submerged, "under the lake");
     assert_eq!(mode(10_000), WaterMode::Submerged, "under the shore");
     assert_eq!(mode(8_800), WaterMode::Swimming, "the air pocket");
+    // The air pocket is the shrine kit's 8 × 8 m room (#431): flat and breathable off the axis.
+    for z in [-5_750, -5_050] {
+        assert_eq!(terrain.height_at(8_800, z), shrine::FLOOR_Y);
+        assert_eq!(
+            WaterMode::of_player(content.waters(), [8_800, shrine::FLOOR_Y + 90, z]),
+            WaterMode::Swimming
+        );
+    }
     // The shore over the cave is dry ground, roofed flush with it.
     assert_eq!(
         WaterMode::of_player(content.waters(), [10_000, 90, CAVE_Z]),

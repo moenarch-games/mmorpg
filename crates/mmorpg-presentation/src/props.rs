@@ -726,7 +726,8 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut roofs = 0;
     for p in &s.props {
         // The inn is asset-tooling's walk-in bundle (`crate::buildings`), not a procedural block.
-        if p.kind == PropKind::Inn {
+        // The shrine (#431) is asset-tooling's kit (`crate::shrine`).
+        if matches!(p.kind, PropKind::Inn | PropKind::ShrineKit) {
             continue;
         }
         let [hx, hy, hz] = half(p);
@@ -749,7 +750,9 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
         }
         match p.kind {
             PropKind::Keep => keep(&mut m, w, d, h),
-            PropKind::Inn => unreachable!("the inn is drawn from its bundle"),
+            PropKind::Inn | PropKind::ShrineKit => {
+                unreachable!("the inn and the shrine are drawn from their bundles")
+            }
             PropKind::House | PropKind::Farmhouse => {
                 house(&mut m, w, d, h, THATCH, p.kind == PropKind::Farmhouse)
             }
