@@ -662,6 +662,31 @@ pub(super) fn shrine_draws(key: &str) -> &'static [SceneDraw] {
         .map_or(&[], |(_, draws)| draws.as_slice())
 }
 
+/// Greyhaven's ambient animals and their resources, embedded by `build.rs` (#419).
+mod ambient_bundle {
+    include!(concat!(env!("OUT_DIR"), "/ambient_bundle.rs"));
+}
+
+/// The skinned ambient animal of entry `key` with its clip lengths, each imported once.
+pub(super) fn ambient_model(key: &str) -> Option<&'static (Model, BTreeMap<String, f32>)> {
+    static MODELS: OnceLock<Vec<(&'static str, (Model, BTreeMap<String, f32>))>> = OnceLock::new();
+    MODELS
+        .get_or_init(|| {
+            ambient_bundle::ENTRIES
+                .iter()
+                .map(|&(key, path)| {
+                    let model = Model::parse(&bundle_glb(path, ambient_bundle::FILES), "Idle")
+                        .expect("an ambient animal is valid glTF");
+                    let clips = model.clip_durations().collect();
+                    (key, (model, clips))
+                })
+                .collect()
+        })
+        .iter()
+        .find(|(entry, _)| *entry == key)
+        .map(|(_, model)| model)
+}
+
 /// Normalizes `base`'s directory joined with a relative `uri` ("../../resources/x.bin").
 fn resolve(base: &str, uri: &str) -> String {
     let mut parts: Vec<&str> = base.split('/').collect();
@@ -1029,6 +1054,27 @@ mod rolling_ranger_tests {
             model.skin("Walk_Loop", 0.),
             model.skin("Walk_Loop", clip.duration * 0.25)
         );
+    }
+
+    #[test]
+    fn ambient_animals_skin_their_idle_and_walk_at_the_contract_size() {
+        // Heights from asset-tooling docs/greyhaven-ambient-animals.md (#419).
+        for (key, height) in [
+            ("greyhaven.ambient.cat", 0.45),
+            ("greyhaven.ambient.dog", 0.65),
+            ("greyhaven.ambient.rodent", 0.17),
+        ] {
+            let (model, clips) = ambient_model(key).expect(key);
+            assert!(
+                (model.height - height).abs() < 0.03,
+                "{key} {}",
+                model.height
+            );
+            assert!(model.floor.abs() < 0.03, "{key} {}", model.floor);
+            let walk = clips["Walk"];
+            assert!(clips["Idle"] > 0. && walk > 0.);
+            assert_ne!(model.skin("Walk", 0.), model.skin("Walk", walk * 0.5));
+        }
     }
 }
 

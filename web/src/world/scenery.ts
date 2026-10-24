@@ -90,6 +90,11 @@ export type SceneryContent = StaticSceneContent & {
   shrineKitEntries(): string[];
   shrineKitKeys(): string[];
   shrineKitModels(): Float32Array;
+  /** Greyhaven's ambient animals (#419): entries, clip names, first-waypoint anchors (x, z units) and per animal 16 model floats, clip index and clip time. */
+  ambientAnimalEntries(): string[];
+  ambientAnimalClips(): string[];
+  ambientAnimalAnchors(): Int32Array;
+  ambientAnimalFrame(seconds: number, animate: boolean): Float32Array;
   /** The rest clip an imported unit model is measured in. */
   importedRestClip(kind: string): string | undefined;
   areaAt(x: number, z: number): number | undefined;
@@ -106,6 +111,16 @@ export type InnPresenterHandle = {
   frame(open: boolean, viewer: Float64Array, dt: number, reducedMotion: boolean): Float32Array;
 };
 
+/** The shared presenter's ambient animal loops (`mmorpg_presentation::ambient`, #419). */
+export type AmbientAnimalsSource = {
+  entries: readonly string[];
+  clips: readonly string[];
+  /** Each animal's first waypoint, `[x, z]` in units. */
+  anchors: readonly (readonly [number, number])[];
+  /** Per animal 16 column-major model floats (metres), the clip index and the clip time. */
+  frame(seconds: number, animate: boolean): Float32Array;
+};
+
 export type SceneryProvider = {
   readonly scenery: Scenery;
   /** The shared static world both clients draw (#184), straight from the WASM owner. */
@@ -117,6 +132,8 @@ export type SceneryProvider = {
   readonly inn: { entries(): readonly string[]; presenter(): InnPresenterHandle; reachableDoor(x: number, z: number): number };
   /** The Sunken Shrine's kit entries and placed modules (#431), column-major matrices in metres. */
   readonly shrine: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
+  /** Greyhaven's cosmetic ambient animals (#419). */
+  readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
   /** The named core area at `(x, z)` in units, if any. */
   areaAt(x: number, z: number): Area | null;
@@ -411,6 +428,15 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       return {
         entries: content.shrineKitEntries(),
         placements: content.shrineKitKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
+      };
+    })(),
+    ambient: (() => {
+      const anchors = content.ambientAnimalAnchors();
+      return {
+        entries: content.ambientAnimalEntries(),
+        clips: content.ambientAnimalClips(),
+        anchors: Array.from({ length: anchors.length / 2 }, (_, index) => [anchors[index * 2]!, anchors[index * 2 + 1]!] as const),
+        frame: (seconds: number, animate: boolean) => content.ambientAnimalFrame(seconds, animate),
       };
     })(),
     importedRestClip(kind) {

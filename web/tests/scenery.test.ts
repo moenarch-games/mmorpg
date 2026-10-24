@@ -84,6 +84,14 @@ describe("scenery provider and local world", () => {
     shrineKitEntries: () => [],
     shrineKitKeys: () => [],
     shrineKitModels: () => new Float32Array(),
+    ambientAnimalEntries: () => ["greyhaven.ambient.cat"],
+    ambientAnimalClips: () => ["Idle", "Walk"],
+    ambientAnimalAnchors: () => Int32Array.from([1_800, 600]),
+    ambientAnimalFrame: () => new Float32Array(18),
+  });
+
+  test("decodes the ambient animals' anchors (#419)", () => {
+    expect(createSceneryProvider(content(1)).ambient.anchors).toEqual([[1_800, 600]]);
   });
 
   test("routes area and relief queries to the WASM owners", () => {
