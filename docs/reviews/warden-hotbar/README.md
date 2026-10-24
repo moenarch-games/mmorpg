@@ -1,6 +1,6 @@
 # Warden hotbar comparison
 
-Before: actual public [MMORPG Pages game](https://moritzbrantner.github.io/mmorpg/), prior to the icon consumer change. [Capture metadata](before-public.json) identifies its loaded game modules. The fifth slot is the existing Charge ability.
+Before: actual public [MMORPG Pages game](https://moenarch-games.github.io/mmorpg/), prior to the icon consumer change. [Capture metadata](before-public.json) identifies its loaded game modules. The fifth slot is the existing Charge ability.
 
 ![Public game before: geometric ability glyphs](before-public.png)
 
