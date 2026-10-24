@@ -4,7 +4,7 @@ Independent acceptance context `/root/native_acceptance` authored this contract
 against `28ce451f2e118c6a664117d8d6d9071dc60bb954`, before production changes.
 Authority: the current `docs/decisions/atlas.md` 5.1.11, 5.2.1, 5.2.16, 5.4.18,
 6.1.1 and 6.3.1–6.3.3; issue #28 and its full independent obligation handoff
-[6211062131](https://github.com/moritzbrantner/mmorpg/issues/28#issuecomment-6211062131).
+[6211062131](https://github.com/moenarch-games/mmorpg/issues/28#issuecomment-6211062131).
 The geometry prerequisite is 3d-lab #125, merged in #126 at
 `df52c324a5692d04d2016d8a29f5bc4368e4aac0`. This acceptance commit does not adopt it.
 Convention resolution: `sourceRevision=5ad0db36974c8b0e5f9812c90ee34a4f227852c3`.

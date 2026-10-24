@@ -20,7 +20,7 @@
 //! `wasm-bindgen` 0.2.129 generates compiles under it, so this crate needs no
 //! lint exception.
 //!
-//! [ADR 0002]: https://github.com/moritzbrantner/mmorpg/blob/main/docs/adr/0002-browser-embeds-zone-simulation.md
+//! [ADR 0002]: https://github.com/moenarch-games/mmorpg/blob/main/docs/adr/0002-browser-embeds-zone-simulation.md
 #![forbid(unsafe_code)]
 
 pub mod action_lab;
