@@ -21,6 +21,8 @@ pub struct Look {
     pub orb: u32,
     /// A Rogue's dagger (#302): the sword stance with a short blade and no shield.
     pub dagger: bool,
+    /// A Druid's gnarled wooden staff (#304): knots along the shaft and prongs around the orb.
+    pub gnarled: bool,
     pub hat: Option<Hat>,
 }
 impl Look {
@@ -75,6 +77,17 @@ impl Look {
                 0xf4f1e8,
                 0xffd65a,
             ),
+            // The Druid (#304): moss and earth-brown robes, a gnarled dark-wood staff and a
+            // moss-green orb.
+            6 => (
+                Stance::Staff,
+                0x5e6b3e,
+                0x4d5a33,
+                0x6f5a3a,
+                0x3e3626,
+                0x4a3524,
+                0x8fe05a,
+            ),
             _ => (
                 Stance::Sword,
                 0x718d84,
@@ -96,6 +109,7 @@ impl Look {
                 weapon: 0xd3d6cf,
                 orb: ARCANE_ORB,
                 dagger: false,
+                gnarled: false,
                 hat: None,
             }
         } else {
@@ -109,6 +123,7 @@ impl Look {
                 weapon,
                 orb,
                 dagger: class == 4,
+                gnarled: class == 6,
                 hat,
             }
         }
@@ -609,13 +624,31 @@ fn gear(p: &mut Parts, l: Look, root: Frame, hands: [Frame; 2], fore: [Frame; 2]
                 offset(staff, [0., -0.8, 0.]),
                 [0.024, 1.85, 0.024],
             );
-            p.part(
-                "staff-fitting",
-                "post",
-                0xc7b66d,
-                offset(staff, [0., 0.95, 0.]),
-                [0.034, 0.07, 0.034],
-            );
+            if l.gnarled {
+                // Knots along the shaft and three bent prongs cradling the orb.
+                for (n, y) in [("staff-knot-0", 0.35), ("staff-knot-1", -0.25)] {
+                    p.part(n, "blob", l.weapon, offset(staff, [0.01, y, 0.]), [0.04; 3]);
+                }
+                for (i, n) in ["staff-prong-0", "staff-prong-1", "staff-prong-2"]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let a = i as f64 / 3. * 2. * PI;
+                    let prong = Frame {
+                        p: offset(staff, [a.sin() * 0.06, 1.05, a.cos() * 0.06]).p,
+                        q: qm(staff.q, tilt(a.cos() * 0.35, -a.sin() * 0.35, 0.)),
+                    };
+                    p.part(n, "post", l.weapon, prong, [0.016, 0.16, 0.016]);
+                }
+            } else {
+                p.part(
+                    "staff-fitting",
+                    "post",
+                    0xc7b66d,
+                    offset(staff, [0., 0.95, 0.]),
+                    [0.034, 0.07, 0.034],
+                );
+            }
             for (n, c, r) in [
                 ("staff-orb", l.orb, 0.075),
                 ("staff-orb-core", 0xffffff, 0.04),

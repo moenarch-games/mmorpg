@@ -77,6 +77,8 @@ pub enum ProjectileKind {
     Shadow,
     /// A Cleric's holy missile (#303): flies like [`Self::Missile`], drawn in gold.
     Holy,
+    /// A Druid's nature missile (#304): flies like [`Self::Missile`], drawn in green.
+    Nature,
 }
 
 impl ProjectileKind {
@@ -88,6 +90,7 @@ impl ProjectileKind {
             Self::Missile => 3,
             Self::Shadow => 4,
             Self::Holy => 5,
+            Self::Nature => 6,
         }
     }
 
@@ -99,6 +102,7 @@ impl ProjectileKind {
             3 => Some(Self::Missile),
             4 => Some(Self::Shadow),
             5 => Some(Self::Holy),
+            6 => Some(Self::Nature),
             _ => None,
         }
     }
@@ -111,13 +115,17 @@ impl ProjectileKind {
             Self::Missile => "missile",
             Self::Shadow => "shadow",
             Self::Holy => "holy",
+            Self::Nature => "nature",
         }
     }
 
     /// Whether it is a spell missile: no gravity, homing and flying at body height.
     #[must_use]
     pub const fn is_magic(self) -> bool {
-        matches!(self, Self::Missile | Self::Shadow | Self::Holy)
+        matches!(
+            self,
+            Self::Missile | Self::Shadow | Self::Holy | Self::Nature
+        )
     }
 
     #[must_use]
@@ -125,7 +133,7 @@ impl ProjectileKind {
         match self {
             Self::Arrow => ARROW_SPEED_UNITS,
             Self::Bolt => BOLT_SPEED_UNITS,
-            Self::Missile | Self::Shadow | Self::Holy => MISSILE_SPEED_UNITS,
+            Self::Missile | Self::Shadow | Self::Holy | Self::Nature => MISSILE_SPEED_UNITS,
         }
     }
 
@@ -135,7 +143,7 @@ impl ProjectileKind {
     pub const fn gravity(self) -> f32 {
         match self {
             Self::Arrow | Self::Bolt => PROJECTILE_GRAVITY_UNITS,
-            Self::Missile | Self::Shadow | Self::Holy => 0.0,
+            Self::Missile | Self::Shadow | Self::Holy | Self::Nature => 0.0,
         }
     }
 }

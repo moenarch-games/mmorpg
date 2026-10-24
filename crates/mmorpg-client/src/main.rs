@@ -60,14 +60,14 @@ impl Options {
                 "--smoke" => options.smoke = true,
                 "--class" => {
                     let name = args.next().ok_or(
-                        "--class needs warden, ranger, arcanist, necromancer, rogue or cleric",
+                        "--class needs warden, ranger, arcanist, necromancer, rogue, cleric or druid",
                     )?;
                     options.class = Some(
                         PlayerClass::ALL
                             .into_iter()
                             .find(|class| class.name() == name)
                             .ok_or(
-                                "--class must be warden, ranger, arcanist, necromancer, rogue or cleric",
+                                "--class must be warden, ranger, arcanist, necromancer, rogue, cleric or druid",
                             )?,
                     );
                 }

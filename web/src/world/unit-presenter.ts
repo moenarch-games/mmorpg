@@ -62,7 +62,7 @@ export type UnitFrameNodes = { nodes: RendererSceneNode[]; units: PresentedUnit[
 
 /** The viewer's own look: class and sex as an appearance code, and headwear. */
 export type ViewerLook = {
-  classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | null; sex: "female" | "male"; headwear: string | null;
+  classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid" | null; sex: "female" | "male"; headwear: string | null;
   /** The viewer's hairstyle and colour (#376); hidden under the hood and helm. */
   hair?: "buzzed" | "parted" | "long" | "bald"; hairColor?: "black" | "brown" | "blond";
 };
@@ -75,7 +75,7 @@ type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKi
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2 };
-const CLASS_CODE = { warden: 0, ranger: 1, arcanist: 2, necromancer: 3, rogue: 4, cleric: 5 } as const;
+const CLASS_CODE = { warden: 0, ranger: 1, arcanist: 2, necromancer: 3, rogue: 4, cleric: 5, druid: 6 } as const;
 
 function triples(values: Float32Array, start: number, count: number): [number, number, number][] {
   const out: [number, number, number][] = new Array(count);

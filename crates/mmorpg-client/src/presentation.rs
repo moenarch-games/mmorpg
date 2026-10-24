@@ -367,7 +367,8 @@ impl Presentation {
             PlayerClass::Arcanist
             | PlayerClass::Necromancer
             | PlayerClass::Rogue
-            | PlayerClass::Cleric => player::Hat::Hood,
+            | PlayerClass::Cleric
+            | PlayerClass::Druid => player::Hat::Hood,
         });
     }
 

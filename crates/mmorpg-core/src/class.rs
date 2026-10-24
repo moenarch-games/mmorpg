@@ -1,5 +1,5 @@
 //! Player classes and their resources: Warden rage, Ranger and Rogue focus,
-//! Arcanist and Necromancer mana and Cleric faith. A player chooses a class once; until then it keeps the
+//! Arcanist, Necromancer and Druid mana and Cleric faith. A player chooses a class once; until then it keeps the
 //! class-agnostic baseline without a resource or abilities. All integer.
 
 use crate::unit::percent_of;
@@ -43,16 +43,20 @@ pub enum PlayerClass {
     /// Holy bolts and beams, heals and shields on faith (#303); heals and shields also land on
     /// a selected friendly player. Knockback blasts follow later.
     Cleric,
+    /// Nature bolts, roots, heals and bark on mana (#304); the pet companion follows in #296
+    /// and stone walls in #293. No shapeshift.
+    Druid,
 }
 
 impl PlayerClass {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Warden,
         Self::Ranger,
         Self::Arcanist,
         Self::Necromancer,
         Self::Rogue,
         Self::Cleric,
+        Self::Druid,
     ];
 
     #[must_use]
@@ -64,6 +68,7 @@ impl PlayerClass {
             3 => Some(Self::Necromancer),
             4 => Some(Self::Rogue),
             5 => Some(Self::Cleric),
+            6 => Some(Self::Druid),
             _ => None,
         }
     }
@@ -77,6 +82,7 @@ impl PlayerClass {
             Self::Necromancer => 3,
             Self::Rogue => 4,
             Self::Cleric => 5,
+            Self::Druid => 6,
         }
     }
 
@@ -90,6 +96,7 @@ impl PlayerClass {
             Self::Necromancer => "necromancer",
             Self::Rogue => "rogue",
             Self::Cleric => "cleric",
+            Self::Druid => "druid",
         }
     }
 
@@ -98,7 +105,7 @@ impl PlayerClass {
         match self {
             Self::Warden => ResourceKind::Rage,
             Self::Ranger | Self::Rogue => ResourceKind::Focus,
-            Self::Arcanist | Self::Necromancer => ResourceKind::Mana,
+            Self::Arcanist | Self::Necromancer | Self::Druid => ResourceKind::Mana,
             Self::Cleric => ResourceKind::Faith,
         }
     }
@@ -148,7 +155,7 @@ impl ClassChoice {
     /// Inverse of [`Self::appearance`]; `None` for 0 and unknown codes.
     #[must_use]
     pub const fn from_appearance(code: u16) -> Option<Self> {
-        if code == 0 || code > 12 {
+        if code == 0 || code > 14 {
             return None;
         }
         let index = code - 1;
@@ -301,10 +308,11 @@ mod tests {
                 codes.push(choice.appearance());
             }
         }
-        assert_eq!(codes, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        assert_eq!(codes, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
         assert_eq!(ClassChoice::from_appearance(0), None);
-        assert_eq!(ClassChoice::from_appearance(13), None);
-        assert_eq!(PlayerClass::from_code(6), None);
+        assert_eq!(ClassChoice::from_appearance(15), None);
+        assert_eq!(PlayerClass::from_code(7), None);
+        assert_eq!(PlayerClass::Druid.resource(), ResourceKind::Mana);
         assert_eq!(PlayerClass::Cleric.resource(), ResourceKind::Faith);
         assert_eq!(PlayerClass::Necromancer.resource(), ResourceKind::Mana);
         assert_eq!(PlayerClass::Rogue.resource(), ResourceKind::Focus);
