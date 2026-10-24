@@ -65,13 +65,13 @@ describe("WASM local zone host", () => {
       run(source, 1);
     }
     const before = source.latestProjection()!;
-    expect(before.viewer).toMatchObject({ copper: 0, health: 29, experience: 50 });
+    expect(before.viewer).toMatchObject({ copper: 0, health: 32, experience: 50 });
     loot.update(before);
     const sheet = loot.sheet;
     if (sheet === null) {
       throw new Error("Missing authoritative corpse sheet");
     }
-    expect(sheet).toEqual({ creatureId: 108, diedAt: 1022n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
+    expect(sheet).toEqual({ creatureId: 108, diedAt: 1010n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
     source.sendCommand({ kind: "loot", creatureId: sheet.creatureId, diedAt: sheet.diedAt + 1n });
     run(source, 1);
     expect(source.latestProjection()?.events).toContainEqual({ kind: "error", code: "invalid-loot", target: { kind: "creature", id: 108 } });
@@ -454,7 +454,7 @@ describe("WASM local zone host", () => {
     const actual = provider.scenery.props.filter((prop) => prop.kind === "grass-tuft" && prop.position[0] >= -3500 && prop.position[0] <= 3500 && prop.position[2] >= -1300 && prop.position[2] <= 5300);
     expect(actual).toEqual(expected);
     expect(actual.length).toBe(55);
-    expect(provider.scenery.presentationFingerprint).toBe("59b3f75f27cfb2d8");
+    expect(provider.scenery.presentationFingerprint).toBe("5a865c8bf541ea27");
     expect(provider.scenery.contentRevision).toBe(28n);
   });
 

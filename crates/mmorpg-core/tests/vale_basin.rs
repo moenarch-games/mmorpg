@@ -182,9 +182,9 @@ fn the_lake_and_the_shrine_lie_in_the_terrace() {
     assert_eq!(lake::SURFACE, basin::TERRACE_Y + 15);
     assert_eq!(definition.ground_at(5_000, -5_400), shrine::FLOOR_Y);
     assert_eq!(shrine::FLOOR_Y, basin::TERRACE_Y - 900);
-    // The west cliff: the floor, then the terrace one cell on.
-    assert_eq!(definition.ground_at(1_600, -7_600), 0);
-    assert_eq!(definition.ground_at(2_000, -7_600), basin::TERRACE_Y);
+    // The south cliff over the basin: the terrace, then the floor one cell on.
+    assert_eq!(definition.ground_at(2_000, -2_400), 0);
+    assert_eq!(definition.ground_at(2_000, -2_800), basin::TERRACE_Y);
 }
 
 #[test]

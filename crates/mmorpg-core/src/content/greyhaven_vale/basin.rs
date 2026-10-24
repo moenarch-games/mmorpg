@@ -32,8 +32,14 @@ pub const SOUTH_CLIFF: [i32; 2] = [9_600, 10_000];
 pub const EAST_SLOPE: [i32; 2] = [12_800, 16_400];
 /// The lake terrace's west cliff (X), north of the basin: floor, then terrace.
 pub const LAKE_WEST_CLIFF: [i32; 2] = [1_600, 2_000];
-/// The lake terrace's northern cliff, toward Redbrand Hollow (Z): floor, then terrace …
-pub const LAKE_NORTH_CLIFF: [i32; 2] = [-8_400, -8_000];
+/// The lake terrace's northern cliff (Z): floor, then terrace. West of [`HOLLOW_WALL_X`] it
+/// stops short of Redbrand Hollow's camp, behind the Lakeshore Climb's landing …
+pub const LAKE_NORTH_CLIFF: [i32; 2] = [-7_600, -7_200];
+/// … and east of it, behind the Hollow's eastern rock wall, it reaches further north.
+pub const LAKE_FAR_NORTH_CLIFF: [i32; 2] = [-8_400, -8_000];
+/// The X from which the lake terrace takes [`LAKE_FAR_NORTH_CLIFF`]: the far side of the
+/// Hollow's eastern rock wall, which hides the step between the two.
+pub const HOLLOW_WALL_X: i32 = 3_200;
 /// … and its southern cliff over the basin's northern apron: terrace, then floor. East of the
 /// farm's west cliff the lake terrace runs on into the farm terrace.
 pub const LAKE_SOUTH_CLIFF: [i32; 2] = [-2_800, -2_400];
@@ -141,7 +147,14 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
         .min(rise_q10(z, NORTH_CLIFF))
         .min(1_024 - rise_q10(z, SOUTH_CLIFF));
     let lake = rise_q10(x, LAKE_WEST_CLIFF)
-        .min(rise_q10(z, LAKE_NORTH_CLIFF))
+        .min(rise_q10(
+            z,
+            if x >= HOLLOW_WALL_X {
+                LAKE_FAR_NORTH_CLIFF
+            } else {
+                LAKE_NORTH_CLIFF
+            },
+        ))
         .min(1_024 - rise_q10(z, LAKE_SOUTH_CLIFF));
     let weight = farm.max(lake).min(1_024 - rise_q10(x, EAST_SLOPE));
     (weight > 0).then(|| i32::try_from(i64::from(TERRACE_Y) * weight / 1_024).unwrap_or(0))

@@ -105,11 +105,11 @@ bot = "hunter"
 action = "move"
 forward = 1
 strafe = 0
-facing = 36136
+facing = 37000
 
 # Stand once near Wolf 106, target it and fight back as it engages …
 [[steps]]
-tick = 1240
+tick = 1250
 bot = "hunter"
 action = "move"
 forward = 0
@@ -117,13 +117,13 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 1240
+tick = 1250
 bot = "hunter"
 action = "select_target"
 entity = "creature:106"
 
 [[steps]]
-tick = 1240
+tick = 1250
 bot = "hunter"
 action = "start_attack"
 
@@ -279,7 +279,7 @@ tick = 1901
 kind = "position"
 bot = "hunter"
 tick = 2000
-position = [-9229, 90, -824]
+position = [-9419, 90, -904]
 
 [[expect]]
 kind = "position"
