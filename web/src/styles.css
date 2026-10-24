@@ -472,7 +472,7 @@ button { font: inherit; }
   margin: 0;
   font-size: .82rem;
   line-height: 1.45;
-  color: #cbd6cd;
+  color: #f2f6f2;
 }
 
 #experience-bar {
@@ -485,7 +485,6 @@ button { font: inherit; }
 
 .hud p + p {
   margin-top: .35rem;
-  color: #f2f6f2;
 }
 
 kbd {
