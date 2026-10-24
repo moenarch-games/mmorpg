@@ -59,7 +59,7 @@ fn content(regrowth_ticks: u32) -> Arc<ZoneContent> {
     );
     Arc::new(
         Arc::unwrap_or_clone(content)
-            .with_creature_abilities(mmorpg_core::ABILITY_CATALOG_REVISION, Vec::new())
+            .with_creature_abilities(Vec::new())
             .unwrap()
             .with_structures(
                 vec![StructureSite {

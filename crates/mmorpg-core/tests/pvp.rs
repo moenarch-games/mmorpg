@@ -10,7 +10,7 @@ fn arena_policy_is_explicit_and_bound_to_recovery_content() {
     let arena = Arc::new(
         Arc::unwrap_or_clone(Arc::clone(&safe)).with_player_combat(PlayerCombatPolicy::FreeForAll),
     );
-    assert_ne!(safe.fingerprint(), arena.fingerprint());
+    assert_ne!(safe.revision(), arena.revision());
     let zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&arena)).unwrap();
     let snapshot = zone.snapshot().unwrap();
     assert!(ZoneSimulation::from_snapshot(snapshot.clone(), Arc::clone(&safe)).is_err());
@@ -485,13 +485,8 @@ fn a_physics_wall_stops_targeted_melee_auto_attacks_and_directed_arena_sweeps() 
         position: [50, 150, -2000],
         half_extents: [5, 150, 400],
     });
-    let definition = ZoneDefinition::with_spawn_grid(
-        ground.revision(),
-        ground.gravity(),
-        ground.spawn_grid(),
-        colliders,
-    )
-    .unwrap();
+    let definition =
+        ZoneDefinition::with_spawn_grid(ground.gravity(), ground.spawn_grid(), colliders).unwrap();
     let content = Arc::new(
         ZoneContent::new(
             definition,
@@ -502,7 +497,7 @@ fn a_physics_wall_stops_targeted_melee_auto_attacks_and_directed_arena_sweeps() 
             [0, 0],
         )
         .unwrap()
-        .with_creature_abilities(mmorpg_core::ABILITY_CATALOG_REVISION, vec![])
+        .with_creature_abilities(vec![])
         .unwrap()
         .with_player_combat(PlayerCombatPolicy::FreeForAll),
     );
@@ -553,7 +548,7 @@ fn a_charge_at_an_arena_player_restores_and_uses_existing_forced_movement() {
     use mmorpg_core::{EntityRef, ZoneCommand};
     let content = Arc::new(
         Arc::unwrap_or_clone(support::arena::arena(vec![], vec![], vec![]))
-            .with_creature_abilities(mmorpg_core::ABILITY_CATALOG_REVISION, vec![])
+            .with_creature_abilities(vec![])
             .unwrap()
             .with_player_combat(PlayerCombatPolicy::FreeForAll),
     );

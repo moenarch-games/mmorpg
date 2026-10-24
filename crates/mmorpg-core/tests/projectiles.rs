@@ -6,9 +6,8 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, CreatureId, EntityRef, Flight, ProjectileKind, SpawnGrid,
-    StaticCollider, StrikeHeight, ZoneAreas, ZoneCommand, ZoneContent, ZoneDefinition, ZoneEvent,
-    ZoneId, ZoneSimulation,
+    CreatureId, EntityRef, Flight, ProjectileKind, SpawnGrid, StaticCollider, StrikeHeight,
+    ZoneAreas, ZoneCommand, ZoneContent, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, NORTHWARD, WOLF};
 use support::classes::{self, BANDIT};
@@ -30,7 +29,6 @@ fn content(wall: bool, spawns: Vec<mmorpg_core::CreatureSpawn>) -> Arc<ZoneConte
         });
     }
     let definition = ZoneDefinition::with_spawn_grid(
-        77,
         [0, -1, 0],
         SpawnGrid {
             origin: [-5_000, -5_000],
@@ -51,7 +49,7 @@ fn content(wall: bool, spawns: Vec<mmorpg_core::CreatureSpawn>) -> Arc<ZoneConte
     .unwrap();
     Arc::new(
         content
-            .with_creature_abilities(ABILITY_CATALOG_REVISION, vec![(BANDIT, ids::CROSSBOW_BOLT)])
+            .with_creature_abilities(vec![(BANDIT, ids::CROSSBOW_BOLT)])
             .unwrap(),
     )
 }

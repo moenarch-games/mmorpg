@@ -31,7 +31,6 @@ describe("content catalog", () => {
     expect(catalog.creatureTemplates.get(2)?.behaviour).toBe("neutral");
     expect(catalog.npcs.get(6)?.role).toBe("guard");
     expect(catalog.areas.get(1)).toBe("Greyhaven Outpost");
-    expect(catalog.itemCatalogRevision).toBe(5n);
     expect([...catalog.items.values()].slice(0, 2)).toEqual([
       { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
       { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2 },
@@ -47,8 +46,7 @@ describe("content catalog", () => {
       mutate(json);
       return () => decodeCatalog(JSON.stringify(json));
     };
-    expect(broken((json) => { json.version = 1; })).toThrow("unsupported format");
-    expect(broken((json) => { json.contentFingerprint = "XYZ"; })).toThrow("fingerprint");
+    expect(broken((json) => { json.format = "other"; })).toThrow("unsupported format");
     expect(broken((json) => { json.extra = true; })).toThrow("exactly");
     expect(broken((json) => { (json.npcs as Record<string, unknown>[])[0]!.role = "wizard"; })).toThrow("role");
     expect(broken((json) => {
@@ -56,7 +54,6 @@ describe("content catalog", () => {
       templates[1]!.id = 1;
     })).toThrow("unique");
     expect(broken((json) => { (json.creatureTemplates as Record<string, unknown>[])[0]!.halfExtents = [40, 45]; })).toThrow("three");
-    expect(broken((json) => { json.itemCatalogRevision = "1"; })).toThrow("item catalog revision");
     expect(broken((json) => { (json.items as Record<string, unknown>[])[1]!.slot = "ring"; })).toThrow("slot");
     expect(broken((json) => { (json.items as Record<string, unknown>[])[1]!.stats = { stamina: 0 }; })).toThrow("stats");
     expect(broken((json) => {
@@ -65,10 +62,7 @@ describe("content catalog", () => {
     expect(broken((json) => { (json.items as Record<string, unknown>[])[0]!.maxStack = 0; })).toThrow("stack limit");
     expect(broken((json) => { (json.items as Record<string, unknown>[])[1]!.id = 1; })).toThrow("unique");
     expect(broken((json) => { (json.items as Record<string, unknown>[])[0]!.id = 0; })).toThrow("item 0 id");
-    expect(broken((json) => { json.vendorCatalogRevision = "1"; })).toThrow("vendor catalog revision");
     const quests = (json: Record<string, unknown>) => json.quests as Record<string, unknown>[];
-    expect(broken((json) => { json.questCatalogRevision = "1"; })).toThrow("quest catalog revision");
-    expect(broken((json) => { json.questCatalogRevision = "0"; })).toThrow("without a quest catalog");
     expect(broken((json) => { quests(json)[0]!.giver = 3; })).toThrow("quest giver");
     expect(broken((json) => { quests(json)[0]!.id = 33; })).toThrow("quest 0 id");
     expect(broken((json) => { quests(json)[1]!.id = 1; })).toThrow("unique");
@@ -78,7 +72,6 @@ describe("content catalog", () => {
     expect(broken((json) => { quests(json)[1]!.objectives = [{ kind: "collect", target: 99, source: 1, count: 1 }]; })).toThrow("unknown item");
     expect(broken((json) => { quests(json)[1]!.choices = [99]; })).toThrow("unknown item");
     expect(broken((json) => { quests(json)[0]!.text = ""; })).toThrow("text");
-    expect(broken((json) => { json.vendorCatalogRevision = "0"; })).toThrow("without a vendor catalog");
     const vendors = (json: Record<string, unknown>) => json.vendors as { npc: number; offers: { item: number; price: number }[] }[];
     expect(broken((json) => { vendors(json)[0]!.npc = 6; })).toThrow("vendor npc");
     expect(broken((json) => { vendors(json)[0]!.offers = []; })).toThrow("at least one");

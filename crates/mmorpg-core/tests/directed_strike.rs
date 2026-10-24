@@ -7,10 +7,9 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, CreatureBehaviour, CreatureId, CreatureTemplate, CreatureTemplateId,
-    EntityRef, ErrorCode, GLOBAL_COOLDOWN_TICKS, StaticCollider, StrikeAim, StrikeHeight,
-    StrikeSide, ZoneAreas, ZoneCommand, ZoneContent, ZoneDefinition, ZoneEvent, ZoneId,
-    ZoneSimulation,
+    CreatureBehaviour, CreatureId, CreatureTemplate, CreatureTemplateId, EntityRef, ErrorCode,
+    GLOBAL_COOLDOWN_TICKS, StaticCollider, StrikeAim, StrikeHeight, StrikeSide, ZoneAreas,
+    ZoneCommand, ZoneContent, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD};
 
@@ -55,7 +54,6 @@ fn content(
     }];
     definition_colliders.extend(colliders);
     let definition = ZoneDefinition::with_spawn_grid(
-        77,
         [0, -1, 0],
         mmorpg_core::SpawnGrid {
             origin: [0, 0],
@@ -78,7 +76,7 @@ fn content(
         GRAVEYARD,
     )
     .unwrap()
-    .with_creature_abilities(ABILITY_CATALOG_REVISION, Default::default())
+    .with_creature_abilities(Default::default())
     .unwrap();
     Arc::new(content)
 }

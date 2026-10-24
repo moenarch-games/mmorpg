@@ -184,5 +184,9 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
             .filter(|(id, _)| !replaced.contains(id))
             .map(|(_, prop)| prop),
     );
+    // The scenery belongs to the content revision this exact definition hosts.
+    scenery.content_revision = greyhaven_vale::content_with_definition(definition.clone())
+        .map_err(|error| error.to_string())?
+        .revision();
     Ok(scenery)
 }

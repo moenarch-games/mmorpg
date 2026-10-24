@@ -8,8 +8,6 @@ use crate::class::PlayerClass;
 use crate::ticks_from_ms;
 use crate::unit::PLAYER_REACH_UNITS;
 
-/// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 13;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = ticks_from_ms(1_500);
 /// At most this many auras rest on one unit.
@@ -1209,7 +1207,6 @@ pub(crate) const fn scaled(value: u16, per_level: u16, level: u8) -> u16 {
 /// A canonical byte encoding of the whole catalog for content identity.
 pub(crate) fn catalog_bytes() -> Vec<u8> {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&ABILITY_CATALOG_REVISION.to_be_bytes());
     for ability in &ABILITY_CATALOG {
         bytes.push(ability.id.get());
         bytes.extend_from_slice(&u32::try_from(ability.name.len()).unwrap_or(0).to_be_bytes());

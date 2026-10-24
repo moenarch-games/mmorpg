@@ -533,8 +533,8 @@ mod tests {
             "the vale's creatures are hosted"
         );
         assert_eq!(
-            canonical.content_fingerprint,
-            mmorpg_core::greyhaven_vale::content().fingerprint()
+            canonical.content_revision,
+            mmorpg_core::greyhaven_vale::content().revision()
         );
     }
 

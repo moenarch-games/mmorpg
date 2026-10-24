@@ -10,37 +10,37 @@ Commands and projections travel inside the pinned `game-server` session frames (
 
 The shared fixture `fixtures/protocol/session-frames-v3.hex` pins these frames and the browser route contract: `crates/mmorpg-game-server/tests/session_frames.rs` renders it from the pinned encoders and decodes it with the pinned decoders, and the browser (`web/tests/session-frames.test.ts`) decodes and encodes the same bytes. A `game-server` pin bump that changes a frame fails in both languages.
 
-## Commands (wire version 14)
+## Commands
 
 The shared session runtime supplies player identity, connection epoch and command sequence separately. Core rejects zero, stale and duplicate sequences without changing state.
 
 | Command | Bytes | Layout |
 | --- | ---: | --- |
-| Move | 6 | `[version = 14, tag = 1, forward: i8, strafe: i8, facing: u16]` |
-| Jump | 2 | `[version = 14, tag = 2]` |
-| SelectTarget | 7 | `[version = 14, tag = 3, kind: u8, id: u32]` |
-| StartAttack | 2 | `[version = 14, tag = 4]` |
-| StopAttack | 2 | `[version = 14, tag = 5]` |
-| ReleaseSpirit | 2 | `[version = 14, tag = 6]` |
-| MoveItem | 6 | `[version = 14, tag = 7, source_slot: u8, destination_slot: u8, quantity: u16]` |
-| Loot | 14 | `[version = 14, tag = 8, creature_id: u32, died_at: u64]` |
-| UseAbility | 8 | `[version = 14, tag = 9, ability: u8, kind: u8, id: u32]` |
-| CancelCast | 2 | `[version = 14, tag = 10]` |
-| ChooseClass | 4 | `[version = 14, tag = 11, class: u8, sex: u8]` |
-| EquipItem | 3 | `[version = 14, tag = 12, bag_slot: u8]` |
-| UnequipItem | 3 | `[version = 14, tag = 13, equipment_slot: u8]` |
-| BuyItem | 9 | `[version = 14, tag = 14, npc: u32, offer: u8, quantity: u16]` |
-| SellItem | 9 | `[version = 14, tag = 15, npc: u32, bag_slot: u8, quantity: u16]` |
-| Chat | 4 + n | `[version = 14, tag = 16, channel: u8, length: u8, text: n bytes]` |
-| Emote | 3 | `[version = 14, tag = 17, emote: u8]` |
-| AcceptQuest | 7 | `[version = 14, tag = 18, npc: u32, quest: u8]` |
-| CompleteQuest | 8 | `[version = 14, tag = 19, npc: u32, quest: u8, choice: u8]` |
-| AbandonQuest | 3 | `[version = 14, tag = 20, quest: u8]` |
-| DirectedStrike | 7 | `[version = 14, tag = 21, ability: u8, facing: u16, side: u8, height: u8]` |
-| Guard | 3 | `[version = 14, tag = 22, lane: u8]` |
-| UseDoor | 4 | `[version = 14, tag = 23, door: u8, open: u8]` |
-| Repair | 4 | `[version = 14, tag = 24, piece: u16]` (0 stops, else the piece ID + 1) |
-| Rise | 3 | `[version = 14, tag = 25, rise: i8]` (1 ascends, -1 descends, 0 neither) |
+| Move | 6 | `[protocol, tag = 1, forward: i8, strafe: i8, facing: u16]` |
+| Jump | 2 | `[protocol, tag = 2]` |
+| SelectTarget | 7 | `[protocol, tag = 3, kind: u8, id: u32]` |
+| StartAttack | 2 | `[protocol, tag = 4]` |
+| StopAttack | 2 | `[protocol, tag = 5]` |
+| ReleaseSpirit | 2 | `[protocol, tag = 6]` |
+| MoveItem | 6 | `[protocol, tag = 7, source_slot: u8, destination_slot: u8, quantity: u16]` |
+| Loot | 14 | `[protocol, tag = 8, creature_id: u32, died_at: u64]` |
+| UseAbility | 8 | `[protocol, tag = 9, ability: u8, kind: u8, id: u32]` |
+| CancelCast | 2 | `[protocol, tag = 10]` |
+| ChooseClass | 4 | `[protocol, tag = 11, class: u8, sex: u8]` |
+| EquipItem | 3 | `[protocol, tag = 12, bag_slot: u8]` |
+| UnequipItem | 3 | `[protocol, tag = 13, equipment_slot: u8]` |
+| BuyItem | 9 | `[protocol, tag = 14, npc: u32, offer: u8, quantity: u16]` |
+| SellItem | 9 | `[protocol, tag = 15, npc: u32, bag_slot: u8, quantity: u16]` |
+| Chat | 4 + n | `[protocol, tag = 16, channel: u8, length: u8, text: n bytes]` |
+| Emote | 3 | `[protocol, tag = 17, emote: u8]` |
+| AcceptQuest | 7 | `[protocol, tag = 18, npc: u32, quest: u8]` |
+| CompleteQuest | 8 | `[protocol, tag = 19, npc: u32, quest: u8, choice: u8]` |
+| AbandonQuest | 3 | `[protocol, tag = 20, quest: u8]` |
+| DirectedStrike | 7 | `[protocol, tag = 21, ability: u8, facing: u16, side: u8, height: u8]` |
+| Guard | 3 | `[protocol, tag = 22, lane: u8]` |
+| UseDoor | 4 | `[protocol, tag = 23, door: u8, open: u8]` |
+| Repair | 4 | `[protocol, tag = 24, piece: u16]` (0 stops, else the piece ID + 1) |
+| Rise | 3 | `[protocol, tag = 25, rise: i8]` (1 ascends, -1 descends, 0 neither) |
 
 Version 14 adds `Rise` (tag 25, #274): held swim intent like `Move`, kept until the next `Rise`. It acts only while the player swims (feet more than 1.3 m under a water volume's surface) and is otherwise ignored; values outside -1..=1 are malformed payloads.
 
@@ -74,9 +74,9 @@ The twenty discrete intents (every command but `Move`, `Jump` and `Guard`) are q
 
 `Loot` names a creature spawn and its observed death tick. Core checks life, owner, expiry, authoritative 3D reach and remaining rewards during the tick, then atomically settles money and items. Refusals preserve rewards; no client supplies reward amounts. See [LOOT.md](LOOT.md).
 
-Decoding is strict: exact lengths per tag, known tags only, `forward`/`strafe`, strike aim and guard lane codes in range, known entity kinds, ID 0 for the absent reference, and only version 13. Versions 1–12 are rejected.
+Decoding is strict: exact lengths per tag, known tags only, `forward`/`strafe`, strike aim and guard lane codes in range, known entity kinds, ID 0 for the absent reference, and a leading protocol byte equal to the low byte of the current [protocol ID](#protocol-identity); any other byte is rejected.
 
-The shared command fixture is `fixtures/protocol/commands-v12.hex`: one encoded command per line followed by its fields, covering every tag. `mmorpg-protocol` renders and verifies it, and the browser encoder (`web/src/command-wire.ts`) must produce the same bytes.
+The shared command fixture is `fixtures/protocol/commands.hex`: one encoded command per line followed by its fields, covering every tag. `mmorpg-protocol` renders and verifies it, and the browser encoder (`web/src/command-wire.ts`) must produce the same bytes.
 
 ## Entity references
 
@@ -86,9 +86,8 @@ An entity reference is 5 bytes: kind (`u8`) then ID (`u32`). Kind 1 is a player 
 
 | Offset | Width | Field |
 | --- | --- | --- |
-| 0 | 1 | Wire version: 30 |
-| 1 | 1 | Scope: 1 canonical, 2 player-visible |
-| 2 | 2 | Core schema version: 30 |
+| 0 | 3 | [Protocol ID](#protocol-identity) (`PROTOCOL_ID`, big-endian) |
+| 3 | 1 | Scope: 1 canonical, 2 player-visible |
 | 4 | 4 | Zone ID |
 | 8 | 8 | Simulation tick |
 
@@ -231,20 +230,19 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 14, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v37.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind but the evade (the 16-event cap keeps the lurker's lost interest instead), two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v37.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v36 fixtures remain as rejection evidence. `presentation-observation-v37.hex` covers the two neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind but the evade (the 16-event cap keeps the lurker's lost interest instead), two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. `presentation-observation.hex` covers the two neutral observation records.
 
 ## Canonical scope
 
 After the common prefix:
 
 1. content revision (`u64`);
-2. content fingerprint (`u64`);
-3. zone AI/combat RNG state (`u64`);
-4. independent loot RNG state (`u64`);
-5. player count (`u16`, at most 512), then player records;
-6. creature count (`u16`, at most 1,024), then creature records in creature-ID order.
+2. zone AI/combat RNG state (`u64`);
+3. independent loot RNG state (`u64`);
+4. player count (`u16`, at most 512), then player records;
+5. creature count (`u16`, at most 1,024), then creature records in creature-ID order.
 
-Content is referenced, not embedded: the revision and the fingerprint (FNV-1a 64 over a canonical encoding of every content table, colliders included, plus item catalog, starter grant, declared RNG seed and any explicitly bound loot, ability, vendor and quest catalogs) identify the exact `ZoneContent`, and `ZoneSimulation::from_snapshot` fails closed unless the supplied content has both (the content-addressed checkpoint rule in [ARCHITECTURE.md](ARCHITECTURE.md#snapshots-and-compatibility)). Content that never bound the ability catalog (revision 0, such as `ZoneContent::new` or `from_definition` alone) leaves it out of the fingerprint, so its zones refuse `ChooseClass` with invalid class and every ability with no class, and recovery rejects a class player against it. Static colliders, NPCs and world-limit bodies come from that content during recovery.
+Content is referenced, not embedded: the revision (FNV-1a 64 over a canonical encoding of every content table, colliders included, plus item catalog, starter grant, declared RNG seed and any explicitly bound loot, ability, vendor and quest catalogs) identifies the exact `ZoneContent`, and `ZoneSimulation::from_snapshot` fails closed unless the supplied content has it (the content-addressed checkpoint rule in [ARCHITECTURE.md](ARCHITECTURE.md#snapshots-and-compatibility)). Content that never bound the ability catalog (such as `ZoneContent::new` or `from_definition` alone) leaves it out of the revision, so its zones refuse `ChooseClass` with invalid class and every ability with no class, and recovery rejects a class player against it. Static colliders, NPCs and world-limit bodies come from that content during recovery.
 
 A player record starts with 39 movement bytes, 92 inventory and equipment bytes and then its unit state:
 
@@ -324,14 +322,13 @@ The decoder rejects booleans other than 0 or 1, unknown codes, unknown or mispla
 
 Canonical data is for trusted replay/recovery and server-side verification. It must never be passed to the browser renderer or substituted for a player projection.
 
-## Versions and migration
+## Protocol identity
 
-Before progression, snapshot wire and core schema version 5 replaced version 4 for both scopes: player projections gained the self, target and event sections and 21-byte entity records for players, creatures and NPCs; canonical snapshots reference content by revision and fingerprint instead of embedding it and carry unit, creature, RNG and event state. Command wire version 2 gained tags 3–6 additively. Old bytes are never reinterpreted and there is no bundled migration:
+Every snapshot leads with the 24-bit protocol ID and every command with its low byte. The ID is `mmorpg_protocol::PROTOCOL_ID`, mirrored in `web/src/protocol-id.ts`: a random token, not a counter ([ADR 0006](adr/0006-merge-safe-format-identities.md)). Any change to the command, projection, observation or canonical layout replaces it once with `scripts/new-protocol-id.sh` and re-records the shared fixtures (`MMORPG_UPDATE_FIXTURES=1 cargo test --workspace --locked`). Decoders accept only the current ID; old bytes are never reinterpreted and there is no migration, so checkpoints, recovery bundles and saved browser worlds of another ID fail closed. Two parallel layout changes edit the same ID line differently, so git stops the second merge instead of combining two formats under one number.
 
-- version 4 snapshots, canonical checkpoints and recovery bundles are rejected;
-- a standalone host restarted with an old `MMORPG_RECOVERY_DIR` fails closed. Start from fresh development state or arrange an explicit migration.
+The content revision is the content hash ([Canonical scope](#canonical-scope)); content changes never edit a number. Battle Royale projections carry the content revision of the pinned battle-royale host, which `web/src/world/battle-royale/protocol.ts` pins with the host.
 
-Protocol changes require updating version handling, this specification, the shared fixture and both language contract tests together.
+The sections below record how the layouts grew; their version numbers are historical.
 
 ## Starter XP snapshot v6
 

@@ -70,7 +70,7 @@ describe("the shared static scene in the browser", () => {
       staticScene: () => JSON.stringify(layout),
     });
     const real = JSON.parse(world.staticScene.staticScene());
-    expect(() => buildSceneryScene(world.scenery, content({ ...real, version: 2 }))).toThrow("Invalid static scene");
+    expect(() => buildSceneryScene(world.scenery, content({ ...real, format: "other" }))).toThrow("Invalid static scene");
     expect(() => buildSceneryScene(world.scenery, content({ ...real, prefix: "scenery:1:0" }))).toThrow("Invalid static scene");
   });
 });

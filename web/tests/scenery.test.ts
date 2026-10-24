@@ -43,8 +43,6 @@ describe("scenery export boundary (format v3)", () => {
     const [structure] = base.structures as Record<string, unknown>[];
     for (const patch of [
       { format: "other" },
-      { version: 1 },
-      { version: 2 },
       { presentationFingerprint: 1 },
       { presentationFingerprint: "0123456789ABCDEf" },
       { presentationFingerprint: "123456789abcdef" },

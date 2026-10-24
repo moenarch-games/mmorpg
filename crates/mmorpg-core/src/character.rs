@@ -228,7 +228,7 @@ impl ZoneSimulation {
     }
 
     fn validate_character(&self, record: &CharacterRecord) -> Result<(), ZoneError> {
-        if self.content.ability_revision() == 0 {
+        if !self.content.binds_abilities() {
             return Err(ZoneError::new(
                 "a class player needs content that binds the ability catalog",
             ));

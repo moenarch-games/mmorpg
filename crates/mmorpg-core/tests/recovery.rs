@@ -44,14 +44,13 @@ fn restore(
 }
 
 #[test]
-fn recovery_refuses_changed_content_of_the_same_revision() {
+fn recovery_refuses_changed_content() {
     let content = wandering_wolf(arena::wolf(30, [1, 2]));
     let retuned = wandering_wolf(CreatureTemplate {
         swing_ticks: 61,
         ..arena::wolf(30, [1, 2])
     });
-    assert_eq!(content.revision(), retuned.revision());
-    assert_ne!(content.fingerprint(), retuned.fingerprint());
+    assert_ne!(content.revision(), retuned.revision());
 
     let state = checkpoint(&content);
     assert!(restore(state.clone(), &content).is_ok());
@@ -109,8 +108,7 @@ fn an_authored_rng_seed_is_bound_to_recovery_identity() {
             .clone()
             .with_rng_seed(content.rng_seed() ^ 1),
     );
-    assert_eq!(content.revision(), retuned.revision());
-    assert_ne!(content.fingerprint(), retuned.fingerprint());
+    assert_ne!(content.revision(), retuned.revision());
     assert_eq!(
         restore(checkpoint(&content), &retuned).err().unwrap(),
         "snapshot content identity does not match the supplied zone content"

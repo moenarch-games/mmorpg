@@ -29,7 +29,6 @@ fn content(walls: Vec<StaticCollider>, spawns: &[[i32; 2]]) -> Arc<ZoneContent> 
     }];
     colliders.extend(walls);
     let definition = ZoneDefinition::with_spawn_grid(
-        77,
         [0, -1, 0],
         SpawnGrid {
             origin: [-5_000, -5_000],
@@ -57,7 +56,7 @@ fn content(walls: Vec<StaticCollider>, spawns: &[[i32; 2]]) -> Arc<ZoneContent> 
             arena::GRAVEYARD,
         )
         .unwrap()
-        .with_creature_abilities(mmorpg_core::ABILITY_CATALOG_REVISION, Vec::new())
+        .with_creature_abilities(Vec::new())
         .unwrap(),
     )
 }

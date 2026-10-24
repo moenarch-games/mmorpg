@@ -1,6 +1,6 @@
 //! Canonical snapshots: every authoritative field needed to continue a zone
-//! exactly, for trusted replay and recovery. Content is referenced by
-//! revision and fingerprint, never embedded: recovery needs the identical
+//! exactly, for trusted replay and recovery. Content is referenced by its
+//! revision (a content hash), never embedded: recovery needs the identical
 //! [`ZoneContent`] and fails closed on any mismatch.
 
 use std::collections::BTreeSet;
@@ -22,8 +22,7 @@ use crate::unit::{PLAYER_START_LEVEL, player_max_health};
 use crate::zone::{Axis, MAX_PENDING_INTENTS, PLAYER_HALF_EXTENTS, PlayerState, physics_error};
 use crate::{
     Aura, CastState, ClassChoice, Cooldown, CreatureId, EntityRef, MAX_EVENTS_PER_PLAYER,
-    MAX_PLAYERS_PER_ZONE, PlayerId, SNAPSHOT_SCHEMA_VERSION, ZoneContent, ZoneError, ZoneEvent,
-    ZoneId, ZoneSimulation,
+    MAX_PLAYERS_PER_ZONE, PlayerId, ZoneContent, ZoneError, ZoneEvent, ZoneId, ZoneSimulation,
 };
 
 /// A queued discrete intent, consumed by the next tick in sequence order.
@@ -280,11 +279,9 @@ pub struct CanonicalCreatureSnapshot {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CanonicalZoneSnapshot {
     pub rewards: Option<crate::RewardHistory>,
-    pub schema_version: u16,
     pub zone_id: ZoneId,
     pub tick: u64,
     pub content_revision: u64,
-    pub content_fingerprint: u64,
     pub rng_state: u64,
     pub loot_rng_state: u64,
     /// Ordered by player ID.
@@ -421,11 +418,9 @@ impl ZoneSimulation {
             .collect::<Result<Vec<_>, ZoneError>>()?;
         Ok(CanonicalZoneSnapshot {
             rewards: self.rewards.clone(),
-            schema_version: SNAPSHOT_SCHEMA_VERSION,
             zone_id: self.zone_id,
             tick: self.tick,
             content_revision: self.content.revision(),
-            content_fingerprint: self.content.fingerprint(),
             rng_state: self.rng.state(),
             loot_rng_state: self.loot_rng.state(),
             players,
@@ -441,18 +436,13 @@ impl ZoneSimulation {
     }
 
     /// Restores a zone from a canonical snapshot and the content it was
-    /// taken with. Any content identity mismatch, schema mismatch or
-    /// inconsistent state fails closed; the restored zone continues exactly.
+    /// taken with. Any content identity mismatch or inconsistent state fails
+    /// closed; the restored zone continues exactly.
     pub fn from_snapshot(
         snapshot: CanonicalZoneSnapshot,
         content: Arc<ZoneContent>,
     ) -> Result<Self, ZoneError> {
-        if snapshot.schema_version != SNAPSHOT_SCHEMA_VERSION {
-            return Err(ZoneError::new("unsupported snapshot schema version"));
-        }
-        if snapshot.content_revision != content.revision()
-            || snapshot.content_fingerprint != content.fingerprint()
-        {
+        if snapshot.content_revision != content.revision() {
             return Err(ZoneError::new(
                 "snapshot content identity does not match the supplied zone content",
             ));
@@ -621,7 +611,7 @@ impl ZoneSimulation {
         } else {
             (Axis::Zero, Axis::Zero, Axis::Zero, false)
         };
-        if combat.abilities.class.is_some() && self.content.ability_revision() == 0 {
+        if combat.abilities.class.is_some() && !self.content.binds_abilities() {
             return Err(ZoneError::new(
                 "a class player needs content that binds the ability catalog",
             ));

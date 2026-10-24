@@ -10,10 +10,6 @@ use crate::{
     ZoneSimulation, item_template,
 };
 
-/// Revision of the vendor rules: the sale values below and the hosted stock.
-/// Revision 2 prices the Wolf Pelt (item catalog 3); revision 3 the Sunken Relic (item catalog 4);
-/// revision 4 the level 6 quest rewards (item catalog 5, #160).
-pub const VENDOR_CATALOG_REVISION: u64 = 4;
 /// A vendor offers at most this many items.
 pub const MAX_VENDOR_OFFERS: usize = 8;
 /// Inclusive horizontal (XZ) distance from a vendor's feet to the player (5 m).

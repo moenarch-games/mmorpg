@@ -8,10 +8,9 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboPhase,
-    CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef, ErrorCode, GLOBAL_COOLDOWN_TICKS,
-    StrikeAim, StrikeHeight, StrikeSide, ZoneAreas, ZoneCommand, ZoneContent, ZoneEvent, ZoneId,
-    ZoneSimulation,
+    COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboPhase, CreatureBehaviour, CreatureId,
+    CreatureTemplate, EntityRef, ErrorCode, GLOBAL_COOLDOWN_TICKS, StrikeAim, StrikeHeight,
+    StrikeSide, ZoneAreas, ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD, WOLF};
 
@@ -39,7 +38,7 @@ fn content() -> Arc<ZoneContent> {
             GRAVEYARD,
         )
         .unwrap()
-        .with_creature_abilities(ABILITY_CATALOG_REVISION, Default::default())
+        .with_creature_abilities(Default::default())
         .unwrap(),
     )
 }

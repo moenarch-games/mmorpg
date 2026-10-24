@@ -1,10 +1,11 @@
 /**
- * Command wire version 14, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
- * `fixtures/protocol/commands-v14.hex` holds both encoders to the same bytes.
+ * Zone command datagrams, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
+ * `fixtures/protocol/commands.hex` holds both encoders to the same bytes.
  * The session supplies player identity and sequence separately.
  */
 import { entityKindCode, isU32, type EntityRef } from "./entity-ref";
 import { chatTextError, EMOTES, STRIKE_HEIGHTS, STRIKE_SIDES, type EmoteName, type StrikeAim, type StrikeHeight } from "./replication";
+import { PROTOCOL_BYTE } from "./protocol-id";
 
 export type Axis = -1 | 0 | 1;
 
@@ -52,7 +53,6 @@ export type WorldCommand =
   /** Starts repairing a destructible piece (#305), or stops with `null`. */
   | { kind: "repair"; piece: number | null };
 
-const COMMAND_WIRE_VERSION = 14;
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
 const SELECT_TARGET_TAG = 3;
@@ -111,7 +111,7 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       }
       const payload = new Uint8Array(6);
       const view = new DataView(payload.buffer);
-      view.setUint8(0, COMMAND_WIRE_VERSION);
+      view.setUint8(0, PROTOCOL_BYTE);
       view.setUint8(1, MOVE_TAG);
       view.setInt8(2, command.forward);
       view.setInt8(3, command.strafe);
@@ -125,7 +125,7 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       }
       const payload = new Uint8Array(6);
       const view = new DataView(payload.buffer);
-      view.setUint8(0, COMMAND_WIRE_VERSION);
+      view.setUint8(0, PROTOCOL_BYTE);
       view.setUint8(1, MOVE_ITEM_TAG);
       view.setUint8(2, command.source);
       view.setUint8(3, command.destination);
@@ -138,23 +138,23 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       }
       const payload = new Uint8Array(14);
       const view = new DataView(payload.buffer);
-      view.setUint8(0, COMMAND_WIRE_VERSION);
+      view.setUint8(0, PROTOCOL_BYTE);
       view.setUint8(1, LOOT_TAG);
       view.setUint32(2, command.creatureId);
       view.setBigUint64(6, command.diedAt);
       return payload;
     }
     case "jump":
-      return Uint8Array.of(COMMAND_WIRE_VERSION, JUMP_TAG);
+      return Uint8Array.of(PROTOCOL_BYTE, JUMP_TAG);
     case "rise":
       if (!isAxis(command.rise)) {
         throw new RangeError("rise must be -1, 0 or 1");
       }
-      return Uint8Array.of(COMMAND_WIRE_VERSION, RISE_TAG, command.rise & 0xff);
+      return Uint8Array.of(PROTOCOL_BYTE, RISE_TAG, command.rise & 0xff);
     case "select-target": {
       const payload = new Uint8Array(7);
       const view = new DataView(payload.buffer);
-      view.setUint8(0, COMMAND_WIRE_VERSION);
+      view.setUint8(0, PROTOCOL_BYTE);
       view.setUint8(1, SELECT_TARGET_TAG);
       writeEntity(view, 2, command.target);
       return payload;
@@ -165,7 +165,7 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       }
       const payload = new Uint8Array(8);
       const view = new DataView(payload.buffer);
-      view.setUint8(0, COMMAND_WIRE_VERSION);
+      view.setUint8(0, PROTOCOL_BYTE);
       view.setUint8(1, USE_ABILITY_TAG);
       view.setUint8(2, command.ability);
       writeEntity(view, 3, command.target);
@@ -182,7 +182,7 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       }
       const payload = new Uint8Array(7);
       const view = new DataView(payload.buffer);
-      view.setUint8(0, COMMAND_WIRE_VERSION);
+      view.setUint8(0, PROTOCOL_BYTE);
       view.setUint8(1, DIRECTED_STRIKE_TAG);
       view.setUint8(2, command.ability);
       view.setUint16(3, command.facing);
@@ -196,15 +196,15 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       if (command.lane !== null && height < 0) {
         throw new Error("Guards need a known lane.");
       }
-      return Uint8Array.of(COMMAND_WIRE_VERSION, GUARD_TAG, height + 1);
+      return Uint8Array.of(PROTOCOL_BYTE, GUARD_TAG, height + 1);
     }
     case "cancel-cast":
-      return Uint8Array.of(COMMAND_WIRE_VERSION, CANCEL_CAST_TAG);
+      return Uint8Array.of(PROTOCOL_BYTE, CANCEL_CAST_TAG);
     case "choose-class": {
       if (!isU8(command.classId) || !isU8(command.sex)) {
         throw new Error("Class choices must fit u8 fields.");
       }
-      return Uint8Array.of(COMMAND_WIRE_VERSION, CHOOSE_CLASS_TAG, command.classId, command.sex);
+      return Uint8Array.of(PROTOCOL_BYTE, CHOOSE_CLASS_TAG, command.classId, command.sex);
     }
     case "buy-item":
       return encodeTrade(BUY_ITEM_TAG, command.npc, command.offer, command.quantity);
@@ -215,7 +215,7 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       if (code === 0) {
         throw new Error(`Unknown emote: ${command.emote}`);
       }
-      return Uint8Array.of(COMMAND_WIRE_VERSION, EMOTE_TAG, code);
+      return Uint8Array.of(PROTOCOL_BYTE, EMOTE_TAG, code);
     }
     case "chat": {
       const problem = chatTextError(command.text);
@@ -223,7 +223,7 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
         throw new Error(problem);
       }
       const text = new TextEncoder().encode(command.text);
-      return Uint8Array.from([COMMAND_WIRE_VERSION, CHAT_TAG, command.channel === "say" ? 0 : 1, text.length, ...text]);
+      return Uint8Array.from([PROTOCOL_BYTE, CHAT_TAG, command.channel === "say" ? 0 : 1, text.length, ...text]);
     }
     case "accept-quest":
     case "complete-quest": {
@@ -233,7 +233,7 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       }
       const payload = new Uint8Array(command.kind === "accept-quest" ? 7 : 8);
       const view = new DataView(payload.buffer);
-      view.setUint8(0, COMMAND_WIRE_VERSION);
+      view.setUint8(0, PROTOCOL_BYTE);
       view.setUint8(1, command.kind === "accept-quest" ? ACCEPT_QUEST_TAG : COMPLETE_QUEST_TAG);
       view.setUint32(2, command.npc);
       view.setUint8(6, command.quest);
@@ -246,35 +246,35 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       if (!isU8(command.quest)) {
         throw new Error("Quest IDs must be u8.");
       }
-      return Uint8Array.of(COMMAND_WIRE_VERSION, ABANDON_QUEST_TAG, command.quest);
+      return Uint8Array.of(PROTOCOL_BYTE, ABANDON_QUEST_TAG, command.quest);
     case "equip-item":
       if (!isU8(command.bagSlot)) {
         throw new Error("Bag slots must be u8.");
       }
-      return Uint8Array.of(COMMAND_WIRE_VERSION, EQUIP_ITEM_TAG, command.bagSlot);
+      return Uint8Array.of(PROTOCOL_BYTE, EQUIP_ITEM_TAG, command.bagSlot);
     case "unequip-item":
       if (!isU8(command.equipmentSlot)) {
         throw new Error("Equipment slots must be u8.");
       }
-      return Uint8Array.of(COMMAND_WIRE_VERSION, UNEQUIP_ITEM_TAG, command.equipmentSlot);
+      return Uint8Array.of(PROTOCOL_BYTE, UNEQUIP_ITEM_TAG, command.equipmentSlot);
     case "use-door":
       if (!isU8(command.door)) {
         throw new Error("Door IDs must be u8.");
       }
-      return Uint8Array.of(COMMAND_WIRE_VERSION, USE_DOOR_TAG, command.door, command.open ? 1 : 0);
+      return Uint8Array.of(PROTOCOL_BYTE, USE_DOOR_TAG, command.door, command.open ? 1 : 0);
     case "repair": {
       if (command.piece !== null && !(Number.isInteger(command.piece) && command.piece >= 0 && command.piece < 0xffff)) {
         throw new Error("Piece IDs must be u16 below 65 535.");
       }
       const reference = command.piece === null ? 0 : command.piece + 1;
-      return Uint8Array.of(COMMAND_WIRE_VERSION, REPAIR_TAG, reference >> 8, reference & 0xff);
+      return Uint8Array.of(PROTOCOL_BYTE, REPAIR_TAG, reference >> 8, reference & 0xff);
     }
     case "start-attack":
-      return Uint8Array.of(COMMAND_WIRE_VERSION, START_ATTACK_TAG);
+      return Uint8Array.of(PROTOCOL_BYTE, START_ATTACK_TAG);
     case "stop-attack":
-      return Uint8Array.of(COMMAND_WIRE_VERSION, STOP_ATTACK_TAG);
+      return Uint8Array.of(PROTOCOL_BYTE, STOP_ATTACK_TAG);
     case "release-spirit":
-      return Uint8Array.of(COMMAND_WIRE_VERSION, RELEASE_SPIRIT_TAG);
+      return Uint8Array.of(PROTOCOL_BYTE, RELEASE_SPIRIT_TAG);
     default: {
       const unsupported: never = command;
       throw new Error(`Unsupported command ${String(unsupported)}.`);
@@ -289,7 +289,7 @@ function encodeTrade(tag: number, npc: number, index: number, quantity: number):
   }
   const payload = new Uint8Array(9);
   const view = new DataView(payload.buffer);
-  view.setUint8(0, COMMAND_WIRE_VERSION);
+  view.setUint8(0, PROTOCOL_BYTE);
   view.setUint8(1, tag);
   view.setUint32(2, npc);
   view.setUint8(6, index);

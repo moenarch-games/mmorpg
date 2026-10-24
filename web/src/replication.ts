@@ -1,5 +1,6 @@
-/** Player-visible protocol v22 only. Canonical recovery state never enters rendering. */
+/** Player-visible projections only. Canonical recovery state never enters rendering. */
 import { entityKindFromCode, sameEntity, type EntityKind, type EntityRef } from "./entity-ref";
+import { PROTOCOL_ID_BYTES } from "./protocol-id";
 
 export type { EntityKind, EntityRef } from "./entity-ref";
 export type Vector3 = readonly [number, number, number];
@@ -320,8 +321,6 @@ function decodeChatText(bytes: Uint8Array): string {
 
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 37;
-const SCHEMA_VERSION = 37;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -835,10 +834,10 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   if (view.byteLength < FIXED_BYTES) {
     throw new Error("Truncated snapshot");
   }
-  if (view.getUint8(0) !== WIRE_VERSION || view.getUint16(2) !== SCHEMA_VERSION) {
-    throw new Error("Unsupported snapshot version");
+  if (PROTOCOL_ID_BYTES.some((byte, at) => view.getUint8(at) !== byte)) {
+    throw new Error("Unsupported snapshot protocol");
   }
-  if (view.getUint8(1) !== PLAYER_SCOPE) {
+  if (view.getUint8(3) !== PLAYER_SCOPE) {
     throw new Error("Expected player-visible snapshot");
   }
   const reader = new Reader(view);

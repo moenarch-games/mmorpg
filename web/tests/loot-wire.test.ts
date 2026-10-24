@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { decodeSnapshot } from "../src/replication";
 
-const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v37.hex", import.meta.url), "utf8").trim(), "hex"));
+const bytes = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot.hex", import.meta.url), "utf8").trim(), "hex"));
 
 describe("Rust/browser corpse loot contract", () => {
   test("reads the complete fenced sheet and repeated balance from Rust's golden bytes", () => {
@@ -43,13 +43,8 @@ describe("Rust/browser corpse loot contract", () => {
       invalid[corpse + 20] = flags;
       expect(() => decodeSnapshot(invalid)).toThrow();
     }
-    const legacy = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-snapshot-v7.hex", import.meta.url), "utf8").trim(), "hex"));
-    expect(() => decodeSnapshot(legacy)).toThrow("version");
-    const v8 = Uint8Array.from(Buffer.from(readFileSync(new URL("../../fixtures/protocol/player-loot-v8.hex", import.meta.url), "utf8").trim(), "hex"));
-    expect(() => decodeSnapshot(v8)).toThrow("version");
-    for (const version of [9, 13]) {
-      const legacyLoot = Uint8Array.from(Buffer.from(readFileSync(new URL(`../../fixtures/protocol/player-loot-v${version}.hex`, import.meta.url), "utf8").trim(), "hex"));
-      expect(() => decodeSnapshot(legacyLoot)).toThrow("version");
-    }
+    const other = bytes.slice();
+    other[2] ^= 1;
+    expect(() => decodeSnapshot(other)).toThrow("protocol");
   });
 });

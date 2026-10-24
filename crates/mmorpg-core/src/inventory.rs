@@ -6,9 +6,6 @@ use std::{error::Error, fmt};
 use crate::equipment::{EquipmentSlot, ItemStats};
 
 pub const INVENTORY_SLOTS: usize = 16;
-/// Revision 3 adds the Wolf Pelt quest item (#25); revision 4 the Sunken Relic (#274); revision 5
-/// the three level 6 rewards of *Deeper into the Hollow* (#160).
-pub const ITEM_CATALOG_REVISION: u64 = 5;
 /// Re-send unchanged bags every ten ticks so a lost change self-heals.
 pub const INVENTORY_RESEND_TICKS: u64 = crate::ticks_from_ms(333) as u64;
 

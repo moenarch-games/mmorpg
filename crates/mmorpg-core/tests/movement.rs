@@ -23,7 +23,7 @@ fn ground(extra: Vec<StaticCollider>) -> ZoneDefinition {
         half_extents: [10_000, 50, 10_000],
     }];
     colliders.extend(extra);
-    ZoneDefinition::new(5, [0, -1, 0], colliders).unwrap()
+    ZoneDefinition::new([0, -1, 0], colliders).unwrap()
 }
 
 /// The player's body as gameplay rules see it: whole units (#271).
@@ -222,7 +222,7 @@ fn touching_only_a_wall_does_not_allow_a_jump() {
         position: [80, 0, 0],
         half_extents: [50, 1_000, 1_000],
     };
-    let definition = ZoneDefinition::new(5, [0, 0, 0], vec![wall]).unwrap();
+    let definition = ZoneDefinition::new([0, 0, 0], vec![wall]).unwrap();
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition).unwrap();
     zone.add_player(1).unwrap();
     assert_eq!(player(&zone).position, [0, REST_Y, 0]);

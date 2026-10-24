@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use super::{GRAVITY, REVISION, SPAWN_GRID, SPAWN_PLAZA, base_definition, clear_of_roads};
+use super::{GRAVITY, SPAWN_GRID, SPAWN_PLAZA, base_definition, clear_of_roads};
 use crate::{StaticCollider, XzBounds, ZoneDefinition, ZoneError};
 
 pub const SOURCE: &str = include_str!(concat!(
@@ -109,7 +109,7 @@ pub fn compile(source: &str) -> Result<ZoneDefinition, ZoneError> {
             }
         }
     }
-    let definition = ZoneDefinition::with_spawn_grid(REVISION, GRAVITY, SPAWN_GRID, colliders)?;
+    let definition = ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders)?;
     match base.terrain() {
         Some(terrain) => definition.with_terrain(terrain.clone()),
         None => Ok(definition),

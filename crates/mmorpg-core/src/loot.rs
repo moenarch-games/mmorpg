@@ -5,7 +5,6 @@ use std::{error::Error, fmt, sync::LazyLock};
 
 use crate::{CreatureTemplateId, Inventory, InventoryError, ItemId, ItemStack, item_template};
 
-pub const LOOT_CATALOG_REVISION: u64 = 5;
 pub const MAX_LOOT_OUTCOMES: usize = 4;
 
 /// One weighted outcome: no ordinary item, or one bounded stack.

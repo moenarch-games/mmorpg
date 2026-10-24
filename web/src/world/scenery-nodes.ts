@@ -68,13 +68,12 @@ export type SceneryStats = {
 };
 
 const FORMAT = "mmorpg.static-scene";
-const VERSION = 1;
 const CULLS: readonly CullClass[] = ["always", "far", "mid", "near"];
 
 type GeometryEntry = { resourceKey: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
 type DrawEntry = { id: string; geometry: number; model: number; color: Color; emissive: Color | null; opacity: number };
 type GroupEntry = { cull: CullClass; instanced: boolean; min: [number, number]; max: [number, number]; draws: DrawEntry[] };
-type Layout = { format: string; version: number; prefix: string; geometries: GeometryEntry[]; groups: GroupEntry[]; water: DrawEntry[]; animated: DrawEntry[][] };
+type Layout = { format: string; prefix: string; geometries: GeometryEntry[]; groups: GroupEntry[]; water: DrawEntry[]; animated: DrawEntry[][] };
 
 function fail(reason: string): never {
   throw new Error(`Invalid static scene: ${reason}`);
@@ -103,8 +102,8 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   } catch {
     fail("not JSON");
   }
-  if (layout.format !== FORMAT || layout.version !== VERSION) {
-    fail(`unsupported format ${String(layout.format)} v${String(layout.version)}`);
+  if (layout.format !== FORMAT) {
+    fail(`unsupported format ${String(layout.format)}`);
   }
   if (!layout.prefix.startsWith(`scenery:${scenery.contentRevision}:`)) {
     fail(`prefix ${layout.prefix} does not match content revision ${scenery.contentRevision}`);

@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, AbilityId, CreatureId, EntityRef, Flight, SpawnGrid, StaticCollider,
-    ZoneAreas, ZoneCommand, ZoneContent, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
+    AbilityId, CreatureId, EntityRef, Flight, SpawnGrid, StaticCollider, ZoneAreas, ZoneCommand,
+    ZoneContent, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, NORTHWARD, WOLF};
 use support::classes;
@@ -32,7 +32,6 @@ fn content(wall: Option<([i32; 2], [i32; 2])>, wolves: &[[i32; 2]]) -> Arc<ZoneC
         });
     }
     let definition = ZoneDefinition::with_spawn_grid(
-        77,
         [0, -1, 0],
         SpawnGrid {
             origin: [-5_000, -5_000],
@@ -56,11 +55,7 @@ fn content(wall: Option<([i32; 2], [i32; 2])>, wolves: &[[i32; 2]]) -> Arc<ZoneC
         arena::GRAVEYARD,
     )
     .unwrap();
-    Arc::new(
-        content
-            .with_creature_abilities(ABILITY_CATALOG_REVISION, Vec::new())
-            .unwrap(),
-    )
+    Arc::new(content.with_creature_abilities(Vec::new()).unwrap())
 }
 
 /// A level 6 Ranger at the origin facing `facing`, who looses `ability` and lets it fly.

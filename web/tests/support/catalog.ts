@@ -2,8 +2,6 @@
 export function catalogJson(revision = "3"): Record<string, unknown> {
   return {
     format: "mmorpg.catalog",
-    version: 7,
-    itemCatalogRevision: "5",
     items: [
       { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
       { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2 },
@@ -11,7 +9,6 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
       { id: 10, name: "Wolf Pelt", maxStack: 10, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1 },
     ],
     contentRevision: revision,
-    contentFingerprint: "3cbc808bbe89b29c",
     creatureTemplates: [
       { id: 1, name: "Timber Wolf", family: "wolf", behaviour: "aggressive", minLevel: 1, maxLevel: 2, elite: false, halfExtents: [40, 45, 40], prop: null },
       { id: 2, name: "Young Boar", family: "boar", behaviour: "neutral", minLevel: 1, maxLevel: 2, elite: false, halfExtents: [45, 45, 45], prop: null },
@@ -29,9 +26,7 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
       { id: 1, name: "ranger", resource: "focus" },
       { id: 2, name: "arcanist", resource: "mana" },
     ],
-    vendorCatalogRevision: "4",
     vendors: [{ npc: 3, offers: [{ item: 2, price: 9 }] }],
-    questCatalogRevision: "3",
     quests: [
       {
         id: 1, name: "Trouble in the Woods", text: "Slay six wolves.", giver: 1, ender: 1, prerequisite: null,
@@ -47,7 +42,6 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
         experience: 100, copper: 5, choices: [],
       },
     ],
-    abilityCatalogRevision: "13",
     abilities: [
       { id: 1, name: "Heroic Strike", user: "warden", level: 1, cost: 15, castTicks: 0, channel: false, cooldown: 0, aura: null },
       { id: 2, name: "Shield Bash", user: "warden", level: 2, cost: 10, castTicks: 0, channel: false, cooldown: 360, aura: 6 },

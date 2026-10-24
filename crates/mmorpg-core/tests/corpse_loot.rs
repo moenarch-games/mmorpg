@@ -23,7 +23,7 @@ fn fixture(table: Option<LootTable>) -> ZoneSimulation {
             original
                 .as_ref()
                 .clone()
-                .with_loot_tables(1, vec![(WOLF, table)])
+                .with_loot_tables(vec![(WOLF, table)])
                 .unwrap(),
         )
     } else {
@@ -438,7 +438,7 @@ fn binding_and_generating_loot_leave_combat_ai_physics_and_their_rng_unchanged()
         let expected = baseline.snapshot().unwrap();
         let mut actual = candidate.snapshot().unwrap();
         saw_corpse |= actual.creatures[0].loot.is_some();
-        actual.content_fingerprint = expected.content_fingerprint;
+        actual.content_revision = expected.content_revision;
         actual.loot_rng_state = expected.loot_rng_state;
         for creature in &mut actual.creatures {
             creature.loot = None;

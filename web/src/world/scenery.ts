@@ -2,7 +2,7 @@ import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
 /**
  * Presentation scenery from the WASM `scenery()` export (format
- * `mmorpg.scenery` v3), which maps the Rust `mmorpg-scenery` value the native
+ * `mmorpg.scenery`), which maps the Rust `mmorpg-scenery` value the native
  * client draws: a terrain grid and a coarse far ring of the same relief,
  * props as compact records (kind, feet anchor, yaw, scale, body box) with the
  * exact collider box of every structure, roads, water and named areas. The
@@ -146,7 +146,6 @@ export type SceneryProvider = {
 };
 
 const FORMAT = "mmorpg.scenery";
-const VERSION = 3;
 const MAX_TERRAIN_SAMPLES = 1 << 20;
 const MAX_PROPS = 1 << 16;
 const MAX_AREAS = 64;
@@ -329,11 +328,11 @@ export function decodeScenery(json: string): Scenery {
     fail("not JSON");
   }
   const root = object(parsed, [
-    "format", "version", "source", "contentRevision", "presentationFingerprint", "unitsPerMetre", "playerHalfExtents",
+    "format", "source", "contentRevision", "presentationFingerprint", "unitsPerMetre", "playerHalfExtents",
     "terrain", "farTerrain", "biomes", "propKinds", "props", "structures", "roads", "water", "areas",
   ], "export");
-  if (root.format !== FORMAT || root.version !== VERSION) {
-    fail(`unsupported format ${String(root.format)} v${String(root.version)}`);
+  if (root.format !== FORMAT) {
+    fail(`unsupported format ${String(root.format)}`);
   }
   if (typeof root.contentRevision !== "string" || !/^(0|[1-9][0-9]{0,19})$/.test(root.contentRevision)) {
     fail("content revision must be a canonical decimal u64");

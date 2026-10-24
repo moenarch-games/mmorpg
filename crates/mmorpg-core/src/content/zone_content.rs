@@ -2,10 +2,10 @@
 //!
 //! A zone's content is its physical definition plus its named areas, creature
 //! templates, creature spawns, NPCs, graveyard and optional loot rules. [`ZoneContent::new`]
-//! validates the tables once and computes a fingerprint over a canonical byte
-//! encoding of all of them. Canonical snapshots record the revision and
-//! fingerprint instead of embedding the content, and recovery refuses content
-//! whose identity differs (the content-addressed checkpoint rule).
+//! validates the tables once and computes its revision, a hash over a canonical
+//! byte encoding of all of them. Canonical snapshots record the revision instead
+//! of embedding the content, and recovery refuses content whose identity differs
+//! (the content-addressed checkpoint rule).
 
 use super::units::{
     CreatureSpawn, CreatureTemplate, MAX_CREATURE_HALF_EXTENT_UNITS, MAX_CREATURE_SPAWNS,
@@ -52,15 +52,15 @@ pub struct ZoneContent {
     character_persistence: CharacterPersistence,
     player_combat: PlayerCombatPolicy,
     rng_seed: u64,
-    loot_revision: u64,
+    loot_bound: bool,
     loot_tables: Vec<(CreatureTemplateId, LootTable)>,
-    ability_revision: u64,
+    ability_bound: bool,
     creature_abilities: Vec<(CreatureTemplateId, AbilityId)>,
     bosses: Vec<crate::BossRules>,
     shielded: Vec<CreatureTemplateId>,
-    vendor_revision: u64,
+    vendor_bound: bool,
     vendors: Vec<(NpcId, VendorStock)>,
-    quest_revision: u64,
+    quest_bound: bool,
     quests: Vec<crate::Quest>,
     doors: Vec<crate::Door>,
     platforms: Vec<crate::Platform>,
@@ -169,15 +169,15 @@ impl ZoneContent {
             character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
             rng_seed: 0,
-            loot_revision: 0,
+            loot_bound: false,
             loot_tables: Vec::new(),
-            ability_revision: 0,
+            ability_bound: false,
             creature_abilities: Vec::new(),
             bosses: Vec::new(),
             shielded: Vec::new(),
-            vendor_revision: 0,
+            vendor_bound: false,
             vendors: Vec::new(),
-            quest_revision: 0,
+            quest_bound: false,
             quests: Vec::new(),
             doors: Vec::new(),
             platforms: Vec::new(),
@@ -209,15 +209,15 @@ impl ZoneContent {
             character_persistence: CharacterPersistence::Durable,
             player_combat: PlayerCombatPolicy::Safe,
             rng_seed: 0,
-            loot_revision: 0,
+            loot_bound: false,
             loot_tables: Vec::new(),
-            ability_revision: 0,
+            ability_bound: false,
             creature_abilities: Vec::new(),
             bosses: Vec::new(),
             shielded: Vec::new(),
-            vendor_revision: 0,
+            vendor_bound: false,
             vendors: Vec::new(),
-            quest_revision: 0,
+            quest_bound: false,
             quests: Vec::new(),
             doors: Vec::new(),
             platforms: Vec::new(),
@@ -259,14 +259,11 @@ impl ZoneContent {
         self.character_persistence
     }
 
+    /// The content revision: a stable FNV-1a 64 hash of the canonical encoding of every
+    /// table, never a hand-bumped counter (docs/adr/0006-merge-safe-format-identities.md).
+    /// Snapshots, scenery, catalogs and checkpoints carry it and refuse any other value.
     #[must_use]
     pub const fn revision(&self) -> u64 {
-        self.definition.revision()
-    }
-
-    /// Stable FNV-1a 64 hash of the canonical encoding of every table.
-    #[must_use]
-    pub const fn fingerprint(&self) -> u64 {
         self.fingerprint
     }
 
@@ -343,16 +340,12 @@ impl ZoneContent {
     }
 
     /// Binds validated loot rules to recovery identity without changing the
-    /// simulation seed. Missing templates have no loot table. Revision zero
-    /// is reserved for content that has never bound a loot catalog.
+    /// simulation seed. Missing templates have no loot table; content that
+    /// never binds loot keeps the item catalog's identity only.
     pub fn with_loot_tables(
         mut self,
-        revision: u64,
         mut tables: Vec<(CreatureTemplateId, LootTable)>,
     ) -> Result<Self, ZoneError> {
-        if revision == 0 {
-            return Err(ZoneError::new("loot catalog revision must be nonzero"));
-        }
         if tables.len() > MAX_CREATURE_TEMPLATES {
             return Err(ZoneError::new("zone loot content capacity reached"));
         }
@@ -366,15 +359,10 @@ impl ZoneContent {
         {
             return Err(ZoneError::new("loot table names an unknown template"));
         }
-        self.loot_revision = revision;
+        self.loot_bound = true;
         self.loot_tables = tables;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
-    }
-
-    #[must_use]
-    pub const fn loot_revision(&self) -> u64 {
-        self.loot_revision
     }
 
     /// Ordered by creature template ID; outcome order remains authored.
@@ -393,17 +381,12 @@ impl ZoneContent {
 
     /// Binds the ability catalog and each creature template's ability to
     /// recovery identity without changing the simulation seed. Templates
-    /// without a binding use no ability. Revision zero is reserved for
-    /// content that has never bound the ability catalog; its fingerprint
-    /// omits the catalog, so its zones refuse classes and abilities.
+    /// without a binding use no ability. Content that never binds the ability
+    /// catalog omits it from its identity, so its zones refuse classes and abilities.
     pub fn with_creature_abilities(
         mut self,
-        revision: u64,
         mut bindings: Vec<(CreatureTemplateId, AbilityId)>,
     ) -> Result<Self, ZoneError> {
-        if revision == 0 {
-            return Err(ZoneError::new("ability catalog revision must be nonzero"));
-        }
         if bindings.len() > MAX_CREATURE_TEMPLATES {
             return Err(ZoneError::new("zone ability content capacity reached"));
         }
@@ -422,15 +405,16 @@ impl ZoneContent {
         }) {
             return Err(ZoneError::new("creature ability names no creature ability"));
         }
-        self.ability_revision = revision;
+        self.ability_bound = true;
         self.creature_abilities = bindings;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
     }
 
+    /// Whether this content binds the ability catalog (classes and abilities exist).
     #[must_use]
-    pub const fn ability_revision(&self) -> u64 {
-        self.ability_revision
+    pub const fn binds_abilities(&self) -> bool {
+        self.ability_bound
     }
 
     /// Ordered by creature template ID.
@@ -507,16 +491,12 @@ impl ZoneContent {
 
     /// Binds vendor stock to NPCs with the `Vendor` role and the vendor
     /// rules (sale values) to recovery identity, without changing the
-    /// simulation seed. Revision zero is reserved for content without
-    /// vendors; its fingerprint omits them, so its zones refuse every trade.
+    /// simulation seed. Content without vendors omits them from its identity,
+    /// so its zones refuse every trade.
     pub fn with_vendors(
         mut self,
-        revision: u64,
         mut vendors: Vec<(NpcId, VendorStock)>,
     ) -> Result<Self, ZoneError> {
-        if revision == 0 {
-            return Err(ZoneError::new("vendor catalog revision must be nonzero"));
-        }
         if vendors.len() > MAX_NPCS {
             return Err(ZoneError::new("zone vendor content capacity reached"));
         }
@@ -530,15 +510,10 @@ impl ZoneContent {
         {
             return Err(ZoneError::new("vendor stock names no vendor npc"));
         }
-        self.vendor_revision = revision;
+        self.vendor_bound = true;
         self.vendors = vendors;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
-    }
-
-    #[must_use]
-    pub const fn vendor_revision(&self) -> u64 {
-        self.vendor_revision
     }
 
     /// Ordered by NPC ID.
@@ -557,27 +532,15 @@ impl ZoneContent {
     }
 
     /// Binds quests, validated against this content, and the quest rules to
-    /// recovery identity without changing the simulation seed. Revision zero
-    /// is reserved for content without quests; its zones refuse every quest.
-    pub fn with_quests(
-        mut self,
-        revision: u64,
-        quests: Vec<crate::Quest>,
-    ) -> Result<Self, ZoneError> {
-        if revision == 0 {
-            return Err(ZoneError::new("quest catalog revision must be nonzero"));
-        }
+    /// recovery identity without changing the simulation seed. Content without
+    /// quests refuses every quest.
+    pub fn with_quests(mut self, quests: Vec<crate::Quest>) -> Result<Self, ZoneError> {
         let quests = crate::quest::validate_quests(&self, quests)
             .map_err(|error| ZoneError::new(error.to_string()))?;
-        self.quest_revision = revision;
+        self.quest_bound = true;
         self.quests = quests;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
-    }
-
-    #[must_use]
-    pub const fn quest_revision(&self) -> u64 {
-        self.quest_revision
     }
 
     /// Ordered by quest ID.
@@ -1033,13 +996,12 @@ impl ZoneContent {
 
     fn compute_quest_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_vendor_fingerprint();
-        if self.quest_revision == 0 {
+        if !self.quest_bound {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/v6");
         hash.u64(fingerprint);
-        hash.u64(self.quest_revision);
         hash.len(self.quests.len());
         for quest in &self.quests {
             hash.u8(quest.id.get());
@@ -1085,13 +1047,12 @@ impl ZoneContent {
 
     fn compute_vendor_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_ability_fingerprint();
-        if self.vendor_revision == 0 {
+        if !self.vendor_bound {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/v5");
         hash.u64(fingerprint);
-        hash.u64(self.vendor_revision);
         for item in crate::ITEM_CATALOG {
             hash.u16(item.id.get());
             hash.u32(crate::sell_price(item.id));
@@ -1110,13 +1071,12 @@ impl ZoneContent {
 
     fn compute_ability_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_loot_fingerprint();
-        if self.ability_revision == 0 {
+        if !self.ability_bound {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/v4");
         hash.u64(fingerprint);
-        hash.u64(self.ability_revision);
         hash.bytes(&crate::ability::catalog_bytes());
         hash.len(self.creature_abilities.len());
         for (template, ability) in &self.creature_abilities {
@@ -1154,7 +1114,6 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/v2");
         hash.u64(self.compute_simulation_fingerprint());
         hash.u64(self.rng_seed);
-        hash.u64(crate::ITEM_CATALOG_REVISION);
         hash.len(crate::ITEM_CATALOG.len());
         for item in crate::ITEM_CATALOG {
             hash.u16(item.id.get());
@@ -1174,13 +1133,12 @@ impl ZoneContent {
             hash.u16(slot.map_or(0, |stack| stack.quantity()));
         }
         let base_fingerprint = hash.finish();
-        if self.loot_revision == 0 {
+        if !self.loot_bound {
             return base_fingerprint;
         }
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/v3");
         hash.u64(base_fingerprint);
-        hash.u64(self.loot_revision);
         hash.len(self.loot_tables.len());
         for (template, table) in &self.loot_tables {
             hash.u16(template.get());
@@ -1216,7 +1174,6 @@ impl ZoneContent {
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/v1");
         let definition = &self.definition;
-        hash.u64(definition.revision());
         hash.i32s(&definition.gravity());
         let grid = definition.spawn_grid();
         hash.i32s(&grid.origin);
@@ -1490,7 +1447,6 @@ mod tests {
 
     fn ground() -> ZoneDefinition {
         ZoneDefinition::with_spawn_grid(
-            9,
             [0, -1, 0],
             SpawnGrid {
                 origin: [0, 0],
@@ -1658,7 +1614,6 @@ mod tests {
             .and_then(|_| {
                 ZoneContent::new(
                     ZoneDefinition::new(
-                        9,
                         [0, -1, 0],
                         vec![StaticCollider {
                             id: 1,
@@ -1743,7 +1698,7 @@ mod tests {
             [0, -1_000],
         )
         .unwrap();
-        assert_eq!(base.fingerprint(), same.fingerprint());
+        assert_eq!(base.revision(), same.revision());
         let variants = [
             content(
                 vec![CreatureTemplate {
@@ -1777,11 +1732,11 @@ mod tests {
             ),
         ];
         for variant in variants {
-            assert_ne!(variant.unwrap().fingerprint(), base.fingerprint());
+            assert_ne!(variant.unwrap().revision(), base.revision());
         }
         let colliders_differ = ZoneContent::from_definition(ZoneDefinition::default());
         let physical = ZoneContent::from_definition(ground());
-        assert_ne!(colliders_differ.fingerprint(), physical.fingerprint());
+        assert_ne!(colliders_differ.revision(), physical.revision());
         assert_eq!(physical.graveyard(), [0, 0]);
     }
 }
