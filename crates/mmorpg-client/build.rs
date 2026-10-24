@@ -1,7 +1,7 @@
 //! Embeds locally acquired assets; builds perform no network acquisition.
 //! Ranger default models and the shared clip library are standard GLBs prepared by
 //! asset-tooling (`scripts/prepare-ranger-native.sh`), with original socket metadata.
-//! The Greyhaven inn retains its existing manifest/resource embedding path.
+//! The Greyhaven inn and the Sunken Shrine kit (#431) keep the manifest/resource embedding path.
 #[path = "build/warden_icons.rs"]
 mod warden_icons;
 
@@ -97,26 +97,53 @@ fn main() {
     ));
     files.push(hair);
     write("ranger_bundle.rs", &bundle, code, files);
-    inn(&manifest_dir.join("../../web/public/buildings/greyhaven.inn"));
+    static_bundle(
+        "inn_bundle.rs",
+        &manifest_dir.join("../../web/public/buildings/greyhaven.inn"),
+        Some(&INN),
+    );
+    // Every module of the Sunken Shrine kit (#431).
+    static_bundle(
+        "shrine_bundle.rs",
+        &manifest_dir.join("../../web/public/scenery/shrine.kit"),
+        None,
+    );
 }
 
-/// The inn's drawn entries as `ENTRIES` (key, glTF path) and their `FILES`.
-fn inn(bundle: &Path) {
-    for watched in ["RELEASE", "manifest.json"] {
+/// A static bundle's drawn entries (`keys`, or every entry) as `ENTRIES` (key, glTF path) and
+/// their `FILES`.
+fn static_bundle(name: &str, bundle: &Path, keys: Option<&[&str]>) {
+    for watched in ["RELEASE", "SHA256", "manifest.json"] {
         println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
     }
     let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
-        panic!("the Greyhaven inn bundle is missing ({error}); run scripts/fetch-bundles.sh")
+        panic!(
+            "the bundle {} is missing ({error}); run scripts/fetch-bundles.sh",
+            bundle.display()
+        )
     });
     let manifest: serde_json::Value =
         serde_json::from_str(&manifest).expect("the bundle manifest is JSON");
     let mut code = String::from("pub const ENTRIES: &[(&str, &str)] = &[\n");
     let mut files = Vec::new();
-    for key in INN {
-        let entry = manifest["assets"]
-            .as_array()
-            .and_then(|assets| assets.iter().find(|asset| asset["key"] == key))
-            .unwrap_or_else(|| panic!("the inn bundle declares {key}"));
+    let assets = manifest["assets"].as_array().expect("bundle assets");
+    let entries: Vec<&serde_json::Value> = match keys {
+        Some(keys) => keys
+            .iter()
+            .map(|key| {
+                assets
+                    .iter()
+                    .find(|asset| asset["key"] == *key && asset["variant"] == "default")
+                    .unwrap_or_else(|| panic!("the bundle declares {key}"))
+            })
+            .collect(),
+        None => assets
+            .iter()
+            .filter(|asset| asset["variant"] == "default")
+            .collect(),
+    };
+    for entry in entries {
+        let key = entry["key"].as_str().expect("the entry names its key");
         let path = entry["path"].as_str().expect("the entry names its glTF");
         code.push_str(&format!("    ({key:?}, {path:?}),\n"));
         files.push(path.to_owned());
@@ -130,7 +157,7 @@ fn inn(bundle: &Path) {
         }
     }
     code.push_str("];\n");
-    write("inn_bundle.rs", bundle, code, files);
+    write(name, bundle, code, files);
 }
 
 /// Appends `FILES` (every bundle file, embedded) to `code` and writes it to `OUT_DIR/name`.

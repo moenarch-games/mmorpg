@@ -16,6 +16,7 @@ pub mod batching;
 pub mod buildings;
 pub mod geometry;
 mod props;
+pub mod shrine;
 pub mod structures;
 mod terrain;
 pub mod units;

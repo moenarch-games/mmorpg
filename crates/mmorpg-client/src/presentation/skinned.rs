@@ -636,6 +636,32 @@ pub(super) fn inn_draws() -> &'static [(&'static str, Vec<SceneDraw>)] {
     })
 }
 
+/// The Sunken Shrine kit's modules and their resources, embedded by `build.rs` (#431).
+mod shrine_bundle {
+    include!(concat!(env!("OUT_DIR"), "/shrine_bundle.rs"));
+}
+
+/// The shrine kit's draws (in the module frame) of entry `key`, every module imported once.
+pub(super) fn shrine_draws(key: &str) -> &'static [SceneDraw] {
+    static DRAWS: OnceLock<Vec<(&'static str, Vec<SceneDraw>)>> = OnceLock::new();
+    DRAWS
+        .get_or_init(|| {
+            shrine_bundle::ENTRIES
+                .iter()
+                .map(|&(key, path)| {
+                    let model = Model::parse(&bundle_glb(path, shrine_bundle::FILES), "")
+                        .expect("a shrine kit entry is valid glTF");
+                    let draws =
+                        model.draws_placed(key, three_d_animation::Mat4::IDENTITY, "", 0., None);
+                    (key, draws)
+                })
+                .collect()
+        })
+        .iter()
+        .find(|(entry, _)| *entry == key)
+        .map_or(&[], |(_, draws)| draws.as_slice())
+}
+
 /// Normalizes `base`'s directory joined with a relative `uri` ("../../resources/x.bin").
 fn resolve(base: &str, uri: &str) -> String {
     let mut parts: Vec<&str> = base.split('/').collect();

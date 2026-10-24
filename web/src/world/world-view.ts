@@ -28,6 +28,7 @@ import {
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
 import { ImpactEffects, impactCues } from "./impact-effects";
 import { InnBuilding, INN_DOOR } from "./inn-building";
+import { ShrineKit } from "./shrine-kit";
 import { ArtPrefetch } from "./art-prefetch";
 import { NatureReview } from "./nature-review";
 import { SkyLayer } from "./sky";
@@ -175,17 +176,24 @@ function boxGapSquared(a: Bounds, b: Bounds): number {
 class RegionArt {
   readonly #world: ZoneWorld;
   readonly #innArea: number | null;
+  /** The areas the Sunken Shrine's kit modules (#431) stand in. */
+  readonly #shrineAreas: Set<number>;
   readonly #prefetch: ArtPrefetch;
 
-  constructor(world: ZoneWorld, models: QuaterniusUnits, inn: InnBuilding, onProgress: () => void) {
+  constructor(world: ZoneWorld, models: QuaterniusUnits, inn: InnBuilding, shrine: ShrineKit, onProgress: () => void) {
     this.#world = world;
     const innProp = world.scenery.scenery.props.find((prop) => prop.kind === "inn");
     this.#innArea = innProp ? world.scenery.areaAt(innProp.position[0], innProp.position[2])?.id ?? null : null;
+    const unit = world.scenery.scenery.unitsPerMetre;
+    this.#shrineAreas = new Set(world.scenery.shrine.placements.flatMap(({ matrix }) => {
+      const area = world.scenery.areaAt(matrix[12]! * unit, matrix[14]! * unit);
+      return area ? [area.id] : [];
+    }));
     // Bundle glTF files share textures; three's file cache serves a repeat from memory instead
     // of downloading it again, and is emptied whenever no piece is loading.
     THREE.Cache.enabled = true;
     this.#prefetch = new ArtPrefetch(
-      (piece) => (piece === "inn" ? inn.load() : models.preload(piece as ImportedModelKind)),
+      (piece) => (piece === "inn" ? inn.load() : piece === "shrine" ? shrine.load() : models.preload(piece as ImportedModelKind)),
       (idle) => {
         if (idle) { THREE.Cache.clear(); }
         onProgress();
@@ -196,9 +204,14 @@ class RegionArt {
   /** The pieces area `id` needs (every piece for `null`). */
   #pieces(id: number | null): string[] {
     if (id === null) {
-      return ["Ranger", "Wolf", "Rat", "Pig", "inn"];
+      return ["Ranger", "Wolf", "Rat", "Pig", "inn", "shrine"];
     }
-    return ["Ranger", ...this.#world.scenery.regionModels(id), ...(id === this.#innArea ? ["inn"] : [])];
+    return [
+      "Ranger",
+      ...this.#world.scenery.regionModels(id),
+      ...(id === this.#innArea ? ["inn"] : []),
+      ...(this.#shrineAreas.has(id) ? ["shrine"] : []),
+    ];
   }
 
   /** Starts area `id`'s pieces now (every area's for `null`). */
@@ -261,6 +274,8 @@ export class WorldView {
   readonly #models = new QuaterniusUnits((kind) => this.#restClip(kind));
   /** The walk-in inn (#158), drawn from its asset-tooling bundle once loaded. */
   #inn: InnBuilding | null = null;
+  /** The Sunken Shrine (#431), drawn from asset-tooling's shrine kit once loaded. */
+  #shrine: ShrineKit | null = null;
   #natureReview: NatureReview | null = null;
   #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
@@ -419,9 +434,10 @@ export class WorldView {
     this.#natureReview = new NatureReview(world.scenery, this.#scene);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new InnBuilding(world.scenery.inn.presenter(), world.scenery.inn.entries());
+    this.#shrine = new ShrineKit(world.scenery.shrine.entries, world.scenery.shrine.placements);
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
     // starting area's pieces, and play fetches each area the player approaches.
-    this.#regions = new RegionArt(world, this.#models, this.#inn, () => this.#onArtProgress?.());
+    this.#regions = new RegionArt(world, this.#models, this.#inn, this.#shrine, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.inn.reachableDoor;
     this.#reachablePieces = world.scenery.reachablePieces;
     this.#units = null;
@@ -556,7 +572,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root] });
     }
   }
 
@@ -914,9 +930,10 @@ export class WorldView {
     this.#lastCamera = camera;
     const models = this.#models.roots();
     const inn = this.#inn?.roots() ?? { roots: [], changed: false };
+    const shrine = this.#shrine?.roots() ?? { roots: [], changed: false };
     const nature = this.#natureReview?.roots() ?? { roots: [], changed: false };
-    if (models.changed || inn.changed || nature.changed || !this.#impacts.root.parent) {
-      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, ...nature.roots, this.#impacts.root] });
+    if (models.changed || inn.changed || shrine.changed || nature.changed || !this.#impacts.root.parent) {
+      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, ...shrine.roots, ...nature.roots, this.#impacts.root] });
     }
     this.#lastWork = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
@@ -1219,6 +1236,8 @@ export class WorldView {
       unitNodes: (identity: string) => structuredClone(this.#lastUnitNodes.filter((node) => node.id.startsWith(`${identity}-`))),
       /** The walk-in inn (#158): whether its bundle loaded and which entries the last frame showed. */
       inn: () => this.#inn?.observe() ?? null,
+      /** The Sunken Shrine kit (#431): whether its modules loaded and which are placed. */
+      shrine: () => this.#shrine?.observe() ?? null,
       /** The units of the last projection (kind, id, creature family, position in metres). */
       projectedUnits: () => this.#lastProjectedUnits,
       /** The projected animal (wolf, boar, vermin) nearest to a point in metres, or null. */
