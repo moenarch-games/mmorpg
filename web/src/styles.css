@@ -630,6 +630,36 @@ kbd {
 }
 .hair-color.is-selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgb(208 177 96 / 35%); }
 
+/* Face features (#411): one select per bundle feature, two columns, one on narrow panels. */
+.face-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: .45rem;
+}
+.face-option { display: grid; gap: .25rem; min-width: 0; color: #9fa9a3; font-size: .67rem; font-weight: 650; }
+.face-option select {
+  min-width: 0;
+  padding: .4rem .35rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: rgb(20 24 23);
+  color: #e3e8e4;
+  font: inherit;
+  font-size: .75rem;
+}
+.face-option select:focus-visible, .face-close-up:focus-visible { outline: 2px solid #e5cf86; outline-offset: 2px; }
+.face-close-up {
+  padding: .25rem .55rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 3%);
+  color: #b9c4be;
+  font-size: .67rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.face-close-up[aria-pressed="true"] { border-color: rgb(208 177 96 / 58%); color: #f0e5c9; box-shadow: inset 0 -2px var(--gold); }
+.face-close-up:disabled { opacity: .45; cursor: default; }
+.face-status { margin: .45rem 0 0; color: #8f9993; font-size: .66rem; }
+
 .hat-option.is-selected {
   border-color: rgb(208 177 96 / 58%);
   background: linear-gradient(180deg, rgb(183 148 70 / 18%), rgb(255 255 255 / 3%));

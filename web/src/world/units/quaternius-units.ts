@@ -32,7 +32,16 @@ const HAIR_VARIANT = "hair-1";
  * How the viewer's Ranger is dressed: carried items, headwear and hair. Units without a viewer
  * look (`headwear` and `hair` null) keep the bundle's default: the hood up, no hair.
  */
-type Dress = { loadout: Loadout; headwear: Headwear | null; hair: Hair | null };
+type Dress = { loadout: Loadout; headwear: Headwear | null; hair: Hair | null; face: FaceChoice | null };
+/** The viewer's face (#411): a `humanoid-appearance.face` feature id to one of its option ids. */
+export type FaceChoice = Readonly<Record<string, string>>;
+/** One face feature the bundle offers (#411), with its options' morph-target weights. */
+export type FaceFeature = {
+  id: string; label: string; default: string;
+  options: readonly { id: string; label: string; morphs: Readonly<Record<string, number>> }[];
+};
+/** The face morphs of the loaded Ranger entry: the nodes carrying them and the features. */
+type FaceLook = { nodes: readonly string[]; features: readonly FaceFeature[] };
 const dressKey = (dress: Dress) => JSON.stringify(dress);
 /** The rest (idle) clip a model is measured in, from the shared presenter's clip table. */
 export type RestClip = (kind: QuaterniusKind) => string;
@@ -64,6 +73,8 @@ type Asset = {
   /** Clip roles and strike contact times by name, from the bundle's `humanoid-clips` (Ranger only). */
   motions?: ReadonlyMap<string, ClipMotion>;
   instantiate(dress: Dress): Posable;
+  /** The face features the drawn entry supports (#411); null when it carries no face morphs. */
+  face?: FaceLook | null;
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
   floor: number;
   height: number;
@@ -267,6 +278,59 @@ function tintMaterials(object: THREE.Object3D, names: readonly string[], color: 
   });
 }
 
+/** The meshes under `nodes` of `model` that carry morph targets. */
+function morphMeshes(model: THREE.Object3D, nodes: readonly string[]): THREE.Mesh[] {
+  const meshes: THREE.Mesh[] = [];
+  for (const name of nodes) {
+    model.getObjectByName(name)?.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.morphTargetInfluences && child.morphTargetDictionary) { meshes.push(child); }
+    });
+  }
+  return meshes;
+}
+
+/**
+ * The `humanoid-appearance.face` section (#411) for the drawn `variant`, or null when the bundle has
+ * none, lists the variant as unsupported (its levels of detail carry no targets) or the model lacks
+ * a target an option names: the character then keeps the base face and the editor says so.
+ */
+export function faceLookOf(appearance: unknown, variant: string, model: THREE.Object3D): FaceLook | null {
+  const face = (appearance as { face?: unknown }).face as
+    { nodes?: unknown; features?: unknown; variants?: unknown } | undefined;
+  if (!face || !Array.isArray(face.nodes) || !Array.isArray(face.features) || !Array.isArray(face.variants)) { return null; }
+  if (!face.variants.includes(variant)) { return null; }
+  const nodes = face.nodes.filter((node): node is string => typeof node === "string");
+  const targets = new Set(morphMeshes(model, nodes).flatMap((mesh) => Object.keys(mesh.morphTargetDictionary ?? {})));
+  const features: FaceFeature[] = [];
+  for (const raw of face.features as { id?: unknown; label?: unknown; default?: unknown; options?: unknown }[]) {
+    if (typeof raw.id !== "string" || typeof raw.default !== "string" || !Array.isArray(raw.options)) { return null; }
+    const options = (raw.options as { id?: unknown; label?: unknown; morphs?: unknown }[]).map((option) => ({
+      id: String(option.id), label: String(option.label ?? option.id),
+      morphs: Object.fromEntries(Object.entries((option.morphs ?? {}) as Record<string, unknown>).map(([target, weight]) => [target, Number(weight)])),
+    }));
+    if (!options.some((option) => option.id === raw.default)
+      || options.some((option) => Object.keys(option.morphs).some((target) => !targets.has(target)))) { return null; }
+    features.push({ id: raw.id, label: typeof raw.label === "string" ? raw.label : raw.id, default: raw.default, options });
+  }
+  return features.length > 0 ? { nodes, features } : null;
+}
+
+/** Resets `model`'s face morphs and applies the chosen option (or the default) of every feature. */
+export function applyFace(model: THREE.Object3D, look: FaceLook, choice: FaceChoice): void {
+  const meshes = morphMeshes(model, look.nodes);
+  for (const mesh of meshes) { mesh.morphTargetInfluences!.fill(0); }
+  for (const feature of look.features) {
+    const option = feature.options.find((candidate) => candidate.id === choice[feature.id])
+      ?? feature.options.find((candidate) => candidate.id === feature.default);
+    for (const [target, weight] of Object.entries(option?.morphs ?? {})) {
+      for (const mesh of meshes) {
+        const index = mesh.morphTargetDictionary![target];
+        if (index !== undefined) { mesh.morphTargetInfluences![index] = weight; }
+      }
+    }
+  }
+}
+
 async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   const url = (path: string) => new URL(path, new URL(RANGER_BUNDLE, window.location.href)).href;
   const json = async (path: string): Promise<unknown> => {
@@ -286,7 +350,10 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     json(entryFile(entry, ".humanoid-clips.json")).then(clipMotionsOf),
   ]);
   const keys = [...new Set([...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key))];
-  const look = headLook(await json(entryFile(entry, ".humanoid-appearance.json")));
+  const appearance = await json(entryFile(entry, ".humanoid-appearance.json"));
+  const look = headLook(appearance);
+  const face = faceLookOf(appearance, entry.variant, gltf.scene);
+  if (!face) { console.info("The Ranger bundle has no face morphs for its drawn entry; faces keep the base shape."); }
   const load = async (key: string, variant?: string) => {
     const scene = (await loader.loadAsync(url(entryFile(bundleEntry(manifest, key, variant), ".gltf")))).scene;
     if (key === "hair.long") {
@@ -307,8 +374,9 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     ...Object.values(HAIR_ENTRIES).map((key) => load(key, HAIR_VARIANT)),
   ]));
   const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
-  const instantiate = ({ loadout, headwear, hair }: Dress): Posable => {
+  const instantiate = ({ loadout, headwear, hair, face: chosen }: Dress): Posable => {
     const model = cloneSkinned(gltf.scene);
+    if (face && chosen) { applyFace(model, face, chosen); }
     // The bundle's hood is on by default; any other chosen headwear replaces it.
     const hooded = headwear === null || headwear === "wayfarer-hood";
     for (const name of look.hood) {
@@ -340,10 +408,10 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     return mixerPosable(model, sources);
   };
   const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
-  const probe = instantiate({ loadout: null, headwear: null, hair: null });
+  const probe = instantiate({ loadout: null, headwear: null, hair: null, face: null });
   const measured = measure(probe, rest);
   probe.dispose();
-  return { clips, motions, instantiate, ...measured };
+  return { clips, motions, instantiate, face, ...measured };
 }
 
 export class QuaterniusUnits {
@@ -399,7 +467,17 @@ export class QuaterniusUnits {
   }
 
   /** Poses every requested unit and drops the instances of units not requested. */
-  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair }): void {
+  /**
+   * The face features the loaded Ranger supports (#411): undefined while it loads, null when it
+   * failed or carries no face morphs.
+   */
+  faceFeatures(): readonly FaceFeature[] | null | undefined {
+    const asset = this.#assets.get("Ranger");
+    if (asset === undefined || asset === "loading") { return undefined; }
+    return asset === "failed" ? null : asset.face?.features ?? null;
+  }
+
+  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice }): void {
     const seen = new Set<string>();
     for (const unit of units) {
       const asset = this.#assets.get(unit.kind);
@@ -408,7 +486,7 @@ export class QuaterniusUnits {
       const loadout: Loadout = unit.swordAndShield ? "sword-and-shield" : unit.bowAndQuiver ? "bow-and-quiver" : unit.blade ? "blade" : null;
       let instance = this.#instances.get(unit.id);
       const dressed = unit.headwear && unit.kind === "Ranger";
-      const dress: Dress = { loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null };
+      const dress: Dress = { loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null, face: dressed ? viewer.face : null };
       if (instance && (instance.kind !== unit.kind || instance.dress !== dressKey(dress))) {
         this.#drop(unit.id, instance);
         instance = undefined;
