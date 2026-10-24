@@ -90,6 +90,10 @@ export type SceneryContent = StaticSceneContent & {
   shrineKitEntries(): string[];
   shrineKitKeys(): string[];
   shrineKitModels(): Float32Array;
+  /** The Outpost kit buildings (#420): their entries (`<key>` or `<key>/<variant>`), and per placed module its entry and 16 model floats. */
+  outpostKitEntries(): string[];
+  outpostKitKeys(): string[];
+  outpostKitModels(): Float32Array;
   /** Greyhaven's ambient animals (#419): entries, clip names, first-waypoint anchors (x, z units) and per animal 16 model floats, clip index and clip time. */
   ambientAnimalEntries(): string[];
   ambientAnimalClips(): string[];
@@ -132,6 +136,8 @@ export type SceneryProvider = {
   readonly inn: { entries(): readonly string[]; presenter(): InnPresenterHandle; reachableDoor(x: number, z: number): number };
   /** The Sunken Shrine's kit entries and placed modules (#431), column-major matrices in metres. */
   readonly shrine: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
+  /** The Outpost kit buildings' entries and placed modules (#420), column-major matrices in metres. */
+  readonly outpost: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
@@ -411,7 +417,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
           staticSceneIndices: () => Uint32Array.from(review.indices),
           staticSceneModels: () => Float32Array.from(review.models),
           staticSceneMotion: (seconds, animate) => content.staticSceneMotion(seconds, animate),
-          staticSceneShown: (viewer) => content.staticSceneShown(viewer),
+          staticSceneShown: (viewer, outpostKit) => content.staticSceneShown(viewer, outpostKit),
           surfaceY: (x, z) => content.surfaceY(x, z),
         };
       },
@@ -427,6 +433,13 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       return {
         entries: content.shrineKitEntries(),
         placements: content.shrineKitKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
+      };
+    })(),
+    outpost: (() => {
+      const models = content.outpostKitModels();
+      return {
+        entries: content.outpostKitEntries(),
+        placements: content.outpostKitKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
       };
     })(),
     ambient: (() => {

@@ -28,7 +28,7 @@ import {
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
 import { ImpactEffects, impactCues } from "./impact-effects";
 import { InnBuilding, INN_DOOR } from "./inn-building";
-import { ShrineKit } from "./shrine-kit";
+import { KitModules, OUTPOST_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
 import { AmbientAnimals } from "./ambient-animals";
 import { ArtPrefetch } from "./art-prefetch";
 import { NatureReview } from "./nature-review";
@@ -184,19 +184,23 @@ class RegionArt {
   readonly #innArea: number | null;
   /** The areas the Sunken Shrine's kit modules (#431) stand in. */
   readonly #shrineAreas: Set<number>;
+  /** The areas the Outpost kit buildings (#420) stand in. */
+  readonly #outpostAreas: Set<number>;
   /** The areas the ambient animals (#419) pace in. */
   readonly #ambientAreas: Set<number>;
   readonly #prefetch: ArtPrefetch;
 
-  constructor(world: ZoneWorld, models: QuaterniusUnits, inn: InnBuilding, shrine: ShrineKit, ambient: AmbientAnimals, onProgress: () => void) {
+  constructor(world: ZoneWorld, models: QuaterniusUnits, inn: InnBuilding, shrine: KitModules, outpost: KitModules, ambient: AmbientAnimals, onProgress: () => void) {
     this.#world = world;
     const innProp = world.scenery.scenery.props.find((prop) => prop.kind === "inn");
     this.#innArea = innProp ? world.scenery.areaAt(innProp.position[0], innProp.position[2])?.id ?? null : null;
     const unit = world.scenery.scenery.unitsPerMetre;
-    this.#shrineAreas = new Set(world.scenery.shrine.placements.flatMap(({ matrix }) => {
+    const areas = (placements: readonly KitPlacement[]) => new Set(placements.flatMap(({ matrix }) => {
       const area = world.scenery.areaAt(matrix[12]! * unit, matrix[14]! * unit);
       return area ? [area.id] : [];
     }));
+    this.#shrineAreas = areas(world.scenery.shrine.placements);
+    this.#outpostAreas = areas(world.scenery.outpost.placements);
     this.#ambientAreas = new Set(world.scenery.ambient.anchors.flatMap(([x, z]) => {
       const area = world.scenery.areaAt(x, z);
       return area ? [area.id] : [];
@@ -205,7 +209,7 @@ class RegionArt {
     // of downloading it again, and is emptied whenever no piece is loading.
     THREE.Cache.enabled = true;
     this.#prefetch = new ArtPrefetch(
-      (piece) => (piece === "inn" ? inn.load() : piece === "shrine" ? shrine.load() : piece === "ambient" ? ambient.load()
+      (piece) => (piece === "inn" ? inn.load() : piece === "shrine" ? shrine.load() : piece === "outpost" ? outpost.load() : piece === "ambient" ? ambient.load()
         : piece === "residents" ? models.preloadResidents() : models.preload(piece as ImportedModelKind)),
       (idle) => {
         if (idle) { THREE.Cache.clear(); }
@@ -217,13 +221,14 @@ class RegionArt {
   /** The pieces area `id` needs (every piece for `null`). */
   #pieces(id: number | null): string[] {
     if (id === null) {
-      return ["Ranger", "Wolf", "Rat", "Pig", "residents", "inn", "shrine", "ambient"];
+      return ["Ranger", "Wolf", "Rat", "Pig", "residents", "inn", "shrine", "outpost", "ambient"];
     }
     return [
       "Ranger",
       ...this.#world.scenery.regionModels(id),
       ...(id === this.#innArea ? ["inn"] : []),
       ...(this.#shrineAreas.has(id) ? ["shrine"] : []),
+      ...(this.#outpostAreas.has(id) ? ["outpost"] : []),
       ...(this.#ambientAreas.has(id) ? ["ambient"] : []),
     ];
   }
@@ -289,7 +294,9 @@ export class WorldView {
   /** The walk-in inn (#158), drawn from its asset-tooling bundle once loaded. */
   #inn: InnBuilding | null = null;
   /** The Sunken Shrine (#431), drawn from asset-tooling's shrine kit once loaded. */
-  #shrine: ShrineKit | null = null;
+  #shrine: KitModules | null = null;
+  /** The Outpost kit buildings (#420), drawn from asset-tooling's Outpost kit once loaded; their blockouts until then. */
+  #outpost: KitModules | null = null;
   /** Greyhaven's cosmetic cat, dog and rodent (#419), drawn once their bundle loads. */
   #ambient: AmbientAnimals | null = null;
   #natureReview: NatureReview | null = null;
@@ -451,11 +458,12 @@ export class WorldView {
     this.#natureReview = new NatureReview(world.scenery, this.#scene);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new InnBuilding(world.scenery.inn.presenter(), world.scenery.inn.entries());
-    this.#shrine = new ShrineKit(world.scenery.shrine.entries, world.scenery.shrine.placements);
+    this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
+    this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries, world.scenery.outpost.placements);
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
     // starting area's pieces, and play fetches each area the player approaches.
     this.#ambient = new AmbientAnimals(world.scenery.ambient);
-    this.#regions = new RegionArt(world, this.#models, this.#inn, this.#shrine, this.#ambient, () => this.#onArtProgress?.());
+    this.#regions = new RegionArt(world, this.#models, this.#inn, this.#shrine, this.#outpost, this.#ambient, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.inn.reachableDoor;
     this.#reachablePieces = world.scenery.reachablePieces;
     this.#units = null;
@@ -590,7 +598,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root] });
     }
   }
 
@@ -942,7 +950,7 @@ export class WorldView {
     this.#camera.position.set(...view.eye);
     this.#camera.lookAt(...view.target);
     this.#camera.updateMatrixWorld(true);
-    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z] });
+    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], outpostKit: this.#outpost?.drawn ?? false });
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
     nodes.push(...frame.nodes, ...unitNodes);
@@ -966,10 +974,11 @@ export class WorldView {
     const models = this.#models.roots();
     const inn = this.#inn?.roots() ?? { roots: [], changed: false };
     const shrine = this.#shrine?.roots() ?? { roots: [], changed: false };
+    const outpost = this.#outpost?.roots() ?? { roots: [], changed: false };
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#natureReview?.roots() ?? { roots: [], changed: false };
-    if (models.changed || inn.changed || shrine.changed || ambient.changed || nature.changed || !this.#impacts.root.parent) {
-      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, ...shrine.roots, ...ambient.roots, ...nature.roots, this.#impacts.root] });
+    if (models.changed || inn.changed || shrine.changed || outpost.changed || ambient.changed || nature.changed || !this.#impacts.root.parent) {
+      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...ambient.roots, ...nature.roots, this.#impacts.root] });
     }
     this.#lastWork = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
@@ -1274,6 +1283,8 @@ export class WorldView {
       inn: () => this.#inn?.observe() ?? null,
       /** The Sunken Shrine kit (#431): whether its modules loaded and which are placed. */
       shrine: () => this.#shrine?.observe() ?? null,
+      /** The Outpost kit buildings (#420): whether their modules loaded and which are placed. */
+      outpost: () => this.#outpost?.observe() ?? null,
       /** The ambient animals (#419): whether they loaded, and each one's entry, clip and feet. */
       ambient: () => this.#ambient?.observe() ?? null,
       /** The units of the last projection (kind, id, creature family, position in metres). */

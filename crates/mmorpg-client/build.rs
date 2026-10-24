@@ -1,8 +1,8 @@
 //! Embeds locally acquired assets; builds perform no network acquisition.
 //! Ranger default models and the shared clip library are standard GLBs prepared by
 //! asset-tooling (`scripts/prepare-ranger-native.sh`), with original socket metadata.
-//! The Greyhaven inn, the Sunken Shrine kit (#431) and the ambient animals (#419) keep the
-//! manifest/resource embedding path.
+//! The Greyhaven inn, the Sunken Shrine kit (#431), the ambient animals (#419) and the
+//! Outpost building kit (#420) keep the manifest/resource embedding path.
 #[path = "build/warden_icons.rs"]
 mod warden_icons;
 
@@ -111,24 +111,35 @@ fn main() {
         "inn_bundle.rs",
         &manifest_dir.join("../../web/public/buildings/greyhaven.inn"),
         Some(&INN),
+        false,
     );
     // Every module of the Sunken Shrine kit (#431).
     static_bundle(
         "shrine_bundle.rs",
         &manifest_dir.join("../../web/public/scenery/shrine.kit"),
         None,
+        false,
     );
     // Greyhaven's ambient cat, dog and rodent (#419).
     static_bundle(
         "ambient_bundle.rs",
         &manifest_dir.join("../../web/public/scenery/greyhaven.ambient-animals"),
         None,
+        false,
+    );
+    // Every module and roof variant of the Outpost building kit (#420).
+    static_bundle(
+        "outpost_bundle.rs",
+        &manifest_dir.join("../../web/public/buildings/outpost.kit"),
+        None,
+        true,
     );
 }
 
 /// A static bundle's drawn entries (`keys`, or every entry) as `ENTRIES` (key, glTF path) and
-/// their `FILES`.
-fn static_bundle(name: &str, bundle: &Path, keys: Option<&[&str]>) {
+/// their `FILES`. With `variants`, every other variant of an entry is drawn too, keyed
+/// `<key>/<variant>`.
+fn static_bundle(name: &str, bundle: &Path, keys: Option<&[&str]>, variants: bool) {
     for watched in ["RELEASE", "SHA256", "manifest.json"] {
         println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
     }
@@ -155,11 +166,15 @@ fn static_bundle(name: &str, bundle: &Path, keys: Option<&[&str]>) {
             .collect(),
         None => assets
             .iter()
-            .filter(|asset| asset["variant"] == "default")
+            .filter(|asset| variants || asset["variant"] == "default")
             .collect(),
     };
     for entry in entries {
         let key = entry["key"].as_str().expect("the entry names its key");
+        let key = match entry["variant"].as_str() {
+            Some("default") | None => key.to_owned(),
+            Some(variant) => format!("{key}/{variant}"),
+        };
         let path = entry["path"].as_str().expect("the entry names its glTF");
         code.push_str(&format!("    ({key:?}, {path:?}),\n"));
         files.push(path.to_owned());
