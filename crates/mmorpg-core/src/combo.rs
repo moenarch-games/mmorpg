@@ -22,9 +22,9 @@ use crate::zone::PlayerState;
 use crate::{EntityRef, ZoneSimulation, ability::ids};
 
 /// Committed impact after a confirming slash: 0.2 s.
-pub const COMBO_IMPACT_TICKS: u16 = 6;
+pub const COMBO_IMPACT_TICKS: u16 = crate::ticks_from_ms(200);
 /// The Shield Bash follow-up window after the impact: 0.6 s.
-pub const COMBO_WINDOW_TICKS: u16 = 18;
+pub const COMBO_WINDOW_TICKS: u16 = crate::ticks_from_ms(600);
 
 /// A confirmed slash's follow-up opening.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

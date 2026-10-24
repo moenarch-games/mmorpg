@@ -51,7 +51,7 @@ const DEBRIS_REST_SPEED_UNITS: f32 = 0.6;
 const DEBRIS_REST_SPIN: f32 = 0.03;
 /// Fixed geometry this far (units) around the pieces takes part in a debris step.
 const DEBRIS_REACH_UNITS: f32 = 1_000.0;
-const TICKS_PER_SECOND: f32 = 30.0;
+const TICKS_PER_SECOND: f32 = crate::TICK_HZ as f32;
 
 /// A body's Rapier handles.
 #[derive(Clone, Copy)]
@@ -118,7 +118,7 @@ fn empty_world() -> PhysicsWorld {
     let mut world = PhysicsWorld::new();
     // Gravity and jumps are movement intent the zone integrates: nothing is dynamic.
     world.gravity = Vector::ZERO;
-    world.integration_parameters.dt = 1.0 / 30.0;
+    world.integration_parameters.dt = 1.0 / TICKS_PER_SECOND;
     world
 }
 

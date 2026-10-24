@@ -1,7 +1,7 @@
 //! The zone clock and deterministic NPC day/night routines (#158, Atlas 5.1.45/5.1.47).
 //!
-//! Time of day is a pure function of the zone tick: a day lasts [`DAY_TICKS`] (two real hours
-//! at 30 Hz) and a zone starts at [`ZONE_START_TIME`] in the morning. Projections carry it so
+//! Time of day is a pure function of the zone tick: a day lasts [`DAY_TICKS`] (two real hours)
+//! and a zone starts at [`ZONE_START_TIME`] in the morning. Projections carry it so
 //! every client's sky follows the zone. A suspended zone's tick, and so its time, freezes.
 //!
 //! An [`NpcRoutine`] walks one NPC along an authored path from its content position (work) to
@@ -13,8 +13,8 @@
 
 use crate::{DoorId, EntityRef, NpcId, ZoneError, ZoneSimulation, trig};
 
-/// Ticks in one zone day: two real hours at 30 ticks per second.
-pub const DAY_TICKS: u32 = 2 * 60 * 60 * 30;
+/// Ticks in one zone day: two real hours.
+pub const DAY_TICKS: u32 = crate::long_ticks_from_ms(2 * 60 * 60 * 1_000);
 /// One zone hour in ticks.
 pub const HOUR_TICKS: u32 = DAY_TICKS / 24;
 /// A new zone's tick 0 is 08:00.
@@ -23,8 +23,8 @@ pub const ZONE_START_TIME: u32 = 8 * HOUR_TICKS;
 pub const DUSK: u32 = 20 * HOUR_TICKS;
 /// ... and ends at 06:00.
 pub const DAWN: u32 = 6 * HOUR_TICKS;
-/// A walking NPC covers this many units per tick (2.4 m/s at 30 Hz).
-pub const NPC_WALK_UNITS_PER_TICK: i64 = 8;
+/// A walking NPC covers this many units per tick (2.4 m/s).
+pub const NPC_WALK_UNITS_PER_TICK: i64 = crate::units_per_tick(240) as i64;
 /// Waypoints a routine path may have.
 pub const MAX_ROUTINE_WAYPOINTS: usize = 16;
 

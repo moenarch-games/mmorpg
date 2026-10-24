@@ -4,7 +4,7 @@
 //! single-player zone host**, like a listen server: [`LocalZone`] builds the
 //! same `ZoneSimulation` and content revision as `mmorpg-zone-host`, accepts
 //! `mmorpg-protocol` command bytes with increasing sequences, advances fixed
-//! 30 Hz ticks, and returns only encoded player-scoped projections, which the
+//! `TICK_HZ` ticks, and returns only encoded player-scoped projections, which the
 //! browser decodes with the same TypeScript decoder a network source uses.
 //! There is no handoff or shared world here. Characters persist through the
 //! same `mmorpg-characters` record and lease contract as zone hosts, over
@@ -81,6 +81,14 @@ fn store(entries: &CharacterEntries) -> CharacterStore<PageEntries<'_>> {
 
 fn character_id(value: &str) -> Result<CharacterId, JsError> {
     CharacterId::new(value).map_err(|error| JsError::new(&error.to_string()))
+}
+
+/// The authoritative simulation rate (`mmorpg_core::TICK_HZ`) the local host
+/// advances at; the browser's `TICK_HZ` must equal it.
+#[wasm_bindgen(js_name = tickHz)]
+#[must_use]
+pub fn tick_hz() -> u16 {
+    mmorpg_core::TICK_HZ
 }
 
 /// The committed level of a stored character, or `undefined` if it was
@@ -250,7 +258,7 @@ impl LocalZone {
             .map_err(js_error)
     }
 
-    /// Advances one 30 Hz tick and returns the new tick.
+    /// Advances one [`TICK_HZ`](mmorpg_core::TICK_HZ) tick and returns the new tick.
     pub fn tick(&mut self) -> Result<u64, JsError> {
         self.host.tick().map_err(js_error)
     }

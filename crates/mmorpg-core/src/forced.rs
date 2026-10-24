@@ -18,12 +18,12 @@ use crate::physics::Vec3i;
 use crate::{ZoneError, ZoneSimulation};
 
 /// Immunity after a forced move ends: 1 s.
-pub const FORCED_IMMUNITY_TICKS: u16 = 30;
+pub const FORCED_IMMUNITY_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// A knockback covers its distance in this many ticks.
-pub const KNOCKBACK_TICKS: u16 = 8;
+pub const KNOCKBACK_TICKS: u16 = crate::ticks_from_ms(267);
 /// A charge rushes at 13.5 m/s for at most 1 s.
 pub const CHARGE_SPEED_UNITS: i32 = 45;
-pub const CHARGE_MAX_TICKS: u16 = 30;
+pub const CHARGE_MAX_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// A charge's path (#57) must be clear for the charger's body above this height (units over
 /// its feet): knee height, so the ground, slopes, kerbs and campfires it runs over do not
 /// count. Even, so the raised capsule stays whole units; obstacles exactly as high as the

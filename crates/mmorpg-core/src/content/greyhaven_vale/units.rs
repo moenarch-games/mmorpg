@@ -39,11 +39,11 @@ pub mod templates {
 }
 
 /// Default respawn time: 60 s.
-pub const RESPAWN_TICKS: u32 = 1_800;
+pub const RESPAWN_TICKS: u32 = crate::long_ticks_from_ms(60_000);
 /// Garrick Redbrand returns 2 min after his death (#276, Atlas 5.1.75); his corpse stays until then.
-pub const GARRICK_RESPAWN_TICKS: u32 = 3_600;
+pub const GARRICK_RESPAWN_TICKS: u32 = crate::long_ticks_from_ms(120_000);
 /// A broken prop stands again after 5 min, once its spot is clear (#288).
-pub const PROP_RESPAWN_TICKS: u32 = 9_000;
+pub const PROP_RESPAWN_TICKS: u32 = crate::long_ticks_from_ms(300_000);
 /// Idle creatures wander within 6 m of their spawn point.
 pub const WANDER_RADIUS_UNITS: i32 = 600;
 /// Released spirits return beside the graveyard, south of the gravestones'
@@ -66,7 +66,7 @@ const FENCE_BOX: [i32; 3] = [110, 50, 8];
 const OGRE: [i32; 3] = [70, 140, 70];
 
 /// `(id, name, family, behaviour, levels, elite, health, health/level,
-/// damage, damage/level, swing ticks, respawn ticks, half extents)`.
+/// damage, damage/level, swing ticks, respawn ticks, half extents)`, durations authored in ms.
 type TemplateRow = (
     CreatureTemplateId,
     &'static str,
@@ -90,26 +90,26 @@ const TEMPLATES: [TemplateRow; 15] = {
     use crate::PropKind;
     use templates::*;
     [
-        (TIMBER_WOLF, "Timber Wolf", Wolf, Aggressive, [1, 2], false, 42, 14, [2, 4], 1, 60, RESPAWN_TICKS, WOLF),
-        (YOUNG_BOAR, "Young Boar", Boar, Neutral, [1, 2], false, 48, 14, [2, 4], 0, 66, RESPAWN_TICKS, BOAR),
-        (GRAIN_RAT, "Grain Rat", Vermin, Neutral, [1, 1], false, 30, 0, [1, 3], 0, 48, RESPAWN_TICKS, RAT),
-        (FIELD_MARAUDER, "Field Marauder", Marauder, Aggressive, [2, 3], false, 60, 16, [3, 6], 0, 66, RESPAWN_TICKS, HUMANOID),
-        (MIREFIN_LURKER, "Mirefin Lurker", Mirefin, Aggressive, [3, 3], false, 70, 0, [3, 6], 0, 60, RESPAWN_TICKS, LURKER),
-        (REDBRAND_BANDIT, "Redbrand Bandit", Redbrand, Aggressive, [3, 5], false, 75, 16, [4, 7], 0, 66, RESPAWN_TICKS, HUMANOID),
-        (GARRICK_REDBRAND, "Garrick Redbrand", Redbrand, Aggressive, [5, 5], true, 420, 0, [8, 14], 0, 72, GARRICK_RESPAWN_TICKS, GARRICK),
-        (REDBRAND_CROSSBOWMAN, "Redbrand Crossbowman", Redbrand, Aggressive, [3, 5], false, 70, 14, [3, 6], 0, 66, RESPAWN_TICKS, HUMANOID),
+        (TIMBER_WOLF, "Timber Wolf", Wolf, Aggressive, [1, 2], false, 42, 14, [2, 4], 1, crate::ticks_from_ms(2_000), RESPAWN_TICKS, WOLF),
+        (YOUNG_BOAR, "Young Boar", Boar, Neutral, [1, 2], false, 48, 14, [2, 4], 0, crate::ticks_from_ms(2_200), RESPAWN_TICKS, BOAR),
+        (GRAIN_RAT, "Grain Rat", Vermin, Neutral, [1, 1], false, 30, 0, [1, 3], 0, crate::ticks_from_ms(1_600), RESPAWN_TICKS, RAT),
+        (FIELD_MARAUDER, "Field Marauder", Marauder, Aggressive, [2, 3], false, 60, 16, [3, 6], 0, crate::ticks_from_ms(2_200), RESPAWN_TICKS, HUMANOID),
+        (MIREFIN_LURKER, "Mirefin Lurker", Mirefin, Aggressive, [3, 3], false, 70, 0, [3, 6], 0, crate::ticks_from_ms(2_000), RESPAWN_TICKS, LURKER),
+        (REDBRAND_BANDIT, "Redbrand Bandit", Redbrand, Aggressive, [3, 5], false, 75, 16, [4, 7], 0, crate::ticks_from_ms(2_200), RESPAWN_TICKS, HUMANOID),
+        (GARRICK_REDBRAND, "Garrick Redbrand", Redbrand, Aggressive, [5, 5], true, 420, 0, [8, 14], 0, crate::ticks_from_ms(2_400), GARRICK_RESPAWN_TICKS, GARRICK),
+        (REDBRAND_CROSSBOWMAN, "Redbrand Crossbowman", Redbrand, Aggressive, [3, 5], false, 70, 14, [3, 6], 0, crate::ticks_from_ms(2_200), RESPAWN_TICKS, HUMANOID),
         // Breakable props (#288): a few hits break them; they never swing.
-        (CRATE, "Crate", CreatureFamily::Prop, Prop(PropKind::Crate), [1, 1], false, 12, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, CRATE_BOX),
-        (BARREL, "Barrel", CreatureFamily::Prop, Prop(PropKind::Barrel), [1, 1], false, 15, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, BARREL_BOX),
-        (EXPLOSIVE_BARREL, "Blasting Powder Barrel", CreatureFamily::Prop, Prop(PropKind::ExplosiveBarrel), [1, 1], false, 10, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, BARREL_BOX),
-        (FENCE, "Fence", CreatureFamily::Prop, Prop(PropKind::Fence), [1, 1], false, 18, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, FENCE_BOX),
+        (CRATE, "Crate", CreatureFamily::Prop, Prop(PropKind::Crate), [1, 1], false, 12, 0, [1, 1], 0, crate::ticks_from_ms(2_000), PROP_RESPAWN_TICKS, CRATE_BOX),
+        (BARREL, "Barrel", CreatureFamily::Prop, Prop(PropKind::Barrel), [1, 1], false, 15, 0, [1, 1], 0, crate::ticks_from_ms(2_000), PROP_RESPAWN_TICKS, BARREL_BOX),
+        (EXPLOSIVE_BARREL, "Blasting Powder Barrel", CreatureFamily::Prop, Prop(PropKind::ExplosiveBarrel), [1, 1], false, 10, 0, [1, 1], 0, crate::ticks_from_ms(2_000), PROP_RESPAWN_TICKS, BARREL_BOX),
+        (FENCE, "Fence", CreatureFamily::Prop, Prop(PropKind::Fence), [1, 1], false, 18, 0, [1, 1], 0, crate::ticks_from_ms(2_000), PROP_RESPAWN_TICKS, FENCE_BOX),
         // A large creature (#297): slow heavy swings, shoves and stomps.
-        (HILL_OGRE, "Hill Ogre", Ogre, Aggressive, [5, 5], false, 300, 0, [9, 15], 1, 84, RESPAWN_TICKS, OGRE),
+        (HILL_OGRE, "Hill Ogre", Ogre, Aggressive, [5, 5], false, 300, 0, [9, 15], 1, crate::ticks_from_ms(2_800), RESPAWN_TICKS, OGRE),
         // A movable prop (#58): knockbacks slide it; it breaks like a crate.
-        (HEAVY_CRATE, "Heavy Crate", CreatureFamily::Prop, Prop(PropKind::HeavyCrate), [1, 1], false, 30, 0, [1, 1], 0, 60, PROP_RESPAWN_TICKS, CRATE_BOX),
+        (HEAVY_CRATE, "Heavy Crate", CreatureFamily::Prop, Prop(PropKind::HeavyCrate), [1, 1], false, 30, 0, [1, 1], 0, crate::ticks_from_ms(2_000), PROP_RESPAWN_TICKS, CRATE_BOX),
         // The Greyfang cavern's shield-bearer (#160): twice a level 5 bandit's health, heavier
         // and slower blows, and an Overhead Smash.
-        (REDBRAND_BRUTE, "Redbrand Brute", Redbrand, Aggressive, [5, 5], false, 215, 0, [7, 12], 0, 84, RESPAWN_TICKS, BRUTE),
+        (REDBRAND_BRUTE, "Redbrand Brute", Redbrand, Aggressive, [5, 5], false, 215, 0, [7, 12], 0, crate::ticks_from_ms(2_800), RESPAWN_TICKS, BRUTE),
     ]
 };
 
@@ -417,7 +417,7 @@ pub fn bosses() -> Vec<crate::BossRules> {
         damage_percent_per_extra: 10,
         engage_radius: 2_500,
         reaction_radius: 3_000,
-        reaction_ticks: 600,
+        reaction_ticks: crate::ticks_from_ms(20_000),
         rally_point: [0, -10_100],
     }]
 }

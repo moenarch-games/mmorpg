@@ -339,7 +339,7 @@ impl LocalZoneHost {
         Ok(SubmitOutcome::Applied)
     }
 
-    /// Advances one fixed 30 Hz tick and returns the new tick.
+    /// Advances one fixed [`TICK_HZ`](mmorpg_core::TICK_HZ) tick and returns the new tick.
     pub fn tick(&mut self) -> Result<u64, LocalZoneError> {
         self.zone.advance_tick().map_err(LocalZoneError::Zone)?;
         Ok(self.zone.current_tick())

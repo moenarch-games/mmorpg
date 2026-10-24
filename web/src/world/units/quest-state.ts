@@ -1,5 +1,5 @@
 import type { WorldCommand } from "../../command-wire";
-import { questCompleted, type ErrorCode, type QuestMarkerKind, type QuestSheet, type ZoneSnapshot } from "../../replication";
+import { questCompleted, ticksFromMs, type ErrorCode, type QuestMarkerKind, type QuestSheet, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog, QuestObjectiveRecord, QuestRecord } from "../catalog";
 
 /** The zone's inclusive XZ reach to a quest NPC's feet (5 m); a presentation hint, the zone decides. */
@@ -148,13 +148,13 @@ export function trackerLines(sheet: QuestSheet, catalog: ContentCatalog): string
   return trackerRows(sheet, catalog).map((row) => row.text);
 }
 
-/** Ticks (3 s at 30 Hz) a confirmed objective change stays highlighted in the tracker. */
-export const HIGHLIGHT_TICKS = 90n;
-/** Ticks (4 s at 30 Hz) a completion notice and a newly ready turn-in marker stay shown. */
-export const NOTICE_TICKS = 120n;
+/** Ticks (3 s) a confirmed objective change stays highlighted in the tracker. */
+export const HIGHLIGHT_TICKS = BigInt(ticksFromMs(3_000));
+/** Ticks (4 s) a completion notice and a newly ready turn-in marker stay shown. */
+export const NOTICE_TICKS = BigInt(ticksFromMs(4_000));
 
-/** Ticks (3 s at 30 Hz) after which an unanswered quest request stops blocking new ones. */
-const PENDING_TICKS = 90n;
+/** Ticks (3 s) after which an unanswered quest request stops blocking new ones. */
+const PENDING_TICKS = BigInt(ticksFromMs(3_000));
 
 const REFUSALS: Partial<Record<ErrorCode, string>> = {
   "invalid-quest": "That quest is not available here.",

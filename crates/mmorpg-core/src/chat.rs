@@ -22,7 +22,7 @@ use crate::{ErrorCode, PlayerId, ZoneError, ZoneEvent, ZoneSimulation};
 /// The longest chat line in UTF-8 bytes.
 pub const MAX_CHAT_BYTES: usize = 80;
 /// A speaker may speak once per second.
-pub const CHAT_INTERVAL_TICKS: u64 = 30;
+pub const CHAT_INTERVAL_TICKS: u64 = crate::ticks_from_ms(1_000) as u64;
 /// Lines one player hears in one tick.
 pub const MAX_CHAT_PER_TICK: usize = 4;
 /// `/say` reaches 20 m (inclusive, horizontal).

@@ -101,7 +101,7 @@ fn steer(dx: i32, dz: i32, speed: i32) -> [i32; 2] {
 /// nor leave it there: a step of at least this length always moves it.
 const CHASE_CLOSE_IN_UNITS: i64 = 10;
 /// A creature that held a boss's rally walks home within this many ticks (#276).
-const RALLY_RETURN_TICKS: u16 = 600;
+const RALLY_RETURN_TICKS: u16 = crate::ticks_from_ms(20_000);
 
 /// Chase velocity toward a target `(dx, dz)` away: run speed while beyond
 /// `reach`, then a last step that ends inside it, and zero once inside.
