@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use mmorpg_core::{
     CanonicalPlayerCombat, CanonicalPlayerSnapshot, INTEREST_RADIUS_UNITS, MAX_PLAYERS_PER_ZONE,
-    PLAYER_HALF_EXTENTS_UNITS, SNAPSHOT_SCHEMA_VERSION, ZoneDefinition, ZoneId, ZoneSimulation,
-    greyhaven_vale, greyhaven_vale_definition,
+    PLAYER_HALF_EXTENTS_UNITS, ZoneDefinition, ZoneId, ZoneSimulation, greyhaven_vale,
+    greyhaven_vale_definition,
 };
-use mmorpg_protocol::{SNAPSHOT_WIRE_VERSION, encode_canonical_snapshot, pack_snapshot};
+use mmorpg_protocol::{PROTOCOL_ID, encode_canonical_snapshot, pack_snapshot};
 #[path = "../tests/support/visibility_oracle.rs"]
 mod visibility_oracle;
 use visibility_oracle::exhaustive_projection;
@@ -113,7 +113,7 @@ fn measure(name: &str) -> Result<(), Box<dyn Error>> {
     let baseline_tests = players * players;
     let revision = canonical.content_revision;
     println!(
-        "{{\"schema\":\"mmorpg.interest-workload/v4\",\"workload\":\"{name}\",\"core_schema\":{SNAPSHOT_SCHEMA_VERSION},\"wire_version\":{SNAPSHOT_WIRE_VERSION},\"content_revision\":{revision},\"radius_units\":{INTEREST_RADIUS_UNITS},\"players\":{players},\"full_index_rebuilds\":{rebuilds},\"bucket_inserts\":{inserts},\"bucket_removes\":{removes},\"bucket_moves\":{moves},\"units_inspected_for_maintenance\":{inspected},\"baseline_distance_tests\":{baseline_tests},\"exact_distance_tests\":{candidates},\"query_bucket_visits\":{cells},\"relevant_records\":{relevant},\"visible_records\":{visible},\"snapshot_payload_bytes\":{bytes},\"largest_snapshot_payload_bytes\":{max_bytes},\"canonical_payload_bytes\":{canonical_bytes},\"wire_parity\":true}}"
+        "{{\"schema\":\"mmorpg.interest-workload/v4\",\"workload\":\"{name}\",\"protocol_id\":\"{PROTOCOL_ID:06x}\",\"content_revision\":{revision},\"radius_units\":{INTEREST_RADIUS_UNITS},\"players\":{players},\"full_index_rebuilds\":{rebuilds},\"bucket_inserts\":{inserts},\"bucket_removes\":{removes},\"bucket_moves\":{moves},\"units_inspected_for_maintenance\":{inspected},\"baseline_distance_tests\":{baseline_tests},\"exact_distance_tests\":{candidates},\"query_bucket_visits\":{cells},\"relevant_records\":{relevant},\"visible_records\":{visible},\"snapshot_payload_bytes\":{bytes},\"largest_snapshot_payload_bytes\":{max_bytes},\"canonical_payload_bytes\":{canonical_bytes},\"wire_parity\":true}}"
     );
     Ok(())
 }

@@ -7,7 +7,6 @@ use mmorpg_protocol::{decode_canonical_snapshot, encode_canonical_snapshot, enco
 
 fn definition() -> ZoneDefinition {
     ZoneDefinition::new(
-        11,
         mmorpg_core::STANDARD_GRAVITY,
         vec![
             StaticCollider {

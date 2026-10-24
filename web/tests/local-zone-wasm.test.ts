@@ -19,6 +19,8 @@ import { immediate, worldSourceContract } from "./support/world-source-contract"
 
 // Builds crates/mmorpg-wasm for wasm32 and runs wasm-bindgen, like `bun run build`.
 const wasm = await localZoneModule();
+/** The hosted content revision: a content hash that changes with the content by itself. */
+const HOSTED_REVISION = (new wasm.LocalZone() as { contentRevision(): bigint }).contentRevision();
 const TICK_SECONDS = 1 / TICK_HZ;
 const EAST = 16_384;
 /** `RUN_SPEED_UNITS_PER_SECOND` (6.3 m/s) per tick. */
@@ -154,7 +156,7 @@ describe("WASM local zone host", () => {
         }
       }
     }
-    expect(provider.scenery.contentRevision).toBe(28n);
+    expect(provider.scenery.contentRevision).toBe(HOSTED_REVISION);
   });
   test("multi-tick frames retain intermediate bag sheets and refusal feedback", async () => {
     const { source } = createLocalWorld(wasm, testCharacters());
@@ -290,10 +292,10 @@ describe("WASM local zone host", () => {
     const zone = new wasm.LocalZone() as InstanceType<typeof wasm.LocalZone> & { zoneId(): number };
     const { entries } = testCharacters();
     expect(zone.zoneId()).toBe(1);
-    expect(zone.contentRevision()).toBe(28n);
+    expect(zone.contentRevision()).toBe(HOSTED_REVISION);
     const player = zone.enter(entries, "local-1", 2, 0, 1n);
     const projection = decodeSnapshot(zone.projection(player));
-    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: 28n, viewerId: player, acknowledgedSequence: 0 });
+    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: HOSTED_REVISION, viewerId: player, acknowledgedSequence: 0 });
     // A new character has made its class choice on entry.
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, autoAttacking: false, target: null,
@@ -416,16 +418,16 @@ describe("WASM local zone host", () => {
 
   test("scenery and areas come from the same content as the zone", async () => {
     const { source, scenery } = createLocalWorld(wasm, testCharacters());
-    expect(scenery.scenery.contentRevision).toBe(28n);
+    expect(scenery.scenery.contentRevision).toBe(HOSTED_REVISION);
     expect(scenery.scenery.source).toBe("mmorpg-scenery");
     expect(scenery.scenery.playerHalfExtents).toEqual([30, 90, 30]);
     await source.join();
     const [x, , z] = self(source).position;
     expect(scenery.areaAt(x, z)?.name).toBe("Greyhaven Outpost");
     expect(scenery.areaAt(-5_500, 0)?.name).toBe("Wolfrun Woods");
-    // Region streaming (#240): the woods need wolf and boar models, the outpost none.
+    // Region streaming (#240): the woods need wolf and boar models, the outpost its residents (#418).
     expect([...scenery.regionModels(2)].sort()).toEqual(["Pig", "Wolf"]);
-    expect(scenery.regionModels(1)).toEqual([]);
+    expect(scenery.regionModels(1)).toEqual(["residents"]);
     expect(scenery.areaAt(-50_000, -50_000)).toBeNull();
     // Spawn slots are flat; the mountains beyond the walls are not.
     expect(scenery.reliefAt(x, z)).toBe(0);
@@ -461,8 +463,8 @@ describe("WASM local zone host", () => {
     const actual = provider.scenery.props.filter((prop) => prop.kind === "grass-tuft" && prop.position[0] >= -3500 && prop.position[0] <= 3500 && prop.position[2] >= -1300 && prop.position[2] <= 5300);
     expect(actual).toEqual(expected);
     expect(actual.length).toBe(55);
-    expect(provider.scenery.presentationFingerprint).toBe("0f9e7665f778abcd");
-    expect(provider.scenery.contentRevision).toBe(28n);
+    expect(provider.scenery.presentationFingerprint).toBe("67c9a26e476ed619");
+    expect(provider.scenery.contentRevision).toBe(HOSTED_REVISION);
   });
 
   test("the vale's static scene models every prop within a bounded node and vertex budget", () => {
@@ -485,7 +487,7 @@ describe("WASM local zone host", () => {
 describe("WASM local zone combat intents", () => {
   test("the catalog names the hosted units and matches the zone's content", () => {
     const { catalog } = createLocalWorld(wasm, testCharacters());
-    expect(catalog.contentRevision).toBe(28n);
+    expect(catalog.contentRevision).toBe(HOSTED_REVISION);
     expect([...catalog.items.values()].map((item) => item.name)).toEqual([
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
       "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl",

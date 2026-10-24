@@ -1,16 +1,15 @@
-//! Versioned content catalog for clients: what projections refer to by ID.
+//! Content catalog for clients: what projections refer to by ID.
 //!
 //! Player projections name creatures by template ID and NPCs by NPC ID, and
 //! clients read area names from core content. The catalog (format
-//! [`CATALOG_FORMAT`], version [`CATALOG_FORMAT_VERSION`]) exports those
+//! [`CATALOG_FORMAT`]) exports those
 //! tables of the hosted [`ZoneContent`] as compact JSON: creature templates
 //! (name, family, behaviour, levels, elite, body size, breakable prop kind), NPCs (name, role,
 //! level), areas (name), items (name, stack limit, equipment slot, stats,
 //! sale value), vendors (NPC and priced offers), classes (name, resource),
 //! abilities (name, user, unlock level, cost, cast time, cooldown, aura) and
 //! quests (name, text, giver, ender, prerequisite, objectives, rewards). It carries the content
-//! revision and fingerprint,
-//! so a client can refuse a catalog of other content. Combat numbers,
+//! revision (a content hash), so a client can refuse a catalog of other content. Combat numbers,
 //! spawn points and AI stay on the server side.
 
 use std::sync::OnceLock;
@@ -21,32 +20,22 @@ use serde::Serialize;
 use crate::host::hosted_content;
 
 pub const CATALOG_FORMAT: &str = "mmorpg.catalog";
-pub const CATALOG_FORMAT_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogExport {
     pub format: &'static str,
-    pub version: u32,
     /// Decimal `u64`, so JavaScript never rounds it.
     pub content_revision: String,
-    /// The content fingerprint as 16 lower-case hex digits.
-    pub content_fingerprint: String,
     pub creature_templates: Vec<CreatureTemplateExport>,
     pub npcs: Vec<NpcExport>,
     pub areas: Vec<AreaNameExport>,
-    pub item_catalog_revision: String,
     pub items: Vec<ItemExport>,
     /// Class choices by wire value (0 Warden, 1 Ranger, 2 Arcanist).
     pub classes: Vec<ClassExport>,
-    pub ability_catalog_revision: String,
     pub abilities: Vec<AbilityExport>,
-    /// `"0"` for content without vendors.
-    pub vendor_catalog_revision: String,
     /// Ordered by NPC ID; offer order is the wire offer index.
     pub vendors: Vec<VendorExport>,
-    /// `"0"` for content without quests.
-    pub quest_catalog_revision: String,
     /// Ordered by quest ID; objective order is the wire progress index.
     pub quests: Vec<QuestExport>,
 }
@@ -200,9 +189,7 @@ pub struct StatsExport {
 pub fn catalog(content: &ZoneContent) -> CatalogExport {
     CatalogExport {
         format: CATALOG_FORMAT,
-        version: CATALOG_FORMAT_VERSION,
         content_revision: content.revision().to_string(),
-        item_catalog_revision: mmorpg_core::ITEM_CATALOG_REVISION.to_string(),
         items: mmorpg_core::ITEM_CATALOG
             .iter()
             .map(|item| ItemExport {
@@ -219,7 +206,6 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                 sell_price: mmorpg_core::sell_price(item.id),
             })
             .collect(),
-        vendor_catalog_revision: content.vendor_revision().to_string(),
         vendors: content
             .vendors()
             .iter()
@@ -235,7 +221,6 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                     .collect(),
             })
             .collect(),
-        quest_catalog_revision: content.quest_revision().to_string(),
         quests: content
             .quests()
             .iter()
@@ -257,7 +242,6 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                     .collect(),
             })
             .collect(),
-        content_fingerprint: format!("{:016x}", content.fingerprint()),
         classes: mmorpg_core::PlayerClass::ALL
             .iter()
             .map(|class| ClassExport {
@@ -266,7 +250,6 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                 resource: class.resource().name(),
             })
             .collect(),
-        ability_catalog_revision: mmorpg_core::ABILITY_CATALOG_REVISION.to_string(),
         abilities: mmorpg_core::ABILITY_CATALOG
             .iter()
             .map(|ability| AbilityExport {
@@ -338,13 +321,11 @@ mod tests {
     use serde_json::{Value, json};
 
     #[test]
-    fn the_catalog_is_versioned_json_of_the_hosted_content() {
+    fn the_catalog_is_json_of_the_hosted_content() {
         let json = hosted_catalog_json();
         let value: Value = serde_json::from_str(json).unwrap();
         let content = hosted_content();
         assert_eq!(value["format"], CATALOG_FORMAT);
-        assert_eq!(value["version"], CATALOG_FORMAT_VERSION);
-        assert_eq!(value["itemCatalogRevision"], "5");
         let stats = |stamina, strength, agility, intellect| json!({"stamina": stamina, "strength": strength, "agility": agility, "intellect": intellect});
         let item = |id, name, slot, stats| {
             let max_stack = match id {
@@ -389,8 +370,6 @@ mod tests {
                 item(14, "Hollow-Delver's Cowl", json!("head"), stats(2, 0, 0, 4)),
             ])
         );
-        assert_eq!(value["vendorCatalogRevision"], "4");
-        assert_eq!(value["questCatalogRevision"], "3");
         let quests = value["quests"].as_array().unwrap();
         assert_eq!(quests.len(), 11);
         assert_eq!(
@@ -430,10 +409,6 @@ mod tests {
         );
         assert_eq!(value["contentRevision"], content.revision().to_string());
         assert_eq!(
-            value["contentFingerprint"],
-            format!("{:016x}", content.fingerprint())
-        );
-        assert_eq!(
             value["creatureTemplates"][0],
             json!({
                 "id": 1,
@@ -468,7 +443,6 @@ mod tests {
                 {"id": 6, "name": "druid", "resource": "mana"}
             ])
         );
-        assert_eq!(value["abilityCatalogRevision"], "13");
         assert_eq!(
             value["abilities"][8],
             json!({

@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0x197d_f65d_24cb_45dc;
+const STABLE_HASH: u64 = 0x0f74_fb79_f0cf_b2a2;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -65,7 +65,7 @@ fn scenery_is_deterministic_with_a_stable_hash() {
     let first = greyhaven_vale_scenery();
     let second = greyhaven_vale_scenery();
     assert_eq!(first, second);
-    assert_eq!(first.content_revision, greyhaven_vale::REVISION);
+    assert_eq!(first.content_revision, greyhaven_vale::content().revision());
     let hash = first.stable_hash();
     assert_eq!(hash, second.stable_hash());
     assert_eq!(hash, STABLE_HASH, "scenery changed: {hash:#018x}");
@@ -93,16 +93,6 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
         assert!(prop.collider.is_none());
         assert!(!prop.footprint().intersects(clearing));
     }
-    let recorded = std::fs::read_to_string(
-        mmorpg_core::golden::workspace_root()
-            .join("fixtures/content/greyhaven-vale-fingerprint.txt"),
-    )
-    .unwrap();
-    assert_eq!(
-        format!("{:#018x}", greyhaven_vale::content().fingerprint()),
-        recorded.trim()
-    );
-    assert_eq!(scenery.content_revision, 28);
 }
 
 #[test]

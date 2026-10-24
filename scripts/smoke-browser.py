@@ -568,13 +568,14 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertEqual(self.legacy_checkpoints(), [])
 
     def test_rejected_projections_fail_closed_without_freezing_the_page(self):
-        # Byte 2 of a snapshot header is its schema version. While the flag is set the
-        # strict decoder sees an unknown version, as after a WASM/decoder version skew.
+        # Bytes 0-2 of a snapshot header are its protocol ID. While the flag is set the
+        # strict decoder sees another ID in byte 2, as after a WASM/decoder skew.
         self.context.add_init_script("""(() => {
           window.__rejectSnapshots = false;
-          const original = DataView.prototype.getUint16;
-          DataView.prototype.getUint16 = function(offset, ...rest) {
-            return window.__rejectSnapshots && offset === 2 ? 0xffff : original.call(this, offset, ...rest);
+          const original = DataView.prototype.getUint8;
+          DataView.prototype.getUint8 = function(offset, ...rest) {
+            const value = original.call(this, offset, ...rest);
+            return window.__rejectSnapshots && offset === 2 ? value ^ 0xff : value;
           };
         })();""")
         self.open()
@@ -583,7 +584,7 @@ class BrowserAcceptance(unittest.TestCase):
         # A refused entry keeps the page on selection, says why, and keeps rendering.
         self.page.evaluate("window.__rejectSnapshots = true")
         self.enter_button().click()
-        expect(note).to_contain_text("Could not enter the world: Unsupported snapshot version")
+        expect(note).to_contain_text("Could not enter the world: Unsupported snapshot protocol")
         expect(self.page.locator("#character-select")).to_be_visible()
         expect(self.page.locator(".hud")).to_be_hidden()
         self.assert_rendering()
@@ -597,7 +598,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("window.__rejectSnapshots = true")
         expect(self.page.locator("#character-select")).to_be_visible()
         expect(self.page.locator(".hud")).to_be_hidden()
-        expect(note).to_contain_text("Left the world after an error: Unsupported snapshot version")
+        expect(note).to_contain_text("Left the world after an error: Unsupported snapshot protocol")
         self.page.evaluate("window.__rejectSnapshots = false")
         self.assert_rendering()
         self.enter_world()

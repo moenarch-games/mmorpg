@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, CreatureId, EntityRef, ErrorCode, SpawnGrid, StaticCollider,
-    ZoneAreas, ZoneCommand, ZoneContent, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
+    CreatureId, EntityRef, ErrorCode, SpawnGrid, StaticCollider, ZoneAreas, ZoneCommand,
+    ZoneContent, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, BOAR};
 use support::classes;
@@ -68,7 +68,6 @@ fn content_with(between: Between) -> Arc<ZoneContent> {
         Between::Nothing | Between::Wall | Between::Ramp => {}
     }
     let definition = ZoneDefinition::with_spawn_grid(
-        78,
         mmorpg_core::STANDARD_GRAVITY,
         SpawnGrid {
             origin: [0, 0],
@@ -87,7 +86,7 @@ fn content_with(between: Between) -> Arc<ZoneContent> {
         arena::GRAVEYARD,
     )
     .unwrap()
-    .with_creature_abilities(ABILITY_CATALOG_REVISION, Vec::new())
+    .with_creature_abilities(Vec::new())
     .unwrap();
     let ramps = match between {
         // 3 m high at its far end, rising toward the boar: the sight line at about 1 m meets

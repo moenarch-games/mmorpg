@@ -65,7 +65,7 @@ impl ZoneSimulation {
         if self.content.character_persistence() != CharacterPersistence::Ephemeral {
             return Err(ZoneError::new("temporary builds require an ephemeral zone"));
         }
-        if self.content.ability_revision() == 0 {
+        if !self.content.binds_abilities() {
             return Err(ZoneError::new("the zone content offers no classes"));
         }
         self.add_player(player)?;

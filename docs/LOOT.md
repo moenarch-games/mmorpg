@@ -55,23 +55,18 @@ only after success. Settlement itself owns no player identity, eligibility,
 range or duplicate-claim fencing. The corpse authority integrates those
 preconditions with generation, revisions, canonical state and wire recovery.
 
-`ZoneContent::with_loot_tables` (#105) binds an explicit nonzero loot revision
-and a bounded table of already validated `LootTable` values. Template IDs must
+`ZoneContent::with_loot_tables` (#105) binds a bounded table of already validated `LootTable` values. Template IDs must
 exist in the zone and be unique; binding sorts them, while weighted outcomes
 retain their authored order. Missing template lookup returns `None`. An empty
-but explicitly revisioned catalog is valid and differs from unbound content.
-Immutable queries expose the revision and ordered rules without allowing mutation.
+but explicitly bound catalog is valid and differs from unbound content.
+Immutable queries expose the ordered rules without allowing mutation.
 
-Bound content uses fingerprint domain `mmorpg.zone-content/v3`: the existing v2
-content fingerprint, loot revision and every ordered rule field enter identity.
+Bound content uses hash domain `mmorpg.zone-content/v3`: the existing v2
+content hash and every ordered rule field enter the content revision.
 Thus changing any money bound, outcome kind, item, quantity bound or weight
-refuses recovery against the old identity. Binding retains the declared RNG seed. Unbound content keeps
-its existing v2 fingerprint exactly. Greyhaven revision 5 binds catalog revision 1
-and has fingerprint `5dcb5d3b46dc5451`, while preserving its physical definition,
-units and revision-3 AI/combat seed `3cbc808bbe89b29c`. Greyhaven revision 7 binds
-loot catalog revision 2 with item catalog revision 2 (fingerprint
-`5a8f35c63f4c8849`) and keeps the same seed; the separate loot stream draws the
-same values, so only the humanoids' item outcomes change.
+refuses recovery against the old identity. Binding retains the declared RNG seed
+(Greyhaven keeps AI/combat seed `3cbc808bbe89b29c`); the separate loot stream
+draws its own values.
 
 ## Corpse authority
 

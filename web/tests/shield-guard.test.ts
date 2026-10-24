@@ -7,6 +7,7 @@ import { combatTexts } from "../src/world/units/combat-text";
 import { GUARD_LANE_THRESHOLD_PX, ShieldGuardHold, canGuard, guardDisplay, laneFromOffset, padGuardLane } from "../src/world/units/shield-guard";
 import { encodeTestSnapshot } from "./support/snapshot-encoder";
 import { playerEntity, testSnapshot } from "./support/snapshots";
+import { PROTOCOL_BYTE } from "../src/protocol-id";
 
 const VIEWER = { kind: "player", id: 1 } as const;
 const WOLF = { kind: "creature", id: 108 } as const;
@@ -49,8 +50,8 @@ describe("shield guard input", () => {
   test("the guard has its own configurable binding and wire command", () => {
     const profile: Profile = { id: "character:test", patches: [] };
     expect(actionBindingLabels("combat.guard", profile)).toEqual(["Z", "Pad 6"]);
-    expect([...encodeCommand({ kind: "guard", lane: "high" })]).toEqual([15, 22, 3]);
-    expect([...encodeCommand({ kind: "guard", lane: null })]).toEqual([15, 22, 0]);
+    expect([...encodeCommand({ kind: "guard", lane: "high" })]).toEqual([PROTOCOL_BYTE, 22, 3]);
+    expect([...encodeCommand({ kind: "guard", lane: null })]).toEqual([PROTOCOL_BYTE, 22, 0]);
   });
 });
 

@@ -75,7 +75,6 @@ pub fn npc(id: u32, position: [i32; 2]) -> Npc {
 /// 200 m of flat ground with gravity; spawn slot 0 is the origin.
 pub fn ground() -> ZoneDefinition {
     ZoneDefinition::with_spawn_grid(
-        77,
         mmorpg_core::STANDARD_GRAVITY,
         SpawnGrid {
             origin: [0, 0],

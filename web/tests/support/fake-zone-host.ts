@@ -3,6 +3,7 @@ import { TICK_HZ, type EntityState } from "../../src/replication";
 import { decodeCommandFrame, encodeSnapshotFragments, encodeSnapshotFrame, encodeWelcomeFrame } from "./session-host-frames";
 import { encodeTestSnapshot } from "./snapshot-encoder";
 import { playerEntity, testSnapshot } from "./snapshots";
+import { PROTOCOL_BYTE } from "../../src/protocol-id";
 
 /** Lets every pending promise callback run, like returning to the event loop. */
 export const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -59,7 +60,7 @@ export class ManualClock implements SessionClock {
 
 export const TICK_MS = 1_000 / TICK_HZ;
 /**
- * Command wire v14 payload lengths by tag (chat, tag 16, carries its own text length): move, jump, select target, start and stop attack, release
+ * Command payload lengths by tag (chat, tag 16, carries its own text length): move, jump, select target, start and stop attack, release
  * spirit, move item, loot, use ability, cancel cast, choose class, equip and unequip item, buy and sell item, emote, and accept,
  * complete and abandon quest, directed strike, guard, use door, repair and rise.
  */
@@ -336,7 +337,7 @@ export class FakeZoneHost {
         return;
       }
       const [version, tag] = frame.payload;
-      if (version !== 15 || tag === undefined || (tag === 16 ? frame.payload.length !== 4 + (frame.payload[3] ?? 0) : COMMAND_LENGTHS.get(tag) !== frame.payload.length)) {
+      if (version !== PROTOCOL_BYTE || tag === undefined || (tag === 16 ? frame.payload.length !== 4 + (frame.payload[3] ?? 0) : COMMAND_LENGTHS.get(tag) !== frame.payload.length)) {
         throw new Error("malformed command payload");
       }
       if (tag === 1) {

@@ -47,10 +47,7 @@ fn content(
     let content = arena::arena(vec![ogre(behaviour), arena::boar()], spawns, Vec::new());
     Arc::new(
         Arc::unwrap_or_clone(content)
-            .with_creature_abilities(
-                mmorpg_core::ABILITY_CATALOG_REVISION,
-                vec![(OGRE, ids::STOMP)],
-            )
+            .with_creature_abilities(vec![(OGRE, ids::STOMP)])
             .unwrap(),
     )
 }

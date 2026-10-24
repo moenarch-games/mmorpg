@@ -19,6 +19,10 @@ import { testCharacters } from "./support/local-characters";
 import { encodeTestSnapshot } from "./support/snapshot-encoder";
 import { playerEntity, testSnapshot } from "./support/snapshots";
 import { immediate, worldSourceContract } from "./support/world-source-contract";
+import { PROTOCOL_BYTE } from "../src/protocol-id";
+
+/** The protocol byte every command leads with, as hex. */
+const P = PROTOCOL_BYTE.toString(16).padStart(2, "0");
 
 /** Records what `LocalZoneSource` asks of the WASM zone; returns well-formed projections. */
 class RecordingZone implements LocalZoneHandle {
@@ -102,9 +106,9 @@ describe("LocalZoneSource", () => {
     // The default is a male Warden.
     expect(zone.joins).toEqual([[first, "local-2", 2, 0], [second, "default-warden", 0, 1]]);
     expect(zone.submitted).toEqual([
-      { player: first, sequence: 1, bytes: "0f0101ff4000" },
+      { player: first, sequence: 1, bytes: `${P}0101ff4000` },
       { player: first, sequence: 2, bytes: Buffer.from(encodeCommand({ kind: "jump" })).toString("hex") },
-      { player: second, sequence: 1, bytes: "0f02" },
+      { player: second, sequence: 1, bytes: `${P}02` },
     ]);
     expect(zone.left).toEqual([first]);
   });
@@ -153,7 +157,7 @@ describe("LocalZoneSource", () => {
       zone.viewerOverride = null;
       expect(await source.join()).toBe(2);
       source.sendCommand({ kind: "jump" });
-      expect(zone.submitted).toEqual([{ player: 2, sequence: 1, bytes: "0f02" }]);
+      expect(zone.submitted).toEqual([{ player: 2, sequence: 1, bytes: `${P}02` }]);
     }
   });
 });

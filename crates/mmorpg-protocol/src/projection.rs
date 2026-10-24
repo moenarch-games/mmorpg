@@ -151,10 +151,9 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     encode_common_header(
         &mut payload,
         PLAYER_SNAPSHOT_SCOPE,
-        snapshot.schema_version,
         snapshot.zone_id,
         snapshot.tick,
-    )?;
+    );
     payload.extend_from_slice(&snapshot.content_revision.to_be_bytes());
     payload.extend_from_slice(&snapshot.acknowledged_sequence.to_be_bytes());
     payload.extend_from_slice(&snapshot.viewer_id.to_be_bytes());
@@ -563,8 +562,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         ));
     }
     let mut offset = 0;
-    let (schema_version, zone_id, tick) =
-        decode_common_header(payload, &mut offset, PLAYER_SNAPSHOT_SCOPE)?;
+    let (zone_id, tick) = decode_common_header(payload, &mut offset, PLAYER_SNAPSHOT_SCOPE)?;
     let content_revision = u64::from_be_bytes(take(payload, &mut offset)?);
     let acknowledged_sequence = u32::from_be_bytes(take(payload, &mut offset)?);
     let viewer_id = u32::from_be_bytes(take(payload, &mut offset)?);
@@ -816,7 +814,6 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         content_revision,
         acknowledged_sequence,
         viewer_id,
-        schema_version,
         zone_id,
         tick,
         viewer: ViewerState {
@@ -927,9 +924,7 @@ mod tests {
     use crate::{
         DATAGRAM_SAFETY_MARGIN_BYTES, MEASURED_MIN_DATAGRAM_BYTES, SESSION_SNAPSHOT_HEADER_BYTES,
     };
-    use mmorpg_core::{
-        CreatureId, EntityRef, ErrorCode, NpcId, SNAPSHOT_SCHEMA_VERSION, ZoneEvent, ZoneId,
-    };
+    use mmorpg_core::{CreatureId, EntityRef, ErrorCode, NpcId, ZoneEvent, ZoneId};
 
     const VIEWER: EntityRef = EntityRef::Player(7);
     const WOLF: EntityRef = EntityRef::Creature(CreatureId::new(108));
@@ -1018,7 +1013,6 @@ mod tests {
             inventory_revision: 9,
             inventory: Some(mmorpg_core::Inventory::from_slots(slots)),
             equipment: Some(equipment(&[4, 6, 7])),
-            schema_version: SNAPSHOT_SCHEMA_VERSION,
             zone_id: ZoneId::new(42),
             tick: 99,
             viewer: ViewerState {
@@ -1306,18 +1300,10 @@ mod tests {
         mmorpg_core::Equipment::from_slots(slots).unwrap()
     }
 
-    fn hex(fixture: &str) -> Vec<u8> {
-        let fixture = fixture.trim();
-        (0..fixture.len())
-            .step_by(2)
-            .map(|offset| u8::from_str_radix(&fixture[offset..offset + 2], 16).unwrap())
-            .collect()
-    }
-
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
         mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v38.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
     }
@@ -1386,14 +1372,15 @@ mod tests {
             "the quest sheet ends the self sheet"
         );
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
-        // The previous version's fixture is rejected, never reinterpreted.
-        let legacy = hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v37.hex"
-        ));
-        assert_eq!(
-            decode_snapshot(&legacy).unwrap_err().to_string(),
-            "unsupported snapshot wire version"
-        );
+        // Any other protocol ID is rejected, never reinterpreted.
+        for at in 0..3 {
+            let mut other = encoded.clone();
+            other[at] ^= 1;
+            assert_eq!(
+                decode_snapshot(&other).unwrap_err().to_string(),
+                "unsupported snapshot protocol id"
+            );
+        }
     }
 
     #[test]
@@ -1472,7 +1459,7 @@ mod tests {
         snapshot.target_detail = TargetDetail::default();
         let bytes = encode_snapshot(&snapshot).unwrap();
         let expected = mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v38.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot.hex"),
             &bytes,
         );
         assert_eq!(bytes, expected);
@@ -1516,17 +1503,6 @@ mod tests {
             }
             assert!(decode_snapshot(&encode_snapshot(&invalid).unwrap()).is_err());
         }
-        for legacy in [
-            include_str!("../../../fixtures/protocol/player-snapshot-v7.hex"),
-            include_str!("../../../fixtures/protocol/player-loot-v8.hex"),
-            include_str!("../../../fixtures/protocol/player-loot-v9.hex"),
-            include_str!("../../../fixtures/protocol/player-loot-v10.hex"),
-            include_str!("../../../fixtures/protocol/player-loot-v11.hex"),
-            include_str!("../../../fixtures/protocol/player-loot-v12.hex"),
-            include_str!("../../../fixtures/protocol/player-loot-v13.hex"),
-        ] {
-            assert!(decode_snapshot(&hex(legacy)).is_err());
-        }
     }
 
     #[test]
@@ -1543,9 +1519,8 @@ mod tests {
         );
         let wolf_record = FIRST_ENTITY + ENTITY_RECORD_BYTES;
         for (offset, value, message) in [
-            (0, 4, "unsupported snapshot wire version"),
-            (1, 1, "unexpected snapshot scope"),
-            (3, 4, "unsupported core snapshot schema version"),
+            (0, 4, "unsupported snapshot protocol id"),
+            (3, 1, "unexpected snapshot scope"),
             (53, 0b1000, "reserved flag bits are set"),
             (53, 0b111, "viewer state is inconsistent"),
             (54, 9, "unknown entity kind"),
@@ -1709,27 +1684,7 @@ mod tests {
     }
 
     #[test]
-    fn progression_decoder_rejects_invalid_self_state_and_legacy_bytes() {
-        let legacy = include_str!("../../../fixtures/protocol/player-snapshot-v5.hex");
-        let bytes: Vec<_> = legacy
-            .trim()
-            .as_bytes()
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-            .collect();
-        assert!(decode_snapshot(&bytes).is_err());
-        let v6 = include_str!("../../../fixtures/protocol/player-snapshot-v6.hex");
-        let bytes = v6
-            .trim()
-            .as_bytes()
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-            .collect::<Vec<_>>();
-        assert!(decode_snapshot(&bytes).is_err());
+    fn progression_decoder_rejects_invalid_self_state() {
         for (level, experience, threshold) in [
             (1, 100, 100),
             (1, 0, 0),
@@ -1921,7 +1876,6 @@ mod tests {
             inventory_revision: 1,
             inventory: None,
             equipment: None,
-            schema_version: SNAPSHOT_SCHEMA_VERSION,
             zone_id: ZoneId::new(u32::MAX),
             tick: u64::MAX,
             viewer: ViewerState {

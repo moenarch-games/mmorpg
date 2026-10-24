@@ -650,7 +650,6 @@ mod tests {
             content_revision: 6,
             acknowledged_sequence: 1,
             viewer_id: 1,
-            schema_version: mmorpg_core::SNAPSHOT_SCHEMA_VERSION,
             zone_id: ZoneId::new(1),
             tick: 1,
             viewer: mmorpg_core::ViewerState::default(),

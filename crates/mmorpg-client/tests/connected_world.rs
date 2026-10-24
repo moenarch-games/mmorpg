@@ -9,8 +9,7 @@ use mmorpg_client::{
 };
 use mmorpg_core::{
     EntityFlags, EntityKind, EntitySnapshot, MAX_VISIBLE_ENTITIES, PLAYER_HALF_EXTENTS_UNITS,
-    SNAPSHOT_SCHEMA_VERSION, TICK_HZ, TargetDetail, ViewerState, ZoneId, ZoneSnapshot,
-    greyhaven_vale, greyhaven_vale_definition,
+    TICK_HZ, TargetDetail, ViewerState, ZoneId, ZoneSnapshot, greyhaven_vale,
 };
 use mmorpg_game_server::{ZoneGameServerAdapter, zone_match_id};
 use mmorpg_protocol::{
@@ -179,7 +178,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
             [feet[0], feet[2]],
         )
         .unwrap()
-        .with_loot_tables(1, vec![(template_id, table)])
+        .with_loot_tables(vec![(template_id, table)])
         .unwrap(),
     );
     let revision = content.revision();
@@ -290,7 +289,7 @@ async fn bag_intents_cross_real_transport_and_resume_without_losing_items() {
             &local.url,
             Some(&local.certificate),
             zone_id,
-            greyhaven_vale::REVISION,
+            greyhaven_vale::content().revision(),
         )
         .await?;
         session.send_move_item(0, 15, 2)?;
@@ -350,7 +349,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
     let local = LocalHost::start(host, zone_id);
     let (url, certificate) = (local.url.clone(), local.certificate.clone());
     let result = tokio::time::timeout(Duration::from_secs(20), async {
-        let revision = greyhaven_vale_definition().revision();
+        let revision = greyhaven_vale::content().revision();
         let mut first = ClientSession::connect(&url, Some(&certificate), zone_id, revision).await?;
         let second = ClientSession::connect(&url, Some(&certificate), zone_id, revision).await?;
         // Path MTU discovery only grows this above the measured floor.
@@ -579,7 +578,7 @@ async fn the_inn_journey_crosses_real_transport_and_both_players_see_the_door() 
         zone_id,
     );
     let result = tokio::time::timeout(Duration::from_secs(60), async {
-        let revision = greyhaven_vale::REVISION;
+        let revision = greyhaven_vale::content().revision();
         let mut walker =
             ClientSession::connect(&local.url, Some(&local.certificate), zone_id, revision).await?;
         let watcher =
@@ -772,7 +771,7 @@ async fn fragmented_projection_reaches_the_native_client() {
     use wtransport::{Endpoint, Identity, ServerConfig};
 
     let zone_id = ZoneId::new(1);
-    let revision = greyhaven_vale_definition().revision();
+    let revision = greyhaven_vale::content().revision();
     let player_id = 42;
     let snapshot = ZoneSnapshot {
         doors: Vec::new(),
@@ -780,7 +779,6 @@ async fn fragmented_projection_reaches_the_native_client() {
         debris: Vec::new(),
         pieces: Vec::new(),
         loot: None,
-        schema_version: SNAPSHOT_SCHEMA_VERSION,
         zone_id,
         tick: 7,
         content_revision: revision,

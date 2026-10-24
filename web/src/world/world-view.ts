@@ -33,7 +33,7 @@ import { AmbientAnimals } from "./ambient-animals";
 import { ArtPrefetch } from "./art-prefetch";
 import { NatureReview } from "./nature-review";
 import { SkyLayer } from "./sky";
-import { SharedUnits, type ImportedModelKind, type ViewerLook } from "./unit-presenter";
+import { SharedUnits, type ImportedModelKind, type Loadout, type ViewerLook } from "./unit-presenter";
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
 import { CharacterPane, type CharacterElements } from "./units/character-pane";
 import { useAbilitySlot } from "./units/abilities";
@@ -88,6 +88,11 @@ export type Intent = (projection: ZoneSnapshot) => WorldCommand | null;
 
 /** Outside every named area the HUD names the zone itself. */
 const ZONE_NAME = "Greyhaven Vale";
+/** The selection turntable's class weapons, as the shared presenter's `Loadout::of_class`. */
+const CLASS_LOADOUTS: Readonly<Record<NonNullable<ViewerLook["classId"]>, Loadout | null>> = {
+  warden: "sword-and-shield", ranger: "bow-and-quiver", arcanist: null, necromancer: "staff.bone",
+  rogue: "dagger", cleric: "staff.gilded", druid: "staff.gnarled",
+};
 /** Quest markers float this far above an NPC's feet (metres). */
 const MARKER_HEIGHT_METRES = 2.3;
 
@@ -200,7 +205,8 @@ class RegionArt {
     // of downloading it again, and is emptied whenever no piece is loading.
     THREE.Cache.enabled = true;
     this.#prefetch = new ArtPrefetch(
-      (piece) => (piece === "inn" ? inn.load() : piece === "shrine" ? shrine.load() : piece === "ambient" ? ambient.load() : models.preload(piece as ImportedModelKind)),
+      (piece) => (piece === "inn" ? inn.load() : piece === "shrine" ? shrine.load() : piece === "ambient" ? ambient.load()
+        : piece === "residents" ? models.preloadResidents() : models.preload(piece as ImportedModelKind)),
       (idle) => {
         if (idle) { THREE.Cache.clear(); }
         onProgress();
@@ -211,7 +217,7 @@ class RegionArt {
   /** The pieces area `id` needs (every piece for `null`). */
   #pieces(id: number | null): string[] {
     if (id === null) {
-      return ["Ranger", "Wolf", "Rat", "Pig", "inn", "shrine", "ambient"];
+      return ["Ranger", "Wolf", "Rat", "Pig", "residents", "inn", "shrine", "ambient"];
     }
     return [
       "Ranger",
@@ -297,7 +303,7 @@ export class WorldView {
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][]][] = [];
   /** The shared unit presenter (#184) of the current viewer. */
-  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null } | null = null;
+  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean } | null = null;
   /** Camera heading of the last frame; health bars face it. */
   #barYaw = 0;
   #lastCamera: RendererCamera | null = null;
@@ -628,7 +634,7 @@ export class WorldView {
     this.#models.update([{
       id: "selection-preview", kind: "Ranger", entity: { kind: "player", id: 0 }, feet, yaw, heightMetres: height,
       clip, time: seconds % length, tint: null,
-      swordAndShield: look.classId === "warden", bowAndQuiver: look.classId === "ranger", blade: look.classId === "rogue", headwear: true,
+      loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null, headwear: true,
     }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} });
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
@@ -861,13 +867,17 @@ export class WorldView {
     if (this.#units?.viewerId !== projection.viewerId) {
       const units = new SharedUnits(world.scenery.unitPresenter(projection.viewerId));
       for (const [kind, clips] of this.#loadedModels) { units.modelReady(kind, clips); }
-      this.#units = { viewerId: projection.viewerId, units, pushed: null };
+      this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false };
     }
     const units = this.#units.units;
     this.#regions?.approach(entitiesSelf(projection), scenery.scenery.areas);
     for (const [kind, clips] of this.#models.drainLoaded()) {
       this.#loadedModels.push([kind, clips]);
       units.modelReady(kind, clips);
+    }
+    if (!this.#units.residents && this.#models.residentsLoaded()) {
+      this.#units.residents = true;
+      units.residentsReady();
     }
     for (const received of receivedProjections) {
       this.#classHud.receive(received, now);

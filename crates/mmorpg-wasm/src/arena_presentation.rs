@@ -4,28 +4,26 @@
 use std::sync::{Arc, OnceLock};
 
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, ClassChoice, EphemeralCharacterBuild, MAX_PLAYER_LEVEL, PlayerClass,
-    Sex, ZoneContent, ZoneDefinition,
+    ClassChoice, EphemeralCharacterBuild, MAX_PLAYER_LEVEL, PlayerClass, Sex, ZoneContent,
+    ZoneDefinition,
 };
 use mmorpg_presentation::StaticScene;
 use mmorpg_scenery::Scenery;
 use wasm_bindgen::prelude::{JsError, wasm_bindgen};
 
+/// The content revision the pinned battle-royale host stamps on its projections
+/// (`web/src/world/battle-royale/protocol.ts`); a cross-repository pin, updated on re-pin.
 const ARENA_CONTENT_REVISION: u64 = 2;
 type SceneBuffers = (String, Vec<f32>, Vec<u32>, Vec<f32>);
 
 pub(crate) fn content() -> Arc<ZoneContent> {
     static CONTENT: OnceLock<Arc<ZoneContent>> = OnceLock::new();
     Arc::clone(CONTENT.get_or_init(|| {
-        let definition = ZoneDefinition::new(
-            ARENA_CONTENT_REVISION,
-            mmorpg_core::STANDARD_GRAVITY,
-            Vec::new(),
-        )
-        .expect("empty client presentation definition is valid");
+        let definition = ZoneDefinition::new(mmorpg_core::STANDARD_GRAVITY, Vec::new())
+            .expect("empty client presentation definition is valid");
         Arc::new(
             ZoneContent::from_definition(definition)
-                .with_creature_abilities(ABILITY_CATALOG_REVISION, Vec::new())
+                .with_creature_abilities(Vec::new())
                 .expect("shared ability catalog is valid"),
         )
     }))

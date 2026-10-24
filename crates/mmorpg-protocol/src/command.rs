@@ -1,18 +1,13 @@
-//! Command wire version 4 added ability use (tag 9), cast cancellation
-//! (tag 10) and the class choice (tag 11); version 5 added equipping
-//! (tag 12) and unequipping (tag 13); version 6 adds vendor purchases
-//! (tag 14) and sales (tag 15); version 7 added chat (tag 16); version 8
-//! added emotes (tag 17); version 9 adds accepting (tag 18), turning in
-//! (tag 19) and abandoning (tag 20) quests; version 10 adds the directed
-//! strike (tag 21); version 11 adds the held shield guard (tag 22); version 14 adds the
-//! held swim rise (tag 25, #274).
+//! Zone command datagrams: the protocol byte, a tag and fixed per-tag fields
+//! (docs/PROTOCOL.md). Decoding is strict.
 
 use mmorpg_core::{NpcId, ZoneCommand};
 
 use crate::ProtocolError;
 use crate::wire::{decode_entity_ref, encode_entity_ref};
 
-pub const COMMAND_WIRE_VERSION: u8 = 15;
+/// Every command leads with the low byte of [`crate::PROTOCOL_ID`].
+const PROTOCOL_BYTE: u8 = crate::PROTOCOL_ID.to_be_bytes()[3];
 
 const MOVE_TAG: u8 = 1;
 const JUMP_TAG: u8 = 2;
@@ -67,22 +62,22 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             facing,
         } => {
             let mut payload = Vec::with_capacity(MOVE_COMMAND_BYTES);
-            payload.extend_from_slice(&[COMMAND_WIRE_VERSION, MOVE_TAG]);
+            payload.extend_from_slice(&[PROTOCOL_BYTE, MOVE_TAG]);
             payload.extend_from_slice(&forward.to_be_bytes());
             payload.extend_from_slice(&strafe.to_be_bytes());
             payload.extend_from_slice(&facing.to_be_bytes());
             payload
         }
         ZoneCommand::Loot(claim) => {
-            let mut payload = vec![COMMAND_WIRE_VERSION, LOOT_TAG];
+            let mut payload = vec![PROTOCOL_BYTE, LOOT_TAG];
             crate::loot::encode_claim(&mut payload, claim);
             payload
         }
-        ZoneCommand::Jump => vec![COMMAND_WIRE_VERSION, JUMP_TAG],
-        ZoneCommand::Rise(rise) => vec![COMMAND_WIRE_VERSION, RISE_TAG, rise.to_be_bytes()[0]],
+        ZoneCommand::Jump => vec![PROTOCOL_BYTE, JUMP_TAG],
+        ZoneCommand::Rise(rise) => vec![PROTOCOL_BYTE, RISE_TAG, rise.to_be_bytes()[0]],
         ZoneCommand::UseAbility { ability, target } => {
             let mut payload = Vec::with_capacity(USE_ABILITY_COMMAND_BYTES);
-            payload.extend_from_slice(&[COMMAND_WIRE_VERSION, USE_ABILITY_TAG, ability]);
+            payload.extend_from_slice(&[PROTOCOL_BYTE, USE_ABILITY_TAG, ability]);
             encode_entity_ref(&mut payload, target);
             payload
         }
@@ -92,47 +87,40 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             aim,
         } => {
             let mut payload = Vec::with_capacity(DIRECTED_STRIKE_COMMAND_BYTES);
-            payload.extend_from_slice(&[COMMAND_WIRE_VERSION, DIRECTED_STRIKE_TAG, ability]);
+            payload.extend_from_slice(&[PROTOCOL_BYTE, DIRECTED_STRIKE_TAG, ability]);
             payload.extend_from_slice(&facing.to_be_bytes());
             payload.extend_from_slice(&crate::wire::encode_aim(aim));
             payload
         }
         ZoneCommand::Guard { lane } => {
-            vec![
-                COMMAND_WIRE_VERSION,
-                GUARD_TAG,
-                crate::wire::encode_lane(lane),
-            ]
+            vec![PROTOCOL_BYTE, GUARD_TAG, crate::wire::encode_lane(lane)]
         }
-        ZoneCommand::UseDoor { door, open } => vec![
-            COMMAND_WIRE_VERSION,
-            USE_DOOR_TAG,
-            door.get(),
-            u8::from(open),
-        ],
+        ZoneCommand::UseDoor { door, open } => {
+            vec![PROTOCOL_BYTE, USE_DOOR_TAG, door.get(), u8::from(open)]
+        }
         ZoneCommand::Repair { piece } => {
             let [high, low] = crate::wire::encode_piece(piece).to_be_bytes();
-            vec![COMMAND_WIRE_VERSION, REPAIR_TAG, high, low]
+            vec![PROTOCOL_BYTE, REPAIR_TAG, high, low]
         }
-        ZoneCommand::CancelCast => vec![COMMAND_WIRE_VERSION, CANCEL_CAST_TAG],
+        ZoneCommand::CancelCast => vec![PROTOCOL_BYTE, CANCEL_CAST_TAG],
         ZoneCommand::ChooseClass { class, sex } => {
-            vec![COMMAND_WIRE_VERSION, CHOOSE_CLASS_TAG, class, sex]
+            vec![PROTOCOL_BYTE, CHOOSE_CLASS_TAG, class, sex]
         }
         ZoneCommand::EquipItem { bag_slot } => {
-            vec![COMMAND_WIRE_VERSION, EQUIP_ITEM_TAG, bag_slot]
+            vec![PROTOCOL_BYTE, EQUIP_ITEM_TAG, bag_slot]
         }
         ZoneCommand::UnequipItem { equipment_slot } => {
-            vec![COMMAND_WIRE_VERSION, UNEQUIP_ITEM_TAG, equipment_slot]
+            vec![PROTOCOL_BYTE, UNEQUIP_ITEM_TAG, equipment_slot]
         }
         ZoneCommand::SelectTarget(target) => {
             let mut payload = Vec::with_capacity(SELECT_TARGET_COMMAND_BYTES);
-            payload.extend_from_slice(&[COMMAND_WIRE_VERSION, SELECT_TARGET_TAG]);
+            payload.extend_from_slice(&[PROTOCOL_BYTE, SELECT_TARGET_TAG]);
             encode_entity_ref(&mut payload, target);
             payload
         }
-        ZoneCommand::StartAttack => vec![COMMAND_WIRE_VERSION, START_ATTACK_TAG],
-        ZoneCommand::StopAttack => vec![COMMAND_WIRE_VERSION, STOP_ATTACK_TAG],
-        ZoneCommand::ReleaseSpirit => vec![COMMAND_WIRE_VERSION, RELEASE_SPIRIT_TAG],
+        ZoneCommand::StartAttack => vec![PROTOCOL_BYTE, START_ATTACK_TAG],
+        ZoneCommand::StopAttack => vec![PROTOCOL_BYTE, STOP_ATTACK_TAG],
+        ZoneCommand::ReleaseSpirit => vec![PROTOCOL_BYTE, RELEASE_SPIRIT_TAG],
         ZoneCommand::BuyItem {
             npc,
             offer,
@@ -143,24 +131,24 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             bag_slot,
             quantity,
         } => encode_trade(SELL_ITEM_TAG, npc, bag_slot, quantity),
-        ZoneCommand::Emote(emote) => vec![COMMAND_WIRE_VERSION, EMOTE_TAG, emote.code()],
+        ZoneCommand::Emote(emote) => vec![PROTOCOL_BYTE, EMOTE_TAG, emote.code()],
         ZoneCommand::AcceptQuest { npc, quest } => {
-            let mut payload = vec![COMMAND_WIRE_VERSION, ACCEPT_QUEST_TAG];
+            let mut payload = vec![PROTOCOL_BYTE, ACCEPT_QUEST_TAG];
             payload.extend_from_slice(&npc.get().to_be_bytes());
             payload.push(quest);
             payload
         }
         ZoneCommand::CompleteQuest { npc, quest, choice } => {
-            let mut payload = vec![COMMAND_WIRE_VERSION, COMPLETE_QUEST_TAG];
+            let mut payload = vec![PROTOCOL_BYTE, COMPLETE_QUEST_TAG];
             payload.extend_from_slice(&npc.get().to_be_bytes());
             payload.extend_from_slice(&[quest, choice]);
             payload
         }
         ZoneCommand::AbandonQuest { quest } => {
-            vec![COMMAND_WIRE_VERSION, ABANDON_QUEST_TAG, quest]
+            vec![PROTOCOL_BYTE, ABANDON_QUEST_TAG, quest]
         }
         ZoneCommand::Chat { channel, text } => {
-            let mut payload = vec![COMMAND_WIRE_VERSION, CHAT_TAG];
+            let mut payload = vec![PROTOCOL_BYTE, CHAT_TAG];
             crate::chat::encode_text(&mut payload, channel, &text);
             payload
         }
@@ -170,21 +158,14 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             quantity,
         } => {
             let [high, low] = quantity.to_be_bytes();
-            vec![
-                COMMAND_WIRE_VERSION,
-                MOVE_ITEM_TAG,
-                source,
-                destination,
-                high,
-                low,
-            ]
+            vec![PROTOCOL_BYTE, MOVE_ITEM_TAG, source, destination, high, low]
         }
     }
 }
 
 fn encode_trade(tag: u8, npc: NpcId, index: u8, quantity: u16) -> Vec<u8> {
     let mut payload = Vec::with_capacity(TRADE_COMMAND_BYTES);
-    payload.extend_from_slice(&[COMMAND_WIRE_VERSION, tag]);
+    payload.extend_from_slice(&[PROTOCOL_BYTE, tag]);
     payload.extend_from_slice(&npc.get().to_be_bytes());
     payload.push(index);
     payload.extend_from_slice(&quantity.to_be_bytes());
@@ -209,8 +190,8 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
     let [version, tag, ..] = payload else {
         return Err(ProtocolError::new("command payload is truncated"));
     };
-    if *version != COMMAND_WIRE_VERSION {
-        return Err(ProtocolError::new("unsupported command wire version"));
+    if *version != PROTOCOL_BYTE {
+        return Err(ProtocolError::new("unsupported command protocol id"));
     }
     let bare = |command| {
         if payload.len() == BARE_COMMAND_BYTES {
@@ -470,71 +451,77 @@ mod tests {
     use mmorpg_core::{CreatureId, EntityRef, NpcId, StrikeAim, StrikeHeight, StrikeSide};
 
     #[test]
-    fn commands_have_exact_versioned_layouts() {
+    fn commands_have_exact_layouts() {
         let movement = ZoneCommand::Move {
             forward: -1,
             strafe: 1,
             facing: 0xabcd,
         };
-        assert_eq!(encode_command(movement), [15, 1, 0xff, 1, 0xab, 0xcd]);
-        assert_eq!(encode_command(ZoneCommand::Jump), [15, 2]);
+        assert_eq!(
+            encode_command(movement),
+            [PROTOCOL_BYTE, 1, 0xff, 1, 0xab, 0xcd]
+        );
+        assert_eq!(encode_command(ZoneCommand::Jump), [PROTOCOL_BYTE, 2]);
         assert_eq!(
             encode_command(ZoneCommand::SelectTarget(Some(EntityRef::Creature(
                 CreatureId::new(0x0102_0304)
             )))),
-            [15, 3, 2, 1, 2, 3, 4]
+            [PROTOCOL_BYTE, 3, 2, 1, 2, 3, 4]
         );
         assert_eq!(
             encode_command(ZoneCommand::SelectTarget(None)),
-            [15, 3, 0, 0, 0, 0, 0]
+            [PROTOCOL_BYTE, 3, 0, 0, 0, 0, 0]
         );
-        assert_eq!(encode_command(ZoneCommand::StartAttack), [15, 4]);
-        assert_eq!(encode_command(ZoneCommand::StopAttack), [15, 5]);
-        assert_eq!(encode_command(ZoneCommand::ReleaseSpirit), [15, 6]);
+        assert_eq!(encode_command(ZoneCommand::StartAttack), [PROTOCOL_BYTE, 4]);
+        assert_eq!(encode_command(ZoneCommand::StopAttack), [PROTOCOL_BYTE, 5]);
+        assert_eq!(
+            encode_command(ZoneCommand::ReleaseSpirit),
+            [PROTOCOL_BYTE, 6]
+        );
         assert_eq!(
             encode_command(ZoneCommand::UseAbility {
                 ability: 9,
                 target: Some(EntityRef::Creature(CreatureId::new(0x0102_0304))),
             }),
-            [15, 9, 9, 2, 1, 2, 3, 4]
+            [PROTOCOL_BYTE, 9, 9, 2, 1, 2, 3, 4]
         );
         assert_eq!(
             encode_command(ZoneCommand::UseAbility {
                 ability: 3,
                 target: None,
             }),
-            [15, 9, 3, 0, 0, 0, 0, 0]
+            [PROTOCOL_BYTE, 9, 3, 0, 0, 0, 0, 0]
         );
-        assert_eq!(encode_command(ZoneCommand::CancelCast), [15, 10]);
+        assert_eq!(encode_command(ZoneCommand::CancelCast), [PROTOCOL_BYTE, 10]);
         assert_eq!(
             encode_command(ZoneCommand::DirectedStrike {
                 ability: 1,
                 facing: 0xabcd,
                 aim: StrikeAim::new(StrikeSide::Right, StrikeHeight::Low),
             }),
-            [15, 21, 1, 0xab, 0xcd, 2, 0]
+            [PROTOCOL_BYTE, 21, 1, 0xab, 0xcd, 2, 0]
         );
         assert_eq!(
             encode_command(ZoneCommand::Guard {
                 lane: Some(StrikeHeight::High)
             }),
-            [15, 22, 3]
+            [PROTOCOL_BYTE, 22, 3]
         );
         assert_eq!(
             encode_command(ZoneCommand::Guard { lane: None }),
-            [15, 22, 0]
+            [PROTOCOL_BYTE, 22, 0]
         );
         assert_eq!(
             encode_command(ZoneCommand::ChooseClass { class: 2, sex: 1 }),
-            [15, 11, 2, 1]
+            [PROTOCOL_BYTE, 11, 2, 1]
         );
         assert_eq!(
             encode_command(ZoneCommand::EquipItem { bag_slot: 3 }),
-            [15, 12, 3]
+            [PROTOCOL_BYTE, 12, 3]
         );
         assert_eq!(
             encode_command(ZoneCommand::UnequipItem { equipment_slot: 5 }),
-            [15, 13, 5]
+            [PROTOCOL_BYTE, 13, 5]
         );
         assert_eq!(
             encode_command(ZoneCommand::BuyItem {
@@ -542,7 +529,7 @@ mod tests {
                 offer: 6,
                 quantity: 0x0a0b,
             }),
-            [15, 14, 1, 2, 3, 4, 6, 0x0a, 0x0b]
+            [PROTOCOL_BYTE, 14, 1, 2, 3, 4, 6, 0x0a, 0x0b]
         );
         assert_eq!(
             encode_command(ZoneCommand::SellItem {
@@ -550,7 +537,7 @@ mod tests {
                 bag_slot: 15,
                 quantity: 2,
             }),
-            [15, 15, 0, 0, 0, 3, 15, 0, 2]
+            [PROTOCOL_BYTE, 15, 0, 0, 0, 3, 15, 0, 2]
         );
         for command in [
             movement,
@@ -791,9 +778,8 @@ mod tests {
             },
             ZoneCommand::Repair { piece: None },
         ];
-        let mut fixture = String::from(
-            "# Command wire v15 golden fixture, verified by mmorpg-protocol and web tests.\n",
-        );
+        let mut fixture =
+            String::from("# Command golden fixture, verified by mmorpg-protocol and web tests.\n");
         for command in commands {
             let hex = encode_command(command)
                 .iter()
@@ -901,7 +887,7 @@ mod tests {
     #[test]
     fn commands_match_the_shared_golden_fixture() {
         let checked_in = mmorpg_core::golden::golden(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/commands-v15.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/commands.hex"),
             &command_fixture(),
         );
         assert_eq!(checked_in, command_fixture());
@@ -916,29 +902,20 @@ mod tests {
     }
 
     #[test]
-    fn actual_legacy_v2_to_v13_command_fixtures_are_rejected() {
-        for line in include_str!("../../../fixtures/protocol/commands-v2.hex")
-            .lines()
-            .chain(include_str!("../../../fixtures/protocol/commands-v3.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v4.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v5.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v6.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v7.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v8.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v9.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v10.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v11.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v12.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v13.hex").lines())
-            .chain(include_str!("../../../fixtures/protocol/commands-v14.hex").lines())
-            .filter(|line| !line.starts_with('#') && !line.is_empty())
-        {
-            let hex = line.split_whitespace().next().unwrap();
-            let old = (0..hex.len())
-                .step_by(2)
-                .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).unwrap())
-                .collect::<Vec<_>>();
-            assert!(decode_command(&old).is_err());
+    fn commands_of_any_other_protocol_are_rejected() {
+        for command in [
+            ZoneCommand::Jump,
+            ZoneCommand::Rise(1),
+            ZoneCommand::StartAttack,
+        ] {
+            let mut other = encode_command(command);
+            for byte in [0, PROTOCOL_BYTE ^ 1, PROTOCOL_BYTE.wrapping_add(1), u8::MAX] {
+                if byte == PROTOCOL_BYTE {
+                    continue;
+                }
+                other[0] = byte;
+                assert!(decode_command(&other).is_err());
+            }
         }
     }
 
@@ -985,42 +962,45 @@ mod tests {
             channel: mmorpg_core::ChatChannel::Say,
             text: mmorpg_core::ChatText::new("hi").unwrap(),
         });
-        assert_eq!(chat, [15, 16, 0, 2, b'h', b'i']);
+        assert_eq!(chat, [PROTOCOL_BYTE, 16, 0, 2, b'h', b'i']);
         let accept = encode_command(ZoneCommand::AcceptQuest {
             npc: NpcId::new(1),
             quest: 2,
         });
-        assert_eq!(accept, [15, 18, 0, 0, 0, 1, 2]);
+        assert_eq!(accept, [PROTOCOL_BYTE, 18, 0, 0, 0, 1, 2]);
         let complete = encode_command(ZoneCommand::CompleteQuest {
             npc: NpcId::new(0x0102_0304),
             quest: 9,
             choice: 2,
         });
-        assert_eq!(complete, [15, 19, 1, 2, 3, 4, 9, 2]);
+        assert_eq!(complete, [PROTOCOL_BYTE, 19, 1, 2, 3, 4, 9, 2]);
         let abandon = encode_command(ZoneCommand::AbandonQuest { quest: 7 });
-        assert_eq!(abandon, [15, 20, 7]);
+        assert_eq!(abandon, [PROTOCOL_BYTE, 20, 7]);
         let emote = encode_command(ZoneCommand::Emote(mmorpg_core::Emote::Bow));
-        assert_eq!(emote, [15, 17, 2]);
+        assert_eq!(emote, [PROTOCOL_BYTE, 17, 2]);
         for invalid in [
-            vec![15, 16, 2, 2, b'h', b'i'],
-            vec![15, 16, 0, 0],
-            vec![15, 16, 0, 2, 0xff, 0xfe],
-            vec![15, 16, 0, 2, b'\n', b'i'],
-            vec![15, 16, 0, 2, b' ', b' '],
-            vec![15, 16, 0, 81].into_iter().chain([b'a'; 81]).collect(),
+            vec![PROTOCOL_BYTE, 16, 2, 2, b'h', b'i'],
+            vec![PROTOCOL_BYTE, 16, 0, 0],
+            vec![PROTOCOL_BYTE, 16, 0, 2, 0xff, 0xfe],
+            vec![PROTOCOL_BYTE, 16, 0, 2, b'\n', b'i'],
+            vec![PROTOCOL_BYTE, 16, 0, 2, b' ', b' '],
+            vec![PROTOCOL_BYTE, 16, 0, 81]
+                .into_iter()
+                .chain([b'a'; 81])
+                .collect(),
             // Unknown strike sides and heights are malformed.
-            vec![15, 21, 1, 0, 0, 3, 0],
-            vec![15, 21, 1, 0, 0, 0, 3],
-            vec![15, 21, 1, 0, 0, u8::MAX, u8::MAX],
+            vec![PROTOCOL_BYTE, 21, 1, 0, 0, 3, 0],
+            vec![PROTOCOL_BYTE, 21, 1, 0, 0, 0, 3],
+            vec![PROTOCOL_BYTE, 21, 1, 0, 0, u8::MAX, u8::MAX],
             // Unknown guard lanes are malformed.
-            vec![15, 22, 4],
-            vec![15, 22, u8::MAX],
-            vec![15, 25, 2],
-            vec![15, 25, 0xfe],
+            vec![PROTOCOL_BYTE, 22, 4],
+            vec![PROTOCOL_BYTE, 22, u8::MAX],
+            vec![PROTOCOL_BYTE, 25, 2],
+            vec![PROTOCOL_BYTE, 25, 0xfe],
             // Unknown emote IDs are malformed.
-            vec![15, 17, 0],
-            vec![15, 17, 6],
-            vec![15, 17, u8::MAX],
+            vec![PROTOCOL_BYTE, 17, 0],
+            vec![PROTOCOL_BYTE, 17, 6],
+            vec![PROTOCOL_BYTE, 17, u8::MAX],
         ] {
             assert!(decode_command(&invalid).is_err(), "{invalid:?}");
         }
@@ -1037,14 +1017,18 @@ mod tests {
         }
         for tag in [2, 4, 5, 6, 10] {
             assert_eq!(
-                decode_command(&[15, tag, 0]).unwrap_err().to_string(),
+                decode_command(&[PROTOCOL_BYTE, tag, 0])
+                    .unwrap_err()
+                    .to_string(),
                 "command payload must be exactly 2 bytes",
                 "tag {tag} has no body"
             );
         }
         for unknown in [0, 26, u8::MAX] {
             assert_eq!(
-                decode_command(&[15, unknown]).unwrap_err().to_string(),
+                decode_command(&[PROTOCOL_BYTE, unknown])
+                    .unwrap_err()
+                    .to_string(),
                 "unknown command tag"
             );
         }
@@ -1053,7 +1037,7 @@ mod tests {
             other[0] = version;
             assert_eq!(
                 decode_command(&other).unwrap_err().to_string(),
-                "unsupported command wire version"
+                "unsupported command protocol id"
             );
         }
         assert!(
@@ -1070,19 +1054,19 @@ mod tests {
             );
         }
         assert_eq!(
-            decode_command(&[15, 3, 4, 0, 0, 0, 1])
+            decode_command(&[PROTOCOL_BYTE, 3, 4, 0, 0, 0, 1])
                 .unwrap_err()
                 .to_string(),
             "unknown entity kind"
         );
         assert_eq!(
-            decode_command(&[15, 9, 1, 4, 0, 0, 0, 1])
+            decode_command(&[PROTOCOL_BYTE, 9, 1, 4, 0, 0, 0, 1])
                 .unwrap_err()
                 .to_string(),
             "unknown entity kind"
         );
         assert_eq!(
-            decode_command(&[15, 3, 0, 0, 0, 0, 1])
+            decode_command(&[PROTOCOL_BYTE, 3, 0, 0, 0, 0, 1])
                 .unwrap_err()
                 .to_string(),
             "an absent entity must have ID 0"

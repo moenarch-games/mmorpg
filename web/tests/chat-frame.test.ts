@@ -3,6 +3,10 @@ import { encodeCommand } from "../src/command-wire";
 import { chatTextError, type ChatLine } from "../src/replication";
 import { ChatLog, MAX_CHAT_LOG_LINES, parseChatInput } from "../src/world/units/chat-frame";
 import { playerEntity, testSnapshot } from "./support/snapshots";
+import { PROTOCOL_BYTE } from "../src/protocol-id";
+
+/** The protocol byte every command leads with, as hex. */
+const P = PROTOCOL_BYTE.toString(16).padStart(2, "0");
 
 function projection(tick: number, chat: ChatLine[], fields = {}) {
   return testSnapshot({
@@ -32,7 +36,7 @@ test("the text rule matches core: bytes, control characters and Unicode whitespa
   // U+FEFF is not White_Space in Rust, so the line is valid there and here.
   expect(chatTextError("﻿")).toBeNull();
   expect(() => encodeCommand({ kind: "chat", channel: "say", text: "" })).toThrow();
-  expect(Buffer.from(encodeCommand({ kind: "chat", channel: "yell", text: "hi" })).toString("hex")).toBe("0f10010268" + "69");
+  expect(Buffer.from(encodeCommand({ kind: "chat", channel: "yell", text: "hi" })).toString("hex")).toBe(`${P}10010268` + "69");
 });
 
 test("the log names speakers, notes refusals and ignores stale or foreign projections", () => {
@@ -58,7 +62,7 @@ test("emote commands send typed emotes and received emotes read as actions", () 
   expect(parseChatInput("/Bow ")).toEqual({ command: { kind: "emote", emote: "bow" } });
   // An emote takes no text; anything after it is not an emote.
   expect("error" in parseChatInput("/wave hello")).toBe(true);
-  expect(Buffer.from(encodeCommand({ kind: "emote", emote: "point" })).toString("hex")).toBe("0f1105");
+  expect(Buffer.from(encodeCommand({ kind: "emote", emote: "point" })).toString("hex")).toBe(`${P}1105`);
 
   const log = new ChatLog();
   log.receive(projection(1, [{ speaker: 1, channel: "emote", emote: "cheer" }, { speaker: 4, channel: "emote", emote: "laugh" }]));

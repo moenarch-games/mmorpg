@@ -3,8 +3,8 @@ use mmorpg_client::{
     presentation::{MAX_SCENE_BOXES, Presentation},
 };
 use mmorpg_core::{
-    CreatureId, EntityFlags, EntityKind, EntityRef, EntitySnapshot, NpcId, SNAPSHOT_SCHEMA_VERSION,
-    TargetDetail, ViewerState, ZoneId, ZoneSnapshot, greyhaven_vale,
+    CreatureId, EntityFlags, EntityKind, EntityRef, EntitySnapshot, NpcId, TargetDetail,
+    ViewerState, ZoneId, ZoneSnapshot, greyhaven_vale,
 };
 use mmorpg_scenery::greyhaven_vale_scenery;
 use std::{
@@ -23,10 +23,9 @@ fn facing_snapshot(tick: u64, position: [i32; 3], facing: u16) -> ZoneSnapshot {
         debris: Vec::new(),
         pieces: Vec::new(),
         loot: None,
-        schema_version: SNAPSHOT_SCHEMA_VERSION,
         zone_id: ZoneId::new(1),
         tick,
-        content_revision: greyhaven_vale::REVISION,
+        content_revision: greyhaven_vale::content().revision(),
         acknowledged_sequence: 1,
         viewer_id: 1,
         inventory_revision: 1,

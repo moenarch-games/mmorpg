@@ -66,8 +66,8 @@ struct Context {
     timeline: u64,
     position: u64,
     tick: u64,
-    content_fingerprint: u64,
-    canonical_version: u16,
+    content_revision: u64,
+    protocol_id: u32,
 }
 impl Context {
     fn from_reference(reference: &CheckpointReference) -> Self {
@@ -77,8 +77,8 @@ impl Context {
             timeline: reference.timeline,
             position: reference.position,
             tick: reference.tick,
-            content_fingerprint: reference.content_fingerprint,
-            canonical_version: reference.canonical_version,
+            content_revision: reference.content_revision,
+            protocol_id: reference.protocol_id,
         }
     }
 }
@@ -214,8 +214,8 @@ impl CheckpointObjects {
         let checkpoint = self.prepare(
             &next,
             0,
-            content.fingerprint(),
-            u16::from(mmorpg_protocol::SNAPSHOT_WIRE_VERSION),
+            content.revision(),
+            mmorpg_protocol::PROTOCOL_ID,
             image,
         )?;
         Ok(PreparedWorldReset { checkpoint })
@@ -235,8 +235,8 @@ impl CheckpointObjects {
         &self,
         fence: &StreamFence,
         position: u64,
-        content_fingerprint: u64,
-        canonical_version: u16,
+        content_revision: u64,
+        protocol_id: u32,
         image: &RecoveryImage,
     ) -> Result<PreparedCheckpoint, CheckpointError> {
         let mut reference = CheckpointReference {
@@ -249,8 +249,8 @@ impl CheckpointObjects {
             object_key: String::new(),
             sha256: [0; 32],
             byte_length: 0,
-            content_fingerprint,
-            canonical_version,
+            content_revision,
+            protocol_id,
         };
         let context = serde_json::to_vec(&Context::from_reference(&reference)).map_err(invalid)?;
         if context.len() > MAX_CONTEXT_BYTES {
@@ -322,13 +322,13 @@ impl CheckpointObjects {
         &self,
         fence: &StreamFence,
         reference: &CheckpointReference,
-        content_fingerprint: u64,
-        canonical_version: u16,
+        content_revision: u64,
+        protocol_id: u32,
     ) -> Result<RecoveryImage, CheckpointError> {
         reference.validate(fence).map_err(invalid)?;
         if reference.object_key != object_key(reference)
-            || reference.content_fingerprint != content_fingerprint
-            || reference.canonical_version != canonical_version
+            || reference.content_revision != content_revision
+            || reference.protocol_id != protocol_id
         {
             return Err(invalid(
                 "checkpoint content/schema/object identity is incompatible",
@@ -468,8 +468,8 @@ mod tests {
         runtime.advance_tick().unwrap();
         let snapshot = runtime.snapshot().unwrap();
         let image = runtime.checkpoint_replay().unwrap();
-        let fingerprint = greyhaven_vale::content().fingerprint();
-        let version = u16::from(mmorpg_protocol::SNAPSHOT_WIRE_VERSION);
+        let fingerprint = greyhaven_vale::content().revision();
+        let version = mmorpg_protocol::PROTOCOL_ID;
         let prepared = objects
             .prepare(&fence, 1, fingerprint, version, &image)
             .unwrap();

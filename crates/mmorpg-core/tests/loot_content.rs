@@ -28,13 +28,12 @@ fn rule() -> LootTable {
     table([1, 3], 2, FUR, [1, 2])
 }
 
-// Frozen pre-activation identity, derived from the unchanged hosted geometry/units.
+// Hosted geometry and units without any loot binding.
 fn unbound() -> ZoneContent {
     let current = greyhaven_vale::content();
     let definition = current.definition();
     ZoneContent::new(
         ZoneDefinition::with_spawn_grid(
-            4,
             definition.gravity(),
             definition.spawn_grid(),
             definition.colliders().to_vec(),
@@ -50,16 +49,15 @@ fn unbound() -> ZoneContent {
     .with_rng_seed(current.rng_seed())
 }
 
-fn bound(revision: u64, tables: Vec<(CreatureTemplateId, LootTable)>) -> ZoneContent {
-    unbound().with_loot_tables(revision, tables).unwrap()
+fn bound(tables: Vec<(CreatureTemplateId, LootTable)>) -> ZoneContent {
+    unbound().with_loot_tables(tables).unwrap()
 }
 
 #[test]
 fn binding_orders_template_ids_and_keeps_missing_templates_explicit() {
-    let first = bound(1, vec![(BOAR, rule()), (WOLF, rule())]);
-    let second = bound(1, vec![(WOLF, rule()), (BOAR, rule())]);
+    let first = bound(vec![(BOAR, rule()), (WOLF, rule())]);
+    let second = bound(vec![(WOLF, rule()), (BOAR, rule())]);
     assert_eq!(first, second);
-    assert_eq!(first.loot_revision(), 1);
     assert_eq!(
         first
             .loot_tables()
@@ -71,14 +69,13 @@ fn binding_orders_template_ids_and_keeps_missing_templates_explicit() {
     assert_eq!(first.loot_table(WOLF), Some(&rule()));
     let reseeded = first.clone().with_rng_seed(7);
     assert_eq!(reseeded.loot_tables(), first.loot_tables());
-    assert_eq!(reseeded.loot_revision(), first.loot_revision());
     assert_eq!(reseeded.rng_seed(), 7);
-    assert_ne!(reseeded.fingerprint(), first.fingerprint());
+    assert_ne!(reseeded.revision(), first.revision());
     assert_eq!(
         reseeded,
         unbound()
             .with_rng_seed(7)
-            .with_loot_tables(1, vec![(WOLF, rule()), (BOAR, rule())])
+            .with_loot_tables(vec![(WOLF, rule()), (BOAR, rule())])
             .unwrap(),
     );
     assert!(first.loot_table(CreatureTemplateId::new(3)).is_none());
@@ -87,29 +84,25 @@ fn binding_orders_template_ids_and_keeps_missing_templates_explicit() {
             .loot_table(CreatureTemplateId::new(u16::MAX))
             .is_none()
     );
-    let empty = bound(7, vec![]);
-    assert_eq!(empty.loot_revision(), 7);
+    let empty = bound(vec![]);
     assert!(empty.loot_tables().is_empty());
-    assert_ne!(empty.fingerprint(), unbound().fingerprint());
+    assert_ne!(empty.revision(), unbound().revision());
 }
 
 #[test]
 fn malformed_bindings_fail_closed() {
-    for (revision, tables) in [
-        (0, vec![(WOLF, rule())]),
-        (0, vec![]),
-        (1, vec![(WOLF, rule()), (WOLF, rule())]),
-        (1, vec![(CreatureTemplateId::new(u16::MAX), rule())]),
-        (1, vec![(WOLF, rule()); MAX_CREATURE_TEMPLATES + 1]),
+    for tables in [
+        vec![(WOLF, rule()), (WOLF, rule())],
+        vec![(CreatureTemplateId::new(u16::MAX), rule())],
+        vec![(WOLF, rule()); MAX_CREATURE_TEMPLATES + 1],
     ] {
-        assert!(unbound().with_loot_tables(revision, tables).is_err());
+        assert!(unbound().with_loot_tables(tables).is_err());
     }
 }
 
 #[test]
 fn every_authored_reward_field_changes_identity_and_refuses_old_recovery() {
-    let original = bound(1, vec![(WOLF, rule())]);
-    assert_eq!(original.fingerprint(), 0x752f_75fe_7d97_9c5e);
+    let original = bound(vec![(WOLF, rule())]);
     let mut zone =
         ZoneSimulation::with_content(ZoneId::new(1), Arc::new(original.clone())).unwrap();
     zone.add_player(1).unwrap();
@@ -118,65 +111,55 @@ fn every_authored_reward_field_changes_identity_and_refuses_old_recovery() {
     let mut reordered = rule().outcomes().to_vec();
     reordered.reverse();
     let variants = [
-        bound(2, vec![(WOLF, rule())]),
-        bound(1, vec![(BOAR, rule())]),
-        bound(1, vec![]),
-        bound(1, vec![(WOLF, rule()), (BOAR, rule())]),
-        bound(1, vec![(WOLF, table([0, 3], 2, FUR, [1, 2]))]),
-        bound(1, vec![(WOLF, table([1, 4], 2, FUR, [1, 2]))]),
-        bound(1, vec![(WOLF, table([1, 3], 1, FUR, [1, 2]))]),
-        bound(1, vec![(WOLF, table([1, 3], 2, ItemId::new(2), [1, 1]))]),
-        bound(1, vec![(WOLF, table([1, 3], 2, FUR, [2, 2]))]),
-        bound(1, vec![(WOLF, table([1, 3], 2, FUR, [1, 3]))]),
-        bound(
-            1,
-            vec![(
-                WOLF,
-                LootTable::new([1, 3], &[LootOutcome::Nothing { weight: 3 }]).unwrap(),
-            )],
-        ),
-        bound(1, vec![(WOLF, LootTable::new([1, 3], &reordered).unwrap())]),
-        bound(
-            1,
-            vec![(
-                WOLF,
-                LootTable::new(
-                    [1, 3],
-                    &[
-                        LootOutcome::Nothing { weight: 4 },
-                        LootOutcome::Item {
-                            weight: 2,
-                            item: FUR,
-                            quantity: [1, 2],
-                        },
-                    ],
-                )
-                .unwrap(),
-            )],
-        ),
-        bound(
-            1,
-            vec![(
-                WOLF,
-                LootTable::new(
-                    [1, 3],
-                    &[
-                        LootOutcome::Nothing { weight: 3 },
-                        LootOutcome::Nothing { weight: 2 },
-                    ],
-                )
-                .unwrap(),
-            )],
-        ),
+        bound(vec![(BOAR, rule())]),
+        bound(vec![]),
+        bound(vec![(WOLF, rule()), (BOAR, rule())]),
+        bound(vec![(WOLF, table([0, 3], 2, FUR, [1, 2]))]),
+        bound(vec![(WOLF, table([1, 4], 2, FUR, [1, 2]))]),
+        bound(vec![(WOLF, table([1, 3], 1, FUR, [1, 2]))]),
+        bound(vec![(WOLF, table([1, 3], 2, ItemId::new(2), [1, 1]))]),
+        bound(vec![(WOLF, table([1, 3], 2, FUR, [2, 2]))]),
+        bound(vec![(WOLF, table([1, 3], 2, FUR, [1, 3]))]),
+        bound(vec![(
+            WOLF,
+            LootTable::new([1, 3], &[LootOutcome::Nothing { weight: 3 }]).unwrap(),
+        )]),
+        bound(vec![(WOLF, LootTable::new([1, 3], &reordered).unwrap())]),
+        bound(vec![(
+            WOLF,
+            LootTable::new(
+                [1, 3],
+                &[
+                    LootOutcome::Nothing { weight: 4 },
+                    LootOutcome::Item {
+                        weight: 2,
+                        item: FUR,
+                        quantity: [1, 2],
+                    },
+                ],
+            )
+            .unwrap(),
+        )]),
+        bound(vec![(
+            WOLF,
+            LootTable::new(
+                [1, 3],
+                &[
+                    LootOutcome::Nothing { weight: 3 },
+                    LootOutcome::Nothing { weight: 2 },
+                ],
+            )
+            .unwrap(),
+        )]),
     ];
     for changed in variants {
-        assert_ne!(changed.fingerprint(), original.fingerprint());
+        assert_ne!(changed.revision(), original.revision());
         assert!(ZoneSimulation::from_snapshot(snapshot.clone(), Arc::new(changed)).is_err());
     }
     // Isolate item identity from the dagger's smaller quantity limit.
     assert_ne!(
-        bound(1, vec![(WOLF, table([1, 3], 2, FUR, [1, 1]))]).fingerprint(),
-        bound(1, vec![(WOLF, table([1, 3], 2, ItemId::new(2), [1, 1]))]).fingerprint(),
+        bound(vec![(WOLF, table([1, 3], 2, FUR, [1, 1]))]).revision(),
+        bound(vec![(WOLF, table([1, 3], 2, ItemId::new(2), [1, 1]))]).revision(),
     );
     assert!(ZoneSimulation::from_snapshot(snapshot, Arc::new(original)).is_ok());
 }
@@ -184,11 +167,8 @@ fn every_authored_reward_field_changes_identity_and_refuses_old_recovery() {
 #[test]
 fn opt_in_binding_preserves_live_content_and_complete_simulation_continuation() {
     let current = Arc::new(unbound());
-    assert_eq!(current.revision(), 4);
-    assert_eq!(current.fingerprint(), 0xd3e9_dd65_3d42_de95);
-    assert_eq!(current.loot_revision(), 0);
     assert!(current.loot_tables().is_empty());
-    let authored = Arc::new(bound(1, vec![(WOLF, rule())]));
+    let authored = Arc::new(bound(vec![(WOLF, rule())]));
     assert_eq!(current.rng_seed(), authored.rng_seed());
     let mut baseline = ZoneSimulation::with_content(ZoneId::new(1), current).unwrap();
     let mut candidate = ZoneSimulation::with_content(ZoneId::new(1), authored).unwrap();
@@ -206,14 +186,14 @@ fn opt_in_binding_preserves_live_content_and_complete_simulation_continuation() 
         candidate.advance_tick().unwrap();
         let expected = baseline.snapshot().unwrap();
         let mut actual = candidate.snapshot().unwrap();
-        actual.content_fingerprint = expected.content_fingerprint;
+        actual.content_revision = expected.content_revision;
         assert_eq!(
             actual, expected,
             "tick {sequence}: only content identity may differ"
         );
-        assert_eq!(
-            baseline.snapshot_for_player(1).unwrap(),
-            candidate.snapshot_for_player(1).unwrap()
-        );
+        let expected = baseline.snapshot_for_player(1).unwrap();
+        let mut actual = candidate.snapshot_for_player(1).unwrap();
+        actual.content_revision = expected.content_revision;
+        assert_eq!(actual, expected);
     }
 }

@@ -188,7 +188,6 @@ impl Default for SpawnGrid {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ZoneDefinition {
-    revision: u64,
     gravity: [i32; 3],
     spawn_grid: SpawnGrid,
     colliders: Vec<StaticCollider>,
@@ -229,12 +228,8 @@ impl ZoneDefinition {
     }
 
     /// Content with the [`SpawnGrid::DEFAULT`] spawn slots.
-    pub fn new(
-        revision: u64,
-        gravity: [i32; 3],
-        colliders: Vec<StaticCollider>,
-    ) -> Result<Self, ZoneError> {
-        Self::with_spawn_grid(revision, gravity, SpawnGrid::DEFAULT, colliders)
+    pub fn new(gravity: [i32; 3], colliders: Vec<StaticCollider>) -> Result<Self, ZoneError> {
+        Self::with_spawn_grid(gravity, SpawnGrid::DEFAULT, colliders)
     }
 
     /// IDs occupy a disjoint namespace from player bodies. Sorting once gives
@@ -244,7 +239,6 @@ impl ZoneDefinition {
     /// spawned body may overlap a collider (touching, such as feet on the
     /// ground, is allowed).
     pub fn with_spawn_grid(
-        revision: u64,
         gravity: [i32; 3],
         spawn_grid: SpawnGrid,
         mut colliders: Vec<StaticCollider>,
@@ -280,7 +274,6 @@ impl ZoneDefinition {
         }
         validate_spawn_grid(spawn_grid, &colliders)?;
         Ok(Self {
-            revision,
             gravity,
             spawn_grid,
             colliders,
@@ -288,12 +281,6 @@ impl ZoneDefinition {
         })
     }
 
-    #[must_use]
-    pub const fn revision(&self) -> u64 {
-        self.revision
-    }
-
-    /// Gravity in subunits per tick² ([`crate::physics::SUBUNITS_PER_UNIT`]).
     #[must_use]
     pub const fn gravity(&self) -> [i32; 3] {
         self.gravity

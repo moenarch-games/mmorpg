@@ -1105,7 +1105,7 @@ fn an_arcanist_level_up_grows_current_mana_with_its_maximum() {
 #[test]
 fn content_without_the_ability_catalog_refuses_classes() {
     let unbound = arena::arena(Vec::new(), Vec::new(), Vec::new());
-    assert_eq!(unbound.ability_revision(), 0);
+    assert!(!unbound.binds_abilities());
     let mut fight = Fight::new(unbound, 1);
     fight.send(ZoneCommand::ChooseClass { class: 2, sex: 0 });
     let tick = fight.zone.current_tick() + 1;

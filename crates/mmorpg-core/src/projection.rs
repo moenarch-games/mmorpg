@@ -17,8 +17,8 @@ use crate::unit::health_percent;
 use crate::zone::saturate_i8;
 use crate::{
     CreatureBehaviour, EntityKind, EntityRef, INTEREST_RADIUS_UNITS, MAX_VISIBLE_ENTITIES,
-    PLAYER_HALF_EXTENTS_UNITS, PlayerId, PlayerProjection, SNAPSHOT_SCHEMA_VERSION, ZoneError,
-    ZoneEvent, ZoneId, ZoneSimulation,
+    PLAYER_HALF_EXTENTS_UNITS, PlayerId, PlayerProjection, ZoneError, ZoneEvent, ZoneId,
+    ZoneSimulation,
 };
 
 /// Presentation flags of a visible unit.
@@ -148,7 +148,6 @@ pub struct ZoneSnapshot {
     pub content_revision: u64,
     pub acknowledged_sequence: u32,
     pub viewer_id: PlayerId,
-    pub schema_version: u16,
     pub zone_id: ZoneId,
     pub tick: u64,
     pub viewer: ViewerState,
@@ -262,7 +261,6 @@ impl ZoneSimulation {
                 content_revision: self.content.revision(),
                 acknowledged_sequence: viewer.last_sequence,
                 viewer_id: player_id,
-                schema_version: SNAPSHOT_SCHEMA_VERSION,
                 zone_id: self.zone_id,
                 tick: self.tick,
                 viewer: ViewerState {

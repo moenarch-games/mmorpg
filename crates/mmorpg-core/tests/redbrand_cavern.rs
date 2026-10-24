@@ -10,8 +10,8 @@ use mmorpg_core::greyhaven_vale::{
     self, cave::GREYFANG, ids as collider_ids, quests, units::templates,
 };
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef, ItemId,
-    QuestObjective, ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation, item_template,
+    CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef, ItemId, QuestObjective,
+    ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation, item_template,
 };
 use support::arena::{self, NORTHWARD, WOLF};
 use support::classes;
@@ -140,7 +140,7 @@ fn brute_arena(facing: u16, shielded: bool) -> Arc<ZoneContent> {
     let mut spawn = arena::spawn(1, WOLF, [-2_000, 1_500]);
     spawn.facing = facing;
     let content = Arc::unwrap_or_clone(arena::arena(vec![template], vec![spawn], Vec::new()))
-        .with_creature_abilities(ABILITY_CATALOG_REVISION, vec![(WOLF, ids::OVERHEAD_SMASH)])
+        .with_creature_abilities(vec![(WOLF, ids::OVERHEAD_SMASH)])
         .unwrap();
     Arc::new(if shielded {
         content.with_shielded(vec![WOLF]).unwrap()

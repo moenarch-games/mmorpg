@@ -80,7 +80,6 @@ pub fn exhaustive_projection(
         equipment: sheet.then_some(observer.equipment),
         // The oracle's content has no quests.
         quests: sheet.then(mmorpg_core::QuestSheet::default),
-        schema_version: canonical.schema_version,
         zone_id: canonical.zone_id,
         tick: canonical.tick,
         viewer: ViewerState {

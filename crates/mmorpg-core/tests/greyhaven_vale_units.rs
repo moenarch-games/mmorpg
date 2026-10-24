@@ -1,4 +1,4 @@
-//! Greyhaven Vale unit content (revision 6): creature templates, spawns,
+//! Greyhaven Vale unit content: creature templates, spawns,
 //! NPCs and graveyard follow the design contract and stay clear of geometry,
 //! of each other and of the hub spawn plaza.
 use std::collections::BTreeMap;
@@ -12,23 +12,31 @@ use mmorpg_core::{
 #[test]
 fn the_content_identity_is_pinned() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.revision(), 28);
     assert_eq!(content.rng_seed(), 0x3cbc_808b_be89_b29c);
     assert_eq!(
         content.definition(),
         &greyhaven_vale::greyhaven_vale_definition()
     );
     assert_eq!(content.areas(), greyhaven_vale::areas());
-    // The recorded fingerprint pins every content table, including the bound ability, item,
-    // loot, vendor and quest catalogs, the inn door and the NPC routines. Changing creatures,
-    // NPCs, colliders or areas requires a new revision; `MMORPG_UPDATE_FIXTURES=1` re-records it.
-    let actual = format!("{:#018x}\n", content.fingerprint());
-    let recorded = mmorpg_core::golden::golden(
-        mmorpg_core::golden::workspace_root()
-            .join("fixtures/content/greyhaven-vale-fingerprint.txt"),
-        &actual,
-    );
-    assert_eq!(actual, recorded, "recorded fingerprint");
+    // The revision hashes every content table, including the bound ability, item, loot,
+    // vendor and quest catalogs, the inn door and the NPC routines, so it is deterministic
+    // and changes by itself with the content (docs/adr/0006-merge-safe-format-identities.md).
+    let rebuilt =
+        greyhaven_vale::content_with_definition(greyhaven_vale::greyhaven_vale_definition())
+            .unwrap();
+    assert_eq!(rebuilt.revision(), content.revision());
+    let mut renamed = content.npcs().to_vec();
+    renamed[0].name.push('!');
+    let changed = mmorpg_core::ZoneContent::new(
+        content.definition().clone(),
+        content.areas().clone(),
+        content.creature_templates().to_vec(),
+        content.creature_spawns().to_vec(),
+        renamed,
+        content.graveyard(),
+    )
+    .unwrap();
+    assert_ne!(changed.revision(), content.revision());
 }
 
 #[test]

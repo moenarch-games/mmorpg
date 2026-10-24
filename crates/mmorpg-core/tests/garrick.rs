@@ -72,7 +72,7 @@ fn content(whirl: bool) -> Arc<ZoneContent> {
         Vec::new()
     };
     Arc::new(
-        base.with_creature_abilities(mmorpg_core::ABILITY_CATALOG_REVISION, abilities)
+        base.with_creature_abilities(abilities)
             .unwrap()
             .with_bosses(vec![BossRules {
                 template: BOSS_TEMPLATE,
@@ -84,22 +84,19 @@ fn content(whirl: bool) -> Arc<ZoneContent> {
                 rally_point: RALLY,
             }])
             .unwrap()
-            .with_quests(
-                1,
-                vec![Quest {
-                    id: HUNT,
-                    name: "Hunt the boss".into(),
-                    text: "Bring him down.".into(),
-                    giver: GIVER,
-                    ender: GIVER,
-                    prerequisite: None,
-                    objectives: vec![QuestObjective::Kill {
-                        template: BOSS_TEMPLATE,
-                        count: 1,
-                    }],
-                    rewards: QuestRewards::default(),
+            .with_quests(vec![Quest {
+                id: HUNT,
+                name: "Hunt the boss".into(),
+                text: "Bring him down.".into(),
+                giver: GIVER,
+                ender: GIVER,
+                prerequisite: None,
+                objectives: vec![QuestObjective::Kill {
+                    template: BOSS_TEMPLATE,
+                    count: 1,
                 }],
-            )
+                rewards: QuestRewards::default(),
+            }])
             .unwrap(),
     )
 }

@@ -2,15 +2,15 @@
 //! entity references, gameplay events and strict readers.
 
 use mmorpg_core::{
-    AbilityId, EntityKind, EntityRef, ErrorCode, MAX_QUEST_OBJECTIVES, QuestId,
-    SNAPSHOT_SCHEMA_VERSION, StrikeAim, StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ability_by_id,
+    AbilityId, EntityKind, EntityRef, ErrorCode, MAX_QUEST_OBJECTIVES, QuestId, StrikeAim,
+    StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ability_by_id,
 };
 
-use crate::{ProtocolError, SNAPSHOT_WIRE_VERSION};
+use crate::{PROTOCOL_ID, ProtocolError};
 
 pub(crate) const CANONICAL_SNAPSHOT_SCOPE: u8 = 1;
 pub(crate) const PLAYER_SNAPSHOT_SCOPE: u8 = 2;
-/// Wire version, scope, schema, zone ID and tick start every snapshot.
+/// Protocol ID (3 bytes), scope, zone ID and tick start every snapshot.
 pub(crate) const COMMON_HEADER_BYTES: usize = 16;
 /// Kind code then `u32` ID; kind 0 (with ID 0) means none.
 pub(crate) const ENTITY_REF_BYTES: usize = 5;
@@ -578,46 +578,33 @@ pub(crate) fn read_bool(payload: &[u8], offset: &mut usize) -> Result<bool, Prot
     }
 }
 
-pub(crate) fn encode_common_header(
-    payload: &mut Vec<u8>,
-    scope: u8,
-    schema_version: u16,
-    zone_id: ZoneId,
-    tick: u64,
-) -> Result<(), ProtocolError> {
-    if schema_version != SNAPSHOT_SCHEMA_VERSION {
-        return Err(ProtocolError::new(
-            "unsupported core snapshot schema version",
-        ));
-    }
-    payload.push(SNAPSHOT_WIRE_VERSION);
+pub(crate) fn encode_common_header(payload: &mut Vec<u8>, scope: u8, zone_id: ZoneId, tick: u64) {
+    payload.extend_from_slice(&protocol_id_bytes());
     payload.push(scope);
-    payload.extend_from_slice(&schema_version.to_be_bytes());
     payload.extend_from_slice(&zone_id.get().to_be_bytes());
     payload.extend_from_slice(&tick.to_be_bytes());
-    Ok(())
 }
 
 pub(crate) fn decode_common_header(
     payload: &[u8],
     offset: &mut usize,
     expected_scope: u8,
-) -> Result<(u16, ZoneId, u64), ProtocolError> {
-    if read_u8(payload, offset)? != SNAPSHOT_WIRE_VERSION {
-        return Err(ProtocolError::new("unsupported snapshot wire version"));
+) -> Result<(ZoneId, u64), ProtocolError> {
+    if take::<3>(payload, offset)? != protocol_id_bytes() {
+        return Err(ProtocolError::new("unsupported snapshot protocol id"));
     }
     if read_u8(payload, offset)? != expected_scope {
         return Err(ProtocolError::new("unexpected snapshot scope"));
     }
-    let schema_version = u16::from_be_bytes(take(payload, offset)?);
-    if schema_version != SNAPSHOT_SCHEMA_VERSION {
-        return Err(ProtocolError::new(
-            "unsupported core snapshot schema version",
-        ));
-    }
     let zone_id = ZoneId::new(u32::from_be_bytes(take(payload, offset)?));
     let tick = u64::from_be_bytes(take(payload, offset)?);
-    Ok((schema_version, zone_id, tick))
+    Ok((zone_id, tick))
+}
+
+/// The 24-bit [`PROTOCOL_ID`] as it leads every snapshot.
+const fn protocol_id_bytes() -> [u8; 3] {
+    let [_, high, middle, low] = PROTOCOL_ID.to_be_bytes();
+    [high, middle, low]
 }
 
 pub(crate) fn encode_u8_count(

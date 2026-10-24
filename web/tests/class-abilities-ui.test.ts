@@ -20,7 +20,7 @@ const ABILITIES: AbilityRecord[] = [
   { id: 12, name: "Blizzard", user: "arcanist", level: 6, cost: 80, castTicks: t(180), channel: true, cooldown: t(0), aura: null },
 ];
 const catalog: ContentCatalog = {
-  itemCatalogRevision: 1n, items: new Map(), contentRevision: 6n, contentFingerprint: "0".repeat(16),
+  items: new Map(), contentRevision: 6n,
   creatureTemplates: new Map(), npcs: new Map(), areas: new Map(),
   classes: new Map([[0, { id: 0, name: "warden", resource: "rage" }], [2, { id: 2, name: "arcanist", resource: "mana" }]]),
   abilities: new Map(ABILITIES.map((ability) => [ability.id, ability])),

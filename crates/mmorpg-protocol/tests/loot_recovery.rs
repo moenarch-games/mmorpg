@@ -42,7 +42,7 @@ fn corpse_dropping(item: ItemId, quantity: u16) -> ZoneSimulation {
         original
             .as_ref()
             .clone()
-            .with_loot_tables(1, vec![(arena::WOLF, table)])
+            .with_loot_tables(vec![(arena::WOLF, table)])
             .unwrap(),
     );
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), content).unwrap();

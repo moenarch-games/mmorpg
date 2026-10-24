@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef,
-    ErrorCode, MeleeStance, ZoneAreas, ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
+    CreatureBehaviour, CreatureId, CreatureTemplate, EntityRef, ErrorCode, MeleeStance, ZoneAreas,
+    ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD, WOLF};
 
@@ -34,7 +34,12 @@ fn content(behaviour: CreatureBehaviour, damage: [u16; 2]) -> Arc<ZoneContent> {
             GRAVEYARD,
         )
         .unwrap()
-        .with_creature_abilities(ABILITY_CATALOG_REVISION, Default::default())
+        // Fixed seeds whose first swings land as plain hits, independent of content identity.
+        .with_rng_seed(match behaviour {
+            CreatureBehaviour::Aggressive => 0x8881_3771_efc1_e1cf,
+            _ => 0x8f98_4419_a65c_8c20,
+        })
+        .with_creature_abilities(Default::default())
         .unwrap(),
     )
 }

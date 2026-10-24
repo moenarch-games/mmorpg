@@ -12,8 +12,8 @@ use mmorpg_core::action::{
     Phase, Region, RuleId, Verdict,
 };
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, CreatureBehaviour, CreatureTemplate, StrikeAim, StrikeHeight,
-    StrikeSide, ZoneAreas, ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
+    CreatureBehaviour, CreatureTemplate, StrikeAim, StrikeHeight, StrikeSide, ZoneAreas,
+    ZoneCommand, ZoneContent, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD, WOLF};
 
@@ -34,7 +34,7 @@ fn content() -> Arc<ZoneContent> {
             GRAVEYARD,
         )
         .unwrap()
-        .with_creature_abilities(ABILITY_CATALOG_REVISION, Default::default())
+        .with_creature_abilities(Default::default())
         .unwrap(),
     )
 }

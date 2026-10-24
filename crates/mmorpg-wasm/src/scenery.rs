@@ -1,7 +1,6 @@
-//! Versioned presentation scenery for the browser's `SceneryProvider`.
+//! Presentation scenery for the browser's `SceneryProvider`.
 //!
-//! The export is JSON (format [`SCENERY_FORMAT`], version
-//! [`SCENERY_FORMAT_VERSION`]) to keep the presentation schema outside `mmorpg-core`. It maps
+//! The export is JSON (format [`SCENERY_FORMAT`]) to keep the presentation schema outside `mmorpg-core`. It maps
 //! the hosted content's `mmorpg-scenery` value, the same one the native
 //! client draws, onto that format:
 //!
@@ -40,7 +39,6 @@ use mmorpg_scenery::{PropKind, Scenery, TerrainGrid, greyhaven_vale_scenery};
 use serde::Serialize;
 
 pub const SCENERY_FORMAT: &str = "mmorpg.scenery";
-pub const SCENERY_FORMAT_VERSION: u32 = 3;
 /// Where this export's props and terrain come from.
 pub const SCENERY_SOURCE: &str = "mmorpg-scenery";
 /// Terrain sample spacing: 4 m, 101 × 101 samples over ±200 m.
@@ -52,7 +50,6 @@ pub const FAR_TERRAIN_STEP_UNITS: i32 = 2_000;
 #[serde(rename_all = "camelCase")]
 pub struct SceneryExport {
     pub format: &'static str,
-    pub version: u32,
     pub source: &'static str,
     /// Decimal `u64`, so JavaScript never rounds it.
     pub content_revision: String,
@@ -192,7 +189,6 @@ pub(crate) fn export(
         .collect();
     let mut export = SceneryExport {
         format: SCENERY_FORMAT,
-        version: SCENERY_FORMAT_VERSION,
         source: SCENERY_SOURCE,
         content_revision: scenery.content_revision.to_string(),
         presentation_fingerprint: String::new(),
@@ -312,12 +308,9 @@ mod tests {
 
     #[test]
     fn scenery_comes_from_the_hosted_content_revision() {
-        let definition = hosted_definition();
-        assert_eq!(hosted_scenery().content_revision, definition.revision());
-        assert_eq!(
-            hosted_export().content_revision,
-            definition.revision().to_string()
-        );
+        let revision = crate::host::hosted_content().revision();
+        assert_eq!(hosted_scenery().content_revision, revision);
+        assert_eq!(hosted_export().content_revision, revision.to_string());
     }
 
     #[test]
@@ -498,16 +491,18 @@ mod tests {
     }
 
     #[test]
-    fn export_is_versioned_deterministic_lean_json_with_core_areas_and_roads() {
+    fn export_is_deterministic_lean_json_with_core_areas_and_roads() {
         let json = hosted_scenery_json();
         assert_eq!(json, serde_json::to_string(&hosted_export()).unwrap());
         assert!(json.len() < 1_000_000, "{} bytes", json.len());
         let value: Value = serde_json::from_str(json).unwrap();
         assert_eq!(value["format"], SCENERY_FORMAT);
-        assert_eq!(value["version"], SCENERY_FORMAT_VERSION);
         assert_eq!(value["source"], SCENERY_SOURCE);
-        assert_eq!(value["contentRevision"], "28");
-        assert_eq!(value["presentationFingerprint"], "0f9e7665f778abcd");
+        assert_eq!(
+            value["contentRevision"],
+            crate::host::hosted_content().revision().to_string()
+        );
+        assert_eq!(value["presentationFingerprint"], "67c9a26e476ed619");
         assert_eq!(value["unitsPerMetre"], 100);
         assert_eq!(value["playerHalfExtents"], serde_json::json!([30, 90, 30]));
         let names: Vec<_> = value["areas"]

@@ -16,9 +16,8 @@
 use mmorpg_client::hud::{CombatHud, CooldownKind, SlotCooldown};
 use mmorpg_core::{
     AbilityId, CastView, ClassChoice, Cooldown, EntityFlags, EntityKind, EntityRef, EntitySnapshot,
-    GLOBAL_COOLDOWN_TICKS, PlayerClass, ResourceKind, ResourceView, SNAPSHOT_SCHEMA_VERSION, Sex,
-    TargetDetail, ViewerState, ZoneCommand, ZoneId, ZoneSimulation, ZoneSnapshot, ability_by_id,
-    greyhaven_vale,
+    GLOBAL_COOLDOWN_TICKS, PlayerClass, ResourceKind, ResourceView, Sex, TargetDetail, ViewerState,
+    ZoneCommand, ZoneId, ZoneSimulation, ZoneSnapshot, ability_by_id, greyhaven_vale,
 };
 use std::sync::Arc;
 
@@ -44,10 +43,9 @@ fn viewer_of(class: PlayerClass) -> ZoneSnapshot {
         projectiles: Vec::new(),
         debris: Vec::new(),
         pieces: Vec::new(),
-        content_revision: greyhaven_vale::REVISION,
+        content_revision: greyhaven_vale::content().revision(),
         acknowledged_sequence: 1,
         viewer_id: 1,
-        schema_version: SNAPSHOT_SCHEMA_VERSION,
         zone_id: ZoneId::new(1),
         tick: 100,
         viewer: ViewerState {

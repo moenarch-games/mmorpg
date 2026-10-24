@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, AbilityId, CreatureId, EntityRef, SpawnGrid, StaticCollider,
-    ZoneAreas, ZoneCommand, ZoneContent, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
+    AbilityId, CreatureId, EntityRef, SpawnGrid, StaticCollider, ZoneAreas, ZoneCommand,
+    ZoneContent, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, NORTHWARD, WOLF};
 use support::classes;
@@ -32,7 +32,6 @@ fn content(walls: &[([i32; 2], [i32; 2])], wolves: &[[i32; 2]]) -> Arc<ZoneConte
         });
     }
     let definition = ZoneDefinition::with_spawn_grid(
-        77,
         mmorpg_core::STANDARD_GRAVITY,
         SpawnGrid {
             origin: [-5_000, -5_000],
@@ -56,11 +55,7 @@ fn content(walls: &[([i32; 2], [i32; 2])], wolves: &[[i32; 2]]) -> Arc<ZoneConte
         arena::GRAVEYARD,
     )
     .unwrap();
-    Arc::new(
-        content
-            .with_creature_abilities(ABILITY_CATALOG_REVISION, Vec::new())
-            .unwrap(),
-    )
+    Arc::new(content.with_creature_abilities(Vec::new()).unwrap())
 }
 
 /// A level 8 Arcanist at the origin facing north uses `ability` (at `target`) and waits `ticks`.

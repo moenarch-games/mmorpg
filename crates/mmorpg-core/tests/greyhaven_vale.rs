@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{
-    self, PLAYABLE_BOUNDS, REVISION, ROAD_CLEARANCE_UNITS, SPAWN_GRID, SPAWN_PLAZA, area_at, areas,
+    self, PLAYABLE_BOUNDS, ROAD_CLEARANCE_UNITS, SPAWN_GRID, SPAWN_PLAZA, area_at, areas,
     clear_of_roads, ids, roads,
 };
 use mmorpg_core::{
@@ -45,7 +45,6 @@ fn run(facing: u16) -> ZoneCommand {
 fn content_is_a_bounded_deterministic_revision() {
     let definition = greyhaven_vale_definition();
     assert_eq!(definition, greyhaven_vale_definition());
-    assert_eq!(definition.revision(), REVISION);
     assert_eq!(definition.gravity(), greyhaven_vale::GRAVITY);
     assert_eq!(definition.spawn_grid(), SPAWN_GRID);
     assert!(definition.colliders().len() <= MAX_STATIC_COLLIDERS);
