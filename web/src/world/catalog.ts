@@ -48,8 +48,8 @@ export type ItemRecord = {
 export type VendorOffer = { item: number; price: number };
 export type VendorRecord = { npc: number; offers: readonly VendorOffer[] };
 
-export type ClassName = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue";
-export type ClassRecord = { id: number; name: ClassName; resource: "rage" | "focus" | "mana" };
+export type ClassName = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric";
+export type ClassRecord = { id: number; name: ClassName; resource: "rage" | "focus" | "mana" | "faith" };
 
 export type AbilityRecord = {
   id: number;
@@ -111,8 +111,8 @@ export type ContentCatalog = {
 const FORMAT = "mmorpg.catalog";
 const VERSION = 7;
 const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve"] as const;
-const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue"];
-const RESOURCES = ["rage", "focus", "mana"] as const;
+const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric"];
+const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
 const FAMILIES: readonly CreatureFamily[] = ["wolf", "boar", "vermin", "marauder", "mirefin", "redbrand", "prop", "ogre"];
 const BEHAVIOURS: readonly CreatureBehaviour[] = ["aggressive", "neutral", "prop"];
@@ -285,15 +285,15 @@ export function decodeCatalog(json: string): ContentCatalog {
   if (root.vendorCatalogRevision === "0" && vendors.length > 0) {
     fail("content without a vendor catalog cannot list vendors");
   }
-  const classes = list(root.classes, "classes", 5).map((value, index) => {
+  const classes = list(root.classes, "classes", 6).map((value, index) => {
     const record = object(value, ["id", "name", "resource"], `class ${index}`);
     return {
-      id: int(record.id, `class ${index} id`, 0, 4),
+      id: int(record.id, `class ${index} id`, 0, 5),
       name: oneOf(record.name, CLASS_NAMES, `class ${index} name`),
       resource: oneOf(record.resource, RESOURCES, `class ${index} resource`),
     };
   });
-  if (root.abilityCatalogRevision !== "11") {
+  if (root.abilityCatalogRevision !== "12") {
     fail("unsupported ability catalog revision");
   }
   const abilities = list(root.abilities, "abilities", 255).map((value, index) => {

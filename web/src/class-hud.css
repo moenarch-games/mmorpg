@@ -52,6 +52,7 @@
 .frame-bar.resource[data-resource="rage"] .fill { background: #c53b30; }
 .frame-bar.resource[data-resource="focus"] .fill { background: #d9962b; }
 .frame-bar.resource[data-resource="mana"] .fill { background: #3b7fd6; }
+.frame-bar.resource[data-resource="faith"] .fill { background: #e8cf7a; }
 .target-frame .frame-bar.health .fill { background: #b84a42; }
 
 .frame-text,

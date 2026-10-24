@@ -36,7 +36,8 @@ impl Fight {
         }
     }
 
-    /// A fight whose player chose `class` (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue).
+    /// A fight whose player chose `class` (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue,
+    /// 5 Cleric).
     fn with_class(content: Arc<ZoneContent>, level: u8, class: u8) -> Self {
         let mut fight = Self::new(content, level);
         fight.send(ZoneCommand::ChooseClass { class, sex: 1 });
@@ -178,7 +179,7 @@ fn players_choose_a_class_once_and_need_one_for_abilities() {
     assert_eq!(unchosen.entities[0].appearance, 0);
 
     fight.use_ability(ids::HEROIC_STRIKE);
-    fight.send(ZoneCommand::ChooseClass { class: 5, sex: 0 });
+    fight.send(ZoneCommand::ChooseClass { class: 6, sex: 0 });
     fight.send(ZoneCommand::ChooseClass { class: 0, sex: 2 });
     fight.tick();
     assert_eq!(
@@ -941,7 +942,7 @@ fn recovery_requires_a_dead_warden_without_rage() {
     for (resource, ticks) in [(20, 0), (0, 5)] {
         assert_eq!(
             restore(resource, ticks).unwrap_err().message(),
-            "a dead Warden has no rage"
+            "a dead player has no rage or faith"
         );
     }
 }
@@ -1249,5 +1250,76 @@ fn a_rogue_strikes_poisons_gouges_and_rushes_on_focus() {
             .auras
             .iter()
             .any(|aura| aura.ability == ids::ADRENALINE_RUSH && aura.kind == AuraKind::Haste)
+    );
+}
+
+#[test]
+fn a_cleric_builds_faith_and_heals_and_shields_a_friend_or_itself() {
+    // A sturdy wolf 25 m north, beyond aggro range.
+    let content = classes::arena(
+        vec![arena::wolf(400, [3, 3])],
+        vec![arena::spawn(1, WOLF, [0, 2_500])],
+    );
+    let mut fight = Fight::with_class(content, 6, 5);
+    fight.zone.add_player(2).unwrap();
+    assert_eq!(fight.resource(), 0, "faith starts empty, like rage");
+
+    // Renew needs faith; Smite costs none and builds it from the damage it deals.
+    fight.use_ability(ids::RENEW);
+    let refused = fight.zone.current_tick() + 1;
+    fight.tick();
+    assert_eq!(fight.errors_at(refused), [ErrorCode::NotEnoughResource]);
+    fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
+    while fight.resource() < 85 {
+        fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+        fight.use_ability(ids::SMITE);
+        fight.until(70, |fight| fight.view().viewer.cast.is_none());
+        assert!(
+            fight
+                .zone
+                .snapshot()
+                .unwrap()
+                .projectiles
+                .iter()
+                .any(|projectile| projectile.kind == mmorpg_core::ProjectileKind::Holy)
+        );
+        fight.land();
+    }
+
+    // With a friendly player selected, Renew and Divine Shield land on that player.
+    let friend = EntityRef::Player(2);
+    fight.send(ZoneCommand::SelectTarget(Some(friend)));
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    let faith = fight.resource();
+    fight.use_ability(ids::RENEW);
+    fight.tick();
+    assert_eq!(fight.resource(), faith - 25);
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.use_ability(ids::DIVINE_SHIELD);
+    fight.tick();
+    let friends = fight.zone.snapshot_for_player(2).unwrap().auras;
+    assert!(
+        friends
+            .iter()
+            .any(|aura| { aura.ability == ids::RENEW && aura.kind == AuraKind::HealOverTime })
+    );
+    assert!(
+        friends
+            .iter()
+            .any(|aura| { aura.ability == ids::DIVINE_SHIELD && aura.kind == AuraKind::Absorb })
+    );
+    assert!(fight.view().auras.is_empty(), "nothing on the Cleric");
+
+    // Without a friendly selection, Renew lands on the Cleric itself.
+    fight.send(ZoneCommand::SelectTarget(None));
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.use_ability(ids::RENEW);
+    fight.tick();
+    assert!(
+        fight
+            .view()
+            .auras
+            .iter()
+            .any(|aura| aura.ability == ids::RENEW && aura.kind == AuraKind::HealOverTime)
     );
 }

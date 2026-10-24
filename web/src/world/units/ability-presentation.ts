@@ -79,6 +79,11 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [31, { range: "melee", description: "A poisoned cut that damages your target over time.", glyph: SNAKE, accent: "#8fd14f", visual: "swing", pose: "swing" }],
   [32, { range: "melee", description: "Gouges your target: interrupts its cast and stuns it without knocking it back.", glyph: SWORD, accent: "#d9b26a", visual: null, pose: "swing" }],
   [33, { range: "self", description: "Quickens your attacks for a short time.", glyph: BOLT, accent: "#f2d24e", visual: null, pose: null }],
+  // The Cleric (#303): Renew and Divine Shield land on a selected friendly player, otherwise on you.
+  [34, { range: RANGED, description: "Hurls a bolt of holy light at your target after a short cast. Costs no faith: dealing damage and healing build it.", glyph: ORB, accent: "#ffd65a", visual: "projectile", pose: "cast" }],
+  [35, { range: "self", description: "Heals over time: your selected friendly player, or yourself without one.", glyph: HEART, accent: "#d8f0a0", visual: null, pose: "cast" }],
+  [36, { range: "self", description: "Channel a beam of holy light along your facing for 2 s: it strikes every enemy on its line until a wall or raised shield. Turn to steer it.", glyph: BOLT, accent: "#ffe9a0", visual: null, pose: "cast" }],
+  [37, { range: "self", description: "A holy ward that absorbs damage: on your selected friendly player, or yourself without one.", glyph: SHIELD, accent: "#fff3c8", visual: "bubble", pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

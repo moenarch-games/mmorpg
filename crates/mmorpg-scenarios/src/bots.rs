@@ -1823,6 +1823,7 @@ fn class_code(name: &str) -> u8 {
         "arcanist" => 2,
         "necromancer" => 3,
         "rogue" => 4,
+        "cleric" => 5,
         _ => u8::MAX,
     }
 }

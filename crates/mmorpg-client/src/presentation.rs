@@ -364,9 +364,10 @@ impl Presentation {
         self.headwear = Some(match class {
             PlayerClass::Warden => player::Hat::Helm,
             PlayerClass::Ranger => player::Hat::Cap,
-            PlayerClass::Arcanist | PlayerClass::Necromancer | PlayerClass::Rogue => {
-                player::Hat::Hood
-            }
+            PlayerClass::Arcanist
+            | PlayerClass::Necromancer
+            | PlayerClass::Rogue
+            | PlayerClass::Cleric => player::Hat::Hood,
         });
     }
 

@@ -42,7 +42,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "door-busy": "The door is still swinging.",
 };
 
-const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana" } as const;
+const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;
 
 /** An ability's catalog name. */
 export function abilityName(ability: number, catalog: ContentCatalog): string {
