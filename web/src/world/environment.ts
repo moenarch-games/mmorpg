@@ -1,4 +1,5 @@
 import type { RendererEnvironment } from "@moritzbrantner/three-d-renderer";
+import { ticksFromMs } from "../replication";
 import type { Color } from "./scenery";
 
 /** Palette and renderer environment for the cosmetic twenty-minute day. */
@@ -176,7 +177,7 @@ export function hazeMix(style: EnvironmentStyle, distanceMetres: number): number
 export const DAY_SECONDS = 20 * 60;
 
 /** The zone's day in ticks and its start time (`mmorpg_core::DAY_TICKS`, `ZONE_START_TIME`). */
-export const ZONE_DAY_TICKS = 2 * 60 * 60 * 30;
+export const ZONE_DAY_TICKS = ticksFromMs(2 * 60 * 60 * 1_000);
 export const ZONE_START_TIME = ZONE_DAY_TICKS / 3;
 
 /** The zone's time of day at `tick` on the sky cycle's `DAY_SECONDS` scale, zero at noon (#158). */

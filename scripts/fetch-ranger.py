@@ -17,11 +17,16 @@ SELECTED = {key: "default" for key in ("humanoid.ranger.male", "equipment.sword.
                                        "equipment.helm.ironcrest")}
 SELECTED.update({key: "hair-1" for key in ("hair.buzzed", "hair.simple-parted", "hair.long")})
 KEYS = set(SELECTED)
+# The rolling release is pinned by the consumer's copy of its export.ref.json (#411: the bundle
+# with face morph targets); a replaced release fails acquisition until this copy is updated.
+EXPORT_REF = ROOT / "web/assets/ranger/export.ref.json"
 
 
 def complete():
-    """The local copy is this release and holds every file of the selected entries."""
+    """The local copy is the pinned export of this release and holds every file of the selected entries."""
     if not (DEST / "RELEASE").is_file() or (DEST / "RELEASE").read_text().strip() != RELEASE:
+        return False
+    if not (DEST / "export.ref.json").is_file() or (DEST / "export.ref.json").read_bytes() != EXPORT_REF.read_bytes():
         return False
     try:
         index = json.loads((DEST / (RELEASE + ".index.json")).read_text())
@@ -61,6 +66,8 @@ def acquire():
                 files.add(entry["clips"])
         for name in sorted(files):
             download(name)
+        if (directory / "export.ref.json").read_bytes() != EXPORT_REF.read_bytes():
+            raise ValueError(f"{RELEASE} is not the pinned export ({EXPORT_REF.relative_to(ROOT)})")
         (directory / "RELEASE").write_text(RELEASE + "\n")
         if DEST.exists():
             shutil.rmtree(DEST)

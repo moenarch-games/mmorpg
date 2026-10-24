@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { TICK_HZ } from "../src/replication";
 import { createLocalWorld, type LocalZoneModule } from "../src/world/local-world";
 import { PROP_KINDS, createSceneryProvider, decodeScenery } from "../src/world/scenery";
 import { catalogJson } from "./support/catalog";
@@ -84,6 +85,14 @@ describe("scenery provider and local world", () => {
     shrineKitEntries: () => [],
     shrineKitKeys: () => [],
     shrineKitModels: () => new Float32Array(),
+    ambientAnimalEntries: () => ["greyhaven.ambient.cat"],
+    ambientAnimalClips: () => ["Idle", "Walk"],
+    ambientAnimalAnchors: () => Int32Array.from([1_800, 600]),
+    ambientAnimalFrame: () => new Float32Array(18),
+  });
+
+  test("decodes the ambient animals' anchors (#419)", () => {
+    expect(createSceneryProvider(content(1)).ambient.anchors).toEqual([[1_800, 600]]);
   });
 
   test("routes area and relief queries to the WASM owners", () => {
@@ -97,9 +106,10 @@ describe("scenery provider and local world", () => {
   });
 
   test("refuses scenery or a catalog from another content revision than the zone", () => {
-    const module = (revision: bigint, catalogRevision = "7"): LocalZoneModule => ({
+    const module = (revision: bigint, catalogRevision = "7", tickHz = TICK_HZ): LocalZoneModule => ({
       ...content(1),
       catalog: () => JSON.stringify(catalogJson(catalogRevision)),
+      tickHz: () => tickHz,
       LocalZone: class {
         join() { return 1; }
         leave() { return true; }
@@ -111,6 +121,7 @@ describe("scenery provider and local world", () => {
     });
     expect(() => createLocalWorld(module(8n))).toThrow("Scenery content revision 7 does not match");
     expect(() => createLocalWorld(module(7n, "8"))).toThrow("Catalog content revision 8 does not match");
+    expect(() => createLocalWorld(module(7n, "7", TICK_HZ * 2))).toThrow("not the browser's");
     const world = createLocalWorld(module(7n));
     expect(world.scenery.scenery.contentRevision).toBe(7n);
     expect(world.catalog.creatureTemplates.get(1)?.name).toBe("Timber Wolf");

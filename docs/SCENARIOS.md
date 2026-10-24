@@ -1,6 +1,8 @@
 # Headless scenarios
 
 > **Interactive review scenarios (#371)** are a separate, manual tool: open the browser game with `?scenario=ogre-combat&seed=7` (local: `cd web && bun run dev`, then `http://localhost:5173/mmorpg/?scenario=ogre-combat&seed=7`; or the same query on GitHub Pages). It skips character selection and drops a level 5 Warden 15 m from the Southmeadow Hill Ogre in a fresh local world; **Reset scenario** or F9 restarts it from the same seed, and nothing is saved. Scenarios are defined in `crates/mmorpg-wasm/src/scenario.rs`; the badge in the top bar names scenario, seed and content revision for bug reports.
+>
+> **Action Lab (#381)** is the scenario `?scenario=action-lab&class=warden&level=6&gear=standard&resource=60` (optional `weapon=<main-hand item id>`, `seed=<n>`): a configured ephemeral character of any implemented class at the Wolfrun Woods pack, with a dock showing the statechart, a tick timeline and an inspector read from `mmorpg-core`'s `action_inspection`/`arbitrate_input`. F7 pauses, F8 steps one tick, the slider/tick field/timeline scrub the last 30 s of recorded ticks; presets and *Apply & reset* restart it with another validated setup (`crates/mmorpg-wasm/src/action_lab.rs`, `web/src/world/action-lab.ts`).
 
 `mmorpg-scenarios` runs scripted multiplayer and control-plane scenarios without a GPU, network, wall clock or randomness. Use it to check server-side behavior that `scripts/smoke-native.py` can only reach through a GPU window.
 

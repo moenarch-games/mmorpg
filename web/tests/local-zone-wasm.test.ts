@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { GRASS_PACKAGE_DIRECTORY, record } from "../scripts/grass-package";
 import { RELIEF_GRID, RELIEF_PACKAGE_DIRECTORY } from "../scripts/relief-package";
 import { encodeCommand } from "../src/command-wire";
-import { ABILITY_SHAPES, ITEM_SHAPES, decodeSnapshot, type EntityState } from "../src/replication";
+import { ABILITY_SHAPES, ITEM_SHAPES, TICK_HZ, decodeSnapshot, type EntityState } from "../src/replication";
 import { abilitySlots, useAbilitySlot } from "../src/world/units/abilities";
 import { undescribedAbilities } from "../src/world/units/ability-presentation";
 import { combatStatus } from "../src/world/units/combat-hud";
@@ -19,9 +19,10 @@ import { immediate, worldSourceContract } from "./support/world-source-contract"
 
 // Builds crates/mmorpg-wasm for wasm32 and runs wasm-bindgen, like `bun run build`.
 const wasm = await localZoneModule();
-const TICK_SECONDS = 1 / 30;
+const TICK_SECONDS = 1 / TICK_HZ;
 const EAST = 16_384;
-const RUN_UNITS_PER_TICK = 21;
+/** `RUN_SPEED_UNITS_PER_SECOND` (6.3 m/s) per tick. */
+const RUN_UNITS_PER_TICK = 630 / TICK_HZ;
 
 function self(source: LocalZoneSource): EntityState {
   const projection = source.latestProjection();
@@ -386,6 +387,24 @@ describe("WASM local zone host", () => {
     const sampled = source.sample().find((entity) => entity.kind === "player" && entity.entityId === source.latestProjection()?.viewerId);
     expect(sampled?.position[0]).toBeGreaterThan(before - RUN_UNITS_PER_TICK);
     expect(sampled?.position[0]).toBeLessThan(before);
+  });
+
+  test("the ambient cat, dog and rodent pace by the inn and at Millbrook Farm (#419)", () => {
+    const { scenery } = createLocalWorld(wasm, testCharacters());
+    const { ambient } = scenery;
+    expect(ambient.entries).toEqual(["greyhaven.ambient.cat", "greyhaven.ambient.dog", "greyhaven.ambient.rodent"]);
+    expect(ambient.clips).toEqual(["Idle", "Walk"]);
+    expect(ambient.anchors.map(([x, z]) => scenery.areaAt(x, z)?.name)).toEqual(["Greyhaven Outpost", "Millbrook Farm", "Millbrook Farm"]);
+    const frame = ambient.frame(12, true);
+    expect(frame.length).toBe(3 * 18);
+    // Reduced motion holds each animal idle at its first waypoint, on the relief.
+    const still = ambient.frame(99, false);
+    ambient.anchors.forEach(([x, z], index) => {
+      expect(still[index * 18 + 12]).toBeCloseTo(x / 100, 4);
+      expect(still[index * 18 + 14]).toBeCloseTo(z / 100, 4);
+      expect(still[index * 18 + 13]).toBeCloseTo(scenery.reliefAt(x, z) / 100, 4);
+      expect(still[index * 18 + 16]).toBe(0);
+    });
   });
 
   test("scenery and areas come from the same content as the zone", async () => {

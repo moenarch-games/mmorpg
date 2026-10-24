@@ -12,6 +12,7 @@
 //! network hosts never depend on it.
 #![forbid(unsafe_code)]
 
+pub mod ambient;
 pub mod batching;
 pub mod buildings;
 pub mod geometry;

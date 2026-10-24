@@ -1,6 +1,6 @@
 import { encodeCommand, type WorldCommand } from "../command-wire";
 import { FixedTickClock } from "../demo-clock";
-import { decodeSnapshot, SnapshotBuffer, type EntityState, type ZoneSnapshot } from "../replication";
+import { decodeSnapshot, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
 import type { CharacterEntries, LocalCharacters } from "./local-characters";
 import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "./world-source";
 
@@ -24,11 +24,11 @@ export type LocalZoneFactory = (checkpoint: Uint8Array | undefined) => LocalZone
 
 const MAX_SEQUENCE = 0xffff_ffff;
 /** Ticks between commits of the played character (5 s). */
-export const SAVE_INTERVAL_TICKS = 150;
+export const SAVE_INTERVAL_TICKS = ticksFromMs(5_000);
 
 /**
  * A single-player world hosted in this page: the shared Rust zone simulation
- * compiled to WASM, advanced in fixed 30 Hz ticks from a bounded accumulator.
+ * compiled to WASM, advanced in fixed `TICK_HZ` ticks from a bounded accumulator.
  * Every tick's encoded player-scoped projection goes through the same decoder
  * and history a network source uses; canonical state never reaches here.
  *

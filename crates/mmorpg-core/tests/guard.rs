@@ -281,7 +281,7 @@ fn guarding_slows_movement_and_a_jump_suspends_protection() {
         mmorpg_core::physics::to_units(warden.zone.snapshot().unwrap().players[0].velocity);
     assert_eq!(
         velocity[2],
-        mmorpg_core::RUN_SPEED_UNITS_PER_TICK,
+        mmorpg_core::RUN_SPEED_SUBUNITS_PER_TICK / mmorpg_core::physics::SUBUNITS_PER_UNIT,
         "no slowdown in the air"
     );
     // Landing restores protection in the held lane.

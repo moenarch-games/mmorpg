@@ -4,6 +4,16 @@ import { entityKindFromCode, sameEntity, type EntityKind, type EntityRef } from 
 export type { EntityKind, EntityRef } from "./entity-ref";
 export type Vector3 = readonly [number, number, number];
 
+/**
+ * The authoritative simulation rate (`mmorpg_core::TICK_HZ`): the online handshake refuses another
+ * rate and `createLocalWorld` refuses a WASM host at another one.
+ */
+export const TICK_HZ = 30;
+/** Whole ticks in `ms` milliseconds, rounded to the nearest tick like `mmorpg_core::ticks_from_ms`. */
+export function ticksFromMs(ms: number): number {
+  return Math.floor((ms * TICK_HZ + 500) / 1_000);
+}
+
 /** Presentation flags of a visible unit (wire bits 0–7). */
 export type EntityFlags = {
   dead: boolean;
@@ -77,7 +87,7 @@ export type ViewerState = {
 };
 
 /** A full breath: 30 s submerged (`water::BREATH_MAX_TICKS`). */
-export const BREATH_MAX_TICKS = 900;
+export const BREATH_MAX_TICKS = ticksFromMs(30_000);
 
 /** Wire order of combo phase codes 1–2 (`ComboPhase::code`). */
 export const COMBO_PHASES = ["impact", "open"] as const;
@@ -89,7 +99,7 @@ export type MeleeStance = (typeof MELEE_STANCES)[number];
 
 export type GuardState = { raised: StrikeHeight | null; protecting: boolean; broken: number };
 /** Ticks a broken guard recovers (mirrors `GUARD_BREAK_TICKS`). */
-export const GUARD_BREAK_TICKS = 45;
+export const GUARD_BREAK_TICKS = ticksFromMs(1_500);
 
 /** The sums of the equipped items' attributes. */
 export type StatTotals = { stamina: number; strength: number; agility: number; intellect: number };
@@ -308,7 +318,6 @@ function decodeChatText(bytes: Uint8Array): string {
   return text;
 }
 
-export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
 const WIRE_VERSION = 37;
@@ -339,7 +348,7 @@ const DEBRIS_KINDS = ["crate", "barrel", "explosive_barrel", "fence"] as const;
 const DEBRIS_PIECES = [6, 8, 8, 5] as const;
 const MAX_COOLDOWNS = 8;
 const MAX_AURAS = 8;
-export const GLOBAL_COOLDOWN_TICKS = 45;
+export const GLOBAL_COOLDOWN_TICKS = ticksFromMs(1_500);
 const BUFFER_CAPACITY = 32;
 
 const ERROR_CODES: readonly ErrorCode[] = [
@@ -391,61 +400,64 @@ const CLASS_RESOURCES: Readonly<Record<ClassId, ResourceKind>> = { warden: "rage
 const AURA_KINDS: readonly AuraKind[] = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
 
 type AbilityShape = { castTicks: number; channel: boolean; cooldown: number; aura: AuraKind | null; auraTicks: number };
-const instant = (cooldown: number, aura: AuraKind | null = null, auraTicks = 0): AbilityShape =>
-  ({ castTicks: 0, channel: false, cooldown, aura, auraTicks });
+const instant = (cooldownMs: number, aura: AuraKind | null = null, auraMs = 0): AbilityShape =>
+  ({ castTicks: 0, channel: false, cooldown: ticksFromMs(cooldownMs), aura, auraTicks: ticksFromMs(auraMs) });
+const timed = (castMs: number, channel: boolean, cooldownMs: number): AbilityShape =>
+  ({ castTicks: ticksFromMs(castMs), channel, cooldown: ticksFromMs(cooldownMs), aura: null, auraTicks: 0 });
 /**
  * Ability catalog revision 1 by ID, the wire facts the decoder validates (cast time, channel, cooldown
- * and aura); `local-zone-wasm.test.ts` holds it to the WASM catalog export.
+ * and aura), authored in milliseconds like the core catalog; `local-zone-wasm.test.ts` holds it to the
+ * WASM catalog export.
  */
 export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [1, instant(0)],
-  [2, instant(360, "stun", 60)],
-  [3, instant(900, "heal-over-time", 300)],
-  [4, instant(180)],
-  [5, instant(180)],
-  [6, instant(0, "damage-over-time", 450)],
-  [7, instant(360, "snare", 120)],
-  [8, instant(900, "haste", 300)],
-  [9, { castTicks: 60, channel: false, cooldown: 0, aura: null, auraTicks: 0 }],
-  [10, instant(600, "root", 180)],
-  [11, instant(900, "absorb", 600)],
-  [12, { castTicks: 180, channel: true, cooldown: 0, aura: null, auraTicks: 0 }],
-  [13, { castTicks: 45, channel: false, cooldown: 240, aura: null, auraTicks: 0 }],
-  [14, { castTicks: 90, channel: false, cooldown: 600, aura: null, auraTicks: 0 }],
-  [15, { castTicks: 30, channel: false, cooldown: 240, aura: null, auraTicks: 0 }],
-  [16, { castTicks: 45, channel: false, cooldown: 300, aura: null, auraTicks: 0 }],
-  [17, instant(450)],
-  [18, { castTicks: 30, channel: false, cooldown: 360, aura: null, auraTicks: 0 }],
+  [2, instant(12_000, "stun", 2_000)],
+  [3, instant(30_000, "heal-over-time", 10_000)],
+  [4, instant(6_000)],
+  [5, instant(6_000)],
+  [6, instant(0, "damage-over-time", 15_000)],
+  [7, instant(12_000, "snare", 4_000)],
+  [8, instant(30_000, "haste", 10_000)],
+  [9, timed(2_000, false, 0)],
+  [10, instant(20_000, "root", 6_000)],
+  [11, instant(30_000, "absorb", 20_000)],
+  [12, timed(6_000, true, 0)],
+  [13, timed(1_500, false, 8_000)],
+  [14, timed(3_000, false, 20_000)],
+  [15, timed(1_000, false, 8_000)],
+  [16, timed(1_500, false, 10_000)],
+  [17, instant(15_000)],
+  [18, timed(1_000, false, 12_000)],
   // Aimed specials (#291): Piercing Shot and Ricochet Shot.
-  [19, instant(300)],
-  [20, instant(240)],
+  [19, instant(10_000)],
+  [20, instant(8_000)],
   // Arcanist cones, beams and chains (#292).
-  [21, instant(300, "snare", 90)],
-  [22, { castTicks: 60, channel: true, cooldown: 600, aura: null, auraTicks: 0 }],
-  [23, { castTicks: 45, channel: false, cooldown: 360, aura: null, auraTicks: 0 }],
-  [24, { castTicks: 45, channel: false, cooldown: 450, aura: null, auraTicks: 0 }],
+  [21, instant(10_000, "snare", 3_000)],
+  [22, timed(2_000, true, 20_000)],
+  [23, timed(1_500, false, 12_000)],
+  [24, timed(1_500, false, 15_000)],
   // The Redbrand Brute's Overhead Smash (#160).
-  [25, { castTicks: 60, channel: false, cooldown: 450, aura: null, auraTicks: 0 }],
+  [25, timed(2_000, false, 15_000)],
   // The Necromancer (#301): Shadow Bolt, Corruption, Drain Life and Bone Shield.
-  [26, { castTicks: 60, channel: false, cooldown: 0, aura: null, auraTicks: 0 }],
-  [27, instant(0, "damage-over-time", 450)],
-  [28, { castTicks: 90, channel: true, cooldown: 300, aura: null, auraTicks: 0 }],
-  [29, instant(900, "absorb", 600)],
+  [26, timed(2_000, false, 0)],
+  [27, instant(0, "damage-over-time", 15_000)],
+  [28, timed(3_000, true, 10_000)],
+  [29, instant(30_000, "absorb", 20_000)],
   // The Rogue (#302): Sinister Strike, Poisoned Blade, Gouge and Adrenaline Rush.
   [30, instant(0)],
-  [31, instant(0, "damage-over-time", 450)],
-  [32, instant(360, "stun", 60)],
-  [33, instant(900, "haste", 300)],
+  [31, instant(0, "damage-over-time", 15_000)],
+  [32, instant(12_000, "stun", 2_000)],
+  [33, instant(30_000, "haste", 10_000)],
   // The Cleric (#303): Smite, Renew, Holy Beam and Divine Shield.
-  [34, { castTicks: 60, channel: false, cooldown: 0, aura: null, auraTicks: 0 }],
-  [35, instant(0, "heal-over-time", 450)],
-  [36, { castTicks: 60, channel: true, cooldown: 600, aura: null, auraTicks: 0 }],
-  [37, instant(600, "absorb", 600)],
+  [34, timed(2_000, false, 0)],
+  [35, instant(0, "heal-over-time", 15_000)],
+  [36, timed(2_000, true, 20_000)],
+  [37, instant(20_000, "absorb", 20_000)],
   // The Druid (#304): Wrath, Entangling Roots, Rejuvenation and Barkskin.
-  [38, { castTicks: 60, channel: false, cooldown: 0, aura: null, auraTicks: 0 }],
-  [39, instant(600, "root", 180)],
-  [40, instant(0, "heal-over-time", 450)],
-  [41, instant(900, "absorb", 600)],
+  [38, timed(2_000, false, 0)],
+  [39, instant(20_000, "root", 6_000)],
+  [40, instant(0, "heal-over-time", 15_000)],
+  [41, instant(30_000, "absorb", 20_000)],
 ]);
 /** Mana: 110 + 22 per level above 1; rage, focus and faith: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

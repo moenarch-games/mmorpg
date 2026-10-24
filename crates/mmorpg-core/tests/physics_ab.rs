@@ -344,12 +344,17 @@ fn check_ogre(
     });
 }
 
+/// Millbrook Farm's terrace (#423), which the dock, its ramps and the hoist stand on.
+#[allow(clippy::cast_precision_loss)]
+const TERRACE: f32 = mmorpg_core::greyhaven_vale::basin::TERRACE_Y as f32;
+
 /// The ramp walk on one backend (#59): the walker is on the dock (feet 1.5 m up) when it
 /// turns back and on the ground at the end; the chute never lets the other player onto the
 /// dock.
 fn check_mill_ramps(trace: &Trace) -> std::result::Result<(), String> {
-    let feet =
-        |tick: usize, player: usize| trace.snapshots[tick - 1].players[player].position[1] - 90.0;
+    let feet = |tick: usize, player: usize| {
+        trace.snapshots[tick - 1].players[player].position[1] - 90.0 - TERRACE
+    };
     if (feet(44, 0) - 150.0).abs() > 3.0 || feet(trace.snapshots.len(), 0).abs() > 0.5 {
         return Err(format!(
             "the walker's feet at 44 {} and at the end {}",
@@ -369,7 +374,7 @@ fn check_mill_ramps(trace: &Trace) -> std::result::Result<(), String> {
 fn check_mill_hoist(trace: &Trace) -> Result<()> {
     let last = trace.snapshots.last().ok_or("empty hoist trace")?;
     let [_, y, z] = last.players[0].position;
-    if (y - 890.0).abs() > 0.1 || z < 1_900.0 {
+    if (y - 890.0 - TERRACE).abs() > 0.1 || z < 1_900.0 {
         return Err(format!("the hoist rider ends at {:?}", last.players[0].position).into());
     }
     Ok(())
@@ -861,8 +866,7 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
         }
         if matches!(workload, Workload::CrateShove) {
             // On each backend both bashes slide their crates over a metre and they come to rest
-            // (#58), where they agree (the engine arm passes Rapier's combined materials,
-            // physics-engine #391).
+            // (#58), where they agree (both average the pair's materials, physics-engine #391).
             let crates = |trace: &Trace| -> Vec<([f32; 3], [f32; 3])> {
                 let last = trace.snapshots.last().expect("crate trace");
                 [917, 918]

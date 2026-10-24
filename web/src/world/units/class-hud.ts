@@ -1,4 +1,4 @@
-import { findEntity, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type ResourceKind, type StrikeAim, type ZoneSnapshot } from "../../replication";
+import { findEntity, STRIKE_HEIGHTS, STRIKE_SIDES, TICK_HZ, type AuraState, type ResourceKind, type StrikeAim, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { abilitySlots } from "./abilities";
 import { artworkOf, auraPolarity, glyphOf } from "./ability-presentation";
@@ -268,7 +268,7 @@ export class ClassHud {
       setData(cell, "on", cell.dataset.lane === shown?.lane ? "true" : null);
     }
     const words = shown === null ? "" : shown.state === "broken"
-      ? `Guard broken ${(snapshot.viewer.guard.broken / 30).toFixed(1)} s`
+      ? `Guard broken ${(snapshot.viewer.guard.broken / TICK_HZ).toFixed(1)} s`
       : shown.state === "protecting" ? `Guarding ${shown.lane}` : `Guard ${shown.lane} (not set)`;
     setText(this.#guard.label, words);
   }

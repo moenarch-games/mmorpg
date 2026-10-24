@@ -14,7 +14,9 @@ use game_server::{
     MatchHostStatusConfig, MatchHostWebTransportConfig, MatchId, MatchRuntime, SnapshotCommitBatch,
     SnapshotCommitFuture, SnapshotCommitter, SnapshotPersistence,
 };
-use mmorpg_core::{CharacterId, ClassChoice, ZoneId, ZoneSimulation, greyhaven_vale};
+use mmorpg_core::{
+    CharacterId, ClassChoice, ZoneId, ZoneSimulation, greyhaven_vale, long_ticks_from_ms,
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     env,
@@ -417,12 +419,18 @@ pub async fn serve_postgres_character_host(
     };
     let ttl = millis("MMORPG_GRANT_TTL_MS", 30000)?;
     let renew = millis("MMORPG_GRANT_RENEW_MS", 10000)?;
-    let interval = number("MMORPG_CHECKPOINT_INTERVAL_TICKS", 300_u64)?;
+    let interval = number(
+        "MMORPG_CHECKPOINT_INTERVAL_TICKS",
+        u64::from(long_ticks_from_ms(10_000)),
+    )?;
     let limits = JournalLimits {
         max_batch_bytes: number("MMORPG_JOURNAL_MAX_BATCH_BYTES", 16 * 1024 * 1024)?,
         max_retained_bytes: number("MMORPG_JOURNAL_MAX_RETAINED_BYTES", 64 * 1024 * 1024)?,
         max_retained_batches: number("MMORPG_JOURNAL_MAX_BATCHES", 900)?,
-        max_replay_ticks: number("MMORPG_JOURNAL_MAX_REPLAY_TICKS", 900)?,
+        max_replay_ticks: number(
+            "MMORPG_JOURNAL_MAX_REPLAY_TICKS",
+            u64::from(long_ticks_from_ms(30_000)),
+        )?,
     };
     let host_id = mmorpg_control_plane::HostId::new(required("MMORPG_HOST_ID")?)?;
     // Validate the S3 destination before granting any ownership.

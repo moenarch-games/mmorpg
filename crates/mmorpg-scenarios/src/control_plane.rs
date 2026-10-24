@@ -22,7 +22,7 @@ use crate::report::{Report, snake_kind, validate_name};
 
 pub const SCHEMA: &str = "mmorpg.control-plane-scenario/v1";
 const MAX_STEPS: usize = 10_000;
-const RECONNECT_GRACE_TICKS: u64 = 120;
+const RECONNECT_GRACE_TICKS: u64 = mmorpg_core::long_ticks_from_ms(4_000) as u64;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -23,9 +23,7 @@ use crate::physics::RigidBody;
 
 use crate::entity::body_id;
 use crate::zone::{PlayerState, is_grounded};
-use crate::{
-    EntityRef, PlayerClass, PlayerId, RUN_SPEED_UNITS_PER_TICK, ZoneError, ZoneSimulation, action,
-};
+use crate::{EntityRef, PlayerClass, PlayerId, ZoneError, ZoneSimulation, action};
 
 /// Recovery after an ordinary landing: the action graph's `Landing`
 /// recovery, 0.3 s.
@@ -36,10 +34,13 @@ pub const OVERHEAD_LANDING_TICKS: u16 = action::modified_recovery_ticks(
     action::ActionId::Landing,
     action::Condition::AttackedAirborne,
 );
-/// Horizontal speed (units per tick) from which a run at the target charges.
-const CHARGE_SPEED_UNITS_PER_TICK: i64 = RUN_SPEED_UNITS_PER_TICK as i64 * 3 / 4;
+/// Horizontal speed from which a run at the target charges: three quarters of
+/// [`crate::RUN_SPEED_UNITS_PER_SECOND`], rounded down to whole units per tick (4.5 m/s).
+const CHARGE_SPEED_UNITS_PER_SECOND: i32 = 450;
+const CHARGE_SPEED_UNITS_PER_TICK: i64 =
+    crate::units_per_tick(CHARGE_SPEED_UNITS_PER_SECOND) as i64;
 /// Below this horizontal speed a grounded Warden is planted.
-const PLANTED_SPEED_UNITS_PER_TICK: i64 = 2;
+const PLANTED_SPEED_UNITS_PER_TICK: i64 = crate::units_per_tick(60) as i64;
 /// A charge heads within acos(0.7) ≈ 45° of the target: cos² ≥ 49/100.
 const CHARGE_COS_SQUARED: [i64; 2] = [49, 100];
 
@@ -160,7 +161,7 @@ impl ZoneSimulation {
             return Ok(Some(MeleeStance::Landing));
         }
         let body = self.player_body(player_id)?;
-        let velocity = body.velocity();
+        let velocity = body.velocity_units();
         let (vx, vz) = (i64::from(velocity.x), i64::from(velocity.z));
         let speed_squared = vx * vx + vz * vz;
         if speed_squared <= PLANTED_SPEED_UNITS_PER_TICK.pow(2) {

@@ -65,6 +65,8 @@ export type ViewerLook = {
   classId: "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid" | null; sex: "female" | "male"; headwear: string | null;
   /** The viewer's hairstyle and colour (#376); hidden under the hood and helm. */
   hair?: "buzzed" | "parted" | "long" | "bald"; hairColor?: "black" | "brown" | "blond";
+  /** The viewer's face (#411): bundle face feature id to option id. */
+  face?: Readonly<Record<string, string>>;
 };
 
 type DrawEntry = { id: string; key: string; model: number; color: Color; emissive: Color | null; opacity: number; unlit: boolean; doubleSided: boolean };

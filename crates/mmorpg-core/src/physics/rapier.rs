@@ -25,7 +25,7 @@ use rapier3d::prelude::{
 use super::queries::UprightShapes;
 use super::{
     Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, RayHit, RigidBody,
-    StepStats, Vec3i, error, exact, round,
+    StepStats, Vec3i, error, exact, from_subunits,
 };
 
 /// Centimetre units per metre.
@@ -51,7 +51,7 @@ pub(super) const DEBRIS_REST_SPEED_UNITS: f32 = 0.6;
 pub(super) const DEBRIS_REST_SPIN: f32 = 0.03;
 /// Fixed geometry this far (units) around the pieces takes part in a debris step.
 pub(super) const DEBRIS_REACH_UNITS: f32 = 1_000.0;
-pub(super) const TICKS_PER_SECOND: f32 = 30.0;
+pub(super) const TICKS_PER_SECOND: f32 = crate::TICK_HZ as f32;
 
 /// A body's Rapier handles.
 #[derive(Clone, Copy)]
@@ -89,7 +89,7 @@ impl fmt::Debug for World {
 
 impl Clone for World {
     fn clone(&self) -> Self {
-        let mut world = Self::new(round(self.gravity));
+        let mut world = Self::new(Vec3i::ZERO);
         world.gravity = self.gravity;
         world.bodies = self.bodies.clone();
         world.ground = self.ground.clone();
@@ -118,7 +118,7 @@ fn empty_world() -> PhysicsWorld {
     let mut world = PhysicsWorld::new();
     // Gravity and jumps are movement intent the zone integrates: nothing is dynamic.
     world.gravity = Vector::ZERO;
-    world.integration_parameters.dt = 1.0 / 30.0;
+    world.integration_parameters.dt = 1.0 / TICKS_PER_SECOND;
     world
 }
 
@@ -276,11 +276,11 @@ fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain)
 }
 
 impl World {
-    /// An empty world; `gravity` is in units per tick squared.
+    /// An empty world; `gravity` is in subunits per tick squared.
     #[must_use]
     pub fn new(gravity: Vec3i) -> Self {
         Self {
-            gravity: exact(gravity),
+            gravity: from_subunits(gravity),
             ground: None,
             world: empty_world(),
             queries: UprightShapes.chain(DefaultQueryDispatcher),
@@ -437,7 +437,7 @@ impl World {
             .get_mut(&id)
             .filter(|body| body.is_moving())
             .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
-        body.velocity = exact(velocity);
+        body.velocity = from_subunits(velocity);
         Ok(())
     }
 
@@ -774,14 +774,25 @@ impl World {
         position: [f32; 3],
         filter: QueryFilter<'_>,
     ) -> Option<f32> {
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            filter,
-        );
-        queries
-            .cast_shape(
+        // Rapier reports only the first hit. A capsule leaning on a face too steep to stand on
+        // (a ramp's chute end, #59) can still stand on the terrain beside it (#423), so a
+        // steep hit is set aside and the cast repeated, a few times at most.
+        let mut steep: Vec<ColliderHandle> = Vec::new();
+        for _ in 0..4 {
+            let previous = filter.predicate;
+            let admit = |handle: ColliderHandle, collider: &rapier3d::prelude::Collider| {
+                !steep.contains(&handle) && previous.is_none_or(|admits| admits(handle, collider))
+            };
+            let queries = self.world.broad_phase.as_query_pipeline(
+                &self.queries,
+                &self.world.bodies,
+                &self.world.colliders,
+                QueryFilter {
+                    predicate: Some(&admit),
+                    ..filter
+                },
+            );
+            let (handle, hit) = queries.cast_shape(
                 &Pose::from_translation(lifted(position)),
                 -Vector::Y,
                 &capsule(body.half_extents),
@@ -791,11 +802,13 @@ impl World {
                     max_time_of_impact: SUPPORT_REACH,
                     compute_impact_geometry_on_penetration: true,
                 },
-            )
-            .filter(|(_, hit)| {
-                hit.normal1.dot(Vector::Y) >= self.controller.max_slope_climb_angle.cos()
-            })
-            .map(|(_, hit)| hit.time_of_impact * UNITS_PER_METRE)
+            )?;
+            if hit.normal1.dot(Vector::Y) >= self.controller.max_slope_climb_angle.cos() {
+                return Some(hit.time_of_impact * UNITS_PER_METRE);
+            }
+            steep.push(handle);
+        }
+        None
     }
 
     /// Whether a moving body stands on static ground.

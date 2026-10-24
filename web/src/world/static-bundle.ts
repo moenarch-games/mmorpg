@@ -1,8 +1,8 @@
 import type { Object3D } from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-/** Existing static glTF consumer shared by the inn and opt-in nature review. */
-export async function loadStaticBundle(base: string, keys: readonly string[]): Promise<Object3D[]> {
+/** The `default` glTF of each of `keys` in the gltf-resources bundle at `base`, loaded with plain three.js. */
+export async function loadBundleGltfs(base: string, keys: readonly string[]): Promise<GLTF[]> {
   const url = (path: string) => new URL(path, new URL(base, window.location.href)).href;
   const response = await fetch(url("manifest.json"));
   if (!response.ok) {
@@ -15,9 +15,16 @@ export async function loadStaticBundle(base: string, keys: readonly string[]): P
     if (!entry) {
       throw new Error(`The static bundle has no ${key}/default entry.`);
     }
-    const root = (await loader.loadAsync(url(entry.path))).scene;
-    root.name = key;
+    return loader.loadAsync(url(entry.path));
+  }));
+}
+
+/** Existing static glTF consumer shared by the inn and opt-in nature review. */
+export async function loadStaticBundle(base: string, keys: readonly string[]): Promise<Object3D[]> {
+  return (await loadBundleGltfs(base, keys)).map((gltf, index) => {
+    const root = gltf.scene;
+    root.name = keys[index]!;
     root.matrixAutoUpdate = false;
     return root;
-  }));
+  });
 }
