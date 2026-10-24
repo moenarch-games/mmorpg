@@ -48,8 +48,8 @@ pub const REVISION: u64 = 26;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
-/// Gravity in units per tick squared.
-pub const GRAVITY: [i32; 3] = [0, -1, 0];
+/// Gravity in units per tick squared, authored as 9 m/s² down.
+pub const GRAVITY: [i32; 3] = [0, crate::units_per_tick_squared(-900), 0];
 /// The inner faces of the boundary walls enclose this square.
 pub const PLAYABLE_BOUNDS: XzBounds = XzBounds {
     min: [-20_800, -20_800],
@@ -868,8 +868,8 @@ pub const MILL_HOIST: crate::Platform = crate::Platform {
     half_extents: [100, 400, 100],
     low: [8_800, -400, 1_748],
     high: [8_800, 400, 1_748],
-    speed: 5,
-    dwell: 150,
+    speed: crate::units_per_tick(150),
+    dwell: crate::long_ticks_from_ms(5_000),
 };
 
 /// The mill's loading dock ramps (#59): a shallow cart ramp (17°) up the dock's west side
@@ -895,7 +895,7 @@ pub fn structure_sites() -> Vec<crate::StructureSite> {
     vec![crate::StructureSite {
         id: 1,
         name: "Redbrand Hollow".to_owned(),
-        regrowth_ticks: 9_000,
+        regrowth_ticks: crate::long_ticks_from_ms(300_000),
     }]
 }
 

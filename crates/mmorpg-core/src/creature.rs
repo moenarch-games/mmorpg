@@ -14,15 +14,15 @@ use crate::{
 };
 
 /// Creatures chase at 19 units per tick (5.7 m/s), slower than a running player.
-pub const CREATURE_RUN_SPEED_UNITS_PER_TICK: i32 = 19;
+pub const CREATURE_RUN_SPEED_UNITS_PER_TICK: i32 = crate::units_per_tick(570);
 /// Wandering creatures walk at 40 % of their run speed, rounded.
-pub const CREATURE_WALK_SPEED_UNITS_PER_TICK: i32 = 8;
+pub const CREATURE_WALK_SPEED_UNITS_PER_TICK: i32 = crate::units_per_tick(240);
 /// Evading creatures run home at 1.25 × their run speed, rounded up.
-pub const CREATURE_EVADE_SPEED_UNITS_PER_TICK: i32 = 24;
+pub const CREATURE_EVADE_SPEED_UNITS_PER_TICK: i32 = crate::units_per_tick(720);
 /// Idle creatures wait 5–15 s between wander walks.
-pub const WANDER_WAIT_TICKS: [u16; 2] = [150, 450];
+pub const WANDER_WAIT_TICKS: [u16; 2] = [crate::ticks_from_ms(5_000), crate::ticks_from_ms(15_000)];
 /// A wander walk that has not arrived after 10 s gives up.
-pub const WANDER_WALK_TIMEOUT_TICKS: u16 = 300;
+pub const WANDER_WALK_TIMEOUT_TICKS: u16 = crate::ticks_from_ms(10_000);
 /// Aggro radius against a player of the same level (10 m) …
 pub const AGGRO_RADIUS_UNITS: i32 = 1_000;
 /// … changed by 1 m per level the creature is above (or below) the player …
@@ -35,7 +35,7 @@ pub const ASSIST_RADIUS_UNITS: i32 = 800;
 /// Beyond this XZ distance from its spawn point a creature evades.
 pub const LEASH_RADIUS_UNITS: i32 = 4_000;
 /// An evading creature still away from home after 10 s is moved home.
-pub const EVADE_TIMEOUT_TICKS: u16 = 300;
+pub const EVADE_TIMEOUT_TICKS: u16 = crate::ticks_from_ms(10_000);
 /// A creature within this XZ distance of its destination has arrived.
 pub const ARRIVAL_RADIUS_UNITS: i32 = 20;
 /// Threat table capacity; later attackers are not added when it is full.

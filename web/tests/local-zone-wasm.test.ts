@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { GRASS_PACKAGE_DIRECTORY, record } from "../scripts/grass-package";
 import { RELIEF_GRID, RELIEF_PACKAGE_DIRECTORY } from "../scripts/relief-package";
 import { encodeCommand } from "../src/command-wire";
-import { ABILITY_SHAPES, ITEM_SHAPES, decodeSnapshot, type EntityState } from "../src/replication";
+import { ABILITY_SHAPES, ITEM_SHAPES, TICK_HZ, decodeSnapshot, type EntityState } from "../src/replication";
 import { abilitySlots, useAbilitySlot } from "../src/world/units/abilities";
 import { undescribedAbilities } from "../src/world/units/ability-presentation";
 import { combatStatus } from "../src/world/units/combat-hud";
@@ -19,9 +19,10 @@ import { immediate, worldSourceContract } from "./support/world-source-contract"
 
 // Builds crates/mmorpg-wasm for wasm32 and runs wasm-bindgen, like `bun run build`.
 const wasm = await localZoneModule();
-const TICK_SECONDS = 1 / 30;
+const TICK_SECONDS = 1 / TICK_HZ;
 const EAST = 16_384;
-const RUN_UNITS_PER_TICK = 21;
+/** `RUN_SPEED_UNITS_PER_SECOND` (6.3 m/s) per tick. */
+const RUN_UNITS_PER_TICK = 630 / TICK_HZ;
 
 function self(source: LocalZoneSource): EntityState {
   const projection = source.latestProjection();

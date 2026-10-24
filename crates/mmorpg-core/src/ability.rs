@@ -5,18 +5,19 @@
 //! catalog live in `casting`; aura bookkeeping in `aura`.
 
 use crate::class::PlayerClass;
+use crate::ticks_from_ms;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
 pub const ABILITY_CATALOG_REVISION: u64 = 13;
 /// Every player ability starts this global cooldown; haste never shortens it.
-pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
+pub const GLOBAL_COOLDOWN_TICKS: u16 = ticks_from_ms(1_500);
 /// At most this many auras rest on one unit.
 pub const MAX_AURAS: usize = 8;
 /// At most this many cooldowns run on one player: one per action-bar slot (its class abilities).
 pub const MAX_COOLDOWNS: usize = 8;
 /// Zone-RNG jitter added whenever a creature's ability timer starts.
-pub const CREATURE_ABILITY_JITTER_TICKS: u16 = 30;
+pub const CREATURE_ABILITY_JITTER_TICKS: u16 = ticks_from_ms(1_000);
 
 /// A global ability ID; 0 is never an ability.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -539,11 +540,11 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         2,
         10,
         CastTime::Instant,
-        360,
+        ticks_from_ms(12_000),
         AbilityRange::Melee,
         AbilityEffect::Bash {
-            stun_ticks: 60,
-            lockout_ticks: 120,
+            stun_ticks: ticks_from_ms(2_000),
+            lockout_ticks: ticks_from_ms(4_000),
             knockback: 300,
         },
     ),
@@ -554,12 +555,12 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         4,
         20,
         CastTime::Instant,
-        900,
+        ticks_from_ms(30_000),
         AbilityRange::SelfCentred,
         AbilityEffect::HealOverTime {
             percent: 30,
-            duration: 300,
-            period: 30,
+            duration: ticks_from_ms(10_000),
+            period: ticks_from_ms(1_000),
         },
     ),
     ability(
@@ -569,7 +570,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         6,
         20,
         CastTime::Instant,
-        180,
+        ticks_from_ms(6_000),
         AbilityRange::Melee,
         AbilityEffect::Cleave {
             extra: 2,
@@ -584,7 +585,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             1,
             30,
             CastTime::Instant,
-            180,
+            ticks_from_ms(6_000),
             RANGED,
             AbilityEffect::WeaponStrike {
                 numerator: 2,
@@ -607,8 +608,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             AbilityEffect::DamageOverTime {
                 base: 30,
                 per_level: 4,
-                duration: 450,
-                period: 90,
+                duration: ticks_from_ms(15_000),
+                period: ticks_from_ms(3_000),
             },
         ),
         crate::ProjectileKind::Arrow,
@@ -621,11 +622,11 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             4,
             15,
             CastTime::Instant,
-            360,
+            ticks_from_ms(12_000),
             RANGED,
             AbilityEffect::Snare {
                 percent: 50,
-                duration: 120,
+                duration: ticks_from_ms(4_000),
             },
         ),
         crate::ProjectileKind::Arrow,
@@ -637,11 +638,11 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         6,
         20,
         CastTime::Instant,
-        900,
+        ticks_from_ms(30_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Haste {
             percent: 40,
-            duration: 300,
+            duration: ticks_from_ms(10_000),
         },
     ),
     // A magic missile (#289): it homes on its target, or flies straight along the facing.
@@ -652,7 +653,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             ARCANIST,
             1,
             25,
-            CastTime::Cast(60),
+            CastTime::Cast(ticks_from_ms(2_000)),
             0,
             RANGED,
             AbilityEffect::Bolt {
@@ -669,13 +670,13 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         2,
         30,
         CastTime::Instant,
-        600,
+        ticks_from_ms(20_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Nova {
             damage: [3, 5],
             radius: 800,
-            root_ticks: 180,
-            unbreakable_ticks: 30,
+            root_ticks: ticks_from_ms(6_000),
+            unbreakable_ticks: ticks_from_ms(1_000),
         },
     ),
     ability(
@@ -685,12 +686,12 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         4,
         40,
         CastTime::Instant,
-        900,
+        ticks_from_ms(30_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Absorb {
             base: 20,
             per_level: 8,
-            duration: 600,
+            duration: ticks_from_ms(20_000),
         },
     ),
     ability(
@@ -699,14 +700,14 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         ARCANIST,
         6,
         80,
-        CastTime::Channel(180),
+        CastTime::Channel(ticks_from_ms(6_000)),
         0,
         RANGED,
         AbilityEffect::Blizzard {
             damage: [4, 6],
             per_level: 1,
             radius: 600,
-            period: 30,
+            period: ticks_from_ms(1_000),
         },
     ),
     ability(
@@ -715,8 +716,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         AbilityUser::Creature,
         1,
         0,
-        CastTime::Cast(45),
-        240,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(8_000),
         AbilityRange::Units(2_000),
         AbilityEffect::Bolt {
             damage: [5, 8],
@@ -729,8 +730,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         AbilityUser::Creature,
         1,
         0,
-        CastTime::Cast(90),
-        600,
+        CastTime::Cast(ticks_from_ms(3_000)),
+        ticks_from_ms(20_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Bandage {
             percent: 20,
@@ -744,8 +745,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             AbilityUser::Creature,
             1,
             0,
-            CastTime::Cast(30),
-            240,
+            CastTime::Cast(ticks_from_ms(1_000)),
+            ticks_from_ms(8_000),
             AbilityRange::Units(2_000),
             AbilityEffect::Bolt {
                 damage: [5, 8],
@@ -760,8 +761,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         ARCANIST,
         3,
         45,
-        CastTime::Cast(45),
-        300,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(10_000),
         RANGED,
         AbilityEffect::Blast {
             damage: [12, 16],
@@ -777,7 +778,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         3,
         0,
         CastTime::Instant,
-        450,
+        ticks_from_ms(15_000),
         // A charge covers CHARGE_MAX_TICKS × CHARGE_SPEED_UNITS plus melee reach.
         AbilityRange::Units(1_500),
         AbilityEffect::Charge { knockback: 300 },
@@ -789,8 +790,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         AbilityUser::Creature,
         1,
         0,
-        CastTime::Cast(30),
-        360,
+        CastTime::Cast(ticks_from_ms(1_000)),
+        ticks_from_ms(12_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Stomp {
             damage: [8, 12],
@@ -808,7 +809,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             3,
             35,
             CastTime::Instant,
-            300,
+            ticks_from_ms(10_000),
             RANGED,
             AbilityEffect::WeaponStrike {
                 numerator: 2,
@@ -826,7 +827,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             5,
             30,
             CastTime::Instant,
-            240,
+            ticks_from_ms(8_000),
             RANGED,
             AbilityEffect::WeaponStrike {
                 numerator: 3,
@@ -844,7 +845,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         5,
         35,
         CastTime::Instant,
-        300,
+        ticks_from_ms(10_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Cone {
             damage: [6, 9],
@@ -852,7 +853,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             range: 800,
             half_angle: 30,
             percent: 40,
-            duration: 90,
+            duration: ticks_from_ms(3_000),
         },
     ),
     ability(
@@ -861,14 +862,14 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         ARCANIST,
         8,
         50,
-        CastTime::Channel(60),
-        600,
+        CastTime::Channel(ticks_from_ms(2_000)),
+        ticks_from_ms(20_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Beam {
             damage: [4, 6],
             per_level: 1,
             length: 2_000,
-            period: 15,
+            period: ticks_from_ms(500),
         },
     ),
     ability(
@@ -877,8 +878,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         ARCANIST,
         7,
         45,
-        CastTime::Cast(45),
-        360,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(12_000),
         RANGED,
         AbilityEffect::Chain {
             damage: [10, 14],
@@ -895,8 +896,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         AbilityUser::Creature,
         1,
         0,
-        CastTime::Cast(45),
-        450,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(15_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Stomp {
             damage: [16, 22],
@@ -914,8 +915,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         AbilityUser::Creature,
         1,
         0,
-        CastTime::Cast(60),
-        450,
+        CastTime::Cast(ticks_from_ms(2_000)),
+        ticks_from_ms(15_000),
         AbilityRange::Melee,
         AbilityEffect::Smash {
             damage: [16, 22],
@@ -934,7 +935,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             NECROMANCER,
             1,
             25,
-            CastTime::Cast(60),
+            CastTime::Cast(ticks_from_ms(2_000)),
             0,
             RANGED,
             AbilityEffect::Bolt {
@@ -957,8 +958,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             AbilityEffect::DamageOverTime {
                 base: 30,
                 per_level: 4,
-                duration: 450,
-                period: 90,
+                duration: ticks_from_ms(15_000),
+                period: ticks_from_ms(3_000),
             },
         ),
         crate::ProjectileKind::Shadow,
@@ -969,13 +970,13 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         NECROMANCER,
         4,
         45,
-        CastTime::Channel(90),
-        300,
+        CastTime::Channel(ticks_from_ms(3_000)),
+        ticks_from_ms(10_000),
         RANGED,
         AbilityEffect::Drain {
             damage: [5, 7],
             per_level: 1,
-            period: 30,
+            period: ticks_from_ms(1_000),
         },
     ),
     ability(
@@ -985,12 +986,12 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         6,
         40,
         CastTime::Instant,
-        900,
+        ticks_from_ms(30_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Absorb {
             base: 20,
             per_level: 8,
-            duration: 600,
+            duration: ticks_from_ms(20_000),
         },
     ),
     // The Rogue (#302): a dagger strike, a poisoned blade, a stunning gouge and a burst of
@@ -1023,8 +1024,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         AbilityEffect::DamageOverTime {
             base: 30,
             per_level: 4,
-            duration: 450,
-            period: 90,
+            duration: ticks_from_ms(15_000),
+            period: ticks_from_ms(3_000),
         },
     ),
     ability(
@@ -1034,11 +1035,11 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         4,
         15,
         CastTime::Instant,
-        360,
+        ticks_from_ms(12_000),
         AbilityRange::Melee,
         AbilityEffect::Bash {
-            stun_ticks: 60,
-            lockout_ticks: 120,
+            stun_ticks: ticks_from_ms(2_000),
+            lockout_ticks: ticks_from_ms(4_000),
             knockback: 0,
         },
     ),
@@ -1049,11 +1050,11 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         6,
         20,
         CastTime::Instant,
-        900,
+        ticks_from_ms(30_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Haste {
             percent: 40,
-            duration: 300,
+            duration: ticks_from_ms(10_000),
         },
     ),
     // The Cleric (#303) on faith: Smite costs nothing and builds faith, so a fresh Cleric can
@@ -1066,7 +1067,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             CLERIC,
             1,
             0,
-            CastTime::Cast(60),
+            CastTime::Cast(ticks_from_ms(2_000)),
             0,
             RANGED,
             AbilityEffect::Bolt {
@@ -1087,8 +1088,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         FRIENDLY,
         AbilityEffect::HealOverTime {
             percent: 25,
-            duration: 450,
-            period: 90,
+            duration: ticks_from_ms(15_000),
+            period: ticks_from_ms(3_000),
         },
     ),
     ability(
@@ -1097,14 +1098,14 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         CLERIC,
         4,
         40,
-        CastTime::Channel(60),
-        600,
+        CastTime::Channel(ticks_from_ms(2_000)),
+        ticks_from_ms(20_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Beam {
             damage: [4, 6],
             per_level: 1,
             length: 2_000,
-            period: 15,
+            period: ticks_from_ms(500),
         },
     ),
     ability(
@@ -1114,12 +1115,12 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         6,
         35,
         CastTime::Instant,
-        600,
+        ticks_from_ms(20_000),
         FRIENDLY,
         AbilityEffect::Absorb {
             base: 20,
             per_level: 8,
-            duration: 600,
+            duration: ticks_from_ms(20_000),
         },
     ),
     // The Druid (#304) on mana like the Arcanist: a nature missile, a single-target root,
@@ -1132,7 +1133,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             DRUID,
             1,
             25,
-            CastTime::Cast(60),
+            CastTime::Cast(ticks_from_ms(2_000)),
             0,
             RANGED,
             AbilityEffect::Bolt {
@@ -1149,11 +1150,11 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         2,
         30,
         CastTime::Instant,
-        600,
+        ticks_from_ms(20_000),
         RANGED,
         AbilityEffect::Root {
-            root_ticks: 180,
-            unbreakable_ticks: 30,
+            root_ticks: ticks_from_ms(6_000),
+            unbreakable_ticks: ticks_from_ms(1_000),
         },
     ),
     ability(
@@ -1167,8 +1168,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         FRIENDLY,
         AbilityEffect::HealOverTime {
             percent: 25,
-            duration: 450,
-            period: 90,
+            duration: ticks_from_ms(15_000),
+            period: ticks_from_ms(3_000),
         },
     ),
     ability(
@@ -1178,12 +1179,12 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         6,
         40,
         CastTime::Instant,
-        900,
+        ticks_from_ms(30_000),
         AbilityRange::SelfCentred,
         AbilityEffect::Absorb {
             base: 20,
             per_level: 8,
-            duration: 600,
+            duration: ticks_from_ms(20_000),
         },
     ),
 ];

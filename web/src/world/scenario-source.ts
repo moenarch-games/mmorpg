@@ -44,7 +44,7 @@ export function scenarioChoice(search: string): ScenarioChoice | null {
 /**
  * A local review scenario (#371): the shared zone simulation in WASM, started
  * fresh in a named situation with an ephemeral character. Like
- * `LocalZoneSource` it ticks at 30 Hz and publishes only decoded projections,
+ * `LocalZoneSource` it ticks at `TICK_HZ` and publishes only decoded projections,
  * but nothing is leased or stored, and `reset()` restarts the same scenario
  * and seed. It is never a network host's input.
  */

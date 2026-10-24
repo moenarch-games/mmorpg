@@ -11,7 +11,7 @@ export function frameDeltaSeconds(now: number, previous: number): number {
   return Math.max(0, Math.min((now - previous) / 1000, 0.05));
 }
 
-/** Bounded accumulator that turns elapsed wall-clock time into whole 30 Hz ticks. */
+/** Bounded accumulator that turns elapsed wall-clock time into whole `TICK_HZ` ticks. */
 export class FixedTickClock {
   #accumulated = 0;
 

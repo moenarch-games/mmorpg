@@ -175,22 +175,67 @@ use std::fmt;
 
 pub type PlayerId = u32;
 
+/// The authoritative simulation rate. Durations are authored in milliseconds and
+/// speeds in units per second; the helpers below are the only place they become
+/// ticks, and the handshake and both clients read this constant.
 pub const TICK_HZ: u16 = 30;
 
-/// Converts an authored duration to whole authoritative ticks at
-/// [`TICK_HZ`]. A duration that is not a whole number of ticks fails to
-/// compile in const contexts.
+/// Whole ticks in `ms` milliseconds at [`TICK_HZ`], rounded to the nearest tick
+/// (halves up): 1 tick lasts 33⅓ ms at 30 Hz, so a duration that is not a
+/// multiple of 100 ms is authored as its nearest whole millisecond. A nonzero
+/// duration shorter than half a tick, or one longer than `u16::MAX` ticks, fails
+/// to compile in const contexts.
 #[must_use]
 pub const fn ticks_from_ms(ms: u32) -> u16 {
-    let scaled = ms as u64 * TICK_HZ as u64;
-    assert!(
-        scaled.is_multiple_of(1_000),
-        "duration is not a whole number of ticks"
-    );
-    let ticks = scaled / 1_000;
-    assert!(ticks <= u16::MAX as u64, "duration is too long");
+    let ticks = long_ticks_from_ms(ms);
+    assert!(ticks <= u16::MAX as u32, "duration is too long");
     ticks as u16
 }
+
+/// [`ticks_from_ms`] for the long `u32` timers (zone day, respawns, corpses).
+#[must_use]
+pub const fn long_ticks_from_ms(ms: u32) -> u32 {
+    let ticks = (ms as u64 * TICK_HZ as u64 + 500) / 1_000;
+    assert!(ms == 0 || ticks > 0, "duration is shorter than half a tick");
+    assert!(ticks <= u32::MAX as u64, "duration is too long");
+    ticks as u32
+}
+
+/// Units per tick of a speed authored in units per second. A speed that is not
+/// a whole number of units per tick fails to compile in const contexts.
+#[must_use]
+pub const fn units_per_tick(units_per_second: i32) -> i32 {
+    assert!(
+        units_per_second % TICK_HZ as i32 == 0,
+        "speed is not a whole number of units per tick"
+    );
+    units_per_second / TICK_HZ as i32
+}
+
+/// Units per tick² of an acceleration authored in units per second². One that is
+/// not a whole number of units per tick² fails to compile in const contexts.
+#[must_use]
+pub const fn units_per_tick_squared(units_per_second_squared: i32) -> i32 {
+    let ticks_squared = TICK_HZ as i32 * TICK_HZ as i32;
+    assert!(
+        units_per_second_squared % ticks_squared == 0,
+        "acceleration is not a whole number of units per tick squared"
+    );
+    units_per_second_squared / ticks_squared
+}
+
+/// [`units_per_tick`] for the `f32` projectile motion, which needs no whole units.
+#[must_use]
+pub const fn f32_units_per_tick(units_per_second: f32) -> f32 {
+    units_per_second / TICK_HZ as f32
+}
+
+/// [`units_per_tick_squared`] for the `f32` projectile motion.
+#[must_use]
+pub const fn f32_units_per_tick_squared(units_per_second_squared: f32) -> f32 {
+    units_per_second_squared / (TICK_HZ as f32 * TICK_HZ as f32)
+}
+
 pub const MAX_PLAYERS_PER_ZONE: usize = 512;
 /// Core schema of canonical and player-visible snapshots.
 pub const SNAPSHOT_SCHEMA_VERSION: u16 = 37;
@@ -204,12 +249,14 @@ pub const MAX_VISIBLE_ENTITIES: usize = 64;
 /// Character collision box: 0.6 m × 1.8 m × 0.6 m, shared with clients.
 pub const PLAYER_HALF_EXTENTS_UNITS: [i32; 3] = [30, 90, 30];
 /// Horizontal speed for forward, strafe and forward-diagonal intent (6.3 m/s).
-pub const RUN_SPEED_UNITS_PER_TICK: i32 = 21;
-/// Horizontal speed whenever intent has a backward component.
-pub const BACKPEDAL_SPEED_UNITS_PER_TICK: i32 = 13;
-/// Upward velocity a grounded jump sets before physics applies gravity.
-pub const JUMP_VELOCITY_UNITS_PER_TICK: i32 = 16;
-
+pub const RUN_SPEED_UNITS_PER_SECOND: i32 = 630;
+pub const RUN_SPEED_UNITS_PER_TICK: i32 = units_per_tick(RUN_SPEED_UNITS_PER_SECOND);
+/// Horizontal speed whenever intent has a backward component (3.9 m/s).
+pub const BACKPEDAL_SPEED_UNITS_PER_SECOND: i32 = 390;
+pub const BACKPEDAL_SPEED_UNITS_PER_TICK: i32 = units_per_tick(BACKPEDAL_SPEED_UNITS_PER_SECOND);
+/// Upward velocity a grounded jump sets before physics applies gravity (4.8 m/s).
+pub const JUMP_VELOCITY_UNITS_PER_SECOND: i32 = 480;
+pub const JUMP_VELOCITY_UNITS_PER_TICK: i32 = units_per_tick(JUMP_VELOCITY_UNITS_PER_SECOND);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ZoneId(u32);
 

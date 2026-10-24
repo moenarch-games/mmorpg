@@ -47,18 +47,18 @@ pub const MAX_PROJECTILES: usize = 256;
 /// At most this many projectiles reach one player projection, nearest first.
 pub const MAX_VISIBLE_PROJECTILES: usize = 16;
 /// Flight speed of an arrow (54 m/s) and of a crossbow bolt (45 m/s), units per tick.
-pub const ARROW_SPEED_UNITS: f32 = 180.0;
-pub const BOLT_SPEED_UNITS: f32 = 150.0;
+pub const ARROW_SPEED_UNITS: f32 = crate::f32_units_per_tick(5_400.0);
+pub const BOLT_SPEED_UNITS: f32 = crate::f32_units_per_tick(4_500.0);
 /// Flight speed of a magic missile (30 m/s), units per tick: slow enough to sidestep.
-pub const MISSILE_SPEED_UNITS: f32 = 100.0;
+pub const MISSILE_SPEED_UNITS: f32 = crate::f32_units_per_tick(3_000.0);
 /// Gravity on a free projectile: 9.81 m/s² in units per tick².
-pub const PROJECTILE_GRAVITY_UNITS: f32 = 981.0 / 900.0;
+pub const PROJECTILE_GRAVITY_UNITS: f32 = crate::f32_units_per_tick_squared(981.0);
 /// A projectile still flying after this many ticks (2 s) falls away.
-pub const MAX_FLIGHT_TICKS: u16 = 60;
+pub const MAX_FLIGHT_TICKS: u16 = crate::ticks_from_ms(2_000);
 /// Ticks a spent projectile stays stuck in a wall or prop (3 s) …
-pub const STUCK_TICKS: u16 = 90;
+pub const STUCK_TICKS: u16 = crate::ticks_from_ms(3_000);
 /// … or in a unit or its shield (1 s).
-pub const STUCK_IN_UNIT_TICKS: u16 = 30;
+pub const STUCK_IN_UNIT_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// Shots leave this far above the shooter's body centre (chest height). A level free shot
 /// drops to the ground about 32 m out.
 pub const LAUNCH_HEIGHT_UNITS: f32 = 20.0;

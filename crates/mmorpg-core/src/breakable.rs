@@ -17,13 +17,13 @@ use crate::snapshot::CreatureAi;
 use crate::{CreatureId, PlayerId, PropKind, ZoneError, ZoneEvent, ZoneSimulation};
 
 /// A piece of debris lives this long (5 s), flying and then lying where it settled.
-pub const DEBRIS_TICKS: u16 = 150;
+pub const DEBRIS_TICKS: u16 = crate::ticks_from_ms(5_000);
 /// At most this many pieces exist in one zone; the oldest goes first.
 pub const MAX_DEBRIS: usize = 192;
 /// At most this many pieces reach one player projection, nearest first.
 pub const MAX_VISIBLE_DEBRIS: usize = 16;
 /// A piece may settle once it has flown this many ticks.
-const SETTLE_AFTER_TICKS: u16 = 8;
+const SETTLE_AFTER_TICKS: u16 = crate::ticks_from_ms(267);
 /// An explosive barrel's blast: Fire Blast's numbers at a level-3 caster (#287).
 pub const EXPLOSION_DAMAGE: [u16; 2] = [12, 16];
 pub const EXPLOSION_RADIUS_UNITS: i32 = 500;

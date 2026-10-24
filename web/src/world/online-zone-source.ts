@@ -1,5 +1,5 @@
 import { encodeCommand, type WorldCommand } from "../command-wire";
-import { SnapshotBuffer, TICK_HZ, decodeSnapshot, type EntityState, type ZoneSnapshot } from "../replication";
+import { SnapshotBuffer, TICK_HZ, decodeSnapshot, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
 import { browserClock, type SessionClock, type SessionConnection, type SessionConnector, type SessionEnd } from "../session/connection";
 import { decodeWelcome, type SnapshotFrame, type Welcome } from "../session/frames";
 import { reconnectUrl, type SessionRoute } from "../session/route";
@@ -17,8 +17,8 @@ export const SNAPSHOT_TIMEOUT_MS = 5_000;
  * so this is best effort, as in the native client.
  */
 export const RECONNECT_SETTLE_MS = 250;
-/** Presentation runs this many ticks behind the newest projection and holds it when projections stall. */
-export const INTERPOLATION_DELAY_TICKS = 2;
+/** Presentation runs this many ticks (2 at 30 Hz) behind the newest projection and holds it when projections stall. */
+export const INTERPOLATION_DELAY_TICKS = ticksFromMs(67);
 /**
  * At most this many projections (one second) wait for the next `advance`; a backgrounded page that
  * stops rendering keeps only the newest, like lost datagrams, and the periodic sheets restore state.

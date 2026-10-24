@@ -11,7 +11,7 @@
 //!   counts down, in `(EntityRef, aura slot)` order.
 //! - **Creature abilities** (step 2): an engaged creature uses its
 //!   content-bound ability once its timer reaches zero; the timer restarts at
-//!   the cooldown plus a zone-RNG jitter of 0–30 ticks.
+//!   the cooldown plus a zone-RNG jitter of up to `CREATURE_ABILITY_JITTER_TICKS` (1 s).
 //!
 //! Damage adds equal threat; healing adds half the effective amount to every
 //! creature engaged with the healed player.
@@ -33,7 +33,7 @@ use crate::{
 };
 
 /// A Shield Bash on a casting creature locks the interrupted ability this long.
-pub(crate) const SHIELD_BASH_LOCKOUT_TICKS: u16 = 120;
+pub(crate) const SHIELD_BASH_LOCKOUT_TICKS: u16 = crate::ticks_from_ms(4_000);
 
 /// A refusal: the error code and the unit it concerned.
 pub(crate) type Refusal = Option<(ErrorCode, Option<EntityRef>)>;
