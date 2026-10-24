@@ -8,6 +8,7 @@
 //! Rapier, embedded in [`physics`] (#271); wire formats live in `mmorpg-protocol`.
 
 pub mod ability;
+pub mod action;
 mod ai;
 mod areas;
 mod aura;

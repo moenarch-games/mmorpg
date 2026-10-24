@@ -98,17 +98,21 @@ impl ZoneSimulation {
         // A Shield Bash in an open combo window follows up on the struck
         // creature and may ignore the slash's global cooldown (#157); any
         // other ability use ends a pending combo.
-        let combo = self
+        let follow_up = self
             .players
             .get(&player_id)
-            .and_then(|player| player.combo)
-            .filter(|combo| combo.is_open() && ability == crate::ability::ids::SHIELD_BASH.get());
+            .filter(|_| ability == crate::ability::ids::SHIELD_BASH.get())
+            .and_then(|player| {
+                crate::action::follow_up(player, crate::action::ActionInput::ShieldBash)
+            });
         self.update_player(player_id, |player| player.combo = None);
-        let target = match combo {
-            Some(combo) => Some(combo.target),
-            None => target,
-        };
-        let ability = match self.ready_ability(player_id, ability, false, combo.is_some()) {
+        let target = follow_up.map_or(target, |(_, struck)| Some(struck));
+        let ignore_global_cooldown = follow_up.is_some_and(|(edge, _)| {
+            crate::action::edge(edge)
+                .effects
+                .contains(&crate::action::Effect::IgnoreGlobalCooldown)
+        });
+        let ability = match self.ready_ability(player_id, ability, false, ignore_global_cooldown) {
             None => return Ok(None),
             Some(Err(code)) => return Ok(Some((code, None))),
             Some(Ok(ability)) => ability,

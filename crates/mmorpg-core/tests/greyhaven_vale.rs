@@ -81,7 +81,7 @@ fn content_is_a_bounded_deterministic_revision() {
             // The Sunken Shrine (#274) stands on its flattened floor 9 m down.
             if !ids::INN_PARTS.contains(&collider.id)
                 && collider.id != ids::CAVE_ROOF
-                && !(550..=586).contains(&collider.id)
+                && !(550..=596).contains(&collider.id)
             {
                 let ground = definition.terrain().map_or(0, |terrain| {
                     [min, [max[0], min[1]], max, [min[0], max[1]]]

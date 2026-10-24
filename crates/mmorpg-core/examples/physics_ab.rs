@@ -149,8 +149,8 @@ fn main() -> Result<()> {
         }
     );
     println!(
-        "- sample: one tick's whole physics path (step, gameplay queries, body updates), debris \
-         excluded; microseconds; setup is building the zone, its physics share in parentheses\n"
+        "- sample: one tick's whole physics path (step, gameplay queries, body updates, debris \
+         and props); microseconds; setup is building the zone, its physics share in parentheses\n"
     );
     println!(
         "| workload | ticks | moving / bodies | backend | median | p95 | p99 | mean | setup (physics) | engine / rapier, median of paired rounds |"

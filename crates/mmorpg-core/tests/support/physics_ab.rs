@@ -198,11 +198,44 @@ pub enum Workload {
     /// down and across it, another walks into the steep chute.
     MillRamps,
     /// Millbrook's heavy crates (#58): two Wardens Shield Bash them across the yard, then one
-    /// walks into a crate where it rests. The slides run on Rapier in both arms.
+    /// walks into a crate where it rests.
     CrateShove,
+    /// Greyhaven Outpost's crates (#288): two players smash crates 900 and 901, whose pieces
+    /// fly, settle and despawn as debris on each backend.
+    CrateSmash,
     /// Magic missiles in Wolfrun Woods (#289): four level-6 Arcanists Firebolt wolves among the
     /// trunks (homing missiles), then cast free Firebolts along their facing into the woods.
     Missiles,
+}
+
+/// The crate-smash workload's length: the crates break, and their debris settles and
+/// despawns (5 s).
+pub const CRATE_SMASH_TICKS: usize = 360;
+
+/// Two players 1.5 m south of crates 900 and 901.
+const CRATE_SMASH_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [2_200.0, 850.0]), (2, [2_310.0, 850.0])];
+
+/// The crate-smash commands: face north, target the crate, attack until it breaks.
+fn crate_smash_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    [(1, 900), (2, 901)]
+        .into_iter()
+        .filter_map(|(player, prop)| match tick {
+            0 => Some((
+                player,
+                ZoneCommand::Move {
+                    forward: 0,
+                    strafe: 0,
+                    facing: 0,
+                },
+            )),
+            1 => Some((
+                player,
+                ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(prop)))),
+            )),
+            2 => Some((player, ZoneCommand::StartAttack)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The missile workload's length.
@@ -545,6 +578,7 @@ impl Workload {
             Self::ChargePath => "vale-charge-path",
             Self::WatchPost => "vale-watch-post",
             Self::CrateShove => "vale-crate-shove",
+            Self::CrateSmash => "vale-crate-smash",
             Self::Missiles => "vale-missiles",
         }
     }
@@ -560,6 +594,7 @@ impl Workload {
             Self::ChargePath => CHARGE_PATH_TICKS,
             Self::WatchPost => WATCH_POST_TICKS,
             Self::CrateShove => CRATE_SHOVE_TICKS,
+            Self::CrateSmash => CRATE_SMASH_TICKS,
             Self::Missiles => MISSILES_TICKS,
         }
     }
@@ -586,6 +621,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::ChargePath);
     workloads.push(Workload::WatchPost);
     workloads.push(Workload::CrateShove);
+    workloads.push(Workload::CrateSmash);
     workloads.push(Workload::Missiles);
     Ok(workloads)
 }
@@ -623,6 +659,7 @@ impl Run {
             Workload::ChargePath => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
             Workload::WatchPost => (placed_zone_at_level(&WATCH_POST_PLAYERS, 6)?, 0),
             Workload::CrateShove => (crate_shove_zone()?, 0),
+            Workload::CrateSmash => (placed_zone_at_level(&CRATE_SMASH_PLAYERS, 6)?, 0),
             Workload::Missiles => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
         };
         Ok(Self {
@@ -688,6 +725,7 @@ impl Run {
             | Workload::ChargePath
             | Workload::WatchPost
             | Workload::CrateShove
+            | Workload::CrateSmash
             | Workload::Missiles => {
                 let commands = match self.workload {
                     Workload::OgreBrawl => ogre_brawl_commands(self.tick),
@@ -695,6 +733,7 @@ impl Run {
                     Workload::ChargePath => charge_path_commands(self.tick),
                     Workload::WatchPost => watch_post_commands(self.tick),
                     Workload::CrateShove => crate_shove_commands(self.tick),
+                    Workload::CrateSmash => crate_smash_commands(self.tick),
                     Workload::Missiles => missiles_commands(self.tick),
                     _ => mill_ramps_commands(self.tick),
                 };

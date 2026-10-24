@@ -47,11 +47,11 @@ const GAP_TOLERANCE_UNITS: f32 = 1.0e-3;
 
 /// A piece slower than this (units per tick) and turning slower than [`DEBRIS_REST_SPIN`]
 /// (radians per tick) settles.
-const DEBRIS_REST_SPEED_UNITS: f32 = 0.6;
-const DEBRIS_REST_SPIN: f32 = 0.03;
+pub(super) const DEBRIS_REST_SPEED_UNITS: f32 = 0.6;
+pub(super) const DEBRIS_REST_SPIN: f32 = 0.03;
 /// Fixed geometry this far (units) around the pieces takes part in a debris step.
-const DEBRIS_REACH_UNITS: f32 = 1_000.0;
-const TICKS_PER_SECOND: f32 = crate::TICK_HZ as f32;
+pub(super) const DEBRIS_REACH_UNITS: f32 = 1_000.0;
+pub(super) const TICKS_PER_SECOND: f32 = crate::TICK_HZ as f32;
 
 /// A body's Rapier handles.
 #[derive(Clone, Copy)]
@@ -1008,9 +1008,8 @@ impl World {
     }
 }
 
-/// [`World::step_debris`] over the game's fixed `bodies` and `ground`: shared by both backends,
-/// since debris dynamics stay on Rapier (physics-engine #330).
-pub(super) fn step_debris(
+/// [`World::step_debris`] over the game's fixed `bodies` and `ground`.
+fn step_debris(
     gravity: [f32; 3],
     bodies: &BTreeMap<BodyId, RigidBody>,
     ground: Option<(BodyId, &crate::Terrain)>,
@@ -1032,8 +1031,8 @@ pub(super) struct Dynamic<'a> {
 }
 
 /// [`World::step_props`] (#58): movable props slide upright under gravity and impulses,
-/// stopped by the fixed world and by units. Shared by both backends like debris.
-pub(super) fn step_props(
+/// stopped by the fixed world and by units.
+fn step_props(
     gravity: [f32; 3],
     bodies: &BTreeMap<BodyId, RigidBody>,
     ground: Option<(BodyId, &crate::Terrain)>,
@@ -1055,6 +1054,40 @@ pub(super) fn step_props(
     )
 }
 
+/// The game bodies a dynamic step takes part with: the floors and everything within
+/// [`DEBRIS_REACH_UNITS`] of a piece, units only when they block, minus `options.exclude`.
+pub(super) fn nearby<'a>(
+    bodies: &'a BTreeMap<BodyId, RigidBody>,
+    debris: &[DebrisBody],
+    options: &'a Dynamic<'_>,
+) -> impl Iterator<Item = &'a RigidBody> {
+    let (mut low, mut high) = ([f32::MAX; 3], [f32::MIN; 3]);
+    for piece in debris {
+        for axis in 0..3 {
+            low[axis] = low[axis].min(piece.position[axis] - DEBRIS_REACH_UNITS);
+            high[axis] = high[axis].max(piece.position[axis] + DEBRIS_REACH_UNITS);
+        }
+    }
+    bodies
+        .values()
+        .filter(|body| options.units_block || !body.is_moving())
+        .filter(|body| !options.exclude.contains(&body.id))
+        .filter(move |body| {
+            #[allow(clippy::cast_precision_loss)]
+            let near = matches!(body.kind, Kind::Floor)
+                || (0..3).all(|axis| {
+                    let half = [
+                        body.half_extents.x,
+                        body.half_extents.y,
+                        body.half_extents.z,
+                    ][axis] as f32;
+                    body.position[axis] + half >= low[axis]
+                        && body.position[axis] - half <= high[axis]
+                });
+            near
+        })
+}
+
 fn step_dynamic(
     gravity: [f32; 3],
     bodies: &BTreeMap<BodyId, RigidBody>,
@@ -1070,36 +1103,15 @@ fn step_dynamic(
     let mut world = empty_world();
     let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND;
     world.gravity = metres(gravity) * per_second;
-    let (mut low, mut high) = ([f32::MAX; 3], [f32::MIN; 3]);
-    for piece in debris.iter() {
-        for axis in 0..3 {
-            low[axis] = low[axis].min(piece.position[axis] - DEBRIS_REACH_UNITS);
-            high[axis] = high[axis].max(piece.position[axis] + DEBRIS_REACH_UNITS);
-        }
-    }
-    for body in bodies
-        .values()
-        .filter(|body| options.units_block || !body.is_moving())
-        .filter(|body| !options.exclude.contains(&body.id))
-    {
-        #[allow(clippy::cast_precision_loss)]
-        let near = matches!(body.kind, Kind::Floor)
-            || (0..3).all(|axis| {
-                let half = [
-                    body.half_extents.x,
-                    body.half_extents.y,
-                    body.half_extents.z,
-                ][axis] as f32;
-                body.position[axis] + half >= low[axis] && body.position[axis] - half <= high[axis]
-            });
-        if near && body.is_moving() {
+    for body in nearby(bodies, debris, options) {
+        if body.is_moving() {
             // A unit stands in the props' way as a fixed capsule (#58).
             world.colliders.insert(
                 ColliderBuilder::new(SharedShape::new(capsule(body.half_extents)))
                     .translation(lifted(body.position))
                     .build(),
             );
-        } else if near {
+        } else {
             insert(&mut world, body);
         }
     }

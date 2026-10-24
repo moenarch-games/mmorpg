@@ -45,9 +45,13 @@ pub const GUARD_SPEED_PERCENT: i32 = 60;
 /// A directed strike's committed recovery: 0.2 s. A guard raised meanwhile
 /// is held but protects only when the recovery ends; a stun before then
 /// discards it (Atlas 5.2.39, 5.2.41).
-pub const STRIKE_RECOVERY_TICKS: u16 = crate::ticks_from_ms(200);
-/// Ticks a broken guard protects nothing: 1.5 s.
-pub const GUARD_BREAK_TICKS: u16 = crate::ticks_from_ms(1_500);
+/// The action graph's `DirectedSlash` recovery.
+pub const STRIKE_RECOVERY_TICKS: u16 =
+    crate::action::recovery_ticks(crate::action::ActionId::DirectedSlash);
+/// Ticks a broken guard protects nothing: the graph's `GuardBreak`
+/// recovery, 1.5 s.
+pub const GUARD_BREAK_TICKS: u16 =
+    crate::action::recovery_ticks(crate::action::ActionId::GuardBreak);
 /// The impact (damage plus momentum) at which a blow overpowers a guard.
 pub const GUARD_BREAK_IMPACT: u32 = 18;
 /// The coverage arc's centre turns this far from the facing toward the
@@ -99,7 +103,12 @@ pub(crate) fn guard_ready(player: &crate::zone::PlayerState) -> Option<StrikeHei
                 && player.is_alive()
                 && !stunned
                 && player.guard.broken == 0
-                && player.strike_recovery == 0 =>
+                && crate::action::rule_applying(
+                    player,
+                    crate::action::ActionInput::GuardProtection,
+                    crate::action::Interaction::Hold,
+                )
+                .is_none() =>
         {
             Some(lane)
         }

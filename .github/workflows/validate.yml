@@ -3,6 +3,8 @@ name: Validate
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
+  merge_group:
+    types: [checks_requested]
   push:
     branches:
       - main
@@ -38,8 +40,8 @@ jobs:
           FULL_VALIDATION: ${{ inputs.full_validation == true }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
         run: |
           set -euo pipefail
           browser_evidence=false
@@ -83,8 +85,8 @@ jobs:
         name: Preserve browser validation scope
         shell: python
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           PR_EVENT: ${{ toJSON(github.event) }}
         run: |
           import json
@@ -107,7 +109,7 @@ jobs:
               return selected
 
           specs = {'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
-          pr = os.environ["GITHUB_EVENT_NAME"] == "pull_request"
+          pr = os.environ["GITHUB_EVENT_NAME"] in ("pull_request", "merge_group")
           event = json.loads(os.environ.get("PR_EVENT", "{}"))
           paths = []
           if pr:
@@ -174,9 +176,9 @@ jobs:
 
   merge-ready:
     name: >-
-      ${{ github.event_name == 'pull_request' &&
+      ${{ (github.event_name == 'merge_group' || (github.event_name == 'pull_request' &&
       ((github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
-      github.event.label.name == 'browser-evidence' || github.event.label.name == 'full-validation') &&
+      github.event.label.name == 'browser-evidence' || github.event.label.name == 'full-validation'))) &&
       'merge-ready' || 'validation-summary' }}
     if: ${{ always() }}
     needs: [scope, rust, pages-validation]

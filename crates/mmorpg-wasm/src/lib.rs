@@ -23,6 +23,7 @@
 //! [ADR 0002]: https://github.com/moritzbrantner/mmorpg/blob/main/docs/adr/0002-browser-embeds-zone-simulation.md
 #![forbid(unsafe_code)]
 
+pub mod action_lab;
 pub mod arena_presentation;
 pub mod catalog;
 pub mod host;
@@ -192,6 +193,37 @@ impl LocalZone {
         })
     }
 
+    /// A fresh Action Lab world (#381) with a configured ephemeral character
+    /// of `class` at `level` wearing `gear` (`starter`, `standard` or
+    /// `none`), `main_hand` replacing its weapon unless 0, and `resource`
+    /// (clamped to its maximum) unless undefined. Throws for an invalid
+    /// setup. The character is [`LocalZone::scenario_player`]; nothing is stored.
+    #[wasm_bindgen(js_name = forActionLab)]
+    pub fn for_action_lab(
+        class: &str,
+        level: u8,
+        gear: &str,
+        #[wasm_bindgen(js_name = mainHand)] main_hand: u16,
+        resource: Option<u16>,
+        seed: u64,
+    ) -> Result<LocalZone, JsError> {
+        let setup = action_lab::LabSetup::parse(class, level, gear, main_hand, resource)
+            .map_err(|error| JsError::new(&error))?;
+        let (host, player) = LocalZoneHost::action_lab(setup, seed).map_err(js_error)?;
+        Ok(Self {
+            host,
+            scenario_player: Some(player),
+        })
+    }
+
+    /// The player's action graph after the last completed tick, with each
+    /// input's arbitration at the next tick, as JSON (#381); undefined for an
+    /// unknown player.
+    #[wasm_bindgen(js_name = actionInspection)]
+    pub fn action_inspection(&self, player: u32) -> Option<String> {
+        action_lab::inspection_json(self.host.zone(), player)
+    }
+
     /// The scenario character's player ID; undefined outside a scenario.
     #[wasm_bindgen(getter, js_name = scenarioPlayer)]
     pub fn scenario_player(&self) -> Option<u32> {
@@ -307,6 +339,33 @@ pub fn reachable_pieces(x: i32, z: i32) -> Vec<u16> {
         .filter(|piece| piece.within_repair_reach([x, 0, z]))
         .map(|piece| piece.id.get())
         .collect()
+}
+
+/// The authored action graph as JSON (#380, #381): actions by region, edges
+/// with windows in ms and ticks, recovery modifiers and compatibility rules.
+#[wasm_bindgen(js_name = actionGraph)]
+#[must_use]
+pub fn action_graph() -> String {
+    action_lab::graph_json()
+}
+
+/// The Action Lab's setup choices as JSON: `{maxLevel, mainHand: [{id, name}]}`.
+#[wasm_bindgen(js_name = actionLabOptions)]
+#[must_use]
+pub fn action_lab_options() -> String {
+    serde_json::json!({
+        "maxLevel": mmorpg_core::MAX_PLAYER_LEVEL,
+        "mainHand": action_lab::main_hand_items(),
+    })
+    .to_string()
+}
+
+/// The area the Action Lab starts in.
+#[wasm_bindgen(js_name = actionLabArea)]
+#[must_use]
+pub fn action_lab_area() -> Option<u16> {
+    let ([x, z], _) = action_lab::LAB_LOCATION;
+    area_at(x, z)
 }
 
 /// The ID of the named core area containing `(x, z)` in units, if any.
@@ -536,6 +595,37 @@ impl InnPresenter {
             .find(|door| door.within_reach([x, 0, z]))
             .map_or(0, |door| door.id.get())
     }
+}
+
+/// The Sunken Shrine's asset-tooling kit modules (#431), placed by the presentation the native
+/// client shares.
+#[wasm_bindgen(js_name = shrineKitEntries)]
+#[must_use]
+pub fn shrine_kit_entries() -> Vec<String> {
+    mmorpg_presentation::shrine::entries()
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The kit entry of each placed shrine module, in [`shrine_kit_models`] order.
+#[wasm_bindgen(js_name = shrineKitKeys)]
+#[must_use]
+pub fn shrine_kit_keys() -> Vec<String> {
+    mmorpg_presentation::shrine::parts(scenery::hosted_scenery())
+        .iter()
+        .map(|part| part.key.to_owned())
+        .collect()
+}
+
+/// 16 column-major model floats per placed shrine module.
+#[wasm_bindgen(js_name = shrineKitModels)]
+#[must_use]
+pub fn shrine_kit_models() -> Vec<f32> {
+    mmorpg_presentation::shrine::parts(scenery::hosted_scenery())
+        .iter()
+        .flat_map(|part| part.model)
+        .collect()
 }
 
 impl Default for InnPresenter {

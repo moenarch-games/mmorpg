@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
+use crate::action_lab::LabSetup;
 use crate::scenario::Scenario;
 use mmorpg_characters::{CharacterLease, CharacterStore, EntryBackend, LeaseHolder, StoreError};
 use mmorpg_core::{
@@ -158,6 +159,27 @@ impl LocalZoneHost {
     pub fn scenario(scenario: Scenario, seed: u64) -> Result<(Self, PlayerId), LocalZoneError> {
         let content = scenario.content(seed);
         let record = scenario.record(&content)?;
+        Self::with_ephemeral(content, &record)
+    }
+
+    /// A fresh world for the Action Lab (#381) with the configured ephemeral
+    /// character admitted, like a review scenario: nothing is stored.
+    pub fn action_lab(setup: LabSetup, seed: u64) -> Result<(Self, PlayerId), LocalZoneError> {
+        let content = Scenario::OgreCombat.content(seed);
+        let record = setup.record(&content)?;
+        Self::with_ephemeral(content, &record)
+    }
+
+    /// The hosted zone, read-only (the Action Lab inspector reads it).
+    #[must_use]
+    pub const fn zone(&self) -> &ZoneSimulation {
+        &self.zone
+    }
+
+    fn with_ephemeral(
+        content: Arc<ZoneContent>,
+        record: &mmorpg_core::CharacterRecord,
+    ) -> Result<(Self, PlayerId), LocalZoneError> {
         let zone =
             ZoneSimulation::with_content(LOCAL_ZONE_ID, content).map_err(LocalZoneError::Zone)?;
         let mut host = Self {
@@ -168,7 +190,7 @@ impl LocalZoneHost {
         };
         let player_id = host.next_player_id;
         host.zone
-            .admit_character(player_id, &record)
+            .admit_character(player_id, record)
             .map_err(LocalZoneError::Zone)?;
         host.next_player_id += 1;
         host.last_sequences.insert(player_id, 0);
