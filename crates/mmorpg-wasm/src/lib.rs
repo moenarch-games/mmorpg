@@ -530,6 +530,37 @@ impl InnPresenter {
     }
 }
 
+/// The Sunken Shrine's asset-tooling kit modules (#431), placed by the presentation the native
+/// client shares.
+#[wasm_bindgen(js_name = shrineKitEntries)]
+#[must_use]
+pub fn shrine_kit_entries() -> Vec<String> {
+    mmorpg_presentation::shrine::entries()
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The kit entry of each placed shrine module, in [`shrine_kit_models`] order.
+#[wasm_bindgen(js_name = shrineKitKeys)]
+#[must_use]
+pub fn shrine_kit_keys() -> Vec<String> {
+    mmorpg_presentation::shrine::parts(scenery::hosted_scenery())
+        .iter()
+        .map(|part| part.key.to_owned())
+        .collect()
+}
+
+/// 16 column-major model floats per placed shrine module.
+#[wasm_bindgen(js_name = shrineKitModels)]
+#[must_use]
+pub fn shrine_kit_models() -> Vec<f32> {
+    mmorpg_presentation::shrine::parts(scenery::hosted_scenery())
+        .iter()
+        .flat_map(|part| part.model)
+        .collect()
+}
+
 impl Default for InnPresenter {
     fn default() -> Self {
         Self::new()

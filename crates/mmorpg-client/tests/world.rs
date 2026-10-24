@@ -2,7 +2,7 @@
 //! reuse the server's collision boxes exactly.
 use mmorpg_client::world::{TERRAIN_STEP_UNITS, WorldScene};
 use mmorpg_core::greyhaven_vale_definition;
-use mmorpg_scenery::{TERRAIN_EXTENT_UNITS, greyhaven_vale_scenery};
+use mmorpg_scenery::{PropKind, TERRAIN_EXTENT_UNITS, greyhaven_vale_scenery};
 
 #[test]
 fn terrain_and_water_are_valid_indexed_meshes() {
@@ -49,7 +49,12 @@ fn every_structure_renders_its_exact_collision_box() {
     let scenery = greyhaven_vale_scenery();
     let world = WorldScene::new(&scenery);
     assert!(world.props.len() >= scenery.props.len());
-    for prop in scenery.props.iter().filter(|prop| prop.collider.is_some()) {
+    // The Sunken Shrine is drawn from its asset-tooling kit (#431), not as boxes.
+    for prop in scenery
+        .props
+        .iter()
+        .filter(|prop| prop.collider.is_some() && prop.kind != PropKind::ShrineKit)
+    {
         // The inn's footprint is a presentation anchor without a collider (#158).
         let Some(collider) = definition
             .colliders()

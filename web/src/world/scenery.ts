@@ -33,6 +33,7 @@ export const PROP_KINDS = [
   "waystone", "gravestone", "tree-oak", "tree-pine", "tree-birch", "bush", "rock-small", "rock-medium",
   "rock-large", "cliff", "grass-tuft", "flowers", "reeds", "fence", "tent", "campfire", "crate", "barrel",
   "cart", "signpost", "lamp", "mine-entrance", "crop-row", "dock", "cave-roof", "ramp", "loading-dock",
+  "shrine-kit",
 ] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
 
@@ -85,6 +86,10 @@ export type SceneryContent = StaticSceneContent & {
     entries(): string[];
     reachableDoor(x: number, z: number): number;
   };
+  /** The Sunken Shrine's kit (#431): its entries, and per placed module its entry and 16 model floats. */
+  shrineKitEntries(): string[];
+  shrineKitKeys(): string[];
+  shrineKitModels(): Float32Array;
   /** The rest clip an imported unit model is measured in. */
   importedRestClip(kind: string): string | undefined;
   areaAt(x: number, z: number): number | undefined;
@@ -110,6 +115,8 @@ export type SceneryProvider = {
   unitPresenter(player: number): UnitPresenterHandle;
   /** The walk-in inn's bundle entries, its presenter, and the door feet at `(x, z)` units reach (0 none). */
   readonly inn: { entries(): readonly string[]; presenter(): InnPresenterHandle; reachableDoor(x: number, z: number): number };
+  /** The Sunken Shrine's kit entries and placed modules (#431), column-major matrices in metres. */
+  readonly shrine: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   importedRestClip(kind: string): string;
   /** The named core area at `(x, z)` in units, if any. */
   areaAt(x: number, z: number): Area | null;
@@ -399,6 +406,13 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       presenter: () => new content.InnPresenter(),
       reachableDoor: (x, z) => content.InnPresenter.reachableDoor(Math.round(x), Math.round(z)),
     },
+    shrine: (() => {
+      const models = content.shrineKitModels();
+      return {
+        entries: content.shrineKitEntries(),
+        placements: content.shrineKitKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
+      };
+    })(),
     importedRestClip(kind) {
       const clip = content.importedRestClip(kind);
       if (clip === undefined) {

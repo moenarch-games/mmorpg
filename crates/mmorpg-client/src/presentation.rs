@@ -98,6 +98,8 @@ pub struct Presentation {
     /// The walk-in inn's door swing and interior look (#158).
     inn: mmorpg_presentation::buildings::Inn,
     last_inn: Instant,
+    /// The Sunken Shrine's kit modules (#431), placed once.
+    shrine: Vec<crate::world::SceneDraw>,
 }
 
 impl Presentation {
@@ -114,6 +116,19 @@ impl Presentation {
         }
         mmorpg_presentation::units::archer::validate()?;
         let inn = mmorpg_presentation::buildings::Inn::new(&scenery);
+        let shrine = mmorpg_presentation::shrine::parts(&scenery)
+            .iter()
+            .flat_map(|part| {
+                skinned::shrine_draws(part.key)
+                    .iter()
+                    .map(|draw| crate::world::SceneDraw {
+                        model: three_d_animation::Mat4 {
+                            elements: part.model,
+                        },
+                        ..draw.clone()
+                    })
+            })
+            .collect();
         let mut units_presenter =
             UnitPresenter::new(player_id, Arc::clone(&content), Arc::new(scenery.clone()));
         for kind in Kind::ALL {
@@ -140,6 +155,7 @@ impl Presentation {
             camera_framed: false,
             inn,
             last_inn: now,
+            shrine,
         })
     }
 
@@ -607,6 +623,7 @@ impl Presentation {
         }
         frame.draws.extend(self.unit_draws(now, view));
         self.append_inn(&mut frame.draws, now);
+        frame.draws.extend(self.shrine.iter().cloned());
         frame
     }
 

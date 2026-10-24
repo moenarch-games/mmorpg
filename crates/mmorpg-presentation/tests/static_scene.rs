@@ -86,10 +86,11 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
     {
         assert_valid(draw);
     }
-    // The inn is drawn from its asset-tooling bundle (`mmorpg_presentation::buildings`).
+    // The inn and the Sunken Shrine are drawn from their asset-tooling bundles
+    // (`mmorpg_presentation::buildings`, `mmorpg_presentation::shrine`).
     for kind in PropKind::ALL
         .into_iter()
-        .filter(|kind| *kind != PropKind::Inn)
+        .filter(|kind| !matches!(kind, PropKind::Inn | PropKind::ShrineKit))
     {
         assert!(
             !prop_triangles(&only(vec![first(&scenery, kind)])).is_empty(),

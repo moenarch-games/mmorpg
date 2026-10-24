@@ -20,7 +20,7 @@ cargo run --release -p mmorpg-core --example physics_ab --features physics-ab   
   selects the backend for every `World::new` on the current thread, so whole zones, and their
   recoveries, are built on it. `World::with_backend` does the same for one world.
 - With the feature, `World::spent_nanos` counts wall-clock time spent in the world's calls
-  (debris excluded), and `mmorpg_core::physics_ab` exposes read-only probes that ask the
+  (debris and props included), and `mmorpg_core::physics_ab` exposes read-only probes that ask the
   gameplay queries themselves (line of sight, NPC sight, projectile contact, door occupancy,
   ground height, grounded units).
 
@@ -34,10 +34,15 @@ NPCs, standing props), ramps (#59, `Shape::Wedge` turned about Y), moving platfo
 static box moved in place with `set_static_position`, its riders carried by the adapter as on Rapier), the floor half-spaces, the
 terrain heightfield (`add_heightfield`),
 rays (`cast_ray`/`cast_ray_first`), capsule sweeps (`cast_shape`, the charge-path rule),
-overlaps (`overlap_shape`) and segment checks. **Dynamic bodies are not supported by the
-engine arm**: debris (#288) and the heavy crates' slides (#58) stay on Rapier in both arms
-(`physics::rapier::step_debris` and `step_props` over the adapter's fixed bodies, units as
-fixed capsules) and are excluded from timing. A crate at rest is a fixed box on both arms.
+overlaps (`overlap_shape`) and segment checks, and dynamic bodies (mmorpg#442): debris (#288)
+and the heavy crates' slides (#58) are engine dynamic boxes (rotation-locked for crates) in a
+world rebuilt each tick from the nearby game bodies, units as fixed capsules, as the Rapier arm
+rebuilds its own; two substeps of four passes for debris and of one for crates, as
+physics-engine's `debris` and `props` oracle scenarios calibrate them. A crate at rest is a fixed
+box on both arms. The engine combines contact materials with max friction and min restitution
+where Rapier averages them (physics-engine #391), so the engine arm passes Rapier's combined
+piece–fixed coefficients (friction 0.65, restitution 0.075); piece–piece friction is 0.65 there
+instead of Rapier's 0.8.
 
 ## What the test asserts
 
@@ -53,7 +58,9 @@ steep chute) `vale-charge-path` (#57: four level-6 Wardens charge at wolves amon
 trunks) and `vale-watch-post` (#305: an arcanist and a ranger fight the Redbrand bandits at the
 watch post, whose pieces the blasts break and whose colliders leave both worlds) and
 `vale-crate-shove` (#58: two level-6 Wardens Shield Bash Millbrook's heavy crates across the
-yard, then one walks into its crate where it rests) and `vale-missiles` (#289: four level-6
+yard, then one walks into its crate where it rests) and `vale-crate-smash` (#288: two players
+smash Greyhaven Outpost's crates 900 and 901, whose panels fly, settle and despawn) and
+`vale-missiles` (#289: four level-6
 Arcanists Firebolt wolves among the Wolfrun trunks, then cast free Firebolts into the woods)
 through the real zone simulation, from the same initial state with the same inputs and tick count.
 
@@ -75,8 +82,11 @@ On **each** backend, every run must:
   a player aside at least once and stomp;
 - in `vale-charge-path`, let some Warden charge;
 - in `vale-watch-post`, damage some piece of the post, with identical piece states on both;
-- in `vale-crate-shove`, slide both crates north and bring them to rest, ending within 0.5
-  units of each other across the arms;
+- in `vale-crate-shove`, slide both crates north and bring them to rest, ending within 13
+  units (5% of the 265-unit slide, the `props` oracle bound) of each other across the arms;
+- in `vale-crate-smash`, break both crates into twelve panels at the same tick on both arms,
+  keep every piece finite and above the ground, settle every piece before it despawns, and
+  rest each within 150 units (the `debris` oracle bound) of Rapier's;
 - in `vale-missiles`, strike some wolf with a missile, with every missile spent the same way
   (in a unit or in the world) on both arms;
 - in `vale-mill-ramps`, carry the walker up the cart ramp onto the dock (feet 1.5 m up within 3
@@ -85,8 +95,9 @@ On **each** backend, every run must:
 Across backends:
 
 - Scripted workloads (the bot scenarios, `vale-idle-16`, `vale-mill-hoist`,
-  `vale-crate-shove` and `vale-missiles`): players within **1 unit** (the
-  rounding step gameplay sees; measured ≤ 0.15), identical command outcomes and door states,
+  `vale-crate-shove`, `vale-crate-smash` and `vale-missiles`): players within **1 unit** (the
+  rounding step gameplay sees; measured ≤ 0.15; in `vale-crate-shove` plus the crates' gap,
+  since a player walks into its resting crate), identical command outcomes and door states,
   and the players' grounded state identical on every tick.
 - Every query decision on **identical states** (Rapier's state every 60 ticks, recovered onto
   both backends): line of sight, shots, charge paths (a capsule `cast_shape`, #57) and creature routes
@@ -117,7 +128,8 @@ Measured at the commit the timing table names:
 | vale-mill-ramps | 1.8 / 2.7 (from tick 19) | 0 apart | continues |
 | vale-charge-path | 0 / 0 | 0 apart (max 0.34) | continues |
 | vale-watch-post | 0 / 0 | 14 apart (max 671) | continues |
-| vale-crate-shove | 0.01 / 0 | 0 apart (max 0.34); crates identical | continues |
+| vale-crate-shove | 5.0 / 0 (player 2 stops at its crate) | 3 apart (max 5.0); crates 5.0 short of Rapier's 265-unit slide | continues |
+| vale-crate-smash | 0 / 0 | 22 apart (max 576); settled debris within 65.6 | continues |
 | vale-missiles | 0 / 0 | 1 apart (max 6.4); same missiles strike, world hits within 0.001 | continues |
 
 Every query decision on identical states agreed (up to 20,468 probes per workload).
@@ -155,15 +167,16 @@ Intentional or explained differences:
 
 ## physics-engine gaps found
 
-1. **Dynamic rigid bodies** (open; physics-engine lists them as unused by any consumer).
-   MMORPG uses them for debris (#288) and, since #58, for movable props: Rapier
-   `RigidBodyBuilder::dynamic().lock_rotations()` boxes (friction 0.8, linear damping 0.2)
-   sliding on fixed boxes, the terrain heightfield and units' capsules as fixed colliders, one
-   `step` per tick from the stored pose and velocity. Minimal repro: a 70-unit box resting on a
-   floor with gravity −1 unit/tick², given 19.7 units/tick horizontally, slides about 265 units
-   and stops at a fixed box or capsule in its way (`tests/movable_props.rs`). The engine arm
-   runs these on Rapier too, disclosed above, so `vale-crate-shove` compares only the
-   characters and queries around them.
+1. **Contact material combine rule** (open, physics-engine #391). Rapier averages two
+   colliders' friction and restitution by default; physics-engine takes the larger friction
+   and the smaller restitution. With the pieces' 0.8 / 0.15 against Rapier's default 0.5 / 0 on
+   fixed geometry, Rapier slides a crate with μ = 0.65 and the engine with μ = 0.8: Shield-Bashed
+   crates slid 215 units on the engine against Rapier's 265 (0.81 = 0.65 / 0.8). The engine arm
+   now passes Rapier's combined coefficients (above): the crates end 5 units short of Rapier's
+   (260 vs 265) and settled debris within 66 units of Rapier's.
+
+Dynamic bodies themselves (debris #288, movable crates #58) need no engine feature: the engine
+arm runs them since mmorpg#442 (physics-engine C18).
 
 Not engine gaps after all: moving platforms (#56) need no engine feature, since both arms
 carry riders in adapter code; a ray starting exactly on a face reads differently only because
@@ -191,7 +204,7 @@ asserts the engine arm's exact continuation:
 
 See the table below, produced by the example in release on the commit it names. A sample is
 one tick's whole physics path (the step, every gameplay query and body update the tick makes,
-as `World::spent_nanos` counts them; debris excluded); setup is building the zone. Timing is
+as `World::spent_nanos` counts them; since mmorpg#442 debris and props too, which the table below predates); setup is building the zone. Timing is
 evidence for physics-engine #330, not a gate.
 
 - mmorpg: aacd5638e9ed0b2abc0d81b60073d918f3ff5d5b plus the #289 change (magic missiles)

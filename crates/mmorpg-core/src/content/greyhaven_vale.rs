@@ -44,9 +44,10 @@ pub mod units;
 /// revision 24 sinks the Sunken Shrine and its flooded cave into it, with quest 10 and the
 /// swimming lurkers (#274); revision 25 garrisons the Greyfang cave as Redbrand Hollow's outer
 /// cavern with Redbrand Brutes, seals its deeper threshold and adds quest 11 (#160); revision 26
-/// lifts Millbrook Farm onto an 11 m terrace above the Outpost's basin, reached by the
-/// Millbrook Climb and the Millbrook Steps (#423).
-pub const REVISION: u64 = 26;
+/// rebuilds the Sunken Shrine on asset-tooling's shrine kit and widens its air pocket into
+/// the kit's 8 × 8 m room (#431); revision 27 lifts Millbrook Farm onto an 11 m terrace above
+/// the Outpost's basin, reached by the Millbrook Climb and the Millbrook Steps (#423).
+pub const REVISION: u64 = 27;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -132,12 +133,12 @@ pub mod ids {
     pub const CAVE_ROOF: u32 = 547;
     /// The sealed threshold to Redbrand Hollow's deeper cave, in the inner chamber (#160).
     pub const CAVE_THRESHOLD: u32 = 548;
-    /// The Sunken Shrine (#274): its ruins and altar, its cave's rock walls and roof slabs.
-    /// Stand-in boxes until the asset-tooling shrine kit (#345) maps these ranges.
-    pub const SHRINE_RUINS: RangeInclusive<u32> = 550..=557;
-    pub const SHRINE_ALTAR: u32 = 557;
-    pub const SHRINE_CAVE_WALLS: RangeInclusive<u32> = 560..=562;
-    pub const SHRINE_CAVE_ROOF: RangeInclusive<u32> = 570..=586;
+    /// The Sunken Shrine (#274): its ruins and altar, its cave's rock walls and roof slabs,
+    /// drawn as asset-tooling's shrine kit (#431).
+    pub const SHRINE_RUINS: RangeInclusive<u32> = 550..=564;
+    pub const SHRINE_ALTAR: u32 = 564;
+    pub const SHRINE_CAVE_WALLS: RangeInclusive<u32> = 565..=575;
+    pub const SHRINE_CAVE_ROOF: RangeInclusive<u32> = 580..=596;
 
     /// Trunks, numbered in generation order from the start: Wolfrun Woods
     /// first, then the outer woods (#159).
@@ -409,7 +410,7 @@ static STRUCTURES: [Footprint; 84] = [
     (214, [9_590, 5_610], [9_610, 8_390], 110),
     // Stillwater Lake: rocks outside the walkable shallow water.
     // North of the Sunken Shrine's cave (#274).
-    (300, [7_900, -4_680], [8_100, -4_520], 150),
+    (300, [7_700, -4_680], [7_900, -4_520], 150),
     (301, [7_080, -7_390], [7_320, -7_210], 180),
     (302, [4_920, -7_470], [5_080, -7_330], 100),
     (303, [3_500, -6_800], [3_700, -6_600], 160),

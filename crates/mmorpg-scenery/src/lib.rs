@@ -34,6 +34,7 @@ mod geometry;
 pub mod layout;
 mod outpost_grass;
 mod outpost_relief;
+pub mod shrine;
 
 use std::collections::BTreeMap;
 
@@ -122,11 +123,14 @@ pub enum PropKind {
     Ramp,
     /// A loading dock (#59): a stone block with a plank deck, fitted to its collider.
     LoadingDock,
+    /// A Sunken Shrine collider (#431): drawn by asset-tooling's shrine kit at [`shrine::placements`],
+    /// never procedurally.
+    ShrineKit,
 }
 
 impl PropKind {
     /// Every kind with its variants flattened, in declaration order.
-    pub const ALL: [Self; 37] = [
+    pub const ALL: [Self; 38] = [
         Self::Keep,
         Self::Inn,
         Self::House,
@@ -164,6 +168,7 @@ impl PropKind {
         Self::CaveRoof,
         Self::Ramp,
         Self::LoadingDock,
+        Self::ShrineKit,
     ];
 
     /// Stable kebab-case name with the variant, independent of `Debug`
@@ -208,6 +213,7 @@ impl PropKind {
             Self::CaveRoof => "cave-roof",
             Self::Ramp => "ramp",
             Self::LoadingDock => "loading-dock",
+            Self::ShrineKit => "shrine-kit",
         }
     }
 }
@@ -454,12 +460,12 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         // The sealed threshold to the deeper cave (#160): a log barricade stand-in until the
         // asset-tooling kit gives it its own kind.
         ids::CAVE_THRESHOLD => PropKind::PalisadeSegment,
-        // The Sunken Shrine (#274): collider-box stand-ins. The asset-tooling shrine kit (#345)
-        // swaps in here by giving these ID ranges its own kinds; the colliders stay.
+        // The Sunken Shrine (#431): the ruins, the altar and the cave's rock are asset-tooling's
+        // shrine kit modules ([`shrine::placements`]); the roof slabs over the cave stay the
+        // rock that caps its trench in the lake bed and the shore, cut away from inside.
         _ if ids::SHRINE_CAVE_ROOF.contains(&id) => PropKind::CaveRoof,
-        ids::SHRINE_ALTAR => PropKind::Waystone,
         _ if ids::SHRINE_RUINS.contains(&id) || ids::SHRINE_CAVE_WALLS.contains(&id) => {
-            PropKind::Cliff
+            PropKind::ShrineKit
         }
         _ if ids::TENTS.contains(&id) => PropKind::Tent,
         _ if ids::CRATES.contains(&id) => PropKind::Crate,
@@ -536,6 +542,7 @@ const fn kind_code(kind: PropKind) -> [u8; 2] {
         PropKind::CaveRoof => [31, 0],
         PropKind::Ramp => [32, 0],
         PropKind::LoadingDock => [33, 0],
+        PropKind::ShrineKit => [34, 0],
     }
 }
 
