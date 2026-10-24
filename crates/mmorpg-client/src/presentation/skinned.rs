@@ -3,7 +3,7 @@
 //! Presentation only; the authoritative body box still comes from content.
 use crate::world::{DrawMaterial, SceneDraw};
 use mmorpg_presentation::units::{
-    imported::Kind,
+    imported::{Kind, Loadout},
     kit::{Frame, model},
     player::Hat,
 };
@@ -858,21 +858,31 @@ impl Equipment {
         }
     }
 
-    /// The sword in the right hand and the shield in the left.
-    pub fn sword_and_shield() -> &'static Self {
-        static EQUIPMENT: OnceLock<Equipment> = OnceLock::new();
-        EQUIPMENT.get_or_init(|| {
-            Self::of(&[
-                (ranger_bundle::SWORD, "hand_r.weapon"),
-                (ranger_bundle::SHIELD, "hand_l.shield"),
-            ])
-        })
-    }
-
-    /// The sword alone in the right hand: the Rogue's blade (#302).
-    pub fn blade() -> &'static Self {
-        static EQUIPMENT: OnceLock<Equipment> = OnceLock::new();
-        EQUIPMENT.get_or_init(|| Self::of(&[(ranger_bundle::SWORD, "hand_r.weapon")]))
+    /// The socket items of a loadout (asset-tooling #375): the sword and shield, the sword, the
+    /// dagger or a class staff in the right hand. The bow and quiver are not drawn natively yet.
+    pub fn loadout(loadout: Loadout) -> Option<&'static Self> {
+        static SWORD_AND_SHIELD: OnceLock<Equipment> = OnceLock::new();
+        static SWORD: OnceLock<Equipment> = OnceLock::new();
+        static DAGGER: OnceLock<Equipment> = OnceLock::new();
+        static BONE: OnceLock<Equipment> = OnceLock::new();
+        static GILDED: OnceLock<Equipment> = OnceLock::new();
+        static GNARLED: OnceLock<Equipment> = OnceLock::new();
+        let (cell, items): (_, &[(&str, &str)]) = match loadout {
+            Loadout::SwordAndShield => (
+                &SWORD_AND_SHIELD,
+                &[
+                    (ranger_bundle::SWORD, "hand_r.weapon"),
+                    (ranger_bundle::SHIELD, "hand_l.shield"),
+                ],
+            ),
+            Loadout::Sword => (&SWORD, &[(ranger_bundle::SWORD, "hand_r.weapon")]),
+            Loadout::Dagger => (&DAGGER, &[(ranger_bundle::DAGGER, "hand_r.weapon")]),
+            Loadout::BoneStaff => (&BONE, &[(ranger_bundle::BONE_STAFF, "hand_r.staff")]),
+            Loadout::GildedStaff => (&GILDED, &[(ranger_bundle::GILDED_STAFF, "hand_r.staff")]),
+            Loadout::GnarledStaff => (&GNARLED, &[(ranger_bundle::GNARLED_STAFF, "hand_r.staff")]),
+            Loadout::BowAndQuiver => return None,
+        };
+        Some(cell.get_or_init(|| Self::of(items)))
     }
 
     /// The authored headwear item worn on the head (#374); the hood is the character's own part.

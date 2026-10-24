@@ -12,7 +12,11 @@ use std::{collections::BTreeSet, sync::Arc};
 use mmorpg_core::{ClassChoice, CreatureId, EntityKind, EntityRef, NpcId, ZoneSnapshot};
 use mmorpg_presentation::{
     Draw,
-    units::{FrameInput, SampledUnit, UnitPresenter, Viewer, imported::Kind, player::Hat},
+    units::{
+        FrameInput, SampledUnit, UnitPresenter, Viewer,
+        imported::{Kind, Loadout, Resident},
+        player::Hat,
+    },
 };
 use serde::Serialize;
 
@@ -68,9 +72,10 @@ struct ImportedEntry {
     clip: &'static str,
     time: f32,
     tint: Option<f32>,
-    sword_and_shield: bool,
-    bow_and_quiver: bool,
-    blade: bool,
+    /// The carried weapons by `Loadout::name`, or null.
+    loadout: Option<&'static str>,
+    /// A resident's `humanoid-appearance` preset id (#418), or null.
+    resident: Option<&'static str>,
     headwear: bool,
 }
 
@@ -150,6 +155,11 @@ impl Units {
             serde_json::from_str(clips).map_err(|error| error.to_string())?;
         self.presenter.model_ready(kind, clips);
         Ok(())
+    }
+
+    /// The residents' appearance presets loaded (#418).
+    pub fn residents_ready(&mut self) {
+        self.presenter.residents_ready();
     }
 
     /// Decodes and observes one received projection.
@@ -268,9 +278,8 @@ impl Units {
                     clip: unit.clip,
                     time: unit.time,
                     tint: unit.tint,
-                    sword_and_shield: unit.sword_and_shield,
-                    bow_and_quiver: unit.bow_and_quiver,
-                    blade: unit.blade,
+                    loadout: unit.loadout.map(Loadout::name),
+                    resident: unit.resident.map(Resident::preset),
                     headwear: unit.headwear.is_some(),
                 }
             })

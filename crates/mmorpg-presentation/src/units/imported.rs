@@ -1,10 +1,110 @@
 //! Which imported model presents a unit, its clip names and the per-unit clip clock.
 //!
 //! Players use asset-tooling's Ranger humanoid (Atlas 6.3.7); wolves, vermin and boars use the
-//! bundled Quaternius CC0 animals (Atlas 6.3.6); humanoid creatures and NPCs keep their
-//! procedural models. Each client imports and skins the models with its own provider; this
-//! module only decides what to pose. Presentation only, never read by gameplay.
-use mmorpg_core::{CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, ZoneContent};
+//! bundled Quaternius CC0 animals (Atlas 6.3.6); the named Greyhaven residents wear the Ranger in
+//! their appearance presets (#418) where the client draws them; humanoid creatures and other
+//! NPCs keep their procedural models. Each client imports and skins the models with its own
+//! provider; this module only decides what to pose. Presentation only, never read by gameplay.
+use mmorpg_core::{
+    CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, PlayerClass, ZoneContent,
+};
+
+/// What an imported humanoid carries in its sockets: the class weapons (#156, #244, #302,
+/// asset-tooling #375) and the guards' sword.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Loadout {
+    /// The Warden's arming sword and heater shield (#156).
+    SwordAndShield,
+    /// The Ranger's longbow and quiver on its back (#244).
+    BowAndQuiver,
+    /// The arming sword alone: the Greyhaven guards.
+    Sword,
+    /// The Rogue's blackened dagger.
+    Dagger,
+    /// The Necromancer's bone staff.
+    BoneStaff,
+    /// The Cleric's gilded staff.
+    GildedStaff,
+    /// The Druid's gnarled staff.
+    GnarledStaff,
+}
+
+impl Loadout {
+    /// The weapons a class carries. The Arcanist has no authored staff yet.
+    #[must_use]
+    pub const fn of_class(class: PlayerClass) -> Option<Self> {
+        match class {
+            PlayerClass::Warden => Some(Self::SwordAndShield),
+            PlayerClass::Ranger => Some(Self::BowAndQuiver),
+            PlayerClass::Rogue => Some(Self::Dagger),
+            PlayerClass::Necromancer => Some(Self::BoneStaff),
+            PlayerClass::Cleric => Some(Self::GildedStaff),
+            PlayerClass::Druid => Some(Self::GnarledStaff),
+            PlayerClass::Arcanist => None,
+        }
+    }
+
+    /// The name both clients key their socket items by.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::SwordAndShield => "sword-and-shield",
+            Self::BowAndQuiver => "bow-and-quiver",
+            Self::Sword => "sword",
+            Self::Dagger => "dagger",
+            Self::BoneStaff => "staff.bone",
+            Self::GildedStaff => "staff.gilded",
+            Self::GnarledStaff => "staff.gnarled",
+        }
+    }
+}
+
+/// A named Greyhaven resident drawn in the Ranger bundle's `humanoid-appearance` preset (#418).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Resident {
+    Marshal,
+    Guard,
+    Innkeeper,
+    Farmer,
+    Healer,
+}
+
+impl Resident {
+    /// The resident an NPC of this canonical name is, if it has a preset. Tanner Hilda Brook has
+    /// none yet (the resident outfits exist on the male figure only).
+    #[must_use]
+    pub fn of_name(name: &str) -> Option<Self> {
+        match name {
+            "Marshal Elden Greywatch" => Some(Self::Marshal),
+            "Greyhaven Guard" => Some(Self::Guard),
+            "Innkeeper Bram Tolliver" => Some(Self::Innkeeper),
+            "Farmer Osric Mill" => Some(Self::Farmer),
+            "Brother Aldous" => Some(Self::Healer),
+            _ => None,
+        }
+    }
+
+    /// The bundle's `humanoid-appearance.presets` id.
+    #[must_use]
+    pub const fn preset(self) -> &'static str {
+        match self {
+            Self::Marshal => "resident.marshal",
+            Self::Guard => "resident.guard",
+            Self::Innkeeper => "resident.innkeeper",
+            Self::Farmer => "resident.farmer",
+            Self::Healer => "resident.healer",
+        }
+    }
+
+    /// What the resident carries: the guards keep their sword.
+    #[must_use]
+    pub const fn loadout(self) -> Option<Loadout> {
+        match self {
+            Self::Guard => Some(Loadout::Sword),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Kind {
@@ -247,6 +347,46 @@ impl Playback {
 mod tests {
     use super::*;
     use mmorpg_core::{CreatureId, NpcId, greyhaven_vale};
+
+    #[test]
+    fn named_greyhaven_residents_have_presets_and_classes_their_weapons() {
+        let content = greyhaven_vale::content();
+        let presets: Vec<_> = content
+            .npcs()
+            .iter()
+            .map(|npc| Resident::of_name(&npc.name).map(Resident::preset))
+            .collect();
+        assert_eq!(
+            presets,
+            [
+                Some("resident.marshal"),
+                None,
+                Some("resident.innkeeper"),
+                Some("resident.farmer"),
+                Some("resident.healer"),
+                Some("resident.guard"),
+                Some("resident.guard"),
+                Some("resident.guard"),
+                Some("resident.guard"),
+            ]
+        );
+        let names: Vec<_> = PlayerClass::ALL
+            .into_iter()
+            .map(|class| Loadout::of_class(class).map(Loadout::name))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                Some("sword-and-shield"),
+                Some("bow-and-quiver"),
+                None,
+                Some("staff.bone"),
+                Some("dagger"),
+                Some("staff.gilded"),
+                Some("staff.gnarled"),
+            ]
+        );
+    }
 
     #[test]
     fn players_are_the_ranger_and_only_animal_families_import() {

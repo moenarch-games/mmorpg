@@ -10,13 +10,19 @@ ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / "web/public/characters/humanoid.ranger.male"
 RELEASE = "humanoid-ranger-male"
 URL = f"https://github.com/moritzbrantner/asset-tooling/releases/download/{RELEASE}/"
-# Selected entries by key and variant: the default character and equipment, and the hairstyles'
-# tintable `hair-1` texture variant (#376).
-SELECTED = {key: "default" for key in ("humanoid.ranger.male", "equipment.sword.arming", "equipment.shield.heater",
-                                       "equipment.bow.long", "equipment.quiver.back", "equipment.cap.ranger",
-                                       "equipment.helm.ironcrest")}
-SELECTED.update({key: "hair-1" for key in ("hair.buzzed", "hair.simple-parted", "hair.long")})
-KEYS = set(SELECTED)
+# Selected entries by key and variants: the default character and equipment, the class weapons
+# (asset-tooling #375), the hairstyles' tintable `hair-1` texture variant (#376) and the Greyhaven
+# residents' outfit variants, armour, straw hat and beards (#418).
+SELECTED = {key: {"default"} for key in (
+    "humanoid.ranger.male", "equipment.sword.arming", "equipment.shield.heater", "equipment.bow.long",
+    "equipment.quiver.back", "equipment.cap.ranger", "equipment.helm.ironcrest", "equipment.dagger.blackened",
+    "equipment.staff.bone", "equipment.staff.gilded", "equipment.staff.gnarled", "equipment.hat.straw",
+    "facial-hair.beards", "armor.knight", "armor.soldier", "armor.farmer", "armor.innkeeper", "armor.monk")}
+SELECTED.update({key: {"hair-1"} for key in ("hair.buzzed", "hair.simple-parted", "hair.long")})
+# The full-detail outfit variant of each resident preset's outfit and skin.
+SELECTED["humanoid.ranger.male"] |= {"outfit.knight.skin.light", "outfit.soldier", "outfit.innkeeper.skin.light",
+                                     "outfit.farmer", "outfit.monk.skin.light"}
+PAIRS = {(key, variant) for key, variants in SELECTED.items() for variant in variants}
 # The rolling release is pinned by the consumer's copy of its export.ref.json (#411: the bundle
 # with face morph targets); a replaced release fails acquisition until this copy is updated.
 EXPORT_REF = ROOT / "web/assets/ranger/export.ref.json"
@@ -32,8 +38,8 @@ def complete():
         index = json.loads((DEST / (RELEASE + ".index.json")).read_text())
     except (OSError, ValueError):
         return False
-    entries = [entry for entry in index.get("entries", []) if SELECTED.get(entry.get("key")) == entry.get("variant")]
-    return {entry["key"] for entry in entries} == KEYS and all((DEST / name).is_file() for entry in entries for name in entry["files"])
+    entries = [entry for entry in index.get("entries", []) if (entry.get("key"), entry.get("variant")) in PAIRS]
+    return {(entry["key"], entry["variant"]) for entry in entries} == PAIRS and all((DEST / name).is_file() for entry in entries for name in entry["files"])
 
 
 def acquire():
@@ -55,9 +61,9 @@ def acquire():
         index = json.loads((directory / index_name).read_text())
         if index["schema"] != "asset-downloads-v1" or index["release"] != RELEASE:
             raise ValueError("unsupported Ranger index")
-        entries = [entry for entry in index["entries"] if SELECTED.get(entry["key"]) == entry["variant"]]
-        if len(entries) != len(KEYS) or {entry["key"] for entry in entries} != KEYS:
-            raise ValueError("index must declare every selected default entry exactly once")
+        entries = [entry for entry in index["entries"] if (entry["key"], entry["variant"]) in PAIRS]
+        if len(entries) != len(PAIRS) or {(entry["key"], entry["variant"]) for entry in entries} != PAIRS:
+            raise ValueError("index must declare every selected entry exactly once")
         files = {"export.ref.json"}
         for entry in entries:
             files.update(entry["files"])
