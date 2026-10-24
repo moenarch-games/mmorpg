@@ -38,10 +38,12 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // garrisons the Greyfang cave with six more creatures for AI and physics every tick and
     // adds its sealed threshold box, which shifts the zone RNG and the fights again. Revision 26
     // (#431) rebuilds the shrine on the asset-tooling kit with 15 more boxes in every step.
+    // Revision 28 (#423) lifts the lake onto the basin terrace, which shifts the zone RNG and
+    // keeps the spread fight's creatures thinking a little longer.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [29_160, 460_800, 224_640, 4_231_728],
         [29_160, 457_920, 80_140, 1_335_287],
-        [29_042, 466_442, 389_620, 6_428_143],
+        [29_101, 466_501, 389_620, 6_428_143],
         [28_205, 477_125, 2_229_082, 24_493_481],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {

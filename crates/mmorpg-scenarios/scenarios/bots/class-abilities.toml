@@ -571,14 +571,14 @@ tick = 739
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 3
-tick = 799
+resource = 5
+tick = 781
 
 [[expect]]
 kind = "resource"
 bot = "warden"
-resource = 1
-tick = 800
+resource = 3
+tick = 782
 
 # #27: a visible recipient observes other actors without receiving their damage credit.
 [[expect]]

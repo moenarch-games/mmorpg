@@ -16,22 +16,23 @@ t=375 warden move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=32768
 t=376 warden p1 e1 ack6 (-8459,90,1775) sees[] rage0/100
 t=380 warden select_target -> applied seq=7 epoch=1 entity=creature:108
 t=381 warden p1 e1 ack7 (-8459,90,1670) sees[] target=creature:108 rage0/100
-t=384 warden p1 e1 ack7 (-8459,90,1607) sees[] target=creature:108 in_combat rage0/100
+t=390 warden p1 e1 ack7 (-8459,90,1481) sees[] target=creature:108 in_combat rage0/100
 t=395 warden move -> applied seq=8 epoch=1 forward=0 strafe=0 facing=32768
 t=395 warden guard -> applied seq=9 epoch=1 lane=middle
 t=396 warden p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 in_combat rage0/100
 t=400 warden p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 in_combat rage0/100
-t=411 warden p1 e1 ack9 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,guard_broken:creature:108>warden:1:45,taken:creature:108:1]
-t=471 expect warden event blocked creature:108 by t=550 ok events[attack:creature:108>warden,blocked:creature:108>warden:1:4]
-t=471 warden p1 e1 ack9 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,blocked:creature:108>warden:1:4]
-t=500 warden p1 e1 ack9 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100
-t=531 warden p1 e1 ack9 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,blocked:creature:108>warden:1:2]
+t=423 warden p1 e1 ack9 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,guard_broken:creature:108>warden:1:45,taken:creature:108:3]
+t=483 expect warden event blocked creature:108 by t=550 ok events[attack:creature:108>warden,blocked:creature:108>warden:1:2]
+t=483 warden p1 e1 ack9 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,blocked:creature:108>warden:1:2]
+t=500 warden p1 e1 ack9 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage4/100
+t=543 warden p1 e1 ack9 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,blocked:creature:108>warden:1:4]
 t=550 warden guard -> applied seq=10 epoch=1 lane=high
-t=551 warden p1 e1 ack10 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100
-t=591 expect warden event damage_taken creature:108 within t=552..=650 ok events[attack:creature:108>warden,taken:creature:108:2]
-t=591 warden p1 e1 ack10 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage8/100 events[attack:creature:108>warden,taken:creature:108:2]
-t=600 warden p1 e1 ack10 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage8/100
+t=551 warden p1 e1 ack10 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage4/100
+t=600 warden p1 e1 ack10 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage4/100
+t=603 expect warden event damage_taken creature:108 within t=552..=650 ok events[attack:creature:108>warden,taken:creature:108:2]
+t=603 warden p1 e1 ack10 (-8459,90,1376) sees[] hp45/50 target=creature:108 in_combat rage8/100 events[attack:creature:108>warden,taken:creature:108:2]
 t=650 warden guard -> applied seq=11 epoch=1 lane=none
-t=651 warden p1 e1 ack11 (-8459,90,1376) sees[] hp44/50 target=creature:108 in_combat rage12/100 events[attack:creature:108>warden,taken:creature:108:3!]
-t=700 warden p1 e1 ack11 (-8459,90,1376) sees[] hp44/50 target=creature:108 in_combat rage12/100
+t=651 warden p1 e1 ack11 (-8459,90,1376) sees[] hp45/50 target=creature:108 in_combat rage8/100
+t=663 warden p1 e1 ack11 (-8459,90,1376) sees[] hp43/50 target=creature:108 in_combat rage12/100 events[attack:creature:108>warden,taken:creature:108:2]
+t=700 warden p1 e1 ack11 (-8459,90,1376) sees[] hp43/50 target=creature:108 in_combat rage12/100
 PASS warden-guard ticks=700 steps=12 expectations=2 failures=0

@@ -575,9 +575,9 @@ const SEED_MASSIF: u64 = 0x4d41_5353_4946_2121;
 const SEED_CRAGS: u64 = 0x4352_4147_5321_2121;
 const LAKE: Water = Water {
     name: "Stillwater Lake",
-    centre: [5_500, -5_500],
-    radii: [2_200, 1_600],
-    surface: 15,
+    centre: greyhaven_vale::lake::CENTRE,
+    radii: greyhaven_vale::lake::RADII,
+    surface: greyhaven_vale::lake::SURFACE,
 };
 /// Ploughed field inside the Millbrook fences.
 const FARMLAND: Rect = Rect {

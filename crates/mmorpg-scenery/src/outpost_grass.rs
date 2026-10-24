@@ -50,10 +50,10 @@ mod tests {
         let before = unmasked_greyhaven_vale_scenery();
         let mut captured_revision = before.clone();
         captured_revision.content_revision = 4;
-        assert_eq!(captured_revision.stable_hash(), 0x219e_99a9_1ce0_01db);
+        assert_eq!(captured_revision.stable_hash(), 0x5fb6_f241_83ec_3a4c);
         let mut previous_revision = before.clone();
         previous_revision.content_revision = 3;
-        assert_eq!(previous_revision.stable_hash(), 0x3778_8b7c_51cd_a24e);
+        assert_eq!(previous_revision.stable_hash(), 0x216c_6a8b_310b_d3ed);
         let original: Vec<_> = before
             .props
             .iter()
@@ -61,12 +61,12 @@ mod tests {
             .copied()
             .collect();
         // The outer valley's roads (#159) reject a few earlier scatter candidates, so the
-        // generator now places one later tuft here too, the Sunken Shrine (#274) two more and the
-        // re-routed Millbrook Road (#423) three more;
+        // generator now places one later tuft here too, the Sunken Shrine (#274) two more, the
+        // re-routed Millbrook Road (#423) three more and the re-routed Lakeshore Path five more;
         // the 118 accepted ones remain.
         let accepted: Vec<_> = ACCEPTED.iter().copied().map(prop).collect();
         assert!(accepted.iter().all(|tuft| original.contains(tuft)));
-        assert_eq!(original.len(), 124);
+        assert_eq!(original.len(), 129);
         let unrelated = |scenery: &Scenery| {
             scenery
                 .props
