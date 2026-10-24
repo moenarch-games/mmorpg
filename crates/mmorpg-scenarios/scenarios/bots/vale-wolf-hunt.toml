@@ -9,7 +9,7 @@
 # events; every command step is applied.
 name = "vale-wolf-hunt"
 zone = 1
-ticks = 4400
+ticks = 4440
 digest_interval = 200
 
 [[bots]]
@@ -83,9 +83,9 @@ tick = 760
 bot = "hunter"
 action = "start_attack"
 
-# The wolf engaged at tick 394: stand and let it come.
+# Stand close enough to the den that Wolf 108 engages wherever it wanders, and let it come.
 [[steps]]
-tick = 790
+tick = 830
 bot = "hunter"
 action = "move"
 forward = 0
@@ -94,22 +94,22 @@ facing = 32768
 
 # The corpse cannot be attacked.
 [[steps]]
-tick = 2240
+tick = 2280
 bot = "hunter"
 action = "start_attack"
 
 # Wounded, walk on north-west through the clearing toward Wolf 106's den.
 [[steps]]
-tick = 2260
+tick = 2300
 bot = "hunter"
 action = "move"
 forward = 1
 strafe = 0
-facing = 36136
+facing = 37400
 
 # Stand once near Wolf 106, target it and fight back as it engages …
 [[steps]]
-tick = 2480
+tick = 2540
 bot = "hunter"
 action = "move"
 forward = 0
@@ -117,31 +117,31 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 2480
+tick = 2540
 bot = "hunter"
 action = "select_target"
 entity = "creature:106"
 
 [[steps]]
-tick = 2480
+tick = 2540
 bot = "hunter"
 action = "start_attack"
 
 # … then stop swinging and keep the selection.
 [[steps]]
-tick = 2800
+tick = 2840
 bot = "hunter"
 action = "stop_attack"
 
 # The dead can neither attack nor move: the walk is accepted but holds
 # nothing, so the released spirit stands at the graveyard.
 [[steps]]
-tick = 3800
+tick = 3840
 bot = "hunter"
 action = "start_attack"
 
 [[steps]]
-tick = 3800
+tick = 3840
 bot = "hunter"
 action = "move"
 forward = 1
@@ -149,7 +149,7 @@ strafe = 0
 facing = 0
 
 [[steps]]
-tick = 4200
+tick = 4240
 bot = "hunter"
 action = "release_spirit"
 
@@ -178,119 +178,119 @@ kind = "unit"
 bot = "hunter"
 entity = "creature:108"
 state = "targets_viewer"
-by_tick = 800
+by_tick = 840
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "damage_dealt"
 entity = "creature:108"
-by_tick = 900
+by_tick = 940
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "damage_taken"
 entity = "creature:108"
-by_tick = 900
+by_tick = 940
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "died"
 entity = "creature:108"
-by_tick = 2400
+by_tick = 2440
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "creature:108"
 state = "dead"
-tick = 2239
+tick = 2279
 
 [[expect]]
 kind = "target"
 bot = "hunter"
 entity = "creature:108"
-tick = 2239
+tick = 2279
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "error:target_dead"
 entity = "creature:108"
-tick = 2241
+tick = 2281
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "creature:106"
 state = "targets_viewer"
-by_tick = 2600
-from_tick = 2262
+by_tick = 2640
+from_tick = 2302
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "damage_taken"
 entity = "creature:106"
-by_tick = 2800
+by_tick = 2840
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "died"
 entity = "bot:hunter"
-by_tick = 3800
+by_tick = 3840
 
 [[expect]]
 kind = "health"
 bot = "hunter"
 health = 0
-tick = 3799
+tick = 3839
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "bot:hunter"
 state = "dead"
-tick = 3799
+tick = 3839
 
 [[expect]]
 kind = "unit"
 bot = "hunter"
 entity = "creature:106"
 state = "evading"
-by_tick = 3800
+by_tick = 3840
 
 [[expect]]
 kind = "event"
 bot = "hunter"
 event = "error:you_are_dead"
-tick = 3801
+tick = 3841
 
 [[expect]]
 kind = "target"
 bot = "hunter"
 entity = "creature:106"
-tick = 3801
+tick = 3841
 
 [[expect]]
 kind = "position"
 bot = "hunter"
-tick = 4000
-position = [-9175, 90, -808]
+tick = 4040
+position = [-9542, 90, -1319]
 
 [[expect]]
 kind = "position"
 bot = "hunter"
-tick = 4202
+tick = 4242
 position = [-2000, 90, 4150]
 
 [[expect]]
 kind = "position"
 bot = "hunter"
-tick = 4400
+tick = 4440
 position = [-2000, 90, 4150]
 
 [[expect]]
@@ -298,18 +298,18 @@ kind = "unit"
 bot = "hunter"
 entity = "bot:hunter"
 state = "alive"
-tick = 4201
+tick = 4241
 
 [[expect]]
 kind = "health"
 bot = "hunter"
 health = 25
-tick = 4201
+tick = 4241
 
 [[expect]]
 kind = "area"
 bot = "hunter"
-tick = 4201
+tick = 4241
 area = "Greyhaven Outpost"
 
 [[expect]]
@@ -317,7 +317,7 @@ kind = "unit"
 bot = "hunter"
 entity = "creature:106"
 state = "absent"
-tick = 4201
+tick = 4241
 
 # XP is durable self-state: death, reconnect and release cannot erase a reward.
 [[expect]]
@@ -332,11 +332,11 @@ kind = "progression"
 bot = "hunter"
 level = 1
 experience = 50
-tick = 2479
+tick = 2519
 
 [[expect]]
 kind = "progression"
 bot = "hunter"
 level = 1
 experience = 50
-tick = 4201
+tick = 4241

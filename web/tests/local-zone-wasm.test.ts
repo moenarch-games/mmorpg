@@ -53,8 +53,8 @@ describe("WASM local zone host", () => {
     loot.update(source.latestProjection()!);
     // The corpse-loot-resume scenario's script, at 60 Hz.
     const movement = new Map([[0, [1, 0]], [72, [1, 49152]], [242, [1, 32768]],
-      [262, [1, 49152]], [750, [1, 32768]], [790, [0, 32768]]]);
-    for (let tick = 0; tick < 2064; tick += 1) {
+      [262, [1, 49152]], [750, [1, 32768]], [830, [0, 32768]]]);
+    for (let tick = 0; tick < 2104; tick += 1) {
       const move = movement.get(tick);
       if (move) {
         source.sendCommand({ kind: "move", forward: move[0] === 0 ? 0 : 1, strafe: 0, facing: move[1] ?? 0 });
@@ -75,7 +75,7 @@ describe("WASM local zone host", () => {
     if (sheet === null) {
       throw new Error("Missing authoritative corpse sheet");
     }
-    expect(sheet).toEqual({ creatureId: 108, diedAt: 1897n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
+    expect(sheet).toEqual({ creatureId: 108, diedAt: 1956n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
     source.sendCommand({ kind: "loot", creatureId: sheet.creatureId, diedAt: sheet.diedAt + 1n });
     run(source, 1);
     expect(source.latestProjection()?.events).toContainEqual({ kind: "error", code: "invalid-loot", target: { kind: "creature", id: 108 } });
@@ -154,7 +154,7 @@ describe("WASM local zone host", () => {
         }
       }
     }
-    expect(provider.scenery.contentRevision).toBe(26n);
+    expect(provider.scenery.contentRevision).toBe(28n);
   });
   test("multi-tick frames retain intermediate bag sheets and refusal feedback", async () => {
     const { source } = createLocalWorld(wasm, testCharacters());
@@ -290,10 +290,10 @@ describe("WASM local zone host", () => {
     const zone = new wasm.LocalZone() as InstanceType<typeof wasm.LocalZone> & { zoneId(): number };
     const { entries } = testCharacters();
     expect(zone.zoneId()).toBe(1);
-    expect(zone.contentRevision()).toBe(26n);
+    expect(zone.contentRevision()).toBe(28n);
     const player = zone.enter(entries, "local-1", 2, 0, 1n);
     const projection = decodeSnapshot(zone.projection(player));
-    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: 26n, viewerId: player, acknowledgedSequence: 0 });
+    expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: 28n, viewerId: player, acknowledgedSequence: 0 });
     // A new character has made its class choice on entry.
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, autoAttacking: false, target: null,
@@ -416,7 +416,7 @@ describe("WASM local zone host", () => {
 
   test("scenery and areas come from the same content as the zone", async () => {
     const { source, scenery } = createLocalWorld(wasm, testCharacters());
-    expect(scenery.scenery.contentRevision).toBe(26n);
+    expect(scenery.scenery.contentRevision).toBe(28n);
     expect(scenery.scenery.source).toBe("mmorpg-scenery");
     expect(scenery.scenery.playerHalfExtents).toEqual([30, 90, 30]);
     await source.join();
@@ -434,7 +434,7 @@ describe("WASM local zone host", () => {
     const keep = scenery.scenery.props.find((prop) => prop.collider?.id === 100);
     expect(keep?.kind).toBe("keep");
     expect(keep?.collider?.halfExtents).toEqual(keep?.halfExtents);
-    expect(scenery.scenery.water).toEqual([{ centerXz: [5_500, -5_500], radiiXz: [2_200, 1_600], surfaceY: 15 }]);
+    expect(scenery.scenery.water).toEqual([{ centerXz: [5_500, -5_500], radiiXz: [2_200, 1_600], surfaceY: 1_115 }]);
     expect(scenery.scenery.roads.map((road) => road.name)).toContain("Hollow Road");
     expect(Math.max(...scenery.scenery.farTerrain.heights)).toBeGreaterThan(Math.max(...scenery.scenery.terrain.heights));
   });
@@ -461,8 +461,8 @@ describe("WASM local zone host", () => {
     const actual = provider.scenery.props.filter((prop) => prop.kind === "grass-tuft" && prop.position[0] >= -3500 && prop.position[0] <= 3500 && prop.position[2] >= -1300 && prop.position[2] <= 5300);
     expect(actual).toEqual(expected);
     expect(actual.length).toBe(55);
-    expect(provider.scenery.presentationFingerprint).toBe("506c9fe18039f755");
-    expect(provider.scenery.contentRevision).toBe(26n);
+    expect(provider.scenery.presentationFingerprint).toBe("0f9e7665f778abcd");
+    expect(provider.scenery.contentRevision).toBe(28n);
   });
 
   test("the vale's static scene models every prop within a bounded node and vertex budget", () => {
@@ -485,7 +485,7 @@ describe("WASM local zone host", () => {
 describe("WASM local zone combat intents", () => {
   test("the catalog names the hosted units and matches the zone's content", () => {
     const { catalog } = createLocalWorld(wasm, testCharacters());
-    expect(catalog.contentRevision).toBe(26n);
+    expect(catalog.contentRevision).toBe(28n);
     expect([...catalog.items.values()].map((item) => item.name)).toEqual([
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
       "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl",

@@ -31,11 +31,14 @@ const TO_WOODS: &[[i32; 2]] = &[
     [-6_600, 300],
     [-7_600, 0],
 ];
-/// The Millbrook Road through the east gate to the farmhouse.
+/// The Millbrook Road through the east gate and up the Millbrook Climb (#423) to the farmhouse.
 const TO_FARMER: &[[i32; 2]] = &[
     [1_600, 2_000],
     [3_200, 2_000],
-    [4_400, 2_000],
+    [4_200, 2_000],
+    [4_200, -1_800],
+    [5_400, -1_800],
+    [5_400, 1_200],
     [5_400, 2_800],
     [6_400, 3_300],
     [6_200, 3_850],

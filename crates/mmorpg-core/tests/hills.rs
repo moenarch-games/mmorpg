@@ -38,8 +38,13 @@ fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
             let height =
                 grid.heights[usize::try_from(row * i32::from(grid.columns) + column).unwrap()];
             // Stillwater Lake's basin and the Sunken Shrine's cave under its shore (#274) are the
-            // only dips in the original valley.
-            let basin = |x: i32| greyhaven_vale::lake_depth(x, z) > 0 || shrine::flattens(x, z);
+            // only dips in the original valley; Millbrook Farm's terrace and its cliffs (#423)
+            // its only rise.
+            let basin = |x: i32| {
+                greyhaven_vale::lake_depth(x, z) > 0
+                    || shrine::flattens(x, z)
+                    || greyhaven_vale::basin::height_at(x, z).is_some()
+            };
             if x.abs().max(z.abs()) <= 12_500 && !basin(x) {
                 assert_eq!(height, 0, "the original valley stays flat at {x}, {z}");
             }

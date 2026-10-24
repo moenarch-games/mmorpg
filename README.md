@@ -21,8 +21,8 @@ Decision history and stable cross-references: [MMORPG Decision Atlas](docs/decis
 | Native graphics | `mmorpg-client`: wgpu/winit adapter over pinned `3d-lab` mesh/camera models |
 | Browser graphics | pinned `3d-lab` browser renderer |
 | Browser zone host (single-player demo) | `mmorpg-wasm`: thin wasm-bindgen adapter over `mmorpg-core` and `mmorpg-protocol` |
-| Runtime input semantics | `input-bindings` (browser and native action runtime; browser/native Settings compose character-scoped profiles and explicit conflict repairs, [#41](https://github.com/moritzbrantner/mmorpg/issues/41)) |
-| User-facing settings | `settings` (shared JSON catalog; browser `@moritzbrantner/settings-browser` and native `settings-core`, [#41](https://github.com/moritzbrantner/mmorpg/issues/41)) |
+| Runtime input semantics | `input-bindings` (browser and native action runtime; browser/native Settings compose character-scoped profiles and explicit conflict repairs, [#41](https://github.com/moenarch-games/mmorpg/issues/41)) |
+| User-facing settings | `settings` (shared JSON catalog; browser `@moritzbrantner/settings-browser` and native `settings-core`, [#41](https://github.com/moenarch-games/mmorpg/issues/41)) |
 | Asset normalization/provenance | `asset-tooling` (future content slice) |
 | Social systems | `social-service` where its existing authority fits |
 | Runtime/performance evidence | `runtime-profiler` integration, without moving gameplay truth |

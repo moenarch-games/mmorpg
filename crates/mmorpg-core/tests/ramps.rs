@@ -11,6 +11,8 @@ use mmorpg_core::{RampRise, ZoneCommand, ZoneId, ZoneSimulation};
 const EAST: u16 = 16_384;
 const WEST: u16 = 49_152;
 const NORTH_FACING_PLUS_Z: u16 = 0;
+/// The dock stands on Millbrook Farm's terrace (#423).
+const TERRACE: f32 = greyhaven_vale::basin::TERRACE_Y as f32;
 
 struct Walker {
     zone: ZoneSimulation,
@@ -23,7 +25,7 @@ impl Walker {
         let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
         zone.add_player(1).unwrap();
         let mut state = zone.snapshot().unwrap();
-        state.players[0].position = [feet[0], 90.0, feet[1]];
+        state.players[0].position = [feet[0], TERRACE + 90.0, feet[1]];
         Self {
             zone: ZoneSimulation::from_snapshot(state, content).unwrap(),
             sequence: 0,
@@ -63,7 +65,7 @@ fn a_player_walks_up_the_cart_ramp_onto_the_dock_and_back_down() {
     for [x, y, z] in &path {
         #[allow(clippy::cast_possible_truncation)]
         if let Some(top) = ramp.top_at(x.round() as i32, z.round() as i32) {
-            let feet = f64::from(*y) - 90.0;
+            let feet = f64::from(*y) - 90.0 - f64::from(TERRACE);
             // The capsule touches the slope uphill of its centre: at most its radius times
             // the slope above the surface under the centre.
             assert!(
@@ -74,7 +76,7 @@ fn a_player_walks_up_the_cart_ramp_onto_the_dock_and_back_down() {
     }
     let [x, y, _] = *path.last().unwrap();
     assert!(
-        x > 8_150.0 && (y - 240.0).abs() < 0.5,
+        x > 8_150.0 && (y - TERRACE - 240.0).abs() < 0.5,
         "on the dock: {x} {y}"
     );
     // And back down to the ground.
@@ -82,7 +84,10 @@ fn a_player_walks_up_the_cart_ramp_onto_the_dock_and_back_down() {
         .walk(WEST, mmorpg_core::golden::t30(60) as _)
         .last()
         .unwrap();
-    assert!(x < 7_550.0 && (y - 90.0).abs() < 0.5, "down again: {x} {y}");
+    assert!(
+        x < 7_550.0 && (y - TERRACE - 90.0).abs() < 0.5,
+        "down again: {x} {y}"
+    );
 }
 
 #[test]
@@ -94,11 +99,11 @@ fn nobody_climbs_the_steep_chute() {
     let path = walker.walk(NORTH_FACING_PLUS_Z, mmorpg_core::golden::t30(90) as _);
     let [_, y, z] = *path.last().unwrap();
     assert!(
-        z < 1_800.0 && y < 90.0 + 75.0,
+        z < 1_800.0 && y < TERRACE + 90.0 + 75.0,
         "held below the dock: {z} {y}"
     );
     assert!(
-        path.iter().all(|[_, y, _]| *y < 90.0 + 150.0),
+        path.iter().all(|[_, y, _]| *y < TERRACE + 90.0 + 150.0),
         "never on the dock"
     );
 }

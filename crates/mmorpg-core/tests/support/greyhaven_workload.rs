@@ -73,11 +73,11 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
                     [index * content.creature_spawns().len() / fixture.players]
             };
             let row = i32::try_from(index / 6)?;
-            [
-                spawn.position[0] + 150 + row * 65,
-                PLAYER_HALF_EXTENTS_UNITS[1],
-                spawn.position[1],
-            ]
+            let [x, z] = [spawn.position[0] + 150 + row * 65, spawn.position[1]];
+            // Feet on the basin's terraces, such as Millbrook Farm's (#423); elsewhere on the
+            // valley floor as before, so the outer hills' fights keep their geometry.
+            let ground = greyhaven_vale::basin::height_at(x, z).unwrap_or(0);
+            [x, ground + PLAYER_HALF_EXTENTS_UNITS[1], z]
         };
         state.players.push(CanonicalPlayerSnapshot {
             copper: 0,

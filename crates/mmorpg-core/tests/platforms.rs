@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use mmorpg_core::greyhaven_vale::{self, MILL_HOIST};
+use mmorpg_core::greyhaven_vale::{self, MILL_HOIST, basin::TERRACE_Y};
 use mmorpg_core::{PlatformPhase, ZoneCommand, ZoneId, ZoneSimulation};
 
 const NORTH: u16 = 0;
@@ -15,7 +15,7 @@ fn zone_on_the_hoist() -> ZoneSimulation {
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
     zone.add_player(1).unwrap();
     let mut state = zone.snapshot().unwrap();
-    state.players[0].position = [8_800.0, 90.0, 1_748.0];
+    state.players[0].position = [8_800.0, (TERRACE_Y + 90) as f32, 1_748.0];
     ZoneSimulation::from_snapshot(state, content).unwrap()
 }
 
@@ -69,12 +69,15 @@ fn the_mill_hoist_lifts_a_player_to_the_gallery_and_sinks_without_them() {
     );
     let gallery = player_at(&zone);
     assert!(gallery[2] > 1_900.0, "{gallery:?}");
-    // The hoist sinks back to the ground; the player stays on the gallery.
+    // The hoist sinks back to the terrace; the player stays on the gallery.
     while hoist.phase_at(zone.current_tick()).0 != PlatformPhase::AtLow {
         zone.advance_tick().unwrap();
     }
     let [_, y, z] = player_at(&zone);
-    assert!((y - 890.0).abs() < 0.1 && z > 1_900.0, "{y} {z}");
+    assert!(
+        (y - (TERRACE_Y + 890) as f32).abs() < 0.1 && z > 1_900.0,
+        "{y} {z}"
+    );
 }
 
 #[test]
@@ -126,7 +129,7 @@ fn the_hoist_sweeps_only_its_own_shaft_and_tops_out_at_the_gallery() {
     );
     assert_eq!(
         hoist.low[1] + hoist.half_extents[1],
-        0,
-        "the low stop is flush with the ground"
+        TERRACE_Y,
+        "the low stop is flush with the farm terrace"
     );
 }

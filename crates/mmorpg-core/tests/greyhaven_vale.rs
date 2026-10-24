@@ -92,7 +92,8 @@ fn content_is_a_bounded_deterministic_revision() {
                 });
                 let base = collider.position[1] - collider.half_extents[1];
                 assert!(
-                    base == 0 || base == ground - 30,
+                    // On level ground, such as Millbrook Farm's terrace (#423), they stand on it.
+                    base == 0 || base == ground || base == ground - 30,
                     "collider {} stands at {base} on {ground}",
                     collider.id
                 );

@@ -506,8 +506,8 @@ mod tests {
         assert_eq!(value["format"], SCENERY_FORMAT);
         assert_eq!(value["version"], SCENERY_FORMAT_VERSION);
         assert_eq!(value["source"], SCENERY_SOURCE);
-        assert_eq!(value["contentRevision"], "26");
-        assert_eq!(value["presentationFingerprint"], "506c9fe18039f755");
+        assert_eq!(value["contentRevision"], "28");
+        assert_eq!(value["presentationFingerprint"], "0f9e7665f778abcd");
         assert_eq!(value["unitsPerMetre"], 100);
         assert_eq!(value["playerHalfExtents"], serde_json::json!([30, 90, 30]));
         let names: Vec<_> = value["areas"]
@@ -543,7 +543,7 @@ mod tests {
         assert_eq!(
             value["water"],
             serde_json::json!([
-                { "centerXz": [5_500, -5_500], "radiiXz": [2_200, 1_600], "surfaceY": 15 }
+                { "centerXz": [5_500, -5_500], "radiiXz": [2_200, 1_600], "surfaceY": 1_115 }
             ])
         );
         assert_eq!(value["roads"][0]["name"], "Hollow Road");

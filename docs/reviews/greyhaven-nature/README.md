@@ -1,6 +1,6 @@
 # Greyhaven broadleaf review
 
-This is the first environment comparison for [#346](https://github.com/moritzbrantner/mmorpg/issues/346), following Atlas 6.3.8. **The default game still uses the current procedural oak.** **Owner feedback (2026-10-20):** the denser, taller prototype is better, but its leaf colours and the current lighting are unsatisfactory. Defer further tree iteration and adoption until lighting can be revisited; this is not approval to replace default art. Full tree/rock adoption remains [#49](https://github.com/moritzbrantner/mmorpg/issues/49).
+This is the first environment comparison for [#346](https://github.com/moenarch-games/mmorpg/issues/346), following Atlas 6.3.8. **The default game still uses the current procedural oak.** **Owner feedback (2026-10-20):** the denser, taller prototype is better, but its leaf colours and the current lighting are unsatisfactory. Defer further tree iteration and adoption until lighting can be revisited; this is not approval to replace default art. Full tree/rock adoption remains [#49](https://github.com/moenarch-games/mmorpg/issues/49).
 
 Both images are actual Chromium browser-game captures: existing `woods` camera, 1440 × 900, presentation time 120 seconds, reduced motion, identical paused authoritative projection. The HUD is hidden equally for readability. One oak left of the path changes; all other scenery stays current. The proposed broadleaf is visibly smaller and more detailed than the current crown; this review does not approve its scale or colour.
 

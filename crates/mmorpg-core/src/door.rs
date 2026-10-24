@@ -208,13 +208,11 @@ impl ZoneSimulation {
         };
         let centre = self.player_position(player_id)?;
         let eye = centre.y - crate::PLAYER_HALF_EXTENTS_UNITS[1] + NPC_SIGHT_HEIGHT_UNITS;
+        // The NPC stands on the ground under its feet, such as Millbrook Farm's terrace (#423).
+        let target = self.content.definition().ground_at(feet[0], feet[1]) + NPC_SIGHT_HEIGHT_UNITS;
         Ok(!self.world.segment_blocked(
             crate::physics::Vec3i::new(centre.x, eye, centre.z),
-            crate::physics::Vec3i::new(
-                feet[0] - centre.x,
-                NPC_SIGHT_HEIGHT_UNITS - eye,
-                feet[1] - centre.z,
-            ),
+            crate::physics::Vec3i::new(feet[0] - centre.x, target - eye, feet[1] - centre.z),
             |body| body.0 < crate::entity::PLAYER_BODY_BASE,
         ))
     }

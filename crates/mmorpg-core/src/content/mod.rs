@@ -220,6 +220,14 @@ impl ZoneDefinition {
         self.terrain.as_ref()
     }
 
+    /// The ground's height at `(x, z)` in units: the terrain's, or 0 on flat content.
+    #[must_use]
+    pub fn ground_at(&self, x: i32, z: i32) -> i32 {
+        self.terrain
+            .as_ref()
+            .map_or(0, |terrain| terrain.height_at(x, z))
+    }
+
     /// Content with the [`SpawnGrid::DEFAULT`] spawn slots.
     pub fn new(
         revision: u64,

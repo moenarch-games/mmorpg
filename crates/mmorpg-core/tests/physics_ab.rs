@@ -258,7 +258,10 @@ fn check_invariants(
             // slope over half a unit. The Greyhaven fixture puts every player's feet at y = 0,
             // some inside a hill.
             let sunk = bottom < ground - authored - 2.0;
-            if tick == 1 && sunk {
+            // physics-engine can carry a swimming capsule (no gravity) into a rising heightfield
+            // shore (physics-engine #396); the unit then stays embedded like one a fixture placed
+            // inside, until that is fixed.
+            if (tick == 1 || unit.body.swimming()) && sunk {
                 check.placed_inside.insert(unit.unit);
             }
             if sunk && !check.placed_inside.contains(&unit.unit) {
@@ -345,12 +348,17 @@ fn check_ogre(
     });
 }
 
+/// Millbrook Farm's terrace (#423), which the dock, its ramps and the hoist stand on.
+#[allow(clippy::cast_precision_loss)]
+const TERRACE: f32 = mmorpg_core::greyhaven_vale::basin::TERRACE_Y as f32;
+
 /// The ramp walk on one backend (#59): the walker is on the dock (feet 1.5 m up) when it
 /// turns back and on the ground at the end; the chute never lets the other player onto the
 /// dock.
 fn check_mill_ramps(trace: &Trace) -> std::result::Result<(), String> {
-    let feet =
-        |tick: usize, player: usize| trace.snapshots[tick - 1].players[player].position[1] - 90.0;
+    let feet = |tick: usize, player: usize| {
+        trace.snapshots[tick - 1].players[player].position[1] - 90.0 - TERRACE
+    };
     // Where the script turns the walker back west (tick 44 at 30 Hz).
     let top = usize::try_from(mmorpg_core::golden::t30(44)).unwrap();
     if (feet(top, 0) - 150.0).abs() > 3.0 || feet(trace.snapshots.len(), 0).abs() > 0.5 {
@@ -372,7 +380,7 @@ fn check_mill_ramps(trace: &Trace) -> std::result::Result<(), String> {
 fn check_mill_hoist(trace: &Trace) -> Result<()> {
     let last = trace.snapshots.last().ok_or("empty hoist trace")?;
     let [_, y, z] = last.players[0].position;
-    if (y - 890.0).abs() > 0.1 || z < 1_900.0 {
+    if (y - 890.0 - TERRACE).abs() > 0.1 || z < 1_900.0 {
         return Err(format!("the hoist rider ends at {:?}", last.players[0].position).into());
     }
     Ok(())

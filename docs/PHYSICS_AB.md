@@ -174,6 +174,9 @@ backend's support test now skips a too-steep surface it meets first and looks fo
 ground below it (a player pressing into the mill chute's foot hovered 0.06 units above the floor,
 never grounded); physics-engine still stops at the steep face (physics-engine #395), so grounded is
 not compared for units at a too-steep ramp's foot.
+physics-engine can also carry a swimming lurker (no gravity) into a rising heightfield shore
+(physics-engine #396, met on the basin terrace of #423); such a unit is from then on treated like
+one a fixture placed inside geometry.
 
 ## physics-engine gaps found
 
@@ -185,6 +188,11 @@ not compared for units at a too-steep ramp's foot.
    now has Rapier's per-body combine rules (default `Average`, default friction 0.5), and the
    adapter passes the game's own materials: the crates end 5 units short of Rapier's (260 vs
    265) and settled debris within 58 units of Rapier's.
+2. **Restore on a heightfield slope** (open, physics-engine #394). On the engine arm, a character
+   resting on a sloped heightfield cell moves 0.4–2 units on the first tick after a restore, while
+   the uninterrupted run holds it still (the lake lurkers in `vale-fights-8`/`-32` once Stillwater
+   Lake rose onto the #423 terrace). The grounded cache is ruled out; contact state carried between
+   moves is suspected. Workaround: the lake's level rim is wider and the lurkers stand on it.
 
 Dynamic bodies themselves (debris #288, movable crates #58) need no engine feature: the engine
 arm runs them since mmorpg#442 (physics-engine C18).

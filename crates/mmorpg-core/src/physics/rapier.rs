@@ -43,8 +43,6 @@ const SEPARATION_UNITS: f32 = 30.0 / crate::TICK_HZ as f32;
 const SUPPORT_REACH: f32 = CONTACT_OFFSET + 0.05;
 /// Ray hits this close (units) along the ray tie, broken by body ID (#57).
 const TIE_UNITS: f32 = 1.0e-3;
-/// At most this many too-steep surfaces are skipped looking for ground below a body.
-const MAX_STEEP_SUPPORTS: usize = 4;
 /// A ground gap (units) below this counts as standing on it.
 const GAP_TOLERANCE_UNITS: f32 = 1.0e-3;
 
@@ -777,22 +775,21 @@ impl World {
         position: [f32; 3],
         filter: QueryFilter<'_>,
     ) -> Option<f32> {
-        // A too-steep surface the cast meets first (a chute's side at its foot) is no support,
-        // but it must not hide walkable ground just below it: skip it and cast again.
+        // Rapier reports only the first hit. A capsule leaning on a face too steep to stand on
+        // (a ramp's chute end, #59) can still stand on the terrain beside it (#423), so a
+        // steep hit is set aside and the cast repeated, a few times at most.
         let mut steep: Vec<ColliderHandle> = Vec::new();
-        loop {
-            let admitted = |handle: ColliderHandle, collider: &rapier3d::prelude::Collider| {
-                !steep.contains(&handle)
-                    && filter
-                        .predicate
-                        .is_none_or(|predicate| predicate(handle, collider))
+        for _ in 0..4 {
+            let previous = filter.predicate;
+            let admit = |handle: ColliderHandle, collider: &rapier3d::prelude::Collider| {
+                !steep.contains(&handle) && previous.is_none_or(|admits| admits(handle, collider))
             };
             let queries = self.world.broad_phase.as_query_pipeline(
                 &self.queries,
                 &self.world.bodies,
                 &self.world.colliders,
                 QueryFilter {
-                    predicate: Some(&admitted),
+                    predicate: Some(&admit),
                     ..filter
                 },
             );
@@ -810,11 +807,9 @@ impl World {
             if hit.normal1.dot(Vector::Y) >= self.controller.max_slope_climb_angle.cos() {
                 return Some(hit.time_of_impact * UNITS_PER_METRE);
             }
-            if steep.len() >= MAX_STEEP_SUPPORTS {
-                return None;
-            }
             steep.push(handle);
         }
+        None
     }
 
     /// Whether a moving body stands on static ground.

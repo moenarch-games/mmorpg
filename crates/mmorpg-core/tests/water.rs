@@ -55,7 +55,7 @@ fn the_basin_is_about_nine_metres_deep_with_walkable_banks() {
             if lake_depth(x, z) == 0 && lake_depth(x + terrain::STEP, z + terrain::STEP) == 0 {
                 continue;
             }
-            deepest = deepest.max(-height(column, row));
+            deepest = deepest.max(lake::SHORE_Y - height(column, row));
             // The Sunken Shrine's sunken plaza and cave floor drop away under its walls.
             let step = terrain::STEP;
             if [[x, z], [x + step, z], [x, z + step]]
@@ -84,7 +84,8 @@ fn the_basin_is_about_nine_metres_deep_with_walkable_banks() {
 #[test]
 fn a_player_wades_in_and_swims_at_the_surface_without_touching_the_floor() {
     // West shore, on the lake's long axis.
-    let mut zone = zone_with_player_at([lake::CENTRE[0] - 2_600, 90, lake::CENTRE[1]]);
+    let mut zone =
+        zone_with_player_at([lake::CENTRE[0] - 2_600, lake::SHORE_Y + 90, lake::CENTRE[1]]);
     run(&mut zone, mmorpg_core::golden::t30(5) as _);
     zone.apply_command(
         1,
@@ -172,7 +173,7 @@ fn diving_spends_breath_drowning_hurts_and_surfacing_refills() {
 
 #[test]
 fn drowning_kills_through_the_normal_death_rules() {
-    let floor_feet = -800;
+    let floor_feet = lake::SHORE_Y - 800;
     let mut zone = zone_with_player_at([lake::CENTRE[0], floor_feet + 90, lake::CENTRE[1]]);
     zone.apply_command(1, 1, ZoneCommand::Rise(-1)).unwrap();
     let mut ticks = 0;

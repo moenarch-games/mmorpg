@@ -59,6 +59,7 @@ import { createArenaWorld, type ArenaWorld } from "./world/battle-royale/world";
 import "./world/battle-royale/style.css";
 import type { LinkState, ZoneWorld } from "./world/world-source";
 import { WorldView, webGpuProjection } from "./world/world-view";
+import type { FaceFeature } from "./world/units/quaternius-units";
 import { attackToggle, nextTabTarget } from "./world/units/targeting";
 import { GameControls, type GameAction, type HeldAction, type HoldPhase } from "./input/game-controls";
 import { actionBindingLabels } from "./input/binding-labels";
@@ -140,6 +141,14 @@ const sexInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="c
 const hatButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-hat-style]")];
 const hairButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-hair-style]")];
 const hairColorButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-hair-color]")];
+const faceOptions = requireElement<HTMLElement>("#face-options");
+const faceStatus = requireElement<HTMLElement>("#face-status");
+const faceCloseUpButton = requireElement<HTMLButtonElement>("#face-close-up");
+/** The bundle's face features once the Ranger loaded (#411); undefined until then. */
+let faceFeatures: readonly FaceFeature[] | null | undefined;
+let faceSelects: { feature: FaceFeature; select: HTMLSelectElement }[] = [];
+/** Frames the preview on the head so eyes, nose and mouth read (#411). */
+let previewCloseUp = false;
 const worldUi = [...document.querySelectorAll<HTMLElement>("[data-world-ui]")];
 
 // A transparent canvas: the CSS sky shows through behind the world.
@@ -159,7 +168,7 @@ let rosterStorageHealthy = true;
 let characters: CharacterPreview[] = [PREVIEW_CHARACTER, ...loadCreatedRoster()];
 let entryState: EntryState = initialEntryState(PREVIEW_CHARACTER);
 let creationDraft: CharacterCreationDraft | null = null;
-let characterAppearance: CharacterAppearance = { ...DEFAULT_CHARACTER_APPEARANCE };
+let characterAppearance: CharacterAppearance = savedAppearance(PREVIEW_CHARACTER) ?? { ...DEFAULT_CHARACTER_APPEARANCE };
 // Unsaved appearance edits survive switching characters within this page session.
 const appearanceByCharacterId = new Map<string, CharacterAppearance>();
 const turntable = installCharacterTurntable(previewSurface, {
@@ -306,7 +315,16 @@ function rememberAppearance(): void {
 }
 
 function restoreAppearance(character: CharacterPreview): void {
-  characterAppearance = { ...(appearanceByCharacterId.get(character.id) ?? defaultAppearanceForCharacter(character)) };
+  characterAppearance = { ...(appearanceByCharacterId.get(character.id) ?? savedAppearance(character) ?? defaultAppearanceForCharacter(character)) };
+}
+
+/** The character's local appearance save, if one is readable. */
+function savedAppearance(character: CharacterPreview): CharacterAppearance | null {
+  try {
+    return loadCharacter(localStorage, character.id)?.appearance ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const camera = new THREE.PerspectiveCamera(50, 1, 0.2, 1_400);
@@ -817,6 +835,43 @@ function syncAppearanceButtons(): void {
   mark(hatButtons, (button) => button.dataset.hatStyle === characterAppearance.hat);
   mark(hairButtons, (button) => button.dataset.hairStyle === characterAppearance.hair);
   mark(hairColorButtons, (button) => button.dataset.hairColor === characterAppearance.hairColor);
+  for (const { feature, select } of faceSelects) {
+    select.value = faceOptionId(feature, characterAppearance.face);
+  }
+}
+
+/** The chosen option of `feature`, or its default when the choice is missing or not offered. */
+function faceOptionId(feature: FaceFeature, face: CharacterAppearance["face"]): string {
+  const chosen = face[feature.id];
+  return feature.options.some((option) => option.id === chosen) ? chosen! : feature.default;
+}
+
+/** Builds one select per bundle face feature once the Ranger has loaded (#411). */
+function showFaceFeatures(features: readonly FaceFeature[] | null): void {
+  faceFeatures = features;
+  faceSelects = (features ?? []).map((feature) => {
+    const label = document.createElement("label");
+    label.className = "face-option";
+    const name = document.createElement("span");
+    name.textContent = feature.label;
+    const select = document.createElement("select");
+    select.dataset.faceFeature = feature.id;
+    select.append(...feature.options.map((option) => new Option(option.label, option.id)));
+    select.addEventListener("change", () => {
+      const option = feature.options.find((candidate) => candidate.id === select.value);
+      if (!option) { return; }
+      applyAppearance({ ...characterAppearance, face: { ...characterAppearance.face, [feature.id]: option.id } },
+        `Unsaved change · ${feature.label}: ${option.label}`);
+    });
+    label.append(name, select);
+    return { feature, select };
+  });
+  faceOptions.replaceChildren(...faceSelects.map(({ select }) => select.parentElement!));
+  faceStatus.textContent = features
+    ? "Close-up shows eyes, nose and mouth; face shape also reads in the world."
+    : "This character model has no face options; the base face is shown.";
+  faceCloseUpButton.disabled = !features;
+  syncAppearanceButtons();
 }
 
 function applyAppearance(nextAppearance: CharacterAppearance, message: string) {
@@ -1001,10 +1056,18 @@ function selectCharacter(characterId: string): void {
   layoutPreview();
 }
 
+const appearanceSection = requireElement<HTMLElement>('section[aria-label="Appearance"]');
+const equipmentSection = requireElement<HTMLElement>('section[aria-label="Equipment and loadout"]');
+const appearanceStorage = requireElement<HTMLElement>(".appearance-storage");
+
 function setCreationMode(active: boolean): void {
   creationPanel.hidden = !active;
   rosterPanel.hidden = active;
   selectionActions.hidden = active;
+  // The one Appearance section (#411) joins the Create form while drafting; its per-character
+  // saves stay with the roster, since Create itself saves the drafted look.
+  if (active) { creationStatus.before(appearanceSection); } else { equipmentSection.before(appearanceSection); }
+  appearanceStorage.hidden = active;
 }
 
 function syncCreationDraft(): void {
@@ -1019,7 +1082,7 @@ function syncCreationDraft(): void {
   const classChanged = creationDraft.classId !== classId;
   creationDraft = { name: creationName.value, classId, sex };
   if (classChanged) {
-    characterAppearance = defaultAppearanceForClass(classId);
+    characterAppearance = { ...defaultAppearanceForClass(classId), face: characterAppearance.face };
   }
   refreshSelectionPresentation();
 }
@@ -1109,6 +1172,13 @@ function finishCharacterCreation(): void {
     creationDraft = null;
     setCreationMode(false);
     entryState = initialEntryState(character);
+    // The drafted appearance becomes the new character's own, saved with it (#411).
+    appearanceByCharacterId.set(character.id, { ...characterAppearance });
+    try {
+      saveCharacter(localStorage, character.id, characterAppearance);
+    } catch {
+      // Browser storage unavailable: the appearance lasts for this session.
+    }
     restoreAppearance(character);
     refreshSelectionPresentation();
     renderRoster();
@@ -1127,6 +1197,9 @@ function finishCharacterCreation(): void {
 /** The framed height around the figure standing at y 0.1, and its centre. */
 const PREVIEW_SPAN = 3.05;
 const PREVIEW_CENTRE_Y = 1.5;
+/** The face close-up (#411): the head of the PREVIEW_HEIGHT figure. */
+const CLOSE_UP_SPAN = 0.75;
+const CLOSE_UP_CENTRE_Y = 2.55;
 
 function layoutPreview() {
   if (entryState.phase !== "character-selection") return;
@@ -1136,9 +1209,11 @@ function layoutPreview() {
   // The figure (PREVIEW_HEIGHT plus headroom for hats) fills most of the preview's height (#362 owner
   // review); narrow layouts are bounded by the width instead.
   const displayHeight = Math.max(1, Math.min(rect.height * 0.9, rect.width * 1.9));
-  const distance = PREVIEW_SPAN * height / (2 * Math.tan(THREE.MathUtils.degToRad(24)) * displayHeight);
-  previewCamera.position.set(4.5, 1.25, 7.1).normalize().multiplyScalar(distance).add(new THREE.Vector3(-1.2, PREVIEW_CENTRE_Y, 0));
-  previewCamera.lookAt(-1.2, PREVIEW_CENTRE_Y, 0);
+  const span = previewCloseUp ? CLOSE_UP_SPAN : PREVIEW_SPAN;
+  const centreY = previewCloseUp ? CLOSE_UP_CENTRE_Y : PREVIEW_CENTRE_Y;
+  const distance = span * height / (2 * Math.tan(THREE.MathUtils.degToRad(24)) * displayHeight);
+  previewCamera.position.set(4.5, previewCloseUp ? 0 : 1.25, 7.1).normalize().multiplyScalar(distance).add(new THREE.Vector3(-1.2, centreY, 0));
+  previewCamera.lookAt(-1.2, centreY, 0);
   previewCamera.setViewOffset(width, height, width / 2 - (rect.left + rect.width / 2), height / 2 - (rect.top + rect.height / 2), width, height);
   previewCamera.updateMatrixWorld(true);
 }
@@ -1165,6 +1240,8 @@ function renderSelection() {
   // The real Ranger once it loaded; the procedural figure while it loads or if it failed.
   const real = worldView.selectionPreview(viewerLook(), [-1.2, 0.1, 0], PREVIEW_FACING + turntable.yaw, PREVIEW_HEIGHT,
     (performance.now() - previewStart) / 1000, camera);
+  const features = worldView.faceFeatures();
+  if (faceFeatures === undefined && features !== undefined) { showFaceFeatures(features); }
   renderer.render({ camera, nodes: real ? selectionStageNodes : [...selectionStageNodes, ...selectionCharacterNodes()] });
 }
 
@@ -1173,7 +1250,7 @@ function viewerLook(): ViewerLook {
   const character = previewCharacter();
   return {
     classId: character.classId, sex: character.sex, headwear: characterAppearance.hat === "none" ? null : characterAppearance.hat,
-    hair: characterAppearance.hair, hairColor: characterAppearance.hairColor,
+    hair: characterAppearance.hair, hairColor: characterAppearance.hairColor, face: characterAppearance.face,
   };
 }
 
@@ -1487,6 +1564,11 @@ for (const button of hairColorButtons) {
     if (isHairColor(hairColor)) { applyAppearance({ ...characterAppearance, hairColor }, `Unsaved change · ${button.title} hair`); }
   });
 }
+faceCloseUpButton.addEventListener("click", () => {
+  previewCloseUp = !previewCloseUp;
+  faceCloseUpButton.setAttribute("aria-pressed", String(previewCloseUp));
+  layoutPreview();
+});
 saveCharacterButton.addEventListener("click", saveCurrentCharacter);
 loadCharacterButton.addEventListener("click", loadSavedCharacter);
 enterWorldButton.addEventListener("click", () => void enterWorld());

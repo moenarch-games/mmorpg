@@ -4,7 +4,7 @@
 # wrong lane, lets them through again; lowering the guard is applied.
 name = "warden-guard"
 zone = 1
-ticks = 1400
+ticks = 1440
 digest_interval = 200
 
 [[bots]]
@@ -68,9 +68,10 @@ bot = "warden"
 action = "select_target"
 entity = "creature:108"
 
-# Stand facing the den and raise a middle guard before the wolf arrives.
+# Stand facing the den, close enough that Wolf 108 engages wherever it wanders, and raise a
+# middle guard before the wolf arrives.
 [[steps]]
-tick = 790
+tick = 830
 bot = "warden"
 action = "move"
 forward = 0
@@ -78,20 +79,20 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 790
+tick = 830
 bot = "warden"
 action = "guard"
 lane = "middle"
 
 # The wrong lane: wolves bite middle.
 [[steps]]
-tick = 1100
+tick = 1140
 bot = "warden"
 action = "guard"
 lane = "high"
 
 [[steps]]
-tick = 1300
+tick = 1340
 bot = "warden"
 action = "guard"
 lane = "none"
@@ -101,12 +102,12 @@ kind = "event"
 bot = "warden"
 event = "blocked"
 entity = "creature:108"
-by_tick = 1100
+by_tick = 1140
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "damage_taken"
 entity = "creature:108"
-from_tick = 1104
-by_tick = 1300
+from_tick = 1144
+by_tick = 1340

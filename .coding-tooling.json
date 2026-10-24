@@ -28,7 +28,7 @@
         "instructions": ["docs/adr/0002-browser-embeds-zone-simulation.md", "docs/AVATAR_ASSETS.md", "docs/CHARACTER_CREATION.md"],
         "conventionRefs": ["TS-004", "TS-006", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"],
+        "owners": ["moenarch-games/mmorpg"],
         "examples": [
           {
             "path": "web/src/world/world-view.ts"
@@ -44,7 +44,7 @@
         "instructions": ["docs/PROTOCOL.md", "docs/adr/0002-browser-embeds-zone-simulation.md"],
         "conventionRefs": ["REL-009", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"],
+        "owners": ["moenarch-games/mmorpg"],
         "components": ["."]
       },
       {
@@ -53,7 +53,7 @@
         "instructions": ["docs/adr/0002-browser-embeds-zone-simulation.md"],
         "conventionRefs": ["REP-003", "REP-016"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"],
+        "owners": ["moenarch-games/mmorpg"],
         "components": ["web", "."]
       },
       {
@@ -62,7 +62,7 @@
         "instructions": ["docs/ARCHITECTURE.md", "docs/INTEREST_WORKLOADS.md", "docs/SCENARIOS.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg", "moritzbrantner/physics-engine"]
+        "owners": ["moenarch-games/mmorpg", "moritzbrantner/physics-engine"]
       },
       {
         "id": "native-protocol",
@@ -70,7 +70,7 @@
         "instructions": ["docs/PROTOCOL.md", "docs/INTEREST_WORKLOADS.md", "docs/SCENARIOS.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"]
+        "owners": ["moenarch-games/mmorpg"]
       },
       {
         "id": "native-control-plane",
@@ -78,7 +78,7 @@
         "instructions": ["docs/ARCHITECTURE.md", "docs/SCENARIOS.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"]
+        "owners": ["moenarch-games/mmorpg"]
       },
       {
         "id": "native-characters",
@@ -86,7 +86,7 @@
         "instructions": ["docs/ARCHITECTURE.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"]
+        "owners": ["moenarch-games/mmorpg"]
       },
       {
         "id": "native-game-server",
@@ -94,7 +94,7 @@
         "instructions": ["docs/ARCHITECTURE.md", "docs/PROTOCOL.md", "docs/SCENARIOS.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"]
+        "owners": ["moenarch-games/mmorpg"]
       },
       {
         "id": "native-scenarios",
@@ -102,7 +102,7 @@
         "instructions": ["docs/SCENARIOS.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"]
+        "owners": ["moenarch-games/mmorpg"]
       },
       {
         "id": "native-client",
@@ -110,7 +110,7 @@
         "instructions": ["docs/NATIVE_CLIENT.md", "docs/PROTOCOL.md", "docs/adr/0001-native-client.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"]
+        "owners": ["moenarch-games/mmorpg"]
       },
       {
         "id": "native-presentation",
@@ -118,7 +118,7 @@
         "instructions": ["docs/ARCHITECTURE.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"]
+        "owners": ["moenarch-games/mmorpg"]
       },
       {
         "id": "native-scenery",
@@ -126,7 +126,7 @@
         "instructions": ["docs/ARCHITECTURE.md", "docs/adr/0002-browser-embeds-zone-simulation.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"]
+        "owners": ["moenarch-games/mmorpg"]
       },
       {
         "id": "native-wasm",
@@ -134,7 +134,7 @@
         "instructions": ["docs/PROTOCOL.md", "docs/adr/0002-browser-embeds-zone-simulation.md"],
         "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"]
+        "owners": ["moenarch-games/mmorpg"]
       },
       {
         "id": "repository",
@@ -142,7 +142,7 @@
         "instructions": ["docs/ARCHITECTURE.md", "docs/PROTOCOL.md", "docs/INTEREST_WORKLOADS.md", "docs/NATIVE_CLIENT.md", "docs/SCENARIOS.md", "docs/adr"],
         "conventionRefs": ["AGENT-004", "REP-012"],
         "capabilities": ["test:unit"],
-        "owners": ["moritzbrantner/mmorpg"],
+        "owners": ["moenarch-games/mmorpg"],
         "components": ["."]
       }
     ]

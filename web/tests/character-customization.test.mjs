@@ -48,18 +48,18 @@ describe("character customization prototype", () => {
 
   test("round-trips a versioned character save by exact character identity", () => {
     const storage = memoryStorage();
-    const saved = saveCharacter(storage, PREVIEW_CHARACTER.id, { hat: "ranger-cap", hair: "buzzed", hairColor: "blond" });
+    const saved = saveCharacter(storage, PREVIEW_CHARACTER.id, { hat: "ranger-cap", hair: "buzzed", hairColor: "blond", face: { face: "face.broad", nose: "nose.long" } });
     expect(saved).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       characterId: PREVIEW_CHARACTER.id,
-      appearance: { hat: "ranger-cap", hair: "buzzed", hairColor: "blond" },
+      appearance: { hat: "ranger-cap", hair: "buzzed", hairColor: "blond", face: { face: "face.broad", nose: "nose.long" } },
     });
     expect(loadCharacter(storage, PREVIEW_CHARACTER.id)).toEqual(saved);
   });
 
   test("returns null when no saved character exists", () => {
     expect(loadCharacter(memoryStorage(), PREVIEW_CHARACTER.id)).toBeNull();
-    expect(DEFAULT_CHARACTER_APPEARANCE).toEqual({ hat: "wayfarer-hood", hair: "parted", hairColor: "brown" });
+    expect(DEFAULT_CHARACTER_APPEARANCE).toEqual({ hat: "wayfarer-hood", hair: "parted", hairColor: "brown", face: {} });
   });
 
   test("fails closed for mismatched or malformed saved character data", () => {
@@ -87,6 +87,24 @@ describe("character customization prototype", () => {
       characterId: PREVIEW_CHARACTER.id,
       appearance: { hat: "ranger-cap" },
     }));
-    expect(loadCharacter(storage, PREVIEW_CHARACTER.id)?.appearance).toEqual({ hat: "ranger-cap", hair: "parted", hairColor: "brown" });
+    expect(loadCharacter(storage, PREVIEW_CHARACTER.id)?.appearance).toEqual({ hat: "ranger-cap", hair: "parted", hairColor: "brown", face: {} });
+  });
+
+  test("version 1 saves read with the default face; malformed faces fail closed", () => {
+    const storage = memoryStorage();
+    const key = storageKeyForCharacter(PREVIEW_CHARACTER.id);
+    storage.setItem(key, JSON.stringify({
+      schemaVersion: 1,
+      characterId: PREVIEW_CHARACTER.id,
+      appearance: { hat: "none", hair: "long", hairColor: "black", face: { face: "ignored" } },
+    }));
+    expect(loadCharacter(storage, PREVIEW_CHARACTER.id)?.appearance.face).toEqual({});
+
+    storage.setItem(key, JSON.stringify({
+      schemaVersion: 2,
+      characterId: PREVIEW_CHARACTER.id,
+      appearance: { hat: "none", hair: "long", hairColor: "black", face: { eyes: 3 } },
+    }));
+    expect(() => loadCharacter(storage, PREVIEW_CHARACTER.id)).toThrow("face is invalid");
   });
 });

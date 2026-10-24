@@ -4,7 +4,8 @@
 //!
 //! The playable square spans ±120 m around the origin inside invisible
 //! boundary walls. Map north is −Z, toward the Redbrand cliffs, matching the
-//! layout table in `docs/STARTER_ZONE.md`. Walkable ground is physically flat (y = 0); relief, props
+//! layout table in `docs/STARTER_ZONE.md`. The Outpost's valley floor is physically flat (y = 0),
+//! below the farm terrace of [`basin`] and the outer hills; relief, props
 //! without colliders, water and mountains are presentation owned by
 //! `mmorpg-scenery`, which derives its structures from the collider IDs in
 //! [`ids`]. Everything here belongs to content [`REVISION`]; changing any of
@@ -16,6 +17,7 @@ use std::sync::{Arc, LazyLock};
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, Terrain, ZoneAreas};
 
+pub mod basin;
 pub mod cave;
 pub mod inn;
 pub mod layout;
@@ -43,8 +45,11 @@ pub mod units;
 /// swimming lurkers (#274); revision 25 garrisons the Greyfang cave as Redbrand Hollow's outer
 /// cavern with Redbrand Brutes, seals its deeper threshold and adds quest 11 (#160); revision 26
 /// rebuilds the Sunken Shrine on asset-tooling's shrine kit and widens its air pocket into
-/// the kit's 8 × 8 m room (#431).
-pub const REVISION: u64 = 26;
+/// the kit's 8 × 8 m room (#431); revision 27 lifts Millbrook Farm onto an 11 m terrace above
+/// the Outpost's basin, reached by the Millbrook Climb and the Millbrook Steps (#423); revision
+/// 28 lifts Stillwater Lake and the Sunken Shrine onto the same terrace, reached up the
+/// Lakeshore Climb and joined to the farm by the Stillwater Rim Trail (#423).
+pub const REVISION: u64 = 28;
 /// Revision 3's simulation seed, retained when revision 4 adds bag content.
 /// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
@@ -274,23 +279,52 @@ pub struct Road {
     pub points: &'static [[i32; 2]],
 }
 
-static ROADS: [Road; 8] = [
+static ROADS: [Road; 10] = [
     Road {
         name: "Hollow Road",
         points: &[[0, 1_200], [0, -1_000], [0, -4_000], [0, -8_600]],
     },
     Road {
         name: "Lakeshore Path",
-        points: &[[0, -4_000], [2_500, -4_800], [3_200, -4_900]],
+        // Up the Lakeshore Climb (#423): the west cliff's ledge, the landing, the cutting.
+        points: &[
+            [0, -2_800],
+            [1_400, -2_800],
+            [1_400, -6_200],
+            [2_600, -6_200],
+            [2_600, -3_200],
+            [3_400, -3_200],
+            [3_400, -4_900],
+        ],
+    },
+    Road {
+        // Along the terrace's rim from the farmyard to the lake's south shore (#423).
+        name: "Stillwater Rim Trail",
+        points: &[[6_400, 3_300], [6_400, -2_400], [5_600, -3_600]],
     },
     Road {
         name: "Millbrook Road",
+        // Up the Millbrook Climb (#423): the cliff ledge, the hairpin landing, the cutting.
         points: &[
             [1_600, 2_000],
             [3_200, 2_000],
-            [4_400, 2_000],
+            [4_200, 2_000],
+            [4_200, -1_800],
+            [5_400, -1_800],
+            [5_400, 1_200],
             [5_400, 2_800],
             [6_400, 3_300],
+        ],
+    },
+    Road {
+        // The farm's footpath down the cliff to the valley floor and the South Road (#423).
+        name: "Millbrook Steps",
+        points: &[
+            [5_400, 2_800],
+            [4_800, 3_400],
+            [4_200, 3_400],
+            [4_200, 8_000],
+            [0, 8_000],
         ],
     },
     Road {
@@ -322,7 +356,8 @@ static ROADS: [Road; 8] = [
     },
     Road {
         name: "Fen Track",
-        points: &[[4_400, 2_000], [11_000, -1_000], [15_000, -3_000]],
+        // From the top of the Millbrook Climb down the terrace's eastern slope (#423).
+        points: &[[5_400, 1_200], [11_000, -1_000], [15_000, -3_000]],
     },
     Road {
         name: "Downs Trail",
@@ -507,7 +542,7 @@ pub fn hill_height(x: i32, z: i32) -> i32 {
 }
 
 /// Stillwater Lake's authoritative water (#274): the ellipse the clients draw, its surface
-/// 0.15 m above the flat ground.
+/// 0.15 m above the lake terrace's ground (#423).
 #[must_use]
 pub fn stillwater_lake() -> crate::WaterVolume {
     crate::WaterVolume {
@@ -523,11 +558,14 @@ pub fn stillwater_lake() -> crate::WaterVolume {
 pub mod lake {
     pub const CENTRE: [i32; 2] = [5_500, -5_500];
     pub const RADII: [i32; 2] = [2_200, 1_600];
-    pub const SURFACE: i32 = 15;
+    /// The shore: the terrace the lake lies in (#423).
+    pub const SHORE_Y: i32 = super::basin::TERRACE_Y;
+    pub const SURFACE: i32 = SHORE_Y + 15;
     /// The basin falls linearly from the shallow rim to this depth (9 m) at the centre …
     pub const DEPTH: i64 = 900;
-    /// … starting at this fraction of the ellipse (Q10): the outer fifth stays ankle-deep.
-    pub const RIM_Q10: i64 = 819;
+    /// … starting at this fraction of the ellipse (Q10): the outer 30 % stays ankle-deep and
+    /// level, where the lurkers wade (#423).
+    pub const RIM_Q10: i64 = 717;
 }
 
 /// How far (units) the lake basin lowers the ground at `(x, z)`.
@@ -543,6 +581,13 @@ pub fn lake_depth(x: i32, z: i32) -> i32 {
         return 0;
     }
     i32::try_from(lake::DEPTH * (lake::RIM_Q10 - distance) / lake::RIM_Q10).unwrap_or(0)
+}
+
+/// The ground wherever no cave flattens it: the hills (#159), the basin's terraces and their
+/// ways down (#423), less the lake's basin (#274).
+fn open_ground(x: i32, z: i32) -> i32 {
+    let hill = hill_height(x, z);
+    basin::height_at(x, z).map_or(hill, |terrace| terrace.max(hill)) - lake_depth(x, z)
 }
 
 /// The outer valley's terrain grid (#159), sampled from [`hill_height`].
@@ -561,7 +606,7 @@ pub fn terrain() -> Terrain {
                     // The Sunken Shrine's plaza and cave floor (#274).
                     shrine::FLOOR_Y
                 } else {
-                    hill_height(x, z) - lake_depth(x, z)
+                    open_ground(x, z)
                 }
             })
         })
@@ -577,21 +622,14 @@ pub fn terrain() -> Terrain {
 
 static TERRAIN: LazyLock<Terrain> = LazyLock::new(terrain);
 
-/// Where a footprint `[min, max]` rests on the terrain: its lowest corner, sunk 0.3 m so
-/// nothing floats on a slope.
+/// Where a footprint `[min, max]` rests on the terrain: on level ground (the valley floor, the
+/// farm terrace) at its height, on a slope at its lowest corner, sunk 0.3 m so nothing floats.
 fn footing(min: [i32; 2], max: [i32; 2]) -> i32 {
-    let corners = [min, [max[0], min[1]], max, [min[0], max[1]]];
-    let lowest = corners
-        .iter()
-        .map(|corner| TERRAIN.height_at(corner[0], corner[1]))
-        .min()
-        .unwrap_or(0);
-    if lowest == 0
-        && corners
-            .iter()
-            .all(|corner| TERRAIN.height_at(corner[0], corner[1]) == 0)
-    {
-        0
+    let corners = [min, [max[0], min[1]], max, [min[0], max[1]]]
+        .map(|corner| TERRAIN.height_at(corner[0], corner[1]));
+    let lowest = corners.iter().copied().min().unwrap_or(0);
+    if corners.iter().all(|&height| height == lowest) {
+        lowest
     } else {
         lowest - 30
     }
@@ -851,23 +889,21 @@ fn colliders() -> Vec<StaticCollider> {
     colliders.push(cave::threshold(ids::CAVE_THRESHOLD));
     colliders.extend(shrine::ruins(*ids::SHRINE_RUINS.start()));
     colliders.extend(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()));
-    colliders.extend(shrine::roof(*ids::SHRINE_CAVE_ROOF.start(), |x, z| {
-        hill_height(x, z) - lake_depth(x, z)
-    }));
+    colliders.extend(shrine::roof(*ids::SHRINE_CAVE_ROOF.start(), open_ground));
     colliders.extend(trees());
     colliders
 }
 
 /// The mill hoist (#56): a 2 m square stone pillar against the windmill's south face that
-/// rests with its top flush with the ground, rises 8 m to the windmill's gallery (its flat
+/// rests with its top flush with the farm terrace, rises 8 m to the windmill's gallery (its flat
 /// top) at 1.5 m/s, rests 5 s and sinks back. Its box fills the shaft below its top, so it
 /// sweeps no space a unit could stand in except on top.
 pub const MILL_HOIST: crate::Platform = crate::Platform {
     id: crate::PlatformId::new(1),
     body: ids::MILL_HOIST,
     half_extents: [100, 400, 100],
-    low: [8_800, -400, 1_748],
-    high: [8_800, 400, 1_748],
+    low: [8_800, basin::TERRACE_Y - 400, 1_748],
+    high: [8_800, basin::TERRACE_Y + 400, 1_748],
     speed: crate::subunits_per_tick(150),
     dwell: crate::long_ticks_from_ms(5_000),
 };
@@ -877,13 +913,13 @@ pub const MILL_HOIST: crate::Platform = crate::Platform {
 pub const MILL_RAMPS: [crate::Ramp; 2] = [
     crate::Ramp {
         body: *ids::MILL_RAMPS.start(),
-        position: [7_850, 75, 1_950],
+        position: [7_850, basin::TERRACE_Y + 75, 1_950],
         half_extents: [250, 75, 100],
         rises: crate::RampRise::PosX,
     },
     crate::Ramp {
         body: *ids::MILL_RAMPS.end(),
-        position: [8_250, 75, 1_757],
+        position: [8_250, basin::TERRACE_Y + 75, 1_757],
         half_extents: [100, 75, 43],
         rises: crate::RampRise::PosZ,
     },
