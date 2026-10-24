@@ -74,6 +74,10 @@ import "./character-creation.css";
 import "./class-hud.css";
 import "./settings/settings.css";
 import "./touch-controls.css";
+import { installAssetCache } from "./asset-cache/register";
+
+// Keep downloaded game bytes for return visits on the built Pages site only (#410).
+if (import.meta.env.PROD) { void installAssetCache(import.meta.env.BASE_URL); }
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
