@@ -73,6 +73,8 @@ pub enum ProjectileKind {
     Bolt,
     /// A magic missile (#289): no gravity.
     Missile,
+    /// A Necromancer's shadow missile (#301): flies like [`Self::Missile`], drawn in shadow.
+    Shadow,
 }
 
 impl ProjectileKind {
@@ -82,6 +84,7 @@ impl ProjectileKind {
             Self::Arrow => 1,
             Self::Bolt => 2,
             Self::Missile => 3,
+            Self::Shadow => 4,
         }
     }
 
@@ -91,6 +94,7 @@ impl ProjectileKind {
             1 => Some(Self::Arrow),
             2 => Some(Self::Bolt),
             3 => Some(Self::Missile),
+            4 => Some(Self::Shadow),
             _ => None,
         }
     }
@@ -101,7 +105,14 @@ impl ProjectileKind {
             Self::Arrow => "arrow",
             Self::Bolt => "bolt",
             Self::Missile => "missile",
+            Self::Shadow => "shadow",
         }
+    }
+
+    /// Whether it is a spell missile: no gravity, homing and flying at body height.
+    #[must_use]
+    pub const fn is_magic(self) -> bool {
+        matches!(self, Self::Missile | Self::Shadow)
     }
 
     #[must_use]
@@ -109,7 +120,7 @@ impl ProjectileKind {
         match self {
             Self::Arrow => ARROW_SPEED_UNITS,
             Self::Bolt => BOLT_SPEED_UNITS,
-            Self::Missile => MISSILE_SPEED_UNITS,
+            Self::Missile | Self::Shadow => MISSILE_SPEED_UNITS,
         }
     }
 
@@ -119,7 +130,7 @@ impl ProjectileKind {
     pub const fn gravity(self) -> f32 {
         match self {
             Self::Arrow | Self::Bolt => PROJECTILE_GRAVITY_UNITS,
-            Self::Missile => 0.0,
+            Self::Missile | Self::Shadow => 0.0,
         }
     }
 }
@@ -293,7 +304,7 @@ impl ZoneSimulation {
             owner,
             ability,
             position: from,
-            velocity: if kind == ProjectileKind::Missile {
+            velocity: if kind.is_magic() {
                 homing(delta, kind.speed())
             } else {
                 ballistic(delta, remaining, kind.gravity())
@@ -314,7 +325,7 @@ impl ZoneSimulation {
         kind: ProjectileKind,
         ability: AbilityId,
     ) -> Result<(), ZoneError> {
-        let from = if kind == ProjectileKind::Missile {
+        let from = if kind.is_magic() {
             let body = self
                 .world
                 .body(body_id(owner))
@@ -431,7 +442,7 @@ impl ZoneSimulation {
                 match self.unit_centre(target).filter(|_| self.unit_alive(target)) {
                     Some(centre) => {
                         let delta = sub(centre, projectile.position);
-                        projectile.velocity = if projectile.kind == ProjectileKind::Missile {
+                        projectile.velocity = if projectile.kind.is_magic() {
                             homing(delta, projectile.kind.speed())
                         } else {
                             ballistic(delta, remaining, projectile.kind.gravity())
@@ -625,7 +636,7 @@ impl ZoneSimulation {
             return Ok(false);
         }
         if let EntityRef::Creature(creature_id) = unit
-            && projectile.kind != ProjectileKind::Missile
+            && !projectile.kind.is_magic()
             && self.creature_shield_covers(creature_id, from)?
         {
             self.notify_units(

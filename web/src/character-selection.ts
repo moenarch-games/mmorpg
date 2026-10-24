@@ -4,7 +4,7 @@ export type EquipmentItem = {
   accent: string;
 };
 
-export type CharacterClassId = "warden" | "ranger" | "arcanist";
+export type CharacterClassId = "warden" | "ranger" | "arcanist" | "necromancer";
 export type CharacterSex = "male" | "female";
 
 export type CharacterClassDefinition = {
@@ -52,6 +52,19 @@ export const CHARACTER_CLASSES: readonly CharacterClassDefinition[] = [
       { slot: "Hands", name: "Runed Gloves", accent: "#776886" },
       { slot: "Feet", name: "Softstep Boots", accent: "#5f536a" },
       { slot: "Main hand", name: "Emberglass Staff", accent: "#bd895f" },
+    ],
+  },
+  {
+    id: "necromancer",
+    name: "Necromancer",
+    summary: "Shadow caster who drains life",
+    starterEquipment: [
+      { slot: "Head", name: "Wayfarer's Hood", accent: "#b7c6bd" },
+      { slot: "Shoulders", name: "Ossuary Mantle", accent: "#4b3e5e" },
+      { slot: "Chest", name: "Duskweave Robe", accent: "#3d3548" },
+      { slot: "Hands", name: "Gravebound Wraps", accent: "#5a4b6a" },
+      { slot: "Feet", name: "Ashen Slippers", accent: "#2c2536" },
+      { slot: "Main hand", name: "Bonewood Staff", accent: "#e6dfc8" },
     ],
   },
 ];

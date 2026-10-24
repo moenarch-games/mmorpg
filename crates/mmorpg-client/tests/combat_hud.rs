@@ -96,7 +96,7 @@ const fn resource_kind(class: PlayerClass) -> ResourceKind {
     match class {
         PlayerClass::Warden => ResourceKind::Rage,
         PlayerClass::Ranger => ResourceKind::Focus,
-        PlayerClass::Arcanist => ResourceKind::Mana,
+        PlayerClass::Arcanist | PlayerClass::Necromancer => ResourceKind::Mana,
     }
 }
 

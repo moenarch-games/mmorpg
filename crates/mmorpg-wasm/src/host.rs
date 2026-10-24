@@ -455,6 +455,23 @@ mod tests {
     }
 
     #[test]
+    fn the_necromancer_drain_starts_a_level_6_necromancer_before_the_pack() {
+        assert_eq!(
+            Scenario::from_name("necromancer-drain"),
+            Some(Scenario::NecromancerDrain)
+        );
+        let (host, player) = LocalZoneHost::scenario(Scenario::NecromancerDrain, 0).unwrap();
+        let viewer = decode_snapshot(&host.projection(player).unwrap())
+            .unwrap()
+            .viewer;
+        assert_eq!(viewer.level, 6);
+        assert_eq!(
+            viewer.class.map(|choice| choice.class),
+            Some(mmorpg_core::PlayerClass::Necromancer)
+        );
+    }
+
+    #[test]
     fn the_sunken_shrine_starts_on_the_lake_shore_with_the_quest_accepted() {
         assert_eq!(
             Scenario::from_name("sunken-shrine"),

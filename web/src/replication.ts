@@ -36,7 +36,7 @@ export type EntityState = {
   flags: EntityFlags;
 };
 
-export type ClassId = "warden" | "ranger" | "arcanist";
+export type ClassId = "warden" | "ranger" | "arcanist" | "necromancer";
 export type ResourceKind = "rage" | "focus" | "mana";
 export type ClassChoice = { classId: ClassId; sex: "female" | "male" };
 export type ResourceState = { kind: ResourceKind; value: number; max: number };
@@ -258,7 +258,7 @@ export type DebrisState = {
 /** One projectile: position in units, heading/pitch in 1/65 536 turns (heading 0 is +Z). */
 export type ProjectileState = {
   id: number;
-  kind: "arrow" | "bolt" | "missile";
+  kind: "arrow" | "bolt" | "missile" | "shadow";
   x: number;
   y: number;
   z: number;
@@ -311,8 +311,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 33;
-const SCHEMA_VERSION = 33;
+const WIRE_VERSION = 34;
+const SCHEMA_VERSION = 34;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -385,8 +385,9 @@ export const ITEM_SHAPES: ReadonlyMap<number, ItemShape> = new Map([
   [13, gear(3, 2, 0, 4, 0)],
   [14, gear(2, 2, 0, 0, 4)],
 ]);
-const CLASSES: readonly ClassId[] = ["warden", "ranger", "arcanist"];
+const CLASSES: readonly ClassId[] = ["warden", "ranger", "arcanist", "necromancer"];
 const RESOURCES: readonly ResourceKind[] = ["rage", "focus", "mana"];
+const CLASS_RESOURCES: Readonly<Record<ClassId, ResourceKind>> = { warden: "rage", ranger: "focus", arcanist: "mana", necromancer: "mana" };
 const AURA_KINDS: readonly AuraKind[] = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
 
 type AbilityShape = { castTicks: number; channel: boolean; cooldown: number; aura: AuraKind | null; auraTicks: number };
@@ -425,6 +426,11 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [24, { castTicks: 45, channel: false, cooldown: 450, aura: null, auraTicks: 0 }],
   // The Redbrand Brute's Overhead Smash (#160).
   [25, { castTicks: 60, channel: false, cooldown: 450, aura: null, auraTicks: 0 }],
+  // The Necromancer (#301): Shadow Bolt, Corruption, Drain Life and Bone Shield.
+  [26, { castTicks: 60, channel: false, cooldown: 0, aura: null, auraTicks: 0 }],
+  [27, instant(0, "damage-over-time", 450)],
+  [28, { castTicks: 90, channel: true, cooldown: 300, aura: null, auraTicks: 0 }],
+  [29, instant(900, "absorb", 600)],
 ]);
 /** Mana: 110 + 22 per level above 1; rage and focus: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {
@@ -830,7 +836,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     throw new Error("Inconsistent viewer state");
   }
   const classCode = reader.u8();
-  if (classCode > 6) {
+  if (classCode > CLASSES.length * 2) {
     throw new Error("Inconsistent viewer ability state");
   }
   const classChoice: ClassChoice | null = classCode === 0
@@ -889,7 +895,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
       throw new Error("Inconsistent viewer resource");
     }
   } else {
-    const kind = RESOURCES[CLASSES.indexOf(classChoice.classId)];
+    const kind = CLASS_RESOURCES[classChoice.classId];
     if (kind === undefined || RESOURCES[resourceCode - 1] !== kind || resourceMaximum !== resourceMax(kind, level)
       || resourceValue > resourceMaximum) {
       throw new Error("Inconsistent viewer resource");
@@ -1038,7 +1044,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const projectiles: ProjectileState[] = [];
   for (let index = 0; index < projectileCount; index += 1) {
     const id = reader.u16();
-    const kind = (["arrow", "bolt", "missile"] as const)[reader.u8() - 1];
+    const kind = (["arrow", "bolt", "missile", "shadow"] as const)[reader.u8() - 1];
     if (kind === undefined) {
       throw new Error("Unknown projectile kind");
     }

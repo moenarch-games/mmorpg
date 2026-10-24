@@ -8,7 +8,7 @@ use crate::class::PlayerClass;
 use crate::unit::PLAYER_REACH_UNITS;
 
 /// Revision of [`ABILITY_CATALOG`]; content identity hashes both.
-pub const ABILITY_CATALOG_REVISION: u64 = 9;
+pub const ABILITY_CATALOG_REVISION: u64 = 10;
 /// Every player ability starts this global cooldown; haste never shortens it.
 pub const GLOBAL_COOLDOWN_TICKS: u16 = 45;
 /// At most this many auras rest on one unit.
@@ -281,6 +281,14 @@ pub enum AbilityEffect {
         jumps: u8,
         radius: i32,
     },
+    /// A channelled drain on the target (#301): every `period` ticks, `damage` + `per_level` to
+    /// it, and the caster heals by the health it lost. The channel breaks when the target dies,
+    /// leaves line of sight or moves out of range.
+    Drain {
+        damage: [u16; 2],
+        per_level: u16,
+        period: u16,
+    },
 }
 
 /// One catalog row.
@@ -328,7 +336,8 @@ impl Ability {
             | AbilityEffect::Stomp { .. }
             | AbilityEffect::Smash { .. }
             | AbilityEffect::Beam { .. }
-            | AbilityEffect::Chain { .. } => return None,
+            | AbilityEffect::Chain { .. }
+            | AbilityEffect::Drain { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -417,6 +426,7 @@ const fn shot(ability: Ability, kind: crate::ProjectileKind) -> Ability {
 const WARDEN: AbilityUser = AbilityUser::Class(PlayerClass::Warden);
 const RANGER: AbilityUser = AbilityUser::Class(PlayerClass::Ranger);
 const ARCANIST: AbilityUser = AbilityUser::Class(PlayerClass::Arcanist);
+const NECROMANCER: AbilityUser = AbilityUser::Class(PlayerClass::Necromancer);
 const RANGED: AbilityRange = AbilityRange::Units(3_000);
 
 pub mod ids {
@@ -448,6 +458,10 @@ pub mod ids {
     pub const REDBRAND_WHIRL: AbilityId = AbilityId::new(24);
     /// The Redbrand Brute's slow, telegraphed overhead smash (#160).
     pub const OVERHEAD_SMASH: AbilityId = AbilityId::new(25);
+    pub const SHADOW_BOLT: AbilityId = AbilityId::new(26);
+    pub const CORRUPTION: AbilityId = AbilityId::new(27);
+    pub const DRAIN_LIFE: AbilityId = AbilityId::new(28);
+    pub const BONE_SHIELD: AbilityId = AbilityId::new(29);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -464,7 +478,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 25] = [
+pub const ABILITY_CATALOG: [Ability; 29] = [
     ability(
         1,
         "Heroic Strike",
@@ -873,6 +887,74 @@ pub const ABILITY_CATALOG: [Ability; 25] = [
             knockback: 200,
         },
     ),
+    // The Necromancer (#301): a shadow missile that tracks its target, a curse, a life drain
+    // and a bone ward, in line with the Arcanist's mana costs. Summons follow with #295.
+    shot(
+        ability(
+            26,
+            "Shadow Bolt",
+            NECROMANCER,
+            1,
+            25,
+            CastTime::Cast(60),
+            0,
+            RANGED,
+            AbilityEffect::Bolt {
+                damage: [10, 14],
+                per_level: 3,
+            },
+        ),
+        crate::ProjectileKind::Shadow,
+    ),
+    shot(
+        ability(
+            27,
+            "Corruption",
+            NECROMANCER,
+            2,
+            30,
+            CastTime::Instant,
+            0,
+            RANGED,
+            AbilityEffect::DamageOverTime {
+                base: 30,
+                per_level: 4,
+                duration: 450,
+                period: 90,
+            },
+        ),
+        crate::ProjectileKind::Shadow,
+    ),
+    ability(
+        28,
+        "Drain Life",
+        NECROMANCER,
+        4,
+        45,
+        CastTime::Channel(90),
+        300,
+        RANGED,
+        AbilityEffect::Drain {
+            damage: [5, 7],
+            per_level: 1,
+            period: 30,
+        },
+    ),
+    ability(
+        29,
+        "Bone Shield",
+        NECROMANCER,
+        6,
+        40,
+        CastTime::Instant,
+        900,
+        AbilityRange::SelfCentred,
+        AbilityEffect::Absorb {
+            base: 20,
+            per_level: 8,
+            duration: 600,
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1074,6 +1156,17 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 jumps.into(),
                 radius,
             ],
+            AbilityEffect::Drain {
+                damage,
+                per_level,
+                period,
+            } => vec![
+                20,
+                damage[0].into(),
+                damage[1].into(),
+                per_level.into(),
+                period.into(),
+            ],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1098,16 +1191,17 @@ mod tests {
                 assert!(aura.period == 0 || aura.duration % aura.period == 0);
             }
             if let CastTime::Channel(ticks) = ability.cast {
-                let (AbilityEffect::Blizzard { period, .. } | AbilityEffect::Beam { period, .. }) =
-                    ability.effect
+                let (AbilityEffect::Blizzard { period, .. }
+                | AbilityEffect::Beam { period, .. }
+                | AbilityEffect::Drain { period, .. }) = ability.effect
                 else {
-                    panic!("only Blizzard and Lightning Beam channel");
+                    panic!("only Blizzard, Lightning Beam and Drain Life channel");
                 };
                 assert_eq!(ticks % period, 0);
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(26)), None);
+        assert_eq!(ability_by_id(AbilityId::new(30)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG
