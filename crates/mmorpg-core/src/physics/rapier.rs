@@ -34,21 +34,24 @@ const UNITS_PER_METRE: f32 = 100.0;
 const CONTACT_OFFSET: f32 = CONTACT_OFFSET_UNITS / UNITS_PER_METRE;
 /// Approaches within 60 degrees of head-on step fully aside in [`World::slide_around`].
 const NEAR_HEAD_ON_COS: f32 = 0.5;
-/// The outward motion (units per tick) [`World::slide_around`] adds against a touching body.
-const SEPARATION_UNITS: f32 = 1.0;
+/// The outward motion (units per tick: 30 units/s) [`World::slide_around`] adds against a
+/// touching body.
+const SEPARATION_UNITS: f32 = 30.0 / crate::TICK_HZ as f32;
 /// How far (in metres) below a body the controller still finds the ground: its contact
 /// offset plus the fixed 5 cm its grounded test predicts. Support queries and snapping use
 /// the same reach.
 const SUPPORT_REACH: f32 = CONTACT_OFFSET + 0.05;
 /// Ray hits this close (units) along the ray tie, broken by body ID (#57).
 const TIE_UNITS: f32 = 1.0e-3;
+/// At most this many too-steep surfaces are skipped looking for ground below a body.
+const MAX_STEEP_SUPPORTS: usize = 4;
 /// A ground gap (units) below this counts as standing on it.
 const GAP_TOLERANCE_UNITS: f32 = 1.0e-3;
 
-/// A piece slower than this (units per tick) and turning slower than [`DEBRIS_REST_SPIN`]
-/// (radians per tick) settles.
-pub(super) const DEBRIS_REST_SPEED_UNITS: f32 = 0.6;
-pub(super) const DEBRIS_REST_SPIN: f32 = 0.03;
+/// A piece slower than this (units per tick: 18 units/s) and turning slower than
+/// [`DEBRIS_REST_SPIN`] (radians per tick: 0.9 rad/s) settles.
+pub(super) const DEBRIS_REST_SPEED_UNITS: f32 = 18.0 / crate::TICK_HZ as f32;
+pub(super) const DEBRIS_REST_SPIN: f32 = 0.9 / crate::TICK_HZ as f32;
 /// Fixed geometry this far (units) around the pieces takes part in a debris step.
 pub(super) const DEBRIS_REACH_UNITS: f32 = 1_000.0;
 pub(super) const TICKS_PER_SECOND: f32 = crate::TICK_HZ as f32;
@@ -774,14 +777,26 @@ impl World {
         position: [f32; 3],
         filter: QueryFilter<'_>,
     ) -> Option<f32> {
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            filter,
-        );
-        queries
-            .cast_shape(
+        // A too-steep surface the cast meets first (a chute's side at its foot) is no support,
+        // but it must not hide walkable ground just below it: skip it and cast again.
+        let mut steep: Vec<ColliderHandle> = Vec::new();
+        loop {
+            let admitted = |handle: ColliderHandle, collider: &rapier3d::prelude::Collider| {
+                !steep.contains(&handle)
+                    && filter
+                        .predicate
+                        .is_none_or(|predicate| predicate(handle, collider))
+            };
+            let queries = self.world.broad_phase.as_query_pipeline(
+                &self.queries,
+                &self.world.bodies,
+                &self.world.colliders,
+                QueryFilter {
+                    predicate: Some(&admitted),
+                    ..filter
+                },
+            );
+            let (handle, hit) = queries.cast_shape(
                 &Pose::from_translation(lifted(position)),
                 -Vector::Y,
                 &capsule(body.half_extents),
@@ -791,11 +806,15 @@ impl World {
                     max_time_of_impact: SUPPORT_REACH,
                     compute_impact_geometry_on_penetration: true,
                 },
-            )
-            .filter(|(_, hit)| {
-                hit.normal1.dot(Vector::Y) >= self.controller.max_slope_climb_angle.cos()
-            })
-            .map(|(_, hit)| hit.time_of_impact * UNITS_PER_METRE)
+            )?;
+            if hit.normal1.dot(Vector::Y) >= self.controller.max_slope_climb_angle.cos() {
+                return Some(hit.time_of_impact * UNITS_PER_METRE);
+            }
+            if steep.len() >= MAX_STEEP_SUPPORTS {
+                return None;
+            }
+            steep.push(handle);
+        }
     }
 
     /// Whether a moving body stands on static ground.

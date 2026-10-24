@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { decodeSnapshot, type EntityState } from "../src/replication";
+import { decodeSnapshot, TICK_HZ, type EntityState } from "../src/replication";
 import { encodeCommand } from "../src/command-wire";
 import { parseSessionRoute } from "../src/session/route";
 import {
   CONNECT_TIMEOUT_MS,
+  INTERPOLATION_DELAY_TICKS,
   RECONNECT_SETTLE_MS,
   SNAPSHOT_TIMEOUT_MS,
   OnlineZoneSource,
@@ -14,9 +15,9 @@ import { worldSourceContract } from "./support/world-source-contract";
 
 const EAST = 16_384;
 const MOVE_EAST = { kind: "move", forward: 1, strafe: 0, facing: EAST } as const;
-const JUMP = "0e02";
+const JUMP = "0f02";
 /** The joining player's first command: `ChooseClass` for the default male Warden. */
-const CLASS_CHOICE = "0e0b0001";
+const CLASS_CHOICE = "0f0b0001";
 
 function online(options: FakeZoneHostOptions = {}) {
   const clock = new ManualClock();
@@ -67,9 +68,9 @@ describe("OnlineZoneSource", () => {
     source.sendCommand({ ...MOVE_EAST, forward: 0 });
     expect(host.applied).toEqual([
       { playerId: 1, sequence: 1, payload: CLASS_CHOICE },
-      { playerId: 1, sequence: 2, payload: "0e0101004000" },
+      { playerId: 1, sequence: 2, payload: "0f0101004000" },
       { playerId: 1, sequence: 3, payload: JUMP },
-      { playerId: 1, sequence: 4, payload: "0e0100004000" },
+      { playerId: 1, sequence: 4, payload: "0f0100004000" },
     ]);
     expect(self(source).position[0]).toBeGreaterThan(0);
   });
@@ -107,7 +108,7 @@ describe("OnlineZoneSource", () => {
     for (let frames = 0; frames < 6; frames += 1) {
       await frame(clock, source);
     }
-    expect(host.applied.map(({ sequence, payload }) => [sequence, payload])).toEqual([[1, CLASS_CHOICE], [2, JUMP], [3, "0e0101004000"]]);
+    expect(host.applied.map(({ sequence, payload }) => [sequence, payload])).toEqual([[1, CLASS_CHOICE], [2, JUMP], [3, "0f0101004000"]]);
   });
 
   test("targeting and attack intents are resent until acknowledged and applied once, in order", async () => {
@@ -124,7 +125,7 @@ describe("OnlineZoneSource", () => {
       await frame(clock, source);
     }
     expect(host.applied.map(({ sequence, payload }) => [sequence, payload])).toEqual([
-      [1, CLASS_CHOICE], [2, "0e030200000007"], [3, "0e04"], [4, "0e05"], [5, "0e06"],
+      [1, CLASS_CHOICE], [2, "0f030200000007"], [3, "0f04"], [4, "0f05"], [5, "0f06"],
     ]);
   });
 
@@ -183,7 +184,7 @@ describe("OnlineZoneSource", () => {
     let dropClassChoice = true;
     host.toHost = (datagram) => (dropClassChoice && datagram.byteLength === 12 && datagram[9] === 11 ? [] : [datagram]);
     const player = await clock.until(source.join());
-    await frame(clock, source, 3 * TICK_MS);
+    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
     expect(host.applied).toEqual([]);
     dropClassChoice = false;
     host.lose(player);
@@ -192,7 +193,7 @@ describe("OnlineZoneSource", () => {
     await frame(clock, source);
     await frame(clock, source);
     expect(source.linkState()).toBe("connected");
-    expect(host.applied.map(({ sequence, payload }) => [sequence, payload])).toEqual([[2, CLASS_CHOICE], [3, "0e0100000000"]]);
+    expect(host.applied.map(({ sequence, payload }) => [sequence, payload])).toEqual([[2, CLASS_CHOICE], [3, "0f0100000000"]]);
   });
 
   test("projections waiting for a paused page are bounded to the newest second", async () => {
@@ -212,7 +213,7 @@ describe("OnlineZoneSource", () => {
   test("a clean close by the host is an interruption that resumes the same player", async () => {
     const { clock, host, source } = online({ graceTicks: 300n });
     const player = await clock.until(source.join());
-    await frame(clock, source, 3 * TICK_MS);
+    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
     host.closeSession(player);
     await clock.advance(0);
     expect(source.linkState()).toBe("reconnecting");
@@ -227,7 +228,7 @@ describe("OnlineZoneSource", () => {
     const { clock, host, source } = online({ graceTicks: 300n });
     const player = await clock.until(source.join());
     source.sendCommand(MOVE_EAST);
-    await frame(clock, source, 3 * TICK_MS);
+    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
     const before = source.latestProjection();
     host.lose(player);
     await clock.advance(0);
@@ -247,7 +248,7 @@ describe("OnlineZoneSource", () => {
     expect(host.connectionEpoch(player)).toBe(2);
     expect(host.players()).toEqual([player]);
     // The resumed connection starts with a stopped move at the last facing, sequenced after everything sent.
-    expect(host.applied.slice(sequencesBefore)).toEqual([{ playerId: player, sequence: 3, payload: "0e0100004000" }]);
+    expect(host.applied.slice(sequencesBefore)).toEqual([{ playerId: player, sequence: 3, payload: "0f0100004000" }]);
     expect(host.unit(player)?.forward).toBe(0);
     // Presentation restarted from the new connection's projections.
     expect(source.sample()).toEqual(source.latestProjection()!.entities);
@@ -348,20 +349,22 @@ describe("OnlineZoneSource", () => {
     await expect(clock.until(source.join())).rejects.toThrow("Could not join the zone host: Opening handshake failed.");
   });
 
-  test("samples run two ticks behind the newest projection and hold it when projections stall", async () => {
+  test("samples run the interpolation delay behind the newest projection and hold it when projections stall", async () => {
+    // The fake host moves a running unit this many whole units per tick.
+    const step = Math.round(630 / TICK_HZ);
     const { clock, host, source } = online();
     const player = await clock.until(source.join());
     source.sendCommand(MOVE_EAST);
-    for (let ticks = 0; ticks < 6; ticks += 1) {
+    for (let ticks = 0; ticks < INTERPOLATION_DELAY_TICKS + 4; ticks += 1) {
       await frame(clock, source);
     }
     const newest = self(source).position[0];
     const sampled = source.sample().find((entity) => entity.entityId === player)!.position[0];
-    expect(sampled).toBeCloseTo(newest - 2 * 21, 6);
+    expect(sampled).toBeCloseTo(newest - INTERPOLATION_DELAY_TICKS * step, 6);
     host.toClient = () => [];
     await frame(clock, source, TICK_MS / 2);
-    expect(source.sample().find((entity) => entity.entityId === player)!.position[0]).toBeCloseTo(newest - 1.5 * 21, 6);
-    await frame(clock, source, 3 * TICK_MS);
+    expect(source.sample().find((entity) => entity.entityId === player)!.position[0]).toBeCloseTo(newest - (INTERPOLATION_DELAY_TICKS - 0.5) * step, 6);
+    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
     expect(source.sample().find((entity) => entity.entityId === player)!.position[0]).toBe(newest);
   });
 

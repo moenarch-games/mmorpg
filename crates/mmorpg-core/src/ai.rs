@@ -34,8 +34,8 @@ use crate::snapshot::CreatureAi;
 use crate::trig::{self, xz_length, yaw_from_vector};
 use crate::zone::physics_error;
 use crate::{
-    ARRIVAL_RADIUS_UNITS, ASSIST_RADIUS_UNITS, CREATURE_EVADE_SPEED_UNITS_PER_TICK,
-    CREATURE_RUN_SPEED_UNITS_PER_TICK, CREATURE_WALK_SPEED_UNITS_PER_TICK, CreatureBehaviour,
+    ARRIVAL_RADIUS_UNITS, ASSIST_RADIUS_UNITS, CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK,
+    CREATURE_RUN_SPEED_SUBUNITS_PER_TICK, CREATURE_WALK_SPEED_SUBUNITS_PER_TICK, CreatureBehaviour,
     CreatureId, EVADE_TIMEOUT_TICKS, EntityRef, LEASH_RADIUS_UNITS, PLAYER_HALF_EXTENTS_UNITS,
     PlayerId, WANDER_WAIT_TICKS, WANDER_WALK_TIMEOUT_TICKS, ZoneError, ZoneSimulation,
     unit::CREATURE_REACH_UNITS,
@@ -83,15 +83,16 @@ fn wander_point(home: [i32; 2], yaw: u16, distance: i32) -> [i32; 2] {
 }
 
 /// Velocity of at most `speed` along `(dx, dz)` without overshooting it.
-/// Integer normalisation: each component is `delta · step / length`, rounded
-/// toward zero.
+/// Integer normalisation: each component is `delta · step / length` in subunits per tick,
+/// rounded toward zero; `speed` is in subunits per tick and `(dx, dz)` in units, and a step
+/// never overshoots the target.
 fn steer(dx: i32, dz: i32, speed: i32) -> [i32; 2] {
     let length = xz_length(dx, dz);
     if length == 0 {
         return [0, 0];
     }
     let length = i64::try_from(length).unwrap_or(i64::MAX);
-    let step = i64::from(speed).min(length);
+    let step = i64::from(speed).min(length.saturating_mul(SUBUNITS));
     let scale = |delta: i32| i32::try_from(i64::from(delta) * step / length).unwrap_or(0);
     [scale(dx), scale(dz)]
 }
@@ -103,10 +104,8 @@ const CHASE_CLOSE_IN_UNITS: i64 = 10;
 /// A creature that held a boss's rally walks home within this many ticks (#276).
 const RALLY_RETURN_TICKS: u16 = crate::ticks_from_ms(20_000);
 
-/// Whole units per tick (the creature steering's resolution) as the subunits physics takes.
-const fn subunits(units: i32) -> i32 {
-    units * crate::physics::SUBUNITS_PER_UNIT
-}
+/// Subunits per unit, for steering in subunits per tick over unit offsets.
+const SUBUNITS: i64 = crate::physics::SUBUNITS_PER_UNIT as i64;
 
 /// Chase velocity toward a target `(dx, dz)` away: run speed while beyond
 /// `reach`, then a last step that ends inside it, and zero once inside.
@@ -117,8 +116,10 @@ fn chase_velocity(dx: i32, dz: i32, reach: i32) -> [i32; 2] {
     let gap = i64::try_from(xz_length(dx, dz))
         .unwrap_or(i64::MAX)
         .saturating_sub(i64::from(reach));
-    let step =
-        i64::from(CREATURE_RUN_SPEED_UNITS_PER_TICK).min(gap.saturating_add(CHASE_CLOSE_IN_UNITS));
+    let step = i64::from(CREATURE_RUN_SPEED_SUBUNITS_PER_TICK).min(
+        gap.saturating_add(CHASE_CLOSE_IN_UNITS)
+            .saturating_mul(SUBUNITS),
+    );
     steer(dx, dz, i32::try_from(step).unwrap_or(0))
 }
 
@@ -294,7 +295,7 @@ impl ZoneSimulation {
                         if near {
                             [0, 0]
                         } else {
-                            steer(dx, dz, crate::water::TRAIL_SPEED_UNITS_PER_TICK)
+                            steer(dx, dz, crate::water::TRAIL_SPEED_SUBUNITS_PER_TICK)
                         },
                         yaw_from_vector(dx, dz),
                     )
@@ -338,7 +339,7 @@ impl ZoneSimulation {
                 Some((_, _)) if route.is_some() => {
                     let (dx, dz) = offset(here, route.unwrap_or(here));
                     (
-                        steer(dx, dz, CREATURE_RUN_SPEED_UNITS_PER_TICK),
+                        steer(dx, dz, CREATURE_RUN_SPEED_SUBUNITS_PER_TICK),
                         yaw_from_vector(dx, dz),
                     )
                 }
@@ -369,7 +370,7 @@ impl ZoneSimulation {
                 } else {
                     let (dx, dz) = route.map_or_else(|| offset(here, point), |to| offset(here, to));
                     (
-                        steer(dx, dz, CREATURE_RUN_SPEED_UNITS_PER_TICK),
+                        steer(dx, dz, CREATURE_RUN_SPEED_SUBUNITS_PER_TICK),
                         yaw_from_vector(dx, dz),
                     )
                 }
@@ -394,7 +395,7 @@ impl ZoneSimulation {
                     creature.ai = CreatureAi::Evading { ticks: ticks + 1 };
                     let (dx, dz) = route.map_or((dx, dz), |waypoint| offset(here, waypoint));
                     (
-                        steer(dx, dz, CREATURE_EVADE_SPEED_UNITS_PER_TICK),
+                        steer(dx, dz, CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK),
                         yaw_from_vector(dx, dz),
                     )
                 }
@@ -424,7 +425,6 @@ impl ZoneSimulation {
             self.world
                 .set_swimming(body, swim.is_some())
                 .map_err(physics_error)?;
-            let swim = swim.map(|units| units * crate::physics::SUBUNITS_PER_UNIT);
             (velocity, swim.unwrap_or(vertical))
         } else {
             (self.keep_out_of_deep_water(here, velocity), vertical)
@@ -442,10 +442,7 @@ impl ZoneSimulation {
                 .map_err(physics_error)?;
         }
         self.world
-            .set_velocity(
-                body,
-                Vec3i::new(subunits(velocity[0]), vertical, subunits(velocity[1])),
-            )
+            .set_velocity(body, Vec3i::new(velocity[0], vertical, velocity[1]))
             .map_err(physics_error)
     }
 
@@ -639,7 +636,7 @@ fn wander(
                 *timer -= 1;
                 let (dx, dz) = offset(here, to);
                 (
-                    steer(dx, dz, CREATURE_WALK_SPEED_UNITS_PER_TICK),
+                    steer(dx, dz, CREATURE_WALK_SPEED_SUBUNITS_PER_TICK),
                     yaw_from_vector(dx, dz),
                 )
             }
@@ -657,7 +654,7 @@ fn wander(
             *timer = WANDER_WALK_TIMEOUT_TICKS;
             let (dx, dz) = offset(here, to);
             (
-                steer(dx, dz, CREATURE_WALK_SPEED_UNITS_PER_TICK),
+                steer(dx, dz, CREATURE_WALK_SPEED_SUBUNITS_PER_TICK),
                 yaw_from_vector(dx, dz),
             )
         }
@@ -670,11 +667,16 @@ mod tests {
 
     #[test]
     fn steering_normalises_with_integers_and_never_overshoots() {
-        assert_eq!(steer(0, 0, 19), [0, 0]);
-        assert_eq!(steer(300, 400, 19), [11, 15]);
-        assert_eq!(steer(-300, 400, 19), [-11, 15]);
-        assert_eq!(steer(3, 4, 19), [3, 4], "a short step lands on the target");
-        assert_eq!(steer(1_000, 0, 24), [24, 0]);
+        let s = crate::physics::SUBUNITS_PER_UNIT;
+        assert_eq!(steer(0, 0, 19 * s), [0, 0]);
+        assert_eq!(steer(300, 400, 19 * s), [2918, 3891]);
+        assert_eq!(steer(-300, 400, 19 * s), [-2918, 3891]);
+        assert_eq!(
+            steer(3, 4, 19 * s),
+            [3 * s, 4 * s],
+            "a short step lands on the target"
+        );
+        assert_eq!(steer(1_000, 0, 24 * s), [24 * s, 0]);
     }
 
     #[test]
@@ -718,11 +720,13 @@ mod tests {
     fn a_chase_always_progresses_and_its_last_step_lands_inside_reach() {
         let reach = creature_reach(EntityRef::Player(1));
         let reach_squared = i64::from(reach).pow(2);
-        assert_eq!(
+        assert_ne!(
             chase_velocity(203, -109, reach),
-            [8, -4],
+            [0, 0],
             "no stall at 230.4"
         );
+        let s = f64::from(crate::physics::SUBUNITS_PER_UNIT);
+        let units = |v: i32| f64::from(v) / s;
         for dx in (-300..=300).step_by(3) {
             for dz in (-300..=300).step_by(3) {
                 let before = distance_squared([0, 0], [dx, dz]);
@@ -731,13 +735,23 @@ mod tests {
                     assert_eq!([vx, vz], [0, 0], "({dx}, {dz}) is inside reach");
                     continue;
                 }
-                let after = distance_squared([0, 0], [dx - vx, dz - vz]);
+                // The body moves by the velocity in units.
+                let (x, z) = (f64::from(dx) - units(vx), f64::from(dz) - units(vz));
+                let after = x * x + z * z;
+                #[allow(clippy::cast_precision_loss)]
+                let before = before as f64;
                 assert!(after < before, "({dx}, {dz}) makes progress");
                 let within_last_step = i64::try_from(xz_length(dx, dz)).unwrap()
-                    <= i64::from(reach) + i64::from(CREATURE_RUN_SPEED_UNITS_PER_TICK)
+                    <= i64::from(reach)
+                        + i64::from(
+                            CREATURE_RUN_SPEED_SUBUNITS_PER_TICK
+                                / crate::physics::SUBUNITS_PER_UNIT,
+                        )
                         - CHASE_CLOSE_IN_UNITS;
                 if within_last_step {
-                    assert!(after <= reach_squared, "({dx}, {dz}) arrives inside reach");
+                    #[allow(clippy::cast_precision_loss)]
+                    let inside = reach_squared as f64;
+                    assert!(after <= inside, "({dx}, {dz}) arrives inside reach");
                 }
             }
         }

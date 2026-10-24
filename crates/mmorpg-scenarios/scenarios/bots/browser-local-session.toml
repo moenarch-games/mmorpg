@@ -8,9 +8,9 @@
 # unit at once), so the away ticks are not compared. Keep both in step.
 name = "browser-local-session"
 zone = 1
-ticks = 54
-reconnect_grace_ticks = 3
-digest_interval = 5
+ticks = 108
+reconnect_grace_ticks = 6
+digest_interval = 10
 
 [[bots]]
 name = "alice"
@@ -29,12 +29,12 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 10
+tick = 20
 bot = "alice"
 action = "jump"
 
 [[steps]]
-tick = 20
+tick = 40
 bot = "alice"
 action = "move"
 forward = 0
@@ -42,7 +42,7 @@ strafe = 1
 facing = 16384
 
 [[steps]]
-tick = 30
+tick = 60
 bot = "alice"
 action = "move"
 forward = 0
@@ -50,12 +50,12 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 44
+tick = 88
 bot = "alice"
 action = "disconnect"
 
 [[steps]]
-tick = 50
+tick = 100
 bot = "alice"
 action = "join"
 
@@ -68,49 +68,49 @@ area = "Greyhaven Outpost"
 [[expect]]
 kind = "position"
 bot = "alice"
-tick = 10
+tick = 20
 position = [-1340, 90, 1250]
 
 [[expect]]
 kind = "acknowledged"
 bot = "alice"
-tick = 11
+tick = 21
 sequence = 2
 
 # The grounded jump lifts off while the run continues, peaks, then lands.
 [[expect]]
 kind = "position"
 bot = "alice"
-tick = 11
+tick = 22
 position = [-1319, 105, 1250]
 
 [[expect]]
 kind = "position"
 bot = "alice"
-tick = 25
-position = [-1130, 210, 1355]
+tick = 50
+position = [-1130, 214, 1355]
 
 [[expect]]
 kind = "position"
 bot = "alice"
-tick = 44
+tick = 88
 position = [-1130, 90, 1460]
 
 [[expect]]
 kind = "area"
 bot = "alice"
-tick = 31
+tick = 61
 area = "Greyhaven Outpost"
 
 # Re-entry is a new player alone at the freed spawn slot.
 [[expect]]
 kind = "visible_count"
 bot = "alice"
-tick = 51
+tick = 101
 count = 1
 
 [[expect]]
 kind = "position"
 bot = "alice"
-tick = 51
+tick = 102
 position = [-1550, 90, 1250]

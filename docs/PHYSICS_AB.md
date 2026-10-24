@@ -93,12 +93,12 @@ On **each** backend, every run must:
 
 Across backends:
 
-- Scripted workloads (the bot scenarios, `vale-idle-16`, `vale-mill-hoist`,
+- Scripted workloads (`two-bots-move`, `vale-hub-walk`, `vale-idle-16`, `vale-mill-hoist`,
   `vale-crate-shove`, `vale-crate-smash` and `vale-missiles`): players within **1 unit** (the
   rounding step gameplay sees; measured ≤ 0.15; in `vale-crate-shove` plus the crates' gap,
   since a player walks into its resting crate), identical command outcomes and door states,
   and the players' grounded state identical on every tick.
-- Every query decision on **identical states** (Rapier's state every 60 ticks, recovered onto
+- Every query decision on **identical states** (Rapier's state every 2 s, recovered onto
   both backends): line of sight, shots, charge paths (a capsule `cast_shape`, #57) and creature routes
   (#307: shape casts and overlap queries on the navigation grid) for player–creature pairs
   within 40 m, NPC sight,
@@ -163,6 +163,17 @@ Intentional or explained differences:
    occupancy agrees.
 6. **Contact gap.** Rapier units never came closer than 0.2498 units to a box; engine units came
    as close as 0.04 (`vale-wolf-hunt`) and 0.00 (`vale-crowded-fights-64`), never inside.
+
+## 60 Hz (#379)
+
+The zone runs at 60 Hz; the scripted workloads keep their 30 Hz timetables at the same moments
+(commands on the matching even ticks, lengths, parity and penetration sampling in seconds).
+`vale-wolf-hunt` is no longer bounded: its creatures part from tick 1 and reach the scripted
+hunter's fights after 38 s (tick 2276), where the players part by up to 81 units. The Rapier
+backend's support test now skips a too-steep surface it meets first and looks for walkable
+ground below it (a player pressing into the mill chute's foot hovered 0.06 units above the floor,
+never grounded); physics-engine still stops at the steep face (physics-engine #395), so grounded is
+not compared for units at a too-steep ramp's foot.
 
 ## physics-engine gaps found
 

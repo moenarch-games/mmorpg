@@ -16,7 +16,7 @@ bytes and a diagnostic trace checksum. The example and regression gate use the
 same fixture/measurement module under protocol test support, outside production.
 
 Every fixture runs Greyhaven's 59 creatures, nine NPCs and static colliders for
-360 completed ticks (12 seconds of simulation at 30 Hz). Initialization is outside
+360 completed ticks (6 seconds of simulation at 60 Hz). Initialization is outside
 the counts. `vale-idle-16` admits 16 stationary players on the plaza; creature AI
 and wandering remain active, so this is an idle-player control rather than an idle
 physics world. The 8/32-player fighting fixtures distribute players across the

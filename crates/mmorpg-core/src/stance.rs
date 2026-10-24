@@ -34,13 +34,11 @@ pub const OVERHEAD_LANDING_TICKS: u16 = action::modified_recovery_ticks(
     action::ActionId::Landing,
     action::Condition::AttackedAirborne,
 );
-/// Horizontal speed from which a run at the target charges: three quarters of
-/// [`crate::RUN_SPEED_UNITS_PER_SECOND`], rounded down to whole units per tick (4.5 m/s).
-const CHARGE_SPEED_UNITS_PER_SECOND: i32 = 450;
-const CHARGE_SPEED_UNITS_PER_TICK: i64 =
-    crate::units_per_tick(CHARGE_SPEED_UNITS_PER_SECOND) as i64;
-/// Below this horizontal speed a grounded Warden is planted.
-const PLANTED_SPEED_UNITS_PER_TICK: i64 = crate::units_per_tick(60) as i64;
+/// Horizontal speed (subunits per tick) from which a run at the target charges: about three
+/// quarters of [`crate::RUN_SPEED_UNITS_PER_SECOND`] (4.5 m/s).
+const CHARGE_SPEED_SUBUNITS_PER_TICK: i64 = crate::subunits_per_tick(450) as i64;
+/// Below this horizontal speed (0.6 m/s, subunits per tick) a grounded Warden is planted.
+const PLANTED_SPEED_SUBUNITS_PER_TICK: i64 = crate::subunits_per_tick(60) as i64;
 /// A charge heads within acos(0.7) ≈ 45° of the target: cos² ≥ 49/100.
 const CHARGE_COS_SQUARED: [i64; 2] = [49, 100];
 
@@ -161,14 +159,14 @@ impl ZoneSimulation {
             return Ok(Some(MeleeStance::Landing));
         }
         let body = self.player_body(player_id)?;
-        let velocity = body.velocity_units();
+        let velocity = body.velocity();
         let (vx, vz) = (i64::from(velocity.x), i64::from(velocity.z));
         let speed_squared = vx * vx + vz * vz;
-        if speed_squared <= PLANTED_SPEED_UNITS_PER_TICK.pow(2) {
+        if speed_squared <= PLANTED_SPEED_SUBUNITS_PER_TICK.pow(2) {
             return Ok(Some(MeleeStance::Planted));
         }
         let toward = match target {
-            Some(target) if speed_squared >= CHARGE_SPEED_UNITS_PER_TICK.pow(2) => {
+            Some(target) if speed_squared >= CHARGE_SPEED_SUBUNITS_PER_TICK.pow(2) => {
                 let from = body.position();
                 let to = self
                     .world

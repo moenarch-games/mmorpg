@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { TICK_HZ } from "../src/replication";
 import {
   explainEdge, explainOutcome, labQuery, labSetupFromQuery, timelineSegments, type ActionGraph, type Inspection,
 } from "../src/world/action-lab";
@@ -7,7 +8,7 @@ import { localZoneModule } from "./support/local-zone-module";
 
 // Builds crates/mmorpg-wasm for wasm32 and runs wasm-bindgen, like `bun run build`.
 const wasm = await localZoneModule();
-const TICK_SECONDS = 1 / 30;
+const TICK_SECONDS = 1 / TICK_HZ;
 
 describe("Action Lab (#381)", () => {
   test("a setup survives the URL round trip a reset uses", () => {

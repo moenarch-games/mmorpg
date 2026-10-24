@@ -1,5 +1,5 @@
 import { entityKindCode, type EntityRef } from "../../src/entity-ref";
-import { COMBO_PHASES, EMOTES, MELEE_STANCES, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type CastState, type ZoneEvent, type ZoneSnapshot } from "../../src/replication";
+import { BREATH_MAX_TICKS, COMBO_PHASES, EMOTES, MELEE_STANCES, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type CastState, type ZoneEvent, type ZoneSnapshot } from "../../src/replication";
 
 const FIXED_BYTES = 117;
 /** Bag 64, equipment 12 and stat totals 8. */
@@ -52,9 +52,9 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(value === null ? 0 : entityKindCode(value.kind));
     u32(value?.id ?? 0);
   };
-  u8(37);
+  u8(38);
   u8(2);
-  u16(37);
+  u16(38);
   u32(snapshot.zoneId);
   u64(snapshot.tick);
   u64(snapshot.contentRevision);
@@ -101,7 +101,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   u8(stance === null ? 0 : MELEE_STANCES.indexOf(stance) + 1);
   const combo = viewer.combo ?? null;
   u8(combo === null ? 0 : COMBO_PHASES.indexOf(combo) + 1);
-  u16(viewer.breath ?? 900);
+  u16(viewer.breath ?? BREATH_MAX_TICKS);
   u8(snapshot.cooldowns.length);
   for (const cooldown of snapshot.cooldowns) {
     u8(cooldown.ability);

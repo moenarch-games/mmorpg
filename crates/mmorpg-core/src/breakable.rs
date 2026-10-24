@@ -24,6 +24,10 @@ pub const MAX_DEBRIS: usize = 192;
 pub const MAX_VISIBLE_DEBRIS: usize = 16;
 /// A piece may settle once it has flown this many ticks.
 const SETTLE_AFTER_TICKS: u16 = crate::ticks_from_ms(267);
+/// Launch speeds (units) and spins (radians) below are tuned per 1/30 s; this turns them into
+/// per-tick values at [`crate::TICK_HZ`].
+#[allow(clippy::cast_precision_loss)]
+const PER_TUNED_TICK: f32 = 30.0 / crate::TICK_HZ as f32;
 /// An explosive barrel's blast: Fire Blast's numbers at a level-3 caster (#287).
 pub const EXPLOSION_DAMAGE: [u16; 2] = [12, 16];
 pub const EXPLOSION_RADIUS_UNITS: i32 = 500;
@@ -252,12 +256,14 @@ impl ZoneSimulation {
                     dx * outward + away[0],
                     upward * lift + (i % 3.0),
                     dz * outward + away[1],
-                ],
+                ]
+                .map(|axis| axis * PER_TUNED_TICK),
                 spin: [
                     0.12 * ((i % 3.0) - 1.0) + 0.05,
                     0.08 * ((i % 2.0) * 2.0 - 1.0),
                     0.12 * (((i + 1.0) % 3.0) - 1.0),
-                ],
+                ]
+                .map(|axis| axis * PER_TUNED_TICK),
                 half_extents: Vec3i::new(
                     piece.half_extents[0],
                     piece.half_extents[1],

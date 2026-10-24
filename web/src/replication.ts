@@ -8,7 +8,7 @@ export type Vector3 = readonly [number, number, number];
  * The authoritative simulation rate (`mmorpg_core::TICK_HZ`): the online handshake refuses another
  * rate and `createLocalWorld` refuses a WASM host at another one.
  */
-export const TICK_HZ = 30;
+export const TICK_HZ = 60;
 /** Whole ticks in `ms` milliseconds, rounded to the nearest tick like `mmorpg_core::ticks_from_ms`. */
 export function ticksFromMs(ms: number): number {
   return Math.floor((ms * TICK_HZ + 500) / 1_000);
@@ -320,8 +320,8 @@ function decodeChatText(bytes: Uint8Array): string {
 
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 37;
-const SCHEMA_VERSION = 37;
+const WIRE_VERSION = 38;
+const SCHEMA_VERSION = 38;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;

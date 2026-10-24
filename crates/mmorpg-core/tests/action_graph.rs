@@ -53,7 +53,7 @@ impl Warden {
         let mut warden = Self { zone, sequence: 0 };
         warden.send(ZoneCommand::ChooseClass { class: 0, sex: 0 });
         warden.send(arena::stand(SOUTH));
-        for _ in 0..20 {
+        for _ in 0..mmorpg_core::golden::t30(20) {
             warden.tick();
         }
         let mut state = warden.zone.snapshot().unwrap();
@@ -100,7 +100,7 @@ impl Warden {
 
     /// Ticks until the Shield Bash resolves (used or refused); its tick.
     fn bash_resolution(&mut self) -> u64 {
-        for _ in 0..60 {
+        for _ in 0..mmorpg_core::golden::t30(60) {
             let events = self.tick();
             if events.iter().any(|event| match event {
                 ZoneEvent::AbilityUsed { ability, .. } => *ability == ids::SHIELD_BASH,
@@ -117,17 +117,21 @@ impl Warden {
 #[test]
 fn the_baseline_graph_validates_and_keeps_the_current_values() {
     action::validate().unwrap();
-    assert_eq!(mmorpg_core::COMBO_IMPACT_TICKS, 6);
-    assert_eq!(mmorpg_core::COMBO_WINDOW_TICKS, 18);
-    assert_eq!(mmorpg_core::STRIKE_RECOVERY_TICKS, 6);
-    assert_eq!(mmorpg_core::LANDING_RECOVERY_TICKS, 9);
-    assert_eq!(mmorpg_core::OVERHEAD_LANDING_TICKS, 15);
-    assert_eq!(mmorpg_core::GUARD_BREAK_TICKS, 45);
-    assert_eq!(mmorpg_core::ticks_from_ms(200), 6);
+    // The authored windows in ms, at 60 Hz (#379): 16⅔ ms per tick.
+    assert_eq!(mmorpg_core::COMBO_IMPACT_TICKS, 12);
+    assert_eq!(mmorpg_core::COMBO_WINDOW_TICKS, 36);
+    assert_eq!(mmorpg_core::STRIKE_RECOVERY_TICKS, 12);
+    assert_eq!(mmorpg_core::LANDING_RECOVERY_TICKS, 18);
+    assert_eq!(mmorpg_core::OVERHEAD_LANDING_TICKS, 30);
+    assert_eq!(mmorpg_core::GUARD_BREAK_TICKS, 90);
+    assert_eq!(mmorpg_core::ticks_from_ms(200), 12);
+    assert_eq!(mmorpg_core::ticks_from_ms(50), 3);
 }
 
 #[test]
 fn a_grounded_slash_buffers_bash_and_guard_until_the_inspected_ticks() {
+    const IMPACT: u64 = mmorpg_core::COMBO_IMPACT_TICKS as u64;
+    const WINDOW: u64 = mmorpg_core::COMBO_WINDOW_TICKS as u64;
     let mut warden = Warden::new();
     warden.slash();
     warden.tick();
@@ -145,14 +149,14 @@ fn a_grounded_slash_buffers_bash_and_guard_until_the_inspected_ticks() {
     assert_eq!(edge.edge, EdgeId::SlashToShieldBash);
     assert_eq!(edge.status, EdgeStatus::Buffering);
     assert_eq!(edge.anchor_tick, Some(strike));
-    assert_eq!(edge.open_from, Some(strike + 6));
-    assert_eq!(edge.open_until, Some(strike + 24));
+    assert_eq!(edge.open_from, Some(strike + IMPACT));
+    assert_eq!(edge.open_until, Some(strike + IMPACT + WINDOW));
     let guard_hold = inspection
         .rules
         .iter()
         .find(|rule| rule.rule == RuleId::SlashRecoveryHoldsGuard)
         .unwrap();
-    assert_eq!(guard_hold.released_at, Some(strike + 6));
+    assert_eq!(guard_hold.released_at, Some(strike + IMPACT));
 
     // The combo edge outranks the Bash's direct use and holds it.
     let arbitration = warden
@@ -179,9 +183,9 @@ fn a_grounded_slash_buffers_bash_and_guard_until_the_inspected_ticks() {
     });
     warden.bash();
     // The guard protects from exactly the released tick.
-    for _ in 0..4 {
+    for _ in 0..mmorpg_core::golden::t30(4) {
         warden.tick();
-        assert!(warden.inspect().tick < strike + 6);
+        assert!(warden.inspect().tick < strike + IMPACT);
         assert!(
             warden
                 .zone
@@ -190,7 +194,7 @@ fn a_grounded_slash_buffers_bash_and_guard_until_the_inspected_ticks() {
                     == Outcome::WaitForRule(RuleId::SlashRecoveryHoldsGuard))
         );
     }
-    assert_eq!(warden.bash_resolution(), strike + 6);
+    assert_eq!(warden.bash_resolution(), strike + IMPACT);
     assert_eq!(
         warden.inspect().edges[0].status,
         EdgeStatus::Blocked(BlockReason::SourceInactive)
@@ -221,7 +225,7 @@ fn a_whiff_reports_the_unmet_damage_condition_and_the_bash_is_direct() {
 fn an_airborne_slash_lands_into_a_held_bash_at_the_inspected_tick() {
     let mut warden = Warden::new();
     warden.send(ZoneCommand::Jump);
-    for _ in 0..3 {
+    for _ in 0..mmorpg_core::golden::t30(3) {
         warden.tick();
     }
     assert_eq!(
@@ -237,7 +241,7 @@ fn an_airborne_slash_lands_into_a_held_bash_at_the_inspected_tick() {
         warden.region(Region::Offense).action,
         Some(ActionId::DirectedSlash)
     );
-    for _ in 0..120 {
+    for _ in 0..mmorpg_core::golden::t30(120) {
         if warden.region(Region::Movement).action == Some(ActionId::Landing) {
             break;
         }

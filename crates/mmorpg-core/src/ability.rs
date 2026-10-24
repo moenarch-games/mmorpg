@@ -779,7 +779,7 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         0,
         CastTime::Instant,
         ticks_from_ms(15_000),
-        // A charge covers CHARGE_MAX_TICKS × CHARGE_SPEED_UNITS plus melee reach.
+        // A charge covers 1 s at 13.5 m/s plus melee reach.
         AbilityRange::Units(1_500),
         AbilityEffect::Charge { knockback: 300 },
     ),

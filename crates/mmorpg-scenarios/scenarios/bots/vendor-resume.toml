@@ -4,9 +4,9 @@
 # connection resume.
 name = "vendor-resume"
 zone = 1
-ticks = 280
-reconnect_grace_ticks = 30
-digest_interval = 25
+ticks = 560
+reconnect_grace_ticks = 60
+digest_interval = 50
 
 [[bots]]
 name = "alice"
@@ -18,7 +18,7 @@ action = "join"
 
 # From the spawn plaza the vendor is about 30 m away.
 [[steps]]
-tick = 1
+tick = 2
 bot = "alice"
 action = "sell_item"
 npc = 3
@@ -27,7 +27,7 @@ quantity = 1
 
 # The inn door is out of reach from the plaza.
 [[steps]]
-tick = 3
+tick = 6
 bot = "alice"
 action = "use_door"
 door = 1
@@ -35,7 +35,7 @@ open = true
 
 # Run east along the plaza, then north to the inn's front door.
 [[steps]]
-tick = 4
+tick = 8
 bot = "alice"
 action = "move"
 forward = 1
@@ -43,7 +43,7 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 149
+tick = 298
 bot = "alice"
 action = "move"
 forward = 1
@@ -51,7 +51,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 180
+tick = 360
 bot = "alice"
 action = "move"
 forward = 0
@@ -59,7 +59,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 181
+tick = 362
 bot = "alice"
 action = "use_door"
 door = 1
@@ -67,7 +67,7 @@ open = true
 
 # Through the open doorway into the inn.
 [[steps]]
-tick = 183
+tick = 366
 bot = "alice"
 action = "move"
 forward = 1
@@ -75,7 +75,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 212
+tick = 424
 bot = "alice"
 action = "move"
 forward = 0
@@ -84,7 +84,7 @@ facing = 32768
 
 # Along the room, then up to the bar where Bram serves across the counter.
 [[steps]]
-tick = 213
+tick = 426
 bot = "alice"
 action = "move"
 forward = 1
@@ -92,7 +92,7 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 233
+tick = 466
 bot = "alice"
 action = "move"
 forward = 1
@@ -100,7 +100,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 241
+tick = 482
 bot = "alice"
 action = "move"
 forward = 0
@@ -108,7 +108,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 259
+tick = 518
 bot = "alice"
 action = "sell_item"
 npc = 3
@@ -117,7 +117,7 @@ quantity = 3
 
 # Three copper do not cover the five-copper Worn Dagger.
 [[steps]]
-tick = 260
+tick = 520
 bot = "alice"
 action = "buy_item"
 npc = 3
@@ -126,7 +126,7 @@ quantity = 1
 
 # A guard sells nothing.
 [[steps]]
-tick = 261
+tick = 522
 bot = "alice"
 action = "buy_item"
 npc = 6
@@ -134,7 +134,7 @@ offer = 0
 quantity = 1
 
 [[steps]]
-tick = 262
+tick = 524
 bot = "alice"
 action = "sell_item"
 npc = 3
@@ -142,17 +142,17 @@ bag_slot = 1
 quantity = 1
 
 [[steps]]
-tick = 264
+tick = 528
 bot = "alice"
 action = "disconnect"
 
 [[steps]]
-tick = 266
+tick = 532
 bot = "alice"
 action = "reconnect"
 
 [[steps]]
-tick = 270
+tick = 540
 bot = "alice"
 action = "buy_item"
 npc = 3
@@ -162,43 +162,43 @@ quantity = 1
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 2
+tick = 3
 event = "error:out_of_range"
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 2
+tick = 3
 copper = 0
 
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 4
+tick = 7
 event = "error:out_of_range"
 
 [[expect]]
 kind = "position"
 bot = "alice"
-tick = 258
+tick = 516
 position = [1915, 90, -178]
 
 [[expect]]
 kind = "area"
 bot = "alice"
-tick = 258
+tick = 515
 area = "Greyhaven Outpost"
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 260
+tick = 519
 copper = 3
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
-tick = 260
+tick = 520
 inventory_revision = 2
 sheet = true
 slot = 0
@@ -208,36 +208,36 @@ quantity = 0
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 261
+tick = 521
 event = "error:not_enough_money"
 
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 262
+tick = 523
 event = "error:invalid_vendor"
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 263
+tick = 525
 copper = 5
 
 [[expect]]
 kind = "identity"
 bot = "alice"
-tick = 267
+tick = 533
 
 [[expect]]
 kind = "copper"
 bot = "alice"
-tick = 271
+tick = 541
 copper = 0
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
-tick = 271
+tick = 541
 inventory_revision = 4
 sheet = true
 slot = 0

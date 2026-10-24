@@ -23,7 +23,7 @@ pub const FLOAT_DEPTH_UNITS: i32 = 140;
 /// Swimmers move at this share of their running speed (3.9 m/s forward).
 pub const SWIM_SPEED_PERCENT: i32 = 62;
 /// Vertical speed of held ascent or descent (2.4 m/s).
-pub const SWIM_RISE_UNITS_PER_TICK: i32 = crate::units_per_tick(240);
+pub const SWIM_RISE_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(240);
 /// A full breath lasts 30 s submerged.
 pub const BREATH_MAX_TICKS: u16 = crate::ticks_from_ms(30_000);
 /// Out of the water, or with the head above it, breath refills in 5 s.
@@ -41,14 +41,18 @@ pub const TRAIL_TICKS: u16 = crate::ticks_from_ms(6_000);
 /// A trailing creature keeps this far from the player (2 m) and never touches it.
 pub const TRAIL_KEEP_UNITS: i32 = 200;
 /// A trailing creature swims at 3.3 m/s, slower than a swimming player (3.9 m/s).
-pub const TRAIL_SPEED_UNITS_PER_TICK: i32 = crate::units_per_tick(330);
+pub const TRAIL_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(330);
 
-/// The vertical velocity (units/tick) of a swimming creature whose feet are `depth` units
+/// The vertical velocity (subunits per tick) of a swimming creature whose feet are `depth` units
 /// below the surface, heading for feet `goal` units down: never above the floating depth.
 #[must_use]
 pub fn creature_swim_velocity(depth: i32, goal: i32) -> i32 {
-    (depth - goal.max(FLOAT_DEPTH_UNITS)).clamp(-SWIM_RISE_UNITS_PER_TICK, SWIM_RISE_UNITS_PER_TICK)
+    (depth - goal.max(FLOAT_DEPTH_UNITS))
+        .saturating_mul(SUBUNITS)
+        .clamp(-SWIM_RISE_SUBUNITS_PER_TICK, SWIM_RISE_SUBUNITS_PER_TICK)
 }
+
+const SUBUNITS: i32 = crate::physics::SUBUNITS_PER_UNIT;
 
 /// At most this many air pockets per water volume.
 pub const MAX_AIR_POCKETS: usize = 4;
@@ -269,16 +273,16 @@ pub fn swim_depth(waters: &[WaterVolume], feet: [i32; 3]) -> Option<i32> {
     Some(water.surface - feet[1])
 }
 
-/// The vertical velocity (units/tick) of a swimmer whose feet are `depth` units below the
+/// The vertical velocity (subunits per tick) of a swimmer whose feet are `depth` units below the
 /// surface, holding `rise` (-1 down, 0 level, 1 up): never above the floating depth.
 #[must_use]
 pub fn swim_vertical_velocity(depth: i32, rise: i8) -> i32 {
-    let toward_float = depth - FLOAT_DEPTH_UNITS;
+    let toward_float = (depth - FLOAT_DEPTH_UNITS).saturating_mul(SUBUNITS);
     match rise {
-        r if r > 0 => SWIM_RISE_UNITS_PER_TICK.min(toward_float.max(0)),
-        r if r < 0 => -SWIM_RISE_UNITS_PER_TICK,
+        r if r > 0 => SWIM_RISE_SUBUNITS_PER_TICK.min(toward_float.max(0)),
+        r if r < 0 => -SWIM_RISE_SUBUNITS_PER_TICK,
         // Level: hold depth, except that feet above the floating depth sink to it.
-        _ if toward_float < 0 => toward_float.max(-SWIM_RISE_UNITS_PER_TICK),
+        _ if toward_float < 0 => toward_float.max(-SWIM_RISE_SUBUNITS_PER_TICK),
         _ => 0,
     }
 }
@@ -300,7 +304,11 @@ impl crate::ZoneSimulation {
         if velocity == [0, 0] || self.content().waters().is_empty() {
             return velocity;
         }
-        let to = [here[0] + velocity[0], here[1] + velocity[1]];
+        // Where the next tick's step (subunits per tick) leads, in whole units.
+        let to = [
+            here[0] + velocity[0] / SUBUNITS,
+            here[1] + velocity[1] / SUBUNITS,
+        ];
         match self.water_depth_at(to[0], to[1]) {
             Some(depth)
                 if depth > SWIM_DEPTH_UNITS
@@ -496,10 +504,21 @@ mod tests {
     #[test]
     fn swimmers_float_and_never_rise_above_the_surface_hold() {
         assert_eq!(swim_vertical_velocity(FLOAT_DEPTH_UNITS, 1), 0);
-        assert_eq!(swim_vertical_velocity(FLOAT_DEPTH_UNITS + 3, 1), 3);
-        assert_eq!(swim_vertical_velocity(400, 1), SWIM_RISE_UNITS_PER_TICK);
-        assert_eq!(swim_vertical_velocity(400, -1), -SWIM_RISE_UNITS_PER_TICK);
+        assert_eq!(
+            swim_vertical_velocity(FLOAT_DEPTH_UNITS + 3, 1),
+            3 * SUBUNITS
+        );
+        assert_eq!(swim_vertical_velocity(400, 1), SWIM_RISE_SUBUNITS_PER_TICK);
+        assert_eq!(
+            swim_vertical_velocity(400, -1),
+            -SWIM_RISE_SUBUNITS_PER_TICK
+        );
         assert_eq!(swim_vertical_velocity(400, 0), 0);
-        assert_eq!(swim_vertical_velocity(131, 0), -8);
+        assert_eq!(
+            swim_vertical_velocity(FLOAT_DEPTH_UNITS - 1, 0),
+            -SUBUNITS,
+            "feet above the floating depth sink to it"
+        );
+        assert_eq!(swim_vertical_velocity(0, 0), -SWIM_RISE_SUBUNITS_PER_TICK);
     }
 }

@@ -45,7 +45,7 @@ fn content(
     definition_colliders.extend(walls);
     let definition = mmorpg_core::ZoneDefinition::with_spawn_grid(
         77,
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         mmorpg_core::SpawnGrid {
             origin: [0, 0],
             columns: 32,
@@ -70,7 +70,7 @@ fn content(
             vec![StructureSite {
                 id: 1,
                 name: "Test Wall".into(),
-                regrowth_ticks: 90_000,
+                regrowth_ticks: mmorpg_core::golden::t30(90_000) as _,
             }],
             pieces,
         )

@@ -1,24 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FixedTickClock, MAX_CATCH_UP_TICKS, frameDeltaSeconds } from "../src/demo-clock";
+import { TICK_HZ } from "../src/replication";
 
 test("fixed ticks come from accumulated time, not from frame count", () => {
   const clock = new FixedTickClock();
   let ticks = 0;
-  // 600 frames at 60 Hz are ten seconds: 300 ticks at 30 Hz, give or take float rounding.
-  for (let frame = 0; frame < 600; frame += 1) {
-    ticks += clock.advance(1 / 60);
+  // 1,440 frames at 144 Hz are ten seconds: ten seconds of ticks, give or take float rounding.
+  for (let frame = 0; frame < 1_440; frame += 1) {
+    ticks += clock.advance(1 / 144);
   }
-  assert.ok(ticks === 300 || ticks === 299, `${ticks}`);
+  assert.ok(ticks === 10 * TICK_HZ || ticks === 10 * TICK_HZ - 1, `${ticks}`);
   assert.ok(clock.fraction >= 0 && clock.fraction < 1);
   assert.equal(clock.advance(0), 0);
 });
 
 test("the fraction interpolates within a tick and resets with the stream", () => {
   const clock = new FixedTickClock();
-  assert.equal(clock.advance(0.5 / 30), 0);
+  assert.equal(clock.advance(0.5 / TICK_HZ), 0);
   assert.ok(Math.abs(clock.fraction - 0.5) < 1e-9);
-  assert.equal(clock.advance(0.75 / 30), 1);
+  assert.equal(clock.advance(0.75 / TICK_HZ), 1);
   assert.ok(Math.abs(clock.fraction - 0.25) < 1e-9);
   clock.reset();
   assert.equal(clock.fraction, 0);

@@ -1,4 +1,4 @@
-import type { EntityFlags, EntityState, QuestSheet, ViewerState, Vector3, ZoneSnapshot } from "../../src/replication";
+import { BREATH_MAX_TICKS, type EntityFlags, type EntityState, type QuestSheet, type ViewerState, type Vector3, type ZoneSnapshot } from "../../src/replication";
 
 export const NO_FLAGS: EntityFlags = {
   dead: false, inCombat: false, hostile: false, attackable: false, tappedByOther: false, evading: false, targetsViewer: false, lootable: false,
@@ -15,7 +15,7 @@ export const HEALTHY_VIEWER: ViewerState = {
   guard: { raised: null, protecting: false, broken: 0 },
   stance: null,
   combo: null,
-  breath: 900,
+  breath: BREATH_MAX_TICKS,
 };
 
 /** Nothing equipped. */

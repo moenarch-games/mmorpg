@@ -28,7 +28,7 @@ fn template(id: CreatureTemplateId, half_extents: [i32; 3]) -> CreatureTemplate 
     CreatureTemplate {
         id,
         behaviour: CreatureBehaviour::Aggressive,
-        swing_ticks: 10,
+        swing_ticks: mmorpg_core::golden::t30(10) as _,
         half_extents,
         ..arena::wolf(500, [2, 3])
     }
@@ -146,7 +146,7 @@ impl Tally {
 fn a_guard_in_the_blows_lane_blocks_it_and_a_wrong_lane_does_not() {
     let mut warden = Warden::new(content(&[(1, WOLF, 0, -150)]), SOUTH, Some(MIDDLE));
     let health = warden.health();
-    let tally = warden.run(60);
+    let tally = warden.run(mmorpg_core::golden::t30(60) as _);
     assert!(tally.blocked.len() >= 3, "{tally:?}");
     assert!(tally.blocked.iter().all(|lane| *lane == MIDDLE));
     assert_eq!((tally.hits, warden.health()), (0, health));
@@ -155,7 +155,7 @@ fn a_guard_in_the_blows_lane_blocks_it_and_a_wrong_lane_does_not() {
 
     // A high guard passes over the wolf's bite.
     warden.send(ZoneCommand::Guard { lane: Some(HIGH) });
-    let tally = warden.run(40);
+    let tally = warden.run(mmorpg_core::golden::t30(40) as _);
     assert!(tally.blocked.is_empty() && tally.hits >= 2, "{tally:?}");
     assert!(warden.health() < health);
 
@@ -163,7 +163,7 @@ fn a_guard_in_the_blows_lane_blocks_it_and_a_wrong_lane_does_not() {
     // and a released guard blocks nothing.
     for lane in [Some(LOW), None] {
         warden.send(ZoneCommand::Guard { lane });
-        let tally = warden.run(30);
+        let tally = warden.run(mmorpg_core::golden::t30(30) as _);
         assert!(
             tally.blocked.is_empty() && tally.hits >= 1,
             "{lane:?}: {tally:?}"
@@ -183,7 +183,7 @@ fn the_shield_covers_the_front_and_shield_flank_but_not_the_sword_flank_or_rear(
         (-100, 160, false),
     ] {
         let mut warden = Warden::new(content(&[(1, WOLF, x, z)]), SOUTH, Some(MIDDLE));
-        let tally = warden.run(50);
+        let tally = warden.run(mmorpg_core::golden::t30(50) as _);
         if covered {
             assert!(
                 tally.blocked.len() >= 3 && tally.hits == 0,
@@ -198,9 +198,9 @@ fn the_shield_covers_the_front_and_shield_flank_but_not_the_sword_flank_or_rear(
     }
     // Turning to face the wolf behind brings it into coverage.
     let mut warden = Warden::new(content(&[(1, WOLF, -100, 160)]), SOUTH, Some(MIDDLE));
-    warden.run(20);
+    warden.run(mmorpg_core::golden::t30(20) as _);
     warden.send(arena::stand(NORTH));
-    let tally = warden.run(40);
+    let tally = warden.run(mmorpg_core::golden::t30(40) as _);
     assert!(tally.blocked.len() >= 3 && tally.hits == 0, "{tally:?}");
 }
 
@@ -233,7 +233,7 @@ fn a_charging_brute_breaks_the_guard_which_returns_while_still_held() {
         );
         // Recovered: the same held lane protects again without a new command;
         // a released guard stays down.
-        let after = warden.run(40);
+        let after = warden.run(mmorpg_core::golden::t30(40) as _);
         (warden.guard(), after)
     };
     let (guard, held) = run(false);
@@ -254,11 +254,11 @@ fn a_charging_brute_breaks_the_guard_which_returns_while_still_held() {
 fn guarding_slows_movement_and_a_jump_suspends_protection() {
     let distance = |lane: Option<StrikeHeight>| {
         let mut warden = Warden::new(content(&[]), NORTH, lane);
-        warden.run(5);
+        warden.run(mmorpg_core::golden::t30(5) as _);
         let start =
             mmorpg_core::physics::to_units(warden.zone.snapshot().unwrap().players[0].position)[2];
         warden.send(arena::walk(NORTH));
-        warden.run(30);
+        warden.run(mmorpg_core::golden::t30(30) as _);
         mmorpg_core::physics::to_units(warden.zone.snapshot().unwrap().players[0].position)[2]
             - start
     };
@@ -270,29 +270,30 @@ fn guarding_slows_movement_and_a_jump_suspends_protection() {
     );
 
     let mut warden = Warden::new(content(&[]), NORTH, Some(LOW));
-    warden.run(5);
+    warden.run(mmorpg_core::golden::t30(5) as _);
     assert!(warden.guard().protecting);
     warden.send(arena::walk(NORTH));
     warden.send(ZoneCommand::Jump);
-    warden.run(3);
+    warden.run(mmorpg_core::golden::t30(3) as _);
     let guard = warden.guard();
     assert_eq!((guard.raised, guard.protecting), (Some(LOW), false));
-    let velocity =
-        mmorpg_core::physics::to_units(warden.zone.snapshot().unwrap().players[0].velocity);
-    assert_eq!(
-        velocity[2],
-        mmorpg_core::RUN_SPEED_SUBUNITS_PER_TICK / mmorpg_core::physics::SUBUNITS_PER_UNIT,
-        "no slowdown in the air"
+    let velocity = warden.zone.snapshot().unwrap().players[0].velocity;
+    #[allow(clippy::cast_precision_loss)]
+    let run = mmorpg_core::RUN_SPEED_SUBUNITS_PER_TICK as f32
+        / mmorpg_core::physics::SUBUNITS_PER_UNIT as f32;
+    assert!(
+        (velocity[2] - run).abs() < 1e-3,
+        "no slowdown in the air: {velocity:?}"
     );
     // Landing restores protection in the held lane.
-    warden.run(60);
+    warden.run(mmorpg_core::golden::t30(60) as _);
     assert!(warden.guard().protecting);
 }
 
 #[test]
 fn a_directed_strike_lowers_the_guard_and_other_classes_never_guard() {
     let mut warden = Warden::new(content(&[]), SOUTH, Some(MIDDLE));
-    warden.run(5);
+    warden.run(mmorpg_core::golden::t30(5) as _);
     let mut state = warden.zone.snapshot().unwrap();
     state.players[0].combat.abilities.resource = 100;
     warden.zone = ZoneSimulation::from_snapshot(state, Arc::clone(warden.zone.content())).unwrap();
@@ -305,7 +306,7 @@ fn a_directed_strike_lowers_the_guard_and_other_classes_never_guard() {
     assert_eq!(warden.guard().raised, None);
 
     let mut ranger = Warden::with_class(content(&[(1, WOLF, 0, -150)]), 1, SOUTH, Some(MIDDLE));
-    let tally = ranger.run(40);
+    let tally = ranger.run(mmorpg_core::golden::t30(40) as _);
     assert!(tally.blocked.is_empty() && tally.hits >= 2, "{tally:?}");
 }
 

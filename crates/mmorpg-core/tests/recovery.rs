@@ -47,7 +47,7 @@ fn restore(
 fn recovery_refuses_changed_content_of_the_same_revision() {
     let content = wandering_wolf(arena::wolf(30, [1, 2]));
     let retuned = wandering_wolf(CreatureTemplate {
-        swing_ticks: 61,
+        swing_ticks: mmorpg_core::golden::t30(61) as _,
         ..arena::wolf(30, [1, 2])
     });
     assert_eq!(content.revision(), retuned.revision());

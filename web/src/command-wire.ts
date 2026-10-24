@@ -1,6 +1,6 @@
 /**
- * Command wire version 14, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
- * `fixtures/protocol/commands-v14.hex` holds both encoders to the same bytes.
+ * Command wire version 15, mirrored from `mmorpg-protocol` (docs/PROTOCOL.md).
+ * `fixtures/protocol/commands-v15.hex` holds both encoders to the same bytes.
  * The session supplies player identity and sequence separately.
  */
 import { entityKindCode, isU32, type EntityRef } from "./entity-ref";
@@ -52,7 +52,7 @@ export type WorldCommand =
   /** Starts repairing a destructible piece (#305), or stops with `null`. */
   | { kind: "repair"; piece: number | null };
 
-const COMMAND_WIRE_VERSION = 14;
+const COMMAND_WIRE_VERSION = 15;
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
 const SELECT_TARGET_TAG = 3;

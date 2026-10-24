@@ -292,14 +292,14 @@ fn creatures_and_npcs_render_by_size_disposition_and_state() {
     });
     caster.viewer.cast = Some(mmorpg_core::CastView {
         ability: mmorpg_core::AbilityId::new(9),
-        elapsed: 20,
-        total: 60,
+        elapsed: mmorpg_core::golden::t30(20) as _,
+        total: mmorpg_core::golden::t30(60) as _,
         channel: false,
     });
     presentation.push(caster, now).unwrap();
     assert_eq!(
         presentation.status().unwrap(),
-        "HP 38/50 · mana 85/110 · casting Firebolt 20/60 · in combat · target Timber Wolf (L2, 43%) · attacking"
+        "HP 38/50 · mana 85/110 · casting Firebolt 40/120 · in combat · target Timber Wolf (L2, 43%) · attacking"
     );
     assert_eq!(
         presentation.unit_name(EntityRef::Npc(NpcId::new(6))),

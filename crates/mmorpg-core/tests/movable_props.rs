@@ -26,7 +26,7 @@ fn heavy_crate() -> CreatureTemplate {
         max_level: 1,
         health: 500,
         half_extents: [35, 35, 35],
-        respawn_ticks: 9_000,
+        respawn_ticks: mmorpg_core::golden::t30(9_000) as _,
         ..arena::wolf(500, [1, 1])
     }
 }
@@ -41,7 +41,7 @@ fn content(walls: Vec<StaticCollider>, boar: bool) -> Arc<ZoneContent> {
     colliders.extend(walls);
     let definition = ZoneDefinition::with_spawn_grid(
         77,
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         mmorpg_core::SpawnGrid {
             origin: [-5_000, -5_000],
             columns: 32,
@@ -141,16 +141,16 @@ impl Warden {
 fn a_bash_slides_the_crate_until_it_comes_to_rest() {
     let mut warden = Warden::new(content(Vec::new(), false));
     let (start, _) = warden.crate_at();
-    warden.ticks(20);
+    warden.ticks(mmorpg_core::golden::t30(20) as _);
     assert_eq!(warden.crate_at().0, start, "a resting crate stays put");
     warden.bash();
-    warden.ticks(4);
+    warden.ticks(mmorpg_core::golden::t30(4) as _);
     let (sliding, velocity) = warden.crate_at();
     assert!(
         sliding[2] > start[2] + 10.0 && velocity[2] > 0.0,
         "sliding north: {sliding:?}"
     );
-    warden.ticks(120);
+    warden.ticks(mmorpg_core::golden::t30(120) as _);
     let (rest, velocity) = warden.crate_at();
     assert_eq!(velocity, [0.0; 3], "it came to rest");
     assert!(rest[2] > start[2] + 200.0, "it slid well away: {rest:?}");
@@ -177,13 +177,13 @@ fn a_bash_slides_the_crate_until_it_comes_to_rest() {
 fn a_resting_crate_wakes_on_the_next_push() {
     let mut warden = Warden::new(content(Vec::new(), false));
     warden.bash();
-    warden.ticks(360);
+    warden.ticks(mmorpg_core::golden::t30(360) as _);
     let (first, _) = warden.crate_at();
     warden.step_up();
-    warden.ticks(30);
+    warden.ticks(mmorpg_core::golden::t30(30) as _);
     assert_eq!(warden.crate_at(), (first, [0.0; 3]), "asleep until pushed");
     warden.bash();
-    warden.ticks(120);
+    warden.ticks(mmorpg_core::golden::t30(120) as _);
     let (second, velocity) = warden.crate_at();
     assert_eq!(velocity, [0.0; 3]);
     assert!(
@@ -197,7 +197,7 @@ fn a_broken_crate_leaves_and_returns_at_rest_at_its_spawn() {
     let mut warden = Warden::new(content(Vec::new(), false));
     let (spawn, _) = warden.crate_at();
     warden.bash();
-    warden.ticks(4);
+    warden.ticks(mmorpg_core::golden::t30(4) as _);
     // Break it mid-slide.
     let mut state = warden.zone.snapshot().unwrap();
     state.creatures[0].health = 1;
@@ -207,7 +207,7 @@ fn a_broken_crate_leaves_and_returns_at_rest_at_its_spawn() {
         CreatureId::new(1),
     ))));
     warden.send(ZoneCommand::StartAttack);
-    for _ in 0..300 {
+    for _ in 0..mmorpg_core::golden::t30(300) {
         warden.zone.advance_tick().unwrap();
         if warden.zone.snapshot().unwrap().creatures[0].life != CreatureLife::Alive {
             break;
@@ -220,7 +220,7 @@ fn a_broken_crate_leaves_and_returns_at_rest_at_its_spawn() {
     ));
     assert_eq!(broken.debris.len(), 6, "it breaks like a crate");
     // Its spot is clear (the Warden stands by where it broke): it stands again at rest.
-    warden.ticks(9_100);
+    warden.ticks(mmorpg_core::golden::t30(9_100) as _);
     let (back, velocity) = warden.crate_at();
     assert_eq!(
         warden.zone.snapshot().unwrap().creatures[0].life,
@@ -229,7 +229,7 @@ fn a_broken_crate_leaves_and_returns_at_rest_at_its_spawn() {
     assert_eq!((back, velocity), (spawn, [0.0; 3]));
     warden.step_up();
     warden.bash();
-    warden.ticks(120);
+    warden.ticks(mmorpg_core::golden::t30(120) as _);
     assert!(
         warden.crate_at().0[2] > spawn[2] + 200.0,
         "and slides again"
@@ -245,7 +245,7 @@ fn a_wall_stops_the_slide() {
     };
     let mut warden = Warden::new(content(vec![wall], false));
     warden.bash();
-    warden.ticks(120);
+    warden.ticks(mmorpg_core::golden::t30(120) as _);
     let (rest, velocity) = warden.crate_at();
     assert_eq!(velocity, [0.0; 3]);
     // The wall's south face is at z = 380; the crate's half-width is 35.
@@ -259,7 +259,7 @@ fn a_wall_stops_the_slide() {
 fn a_unit_in_the_way_stops_the_slide() {
     let mut warden = Warden::new(content(Vec::new(), true));
     warden.bash();
-    warden.ticks(120);
+    warden.ticks(mmorpg_core::golden::t30(120) as _);
     let (rest, velocity) = warden.crate_at();
     assert_eq!(velocity, [0.0; 3]);
     // Unblocked it slides to about z = 465; the boar stands at z = 400 (radius 40) and the
@@ -274,13 +274,13 @@ fn a_unit_in_the_way_stops_the_slide() {
 fn a_restored_zone_continues_a_slide_exactly() {
     let mut warden = Warden::new(content(Vec::new(), false));
     warden.bash();
-    warden.ticks(5);
+    warden.ticks(mmorpg_core::golden::t30(5) as _);
     let mut restored = ZoneSimulation::from_snapshot(
         warden.zone.snapshot().unwrap(),
         Arc::clone(warden.zone.content()),
     )
     .unwrap();
-    for _ in 0..80 {
+    for _ in 0..mmorpg_core::golden::t30(80) {
         warden.zone.advance_tick().unwrap();
         restored.advance_tick().unwrap();
         assert_eq!(

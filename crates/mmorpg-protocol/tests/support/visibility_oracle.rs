@@ -55,7 +55,9 @@ pub fn exhaustive_projection(
     };
     let sheet = canonical.tick == observer.inventory_changed_at
         || canonical.tick == observer.quests_changed_at
-        || canonical.tick.is_multiple_of(10);
+        || canonical
+            .tick
+            .is_multiple_of(mmorpg_core::INVENTORY_RESEND_TICKS);
     ZoneSnapshot {
         doors: canonical
             .doors

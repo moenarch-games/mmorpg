@@ -12,7 +12,7 @@ use mmorpg_core::{NpcId, ZoneCommand};
 use crate::ProtocolError;
 use crate::wire::{decode_entity_ref, encode_entity_ref};
 
-pub const COMMAND_WIRE_VERSION: u8 = 14;
+pub const COMMAND_WIRE_VERSION: u8 = 15;
 
 const MOVE_TAG: u8 = 1;
 const JUMP_TAG: u8 = 2;
@@ -476,65 +476,65 @@ mod tests {
             strafe: 1,
             facing: 0xabcd,
         };
-        assert_eq!(encode_command(movement), [14, 1, 0xff, 1, 0xab, 0xcd]);
-        assert_eq!(encode_command(ZoneCommand::Jump), [14, 2]);
+        assert_eq!(encode_command(movement), [15, 1, 0xff, 1, 0xab, 0xcd]);
+        assert_eq!(encode_command(ZoneCommand::Jump), [15, 2]);
         assert_eq!(
             encode_command(ZoneCommand::SelectTarget(Some(EntityRef::Creature(
                 CreatureId::new(0x0102_0304)
             )))),
-            [14, 3, 2, 1, 2, 3, 4]
+            [15, 3, 2, 1, 2, 3, 4]
         );
         assert_eq!(
             encode_command(ZoneCommand::SelectTarget(None)),
-            [14, 3, 0, 0, 0, 0, 0]
+            [15, 3, 0, 0, 0, 0, 0]
         );
-        assert_eq!(encode_command(ZoneCommand::StartAttack), [14, 4]);
-        assert_eq!(encode_command(ZoneCommand::StopAttack), [14, 5]);
-        assert_eq!(encode_command(ZoneCommand::ReleaseSpirit), [14, 6]);
+        assert_eq!(encode_command(ZoneCommand::StartAttack), [15, 4]);
+        assert_eq!(encode_command(ZoneCommand::StopAttack), [15, 5]);
+        assert_eq!(encode_command(ZoneCommand::ReleaseSpirit), [15, 6]);
         assert_eq!(
             encode_command(ZoneCommand::UseAbility {
                 ability: 9,
                 target: Some(EntityRef::Creature(CreatureId::new(0x0102_0304))),
             }),
-            [14, 9, 9, 2, 1, 2, 3, 4]
+            [15, 9, 9, 2, 1, 2, 3, 4]
         );
         assert_eq!(
             encode_command(ZoneCommand::UseAbility {
                 ability: 3,
                 target: None,
             }),
-            [14, 9, 3, 0, 0, 0, 0, 0]
+            [15, 9, 3, 0, 0, 0, 0, 0]
         );
-        assert_eq!(encode_command(ZoneCommand::CancelCast), [14, 10]);
+        assert_eq!(encode_command(ZoneCommand::CancelCast), [15, 10]);
         assert_eq!(
             encode_command(ZoneCommand::DirectedStrike {
                 ability: 1,
                 facing: 0xabcd,
                 aim: StrikeAim::new(StrikeSide::Right, StrikeHeight::Low),
             }),
-            [14, 21, 1, 0xab, 0xcd, 2, 0]
+            [15, 21, 1, 0xab, 0xcd, 2, 0]
         );
         assert_eq!(
             encode_command(ZoneCommand::Guard {
                 lane: Some(StrikeHeight::High)
             }),
-            [14, 22, 3]
+            [15, 22, 3]
         );
         assert_eq!(
             encode_command(ZoneCommand::Guard { lane: None }),
-            [14, 22, 0]
+            [15, 22, 0]
         );
         assert_eq!(
             encode_command(ZoneCommand::ChooseClass { class: 2, sex: 1 }),
-            [14, 11, 2, 1]
+            [15, 11, 2, 1]
         );
         assert_eq!(
             encode_command(ZoneCommand::EquipItem { bag_slot: 3 }),
-            [14, 12, 3]
+            [15, 12, 3]
         );
         assert_eq!(
             encode_command(ZoneCommand::UnequipItem { equipment_slot: 5 }),
-            [14, 13, 5]
+            [15, 13, 5]
         );
         assert_eq!(
             encode_command(ZoneCommand::BuyItem {
@@ -542,7 +542,7 @@ mod tests {
                 offer: 6,
                 quantity: 0x0a0b,
             }),
-            [14, 14, 1, 2, 3, 4, 6, 0x0a, 0x0b]
+            [15, 14, 1, 2, 3, 4, 6, 0x0a, 0x0b]
         );
         assert_eq!(
             encode_command(ZoneCommand::SellItem {
@@ -550,7 +550,7 @@ mod tests {
                 bag_slot: 15,
                 quantity: 2,
             }),
-            [14, 15, 0, 0, 0, 3, 15, 0, 2]
+            [15, 15, 0, 0, 0, 3, 15, 0, 2]
         );
         for command in [
             movement,
@@ -792,7 +792,7 @@ mod tests {
             ZoneCommand::Repair { piece: None },
         ];
         let mut fixture = String::from(
-            "# Command wire v13 golden fixture, verified by mmorpg-protocol and web tests.\n",
+            "# Command wire v15 golden fixture, verified by mmorpg-protocol and web tests.\n",
         );
         for command in commands {
             let hex = encode_command(command)
@@ -901,7 +901,7 @@ mod tests {
     #[test]
     fn commands_match_the_shared_golden_fixture() {
         let checked_in = mmorpg_core::golden::golden(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/commands-v14.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/commands-v15.hex"),
             &command_fixture(),
         );
         assert_eq!(checked_in, command_fixture());
@@ -930,6 +930,7 @@ mod tests {
             .chain(include_str!("../../../fixtures/protocol/commands-v11.hex").lines())
             .chain(include_str!("../../../fixtures/protocol/commands-v12.hex").lines())
             .chain(include_str!("../../../fixtures/protocol/commands-v13.hex").lines())
+            .chain(include_str!("../../../fixtures/protocol/commands-v14.hex").lines())
             .filter(|line| !line.starts_with('#') && !line.is_empty())
         {
             let hex = line.split_whitespace().next().unwrap();
@@ -984,42 +985,42 @@ mod tests {
             channel: mmorpg_core::ChatChannel::Say,
             text: mmorpg_core::ChatText::new("hi").unwrap(),
         });
-        assert_eq!(chat, [14, 16, 0, 2, b'h', b'i']);
+        assert_eq!(chat, [15, 16, 0, 2, b'h', b'i']);
         let accept = encode_command(ZoneCommand::AcceptQuest {
             npc: NpcId::new(1),
             quest: 2,
         });
-        assert_eq!(accept, [14, 18, 0, 0, 0, 1, 2]);
+        assert_eq!(accept, [15, 18, 0, 0, 0, 1, 2]);
         let complete = encode_command(ZoneCommand::CompleteQuest {
             npc: NpcId::new(0x0102_0304),
             quest: 9,
             choice: 2,
         });
-        assert_eq!(complete, [14, 19, 1, 2, 3, 4, 9, 2]);
+        assert_eq!(complete, [15, 19, 1, 2, 3, 4, 9, 2]);
         let abandon = encode_command(ZoneCommand::AbandonQuest { quest: 7 });
-        assert_eq!(abandon, [14, 20, 7]);
+        assert_eq!(abandon, [15, 20, 7]);
         let emote = encode_command(ZoneCommand::Emote(mmorpg_core::Emote::Bow));
-        assert_eq!(emote, [14, 17, 2]);
+        assert_eq!(emote, [15, 17, 2]);
         for invalid in [
-            vec![14, 16, 2, 2, b'h', b'i'],
-            vec![14, 16, 0, 0],
-            vec![14, 16, 0, 2, 0xff, 0xfe],
-            vec![14, 16, 0, 2, b'\n', b'i'],
-            vec![14, 16, 0, 2, b' ', b' '],
-            vec![14, 16, 0, 81].into_iter().chain([b'a'; 81]).collect(),
+            vec![15, 16, 2, 2, b'h', b'i'],
+            vec![15, 16, 0, 0],
+            vec![15, 16, 0, 2, 0xff, 0xfe],
+            vec![15, 16, 0, 2, b'\n', b'i'],
+            vec![15, 16, 0, 2, b' ', b' '],
+            vec![15, 16, 0, 81].into_iter().chain([b'a'; 81]).collect(),
             // Unknown strike sides and heights are malformed.
-            vec![14, 21, 1, 0, 0, 3, 0],
-            vec![14, 21, 1, 0, 0, 0, 3],
-            vec![14, 21, 1, 0, 0, u8::MAX, u8::MAX],
+            vec![15, 21, 1, 0, 0, 3, 0],
+            vec![15, 21, 1, 0, 0, 0, 3],
+            vec![15, 21, 1, 0, 0, u8::MAX, u8::MAX],
             // Unknown guard lanes are malformed.
-            vec![14, 22, 4],
-            vec![14, 22, u8::MAX],
-            vec![14, 25, 2],
-            vec![14, 25, 0xfe],
+            vec![15, 22, 4],
+            vec![15, 22, u8::MAX],
+            vec![15, 25, 2],
+            vec![15, 25, 0xfe],
             // Unknown emote IDs are malformed.
-            vec![14, 17, 0],
-            vec![14, 17, 6],
-            vec![14, 17, u8::MAX],
+            vec![15, 17, 0],
+            vec![15, 17, 6],
+            vec![15, 17, u8::MAX],
         ] {
             assert!(decode_command(&invalid).is_err(), "{invalid:?}");
         }
@@ -1036,14 +1037,14 @@ mod tests {
         }
         for tag in [2, 4, 5, 6, 10] {
             assert_eq!(
-                decode_command(&[14, tag, 0]).unwrap_err().to_string(),
+                decode_command(&[15, tag, 0]).unwrap_err().to_string(),
                 "command payload must be exactly 2 bytes",
                 "tag {tag} has no body"
             );
         }
         for unknown in [0, 26, u8::MAX] {
             assert_eq!(
-                decode_command(&[14, unknown]).unwrap_err().to_string(),
+                decode_command(&[15, unknown]).unwrap_err().to_string(),
                 "unknown command tag"
             );
         }
@@ -1069,19 +1070,19 @@ mod tests {
             );
         }
         assert_eq!(
-            decode_command(&[14, 3, 4, 0, 0, 0, 1])
+            decode_command(&[15, 3, 4, 0, 0, 0, 1])
                 .unwrap_err()
                 .to_string(),
             "unknown entity kind"
         );
         assert_eq!(
-            decode_command(&[14, 9, 1, 4, 0, 0, 0, 1])
+            decode_command(&[15, 9, 1, 4, 0, 0, 0, 1])
                 .unwrap_err()
                 .to_string(),
             "unknown entity kind"
         );
         assert_eq!(
-            decode_command(&[14, 3, 0, 0, 0, 0, 1])
+            decode_command(&[15, 3, 0, 0, 0, 0, 1])
                 .unwrap_err()
                 .to_string(),
             "an absent entity must have ID 0"

@@ -1044,8 +1044,8 @@ mod tests {
                 }),
                 cast: Some(CastView {
                     ability: FIREBOLT,
-                    elapsed: 20,
-                    total: 60,
+                    elapsed: mmorpg_core::golden::t30(20) as _,
+                    total: mmorpg_core::golden::t30(60) as _,
                     channel: false,
                 }),
                 global_cooldown: 25,
@@ -1082,8 +1082,8 @@ mod tests {
             target_detail: TargetDetail {
                 cast: Some(CastView {
                     ability: MUCK_BOLT,
-                    elapsed: 10,
-                    total: 45,
+                    elapsed: mmorpg_core::golden::t30(10) as _,
+                    total: mmorpg_core::golden::t30(45) as _,
                     channel: false,
                 }),
                 auras: vec![AuraView {
@@ -1132,7 +1132,7 @@ mod tests {
                     source: WOLF,
                     target: Some(VIEWER),
                     ability: MUCK_BOLT,
-                    ticks: 45,
+                    ticks: mmorpg_core::golden::t30(45) as _,
                 },
                 ZoneEvent::AbilityUsed {
                     source: VIEWER,
@@ -1149,7 +1149,7 @@ mod tests {
                     source: VIEWER,
                     target: WOLF,
                     ability: FROST_NOVA,
-                    ticks: 180,
+                    ticks: mmorpg_core::golden::t30(180) as _,
                 },
                 ZoneEvent::AuraRemoved {
                     source: VIEWER,
@@ -1317,7 +1317,7 @@ mod tests {
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
         mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v37.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot-v38.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
     }
@@ -1388,7 +1388,7 @@ mod tests {
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
         // The previous version's fixture is rejected, never reinterpreted.
         let legacy = hex(include_str!(
-            "../../../fixtures/protocol/player-snapshot-v36.hex"
+            "../../../fixtures/protocol/player-snapshot-v37.hex"
         ));
         assert_eq!(
             decode_snapshot(&legacy).unwrap_err().to_string(),
@@ -1472,7 +1472,7 @@ mod tests {
         snapshot.target_detail = TargetDetail::default();
         let bytes = encode_snapshot(&snapshot).unwrap();
         let expected = mmorpg_core::golden::golden_hex(
-            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v37.hex"),
+            mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot-v38.hex"),
             &bytes,
         );
         assert_eq!(bytes, expected);
@@ -1553,11 +1553,20 @@ mod tests {
             (CLASS, 1, "viewer resource is inconsistent"),
             (CLASS + 1, 1, "viewer resource is inconsistent"),
             (CLASS + 4, 0xff, "viewer resource is inconsistent"),
-            (CLASS + 7, 46, "viewer ability state is inconsistent"),
+            (
+                CLASS + 7,
+                u8::try_from(GLOBAL_COOLDOWN_TICKS + 1).unwrap(),
+                "viewer ability state is inconsistent",
+            ),
             (CAST, 1, "cast state is inconsistent"),
             (CAST + 1, 1, "cast state is inconsistent"),
             (CAST + 1, 2, "reserved flag bits are set"),
-            (CAST + 3, 60, "cast state is inconsistent"),
+            // Elapsed reaches the 2 s total.
+            (
+                CAST + 3,
+                u8::try_from(mmorpg_core::ticks_from_ms(2_000)).unwrap(),
+                "cast state is inconsistent",
+            ),
             (DAMAGE + 1, 13, "viewer damage range is inverted"),
             (
                 COOLDOWNS,
@@ -2105,8 +2114,8 @@ mod tests {
         loaded.viewer.global_cooldown = GLOBAL_COOLDOWN_TICKS;
         loaded.viewer.cast = Some(CastView {
             ability: AbilityId::new(12),
-            elapsed: 179,
-            total: 180,
+            elapsed: mmorpg_core::golden::t30(179) as _,
+            total: mmorpg_core::golden::t30(180) as _,
             channel: true,
         });
         loaded.cooldowns = [2, 3, 4, 5]
@@ -2120,8 +2129,8 @@ mod tests {
         loaded.target_detail = TargetDetail {
             cast: Some(CastView {
                 ability: AbilityId::new(14),
-                elapsed: 89,
-                total: 90,
+                elapsed: mmorpg_core::golden::t30(89) as _,
+                total: mmorpg_core::golden::t30(90) as _,
                 channel: false,
             }),
             auras: full_auras,

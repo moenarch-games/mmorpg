@@ -22,7 +22,7 @@ fn run(facing: u16) -> ZoneCommand {
 fn definition() -> ZoneDefinition {
     ZoneDefinition::new(
         7,
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         vec![
             StaticCollider {
                 id: 1,
@@ -44,7 +44,7 @@ fn shared_physics_resolves_gravity_ground_and_wall_contact() {
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition()).unwrap();
     zone.add_player(1).unwrap();
     zone.apply_command(1, 1, run(EAST)).unwrap();
-    for _ in 0..100 {
+    for _ in 0..mmorpg_core::golden::t30(100) {
         zone.advance_tick().unwrap();
     }
     let snapshot = zone.snapshot().unwrap();
@@ -75,7 +75,7 @@ fn recovery_continues_airborne_motion_and_collision_identically() {
     let mut restored =
         ZoneSimulation::from_snapshot(original.snapshot().unwrap(), Arc::clone(original.content()))
             .unwrap();
-    for _ in 0..50 {
+    for _ in 0..mmorpg_core::golden::t30(50) {
         original.advance_tick().unwrap();
         restored.advance_tick().unwrap();
         assert_eq!(original.snapshot().unwrap(), restored.snapshot().unwrap());
@@ -193,7 +193,7 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
         open.add_player(player_id).unwrap();
         open.apply_command(player_id, 1, run(facing)).unwrap();
     }
-    for _ in 0..1_600 {
+    for _ in 0..mmorpg_core::golden::t30(1_600) {
         open.advance_tick().unwrap();
     }
     let players = open.snapshot().unwrap().players;
@@ -226,11 +226,12 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
     }
 
     // Gravity without ground or ceiling carries a body to the floor or ceiling limit.
-    for (gravity, y) in [(-1, -limit + half_y), (1, limit - half_y)] {
+    let g = mmorpg_core::STANDARD_GRAVITY[1];
+    for (gravity, y) in [(g, -limit + half_y), (-g, limit - half_y)] {
         let definition = ZoneDefinition::new(1, [0, gravity, 0], Vec::new()).unwrap();
         let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition).unwrap();
         zone.add_player(1).unwrap();
-        for _ in 0..300 {
+        for _ in 0..mmorpg_core::golden::t30(300) {
             zone.advance_tick().unwrap();
         }
         let player = &zone.snapshot().unwrap().players[0];
@@ -260,8 +261,13 @@ fn every_spawn_slot_is_validated_clear_of_colliders() {
         position: [0, -50, 0],
         half_extents: [5_000, 50, 5_000],
     };
-    let definition =
-        ZoneDefinition::with_spawn_grid(3, [0, -1, 0], grid, vec![ground.clone()]).unwrap();
+    let definition = ZoneDefinition::with_spawn_grid(
+        3,
+        mmorpg_core::STANDARD_GRAVITY,
+        grid,
+        vec![ground.clone()],
+    )
+    .unwrap();
     assert_eq!(definition.spawn_grid(), grid);
     // The last slot of the configured capacity, and a crate on top of it.
     let last = u16::try_from(MAX_PLAYERS_PER_ZONE - 1).unwrap();
@@ -275,7 +281,7 @@ fn every_spawn_slot_is_validated_clear_of_colliders() {
     assert_eq!(
         ZoneDefinition::with_spawn_grid(
             3,
-            [0, -1, 0],
+            mmorpg_core::STANDARD_GRAVITY,
             grid,
             vec![ground.clone(), crate_on_last_slot]
         )
@@ -290,8 +296,13 @@ fn every_spawn_slot_is_validated_clear_of_colliders() {
         half_extents: [25, 100, 25],
     };
     assert!(
-        ZoneDefinition::with_spawn_grid(3, [0, -1, 0], grid, vec![ground.clone(), touching])
-            .is_ok()
+        ZoneDefinition::with_spawn_grid(
+            3,
+            mmorpg_core::STANDARD_GRAVITY,
+            grid,
+            vec![ground.clone(), touching]
+        )
+        .is_ok()
     );
     for invalid in [
         SpawnGrid { columns: 0, ..grid },

@@ -37,12 +37,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // lurkers swim, which shifts the zone RNG and so the fights' creatures. Revision 25 (#160)
     // garrisons the Greyfang cave with six more creatures for AI and physics every tick and
     // adds its sealed threshold box, which shifts the zone RNG and the fights again. Revision 26
-    // (#431) rebuilds the shrine on the asset-tooling kit with 15 more boxes in every step.
+    // (#431) rebuilds the shrine on the asset-tooling kit with 15 more boxes in every step. The
+    // 60 Hz zone (#379) covers half the time in the same ticks; its creatures run on subunit
+    // steering, which moves the crowded fights a little.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [29_160, 460_800, 224_640, 4_231_728],
         [29_160, 457_920, 80_140, 1_335_287],
-        [29_042, 466_442, 389_620, 6_428_143],
-        [28_205, 477_125, 2_229_082, 24_493_481],
+        [29_160, 466_560, 389_620, 6_428_143],
+        [28_922, 477_842, 2_248_200, 24_496_050],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

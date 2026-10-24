@@ -1,4 +1,4 @@
-scenario class-abilities zone=1 bots=3 ticks=900 grace=120
+scenario class-abilities zone=1 bots=3 ticks=1800 grace=120
 t=0 warden join -> joined player=1 epoch=1
 t=0 ranger join -> joined player=2 epoch=1
 t=0 arcanist join -> joined player=3 epoch=1
@@ -13,142 +13,144 @@ t=1 expect arcanist event error:invalid_class ok events[error:invalid_class]
 t=1 expect warden resource ok rage=0/100
 t=1 expect ranger resource ok focus=100/100
 t=1 expect arcanist resource ok mana=110/110
-t=1 expect ranger resource by t=700 ok focus=100/100
-t=1 warden p1 e1 ack2 (-1550,90,1271) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack2 (-1450,90,1271) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack3 (-1350,90,1271) sees[ranger,warden] mana110/110 events[error:invalid_class]
-t=1 warden use_ability -> applied seq=3 epoch=1 ability=2 entity=none
-t=1 warden use_ability -> applied seq=4 epoch=1 ability=1 entity=none
-t=1 arcanist use_ability -> applied seq=4 epoch=1 ability=9 entity=none
-t=1 arcanist use_ability -> applied seq=5 epoch=1 ability=10 entity=none
-t=1 ranger use_ability -> applied seq=3 epoch=1 ability=1 entity=none
-t=2 expect warden event error:not_learned ok events[error:not_learned,error:not_enough_resource,cast:arcanist:9,interrupted:arcanist:9]
-t=2 expect warden event error:not_enough_resource ok events[error:not_learned,error:not_enough_resource,cast:arcanist:9,interrupted:arcanist:9]
-t=2 expect ranger event error:not_learned ok events[error:not_learned,cast:arcanist:9,interrupted:arcanist:9]
-t=2 expect arcanist event interrupted ok events[cast:arcanist:9,error:not_learned,interrupted:arcanist:9]
-t=2 expect arcanist event error:not_learned ok events[cast:arcanist:9,error:not_learned,interrupted:arcanist:9]
-t=2 warden p1 e1 ack4 (-1550,90,1292) sees[ranger,arcanist] rage0/100 events[error:not_learned,error:not_enough_resource,cast:arcanist:9,interrupted:arcanist:9] | ranger p2 e1 ack3 (-1450,90,1292) sees[warden,arcanist] focus100/100 events[error:not_learned,cast:arcanist:9,interrupted:arcanist:9] | arcanist p3 e1 ack5 (-1350,90,1292) sees[ranger,warden] mana110/110 events[cast:arcanist:9,error:not_learned,interrupted:arcanist:9]
-t=36 warden move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=49152
-t=36 ranger move -> applied seq=4 epoch=1 forward=1 strafe=0 facing=49152
-t=36 arcanist move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=49152
-t=37 warden p1 e1 ack5 (-1571,90,2006) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack4 (-1471,90,2006) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack6 (-1371,90,2006) sees[ranger,warden] mana110/110
-t=100 warden p1 e1 ack5 (-2894,90,2006) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack4 (-2794,90,2006) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack6 (-2694,90,2006) sees[ranger,warden] mana110/110
-t=121 warden move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=32768
-t=122 warden p1 e1 ack6 (-3335,90,1985) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack4 (-3256,90,2006) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack6 (-3156,90,2006) sees[ranger,warden] mana110/110
-t=126 warden p1 e1 ack6 (-3335,90,1901) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack4 (-3340,90,2006) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack6 (-3240,90,2006) sees[ranger,warden] mana110/110
-t=126 ranger move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=32768
-t=127 warden p1 e1 ack6 (-3335,90,1880) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack5 (-3340,90,1985) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack6 (-3261,90,2006) sees[ranger,warden] mana110/110
-t=131 warden p1 e1 ack6 (-3335,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack5 (-3340,90,1901) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack6 (-3345,90,2006) sees[ranger,warden] mana110/110
-t=131 warden move -> applied seq=7 epoch=1 forward=1 strafe=0 facing=49152
-t=131 arcanist move -> applied seq=7 epoch=1 forward=1 strafe=0 facing=32768
-t=132 warden p1 e1 ack7 (-3356,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack5 (-3340,90,1880) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack7 (-3345,90,1985) sees[ranger,warden] mana110/110
-t=136 ranger move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=49152
-t=137 warden p1 e1 ack7 (-3461,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-3361,90,1796) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack7 (-3345,90,1880) sees[ranger,warden] mana110/110
-t=141 warden p1 e1 ack7 (-3545,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-3445,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack7 (-3345,90,1796) sees[ranger,warden] mana110/110
-t=141 arcanist move -> applied seq=8 epoch=1 forward=1 strafe=0 facing=49152
-t=142 warden p1 e1 ack7 (-3566,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-3466,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-3366,90,1796) sees[ranger,warden] mana110/110
-t=200 warden p1 e1 ack7 (-4784,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-4684,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-4584,90,1796) sees[ranger,warden] mana110/110
-t=300 warden p1 e1 ack7 (-6884,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-6784,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-6684,90,1796) sees[ranger,warden] mana110/110
-t=375 warden move -> applied seq=8 epoch=1 forward=1 strafe=0 facing=32768
-t=376 warden p1 e1 ack8 (-8459,90,1775) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-8380,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-8280,90,1796) sees[ranger,warden] mana110/110
-t=380 warden p1 e1 ack8 (-8459,90,1691) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-8464,90,1796) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack8 (-8364,90,1796) sees[ranger,warden] mana110/110
-t=380 ranger move -> applied seq=7 epoch=1 forward=1 strafe=0 facing=32768
-t=380 warden select_target -> applied seq=9 epoch=1 entity=creature:108
-t=380 warden start_attack -> applied seq=10 epoch=1
-t=381 warden p1 e1 ack10 (-8459,90,1670) sees[ranger,arcanist] target=creature:108 attacking rage0/100 events[error:out_of_range] | ranger p2 e1 ack7 (-8464,90,1775) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack8 (-8385,90,1796) sees[ranger,warden] mana110/110
-t=384 warden p1 e1 ack10 (-8459,90,1607) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack7 (-8464,90,1712) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack8 (-8448,90,1796) sees[ranger,warden] mana110/110
-t=385 warden p1 e1 ack10 (-8459,90,1586) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack7 (-8464,90,1691) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-8469,90,1796) sees[ranger,warden] mana110/110
-t=385 arcanist move -> applied seq=9 epoch=1 forward=1 strafe=0 facing=32768
-t=385 ranger select_target -> applied seq=8 epoch=1 entity=creature:108
-t=385 arcanist select_target -> applied seq=10 epoch=1 entity=creature:108
-t=386 warden p1 e1 ack10 (-8459,90,1565) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack8 (-8464,90,1670) sees[warden,arcanist] target=creature:108 focus100/100 | arcanist p3 e1 ack10 (-8469,90,1775) sees[ranger,warden] target=creature:108 mana110/110
-t=395 warden move -> applied seq=11 epoch=1 forward=0 strafe=0 facing=32768
-t=395 ranger move -> applied seq=9 epoch=1 forward=0 strafe=0 facing=32768
-t=395 arcanist move -> applied seq=11 epoch=1 forward=0 strafe=0 facing=32768
-t=396 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[warden,arcanist] target=creature:108 focus100/100 | arcanist p3 e1 ack11 (-8469,90,1586) sees[ranger,warden] target=creature:108 mana110/110
-t=396 arcanist use_ability -> applied seq=12 epoch=1 ability=9 entity=none
-t=397 expect arcanist event cast_started ok events[cast:arcanist:9]
-t=397 expect warden event cast_started bot:arcanist ok events[cast:arcanist:9]
-t=397 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 events[cast:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[warden,arcanist] target=creature:108 focus100/100 events[cast:arcanist:9] | arcanist p3 e1 ack12 (-8469,90,1586) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[cast:arcanist:9]
-t=400 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[warden,arcanist] target=creature:108 focus100/100 | arcanist p3 e1 ack12 (-8469,90,1586) sees[ranger,warden] target=creature:108 mana110/110 casting9
-t=400 arcanist move -> applied seq=13 epoch=1 forward=1 strafe=0 facing=32768
-t=401 expect arcanist event interrupted ok events[interrupted:arcanist:9]
-t=401 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 events[interrupted:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[interrupted:arcanist:9] | arcanist p3 e1 ack13 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[interrupted:arcanist:9]
-t=401 arcanist move -> applied seq=14 epoch=1 forward=0 strafe=0 facing=32768
-t=402 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack14 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
-t=410 expect ranger event attack_performed bot:warden by t=450 ok events[attack:warden>creature:108,observed:warden>creature:108:3]
-t=410 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage6/100 events[attack:warden>creature:108,dealt:creature:108:3] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:warden>creature:108,observed:warden>creature:108:3] | arcanist p3 e1 ack14 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[attack:warden>creature:108,observed:warden>creature:108:3]
-t=411 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage10/100 events[attack:creature:108>warden,taken:creature:108:3] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:creature:108>warden,observed:creature:108>warden:3] | arcanist p3 e1 ack14 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[attack:creature:108>warden,observed:creature:108>warden:3]
-t=441 arcanist use_ability -> applied seq=15 epoch=1 ability=9 entity=none
-t=442 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage10/100 events[cast:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[cast:arcanist:9] | arcanist p3 e1 ack15 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[cast:arcanist:9]
-t=450 arcanist cancel_cast -> applied seq=16 epoch=1
-t=451 expect arcanist event interrupted ok events[interrupted:arcanist:9]
-t=451 expect arcanist resource ok mana=110/110
-t=451 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage10/100 events[interrupted:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[interrupted:arcanist:9] | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[interrupted:arcanist:9]
-t=460 warden use_ability -> applied seq=12 epoch=1 ability=1 entity=none
-t=461 expect warden event error:not_enough_resource ok events[error:not_enough_resource]
-t=461 warden p1 e1 ack12 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage10/100 events[error:not_enough_resource] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
-t=470 warden p1 e1 ack12 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage16/100 events[attack:warden>creature:108,dealt:creature:108:6] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:warden>creature:108,observed:warden>creature:108:6] | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[attack:warden>creature:108,observed:warden>creature:108:6]
-t=471 warden p1 e1 ack12 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 attacking in_combat rage20/100 events[attack:creature:108>warden,taken:creature:108:1] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:creature:108>warden,observed:creature:108>warden:1] | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[attack:creature:108>warden,observed:creature:108>warden:1]
-t=500 expect warden resource ok rage=20/100
-t=500 warden p1 e1 ack12 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 attacking in_combat rage20/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
-t=500 warden use_ability -> applied seq=13 epoch=1 ability=1 entity=none
-t=500 arcanist use_ability -> applied seq=17 epoch=1 ability=9 entity=none
-t=501 expect warden event ability_used ok events[used:warden:1,dealt:creature:108:13,cast:arcanist:9]
-t=501 expect warden event damage_dealt creature:108 ok events[used:warden:1,dealt:creature:108:13,cast:arcanist:9]
-t=501 expect warden resource ok rage=5/100
-t=501 expect ranger event damage_observed bot:warden ok events[used:warden:1,observed:warden>creature:108:13,cast:arcanist:9]
-t=501 warden p1 e1 ack13 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 attacking in_combat rage5/100 events[used:warden:1,dealt:creature:108:13,cast:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[used:warden:1,observed:warden>creature:108:13,cast:arcanist:9] | arcanist p3 e1 ack17 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[used:warden:1,observed:warden>creature:108:13,cast:arcanist:9]
-t=501 warden use_ability -> applied seq=14 epoch=1 ability=1 entity=none
-t=502 expect warden event error:not_ready ok events[error:not_ready]
-t=502 warden p1 e1 ack14 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 attacking in_combat rage5/100 events[error:not_ready] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack17 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9
-t=510 arcanist use_ability -> applied seq=18 epoch=1 ability=9 entity=none
-t=511 expect arcanist event error:already_casting ok events[error:already_casting]
-t=511 warden p1 e1 ack14 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 attacking in_combat rage5/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[error:already_casting]
-t=520 ranger use_ability -> applied seq=10 epoch=1 ability=5 entity=none
-t=521 expect ranger event ability_used creature:108 ok events[used:ranger:5]
-t=521 expect ranger resource ok focus=70/100
-t=521 expect warden event ability_used bot:ranger ok events[used:ranger:5]
-t=521 warden p1 e1 ack14 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 attacking in_combat rage5/100 events[used:ranger:5] | ranger p2 e1 ack10 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus70/100 events[used:ranger:5] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[used:ranger:5]
-t=521 ranger use_ability -> applied seq=11 epoch=1 ability=5 entity=none
-t=522 expect ranger event error:not_ready ok events[error:not_ready,dealt:creature:108:14]
-t=522 warden p1 e1 ack14 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 attacking in_combat rage5/100 events[observed:ranger>creature:108:14] | ranger p2 e1 ack11 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus70/100 events[error:not_ready,dealt:creature:108:14] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[observed:ranger>creature:108:14]
-t=530 warden p1 e1 ack14 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 attacking in_combat rage11/100 events[attack:warden>creature:108,dealt:creature:108:3] | ranger p2 e1 ack11 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus70/100 events[attack:warden>creature:108,observed:warden>creature:108:3] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[attack:warden>creature:108,observed:warden>creature:108:3]
-t=530 warden stop_attack -> applied seq=15 epoch=1
-t=531 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 events[attack:creature:108>warden,taken:creature:108:2] | ranger p2 e1 ack11 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus70/100 events[attack:creature:108>warden,observed:creature:108>warden:2] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[attack:creature:108>warden,observed:creature:108>warden:2]
-t=550 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack11 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus75/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9
-t=560 expect arcanist event ability_used creature:108 ok events[used:arcanist:9]
-t=560 expect arcanist resource ok mana=85/110
-t=560 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 events[used:arcanist:9] | ranger p2 e1 ack11 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus75/100 events[used:arcanist:9] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana85/110 events[used:arcanist:9]
-t=563 expect arcanist event died creature:108 by t=580 ok events[dealt:creature:108:3,died:creature:108]
-t=563 expect warden unit creature:108 dead by t=580 ok L1 hp0% (-8402,45,1158) [dead,hostile]
-t=563 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 events[observed:arcanist>creature:108:3,died:creature:108] | ranger p2 e1 ack11 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus75/100 events[observed:arcanist>creature:108:3] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110 events[dealt:creature:108:3,died:creature:108]
-t=570 ranger use_ability -> applied seq=12 epoch=1 ability=5 entity=none
-t=571 expect ranger event error:not_ready ok events[error:not_ready]
-t=571 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus75/100 events[error:not_ready] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=580 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus80/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=600 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus80/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=610 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus85/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=640 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus90/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=670 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 in_combat focus95/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=671 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus95/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=681 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus95/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=700 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=710 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage13/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
-t=712 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage13/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana85/110
-t=738 expect arcanist resource ok mana=85/110
-t=738 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage13/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana85/110
-t=739 expect arcanist resource ok mana=91/110
-t=739 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage13/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana91/110
-t=740 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage11/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana91/110
-t=769 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage11/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana97/110
-t=770 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage9/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana97/110
-t=799 expect warden resource ok rage=9/100
-t=799 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage9/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana103/110
-t=800 expect warden resource ok rage=7/100
-t=800 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage7/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana103/110
-t=829 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage7/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana109/110
-t=830 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage5/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana109/110
-t=859 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage5/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
-t=860 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 rage3/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
-t=890 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp48/50 target=creature:108 rage1/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
-t=900 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp48/50 target=creature:108 rage1/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
-PASS class-abilities ticks=900 steps=48 expectations=37 failures=0
+t=1 expect ranger resource by t=1400 ok focus=100/100
+t=1 warden p1 e1 ack2 (-1550,90,1261) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack2 (-1450,90,1261) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack3 (-1350,90,1261) sees[ranger,warden] mana110/110 events[error:invalid_class]
+t=2 warden use_ability -> applied seq=3 epoch=1 ability=2 entity=none
+t=2 warden use_ability -> applied seq=4 epoch=1 ability=1 entity=none
+t=2 arcanist use_ability -> applied seq=4 epoch=1 ability=9 entity=none
+t=2 arcanist use_ability -> applied seq=5 epoch=1 ability=10 entity=none
+t=2 ranger use_ability -> applied seq=3 epoch=1 ability=1 entity=none
+t=3 expect warden event error:not_learned ok events[error:not_learned,error:not_enough_resource,cast:arcanist:9,interrupted:arcanist:9]
+t=3 expect warden event error:not_enough_resource ok events[error:not_learned,error:not_enough_resource,cast:arcanist:9,interrupted:arcanist:9]
+t=3 expect ranger event error:not_learned ok events[error:not_learned,cast:arcanist:9,interrupted:arcanist:9]
+t=3 expect arcanist event interrupted ok events[cast:arcanist:9,error:not_learned,interrupted:arcanist:9]
+t=3 expect arcanist event error:not_learned ok events[cast:arcanist:9,error:not_learned,interrupted:arcanist:9]
+t=3 warden p1 e1 ack4 (-1550,90,1282) sees[ranger,arcanist] rage0/100 events[error:not_learned,error:not_enough_resource,cast:arcanist:9,interrupted:arcanist:9] | ranger p2 e1 ack3 (-1450,90,1282) sees[warden,arcanist] focus100/100 events[error:not_learned,cast:arcanist:9,interrupted:arcanist:9] | arcanist p3 e1 ack5 (-1350,90,1282) sees[ranger,warden] mana110/110 events[cast:arcanist:9,error:not_learned,interrupted:arcanist:9]
+t=72 warden move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=49152
+t=72 ranger move -> applied seq=4 epoch=1 forward=1 strafe=0 facing=49152
+t=72 arcanist move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=49152
+t=73 warden p1 e1 ack5 (-1561,90,2006) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack4 (-1461,90,2006) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack6 (-1361,90,2006) sees[ranger,warden] mana110/110
+t=200 warden p1 e1 ack5 (-2894,90,2006) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack4 (-2794,90,2006) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack6 (-2694,90,2006) sees[ranger,warden] mana110/110
+t=242 warden move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=32768
+t=243 warden p1 e1 ack6 (-3335,90,1996) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack4 (-3246,90,2006) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack6 (-3146,90,2006) sees[ranger,warden] mana110/110
+t=252 warden p1 e1 ack6 (-3335,90,1901) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack4 (-3340,90,2006) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack6 (-3240,90,2006) sees[ranger,warden] mana110/110
+t=252 ranger move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=32768
+t=253 warden p1 e1 ack6 (-3335,90,1891) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack5 (-3340,90,1996) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack6 (-3251,90,2006) sees[ranger,warden] mana110/110
+t=262 warden p1 e1 ack6 (-3335,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack5 (-3340,90,1901) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack6 (-3345,90,2006) sees[ranger,warden] mana110/110
+t=262 warden move -> applied seq=7 epoch=1 forward=1 strafe=0 facing=49152
+t=262 arcanist move -> applied seq=7 epoch=1 forward=1 strafe=0 facing=32768
+t=263 warden p1 e1 ack7 (-3346,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack5 (-3340,90,1891) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack7 (-3345,90,1996) sees[ranger,warden] mana110/110
+t=272 ranger move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=49152
+t=273 warden p1 e1 ack7 (-3451,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-3351,90,1796) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack7 (-3345,90,1891) sees[ranger,warden] mana110/110
+t=282 warden p1 e1 ack7 (-3545,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-3445,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack7 (-3345,90,1796) sees[ranger,warden] mana110/110
+t=282 arcanist move -> applied seq=8 epoch=1 forward=1 strafe=0 facing=49152
+t=283 warden p1 e1 ack7 (-3556,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-3456,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-3356,90,1796) sees[ranger,warden] mana110/110
+t=400 warden p1 e1 ack7 (-4784,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-4684,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-4584,90,1796) sees[ranger,warden] mana110/110
+t=600 warden p1 e1 ack7 (-6884,90,1796) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-6784,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-6684,90,1796) sees[ranger,warden] mana110/110
+t=750 warden move -> applied seq=8 epoch=1 forward=1 strafe=0 facing=32768
+t=751 warden p1 e1 ack8 (-8459,90,1786) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-8370,90,1796) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-8270,90,1796) sees[ranger,warden] mana110/110
+t=760 warden p1 e1 ack8 (-8459,90,1691) sees[ranger,arcanist] rage0/100 | ranger p2 e1 ack6 (-8464,90,1796) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack8 (-8364,90,1796) sees[ranger,warden] mana110/110
+t=760 ranger move -> applied seq=7 epoch=1 forward=1 strafe=0 facing=32768
+t=760 warden select_target -> applied seq=9 epoch=1 entity=creature:108
+t=760 warden start_attack -> applied seq=10 epoch=1
+t=761 warden p1 e1 ack10 (-8459,90,1681) sees[ranger,arcanist] target=creature:108 attacking rage0/100 events[error:out_of_range] | ranger p2 e1 ack7 (-8464,90,1786) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack8 (-8375,90,1796) sees[ranger,warden] mana110/110
+t=766 warden p1 e1 ack10 (-8459,90,1628) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack7 (-8464,90,1733) sees[arcanist,warden] focus100/100 | arcanist p3 e1 ack8 (-8427,90,1796) sees[ranger,warden] mana110/110
+t=770 warden p1 e1 ack10 (-8459,90,1586) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack7 (-8464,90,1691) sees[warden,arcanist] focus100/100 | arcanist p3 e1 ack8 (-8469,90,1796) sees[ranger,warden] mana110/110
+t=770 arcanist move -> applied seq=9 epoch=1 forward=1 strafe=0 facing=32768
+t=770 ranger select_target -> applied seq=8 epoch=1 entity=creature:108
+t=770 arcanist select_target -> applied seq=10 epoch=1 entity=creature:108
+t=771 warden p1 e1 ack10 (-8459,90,1576) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack8 (-8464,90,1681) sees[warden,arcanist] target=creature:108 focus100/100 | arcanist p3 e1 ack10 (-8469,90,1786) sees[ranger,warden] target=creature:108 mana110/110
+t=790 warden move -> applied seq=11 epoch=1 forward=0 strafe=0 facing=32768
+t=790 ranger move -> applied seq=9 epoch=1 forward=0 strafe=0 facing=32768
+t=790 arcanist move -> applied seq=11 epoch=1 forward=0 strafe=0 facing=32768
+t=791 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[warden,arcanist] target=creature:108 focus100/100 | arcanist p3 e1 ack11 (-8469,90,1586) sees[ranger,warden] target=creature:108 mana110/110
+t=792 arcanist use_ability -> applied seq=12 epoch=1 ability=9 entity=none
+t=793 expect arcanist event cast_started ok events[cast:arcanist:9]
+t=793 expect warden event cast_started bot:arcanist ok events[cast:arcanist:9]
+t=793 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 events[cast:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[warden,arcanist] target=creature:108 focus100/100 events[cast:arcanist:9] | arcanist p3 e1 ack12 (-8469,90,1586) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[cast:arcanist:9]
+t=800 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[warden,arcanist] target=creature:108 focus100/100 | arcanist p3 e1 ack12 (-8469,90,1586) sees[ranger,warden] target=creature:108 mana110/110 casting9
+t=800 arcanist move -> applied seq=13 epoch=1 forward=1 strafe=0 facing=32768
+t=801 expect arcanist event interrupted ok events[interrupted:arcanist:9]
+t=801 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 events[interrupted:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[interrupted:arcanist:9] | arcanist p3 e1 ack13 (-8469,90,1576) sees[ranger,warden] target=creature:108 mana110/110 events[interrupted:arcanist:9]
+t=802 arcanist move -> applied seq=14 epoch=1 forward=0 strafe=0 facing=32768
+t=803 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage0/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack14 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
+t=817 expect ranger event attack_performed bot:warden by t=900 ok events[attack:warden>creature:108,observed:warden>creature:108:7!]
+t=817 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] target=creature:108 attacking in_combat rage6/100 events[attack:warden>creature:108,dealt:creature:108:7!] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:warden>creature:108,observed:warden>creature:108:7!] | arcanist p3 e1 ack14 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[attack:warden>creature:108,observed:warden>creature:108:7!]
+t=819 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage10/100 events[attack:creature:108>warden,taken:creature:108:3] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:creature:108>warden,observed:creature:108>warden:3] | arcanist p3 e1 ack14 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[attack:creature:108>warden,observed:creature:108>warden:3]
+t=882 arcanist use_ability -> applied seq=15 epoch=1 ability=9 entity=none
+t=883 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage10/100 events[cast:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[cast:arcanist:9] | arcanist p3 e1 ack15 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[cast:arcanist:9]
+t=900 arcanist cancel_cast -> applied seq=16 epoch=1
+t=901 expect arcanist event interrupted ok events[interrupted:arcanist:9]
+t=901 expect arcanist resource ok mana=110/110
+t=901 warden p1 e1 ack11 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage10/100 events[interrupted:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[interrupted:arcanist:9] | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[interrupted:arcanist:9]
+t=920 warden use_ability -> applied seq=12 epoch=1 ability=1 entity=none
+t=921 expect warden event error:not_enough_resource ok events[error:not_enough_resource]
+t=921 warden p1 e1 ack12 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage10/100 events[error:not_enough_resource] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
+t=937 warden p1 e1 ack12 (-8459,90,1376) sees[ranger,arcanist] hp47/50 target=creature:108 attacking in_combat rage16/100 events[attack:warden>creature:108,dealt:creature:108:5] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:warden>creature:108,observed:warden>creature:108:5] | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[attack:warden>creature:108,observed:warden>creature:108:5]
+t=939 warden p1 e1 ack12 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 attacking in_combat rage20/100 events[attack:creature:108>warden,taken:creature:108:3] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:creature:108>warden,observed:creature:108>warden:3] | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 events[attack:creature:108>warden,observed:creature:108>warden:3]
+t=999 expect warden resource ok rage=20/100
+t=999 warden p1 e1 ack12 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 attacking in_combat rage20/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
+t=1000 warden p1 e1 ack12 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 attacking in_combat rage20/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack16 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
+t=1000 warden use_ability -> applied seq=13 epoch=1 ability=1 entity=none
+t=1000 arcanist use_ability -> applied seq=17 epoch=1 ability=9 entity=none
+t=1001 expect warden event ability_used ok events[used:warden:1,dealt:creature:108:12,cast:arcanist:9]
+t=1001 expect warden event damage_dealt creature:108 ok events[used:warden:1,dealt:creature:108:12,cast:arcanist:9]
+t=1001 expect warden resource ok rage=5/100
+t=1001 expect ranger event damage_observed bot:warden ok events[used:warden:1,observed:warden>creature:108:12,cast:arcanist:9]
+t=1001 warden p1 e1 ack13 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 attacking in_combat rage5/100 events[used:warden:1,dealt:creature:108:12,cast:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[used:warden:1,observed:warden>creature:108:12,cast:arcanist:9] | arcanist p3 e1 ack17 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[used:warden:1,observed:warden>creature:108:12,cast:arcanist:9]
+t=1002 warden use_ability -> applied seq=14 epoch=1 ability=1 entity=none
+t=1003 expect warden event error:not_ready ok events[error:not_ready]
+t=1003 warden p1 e1 ack14 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 attacking in_combat rage5/100 events[error:not_ready] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack17 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9
+t=1020 arcanist use_ability -> applied seq=18 epoch=1 ability=9 entity=none
+t=1021 expect arcanist event error:already_casting ok events[error:already_casting]
+t=1021 warden p1 e1 ack14 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 attacking in_combat rage5/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[error:already_casting]
+t=1057 warden p1 e1 ack14 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 attacking in_combat rage11/100 events[attack:warden>creature:108,dealt:creature:108:4] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:warden>creature:108,observed:warden>creature:108:4] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[attack:warden>creature:108,observed:warden>creature:108:4]
+t=1059 warden p1 e1 ack14 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 attacking in_combat rage15/100 events[attack:creature:108>warden,taken:creature:108:2!] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[attack:creature:108>warden,observed:creature:108>warden:2!] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9 events[attack:creature:108>warden,observed:creature:108>warden:2!]
+t=1060 warden stop_attack -> applied seq=15 epoch=1
+t=1061 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110 casting9
+t=1120 expect arcanist event ability_used creature:108 ok events[used:arcanist:9]
+t=1120 expect arcanist resource ok mana=85/110
+t=1120 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 in_combat rage15/100 events[used:arcanist:9] | ranger p2 e1 ack9 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 events[used:arcanist:9] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana85/110 events[used:arcanist:9]
+t=1124 ranger use_ability -> applied seq=10 epoch=1 ability=5 entity=none
+t=1125 expect ranger event ability_used creature:108 ok events[used:ranger:5]
+t=1125 expect ranger resource ok focus=70/100
+t=1125 expect warden event ability_used bot:ranger ok events[used:ranger:5]
+t=1125 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 in_combat rage15/100 events[used:ranger:5] | ranger p2 e1 ack10 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus70/100 events[used:ranger:5] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana85/110 events[used:ranger:5]
+t=1126 ranger use_ability -> applied seq=11 epoch=1 ability=5 entity=none
+t=1127 expect ranger event error:not_ready ok events[error:not_ready,observed:arcanist>creature:108:14]
+t=1127 expect arcanist event died creature:108 by t=1160 ok events[dealt:creature:108:14,died:creature:108]
+t=1127 expect warden unit creature:108 dead by t=1160 ok L1 hp0% (-8407,45,1156) [dead,hostile]
+t=1127 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 in_combat rage15/100 events[observed:arcanist>creature:108:14,died:creature:108] | ranger p2 e1 ack11 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus70/100 events[error:not_ready,observed:arcanist>creature:108:14] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110 events[dealt:creature:108:14,died:creature:108]
+t=1140 ranger use_ability -> applied seq=12 epoch=1 ability=5 entity=none
+t=1141 expect ranger event error:not_ready ok events[error:not_ready]
+t=1141 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus70/100 events[error:not_ready] | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1184 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus75/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1200 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus75/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1244 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus80/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1304 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 in_combat rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus85/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1359 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus85/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1364 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus90/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1400 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage15/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus90/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1418 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage13/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus90/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1424 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage13/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus95/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 in_combat mana85/110
+t=1426 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage13/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus95/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana85/110
+t=1478 expect arcanist resource ok mana=85/110
+t=1478 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage11/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus95/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana85/110
+t=1479 expect arcanist resource ok mana=91/110
+t=1479 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage11/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus95/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana91/110
+t=1484 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage11/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana91/110
+t=1538 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage9/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana91/110
+t=1539 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage9/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana97/110
+t=1597 expect warden resource ok rage=9/100
+t=1597 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage9/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana97/110
+t=1598 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage7/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana97/110
+t=1599 expect warden resource ok rage=7/100
+t=1599 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage7/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana103/110
+t=1600 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage7/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana103/110
+t=1658 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage5/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana103/110
+t=1659 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp42/50 target=creature:108 rage5/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana109/110
+t=1718 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage3/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana109/110
+t=1719 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp44/50 target=creature:108 rage3/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
+t=1778 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 rage1/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
+t=1800 warden p1 e1 ack15 (-8459,90,1376) sees[ranger,arcanist] hp46/50 target=creature:108 rage1/100 | ranger p2 e1 ack12 (-8464,90,1481) sees[arcanist,warden] target=creature:108 focus100/100 | arcanist p3 e1 ack18 (-8469,90,1565) sees[ranger,warden] target=creature:108 mana110/110
+PASS class-abilities ticks=1800 steps=48 expectations=37 failures=0

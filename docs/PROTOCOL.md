@@ -1,6 +1,6 @@
 # Zone snapshot protocol
 
-All multibyte fields are big-endian. Integers are unsigned unless marked `i8`/`i16`/`i32`. Simulation positions use 100 units per metre; velocities use units per 30 Hz tick. Ticks and content revisions are 64-bit values; browser decoders retain them as `bigint`.
+All multibyte fields are big-endian. Integers are unsigned unless marked `i8`/`i16`/`i32`. Simulation positions use 100 units per metre; velocities use units per tick at `TICK_HZ` (60 Hz since snapshot v38). Ticks and content revisions are 64-bit values; browser decoders retain them as `bigint`.
 
 A yaw or facing is a `u16`: 65 536 steps are one full turn. Yaw 0 faces +Z and increasing yaw turns toward +X, so the facing direction is `(sin yaw, cos yaw)` in XZ. A character's right is the direction of `yaw − 90°`; facing +Z, right is −X.
 
@@ -10,7 +10,7 @@ Commands and projections travel inside the pinned `game-server` session frames (
 
 The shared fixture `fixtures/protocol/session-frames-v3.hex` pins these frames and the browser route contract: `crates/mmorpg-game-server/tests/session_frames.rs` renders it from the pinned encoders and decodes it with the pinned decoders, and the browser (`web/tests/session-frames.test.ts`) decodes and encodes the same bytes. A `game-server` pin bump that changes a frame fails in both languages.
 
-## Commands (wire version 14)
+## Commands (wire version 15)
 
 The shared session runtime supplies player identity, connection epoch and command sequence separately. Core rejects zero, stale and duplicate sequences without changing state.
 
@@ -223,7 +223,7 @@ The pinned `game-server` sends a session snapshot frame unchanged when it fits t
 
 On loopback, path MTU discovery raises the host's value to 1,287 bytes before admission and the client's to 1,350–1,413 bytes, but on a real path the host can capture its limit before discovery completes, so the budget uses the floor. `mmorpg-client`'s `connected_world` tests log the negotiated size, pin the floor with discovery disabled on both peers, and deliver a crowded projection packed to the budget through a real host, with or without the self sheet.
 
-Encoding is budget-driven in fixed section priority: `pack_snapshot` writes the header, self (with its cooldowns and auras), target (with its cast and auras), optional bag and loot sections and this tick's events, then entities in priority order until the next record would exceed the budget, and reports how many it packed. Hosts publish with it. Without events, sheets, doors, cooldowns or auras, `(1,077 − 112) / 21 = 45` records fit (`MAX_WIRE_ENTITIES`); the door section takes at most 32 bytes. The self sheet takes 84 bytes plus its quest part: 10 bytes plus 4 per active quest and 3 per marker, at most 154 bytes with ten quests and eight markers, beside which 38 records fit. Beside all 16 events the counts are 35 without either sheet or 28 with the largest self sheet. The largest self sheet, a loot sheet with an item and a quest item and all events leave room for 26 records, and with full cooldown and aura lists for the viewer and its target (108 bytes) 22. The largest attainable payload stays within 1,077 bytes. The viewer and its target lead the entities and always fit even beside full lists, both sheets, all events and four full chat lines: `109 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + 2 × 21 = 1,007` bytes, which a compile-time assertion checks. The budget is unchanged from v8; at 30 Hz a full projection is at most 1,077 × 30 = 32,310 bytes per second per player (about 258 kbit/s), as before. Relevant units beyond the budget are omitted by priority, never truncated by transport. `encode_snapshot`, used by fixtures and tests, fails closed instead of omitting any entity. A test with extreme field values (maximum IDs, tick and revision, `i16`/`i8` extremes, a full event section and the whole relevance cap) proves the packing fits one datagram. Future payload growth requires a deliberate MMO budget and wire change; transport fragmentation alone does not raise the budget. Future sections take their place before the entities.
+Encoding is budget-driven in fixed section priority: `pack_snapshot` writes the header, self (with its cooldowns and auras), target (with its cast and auras), optional bag and loot sections and this tick's events, then entities in priority order until the next record would exceed the budget, and reports how many it packed. Hosts publish with it. Without events, sheets, doors, cooldowns or auras, `(1,077 − 112) / 21 = 45` records fit (`MAX_WIRE_ENTITIES`); the door section takes at most 32 bytes. The self sheet takes 84 bytes plus its quest part: 10 bytes plus 4 per active quest and 3 per marker, at most 154 bytes with ten quests and eight markers, beside which 38 records fit. Beside all 16 events the counts are 35 without either sheet or 28 with the largest self sheet. The largest self sheet, a loot sheet with an item and a quest item and all events leave room for 26 records, and with full cooldown and aura lists for the viewer and its target (108 bytes) 22. The largest attainable payload stays within 1,077 bytes. The viewer and its target lead the entities and always fit even beside full lists, both sheets, all events and four full chat lines: `109 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + 2 × 21 = 1,007` bytes, which a compile-time assertion checks. The budget is unchanged from v8; at 60 Hz a full projection is at most 1,077 × 60 = 64,620 bytes per second per player (about 258 kbit/s), as before. Relevant units beyond the budget are omitted by priority, never truncated by transport. `encode_snapshot`, used by fixtures and tests, fails closed instead of omitting any entity. A test with extreme field values (maximum IDs, tick and revision, `i16`/`i8` extremes, a full event section and the whole relevance cap) proves the packing fits one datagram. Future payload growth requires a deliberate MMO budget and wire change; transport fragmentation alone does not raise the budget. Future sections take their place before the entities.
 
 Player IDs are zone/session-local. These snapshots have no authority epoch field; the future online session/routing envelope must bind the stream to a grant and reset presentation on grant changes. An acknowledgement supports future prediction reconciliation, not permission to mutate authoritative state.
 
@@ -231,7 +231,7 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 14, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v37.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind but the evade (the 16-event cap keeps the lurker's lost interest instead), two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v37.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v36 fixtures remain as rejection evidence. `presentation-observation-v37.hex` covers the two neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot-v38.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind but the evade (the 16-event cap keeps the lurker's lost interest instead), two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v38.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v37 fixtures remain as rejection evidence. `presentation-observation-v38.hex` covers the two neutral observation records.
 
 ## Canonical scope
 
@@ -639,3 +639,21 @@ it after its first second, like a Frost Nova root), Rejuvenation (40, a friendly
 like Renew) and Barkskin (41, a self absorb). Layouts are unchanged; the root reuses aura kind 4.
 Commands stay v14 (class 6 is now a valid `ChooseClass`). Snapshot v36 / schema 36 payloads fail
 closed; `player-snapshot-v36.hex` remains as rejection evidence.
+
+## 60 Hz: snapshot v38 / core schema 38 / commands v15 (#379)
+
+The zone simulates at `TICK_HZ` = 60 (16⅔ ms per tick), physics, AI, movement and replication
+alike: every tick still publishes one projection per player. Layouts are unchanged; what the
+fields mean in time changes, so every version moves once and nothing is shimmed:
+
+- tick-valued fields (casts, cooldowns, auras, swing timers, breath, recovery and window
+  ticks, corpse and respawn deadlines, the zone clock, `reconnect_grace_ticks`) count 60 Hz
+  ticks, twice their former values for the same durations;
+- velocities (`i8` units per tick in projections, exact `f32` in canonical snapshots) are per
+  60 Hz tick, half their former values for the same speeds; forced-move velocities in canonical
+  snapshots are in subunits (1/256 unit) per tick;
+- content gravity is in subunits per tick², so the Greyhaven fingerprint changes.
+
+Command v14, snapshot v37 / schema 37 payloads, canonical checkpoints and recovery bundles are
+rejected: a host restarted on old state fails closed and starts fresh (no migration).
+`commands-v14.hex` and `player-snapshot-v37.hex` remain as rejection evidence.

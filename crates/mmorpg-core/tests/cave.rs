@@ -39,7 +39,7 @@ fn walk(zone: &mut ZoneSimulation, sequence: u32, facing: u16, ticks: usize) {
 #[test]
 fn a_player_walks_through_the_mouth_into_both_chambers() {
     let mut zone = player_at([5_800, -12_400]);
-    walk(&mut zone, 1, NORTH, 70);
+    walk(&mut zone, 1, NORTH, mmorpg_core::golden::t30(70) as _);
     let inside = feet(&zone);
     assert!(
         inside[2] < -13_600.0 && inside[1].abs() < 6.0,
@@ -47,7 +47,7 @@ fn a_player_walks_through_the_mouth_into_both_chambers() {
     );
     assert!(GREYFANG.flattens(inside[0] as i32, inside[2] as i32));
     // East through the passage into the inner chamber, stopped by its far wall.
-    walk(&mut zone, 2, EAST, 160);
+    walk(&mut zone, 2, EAST, mmorpg_core::golden::t30(160) as _);
     let inner = feet(&zone);
     assert!(
         inner[0] > 7_300.0 && inner[0] < 8_000.0 && inner[1].abs() < 6.0,
@@ -58,7 +58,7 @@ fn a_player_walks_through_the_mouth_into_both_chambers() {
 #[test]
 fn the_south_wall_blocks_beside_the_mouth() {
     let mut zone = player_at([5_000, -12_400]);
-    walk(&mut zone, 1, NORTH, 80);
+    walk(&mut zone, 1, NORTH, mmorpg_core::golden::t30(80) as _);
     let at = feet(&zone);
     assert!(at[2] > -12_800.0, "held outside the wall: {at:?}");
 }

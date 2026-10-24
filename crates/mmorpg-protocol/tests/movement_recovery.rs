@@ -8,7 +8,7 @@ use mmorpg_protocol::{decode_canonical_snapshot, encode_canonical_snapshot, enco
 fn definition() -> ZoneDefinition {
     ZoneDefinition::new(
         11,
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         vec![
             StaticCollider {
                 id: 1,
@@ -89,7 +89,7 @@ fn recovery_mid_run_and_mid_jump_reproduces_the_continuation_exactly() {
         },
     )
     .unwrap();
-    for _ in 0..3 {
+    for _ in 0..mmorpg_core::golden::t30(3) {
         zone.advance_tick().unwrap();
     }
 

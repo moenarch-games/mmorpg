@@ -1,37 +1,38 @@
-scenario warden-guard zone=1 bots=1 ticks=700 grace=120
+scenario warden-guard zone=1 bots=1 ticks=1400 grace=120
 t=0 warden join -> joined player=1 epoch=1
 t=0 warden choose_class -> applied seq=1 epoch=1 class=warden sex=male
 t=0 warden move -> applied seq=2 epoch=1 forward=1 strafe=0 facing=0
-t=1 warden p1 e1 ack2 (-1550,90,1271) sees[] rage0/100
-t=36 warden move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=49152
-t=37 warden p1 e1 ack3 (-1571,90,2006) sees[] rage0/100
-t=100 warden p1 e1 ack3 (-2894,90,2006) sees[] rage0/100
-t=121 warden move -> applied seq=4 epoch=1 forward=1 strafe=0 facing=32768
-t=122 warden p1 e1 ack4 (-3335,90,1985) sees[] rage0/100
-t=131 warden move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=49152
-t=132 warden p1 e1 ack5 (-3356,90,1796) sees[] rage0/100
-t=200 warden p1 e1 ack5 (-4784,90,1796) sees[] rage0/100
-t=300 warden p1 e1 ack5 (-6884,90,1796) sees[] rage0/100
-t=375 warden move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=32768
-t=376 warden p1 e1 ack6 (-8459,90,1775) sees[] rage0/100
-t=380 warden select_target -> applied seq=7 epoch=1 entity=creature:108
-t=381 warden p1 e1 ack7 (-8459,90,1670) sees[] target=creature:108 rage0/100
-t=384 warden p1 e1 ack7 (-8459,90,1607) sees[] target=creature:108 in_combat rage0/100
-t=395 warden move -> applied seq=8 epoch=1 forward=0 strafe=0 facing=32768
-t=395 warden guard -> applied seq=9 epoch=1 lane=middle
-t=396 warden p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 in_combat rage0/100
-t=400 warden p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 in_combat rage0/100
-t=411 warden p1 e1 ack9 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,guard_broken:creature:108>warden:1:45,taken:creature:108:1]
-t=471 expect warden event blocked creature:108 by t=550 ok events[attack:creature:108>warden,blocked:creature:108>warden:1:4]
-t=471 warden p1 e1 ack9 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,blocked:creature:108>warden:1:4]
-t=500 warden p1 e1 ack9 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100
-t=531 warden p1 e1 ack9 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,blocked:creature:108>warden:1:2]
-t=550 warden guard -> applied seq=10 epoch=1 lane=high
-t=551 warden p1 e1 ack10 (-8459,90,1376) sees[] hp49/50 target=creature:108 in_combat rage4/100
-t=591 expect warden event damage_taken creature:108 within t=552..=650 ok events[attack:creature:108>warden,taken:creature:108:2]
-t=591 warden p1 e1 ack10 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage8/100 events[attack:creature:108>warden,taken:creature:108:2]
-t=600 warden p1 e1 ack10 (-8459,90,1376) sees[] hp47/50 target=creature:108 in_combat rage8/100
-t=650 warden guard -> applied seq=11 epoch=1 lane=none
-t=651 warden p1 e1 ack11 (-8459,90,1376) sees[] hp44/50 target=creature:108 in_combat rage12/100 events[attack:creature:108>warden,taken:creature:108:3]
-t=700 warden p1 e1 ack11 (-8459,90,1376) sees[] hp44/50 target=creature:108 in_combat rage12/100
-PASS warden-guard ticks=700 steps=12 expectations=2 failures=0
+t=1 warden p1 e1 ack2 (-1550,90,1261) sees[] rage0/100
+t=72 warden move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=49152
+t=73 warden p1 e1 ack3 (-1561,90,2006) sees[] rage0/100
+t=200 warden p1 e1 ack3 (-2894,90,2006) sees[] rage0/100
+t=242 warden move -> applied seq=4 epoch=1 forward=1 strafe=0 facing=32768
+t=243 warden p1 e1 ack4 (-3335,90,1996) sees[] rage0/100
+t=262 warden move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=49152
+t=263 warden p1 e1 ack5 (-3346,90,1796) sees[] rage0/100
+t=400 warden p1 e1 ack5 (-4784,90,1796) sees[] rage0/100
+t=600 warden p1 e1 ack5 (-6884,90,1796) sees[] rage0/100
+t=750 warden move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=32768
+t=751 warden p1 e1 ack6 (-8459,90,1786) sees[] rage0/100
+t=760 warden select_target -> applied seq=7 epoch=1 entity=creature:108
+t=761 warden p1 e1 ack7 (-8459,90,1681) sees[] target=creature:108 rage0/100
+t=766 warden p1 e1 ack7 (-8459,90,1628) sees[] target=creature:108 in_combat rage0/100
+t=790 warden move -> applied seq=8 epoch=1 forward=0 strafe=0 facing=32768
+t=790 warden guard -> applied seq=9 epoch=1 lane=middle
+t=791 warden p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 in_combat rage0/100
+t=800 warden p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 in_combat rage0/100
+t=819 warden p1 e1 ack9 (-8459,90,1376) sees[] hp48/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,guard_broken:creature:108>warden:1:90,taken:creature:108:2]
+t=939 expect warden event blocked creature:108 by t=1100 ok events[attack:creature:108>warden,blocked:creature:108>warden:1:3]
+t=939 warden p1 e1 ack9 (-8459,90,1376) sees[] hp48/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,blocked:creature:108>warden:1:3]
+t=1000 warden p1 e1 ack9 (-8459,90,1376) sees[] hp48/50 target=creature:108 in_combat rage4/100
+t=1059 warden p1 e1 ack9 (-8459,90,1376) sees[] hp48/50 target=creature:108 in_combat rage4/100 events[attack:creature:108>warden,blocked:creature:108>warden:1:4]
+t=1100 warden guard -> applied seq=10 epoch=1 lane=high
+t=1101 warden p1 e1 ack10 (-8459,90,1376) sees[] hp48/50 target=creature:108 in_combat rage4/100
+t=1179 expect warden event damage_taken creature:108 within t=1104..=1300 ok events[attack:creature:108>warden,taken:creature:108:3]
+t=1179 warden p1 e1 ack10 (-8459,90,1376) sees[] hp45/50 target=creature:108 in_combat rage8/100 events[attack:creature:108>warden,taken:creature:108:3]
+t=1200 warden p1 e1 ack10 (-8459,90,1376) sees[] hp45/50 target=creature:108 in_combat rage8/100
+t=1299 warden p1 e1 ack10 (-8459,90,1376) sees[] hp43/50 target=creature:108 in_combat rage12/100 events[attack:creature:108>warden,taken:creature:108:2]
+t=1300 warden guard -> applied seq=11 epoch=1 lane=none
+t=1301 warden p1 e1 ack11 (-8459,90,1376) sees[] hp43/50 target=creature:108 in_combat rage12/100
+t=1400 warden p1 e1 ack11 (-8459,90,1376) sees[] hp43/50 target=creature:108 in_combat rage12/100
+PASS warden-guard ticks=1400 steps=12 expectations=2 failures=0

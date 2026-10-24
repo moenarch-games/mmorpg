@@ -71,7 +71,7 @@ fn a_player_stands_on_and_walks_over_the_hills() {
     // Find a hillside in Hollowpine Reach, clear of the woods' trunks: the ring road.
     let start = [-15_000, -6_000];
     let mut zone = player_at(start);
-    for _ in 0..60 {
+    for _ in 0..mmorpg_core::golden::t30(60) {
         zone.advance_tick().unwrap();
     }
     let rest = feet(&zone);
@@ -92,7 +92,7 @@ fn a_player_stands_on_and_walks_over_the_hills() {
     )
     .unwrap();
     let mut heights = Vec::new();
-    for _ in 0..240 {
+    for _ in 0..mmorpg_core::golden::t30(240) {
         zone.advance_tick().unwrap();
         heights.push(feet(&zone));
     }

@@ -3,6 +3,11 @@
 //! target and knocks it back on arrival.
 mod support;
 
+/// [`mmorpg_core::golden::t30`] as a `usize` tick count.
+fn t30u(ticks: u64) -> usize {
+    usize::try_from(mmorpg_core::golden::t30(ticks)).unwrap()
+}
+
 use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
@@ -29,7 +34,7 @@ fn content(walls: Vec<StaticCollider>, spawns: &[[i32; 2]]) -> Arc<ZoneContent> 
     colliders.extend(walls);
     let definition = ZoneDefinition::with_spawn_grid(
         77,
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         SpawnGrid {
             origin: [-5_000, -5_000],
             columns: 32,
@@ -147,7 +152,7 @@ fn shield_bash_knocks_its_target_back_once_and_grants_immunity() {
     let mut warden = Caster::new(content(Vec::new(), &[[0, 200]]), WARDEN);
     let before = warden.creature_at(1)[1];
     warden.cast(ids::SHIELD_BASH, creature(1));
-    warden.ticks(12);
+    warden.ticks(t30u(12));
     let after = warden.creature_at(1)[1];
     assert!(
         after - before > 200.0,
@@ -170,7 +175,7 @@ fn a_wall_stops_a_knockback() {
     };
     let mut warden = Caster::new(content(vec![wall], &[[0, 200]]), WARDEN);
     warden.cast(ids::SHIELD_BASH, creature(1));
-    warden.ticks(12);
+    warden.ticks(t30u(12));
     assert!(
         warden.creature_at(1)[1] < 300.0,
         "{:?}",
@@ -192,7 +197,7 @@ fn fire_blast_hurls_back_what_it_sees_and_walls_shield_the_rest() {
     );
     let before = [arcanist.creature_at(1), arcanist.creature_at(3)];
     arcanist.cast(ids::FIRE_BLAST, creature(1));
-    arcanist.ticks(45 + 12);
+    arcanist.ticks(t30u(45 + 12));
     assert!(
         arcanist.damaged(creature(1)),
         "the centre burns: {:?}",
@@ -211,7 +216,7 @@ fn fire_blast_hurls_back_what_it_sees_and_walls_shield_the_rest() {
 fn charge_rushes_at_the_target_and_knocks_it_back() {
     let mut warden = Caster::new(content(Vec::new(), &[[0, 1_450]]), WARDEN);
     warden.cast(ids::CHARGE, creature(1));
-    warden.ticks(30);
+    warden.ticks(t30u(30));
     let [_, warden_z] = warden.player_at();
     assert!(warden_z > 1_000.0, "the Warden rushed north: {warden_z}");
     let forced = warden.zone.snapshot().unwrap().forced;
@@ -254,7 +259,7 @@ fn a_charge_needs_a_path_as_wide_as_the_warden() {
         // A 1 m gap lets the charge through.
         let mut wide = Caster::new(content(posts(100), &[[0, 1_450]]), WARDEN);
         wide.cast(ids::CHARGE, creature(1));
-        wide.ticks(30);
+        wide.ticks(t30u(30));
         assert!(wide.refusals().is_empty(), "{:?}", wide.refusals());
         assert!(wide.player_at()[1] > 1_000.0, "{:?}", wide.player_at());
     };

@@ -17,12 +17,12 @@ use mmorpg_protocol::{decode_canonical_snapshot, encode_canonical_snapshot, pack
 use arena::{NORTHWARD, WOLF};
 
 /// Every checkpoint's copy is compared for this many ticks.
-const COMPARED_TICKS: u64 = 300;
+const COMPARED_TICKS: u64 = mmorpg_core::golden::t30(300);
 
 /// Two wolves 6.7 m apart (packmates) and an NPC.
 fn pack() -> Arc<ZoneContent> {
     let mut wolf = arena::wolf(80, [20, 30]);
-    wolf.respawn_ticks = 900;
+    wolf.respawn_ticks = mmorpg_core::golden::t30(900) as _;
     arena::arena(
         vec![wolf],
         vec![
@@ -37,13 +37,19 @@ fn pack() -> Arc<ZoneContent> {
 fn lone_wolf() -> Arc<ZoneContent> {
     let mut wolf = arena::wolf(6, [1, 1]);
     // Longer than the corpse's 900 ticks, so it rests despawned for a while.
-    wolf.respawn_ticks = 1_200;
+    wolf.respawn_ticks = mmorpg_core::golden::t30(1_200) as _;
     arena::arena(vec![wolf], vec![arena::spawn(1, WOLF, [0, 2_000])], vec![])
 }
 
 /// Scripted inputs by tick: walk into aggro range, fight, die, release, then
 /// walk back in; a second player watches from the spawn row.
 fn commands(tick: u64) -> Vec<(u32, ZoneCommand)> {
+    // The script was written in 30 Hz ticks; it runs at the same moments at TICK_HZ.
+    let scale = u64::from(mmorpg_core::TICK_HZ) / 30;
+    if !tick.is_multiple_of(scale) {
+        return Vec::new();
+    }
+    let tick = tick / scale;
     let target = ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(1))));
     match tick {
         0 => vec![(1, arena::walk(NORTHWARD)), (2, arena::stand(NORTHWARD))],
@@ -132,7 +138,7 @@ fn verify_checkpoints(content: Arc<ZoneContent>, checkpoints: &[Checkpoint]) {
             next += 1;
         }
         assert!(
-            state.tick < 5_000,
+            state.tick < mmorpg_core::golden::t30(5_000),
             "checkpoint {:?} never reached",
             checkpoints.get(next).map(|(name, _)| name)
         );
@@ -176,7 +182,7 @@ fn recovery_during_a_fight_reproduces_every_following_tick() {
                 |state| matches!(first_wolf(state).ai, CreatureAi::Evading { ticks } if ticks > 3),
             ),
             ("released", |state| {
-                state.players[0].combat.health > 0 && state.tick > 500
+                state.players[0].combat.health > 0 && state.tick > mmorpg_core::golden::t30(500)
             }),
         ],
     );
@@ -194,7 +200,8 @@ fn recovery_around_a_corpse_reproduces_despawn_and_respawn() {
                 matches!(first_wolf(state).life, CreatureLife::Despawned { .. })
             }),
             ("respawned", |state| {
-                first_wolf(state).life == CreatureLife::Alive && state.tick > 900
+                first_wolf(state).life == CreatureLife::Alive
+                    && state.tick > mmorpg_core::golden::t30(900)
             }),
         ],
     );
@@ -205,7 +212,7 @@ fn identical_inputs_produce_identical_canonical_bytes() {
     let mut first = Run::new(pack());
     let mut second = Run::new(pack());
     let mut dead_ticks = 0;
-    for _ in 0..900 {
+    for _ in 0..mmorpg_core::golden::t30(900) {
         first.step();
         second.step();
         assert_eq!(first.bytes(), second.bytes());

@@ -4,7 +4,7 @@
 # Positions come from the real physics step and are checked exactly.
 name = "two-bots-move"
 zone = 1
-ticks = 10
+ticks = 20
 
 [[bots]]
 name = "alice"
@@ -31,7 +31,7 @@ strafe = 0
 facing = 0
 
 [[steps]]
-tick = 5
+tick = 10
 bot = "bob"
 action = "move"
 forward = 1
@@ -60,12 +60,12 @@ sequence = 1
 kind = "position"
 bot = "bob"
 target = "alice"
-tick = 10
+tick = 20
 position = [-1550, 90, 1460]
 
 [[expect]]
 kind = "position"
 bot = "alice"
 target = "bob"
-tick = 10
+tick = 20
 position = [-1345, 90, 1250]

@@ -49,8 +49,8 @@ describe("shield guard input", () => {
   test("the guard has its own configurable binding and wire command", () => {
     const profile: Profile = { id: "character:test", patches: [] };
     expect(actionBindingLabels("combat.guard", profile)).toEqual(["Z", "Pad 6"]);
-    expect([...encodeCommand({ kind: "guard", lane: "high" })]).toEqual([14, 22, 3]);
-    expect([...encodeCommand({ kind: "guard", lane: null })]).toEqual([14, 22, 0]);
+    expect([...encodeCommand({ kind: "guard", lane: "high" })]).toEqual([15, 22, 3]);
+    expect([...encodeCommand({ kind: "guard", lane: null })]).toEqual([15, 22, 0]);
   });
 });
 

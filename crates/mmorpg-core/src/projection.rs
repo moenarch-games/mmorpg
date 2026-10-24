@@ -162,7 +162,7 @@ pub struct ZoneSnapshot {
     pub target_detail: TargetDetail,
     /// Always repeated; an absent sheet must not be mistaken for an empty bag.
     pub inventory_revision: u64,
-    /// Complete self bag on admission/change ticks and every ten ticks.
+    /// Complete self bag on admission/change ticks and every [`crate::INVENTORY_RESEND_TICKS`].
     pub inventory: Option<crate::Inventory>,
     /// Equipment, sent exactly with the bag under the same revision; its
     /// stat totals are [`crate::Equipment::totals`].

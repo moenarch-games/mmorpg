@@ -4,8 +4,8 @@
 # until bob leaves alice's 45 m interest radius.
 name = "vale-hub-walk"
 zone = 1
-ticks = 280
-digest_interval = 20
+ticks = 560
+digest_interval = 40
 
 [[bots]]
 name = "alice"
@@ -40,7 +40,7 @@ strafe = 0
 facing = 0
 
 [[steps]]
-tick = 36
+tick = 72
 bot = "bob"
 action = "move"
 forward = 1
@@ -56,36 +56,36 @@ tick = 1
 [[expect]]
 kind = "position"
 bot = "alice"
-tick = 40
+tick = 80
 position = [-1550, 90, 730]
 
 [[expect]]
 kind = "position"
 bot = "bob"
 target = "alice"
-tick = 200
+tick = 400
 position = [-1550, 90, 730]
 
 [[expect]]
 kind = "sees"
 bot = "alice"
 target = "bob"
-tick = 200
+tick = 399
 
 [[expect]]
 kind = "position"
 bot = "bob"
-tick = 280
+tick = 560
 position = [3674, 90, 2006]
 
 [[expect]]
 kind = "not_sees"
 bot = "alice"
 target = "bob"
-tick = 280
+tick = 559
 
 [[expect]]
 kind = "visible_count"
 bot = "bob"
-tick = 280
+tick = 559
 count = 1

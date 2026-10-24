@@ -109,7 +109,7 @@ fn malformed_bindings_fail_closed() {
 #[test]
 fn every_authored_reward_field_changes_identity_and_refuses_old_recovery() {
     let original = bound(1, vec![(WOLF, rule())]);
-    assert_eq!(original.fingerprint(), 0xb165_a033_e403_1fa3);
+    assert_eq!(original.fingerprint(), 0xe5ba_af62_6fe4_858b);
     let mut zone =
         ZoneSimulation::with_content(ZoneId::new(1), Arc::new(original.clone())).unwrap();
     zone.add_player(1).unwrap();
@@ -185,7 +185,7 @@ fn every_authored_reward_field_changes_identity_and_refuses_old_recovery() {
 fn opt_in_binding_preserves_live_content_and_complete_simulation_continuation() {
     let current = Arc::new(unbound());
     assert_eq!(current.revision(), 4);
-    assert_eq!(current.fingerprint(), 0x0c06_95de_2253_7912);
+    assert_eq!(current.fingerprint(), 0xbad9_2c2c_57ee_df2e);
     assert_eq!(current.loot_revision(), 0);
     assert!(current.loot_tables().is_empty());
     let authored = Arc::new(bound(1, vec![(WOLF, rule())]));
@@ -194,7 +194,7 @@ fn opt_in_binding_preserves_live_content_and_complete_simulation_continuation() 
     let mut candidate = ZoneSimulation::with_content(ZoneId::new(1), authored).unwrap();
     baseline.add_player(1).unwrap();
     candidate.add_player(1).unwrap();
-    for sequence in 1..=360 {
+    for sequence in 1..=u32::try_from(mmorpg_core::golden::t30(360)).unwrap() {
         let command = ZoneCommand::Move {
             forward: 1,
             strafe: 0,

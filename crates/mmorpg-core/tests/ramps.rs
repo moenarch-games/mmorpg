@@ -59,7 +59,7 @@ fn a_player_walks_up_the_cart_ramp_onto_the_dock_and_back_down() {
     assert!((15.0..=20.0).contains(&ramp.slope_degrees()));
     // From 3 m west of the ramp's foot, east up the ramp and onto the dock.
     let mut walker = Walker::at([7_300.0, 1_950.0]);
-    let path = walker.walk(EAST, 44);
+    let path = walker.walk(EAST, mmorpg_core::golden::t30(44) as _);
     for [x, y, z] in &path {
         #[allow(clippy::cast_possible_truncation)]
         if let Some(top) = ramp.top_at(x.round() as i32, z.round() as i32) {
@@ -78,7 +78,10 @@ fn a_player_walks_up_the_cart_ramp_onto_the_dock_and_back_down() {
         "on the dock: {x} {y}"
     );
     // And back down to the ground.
-    let [x, y, _] = *walker.walk(WEST, 60).last().unwrap();
+    let [x, y, _] = *walker
+        .walk(WEST, mmorpg_core::golden::t30(60) as _)
+        .last()
+        .unwrap();
     assert!(x < 7_550.0 && (y - 90.0).abs() < 0.5, "down again: {x} {y}");
 }
 
@@ -88,7 +91,7 @@ fn nobody_climbs_the_steep_chute() {
     assert!(chute.slope_degrees() > 55.0);
     // 2 m north of the chute, walking south into it (+Z) for 3 s.
     let mut walker = Walker::at([8_250.0, 1_500.0]);
-    let path = walker.walk(NORTH_FACING_PLUS_Z, 90);
+    let path = walker.walk(NORTH_FACING_PLUS_Z, mmorpg_core::golden::t30(90) as _);
     let [_, y, z] = *path.last().unwrap();
     assert!(
         z < 1_800.0 && y < 90.0 + 75.0,

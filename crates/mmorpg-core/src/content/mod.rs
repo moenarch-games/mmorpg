@@ -285,6 +285,7 @@ impl ZoneDefinition {
         self.revision
     }
 
+    /// Gravity in subunits per tick² ([`crate::physics::SUBUNITS_PER_UNIT`]).
     #[must_use]
     pub const fn gravity(&self) -> [i32; 3] {
         self.gravity

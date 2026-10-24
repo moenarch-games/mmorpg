@@ -97,7 +97,7 @@ fn the_air_pocket_refills_breath_halfway_along_the_cave() {
     zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     run(&mut zone, 1);
     assert_eq!(water(&zone), WaterMode::Swimming);
-    run(&mut zone, 150);
+    run(&mut zone, mmorpg_core::golden::t30(150) as _);
     assert_eq!(
         zone.snapshot_for_player(1).unwrap().viewer.breath,
         BREATH_MAX_TICKS
@@ -108,7 +108,7 @@ fn the_air_pocket_refills_breath_halfway_along_the_cave() {
 fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it() {
     // From the shrine's plaza, straight east through the mouth and along the cave.
     let mut zone = zone_with_player_at([5_400, LOW, CAVE_Z], true);
-    run(&mut zone, 2);
+    run(&mut zone, mmorpg_core::golden::t30(2) as _);
     assert_eq!(water(&zone), WaterMode::Submerged);
     zone.apply_command(
         1,
@@ -120,13 +120,13 @@ fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it()
         },
     )
     .unwrap();
-    let mut ticks = 0;
+    let mut ticks: u32 = 0;
     let mut events = Vec::new();
     while relics(&zone) == 0 {
         events.extend(run(&mut zone, 1));
         ticks += 1;
         assert!(
-            ticks < 900,
+            u64::from(ticks) < mmorpg_core::golden::t30(900),
             "the altar is reached on one breath from the plaza"
         );
     }
@@ -148,7 +148,7 @@ fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it()
     let viewer = zone.snapshot_for_player(1).unwrap().viewer;
     assert!(viewer.breath > 0 && !viewer.dead);
     // One relic only, however long the player stays.
-    run(&mut zone, 30);
+    run(&mut zone, mmorpg_core::golden::t30(30) as _);
     assert_eq!(relics(&zone), 1);
 
     // Back at the outpost, the Marshal takes it: 300 XP and 25 copper.
@@ -168,7 +168,7 @@ fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it()
         },
     )
     .unwrap();
-    let events = run(&mut zone, 2);
+    let events = run(&mut zone, mmorpg_core::golden::t30(2) as _);
     assert!(
         events.contains(&ZoneEvent::QuestCompleted {
             quest: THE_SUNKEN_SHRINE
@@ -184,7 +184,7 @@ fn swimming_the_cave_to_the_altar_retrieves_the_relic_and_the_marshal_takes_it()
 #[test]
 fn walking_over_the_altar_on_the_shore_retrieves_nothing() {
     let mut zone = zone_with_player_at([11_800, 95, CAVE_Z], true);
-    run(&mut zone, 30);
+    run(&mut zone, mmorpg_core::golden::t30(30) as _);
     assert_eq!(water(&zone), WaterMode::Dry);
     assert_eq!(relics(&zone), 0);
 }
@@ -214,7 +214,7 @@ fn lurker(zone: &ZoneSimulation) -> mmorpg_core::CanonicalCreatureSnapshot {
 #[test]
 fn a_lurker_trails_a_diver_without_harm_then_loses_interest_and_swims_home() {
     let mut zone = lurker_beside_a_diver();
-    run(&mut zone, 2);
+    run(&mut zone, mmorpg_core::golden::t30(2) as _);
     assert!(
         matches!(lurker(&zone).ai, CreatureAi::Trailing { player: 1, .. }),
         "{:?}",
@@ -237,8 +237,8 @@ fn a_lurker_trails_a_diver_without_harm_then_loses_interest_and_swims_home() {
     // Recovery keeps the trail's state exactly.
     let state = zone.snapshot().unwrap();
     let mut restored = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
-    run(&mut restored, 20);
-    run(&mut zone, 20);
+    run(&mut restored, mmorpg_core::golden::t30(20) as _);
+    run(&mut zone, mmorpg_core::golden::t30(20) as _);
     assert_eq!(restored.snapshot().unwrap(), zone.snapshot().unwrap());
 }
 
@@ -269,7 +269,7 @@ fn a_lurker_drops_a_player_who_dives_and_divers_cannot_attack() {
     )
     .unwrap();
     zone.apply_command(1, 2, ZoneCommand::StartAttack).unwrap();
-    let events = run(&mut zone, 2);
+    let events = run(&mut zone, mmorpg_core::golden::t30(2) as _);
     assert!(
         events.contains(&ZoneEvent::Error {
             code: ErrorCode::NotAttackable,

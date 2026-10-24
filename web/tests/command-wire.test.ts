@@ -4,7 +4,7 @@ import { encodeCommand, STRIKE_HEIGHTS, STRIKE_SIDES, type Axis, type WorldComma
 import { entityKindFromCode } from "../src/entity-ref";
 import { EMOTES } from "../src/replication";
 
-const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v14.hex", import.meta.url), "utf8");
+const fixture = readFileSync(new URL("../../fixtures/protocol/commands-v15.hex", import.meta.url), "utf8");
 
 function axis(raw: string | undefined): Axis {
   const value = Number(raw);

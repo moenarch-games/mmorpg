@@ -1491,7 +1491,7 @@ mod tests {
     fn ground() -> ZoneDefinition {
         ZoneDefinition::with_spawn_grid(
             9,
-            [0, -1, 0],
+            crate::STANDARD_GRAVITY,
             SpawnGrid {
                 origin: [0, 0],
                 columns: 32,
@@ -1659,7 +1659,7 @@ mod tests {
                 ZoneContent::new(
                     ZoneDefinition::new(
                         9,
-                        [0, -1, 0],
+                        crate::STANDARD_GRAVITY,
                         vec![StaticCollider {
                             id: 1,
                             position: [0, 50, 5_000],

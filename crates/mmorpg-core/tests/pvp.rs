@@ -176,7 +176,7 @@ fn arena_auto_attacks_use_the_existing_swing_clock() {
         zone.apply_command(1, 2, ZoneCommand::SelectTarget(Some(EntityRef::Player(2))))
             .unwrap();
         zone.apply_command(1, 3, ZoneCommand::StartAttack).unwrap();
-        for _ in 0..150 {
+        for _ in 0..mmorpg_core::golden::t30(150) {
             zone.advance_tick().unwrap();
         }
         let after = zone.snapshot_for_player(2).unwrap();
@@ -226,7 +226,7 @@ fn an_arena_firebolt_completes_its_cast_and_hits_through_a_real_projectile() {
         let mut shot = false;
         let mut damaged = false;
         let mut blocked = false;
-        for _ in 0..120 {
+        for _ in 0..mmorpg_core::golden::t30(120) {
             zone.advance_tick().unwrap();
             shot |= !zone.snapshot_for_player(1).unwrap().projectiles.is_empty();
             let victim = zone.snapshot_for_player(2).unwrap();
@@ -260,14 +260,14 @@ fn an_arena_cast_restores_and_continues_identically() {
         },
     )
     .unwrap();
-    for _ in 0..15 {
+    for _ in 0..mmorpg_core::golden::t30(15) {
         zone.advance_tick().unwrap();
     }
     assert!(zone.snapshot_for_player(1).unwrap().viewer.cast.is_some());
     let mut restored =
         ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), Arc::clone(zone.content()))
             .unwrap();
-    for _ in 0..100 {
+    for _ in 0..mmorpg_core::golden::t30(100) {
         zone.advance_tick().unwrap();
         restored.advance_tick().unwrap();
         assert_eq!(zone.snapshot().unwrap(), restored.snapshot().unwrap());
@@ -290,7 +290,7 @@ fn an_arena_damage_over_time_aura_restores_and_pulses_identically() {
         },
     )
     .unwrap();
-    for _ in 0..30 {
+    for _ in 0..mmorpg_core::golden::t30(30) {
         zone.advance_tick().unwrap();
     }
     let state = zone.snapshot().unwrap();
@@ -304,7 +304,7 @@ fn an_arena_damage_over_time_aura_restores_and_pulses_identically() {
     );
     let mut restored = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     let before = zone.snapshot_for_player(2).unwrap().viewer.health;
-    for _ in 0..100 {
+    for _ in 0..mmorpg_core::golden::t30(100) {
         zone.advance_tick().unwrap();
         restored.advance_tick().unwrap();
         assert_eq!(zone.snapshot().unwrap(), restored.snapshot().unwrap());
@@ -378,7 +378,7 @@ fn directed_arena_strikes_use_the_aimed_guard_lane_and_restore_combo_followup() 
                 .unwrap();
             }
             let mut stunned = false;
-            for _ in 0..30 {
+            for _ in 0..mmorpg_core::golden::t30(30) {
                 zone.advance_tick().unwrap();
                 restored.advance_tick().unwrap();
                 let state = zone.snapshot().unwrap();
@@ -530,7 +530,7 @@ fn a_physics_wall_stops_targeted_melee_auto_attacks_and_directed_arena_sweeps() 
     zone.apply_command(1, 3, ZoneCommand::SelectTarget(Some(EntityRef::Player(2))))
         .unwrap();
     zone.apply_command(1, 4, ZoneCommand::StartAttack).unwrap();
-    for _ in 0..10 {
+    for _ in 0..mmorpg_core::golden::t30(10) {
         zone.advance_tick().unwrap();
     }
     zone.apply_command(
@@ -581,7 +581,7 @@ fn a_charge_at_an_arena_player_restores_and_uses_existing_forced_movement() {
             .any(|(unit, state)| *unit == EntityRef::Player(1) && state.moving.is_some())
     );
     let mut restored = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
-    for _ in 0..40 {
+    for _ in 0..mmorpg_core::golden::t30(40) {
         zone.advance_tick().unwrap();
         restored.advance_tick().unwrap();
         assert_eq!(zone.snapshot().unwrap(), restored.snapshot().unwrap());

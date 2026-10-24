@@ -1,35 +1,38 @@
-scenario browser-local-session zone=1 bots=1 ticks=54 grace=3
+scenario browser-local-session zone=1 bots=1 ticks=108 grace=6
 t=0 alice join -> joined player=1 epoch=1
 t=0 alice move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=16384
 t=1 expect alice area alice ok alice in Greyhaven Outpost
-t=1 alice p1 e1 ack1 (-1529,90,1250) sees[]
-t=5 alice p1 e1 ack1 (-1445,90,1250) sees[]
-t=10 expect alice position alice ok [-1340, 90, 1250]
-t=10 alice p1 e1 ack1 (-1340,90,1250) sees[]
-t=10 alice jump -> applied seq=2 epoch=1
-t=11 expect alice acknowledged ok ack=2
-t=11 expect alice position alice ok [-1319, 105, 1250]
-t=11 alice p1 e1 ack2 (-1319,105,1250) sees[]
-t=15 alice p1 e1 ack2 (-1235,155,1250) sees[]
-t=20 alice p1 e1 ack2 (-1130,195,1250) sees[]
-t=20 alice move -> applied seq=3 epoch=1 forward=0 strafe=1 facing=16384
-t=21 alice p1 e1 ack3 (-1130,200,1271) sees[]
-t=25 expect alice position alice ok [-1130, 210, 1355]
-t=25 alice p1 e1 ack3 (-1130,210,1355) sees[]
-t=30 alice p1 e1 ack3 (-1130,200,1460) sees[]
-t=30 alice move -> applied seq=4 epoch=1 forward=0 strafe=0 facing=16384
-t=31 expect alice area alice ok alice in Greyhaven Outpost
-t=31 alice p1 e1 ack4 (-1130,195,1460) sees[]
-t=35 alice p1 e1 ack4 (-1130,165,1460) sees[]
-t=40 alice p1 e1 ack4 (-1130,105,1460) sees[]
-t=44 expect alice position alice ok [-1130, 90, 1460]
-t=44 alice p1 e1 ack4 (-1130,90,1460) sees[]
-t=44 alice disconnect -> disconnected player=1
-t=45 alice p1 offline
-t=50 alice p1 offline
-t=50 alice join -> joined player=2 epoch=1
-t=51 expect alice visible_count ok count=1
-t=51 expect alice position alice ok [-1550, 90, 1250]
-t=51 alice p2 e1 ack0 (-1550,90,1250) sees[]
-t=54 alice p2 e1 ack0 (-1550,90,1250) sees[]
-PASS browser-local-session ticks=54 steps=7 expectations=9 failures=0
+t=1 alice p1 e1 ack1 (-1540,90,1250) sees[]
+t=10 alice p1 e1 ack1 (-1445,90,1250) sees[]
+t=20 expect alice position alice ok [-1340, 90, 1250]
+t=20 alice p1 e1 ack1 (-1340,90,1250) sees[]
+t=20 alice jump -> applied seq=2 epoch=1
+t=21 expect alice acknowledged ok ack=2
+t=21 alice p1 e1 ack2 (-1330,98,1250) sees[]
+t=22 expect alice position alice ok [-1319, 105, 1250]
+t=22 alice p1 e1 ack2 (-1319,105,1250) sees[]
+t=30 alice p1 e1 ack2 (-1235,156,1250) sees[]
+t=40 alice p1 e1 ack2 (-1130,198,1250) sees[]
+t=40 alice move -> applied seq=3 epoch=1 forward=0 strafe=1 facing=16384
+t=41 alice p1 e1 ack3 (-1130,200,1261) sees[]
+t=50 expect alice position alice ok [-1130, 214, 1355]
+t=50 alice p1 e1 ack3 (-1130,214,1355) sees[]
+t=60 alice p1 e1 ack3 (-1130,205,1460) sees[]
+t=60 alice move -> applied seq=4 epoch=1 forward=0 strafe=0 facing=16384
+t=61 expect alice area alice ok alice in Greyhaven Outpost
+t=61 alice p1 e1 ack4 (-1130,203,1460) sees[]
+t=70 alice p1 e1 ack4 (-1130,171,1460) sees[]
+t=80 alice p1 e1 ack4 (-1130,113,1460) sees[]
+t=88 expect alice position alice ok [-1130, 90, 1460]
+t=88 alice p1 e1 ack4 (-1130,90,1460) sees[]
+t=88 alice disconnect -> disconnected player=1
+t=89 alice p1 offline
+t=90 alice p1 offline
+t=100 alice p1 offline
+t=100 alice join -> joined player=2 epoch=1
+t=101 expect alice visible_count ok count=1
+t=101 alice p2 e1 ack0 (-1550,90,1250) sees[]
+t=102 expect alice position alice ok [-1550, 90, 1250]
+t=102 alice p2 e1 ack0 (-1550,90,1250) sees[]
+t=108 alice p2 e1 ack0 (-1550,90,1250) sees[]
+PASS browser-local-session ticks=108 steps=7 expectations=9 failures=0

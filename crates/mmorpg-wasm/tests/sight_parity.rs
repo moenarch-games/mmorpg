@@ -18,15 +18,15 @@ use mmorpg_wasm::host::{LOCAL_ZONE_ID, LocalZoneHost};
 /// inn, targets the crate beside it (prop 900), and its Firebolts are refused.
 const MOVES: [(u64, i8, u16); 4] = [
     (0, 1, 24_576),
-    (80, 0, 24_576),
-    (145, 1, 24_576),
-    (170, 0, 24_576),
+    (160, 0, 24_576),
+    (290, 1, 24_576),
+    (340, 0, 24_576),
 ];
 /// `(tick, prop)`: a crate by the smithy first, then the one beside it.
-const TARGETS: [(u64, u32); 2] = [(2, 901), (171, 900)];
-const CASTS: [u64; 3] = [81, 172, 190];
+const TARGETS: [(u64, u32); 2] = [(4, 901), (342, 900)];
+const CASTS: [u64; 3] = [162, 344, 380];
 const FIREBOLT: u8 = 9;
-const TICKS: u64 = 200;
+const TICKS: u64 = 400;
 
 #[derive(Default)]
 struct Memory(BTreeMap<String, Vec<u8>>);

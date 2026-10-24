@@ -336,7 +336,7 @@ export class FakeZoneHost {
         return;
       }
       const [version, tag] = frame.payload;
-      if (version !== 14 || tag === undefined || (tag === 16 ? frame.payload.length !== 4 + (frame.payload[3] ?? 0) : COMMAND_LENGTHS.get(tag) !== frame.payload.length)) {
+      if (version !== 15 || tag === undefined || (tag === 16 ? frame.payload.length !== 4 + (frame.payload[3] ?? 0) : COMMAND_LENGTHS.get(tag) !== frame.payload.length)) {
         throw new Error("malformed command payload");
       }
       if (tag === 1) {

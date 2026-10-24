@@ -2,9 +2,9 @@
 # shares the bag's revision and survives a connection resume.
 name = "equipment-resume"
 zone = 1
-ticks = 22
-reconnect_grace_ticks = 30
-digest_interval = 10
+ticks = 44
+reconnect_grace_ticks = 60
+digest_interval = 20
 
 [[bots]]
 name = "alice"
@@ -21,29 +21,29 @@ action = "equip_item"
 bag_slot = 1
 
 [[steps]]
-tick = 1
+tick = 2
 bot = "alice"
 action = "equip_item"
 bag_slot = 0
 
 [[steps]]
-tick = 3
+tick = 6
 bot = "alice"
 action = "disconnect"
 
 [[steps]]
-tick = 5
+tick = 10
 bot = "alice"
 action = "reconnect"
 
 [[steps]]
-tick = 10
+tick = 20
 bot = "alice"
 action = "unequip_item"
 equipment_slot = 0
 
 [[steps]]
-tick = 11
+tick = 22
 bot = "alice"
 action = "unequip_item"
 equipment_slot = 0
@@ -68,39 +68,39 @@ quantity = 0
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 2
+tick = 3
 event = "error:not_equippable"
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
-tick = 2
+tick = 3
 inventory_revision = 2
 sheet = false
 
 [[expect]]
 kind = "identity"
 bot = "alice"
-tick = 6
+tick = 11
 
 [[expect]]
 kind = "equipment"
 bot = "alice"
-tick = 10
+tick = 20
 equipment_slot = 0
 item = 2
 
 [[expect]]
 kind = "equipment"
 bot = "alice"
-tick = 11
+tick = 21
 equipment_slot = 0
 item = 0
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
-tick = 11
+tick = 21
 inventory_revision = 3
 sheet = true
 slot = 1
@@ -110,13 +110,13 @@ quantity = 1
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 12
+tick = 23
 event = "error:invalid_inventory_move"
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
-tick = 20
+tick = 40
 inventory_revision = 3
 sheet = true
 slot = 1

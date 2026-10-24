@@ -299,8 +299,8 @@ fn a_channel_drains_and_marks_its_slot() {
     });
     arcanist.viewer.cast = Some(CastView {
         ability: AbilityId::new(12),
-        elapsed: 45,
-        total: 180,
+        elapsed: mmorpg_core::golden::t30(45) as _,
+        total: mmorpg_core::golden::t30(180) as _,
         channel: true,
     });
     arcanist.viewer.in_combat = true;
@@ -309,8 +309,8 @@ fn a_channel_drains_and_marks_its_slot() {
         hud.cast,
         Some(CastView {
             ability: AbilityId::new(12),
-            elapsed: 45,
-            total: 180,
+            elapsed: mmorpg_core::golden::t30(45) as _,
+            total: mmorpg_core::golden::t30(180) as _,
             channel: true,
         })
     );
@@ -374,7 +374,7 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
         },
     )
     .unwrap();
-    for _ in 0..15 {
+    for _ in 0..mmorpg_core::golden::t30(15) {
         zone.advance_tick().unwrap();
     }
     let projection = received(&zone.snapshot_for_player(1).unwrap());
@@ -383,13 +383,13 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
             .viewer
             .cast
             .map(|cast| (cast.ability, cast.elapsed)),
-        Some((AbilityId::new(9), 15)),
-        "fixture: Firebolt is fifteen ticks into its cast"
+        Some((AbilityId::new(9), mmorpg_core::golden::t30(15) as u16)),
+        "fixture: Firebolt is half a second into its cast"
     );
 
     let hud = CombatHud::from_projection(&projection);
     assert_eq!(hud.cast, projection.viewer.cast);
-    assert_close(hud.cast_fill(), 0.25, "Firebolt 15 of 60 ticks");
+    assert_close(hud.cast_fill(), 0.25, "Firebolt 0.5 s of 2 s");
     assert_eq!(hud.resource, projection.viewer.resource);
     assert_close(hud.resource_fill(), 1.0, "a cast pays on completion");
     assert_eq!(slot_ids(&hud), [9, 10, 11, 12, 16, 21, 22, 23]);
@@ -417,7 +417,10 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
     zone.advance_tick().unwrap();
     let next = received(&zone.snapshot_for_player(1).unwrap());
     let later = CombatHud::from_projection(&next);
-    assert_eq!(later.cast.map(|cast| cast.elapsed), Some(16));
+    assert_eq!(
+        later.cast.map(|cast| u64::from(cast.elapsed)),
+        Some(mmorpg_core::golden::t30(15) + 1)
+    );
     assert_eq!(
         later.slots[0].cooldown.map(|cooldown| cooldown.remaining),
         Some(global - 1)

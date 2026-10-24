@@ -473,7 +473,7 @@ mod tests {
             value["abilities"][8],
             json!({
                 "id": 9, "name": "Firebolt", "user": "arcanist", "level": 1, "cost": 25,
-                "castTicks": 60, "channel": false, "cooldown": 0, "aura": null
+                "castTicks": mmorpg_core::ticks_from_ms(2_000), "channel": false, "cooldown": 0, "aura": null
             })
         );
         assert_eq!(value["abilities"][12]["user"], "creature");

@@ -61,7 +61,7 @@ fn moves_are_queued_owned_sequenced_and_recover_before_consumption() {
             "no-op does not change revision"
         );
     }
-    for _ in 0..20 {
+    for _ in 0..mmorpg_core::golden::t30(20) {
         zone.advance_tick().unwrap();
         restored.advance_tick().unwrap();
         assert_eq!(zone.snapshot().unwrap(), restored.snapshot().unwrap());
@@ -81,13 +81,14 @@ fn losing_a_change_sheet_self_heals_on_the_next_periodic_projection() {
     let lost = zone.snapshot_for_player(1).unwrap();
     assert!(lost.inventory.is_some());
     assert_eq!(lost.inventory_revision, 2);
-    for tick in 2..=10 {
+    let resend = mmorpg_core::INVENTORY_RESEND_TICKS;
+    for tick in 2..=resend {
         zone.advance_tick().unwrap();
         let before_query = zone.snapshot().unwrap();
         let received = zone.snapshot_for_player(1).unwrap();
         assert_eq!(received.tick, tick);
         assert_eq!(received.inventory_revision, 2);
-        if tick == 10 {
+        if tick == resend {
             assert_eq!(received.inventory, lost.inventory);
         } else {
             assert_eq!(received.inventory, None);

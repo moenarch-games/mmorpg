@@ -56,7 +56,7 @@ fn content(
     definition_colliders.extend(colliders);
     let definition = ZoneDefinition::with_spawn_grid(
         77,
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         mmorpg_core::SpawnGrid {
             origin: [0, 0],
             columns: 32,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DAY_SECONDS, ENVIRONMENT, ZONE_DAY_TICKS, hazeMix, mergeNearColors, mixColor, quantizeColor, shadeColor, skyAt, zoneSkySeconds } from "../src/world/environment";
+import { TICK_HZ } from "../src/replication";
 
 const HEX = /^#[0-9a-f]{6}$/;
 
@@ -61,7 +62,7 @@ describe("environment style", () => {
 });
 
 test("the sky follows the zone clock: tick 0 is 08:00 and a zone day is one sky cycle (#158)", () => {
-  expect(ZONE_DAY_TICKS).toBe(216_000);
+  expect(ZONE_DAY_TICKS).toBe(2 * 60 * 60 * TICK_HZ);
   const hour = BigInt(ZONE_DAY_TICKS / 24);
   expect(zoneSkySeconds(4n * hour)).toBeCloseTo(0, 6); // noon is the cycle's zero
   expect(zoneSkySeconds(16n * hour)).toBeCloseTo(DAY_SECONDS / 2, 6); // midnight

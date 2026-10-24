@@ -1,86 +1,87 @@
-scenario corpse-loot-resume zone=1 bots=1 ticks=1125 grace=120
+scenario corpse-loot-resume zone=1 bots=1 ticks=2250 grace=120
 t=0 hunter join -> joined player=1 epoch=1
 t=0 hunter move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=0
-t=1 hunter p1 e1 ack1 (-1550,90,1271) sees[]
-t=1 hunter start_attack -> applied seq=2 epoch=1
-t=2 hunter p1 e1 ack2 (-1550,90,1292) sees[] events[error:no_target]
-t=36 hunter move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=49152
-t=37 hunter p1 e1 ack3 (-1571,90,2006) sees[]
-t=100 hunter p1 e1 ack3 (-2894,90,2006) sees[]
-t=121 hunter move -> applied seq=4 epoch=1 forward=1 strafe=0 facing=32768
-t=122 hunter p1 e1 ack4 (-3335,90,1985) sees[]
-t=131 hunter move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=49152
-t=132 hunter p1 e1 ack5 (-3356,90,1796) sees[]
-t=200 hunter p1 e1 ack5 (-4784,90,1796) sees[]
-t=300 hunter p1 e1 ack5 (-6884,90,1796) sees[]
-t=375 hunter move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=32768
-t=376 hunter p1 e1 ack6 (-8459,90,1775) sees[]
-t=380 hunter select_target -> applied seq=7 epoch=1 entity=creature:108
-t=380 hunter start_attack -> applied seq=8 epoch=1
-t=381 hunter p1 e1 ack8 (-8459,90,1670) sees[] target=creature:108 attacking events[error:out_of_range]
-t=384 hunter p1 e1 ack8 (-8459,90,1607) sees[] target=creature:108 attacking in_combat
-t=395 hunter move -> applied seq=9 epoch=1 forward=0 strafe=0 facing=32768
-t=396 hunter p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 attacking in_combat
-t=400 hunter p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 attacking in_combat
-t=410 hunter p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:3]
-t=411 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp46/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:4]
-t=470 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp46/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:6]
-t=471 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp44/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
-t=500 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp44/50 target=creature:108 attacking in_combat
-t=530 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp44/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:7!]
-t=531 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp42/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
-t=590 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp42/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:3]
-t=591 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp38/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:4]
-t=600 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp38/50 target=creature:108 attacking in_combat
-t=650 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp38/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:3]
-t=651 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp36/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
-t=700 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp36/50 target=creature:108 attacking in_combat
-t=710 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp36/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:5]
-t=711 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp33/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:3]
-t=770 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp33/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:4]
-t=771 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp30/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:3]
-t=800 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp30/50 target=creature:108 attacking in_combat
-t=830 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp30/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:5]
-t=831 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp28/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
-t=890 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp28/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:5]
-t=891 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp26/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
-t=900 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp26/50 target=creature:108 attacking in_combat
-t=950 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp26/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,miss:hunter>creature:108]
-t=951 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp24/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
-t=1000 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp24/50 target=creature:108 attacking in_combat
-t=1010 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp24/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:1,died:creature:108]
-t=1011 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp24/50 target=creature:108 in_combat
-t=1100 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp24/50 target=creature:108 in_combat
-t=1112 expect hunter loot ok sheet=true creature=108 died_at=1010 copper=2
-t=1112 expect hunter copper ok copper=0
-t=1112 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp24/50 target=creature:108 in_combat
-t=1113 hunter loot -> applied seq=10 epoch=1 creature=108 died_at=1008
-t=1114 expect hunter event error:invalid_loot creature:108 ok events[error:invalid_loot]
-t=1114 expect hunter loot ok sheet=true creature=108 died_at=1010 copper=2
-t=1114 hunter p1 e1 ack10 (-8459,90,1376) sees[] hp24/50 target=creature:108 in_combat events[error:invalid_loot]
-t=1114 hunter loot -> applied seq=11 epoch=1 creature=108 died_at=1010
-t=1114 hunter loot -> applied seq=12 epoch=1 creature=108 died_at=1010
-t=1114 hunter loot -> ignored_stale seq=11 epoch=1 creature=108 died_at=1010
-t=1115 expect hunter loot ok sheet=false
-t=1115 expect hunter copper ok copper=2
-t=1115 expect hunter event error:empty_loot creature:108 ok events[error:empty_loot]
-t=1115 expect hunter inventory ok revision=2 sheet=true slot=0 item=1 quantity=5
-t=1115 hunter p1 e1 ack12 (-8459,90,1376) sees[] hp24/50 target=creature:108 in_combat events[error:empty_loot]
-t=1116 hunter disconnect -> disconnected player=1
-t=1117 hunter p1 offline
-t=1118 hunter reconnect -> resumed player=1 epoch=2 identity=kept
-t=1118 hunter loot -> applied seq=13 epoch=2 creature=108 died_at=1010
-t=1119 expect hunter identity ok player=1 epoch=2
-t=1119 expect hunter copper ok copper=2
-t=1119 expect hunter loot ok sheet=false
-t=1119 expect hunter event error:empty_loot creature:108 ok events[error:empty_loot]
-t=1119 hunter p1 e2 ack13 (-8459,90,1376) sees[] hp24/50 target=creature:108 in_combat events[error:empty_loot]
-t=1119 hunter loot -> rejected:stale_connection seq=14 epoch=1 creature=108 died_at=1010
-t=1120 expect hunter inventory ok revision=2 sheet=true slot=0 item=1 quantity=5
-t=1120 hunter p1 e2 ack13 (-8459,90,1376) sees[] hp24/50 target=creature:108 in_combat
-t=1121 hunter loot -> applied seq=15 epoch=2 creature=108 died_at=18446744073709551615
-t=1122 expect hunter event error:invalid_loot creature:108 ok events[error:invalid_loot]
-t=1122 hunter p1 e2 ack15 (-8459,90,1376) sees[] hp24/50 target=creature:108 in_combat events[error:invalid_loot]
-t=1125 expect hunter copper ok copper=2
-t=1125 hunter p1 e2 ack15 (-8459,90,1376) sees[] hp24/50 target=creature:108 in_combat
-PASS corpse-loot-resume ticks=1125 steps=19 expectations=15 failures=0
+t=1 hunter p1 e1 ack1 (-1550,90,1261) sees[]
+t=2 hunter start_attack -> applied seq=2 epoch=1
+t=3 hunter p1 e1 ack2 (-1550,90,1282) sees[] events[error:no_target]
+t=72 hunter move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=49152
+t=73 hunter p1 e1 ack3 (-1561,90,2006) sees[]
+t=200 hunter p1 e1 ack3 (-2894,90,2006) sees[]
+t=242 hunter move -> applied seq=4 epoch=1 forward=1 strafe=0 facing=32768
+t=243 hunter p1 e1 ack4 (-3335,90,1996) sees[]
+t=262 hunter move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=49152
+t=263 hunter p1 e1 ack5 (-3346,90,1796) sees[]
+t=400 hunter p1 e1 ack5 (-4784,90,1796) sees[]
+t=600 hunter p1 e1 ack5 (-6884,90,1796) sees[]
+t=750 hunter move -> applied seq=6 epoch=1 forward=1 strafe=0 facing=32768
+t=751 hunter p1 e1 ack6 (-8459,90,1786) sees[]
+t=760 hunter select_target -> applied seq=7 epoch=1 entity=creature:108
+t=760 hunter start_attack -> applied seq=8 epoch=1
+t=761 hunter p1 e1 ack8 (-8459,90,1681) sees[] target=creature:108 attacking events[error:out_of_range]
+t=766 hunter p1 e1 ack8 (-8459,90,1628) sees[] target=creature:108 attacking in_combat
+t=790 hunter move -> applied seq=9 epoch=1 forward=0 strafe=0 facing=32768
+t=791 hunter p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 attacking in_combat
+t=800 hunter p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 attacking in_combat
+t=817 hunter p1 e1 ack9 (-8459,90,1376) sees[] target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:7!]
+t=819 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp46/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:4]
+t=937 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp46/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:5]
+t=939 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp42/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:4]
+t=1000 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp42/50 target=creature:108 attacking in_combat
+t=1057 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp42/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:4]
+t=1059 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp40/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
+t=1177 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp40/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:3]
+t=1179 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp36/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:4]
+t=1200 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp36/50 target=creature:108 attacking in_combat
+t=1297 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp36/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:5]
+t=1299 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp34/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
+t=1400 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp34/50 target=creature:108 attacking in_combat
+t=1417 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp34/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:3]
+t=1419 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp32/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
+t=1537 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp32/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:5]
+t=1539 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp30/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
+t=1600 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp30/50 target=creature:108 attacking in_combat
+t=1657 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp30/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:3]
+t=1659 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp28/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:2]
+t=1777 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp28/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:5]
+t=1779 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp25/50 target=creature:108 attacking in_combat events[attack:creature:108>hunter,taken:creature:108:3]
+t=1800 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp25/50 target=creature:108 attacking in_combat
+t=1897 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp25/50 target=creature:108 attacking in_combat events[attack:hunter>creature:108,dealt:creature:108:2,died:creature:108]
+t=1898 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp25/50 target=creature:108 in_combat
+t=2000 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp25/50 target=creature:108 in_combat
+t=2197 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp25/50 target=creature:108
+t=2200 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp25/50 target=creature:108
+t=2223 expect hunter loot ok sheet=true creature=108 died_at=1897 copper=2
+t=2223 expect hunter copper ok copper=0
+t=2223 hunter p1 e1 ack9 (-8459,90,1376) sees[] hp25/50 target=creature:108
+t=2226 hunter loot -> applied seq=10 epoch=1 creature=108 died_at=1895
+t=2227 expect hunter event error:invalid_loot creature:108 ok events[error:invalid_loot]
+t=2227 expect hunter loot ok sheet=true creature=108 died_at=1897 copper=2
+t=2227 hunter p1 e1 ack10 (-8459,90,1376) sees[] hp25/50 target=creature:108 events[error:invalid_loot]
+t=2228 hunter loot -> applied seq=11 epoch=1 creature=108 died_at=1897
+t=2228 hunter loot -> applied seq=12 epoch=1 creature=108 died_at=1897
+t=2228 hunter loot -> ignored_stale seq=11 epoch=1 creature=108 died_at=1897
+t=2229 expect hunter loot ok sheet=false
+t=2229 expect hunter copper ok copper=2
+t=2229 expect hunter event error:empty_loot creature:108 ok events[error:empty_loot]
+t=2229 expect hunter inventory ok revision=2 sheet=true slot=0 item=1 quantity=5
+t=2229 hunter p1 e1 ack12 (-8459,90,1376) sees[] hp25/50 target=creature:108 events[error:empty_loot]
+t=2232 hunter disconnect -> disconnected player=1
+t=2233 hunter p1 offline
+t=2236 hunter reconnect -> resumed player=1 epoch=2 identity=kept
+t=2236 hunter loot -> applied seq=13 epoch=2 creature=108 died_at=1897
+t=2237 expect hunter identity ok player=1 epoch=2
+t=2237 expect hunter copper ok copper=2
+t=2237 expect hunter loot ok sheet=false
+t=2237 expect hunter event error:empty_loot creature:108 ok events[error:empty_loot]
+t=2237 hunter p1 e2 ack13 (-8459,90,1376) sees[] hp25/50 target=creature:108 events[error:empty_loot]
+t=2238 hunter loot -> rejected:stale_connection seq=14 epoch=1 creature=108 died_at=1897
+t=2239 hunter p1 e2 ack13 (-8459,90,1376) sees[] hp25/50 target=creature:108
+t=2240 expect hunter inventory ok revision=2 sheet=true slot=0 item=1 quantity=5
+t=2240 hunter p1 e2 ack13 (-8459,90,1376) sees[] hp25/50 target=creature:108
+t=2242 hunter loot -> applied seq=15 epoch=2 creature=108 died_at=18446744073709551615
+t=2243 expect hunter event error:invalid_loot creature:108 ok events[error:invalid_loot]
+t=2243 hunter p1 e2 ack15 (-8459,90,1376) sees[] hp25/50 target=creature:108 events[error:invalid_loot]
+t=2249 expect hunter copper ok copper=2
+t=2249 hunter p1 e2 ack15 (-8459,90,1376) sees[] hp25/50 target=creature:108
+t=2250 hunter p1 e2 ack15 (-8459,90,1376) sees[] hp25/50 target=creature:108
+PASS corpse-loot-resume ticks=2250 steps=19 expectations=15 failures=0

@@ -330,7 +330,8 @@ mod tests {
             value: 5,
             ..ResourceClock::default()
         };
-        for _ in 0..29 {
+        let interval = RESOURCE_INTERVAL_TICKS;
+        for _ in 0..interval - 1 {
             rage.advance(ResourceKind::Rage, 1, false);
         }
         assert_eq!(rage.value, 5);
@@ -344,14 +345,15 @@ mod tests {
             ..ResourceClock::default()
         };
         mana.spend(ResourceKind::Mana, 25);
-        assert_eq!((mana.value, mana.delay), (25, 150));
-        for _ in 0..150 + 29 {
+        let delay = mana.delay;
+        assert_eq!(delay, MANA_REGEN_DELAY_TICKS);
+        for _ in 0..delay + interval - 1 {
             mana.advance(ResourceKind::Mana, 1, false);
         }
         assert_eq!(mana.value, 25);
         mana.advance(ResourceKind::Mana, 1, false);
         assert_eq!(mana.value, 31, "5 % of 110, rounded up");
-        for _ in 0..30 {
+        for _ in 0..interval {
             mana.advance(ResourceKind::Mana, 1, true);
         }
         assert_eq!(mana.value, 33, "1 % of 110, rounded up");
@@ -360,7 +362,7 @@ mod tests {
             value: 98,
             ..ResourceClock::default()
         };
-        for _ in 0..30 {
+        for _ in 0..interval {
             focus.advance(ResourceKind::Focus, 1, true);
         }
         assert_eq!(focus.value, 100);

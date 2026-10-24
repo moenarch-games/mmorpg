@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { encodeCommand } from "../src/command-wire";
 import { MAX_CATCH_UP_TICKS } from "../src/demo-clock";
+import { TICK_HZ } from "../src/replication";
 import { LocalZoneSource, type LocalZoneHandle } from "../src/world/local-zone-source";
 import { FACING_INTERVAL_MS, MovementOutbox, RESEND_INTERVAL_MS, type MovementInput } from "../src/world/movement-outbox";
 import {
@@ -101,9 +102,9 @@ describe("LocalZoneSource", () => {
     // The default is a male Warden.
     expect(zone.joins).toEqual([[first, "local-2", 2, 0], [second, "default-warden", 0, 1]]);
     expect(zone.submitted).toEqual([
-      { player: first, sequence: 1, bytes: "0e0101ff4000" },
+      { player: first, sequence: 1, bytes: "0f0101ff4000" },
       { player: first, sequence: 2, bytes: Buffer.from(encodeCommand({ kind: "jump" })).toString("hex") },
-      { player: second, sequence: 1, bytes: "0e02" },
+      { player: second, sequence: 1, bytes: "0f02" },
     ]);
     expect(zone.left).toEqual([first]);
   });
@@ -114,9 +115,9 @@ describe("LocalZoneSource", () => {
     source.advance(1);
     expect(zone.ticks).toBe(0);
     await source.join();
-    source.advance(0.5 / 30);
+    source.advance(0.5 / TICK_HZ);
     expect(zone.ticks).toBe(0);
-    source.advance(0.5 / 30 + 1e-9);
+    source.advance(0.5 / TICK_HZ + 1e-9);
     expect(zone.ticks).toBe(1);
     source.advance(10);
     expect(zone.ticks).toBe(1 + MAX_CATCH_UP_TICKS);
@@ -127,10 +128,10 @@ describe("LocalZoneSource", () => {
     const zone = new RecordingZone();
     const source = new LocalZoneSource(() => zone, testCharacters());
     await source.join();
-    source.advance(2 / 30 + 1e-9);
+    source.advance(2 / TICK_HZ + 1e-9);
     expect(zone.ticks).toBe(2);
     expect(source.sample()[0]?.position[0]).toBeCloseTo(21, 3);
-    source.advance(0.5 / 30);
+    source.advance(0.5 / TICK_HZ);
     expect(source.sample()[0]?.position[0]).toBeCloseTo(31.5, 3);
   });
 
@@ -152,7 +153,7 @@ describe("LocalZoneSource", () => {
       zone.viewerOverride = null;
       expect(await source.join()).toBe(2);
       source.sendCommand({ kind: "jump" });
-      expect(zone.submitted).toEqual([{ player: 2, sequence: 1, bytes: "0e02" }]);
+      expect(zone.submitted).toEqual([{ player: 2, sequence: 1, bytes: "0f02" }]);
     }
   });
 });

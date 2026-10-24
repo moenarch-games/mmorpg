@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { GRASS_PACKAGE_DIRECTORY, record } from "../scripts/grass-package";
 import { RELIEF_GRID, RELIEF_PACKAGE_DIRECTORY } from "../scripts/relief-package";
 import { encodeCommand } from "../src/command-wire";
-import { ABILITY_SHAPES, ITEM_SHAPES, TICK_HZ, decodeSnapshot, type EntityState } from "../src/replication";
+import { ABILITY_SHAPES, BREATH_MAX_TICKS, ITEM_SHAPES, TICK_HZ, decodeSnapshot, ticksFromMs, type EntityState } from "../src/replication";
 import { abilitySlots, useAbilitySlot } from "../src/world/units/abilities";
 import { undescribedAbilities } from "../src/world/units/ability-presentation";
 import { combatStatus } from "../src/world/units/combat-hud";
@@ -33,6 +33,9 @@ function self(source: LocalZoneSource): EntityState {
   return entity;
 }
 
+/** Ticks of the 30 Hz rate these scripts were written against, at `TICK_HZ`. */
+const t30 = (ticks: number) => (ticks * TICK_HZ) / 30;
+
 function run(source: LocalZoneSource, ticks: number): void {
   for (let tick = 0; tick < ticks; tick += 1) {
     source.advance(TICK_SECONDS);
@@ -48,17 +51,18 @@ describe("WASM local zone host", () => {
     bag.update(source.latestProjection()!);
     loot.reset(source.latestProjection());
     loot.update(source.latestProjection()!);
-    const movement = new Map([[0, [1, 0]], [36, [1, 49152]], [121, [1, 32768]],
-      [131, [1, 49152]], [375, [1, 32768]], [395, [0, 32768]]]);
-    for (let tick = 0; tick < 1032; tick += 1) {
+    // The corpse-loot-resume scenario's script, at 60 Hz.
+    const movement = new Map([[0, [1, 0]], [72, [1, 49152]], [242, [1, 32768]],
+      [262, [1, 49152]], [750, [1, 32768]], [790, [0, 32768]]]);
+    for (let tick = 0; tick < 2064; tick += 1) {
       const move = movement.get(tick);
       if (move) {
         source.sendCommand({ kind: "move", forward: move[0] === 0 ? 0 : 1, strafe: 0, facing: move[1] ?? 0 });
       }
-      if (tick === 1) {
+      if (tick === 2) {
         source.sendCommand({ kind: "start-attack" });
       }
-      if (tick === 380) {
+      if (tick === 760) {
         source.sendCommand({ kind: "select-target", target: { kind: "creature", id: 108 } });
         source.sendCommand({ kind: "start-attack" });
       }
@@ -71,7 +75,7 @@ describe("WASM local zone host", () => {
     if (sheet === null) {
       throw new Error("Missing authoritative corpse sheet");
     }
-    expect(sheet).toEqual({ creatureId: 108, diedAt: 1010n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
+    expect(sheet).toEqual({ creatureId: 108, diedAt: 1897n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
     source.sendCommand({ kind: "loot", creatureId: sheet.creatureId, diedAt: sheet.diedAt + 1n });
     run(source, 1);
     expect(source.latestProjection()?.events).toContainEqual({ kind: "error", code: "invalid-loot", target: { kind: "creature", id: 108 } });
@@ -91,7 +95,7 @@ describe("WASM local zone host", () => {
     expect(loot.sheet).toEqual(sheet);
     // Lose the claim tick's bag sheet. Later projections retain money and absence;
     // the existing periodic bag resend recovers the missed inventory change.
-    const frames = source.advance(4 / 30);
+    const frames = source.advance(4 / TICK_HZ);
     const later = frames.at(-1)!;
     expect(frames[0]?.inventory).not.toBeNull();
     expect(later.inventory).toBeNull();
@@ -103,7 +107,8 @@ describe("WASM local zone host", () => {
     expect(loot.sheet).toBeNull();
     expect(loot.claimIntent()).toBeNull();
     expect(bag.ready).toBe(false);
-    for (let tick = 0; tick < 10 && !bag.ready; tick += 1) {
+    // The bag resends every 333 ms.
+    for (let tick = 0; tick < 2 * ticksFromMs(333) && !bag.ready; tick += 1) {
       run(source, 1); bag.update(source.latestProjection()!);
     }
     expect(bag.ready).toBe(true);
@@ -123,7 +128,7 @@ describe("WASM local zone host", () => {
     // The looted copper is the stored character's; the loot window starts empty.
     expect(loot.sheet).toBeNull();
     expect(source.latestProjection()?.viewer.copper).toBe(2);
-  });
+  }, 30_000);
   test("shared relief queries and both exported terrain grids consume the saved signed-centimetre field", () => {
     const provider = createLocalWorld(wasm, testCharacters()).scenery;
     const field = record(JSON.parse(readFileSync(`${RELIEF_PACKAGE_DIRECTORY}/flattened.heights.json`, "utf8")));
@@ -157,7 +162,7 @@ describe("WASM local zone host", () => {
     const bag = new BagState();
     bag.update(source.latestProjection()!);
     source.sendCommand({ kind: "move-item", source: 0, destination: 15, quantity: 2 });
-    const moved = source.advance(4 / 30);
+    const moved = source.advance(4 / TICK_HZ);
     expect(moved.map((view) => view.tick)).toEqual([1n, 2n, 3n, 4n]);
     expect(moved[0]?.inventory).not.toBeNull();
     expect(moved[3]?.inventory).toBeNull();
@@ -168,7 +173,7 @@ describe("WASM local zone host", () => {
     expect(bag.slots?.[15]).toEqual({ itemId: 1, quantity: 2 });
     // Feedback answers the bag's own pending intent.
     source.sendCommand(bag.move(15, 1, 1)!);
-    const refused = source.advance(4 / 30);
+    const refused = source.advance(4 / TICK_HZ);
     expect(refused[0]?.events).toContainEqual({ kind: "error", code: "invalid-inventory-move", target: null });
     expect(refused[3]?.events).toEqual([]);
     for (const view of refused) {
@@ -193,7 +198,8 @@ describe("WASM local zone host", () => {
     source.sendCommand({ kind: "move-item", source: 15, destination: 1, quantity: 1 });
     run(source, 1);
     expect(source.latestProjection()?.events).toContainEqual({ kind: "error", code: "invalid-inventory-move", target: null });
-    run(source, 7);
+    // The bag resends every 333 ms: tick 2 was the refusal, the next sheet is periodic.
+    run(source, ticksFromMs(333) - 3);
     expect(source.latestProjection()?.inventory).toBeNull();
     expect(source.latestProjection()?.inventoryRevision).toBe(2n);
     run(source, 1);
@@ -252,16 +258,16 @@ describe("WASM local zone host", () => {
       source.sendCommand({ kind: "move", forward: 1, strafe: 0, facing });
       run(source, ticks);
     };
-    walk(EAST, 145);
-    walk(32_768, 31);
+    walk(EAST, t30(145));
+    walk(32_768, t30(31));
     source.sendCommand({ kind: "move", forward: 0, strafe: 0, facing: 32_768 });
     run(source, 1);
     source.sendCommand({ kind: "use-door", door: 1, open: true });
     run(source, 2);
     expect(source.latestProjection()?.doors).toEqual([{ door: 1, open: true }]);
-    walk(32_768, 29);
-    walk(EAST, 20);
-    walk(32_768, 8);
+    walk(32_768, t30(29));
+    walk(EAST, t30(20));
+    walk(32_768, t30(8));
     source.sendCommand({ kind: "move", forward: 0, strafe: 0, facing: 32_768 });
     run(source, 2);
     source.sendCommand({ kind: "sell-item", npc: 3, bagSlot: 0, quantity: 3 });
@@ -292,7 +298,7 @@ describe("WASM local zone host", () => {
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, autoAttacking: false, target: null,
       classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
-      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: 900,
+      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: BREATH_MAX_TICKS,
     });
     expect(() => zone.submit(player, 1, Uint8Array.of(1, 1, 0, 0, 0, 0))).toThrow();
     expect(zone.submit(player, 1, encodeCommand({ kind: "jump" }))).toBe(true);
@@ -345,7 +351,8 @@ describe("WASM local zone host", () => {
     run(source, 10);
     const east = self(source).position;
     expect(source.latestProjection()?.tick).toBe(10n);
-    expect(east).toEqual([spawn[0] + 10 * RUN_UNITS_PER_TICK, spawn[1], spawn[2]]);
+    // Whole units on the wire.
+    expect(east).toEqual([Math.round(spawn[0] + 10 * RUN_UNITS_PER_TICK), spawn[1], spawn[2]]);
     expect(self(source).facing).toBe(EAST);
 
     // The character's right is yaw - 90°: facing +X, strafing right heads toward +Z.
@@ -353,7 +360,7 @@ describe("WASM local zone host", () => {
     run(source, 5);
     const right = self(source).position;
     expect(right[0]).toBe(east[0]);
-    expect(right[2]).toBe(east[2] + 5 * RUN_UNITS_PER_TICK);
+    expect(right[2]).toBe(Math.round(east[2] + 5 * RUN_UNITS_PER_TICK));
 
     source.sendCommand({ kind: "move", forward: 0, strafe: 0, facing: EAST });
     run(source, 3);
@@ -369,7 +376,7 @@ describe("WASM local zone host", () => {
     const lifted = self(source).position[1];
     expect(lifted).toBeGreaterThan(ground);
     let apex = lifted;
-    for (let tick = 0; tick < 60; tick += 1) {
+    for (let tick = 0; tick < t30(60); tick += 1) {
       run(source, 1);
       apex = Math.max(apex, self(source).position[1]);
     }
@@ -536,7 +543,7 @@ describe("WASM local zone combat intents", () => {
     }
     run(source, 1);
     expect(source.latestProjection()?.events).toEqual([
-      { kind: "cast-started", source: { kind: "player", id: 1 }, target: null, ability: 9, ticks: 60 },
+      { kind: "cast-started", source: { kind: "player", id: 1 }, target: null, ability: 9, ticks: ticksFromMs(2_000) },
       { kind: "error", code: "not-learned", target: null },
     ]);
   });
