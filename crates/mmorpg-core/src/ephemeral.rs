@@ -26,7 +26,7 @@ impl EphemeralCharacterBuild {
         let weapon = match class.class {
             PlayerClass::Warden => 3,
             PlayerClass::Ranger => 2,
-            PlayerClass::Arcanist => 4,
+            PlayerClass::Arcanist | PlayerClass::Necromancer => 4,
         };
         Self::new(
             class,
