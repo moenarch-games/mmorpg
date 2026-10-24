@@ -54,7 +54,7 @@ The twenty discrete intents (every command but `Move`, `Jump` and `Guard`) are q
 
 `MoveItem` names only slots in the sender’s own bag. Slot/quantity values that fit the wire but cannot be applied are tick-time feedback, not session errors; there is no item grant command. `EquipItem` equips the item in one of the sender's bag slots into its catalog equipment slot, and `UnequipItem` moves the item in equipment slot 0 main hand, 1 off hand, 2 head, 3 chest, 4 legs or 5 feet to the lowest empty bag slot; every `u8` fits the wire and invalid slots are tick-time feedback. See [INVENTORY.md](INVENTORY.md#equipment).
 
-`UseAbility` names a global ability ID and an [entity reference](#entity-references) as in `SelectTarget`; kind 0 (ID 0) means the current selection, and self-centred abilities ignore it. `CancelCast` stops the player's own cast or channel (nothing happens without one). `ChooseClass` picks class 0 Warden, 1 Ranger or 2 Arcanist and sex 0 female or 1 male, once per player. Every `u8` value fits the wire: unknown abilities, classes or sexes, repeats and every other refusal are `Error` events, never session errors (see [Classes and abilities](#classes-and-abilities)).
+`UseAbility` names a global ability ID and an [entity reference](#entity-references) as in `SelectTarget`; kind 0 (ID 0) means the current selection, and self-centred abilities ignore it. `CancelCast` stops the player's own cast or channel (nothing happens without one). `ChooseClass` picks class 0 Warden, 1 Ranger, 2 Arcanist or 3 Necromancer and sex 0 female or 1 male, once per player. Every `u8` value fits the wire: unknown abilities, classes or sexes, repeats and every other refusal are `Error` events, never session errors (see [Classes and abilities](#classes-and-abilities)).
 
 `DirectedStrike` executes an ability's directed mode (#154; only Heroic Strike, ability 1, has one): the player turns to `facing` and sweeps toward side 0 left, 1 centre or 2 right and height 0 low, 1 middle or 2 high. It shares the ability's validation order, Rage cost, cooldown and global cooldown; an ability without a directed mode is `not learned`. Instead of a target and range check, core resolves which living creature the sweep physically covers: the arc is centred on `facing` turned 45° toward the side (left is `facing + 45°`) and spans ±30°, it reaches the melee reach (2.5 m XZ centre distance), the creature's physics body must overlap the height band above the striker's feet (low 0–0.6 m, middle 0.6–1.3 m, high 1.3–2 m), and a `physics-engine` ray between body centres must not hit static geometry. The nearest covered creature (ties in `EntityRef` order) takes the ability's weapon-strike damage; a sweep that covers nobody is a whiff that still pays and starts the global cooldown. Side and height codes above 2 are malformed payloads.
 
@@ -109,7 +109,7 @@ Sections follow in fixed order: header, self (including class, resource, cast, m
 | 49 | 4 | Self: copper |
 | 53 | 1 | Self flags: bit 0 dead, bit 1 in combat, bit 2 auto-attacking; other bits 0 |
 | 54 | 5 | Self: target (entity reference, kind 0 for none) |
-| 59 | 1 | Self: class code, 0 without a class, otherwise `1 + class × 2 + sex` (1–6) |
+| 59 | 1 | Self: class code, 0 without a class, otherwise `1 + class × 2 + sex` (1–8) |
 | 60 | 1 | Self: resource kind, 0 none, 1 rage, 2 focus, 3 mana |
 | 61 | 2 | Self: resource value |
 | 63 | 2 | Self: resource maximum |
@@ -231,7 +231,7 @@ Decoders reject payloads above the byte budget, a wrong wire version, scope or s
 
 Decoders additionally reject class codes above 6, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v33.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind but the evade (the 16-event cap keeps the lurker's lost interest instead), two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v33.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v32 fixtures remain as rejection evidence. `presentation-observation-v33.hex` covers the two neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot-v34.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind but the evade (the 16-event cap keeps the lurker's lost interest instead), two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v34.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v33 fixtures remain as rejection evidence. `presentation-observation-v34.hex` covers the two neutral observation records.
 
 ## Canonical scope
 
@@ -591,3 +591,15 @@ adds the Sunken Relic (11), vendor catalog 3 prices it, and quest catalog 2 adds
 objective (code 5: an item granted by swimming into an area) and quest 10, *The Sunken Shrine*.
 No combat reaches into, out of or between submerged units. Commands stay v14. Snapshot v32 /
 schema 32 payloads fail closed.
+
+## The Necromancer: snapshot v34 / core schema 34 (#301)
+
+Class code 3 is the Necromancer, a mana caster like the Arcanist (same maximum and five-second
+rule, intellect as its primary stat); player appearance codes 7 and 8 follow from
+`1 + class × 2 + sex`. Projectile kind 4 is a shadow missile, which flies and homes like the
+magic missile (kind 3); layouts are unchanged. Ability catalog revision 10 adds Shadow Bolt (26),
+Corruption (27), Drain Life (28) and Bone Shield (29), and effect code 20, a channelled drain:
+every pulse damages the channel's target and heals the caster by the health it lost, and the
+channel breaks when the target dies or leaves line of sight or range. Commands stay v14 (class 3
+is now a valid `ChooseClass`). Snapshot v33 / schema 33 payloads fail closed;
+`player-snapshot-v33.hex` remains as rejection evidence.

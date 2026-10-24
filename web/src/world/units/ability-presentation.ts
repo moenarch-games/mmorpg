@@ -42,6 +42,7 @@ const ORB = "M12 2C18 2 22 6 22 12 22 18 18 22 12 22 6 22 2 18 2 12 2 6 6 2 12 2
 const SHARDS = "M4 2 8 10 3 12ZM11 2 15 12 9 14ZM18 2 22 10 17 14ZM7 15 11 22 4 20ZM15 16 19 22 12 22Z";
 const BANDAGE = "M3 9 15 3 21 15 9 21ZM10 10 14 12 12 16 8 14Z";
 const SPLAT = "M12 3C15 3 17 6 20 7 22 10 19 13 19 16 17 19 14 18 12 21 9 19 6 20 5 16 3 13 4 10 6 8 8 5 10 4Z";
+const SKULL = "M12 2C17 2 20 5 20 10 20 13 18 15 17 16L17 19 15 19 15 21 13 21 13 19 11 19 11 21 9 21 9 19 7 19 7 16C6 15 4 13 4 10 4 5 7 2 12 2ZM9 9C8 9 7 10 7 11 7 12 8 13 9 13 10 13 11 12 11 11 11 10 10 9 9 9ZM15 9C14 9 13 10 13 11 13 12 14 13 15 13 16 13 17 12 17 11 17 10 16 9 15 9Z";
 
 /** Player abilities 1–12 and 16–17, creature abilities 13–15 and 18, by catalog ID. Shots (5–7, 15) fly as the zone's own projectiles (#286). */
 export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = new Map<number, AbilityPresentation>([
@@ -70,6 +71,10 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [20, { range: RANGED, description: "Looses an arrow along your facing that bounces off walls up to twice before striking the first enemy it meets.", glyph: ARROW, accent: "#a8c87a", visual: null, pose: "draw" }],
   [24, { range: "self", description: "Garrick winds up for 1.5 s, then whirls his blade around him: step out of the 4 m ring or be hurt and thrown back.", glyph: CLEAVE, accent: "#d8452c", visual: "ring", pose: "swing" }],
   [25, { range: "melee", description: "A Redbrand Brute raises its weapon for 2 s without turning, then smashes the 3.5 m arc ahead of it: step aside or behind it, or be hurt and knocked back.", glyph: SWORD, accent: "#a8452c", visual: "swing", pose: "swing" }],
+  [26, { range: RANGED, description: "Hurls a bolt of shadow at your target after a short cast.", glyph: SKULL, accent: "#8a4dff", visual: "projectile", pose: "cast" }],
+  [27, { range: RANGED, description: "A shadow missile that curses your target, damaging it over time.", glyph: SNAKE, accent: "#7dff8a", visual: "projectile", pose: "cast" }],
+  [28, { range: RANGED, description: "Channel for 3 s to drain your target's life: each pulse damages it and heals you for the health it lost. Breaks if the target leaves sight or range.", glyph: HEART, accent: "#6fe07a", visual: null, pose: "cast" }],
+  [29, { range: "self", description: "A ward of bone that absorbs damage.", glyph: SHIELD, accent: "#e6dfc8", visual: "bubble", pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

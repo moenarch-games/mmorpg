@@ -30,6 +30,8 @@ enum Visual {
     Beam,
     /// Chain Lightning (#292): arcs from the caster through each victim in turn.
     Chain,
+    /// Drain Life (#301): a tether from the target back to the caster while it channels.
+    Drain,
     /// A creature special's danger footprint (#276, Atlas 6.6.29–6.6.31): the true ring it will
     /// strike, held while the zone's wind-up lasts, then a brief burst when it resolves.
     Danger {
@@ -109,6 +111,8 @@ const BEAM_METRES: f64 = 20.;
 const CONE_METRES: f64 = 8.;
 const CONE_HALF_ANGLE: f64 = PI / 6.;
 const BARRIER: u8 = 11;
+const DRAIN_LIFE: u8 = 28;
+const BONE_SHIELD: u8 = 29;
 /// The zone's guard coverage is centred 30° toward the shield (left) side of the facing.
 const GUARD_SIDE: f64 = PI / 6.;
 const SWEEP_HALF_WIDTH: f64 = PI / 6.;
@@ -148,6 +152,11 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         22 => (Some(Stance::Staff), Some(Visual::Beam), 0xc8dcff),
         23 => (Some(Stance::Staff), Some(Visual::Chain), 0xb9a8ff),
         24 => (Some(Stance::Sword), None, 0xd8452c),
+        // The Necromancer (#301): shadow violet bolts, a green curse and drain, a bone ward.
+        26 => (Some(Stance::Staff), Some(Visual::Projectile), 0x8a4dff),
+        27 => (Some(Stance::Staff), Some(Visual::Projectile), 0x7dff8a),
+        28 => (Some(Stance::Staff), Some(Visual::Drain), 0x6fe07a),
+        29 => (Some(Stance::Staff), Some(Visual::Bubble), 0xe6dfc8),
         _ => (None, None, 0xffffff),
     }
 }
@@ -248,6 +257,17 @@ impl Effects {
         }
     }
 
+    fn drain(&mut self, source: EntityRef, target: Option<EntityRef>, now: f64) {
+        if target.is_some()
+            && !self
+                .effects
+                .iter()
+                .any(|e| e.visual == Visual::Drain && e.source == source)
+        {
+            self.add(Visual::Drain, DRAIN_LIFE, source, target, None, now);
+        }
+    }
+
     /// Consumes one received projection; identities never share animation state.
     pub fn push(&mut self, s: &ZoneSnapshot, now: f64, anchors: &BTreeMap<EntityRef, Anchor>) {
         let session = (s.zone_id.get(), s.viewer_id, s.content_revision);
@@ -325,6 +345,9 @@ impl Effects {
                     }
                     if id == LIGHTNING_BEAM {
                         self.beam(source, now);
+                    }
+                    if id == DRAIN_LIFE {
+                        self.drain(source, target, now);
                     }
                 }
                 ZoneEvent::AbilityUsed {
@@ -525,10 +548,17 @@ impl Effects {
                 self.casts.remove(&viewer);
             }
         }
-        let barrier = !s.viewer.dead
-            && s.auras
+        // Arcane Barrier or Bone Shield (#301): the viewer's absorb ward, in its own colour.
+        let ward = if s.viewer.dead {
+            None
+        } else {
+            s.auras
                 .iter()
-                .any(|a| a.ability.get() == BARRIER && a.kind == AuraKind::Absorb);
+                .find(|a| {
+                    matches!(a.ability.get(), BARRIER | BONE_SHIELD) && a.kind == AuraKind::Absorb
+                })
+                .map(|a| a.ability.get())
+        };
         let casts = &self.casts;
         self.effects.retain(|e| {
             if e.duration.is_some() || matches!(e.visual, Visual::Guard { .. }) {
@@ -542,13 +572,21 @@ impl Effects {
                     .get(&e.source)
                     .is_some_and(|c| c.ability == LIGHTNING_BEAM);
             }
-            e.source == viewer && barrier
+            if e.visual == Visual::Drain {
+                return casts
+                    .get(&e.source)
+                    .is_some_and(|c| c.ability == DRAIN_LIFE);
+            }
+            e.source == viewer && ward == Some(e.ability)
         });
         if cast.is_some_and(|c| c.channel && c.ability.get() == BLIZZARD) && !s.viewer.dead {
             self.shards(viewer, s.viewer.target, now, anchors);
         }
         if cast.is_some_and(|c| c.channel && c.ability.get() == LIGHTNING_BEAM) && !s.viewer.dead {
             self.beam(viewer, now);
+        }
+        if cast.is_some_and(|c| c.channel && c.ability.get() == DRAIN_LIFE) && !s.viewer.dead {
+            self.drain(viewer, s.viewer.target, now);
         }
         // The raised shield follows the zone's guard: its lane, and protecting, suspended or broken.
         let shown = if s.viewer.dead {
@@ -577,13 +615,13 @@ impl Effects {
             (Some(visual), Some(raised)) => raised.visual = visual,
             (Some(visual), None) => self.add(visual, 0, viewer, None, None, now),
         }
-        if barrier
+        if let Some(ward) = ward
             && !self
                 .effects
                 .iter()
                 .any(|e| e.visual == Visual::Bubble && e.source == viewer)
         {
-            self.add(Visual::Bubble, BARRIER, viewer, None, None, now);
+            self.add(Visual::Bubble, ward, viewer, None, None, now);
         }
     }
 
@@ -886,6 +924,30 @@ impl Effects {
                                 );
                             }
                             from = to;
+                        }
+                    }
+                }
+                Visual::Drain => {
+                    if let (Some(s), Some(v)) = (source, target) {
+                        // Motes stream from the victim back into the caster's hands.
+                        let from = [v.feet[0], v.centre, v.feet[2]];
+                        let to = [s.feet[0], s.centre + 0.3, s.feet[2]];
+                        for k in 0..10 {
+                            let u = (f64::from(k) / 10. + age * 0.8) % 1.;
+                            let sway = (u * PI * 3. + age * 6.).sin() * 0.18;
+                            add(
+                                &format!("drain-{k}"),
+                                Primitive::Ball(0.07 + 0.04 * (1. - u)),
+                                if k % 3 == 0 { 0x8a4dff } else { color },
+                                [
+                                    lerp(from[0], to[0], u) + sway,
+                                    lerp(from[1], to[1], u) + (PI * u).sin() * 0.35,
+                                    lerp(from[2], to[2], u) - sway,
+                                ],
+                                IQ,
+                                0.9,
+                                true,
+                            );
                         }
                     }
                 }
