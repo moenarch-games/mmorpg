@@ -2,8 +2,11 @@ import type { HeldIntent } from "../world/orbit-camera";
 import type { GameAction } from "./game-controls";
 import { ChordState, FACE_BUTTONS, INTERACT_LABELS, stickIntent, TOUCH_CHORD_PAGES, type TouchContext } from "./touch-layout";
 
-/** One hotbar slot as the face buttons show it: its ability name and a copy of its icon. */
-export type SlotFace = { name: string; icon: Node };
+/** One hotbar slot as the face buttons show it: its ability name and the action-bar button it mirrors. */
+export type SlotFace = { name: string; source: HTMLElement };
+
+/** The action-bar slot states a face button copies each frame (locked, cooldown, resource, range, …). */
+const MIRRORED_DATA = ["data-state", "data-resource", "data-range", "data-gcd"] as const;
 
 export type TouchControlsOptions = {
   /** Fires an existing semantic action, exactly as its key or gamepad button would. */
@@ -43,6 +46,8 @@ export class TouchControls {
   readonly #stick: { zone: HTMLElement; base: HTMLElement; knob: HTMLElement };
   readonly #faces: HTMLButtonElement[];
   readonly #hints: HTMLElement[];
+  /** The action-bar buttons the four faces currently mirror. */
+  readonly #sources: (HTMLElement | null)[] = [null, null, null, null];
   readonly #ring: HTMLElement;
   readonly #modifier: HTMLButtonElement;
   readonly #menu: HTMLElement;
@@ -116,7 +121,7 @@ export class TouchControls {
       return hint;
     });
     this.#faces = FACE_BUTTONS.map((face, index) => {
-      const entry = button("touch-face", "", () => {
+      const entry = button("touch-face action-slot", "", () => {
         const action = this.#chord.press(index, performance.now());
         if (action) {
           this.#options.onAction(action);
@@ -181,10 +186,15 @@ export class TouchControls {
     }
     const page = this.#chord.page(now);
     const key = `${page}:${this.#options.facesKey()}`;
-    if (key === this.#shownKey) {
-      return;
+    if (key !== this.#shownKey) {
+      this.#shownKey = key;
+      this.#showPage(page);
     }
-    this.#shownKey = key;
+    this.#mirrorSlots();
+  }
+
+  /** Shows the slots the next tap fires: the action bar's own icon, cooldown sweep and timer, and the slot number. */
+  #showPage(page: number): void {
     const faces = this.#options.faces();
     this.#ring.dataset.page = String(page);
     this.#modifier.setAttribute("aria-pressed", String(page === 1));
@@ -196,11 +206,53 @@ export class TouchControls {
       if (!entry || !hint) {
         return;
       }
-      entry.replaceChildren(...(face ? [face.icon] : []));
+      this.#sources[index] = face?.source ?? null;
+      const number = element("kbd", "slot-key");
+      number.textContent = String(slot);
+      const parts = face
+        ? [".slot-icon", ".slot-sweep", ".slot-timer"].flatMap((selector) => {
+          const part = face.source.querySelector(selector);
+          return part ? [part.cloneNode(true)] : [];
+        })
+        : [];
+      entry.replaceChildren(...parts, number);
       entry.disabled = face === null;
+      entry.dataset.empty = String(face === null);
+      for (const name of MIRRORED_DATA) {
+        entry.removeAttribute(name);
+      }
+      entry.style.removeProperty("--sweep");
       entry.setAttribute("aria-label", face ? `${face.name} (ability ${slot})` : `Ability ${slot} (empty)`);
       // The hint ring names what the next tap on each face fires.
-      hint.textContent = face ? `${slot} ${face.name}` : String(slot);
+      hint.textContent = face?.name ?? "";
+      hint.hidden = face === null;
+    });
+  }
+
+  /** Copies each shown slot's live state (locked, cooldown sweep and seconds, resource, range). */
+  #mirrorSlots(): void {
+    this.#sources.forEach((source, index) => {
+      const entry = this.#faces[index];
+      if (!source || !entry) {
+        return;
+      }
+      for (const name of MIRRORED_DATA) {
+        const value = source.getAttribute(name);
+        if (value === null) {
+          entry.removeAttribute(name);
+        } else if (entry.getAttribute(name) !== value) {
+          entry.setAttribute(name, value);
+        }
+      }
+      const sweep = source.style.getPropertyValue("--sweep");
+      if (entry.style.getPropertyValue("--sweep") !== sweep) {
+        entry.style.setProperty("--sweep", sweep);
+      }
+      const timer = source.querySelector(".slot-timer")?.textContent ?? "";
+      const shown = entry.querySelector(".slot-timer");
+      if (shown && shown.textContent !== timer) {
+        shown.textContent = timer;
+      }
     });
   }
 

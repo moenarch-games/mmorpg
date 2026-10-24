@@ -203,13 +203,12 @@ export class ClassHud {
     return this.#slotKey;
   }
 
-  /** Each hotbar slot's ability name and a copy of its icon (touch face buttons, #434). */
-  slotFaces(): { name: string; icon: Node }[] {
-    return this.#slots.map((slot) => {
-      const name = this.#catalog?.abilities.get(Number(slot.button.dataset.ability))?.name ?? "Ability";
-      const icon = slot.button.querySelector(".slot-icon")?.cloneNode(true) ?? document.createElement("span");
-      return { name, icon };
-    });
+  /** Each hotbar slot's ability name and its action-bar button, which touch face buttons mirror (#434). */
+  slotFaces(): { name: string; source: HTMLButtonElement }[] {
+    return this.#slots.map((slot) => ({
+      name: this.#catalog?.abilities.get(Number(slot.button.dataset.ability))?.name ?? "Ability",
+      source: slot.button,
+    }));
   }
 
   /** Clears everything for a new session. */

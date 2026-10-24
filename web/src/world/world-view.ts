@@ -692,7 +692,7 @@ export class WorldView {
     return this.#classHud.slotKey;
   }
 
-  hotbarFaces(): { name: string; icon: Node }[] {
+  hotbarFaces(): { name: string; source: HTMLButtonElement }[] {
     return this.#classHud.slotFaces();
   }
 

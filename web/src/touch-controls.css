@@ -141,7 +141,10 @@
 }
 
 .touch-face { width: 3.3rem; height: 3.3rem; }
-.touch-face:disabled { opacity: .4; }
+.touch-face:disabled, .touch-face[data-empty="true"] { border: 2px dashed rgb(255 255 255 / 22%); background: rgb(9 14 20 / 35%); opacity: .55; }
+.touch-face[data-empty="true"] .slot-key { background: none; color: rgb(255 255 255 / 55%); }
+.touch-face .slot-key { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.touch-face:not([data-empty="true"]) .slot-key { top: auto; bottom: 2px; left: 50%; transform: translateX(-50%); }
 .touch-face .slot-icon { position: absolute; inset: 0; display: grid; place-items: center; }
 .touch-face .slot-icon img { width: 100%; height: 100%; object-fit: cover; }
 .touch-face .slot-icon svg { width: 68%; height: 68%; }
@@ -173,7 +176,7 @@
 
 .touch-hint {
   position: absolute;
-  max-width: 5.5rem;
+  max-width: 4.6rem;
   overflow: hidden;
   padding: .05rem .35rem;
   border-radius: .4rem;
@@ -187,9 +190,9 @@
 .touch-hint-ring[data-page="1"] .touch-hint { color: #ffd36b; }
 .touch-hint[data-face="north"] { top: -.6rem; left: 50%; transform: translateX(-50%); }
 .touch-hint[data-face="south"] { bottom: -.6rem; left: 50%; transform: translateX(-50%); }
-.touch-hint[data-face="west"] { top: 50%; right: calc(100% - .4rem); transform: translateY(-50%); }
-/* The cluster hugs the right edge, so face 2's hint sits on the ring above it. */
-.touch-hint[data-face="east"] { top: 1.3rem; right: -.8rem; }
+/* Side hints sit on the ring above their faces, so nothing leaves the cluster. */
+.touch-hint[data-face="west"] { top: 2.2rem; left: -.4rem; }
+.touch-hint[data-face="east"] { top: 2.2rem; right: -.4rem; }
 
 /* Compact phone HUD: the menu replaces the toolbar, chat collapses to its button, the minimap
    shrinks and the unit frames and hotbar scale down, clearing room for the stick and buttons. */
