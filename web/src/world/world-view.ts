@@ -300,6 +300,7 @@ export class WorldView {
   #outbox: MovementOutbox;
   #shownArea: string | null = null;
   #seconds = 0;
+  #viewerClip: string | null = null;
   #flyTo: { eye: Vec3; target: Vec3 } | null = null;
   #lastWork: RendererWorkObservations | null = null;
   #occluders: Box[] = [];
@@ -687,6 +688,11 @@ export class WorldView {
     this.interact();
   }
 
+  /** The imported clip the shared presenter chose for the viewer last frame, or null when procedural (#381). */
+  get viewerClip(): string | null {
+    return this.#viewerClip;
+  }
+
   /** The hotbar as the touch face buttons mirror it. */
   get hotbarKey(): string {
     return this.#classHud.slotKey;
@@ -820,6 +826,8 @@ export class WorldView {
     const { unitsPerMetre } = scenery.scenery;
     const sampled = source.sample();
     const presented = units.frame(sampled, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
+    const viewerModel = presented.imported.find((unit) => unit.entity.kind === "player" && unit.entity.id === projection.viewerId);
+    this.#viewerClip = viewerModel?.clip ?? null;
     const nodes: RendererSceneNode[] = [];
     const projected: ProjectedUnit[] = [];
     const others: MinimapUnit[] = [];

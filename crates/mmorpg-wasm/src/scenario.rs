@@ -145,22 +145,13 @@ impl Scenario {
     /// at full health and placed at the scenario location. It is built in a
     /// throwaway zone, so the scenario world's RNG is untouched.
     pub fn record(self, content: &Arc<ZoneContent>) -> Result<CharacterRecord, LocalZoneError> {
-        let zone_error = LocalZoneError::Zone;
-        let mut template =
-            ZoneSimulation::with_content(LOCAL_ZONE_ID, Arc::clone(content)).map_err(zone_error)?;
-        template
-            .create_character(1, self.class())
-            .map_err(zone_error)?;
-        let id = CharacterId::new(format!("scenario-{}", self.name())).map_err(zone_error)?;
-        let mut record = template.capture_character(1, id).map_err(zone_error)?;
-        let ([x, z], facing) = self.location();
-        // Outer-valley hills are physical (#159): stand on the authored ground, not inside it.
-        let ground = content
-            .definition()
-            .terrain()
-            .map_or(0, |terrain| terrain.height_at(x, z));
-        record.level = self.level();
-        record.experience = 0;
+        let mut record = fresh_record(
+            content,
+            self.class(),
+            self.level(),
+            &format!("scenario-{}", self.name()),
+            self.location(),
+        )?;
         if self == Self::SunkenShrine {
             use mmorpg_core::greyhaven_vale::quests::{SCOUT_THE_LAKE, THE_SUNKEN_SHRINE};
             // The chain through *Scout the Lake* turned in; the shrine quest accepted.
@@ -189,12 +180,44 @@ impl Scenario {
                     .fold(0, |mask, bit| mask | bit),
             };
         }
-        record.health = player_max_health(record.level) + record.equipment.totals().bonus_health();
-        record.location = CharacterLocation {
-            zone_id: LOCAL_ZONE_ID,
-            position: [x, ground + PLAYER_HALF_EXTENTS_UNITS[1], z],
-            facing,
-        };
         Ok(record)
     }
+}
+
+/// A freshly created character of `class` with its starter gear, raised to
+/// `level` at full health and standing on the authored ground at
+/// `location`. It is built in a throwaway zone, so the hosting world's RNG
+/// is untouched.
+pub(crate) fn fresh_record(
+    content: &Arc<ZoneContent>,
+    class: ClassChoice,
+    level: u8,
+    id: &str,
+    ([x, z], facing): ([i32; 2], u16),
+) -> Result<CharacterRecord, LocalZoneError> {
+    let zone_error = LocalZoneError::Zone;
+    let mut template =
+        ZoneSimulation::with_content(LOCAL_ZONE_ID, Arc::clone(content)).map_err(zone_error)?;
+    template.create_character(1, class).map_err(zone_error)?;
+    let id = CharacterId::new(id.to_owned()).map_err(zone_error)?;
+    let mut record = template.capture_character(1, id).map_err(zone_error)?;
+    // Outer-valley hills are physical (#159): stand on the authored ground, not inside it.
+    let ground = content
+        .definition()
+        .terrain()
+        .map_or(0, |terrain| terrain.height_at(x, z));
+    record.level = level;
+    record.experience = 0;
+    record.location = CharacterLocation {
+        zone_id: LOCAL_ZONE_ID,
+        position: [x, ground + PLAYER_HALF_EXTENTS_UNITS[1], z],
+        facing,
+    };
+    restore_health(&mut record);
+    Ok(record)
+}
+
+/// Full health for the record's level and equipment.
+pub(crate) fn restore_health(record: &mut CharacterRecord) {
+    record.health = player_max_health(record.level) + record.equipment.totals().bonus_health();
 }

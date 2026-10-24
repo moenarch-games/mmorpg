@@ -47,7 +47,9 @@ import {
 import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { committedArea, committedLevel, createScenarioWorld, loadLocalWorld } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, createScenarioWorld, loadLocalWorld } from "./world/wasm-runtime";
+import { ActionLabPanel, labQuery } from "./world/action-lab";
+import "./action-lab.css";
 import { scenarioChoice, type ScenarioChoice, type ScenarioSource } from "./world/scenario-source";
 import { webTransportConnector } from "./session/webtransport";
 import { onlineChoice, type ZoneServer } from "./world/online-config";
@@ -194,6 +196,10 @@ try {
   worldLoadError = errorMessage(error);
 }
 const scenarioReset = requireElement<HTMLButtonElement>("#scenario-reset");
+// The Action Lab (#381, `?scenario=action-lab&class=…`): a scenario with a configured character,
+// pause/step/scrub and the inspector dock.
+const actionLabRoot = requireElement<HTMLElement>("#action-lab");
+let actionLab: ActionLabPanel | null = null;
 let arenaServer: ZoneServer | null = null;
 let arenaError: string | null = null;
 const arenaStatus = requireElement<HTMLElement>("#battle-royale-status");
@@ -1191,6 +1197,7 @@ function frame(now: number) {
       showLinkState(activeWorld.source.linkState());
       showArenaMatch();
       showScenarioStatus();
+      updateActionLab();
       if (loading.entry !== null && loading.playableMs === null) {
         loading.playableMs = Math.round(now - loading.entry);
         markStartup("first-frame");
@@ -1334,6 +1341,8 @@ async function enterWorld(): Promise<void> {
     element.hidden = false;
   }
   scenarioReset.hidden = !scenario;
+  actionLabRoot.hidden = actionLab === null;
+  document.body.classList.toggle("action-lab-open", actionLab !== null);
   lastTime = performance.now();
   canvas.focus();
 }
@@ -1348,6 +1357,36 @@ async function resetScenario(): Promise<void> {
   worldView.enter(worldInput(), scenarioWorld.source.latestProjection());
   lastTime = performance.now();
   canvas.focus();
+}
+
+/** Syncs the Action Lab dock to the tick the arena shows. */
+function updateActionLab(): void {
+  if (!actionLab || !scenarioWorld || activeWorld !== scenarioWorld.world) { return; }
+  const source = scenarioWorld.source;
+  const shown = source.shownFrame();
+  const viewer = (shown?.snapshot ?? source.latestProjection())?.viewer;
+  if (!viewer) { return; }
+  actionLab.update(source.frames, shown, source.paused, {
+    level: viewer.level, health: viewer.health, maxHealth: viewer.maxHealth,
+    resource: viewer.resource ? `${viewer.resource.value} / ${viewer.resource.max} ${viewer.resource.kind}` : null,
+    clip: worldView.viewerClip,
+  });
+}
+
+/** Builds the lab dock once its world loaded. */
+function mountActionLab(loaded: LocalWorld, choice: ScenarioChoice, source: ScenarioSource): void {
+  const setup = choice.lab;
+  if (!setup) { return; }
+  const { graph, options } = actionLabDefinitions();
+  actionLab = new ActionLabPanel(actionLabRoot, graph, options, loaded.catalog, setup, {
+    togglePause: () => source.setPaused(!source.paused),
+    step: () => source.step(),
+    scrub: (tick) => source.scrubTo(tick === null ? null : BigInt(tick)),
+    apply: (next) => { window.location.search = labQuery(next, choice.seed); },
+  });
+  new ResizeObserver(() => {
+    document.body.style.setProperty("--lab-width", `${actionLabRoot.offsetWidth}px`);
+  }).observe(actionLabRoot);
 }
 
 /** A dead scenario character is offered the reset instead of the long run back. */
@@ -1434,6 +1473,11 @@ window.addEventListener("keydown", (event) => {
   if (scenario && event.key === "F9" && !event.repeat) {
     event.preventDefault();
     void resetScenario();
+  }
+  const labSource = actionLab && scenarioWorld && activeWorld === scenarioWorld.world ? scenarioWorld.source : null;
+  if (labSource && (event.key === "F7" || event.key === "F8") && !event.repeat) {
+    event.preventDefault();
+    if (event.key === "F7") { labSource.setPaused(!labSource.paused); } else { labSource.step(); }
   }
 });
 createCharacterButton.addEventListener("click", openCharacterCreation);
@@ -1678,6 +1722,7 @@ void loadPageWorld().then((loaded) => {
   if (scenario) {
     try {
       scenarioWorld = createScenarioWorld(loaded, scenario);
+      mountActionLab(loaded, scenario, scenarioWorld.source);
     } catch (error) {
       worldLoadError = `Review scenario ${scenario.name}: ${errorMessage(error)}`;
     }
