@@ -30,6 +30,8 @@ enum Visual {
     Beam,
     /// Chain Lightning (#292): arcs from the caster through each victim in turn.
     Chain,
+    /// Entangling Roots (#304): vines that rise and coil around the rooted target.
+    Roots,
     /// Drain Life (#301): a tether from the target back to the caster while it channels.
     Drain,
     /// A creature special's danger footprint (#276, Atlas 6.6.29–6.6.31): the true ring it will
@@ -115,6 +117,7 @@ const DRAIN_LIFE: u8 = 28;
 const BONE_SHIELD: u8 = 29;
 const HOLY_BEAM: u8 = 36;
 const DIVINE_SHIELD: u8 = 37;
+const BARKSKIN: u8 = 41;
 /// The zone's guard coverage is centred 30° toward the shield (left) side of the facing.
 const GUARD_SIDE: f64 = PI / 6.;
 const SWEEP_HALF_WIDTH: f64 = PI / 6.;
@@ -169,6 +172,11 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         35 => (Some(Stance::Staff), None, 0xd8f0a0),
         36 => (Some(Stance::Staff), Some(Visual::Beam), 0xffe9a0),
         37 => (Some(Stance::Staff), Some(Visual::Bubble), 0xfff3c8),
+        // The Druid (#304): a green wrath, brown-green roots, a leafy rejuvenation, a bark ward.
+        38 => (Some(Stance::Staff), Some(Visual::Projectile), 0x7fd65a),
+        39 => (Some(Stance::Staff), Some(Visual::Roots), 0x6b8a3a),
+        40 => (Some(Stance::Staff), None, 0x9ee07a),
+        41 => (Some(Stance::Staff), Some(Visual::Bubble), 0xa07a4a),
         _ => (None, None, 0xffffff),
     }
 }
@@ -190,6 +198,7 @@ fn timed(visual: Visual) -> Option<f64> {
         Visual::Swing => Some(0.28),
         Visual::Cone => Some(0.45),
         Visual::Chain => Some(0.5),
+        Visual::Roots => Some(2.),
         _ => None,
     }
 }
@@ -561,16 +570,18 @@ impl Effects {
                 self.casts.remove(&viewer);
             }
         }
-        // Arcane Barrier, Bone Shield (#301) or Divine Shield (#303): the viewer's absorb ward,
-        // in its own colour.
+        // Arcane Barrier, Bone Shield (#301), Divine Shield (#303) or Barkskin (#304): the viewer's
+        // absorb ward, in its own colour.
         let ward = if s.viewer.dead {
             None
         } else {
             s.auras
                 .iter()
                 .find(|a| {
-                    matches!(a.ability.get(), BARRIER | BONE_SHIELD | DIVINE_SHIELD)
-                        && a.kind == AuraKind::Absorb
+                    matches!(
+                        a.ability.get(),
+                        BARRIER | BONE_SHIELD | DIVINE_SHIELD | BARKSKIN
+                    ) && a.kind == AuraKind::Absorb
                 })
                 .map(|a| a.ability.get())
         };
@@ -941,6 +952,37 @@ impl Effects {
                                 );
                             }
                             from = to;
+                        }
+                    }
+                }
+                Visual::Roots => {
+                    if let Some(v) = target {
+                        // Six vines grow out of the ground around the victim's feet and coil
+                        // inward, then sink back as the burst ends.
+                        let grow = (t * 4.).min(1.) * (1. - ((t - 0.8) * 5.).max(0.));
+                        for i in 0..6 {
+                            let a = f64::from(i) / 6. * TAU + t * 1.5;
+                            for k in 0..4 {
+                                let h = f64::from(k) / 4.;
+                                if h > grow {
+                                    break;
+                                }
+                                let radius = 0.55 - 0.25 * h;
+                                let turn = a + h * 1.6;
+                                add(
+                                    &format!("vine-{i}-{k}"),
+                                    Primitive::Box([0.09, 0.32, 0.09]),
+                                    if k == 3 { 0x7fd65a } else { color },
+                                    [
+                                        v.feet[0] + turn.sin() * radius,
+                                        v.feet[1] + 0.16 + h * 1.1,
+                                        v.feet[2] + turn.cos() * radius,
+                                    ],
+                                    qa(1, turn),
+                                    1.,
+                                    false,
+                                );
+                            }
                         }
                     }
                 }

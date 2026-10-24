@@ -37,7 +37,7 @@ impl Fight {
     }
 
     /// A fight whose player chose `class` (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue,
-    /// 5 Cleric).
+    /// 5 Cleric, 6 Druid).
     fn with_class(content: Arc<ZoneContent>, level: u8, class: u8) -> Self {
         let mut fight = Self::new(content, level);
         fight.send(ZoneCommand::ChooseClass { class, sex: 1 });
@@ -179,7 +179,7 @@ fn players_choose_a_class_once_and_need_one_for_abilities() {
     assert_eq!(unchosen.entities[0].appearance, 0);
 
     fight.use_ability(ids::HEROIC_STRIKE);
-    fight.send(ZoneCommand::ChooseClass { class: 6, sex: 0 });
+    fight.send(ZoneCommand::ChooseClass { class: 7, sex: 0 });
     fight.send(ZoneCommand::ChooseClass { class: 0, sex: 2 });
     fight.tick();
     assert_eq!(
@@ -1321,5 +1321,66 @@ fn a_cleric_builds_faith_and_heals_and_shields_a_friend_or_itself() {
             .auras
             .iter()
             .any(|aura| aura.ability == ids::RENEW && aura.kind == AuraKind::HealOverTime)
+    );
+}
+
+#[test]
+fn a_druid_roots_bolts_heals_a_friend_and_barks_itself() {
+    // A sturdy wolf 25 m north, beyond aggro range.
+    let content = classes::arena(
+        vec![arena::wolf(400, [3, 3])],
+        vec![arena::spawn(1, WOLF, [0, 2_500])],
+    );
+    let mut fight = Fight::with_class(content, 6, 6);
+    fight.zone.add_player(2).unwrap();
+    assert_eq!(fight.resource(), 110 + 22 * 5, "mana like the Arcanist");
+
+    // Entangling Roots holds the selected wolf in place at range.
+    fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
+    fight.use_ability(ids::ENTANGLING_ROOTS);
+    fight.tick();
+    let root = fight.view().target_detail.auras[0];
+    assert_eq!(
+        (root.ability, root.kind),
+        (ids::ENTANGLING_ROOTS, AuraKind::Root)
+    );
+
+    // Wrath flies as a nature missile.
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.use_ability(ids::WRATH);
+    fight.until(70, |fight| fight.view().viewer.cast.is_none());
+    assert!(
+        fight
+            .zone
+            .snapshot()
+            .unwrap()
+            .projectiles
+            .iter()
+            .any(|projectile| projectile.kind == mmorpg_core::ProjectileKind::Nature)
+    );
+
+    // Rejuvenation lands on a selected friendly player; Barkskin on the Druid.
+    fight.send(ZoneCommand::SelectTarget(Some(EntityRef::Player(2))));
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.use_ability(ids::REJUVENATION);
+    fight.tick();
+    assert!(
+        fight
+            .zone
+            .snapshot_for_player(2)
+            .unwrap()
+            .auras
+            .iter()
+            .any(|aura| aura.ability == ids::REJUVENATION && aura.kind == AuraKind::HealOverTime)
+    );
+    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.use_ability(ids::BARKSKIN);
+    fight.tick();
+    assert!(
+        fight
+            .view()
+            .auras
+            .iter()
+            .any(|aura| aura.ability == ids::BARKSKIN && aura.kind == AuraKind::Absorb)
     );
 }
