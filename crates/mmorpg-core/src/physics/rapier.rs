@@ -774,14 +774,25 @@ impl World {
         position: [f32; 3],
         filter: QueryFilter<'_>,
     ) -> Option<f32> {
-        let queries = self.world.broad_phase.as_query_pipeline(
-            &self.queries,
-            &self.world.bodies,
-            &self.world.colliders,
-            filter,
-        );
-        queries
-            .cast_shape(
+        // Rapier reports only the first hit. A capsule leaning on a face too steep to stand on
+        // (a ramp's chute end, #59) can still stand on the terrain beside it (#423), so a
+        // steep hit is set aside and the cast repeated, a few times at most.
+        let mut steep: Vec<ColliderHandle> = Vec::new();
+        for _ in 0..4 {
+            let previous = filter.predicate;
+            let admit = |handle: ColliderHandle, collider: &rapier3d::prelude::Collider| {
+                !steep.contains(&handle) && previous.is_none_or(|admits| admits(handle, collider))
+            };
+            let queries = self.world.broad_phase.as_query_pipeline(
+                &self.queries,
+                &self.world.bodies,
+                &self.world.colliders,
+                QueryFilter {
+                    predicate: Some(&admit),
+                    ..filter
+                },
+            );
+            let (handle, hit) = queries.cast_shape(
                 &Pose::from_translation(lifted(position)),
                 -Vector::Y,
                 &capsule(body.half_extents),
@@ -791,11 +802,13 @@ impl World {
                     max_time_of_impact: SUPPORT_REACH,
                     compute_impact_geometry_on_penetration: true,
                 },
-            )
-            .filter(|(_, hit)| {
-                hit.normal1.dot(Vector::Y) >= self.controller.max_slope_climb_angle.cos()
-            })
-            .map(|(_, hit)| hit.time_of_impact * UNITS_PER_METRE)
+            )?;
+            if hit.normal1.dot(Vector::Y) >= self.controller.max_slope_climb_angle.cos() {
+                return Some(hit.time_of_impact * UNITS_PER_METRE);
+            }
+            steep.push(handle);
+        }
+        None
     }
 
     /// Whether a moving body stands on static ground.

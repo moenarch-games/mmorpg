@@ -474,7 +474,11 @@ fn mill_hoist_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
     let mut state = zone.snapshot()?;
     let [x, _, z] = mmorpg_core::greyhaven_vale::MILL_HOIST.low;
     #[allow(clippy::cast_precision_loss)]
-    let feet = [x as f32, 90.0, z as f32];
+    let feet = [
+        x as f32,
+        (mmorpg_core::greyhaven_vale::basin::TERRACE_Y + 90) as f32,
+        z as f32,
+    ];
     state.players[0].position = feet;
     Ok(ZoneSimulation::from_snapshot(state, content)?)
 }
