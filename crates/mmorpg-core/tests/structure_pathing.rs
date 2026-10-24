@@ -44,7 +44,6 @@ fn content(
     }];
     definition_colliders.extend(walls);
     let definition = mmorpg_core::ZoneDefinition::with_spawn_grid(
-        77,
         [0, -1, 0],
         mmorpg_core::SpawnGrid {
             origin: [0, 0],
@@ -64,7 +63,7 @@ fn content(
             arena::GRAVEYARD,
         )
         .unwrap()
-        .with_creature_abilities(mmorpg_core::ABILITY_CATALOG_REVISION, Vec::new())
+        .with_creature_abilities(Vec::new())
         .unwrap()
         .with_structures(
             vec![StructureSite {

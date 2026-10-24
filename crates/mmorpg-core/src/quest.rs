@@ -19,9 +19,6 @@ use crate::{
     item_template,
 };
 
-/// Revision of the quest rules and the hosted Greyhaven chain. Revision 2 adds retrieve
-/// objectives and *The Sunken Shrine* (#274); revision 3 *Deeper into the Hollow* (#160).
-pub const QUEST_CATALOG_REVISION: u64 = 3;
 /// Quest IDs are `1..=MAX_QUESTS`, so completed quests fit a `u32` mask.
 pub const MAX_QUESTS: usize = 32;
 /// A player's quest log holds at most this many active quests.

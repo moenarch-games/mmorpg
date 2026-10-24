@@ -68,7 +68,7 @@ fn market(vendor_at: [i32; 2], bag: Bag, copper: u32, health: Option<u32>) -> Zo
             npc(GUARD, NpcRole::Guard, [0, -600]),
         ],
     ))
-    .with_vendors(1, vec![(VENDOR, starter_vendor_stock())])
+    .with_vendors(vec![(VENDOR, starter_vendor_stock())])
     .unwrap();
     let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::new(content)).unwrap();
     zone.add_player(1).unwrap();
@@ -379,36 +379,32 @@ fn content_without_vendors_refuses_every_trade_and_binding_is_validated() {
         }]
     );
     let base = ZoneContent::clone(&plain);
-    assert!(base.clone().with_vendors(0, vec![]).is_err());
     assert!(
         base.clone()
-            .with_vendors(1, vec![(GUARD, starter_vendor_stock())])
+            .with_vendors(vec![(GUARD, starter_vendor_stock())])
             .is_err()
     );
     assert!(
         base.clone()
-            .with_vendors(
-                1,
-                vec![
-                    (VENDOR, starter_vendor_stock()),
-                    (VENDOR, starter_vendor_stock())
-                ]
-            )
+            .with_vendors(vec![
+                (VENDOR, starter_vendor_stock()),
+                (VENDOR, starter_vendor_stock())
+            ])
             .is_err()
     );
     let bound = base
         .clone()
-        .with_vendors(1, vec![(VENDOR, starter_vendor_stock())])
+        .with_vendors(vec![(VENDOR, starter_vendor_stock())])
         .unwrap();
-    assert_ne!(bound.fingerprint(), base.fingerprint());
+    assert_ne!(bound.revision(), base.revision());
     assert_eq!(bound.rng_seed(), base.rng_seed());
     let cheaper = VendorStock::new(&[VendorOffer {
         item: BOOTS,
         price: 11,
     }])
     .unwrap();
-    let other = base.with_vendors(1, vec![(VENDOR, cheaper)]).unwrap();
-    assert_ne!(other.fingerprint(), bound.fingerprint());
+    let other = base.with_vendors(vec![(VENDOR, cheaper)]).unwrap();
+    assert_ne!(other.revision(), bound.revision());
 }
 
 #[test]
@@ -451,10 +447,6 @@ fn vendor_stock_is_validated() {
 #[test]
 fn greyhaven_binds_bram_tolliver_as_its_vendor() {
     let content = greyhaven_vale::content();
-    assert_eq!(
-        content.vendor_revision(),
-        mmorpg_core::VENDOR_CATALOG_REVISION
-    );
     let [(npc, stock)] = content.vendors() else {
         panic!("one vendor");
     };

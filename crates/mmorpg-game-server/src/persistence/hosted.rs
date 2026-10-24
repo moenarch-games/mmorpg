@@ -560,8 +560,8 @@ impl State {
             self.objects.load(
                 &self.fence,
                 &reference,
-                self.content.fingerprint(),
-                u16::from(mmorpg_protocol::SNAPSHOT_WIRE_VERSION),
+                self.content.revision(),
+                mmorpg_protocol::PROTOCOL_ID,
             ),
         )
         .map_err(error)?;
@@ -586,8 +586,8 @@ impl State {
             .prepare(
                 &self.fence,
                 self.position,
-                self.content.fingerprint(),
-                u16::from(mmorpg_protocol::SNAPSHOT_WIRE_VERSION),
+                self.content.revision(),
+                mmorpg_protocol::PROTOCOL_ID,
                 &self.last_image,
             )
             .map_err(checkpoint_error)?;
@@ -828,8 +828,8 @@ fn initialize(
                 objects.load(
                     &config.fence,
                     &reference,
-                    config.content.fingerprint(),
-                    u16::from(mmorpg_protocol::SNAPSHOT_WIRE_VERSION),
+                    config.content.revision(),
+                    mmorpg_protocol::PROTOCOL_ID,
                 ),
             )
             .map_err(error)?;

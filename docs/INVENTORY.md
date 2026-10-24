@@ -220,9 +220,8 @@ Bags. Opening Loot or the vendor closes Bags and the pane. While an equip or une
 answer, Equip and Unequip are disabled, so a double click cannot send a second
 change that would only be refused.
 
-Catalog JSON format v2 includes `itemCatalogRevision` (decimal string) and an
-ordered `items` array of `{id, name, maxStack}` from core; format v4 adds each
-item's `slot` (`null` or the camel-case slot name) and `stats`. The browser decodes it
+The catalog JSON carries an ordered `items` array of `{id, name, maxStack, slot,
+stats, sellPrice}` from core (`slot` is `null` or the camel-case slot name). The browser decodes it
 strictly and uses its names, without reproducing grant or bag-mutation rules.
 Focused state tests and real Chromium cover commands, refusal, fresh-session
 reset, keyboard close and narrow/short viewport layouts.

@@ -1,6 +1,6 @@
 use mmorpg_core::{
-    CreatureTemplateId, ItemId, LOOT_CATALOG_REVISION, LootOutcome, LootRolls, LootTable,
-    LootTableError, MAX_LOOT_OUTCOMES, ZoneId, ZoneSimulation, greyhaven_vale, loot_table,
+    CreatureTemplateId, ItemId, LootOutcome, LootRolls, LootTable, LootTableError,
+    MAX_LOOT_OUTCOMES, ZoneId, ZoneSimulation, greyhaven_vale, loot_table,
 };
 
 const FUR: ItemId = ItemId::new(1);
@@ -162,7 +162,6 @@ fn extreme_money_ranges_and_weights_never_overflow() {
 
 #[test]
 fn starter_tables_are_pinned_and_cover_every_hosted_template() {
-    assert_eq!(LOOT_CATALOG_REVISION, 5);
     let gear = |id| item(1, ItemId::new(id), [1, 1]);
     let nothing = |weight| LootOutcome::Nothing { weight };
     let rows = [

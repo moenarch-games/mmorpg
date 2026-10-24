@@ -158,16 +158,13 @@ impl NativeApplication {
                 original.graveyard(),
             )
             .unwrap()
-            .with_loot_tables(original.loot_revision(), original.loot_tables().to_vec())
+            .with_loot_tables(original.loot_tables().to_vec())
             .unwrap()
-            .with_creature_abilities(
-                original.ability_revision(),
-                original.creature_abilities().to_vec(),
-            )
+            .with_creature_abilities(original.creature_abilities().to_vec())
             .unwrap()
-            .with_vendors(original.vendor_revision(), original.vendors().to_vec())
+            .with_vendors(original.vendors().to_vec())
             .unwrap()
-            .with_quests(original.quest_revision(), original.quests().to_vec())
+            .with_quests(original.quests().to_vec())
             .unwrap(),
         );
         let zone_id = mmorpg_core::ZoneId::new(1);

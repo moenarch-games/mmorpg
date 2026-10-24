@@ -675,7 +675,9 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         })
         .collect();
     let mut scenery = Scenery {
-        content_revision: definition.revision(),
+        content_revision: greyhaven_vale::content_with_definition(definition.clone())
+            .expect("built-in Greyhaven content is valid")
+            .revision(),
         props: Vec::new(),
         roads,
         water,

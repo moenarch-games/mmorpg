@@ -68,12 +68,10 @@ pub fn encode_canonical_snapshot(
     encode_common_header(
         &mut payload,
         CANONICAL_SNAPSHOT_SCOPE,
-        snapshot.schema_version,
         snapshot.zone_id,
         snapshot.tick,
-    )?;
+    );
     payload.extend_from_slice(&snapshot.content_revision.to_be_bytes());
-    payload.extend_from_slice(&snapshot.content_fingerprint.to_be_bytes());
     payload.extend_from_slice(&snapshot.rng_state.to_be_bytes());
     payload.extend_from_slice(&snapshot.loot_rng_state.to_be_bytes());
     payload.extend_from_slice(&player_count.to_be_bytes());
@@ -450,10 +448,8 @@ fn encode_creature(
 
 pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot, ProtocolError> {
     let mut offset = 0;
-    let (schema_version, zone_id, tick) =
-        decode_common_header(payload, &mut offset, CANONICAL_SNAPSHOT_SCOPE)?;
+    let (zone_id, tick) = decode_common_header(payload, &mut offset, CANONICAL_SNAPSHOT_SCOPE)?;
     let content_revision = u64::from_be_bytes(take(payload, &mut offset)?);
-    let content_fingerprint = u64::from_be_bytes(take(payload, &mut offset)?);
     let rng_state = u64::from_be_bytes(take(payload, &mut offset)?);
     let loot_rng_state = u64::from_be_bytes(take(payload, &mut offset)?);
     let player_count = decode_u16_count(
@@ -485,11 +481,9 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
-        schema_version,
         zone_id,
         tick,
         content_revision,
-        content_fingerprint,
         rng_state,
         loot_rng_state,
         players,
@@ -1284,10 +1278,7 @@ fn decode_canonical_doors(
 mod tests {
     use super::*;
     use crate::decode_snapshot;
-    use mmorpg_core::{
-        ErrorCode, NpcId, SNAPSHOT_SCHEMA_VERSION, ZoneDefinition, ZoneEvent, ZoneId,
-        ZoneSimulation,
-    };
+    use mmorpg_core::{ErrorCode, NpcId, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation};
 
     fn snapshot() -> CanonicalZoneSnapshot {
         let wolf = EntityRef::Creature(CreatureId::new(4));
@@ -1363,11 +1354,9 @@ mod tests {
                 },
             ],
             loot_rng_state: 0,
-            schema_version: SNAPSHOT_SCHEMA_VERSION,
             zone_id: ZoneId::new(42),
             tick: 99,
             content_revision: 3,
-            content_fingerprint: 0x0123_4567_89ab_cdef,
             rng_state: u64::MAX,
             doors: vec![mmorpg_core::CanonicalDoor {
                 door: mmorpg_core::DoorId::new(1),
@@ -1717,7 +1706,7 @@ mod tests {
         // flag without a point and an aura without a caster.
         // The intent count follows the player's timers; the seven intents
         // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes, then the dropped flag and two events.
-        let intents = 16 + 32 + 2 + 163;
+        let intents = 16 + 24 + 2 + 163;
         let player_abilities = intents + 1 + (7 + 7 + 6 + 6 + 3 + 2 + 2) + 1 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
         let cast = player_abilities + 1 + 8 + 1 + 2 * 3;
@@ -1773,13 +1762,13 @@ mod tests {
         assert_eq!(bytes.len(), encoded.len() + 4);
         assert_eq!(decode_canonical_snapshot(&bytes).unwrap(), trailer);
         // Header 16, identity 24, then the first player record.
-        let jump_flag = 16 + 32 + 2 + 32;
+        let jump_flag = 16 + 24 + 2 + 32;
         assert_eq!(encoded[jump_flag], 1);
         for (offset, value, message) in [
             (jump_flag, 2, "jump flag must be 0 or 1"),
-            (0, 4, "unsupported snapshot wire version"),
-            (3, 4, "unsupported core snapshot schema version"),
-            (48, 2, "snapshot exceeds configured zone player capacity"),
+            (0, 4, "unsupported snapshot protocol id"),
+            (3, 2, "unexpected snapshot scope"),
+            (40, 2, "snapshot exceeds configured zone player capacity"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -1898,7 +1887,7 @@ mod tests {
     fn canonical_decoding_rejects_malformed_unit_state() {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
         // Player 7's auto-attack flag follows its target reference.
-        let player = 16 + 32 + 2;
+        let player = 16 + 24 + 2;
         let auto_attack = player + 44 + 96 + 1 + 4 + 4 + 5;
         let intents = auto_attack + 1 + 8;
         let mut cases = vec![
@@ -1929,7 +1918,7 @@ mod tests {
             ..snapshot()
         };
         let encoded = encode_canonical_snapshot(&without_players).unwrap();
-        let creature = 16 + 32 + 2 + 2;
+        let creature = 16 + 24 + 2 + 2;
         let life = creature + 4 + 8 + 1 + 4 + 2 + 24;
         let ai = life + 9;
         for (offset, value, message) in [
@@ -1942,7 +1931,7 @@ mod tests {
             (ai + 13, 0, "an absent entity must have ID 0"),
             (ai + 12 + 1 + 9 + 4, 2, "boolean field must be 0 or 1"),
             (ai + 12 + 1 + 9 + 4, 0, "malformed creature tap"),
-            (50, 5, "snapshot exceeds the creature spawn capacity"),
+            (42, 5, "snapshot exceeds the creature spawn capacity"),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -1958,7 +1947,7 @@ mod tests {
     fn canonical_equipment_rejects_unknown_and_misplaced_items() {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
         // Player 7's equipment follows its 80-byte inventory block.
-        let equipment = 16 + 32 + 2 + 44 + 80;
+        let equipment = 16 + 24 + 2 + 44 + 80;
         assert_eq!(encoded[equipment..equipment + 2], [0, 3]);
         for (slot, item, message) in [
             (0, 15, "unknown item"),
@@ -1988,7 +1977,7 @@ mod tests {
         assert_eq!(restored.snapshot().unwrap(), state);
         let other = ZoneSimulation::with_definition(
             ZoneId::new(1),
-            ZoneDefinition::new(9, [0, -1, 0], Vec::new()).unwrap(),
+            ZoneDefinition::new([0, -1, 0], Vec::new()).unwrap(),
         )
         .unwrap();
         assert_eq!(

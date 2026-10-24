@@ -8,8 +8,8 @@ use std::sync::Arc;
 use mmorpg_core::ability::ids;
 use mmorpg_core::unit::player_max_health;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
-    CreatureTemplateId, ZoneContent, ZoneSimulation,
+    CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate, CreatureTemplateId,
+    ZoneContent, ZoneSimulation,
 };
 
 use super::arena;
@@ -51,7 +51,7 @@ pub fn arena(templates: Vec<CreatureTemplate>, spawns: Vec<CreatureSpawn>) -> Ar
         .collect();
     Arc::new(
         content
-            .with_creature_abilities(ABILITY_CATALOG_REVISION, bindings)
+            .with_creature_abilities(bindings)
             .expect("test abilities are valid"),
     )
 }

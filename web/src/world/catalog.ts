@@ -1,6 +1,6 @@
 /**
  * The content catalog from the WASM `catalog()` export (format
- * `mmorpg.catalog` v7): names and presentation facts for the IDs that
+ * `mmorpg.catalog`): names and presentation facts for the IDs that
  * projections carry. Creature templates by template ID, NPCs by NPC ID,
  * areas by area ID, items (with equipment slot and stats) by item ID,
  * classes by wire value, abilities by ability ID and quests by quest ID.
@@ -92,11 +92,9 @@ export type QuestRecord = {
 };
 
 export type ContentCatalog = {
-  itemCatalogRevision: bigint;
   items: ReadonlyMap<number, ItemRecord>;
+  /** The content hash, never a hand-bumped counter. */
   contentRevision: bigint;
-  /** 16 lower-case hex digits. */
-  contentFingerprint: string;
   creatureTemplates: ReadonlyMap<number, CreatureTemplate>;
   npcs: ReadonlyMap<number, NpcRecord>;
   areas: ReadonlyMap<number, string>;
@@ -109,7 +107,6 @@ export type ContentCatalog = {
 };
 
 const FORMAT = "mmorpg.catalog";
-const VERSION = 7;
 const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve"] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
@@ -183,11 +180,10 @@ export function decodeCatalog(json: string): ContentCatalog {
     fail("not JSON");
   }
   const root = object(parsed, [
-    "format", "version", "contentRevision", "contentFingerprint", "creatureTemplates", "npcs", "areas", "itemCatalogRevision", "items",
-    "classes", "abilityCatalogRevision", "abilities", "vendorCatalogRevision", "vendors", "questCatalogRevision", "quests",
+    "format", "contentRevision", "creatureTemplates", "npcs", "areas", "items", "classes", "abilities", "vendors", "quests",
   ], "export");
-  if (root.format !== FORMAT || root.version !== VERSION) {
-    fail(`unsupported format ${String(root.format)} v${String(root.version)}`);
+  if (root.format !== FORMAT) {
+    fail(`unsupported format ${String(root.format)}`);
   }
   if (typeof root.contentRevision !== "string" || !/^(0|[1-9][0-9]{0,19})$/.test(root.contentRevision)) {
     fail("content revision must be a canonical decimal u64");
@@ -195,9 +191,6 @@ export function decodeCatalog(json: string): ContentCatalog {
   const contentRevision = BigInt(root.contentRevision);
   if (contentRevision > 0xffff_ffff_ffff_ffffn) {
     fail("content revision exceeds u64");
-  }
-  if (typeof root.contentFingerprint !== "string" || !/^[0-9a-f]{16}$/.test(root.contentFingerprint)) {
-    fail("content fingerprint must be 16 lower-case hex digits");
   }
   const templates = list(root.creatureTemplates, "creature templates", 256).map((value, index) => {
     const name = `creature template ${index}`;
@@ -237,9 +230,6 @@ export function decodeCatalog(json: string): ContentCatalog {
     const record = object(value, ["id", "name"], `area ${index}`);
     return { id: int(record.id, `area ${index} id`, 0, 0xffff), name: text(record.name, `area ${index} name`) };
   });
-  if (root.itemCatalogRevision !== "5") {
-    fail("unsupported item catalog revision");
-  }
   const items = list(root.items, "items", 256).map((value, index): ItemRecord => {
     const name = `item ${index}`;
     const record = object(value, ["id", "name", "maxStack", "slot", "stats", "sellPrice"], name);
@@ -259,9 +249,6 @@ export function decodeCatalog(json: string): ContentCatalog {
     };
   });
   const itemsById = byId(items, "item");
-  if (root.vendorCatalogRevision !== "0" && root.vendorCatalogRevision !== "4") {
-    fail("unsupported vendor catalog revision");
-  }
   const vendors = list(root.vendors, "vendors", 256).map((value, index): VendorRecord & { id: number } => {
     const name = `vendor ${index}`;
     const record = object(value, ["npc", "offers"], name);
@@ -282,9 +269,6 @@ export function decodeCatalog(json: string): ContentCatalog {
     }
     return { id: npc, npc, offers };
   });
-  if (root.vendorCatalogRevision === "0" && vendors.length > 0) {
-    fail("content without a vendor catalog cannot list vendors");
-  }
   const classes = list(root.classes, "classes", 7).map((value, index) => {
     const record = object(value, ["id", "name", "resource"], `class ${index}`);
     return {
@@ -293,9 +277,6 @@ export function decodeCatalog(json: string): ContentCatalog {
       resource: oneOf(record.resource, RESOURCES, `class ${index} resource`),
     };
   });
-  if (root.abilityCatalogRevision !== "13") {
-    fail("unsupported ability catalog revision");
-  }
   const abilities = list(root.abilities, "abilities", 255).map((value, index) => {
     const name = `ability ${index}`;
     const record = object(value, [
@@ -316,9 +297,6 @@ export function decodeCatalog(json: string): ContentCatalog {
       aura: record.aura === null ? null : int(record.aura, `${name} aura`, 1, 7),
     };
   });
-  if (root.questCatalogRevision !== "0" && root.questCatalogRevision !== "3") {
-    fail("unsupported quest catalog revision");
-  }
   const npcsById = byId(npcs, "npc");
   const quests = list(root.quests, "quests", 32).map((value, index): QuestRecord => {
     const name = `quest ${index}`;
@@ -382,18 +360,13 @@ export function decodeCatalog(json: string): ContentCatalog {
       choices,
     };
   });
-  if (root.questCatalogRevision === "0" && quests.length > 0) {
-    fail("content without a quest catalog cannot list quests");
-  }
   return {
     quests: byId(quests, "quest"),
     classes: byId(classes, "class"),
     abilities: byId(abilities, "ability"),
-    itemCatalogRevision: 5n,
     items: itemsById,
     vendors: new Map([...byId(vendors, "vendor")].map(([id, { npc, offers }]) => [id, { npc, offers }])),
     contentRevision,
-    contentFingerprint: root.contentFingerprint,
     creatureTemplates: byId(templates, "creature template"),
     npcs: npcsById,
     areas: new Map([...byId(areas, "area")].map(([id, area]) => [id, area.name])),

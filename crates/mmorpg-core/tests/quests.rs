@@ -128,7 +128,7 @@ fn base_content() -> ZoneContent {
 }
 
 fn content() -> Arc<ZoneContent> {
-    Arc::new(base_content().with_quests(1, quests()).unwrap())
+    Arc::new(base_content().with_quests(quests()).unwrap())
 }
 
 struct Run {
@@ -249,10 +249,9 @@ type Mutation = fn(&mut Vec<Quest>);
 #[test]
 fn content_validates_quests_and_binds_them_to_its_identity() {
     let base = base_content();
-    let bound = base.clone().with_quests(1, quests()).unwrap();
-    assert_ne!(bound.fingerprint(), base.fingerprint());
+    let bound = base.clone().with_quests(quests()).unwrap();
+    assert_ne!(bound.revision(), base.revision());
     assert_eq!(bound.rng_seed(), base.rng_seed(), "quests keep the seed");
-    assert_eq!(bound.quest_revision(), 1);
     assert_eq!(
         bound
             .quests()
@@ -264,12 +263,8 @@ fn content_validates_quests_and_binds_them_to_its_identity() {
     let mut reworded = quests();
     reworded[0].text = "Do it now.".into();
     assert_ne!(
-        base.clone().with_quests(1, reworded).unwrap().fingerprint(),
-        bound.fingerprint()
-    );
-    assert_ne!(
-        base.clone().with_quests(2, quests()).unwrap().fingerprint(),
-        bound.fingerprint()
+        base.clone().with_quests(reworded).unwrap().revision(),
+        bound.revision()
     );
 
     let mutations: Vec<(&str, Mutation)> = vec![
@@ -334,7 +329,7 @@ fn content_validates_quests_and_binds_them_to_its_identity() {
     for (name, mutate) in mutations {
         let mut invalid = quests();
         mutate(&mut invalid);
-        assert!(base.clone().with_quests(1, invalid).is_err(), "{name}");
+        assert!(base.clone().with_quests(invalid).is_err(), "{name}");
     }
     let mut full_bag = quests();
     full_bag[1].objectives[0] = QuestObjective::Collect {
@@ -343,13 +338,11 @@ fn content_validates_quests_and_binds_them_to_its_identity() {
         source: BOAR,
     };
     assert!(
-        base.clone().with_quests(1, full_bag).is_ok(),
+        base.clone().with_quests(full_bag).is_ok(),
         "a full bag of pelts"
     );
-    assert!(base.with_quests(0, quests()).is_err(), "revision zero");
 
     let hosted = greyhaven_vale::content();
-    assert_eq!(hosted.revision(), 28);
     assert_eq!(hosted.quests().len(), 11);
     assert_eq!(hosted.rng_seed(), greyhaven_vale::RNG_SEED);
 }
@@ -446,7 +439,7 @@ fn the_log_holds_ten_quests_and_the_dead_cannot_take_more() {
             )
         })
         .collect();
-    let mut run = Run::with(Arc::new(base_content().with_quests(1, many).unwrap()));
+    let mut run = Run::with(Arc::new(base_content().with_quests(many).unwrap()));
     for id in 1..=10 {
         assert!(run.accept(QuestId::new(id)).is_empty(), "quest {id}");
     }
@@ -723,7 +716,7 @@ fn recovery_continues_quests_exactly_and_refuses_inconsistent_logs() {
     // Content without quests holds no log.
     let mut state = checkpoint.clone();
     let plain = Arc::new(base_content());
-    state.content_fingerprint = plain.fingerprint();
+    state.content_revision = plain.revision();
     assert!(ZoneSimulation::from_snapshot(state, plain).is_err());
 }
 

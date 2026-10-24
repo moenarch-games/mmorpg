@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, CreatureBehaviour, CreatureTemplate, CreatureTemplateId, EntityRef,
-    GUARD_BREAK_TICKS, StrikeAim, StrikeHeight, StrikeSide, ZoneAreas, ZoneCommand, ZoneContent,
-    ZoneEvent, ZoneId, ZoneSimulation,
+    CreatureBehaviour, CreatureTemplate, CreatureTemplateId, EntityRef, GUARD_BREAK_TICKS,
+    StrikeAim, StrikeHeight, StrikeSide, ZoneAreas, ZoneCommand, ZoneContent, ZoneEvent, ZoneId,
+    ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD};
 
@@ -50,7 +50,7 @@ fn content(creatures: &[(u32, CreatureTemplateId, i32, i32)]) -> Arc<ZoneContent
         GRAVEYARD,
     )
     .unwrap()
-    .with_creature_abilities(ABILITY_CATALOG_REVISION, Default::default())
+    .with_creature_abilities(Default::default())
     .unwrap();
     Arc::new(content)
 }

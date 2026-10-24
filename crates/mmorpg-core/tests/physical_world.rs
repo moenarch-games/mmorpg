@@ -21,7 +21,6 @@ fn run(facing: u16) -> ZoneCommand {
 
 fn definition() -> ZoneDefinition {
     ZoneDefinition::new(
-        7,
         [0, -1, 0],
         vec![
             StaticCollider {
@@ -58,7 +57,7 @@ fn shared_physics_resolves_gravity_ground_and_wall_contact() {
         [0, 0, 0]
     );
     let projection = zone.snapshot_for_player(1).unwrap();
-    assert_eq!(projection.content_revision, 7);
+    assert_eq!(projection.content_revision, zone.content().revision());
     assert_eq!(projection.acknowledged_sequence, 1);
 }
 
@@ -93,10 +92,9 @@ fn content_rejects_ambiguous_ids_invalid_extents_and_overflow() {
         position: [0, 0, 0],
         half_extents: [1, 1, 1],
     };
-    assert!(ZoneDefinition::new(1, [0; 3], vec![collider.clone(), collider.clone()]).is_err());
+    assert!(ZoneDefinition::new([0; 3], vec![collider.clone(), collider.clone()]).is_err());
     assert!(
         ZoneDefinition::new(
-            1,
             [0; 3],
             vec![StaticCollider {
                 id: 1_000_000,
@@ -107,7 +105,6 @@ fn content_rejects_ambiguous_ids_invalid_extents_and_overflow() {
     );
     assert!(
         ZoneDefinition::new(
-            1,
             [0; 3],
             vec![StaticCollider {
                 half_extents: [-1, 1, 1],
@@ -118,7 +115,6 @@ fn content_rejects_ambiguous_ids_invalid_extents_and_overflow() {
     );
     assert!(
         ZoneDefinition::new(
-            1,
             [0; 3],
             vec![StaticCollider {
                 position: [i32::MAX, 0, 0],
@@ -137,10 +133,9 @@ fn content_keeps_colliders_and_spawn_slots_in_the_compact_coordinate_range() {
         position: [limit - 10, 0, -limit + 10],
         half_extents: [10, 10, 10],
     };
-    assert!(ZoneDefinition::new(1, [0; 3], vec![edge.clone()]).is_ok());
+    assert!(ZoneDefinition::new([0; 3], vec![edge.clone()]).is_ok());
     for position in [[limit - 9, 0, 0], [0, -limit + 9, 0], [0, 0, limit]] {
         let error = ZoneDefinition::new(
-            1,
             [0; 3],
             vec![StaticCollider {
                 position,
@@ -161,14 +156,14 @@ fn content_keeps_colliders_and_spawn_slots_in_the_compact_coordinate_range() {
         columns: 32,
         spacing: 100,
     };
-    assert!(ZoneDefinition::with_spawn_grid(1, [0; 3], reaching, Vec::new()).is_ok());
+    assert!(ZoneDefinition::with_spawn_grid([0; 3], reaching, Vec::new()).is_ok());
     for origin in [
         [reaching.origin[0] + 1, reaching.origin[1]],
         [reaching.origin[0], reaching.origin[1] - 1],
     ] {
         let beyond = SpawnGrid { origin, ..reaching };
         assert_eq!(
-            ZoneDefinition::with_spawn_grid(1, [0; 3], beyond, Vec::new())
+            ZoneDefinition::with_spawn_grid([0; 3], beyond, Vec::new())
                 .unwrap_err()
                 .message(),
             "spawn slot lies outside the content coordinate range"
@@ -227,7 +222,7 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
 
     // Gravity without ground or ceiling carries a body to the floor or ceiling limit.
     for (gravity, y) in [(-1, -limit + half_y), (1, limit - half_y)] {
-        let definition = ZoneDefinition::new(1, [0, gravity, 0], Vec::new()).unwrap();
+        let definition = ZoneDefinition::new([0, gravity, 0], Vec::new()).unwrap();
         let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition).unwrap();
         zone.add_player(1).unwrap();
         for _ in 0..300 {
@@ -261,7 +256,7 @@ fn every_spawn_slot_is_validated_clear_of_colliders() {
         half_extents: [5_000, 50, 5_000],
     };
     let definition =
-        ZoneDefinition::with_spawn_grid(3, [0, -1, 0], grid, vec![ground.clone()]).unwrap();
+        ZoneDefinition::with_spawn_grid([0, -1, 0], grid, vec![ground.clone()]).unwrap();
     assert_eq!(definition.spawn_grid(), grid);
     // The last slot of the configured capacity, and a crate on top of it.
     let last = u16::try_from(MAX_PLAYERS_PER_ZONE - 1).unwrap();
@@ -273,14 +268,9 @@ fn every_spawn_slot_is_validated_clear_of_colliders() {
         half_extents: [25, 100, 25],
     };
     assert_eq!(
-        ZoneDefinition::with_spawn_grid(
-            3,
-            [0, -1, 0],
-            grid,
-            vec![ground.clone(), crate_on_last_slot]
-        )
-        .unwrap_err()
-        .message(),
+        ZoneDefinition::with_spawn_grid([0, -1, 0], grid, vec![ground.clone(), crate_on_last_slot])
+            .unwrap_err()
+            .message(),
         "spawn slot overlaps a static collider"
     );
     // Touching the body's side is allowed, like touching the ground.
@@ -290,8 +280,7 @@ fn every_spawn_slot_is_validated_clear_of_colliders() {
         half_extents: [25, 100, 25],
     };
     assert!(
-        ZoneDefinition::with_spawn_grid(3, [0, -1, 0], grid, vec![ground.clone(), touching])
-            .is_ok()
+        ZoneDefinition::with_spawn_grid([0, -1, 0], grid, vec![ground.clone(), touching]).is_ok()
     );
     for invalid in [
         SpawnGrid { columns: 0, ..grid },
@@ -300,7 +289,7 @@ fn every_spawn_slot_is_validated_clear_of_colliders() {
             ..grid
         },
     ] {
-        assert!(ZoneDefinition::with_spawn_grid(3, [0; 3], invalid, Vec::new()).is_err());
+        assert!(ZoneDefinition::with_spawn_grid([0; 3], invalid, Vec::new()).is_err());
     }
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition).unwrap();
     for id in 0..MAX_PLAYERS_PER_ZONE {

@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::{
-    ABILITY_CATALOG_REVISION, STRIKE_RECOVERY_TICKS, StrikeAim, StrikeHeight, StrikeSide,
-    ZoneAreas, ZoneCommand, ZoneContent, ZoneId, ZoneSimulation,
+    STRIKE_RECOVERY_TICKS, StrikeAim, StrikeHeight, StrikeSide, ZoneAreas, ZoneCommand,
+    ZoneContent, ZoneId, ZoneSimulation,
 };
 use support::arena::{self, GRAVEYARD};
 
@@ -33,7 +33,7 @@ impl Warden {
                 GRAVEYARD,
             )
             .unwrap()
-            .with_creature_abilities(ABILITY_CATALOG_REVISION, Default::default())
+            .with_creature_abilities(Default::default())
             .unwrap(),
         );
         let mut zone = ZoneSimulation::with_content(ZoneId::new(9), Arc::clone(&content)).unwrap();

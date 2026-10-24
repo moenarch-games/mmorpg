@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
-const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v37.hex", import.meta.url), "utf8").trim();
+const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot.hex", import.meta.url), "utf8").trim();
 const fixture = Uint8Array.from(Buffer.from(hex, "hex"));
 const player = (entityId, x, facing = 0) => playerEntity(entityId, [x, 90, 0], [21, 0, 0], facing);
 const snapshot = (tick, entities = [player(1, Number(tick) * 12)]) => testSnapshot({
@@ -40,9 +40,7 @@ const ENTITY_COUNT = EMOTE + 6;
 const FIRST_ENTITY = ENTITY_COUNT + 2;
 
 describe("Rust/browser snapshot contract", () => {
-  test("validates bag slots, sheet presence and revisions, including the legacy v6 fixture", () => {
-    const legacy = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v6.hex", import.meta.url), "utf8").trim();
-    expect(() => decodeSnapshot(Uint8Array.from(Buffer.from(legacy, "hex")))).toThrow("version");
+  test("validates bag slots, sheet presence and revisions", () => {
     const zeroRevision = fixture.slice();
     zeroRevision.fill(0, INVENTORY, INVENTORY + 8);
     expect(() => decodeSnapshot(zeroRevision)).toThrow("revision");
@@ -77,9 +75,7 @@ describe("Rust/browser snapshot contract", () => {
     new DataView(inverted.buffer).setUint16(DAMAGE, 13);
     expect(() => decodeSnapshot(inverted)).toThrow("Inverted");
   });
-  test("rejects invalid progression and the actual legacy v5 fixture", () => {
-    const legacy = readFileSync(new URL("../../fixtures/protocol/player-snapshot-v5.hex", import.meta.url), "utf8").trim();
-    expect(() => decodeSnapshot(Uint8Array.from(Buffer.from(legacy, "hex")))).toThrow("version");
+  test("rejects invalid progression", () => {
     for (const [level, experience, threshold] of [[1, 100, 100], [1, 0, 0], [10, 1, 0], [10, 0, 100], [11, 0, 0]]) {
       const bytes = fixture.slice();
       const view = new DataView(bytes.buffer);
@@ -190,15 +186,14 @@ describe("Rust/browser snapshot contract", () => {
     });
   });
 
-  test("rejects legacy, canonical, truncated, excessive, malformed and trailing payloads", () => {
+  test("rejects other-protocol, canonical, truncated, excessive, malformed and trailing payloads", () => {
     for (let length = 0; length < fixture.length; length++) {
       expect(() => decodeSnapshot(fixture.slice(0, length))).toThrow();
     }
     const wolfRecord = FIRST_ENTITY + 21;
     for (const [offset, value, message] of [
-      [0, 4, "version"],
-      [1, 1, "player-visible"],
-      [3, 4, "version"],
+      [0, 4, "protocol"],
+      [3, 1, "player-visible"],
       [53, 0b1000, "Reserved"],
       [53, 0b111, "Inconsistent"],
       [54, 9, "kind"],
@@ -276,9 +271,10 @@ describe("Rust/browser snapshot contract", () => {
     expect(() => decodeSnapshot(fewer)).toThrow("count");
     expect(() => decodeSnapshot(new Uint8Array([...fixture, 0]))).toThrow();
     expect(() => decodeSnapshot(new Uint8Array(1_078))).toThrow("budget");
-    for (const version of [9, 13, 29, 31, 32, 33, 34, 35, 36]) {
-      const legacy = readFileSync(new URL(`../../fixtures/protocol/player-snapshot-v${version}.hex`, import.meta.url), "utf8").trim();
-      expect(() => decodeSnapshot(Uint8Array.from(Buffer.from(legacy, "hex")))).toThrow("version");
+    for (const at of [0, 1, 2]) {
+      const other = fixture.slice();
+      other[at] ^= 1;
+      expect(() => decodeSnapshot(other)).toThrow("protocol");
     }
   });
 

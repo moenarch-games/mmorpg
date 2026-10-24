@@ -2,8 +2,7 @@
 //!
 //! The browser draws exactly the draws the native client lowers: the same
 //! terrain, roads, water and prop geometry, IDs, resource keys, transforms and
-//! materials. The layout is JSON (format [`STATIC_SCENE_FORMAT`], version
-//! [`STATIC_SCENE_FORMAT_VERSION`]); bulk numbers travel as typed arrays:
+//! materials. The layout is JSON (format [`STATIC_SCENE_FORMAT`]); bulk numbers travel as typed arrays:
 //!
 //! - **geometries**: one entry per distinct resource, with offsets into
 //!   [`vertices`] (positions, then normals, then linear vertex colours when
@@ -26,7 +25,6 @@ use serde::Serialize;
 use crate::scenery::hosted_scenery;
 
 pub const STATIC_SCENE_FORMAT: &str = "mmorpg.static-scene";
-pub const STATIC_SCENE_FORMAT_VERSION: u32 = 1;
 
 #[must_use]
 pub fn hosted_static_scene() -> &'static StaticScene {
@@ -38,7 +36,6 @@ pub fn hosted_static_scene() -> &'static StaticScene {
 #[serde(rename_all = "camelCase")]
 struct Layout {
     format: &'static str,
-    version: u32,
     prefix: String,
     geometries: Vec<GeometryEntry>,
     groups: Vec<GroupEntry>,
@@ -171,7 +168,6 @@ pub(crate) fn encode(scene: &StaticScene) -> (String, Vec<f32>, Vec<u32>, Vec<f3
         .collect();
     let layout = Layout {
         format: STATIC_SCENE_FORMAT,
-        version: STATIC_SCENE_FORMAT_VERSION,
         prefix: scene.prefix.clone(),
         geometries: std::mem::take(&mut buffers.geometries),
         groups,

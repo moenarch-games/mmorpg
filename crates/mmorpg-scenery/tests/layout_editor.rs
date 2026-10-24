@@ -23,10 +23,10 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
     assert_eq!(definition, layout::compile(&saved).unwrap());
     assert_eq!(scenery, compose(&saved, &definition).unwrap());
     assert_eq!(
-        content.fingerprint(),
+        content.revision(),
         greyhaven_vale::content_with_definition(layout::compile(&saved).unwrap())
             .unwrap()
-            .fingerprint()
+            .revision()
     );
     assert!(
         !definition
@@ -53,14 +53,14 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
         assert_eq!(prop.half_extents, collider.half_extents);
     }
     // A decorative move cannot change gameplay content identity.
-    let collision_identity = content.fingerprint();
+    let collision_identity = content.revision();
     document["decoration"][0]["position"] = json!([-1900, 1000]);
     let decorative_edit = document.to_string();
     assert_eq!(
         collision_identity,
         greyhaven_vale::content_with_definition(layout::compile(&decorative_edit).unwrap())
             .unwrap()
-            .fingerprint()
+            .revision()
     );
     assert_ne!(scenery, compose(&decorative_edit, &definition).unwrap());
 }

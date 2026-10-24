@@ -75,8 +75,8 @@ pub(crate) struct CheckpointReference {
     pub object_key: String,
     pub sha256: [u8; 32],
     pub byte_length: u64,
-    pub content_fingerprint: u64,
-    pub canonical_version: u16,
+    pub content_revision: u64,
+    pub protocol_id: u32,
 }
 impl CheckpointReference {
     pub(super) fn validate(&self, fence: &StreamFence) -> Result<(), StoreError> {
@@ -966,8 +966,8 @@ mod tests {
             object_key: "test/checkpoint.zst".into(),
             sha256: [1; 32],
             byte_length: 1,
-            content_fingerprint: 0,
-            canonical_version: 1,
+            content_revision: 0,
+            protocol_id: 1,
         };
         journal
             .publish_checkpoint(

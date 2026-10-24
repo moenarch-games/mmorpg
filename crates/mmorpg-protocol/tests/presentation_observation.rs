@@ -1,11 +1,11 @@
 //! #27 observer cues cross the same strict Rust/native/browser snapshot seam.
 use mmorpg_core::{CreatureId, EntityRef, ZoneEvent, ZoneId, ZoneSimulation};
 use mmorpg_protocol::{
-    MAX_PLAYER_PROJECTION_BYTES, SNAPSHOT_WIRE_VERSION, decode_canonical_snapshot, decode_snapshot,
+    MAX_PLAYER_PROJECTION_BYTES, decode_canonical_snapshot, decode_snapshot,
     encode_canonical_snapshot, encode_snapshot, pack_snapshot,
 };
 #[test]
-fn observation_records_round_trip_without_reinterpreting_previous_snapshot_version() {
+fn observation_records_round_trip_through_the_shared_fixture() {
     let mut zone = ZoneSimulation::new(ZoneId::new(1));
     zone.add_player(1).unwrap();
     let mut view = zone.snapshot_for_player(1).unwrap();
@@ -40,24 +40,11 @@ fn observation_records_round_trip_without_reinterpreting_previous_snapshot_versi
     let bytes = encode_snapshot(&view).unwrap();
     let expected = mmorpg_core::golden::golden_hex(
         mmorpg_core::golden::workspace_root()
-            .join("fixtures/protocol/presentation-observation-v37.hex"),
+            .join("fixtures/protocol/presentation-observation.hex"),
         &bytes,
     );
     assert_eq!(bytes, expected);
     assert_eq!(decode_snapshot(&bytes).unwrap(), view);
-    assert_eq!(
-        SNAPSHOT_WIRE_VERSION, 37,
-        "one intentional migration from baseline36"
-    );
-    // Use the current encoder for the new schema; old version is explicitly rejected.
-    let old = include_str!("../../../fixtures/protocol/player-snapshot-v36.hex");
-    let old: Vec<u8> = old
-        .trim()
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-        .collect();
-    assert!(decode_snapshot(&old).is_err());
     let packed = pack_snapshot(&view).unwrap();
     assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
     assert_eq!(

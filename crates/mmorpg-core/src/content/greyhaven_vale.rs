@@ -8,9 +8,8 @@
 //! below the farm terrace of [`basin`] and the outer hills; relief, props
 //! without colliders, water and mountains are presentation owned by
 //! `mmorpg-scenery`, which derives its structures from the collider IDs in
-//! [`ids`]. Everything here belongs to content [`REVISION`]; changing any of
-//! it requires a new revision. [`content`] bundles it as the hosted
-//! [`ZoneContent`].
+//! [`ids`]. [`content`] bundles it as the hosted [`ZoneContent`], whose revision
+//! is a hash of all of it: changing anything here changes the revision by itself.
 
 use std::sync::{Arc, LazyLock};
 
@@ -25,33 +24,8 @@ pub mod quests;
 pub mod shrine;
 pub mod units;
 
-/// Content revision of this zone. Revision 1 was the former test outpost;
-/// revision 2 had no creatures or NPCs; revision 6 binds the ability catalog
-/// (Mirefin Lurkers cast Muck Bolt, Redbrand Bandits use Crude Bandage);
-/// revision 7 binds item catalog 2 (equipment) and loot catalog 2;
-/// revision 8 binds vendor catalog 1 (Innkeeper Bram Tolliver's stock);
-/// revision 9 binds quest catalog 1 (the Greyhaven chain), item catalog 3
-/// (the Wolf Pelt) and vendor catalog 2; revision 10 replaces the inn block
-/// with the walk-in inn and its door (#158) and moves Innkeeper Bram Tolliver
-/// inside; revision 15 adds breakable crates, barrels, fences and powder barrels (#288);
-/// revision 16 composes the saved Outpost layout overrides (#321); revision 17 adds the
-/// Hill Ogre, a large creature that shoves and stomps (#297); revision 18 adds the mill
-/// hoist, a moving platform (#56); revision 19 adds the mill's loading dock and its ramps
-/// (#59); revision 20 adds the Redbrand watch post, a destructible structure (#305); revision 21
-/// adds two heavy crates at Millbrook Farm, movable props (#58); revision 22 makes Garrick
-/// Redbrand a shared boss with his Redbrand Whirl and a 2 min respawn (#276); revision 23
-/// deepens Stillwater Lake into a 9 m basin under an authoritative water volume (#274);
-/// revision 24 sinks the Sunken Shrine and its flooded cave into it, with quest 10 and the
-/// swimming lurkers (#274); revision 25 garrisons the Greyfang cave as Redbrand Hollow's outer
-/// cavern with Redbrand Brutes, seals its deeper threshold and adds quest 11 (#160); revision 26
-/// rebuilds the Sunken Shrine on asset-tooling's shrine kit and widens its air pocket into
-/// the kit's 8 × 8 m room (#431); revision 27 lifts Millbrook Farm onto an 11 m terrace above
-/// the Outpost's basin, reached by the Millbrook Climb and the Millbrook Steps (#423); revision
-/// 28 lifts Stillwater Lake and the Sunken Shrine onto the same terrace, reached up the
-/// Lakeshore Climb and joined to the farm by the Stillwater Rim Trail (#423).
-pub const REVISION: u64 = 28;
-/// Revision 3's simulation seed, retained when revision 4 adds bag content.
-/// Economy changes must not reroll Greyhaven's existing creature/combat scripts.
+/// The fixed simulation seed, independent of the content revision, so content and economy
+/// changes do not reroll Greyhaven's existing creature/combat scripts.
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
 /// Gravity in units per tick squared, authored as 9 m/s² down.
 pub const GRAVITY: [i32; 3] = [0, crate::units_per_tick_squared(-900), 0];
@@ -972,7 +946,7 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
 /// exact definition; the spawn grid is validated clear of every collider.
 #[must_use]
 pub fn base_definition() -> ZoneDefinition {
-    ZoneDefinition::with_spawn_grid(REVISION, GRAVITY, SPAWN_GRID, colliders())
+    ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders())
         .and_then(|definition| definition.with_terrain(TERRAIN.clone()))
         .expect("built-in Greyhaven Vale content is valid")
 }
@@ -1015,12 +989,12 @@ pub fn content_with_definition(
         .collect();
     Ok(Arc::new(
         content
-            .with_loot_tables(crate::LOOT_CATALOG_REVISION, tables)?
-            .with_creature_abilities(crate::ABILITY_CATALOG_REVISION, units::creature_abilities())?
+            .with_loot_tables(tables)?
+            .with_creature_abilities(units::creature_abilities())?
             .with_bosses(units::bosses())?
             .with_shielded(units::shielded())?
-            .with_vendors(crate::VENDOR_CATALOG_REVISION, units::vendors())?
-            .with_quests(crate::QUEST_CATALOG_REVISION, quests::quests())?
+            .with_vendors(units::vendors())?
+            .with_quests(quests::quests())?
             .with_doors(vec![inn::door(ids::INN_DOOR)])?
             .with_platforms(vec![MILL_HOIST])?
             .with_ramps(MILL_RAMPS.to_vec())?

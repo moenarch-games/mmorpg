@@ -76,7 +76,6 @@ export function fixtureExport(patch: Record<string, unknown> = {}): Record<strin
   });
   return {
     format: "mmorpg.scenery",
-    version: 3,
     source: "fixture",
     contentRevision: "7",
     presentationFingerprint: "0123456789abcdef",
