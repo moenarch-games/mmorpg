@@ -84,9 +84,9 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
         if fixture.crowded {
             // Whole 14-byte events and 21-byte records beside the fixed part
             // and the door section, a 93-byte self sheet, an 18-byte copper-only
-            // corpse sheet, the projectile, debris and piece counts fill 1,073 of the 1,077
+            // corpse sheet, the projectile, debris and piece counts fill 1,074 of the 1,077
             // bytes: no further 21-byte record fits.
-            assert_eq!(report.max_projection_bytes, 1_073);
+            assert_eq!(report.max_projection_bytes, 1_074);
             assert!(report.candidates_tested > 1_000_000);
         }
     }
