@@ -174,7 +174,7 @@ impl crate::ZoneSimulation {
             .world
             .body(crate::entity::body_id(attacker))
             .ok_or_else(|| ZoneError::new("attacker physics body is missing"))?;
-        let (from, half, velocity) = (body.position(), body.half_extents(), body.velocity());
+        let (from, half, velocity) = (body.position(), body.half_extents(), body.velocity_units());
         let to = self.player_position(player_id)?;
         let feet = to.y - PLAYER_HALF_EXTENTS_UNITS[1];
         // Three quarters up the attacker's body.

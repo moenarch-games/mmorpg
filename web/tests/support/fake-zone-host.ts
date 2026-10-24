@@ -1,5 +1,5 @@
 import type { SessionClock, SessionConnection, SessionConnector, SessionEnd } from "../../src/session/connection";
-import type { EntityState } from "../../src/replication";
+import { TICK_HZ, type EntityState } from "../../src/replication";
 import { decodeCommandFrame, encodeSnapshotFragments, encodeSnapshotFrame, encodeWelcomeFrame } from "./session-host-frames";
 import { encodeTestSnapshot } from "./snapshot-encoder";
 import { playerEntity, testSnapshot } from "./snapshots";
@@ -57,7 +57,6 @@ export class ManualClock implements SessionClock {
   }
 }
 
-const TICK_HZ = 30;
 export const TICK_MS = 1_000 / TICK_HZ;
 /**
  * Command wire v14 payload lengths by tag (chat, tag 16, carries its own text length): move, jump, select target, start and stop attack, release
@@ -68,7 +67,8 @@ const COMMAND_LENGTHS = new Map([
   [1, 6], [2, 2], [3, 7], [4, 2], [5, 2], [6, 2], [7, 6], [8, 14], [9, 8], [10, 2], [11, 4], [12, 3], [13, 3],
   [14, 9], [15, 9], [17, 3], [18, 7], [19, 8], [20, 3], [21, 7], [22, 3], [23, 4], [24, 4], [25, 3],
 ]);
-const RUN_UNITS_PER_TICK = 21;
+/** `RUN_SPEED_UNITS_PER_SECOND` (6.3 m/s) per tick. */
+const RUN_UNITS_PER_TICK = 630 / TICK_HZ;
 
 type Session = {
   playerId: number;
@@ -150,7 +150,7 @@ export class FakeZoneHost {
     return `${this.#origin}${this.#prefix}/matches/zone-${this.zoneId}`;
   }
 
-  /** Ticks at 30 Hz on the clock until `stop`. */
+  /** Ticks at `TICK_HZ` on the clock until `stop`. */
   start(): this {
     const schedule = () => {
       this.#stopTicking = this.clock.after(TICK_MS, () => {

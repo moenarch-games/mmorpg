@@ -8,7 +8,7 @@ scripts/fetch-bundles.sh
 
 The Ranger index, `export.ref.json`, selected glTF/bin files, shared KTX2 textures, attachment JSON and shared clips are retained together under the ignored `web/public/characters/humanoid.ranger.male/`. The Greyhaven inn keeps its existing release and acquisition path. Acquisition never fetches the Ranger review tar.
 
-Re-running acquisition keeps the local rolling input. To deliberately adopt a newer rolling output, first preserve any comparison input you need outside that directory, remove its `RELEASE` file, and run acquisition again. Builds do not silently refresh accepted assets. Source and license information is maintained in [asset-tooling's humanoid source documentation](https://github.com/moritzbrantner/asset-tooling/blob/main/docs/humanoid-sources.md); `export.ref.json` identifies the corresponding bundle. No per-file consumer hash list is required.
+Re-running acquisition keeps the local rolling input. To deliberately adopt a newer rolling output, first preserve any comparison input you need outside that directory, remove its `RELEASE` file, and run acquisition again. Builds do not silently refresh accepted assets. Source and license information is maintained in [asset-tooling's humanoid source documentation](https://github.com/moritzbrantner/asset-tooling/blob/main/docs/humanoid-sources.md); `export.ref.json` identifies the corresponding bundle; acquisition is pinned to the committed copy in `web/assets/ranger/export.ref.json` (the export with face morph targets, #411), refetches when the local copy differs and fails if the release serves another export. No per-file consumer hash list is required.
 
 ## Browser
 

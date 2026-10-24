@@ -21,13 +21,13 @@ pub const FOCUS_REGEN: u16 = 5;
 pub const MANA_BASE: u16 = 110;
 pub const MANA_PER_LEVEL: u16 = 22;
 /// The five-second rule: no mana regeneration this long after spending.
-pub const MANA_REGEN_DELAY_TICKS: u16 = 150;
+pub const MANA_REGEN_DELAY_TICKS: u16 = crate::ticks_from_ms(5_000);
 /// Mana regenerates this percentage of its maximum per interval out of
 /// combat, and [`MANA_REGEN_COMBAT_PERCENT`] in combat (rounded up).
 pub const MANA_REGEN_PERCENT: u32 = 5;
 pub const MANA_REGEN_COMBAT_PERCENT: u32 = 1;
 /// Ticks between two resource steps (1 s).
-pub const RESOURCE_INTERVAL_TICKS: u16 = 30;
+pub const RESOURCE_INTERVAL_TICKS: u16 = crate::ticks_from_ms(1_000);
 
 /// A playable class; the wire value is its discriminant.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

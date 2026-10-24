@@ -866,8 +866,7 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
         }
         if matches!(workload, Workload::CrateShove) {
             // On each backend both bashes slide their crates over a metre and they come to rest
-            // (#58), where they agree (the engine arm passes Rapier's combined materials,
-            // physics-engine #391).
+            // (#58), where they agree (both average the pair's materials, physics-engine #391).
             let crates = |trace: &Trace| -> Vec<([f32; 3], [f32; 3])> {
                 let last = trace.snapshots.last().expect("crate trace");
                 [917, 918]

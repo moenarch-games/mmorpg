@@ -1,11 +1,10 @@
 use game_server::{
-    BrowserRoutePrefix, DEFAULT_HOST_STATUS_PORT, DEFAULT_RECONNECT_GRACE_TICKS,
-    MatchHostRecoveryConfig, MatchHostStatusConfig, MatchHostWebTransportConfig,
-    RejectMatchControlService, prepare_match_host_for_recovery,
+    BrowserRoutePrefix, DEFAULT_HOST_STATUS_PORT, MatchHostRecoveryConfig, MatchHostStatusConfig,
+    MatchHostWebTransportConfig, RejectMatchControlService, prepare_match_host_for_recovery,
     serve_match_host_with_status_and_control_and_shutdown,
     serve_prepared_match_host_with_status_and_control_and_shutdown,
 };
-use mmorpg_core::ZoneId;
+use mmorpg_core::{ZoneId, long_ticks_from_ms};
 use mmorpg_game_server::{
     DevelopmentCharacterHostConfig, build_zone_host, build_zone_matches,
     serve_development_character_host,
@@ -20,6 +19,8 @@ use tokio::sync::mpsc;
 
 const DEFAULT_PORT: u16 = 4433;
 const DEFAULT_DRAIN_GRACE_MS: u64 = 500;
+/// A disconnected player keeps its unit this long (20 s) before it leaves the zone.
+const DEFAULT_RECONNECT_GRACE_TICKS: u64 = long_ticks_from_ms(20_000) as u64;
 const DEFAULT_ROUTE_PREFIX: &str = "/game";
 const DEFAULT_ZONE_IDS: &str = "1";
 

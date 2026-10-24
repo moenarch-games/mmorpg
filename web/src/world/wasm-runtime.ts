@@ -3,6 +3,7 @@ import { LocalCharacters } from "./local-characters";
 import { createLocalWorld, type LocalWorld } from "./local-world";
 import { ScenarioSource, type ScenarioChoice } from "./scenario-source";
 import { markStartup } from "../startup-marks";
+import type { ActionGraph, LabOptions } from "./action-lab";
 import type { ZoneWorld } from "./world-source";
 
 /**
@@ -16,6 +17,11 @@ export async function loadLocalWorld(characters: LocalCharacters): Promise<Local
   const world = createLocalWorld(generated, characters);
   markStartup("world-created");
   return world;
+}
+
+/** The authored action graph and the lab's setup choices (#381); call after the module loaded. */
+export function actionLabDefinitions(): { graph: ActionGraph; options: LabOptions } {
+  return { graph: JSON.parse(generated.actionGraph()) as ActionGraph, options: JSON.parse(generated.actionLabOptions()) as LabOptions };
 }
 
 /** The area id of a stored local character's committed location, or null (#240). */
@@ -34,6 +40,14 @@ export function committedLevel(characters: LocalCharacters, characterId: string)
  * unknown scenario name.
  */
 export function createScenarioWorld(local: LocalWorld, choice: ScenarioChoice): { world: ZoneWorld; source: ScenarioSource; area: number | null } {
+  const lab = choice.lab;
+  if (lab) {
+    const create = () => generated.LocalZone.forActionLab(lab.className, lab.level, lab.gear, lab.mainHand, lab.resource ?? undefined, choice.seed);
+    // Validate the setup now, so an illegal one is reported before entry.
+    create().free();
+    const source = new ScenarioSource(create);
+    return { world: { ...local, source }, source, area: generated.actionLabArea() ?? null };
+  }
   const area = generated.scenarioArea(choice.name);
   // Validate the name now, so a typo is reported before entry.
   generated.LocalZone.forScenario(choice.name, choice.seed).free();

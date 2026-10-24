@@ -23,25 +23,25 @@ pub const FLOAT_DEPTH_UNITS: i32 = 140;
 /// Swimmers move at this share of their running speed (3.9 m/s forward).
 pub const SWIM_SPEED_PERCENT: i32 = 62;
 /// Vertical speed of held ascent or descent (2.4 m/s).
-pub const SWIM_RISE_UNITS_PER_TICK: i32 = 8;
+pub const SWIM_RISE_UNITS_PER_TICK: i32 = crate::units_per_tick(240);
 /// A full breath lasts 30 s submerged.
-pub const BREATH_MAX_TICKS: u16 = 900;
+pub const BREATH_MAX_TICKS: u16 = crate::ticks_from_ms(30_000);
 /// Out of the water, or with the head above it, breath refills in 5 s.
 pub const BREATH_REFILL_PER_TICK: u16 = 6;
 /// At zero breath a submerged player loses this share of maximum health …
 pub const DROWN_DAMAGE_PERCENT: u32 = 10;
 /// … every this many ticks (1 s).
-pub const DROWN_INTERVAL_TICKS: u16 = 30;
+pub const DROWN_INTERVAL_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// At most this many water volumes per zone.
 pub const MAX_WATER_VOLUMES: usize = 8;
 /// An idle aquatic creature notices a submerged player this close (8 m) …
 pub const TRAIL_NOTICE_UNITS: i32 = 800;
 /// … follows it for this long (6 s), then loses interest and swims home.
-pub const TRAIL_TICKS: u16 = 180;
+pub const TRAIL_TICKS: u16 = crate::ticks_from_ms(6_000);
 /// A trailing creature keeps this far from the player (2 m) and never touches it.
 pub const TRAIL_KEEP_UNITS: i32 = 200;
 /// A trailing creature swims at 3.3 m/s, slower than a swimming player (3.9 m/s).
-pub const TRAIL_SPEED_UNITS_PER_TICK: i32 = 11;
+pub const TRAIL_SPEED_UNITS_PER_TICK: i32 = crate::units_per_tick(330);
 
 /// The vertical velocity (units/tick) of a swimming creature whose feet are `depth` units
 /// below the surface, heading for feet `goal` units down: never above the floating depth.

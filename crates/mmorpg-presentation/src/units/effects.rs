@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{Draw, geometry::V};
 use mmorpg_core::{
-    AuraKind, EntityRef, StrikeAim, StrikeHeight, StrikeSide, ZoneEvent, ZoneSnapshot,
+    AuraKind, EntityRef, StrikeAim, StrikeHeight, StrikeSide, TICK_HZ, ZoneEvent, ZoneSnapshot,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -347,7 +347,7 @@ impl Effects {
                             ActorAction {
                                 stance,
                                 start: now,
-                                duration: f64::from(ticks) / 30.,
+                                duration: f64::from(ticks) / f64::from(TICK_HZ),
                                 hold: true,
                                 ability: id,
                                 release: false,
@@ -553,8 +553,8 @@ impl Effects {
                     viewer,
                     ActorAction {
                         stance,
-                        start: now - f64::from(c.elapsed) / 30.,
-                        duration: f64::from(c.total) / 30.,
+                        start: now - f64::from(c.elapsed) / f64::from(TICK_HZ),
+                        duration: f64::from(c.total) / f64::from(TICK_HZ),
                         hold: true,
                         ability: c.ability.get(),
                         release: false,

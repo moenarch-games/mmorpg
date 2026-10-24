@@ -26,28 +26,36 @@ export const HAIR_COLOR_OPTIONS = [
 ] as const;
 export type HairColor = (typeof HAIR_COLOR_OPTIONS)[number]["id"];
 
-export type CharacterAppearance = { hat: HatStyle; hair: HairStyle; hairColor: HairColor };
+/**
+ * Face choices (#411): a `humanoid-appearance.face` feature id of the Ranger bundle (`face`, `eyes`,
+ * `nose`, `mouth`) to one of its option ids. A missing feature, or an option the loaded bundle does
+ * not offer, shows that feature's default.
+ */
+export type FaceChoice = Readonly<Record<string, string>>;
 
-/** Saves from before hair (#376) read with this hair. */
-const DEFAULT_HAIR = { hair: "parted", hairColor: "brown" } as const;
+export type CharacterAppearance = { hat: HatStyle; hair: HairStyle; hairColor: HairColor; face: FaceChoice };
 
-export const DEFAULT_CHARACTER_APPEARANCE: CharacterAppearance = { hat: "wayfarer-hood", ...DEFAULT_HAIR };
+/** Saves from before hair (#376) read with this hair; saves from before faces (#411) with the default face. */
+const DEFAULT_LOOK = { hair: "parted", hairColor: "brown", face: {} } as const;
+
+export const DEFAULT_CHARACTER_APPEARANCE: CharacterAppearance = { hat: "wayfarer-hood", ...DEFAULT_LOOK };
 
 export function defaultAppearanceForClass(classId: CharacterClassId): CharacterAppearance {
   switch (classId) {
-    case "warden": return { hat: "ironcrest-helm", ...DEFAULT_HAIR };
-    case "ranger": return { hat: "ranger-cap", ...DEFAULT_HAIR };
+    case "warden": return { hat: "ironcrest-helm", ...DEFAULT_LOOK };
+    case "ranger": return { hat: "ranger-cap", ...DEFAULT_LOOK };
     case "arcanist":
     case "necromancer":
     case "rogue":
     case "cleric":
-    case "druid": return { hat: "wayfarer-hood", ...DEFAULT_HAIR };
+    case "druid": return { hat: "wayfarer-hood", ...DEFAULT_LOOK };
   }
 }
-const SAVE_SCHEMA_VERSION = 1;
+/** Version 2 adds `appearance.face` (#411); version 1 saves still load, with the default face. */
+const SAVE_SCHEMA_VERSION = 2;
 const SAVE_KEY_PREFIX = "mmorpg.preview-character.v1";
 
-export type SavedCharacterV1 = {
+export type SavedCharacter = {
   schemaVersion: typeof SAVE_SCHEMA_VERSION;
   characterId: string;
   appearance: CharacterAppearance;
@@ -71,6 +79,14 @@ export function isHairStyle(value: unknown): value is HairStyle {
 
 export function isHairColor(value: unknown): value is HairColor {
   return HAIR_COLOR_OPTIONS.some((option) => option.id === value);
+}
+
+const FACE_ID = /^[a-z][a-z0-9.-]{0,47}$/;
+
+/** A face choice is a small map of bundle feature ids to option ids. */
+export function isFaceChoice(value: unknown): value is FaceChoice {
+  return isRecord(value) && Object.keys(value).length <= 16
+    && Object.entries(value).every(([feature, option]) => FACE_ID.test(feature) && typeof option === "string" && FACE_ID.test(option));
 }
 
 export function hatOption(style: HatStyle) {
@@ -98,21 +114,24 @@ export function saveCharacter(
   storage: CharacterStorage,
   characterId: string,
   appearance: CharacterAppearance,
-): SavedCharacterV1 {
+): SavedCharacter {
   hatOption(appearance.hat);
   if (!isHairStyle(appearance.hair) || !isHairColor(appearance.hairColor)) {
     throw new Error("Character hair is invalid");
   }
-  const saved: SavedCharacterV1 = {
+  if (!isFaceChoice(appearance.face)) {
+    throw new Error("Character face is invalid");
+  }
+  const saved: SavedCharacter = {
     schemaVersion: SAVE_SCHEMA_VERSION,
     characterId,
-    appearance: { ...appearance },
+    appearance: { ...appearance, face: { ...appearance.face } },
   };
   storage.setItem(storageKeyForCharacter(characterId), JSON.stringify(saved));
   return saved;
 }
 
-export function loadCharacter(storage: CharacterStorage, characterId: string): SavedCharacterV1 | null {
+export function loadCharacter(storage: CharacterStorage, characterId: string): SavedCharacter | null {
   const raw = storage.getItem(storageKeyForCharacter(characterId));
   if (raw === null) return null;
 
@@ -123,7 +142,7 @@ export function loadCharacter(storage: CharacterStorage, characterId: string): S
     throw new Error("Saved character is not valid JSON");
   }
 
-  if (!isRecord(value) || value.schemaVersion !== SAVE_SCHEMA_VERSION) {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== SAVE_SCHEMA_VERSION)) {
     throw new Error("Unsupported saved character schema");
   }
   if (value.characterId !== characterId) {
@@ -132,15 +151,19 @@ export function loadCharacter(storage: CharacterStorage, characterId: string): S
   if (!isRecord(value.appearance) || !isHatStyle(value.appearance.hat)) {
     throw new Error("Saved character appearance is invalid");
   }
-  const { hair = DEFAULT_HAIR.hair, hairColor = DEFAULT_HAIR.hairColor } = value.appearance;
+  const { hair = DEFAULT_LOOK.hair, hairColor = DEFAULT_LOOK.hairColor } = value.appearance;
   if (!isHairStyle(hair) || !isHairColor(hairColor)) {
     throw new Error("Saved character hair is invalid");
+  }
+  const face = value.schemaVersion === 1 ? DEFAULT_LOOK.face : value.appearance.face;
+  if (!isFaceChoice(face)) {
+    throw new Error("Saved character face is invalid");
   }
 
   return {
     schemaVersion: SAVE_SCHEMA_VERSION,
     characterId,
-    appearance: { hat: value.appearance.hat, hair, hairColor },
+    appearance: { hat: value.appearance.hat, hair, hairColor, face: { ...face } },
   };
 }
 

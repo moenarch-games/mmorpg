@@ -18,7 +18,7 @@ pub const NPC_SIGHT_HEIGHT_UNITS: i32 = 160;
 /// Doors a zone's content may author.
 pub const MAX_DOORS: usize = 16;
 /// Players cannot move a door leaf again within 1.5 s of its last change.
-pub const DOOR_COOLDOWN_TICKS: u64 = 45;
+pub const DOOR_COOLDOWN_TICKS: u64 = crate::ticks_from_ms(1_500) as u64;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DoorId(u8);

@@ -2,7 +2,8 @@
 # Downloads the asset-tooling bundles the clients draw, once each: the Ranger
 # humanoid (Atlas 6.3.7) into web/public/characters/humanoid.ranger.male and the
 # Greyhaven inn (#158) into web/public/buildings/greyhaven.inn and the Sunken Shrine kit
-# (#431) into web/public/scenery/shrine.kit, where the browser
+# (#431) into web/public/scenery/shrine.kit and the ambient animals (#419) into
+# web/public/scenery/greyhaven.ambient-animals, where the browser
 # serves them and the native client build embeds them. Idempotent: an existing
 # download of the same release is kept. The directories are ignored build input,
 # never committed.
@@ -56,3 +57,6 @@ python3 "${ROOT_DIR}/scripts/fetch-ranger.py"
 fetch greyhaven-inn-v1 greyhaven.inn buildings/greyhaven.inn
 fetch_pinned shrine-kit shrine.kit scenery/shrine.kit \
   a1938eb814e570cec9ad4c50fde54b62d260c40d80d9416eed0961e8572255db web/assets/shrine-kit/export.ref.json
+# Greyhaven's cosmetic cat, dog and rodent (#419).
+fetch_pinned greyhaven-ambient-animals greyhaven.ambient-animals scenery/greyhaven.ambient-animals \
+  03793700a4d1a15314aa89c3f3535fbe5c4f7017a748caf6f32f3946ed2b5df9 web/assets/greyhaven-ambient-animals/export.ref.json

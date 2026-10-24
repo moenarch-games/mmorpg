@@ -10,7 +10,7 @@ pub const INVENTORY_SLOTS: usize = 16;
 /// the three level 6 rewards of *Deeper into the Hollow* (#160).
 pub const ITEM_CATALOG_REVISION: u64 = 5;
 /// Re-send unchanged bags every ten ticks so a lost change self-heals.
-pub const INVENTORY_RESEND_TICKS: u64 = 10;
+pub const INVENTORY_RESEND_TICKS: u64 = crate::ticks_from_ms(333) as u64;
 
 /// Stable catalog identity. Zero and unknown values fail closed on lookup.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

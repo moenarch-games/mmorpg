@@ -13,7 +13,7 @@ pub const PLAYER_HEALTH_PER_LEVEL: u32 = 15;
 /// Player melee damage at level 1; each further level adds 1 to both ends.
 pub const PLAYER_BASE_DAMAGE: [u16; 2] = [3, 6];
 /// Ticks between two player swings (2 s).
-pub const PLAYER_SWING_TICKS: u16 = 60;
+pub const PLAYER_SWING_TICKS: u16 = crate::ticks_from_ms(2_000);
 /// Player melee reach: XZ centre distance in units.
 pub const PLAYER_REACH_UNITS: i32 = 250;
 /// Creature melee reach before adding the target's half-width.
@@ -25,19 +25,19 @@ pub const CRITICAL_PERCENT: u32 = 5;
 /// No swing deals more than this, so a critical hit fits `u16`.
 pub const MAX_SWING_DAMAGE: u16 = 10_000;
 /// Dealing or taking damage keeps a unit in combat for this many ticks (5 s).
-pub const COMBAT_LINGER_TICKS: u16 = 150;
+pub const COMBAT_LINGER_TICKS: u16 = crate::ticks_from_ms(5_000);
 /// Players regenerate after this many ticks out of combat (6 s) …
-pub const REGEN_DELAY_TICKS: u16 = 180;
+pub const REGEN_DELAY_TICKS: u16 = crate::ticks_from_ms(6_000);
 /// … every this many ticks (1 s) …
-pub const REGEN_INTERVAL_TICKS: u16 = 30;
+pub const REGEN_INTERVAL_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// … this percentage of their maximum health, rounded up.
 pub const REGEN_PERCENT: u32 = 3;
 /// A creature corpse stays for 30 s without a physics body.
-pub const CORPSE_TICKS: u32 = 900;
+pub const CORPSE_TICKS: u32 = crate::long_ticks_from_ms(30_000);
 /// A released spirit returns with half of its maximum health, rounded up.
 pub const RELEASE_HEALTH_PERCENT: u32 = 50;
 /// A player receives at most one out-of-range error per second.
-pub const OUT_OF_RANGE_ERROR_INTERVAL_TICKS: u16 = 30;
+pub const OUT_OF_RANGE_ERROR_INTERVAL_TICKS: u16 = crate::ticks_from_ms(1_000);
 
 /// Player maximum health: 50 + 15 · (level − 1).
 #[must_use]

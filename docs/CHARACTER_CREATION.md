@@ -12,13 +12,15 @@ From **Choose your character**, select **Create character** and provide:
 
 The 3D preview updates before creation and remains rotatable. Class changes update the starter equipment and main-hand presentation: Warden uses a sword, Ranger a bow, and Arcanist a staff. Sex changes the presentation frame only; it does not change gameplay statistics.
 
+The collapsible **Appearance** section joins the Create form while drafting: headwear, hair, hair colour and one select per face feature (#411) the Ranger bundle's `humanoid-appearance.face` offers (face shape, eyes, nose, mouth), each applied as morph-target weights on the real preview. **Close-up** frames the head, where eyes, nose and mouth read; at gameplay distance mainly the face shape shows. If the loaded bundle carries no face morphs for its drawn entry, the selects are absent, the editor says so and the base face is drawn. **Create** keeps the drafted appearance as the new character's own and saves it. Faces are cosmetic and local: they show on the viewer's own in-world model only; other players keep the bundle default, and the command wire is unchanged. The native client has no appearance editor (hair, headwear or face).
+
 Created characters start at level 1 in Greyhaven Outpost. The original Aelric Stormward preview remains a built-in level-18 character. **Enter World** spawns a new level-1 unit in the local WASM zone host and chooses the character's class and sex with `ChooseClass` as its first command, so the zone grants that class's resource and abilities. The preview's level stays presentation.
 
 ## Local identity and persistence
 
 Created characters receive stable local IDs such as `local-1`. The browser stores only the created roster in the versioned `mmorpg.offline-roster.v1` record; the built-in character is not duplicated into storage.
 
-Each character ID owns its own appearance-only save key and its unsaved in-memory appearance edits. Switching characters keeps the previous character's edits for this page session. Played progress is kept in the character's durable record; see [save/load](SAVE_LOAD.md). A character ID that still has a stored character entry, an appearance save or a legacy offline checkpoint is never reissued to a new character.
+Each character ID owns its own appearance-only save key and its unsaved in-memory appearance edits. Selecting a character, including after a reload, restores its saved appearance. The save is `schemaVersion` 2, adding `appearance.face` (feature id → option id); version 1 saves (hat and hair only) still load with the default face. Switching characters keeps the previous character's edits for this page session. Played progress is kept in the character's durable record; see [save/load](SAVE_LOAD.md). A character ID that still has a stored character entry, an appearance save or a legacy offline checkpoint is never reissued to a new character.
 
 Roster parsing fails closed for unsupported schemas, malformed records, duplicate IDs, duplicate names (including the built-in character), invalid class/sex values, excessive slots, and oversized data. If roster storage is unavailable or corrupt, the existing bytes are not silently replaced; newly created characters remain session-only.
 

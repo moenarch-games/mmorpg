@@ -16,9 +16,6 @@ body[data-activity="battle-royale"] #bags-toggle,
 body[data-activity="battle-royale"] #vendor-toggle,
 body[data-activity="battle-royale"] #quest-log-toggle { display: none; }
 
-#arena-controls { display: none; }
-body[data-activity="battle-royale"] #arena-controls { display: block; }
-body[data-activity="battle-royale"] #world-controls,
 body[data-activity="battle-royale"] #objective,
 body[data-activity="battle-royale"] #copper-status,
 body[data-activity="battle-royale"] #experience-status,

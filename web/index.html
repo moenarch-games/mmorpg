@@ -93,6 +93,9 @@
                 <button class="hair-color is-selected" type="button" data-hair-color="brown" aria-pressed="true" aria-label="Brown hair" title="Brown" style="--swatch: #6b4426"></button>
                 <button class="hair-color" type="button" data-hair-color="blond" aria-pressed="false" aria-label="Blond hair" title="Blond" style="--swatch: #c9a55e"></button>
               </div>
+              <div class="customization-heading"><p class="panel-label">Face</p><button id="face-close-up" class="face-close-up" type="button" aria-pressed="false" disabled>Close-up</button></div>
+              <div id="face-options" class="face-options"></div>
+              <p id="face-status" class="face-status" aria-live="polite">Loading face options…</p>
               <details class="appearance-storage">
                 <summary>Appearance-only saves</summary>
                 <div class="save-actions"><button id="save-character" type="button">Save appearance</button><button id="load-character" type="button">Load appearance</button></div>
@@ -186,6 +189,7 @@
         <span id="battle-royale-progress"></span>
         <button id="battle-royale-next" type="button" hidden>Change build / next match</button>
       </section>
+      <aside id="action-lab" class="action-lab" aria-label="Action Lab" hidden></aside>
       <header class="topbar" data-world-ui hidden>
         <p id="world-mode" class="eyebrow">Greyhaven Vale · local zone host</p>
         <p id="connection-status" class="connection-status" role="status" aria-live="polite"></p>
@@ -275,9 +279,7 @@
       </section>
       <section id="debug-overlay" class="debug-overlay" aria-label="Debug statistics" hidden></section>
       <section id="touch-controls" class="touch-controls" data-world-ui aria-label="Touch controls" hidden></section>
-      <section class="hud" data-world-ui aria-label="Controls" hidden>
-        <p id="world-controls"><kbd>WASD</kbd> move · <kbd>Space</kbd> jump (hold to swim up) · <kbd>X</kbd> swim down · <kbd>Tab</kbd> target · <kbd>1</kbd>–<kbd>8</kbd> abilities · <kbd>Esc</kbd> cancels a cast · <kbd>F</kbd> or right-click attack · left-drag look · right-drag turn · wheel zoom · <kbd>B</kbd> bags · <kbd>C</kbd> character · <kbd>V</kbd> vendor · <kbd>T</kbd> talk · <kbd>L</kbd> quests · <kbd>Enter</kbd> chat · <kbd>F3</kbd> stats · <kbd>Esc</kbd> characters</p>
-        <p id="arena-controls"><kbd>WASD</kbd> move · <kbd>Space</kbd> jump · <kbd>Tab</kbd> target · <kbd>1</kbd>–<kbd>5</kbd> abilities · <kbd>F</kbd> attack · hold <kbd>Z</kbd> guard · wheel zoom · <kbd>C</kbd> character</p>
+      <section class="hud" data-world-ui aria-label="Status" hidden>
         <p id="objective" class="quest-tracker" aria-label="Quest objectives" aria-live="polite">No active quests.</p>
         <p id="quest-notice" class="quest-notice" role="status" aria-live="polite" hidden></p>
         <p id="unit-status" aria-live="polite"></p>

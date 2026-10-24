@@ -624,7 +624,37 @@ impl Presentation {
         frame.draws.extend(self.unit_draws(now, view));
         self.append_inn(&mut frame.draws, now);
         frame.draws.extend(self.shrine.iter().cloned());
+        self.append_ambient(&mut frame.draws, now);
         frame
+    }
+
+    /// Greyhaven's cosmetic cat, dog and rodent (#419), skinned on their authored loops.
+    fn append_ambient(&self, draws: &mut Vec<crate::world::SceneDraw>, now: Instant) {
+        let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
+        for pose in
+            mmorpg_presentation::ambient::poses(&self.scenery, seconds, !self.reduced_motion)
+        {
+            let Some((model, clips)) = skinned::ambient_model(pose.key) else {
+                continue;
+            };
+            let clip = mmorpg_presentation::ambient::CLIPS[pose.clip];
+            let length = f64::from(clips.get(clip).copied().unwrap_or(0.));
+            #[allow(clippy::cast_possible_truncation)]
+            let time = if length > 0. {
+                pose.time.rem_euclid(length) as f32
+            } else {
+                0.
+            };
+            draws.extend(model.draws_placed(
+                pose.key,
+                three_d_animation::Mat4 {
+                    elements: pose.model,
+                },
+                clip,
+                time,
+                None,
+            ));
+        }
     }
 
     /// The inn's bundle entries with the door at its eased swing; roof and ceiling are hidden
