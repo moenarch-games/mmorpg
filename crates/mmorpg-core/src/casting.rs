@@ -479,6 +479,11 @@ impl ZoneSimulation {
                     self.hostile_aura(player_id, victim, aura)?;
                 }
             }
+            AbilityEffect::Root { .. } => {
+                if let (Some(victim), Some(root)) = (target, aura(0)) {
+                    self.hostile_aura(player_id, victim, root)?;
+                }
+            }
             AbilityEffect::Haste { percent, .. } => {
                 if let Some(aura) = aura(percent) {
                     self.put_aura(source, aura);
@@ -1662,10 +1667,15 @@ impl ZoneSimulation {
         let breakable = |aura: &Aura| {
             matches!(
                 ability_by_id(aura.ability).map(|ability| ability.effect),
-                Some(AbilityEffect::Nova {
-                    unbreakable_ticks,
-                    ..
-                }) if aura.elapsed() >= unbreakable_ticks
+                Some(
+                    AbilityEffect::Nova {
+                        unbreakable_ticks,
+                        ..
+                    } | AbilityEffect::Root {
+                        unbreakable_ticks,
+                        ..
+                    }
+                ) if aura.elapsed() >= unbreakable_ticks
             )
         };
         let auras = match unit {
