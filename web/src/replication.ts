@@ -36,8 +36,8 @@ export type EntityState = {
   flags: EntityFlags;
 };
 
-export type ClassId = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue";
-export type ResourceKind = "rage" | "focus" | "mana";
+export type ClassId = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid";
+export type ResourceKind = "rage" | "focus" | "mana" | "faith";
 export type ClassChoice = { classId: ClassId; sex: "female" | "male" };
 export type ResourceState = { kind: ResourceKind; value: number; max: number };
 /** A cast or channel in progress: `elapsed` of `total` ticks. */
@@ -258,7 +258,7 @@ export type DebrisState = {
 /** One projectile: position in units, heading/pitch in 1/65 536 turns (heading 0 is +Z). */
 export type ProjectileState = {
   id: number;
-  kind: "arrow" | "bolt" | "missile" | "shadow";
+  kind: "arrow" | "bolt" | "missile" | "shadow" | "holy" | "nature";
   x: number;
   y: number;
   z: number;
@@ -311,8 +311,8 @@ function decodeChatText(bytes: Uint8Array): string {
 export const TICK_HZ = 30;
 export const UNITS_PER_METRE = 100;
 const YAW_STEPS = 65_536;
-const WIRE_VERSION = 35;
-const SCHEMA_VERSION = 35;
+const WIRE_VERSION = 37;
+const SCHEMA_VERSION = 37;
 const PLAYER_SCOPE = 2;
 /** One datagram: the measured 1 161-byte floor minus the 20-byte session header and 64 bytes of margin. */
 const MAX_PROJECTION_BYTES = 1_077;
@@ -385,9 +385,9 @@ export const ITEM_SHAPES: ReadonlyMap<number, ItemShape> = new Map([
   [13, gear(3, 2, 0, 4, 0)],
   [14, gear(2, 2, 0, 0, 4)],
 ]);
-const CLASSES: readonly ClassId[] = ["warden", "ranger", "arcanist", "necromancer", "rogue"];
-const RESOURCES: readonly ResourceKind[] = ["rage", "focus", "mana"];
-const CLASS_RESOURCES: Readonly<Record<ClassId, ResourceKind>> = { warden: "rage", ranger: "focus", arcanist: "mana", necromancer: "mana", rogue: "focus" };
+const CLASSES: readonly ClassId[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
+const RESOURCES: readonly ResourceKind[] = ["rage", "focus", "mana", "faith"];
+const CLASS_RESOURCES: Readonly<Record<ClassId, ResourceKind>> = { warden: "rage", ranger: "focus", arcanist: "mana", necromancer: "mana", rogue: "focus", cleric: "faith", druid: "mana" };
 const AURA_KINDS: readonly AuraKind[] = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
 
 type AbilityShape = { castTicks: number; channel: boolean; cooldown: number; aura: AuraKind | null; auraTicks: number };
@@ -436,8 +436,18 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [31, instant(0, "damage-over-time", 450)],
   [32, instant(360, "stun", 60)],
   [33, instant(900, "haste", 300)],
+  // The Cleric (#303): Smite, Renew, Holy Beam and Divine Shield.
+  [34, { castTicks: 60, channel: false, cooldown: 0, aura: null, auraTicks: 0 }],
+  [35, instant(0, "heal-over-time", 450)],
+  [36, { castTicks: 60, channel: true, cooldown: 600, aura: null, auraTicks: 0 }],
+  [37, instant(600, "absorb", 600)],
+  // The Druid (#304): Wrath, Entangling Roots, Rejuvenation and Barkskin.
+  [38, { castTicks: 60, channel: false, cooldown: 0, aura: null, auraTicks: 0 }],
+  [39, instant(600, "root", 180)],
+  [40, instant(0, "heal-over-time", 450)],
+  [41, instant(900, "absorb", 600)],
 ]);
-/** Mana: 110 + 22 per level above 1; rage and focus: 100. */
+/** Mana: 110 + 22 per level above 1; rage, focus and faith: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {
   return kind === "mana" ? 110 + 22 * (level - 1) : 100;
 }
@@ -1049,7 +1059,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const projectiles: ProjectileState[] = [];
   for (let index = 0; index < projectileCount; index += 1) {
     const id = reader.u16();
-    const kind = (["arrow", "bolt", "missile", "shadow"] as const)[reader.u8() - 1];
+    const kind = (["arrow", "bolt", "missile", "shadow", "holy", "nature"] as const)[reader.u8() - 1];
     if (kind === undefined) {
       throw new Error("Unknown projectile kind");
     }

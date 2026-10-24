@@ -489,6 +489,45 @@ mod tests {
     }
 
     #[test]
+    fn the_cleric_holy_starts_a_level_6_cleric_without_faith() {
+        assert_eq!(
+            Scenario::from_name("cleric-holy"),
+            Some(Scenario::ClericHoly)
+        );
+        let (host, player) = LocalZoneHost::scenario(Scenario::ClericHoly, 0).unwrap();
+        let viewer = decode_snapshot(&host.projection(player).unwrap())
+            .unwrap()
+            .viewer;
+        assert_eq!(viewer.level, 6);
+        assert_eq!(
+            viewer.class.map(|choice| choice.class),
+            Some(mmorpg_core::PlayerClass::Cleric)
+        );
+        assert_eq!(viewer.resource.map(|resource| resource.value), Some(0));
+    }
+
+    #[test]
+    fn the_druid_nature_starts_a_level_6_druid_on_mana() {
+        assert_eq!(
+            Scenario::from_name("druid-nature"),
+            Some(Scenario::DruidNature)
+        );
+        let (host, player) = LocalZoneHost::scenario(Scenario::DruidNature, 0).unwrap();
+        let viewer = decode_snapshot(&host.projection(player).unwrap())
+            .unwrap()
+            .viewer;
+        assert_eq!(viewer.level, 6);
+        assert_eq!(
+            viewer.class.map(|choice| choice.class),
+            Some(mmorpg_core::PlayerClass::Druid)
+        );
+        assert_eq!(
+            viewer.resource.map(|resource| resource.kind),
+            Some(mmorpg_core::ResourceKind::Mana)
+        );
+    }
+
+    #[test]
     fn the_sunken_shrine_starts_on_the_lake_shore_with_the_quest_accepted() {
         assert_eq!(
             Scenario::from_name("sunken-shrine"),

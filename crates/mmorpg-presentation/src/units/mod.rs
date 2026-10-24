@@ -477,6 +477,10 @@ impl UnitPresenter {
                 ProjectileKind::Bolt => (0.45, 0.045, 0x5c3f28, 0x3a3c40),
                 ProjectileKind::Missile => (0.5, 0.08, 0xff8a2a, 0xffd36a),
                 ProjectileKind::Shadow => (0.5, 0.08, 0x5a2a8a, 0x9cff7a),
+                // A Cleric's holy missile (#303): gold with a white core.
+                ProjectileKind::Holy => (0.5, 0.08, 0xffc94a, 0xfff6d8),
+                // A Druid's nature missile (#304): leaf green with a pale core.
+                ProjectileKind::Nature => (0.5, 0.08, 0x5fbf3a, 0xd8ffb0),
             };
             let turn = |value: f64| value / 65_536. * std::f64::consts::TAU;
             let tip = Frame {

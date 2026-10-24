@@ -63,6 +63,24 @@ const CLASS_VISUALS: Record<CharacterClassId, Omit<CharacterVisualProfile,
     weapon: "dagger",
     weaponColor: "#c4c9cc",
   },
+  // White robes with gold trim and a white staff (#303), the in-world look's colours.
+  cleric: {
+    bodyColor: "#e8e4da",
+    chestColor: "#f2efe6",
+    shoulderColor: "#d9b44a",
+    cloakColor: "#c9a23e",
+    weapon: "staff",
+    weaponColor: "#f4f1e8",
+  },
+  // Moss and earth-brown robes and a gnarled dark-wood staff (#304), the in-world look's colours.
+  druid: {
+    bodyColor: "#5e6b3e",
+    chestColor: "#4d5a33",
+    shoulderColor: "#6f5a3a",
+    cloakColor: "#3e3626",
+    weapon: "staff",
+    weaponColor: "#4a3524",
+  },
 };
 
 const SEX_FRAME: Record<CharacterSex, Pick<CharacterVisualProfile,

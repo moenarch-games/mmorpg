@@ -6,7 +6,7 @@ const FIXED_BYTES = 117;
 const SHEET_BYTES = 84;
 const AURA_KINDS = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
 const CLASSES = ["warden", "ranger", "arcanist"];
-const RESOURCES = ["rage", "focus", "mana"];
+const RESOURCES = ["rage", "focus", "mana", "faith"];
 const EVENT_BYTES = 14;
 const ENTITY_BYTES = 21;
 const ERROR_CODES = [
@@ -52,9 +52,9 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(value === null ? 0 : entityKindCode(value.kind));
     u32(value?.id ?? 0);
   };
-  u8(35);
+  u8(37);
   u8(2);
-  u16(35);
+  u16(37);
   u32(snapshot.zoneId);
   u64(snapshot.tick);
   u64(snapshot.contentRevision);

@@ -979,10 +979,15 @@ impl ZoneSimulation {
                         learned(choice.class, caster.level, aura.ability).is_some()
                     })
             });
-            let on_caster =
-                ability_by_id(aura.ability).is_some_and(|ability| ability.aura_on_caster());
+            let ability = ability_by_id(aura.ability);
+            let on_caster = ability.is_some_and(|ability| ability.aura_on_caster());
+            let friendly = ability.is_some_and(|ability| ability.is_friendly());
             learned
-                && if on_caster {
+                && if friendly {
+                    // A Cleric's heal or shield (#303) rests on the caster or a friendly player.
+                    unit == aura.caster
+                        || matches!(unit, EntityRef::Player(friend) if !self.players_are_hostile(caster_id, friend))
+                } else if on_caster {
                     unit == aura.caster
                 } else {
                     matches!(unit, EntityRef::Creature(_))
@@ -1140,12 +1145,12 @@ pub(crate) fn validate_player_abilities(
     if !alive && (abilities.cast.is_some() || !abilities.auras.is_empty()) {
         return Err(ZoneError::new("the dead neither cast nor keep auras"));
     }
-    // Death drains rage and its decay clock.
+    // Death drains rage and faith and their decay clock.
     if !alive
-        && class.resource() == crate::ResourceKind::Rage
+        && class.resource().is_built()
         && (abilities.resource != 0 || abilities.resource_ticks != 0)
     {
-        return Err(ZoneError::new("a dead Warden has no rage"));
+        return Err(ZoneError::new("a dead player has no rage or faith"));
     }
     Ok(())
 }

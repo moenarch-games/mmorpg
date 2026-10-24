@@ -1,11 +1,14 @@
-//! Player classes and their resources: Warden rage, Ranger and Rogue focus and
-//! Arcanist and Necromancer mana. A player chooses a class once; until then it keeps the
+//! Player classes and their resources: Warden rage, Ranger and Rogue focus,
+//! Arcanist, Necromancer and Druid mana and Cleric faith. A player chooses a class once; until then it keeps the
 //! class-agnostic baseline without a resource or abilities. All integer.
 
 use crate::unit::percent_of;
 
-/// Rage and focus share this maximum.
+/// Rage, focus and faith share this maximum.
 pub const RAGE_FOCUS_MAX: u16 = 100;
+/// Cleric faith (#303) gained per hit dealt or heal given: half the damage dealt or health
+/// restored, at least 1 and at most this. Out of combat it decays like rage.
+pub const FAITH_PER_EVENT_MAX: u16 = 15;
 /// Warden rage gained per auto-attack hit dealt …
 pub const RAGE_PER_HIT_DEALT: u16 = 6;
 /// … per hit taken (a creature swing or ability that lands) …
@@ -37,15 +40,23 @@ pub enum PlayerClass {
     /// Dagger strikes, poison and stuns on focus (#302); thrown weapons, traps and dashes
     /// follow in #290, #300 and #294.
     Rogue,
+    /// Holy bolts and beams, heals and shields on faith (#303); heals and shields also land on
+    /// a selected friendly player. Knockback blasts follow later.
+    Cleric,
+    /// Nature bolts, roots, heals and bark on mana (#304); the pet companion follows in #296
+    /// and stone walls in #293. No shapeshift.
+    Druid,
 }
 
 impl PlayerClass {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 7] = [
         Self::Warden,
         Self::Ranger,
         Self::Arcanist,
         Self::Necromancer,
         Self::Rogue,
+        Self::Cleric,
+        Self::Druid,
     ];
 
     #[must_use]
@@ -56,6 +67,8 @@ impl PlayerClass {
             2 => Some(Self::Arcanist),
             3 => Some(Self::Necromancer),
             4 => Some(Self::Rogue),
+            5 => Some(Self::Cleric),
+            6 => Some(Self::Druid),
             _ => None,
         }
     }
@@ -68,6 +81,8 @@ impl PlayerClass {
             Self::Arcanist => 2,
             Self::Necromancer => 3,
             Self::Rogue => 4,
+            Self::Cleric => 5,
+            Self::Druid => 6,
         }
     }
 
@@ -80,6 +95,8 @@ impl PlayerClass {
             Self::Arcanist => "arcanist",
             Self::Necromancer => "necromancer",
             Self::Rogue => "rogue",
+            Self::Cleric => "cleric",
+            Self::Druid => "druid",
         }
     }
 
@@ -88,7 +105,8 @@ impl PlayerClass {
         match self {
             Self::Warden => ResourceKind::Rage,
             Self::Ranger | Self::Rogue => ResourceKind::Focus,
-            Self::Arcanist | Self::Necromancer => ResourceKind::Mana,
+            Self::Arcanist | Self::Necromancer | Self::Druid => ResourceKind::Mana,
+            Self::Cleric => ResourceKind::Faith,
         }
     }
 }
@@ -137,7 +155,7 @@ impl ClassChoice {
     /// Inverse of [`Self::appearance`]; `None` for 0 and unknown codes.
     #[must_use]
     pub const fn from_appearance(code: u16) -> Option<Self> {
-        if code == 0 || code > 10 {
+        if code == 0 || code > 14 {
             return None;
         }
         let index = code - 1;
@@ -157,6 +175,8 @@ pub enum ResourceKind {
     Rage,
     Focus,
     Mana,
+    /// The Cleric's (#303): built by dealing damage and healing, decaying out of combat.
+    Faith,
 }
 
 impl ResourceKind {
@@ -166,25 +186,36 @@ impl ResourceKind {
             Self::Rage => "rage",
             Self::Focus => "focus",
             Self::Mana => "mana",
+            Self::Faith => "faith",
         }
     }
 
-    /// The maximum at `level`: 100 rage or focus; mana 110 + 22 × (level − 1).
+    /// The maximum at `level`: 100 rage, focus or faith; mana 110 + 22 × (level − 1).
     #[must_use]
     pub const fn max(self, level: u8) -> u16 {
         match self {
-            Self::Rage | Self::Focus => RAGE_FOCUS_MAX,
+            Self::Rage | Self::Focus | Self::Faith => RAGE_FOCUS_MAX,
             Self::Mana => MANA_BASE + MANA_PER_LEVEL * level.saturating_sub(1) as u16,
         }
     }
 
-    /// The value after choosing the class: rage starts empty, focus and
-    /// mana full.
+    /// The value after choosing the class: rage and faith start empty, focus
+    /// and mana full.
     #[must_use]
     pub const fn start(self, level: u8) -> u16 {
         match self {
-            Self::Rage => 0,
+            Self::Rage | Self::Faith => 0,
             Self::Focus | Self::Mana => self.max(level),
+        }
+    }
+
+    /// Whether the resource is built in combat (rage and faith): it starts empty, decays out
+    /// of combat and drains on death.
+    #[must_use]
+    pub const fn is_built(self) -> bool {
+        match self {
+            Self::Rage | Self::Faith => true,
+            Self::Focus | Self::Mana => false,
         }
     }
 }
@@ -206,7 +237,7 @@ impl ResourceClock {
     pub(crate) fn advance(&mut self, kind: ResourceKind, level: u8, in_combat: bool) {
         let max = kind.max(level);
         let step: Option<u16> = match kind {
-            ResourceKind::Rage => (!in_combat && self.value > 0).then_some(0),
+            ResourceKind::Rage | ResourceKind::Faith => (!in_combat && self.value > 0).then_some(0),
             ResourceKind::Focus => (self.value < max).then_some(FOCUS_REGEN),
             ResourceKind::Mana => {
                 if self.delay > 0 {
@@ -233,7 +264,7 @@ impl ResourceClock {
         }
         self.ticks = 0;
         self.value = match kind {
-            ResourceKind::Rage => self.value.saturating_sub(RAGE_DECAY),
+            ResourceKind::Rage | ResourceKind::Faith => self.value.saturating_sub(RAGE_DECAY),
             ResourceKind::Focus | ResourceKind::Mana => self.value.saturating_add(gain).min(max),
         };
     }
@@ -277,10 +308,12 @@ mod tests {
                 codes.push(choice.appearance());
             }
         }
-        assert_eq!(codes, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        assert_eq!(codes, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
         assert_eq!(ClassChoice::from_appearance(0), None);
-        assert_eq!(ClassChoice::from_appearance(11), None);
-        assert_eq!(PlayerClass::from_code(5), None);
+        assert_eq!(ClassChoice::from_appearance(15), None);
+        assert_eq!(PlayerClass::from_code(7), None);
+        assert_eq!(PlayerClass::Druid.resource(), ResourceKind::Mana);
+        assert_eq!(PlayerClass::Cleric.resource(), ResourceKind::Faith);
         assert_eq!(PlayerClass::Necromancer.resource(), ResourceKind::Mana);
         assert_eq!(PlayerClass::Rogue.resource(), ResourceKind::Focus);
         assert_eq!(Sex::from_code(2), None);

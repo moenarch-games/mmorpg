@@ -463,10 +463,12 @@ mod tests {
                 {"id": 1, "name": "ranger", "resource": "focus"},
                 {"id": 2, "name": "arcanist", "resource": "mana"},
                 {"id": 3, "name": "necromancer", "resource": "mana"},
-                {"id": 4, "name": "rogue", "resource": "focus"}
+                {"id": 4, "name": "rogue", "resource": "focus"},
+                {"id": 5, "name": "cleric", "resource": "faith"},
+                {"id": 6, "name": "druid", "resource": "mana"}
             ])
         );
-        assert_eq!(value["abilityCatalogRevision"], "11");
+        assert_eq!(value["abilityCatalogRevision"], "13");
         assert_eq!(
             value["abilities"][8],
             json!({
