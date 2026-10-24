@@ -38,7 +38,7 @@ use std::fmt;
 
 use physics_engine::BodyId as EngineId;
 use physics_engine::approximate::{
-    Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, HeightfieldDesc,
+    Body, CharacterMove, CharacterMoveResult, CharacterSettings, Config, HeightfieldDesc, Material,
     Quaternion, QueryFilter, QueryPose, RayCast, Shape, ShapeCast, Vector,
 };
 
@@ -52,15 +52,10 @@ use super::{
 const UNITS_PER_METRE: f32 = 100.0;
 /// Debris and props weigh as the Rapier backend's colliders do (kg/m³).
 const DEBRIS_DENSITY: f32 = 600.0;
-/// Rapier averages two colliders' coefficients; physics-engine takes the larger friction and the
-/// smaller restitution (physics-engine #391). Pieces carry friction 0.8 and restitution 0.15 on
-/// Rapier, fixed geometry its defaults 0.5 and 0, so these reproduce Rapier's piece–fixed
-/// coefficients (0.65 and 0.075). Piece–piece friction is 0.65 here, 0.8 on Rapier, and the
-/// heightfield keeps the engine's restitution 0.
-const PIECE_FRICTION: f32 = 0.65;
+/// The pieces' material on both backends. Fixed geometry and the heightfield keep the engine's
+/// defaults (friction 0.5, restitution 0, `CombineRule::Average`), which are Rapier's.
+const PIECE_FRICTION: f32 = 0.8;
 const PIECE_RESTITUTION: f32 = 0.15;
-const FIXED_FRICTION: f32 = 0.5;
-const FIXED_RESTITUTION: f32 = 0.075;
 /// Ground within the contact offset plus this (5 cm) counts as support, as in Rapier.
 const GROUND_PREDICTION_UNITS: f32 = 5.0;
 /// A ceiling stops a rising body when it realizes less than this much (units) of its rise.
@@ -405,6 +400,7 @@ fn heightfield(terrain: &crate::Terrain) -> HeightfieldDesc {
             .map(|&height| height as f32)
             .collect(),
         removed_cells: Some(removed_cells),
+        material: Material::default(),
     }
 }
 
@@ -763,8 +759,6 @@ impl World {
                 fixed.mass = 0.0;
                 fixed.external = false;
             }
-            fixed.friction = FIXED_FRICTION;
-            fixed.restitution = FIXED_RESTITUTION;
             add(&mut engine, fixed)?;
         }
         if let Some(ground) = &self.ground {

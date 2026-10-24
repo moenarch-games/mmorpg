@@ -39,10 +39,9 @@ and the heavy crates' slides (#58) are engine dynamic boxes (rotation-locked for
 world rebuilt each tick from the nearby game bodies, units as fixed capsules, as the Rapier arm
 rebuilds its own; two substeps of four passes for debris and of one for crates, as
 physics-engine's `debris` and `props` oracle scenarios calibrate them. A crate at rest is a fixed
-box on both arms. The engine combines contact materials with max friction and min restitution
-where Rapier averages them (physics-engine #391), so the engine arm passes Rapier's combined
-piece–fixed coefficients (friction 0.65, restitution 0.075); piece–piece friction is 0.65 there
-instead of Rapier's 0.8.
+box on both arms. Both arms give the pieces friction 0.8 and restitution 0.15 and leave fixed
+geometry and the heightfield at the defaults (0.5, 0); both average a pair's coefficients
+(physics-engine #391).
 
 ## What the test asserts
 
@@ -129,7 +128,7 @@ Measured at the commit the timing table names:
 | vale-charge-path | 0 / 0 | 0 apart (max 0.34) | continues |
 | vale-watch-post | 0 / 0 | 14 apart (max 671) | continues |
 | vale-crate-shove | 5.0 / 0 (player 2 stops at its crate) | 3 apart (max 5.0); crates 5.0 short of Rapier's 265-unit slide | continues |
-| vale-crate-smash | 0 / 0 | 22 apart (max 576); settled debris within 65.6 | continues |
+| vale-crate-smash | 0 / 0 | 22 apart (max 576); settled debris within 58.3 | continues |
 | vale-missiles | 0 / 0 | 1 apart (max 6.4); same missiles strike, world hits within 0.001 | continues |
 
 Every query decision on identical states agreed (up to 20,468 probes per workload).
@@ -167,13 +166,14 @@ Intentional or explained differences:
 
 ## physics-engine gaps found
 
-1. **Contact material combine rule** (open, physics-engine #391). Rapier averages two
-   colliders' friction and restitution by default; physics-engine takes the larger friction
+1. **Contact material combine rule** (fixed, physics-engine #391 / #392). Rapier averages two
+   colliders' friction and restitution by default; physics-engine took the larger friction
    and the smaller restitution. With the pieces' 0.8 / 0.15 against Rapier's default 0.5 / 0 on
    fixed geometry, Rapier slides a crate with μ = 0.65 and the engine with μ = 0.8: Shield-Bashed
-   crates slid 215 units on the engine against Rapier's 265 (0.81 = 0.65 / 0.8). The engine arm
-   now passes Rapier's combined coefficients (above): the crates end 5 units short of Rapier's
-   (260 vs 265) and settled debris within 66 units of Rapier's.
+   crates slid 215 units on the engine against Rapier's 265 (0.81 = 0.65 / 0.8). physics-engine
+   now has Rapier's per-body combine rules (default `Average`, default friction 0.5), and the
+   adapter passes the game's own materials: the crates end 5 units short of Rapier's (260 vs
+   265) and settled debris within 58 units of Rapier's.
 
 Dynamic bodies themselves (debris #288, movable crates #58) need no engine feature: the engine
 arm runs them since mmorpg#442 (physics-engine C18).
