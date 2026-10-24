@@ -49,7 +49,7 @@ import { nearestAnimal, projectedUnit, type ProjectedUnit } from "./units/projec
 import { ProgressionHud } from "./units/progression-hud";
 import { PointerClick, SecondaryClick, attackToggle } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
-import { QuaterniusUnits, type Hair, type Headwear } from "./units/quaternius-units";
+import { QuaterniusUnits, type FaceFeature, type Hair, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
 import type { ZoneWorld } from "./world-source";
 import { touchContext, type TouchContext } from "../input/touch-layout";
@@ -629,10 +629,15 @@ export class WorldView {
       id: "selection-preview", kind: "Ranger", entity: { kind: "player", id: 0 }, feet, yaw, heightMetres: height,
       clip, time: seconds % length, tint: null,
       swordAndShield: look.classId === "warden", bowAndQuiver: look.classId === "ranger", blade: look.classId === "rogue", headwear: true,
-    }], { headwear: viewerHeadwear(look), hair: viewerHair(look) });
+    }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} });
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
     return true;
+  }
+
+  /** The face features the loaded Ranger offers (#411): undefined while loading, null if it has none. */
+  faceFeatures(): readonly FaceFeature[] | null | undefined {
+    return this.#models.faceFeatures();
   }
 
   /** Queues an intent for the next frame; the zone decides what happens. */
@@ -895,7 +900,7 @@ export class WorldView {
         others.push(this.#minimapUnit(entity, unitsPerMetre));
       }
     }
-    this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look) });
+    this.#models.update(presented.imported, { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} });
     const intensity = animate ? "strong" : "subtle";
     this.#impacts.preload(intensity);
     for (const received of receivedProjections) {
