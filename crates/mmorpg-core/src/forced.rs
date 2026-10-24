@@ -228,7 +228,7 @@ impl ZoneSimulation {
             let Some(body) = self.world.body(body_id(shover)).copied() else {
                 continue;
             };
-            let velocity = body.velocity();
+            let velocity = body.velocity_units();
             let step = [i64::from(velocity.x), i64::from(velocity.z)];
             if step == [0, 0] {
                 continue;
@@ -364,8 +364,9 @@ impl ZoneSimulation {
             .ok_or_else(|| ZoneError::new("forced unit physics body is missing"))?
             .velocity()
             .y;
+        let [x, z] = velocity.map(|units| units * crate::physics::SUBUNITS_PER_UNIT);
         self.world
-            .set_velocity(body, Vec3i::new(velocity[0], vertical, velocity[1]))
+            .set_velocity(body, Vec3i::new(x, vertical, z))
             .map_err(crate::zone::physics_error)
     }
 

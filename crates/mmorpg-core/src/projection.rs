@@ -382,7 +382,7 @@ impl ZoneSimulation {
                     .world
                     .body(body_id(entity))
                     .ok_or_else(|| ZoneError::new("player physics body is missing"))?;
-                let (position, velocity) = (body.position(), body.velocity());
+                let (position, velocity) = (body.position(), body.velocity_units());
                 EntitySnapshot {
                     kind: EntityKind::Player,
                     id: player_id,
@@ -415,7 +415,7 @@ impl ZoneSimulation {
                             .world
                             .body(body_id(entity))
                             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?;
-                        let (position, velocity) = (body.position(), body.velocity());
+                        let (position, velocity) = (body.position(), body.velocity_units());
                         (
                             [position.x, position.y, position.z],
                             [velocity.x, velocity.y, velocity.z].map(saturate_i8),

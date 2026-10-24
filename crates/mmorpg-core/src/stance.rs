@@ -161,7 +161,7 @@ impl ZoneSimulation {
             return Ok(Some(MeleeStance::Landing));
         }
         let body = self.player_body(player_id)?;
-        let velocity = body.velocity();
+        let velocity = body.velocity_units();
         let (vx, vz) = (i64::from(velocity.x), i64::from(velocity.z));
         let speed_squared = vx * vx + vz * vz;
         if speed_squared <= PLANTED_SPEED_UNITS_PER_TICK.pow(2) {
