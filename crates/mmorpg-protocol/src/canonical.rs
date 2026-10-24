@@ -1723,7 +1723,7 @@ mod tests {
         let cast = player_abilities + 1 + 8 + 1 + 2 * 3;
         let aura = cast + 17 + 1;
         for (offset, value, message) in [
-            (player_abilities, 9, "unknown class choice"),
+            (player_abilities, 13, "unknown class choice"),
             // The directed strike's side code.
             (intents + 1 + 7 + 7 + 4, 3, "unknown strike aim"),
             (cast + 8, 2, "boolean field must be 0 or 1"),

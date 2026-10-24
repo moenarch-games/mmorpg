@@ -54,7 +54,7 @@ The twenty discrete intents (every command but `Move`, `Jump` and `Guard`) are q
 
 `MoveItem` names only slots in the sender’s own bag. Slot/quantity values that fit the wire but cannot be applied are tick-time feedback, not session errors; there is no item grant command. `EquipItem` equips the item in one of the sender's bag slots into its catalog equipment slot, and `UnequipItem` moves the item in equipment slot 0 main hand, 1 off hand, 2 head, 3 chest, 4 legs or 5 feet to the lowest empty bag slot; every `u8` fits the wire and invalid slots are tick-time feedback. See [INVENTORY.md](INVENTORY.md#equipment).
 
-`UseAbility` names a global ability ID and an [entity reference](#entity-references) as in `SelectTarget`; kind 0 (ID 0) means the current selection, and self-centred abilities ignore it. `CancelCast` stops the player's own cast or channel (nothing happens without one). `ChooseClass` picks class 0 Warden, 1 Ranger, 2 Arcanist or 3 Necromancer and sex 0 female or 1 male, once per player. Every `u8` value fits the wire: unknown abilities, classes or sexes, repeats and every other refusal are `Error` events, never session errors (see [Classes and abilities](#classes-and-abilities)).
+`UseAbility` names a global ability ID and an [entity reference](#entity-references) as in `SelectTarget`; kind 0 (ID 0) means the current selection, self-centred abilities ignore it, and friendly abilities (Renew, Divine Shield) land on a selected non-hostile player or else on the caster. `CancelCast` stops the player's own cast or channel (nothing happens without one). `ChooseClass` picks class 0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue or 5 Cleric and sex 0 female or 1 male, once per player. Every `u8` value fits the wire: unknown abilities, classes or sexes, repeats and every other refusal are `Error` events, never session errors (see [Classes and abilities](#classes-and-abilities)).
 
 `DirectedStrike` executes an ability's directed mode (#154; only Heroic Strike, ability 1, has one): the player turns to `facing` and sweeps toward side 0 left, 1 centre or 2 right and height 0 low, 1 middle or 2 high. It shares the ability's validation order, Rage cost, cooldown and global cooldown; an ability without a directed mode is `not learned`. Instead of a target and range check, core resolves which living creature the sweep physically covers: the arc is centred on `facing` turned 45° toward the side (left is `facing + 45°`) and spans ±30°, it reaches the melee reach (2.5 m XZ centre distance), the creature's physics body must overlap the height band above the striker's feet (low 0–0.6 m, middle 0.6–1.3 m, high 1.3–2 m), and a `physics-engine` ray between body centres must not hit static geometry. The nearest covered creature (ties in `EntityRef` order) takes the ability's weapon-strike damage; a sweep that covers nobody is a whiff that still pays and starts the global cooldown. Side and height codes above 2 are malformed payloads.
 
@@ -109,8 +109,8 @@ Sections follow in fixed order: header, self (including class, resource, cast, m
 | 49 | 4 | Self: copper |
 | 53 | 1 | Self flags: bit 0 dead, bit 1 in combat, bit 2 auto-attacking; other bits 0 |
 | 54 | 5 | Self: target (entity reference, kind 0 for none) |
-| 59 | 1 | Self: class code, 0 without a class, otherwise `1 + class × 2 + sex` (1–8) |
-| 60 | 1 | Self: resource kind, 0 none, 1 rage, 2 focus, 3 mana |
+| 59 | 1 | Self: class code, 0 without a class, otherwise `1 + class × 2 + sex` (1–12) |
+| 60 | 1 | Self: resource kind, 0 none, 1 rage, 2 focus, 3 mana, 4 faith |
 | 61 | 2 | Self: resource value |
 | 63 | 2 | Self: resource maximum |
 | 65 | 2 | Self: global cooldown ticks left (at most 45) |
@@ -229,9 +229,9 @@ Player IDs are zone/session-local. These snapshots have no authority epoch field
 
 Decoders reject payloads above the byte budget, a wrong wire version, scope or schema, inconsistent self state (level 0, health above its maximum, a dead flag that disagrees with zero health), more than 16 events, 16 doors or 45 entities, unordered doors or door states other than 0 or 1, zero inventory revision, an invalid sheet flag, quest logs with more than 10 entries, out-of-range, unordered or turned-in active quests, more than 8 markers, unordered markers or unknown marker codes, unknown items or invalid stack quantities, equipment items that are unknown or in the wrong slot, stat totals that do not match the equipment, an inverted melee damage range, inconsistent loot presence/rewards/target/death tick or corpse flags, unknown entity kinds, event kinds or error codes, event flags or fields that do not fit their kind, an absent reference with a non-zero ID, reserved flag bits, a health percent above 100, counts not matching the payload length, a first record that is not the viewer, truncation and trailing bytes. The browser decoder additionally rejects duplicate `(kind, id)` identities. The native client rejects duplicates, a projection addressed to another viewer, and a projection without its own player.
 
-Decoders additionally reject class codes above 6, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
+Decoders additionally reject class codes above 12, a resource that does not match the class or its maximum, a global cooldown above 45, casts with unknown abilities or a wrong total, channel flag or progress, more than 4 cooldowns or out-of-order, unknown or over-long cooldowns, more than 8 auras, auras whose kind or time left does not match the catalog, ability state without a class or on a dead viewer, target detail without a target, and unknown abilities in ability events; quest events need a quest ID in 1–32, no units, an objective slot below 3 with a nonzero count, or amount 0 for a completion.
 
-The shared fixture is `fixtures/protocol/player-snapshot-v34.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind but the evade (the 16-event cap keeps the lurker's lost interest instead), two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v34.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v33 fixtures remain as rejection evidence. `presentation-observation-v34.hex` covers the two neutral observation records.
+The shared fixture is `fixtures/protocol/player-snapshot-v36.hex`: a level-4 Arcanist wearing an Apprentice Wand, a Cloth Hood and a Padded Tunic (3 stamina, 6 intellect: 110 maximum health and a 9–12 melee range) casting Firebolt behind an Arcane Barrier at a rooted Mirefin Lurker that casts Muck Bolt, next to an NPC and a corpse tapped by another player, with a sparse self bag, one turned-in quest, one active quest and two markers (`!` and grey `?`), one event of every participant-feedback kind but the evade (the 16-event cap keeps the lurker's lost interest instead), two chat lines (a say and a yell with non-ASCII text), an emote, two doors (1 open, 2 closed), two structure pieces (2 damaged, 261 destroyed), three projectiles (a flying arrow, a stuck bolt and a flying magic missile) and an empty debris section (debris records are round-tripped by a separate projection test). Rust encoding and browser decoding both verify these exact bytes. `player-loot-v36.hex` additionally pins an owned eligible corpse with two copper, two Torn Fur and a Wolf Pelt quest item. The viewer holds a broken high guard and, as an Arcanist, no melee stance or combo. The v8–v35 fixtures remain as rejection evidence. `presentation-observation-v36.hex` covers the two neutral observation records.
 
 ## Canonical scope
 
@@ -603,3 +603,28 @@ every pulse damages the channel's target and heals the caster by the health it l
 channel breaks when the target dies or leaves line of sight or range. Commands stay v14 (class 3
 is now a valid `ChooseClass`). Snapshot v33 / schema 33 payloads fail closed;
 `player-snapshot-v33.hex` remains as rejection evidence.
+
+## The Rogue: snapshot v35 / core schema 35 (#302)
+
+Class code 4 is the Rogue, a focus fighter like the Ranger (100 focus, +5 per second, agility as
+its primary stat); player appearance codes 9 and 10 follow from `1 + class × 2 + sex`. Layouts
+are unchanged. Ability catalog revision 11 adds Sinister Strike (30, a melee weapon strike),
+Poisoned Blade (31, a melee damage over time), Gouge (32, an interrupt and stun without
+knockback) and Adrenaline Rush (33, a self haste), all from existing effect codes. Commands
+stay v14 (class 4 is now a valid `ChooseClass`). Snapshot v34 / schema 34 payloads fail closed;
+`player-snapshot-v34.hex` remains as rejection evidence.
+
+## The Cleric: snapshot v36 / core schema 36 (#303)
+
+Class code 5 is the Cleric; player appearance codes 11 and 12 follow from `1 + class × 2 + sex`.
+Its resource is faith, resource kind 4: 0–100, starting empty, built by half of each hit's
+damage dealt and each heal's health restored (at least 1, at most 15 per event), decaying 2 per
+second out of combat like rage and drained on death. Projectile kind 5 is a holy missile, which
+flies and homes like the magic missile. Ability catalog revision 12 adds Smite (34, a 2 s cast
+holy missile, free), Renew (35, a heal over time of 25 % of the recipient's maximum health),
+Holy Beam (36, a channelled beam like Lightning Beam) and Divine Shield (37, an absorb). Renew
+and Divine Shield are friendly abilities: with another non-hostile living player selected
+within 30 m and line of sight they land on that player (out of range or sight is refused),
+otherwise on the caster. Layouts are unchanged. Commands stay v14 (class 5 is now a valid
+`ChooseClass`). Snapshot v35 / schema 35 payloads fail closed; `player-snapshot-v35.hex`
+remains as rejection evidence.

@@ -19,6 +19,8 @@ pub struct Look {
     pub weapon: u32,
     /// The glowing orb atop a staff.
     pub orb: u32,
+    /// A Rogue's dagger (#302): the sword stance with a short blade and no shield.
+    pub dagger: bool,
     pub hat: Option<Hat>,
 }
 impl Look {
@@ -53,6 +55,26 @@ impl Look {
                 0xe6dfc8,
                 0x7dff8a,
             ),
+            // The Rogue (#302): charcoal and dark leather, a steel dagger.
+            4 => (
+                Stance::Sword,
+                0x45413d,
+                0x3a2e26,
+                0x4f4038,
+                0x2a2826,
+                0xc4c9cc,
+                ARCANE_ORB,
+            ),
+            // The Cleric (#303): white robes with gold trim, a white staff and a gold orb.
+            5 => (
+                Stance::Staff,
+                0xe8e4da,
+                0xf2efe6,
+                0xd9b44a,
+                0xc9a23e,
+                0xf4f1e8,
+                0xffd65a,
+            ),
             _ => (
                 Stance::Sword,
                 0x718d84,
@@ -73,6 +95,7 @@ impl Look {
                 cloak: 0x5d6468,
                 weapon: 0xd3d6cf,
                 orb: ARCANE_ORB,
+                dagger: false,
                 hat: None,
             }
         } else {
@@ -85,6 +108,7 @@ impl Look {
                 cloak,
                 weapon,
                 orb,
+                dagger: class == 4,
                 hat,
             }
         }
@@ -532,13 +556,17 @@ fn gear(p: &mut Parts, l: Look, root: Frame, hands: [Frame; 2], fore: [Frame; 2]
                 offset(grip, [0., 0., 0.075]),
                 [0.11, 0.02, 0.022],
             );
+            let (reach, half) = if l.dagger { (0.25, 0.17) } else { (0.5, 0.42) };
             p.part(
                 "sword-blade",
                 "box",
                 l.weapon,
-                offset(grip, [0., 0., 0.5]),
-                [0.032, 0.007, 0.42],
+                offset(grip, [0., 0., reach]),
+                [0.032, 0.007, half],
             );
+            if l.dagger {
+                return;
+            }
             let shield = child(fore[0], [0.07, -0.15, 0.02], tilt(0., -PI / 2., 0.));
             p.part(
                 "shield",

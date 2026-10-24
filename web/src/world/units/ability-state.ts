@@ -89,7 +89,7 @@ function secondsText(ticks: number): string {
   return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)} sec`;
 }
 
-const RESOURCE_NAMES: Record<ResourceKind, string> = { rage: "Rage", focus: "Focus", mana: "Mana" };
+const RESOURCE_NAMES: Record<ResourceKind, string> = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" };
 
 export function resourceName(kind: ResourceKind): string {
   return RESOURCE_NAMES[kind];

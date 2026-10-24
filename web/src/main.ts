@@ -684,12 +684,14 @@ function previewWeaponNodes(
       },
     ];
   }
+  // A dagger (#302) is the sword with a short blade under the same hilt.
+  const [bladeLength, bladeCentre] = visuals.weapon === "dagger" ? [0.7, 1.53] : [1.78, 1.1];
   return [
     {
       id: "preview-sword-blade",
-      geometry: { kind: "box", size: [0.13, 1.78, 0.09] },
+      geometry: { kind: "box", size: [0.13, bladeLength, 0.09] },
       color: visuals.weaponColor,
-      transform: { translation: localPoint(0.82, 1.1, -0.02), rotationQuaternion },
+      transform: { translation: localPoint(0.82, bladeCentre, -0.02), rotationQuaternion },
     },
     {
       id: "preview-sword-hilt",

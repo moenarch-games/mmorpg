@@ -113,6 +113,8 @@ const CONE_HALF_ANGLE: f64 = PI / 6.;
 const BARRIER: u8 = 11;
 const DRAIN_LIFE: u8 = 28;
 const BONE_SHIELD: u8 = 29;
+const HOLY_BEAM: u8 = 36;
+const DIVINE_SHIELD: u8 = 37;
 /// The zone's guard coverage is centred 30° toward the shield (left) side of the facing.
 const GUARD_SIDE: f64 = PI / 6.;
 const SWEEP_HALF_WIDTH: f64 = PI / 6.;
@@ -157,6 +159,16 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         27 => (Some(Stance::Staff), Some(Visual::Projectile), 0x7dff8a),
         28 => (Some(Stance::Staff), Some(Visual::Drain), 0x6fe07a),
         29 => (Some(Stance::Staff), Some(Visual::Bubble), 0xe6dfc8),
+        // The Rogue (#302): steel and poison-green dagger swings, a gouge and a rush.
+        30 => (Some(Stance::Sword), Some(Visual::Swing), 0xc4c9cc),
+        31 => (Some(Stance::Sword), Some(Visual::Swing), 0x8fd14f),
+        32 => (Some(Stance::Sword), None, 0xd9b26a),
+        33 => (None, None, 0xf2d24e),
+        // The Cleric (#303): a gold smite and beam, a soft green-gold renew, a white-gold ward.
+        34 => (Some(Stance::Staff), Some(Visual::Projectile), 0xffd65a),
+        35 => (Some(Stance::Staff), None, 0xd8f0a0),
+        36 => (Some(Stance::Staff), Some(Visual::Beam), 0xffe9a0),
+        37 => (Some(Stance::Staff), Some(Visual::Bubble), 0xfff3c8),
         _ => (None, None, 0xffffff),
     }
 }
@@ -247,13 +259,14 @@ impl Effects {
         }
     }
 
-    fn beam(&mut self, source: EntityRef, now: f64) {
+    /// Lightning Beam or Holy Beam (#303), in the ability's own colour.
+    fn beam(&mut self, ability: u8, source: EntityRef, now: f64) {
         if !self
             .effects
             .iter()
             .any(|e| e.visual == Visual::Beam && e.source == source)
         {
-            self.add(Visual::Beam, LIGHTNING_BEAM, source, None, None, now);
+            self.add(Visual::Beam, ability, source, None, None, now);
         }
     }
 
@@ -343,8 +356,8 @@ impl Effects {
                         };
                         self.add(warning, id, source, None, None, now);
                     }
-                    if id == LIGHTNING_BEAM {
-                        self.beam(source, now);
+                    if matches!(id, LIGHTNING_BEAM | HOLY_BEAM) {
+                        self.beam(id, source, now);
                     }
                     if id == DRAIN_LIFE {
                         self.drain(source, target, now);
@@ -548,14 +561,16 @@ impl Effects {
                 self.casts.remove(&viewer);
             }
         }
-        // Arcane Barrier or Bone Shield (#301): the viewer's absorb ward, in its own colour.
+        // Arcane Barrier, Bone Shield (#301) or Divine Shield (#303): the viewer's absorb ward,
+        // in its own colour.
         let ward = if s.viewer.dead {
             None
         } else {
             s.auras
                 .iter()
                 .find(|a| {
-                    matches!(a.ability.get(), BARRIER | BONE_SHIELD) && a.kind == AuraKind::Absorb
+                    matches!(a.ability.get(), BARRIER | BONE_SHIELD | DIVINE_SHIELD)
+                        && a.kind == AuraKind::Absorb
                 })
                 .map(|a| a.ability.get())
         };
@@ -568,9 +583,7 @@ impl Effects {
                 return casts.get(&e.source).is_some_and(|c| c.ability == BLIZZARD);
             }
             if e.visual == Visual::Beam {
-                return casts
-                    .get(&e.source)
-                    .is_some_and(|c| c.ability == LIGHTNING_BEAM);
+                return casts.get(&e.source).is_some_and(|c| c.ability == e.ability);
             }
             if e.visual == Visual::Drain {
                 return casts
@@ -582,8 +595,12 @@ impl Effects {
         if cast.is_some_and(|c| c.channel && c.ability.get() == BLIZZARD) && !s.viewer.dead {
             self.shards(viewer, s.viewer.target, now, anchors);
         }
-        if cast.is_some_and(|c| c.channel && c.ability.get() == LIGHTNING_BEAM) && !s.viewer.dead {
-            self.beam(viewer, now);
+        if let Some(c) = cast
+            && c.channel
+            && matches!(c.ability.get(), LIGHTNING_BEAM | HOLY_BEAM)
+            && !s.viewer.dead
+        {
+            self.beam(c.ability.get(), viewer, now);
         }
         if cast.is_some_and(|c| c.channel && c.ability.get() == DRAIN_LIFE) && !s.viewer.dead {
             self.drain(viewer, s.viewer.target, now);

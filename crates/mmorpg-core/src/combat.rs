@@ -572,6 +572,27 @@ impl ZoneSimulation {
         }
     }
 
+    /// A Cleric's faith for dealing `amount` damage or restoring `amount` health (#303): half
+    /// of it, at least 1 and at most [`crate::class::FAITH_PER_EVENT_MAX`]; nothing for 0.
+    pub(crate) fn gain_faith(&mut self, player_id: PlayerId, amount: u32) {
+        if amount == 0 {
+            return;
+        }
+        let faith = u16::try_from(amount / 2)
+            .unwrap_or(u16::MAX)
+            .clamp(1, crate::class::FAITH_PER_EVENT_MAX);
+        self.update_player(player_id, |player| {
+            if let Some(choice) = player.class
+                && choice.class.resource() == crate::ResourceKind::Faith
+                && player.is_alive()
+            {
+                player
+                    .resource
+                    .gain(crate::ResourceKind::Faith, player.level, faith);
+            }
+        });
+    }
+
     /// Damage from a player to a living creature, by a swing, an ability or
     /// an aura: evading creatures ignore it; otherwise it lands, the first
     /// damaging player taps the creature, threat rises by the damage, a
@@ -623,6 +644,7 @@ impl ZoneSimulation {
             encounter.contribute(player_id);
         }
         let dead = creature.health == 0;
+        self.gain_faith(player_id, dealt);
         self.notify(
             player_id,
             ZoneEvent::DamageDealt {
@@ -743,6 +765,9 @@ impl ZoneSimulation {
                 critical,
             },
         );
+        if let EntityRef::Player(attacker) = source {
+            self.gain_faith(attacker, dealt);
+        }
         self.observe_damage(source, target, dealt, critical);
         if dead {
             return self.player_dies(player_id, Some(source));
@@ -1074,11 +1099,11 @@ impl ZoneSimulation {
             player.auto_attack = false;
             player.swing_timer = 0;
             player.calm_ticks = 0;
-            // Death clears every aura and cast; rage drains.
+            // Death clears every aura and cast; rage and faith drain.
             player.cast = None;
             player.auras.clear();
             if let Some(choice) = player.class
-                && choice.class.resource() == crate::ResourceKind::Rage
+                && choice.class.resource().is_built()
             {
                 player.resource.value = 0;
                 player.resource.ticks = 0;

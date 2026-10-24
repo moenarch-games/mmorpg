@@ -483,7 +483,7 @@ describe("WASM local zone combat intents", () => {
     expect(catalog.npcs.get(5)).toEqual({ id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10 });
     expect(catalog.areas.get(2)).toBe("Wolfrun Woods");
     expect([...catalog.classes.values()].map((record) => [record.name, record.resource])).toEqual([
-      ["warden", "rage"], ["ranger", "focus"], ["arcanist", "mana"], ["necromancer", "mana"],
+      ["warden", "rage"], ["ranger", "focus"], ["arcanist", "mana"], ["necromancer", "mana"], ["rogue", "focus"], ["cleric", "faith"],
     ]);
     // The decoder's ability table matches the catalog the zone binds.
     const auraKinds = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];

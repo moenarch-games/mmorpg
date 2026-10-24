@@ -4,7 +4,7 @@ export type EquipmentItem = {
   accent: string;
 };
 
-export type CharacterClassId = "warden" | "ranger" | "arcanist" | "necromancer";
+export type CharacterClassId = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric";
 export type CharacterSex = "male" | "female";
 
 export type CharacterClassDefinition = {
@@ -65,6 +65,32 @@ export const CHARACTER_CLASSES: readonly CharacterClassDefinition[] = [
       { slot: "Hands", name: "Gravebound Wraps", accent: "#5a4b6a" },
       { slot: "Feet", name: "Ashen Slippers", accent: "#2c2536" },
       { slot: "Main hand", name: "Bonewood Staff", accent: "#e6dfc8" },
+    ],
+  },
+  {
+    id: "rogue",
+    name: "Rogue",
+    summary: "Dagger fighter who poisons and stuns",
+    starterEquipment: [
+      { slot: "Head", name: "Wayfarer's Hood", accent: "#b7c6bd" },
+      { slot: "Shoulders", name: "Shadowstitch Mantle", accent: "#4f4038" },
+      { slot: "Chest", name: "Cutpurse Jerkin", accent: "#45413d" },
+      { slot: "Hands", name: "Quickfinger Gloves", accent: "#3a2e26" },
+      { slot: "Feet", name: "Hushstep Boots", accent: "#2a2826" },
+      { slot: "Main hand", name: "Steel Dirk", accent: "#c4c9cc" },
+    ],
+  },
+  {
+    id: "cleric",
+    name: "Cleric",
+    summary: "Holy caster who heals and shields allies",
+    starterEquipment: [
+      { slot: "Head", name: "Wayfarer's Hood", accent: "#b7c6bd" },
+      { slot: "Shoulders", name: "Gilded Mantle", accent: "#d9b44a" },
+      { slot: "Chest", name: "Vestal Robe", accent: "#e8e4da" },
+      { slot: "Hands", name: "Linen Wraps", accent: "#f2efe6" },
+      { slot: "Feet", name: "Pilgrim Sandals", accent: "#c9a23e" },
+      { slot: "Main hand", name: "Sunlit Staff", accent: "#f4f1e8" },
     ],
   },
 ];

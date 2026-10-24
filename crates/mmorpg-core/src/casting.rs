@@ -159,6 +159,34 @@ impl ZoneSimulation {
                 }
                 Some(entity)
             }
+        } else if ability.is_friendly() {
+            // A heal or shield lands on the selected friendly player, otherwise on the caster
+            // (#303). Hostile and non-player selections fall back to the caster too.
+            match target.or(player.target) {
+                Some(EntityRef::Player(id))
+                    if id != player_id && !self.players_are_hostile(player_id, id) =>
+                {
+                    let entity = EntityRef::Player(id);
+                    let alive = self.players.get(&id).is_some_and(|unit| unit.is_alive());
+                    if !alive
+                        || self.combat_blocked(EntityRef::Player(player_id), entity)
+                        || !self.visible_to(player_id, entity)?
+                    {
+                        return Ok(Some((ErrorCode::InvalidTarget, Some(entity))));
+                    }
+                    let reach = ability.range.reach().unwrap_or(0);
+                    if self.unit_distance_squared(EntityRef::Player(player_id), entity)?
+                        > i64::from(reach).pow(2)
+                    {
+                        return Ok(Some((ErrorCode::OutOfRange, Some(entity))));
+                    }
+                    if !self.line_of_sight(EntityRef::Player(player_id), entity)? {
+                        return Ok(Some((ErrorCode::LineOfSight, Some(entity))));
+                    }
+                    Some(entity)
+                }
+                _ => None,
+            }
         } else {
             None
         };
@@ -409,9 +437,17 @@ impl ZoneSimulation {
                 }
             }
             AbilityEffect::HealOverTime { percent, .. } => {
+                // A friendly heal (#303) lands on its target, scaled by the target's health.
+                let (recipient, max_health) = match target {
+                    Some(EntityRef::Player(id)) if ability.is_friendly() => (
+                        EntityRef::Player(id),
+                        self.players.get(&id).map_or(0, |unit| unit.max_health()),
+                    ),
+                    _ => (source, max_health),
+                };
                 let total = percent_of(max_health, u32::from(percent));
                 if let Some(aura) = aura(u16::try_from(total).unwrap_or(u16::MAX)) {
-                    self.put_aura(source, aura);
+                    self.put_aura(recipient, aura);
                 }
             }
             AbilityEffect::Cleave { extra, radius } => {
@@ -475,7 +511,11 @@ impl ZoneSimulation {
                 base, per_level, ..
             } => {
                 if let Some(aura) = aura(scaled(base, per_level, level)) {
-                    self.put_aura(source, aura);
+                    let recipient = match target {
+                        Some(friend @ EntityRef::Player(_)) if ability.is_friendly() => friend,
+                        _ => source,
+                    };
+                    self.put_aura(recipient, aura);
                 }
             }
             AbilityEffect::Blast {
@@ -1602,6 +1642,9 @@ impl ZoneSimulation {
                     encounter.contribute(healer);
                 }
             }
+        }
+        if let EntityRef::Player(healer) = healer {
+            self.gain_faith(healer, healed);
         }
         self.notify_units(
             [Some(healer), Some(healed_unit)],

@@ -37,16 +37,24 @@ pub enum Scenario {
     /// A level 6 Necromancer at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
     /// Shadow Bolt, Corruption, Drain Life and Bone Shield (#301).
     NecromancerDrain,
+    /// A level 6 Rogue at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
+    /// Sinister Strike, Poisoned Blade, Gouge and Adrenaline Rush (#302).
+    RogueMelee,
+    /// A level 6 Cleric at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
+    /// Smite, Renew, Holy Beam and Divine Shield (#303).
+    ClericHoly,
 }
 
 impl Scenario {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::OgreCombat,
         Self::RangerRange,
         Self::ArcanistPack,
         Self::SunkenShrine,
         Self::RedbrandCavern,
         Self::NecromancerDrain,
+        Self::RogueMelee,
+        Self::ClericHoly,
     ];
 
     #[must_use]
@@ -65,6 +73,8 @@ impl Scenario {
             Self::SunkenShrine => "sunken-shrine",
             Self::RedbrandCavern => "redbrand-cavern",
             Self::NecromancerDrain => "necromancer-drain",
+            Self::RogueMelee => "rogue-melee",
+            Self::ClericHoly => "cleric-holy",
         }
     }
 
@@ -86,6 +96,14 @@ impl Scenario {
                 class: PlayerClass::Necromancer,
                 sex: Sex::Male,
             },
+            Self::RogueMelee => ClassChoice {
+                class: PlayerClass::Rogue,
+                sex: Sex::Female,
+            },
+            Self::ClericHoly => ClassChoice {
+                class: PlayerClass::Cleric,
+                sex: Sex::Male,
+            },
         }
     }
 
@@ -93,8 +111,12 @@ impl Scenario {
     const fn level(self) -> u8 {
         match self {
             Self::OgreCombat | Self::SunkenShrine => 5,
-            // Bone Shield unlocks at level 6.
-            Self::RangerRange | Self::RedbrandCavern | Self::NecromancerDrain => 6,
+            // Bone Shield, Adrenaline Rush and Divine Shield unlock at level 6.
+            Self::RangerRange
+            | Self::RedbrandCavern
+            | Self::NecromancerDrain
+            | Self::RogueMelee
+            | Self::ClericHoly => 6,
             // Lightning Beam unlocks at level 8.
             Self::ArcanistPack => 8,
         }
@@ -108,8 +130,10 @@ impl Scenario {
             // The nearest wolves stand about 18 m west, beyond aggro range; facing west.
             Self::RangerRange => ([-3_500, -3_400], 49_152),
             // Beside the ranger range, nearer the pack's middle; facing west.
-            // The Necromancer reviews from the same spot.
-            Self::ArcanistPack | Self::NecromancerDrain => ([-4_000, -2_200], 49_152),
+            // The Necromancer, the Rogue and the Cleric review from the same spot.
+            Self::ArcanistPack | Self::NecromancerDrain | Self::RogueMelee | Self::ClericHoly => {
+                ([-4_000, -2_200], 49_152)
+            }
             // On the west shore, on the lake's long axis; facing east over the water.
             Self::SunkenShrine => ([3_000, -5_400], 16_384),
             // On the flat foot of Greyfang Ridge, 8 m south of the cave mouth; facing north into it.

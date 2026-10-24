@@ -76,7 +76,7 @@ type SlotElements = {
   unlock: HTMLElement;
 };
 
-const RESOURCE_CLASS: Record<ResourceKind, string> = { rage: "rage", focus: "focus", mana: "mana" };
+const RESOURCE_CLASS: Record<ResourceKind, string> = { rage: "rage", focus: "focus", mana: "mana", faith: "faith" };
 
 export class ClassHud {
   readonly #callbacks: ClassHudCallbacks;

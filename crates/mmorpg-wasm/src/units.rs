@@ -70,6 +70,7 @@ struct ImportedEntry {
     tint: Option<f32>,
     sword_and_shield: bool,
     bow_and_quiver: bool,
+    blade: bool,
     headwear: bool,
 }
 
@@ -269,6 +270,7 @@ impl Units {
                     tint: unit.tint,
                     sword_and_shield: unit.sword_and_shield,
                     bow_and_quiver: unit.bow_and_quiver,
+                    blade: unit.blade,
                     headwear: unit.headwear.is_some(),
                 }
             })

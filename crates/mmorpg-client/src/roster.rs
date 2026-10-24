@@ -57,7 +57,10 @@ impl Headwear {
         match class {
             PlayerClass::Warden => Self::IroncrestHelm,
             PlayerClass::Ranger => Self::RangerCap,
-            PlayerClass::Arcanist | PlayerClass::Necromancer => Self::WayfarerHood,
+            PlayerClass::Arcanist
+            | PlayerClass::Necromancer
+            | PlayerClass::Rogue
+            | PlayerClass::Cleric => Self::WayfarerHood,
         }
     }
 }
@@ -400,7 +403,7 @@ mod tests {
             "not json",
             r#"{"schemaVersion":2,"characters":[]}"#,
             r#"{"schemaVersion":1,"characters":[],"progress":{}}"#,
-            r#"{"schemaVersion":1,"characters":[{"id":"local-1","name":"Ab","classId":"rogue","sex":"male","appearance":{"hat":"ranger-cap"}}]}"#,
+            r#"{"schemaVersion":1,"characters":[{"id":"local-1","name":"Ab","classId":"bard","sex":"male","appearance":{"hat":"ranger-cap"}}]}"#,
         ] {
             std::fs::write(&file, bad).unwrap();
             assert!(Roster::load(dir.path()).is_err(), "{bad}");
