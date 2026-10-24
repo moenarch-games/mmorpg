@@ -18,8 +18,9 @@
 //!   order, each seeing the earlier movers at their new positions, as the Rapier step does
 //!   body by body.
 //! - Rays, overlaps and segment checks are `cast_ray`/`cast_ray_first` and `overlap_shape`.
-//! - Debris (#288) stays on Rapier: [`World::step_debris`] runs the shared Rapier debris step
-//!   over this adapter's fixed bodies.
+//! - Debris (#288) and movable props (#58) are engine dynamic boxes in a world rebuilt each
+//!   tick from the nearby game bodies, as the Rapier backend rebuilds its own
+//!   ([`World::step_debris`], [`World::step_props`]).
 //!
 //! Intentional differences from the Rapier backend (listed in `docs/PHYSICS_AB.md`):
 //!
@@ -41,6 +42,7 @@ use physics_engine::approximate::{
     Quaternion, QueryFilter, QueryPose, RayCast, Shape, ShapeCast, Vector,
 };
 
+use super::rapier::{DEBRIS_REST_SPEED_UNITS, DEBRIS_REST_SPIN, Dynamic, TICKS_PER_SECOND, nearby};
 use super::{
     Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, RayHit, RigidBody,
     StepStats, Vec3i, error, exact,
@@ -48,6 +50,17 @@ use super::{
 
 /// The game's centimetres per metre: the engine's length unit.
 const UNITS_PER_METRE: f32 = 100.0;
+/// Debris and props weigh as the Rapier backend's colliders do (kg/m³).
+const DEBRIS_DENSITY: f32 = 600.0;
+/// Rapier averages two colliders' coefficients; physics-engine takes the larger friction and the
+/// smaller restitution (physics-engine #391). Pieces carry friction 0.8 and restitution 0.15 on
+/// Rapier, fixed geometry its defaults 0.5 and 0, so these reproduce Rapier's piece–fixed
+/// coefficients (0.65 and 0.075). Piece–piece friction is 0.65 here, 0.8 on Rapier, and the
+/// heightfield keeps the engine's restitution 0.
+const PIECE_FRICTION: f32 = 0.65;
+const PIECE_RESTITUTION: f32 = 0.15;
+const FIXED_FRICTION: f32 = 0.5;
+const FIXED_RESTITUTION: f32 = 0.075;
 /// Ground within the contact offset plus this (5 cm) counts as support, as in Rapier.
 const GROUND_PREDICTION_UNITS: f32 = 5.0;
 /// A ceiling stops a rising body when it realizes less than this much (units) of its rise.
@@ -83,10 +96,9 @@ fn engine_error(what: &str, failure: impl fmt::Debug) -> PhysicsError {
     error(format!("physics-engine {what} failed: {failure:?}"))
 }
 
-/// The authored ground: its game identity, the content it came from and its engine body.
+/// The authored ground: the content it came from and its engine body.
 #[derive(Clone)]
 struct Ground {
-    id: BodyId,
     terrain: crate::Terrain,
     body: EngineId,
 }
@@ -150,39 +162,7 @@ impl World {
     }
 
     fn insert(&mut self, body: &RigidBody) -> Result<EngineId, PhysicsError> {
-        let key = body.id.0;
-        let engine_body = match body.kind {
-            Kind::Moving => {
-                let mut engine_body =
-                    Body::keyed(key, capsule(body.half_extents), lifted(body.position), 1.0);
-                engine_body.external = true;
-                engine_body
-            }
-            Kind::Floor => Body::keyed(key, Shape::HalfSpace, vector(body.position), 0.0),
-            // A ramp (#59) is the engine's wedge, which rises toward local -X, turned about Y
-            // toward the ramp's rise; along Z its local X extent is the box's Z extent.
-            Kind::Ramp(rises) => {
-                let [hx, hy, hz] = exact(body.half_extents);
-                let (half, turn) = match rises {
-                    crate::RampRise::NegX => (Vector(hx, hy, hz), 0.0),
-                    crate::RampRise::PosX => (Vector(hx, hy, hz), std::f32::consts::PI),
-                    crate::RampRise::PosZ => (Vector(hz, hy, hx), std::f32::consts::FRAC_PI_2),
-                    crate::RampRise::NegZ => (Vector(hz, hy, hx), -std::f32::consts::FRAC_PI_2),
-                };
-                let mut wedge = Body::keyed(key, Shape::Wedge(half), vector(body.position), 0.0);
-                let (sin, cos) = (turn / 2.0).sin_cos();
-                wedge.orientation = Quaternion(0.0, sin, 0.0, cos);
-                wedge
-            }
-            // A moving platform (#56) is a static box the adapter moves in place where the zone
-            // moves it; the adapter carries its riders.
-            Kind::Fixed | Kind::Platform => Body::keyed(
-                key,
-                Shape::Box(vector(exact(body.half_extents))),
-                vector(body.position),
-                0.0,
-            ),
-        };
+        let engine_body = engine_body(body);
         let handle = self
             .engine
             .add_body(engine_body)
@@ -195,7 +175,47 @@ impl World {
         self.games.insert(handle.to_bits(), body.id);
         Ok(handle)
     }
+}
 
+/// `body`'s engine body, keyed by its game ID: a unit is an external capsule, everything else
+/// static.
+fn engine_body(body: &RigidBody) -> Body {
+    let key = body.id.0;
+    match body.kind {
+        Kind::Moving => {
+            let mut engine_body =
+                Body::keyed(key, capsule(body.half_extents), lifted(body.position), 1.0);
+            engine_body.external = true;
+            engine_body
+        }
+        Kind::Floor => Body::keyed(key, Shape::HalfSpace, vector(body.position), 0.0),
+        // A ramp (#59) is the engine's wedge, which rises toward local -X, turned about Y
+        // toward the ramp's rise; along Z its local X extent is the box's Z extent.
+        Kind::Ramp(rises) => {
+            let [hx, hy, hz] = exact(body.half_extents);
+            let (half, turn) = match rises {
+                crate::RampRise::NegX => (Vector(hx, hy, hz), 0.0),
+                crate::RampRise::PosX => (Vector(hx, hy, hz), std::f32::consts::PI),
+                crate::RampRise::PosZ => (Vector(hz, hy, hx), std::f32::consts::FRAC_PI_2),
+                crate::RampRise::NegZ => (Vector(hz, hy, hx), -std::f32::consts::FRAC_PI_2),
+            };
+            let mut wedge = Body::keyed(key, Shape::Wedge(half), vector(body.position), 0.0);
+            let (sin, cos) = (turn / 2.0).sin_cos();
+            wedge.orientation = Quaternion(0.0, sin, 0.0, cos);
+            wedge
+        }
+        // A moving platform (#56) is a static box the adapter moves in place where the zone
+        // moves it; the adapter carries its riders.
+        Kind::Fixed | Kind::Platform => Body::keyed(
+            key,
+            Shape::Box(vector(exact(body.half_extents))),
+            vector(body.position),
+            0.0,
+        ),
+    }
+}
+
+impl World {
     pub fn add_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
         if self.bodies.contains_key(&body.id) {
             return Err(error(format!("physics body {} already exists", body.id.0)));
@@ -346,43 +366,49 @@ impl World {
             self.engine.remove_body(ground.body);
             self.games.remove(&ground.body.to_bits());
         }
-        let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
-        // Flat cells are left to the floor half-space, as on the Rapier backend.
-        let removed_cells = (0..rows - 1)
-            .flat_map(|row| (0..columns - 1).map(move |column| (row, column)))
-            .map(|(row, column)| {
-                [
-                    (row, column),
-                    (row + 1, column),
-                    (row, column + 1),
-                    (row + 1, column + 1),
-                ]
-                .iter()
-                .all(|&(r, c)| terrain.heights[r * columns + c] == 0)
-            })
-            .collect();
-        #[allow(clippy::cast_precision_loss)]
-        let desc = HeightfieldDesc {
-            origin: Vector(terrain.origin[0] as f32, 0.0, terrain.origin[1] as f32),
-            cell_size: (terrain.step as f32, terrain.step as f32),
-            columns,
-            rows,
-            heights: terrain
-                .heights
-                .iter()
-                .map(|&height| height as f32)
-                .collect(),
-            removed_cells: Some(removed_cells),
-        };
         // Content validation already bounds the grid; an engine refusal is a broken invariant.
         let body = self
             .engine
-            .add_heightfield(desc, None)
+            .add_heightfield(heightfield(&terrain), None)
             .expect("validated content terrain is a valid heightfield");
         self.games.insert(body.to_bits(), id);
-        self.ground = Some(Ground { id, terrain, body });
+        self.ground = Some(Ground { terrain, body });
     }
+}
 
+/// `terrain` as an engine heightfield (see [`World::set_terrain`]).
+fn heightfield(terrain: &crate::Terrain) -> HeightfieldDesc {
+    let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
+    // Flat cells are left to the floor half-space, as on the Rapier backend.
+    let removed_cells = (0..rows - 1)
+        .flat_map(|row| (0..columns - 1).map(move |column| (row, column)))
+        .map(|(row, column)| {
+            [
+                (row, column),
+                (row + 1, column),
+                (row, column + 1),
+                (row + 1, column + 1),
+            ]
+            .iter()
+            .all(|&(r, c)| terrain.heights[r * columns + c] == 0)
+        })
+        .collect();
+    #[allow(clippy::cast_precision_loss)]
+    HeightfieldDesc {
+        origin: Vector(terrain.origin[0] as f32, 0.0, terrain.origin[1] as f32),
+        cell_size: (terrain.step as f32, terrain.step as f32),
+        columns,
+        rows,
+        heights: terrain
+            .heights
+            .iter()
+            .map(|&height| height as f32)
+            .collect(),
+        removed_cells: Some(removed_cells),
+    }
+}
+
+impl World {
     pub fn terrain_height(&self, x: i32, z: i32) -> Option<f32> {
         let terrain = self.ground.as_ref()?.body;
         #[allow(clippy::cast_precision_loss)]
@@ -683,22 +709,114 @@ impl World {
         })
     }
 
-    /// Debris stays on Rapier (physics-engine #330 parks dynamics): the shared Rapier debris
-    /// step over this world's fixed bodies and terrain.
+    /// Debris (#288) as engine dynamic boxes: see [`Self::step_dynamic`].
     pub fn step_debris(&self, debris: &mut [DebrisBody], settle: &[bool]) -> usize {
-        let ground = self
-            .ground
-            .as_ref()
-            .map(|ground| (ground.id, &ground.terrain));
-        super::rapier::step_debris(self.gravity, &self.bodies, ground, debris, settle)
+        self.step_dynamic(debris, settle, &Dynamic::default())
+            .expect("physics-engine debris step failed")
     }
 
-    /// Movable props (#58) slide on Rapier too, like debris: physics-engine parks dynamics.
+    /// Movable props (#58) as rotation-locked engine boxes stopped by units' capsules.
     pub fn step_props(&self, props: &mut [DebrisBody], exclude: &[BodyId]) -> usize {
-        let ground = self
-            .ground
-            .as_ref()
-            .map(|ground| (ground.id, &ground.terrain));
-        super::rapier::step_props(self.gravity, &self.bodies, ground, props, exclude)
+        let settle = vec![true; props.len()];
+        let options = Dynamic {
+            upright: true,
+            units_block: true,
+            exclude,
+        };
+        self.step_dynamic(props, &settle, &options)
+            .expect("physics-engine props step failed")
+    }
+
+    /// One tick of `pieces` in a fresh engine world of the nearby game bodies, rebuilt from
+    /// game state like the Rapier backend's step: the same materials (see [`PIECE_FRICTION`],
+    /// density 600, linear damping 0.2, angular 0.8), sleep off, and the
+    /// game's settle rule. Two substeps of four passes for debris and of one for upright props,
+    /// as physics-engine's `debris` and `props` oracle scenarios calibrate them.
+    fn step_dynamic(
+        &self,
+        pieces: &mut [DebrisBody],
+        settle: &[bool],
+        options: &Dynamic<'_>,
+    ) -> Result<usize, PhysicsError> {
+        let moving = pieces.iter().filter(|piece| !piece.resting).count();
+        if moving == 0 {
+            return Ok(0);
+        }
+        let per_second = TICKS_PER_SECOND * TICKS_PER_SECOND / UNITS_PER_METRE;
+        let mut engine = physics_engine::approximate::World::new(Config {
+            gravity: vector(self.gravity.map(|g| g * per_second)),
+            substeps: 2,
+            velocity_iterations: if options.upright { 1 } else { 4 },
+            length_unit: UNITS_PER_METRE,
+            ..Config::default()
+        })
+        .map_err(|failure| engine_error("dynamic world", failure))?;
+        let add = |engine: &mut physics_engine::approximate::World, body: Body| {
+            engine
+                .add_body(body)
+                .map_err(|failure| engine_error("add_body", failure))
+        };
+        for body in nearby(&self.bodies, pieces, options) {
+            let mut fixed = engine_body(body);
+            if body.is_moving() {
+                // A unit stands in the props' way as a fixed capsule (#58).
+                fixed.mass = 0.0;
+                fixed.external = false;
+            }
+            fixed.friction = FIXED_FRICTION;
+            fixed.restitution = FIXED_RESTITUTION;
+            add(&mut engine, fixed)?;
+        }
+        if let Some(ground) = &self.ground {
+            engine
+                .add_heightfield(heightfield(&ground.terrain), None)
+                .map_err(|failure| engine_error("add_heightfield", failure))?;
+        }
+        let mut handles = Vec::with_capacity(pieces.len());
+        for piece in pieces.iter() {
+            let half = vector(exact(piece.half_extents));
+            let mass = DEBRIS_DENSITY * 8.0 * half.0 * half.1 * half.2 / UNITS_PER_METRE.powi(3);
+            let [x, y, z, w] = piece.rotation;
+            let mut body = Body::new(
+                Shape::Box(half),
+                vector(piece.position),
+                if piece.resting { 0.0 } else { mass },
+            );
+            body.orientation = Quaternion(x, y, z, w);
+            body.friction = PIECE_FRICTION;
+            body.restitution = PIECE_RESTITUTION;
+            if !piece.resting {
+                body.velocity = vector(piece.velocity.map(|v| v * TICKS_PER_SECOND));
+                body.angular_velocity = vector(piece.spin.map(|v| v * TICKS_PER_SECOND));
+                body.linear_damping = 0.2;
+                body.angular_damping = 0.8;
+                body.rotation_locked = options.upright;
+                body.sleep_allowed = false;
+            }
+            let handle = add(&mut engine, body)?;
+            handles.push((!piece.resting).then_some(handle));
+        }
+        engine
+            .step(1.0 / f64::from(TICKS_PER_SECOND))
+            .map_err(|failure| engine_error("dynamic step", failure))?;
+        for ((piece, handle), &settles) in pieces.iter_mut().zip(handles).zip(settle) {
+            let Some(body) = handle.and_then(|handle| engine.body(handle)) else {
+                continue;
+            };
+            let Quaternion(x, y, z, w) = body.orientation;
+            let norm = (x * x + y * y + z * z + w * w).sqrt();
+            piece.position = array(body.position);
+            piece.rotation = [x / norm, y / norm, z / norm, w / norm];
+            piece.velocity = array(body.velocity).map(|v| v / TICKS_PER_SECOND);
+            piece.spin = array(body.angular_velocity).map(|v| v / TICKS_PER_SECOND);
+            let speed = piece.velocity.iter().map(|v| v * v).sum::<f32>().sqrt();
+            let spin = piece.spin.iter().map(|v| v * v).sum::<f32>().sqrt();
+            if settles && speed < DEBRIS_REST_SPEED_UNITS && spin < DEBRIS_REST_SPIN {
+                piece.resting = true;
+                piece.velocity = [0.0; 3];
+                piece.spin = [0.0; 3];
+            }
+        }
+        Ok(moving)
     }
 }

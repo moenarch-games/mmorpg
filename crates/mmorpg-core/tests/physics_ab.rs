@@ -42,13 +42,14 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// The workloads whose players are only scripted: the bot scenarios and the idle plaza. The
 /// fighting fixtures place players inside props, boxes and hills, which Rapier leaves embedded
 /// and physics-engine pushes out, so their fights (and every position after) legitimately part.
-const SCRIPTED: [&str; 7] = [
+const SCRIPTED: [&str; 8] = [
     "two-bots-move",
     "vale-hub-walk",
     "vale-wolf-hunt",
     "vale-idle-16",
     "vale-mill-hoist",
     "vale-crate-shove",
+    "vale-crate-smash",
     "vale-missiles",
 ];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
@@ -374,6 +375,70 @@ fn check_mill_hoist(trace: &Trace) -> Result<()> {
     Ok(())
 }
 
+/// Settled debris (#288) may rest this far (units, horizontally) from Rapier's: physics-engine's
+/// `debris` oracle bound for every piece.
+const DEBRIS_REST_TOLERANCE_UNITS: f32 = 150.0;
+
+/// Both crates break into six panels each on each backend, at the same tick; every piece stays
+/// finite and above the ground, settles before it despawns, and rests near Rapier's.
+fn check_crate_smash(name: &str, rapier: &Trace, engine: &Trace) {
+    let broke = |trace: &Trace| trace.snapshots.iter().position(|s| s.debris.len() == 12);
+    let lying = |trace: &Trace| {
+        trace
+            .snapshots
+            .iter()
+            .rev()
+            .find(|snapshot| !snapshot.debris.is_empty())
+            .map(|snapshot| snapshot.debris.clone())
+            .unwrap_or_default()
+    };
+    for (trace, backend) in [(rapier, "rapier"), (engine, "engine")] {
+        assert!(
+            broke(trace).is_some(),
+            "{name} on {backend}: crates did not break"
+        );
+        let pieces = trace.snapshots.iter().flat_map(|snapshot| &snapshot.debris);
+        for piece in pieces {
+            assert!(
+                piece.body.is_valid() && piece.body.position[1] > -2.0,
+                "{name} on {backend}: piece {} at {:?}",
+                piece.id,
+                piece.body.position
+            );
+        }
+        assert!(
+            lying(trace).iter().all(|piece| piece.body.resting),
+            "{name} on {backend}: a piece still moves when the debris despawns"
+        );
+        assert!(
+            trace
+                .snapshots
+                .last()
+                .is_some_and(|last| last.debris.is_empty()),
+            "{name} on {backend}: debris did not despawn"
+        );
+    }
+    assert_eq!(
+        broke(rapier),
+        broke(engine),
+        "{name}: crates break at different ticks"
+    );
+    let (a, b) = (lying(rapier), lying(engine));
+    assert_eq!(a.len(), b.len(), "{name}: different debris");
+    let gap = a
+        .iter()
+        .zip(&b)
+        .map(|(x, y)| {
+            (x.body.position[0] - y.body.position[0]).hypot(x.body.position[2] - y.body.position[2])
+        })
+        .fold(0.0_f32, f32::max);
+    println!("  {name}: settled debris parts by at most {gap:.2}");
+    assert!(
+        gap <= DEBRIS_REST_TOLERANCE_UNITS,
+        "{name}: debris parts by {gap}"
+    );
+}
+
 fn run(workload: &Workload, backend: Backend) -> Result<(Trace, Check)> {
     using_backend(backend, || {
         let mut run = Run::new(workload)?;
@@ -677,6 +742,8 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
             .zip(&engine.snapshots)
             .any(|(a, b)| a.doors != b.doors);
         let outcomes_differ = rapier.outcomes != engine.outcomes;
+        // Units that walk into a settled crate stop where it rests (`vale-crate-shove`).
+        let mut crate_gap = 0.0_f32;
         let (probes, embedded) = query_parity(&workload, &rapier)?;
         println!(
             "{name}: ticks={} players max Δxz={horizontal:.4} Δy={vertical:.4} first rounded \
@@ -794,7 +861,8 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
         }
         if matches!(workload, Workload::CrateShove) {
             // On each backend both bashes slide their crates over a metre and they come to rest
-            // (#58); the slides run on Rapier in both arms, so the crates end where they agree.
+            // (#58), where they agree (the engine arm passes Rapier's combined materials,
+            // physics-engine #391).
             let crates = |trace: &Trace| -> Vec<([f32; 3], [f32; 3])> {
                 let last = trace.snapshots.last().expect("crate trace");
                 [917, 918]
@@ -827,7 +895,12 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
                 .zip(crates(&engine))
                 .map(|((a, _), (b, _))| (a[0] - b[0]).hypot(a[2] - b[2]))
                 .fold(0.0_f32, f32::max);
-            assert!(gap <= 0.5, "{name}: crates part by {gap}");
+            // physics-engine's `props` oracle bound: within 5% of each slide (about 265 units).
+            assert!(gap <= 13.0, "{name}: crates part by {gap}");
+            crate_gap = gap;
+        }
+        if matches!(workload, Workload::CrateSmash) {
+            check_crate_smash(&name, &rapier, &engine);
         }
         if matches!(workload, Workload::MillRamps) {
             // Both hold the chute's walker at its foot (physics-engine #351: too-steep slopes are
@@ -893,7 +966,7 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
         // must agree: positions within the tolerance, the same command outcomes and doors.
         if SCRIPTED.contains(&name.as_str()) {
             assert!(
-                horizontal <= SCRIPTED_POSITION_TOLERANCE_UNITS
+                horizontal <= SCRIPTED_POSITION_TOLERANCE_UNITS + crate_gap
                     && vertical <= SCRIPTED_POSITION_TOLERANCE_UNITS,
                 "{name}: players diverge by Δxz={horizontal} Δy={vertical}"
             );
