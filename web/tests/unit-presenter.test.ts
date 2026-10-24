@@ -50,7 +50,24 @@ describe("the shared unit presenter in the browser", () => {
     const frame = units.frame(world.source.sample(), { seconds: 0, dt: 0, reducedMotion: false, barYaw: 0, look });
     const viewer = frame.imported.find((unit) => unit.entity.id === projection.viewerId)!;
     // The imported model itself wears the viewer's headwear (#374); no procedural hat is drawn.
-    expect(viewer).toMatchObject({ kind: "Ranger", clip: "Idle_Loop", swordAndShield: true, headwear: true, tint: null });
+    expect(viewer).toMatchObject({ kind: "Ranger", clip: "Idle_Loop", loadout: "sword-and-shield", resident: null, headwear: true, tint: null });
+    // Residents stay procedural until their presets loaded.
+    expect(frame.imported.some((unit) => unit.entity.kind === "npc")).toBe(false);
+  });
+
+  test("named residents become Rangers in their presets once those loaded (#418)", async () => {
+    const { world, units } = await joined();
+    units.modelReady("Ranger", [["Idle_Loop", 2], ["Walk_Loop", 1], ["Jog_Fwd_Loop", 1], ["Sword_Attack", 1], ["Death01", 1], ["Idle_Shield_Loop", 1]]);
+    units.residentsReady();
+    const frame = units.frame(world.source.sample(), { seconds: 0, dt: 0, reducedMotion: false, barYaw: 0, look });
+    const residents = frame.imported.filter((unit) => unit.entity.kind === "npc");
+    expect(residents.length).toBeGreaterThan(0);
+    for (const resident of residents) {
+      expect(resident.kind).toBe("Ranger");
+      expect(resident.resident).toMatch(/^resident\./);
+      expect(resident.headwear).toBe(false);
+      expect(resident.loadout).toBe(resident.resident === "resident.guard" ? "sword" : null);
+    }
   });
 
   test("the viewer look maps to the appearance code the presenter reads", () => {

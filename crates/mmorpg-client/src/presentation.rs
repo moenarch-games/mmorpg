@@ -524,14 +524,7 @@ impl Presentation {
                     imported.tint,
                 ));
             }
-            let weapon = if imported.sword_and_shield {
-                Some(skinned::Equipment::sword_and_shield())
-            } else if imported.blade {
-                Some(skinned::Equipment::blade())
-            } else {
-                None
-            };
-            if let Some(weapon) = weapon {
+            if let Some(weapon) = imported.loadout.and_then(skinned::Equipment::loadout) {
                 body.extend(weapon.draws(
                     &imported.id,
                     asset,

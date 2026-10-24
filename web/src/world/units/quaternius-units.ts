@@ -5,11 +5,14 @@ import type { ThreeSceneRenderer } from "@moritzbrantner/three-d-renderer";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EntityRef } from "../../entity-ref";
-import type { ImportedModelKind, ImportedRequest } from "../unit-presenter";
+import type { ImportedModelKind, ImportedRequest, Loadout as CarriedLoadout } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
-/** What a player model carries: a Warden's sword and shield (#156), a Ranger's bow and quiver (#244), or nothing. */
-type Loadout = "sword-and-shield" | "bow-and-quiver" | "blade" | null;
+/**
+ * What a model carries: a Warden's sword and shield (#156), a Ranger's bow and quiver (#244), the
+ * Rogue's dagger, a caster's staff (asset-tooling #375), a guard's sword, or nothing.
+ */
+type Loadout = CarriedLoadout | null;
 /**
  * The viewer's headwear (#374): an authored item on the `head.armor` socket, the bundle's own hood,
  * or none. Units without a viewer style keep the bundle's default look.
@@ -32,7 +35,7 @@ const HAIR_VARIANT = "hair-1";
  * How the viewer's Ranger is dressed: carried items, headwear and hair. Units without a viewer
  * look (`headwear` and `hair` null) keep the bundle's default: the hood up, no hair.
  */
-type Dress = { loadout: Loadout; headwear: Headwear | null; hair: Hair | null; face: FaceChoice | null };
+type Dress = { loadout: Loadout; headwear: Headwear | null; hair: Hair | null; face: FaceChoice | null; resident: string | null };
 /** The viewer's face (#411): a `humanoid-appearance.face` feature id to one of its option ids. */
 export type FaceChoice = Readonly<Record<string, string>>;
 /** One face feature the bundle offers (#411), with its options' morph-target weights. */
@@ -73,6 +76,8 @@ type Asset = {
   /** Clip roles and strike contact times by name, from the bundle's `humanoid-clips` (Ranger only). */
   motions?: ReadonlyMap<string, ClipMotion>;
   instantiate(dress: Dress): Posable;
+  /** Loads the residents' appearance presets (#418), Ranger only; resolves once they can be drawn. */
+  loadResidents?: () => Promise<void>;
   /** The face features the drawn entry supports (#411); null when it carries no face morphs. */
   face?: FaceLook | null;
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
@@ -189,16 +194,20 @@ export function clipMotionsOf(descriptor: unknown): Map<string, ClipMotion> {
 }
 
 /** Which bundle item goes to which socket, per loadout. */
-const LOADOUT_ITEMS: Readonly<Record<Exclude<Loadout, null>, readonly { key: string; socket: string }[]>> = {
+const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; socket: string }[]>> = {
   "sword-and-shield": [
     { key: "equipment.sword.arming", socket: "hand_r.weapon" },
     { key: "equipment.shield.heater", socket: "hand_l.shield" },
   ],
-  "blade": [{ key: "equipment.sword.arming", socket: "hand_r.weapon" }],
   "bow-and-quiver": [
     { key: "equipment.bow.long", socket: "back.bow.stowed" },
     { key: "equipment.quiver.back", socket: "back.quiver" },
   ],
+  sword: [{ key: "equipment.sword.arming", socket: "hand_r.weapon" }],
+  dagger: [{ key: "equipment.dagger.blackened", socket: "hand_r.weapon" }],
+  "staff.bone": [{ key: "equipment.staff.bone", socket: "hand_r.staff" }],
+  "staff.gilded": [{ key: "equipment.staff.gilded", socket: "hand_r.staff" }],
+  "staff.gnarled": [{ key: "equipment.staff.gnarled", socket: "hand_r.staff" }],
 };
 
 type DownloadEntry = { key: string; variant: string; files: string[]; clips?: string };
@@ -349,7 +358,8 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     json(entryFile(entry, ".humanoid-sockets.json")).then(socketsOf),
     json(entryFile(entry, ".humanoid-clips.json")).then(clipMotionsOf),
   ]);
-  const keys = [...new Set([...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key))];
+  // The farmer's straw hat (#418) rides with the viewer's headwear choices.
+  const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw"])];
   const appearance = await json(entryFile(entry, ".humanoid-appearance.json"));
   const look = headLook(appearance);
   const face = faceLookOf(appearance, entry.variant, gltf.scene);
@@ -374,20 +384,9 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     ...Object.values(HAIR_ENTRIES).map((key) => load(key, HAIR_VARIANT)),
   ]));
   const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
-  const instantiate = ({ loadout, headwear, hair, face: chosen }: Dress): Posable => {
-    const model = cloneSkinned(gltf.scene);
-    if (face && chosen) { applyFace(model, face, chosen); }
-    // The bundle's hood is on by default; any other chosen headwear replaces it.
-    const hooded = headwear === null || headwear === "wayfarer-hood";
-    for (const name of look.hood) {
-      const node = model.getObjectByName(name);
-      if (!node) { throw new Error(`The Ranger has no hood node ${name}.`); }
-      node.visible = hooded;
-    }
-    const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(headwear ? HEADWEAR_ITEMS[headwear] : [])];
-    const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
-    const hairKey = hair && hair.style !== "bald" && !hairHidden ? HAIR_ENTRIES[hair.style] : null;
-    const tint = hair ? look.tints.get(`tint.${hair.color}`) : undefined;
+  /** Dresses `model`: socket items, then the hair tinted with its eyebrows. */
+  const wear = (model: THREE.Object3D, worn: readonly { key: string; socket: string }[], hairKey: string | null,
+    tint: readonly [number, number, number] | undefined) => {
     for (const { key, socket } of [...worn, ...(hairKey ? [{ key: hairKey, socket: "head.hair" }] : [])]) {
       const item = items.get(key);
       const place = sockets.get(socket);
@@ -405,13 +404,156 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
         if (node) { tintMaterials(node, look.eyebrows.materials, tint); }
       }
     }
+  };
+  let residents: Map<string, ResidentLook> | null = null;
+  const instantiate = ({ loadout, headwear, hair, face: chosen, resident }: Dress): Posable => {
+    if (resident !== null) {
+      const preset = residents?.get(resident);
+      if (!preset) { throw new Error(`The Ranger bundle has no resident preset ${resident}.`); }
+      const model = cloneSkinned(preset.character);
+      if (preset.face) { applyFace(model, preset.face, preset.choice); }
+      for (const name of look.hood) {
+        const node = model.getObjectByName(name);
+        if (node) { node.visible = false; }
+      }
+      for (const piece of preset.pieces) {
+        const place = sockets.get(piece.socket);
+        if (!place) { throw new Error(`The Ranger bundle has no socket ${piece.socket}.`); }
+        const clone = piece.node.clone();
+        if (piece.tint) { tintMaterials(clone, piece.materials, piece.tint); }
+        // Plates and beards are authored in rest model space: their origin is the socket's.
+        attachItem(model, clone, new THREE.Matrix4(), place);
+      }
+      const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(preset.headwear ? [{ key: preset.headwear, socket: "head.armor" }] : [])];
+      wear(model, worn, preset.hair, preset.tint);
+      if (preset.faction) { tintMaterials(model, preset.faction.materials, preset.faction.color); }
+      return mixerPosable(model, sources);
+    }
+    const model = cloneSkinned(gltf.scene);
+    if (face && chosen) { applyFace(model, face, chosen); }
+    // The bundle's hood is on by default; any other chosen headwear replaces it.
+    const hooded = headwear === null || headwear === "wayfarer-hood";
+    for (const name of look.hood) {
+      const node = model.getObjectByName(name);
+      if (!node) { throw new Error(`The Ranger has no hood node ${name}.`); }
+      node.visible = hooded;
+    }
+    const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(headwear ? HEADWEAR_ITEMS[headwear] : [])];
+    const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
+    const hairKey = hair && hair.style !== "bald" && !hairHidden ? HAIR_ENTRIES[hair.style] : null;
+    wear(model, worn, hairKey, hair ? look.tints.get(`tint.${hair.color}`) : undefined);
     return mixerPosable(model, sources);
   };
+  let pending: Promise<void> | null = null;
+  const loadResidents = () => {
+    pending ??= residentLooks(appearance, look, async (key, variant) => {
+      const scene = (await loader.loadAsync(url(entryFile(bundleEntry(manifest, key, variant), ".gltf")))).scene;
+      scene.updateMatrixWorld(true);
+      return scene;
+    }).then((looks) => { residents = looks; });
+    return pending;
+  };
   const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
-  const probe = instantiate({ loadout: null, headwear: null, hair: null, face: null });
+  const probe = instantiate({ loadout: null, headwear: null, hair: null, face: null, resident: null });
   const measured = measure(probe, rest);
   probe.dispose();
-  return { clips, motions, instantiate, face, ...measured };
+  return { clips, motions, instantiate, loadResidents, face, ...measured };
+}
+
+/** One resident preset resolved against the bundle (#418): its outfit model and what it wears. */
+type ResidentLook = {
+  /** The outfit variant for the preset's skin. */
+  character: THREE.Object3D;
+  face: FaceLook | null;
+  choice: FaceChoice;
+  /** Armour plates and beards on their sockets, beards tinted like the hair. */
+  pieces: { node: THREE.Object3D; socket: string; materials: readonly string[]; tint: readonly [number, number, number] | null }[];
+  headwear: string | null;
+  hair: string | null;
+  tint: readonly [number, number, number] | undefined;
+  /** The outfit's faction materials in the preset's colour (linear). */
+  faction: { materials: readonly string[]; color: readonly [number, number, number] } | null;
+};
+
+type PresetValue = {
+  id?: unknown; outfit?: unknown; skin?: unknown; hair?: unknown; tint?: unknown; headwear?: unknown;
+  facialHair?: unknown; face?: unknown; hiddenArmor?: unknown; faction?: unknown;
+};
+type OutfitValue = {
+  id?: unknown; skins?: { id?: unknown; variant?: unknown }[];
+  armor?: { entry?: unknown; pieces?: { node?: unknown; socket?: unknown }[] };
+  faction?: { materials?: unknown };
+};
+type FacialHairValue = {
+  entry?: unknown; options?: { id?: unknown; node?: unknown; socket?: unknown; tintMaterials?: unknown }[];
+  tints?: { id?: unknown; baseColorFactor?: unknown }[];
+};
+
+/**
+ * Resolves every `humanoid-appearance.presets` entry (#418): the outfit variant of its skin
+ * (`outfits[].skins`), the outfit's armour plates less `hiddenArmor`, the chosen beards in the
+ * matching `facialHair.tints` colour, headwear, hair and tint, face and faction colour.
+ */
+export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "tints">,
+  load: (key: string, variant: string) => Promise<THREE.Object3D>): Promise<Map<string, ResidentLook>> {
+  const value = appearance as { presets?: PresetValue[]; outfits?: OutfitValue[]; facialHair?: FacialHairValue };
+  const strings = (list: unknown): string[] => (Array.isArray(list) && list.every((item) => typeof item === "string") ? list : []);
+  const rgb = (c: unknown): [number, number, number] | null =>
+    (Array.isArray(c) && c.length >= 3 ? [Number(c[0]), Number(c[1]), Number(c[2])] : null);
+  const scenes = new Map<string, Promise<THREE.Object3D>>();
+  const scene = (key: string, variant: string) => {
+    const id = `${key}/${variant}`;
+    if (!scenes.has(id)) { scenes.set(id, load(key, variant)); }
+    return scenes.get(id)!;
+  };
+  const node = async (key: string, name: string) => {
+    // GLTFLoader drops the dots of `knight.breastplate` from node names.
+    const found = (await scene(key, "default")).getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name));
+    if (!found) { throw new Error(`The Ranger bundle's ${key} has no node ${name}.`); }
+    return found;
+  };
+  const looks = new Map<string, ResidentLook>();
+  for (const preset of value.presets ?? []) {
+    if (typeof preset.id !== "string") { continue; }
+    const outfit = value.outfits?.find((candidate) => candidate.id === preset.outfit);
+    const variant = outfit?.skins?.find((skin) => skin.id === preset.skin)?.variant;
+    if (!outfit || typeof variant !== "string") {
+      throw new Error(`The resident preset ${preset.id} names no outfit variant for its skin.`);
+    }
+    const character = await scene("humanoid.ranger.male", variant);
+    const hidden = strings(preset.hiddenArmor);
+    const pieces: ResidentLook["pieces"] = [];
+    const armor = outfit.armor;
+    if (armor && typeof armor.entry === "string") {
+      for (const piece of armor.pieces ?? []) {
+        if (typeof piece.node !== "string" || typeof piece.socket !== "string" || hidden.includes(piece.node)) { continue; }
+        pieces.push({ node: await node(armor.entry, piece.node), socket: piece.socket, materials: [], tint: null });
+      }
+    }
+    const tintId = typeof preset.tint === "string" ? preset.tint : null;
+    const facialHair = value.facialHair;
+    const beardTint = rgb(facialHair?.tints?.find((tint) => tint.id === tintId)?.baseColorFactor);
+    for (const id of strings(preset.facialHair)) {
+      const option = facialHair?.options?.find((candidate) => candidate.id === id);
+      if (!option || typeof facialHair?.entry !== "string" || typeof option.node !== "string" || typeof option.socket !== "string") {
+        throw new Error(`The resident preset ${preset.id} names an unknown beard ${id}.`);
+      }
+      pieces.push({ node: await node(facialHair.entry, option.node), socket: option.socket, materials: strings(option.tintMaterials), tint: beardTint });
+    }
+    const factionColor = rgb(preset.faction);
+    const factionMaterials = strings(outfit.faction?.materials);
+    looks.set(preset.id, {
+      character,
+      face: faceLookOf(appearance, variant, character),
+      choice: Object.fromEntries(Object.entries((preset.face ?? {}) as Record<string, unknown>).map(([feature, option]) => [feature, String(option)])),
+      pieces,
+      headwear: typeof preset.headwear === "string" ? preset.headwear : null,
+      hair: typeof preset.hair === "string" ? preset.hair : null,
+      tint: tintId ? look.tints.get(tintId) : undefined,
+      faction: factionColor && factionMaterials.length > 0 ? { materials: factionMaterials, color: factionColor } : null,
+    });
+  }
+  return looks;
 }
 
 export class QuaterniusUnits {
@@ -423,6 +565,8 @@ export class QuaterniusUnits {
   readonly #instances = new Map<string, Instance>();
   readonly #loaded: [QuaterniusKind, [string, number][]][] = [];
   #rootsChanged = false;
+  #residents: Promise<boolean> | null = null;
+  #residentsLoaded = false;
 
   constructor(rest: RestClip) {
     this.#rest = rest;
@@ -461,6 +605,29 @@ export class QuaterniusUnits {
     return this.#settled.get(kind) ?? Promise.resolve(true);
   }
 
+  /**
+   * Loads the residents' appearance presets (#418) after the Ranger; settles true once they can
+   * be drawn, false when they failed (the residents then keep their procedural models).
+   */
+  preloadResidents(): Promise<boolean> {
+    this.#residents ??= this.preload("Ranger").then(async (ready) => {
+      const asset = this.#assets.get("Ranger");
+      if (!ready || typeof asset !== "object" || !asset.loadResidents) { return false; }
+      await asset.loadResidents();
+      this.#residentsLoaded = true;
+      return true;
+    }).catch((error: unknown) => {
+      console.warn("The residents' looks failed to load; keeping their procedural models.", error);
+      return false;
+    });
+    return this.#residents;
+  }
+
+  /** Whether the residents' presets are drawable. */
+  residentsLoaded(): boolean {
+    return this.#residentsLoaded;
+  }
+
   /** Models that finished loading since the last call, with their clip lengths. */
   drainLoaded(): [QuaterniusKind, [string, number][]][] {
     return this.#loaded.splice(0);
@@ -483,10 +650,13 @@ export class QuaterniusUnits {
       const asset = this.#assets.get(unit.kind);
       if (typeof asset !== "object") { continue; }
       seen.add(unit.id);
-      const loadout: Loadout = unit.swordAndShield ? "sword-and-shield" : unit.bowAndQuiver ? "bow-and-quiver" : unit.blade ? "blade" : null;
       let instance = this.#instances.get(unit.id);
       const dressed = unit.headwear && unit.kind === "Ranger";
-      const dress: Dress = { loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null, face: dressed ? viewer.face : null };
+      const resident = unit.kind === "Ranger" && this.#residentsLoaded ? unit.resident : null;
+      const dress: Dress = {
+        loadout: unit.loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null,
+        face: dressed ? viewer.face : null, resident,
+      };
       if (instance && (instance.kind !== unit.kind || instance.dress !== dressKey(dress))) {
         this.#drop(unit.id, instance);
         instance = undefined;

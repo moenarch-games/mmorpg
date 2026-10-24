@@ -14,6 +14,11 @@ use std::{
 const CHARACTER: &str = "humanoid.ranger.male";
 const SWORD: &str = "equipment.sword.arming";
 const SHIELD: &str = "equipment.shield.heater";
+/// The class weapons (asset-tooling #375): the Rogue's dagger and the casters' staffs.
+const DAGGER: &str = "equipment.dagger.blackened";
+const BONE_STAFF: &str = "equipment.staff.bone";
+const GILDED_STAFF: &str = "equipment.staff.gilded";
+const GNARLED_STAFF: &str = "equipment.staff.gnarled";
 /// The authored headwear on `head.armor` (#374).
 const CAP: &str = "equipment.cap.ranger";
 const HELM: &str = "equipment.helm.ironcrest";
@@ -85,6 +90,10 @@ fn main() {
         ("CHARACTER", CHARACTER),
         ("SWORD", SWORD),
         ("SHIELD", SHIELD),
+        ("DAGGER", DAGGER),
+        ("BONE_STAFF", BONE_STAFF),
+        ("GILDED_STAFF", GILDED_STAFF),
+        ("GNARLED_STAFF", GNARLED_STAFF),
         ("CAP", CAP),
         ("HELM", HELM),
     ] {

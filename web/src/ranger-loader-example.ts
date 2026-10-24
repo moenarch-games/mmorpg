@@ -28,7 +28,7 @@ if (await models.preload("Ranger")) {
     camera.updateProjectionMatrix();
     models.update([{ id: "ranger-example", kind: "Ranger", entity: { kind: "player", id: 1 },
       feet: [0, 0, 0], yaw: 0, heightMetres: 1.8, clip: "Walk_Loop", time: ((now - start) / 1000) % duration!,
-      tint: null, swordAndShield: false, bowAndQuiver: true, blade: false, headwear: false }], { headwear: "none", hair: { style: "parted", color: "brown" }, face: {} });
+      tint: null, loadout: "bow-and-quiver", resident: null, headwear: false }], { headwear: "none", hair: { style: "parted", color: "brown" }, face: {} });
     const view = { viewMatrix: matrix(camera.matrixWorldInverse), projectionMatrix: matrix(camera.projectionMatrix) };
     renderer.render({ camera: view, nodes: [] });
     renderer.renderImportedRoots({ camera: view, roots: models.roots().roots });

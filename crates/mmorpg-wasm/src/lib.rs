@@ -117,32 +117,42 @@ pub fn committed_area(entries: &CharacterEntries, character: &str) -> Result<Opt
     }))
 }
 
-/// Per area, the imported unit models its creature spawns use, as JSON
+/// Per area, the imported unit models its creature spawns use, and `"residents"` where a named
+/// resident with an appearance preset stands (#418), as JSON
 /// `[{"area": id, "models": ["Wolf", …]}]` in area order (#240).
 #[wasm_bindgen(js_name = regionModels)]
 pub fn region_models() -> String {
+    use mmorpg_presentation::units::imported::{Kind, Resident};
     let content = mmorpg_core::greyhaven_vale::content();
     let regions: Vec<_> = mmorpg_core::greyhaven_vale::areas()
         .areas()
         .iter()
         .map(|area| {
+            let inside = |[x, z]: [i32; 2]| {
+                mmorpg_core::greyhaven_vale::area_at(x, z).is_some_and(|at| at.id() == area.id())
+            };
             let mut models: Vec<_> = content
                 .creature_spawns()
                 .iter()
-                .filter(|spawn| {
-                    mmorpg_core::greyhaven_vale::area_at(spawn.position[0], spawn.position[1])
-                        .is_some_and(|at| at.id() == area.id())
-                })
+                .filter(|spawn| inside(spawn.position))
                 .filter_map(|spawn| {
                     let family = content.creature_template(spawn.template)?.family;
-                    mmorpg_presentation::units::imported::Kind::of_family(family)
+                    Kind::of_family(family)
                 })
                 .collect();
             models.sort();
             models.dedup();
+            let mut names: Vec<_> = models.iter().map(|model| model.name()).collect();
+            if content
+                .npcs()
+                .iter()
+                .any(|npc| inside(npc.position) && Resident::of_name(&npc.name).is_some())
+            {
+                names.push("residents");
+            }
             serde_json::json!({
                 "area": area.id().get(),
-                "models": models.iter().map(|model| model.name()).collect::<Vec<_>>(),
+                "models": names,
             })
         })
         .collect();
@@ -487,6 +497,12 @@ impl UnitPresenter {
         self.0
             .model_ready(kind, clips)
             .map_err(|error| JsError::new(&error))
+    }
+
+    /// The residents' appearance presets loaded (#418): named residents become Rangers.
+    #[wasm_bindgen(js_name = residentsReady)]
+    pub fn residents_ready(&mut self) {
+        self.0.residents_ready();
     }
 
     pub fn push(&mut self, projection: &[u8], seconds: f64) -> Result<(), JsError> {

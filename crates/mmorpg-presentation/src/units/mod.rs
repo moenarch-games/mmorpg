@@ -23,13 +23,13 @@ use std::{
 
 use mmorpg_core::{
     ClassChoice, CreatureFamily, CreatureTemplateId, EntityKind, EntityRef, EntitySnapshot,
-    PLAYER_HALF_EXTENTS_UNITS, PlayerClass, ProjectileKind, UNITS_PER_METRE, ZoneContent,
-    ZoneEvent, ZoneSnapshot,
+    PLAYER_HALF_EXTENTS_UNITS, ProjectileKind, UNITS_PER_METRE, ZoneContent, ZoneEvent,
+    ZoneSnapshot,
 };
 use mmorpg_scenery::Scenery;
 
 use crate::{Draw, geometry::V};
-use imported::{Kind, Playback};
+use imported::{Kind, Loadout, Playback, Resident};
 use kit::{Frame, IQ, Primitive, Resources, offset, qa, qm, shade};
 use player::{Hat, Look};
 
@@ -83,12 +83,10 @@ pub struct ImportedUnit {
     pub time: f32,
     /// Corpse darkening.
     pub tint: Option<f32>,
-    /// A Warden carries the bundle's sword and shield (#156).
-    pub sword_and_shield: bool,
-    /// A Ranger carries the bundle's bow and quiver on its back (#244).
-    pub bow_and_quiver: bool,
-    /// A Rogue carries the bundle's sword alone as its blade (#302), until a dagger asset exists.
-    pub blade: bool,
+    /// What the unit carries: a player its class weapons, a guard its sword.
+    pub loadout: Option<Loadout>,
+    /// A named resident's appearance preset (#418); players and animals have none.
+    pub resident: Option<Resident>,
     /// The living viewer wears their headwear on the posed head (see [`UnitPresenter::headwear`]).
     pub headwear: Option<Look>,
 }
@@ -129,6 +127,8 @@ pub struct UnitPresenter {
     effects: effects::Effects,
     durations: BTreeMap<(Kind, String), f32>,
     ready: BTreeSet<Kind>,
+    /// The client draws the residents' appearance presets on the Ranger (#418).
+    residents: bool,
     structures: crate::structures::Structures,
 }
 
@@ -149,7 +149,14 @@ impl UnitPresenter {
             effects: effects::Effects::default(),
             durations: BTreeMap::new(),
             ready: BTreeSet::new(),
+            residents: false,
         }
+    }
+
+    /// The client has loaded the residents' appearance presets (#418): once the Ranger is ready
+    /// too, the named residents are imported Rangers instead of procedural models.
+    pub fn residents_ready(&mut self) {
+        self.residents = true;
     }
 
     /// An imported model is loaded: its clip lengths in seconds. Until then its units keep
@@ -305,6 +312,7 @@ impl UnitPresenter {
             let dead = unit.record.flags.dead;
             let start = out.draws.len();
             if let Some(kind) = self.imported_kind(entity, &unit.record) {
+                let resident = self.resident(entity);
                 // Only the viewer's guard is projected; a held one raises the shield (#156).
                 let guarding = viewer && snapshot.viewer.guard.raised.is_some();
                 // Swimmers (#274) have no swim clips yet: the in-place fallback (Atlas 6.6.41)
@@ -349,12 +357,14 @@ impl UnitPresenter {
                     clip,
                     time,
                     tint: dead.then_some(0.6),
-                    sword_and_shield: matches!(entity, EntityRef::Player(_))
-                        && class.is_some_and(|c| c.class == PlayerClass::Warden),
-                    bow_and_quiver: matches!(entity, EntityRef::Player(_))
-                        && class.is_some_and(|c| c.class == PlayerClass::Ranger),
-                    blade: matches!(entity, EntityRef::Player(_))
-                        && class.is_some_and(|c| c.class == PlayerClass::Rogue),
+                    loadout: match resident {
+                        Some(resident) => resident.loadout(),
+                        None if matches!(entity, EntityRef::Player(_)) => {
+                            class.and_then(|c| Loadout::of_class(c.class))
+                        }
+                        None => None,
+                    },
+                    resident,
                     headwear: (viewer && !dead).then(|| {
                         Look::new(
                             input.viewer.choice.map_or(0, |c| c.class.code()),
@@ -539,7 +549,22 @@ impl UnitPresenter {
     }
 
     fn imported_kind(&self, entity: EntityRef, record: &EntitySnapshot) -> Option<Kind> {
-        Kind::of(entity, record, &self.content).filter(|kind| self.ready.contains(kind))
+        let kind = match entity {
+            EntityRef::Npc(_) => self.resident(entity).map(|_| Kind::Ranger),
+            _ => Kind::of(entity, record, &self.content),
+        };
+        kind.filter(|kind| self.ready.contains(kind))
+    }
+
+    /// The resident preset an NPC wears, once the client draws resident looks (#418).
+    fn resident(&self, entity: EntityRef) -> Option<Resident> {
+        let EntityRef::Npc(id) = entity else {
+            return None;
+        };
+        if !self.residents {
+            return None;
+        }
+        Resident::of_name(&self.content.npc(id)?.name)
     }
 
     #[allow(clippy::too_many_arguments)]
