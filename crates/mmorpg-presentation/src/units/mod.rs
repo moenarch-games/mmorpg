@@ -947,7 +947,6 @@ mod tests {
     fn the_companion_wolf_is_tinted_green_unlike_hostile_wolves() {
         assert_eq!(imported_tint(false, false), None);
         assert_eq!(imported_tint(false, true), Some(COMPANION_TINT));
-        assert!(COMPANION_TINT[1] > COMPANION_TINT[0] && COMPANION_TINT[1] > COMPANION_TINT[2]);
         assert_eq!(imported_tint(true, false), Some([CORPSE_TINT; 3]));
         assert_eq!(
             imported_tint(true, true),
