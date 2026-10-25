@@ -152,6 +152,9 @@ pub mod ids {
     pub const WATCHTOWER: u32 = 520;
     /// Hollowpine Reach boulders (#159).
     pub const BOULDERS: RangeInclusive<u32> = 530..=537;
+    /// Ladders up the southern faces of the Eastwater watchtower, the highland lookout and the
+    /// drowned watchtower (#490), in [`super::LADDER_TOWERS`] order.
+    pub const LADDERS: RangeInclusive<u32> = 600..=602;
     /// The Greyfang cave's rock walls and roof slab (#159).
     pub const CAVE_WALLS: RangeInclusive<u32> = 540..=546;
     pub const CAVE_ROOF: u32 = 547;
@@ -1180,8 +1183,112 @@ fn colliders() -> Vec<StaticCollider> {
             collider
         },
     ));
+    colliders.extend((*ids::LADDERS.start()..).zip(LADDER_TOWERS).map(ladder));
     colliders
 }
+
+/// The towers with a ladder (#490): `(footprint min, footprint max, height)` of the Eastwater
+/// watchtower, the highland lookout and the drowned watchtower.
+pub const LADDER_TOWERS: [([i32; 2], [i32; 2], i32); 3] = [
+    ([16_500, -6_200], [16_900, -5_800], 1_400),
+    ([12_000, -39_600], [12_800, -38_800], 1_400),
+    ([45_600, -2_400], [46_400, -1_600], 1_800),
+];
+
+/// A ladder 0.6 m wide and 0.1 m deep up the middle of a tower's southern (+Z) face, from the
+/// tower's footing to its flat top.
+fn ladder((id, (min, max, height)): (u32, ([i32; 2], [i32; 2], i32))) -> StaticCollider {
+    let middle = (min[0] + max[0]) / 2;
+    let mut collider = standing(
+        id,
+        [middle - 30, max[1]],
+        [middle + 30, max[1] + 10],
+        height,
+    );
+    collider.position[1] += footing(min, max);
+    collider
+}
+
+/// Which collision is climbable (#490). Rough rock (crags, the Redbrand cliffs, boulders and
+/// shore rocks), timber (the palisades and fences) and the ladders climb; buildings, towers,
+/// standing stones and cave walls do not. Each kind keeps unclimbable variants: the Redbrand
+/// Hollow's sheer back wall, two sheer highland crags and the stronghold's smooth-planked
+/// northern palisade. On the terrain, the Vale basin's cliffs are rough rock except the sheer
+/// cliff under Stillwater Lake, and each boundary ridge or escarpment has one hard climbable
+/// route beside its pass while the rest of it is sheer.
+#[must_use]
+pub fn climbing() -> crate::ClimbSurfaces {
+    use crate::Grip::{Rock, Rungs, Timber};
+    let range = |ids: std::ops::RangeInclusive<u32>, grip| ids.map(move |id| (id, grip));
+    // The stronghold's northern palisade (its second structure) is smooth-planked.
+    let palisades = highlands::BUILDINGS
+        .iter()
+        .zip(*ids::HIGHLAND_BUILDINGS.start()..)
+        .filter(|((building, ..), id)| {
+            *building == highlands::Building::Palisade && *id != ids::HIGHLAND_BUILDINGS.start() + 1
+        })
+        .map(|(_, id)| (id, Timber));
+    // Two of the tallest crags are sheer: west of the trail's bend and west of the stronghold.
+    let crags = (*ids::HIGHLAND_CRAGS.start()..)
+        .zip(highlands::CRAGS)
+        .enumerate()
+        .filter(|&(index, _)| index != SHEER_CRAGS[0] && index != SHEER_CRAGS[1])
+        .map(|(_, (id, _))| (id, Rock));
+    let colliders = range(ids::PALISADE, Timber)
+        .chain(range(ids::FENCES, Timber))
+        .chain(range(ids::RUIN_FENCES, Timber))
+        .chain(range(ids::FARMLAND_FENCES, Timber).take(farmland::fences().len()))
+        .chain(palisades)
+        .chain(range(ids::SHORE_ROCKS, Rock))
+        .chain(range(ids::BOULDERS, Rock))
+        // The Redbrand Hollow's cliffs, but not its sheer back wall.
+        .chain(range(ids::CLIFFS, Rock).filter(|&(id, _)| id != SHEER_HOLLOW_WALL))
+        .chain(crags)
+        .chain(range(ids::LADDERS, Rungs))
+        .collect();
+    let terrain = vec![
+        // The sheer cliff under Stillwater Lake, then the rest of the Vale basin's cliffs.
+        (SHEER_LAKE_CLIFF, None),
+        (VALE_BASIN, Some(Rock)),
+        // One hard route up each boundary ridge or escarpment, beside its pass.
+        (CLIMBING_ROUTES[0], Some(Rock)),
+        (CLIMBING_ROUTES[1], Some(Rock)),
+        (CLIMBING_ROUTES[2], Some(Rock)),
+    ];
+    crate::ClimbSurfaces::new(colliders, terrain).expect("Greyhaven climbing is valid")
+}
+
+/// The Redbrand Hollow's 14 m back wall under the north wall: sheer (#490).
+pub const SHEER_HOLLOW_WALL: u32 = 404;
+/// The sheer highland crags, by index in [`highlands::CRAGS`] (#490).
+pub const SHEER_CRAGS: [usize; 2] = [4, 12];
+/// The Vale basin (#423) and its cliffs, rough rock (#490).
+pub const VALE_BASIN: XzBounds = XzBounds {
+    min: [-12_800, -12_800],
+    max: [12_800, 12_800],
+};
+/// The basin's northern cliff under Stillwater Lake: sheer (#490).
+pub const SHEER_LAKE_CLIFF: XzBounds = XzBounds {
+    min: [2_000, -3_200],
+    max: [12_800, -2_000],
+};
+/// The boundary climbing routes (#490): up the highlands' escarpment east of the Highland Pass,
+/// over the farmland's ridge west of the South Road's notch and over the wetlands' ridge south
+/// of the Marsh Pass. Each is 8 m wide.
+pub const CLIMBING_ROUTES: [XzBounds; 3] = [
+    XzBounds {
+        min: [12_000, -28_000],
+        max: [12_800, -20_800],
+    },
+    XzBounds {
+        min: [-2_400, 20_800],
+        max: [-1_600, 25_600],
+    },
+    XzBounds {
+        min: [20_800, 6_400],
+        max: [25_600, 7_200],
+    },
+];
 
 /// The mill hoist (#56): a 2 m square stone pillar against the windmill's south face that
 /// rests with its top flush with the farm terrace, rises 8 m to the windmill's gallery (its flat
@@ -1325,7 +1432,8 @@ pub fn content_with_definition(
                     .into_iter()
                     .chain(marsh::water_volumes())
                     .collect(),
-            )?,
+            )?
+            .with_climbing(climbing())?,
     ))
 }
 

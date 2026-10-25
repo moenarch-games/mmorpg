@@ -18,6 +18,7 @@ mod casting;
 mod character;
 mod chat;
 mod class;
+pub mod climb;
 mod combat;
 mod combo;
 mod content;
@@ -82,6 +83,7 @@ pub use chat::{
     MAX_CHAT_PER_TICK, SAY_RANGE_UNITS, YELL_RANGE_UNITS,
 };
 pub use class::{ClassChoice, PlayerClass, ResourceKind, Sex};
+pub use climb::{ClimbSurfaces, Grip, Traversal, TraversalView};
 pub use combo::{COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboOpening, ComboPhase};
 pub use content::greyhaven_vale::{self, greyhaven_vale_definition};
 pub use content::{

@@ -432,7 +432,7 @@ impl ZoneSimulation {
             let goal = trail.map(|at| at.y - PLAYER_HALF_EXTENTS_UNITS[1]);
             let swim = self.creature_swim(feet, 2 * half.y, goal);
             self.world
-                .set_swimming(body, swim.is_some())
+                .set_weightless(body, swim.is_some())
                 .map_err(physics_error)?;
             (velocity, swim.unwrap_or(vertical))
         } else {

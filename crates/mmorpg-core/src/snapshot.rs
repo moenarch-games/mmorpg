@@ -173,6 +173,8 @@ pub struct CanonicalPlayerCombat {
     pub abilities: CanonicalPlayerAbilities,
     /// Airborne state and landing recovery (#155).
     pub landing: crate::LandingState,
+    /// A climb or mantle in progress (#490).
+    pub traversal: crate::Traversal,
     /// A pending sword → Shield Bash follow-up (#157).
     pub combo: Option<crate::ComboOpening>,
     /// Ticks left of a directed strike's committed recovery (#156).
@@ -230,6 +232,7 @@ impl Default for CanonicalPlayerCombat {
             events: Vec::new(),
             abilities: CanonicalPlayerAbilities::default(),
             landing: crate::LandingState::default(),
+            traversal: crate::Traversal::Free,
             combo: None,
             strike_recovery: 0,
             repairing: None,
@@ -380,6 +383,7 @@ impl ZoneSimulation {
                             guard: state.guard,
                         },
                         landing: state.landing,
+                        traversal: state.traversal,
                         combo: state.combo,
                         strike_recovery: state.strike_recovery,
                         repairing: state.repairing,
@@ -672,6 +676,9 @@ impl ZoneSimulation {
         if !combat.landing.is_valid() {
             return Err(ZoneError::new("player landing state is out of range"));
         }
+        if !combat.traversal.is_valid() {
+            return Err(ZoneError::new("player climb or mantle is out of range"));
+        }
         let guard = combat.abilities.guard;
         if guard.broken > crate::GUARD_BREAK_TICKS
             || (!alive && guard != crate::GuardState::default())
@@ -697,6 +704,11 @@ impl ZoneSimulation {
                 breath: player.breath,
                 guard,
                 landing: combat.landing,
+                traversal: if alive {
+                    combat.traversal
+                } else {
+                    crate::Traversal::Free
+                },
                 swimming: false,
                 impulse: None,
                 authored: None,

@@ -295,11 +295,11 @@ fn check_invariants(
                         && before.body.exact_velocity() == [0.0; 3]
                 })
             });
-            // A swimming unit (#274) floats without ground under it.
+            // A weightless unit (a swimmer #274, a climber #490) rests without ground under it.
             if rested
                 && unit.body.exact_velocity() == [0.0; 3]
                 && !unit.grounded
-                && !unit.body.swimming()
+                && !unit.body.weightless()
             {
                 return Err(format!("{:?} rests ungrounded at tick {tick}", unit.unit));
             }

@@ -343,13 +343,13 @@ impl World {
         Ok(())
     }
 
-    pub fn set_swimming(&mut self, id: BodyId, swimming: bool) -> Result<(), PhysicsError> {
+    pub fn set_weightless(&mut self, id: BodyId, weightless: bool) -> Result<(), PhysicsError> {
         let body = self
             .bodies
             .get_mut(&id)
             .filter(|body| body.is_moving())
             .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
-        body.swimming = swimming;
+        body.weightless = weightless;
         Ok(())
     }
 
@@ -508,7 +508,7 @@ impl World {
             let mut velocity = body.velocity;
             // A swimmer (#274) keeps the zone's vertical velocity. The lake basin's open floor
             // is a Rapier-only workaround; this arm still has the floor half-space there.
-            if !body.swimming {
+            if !body.weightless {
                 if self.grounded(body.id) && velocity[1] <= 0.0 {
                     velocity[1] = 0.0;
                 } else {

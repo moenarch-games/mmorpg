@@ -360,12 +360,25 @@ impl ZoneSimulation {
         velocity: [i32; 2],
     ) -> Result<(), ZoneError> {
         let body = body_id(unit);
-        let vertical = self
+        let mut vertical = self
             .world
             .body(body)
             .ok_or_else(|| ZoneError::new("forced unit physics body is missing"))?
             .velocity()
             .y;
+        // A forced move tears a climber off the face or out of a mantle (#490).
+        if let EntityRef::Player(id) = unit
+            && let Some(player) = self.players.get_mut(&id)
+            && player.traversal.holds()
+        {
+            player.traversal = crate::Traversal::Released {
+                ticks: crate::climb::RELEASE_TICKS,
+            };
+            vertical = 0;
+            self.world
+                .set_weightless(body, false)
+                .map_err(crate::zone::physics_error)?;
+        }
         self.world
             .set_velocity(body, Vec3i::new(velocity[0], vertical, velocity[1]))
             .map_err(crate::zone::physics_error)

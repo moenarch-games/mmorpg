@@ -135,9 +135,10 @@ pub struct RigidBody {
     /// Units per tick; zero for fixed bodies.
     velocity: [f32; 3],
     half_extents: Vec3i,
-    /// A swimming unit (#274): no gravity or ground settling; its vertical velocity is the
-    /// zone's. Set by the zone every tick, never canonical.
-    swimming: bool,
+    /// A weightless unit: a swimmer (#274) or a climbing or mantling player (#490). No gravity
+    /// or ground settling; its vertical velocity is the zone's. Set by the zone every tick,
+    /// never canonical.
+    weightless: bool,
 }
 
 fn round(value: [f32; 3]) -> Vec3i {
@@ -185,7 +186,7 @@ impl RigidBody {
             position: exact(position),
             velocity: [0.0; 3],
             half_extents,
-            swimming: false,
+            weightless: false,
         }
     }
 
@@ -199,7 +200,7 @@ impl RigidBody {
             position: exact(Vec3i::new(0, y, 0)),
             velocity: [0.0; 3],
             half_extents: Vec3i::ZERO,
-            swimming: false,
+            weightless: false,
         }
     }
 
@@ -218,7 +219,7 @@ impl RigidBody {
             position: exact(position),
             velocity: [0.0; 3],
             half_extents,
-            swimming: false,
+            weightless: false,
         }
     }
 
@@ -231,7 +232,7 @@ impl RigidBody {
             position: exact(position),
             velocity: [0.0; 3],
             half_extents,
-            swimming: false,
+            weightless: false,
         }
     }
 
@@ -260,14 +261,14 @@ impl RigidBody {
             position,
             velocity,
             half_extents,
-            swimming: false,
+            weightless: false,
         }
     }
 
-    /// Whether the zone set this unit swimming for the next step (#274).
+    /// Whether the zone set this unit weightless for the next step (#274, #490).
     #[must_use]
-    pub const fn swimming(&self) -> bool {
-        self.swimming
+    pub const fn weightless(&self) -> bool {
+        self.weightless
     }
 
     #[must_use]
@@ -557,10 +558,11 @@ impl World {
         dispatch!(self, &mut self.worlds, world => world.set_velocity(id, velocity))
     }
 
-    /// Marks moving body `id` swimming (#274) for the next step: no gravity or ground
+    /// Marks moving body `id` weightless (a swimmer #274, a climber #490) for the next step: no
+    /// gravity or ground
     /// settling, its vertical velocity as set.
-    pub fn set_swimming(&mut self, id: BodyId, swimming: bool) -> Result<(), PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.set_swimming(id, swimming))
+    pub fn set_weightless(&mut self, id: BodyId, weightless: bool) -> Result<(), PhysicsError> {
+        dispatch!(self, &mut self.worlds, world => world.set_weightless(id, weightless))
     }
 
     /// Moves platform `id`'s box (#56) to centre `to` during the next [`World::step`], before
