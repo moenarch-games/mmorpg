@@ -123,6 +123,10 @@ pub enum ActionId {
     Landing,
     /// Swimming in deep water, at the surface or under it (#274).
     Swim,
+    /// Holding a climbable face (#490).
+    Climb,
+    /// Pulling up onto a ledge (#490).
+    Mantle,
     /// The Warden's directed (mouse-aimed) Heroic Strike.
     DirectedSlash,
     /// A held shield guard lane.
@@ -513,6 +517,10 @@ pub enum RuleId {
     /// An attack in water is refused (#413). Experimental graphs author it;
     /// the baseline allows attacks while swimming.
     SwimmingRefuses,
+    /// An attack waits until the climber is off the face (#490).
+    /// Experimental graphs author it; the baseline allows attacks while
+    /// climbing.
+    ClimbingHolds,
     /// An attack in water waits until the swimmer is ashore (#413).
     SwimmingHolds,
 }
@@ -521,7 +529,8 @@ pub enum RuleId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuleEffect {
     /// While `during` recovers, the input waits (is held) until the
-    /// recovery ends. During a swim, it waits until the swim ends.
+    /// recovery ends. During a swim, climb or mantle, it waits until that
+    /// ends.
     Hold,
     /// While `during` runs, the input ends it. Only a cast supports this,
     /// for movement and jump inputs.
@@ -696,7 +705,7 @@ pub struct ActionGraph {
 }
 
 /// The authored actions.
-pub const ACTIONS: [ActionDef; 10] = [
+pub const ACTIONS: [ActionDef; 12] = [
     ActionDef {
         id: ActionId::Airborne,
         region: Region::Movement,
@@ -710,6 +719,17 @@ pub const ACTIONS: [ActionDef; 10] = [
     // A swim lasts while the player is in deep water.
     ActionDef {
         id: ActionId::Swim,
+        region: Region::Movement,
+        recovery_ms: None,
+    },
+    // A climb lasts while the player holds the face, a mantle until it lands (#490).
+    ActionDef {
+        id: ActionId::Climb,
+        region: Region::Movement,
+        recovery_ms: None,
+    },
+    ActionDef {
+        id: ActionId::Mantle,
         region: Region::Movement,
         recovery_ms: None,
     },
@@ -789,6 +809,8 @@ const fn action_code(id: ActionId) -> u16 {
         ActionId::Cast => 7,
         ActionId::GlobalCooldown => 8,
         ActionId::Swim => 9,
+        ActionId::Climb => 10,
+        ActionId::Mantle => 11,
         ActionId::Authored(slot) => 256 + slot as u16,
     }
 }
@@ -976,6 +998,8 @@ pub const fn phases(id: ActionId) -> &'static [Phase] {
     match id {
         ActionId::Airborne
         | ActionId::Swim
+        | ActionId::Climb
+        | ActionId::Mantle
         | ActionId::Guard
         | ActionId::Cast
         | ActionId::Stun
@@ -1051,8 +1075,7 @@ impl ActionGraph {
             }
             match rule.effect {
                 RuleEffect::Hold
-                    if action(rule.during).recovery_ms.is_none()
-                        && rule.during != ActionId::Swim =>
+                    if action(rule.during).recovery_ms.is_none() && !lasting(rule.during) =>
                 {
                     return Err(GraphError::NoRecovery(rule.id));
                 }
@@ -1601,11 +1624,31 @@ fn swimming(state: &PlayerState) -> bool {
     state.swimming && state.is_alive()
 }
 
-/// Whether a holding rule's action is in the phase it holds in: a swim
-/// while it lasts, any other action while it recovers.
-fn holds_during(state: &PlayerState, id: ActionId) -> bool {
+/// The movement region's traversal actions, which hold while they last
+/// rather than while they recover: a swim, a climb and a mantle.
+const fn lasting(id: ActionId) -> bool {
+    matches!(id, ActionId::Swim | ActionId::Climb | ActionId::Mantle)
+}
+
+/// Whether the lasting traversal action `id` runs now (#413, #490).
+fn running(state: &PlayerState, id: ActionId) -> bool {
     match id {
         ActionId::Swim => swimming(state),
+        ActionId::Climb => {
+            state.is_alive() && matches!(state.traversal, crate::Traversal::Climbing { .. })
+        }
+        ActionId::Mantle => {
+            state.is_alive() && matches!(state.traversal, crate::Traversal::Mantling { .. })
+        }
+        _ => false,
+    }
+}
+
+/// Whether a holding rule's action is in the phase it holds in: a swim,
+/// climb or mantle while it lasts, any other action while it recovers.
+fn holds_during(state: &PlayerState, id: ActionId) -> bool {
+    match id {
+        id if lasting(id) => running(state, id),
         _ => recovery_left(state, id).is_some(),
     }
 }
@@ -1623,6 +1666,8 @@ fn recovery_left(state: &PlayerState, id: ActionId) -> Option<u16> {
         ActionId::GlobalCooldown => state.global_cooldown,
         ActionId::Airborne
         | ActionId::Swim
+        | ActionId::Climb
+        | ActionId::Mantle
         | ActionId::Guard
         | ActionId::Stun
         | ActionId::Death
@@ -1694,13 +1739,11 @@ fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4]
         ability: action.and_then(|id| action_ability(state, id)),
         active_left: None,
     };
-    let movement = if swimming(state) {
-        report(
-            Region::Movement,
-            Some(ActionId::Swim),
-            Some(Phase::Active),
-            None,
-        )
+    let traversing = [ActionId::Mantle, ActionId::Climb, ActionId::Swim]
+        .into_iter()
+        .find(|&id| running(state, id));
+    let movement = if let Some(id) = traversing {
+        report(Region::Movement, Some(id), Some(Phase::Active), None)
     } else if state.landing.airborne {
         report(
             Region::Movement,
@@ -1839,8 +1882,8 @@ fn target_phase(graph: &ActionGraph, state: &PlayerState, target: Interrupted) -
                             .any(|queued| input_of(&queued.intent) == Some(input)),
                     }
             })?;
-            // A swim holds while it runs; every other action while it recovers.
-            Some(if held.during == ActionId::Swim {
+            // A swim, climb or mantle holds while it runs; any other action while it recovers.
+            Some(if lasting(held.during) {
                 Phase::Active
             } else {
                 Phase::Recovery
@@ -2644,7 +2687,7 @@ impl ZoneSimulation {
                 // Recovery counts down after the next tick's intents and
                 // combat resolve; movement cancels a cast before it advances.
                 let left = match (rule.effect, rule.during) {
-                    (_, ActionId::Swim) => swimming(state).then_some(None)?,
+                    (_, id) if lasting(id) => running(state, id).then_some(None)?,
                     (RuleEffect::Hold, _) => Some(recovery_left(state, rule.during)?),
                     (RuleEffect::Cancel, _) => Some(
                         cast_left(state)

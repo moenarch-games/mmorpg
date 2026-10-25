@@ -86,7 +86,9 @@ const MAX_ABILITY_LIST_BYTES: usize =
 /// Kind, flags, source and target references, `u16` amount.
 pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// Kind, ID, appearance, `3 × i32` position, `3 × i8` velocity, `u16`
-/// facing, level, health percent and flags.
+/// facing, level, health percent and flags. Only creatures are tapped or evade, so on a player
+/// record those two flag bits carry its traversal instead (#490): tapped means climbing,
+/// evading means mantling.
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 12 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events, sheets, cooldowns or auras:
 /// (1,077 − 117) / 27 = 35.
@@ -544,13 +546,27 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
     }
     payload.push(entity.health_percent);
     let flags = entity.flags;
+    let (tapped, evading) = if entity.kind == EntityKind::Player {
+        if flags.tapped_by_other || flags.evading {
+            return Err(ProtocolError::new("a player is never tapped or evading"));
+        }
+        (
+            flags.traversal == mmorpg_core::TraversalView::Climbing,
+            flags.traversal == mmorpg_core::TraversalView::Mantling,
+        )
+    } else {
+        if flags.traversal != mmorpg_core::TraversalView::Free {
+            return Err(ProtocolError::new("only a player climbs or mantles"));
+        }
+        (flags.tapped_by_other, flags.evading)
+    };
     payload.push(flag_byte(&[
         flags.dead,
         flags.in_combat,
         flags.hostile,
         flags.attackable,
-        flags.tapped_by_other,
-        flags.evading,
+        tapped,
+        evading,
         flags.targets_viewer,
         flags.lootable,
     ]));
@@ -897,6 +913,21 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
     {
         return Err(ProtocolError::new("lootable entity flags are inconsistent"));
     }
+    // On a player record the tapped and evading bits carry its traversal (#490).
+    let (tapped_by_other, evading, traversal) = if kind == EntityKind::Player {
+        let traversal = match (tapped_by_other, evading) {
+            (false, false) => mmorpg_core::TraversalView::Free,
+            (true, false) => mmorpg_core::TraversalView::Climbing,
+            (false, true) => mmorpg_core::TraversalView::Mantling,
+            (true, true) => return Err(ProtocolError::new("a player climbs or mantles, not both")),
+        };
+        if dead && traversal != mmorpg_core::TraversalView::Free {
+            return Err(ProtocolError::new("a dead player cannot climb or mantle"));
+        }
+        (false, false, traversal)
+    } else {
+        (tapped_by_other, evading, mmorpg_core::TraversalView::Free)
+    };
     Ok(EntitySnapshot {
         kind,
         id,
@@ -915,6 +946,7 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
             evading,
             targets_viewer,
             lootable,
+            traversal,
         },
     })
 }
@@ -1228,6 +1260,7 @@ mod tests {
                         tapped_by_other: false,
                         evading: false,
                         targets_viewer: true,
+                        traversal: mmorpg_core::TraversalView::Free,
                     },
                 },
                 EntitySnapshot {
@@ -1851,9 +1884,14 @@ mod tests {
                         in_combat: true,
                         hostile: true,
                         attackable: true,
-                        tapped_by_other: true,
-                        evading: true,
+                        tapped_by_other: kind != EntityKind::Player,
+                        evading: kind != EntityKind::Player,
                         targets_viewer: true,
+                        traversal: if kind == EntityKind::Player {
+                            mmorpg_core::TraversalView::Climbing
+                        } else {
+                            mmorpg_core::TraversalView::Free
+                        },
                     },
                 }
             })

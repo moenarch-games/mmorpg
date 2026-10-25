@@ -289,6 +289,7 @@ fn encode_player(
     payload.push(u8::from(landing.airborne));
     payload.extend_from_slice(&landing.recovery.to_be_bytes());
     payload.push(u8::from(landing.attacked_airborne));
+    encode_traversal(payload, combat.traversal);
     payload.extend_from_slice(&combat.strike_recovery.to_be_bytes());
     payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
     encode_entity_ref(payload, combat.combo.map(|combo| combo.target));
@@ -303,6 +304,65 @@ fn encode_player(
         crate::chat::encode_line(payload, line);
     }
     crate::quest::encode_log(payload, &player.quests, player.quests_changed_at)
+}
+
+/// 18 bytes (#490): kind (0 free, 1 released, 2 climbing, 3 mantling), ticks, wall yaw, the
+/// mantle's goal (`3 × i32`) and whether it moves across; unused fields are zero.
+fn encode_traversal(payload: &mut Vec<u8>, traversal: mmorpg_core::Traversal) {
+    use mmorpg_core::Traversal;
+    let (kind, ticks, wall, goal, across) = match traversal {
+        Traversal::Free => (0, 0, 0, [0; 3], false),
+        Traversal::Released { ticks } => (1, ticks, 0, [0; 3], false),
+        Traversal::Climbing { wall } => (2, 0, wall, [0; 3], false),
+        Traversal::Mantling {
+            goal,
+            wall,
+            ticks,
+            across,
+        } => (3, ticks, wall, goal, across),
+    };
+    payload.push(kind);
+    payload.extend_from_slice(&ticks.to_be_bytes());
+    payload.extend_from_slice(&wall.to_be_bytes());
+    for axis in goal {
+        payload.extend_from_slice(&axis.to_be_bytes());
+    }
+    payload.push(u8::from(across));
+}
+
+fn decode_traversal(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<mmorpg_core::Traversal, ProtocolError> {
+    use mmorpg_core::Traversal;
+    let kind = read_u8(payload, offset)?;
+    let ticks = u16::from_be_bytes(take(payload, offset)?);
+    let wall = u16::from_be_bytes(take(payload, offset)?);
+    let goal = [
+        i32::from_be_bytes(take(payload, offset)?),
+        i32::from_be_bytes(take(payload, offset)?),
+        i32::from_be_bytes(take(payload, offset)?),
+    ];
+    let across = read_bool(payload, offset)?;
+    let unused = |ticks: u16, wall: u16, goal: [i32; 3], across: bool| {
+        ticks == 0 && wall == 0 && goal == [0; 3] && !across
+    };
+    let traversal = match kind {
+        0 if unused(ticks, wall, goal, across) => Traversal::Free,
+        1 if unused(0, wall, goal, across) => Traversal::Released { ticks },
+        2 if unused(ticks, 0, goal, across) => Traversal::Climbing { wall },
+        3 => Traversal::Mantling {
+            goal,
+            wall,
+            ticks,
+            across,
+        },
+        _ => return Err(ProtocolError::new("player climb or mantle is malformed")),
+    };
+    if !traversal.is_valid() {
+        return Err(ProtocolError::new("player climb or mantle is out of range"));
+    }
+    Ok(traversal)
 }
 
 /// 17 bytes: ability (0 for none), elapsed ticks, target reference, point
@@ -872,6 +932,7 @@ fn decode_player(
         recovery: u16::from_be_bytes(take(payload, offset)?),
         attacked_airborne: read_bool(payload, offset)?,
     };
+    let traversal = decode_traversal(payload, offset)?;
     let strike_recovery = u16::from_be_bytes(take(payload, offset)?);
     let repairing = crate::wire::decode_piece(u16::from_be_bytes(take(payload, offset)?));
     let combo_target = decode_entity_ref(payload, offset)?;
@@ -935,6 +996,7 @@ fn decode_player(
             events,
             abilities,
             landing,
+            traversal,
             combo,
             strike_recovery,
             repairing,
@@ -1573,6 +1635,12 @@ mod tests {
                             airborne: false,
                             recovery: 7,
                             attacked_airborne: false,
+                        },
+                        traversal: mmorpg_core::Traversal::Mantling {
+                            goal: [10, 20, -30],
+                            wall: 16_384,
+                            ticks: 5,
+                            across: true,
                         },
                         combo: Some(mmorpg_core::ComboOpening {
                             target: EntityRef::Creature(CreatureId::new(1)),

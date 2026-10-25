@@ -69,7 +69,7 @@ export type Outcome =
   | { kind: "WaitForEdge"; edge: string }
   | { kind: "Cancel" | "Refuse"; rule: string };
 
-/** `releasedAt` is null while a swim holds or refuses the input: until the swimmer is ashore (#413). */
+/** `releasedAt` is null while a swim or climb holds or refuses the input: until it ends (#413, #490). */
 export type RuleReport = { rule: string; input: string; effect: "Hold" | "Cancel" | "Refuse"; releasedAt: number | null; origin: string };
 
 /** One tick's `actionInspection()`. */

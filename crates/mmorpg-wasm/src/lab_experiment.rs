@@ -83,12 +83,13 @@ const PARTNERS: [Partner; 4] = [
     Partner::Input(ActionInput::ShieldBash),
     Partner::Input(ActionInput::Ability),
 ];
-const RULES: [RuleId; 5] = [
+const RULES: [RuleId; 6] = [
     RuleId::LandingHoldsMelee,
     RuleId::SlashRecoveryHoldsGuard,
     RuleId::MovementCancelsCast,
     RuleId::SwimmingRefuses,
     RuleId::SwimmingHolds,
+    RuleId::ClimbingHolds,
 ];
 const RULE_EFFECTS: [RuleEffect; 3] = [RuleEffect::Hold, RuleEffect::Cancel, RuleEffect::Refuse];
 const PHASES: [Phase; 4] = [

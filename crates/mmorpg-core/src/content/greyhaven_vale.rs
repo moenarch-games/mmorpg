@@ -1195,17 +1195,15 @@ pub const LADDER_TOWERS: [([i32; 2], [i32; 2], i32); 3] = [
     ([45_600, -2_400], [46_400, -1_600], 1_800),
 ];
 
-/// A ladder 0.6 m wide and 0.1 m deep up the middle of a tower's southern (+Z) face, from the
-/// tower's footing to its flat top.
+/// A ladder 0.6 m wide and 0.1 m deep up the middle of a tower's southern (+Z) face, standing
+/// on the ground there and reaching the tower's flat top.
 fn ladder((id, (min, max, height)): (u32, ([i32; 2], [i32; 2], i32))) -> StaticCollider {
     let middle = (min[0] + max[0]) / 2;
-    let mut collider = standing(
-        id,
-        [middle - 30, max[1]],
-        [middle + 30, max[1] + 10],
-        height,
-    );
-    collider.position[1] += footing(min, max);
+    let (low, high) = ([middle - 30, max[1]], [middle + 30, max[1] + 10]);
+    let base = footing(low, high);
+    let top = footing(min, max) + height;
+    let mut collider = standing(id, low, high, top - base);
+    collider.position[1] += base;
     collider
 }
 

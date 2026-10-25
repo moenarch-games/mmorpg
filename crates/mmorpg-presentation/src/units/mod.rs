@@ -526,7 +526,20 @@ impl UnitPresenter {
                         unit.record.position,
                     )
                     .swims();
-                let vertical = if swimming { 0. } else { loc.vertical };
+                // Climbers and mantlers (#490) have no climb clips yet (#500): the same in-place
+                // fallback holds on with the idle clip and climbs with the walk, at the speed
+                // they move along the face, facing it (the zone projects the wall's yaw).
+                let traversing = unit.record.flags.traversal != mmorpg_core::TraversalView::Free;
+                let vertical = if swimming || traversing {
+                    0.
+                } else {
+                    loc.vertical
+                };
+                let speed = if traversing {
+                    loc.forward.hypot(loc.right).hypot(loc.vertical)
+                } else {
+                    loc.forward.hypot(loc.right)
+                };
                 if viewer {
                     let wind_up = self.preparation.map(|preparation| {
                         let class = snapshot.viewer.class.map(|choice| choice.class);
@@ -552,7 +565,7 @@ impl UnitPresenter {
                             .unwrap_or(0.)
                     },
                     imported::Cues {
-                        speed: loc.forward.hypot(loc.right),
+                        speed,
                         vertical_speed: vertical,
                         dead,
                         guarding,

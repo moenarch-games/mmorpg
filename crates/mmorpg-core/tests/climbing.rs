@@ -400,3 +400,52 @@ fn a_climb_and_a_mantle_continue_exactly_from_a_checkpoint() {
         restored.snapshot().unwrap()
     );
 }
+
+/// An experimental rule: abilities wait until the climber is off the face (#490).
+static CLIMB_RULES: [mmorpg_core::action::CompatibilityRule; 6] = [
+    mmorpg_core::action::RULES[0],
+    mmorpg_core::action::RULES[1],
+    mmorpg_core::action::RULES[2],
+    mmorpg_core::action::RULES[3],
+    mmorpg_core::action::RULES[4],
+    mmorpg_core::action::CompatibilityRule {
+        id: mmorpg_core::action::RuleId::ClimbingHolds,
+        during: mmorpg_core::action::ActionId::Climb,
+        input: mmorpg_core::action::ActionInput::Ability,
+        conditions: &[],
+        effect: mmorpg_core::action::RuleEffect::Hold,
+    },
+];
+
+static CLIMB_GRAPH: mmorpg_core::action::ActionGraph = mmorpg_core::action::ActionGraph {
+    rules: &CLIMB_RULES,
+    ..mmorpg_core::action::BASELINE
+};
+
+#[test]
+fn climbing_and_mantling_run_in_the_movement_region() {
+    use mmorpg_core::action::{ActionId, ActionInput, Outcome, Region, RuleId};
+    let movement = |player: &Player| {
+        player.zone.action_inspection(1).unwrap().regions[Region::Movement as usize].action
+    };
+    let mut player = Player::at([1_500, -28_900]);
+    player.zone.set_action_graph(&CLIMB_GRAPH).unwrap();
+    player.walk_into(NORTH);
+    assert_eq!(movement(&player), None);
+    player.jump();
+    player.ticks(1);
+    assert_eq!(movement(&player), Some(ActionId::Climb));
+    assert_eq!(
+        player
+            .zone
+            .arbitrate_input(1, ActionInput::Ability)
+            .unwrap()
+            .outcome,
+        Outcome::WaitForRule(RuleId::ClimbingHolds)
+    );
+    assert!(player.until(1, NORTH, 1_500, |p| matches!(
+        p.traversal(),
+        Traversal::Mantling { .. }
+    )));
+    assert_eq!(movement(&player), Some(ActionId::Mantle));
+}
