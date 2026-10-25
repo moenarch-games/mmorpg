@@ -3,7 +3,7 @@ import { PROTOCOL_ID } from "../src/protocol-id";
 import { encodeCommand } from "../src/command-wire";
 import { TICK_HZ } from "../src/replication";
 import {
-  copyConfig, importFile, exportBundle, insertCopy, isMovement, LabLibrary, moveCommand, movementRule, PROMOTION_FORMAT,
+  arrivalText, copyConfig, importFile, exportBundle, insertCopy, isMovement, LabLibrary, LOCAL_NETWORK, moveCommand, movementRule, NETWORK_PRESETS, PROMOTION_FORMAT,
   promotionFileName, promotionRequest, RECORD_FORMAT, removeAuthored, removeCommand, removeEdge, ruleApplies, setAuthored,
   setMovementRule, setRuleApplies, slidingSlashSample, swimmingSample, traversalSample, SCENARIO_FORMAT,
   type ConfigCheck, type LabComparison, type LabConfig, type LabRun, type LabScenario,
@@ -15,8 +15,8 @@ type LabModule = {
   LocalZone: { forActionLab(...args: unknown[]): ScenarioZoneHandle; new (): { contentRevision(): bigint; free(): void } };
   actionLabBaseline(): string;
   actionLabCheck(config: string): string;
-  actionLabRun(scenario: string, config: string): string;
-  actionLabCompare(scenario: string, a: string, b: string): string;
+  actionLabRun(scenario: string, config: string, network: string): string;
+  actionLabCompare(scenario: string, a: string, b: string, network: string): string;
   actionLabChanges(from: string, to: string): string;
 };
 
@@ -28,6 +28,7 @@ const SETUP = { className: "warden", level: 6, gear: "standard" as const, mainHa
 const zone = (config: LabConfig | null) => () => wasm.LocalZone.forActionLab("warden", 6, "standard", 0, 60, 0n, config ? JSON.stringify(config) : undefined);
 const baseline = () => JSON.parse(wasm.actionLabBaseline()) as LabConfig;
 const check = (config: LabConfig) => JSON.parse(wasm.actionLabCheck(JSON.stringify(config))) as ConfigCheck;
+const LOCAL = JSON.stringify(LOCAL_NETWORK);
 
 /** Plays a jump and an attack in the real lab and keeps them as a scenario. */
 function record(): LabScenario {
@@ -62,7 +63,7 @@ describe("Action Lab experiments (#382)", () => {
   test("a recorded scenario replays deterministically and reproduces its recording", async () => {
     const scenario = record();
     expect(scenario.commands.map((command) => command.tick)).toEqual([3, 20]);
-    const run = JSON.parse(wasm.actionLabRun(JSON.stringify(scenario), JSON.stringify(baseline()))) as LabRun;
+    const run = JSON.parse(wasm.actionLabRun(JSON.stringify(scenario), JSON.stringify(baseline()), LOCAL)) as LabRun;
     expect(run.baseline).toBe(true);
     expect(run.ticks).toHaveLength(60);
     expect(run.reproducesRecording).toBe(true);
@@ -83,11 +84,24 @@ describe("Action Lab experiments (#382)", () => {
     expect(moved.recorded).toBeNull();
     expect(insertCopy(scenario, 1, 99).commands.map((command) => command.tick)).toEqual([3, 20, 59]);
     expect(removeCommand(scenario, 0).commands).toHaveLength(1);
-    const same = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(baseline()), JSON.stringify(baseline()))) as LabComparison;
+    const same = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(baseline()), JSON.stringify(baseline()), LOCAL)) as LabComparison;
     expect(same.divergesAt).toBeNull();
-    const a = JSON.parse(wasm.actionLabRun(JSON.stringify(scenario), JSON.stringify(baseline()))) as LabRun;
-    const b = JSON.parse(wasm.actionLabRun(JSON.stringify(moved), JSON.stringify(baseline()))) as LabRun;
+    const a = JSON.parse(wasm.actionLabRun(JSON.stringify(scenario), JSON.stringify(baseline()), LOCAL)) as LabRun;
+    const b = JSON.parse(wasm.actionLabRun(JSON.stringify(moved), JSON.stringify(baseline()), LOCAL)) as LabRun;
     expect(a.summary.finalDigest).not.toBe(b.summary.finalDigest);
+  }, 30_000);
+
+  test("a latency preset delays every input one round trip and traces its arrival (#415)", () => {
+    const scenario = record();
+    const preset = NETWORK_PRESETS.find((entry) => entry.roundTripMs === 100)!;
+    const network = JSON.stringify({ roundTripMs: preset.roundTripMs, jitterMs: 0, compensate: true });
+    const run = JSON.parse(wasm.actionLabRun(JSON.stringify(scenario), JSON.stringify(baseline()), network)) as LabRun;
+    const rtt = Math.round((preset.roundTripMs * TICK_HZ) / 1_000);
+    expect(run.commands.map((command) => command.arrivedTick)).toEqual(scenario.commands.map((command) => command.tick + rtt));
+    expect(arrivalText(run.commands[0]!)).toStartWith(`+${rtt} t`);
+    const local = JSON.parse(wasm.actionLabRun(JSON.stringify(scenario), JSON.stringify(baseline()), LOCAL)) as LabRun;
+    expect(arrivalText(local.commands[0]!)).toStartWith("on time");
+    expect(run.summary.finalDigest).not.toBe(local.summary.finalDigest);
   }, 30_000);
 
   test("experimental configurations are validated, isolated and exportable", () => {
@@ -146,7 +160,7 @@ describe("Action Lab experiments (#382)", () => {
     const recording = source.recording();
     source.leave();
     const scenario: LabScenario = { ...record(), name: "running jump", ticks: recording.ticks, commands: [...recording.commands], recorded: null };
-    const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(sample))) as LabComparison;
+    const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(sample), LOCAL)) as LabComparison;
     expect(comparison.divergesAt).not.toBeNull();
     const at = (run: LabRun, tick: number) => run.ticks.find((entry) => entry.tick === tick)!;
     expect(at(comparison.a, 30).speed).toBe(0);
@@ -204,7 +218,7 @@ describe("Action Lab experiments (#382)", () => {
     const recording = source.recording();
     source.leave();
     const scenario: LabScenario = { ...record(), name: "sliding slash", ticks: recording.ticks, commands: [...recording.commands], recorded: null };
-    const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(sample))) as LabComparison;
+    const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(sample), LOCAL)) as LabComparison;
     expect(comparison.divergesAt).not.toBeNull();
     expect(comparison.b.ticks.some((tick) => tick.regions.some((region) => region.startsWith("Authored(0)·Startup")))).toBe(true);
   }, 30_000);
@@ -214,7 +228,7 @@ describe("Action Lab diagnostics and promotion (#383)", () => {
   test("runs carry explained findings, and only an explicitly chosen saved version is promoted", () => {
     const scenario = record();
     const production = baseline();
-    const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(production))) as LabComparison;
+    const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(production), LOCAL)) as LabComparison;
     // The jump-and-swing scenario never runs the directed slash: its combo edge is not exercised.
     expect(comparison.a.findings.some((finding) => finding.kind === "unreachableTransition" && finding.severity === "note")).toBe(true);
     expect(comparison.regressions).toEqual([]);

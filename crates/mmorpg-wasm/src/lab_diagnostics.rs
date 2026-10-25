@@ -568,6 +568,9 @@ mod tests {
             refused,
             effect_tick: None,
             delay_ticks: None,
+            arrived_tick: Some(tick),
+            observed_tick: None,
+            late_ticks: 0,
             arbitration: Some(Arbitration {
                 input: ActionInput::ShieldBash,
                 outcome,
@@ -579,6 +582,8 @@ mod tests {
                     ),
                 ],
                 precise: false,
+                late: 0,
+                compensated: false,
             }),
         }
     }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { encodeCommand, STRIKE_HEIGHTS, STRIKE_SIDES, type Axis, type WorldCommand } from "../src/command-wire";
+import { encodeCommand, encodeObservedCommand, STRIKE_HEIGHTS, STRIKE_SIDES, type Axis, type WorldCommand } from "../src/command-wire";
 import { entityKindFromCode } from "../src/entity-ref";
 import { EMOTES } from "../src/replication";
 
@@ -98,7 +98,7 @@ function command(fields: readonly string[]): WorldCommand {
   }
 }
 
-function fixtureCommands(): { hex: string; command: WorldCommand }[] {
+function fixtureCommands(): { hex: string; command: WorldCommand; observed: bigint | null }[] {
   return fixture
     .split("\n")
     .filter((line) => line.length > 0 && !line.startsWith("#"))
@@ -107,7 +107,10 @@ function fixtureCommands(): { hex: string; command: WorldCommand }[] {
       if (!hex) {
         throw new Error("Empty fixture line");
       }
-      return { hex, command: command(fields) };
+      if (fields[0] === "observed") {
+        return { hex, command: command(fields.slice(2)), observed: BigInt(fields[1] ?? "") };
+      }
+      return { hex, command: command(fields), observed: null };
     });
 }
 
@@ -122,9 +125,13 @@ describe("Rust/browser command contract", () => {
     ]);
     expect(commands.filter(({ command }) => command.kind === "move").length).toBeGreaterThanOrEqual(4);
     expect(commands.filter(({ command }) => command.kind === "select-target").length).toBe(4);
-    for (const { hex, command } of commands) {
-      expect(Buffer.from(encodeCommand(command)).toString("hex")).toBe(hex);
+    expect(commands.filter(({ observed }) => observed !== null).length).toBe(3);
+    for (const { hex, command, observed } of commands) {
+      const bytes = observed === null ? encodeCommand(command) : encodeObservedCommand(command, observed);
+      expect(Buffer.from(bytes).toString("hex")).toBe(hex);
     }
+    expect(() => encodeObservedCommand({ kind: "jump" }, -1n)).toThrow();
+    expect(() => encodeObservedCommand({ kind: "jump" }, 1n << 64n)).toThrow();
   });
 
   test("rejects intent the Rust decoder would reject", () => {

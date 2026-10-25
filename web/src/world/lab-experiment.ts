@@ -262,7 +262,11 @@ export type LabEdgeTrace = {
   openUntil: number | null; precision: [number, number] | null;
 };
 /** How the zone arbitrated a command's graph input (Atlas 5.7.4). */
-export type LabDecision = { input: string; outcome: string; candidates: { candidate: string; verdict: string }[]; precise: boolean };
+export type LabDecision = {
+  input: string; outcome: string; candidates: { candidate: string; verdict: string }[]; precise: boolean;
+  /** Ticks of lateness the zone made up for, and whether they kept the winning edge open (#415). */
+  late: number; compensated: boolean;
+};
 export type LabTick = {
   tick: number; regions: string[]; events: string[]; health: number; resource: number | null;
   /** Body centre in cm and horizontal speed in cm/s after the tick's physics step (#413). */
@@ -271,6 +275,9 @@ export type LabTick = {
 };
 export type LabCommandResult = {
   index: number; tick: number; label: string; refused: string[]; effectTick: number | null; delayTicks: number | null;
+  /** Under the run's simulated network (#415): when the input reached the zone, the tick it was made against, its lateness. */
+  arrivedTick: number | null; observedTick: number | null; lateTicks: number;
+  /** How the zone arbitrated the input on arrival, for inputs the action graph judges. */
   decision: LabDecision | null;
 };
 /** An explained diagnostic (#383, Atlas 5.6.6): never a claim that a configuration is better. */
@@ -284,6 +291,34 @@ export type LabFinding = {
     decision: LabDecision | null; command: number | null; divergesAt: number | null;
   };
 };
+
+/** A simulated network between the scenario's player and the lab world (#415). */
+export type LabNetwork = { roundTripMs: number; jitterMs: number; compensate: boolean };
+
+/** Illustrative latency presets, not production thresholds (Atlas 5.9.6). */
+export const NETWORK_PRESETS: readonly { name: string; roundTripMs: number; jitterMs: number }[] = [
+  { name: "Local (0 ms)", roundTripMs: 0, jitterMs: 0 },
+  { name: "50 ms ±10", roundTripMs: 50, jitterMs: 10 },
+  { name: "100 ms ±20", roundTripMs: 100, jitterMs: 20 },
+  { name: "200 ms ±40", roundTripMs: 200, jitterMs: 40 },
+];
+
+export const LOCAL_NETWORK: LabNetwork = { roundTripMs: 0, jitterMs: 0, compensate: true };
+
+/** A command's arrival and arbitration under its run's network, in one short line. */
+export function arrivalText(result: LabCommandResult): string {
+  if (result.arrivedTick === null) { return "never arrived"; }
+  const travel = result.arrivedTick - result.tick;
+  const parts = [travel === 0 ? "on time" : `+${travel} t`];
+  if (result.observedTick !== null) { parts.push(`late ${result.lateTicks} t`); }
+  const arbitration = result.decision;
+  if (arbitration) {
+    parts.push(arbitration.outcome);
+    if (arbitration.compensated) { parts.push("kept open by lateness"); }
+    if (arbitration.precise) { parts.push("precise"); }
+  }
+  return parts.join(" · ");
+}
 export type LabRun = {
   config: string; configName: string; baseline: boolean; contentRevision: string; contentChanged: boolean;
   reproducesRecording: boolean | null;
