@@ -8,6 +8,7 @@ use game_server::{
     Welcome,
 };
 use mmorpg_core::{EntityKind, EntityRef, TICK_HZ, ZoneCommand, ZoneId, ZoneSnapshot};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::BTreeSet, error::Error, fmt, path::Path, time::Duration};
 use tokio::sync::Mutex;
 use url::Url;
@@ -112,6 +113,9 @@ pub struct ClientSession {
     sequence: u32,
     /// Facing of the latest movement intent, reused by the stopped resume intent.
     facing: u16,
+    /// One more than the newest projection tick received, 0 before the first
+    /// (#415); combo inputs report it as their observation.
+    observed: AtomicU64,
     resume_available: bool,
     zone_id: ZoneId,
     content_revision: u64,
@@ -150,6 +154,7 @@ impl ClientSession {
                 welcome,
                 sequence: 0,
                 facing: 0,
+                observed: AtomicU64::new(0),
                 resume_available: true,
                 zone_id,
                 content_revision,
@@ -426,7 +431,16 @@ impl ClientSession {
             .sequence
             .checked_add(1)
             .ok_or(SessionError::SequenceExhausted)?;
-        let payload = mmorpg_protocol::encode_command(command);
+        // Combo inputs report the newest projection they were made against, so
+        // the zone can make up for their travel time within its bounded grace
+        // (#415); it still judges them on arrival.
+        let observed = self.observed.load(Ordering::Relaxed).checked_sub(1);
+        let payload = match (command, observed) {
+            (ZoneCommand::UseAbility { .. } | ZoneCommand::DirectedStrike { .. }, Some(tick)) => {
+                mmorpg_protocol::encode_observed_command(command, tick)
+            }
+            _ => mmorpg_protocol::encode_command(command),
+        };
         let frame = game_server::encode_command(sequence, &payload)
             .map_err(|error| SessionError::InvalidData(error.into()))?;
         self.connection
@@ -457,6 +471,8 @@ impl ClientSession {
                     if self.durable_character && snapshot.viewer.class.is_none() {
                         continue;
                     }
+                    self.observed
+                        .fetch_max(snapshot.tick.saturating_add(1), Ordering::Relaxed);
                     return Ok(snapshot);
                 }
             }

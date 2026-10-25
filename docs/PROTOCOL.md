@@ -42,6 +42,7 @@ The shared session runtime supplies player identity, connection epoch and comman
 | Repair | 4 | `[protocol, tag = 24, piece: u16]` (0 stops, else the piece ID + 1) |
 | Rise | 3 | `[protocol, tag = 25, rise: i8]` (1 ascends, -1 descends, 0 neither) |
 | CommandMinions | 11 | `[protocol, tag = 26, order: u8, body: 8 bytes]` (see [Summoned minions](#summoned-minions-295)) |
+| Observed | 9 + inner | `[protocol, tag = 27, observed: u64, inner command without its protocol byte]` (see [Observed commands](#observed-commands-and-late-combo-inputs-415)) |
 
 Version 14 adds `Rise` (tag 25, #274): held swim intent like `Move`, kept until the next `Rise`. It acts only while the player swims (feet more than 1.3 m under a water volume's surface) and is otherwise ignored; values outside -1..=1 are malformed payloads.
 
@@ -697,3 +698,21 @@ A Druid's wolf companion is a minion whose appearance is Call Companion (46; eff
 a companion, without a duration), so content revisions (hashes) change. Each owner keeps one; it is
 not timed (its canonical remaining ticks are always zero), outlives its owner's death and obeys the
 same `CommandMinions` orders. Layouts are unchanged.
+
+## Observed commands and late combo inputs (#415)
+
+An online client may wrap a timing-sensitive command (the browser and native clients wrap
+`UseAbility` and `DirectedStrike`) as `Observed` (tag 27): `[protocol, tag = 27, observed: u64,
+inner tag, inner fields]`, the inner command without its protocol byte. `observed` is the newest
+completed zone tick whose projection the client had received; an observed command cannot wrap
+another. The zone fails closed on an observation ahead of its current tick or older than the
+player's previous one, like a stale sequence. The command's pending intent is **late** by the ticks
+the zone completed between the observation and its arrival, at most `LATE_INPUT_GRACE_MS` (150 ms,
+9 ticks). An action-graph edge whose window closed no more than that many ticks before the intent
+resolves is still open for it; a precision window counts only on arrival, never through lateness;
+nothing is backdated, every other rule reads the arrival state, and a plain command is never late.
+The slash → Shield Bash opening is therefore kept canonically for the grace after its window
+closes, invisible to projections and inspection except to a late enough input.
+
+Canonical player records gain a lateness byte before each pending intent and the player's last
+observation (`u64`) after the dropped-intent flag. Layouts change, so the protocol ID changed.

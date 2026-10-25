@@ -35,6 +35,10 @@ const USE_DOOR_TAG: u8 = 23;
 const REPAIR_TAG: u8 = 24;
 const RISE_TAG: u8 = 25;
 const COMMAND_MINIONS_TAG: u8 = 26;
+/// Wraps another command with the zone tick its client had observed (#415).
+const OBSERVED_TAG: u8 = 27;
+/// Version, tag, observed tick (u64), before the inner command's tag.
+const OBSERVED_PREFIX_BYTES: usize = 10;
 /// Version, tag, minion order (9 bytes, #295).
 const COMMAND_MINIONS_COMMAND_BYTES: usize = 2 + crate::wire::MINION_ORDER_BYTES;
 /// Version, tag, rise (i8: -1, 0 or 1).
@@ -193,6 +197,43 @@ fn decode_trade(payload: &[u8], name: &str) -> Result<(NpcId, u8, u16), Protocol
         *index,
         u16::from_be_bytes([*q0, *q1]),
     ))
+}
+
+/// `command` sent after the client had observed the zone's completed tick
+/// `observed` (#415, docs/PROTOCOL.md): version, the observed tag, the tick
+/// (u64), then the inner command's tag and fields.
+#[must_use]
+pub fn encode_observed_command(command: ZoneCommand, observed: u64) -> Vec<u8> {
+    let inner = encode_command(command);
+    let mut payload = Vec::with_capacity(OBSERVED_PREFIX_BYTES + inner.len() - 1);
+    payload.extend_from_slice(&[PROTOCOL_BYTE, OBSERVED_TAG]);
+    payload.extend_from_slice(&observed.to_be_bytes());
+    payload.extend_from_slice(&inner[1..]);
+    payload
+}
+
+/// Decodes a plain or an observed command: the command and, for an observed
+/// one, the zone tick its client had observed. An observed command cannot
+/// wrap another.
+pub fn decode_observed_command(
+    payload: &[u8],
+) -> Result<(ZoneCommand, Option<u64>), ProtocolError> {
+    let [version, tag, rest @ ..] = payload else {
+        return Err(ProtocolError::new("command payload is truncated"));
+    };
+    if *tag != OBSERVED_TAG {
+        return decode_command(payload).map(|command| (command, None));
+    }
+    let Some((tick, inner)) = rest.split_first_chunk::<8>() else {
+        return Err(ProtocolError::new("observed command payload is truncated"));
+    };
+    if inner.first() == Some(&OBSERVED_TAG) {
+        return Err(ProtocolError::new("an observed command cannot nest"));
+    }
+    let mut plain = Vec::with_capacity(1 + inner.len());
+    plain.push(*version);
+    plain.extend_from_slice(inner);
+    Ok((decode_command(&plain)?, Some(u64::from_be_bytes(*tick))))
 }
 
 pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
@@ -806,13 +847,41 @@ mod tests {
             ZoneCommand::CommandMinions(MinionOrder::Defend([-1_234, 56_789])),
             ZoneCommand::CommandMinions(MinionOrder::Retreat),
         ];
+        // Observed commands (#415): the inner command after `observed <tick>`.
+        let observed = [
+            (
+                ZoneCommand::UseAbility {
+                    ability: 3,
+                    target: Some(EntityRef::Creature(CreatureId::new(108))),
+                },
+                1_234,
+            ),
+            (
+                ZoneCommand::DirectedStrike {
+                    ability: 1,
+                    facing: 16_384,
+                    aim: StrikeAim::new(StrikeSide::Left, StrikeHeight::High),
+                },
+                u64::MAX,
+            ),
+            (ZoneCommand::Jump, 0),
+        ];
         let mut fixture =
             String::from("# Command golden fixture, verified by mmorpg-protocol and web tests.\n");
-        for command in commands {
-            let hex = encode_command(command)
+        for (command, observed) in commands
+            .into_iter()
+            .map(|command| (command, None))
+            .chain(observed.map(|(command, tick)| (command, Some(tick))))
+        {
+            let bytes = match observed {
+                Some(tick) => encode_observed_command(command, tick),
+                None => encode_command(command),
+            };
+            let hex = bytes
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<String>();
+            let prefix = observed.map_or_else(String::new, |tick| format!("observed {tick} "));
             let fields = match command {
                 ZoneCommand::Move {
                     forward,
@@ -905,7 +974,7 @@ mod tests {
                     quantity,
                 } => format!("move_item {source} {destination} {quantity}"),
             };
-            fixture.push_str(&format!("{hex} {fields}\n"));
+            fixture.push_str(&format!("{hex} {prefix}{fields}\n"));
         }
         fixture
     }
@@ -935,8 +1004,34 @@ mod tests {
                 .step_by(2)
                 .map(|offset| u8::from_str_radix(&hex[offset..offset + 2], 16).unwrap())
                 .collect::<Vec<_>>();
-            assert_eq!(encode_command(decode_command(&bytes).unwrap()), bytes);
+            let encoded = match decode_observed_command(&bytes).unwrap() {
+                (command, Some(tick)) => encode_observed_command(command, tick),
+                (command, None) => encode_command(command),
+            };
+            assert_eq!(encoded, bytes);
         }
+    }
+
+    #[test]
+    fn observed_commands_wrap_exactly_one_plain_command() {
+        let observed = encode_observed_command(ZoneCommand::StartAttack, 77);
+        assert!(
+            decode_command(&observed).is_err(),
+            "plain decoding is strict"
+        );
+        assert_eq!(
+            decode_observed_command(&observed).unwrap(),
+            (ZoneCommand::StartAttack, Some(77))
+        );
+        assert_eq!(
+            decode_observed_command(&encode_command(ZoneCommand::Jump)).unwrap(),
+            (ZoneCommand::Jump, None)
+        );
+        let mut nested = observed[..10].to_vec();
+        nested.extend_from_slice(&observed[1..]);
+        assert!(decode_observed_command(&nested).is_err());
+        assert!(decode_observed_command(&observed[..9]).is_err());
+        assert!(decode_observed_command(&observed[..10]).is_err());
     }
 
     #[test]

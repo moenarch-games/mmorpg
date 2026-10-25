@@ -9,13 +9,13 @@ import { PROTOCOL_ID } from "../protocol-id";
 import { ticksFromMs } from "../replication";
 import { element, type LabSetup } from "./action-lab";
 import {
-  addLandingEdge, copyConfig, exportBundle, importFile, insertCopy, isMovement, LANDING_EDGES, MOVEMENT_PHASES, moveCommand,
-  movementRule, promoteCommand, promotionFileName, promotionRequest, recoveryOverride, removeAuthored, removeCommand, removeEdge,
+  addLandingEdge, copyConfig, exportBundle, importFile, arrivalText, insertCopy, isMovement, LANDING_EDGES, LOCAL_NETWORK, MOVEMENT_PHASES, moveCommand,
+  movementRule, NETWORK_PRESETS, promoteCommand, promotionFileName, promotionRequest, recoveryOverride, removeAuthored, removeCommand, removeEdge,
   ruleApplies, setAuthored, setDuration, setMovementRule, setRecoveryOverride, setRuleApplies, shortLabel, slidingSlashSample,
   swimmingSample, traversalSample, INPUT_CONTEXTS, SCENARIO_FORMAT,
   type ConfigCheck, type LabAuthoredAction, type LabAuthoredPhase, type LabComparison, type LabConfig, type LabConfigEdge,
   type LabConfigVersion, type LabEffect, type LabFinding,
-  type LabLibrary, type LabRun, type LabScenario,
+  type LabLibrary, type LabNetwork, type LabRun, type LabScenario,
 } from "./lab-experiment";
 import type { LabExperiments } from "./wasm-runtime";
 
@@ -80,6 +80,8 @@ export class ExperimentPanel {
   /** The configuration the arena runs now. */
   #live: Slot | null = null;
   #comparison: LabComparison | null = null;
+  /** The simulated network the comparison runs across (#415). */
+  #network: LabNetwork = LOCAL_NETWORK;
   #error: string | null = null;
   #refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -177,7 +179,7 @@ export class ExperimentPanel {
     const scenario = this.#scenario;
     if (scenario && !this.#checks.a.error && !this.#checks.b.error) {
       try {
-        this.#comparison = this.#runtime.compare(scenario, this.#configs.a, this.#configs.b);
+        this.#comparison = this.#runtime.compare(scenario, this.#configs.a, this.#configs.b, this.#network);
       } catch (error) {
         this.#error = error instanceof Error ? error.message : String(error);
       }
@@ -246,6 +248,7 @@ export class ExperimentPanel {
           button("✕", "Remove", () => removeCommand(scenario, index))),
         element("td", { className: "lab-label", title: result?.label ?? command.bytes }, shortLabel(result?.label ?? command.bytes)),
         element("td", { title: "Input-to-effect delay under A / B" }, `${delay(result)} / ${delay(other)}`),
+        element("td", { title: "Arrival at the zone and its arbitration under A and the simulated network" }, result ? arrivalText(result) : "—"),
         element("td", { className: result?.refused.length ? "lab-refused" : "" }, result?.refused.length ? `refused ${result.refused.join(", ")}` : "ok"))];
     });
     const recorded = scenario.recorded
@@ -260,7 +263,7 @@ export class ExperimentPanel {
       element("label", {}, "Duration (ticks) ", duration),
       element("label", {}, " ", showMovement, ` Show movement (${movement})`),
       element("div", { className: "lab-scroll" }, element("table", { className: "lab-table" },
-        element("thead", {}, element("tr", {}, ...["Tick", "Edit", "Command", "Delay A/B", "Result A"].map((text) => element("th", {}, text)))),
+        element("thead", {}, element("tr", {}, ...["Tick", "Edit", "Command", "Delay A/B", "Arrival A", "Result A"].map((text) => element("th", {}, text)))),
         element("tbody", {}, ...rows))));
   }
 
@@ -504,6 +507,28 @@ export class ExperimentPanel {
       ] : []));
   }
 
+  /** The simulated network both runs cross (#415): a latency/jitter preset and the zone's late-input grace. */
+  #networkControls(): HTMLElement[] {
+    const preset = element("select", { title: "Simulated round trip and jitter between the player and the zone (illustrative presets)" });
+    for (const [index, entry] of NETWORK_PRESETS.entries()) {
+      const option = element("option", { value: String(index) }, entry.name);
+      option.selected = entry.roundTripMs === this.#network.roundTripMs && entry.jitterMs === this.#network.jitterMs;
+      preset.append(option);
+    }
+    preset.addEventListener("change", () => {
+      const chosen = NETWORK_PRESETS[Number(preset.value)] ?? NETWORK_PRESETS[0]!;
+      this.#network = { ...this.#network, roundTripMs: chosen.roundTripMs, jitterMs: chosen.jitterMs };
+      this.#compare();
+    });
+    const compensate = element("input", { type: "checkbox", title: "Combo inputs report the tick they were made against, so the zone's bounded grace applies" });
+    compensate.checked = this.#network.compensate;
+    compensate.addEventListener("change", () => {
+      this.#network = { ...this.#network, compensate: compensate.checked };
+      this.#compare();
+    });
+    return [element("label", {}, "Network ", preset), element("label", {}, compensate, " late-input grace")];
+  }
+
   #renderComparison(): void {
     const action = (text: string, run: () => void, title = "") => {
       const node = element("button", { type: "button", title }, text);
@@ -514,7 +539,8 @@ export class ExperimentPanel {
     const header = element("div", { className: "lab-playback" },
       action("Replay A", () => void this.#replay("a", null), "Replay the scenario in the arena under A"),
       action("Replay B", () => void this.#replay("b", null), "Replay the scenario in the arena under B"),
-      action("Compare", () => this.#compare(), "Run the scenario under A and B"));
+      action("Compare", () => this.#compare(), "Run the scenario under A and B"),
+      ...this.#networkControls());
     const error = this.#error ? [element("p", { className: "lab-refused" }, this.#error)] : [];
     const comparison = this.#comparison;
     if (!scenario || !comparison) {

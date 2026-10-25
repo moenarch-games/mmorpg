@@ -96,6 +96,22 @@ pub enum PlayerIntent {
     },
 }
 
+/// A pending intent and the ticks of lateness its command's observation
+/// reported (Atlas 5.9.6, #415): at most
+/// [`crate::action::LATE_INPUT_GRACE_TICKS`], 0 without an observation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct QueuedIntent {
+    pub intent: PlayerIntent,
+    pub late: u8,
+}
+
+impl From<PlayerIntent> for QueuedIntent {
+    /// An intent that is not late.
+    fn from(intent: PlayerIntent) -> Self {
+        Self { intent, late: 0 }
+    }
+}
+
 /// A creature's decision state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CreatureAi {
@@ -145,10 +161,13 @@ pub struct CanonicalPlayerCombat {
     pub calm_ticks: u16,
     pub error_cooldown: u16,
     /// Queued intents in sequence order.
-    pub intents: Vec<PlayerIntent>,
+    pub intents: Vec<QueuedIntent>,
     /// A later intent found the queue full and was dropped; the next tick
     /// reports it. Only a full queue drops intents.
     pub intents_dropped: bool,
+    /// The latest zone tick a command of the player reported having observed
+    /// (#415); a later observation may not be older. 0 before the first.
+    pub last_observed: u64,
     /// Events of the current tick.
     pub events: Vec<ZoneEvent>,
     pub abilities: CanonicalPlayerAbilities,
@@ -207,6 +226,7 @@ impl Default for CanonicalPlayerCombat {
             error_cooldown: 0,
             intents: Vec::new(),
             intents_dropped: false,
+            last_observed: 0,
             events: Vec::new(),
             abilities: CanonicalPlayerAbilities::default(),
             landing: crate::LandingState::default(),
@@ -346,6 +366,7 @@ impl ZoneSimulation {
                         error_cooldown: state.error_cooldown,
                         intents: state.intents.clone(),
                         intents_dropped: state.intents_dropped,
+                        last_observed: state.last_observed,
                         events: state.events.clone(),
                         abilities: CanonicalPlayerAbilities {
                             class: state.class,
@@ -608,6 +629,14 @@ impl ZoneSimulation {
         if combat.intents_dropped && combat.intents.len() != MAX_PENDING_INTENTS {
             return Err(ZoneError::new("only a full intent queue drops intents"));
         }
+        if combat.last_observed > self.tick
+            || combat
+                .intents
+                .iter()
+                .any(|queued| queued.late > crate::action::LATE_INPUT_GRACE_TICKS)
+        {
+            return Err(ZoneError::new("player observation state is out of range"));
+        }
         if combat.health == 0 && combat.auto_attack {
             return Err(ZoneError::new("a dead player cannot auto-attack"));
         }
@@ -692,6 +721,7 @@ impl ZoneSimulation {
                 error_cooldown: combat.error_cooldown,
                 intents: combat.intents,
                 intents_dropped: combat.intents_dropped,
+                last_observed: combat.last_observed,
                 events: combat.events,
                 class: combat.abilities.class,
                 resource: ResourceClock {

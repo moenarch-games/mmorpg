@@ -3,7 +3,7 @@
 //! Presentation only; the authoritative body box still comes from content.
 use crate::world::{DrawMaterial, SceneDraw};
 use mmorpg_presentation::units::{
-    imported::{Kind, Layer, Loadout, Mask, UPPER_BODY_ROOT},
+    imported::{DROP_ARMOR_OUTFIT, Kind, Layer, Loadout, Mask, Outfit, UPPER_BODY_ROOT},
     kit::{Frame, model},
     player::Hat,
 };
@@ -146,6 +146,7 @@ impl Channel {
     }
 }
 
+#[derive(Clone)]
 struct Primitive {
     /// The glTF node drawing it, so a look can hide named parts (the Ranger's hood).
     node: Option<String>,
@@ -589,6 +590,41 @@ impl Model {
         Some(joint)
     }
 
+    /// Gives the `names` materials the linear base colour `to` in place of their authored `from`,
+    /// like the browser's tint of a material's colour.
+    fn retint(&mut self, names: &[String], from: [f32; 3], to: [f32; 3]) {
+        let factor: [f32; 3] = std::array::from_fn(|i| srgb(to[i]) / srgb(from[i]).max(1e-4));
+        for p in &mut self.primitives {
+            if p.material.as_ref().is_some_and(|name| names.contains(name)) {
+                for c in &mut p.colors {
+                    *c = Color3::new(c.r * factor[0], c.g * factor[1], c.b * factor[2]);
+                }
+            }
+        }
+    }
+
+    /// The model of glTF node `node` alone: one armour plate of a multi-plate entry.
+    fn piece(&self, node: &str) -> Self {
+        Self {
+            rest: self.rest.clone(),
+            parents: self.parents.clone(),
+            order: self.order.clone(),
+            primitives: self
+                .primitives
+                .iter()
+                .filter(|p| p.node.as_deref() == Some(node))
+                .cloned()
+                .collect(),
+            clips: BTreeMap::new(),
+            names: self.names.clone(),
+            upper: self.upper.clone(),
+            floor: self.floor,
+            height: self.height,
+            centre: self.centre,
+            head: None,
+        }
+    }
+
     /// Recolours the `names` materials by a linear base colour factor, like the browser's tint.
     fn tint(&mut self, names: &[String], factor: [f32; 3]) {
         let factor = factor.map(srgb);
@@ -1001,14 +1037,17 @@ impl Equipment {
         }
     }
 
-    /// The socket items of a loadout (asset-tooling #375): the sword and shield, the sword, the
-    /// dagger or a class staff in the right hand. The bow and quiver are not drawn natively yet.
-    pub fn loadout(loadout: Loadout) -> Option<&'static Self> {
+    /// The socket items of a loadout (asset-tooling #375, #379): the sword and shield, the
+    /// stowed bow and quiver, the sword, the dagger, a class staff, the crystal staff and tome,
+    /// or the mace. The bow rests in its bind pose on the back.
+    pub fn loadout(loadout: Loadout) -> &'static Self {
         static SWORD_AND_SHIELD: OnceLock<Equipment> = OnceLock::new();
+        static BOW_AND_QUIVER: OnceLock<Equipment> = OnceLock::new();
         static SWORD: OnceLock<Equipment> = OnceLock::new();
         static DAGGER: OnceLock<Equipment> = OnceLock::new();
         static BONE: OnceLock<Equipment> = OnceLock::new();
-        static GILDED: OnceLock<Equipment> = OnceLock::new();
+        static CRYSTAL_AND_TOME: OnceLock<Equipment> = OnceLock::new();
+        static MACE: OnceLock<Equipment> = OnceLock::new();
         static GNARLED: OnceLock<Equipment> = OnceLock::new();
         let (cell, items): (_, &[(&str, &str)]) = match loadout {
             Loadout::SwordAndShield => (
@@ -1018,22 +1057,37 @@ impl Equipment {
                     (ranger_bundle::SHIELD, "hand_l.shield"),
                 ],
             ),
+            Loadout::BowAndQuiver => (
+                &BOW_AND_QUIVER,
+                &[
+                    (ranger_bundle::BOW, "back.bow.stowed"),
+                    (ranger_bundle::QUIVER, "back.quiver"),
+                ],
+            ),
             Loadout::Sword => (&SWORD, &[(ranger_bundle::SWORD, "hand_r.weapon")]),
             Loadout::Dagger => (&DAGGER, &[(ranger_bundle::DAGGER, "hand_r.weapon")]),
             Loadout::BoneStaff => (&BONE, &[(ranger_bundle::BONE_STAFF, "hand_r.staff")]),
-            Loadout::GildedStaff => (&GILDED, &[(ranger_bundle::GILDED_STAFF, "hand_r.staff")]),
+            // The tome is held like a shield: spine along the forearm.
+            Loadout::CrystalStaffAndTome => (
+                &CRYSTAL_AND_TOME,
+                &[
+                    (ranger_bundle::CRYSTAL_STAFF, "hand_r.staff"),
+                    (ranger_bundle::TOME, "hand_l.shield"),
+                ],
+            ),
+            Loadout::FlangedMace => (&MACE, &[(ranger_bundle::MACE, "hand_r.weapon")]),
             Loadout::GnarledStaff => (&GNARLED, &[(ranger_bundle::GNARLED_STAFF, "hand_r.staff")]),
-            Loadout::BowAndQuiver => return None,
         };
-        Some(cell.get_or_init(|| Self::of(items)))
+        cell.get_or_init(|| Self::of(items))
     }
 
-    /// The authored headwear item worn on the head (#374); the hood is the character's own part.
+    /// The authored headwear item worn on the head (#374); the hood is the character's own part
+    /// and the class headwear the outfit's (#379).
     pub fn headwear(hat: Hat) -> Option<&'static Self> {
         static CAP: OnceLock<Equipment> = OnceLock::new();
         static HELM: OnceLock<Equipment> = OnceLock::new();
         match hat {
-            Hat::Hood => None,
+            Hat::Hood | Hat::Class => None,
             Hat::Cap => Some(CAP.get_or_init(|| Self::of(&[(ranger_bundle::CAP, "head.armor")]))),
             Hat::Helm => {
                 Some(HELM.get_or_init(|| Self::of(&[(ranger_bundle::HELM, "head.armor")])))
@@ -1061,10 +1115,11 @@ fn strings(value: &serde_json::Value) -> Vec<String> {
 }
 
 /// Whether the viewer's headwear hides the hair (#376): the hood, or an item whose
-/// `humanoid-appearance` headwear entry lists `hair`.
+/// `humanoid-appearance` headwear entry lists `hair`. The class headwear hides it only under
+/// the outfit's own hood ([`ClassOutfit::hood`]).
 pub fn hides_hair(hat: Option<Hat>) -> bool {
     let entry = match hat {
-        None => return false,
+        None | Some(Hat::Class) => return false,
         Some(Hat::Hood) => return true,
         Some(Hat::Cap) => ranger_bundle::CAP_KEY,
         Some(Hat::Helm) => ranger_bundle::HELM_KEY,
@@ -1121,6 +1176,148 @@ pub fn hood_nodes() -> &'static [String] {
             .iter()
             .map(|node| node.as_str().expect("a hood node name").to_owned())
             .collect()
+    })
+}
+
+/// Armour plates on their `humanoid-sockets` sockets, authored in rest model space with the
+/// socket as origin: the socket id, the plate and its joint and socket transform.
+pub(super) struct Plates {
+    items: Vec<(String, Model, &'static str, three_d_animation::Mat4)>,
+}
+
+impl Plates {
+    /// The `pieces` (`{node, socket}`) of the armour entry embedded at `path`.
+    fn of(path: &str, pieces: &serde_json::Value) -> Self {
+        let descriptor: serde_json::Value =
+            serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
+                .expect("the sockets descriptor is JSON");
+        let armor = Model::parse(ranger_file(path), "").expect("a bundle armour is valid glTF");
+        Self {
+            items: pieces
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|piece| {
+                    let node = piece["node"].as_str().expect("an armour piece node");
+                    let id = piece["socket"].as_str().expect("an armour piece socket");
+                    let (joint, matrix) = socket(&descriptor, id);
+                    (id.to_owned(), armor.piece(node), joint, matrix)
+                })
+                .collect(),
+        }
+    }
+
+    /// Draws of the plates whose socket `keep` accepts, on a character posed at `placement`.
+    pub fn draws(
+        &self,
+        id: &str,
+        character: &Model,
+        placement: three_d_animation::Mat4,
+        pose: &[Layer],
+        tint: Option<[f32; 3]>,
+        keep: impl Fn(&str) -> bool,
+    ) -> Vec<SceneDraw> {
+        let mut draws = Vec::new();
+        for (index, (socket, model, joint, matrix)) in self.items.iter().enumerate() {
+            if !keep(socket) {
+                continue;
+            }
+            let Some(at) = character.joint(joint, pose) else {
+                continue;
+            };
+            let mut held = three_d_animation::Mat4::IDENTITY;
+            held.elements = mul(&mul(&placement.elements, &at.elements), &matrix.elements);
+            draws.extend(model.draws_placed(&format!("{id}-plate-{index}"), held, &[], tint));
+        }
+        draws
+    }
+}
+
+/// The `humanoid-appearance` outfit `id`.
+fn outfit_entry(id: &str) -> &'static serde_json::Value {
+    appearance()["outfits"]
+        .as_array()
+        .and_then(|outfits| outfits.iter().find(|outfit| outfit["id"] == id))
+        .unwrap_or_else(|| panic!("the appearance declares {id}"))
+}
+
+/// A class starter outfit (asset-tooling #379): the character in its outfit variant with the
+/// `classTrim` in the class colour, its armour plates and its own hood garment.
+pub(super) struct ClassOutfit {
+    pub model: Model,
+    pub plates: Plates,
+    /// The glTF nodes of the outfit's hood garment; empty when it has none.
+    pub hood: Vec<String>,
+    /// Whether the preset wears hair (the native client draws the starter hair).
+    pub hair: bool,
+    /// Whether the outfit variant keeps the bundle's own hood for `wayfarer-hood`.
+    pub base_hood: bool,
+}
+
+/// The starter outfit of `outfit`'s class, imported once per process on first use.
+pub(super) fn class_outfit(outfit: Outfit) -> &'static ClassOutfit {
+    static OUTFITS: OnceLock<Vec<OnceLock<ClassOutfit>>> = OnceLock::new();
+    let slots = OUTFITS.get_or_init(|| {
+        ranger_bundle::OUTFITS
+            .iter()
+            .map(|_| OnceLock::new())
+            .collect()
+    });
+    let index = ranger_bundle::OUTFITS
+        .iter()
+        .position(|(preset, _, _)| *preset == outfit.preset())
+        .expect("every class preset is embedded");
+    slots[index].get_or_init(|| {
+        let (preset_id, path, armor) = ranger_bundle::OUTFITS[index];
+        let preset = appearance()["presets"]
+            .as_array()
+            .and_then(|presets| presets.iter().find(|preset| preset["id"] == preset_id))
+            .expect("the appearance declares the class preset");
+        let entry = outfit_entry(preset["outfit"].as_str().expect("a preset outfit"));
+        let mut model = Model::parse_with_clips(
+            ranger_file(path),
+            Kind::Ranger.clips().idle,
+            Some(ranger_file(ranger_bundle::CLIPS)),
+        )
+        .expect("a class outfit is valid glTF");
+        let trim = &entry["classTrim"];
+        let from = trim["defaultBaseColorFactor"]
+            .as_array()
+            .map(|c| std::array::from_fn(|i| c[i].as_f64().unwrap_or(1.) as f32))
+            .expect("the outfit declares its classTrim colour");
+        model.retint(&strings(&trim["materials"]), from, outfit.trim());
+        let hood = entry["garments"]
+            .as_array()
+            .and_then(|garments| {
+                garments
+                    .iter()
+                    .find(|garment| garment["id"] == entry["hood"])
+            })
+            .map(|garment| strings(&garment["nodes"]))
+            .unwrap_or_default();
+        let base_hood = model.primitives.iter().any(|p| {
+            p.node
+                .as_ref()
+                .is_some_and(|node| hood_nodes().contains(node) && !hood.contains(node))
+        });
+        ClassOutfit {
+            base_hood,
+            model,
+            plates: Plates::of(armor, &entry["armor"]["pieces"]),
+            hood,
+            hair: preset["hair"].is_string(),
+        }
+    })
+}
+
+/// The plates equipped drops wear (`imported::DROP_ARMOR_OUTFIT`), imported once.
+pub(super) fn drop_plates() -> &'static Plates {
+    static PLATES: OnceLock<Plates> = OnceLock::new();
+    PLATES.get_or_init(|| {
+        Plates::of(
+            ranger_bundle::DROP_ARMOR,
+            &outfit_entry(DROP_ARMOR_OUTFIT)["armor"]["pieces"],
+        )
     })
 }
 
@@ -1189,6 +1386,46 @@ pub(super) fn asset(kind: Kind) -> &'static Asset {
 #[cfg(test)]
 mod rolling_ranger_tests {
     use super::*;
+
+    #[test]
+    fn class_outfits_wear_their_plates_trim_and_drops_cover_every_armour_socket() {
+        use mmorpg_presentation::units::imported::ARMOR_SOCKETS;
+        for class in mmorpg_core::PlayerClass::ALL {
+            let outfit = Outfit::new(class, None);
+            let worn = class_outfit(outfit);
+            assert!(!worn.plates.items.is_empty(), "{class:?} wears its armour");
+            assert!(worn.model.clips.contains_key(Kind::Ranger.clips().idle));
+            assert!(
+                worn.model
+                    .primitives
+                    .iter()
+                    .any(|p| p.material.as_deref() == Some("class")),
+                "{class:?} has classTrim garments"
+            );
+        }
+        // The Ranger, Rogue and Necromancer outfits carry their own hood.
+        let hooded: Vec<_> = mmorpg_core::PlayerClass::ALL
+            .into_iter()
+            .filter(|&class| !class_outfit(Outfit::new(class, None)).hood.is_empty())
+            .collect();
+        assert_eq!(
+            hooded,
+            [
+                mmorpg_core::PlayerClass::Ranger,
+                mmorpg_core::PlayerClass::Necromancer,
+                mmorpg_core::PlayerClass::Rogue,
+            ]
+        );
+        let drops = drop_plates();
+        for (_, sockets) in ARMOR_SOCKETS {
+            for socket in sockets {
+                assert!(
+                    drops.items.iter().any(|(id, ..)| id == socket),
+                    "a drop covers {socket}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn layered_poses_drive_each_region_from_its_own_clip() {

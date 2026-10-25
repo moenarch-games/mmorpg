@@ -19,7 +19,7 @@ use mmorpg_core::{
     ZoneSimulation, greyhaven_vale,
 };
 use mmorpg_protocol::{
-    ProtocolError, decode_canonical_snapshot, decode_command, encode_canonical_snapshot,
+    ProtocolError, decode_canonical_snapshot, decode_observed_command, encode_canonical_snapshot,
     pack_snapshot,
 };
 
@@ -362,10 +362,15 @@ impl LocalZoneHost {
         if sequence <= *last {
             return Ok(SubmitOutcome::IgnoredStale);
         }
-        let command = decode_command(payload).map_err(LocalZoneError::Command)?;
-        self.zone
-            .apply_command(player_id, sequence, command)
-            .map_err(LocalZoneError::Zone)?;
+        let (command, observed) =
+            decode_observed_command(payload).map_err(LocalZoneError::Command)?;
+        match observed {
+            Some(observed) => self
+                .zone
+                .apply_observed_command(player_id, sequence, command, observed),
+            None => self.zone.apply_command(player_id, sequence, command),
+        }
+        .map_err(LocalZoneError::Zone)?;
         *last = sequence;
         Ok(SubmitOutcome::Applied)
     }

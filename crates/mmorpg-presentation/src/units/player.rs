@@ -7,6 +7,9 @@ pub enum Hat {
     Helm,
     Cap,
     Hood,
+    /// The class starter outfit's own headwear (asset-tooling #379); the procedural stand-in
+    /// has none and shows its hair.
+    Class,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Look {
@@ -189,7 +192,7 @@ const BOOTS: u32 = 0x4c3828;
 fn hat(p: &mut Parts, l: Look, head: Frame, r: f64) {
     let hair = if l.female { 0x8a5632 } else { 0x4a3222 };
     match l.hat {
-        None => p.part(
+        None | Some(Hat::Class) => p.part(
             "hair",
             "blob",
             hair,

@@ -19,8 +19,9 @@ function memoryStorage() {
 }
 
 describe("character customization prototype", () => {
-  test("offers exactly three MVP hat styles", () => {
+  test("offers the class outfit's headwear and three MVP hat styles", () => {
     expect(HAT_OPTIONS.map((option) => option.id)).toEqual([
+      "class",
       "wayfarer-hood",
       "ranger-cap",
       "ironcrest-helm",

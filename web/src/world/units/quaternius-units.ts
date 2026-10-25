@@ -5,20 +5,25 @@ import type { ThreeSceneRenderer } from "@moritzbrantner/three-d-renderer";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EntityRef } from "../../entity-ref";
-import type { ClipLayer, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout } from "../unit-presenter";
+import { characterVisualProfile } from "../../character-visuals";
+import type { CharacterClassId } from "../../character-selection";
+import type { ClassOutfit, ClipLayer, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
 /**
  * What a model carries: a Warden's sword and shield (#156), a Ranger's bow and quiver (#244), the
- * Rogue's dagger, a caster's staff (asset-tooling #375), a guard's sword, or nothing.
+ * Rogue's dagger, a caster's staff (asset-tooling #375), the Arcanist's staff and tome or the
+ * Cleric's mace (#379), a guard's sword, or nothing.
  */
 type Loadout = CarriedLoadout | null;
 /**
- * The viewer's headwear (#374): an authored item on the `head.armor` socket, the bundle's own hood,
- * or none. Units without a viewer style keep the bundle's default look.
+ * The viewer's headwear (#374): the class outfit's own (#379), an authored item on the
+ * `head.armor` socket, the bundle's own hood, or none. Units without a viewer style keep the
+ * bundle's default look.
  */
-export type Headwear = "wayfarer-hood" | "ranger-cap" | "ironcrest-helm" | "none";
+export type Headwear = "class" | "wayfarer-hood" | "ranger-cap" | "ironcrest-helm" | "none";
 const HEADWEAR_ITEMS: Readonly<Record<Headwear, readonly { key: string; socket: string }[]>> = {
+  class: [],
   "wayfarer-hood": [],
   "ranger-cap": [{ key: "equipment.cap.ranger", socket: "head.armor" }],
   "ironcrest-helm": [{ key: "equipment.helm.ironcrest", socket: "head.armor" }],
@@ -35,7 +40,11 @@ const HAIR_VARIANT = "hair-1";
  * How the viewer's Ranger is dressed: carried items, headwear and hair. Units without a viewer
  * look (`headwear` and `hair` null) keep the bundle's default: the hood up, no hair.
  */
-type Dress = { loadout: Loadout; headwear: Headwear | null; hair: Hair | null; face: FaceChoice | null; resident: string | null };
+type Dress = {
+  loadout: Loadout; headwear: Headwear | null; hair: Hair | null; face: FaceChoice | null; resident: string | null;
+  /** A player's class starter outfit (#379), once its preset has loaded. */
+  outfit: ClassOutfit | null;
+};
 /** The viewer's face (#411): a `humanoid-appearance.face` feature id to one of its option ids. */
 export type FaceChoice = Readonly<Record<string, string>>;
 /** One face feature the bundle offers (#411), with its options' morph-target weights. */
@@ -78,6 +87,11 @@ type Asset = {
   instantiate(dress: Dress): Posable;
   /** Loads the residents' appearance presets (#418), Ranger only; resolves once they can be drawn. */
   loadResidents?: () => Promise<void>;
+  /**
+   * Whether a class starter outfit preset (#379) can be drawn, Ranger only; the first ask starts
+   * loading it, and a failed preset stays false (the unit keeps the bundle's default look).
+   */
+  outfitReady?: (preset: string) => boolean;
   /** The face features the drawn entry supports (#411); null when it carries no face morphs. */
   face?: FaceLook | null;
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
@@ -260,7 +274,12 @@ const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; soc
   sword: [{ key: "equipment.sword.arming", socket: "hand_r.weapon" }],
   dagger: [{ key: "equipment.dagger.blackened", socket: "hand_r.weapon" }],
   "staff.bone": [{ key: "equipment.staff.bone", socket: "hand_r.staff" }],
-  "staff.gilded": [{ key: "equipment.staff.gilded", socket: "hand_r.staff" }],
+  // The tome is held like a shield (asset-tooling #379): spine along the forearm.
+  "staff.crystal-and-tome": [
+    { key: "equipment.staff.crystal", socket: "hand_r.staff" },
+    { key: "equipment.book.tome", socket: "hand_l.shield" },
+  ],
+  "mace.flanged": [{ key: "equipment.mace.flanged", socket: "hand_r.weapon" }],
   "staff.gnarled": [{ key: "equipment.staff.gnarled", socket: "hand_r.staff" }],
 };
 
@@ -433,6 +452,20 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     if (!grip && variant === undefined) { throw new Error(`The Ranger bundle's ${key} has no grip frame.`); }
     return [key, { scene, gripInverse: grip ? grip.matrixWorld.clone().invert() : new THREE.Matrix4() }] as const;
   };
+  /** Bundle entries' scenes, loaded once for the residents, the class outfits and the drops. */
+  const scenes = new Map<string, Promise<THREE.Object3D>>();
+  const scene = (key: string, variant: string): Promise<THREE.Object3D> => {
+    const id = `${key}/${variant}`;
+    let loaded = scenes.get(id);
+    if (!loaded) {
+      loaded = loader.loadAsync(url(entryFile(bundleEntry(manifest, key, variant), ".gltf"))).then((result) => {
+        result.scene.updateMatrixWorld(true);
+        return result.scene;
+      });
+      scenes.set(id, loaded);
+    }
+    return loaded;
+  };
   const items = new Map(await Promise.all([
     ...keys.map((key) => load(key)),
     ...Object.values(HAIR_ENTRIES).map((key) => load(key, HAIR_VARIANT)),
@@ -460,14 +493,98 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     }
   };
   let residents: Map<string, ResidentLook> | null = null;
-  const instantiate = ({ loadout, headwear, hair, face: chosen, resident }: Dress): Posable => {
+  /** Loaded class outfit presets (#379): a look, or null while loading or after failing. */
+  const outfits = new Map<string, ResidentLook | null>();
+  /** The drop armour's pieces by socket: what an equipped drop wears (`DROP_ARMOR_OUTFIT`). */
+  let drops: Map<string, THREE.Object3D> | null = null;
+  /** Puts an outfit's or a drop's armour plate on its socket. */
+  const plate = (model: THREE.Object3D, node: THREE.Object3D, socket: string) => {
+    const place = sockets.get(socket);
+    if (!place) { throw new Error(`The Ranger bundle has no socket ${socket}.`); }
+    // Plates and beards are authored in rest model space: their origin is the socket's.
+    attachItem(model, node.clone(), new THREE.Matrix4(), place);
+  };
+  /**
+   * A player in their class starter outfit (#379). The viewer (a chosen `headwear`) keeps their own
+   * face and hair; everyone else wears the preset's face, hair and beards. The chosen headwear
+   * decides the head: the outfit's own hood and head plate (`class`), the outfit's hood or else the
+   * bundle's (`wayfarer-hood`), an item, or nothing. Equipped drops replace the outfit's plates on
+   * the sockets they cover; the class colour stays on the `classTrim` garments.
+   */
+  const dressOutfit = (outfit: ClassOutfit, { loadout, headwear, hair, face: chosen }: Dress): THREE.Object3D => {
+    const preset = outfits.get(outfit.preset);
+    if (!preset) { throw new Error(`The Ranger bundle's class outfit ${outfit.preset} has not loaded.`); }
+    const viewer = headwear !== null;
+    const head = headwear ?? "class";
+    const model = cloneSkinned(preset.character);
+    if (preset.face) { applyFace(model, preset.face, viewer && chosen ? chosen : preset.choice); }
+    const ownHood = (head === "class" || head === "wayfarer-hood") && preset.hood.length > 0;
+    // `outfit.hood` names every variant's hood: the bundle's and the class outfits' own. An outfit
+    // variant without the bundle's hood shows the hair under `wayfarer-hood` instead.
+    const baseHoods = look.hood.filter((hood) => !preset.hood.includes(hood))
+      .flatMap((name) => model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name)) ?? []);
+    const baseHood = head === "wayfarer-hood" && preset.hood.length === 0 && baseHoods.length > 0;
+    for (const node of baseHoods) { node.visible = baseHood; }
+    for (const name of preset.hood) {
+      const node = model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name));
+      if (node) { node.visible = ownHood; }
+    }
+    const items = HEADWEAR_ITEMS[head];
+    for (const piece of preset.pieces) {
+      if (piece.beard) {
+        if (viewer) { continue; }
+        const clone = piece.node.clone();
+        if (piece.tint) { tintMaterials(clone, piece.materials, piece.tint); }
+        attachItem(model, clone, new THREE.Matrix4(), sockets.get(piece.socket)!);
+        continue;
+      }
+      if (outfit.replaced.includes(piece.socket) || (piece.socket === "head.armor" && head !== "class")) { continue; }
+      plate(model, piece.node, piece.socket);
+    }
+    for (const socket of outfit.replaced) {
+      // A chosen headwear item takes the head over a drop's helm.
+      if (socket === "head.armor" && items.length > 0) { continue; }
+      const node = drops?.get(socket);
+      if (node) { plate(model, node, socket); }
+    }
+    const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...items];
+    const hooded = ownHood || baseHood;
+    if (viewer) {
+      const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
+      const hairKey = hair && hair.style !== "bald" && !hairHidden ? HAIR_ENTRIES[hair.style] : null;
+      wear(model, worn, hairKey, hair ? look.tints.get(`tint.${hair.color}`) : undefined);
+    } else {
+      wear(model, worn, hooded ? null : preset.hair, preset.tint);
+    }
+    if (preset.trim) { tintMaterials(model, preset.trim.materials, preset.trim.color); }
+    return model;
+  };
+  const outfitReady = (preset: string): boolean => {
+    if (outfits.has(preset)) { return outfits.get(preset) !== null; }
+    outfits.set(preset, null);
+    void Promise.all([
+      residentLooks(appearance, look, scene, (id) => id === preset),
+      drops ? Promise.resolve(drops) : dropPieces(appearance, scene),
+    ]).then(([looks, pieces]) => {
+      drops = pieces;
+      const loaded = looks.get(preset);
+      if (!loaded) { throw new Error(`The Ranger bundle has no class outfit preset ${preset}.`); }
+      outfits.set(preset, loaded);
+    }).catch((error: unknown) => {
+      console.warn(`The class outfit ${preset} failed to load; keeping the default Ranger look.`, error);
+    });
+    return false;
+  };
+  const instantiate = (dress: Dress): Posable => {
+    const { loadout, headwear, hair, face: chosen, resident } = dress;
+    if (dress.outfit !== null) { return mixerPosable(dressOutfit(dress.outfit, dress), sources); }
     if (resident !== null) {
       const preset = residents?.get(resident);
       if (!preset) { throw new Error(`The Ranger bundle has no resident preset ${resident}.`); }
       const model = cloneSkinned(preset.character);
       if (preset.face) { applyFace(model, preset.face, preset.choice); }
       for (const name of look.hood) {
-        const node = model.getObjectByName(name);
+        const node = model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name));
         if (node) { node.visible = false; }
       }
       for (const piece of preset.pieces) {
@@ -487,11 +604,10 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     if (face && chosen) { applyFace(model, face, chosen); }
     // The bundle's hood is on by default; any other chosen headwear replaces it.
     const hooded = headwear === null || headwear === "wayfarer-hood";
-    for (const name of look.hood) {
-      const node = model.getObjectByName(name);
-      if (!node) { throw new Error(`The Ranger has no hood node ${name}.`); }
-      node.visible = hooded;
-    }
+    // `outfit.hood` also names the class outfits' hoods (#379), absent from the default entry.
+    const hoods = look.hood.flatMap((name) => model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name)) ?? []);
+    if (hoods.length === 0) { throw new Error("The Ranger has none of its outfit.hood nodes."); }
+    for (const node of hoods) { node.visible = hooded; }
     const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(headwear ? HEADWEAR_ITEMS[headwear] : [])];
     const hairHidden = hooded || worn.some(({ key }) => look.hides.get(key)?.includes("hair"));
     const hairKey = hair && hair.style !== "bald" && !hairHidden ? HAIR_ENTRIES[hair.style] : null;
@@ -500,33 +616,64 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   };
   let pending: Promise<void> | null = null;
   const loadResidents = () => {
-    pending ??= residentLooks(appearance, look, async (key, variant) => {
-      const scene = (await loader.loadAsync(url(entryFile(bundleEntry(manifest, key, variant), ".gltf")))).scene;
-      scene.updateMatrixWorld(true);
-      return scene;
-    }).then((looks) => { residents = looks; });
+    pending ??= residentLooks(appearance, look, scene, (id) => id.startsWith("resident."))
+      .then((looks) => { residents = looks; });
     return pending;
   };
   const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
-  const probe = instantiate({ loadout: null, headwear: null, hair: null, face: null, resident: null });
+  const probe = instantiate({ loadout: null, headwear: null, hair: null, face: null, resident: null, outfit: null });
   const measured = measure(probe, rest);
   probe.dispose();
-  return { clips, motions, instantiate, loadResidents, face, ...measured };
+  return { clips, motions, instantiate, loadResidents, outfitReady, face, ...measured };
 }
 
-/** One resident preset resolved against the bundle (#418): its outfit model and what it wears. */
+/** The drop armour outfit's plates by socket (#379), from the bundle's `DROP_ARMOR_OUTFIT`. */
+async function dropPieces(appearance: unknown, load: (key: string, variant: string) => Promise<THREE.Object3D>): Promise<Map<string, THREE.Object3D>> {
+  const outfits = (appearance as { outfits?: OutfitValue[] }).outfits ?? [];
+  const armor = outfits.find((outfit) => outfit.id === DROP_ARMOR_OUTFIT)?.armor;
+  if (!armor || typeof armor.entry !== "string") { throw new Error(`The Ranger bundle has no ${DROP_ARMOR_OUTFIT} armour.`); }
+  const scene = await load(armor.entry, "default");
+  const pieces = new Map<string, THREE.Object3D>();
+  for (const piece of armor.pieces ?? []) {
+    if (typeof piece.node !== "string" || typeof piece.socket !== "string") { continue; }
+    const node = scene.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(piece.node));
+    if (!node) { throw new Error(`The Ranger bundle's ${armor.entry} has no node ${piece.node}.`); }
+    pieces.set(piece.socket, node);
+  }
+  return pieces;
+}
+
+/** The bundle outfit whose plates an equipped drop wears (`imported::DROP_ARMOR_OUTFIT`). */
+const DROP_ARMOR_OUTFIT = "outfit.knight";
+
+/** The class colour of a `class.<id>` preset's `classTrim` (#379): `character-visuals` accent, linear. */
+function classTrimColor(preset: string): [number, number, number] | null {
+  const classId = preset.startsWith("class.") ? preset.slice("class.".length) as CharacterClassId : null;
+  if (!classId) { return null; }
+  const color = new THREE.Color(characterVisualProfile({ classId, sex: "male" }).shoulderColor);
+  return [color.r, color.g, color.b];
+}
+
+/**
+ * One appearance preset resolved against the bundle: a resident's (#418) or a class starter
+ * outfit's (#379) outfit model and what it wears.
+ */
 type ResidentLook = {
   /** The outfit variant for the preset's skin. */
   character: THREE.Object3D;
   face: FaceLook | null;
   choice: FaceChoice;
   /** Armour plates and beards on their sockets, beards tinted like the hair. */
-  pieces: { node: THREE.Object3D; socket: string; materials: readonly string[]; tint: readonly [number, number, number] | null }[];
+  pieces: { node: THREE.Object3D; socket: string; beard: boolean; materials: readonly string[]; tint: readonly [number, number, number] | null }[];
   headwear: string | null;
   hair: string | null;
   tint: readonly [number, number, number] | undefined;
   /** The outfit's faction materials in the preset's colour (linear). */
   faction: { materials: readonly string[]; color: readonly [number, number, number] } | null;
+  /** The outfit's `classTrim` materials in the class colour (linear, #379). */
+  trim: { materials: readonly string[]; color: readonly [number, number, number] } | null;
+  /** The glTF nodes of the outfit's own hood garment, if it has one (#379). */
+  hood: readonly string[];
 };
 
 type PresetValue = {
@@ -537,6 +684,9 @@ type OutfitValue = {
   id?: unknown; skins?: { id?: unknown; variant?: unknown }[];
   armor?: { entry?: unknown; pieces?: { node?: unknown; socket?: unknown }[] };
   faction?: { materials?: unknown };
+  classTrim?: { materials?: unknown };
+  garments?: { id?: unknown; nodes?: unknown }[];
+  hood?: unknown;
 };
 type FacialHairValue = {
   entry?: unknown; options?: { id?: unknown; node?: unknown; socket?: unknown; tintMaterials?: unknown }[];
@@ -544,22 +694,20 @@ type FacialHairValue = {
 };
 
 /**
- * Resolves every `humanoid-appearance.presets` entry (#418): the outfit variant of its skin
- * (`outfits[].skins`), the outfit's armour plates less `hiddenArmor`, the chosen beards in the
- * matching `facialHair.tints` colour, headwear, hair and tint, face and faction colour.
+ * Resolves the `humanoid-appearance.presets` entries `select` picks (#418, #379): the outfit
+ * variant of its skin (`outfits[].skins`), the outfit's armour plates less `hiddenArmor`, the
+ * chosen beards in the matching `facialHair.tints` colour, headwear, hair and tint, face, faction
+ * colour, and a class outfit's `classTrim` in the class colour and its own hood. `load` loads
+ * each entry once.
  */
 export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "tints">,
-  load: (key: string, variant: string) => Promise<THREE.Object3D>): Promise<Map<string, ResidentLook>> {
+  load: (key: string, variant: string) => Promise<THREE.Object3D>,
+  select: (id: string) => boolean = () => true): Promise<Map<string, ResidentLook>> {
   const value = appearance as { presets?: PresetValue[]; outfits?: OutfitValue[]; facialHair?: FacialHairValue };
   const strings = (list: unknown): string[] => (Array.isArray(list) && list.every((item) => typeof item === "string") ? list : []);
   const rgb = (c: unknown): [number, number, number] | null =>
     (Array.isArray(c) && c.length >= 3 ? [Number(c[0]), Number(c[1]), Number(c[2])] : null);
-  const scenes = new Map<string, Promise<THREE.Object3D>>();
-  const scene = (key: string, variant: string) => {
-    const id = `${key}/${variant}`;
-    if (!scenes.has(id)) { scenes.set(id, load(key, variant)); }
-    return scenes.get(id)!;
-  };
+  const scene = load;
   const node = async (key: string, name: string) => {
     // GLTFLoader drops the dots of `knight.breastplate` from node names.
     const found = (await scene(key, "default")).getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name));
@@ -568,7 +716,7 @@ export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "t
   };
   const looks = new Map<string, ResidentLook>();
   for (const preset of value.presets ?? []) {
-    if (typeof preset.id !== "string") { continue; }
+    if (typeof preset.id !== "string" || !select(preset.id)) { continue; }
     const outfit = value.outfits?.find((candidate) => candidate.id === preset.outfit);
     const variant = outfit?.skins?.find((skin) => skin.id === preset.skin)?.variant;
     if (!outfit || typeof variant !== "string") {
@@ -581,7 +729,7 @@ export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "t
     if (armor && typeof armor.entry === "string") {
       for (const piece of armor.pieces ?? []) {
         if (typeof piece.node !== "string" || typeof piece.socket !== "string" || hidden.includes(piece.node)) { continue; }
-        pieces.push({ node: await node(armor.entry, piece.node), socket: piece.socket, materials: [], tint: null });
+        pieces.push({ node: await node(armor.entry, piece.node), socket: piece.socket, beard: false, materials: [], tint: null });
       }
     }
     const tintId = typeof preset.tint === "string" ? preset.tint : null;
@@ -592,10 +740,13 @@ export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "t
       if (!option || typeof facialHair?.entry !== "string" || typeof option.node !== "string" || typeof option.socket !== "string") {
         throw new Error(`The resident preset ${preset.id} names an unknown beard ${id}.`);
       }
-      pieces.push({ node: await node(facialHair.entry, option.node), socket: option.socket, materials: strings(option.tintMaterials), tint: beardTint });
+      pieces.push({ node: await node(facialHair.entry, option.node), socket: option.socket, beard: true, materials: strings(option.tintMaterials), tint: beardTint });
     }
     const factionColor = rgb(preset.faction);
     const factionMaterials = strings(outfit.faction?.materials);
+    const trimMaterials = strings(outfit.classTrim?.materials);
+    const trimColor = classTrimColor(preset.id);
+    const hood = outfit.garments?.find((garment) => garment.id === outfit.hood);
     looks.set(preset.id, {
       character,
       face: faceLookOf(appearance, variant, character),
@@ -605,6 +756,8 @@ export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "t
       hair: typeof preset.hair === "string" ? preset.hair : null,
       tint: tintId ? look.tints.get(tintId) : undefined,
       faction: factionColor && factionMaterials.length > 0 ? { materials: factionMaterials, color: factionColor } : null,
+      trim: trimColor && trimMaterials.length > 0 ? { materials: trimMaterials, color: trimColor } : null,
+      hood: strings(hood?.nodes),
     });
   }
   return looks;
@@ -707,9 +860,10 @@ export class QuaterniusUnits {
       let instance = this.#instances.get(unit.id);
       const dressed = unit.headwear && unit.kind === "Ranger";
       const resident = unit.kind === "Ranger" && this.#residentsLoaded ? unit.resident : null;
-      const dress: Dress = {
+      // Until its preset loads, a player keeps the bundle's default look.
+      const outfit = unit.kind === "Ranger" && unit.outfit && asset.outfitReady?.(unit.outfit.preset) ? unit.outfit : null;      const dress: Dress = {
         loadout: unit.loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null,
-        face: dressed ? viewer.face : null, resident,
+        face: dressed ? viewer.face : null, resident, outfit,
       };
       if (instance && (instance.kind !== unit.kind || instance.dress !== dressKey(dress))) {
         this.#drop(unit.id, instance);

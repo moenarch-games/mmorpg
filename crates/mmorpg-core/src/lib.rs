@@ -162,7 +162,7 @@ pub use routine::{
 pub use snapshot::{
     CanonicalCreatureAbilities, CanonicalCreatureSnapshot, CanonicalPlayerAbilities,
     CanonicalPlayerCombat, CanonicalPlayerSnapshot, CanonicalZoneSnapshot, CreatureAi,
-    CreatureLife, PlayerIntent, ThreatEntry,
+    CreatureLife, PlayerIntent, QueuedIntent, ThreatEntry,
 };
 pub use stance::{LANDING_RECOVERY_TICKS, LandingState, MeleeStance, OVERHEAD_LANDING_TICKS};
 pub use strike::{STRIKE_ARC_HALF_WIDTH, StrikeAim, StrikeHeight, StrikeSide, has_directed_mode};

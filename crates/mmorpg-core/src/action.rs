@@ -98,7 +98,7 @@ pub use authored::{
     TriggerRefusal, TriggerStatus,
 };
 
-use crate::snapshot::PlayerIntent;
+use crate::snapshot::{PlayerIntent, QueuedIntent};
 use crate::zone::PlayerState;
 use crate::{
     AbilityId, AbilityUser, AuraKind, EntityRef, EquipmentSlot, ItemId, PlayerClass, PlayerId,
@@ -793,6 +793,30 @@ const fn action_code(id: ActionId) -> u16 {
     }
 }
 
+/// The most lateness an online input's observation can make up for (Atlas
+/// 5.9.6, #415): 150 ms, nine ticks at 60 Hz.
+///
+/// A client may say which completed zone tick it had last observed when it
+/// sent a timing-sensitive command (`ZoneSimulation::apply_observed_command`).
+/// The input's **lateness** is how many ticks the zone completed between that
+/// observation and the command's arrival, at most this grace. An edge whose
+/// window closed no more than that lateness before arrival is still open for
+/// the input. Lateness rescues only that ordinary window: a precision window
+/// counts only when the input resolves inside it on arrival (owner decision,
+/// #415 Q2). Nothing is backdated: the follow-up
+/// resolves in the arrival tick against the current world, and every other
+/// rule (holds, cancels, conditions, interruptions, cooldowns, range, Rage)
+/// reads the arrival state. An observation can be neither ahead of the zone
+/// nor older than the player's previous one, and without one the input is
+/// not late.
+pub const LATE_INPUT_GRACE_MS: u32 = 150;
+/// [`LATE_INPUT_GRACE_MS`] in ticks.
+pub const LATE_INPUT_GRACE_TICKS: u8 = {
+    let ticks = crate::ticks_from_ms(LATE_INPUT_GRACE_MS);
+    assert!(ticks <= u8::MAX as u16, "the late-input grace is too long");
+    ticks as u8
+};
+
 /// The definition of `id`; for an authored action, their shared shape.
 #[must_use]
 pub fn action(id: ActionId) -> &'static ActionDef {
@@ -1348,6 +1372,19 @@ impl ActionGraph {
     }
 }
 
+/// The graph input whose edges a command's intent may answer: a class
+/// ability use or a directed strike.
+#[must_use]
+pub fn command_input(command: &crate::ZoneCommand) -> Option<ActionInput> {
+    match *command {
+        crate::ZoneCommand::UseAbility { ability, target } => {
+            input_of(&PlayerIntent::UseAbility { ability, target })
+        }
+        crate::ZoneCommand::DirectedStrike { .. } => Some(ActionInput::WardenMelee),
+        _ => None,
+    }
+}
+
 /// The graph input an intent makes, if any.
 pub(crate) fn input_of(intent: &PlayerIntent) -> Option<ActionInput> {
     match intent {
@@ -1521,6 +1558,17 @@ fn slash(graph: &ActionGraph, state: &PlayerState) -> Option<(u16, Option<Entity
     }
 }
 
+/// Whether the slash's opening is past its window and kept only for late
+/// inputs (#415): the slash no longer runs for anything else.
+fn slash_in_late_grace(graph: &ActionGraph, state: &PlayerState) -> bool {
+    let Some(def) = graph.edge(EdgeId::SlashToShieldBash) else {
+        return false;
+    };
+    state
+        .combo
+        .is_some_and(|combo| combo.elapsed > effective_window(state, graph, def).closes())
+}
+
 /// The landing's runtime: ticks since the touchdown, while it recovers.
 fn landing(state: &PlayerState) -> Option<u16> {
     let left = recovery_left(state, ActionId::Landing)?;
@@ -1682,7 +1730,7 @@ fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4]
                 None,
             )
         }
-    } else if slash(graph, state).is_some() {
+    } else if slash(graph, state).is_some() && !slash_in_late_grace(graph, state) {
         match recovery_left(state, ActionId::DirectedSlash) {
             Some(left) => report(
                 Region::Offense,
@@ -1788,7 +1836,7 @@ fn target_phase(graph: &ActionGraph, state: &PlayerState, target: Interrupted) -
                         input => state
                             .intents
                             .iter()
-                            .any(|intent| input_of(intent) == Some(input)),
+                            .any(|queued| input_of(&queued.intent) == Some(input)),
                     }
             })?;
             // A swim holds while it runs; every other action while it recovers.
@@ -1916,9 +1964,12 @@ struct EdgeEval {
     window: TickWindow,
     /// An input now falls inside the precision window.
     precise: bool,
+    /// Open only because the input is late.
+    compensated: bool,
 }
 
-fn evaluate(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef) -> EdgeEval {
+/// Evaluates `def` for an input `late` ticks late (see [`LATE_INPUT_GRACE_MS`]).
+fn evaluate(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef, late: u8) -> EdgeEval {
     let window = effective_window(state, graph, def);
     let source = match def.from {
         ActionId::DirectedSlash => slash(graph, state).map(|(elapsed, _)| elapsed),
@@ -1935,6 +1986,7 @@ fn evaluate(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef) -> EdgeEval
             elapsed: None,
             window,
             precise: false,
+            compensated: false,
         };
     };
     let failed = def
@@ -1954,7 +2006,31 @@ fn evaluate(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef) -> EdgeEval
         },
         (None, _) => window.status_at(elapsed),
     };
+    // A late input may still catch a window that closed while it travelled
+    // (`LATE_INPUT_GRACE_MS`), unless a condition or a reaction refuses it now.
+    let earliest = elapsed.saturating_sub(u16::from(late));
+    let compensated = status == EdgeStatus::Blocked(BlockReason::Expired)
+        && interrupted.is_none_or(|(consequence, ..)| consequence == Consequence::Preserve)
+        && earliest <= window.closes();
+    // Otherwise an opening kept only for late inputs is gone, as before.
+    if !compensated && def.from == ActionId::DirectedSlash && slash_in_late_grace(graph, state) {
+        return EdgeEval {
+            status: EdgeStatus::Blocked(BlockReason::SourceInactive),
+            elapsed: None,
+            window,
+            precise: false,
+            compensated: false,
+        };
+    }
+    let status = if compensated {
+        EdgeStatus::Open
+    } else {
+        status
+    };
+    // Precision ignores lateness (owner, #415 Q2): only an input resolving
+    // inside the sweet spot on arrival is precise.
     let precise = status == EdgeStatus::Open
+        && !compensated
         && def.precision.is_some_and(|precision| {
             let (from, until) = precision.ticks(window.opens);
             (from..=until).contains(&elapsed)
@@ -1964,6 +2040,7 @@ fn evaluate(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef) -> EdgeEval
         elapsed: Some(elapsed),
         window,
         precise,
+        compensated,
     }
 }
 
@@ -2022,15 +2099,22 @@ pub struct Arbitration {
     pub candidates: Vec<(Candidate, Verdict)>,
     /// The winning edge resolves inside its precision window.
     pub precise: bool,
+    /// The ticks of lateness the input may make up for, at most
+    /// [`LATE_INPUT_GRACE_TICKS`]; 0 for an input without an observation.
+    pub late: u8,
+    /// The winning edge had closed when the input arrived; its lateness
+    /// kept it open.
+    pub compensated: bool,
 }
 
-/// Arbitrates `input` for a player in `state`.
+/// Arbitrates `input`, arriving `late` ticks late, for a player in `state`.
 pub(crate) fn arbitrate(
     graph: &ActionGraph,
     state: &PlayerState,
     input: ActionInput,
+    late: u8,
 ) -> Arbitration {
-    arbitrate_with(graph, state, input, true)
+    arbitrate_with(graph, state, input, true, late)
 }
 
 /// [`arbitrate`], optionally without the running authored action's hold.
@@ -2039,12 +2123,14 @@ pub(crate) fn arbitrate_with(
     state: &PlayerState,
     input: ActionInput,
     authored_hold: bool,
+    late: u8,
 ) -> Arbitration {
+    let late = late.min(LATE_INPUT_GRACE_TICKS);
     let mut edges: Vec<(&EdgeDef, EdgeEval)> = graph
         .edges
         .iter()
         .filter(|def| def.input == input)
-        .map(|def| (def, evaluate(graph, state, def)))
+        .map(|def| (def, evaluate(graph, state, def, late)))
         .collect();
     // Highest priority first; ties in authored order.
     edges.sort_by_key(|(def, _)| std::cmp::Reverse(def.priority));
@@ -2089,9 +2175,9 @@ pub(crate) fn arbitrate_with(
                 None => Outcome::Proceed(Candidate::Direct),
             })
     };
-    let precise = edges
-        .iter()
-        .any(|(def, eval)| outcome == Outcome::Proceed(Candidate::Edge(def.id)) && eval.precise);
+    let won = |def: &EdgeDef| outcome == Outcome::Proceed(Candidate::Edge(def.id));
+    let precise = edges.iter().any(|(def, eval)| won(def) && eval.precise);
+    let compensated = edges.iter().any(|(def, eval)| won(def) && eval.compensated);
     let verdict = |candidate: Candidate, status: Option<EdgeStatus>| -> Verdict {
         if let Some(rule) = refusal {
             return Verdict::RefusedBy(rule.id);
@@ -2128,14 +2214,16 @@ pub(crate) fn arbitrate_with(
         outcome,
         candidates,
         precise,
+        late,
+        compensated,
     }
 }
 
-/// Whether an intent waits in the queue rather than resolving now.
-pub(crate) fn waits(graph: &ActionGraph, state: &PlayerState, intent: &PlayerIntent) -> bool {
-    input_of(intent).is_some_and(|input| {
+/// Whether a queued intent waits in the queue rather than resolving now.
+pub(crate) fn waits(graph: &ActionGraph, state: &PlayerState, queued: &QueuedIntent) -> bool {
+    input_of(&queued.intent).is_some_and(|input| {
         matches!(
-            arbitrate(graph, state, input).outcome,
+            arbitrate(graph, state, input, queued.late).outcome,
             Outcome::WaitForRule(_) | Outcome::WaitForEdge(_) | Outcome::WaitForAuthored(_)
         )
     })
@@ -2195,11 +2283,12 @@ impl FollowUp {
     }
 }
 
-/// The edge `input` resolves through now, with its effects.
+/// The edge `input`, `late` ticks late, resolves through now, with its effects.
 pub(crate) fn follow_up(
     graph: &ActionGraph,
     state: &PlayerState,
     input: ActionInput,
+    late: u8,
 ) -> Option<FollowUp> {
     // The use an authored action's active phase resolves carries its
     // effects (#414).
@@ -2214,7 +2303,7 @@ pub(crate) fn follow_up(
             effects: def.effects.to_vec(),
         });
     }
-    let arbitration = arbitrate(graph, state, input);
+    let arbitration = arbitrate(graph, state, input, late);
     let Outcome::Proceed(Candidate::Edge(id)) = arbitration.outcome else {
         return None;
     };
@@ -2425,7 +2514,7 @@ impl ZoneSimulation {
     /// The edge the player's `input` follows now, with its effects.
     pub(crate) fn follow_up_of(&self, player_id: PlayerId, input: ActionInput) -> Option<FollowUp> {
         let state = self.players.get(&player_id)?;
-        follow_up(self.action_graph, state, input)
+        follow_up(self.action_graph, state, input, self.resolving_late)
     }
 
     /// Applies a resolved follow-up's movement: leaving a landing ends its
@@ -2491,7 +2580,7 @@ impl ZoneSimulation {
                     }
                     player
                         .intents
-                        .retain(|intent| input_of(intent) != Some(rule.input));
+                        .retain(|queued| input_of(&queued.intent) != Some(rule.input));
                 }
             }
             if consequence(graph, player, Interrupted::Action(ActionId::Guard))
@@ -2522,7 +2611,7 @@ impl ZoneSimulation {
             .edges
             .iter()
             .map(|def| {
-                let eval = evaluate(graph, state, def);
+                let eval = evaluate(graph, state, def, 0);
                 // The source resolved during the intents of `anchor`; ticks
                 // since then are counted at the end of each tick. A
                 // suspended clock reports the ticks it would resume with.
@@ -2618,9 +2707,21 @@ impl ZoneSimulation {
     /// Explains how `input` would be arbitrated at the player's next tick.
     #[must_use]
     pub fn arbitrate_input(&self, player_id: PlayerId, input: ActionInput) -> Option<Arbitration> {
+        self.arbitrate_late_input(player_id, input, 0)
+    }
+
+    /// [`Self::arbitrate_input`] for an input `late` ticks late; at most
+    /// [`LATE_INPUT_GRACE_TICKS`] count.
+    #[must_use]
+    pub fn arbitrate_late_input(
+        &self,
+        player_id: PlayerId,
+        input: ActionInput,
+        late: u8,
+    ) -> Option<Arbitration> {
         self.players
             .get(&player_id)
-            .map(|state| arbitrate(self.action_graph, state, input))
+            .map(|state| arbitrate(self.action_graph, state, input, late))
     }
 }
 

@@ -4,7 +4,7 @@ import { createLocalWorld, type LocalWorld } from "./local-world";
 import { ScenarioSource, type ScenarioChoice, type ScenarioZoneHandle } from "./scenario-source";
 import { markStartup } from "../startup-marks";
 import type { ActionGraph, LabOptions, LabSetup } from "./action-lab";
-import type { ConfigCheck, LabComparison, LabConfig, LabRun, LabScenario } from "./lab-experiment";
+import type { ConfigCheck, LabComparison, LabConfig, LabNetwork, LabRun, LabScenario } from "./lab-experiment";
 import type { ZoneWorld } from "./world-source";
 
 /**
@@ -37,8 +37,9 @@ export type LabExperiments = {
   check(config: LabConfig): ConfigCheck;
   /** The rule values that differ from `from` to `to`, as `path: old → new` lines (#383). */
   changes(from: LabConfig, to: LabConfig): string[];
-  run(scenario: LabScenario, config: LabConfig): LabRun;
-  compare(scenario: LabScenario, a: LabConfig, b: LabConfig): LabComparison;
+  /** Replays `scenario` under `config` across a simulated `network` (#415). */
+  run(scenario: LabScenario, config: LabConfig, network: LabNetwork): LabRun;
+  compare(scenario: LabScenario, a: LabConfig, b: LabConfig, network: LabNetwork): LabComparison;
   /** Fresh lab worlds of `setup` and `seed` under `config` (production rules for null). */
   zoneFactory(setup: LabSetup, seed: bigint, config: LabConfig | null): () => ScenarioZoneHandle;
   contentRevision(): string;
@@ -48,9 +49,10 @@ export const labExperiments: LabExperiments = {
   baseline: () => JSON.parse(generated.actionLabBaseline()) as LabConfig,
   check: (config) => JSON.parse(generated.actionLabCheck(JSON.stringify(config))) as ConfigCheck,
   changes: (from, to) => JSON.parse(generated.actionLabChanges(JSON.stringify(from), JSON.stringify(to))) as string[],
-  run: (scenario, config) => JSON.parse(generated.actionLabRun(JSON.stringify(scenario), JSON.stringify(config))) as LabRun,
-  compare: (scenario, a, b) =>
-    JSON.parse(generated.actionLabCompare(JSON.stringify(scenario), JSON.stringify(a), JSON.stringify(b))) as LabComparison,
+  run: (scenario, config, network) =>
+    JSON.parse(generated.actionLabRun(JSON.stringify(scenario), JSON.stringify(config), JSON.stringify(network))) as LabRun,
+  compare: (scenario, a, b, network) =>
+    JSON.parse(generated.actionLabCompare(JSON.stringify(scenario), JSON.stringify(a), JSON.stringify(b), JSON.stringify(network))) as LabComparison,
   zoneFactory: (setup, seed, config) => () => generated.LocalZone.forActionLab(
     setup.className, setup.level, setup.gear, setup.mainHand, setup.resource ?? undefined, seed, config ? JSON.stringify(config) : undefined),
   contentRevision: () => {

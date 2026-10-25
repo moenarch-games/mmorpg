@@ -1,4 +1,4 @@
-import { encodeCommand, type WorldCommand } from "../command-wire";
+import { encodeCommand, encodeObservedCommand, isTimingSensitive, type WorldCommand } from "../command-wire";
 import { SnapshotBuffer, TICK_HZ, decodeSnapshot, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
 import { browserClock, type SessionClock, type SessionConnection, type SessionConnector, type SessionEnd } from "../session/connection";
 import { decodeWelcome, type SnapshotFrame, type Welcome } from "../session/frames";
@@ -565,7 +565,15 @@ export class OnlineZoneSource implements WorldSource {
   }
 
   #encodeCommand(command: WorldCommand): Uint8Array {
-    return this.#activityProtocol ? this.#activityProtocol.encodeCommand(command) : encodeCommand(command);
+    if (this.#activityProtocol) {
+      return this.#activityProtocol.encodeCommand(command);
+    }
+    // Combo inputs report the newest projection they were made against, so the zone can make up
+    // for their travel time within its bounded grace (#415); it still judges them on arrival.
+    const observed = this.#latest?.tick;
+    return observed !== undefined && isTimingSensitive(command)
+      ? encodeObservedCommand(command, observed)
+      : encodeCommand(command);
   }
 
   #classChoice(): Uint8Array {

@@ -25,7 +25,9 @@ use mmorpg_core::action::{
     WindowModifier,
 };
 use mmorpg_core::{AbilityId, EntityRef, ItemId, PlayerClass, ZoneCommand, ZoneEvent};
-use mmorpg_protocol::{PROTOCOL_ID, decode_command, encode_canonical_snapshot};
+use mmorpg_protocol::{
+    PROTOCOL_ID, decode_command, encode_canonical_snapshot, encode_observed_command,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::action_lab::{INPUTS, LabSetup};
@@ -873,6 +875,60 @@ impl ScenarioFile {
     }
 }
 
+/// A simulated network between the scenario's player and the lab world
+/// (#415, Atlas 5.9.6): the scenario's inputs keep their timing relative to
+/// what the player saw, so each arrives one round trip (plus jitter) after its
+/// recorded tick, in order, reporting the tick it was made against. The
+/// presets are illustrative, not production thresholds.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Network {
+    /// The round trip: the projection's way to the player and the input's way back.
+    pub round_trip_ms: u32,
+    /// Each input arrives up to this much later again, deterministically per
+    /// input and seed.
+    pub jitter_ms: u32,
+    /// Timing-sensitive inputs report their observed tick, so the zone's
+    /// bounded late-input grace applies; off, they arrive plain.
+    pub compensate: bool,
+}
+
+/// The longest simulated round trip plus jitter: two seconds.
+pub const MAX_NETWORK_MS: u32 = 2_000;
+
+impl Network {
+    /// No network: the local arena.
+    pub const LOCAL: Self = Self {
+        round_trip_ms: 0,
+        jitter_ms: 0,
+        compensate: true,
+    };
+
+    pub fn parse(json: &str) -> Result<Self, String> {
+        let network: Self =
+            serde_json::from_str(json).map_err(|error| format!("network: {error}"))?;
+        if network.round_trip_ms.saturating_add(network.jitter_ms) > MAX_NETWORK_MS {
+            return Err(format!(
+                "a simulated network delays at most {MAX_NETWORK_MS} ms"
+            ));
+        }
+        Ok(network)
+    }
+
+    /// The ticks input `index` of a scenario seeded `seed` travels.
+    fn delay_ticks(&self, seed: u64, index: usize) -> u32 {
+        let jitter = u64::from(mmorpg_core::ticks_from_ms(self.jitter_ms));
+        let roll = if jitter == 0 {
+            0
+        } else {
+            let mut bytes = seed.to_be_bytes().to_vec();
+            bytes.extend_from_slice(&(index as u64).to_be_bytes());
+            fnv1a(&bytes) % (jitter + 1)
+        };
+        u32::from(mmorpg_core::ticks_from_ms(self.round_trip_ms)) + roll as u32
+    }
+}
+
 /// The canonical-snapshot digest of the lab world.
 pub fn digest(host: &LocalZoneHost) -> Result<u64, String> {
     let snapshot = host.zone().snapshot().map_err(|error| error.to_string())?;
@@ -913,10 +969,18 @@ pub struct CommandResult {
     /// The first tick with an effect of the player's (an attack, strike, cast
     /// or ability) before the next action command, for action commands.
     pub effect_tick: Option<u64>,
-    /// `effect_tick - tick`, the input-to-effect delay in ticks.
+    /// `effect_tick - tick`, the input-to-effect delay in ticks, network included.
     pub delay_ticks: Option<u64>,
+    /// The scenario tick the input reached the zone at under the run's
+    /// network; `None` when the scenario ended first.
+    pub arrived_tick: Option<u32>,
+    /// The zone tick the input was made against, when it reported one.
+    pub observed_tick: Option<u64>,
+    /// The ticks of lateness the zone may make up for (#415).
+    pub late_ticks: u8,
     /// How the zone arbitrated the command's graph input against the state
-    /// it met (#383, Atlas 5.7.4), for commands that make one.
+    /// it met on arrival (#383, Atlas 5.7.4), for commands that make one,
+    /// with its lateness (#415).
     #[serde(rename = "decision", serialize_with = "decision_trace")]
     pub arbitration: Option<Arbitration>,
 }
@@ -965,6 +1029,8 @@ pub fn decision(arbitration: &Arbitration) -> serde_json::Value {
         "outcome": name(arbitration.outcome),
         "candidates": candidates,
         "precise": arbitration.precise,
+        "late": arbitration.late,
+        "compensated": arbitration.compensated,
     })
 }
 
@@ -1060,12 +1126,14 @@ fn region_text(report: &action::RegionReport) -> String {
     }
 }
 
-/// Replays `scenario` under `config` in a fresh lab world.
-pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
+/// Replays `scenario` under `config` in a fresh lab world, its inputs
+/// crossing `network`.
+pub fn run(scenario: &ScenarioFile, config: &Config, network: &Network) -> Result<Run, String> {
     let graph = config.graph()?;
     let identity = config.identity();
     let commands = scenario.commands()?;
-    let (mut host, player) = LocalZoneHost::action_lab(scenario.setup.setup()?, scenario.seed()?)
+    let seed = scenario.seed()?;
+    let (mut host, player) = LocalZoneHost::action_lab(scenario.setup.setup()?, seed)
         .map_err(|error| error.to_string())?;
     host.set_action_graph(graph)
         .map_err(|error| format!("{error:?}"))?;
@@ -1076,19 +1144,17 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
     let mut summary = Summary::default();
     let mut next = 0;
     let mut sequence = 0;
+    // Inputs on their way, in order: arrival tick, result index, the zone
+    // tick they were made against.
+    let mut travelling = std::collections::VecDeque::new();
+    let mut last_arrival = 0;
     // The action command still waiting for its first effect.
     let mut waiting: Option<usize> = None;
     for tick in 0..scenario.ticks {
-        let first = results.len();
-        while let Some((at, bytes, command)) = commands.get(next).filter(|(at, ..)| *at == tick) {
-            sequence += 1;
-            let arbitration = graph_input(command, class)
-                .and_then(|input| host.zone().arbitrate_input(player, input));
-            host.submit(player, sequence, bytes)
-                .map_err(|error| error.to_string())?;
-            if is_action(command) {
-                waiting = Some(results.len());
-            }
+        while let Some((at, _, command)) = commands.get(next).filter(|(at, ..)| *at == tick) {
+            // In order: an input never overtakes an earlier one.
+            last_arrival = (at + network.delay_ticks(seed, next)).max(last_arrival);
+            travelling.push_back((last_arrival, results.len(), host.zone().current_tick()));
             results.push(CommandResult {
                 index: next,
                 tick: *at,
@@ -1096,9 +1162,47 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
                 refused: Vec::new(),
                 effect_tick: None,
                 delay_ticks: None,
-                arbitration,
+                arrived_tick: None,
+                observed_tick: None,
+                late_ticks: 0,
+                arbitration: None,
             });
             next += 1;
+        }
+        let mut delivered = Vec::new();
+        while let Some(&(_, index, observed)) =
+            travelling.front().filter(|(arrival, ..)| *arrival == tick)
+        {
+            travelling.pop_front();
+            let (_, bytes, command) = &commands[results[index].index];
+            // An input that did not travel stays the recorded bytes, so a
+            // local run still reproduces its recording.
+            let travelled = tick > results[index].tick;
+            let observed =
+                (network.compensate && travelled && action::command_input(command).is_some())
+                    .then_some(observed);
+            let late = observed.map_or(0, |observed| {
+                u8::try_from(host.zone().current_tick() - observed)
+                    .unwrap_or(u8::MAX)
+                    .min(action::LATE_INPUT_GRACE_TICKS)
+            });
+            let result = &mut results[index];
+            result.arrived_tick = Some(tick);
+            result.observed_tick = observed;
+            result.late_ticks = late;
+            result.arbitration = graph_input(command, class)
+                .and_then(|input| host.zone().arbitrate_late_input(player, input, late));
+            let payload = match observed {
+                Some(observed) => encode_observed_command(*command, observed),
+                None => bytes.clone(),
+            };
+            sequence += 1;
+            host.submit(player, sequence, &payload)
+                .map_err(|error| error.to_string())?;
+            if is_action(command) {
+                waiting = Some(index);
+            }
+            delivered.push(index);
         }
         host.tick().map_err(|error| error.to_string())?;
         let projection = host
@@ -1110,8 +1214,8 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
             match *event {
                 ZoneEvent::Error { code, .. } => {
                     summary.refusals += 1;
-                    for result in &mut results[first..] {
-                        result.refused.push(name(code));
+                    for &index in &delivered {
+                        results[index].refused.push(name(code));
                     }
                 }
                 ZoneEvent::DamageDealt { source, amount, .. } if source == me => {
@@ -1226,10 +1330,15 @@ pub struct Comparison {
     pub regressions: Vec<Finding>,
 }
 
-/// Runs `scenario` under `a` and `b` and reports where they diverge.
-pub fn compare(scenario: &ScenarioFile, a: &Config, b: &Config) -> Result<Comparison, String> {
-    let a = run(scenario, a)?;
-    let b = run(scenario, b)?;
+/// Runs `scenario` under `a` and `b` across one `network` and reports where they diverge.
+pub fn compare(
+    scenario: &ScenarioFile,
+    a: &Config,
+    b: &Config,
+    network: &Network,
+) -> Result<Comparison, String> {
+    let a = run(scenario, a, network)?;
+    let b = run(scenario, b, network)?;
     let diverges_at = a
         .ticks
         .iter()
@@ -1354,21 +1463,21 @@ mod tests {
     fn a_scenario_replays_deterministically_and_compares() {
         let scenario = scenario(&[(2, ZoneCommand::Jump), (10, ZoneCommand::StartAttack)]);
         let baseline = Config::baseline();
-        let first = run(&scenario, &baseline).unwrap();
-        let second = run(&scenario, &baseline).unwrap();
+        let first = run(&scenario, &baseline, &Network::LOCAL).unwrap();
+        let second = run(&scenario, &baseline, &Network::LOCAL).unwrap();
         assert_eq!(first, second);
         assert_eq!(first.ticks.len(), 90);
         assert!(first.baseline && !first.content_changed);
         assert_eq!(first.commands.len(), 2);
         assert!(first.commands[0].label.starts_with("Jump"));
-        let same = compare(&scenario, &baseline, &baseline).unwrap();
+        let same = compare(&scenario, &baseline, &baseline, &Network::LOCAL).unwrap();
         assert_eq!(same.diverges_at, None);
         assert!(same.differences.is_empty());
         // Removing the jump changes the canonical state from its tick on.
         let mut edited = scenario.clone();
         edited.commands.remove(0);
-        let a = run(&scenario, &baseline).unwrap();
-        let b = run(&edited, &baseline).unwrap();
+        let a = run(&scenario, &baseline, &Network::LOCAL).unwrap();
+        let b = run(&edited, &baseline, &Network::LOCAL).unwrap();
         assert_ne!(a.summary.final_digest, b.summary.final_digest);
         // A recording reproduces under its own rules.
         let mut recorded = scenario.clone();
@@ -1377,7 +1486,9 @@ mod tests {
             digest: first.summary.final_digest.clone(),
         });
         assert_eq!(
-            run(&recorded, &baseline).unwrap().reproduces_recording,
+            run(&recorded, &baseline, &Network::LOCAL)
+                .unwrap()
+                .reproduces_recording,
             Some(true)
         );
     }
@@ -1451,7 +1562,7 @@ mod tests {
                 },
             ),
         ]);
-        let authored = run(&scenario, &config).unwrap();
+        let authored = run(&scenario, &config, &Network::LOCAL).unwrap();
         assert!(!authored.baseline);
         assert!(
             authored.ticks.iter().any(|tick| tick
@@ -1460,9 +1571,9 @@ mod tests {
                 .any(|region| region.contains("Authored(0)"))),
             "the replay shows the authored action running"
         );
-        let comparison = compare(&scenario, &Config::baseline(), &config).unwrap();
+        let comparison = compare(&scenario, &Config::baseline(), &config, &Network::LOCAL).unwrap();
         assert!(comparison.diverges_at.is_some());
-        assert_eq!(run(&scenario, &config).unwrap(), authored);
+        assert_eq!(run(&scenario, &config, &Network::LOCAL).unwrap(), authored);
     }
 
     #[test]
@@ -1494,7 +1605,7 @@ mod tests {
                 },
             ),
         ]);
-        let replay = run(&scenario, &config).unwrap();
+        let replay = run(&scenario, &config, &Network::LOCAL).unwrap();
         let strike = replay.commands.last().unwrap();
         // The use waited out the 12-tick startup: past the lag threshold.
         let delay = strike.delay_ticks.expect("the strike took effect");
@@ -1520,6 +1631,110 @@ mod tests {
             tick: 1,
             bytes: "zz".to_owned(),
         });
-        assert!(run(&garbled, &Config::baseline()).is_err());
+        assert!(run(&garbled, &Config::baseline(), &Network::LOCAL).is_err());
+    }
+
+    #[test]
+    fn a_local_run_with_ability_use_reproduces_its_plain_recording() {
+        let strike = ZoneCommand::UseAbility {
+            ability: mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
+            target: None,
+        };
+        let mut scenario = scenario(&[(3, strike), (20, ZoneCommand::Jump), (40, strike)]);
+        // The arena records plain commands: replay them directly.
+        let (mut host, player) =
+            LocalZoneHost::action_lab(scenario.setup.setup().unwrap(), 0).unwrap();
+        let mut sequence = 0;
+        for tick in 0..scenario.ticks {
+            for (at, bytes, _) in scenario.commands().unwrap() {
+                if at == tick {
+                    sequence += 1;
+                    host.submit(player, sequence, &bytes).unwrap();
+                }
+            }
+            host.tick().unwrap();
+        }
+        let baseline = Config::baseline();
+        scenario.recorded = Some(RecordedDto {
+            config: baseline.identity(),
+            digest: format!("{:016x}", digest(&host).unwrap()),
+        });
+        let local = run(&scenario, &baseline, &Network::LOCAL).unwrap();
+        assert_eq!(local.reproduces_recording, Some(true));
+        assert!(
+            local
+                .commands
+                .iter()
+                .all(|command| command.observed_tick.is_none())
+        );
+    }
+
+    #[test]
+    fn a_simulated_network_delays_inputs_in_order_and_reports_their_lateness() {
+        let strike = ZoneCommand::UseAbility {
+            ability: mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
+            target: None,
+        };
+        let scenario = scenario(&[(2, ZoneCommand::Jump), (3, strike), (40, strike)]);
+        let baseline = Config::baseline();
+        let local = run(&scenario, &baseline, &Network::LOCAL).unwrap();
+        assert!(local.commands.iter().all(|command| {
+            command.arrived_tick == Some(command.tick) && command.late_ticks == 0
+        }));
+        assert!(
+            local.commands[1].arbitration.is_some(),
+            "a melee input is arbitrated"
+        );
+        assert!(local.commands[0].arbitration.is_some(), "so is a jump");
+
+        let network = Network {
+            round_trip_ms: 100,
+            jitter_ms: 50,
+            compensate: true,
+        };
+        let delayed = run(&scenario, &baseline, &network).unwrap();
+        assert_eq!(
+            delayed,
+            run(&scenario, &baseline, &network).unwrap(),
+            "deterministic"
+        );
+        let rtt = u32::from(mmorpg_core::ticks_from_ms(100));
+        let jitter = u32::from(mmorpg_core::ticks_from_ms(50));
+        let mut previous = 0;
+        for command in &delayed.commands {
+            let arrived = command.arrived_tick.unwrap();
+            assert!(arrived >= previous, "inputs stay in order");
+            assert!(arrived >= command.tick + rtt);
+            assert!(arrived <= (command.tick + rtt + jitter).max(previous));
+            previous = arrived;
+        }
+        // Only arbitrated inputs report their observation; the zone caps their lateness.
+        assert_eq!(delayed.commands[0].observed_tick, None);
+        let strike = &delayed.commands[1];
+        assert_eq!(strike.observed_tick, Some(u64::from(strike.tick)));
+        assert_eq!(
+            u32::from(strike.late_ticks),
+            (strike.arrived_tick.unwrap() - strike.tick)
+                .min(u32::from(action::LATE_INPUT_GRACE_TICKS))
+        );
+        // Without compensation the same inputs arrive plain.
+        let plain = Network {
+            compensate: false,
+            ..network
+        };
+        let uncompensated = run(&scenario, &baseline, &plain).unwrap();
+        assert!(
+            uncompensated
+                .commands
+                .iter()
+                .all(|command| command.late_ticks == 0 && command.observed_tick.is_none())
+        );
+        assert!(
+            Network::parse(r#"{"roundTripMs":1900,"jitterMs":200,"compensate":true}"#).is_err()
+        );
+        assert_eq!(
+            Network::parse(r#"{"roundTripMs":0,"jitterMs":0,"compensate":true}"#).unwrap(),
+            Network::LOCAL
+        );
     }
 }

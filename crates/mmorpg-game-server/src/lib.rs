@@ -18,7 +18,7 @@ use game_server::{
 use std::sync::Arc;
 
 use mmorpg_core::{MAX_PLAYERS_PER_ZONE, TICK_HZ, ZoneContent, ZoneId, ZoneSimulation};
-use mmorpg_protocol::{decode_command, encode_canonical_snapshot, pack_snapshot};
+use mmorpg_protocol::{decode_observed_command, encode_canonical_snapshot, pack_snapshot};
 
 pub const PINNED_GAME_SERVER_REVISION: &str = "f9da1f462f0b0c7f87bbd17588a979df4745c00b";
 pub const PINNED_PHYSICS_ENGINE_REVISION: &str = "1b98f84d409796b2a15b84f3fa4ed7f03a11f8bd";
@@ -242,14 +242,18 @@ impl GameSimulation for ZoneGameServerAdapter {
                 "claim a durable character before gameplay",
             ));
         }
-        let command = decode_command(payload).map_err(map_protocol_error)?;
+        let (command, observed) = decode_observed_command(payload).map_err(map_protocol_error)?;
         if self.parked_characters.contains_key(&player_id) {
             // Ignore in-flight gameplay after logout without interrupting its reply.
             return Ok(());
         }
-        self.zone
-            .apply_command(player_id, sequence, command)
-            .map_err(map_zone_error)
+        match observed {
+            Some(observed) => self
+                .zone
+                .apply_observed_command(player_id, sequence, command, observed),
+            None => self.zone.apply_command(player_id, sequence, command),
+        }
+        .map_err(map_zone_error)
     }
 
     fn apply_host_input(

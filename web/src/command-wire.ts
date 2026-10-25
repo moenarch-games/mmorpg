@@ -88,7 +88,36 @@ const USE_DOOR_TAG = 23;
 const REPAIR_TAG = 24;
 const RISE_TAG = 25;
 const COMMAND_MINIONS_TAG = 26;
+const OBSERVED_TAG = 27;
 const YAW_STEPS = 65_536;
+const U64_MAX = (1n << 64n) - 1n;
+
+/**
+ * Commands whose timing the zone's action graph judges (#415): an online client sends them with
+ * the latest zone tick it had observed, so a combo window that closed while they travelled can
+ * still count, within the zone's bounded grace.
+ */
+export function isTimingSensitive(command: WorldCommand): boolean {
+  return command.kind === "use-ability" || command.kind === "directed-strike";
+}
+
+/**
+ * `command` sent after observing the zone's completed tick `observed` (#415): version, the
+ * observed tag, the tick (u64), then the inner command's tag and fields.
+ */
+export function encodeObservedCommand(command: WorldCommand, observed: bigint): Uint8Array {
+  if (observed < 0n || observed > U64_MAX) {
+    throw new Error("The observed tick must be a u64.");
+  }
+  const inner = encodeCommand(command);
+  const payload = new Uint8Array(10 + inner.byteLength - 1);
+  const view = new DataView(payload.buffer);
+  view.setUint8(0, PROTOCOL_BYTE);
+  view.setUint8(1, OBSERVED_TAG);
+  view.setBigUint64(2, observed);
+  payload.set(inner.subarray(1), 10);
+  return payload;
+}
 
 /** Whether an encoded command is movement intent (Move or Rise), by its tag byte. */
 export function isMovementCommand(bytes: Uint8Array): boolean {

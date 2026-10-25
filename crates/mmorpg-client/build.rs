@@ -15,11 +15,19 @@ use std::{
 const CHARACTER: &str = "humanoid.ranger.male";
 const SWORD: &str = "equipment.sword.arming";
 const SHIELD: &str = "equipment.shield.heater";
-/// The class weapons (asset-tooling #375): the Rogue's dagger and the casters' staffs.
+/// The Ranger's longbow and quiver stowed on the back (#244).
+const BOW: &str = "equipment.bow.long";
+const QUIVER: &str = "equipment.quiver.back";
+/// The class weapons and props (asset-tooling #375, #379): the Rogue's dagger, the casters'
+/// staffs, the Arcanist's tome and the Cleric's mace.
 const DAGGER: &str = "equipment.dagger.blackened";
 const BONE_STAFF: &str = "equipment.staff.bone";
-const GILDED_STAFF: &str = "equipment.staff.gilded";
+const CRYSTAL_STAFF: &str = "equipment.staff.crystal";
 const GNARLED_STAFF: &str = "equipment.staff.gnarled";
+const TOME: &str = "equipment.book.tome";
+const MACE: &str = "equipment.mace.flanged";
+/// The bundle outfit whose plates equipped drops wear (`imported::DROP_ARMOR_OUTFIT`).
+const DROP_ARMOR_OUTFIT: &str = "outfit.knight";
 /// The authored headwear on `head.armor` (#374).
 const CAP: &str = "equipment.cap.ranger";
 const HELM: &str = "equipment.helm.ironcrest";
@@ -91,10 +99,14 @@ fn main() {
         ("CHARACTER", CHARACTER),
         ("SWORD", SWORD),
         ("SHIELD", SHIELD),
+        ("BOW", BOW),
+        ("QUIVER", QUIVER),
         ("DAGGER", DAGGER),
         ("BONE_STAFF", BONE_STAFF),
-        ("GILDED_STAFF", GILDED_STAFF),
+        ("CRYSTAL_STAFF", CRYSTAL_STAFF),
         ("GNARLED_STAFF", GNARLED_STAFF),
+        ("TOME", TOME),
+        ("MACE", MACE),
         ("CAP", CAP),
         ("HELM", HELM),
     ] {
@@ -102,6 +114,45 @@ fn main() {
         code.push_str(&format!("pub const {name}: &str = {path:?};\n"));
         files.push(path);
     }
+    // The class starter outfits (asset-tooling #379): per `class.<id>` preset, its outfit's
+    // variant for the preset's skin and its armour, and the drop armour.
+    let look: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(bundle.join(&appearance)).expect("the Ranger appearance is embedded"),
+    )
+    .expect("the Ranger appearance is JSON");
+    let outfit = |id: &str| {
+        look["outfits"]
+            .as_array()
+            .and_then(|outfits| outfits.iter().find(|outfit| outfit["id"] == id))
+            .unwrap_or_else(|| panic!("the Ranger appearance declares {id}"))
+    };
+    let armor = |outfit: &serde_json::Value| {
+        let entry = outfit["armor"]["entry"]
+            .as_str()
+            .expect("an outfit armour entry");
+        format!("native/{entry}.default.native.glb")
+    };
+    let drop = armor(outfit(DROP_ARMOR_OUTFIT));
+    code.push_str(&format!("pub const DROP_ARMOR: &str = {drop:?};\n"));
+    files.push(drop);
+    code.push_str("pub const OUTFITS: &[(&str, &str, &str)] = &[\n");
+    for preset in look["presets"].as_array().expect("appearance presets") {
+        let id = preset["id"].as_str().expect("a preset id");
+        if !id.starts_with("class.") {
+            continue;
+        }
+        let worn = outfit(preset["outfit"].as_str().expect("a preset outfit"));
+        let variant = worn["skins"]
+            .as_array()
+            .and_then(|skins| skins.iter().find(|skin| skin["id"] == preset["skin"]))
+            .and_then(|skin| skin["variant"].as_str())
+            .unwrap_or_else(|| panic!("the preset {id} names its skin's outfit variant"));
+        let model = format!("native/{CHARACTER}.{variant}.native.glb");
+        let plates = armor(worn);
+        code.push_str(&format!("    ({id:?}, {model:?}, {plates:?}),\n"));
+        files.extend([model, plates]);
+    }
+    code.push_str("];\n");
     let hair = format!("native/{HAIR}.{HAIR_VARIANT}.native.glb");
     code.push_str(&format!(
         "pub const HAIR: &str = {hair:?};\npub const HAIR_KEY: &str = {HAIR:?};\npub const CAP_KEY: &str = {CAP:?};\npub const HELM_KEY: &str = {HELM:?};\n"

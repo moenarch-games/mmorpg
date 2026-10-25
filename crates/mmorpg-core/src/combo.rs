@@ -47,9 +47,11 @@ impl ComboOpening {
         self.elapsed >= COMBO_IMPACT_TICKS
     }
 
+    /// Within the window, or the late-input grace after it (#415).
     #[must_use]
     pub const fn is_valid(self) -> bool {
-        self.elapsed <= COMBO_IMPACT_TICKS + COMBO_WINDOW_TICKS
+        self.elapsed
+            <= COMBO_IMPACT_TICKS + COMBO_WINDOW_TICKS + action::LATE_INPUT_GRACE_TICKS as u16
     }
 }
 
@@ -86,20 +88,26 @@ impl ZoneSimulation {
     pub(crate) fn combo_phase(&self, state: &PlayerState) -> Option<ComboPhase> {
         let graph = self.action_graph;
         let def = graph.edge(action::EdgeId::SlashToShieldBash)?;
-        let opens = action::effective_window(state, graph, def).opens;
-        state.combo.map(|combo| {
-            if combo.elapsed >= opens {
-                ComboPhase::Open
-            } else {
-                ComboPhase::Impact
-            }
-        })
+        let window = action::effective_window(state, graph, def);
+        // An opening kept only for late inputs (#415) is over for the viewer.
+        state
+            .combo
+            .filter(|combo| combo.elapsed <= window.closes())
+            .map(|combo| {
+                if combo.elapsed >= window.opens {
+                    ComboPhase::Open
+                } else {
+                    ComboPhase::Impact
+                }
+            })
     }
 
     /// Applies the reactions' cancellations (a stun discards a guard held by
     /// the strike recovery, in the baseline), then ages every opening by one
     /// tick: an expired or cancelled opening (death, in the baseline) ends
-    /// and a suspended one keeps its age (Atlas 5.8.4).
+    /// and a suspended one keeps its age (Atlas 5.8.4). An expired opening is
+    /// kept for [`action::LATE_INPUT_GRACE_TICKS`] after its window closes,
+    /// only so a late input can still answer it (#415).
     pub(crate) fn advance_combos(&mut self) {
         self.apply_interruptions();
         let graph = self.action_graph;
@@ -118,7 +126,8 @@ impl ZoneSimulation {
                         elapsed: combo.elapsed + 1,
                         ..combo
                     };
-                    (aged.elapsed <= window.closes()).then_some(aged)
+                    let kept = window.closes() + u16::from(action::LATE_INPUT_GRACE_TICKS);
+                    (aged.elapsed <= kept).then_some(aged)
                 }
                 (Some(combo), Some(_), action::Consequence::Suspend) => Some(combo),
                 _ => None,
