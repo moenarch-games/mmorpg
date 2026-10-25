@@ -42,6 +42,7 @@ const DIRECTED_STRIKE_INTENT: u8 = 18;
 const GUARD_INTENT: u8 = 19;
 const USE_DOOR_INTENT: u8 = 20;
 const REPAIR_INTENT: u8 = 21;
+const COMMAND_MINIONS_INTENT: u8 = 22;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -91,6 +92,7 @@ pub fn encode_canonical_snapshot(
     encode_forced(&mut payload, &snapshot.forced)?;
     encode_debris(&mut payload, snapshot.next_debris, &snapshot.debris)?;
     encode_pieces(&mut payload, &snapshot.pieces)?;
+    encode_minions(&mut payload, snapshot.next_minion, &snapshot.minions)?;
     crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
     Ok(payload)
 }
@@ -184,6 +186,11 @@ fn encode_player(
             PlayerIntent::Repair(piece) => {
                 payload.push(REPAIR_INTENT);
                 payload.extend_from_slice(&crate::wire::encode_piece(piece).to_be_bytes());
+                continue;
+            }
+            PlayerIntent::CommandMinions(order) => {
+                payload.push(COMMAND_MINIONS_INTENT);
+                crate::wire::encode_minion_order(payload, order);
                 continue;
             }
             PlayerIntent::ChooseClass { class, sex } => {
@@ -477,6 +484,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let forced = decode_forced(payload, &mut offset)?;
     let (next_debris, debris) = decode_debris(payload, &mut offset)?;
     let pieces = decode_pieces(payload, &mut offset)?;
+    let (next_minion, minions) = decode_minions(payload, &mut offset)?;
     let rewards = crate::rewards::decode_history(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
@@ -495,7 +503,89 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         debris,
         next_debris,
         pieces,
+        minions,
+        next_minion,
     })
+}
+
+/// Summoned minions (#295): the next minion ID (`u32`) and count (`u16`), then per minion in ID
+/// order its ID and summoner (`u32` each), summoning ability and level (`u8` each), health
+/// (`u32`), facing (`u16`), order (9 bytes), fight target (entity reference), swing timer and
+/// remaining ticks (`u16` each) and exact body position and velocity (`f32` × 3 each).
+fn encode_minions(
+    payload: &mut Vec<u8>,
+    next_minion: u32,
+    minions: &[mmorpg_core::CanonicalMinion],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(&next_minion.to_be_bytes());
+    let count = encode_u16_count(
+        minions.len(),
+        mmorpg_core::MAX_MINIONS,
+        "snapshot exceeds the minion capacity",
+    )?;
+    payload.extend_from_slice(&count.to_be_bytes());
+    for record in minions {
+        let minion = &record.minion;
+        payload.extend_from_slice(&minion.id.get().to_be_bytes());
+        payload.extend_from_slice(&minion.summoner.to_be_bytes());
+        payload.extend_from_slice(&[minion.ability.get(), minion.level]);
+        payload.extend_from_slice(&minion.health.to_be_bytes());
+        payload.extend_from_slice(&minion.facing.to_be_bytes());
+        crate::wire::encode_minion_order(payload, minion.order);
+        encode_entity_ref(payload, minion.target);
+        payload.extend_from_slice(&minion.swing_timer.to_be_bytes());
+        payload.extend_from_slice(&minion.remaining.to_be_bytes());
+        for component in record.position.into_iter().chain(record.velocity) {
+            payload.extend_from_slice(&component.to_be_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn decode_minions(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<(u32, Vec<mmorpg_core::CanonicalMinion>), ProtocolError> {
+    let next_minion = u32::from_be_bytes(take(payload, offset)?);
+    let count = decode_u16_count(
+        payload,
+        offset,
+        mmorpg_core::MAX_MINIONS,
+        "snapshot exceeds the minion capacity",
+    )?;
+    let minions = (0..count)
+        .map(|_| {
+            let id = mmorpg_core::MinionId::new(u32::from_be_bytes(take(payload, offset)?));
+            let summoner = u32::from_be_bytes(take(payload, offset)?);
+            let ability = AbilityId::new(read_u8(payload, offset)?);
+            let level = read_u8(payload, offset)?;
+            let health = u32::from_be_bytes(take(payload, offset)?);
+            let facing = u16::from_be_bytes(take(payload, offset)?);
+            let order = crate::wire::decode_minion_order(payload, offset)?;
+            let target = decode_entity_ref(payload, offset)?;
+            let swing_timer = u16::from_be_bytes(take(payload, offset)?);
+            let remaining = u16::from_be_bytes(take(payload, offset)?);
+            let position = read_f32_vector(payload, offset)?;
+            let velocity = read_f32_vector(payload, offset)?;
+            Ok(mmorpg_core::CanonicalMinion {
+                minion: mmorpg_core::Minion {
+                    id,
+                    summoner,
+                    ability,
+                    level,
+                    health,
+                    facing,
+                    order,
+                    target,
+                    swing_timer,
+                    remaining,
+                },
+                position,
+                velocity,
+            })
+        })
+        .collect::<Result<Vec<_>, ProtocolError>>()?;
+    Ok((next_minion, minions))
 }
 
 /// Destructible pieces (#305): count (`u8`), then per piece its ID (`u16`), health (`u32`),
@@ -628,6 +718,12 @@ fn decode_player(
         if code == REPAIR_INTENT {
             let piece = u16::from_be_bytes(take(payload, offset)?);
             intents.push(PlayerIntent::Repair(crate::wire::decode_piece(piece)));
+            continue;
+        }
+        if code == COMMAND_MINIONS_INTENT {
+            intents.push(PlayerIntent::CommandMinions(
+                crate::wire::decode_minion_order(payload, offset)?,
+            ));
             continue;
         }
         if code == CHOOSE_CLASS_INTENT {
@@ -1587,6 +1683,23 @@ mod tests {
                 changed_tick: 77,
                 repaired: 8,
             }],
+            minions: vec![mmorpg_core::CanonicalMinion {
+                minion: mmorpg_core::Minion {
+                    id: mmorpg_core::MinionId::new(5),
+                    summoner: 1,
+                    ability: mmorpg_core::ability::ids::RAISE_SKELETON,
+                    level: 6,
+                    health: 80,
+                    facing: 0x4000,
+                    order: mmorpg_core::MinionOrder::Attack(wolf),
+                    target: Some(wolf),
+                    swing_timer: 12,
+                    remaining: 900,
+                },
+                position: [1.5, 80.0, -2.25],
+                velocity: [0.5, 0.0, -0.75],
+            }],
+            next_minion: 6,
         }
     }
 
@@ -1913,7 +2026,7 @@ mod tests {
         let mut cases = vec![
             (auto_attack, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
-            (intents + 1, 22, "malformed pending intent"),
+            (intents + 1, 23, "malformed pending intent"),
         ];
         // The third intent (StartAttack) carries no target.
         cases.push((intents + 1 + 2 * 6 + 1, 2, "malformed pending intent"));

@@ -200,7 +200,7 @@ impl ZoneSimulation {
         match target {
             EntityRef::Creature(id) => self.creatures.get(&id).map_or(0, |unit| unit.health),
             EntityRef::Player(id) => self.players.get(&id).map_or(0, |unit| unit.health),
-            EntityRef::Npc(_) => 0,
+            EntityRef::Npc(_) | EntityRef::Minion(_) => 0,
         }
     }
 

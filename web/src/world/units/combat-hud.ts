@@ -40,6 +40,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "door-blocked": "Something is in the way of the door.",
   "vendor-closed": "The shop is closed for the night.",
   "door-busy": "The door is still swinging.",
+  "no-minions": "You have no minions to command.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;
@@ -56,6 +57,9 @@ export function unitName(entity: EntityRef, snapshot: ZoneSnapshot, catalog: Con
       return entity.id === snapshot.viewerId ? "you" : `Player ${entity.id}`;
     case "npc":
       return catalog.npcs.get(entity.id)?.name ?? `NPC ${entity.id}`;
+    // A Necromancer's summoned minion (#295).
+    case "minion":
+      return "Skeleton";
     case "creature": {
       const template = findEntity(snapshot, entity)?.appearance;
       return (template === undefined ? undefined : catalog.creatureTemplates.get(template)?.name) ?? "a creature";

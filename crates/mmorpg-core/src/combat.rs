@@ -107,6 +107,7 @@ impl ZoneSimulation {
                 self.cancel_cast(player_id);
                 None
             }
+            PlayerIntent::CommandMinions(order) => self.command_minions(player_id, order)?,
             PlayerIntent::Repair(piece) => {
                 if alive {
                     self.start_repair(player_id, piece)?
@@ -241,9 +242,9 @@ impl ZoneSimulation {
                     self.update_player(player_id, |player| player.auto_attack = true);
                     None
                 }
-                Some(target @ (EntityRef::Player(_) | EntityRef::Npc(_))) => {
-                    Some((ErrorCode::NotAttackable, Some(target)))
-                }
+                Some(
+                    target @ (EntityRef::Player(_) | EntityRef::Npc(_) | EntityRef::Minion(_)),
+                ) => Some((ErrorCode::NotAttackable, Some(target))),
                 Some(target @ EntityRef::Creature(creature_id)) => {
                     match self
                         .creatures
@@ -374,6 +375,12 @@ impl ZoneSimulation {
                 Some(feet) => [feet[0], 0, feet[1]],
                 None => return Ok(false),
             },
+            EntityRef::Minion(minion_id) => {
+                if !self.minions.contains_key(&minion_id) {
+                    return Ok(false);
+                }
+                self.unit_position(target)?
+            }
         };
         Ok(
             distance_squared([center.x, center.z], [position[0], position[2]])
@@ -414,7 +421,7 @@ impl ZoneSimulation {
         for creature_id in creatures {
             self.creature_swing(creature_id)?;
         }
-        Ok(())
+        self.minion_swings(now)
     }
 
     fn player_swing(&mut self, player_id: PlayerId, now: u64) -> Result<(), ZoneError> {
@@ -613,6 +620,21 @@ impl ZoneSimulation {
         now: u64,
     ) -> Result<(), ZoneError> {
         let source = EntityRef::Player(player_id);
+        self.unit_damages_creature(player_id, source, creature_id, amount, critical, now)
+    }
+
+    /// [`Self::player_damages_creature`] dealt by `source`, the player itself or one of its
+    /// minions (#295): the creature's threat goes to `source`, the tap and the credit to
+    /// `player_id`.
+    pub(crate) fn unit_damages_creature(
+        &mut self,
+        player_id: PlayerId,
+        source: EntityRef,
+        creature_id: CreatureId,
+        amount: u32,
+        critical: bool,
+        now: u64,
+    ) -> Result<(), ZoneError> {
         let target = EntityRef::Creature(creature_id);
         let Some(creature) = self.creatures.get(&creature_id) else {
             return Ok(());
@@ -802,24 +824,30 @@ impl ZoneSimulation {
         {
             return Ok(());
         }
-        let Some(target @ EntityRef::Player(player_id)) = creature.top_threat() else {
-            return Ok(());
-        };
         let level = creature.level;
-        if !self
-            .players
-            .get(&player_id)
-            .is_some_and(|player| player.is_alive())
-        {
-            return Ok(());
-        }
+        // Players and minions (#295) are fought; minions take the blow without guard or stance.
+        let (target, victim) = match creature.top_threat() {
+            Some(target @ EntityRef::Player(player_id))
+                if self
+                    .players
+                    .get(&player_id)
+                    .is_some_and(|player| player.is_alive()) =>
+            {
+                (target, Ok(player_id))
+            }
+            Some(target @ EntityRef::Minion(minion)) if self.minions.contains_key(&minion) => {
+                (target, Err(minion))
+            }
+            _ => return Ok(()),
+        };
         let source = EntityRef::Creature(creature_id);
         let from = self
             .world
             .body(body_id(source))
             .ok_or_else(|| ZoneError::new("creature physics body is missing"))?
             .position();
-        let to = self.player_position(player_id)?;
+        let to = self.unit_position(target)?;
+        let to = Vec3i::new(to[0], to[1], to[2]);
         let reach = i64::from(creature_reach(target));
         if distance_squared([from.x, from.z], [to.x, to.z]) > reach * reach
             || self.combat_blocked(source, target)
@@ -846,6 +874,22 @@ impl ZoneSimulation {
             creature.swing_timer = template.swing_ticks;
             creature.combat_timer = COMBAT_LINGER_TICKS;
         }
+        let player_id = match victim {
+            Ok(player_id) => player_id,
+            Err(minion) => {
+                return match swing {
+                    Swing::Miss => {
+                        if let Some(summoner) = self.controller(target) {
+                            self.notify(summoner, ZoneEvent::Miss { source, target });
+                        }
+                        Ok(())
+                    }
+                    Swing::Hit { amount, critical } => {
+                        self.damage_minion(source, minion, u32::from(amount), critical)
+                    }
+                };
+            }
+        };
         match swing {
             Swing::Miss => {
                 let Some(player) = self.players.get_mut(&player_id) else {
@@ -997,9 +1041,8 @@ impl ZoneSimulation {
             killer: Some(killer),
         };
         let mut recipients = BTreeSet::new();
-        if let EntityRef::Player(player_id) = killer {
-            recipients.insert(player_id);
-        }
+        // A minion's kill is its summoner's (#295).
+        recipients.extend(self.controller(killer));
         recipients.extend(tapper);
         for player_id in recipients {
             self.notify(player_id, died);
@@ -1121,10 +1164,11 @@ impl ZoneSimulation {
             player.guard = crate::GuardState::default();
         });
         self.notify(player_id, ZoneEvent::Died { entity, killer });
-        Ok(())
+        // Its minions crumble with it (#295).
+        self.release_minions(player_id, false)
     }
 
-    /// Players on any living creature's threat table.
+    /// Players on any living creature's threat table, themselves or through a minion (#295).
     pub(crate) fn threatened_players(&self) -> BTreeSet<PlayerId> {
         self.creatures
             .values()
@@ -1132,14 +1176,16 @@ impl ZoneSimulation {
             .flat_map(|creature| &creature.threat)
             .filter_map(|entry| match entry.entity {
                 EntityRef::Player(player_id) => Some(player_id),
+                unit @ EntityRef::Minion(_) => self.controller(unit),
                 EntityRef::Creature(_) | EntityRef::Npc(_) => None,
             })
             .collect()
     }
 
-    /// Step 7: player regeneration, then corpse despawns and respawns in
+    /// Step 7: player regeneration, minions' time (#295), then corpse despawns and respawns in
     /// creature-ID order.
     pub(crate) fn update_timers(&mut self, now: u64) -> Result<(), ZoneError> {
+        self.age_minions()?;
         let threatened = self.threatened_players();
         for (player_id, player) in &mut self.players {
             if !player.is_alive() {

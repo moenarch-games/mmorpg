@@ -28,3 +28,27 @@ export function useAbilitySlot(slot: number, snapshot: ZoneSnapshot, catalog: Co
 export function cancelCast(snapshot: ZoneSnapshot): WorldCommand | null {
   return snapshot.viewer.cast ? { kind: "cancel-cast" } : null;
 }
+
+/** The four minion group orders (#295, Atlas 5.2.84), as the `minions.*` actions name them. */
+export type MinionAction = "attack" | "defend" | "follow" | "retreat";
+
+/**
+ * A Necromancer's group order for all its minions: attack the selected unit, defend where the
+ * viewer stands, follow or retreat. Nothing to send for an attack without a selection; the zone
+ * checks summoner, target and range.
+ */
+export function minionCommand(action: MinionAction, snapshot: ZoneSnapshot): WorldCommand | null {
+  switch (action) {
+    case "attack": {
+      const target = snapshot.viewer.target;
+      return target ? { kind: "command-minions", order: { order: "attack", target } } : null;
+    }
+    case "defend": {
+      const me = snapshot.entities.find((entity) => entity.kind === "player" && entity.entityId === snapshot.viewerId);
+      return me ? { kind: "command-minions", order: { order: "defend", point: [me.position[0], me.position[2]] } } : null;
+    }
+    case "follow":
+    case "retreat":
+      return { kind: "command-minions", order: { order: action } };
+  }
+}

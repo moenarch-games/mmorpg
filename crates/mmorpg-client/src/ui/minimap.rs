@@ -180,6 +180,8 @@ impl MinimapLayers {
                 EntityKind::Npc => Color32::from_rgb(240, 220, 120),
                 EntityKind::Creature if entity.flags.hostile => Color32::from_rgb(230, 70, 60),
                 EntityKind::Creature => Color32::from_rgb(235, 200, 60),
+                // Summoned skeletons (#295) in bone white.
+                EntityKind::Minion => Color32::from_rgb(216, 208, 180),
             };
             painter.circle_filled(at, 3.0, color);
         }

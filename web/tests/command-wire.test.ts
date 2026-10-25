@@ -80,6 +80,19 @@ function command(fields: readonly string[]): WorldCommand {
       return { kind: "use-door", door: Number(first), open: second === "1" };
     case "repair":
       return { kind: "repair", piece: Number(first) === 0 ? null : Number(first) - 1 };
+    case "command_minions": {
+      if (first === "attack") {
+        const kind = entityKindFromCode(Number(second));
+        if (kind === null) {
+          throw new Error("An attack order needs a target");
+        }
+        return { kind: "command-minions", order: { order: "attack", target: { kind, id: Number(third) } } };
+      }
+      if (first === "defend") {
+        return { kind: "command-minions", order: { order: "defend", point: [Number(second), Number(third)] } };
+      }
+      return { kind: "command-minions", order: { order: first === "retreat" ? "retreat" : "follow" } };
+    }
     default:
       throw new Error(`Unknown fixture command ${name}`);
   }
@@ -103,7 +116,7 @@ describe("Rust/browser command contract", () => {
     const commands = fixtureCommands();
     const kinds = new Set(commands.map(({ command }) => command.kind));
     expect([...kinds].sort()).toEqual([
-      "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "complete-quest", "directed-strike", "emote", "equip-item", "guard", "jump",
+      "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "command-minions", "complete-quest", "directed-strike", "emote", "equip-item", "guard", "jump",
       "loot", "move", "move-item", "release-spirit", "repair", "rise", "select-target", "sell-item", "start-attack", "stop-attack", "unequip-item",
       "use-ability", "use-door",
     ]);

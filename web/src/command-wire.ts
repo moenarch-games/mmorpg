@@ -51,7 +51,16 @@ export type WorldCommand =
   /** Opens (`open`) or closes content door `door` (#158); the zone checks reach and blockers. */
   | { kind: "use-door"; door: number; open: boolean }
   /** Starts repairing a destructible piece (#305), or stops with `null`. */
-  | { kind: "repair"; piece: number | null };
+  | { kind: "repair"; piece: number | null }
+  /** Orders all of a Necromancer's minions at once (#295); the zone checks the target or point. */
+  | { kind: "command-minions"; order: MinionOrder };
+
+/** A minion group order (#295, Atlas 5.2.84): attack a unit, defend an XZ point (units), follow or retreat. */
+export type MinionOrder =
+  | { order: "follow" }
+  | { order: "attack"; target: EntityRef }
+  | { order: "defend"; point: readonly [number, number] }
+  | { order: "retreat" };
 
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
@@ -78,6 +87,7 @@ const GUARD_TAG = 22;
 const USE_DOOR_TAG = 23;
 const REPAIR_TAG = 24;
 const RISE_TAG = 25;
+const COMMAND_MINIONS_TAG = 26;
 const YAW_STEPS = 65_536;
 
 function isAxis(value: number): value is Axis {
@@ -269,6 +279,8 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       const reference = command.piece === null ? 0 : command.piece + 1;
       return Uint8Array.of(PROTOCOL_BYTE, REPAIR_TAG, reference >> 8, reference & 0xff);
     }
+    case "command-minions":
+      return encodeMinionOrder(command.order);
     case "start-attack":
       return Uint8Array.of(PROTOCOL_BYTE, START_ATTACK_TAG);
     case "stop-attack":
@@ -280,6 +292,41 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       throw new Error(`Unsupported command ${String(unsupported)}.`);
     }
   }
+}
+
+/** Version, tag, order code (1 follow, 2 attack, 3 defend, 4 retreat) and 8 bytes: the attacked unit's reference and zeros, the defended `x` and `z` (i32 each), or zeros. */
+function encodeMinionOrder(order: MinionOrder): Uint8Array {
+  const payload = new Uint8Array(11);
+  const view = new DataView(payload.buffer);
+  view.setUint8(0, PROTOCOL_BYTE);
+  view.setUint8(1, COMMAND_MINIONS_TAG);
+  switch (order.order) {
+    case "follow":
+      view.setUint8(2, 1);
+      break;
+    case "attack":
+      view.setUint8(2, 2);
+      writeEntity(view, 3, order.target);
+      break;
+    case "defend": {
+      const isI32 = (value: number) => Number.isInteger(value) && value >= -(2 ** 31) && value < 2 ** 31;
+      if (!order.point.every(isI32)) {
+        throw new Error("Defended points must be i32 units.");
+      }
+      view.setUint8(2, 3);
+      view.setInt32(3, order.point[0]);
+      view.setInt32(7, order.point[1]);
+      break;
+    }
+    case "retreat":
+      view.setUint8(2, 4);
+      break;
+    default: {
+      const unsupported: never = order;
+      throw new Error(`Unsupported minion order ${String(unsupported)}.`);
+    }
+  }
+  return payload;
 }
 
 /** Version, tag, NPC (u32), offer or bag slot (u8), quantity (u16). */

@@ -622,7 +622,7 @@ impl NativeApplication {
                     .unwrap()
                     .name
             }
-            EntityRef::Player(_) => unreachable!(),
+            EntityRef::Player(_) | EntityRef::Minion(_) => unreachable!(),
         };
         assert!(
             self.driver.app.title.contains(name),

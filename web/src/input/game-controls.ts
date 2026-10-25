@@ -34,6 +34,10 @@ export const GAME_ACTIONS = [
   "combat.directedStrike",
   "combat.guard",
   "combat.cancelCast",
+  "minions.attack",
+  "minions.defend",
+  "minions.follow",
+  "minions.retreat",
   "player.releaseSpirit",
   "ui.toggleBags",
   "ui.toggleCharacter",
@@ -98,6 +102,7 @@ const ACTION_CATEGORIES: Readonly<Record<string, string>> = {
   target: "Targeting",
   combat: "Combat",
   ability: "Abilities",
+  minions: "Combat",
   player: "Character",
   ui: "Interface",
 };
@@ -163,6 +168,11 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     // Hold to raise the Warden's shield; pointer up/down (or the right stick, holding LT) picks the lane (#156).
     action("combat.guard", "Shield guard (hold, aim up/down)", "gameplay", [key("KeyZ"), button(6)]),
     action("combat.cancelCast", "Cancel cast", "casting", [key("Escape"), button(1)]),
+    // A Necromancer's group orders for all its minions (#295, Atlas 5.2.84); the zone checks them.
+    action("minions.attack", "Minions: attack target", "gameplay", [key("KeyY")]),
+    action("minions.defend", "Minions: defend here", "gameplay", [key("KeyU")]),
+    action("minions.follow", "Minions: follow", "gameplay", [key("KeyI")]),
+    action("minions.retreat", "Minions: retreat", "gameplay", [key("KeyO")]),
     action("player.releaseSpirit", "Release spirit", "gameplay", [key("KeyR"), button(3)]),
     action("ui.toggleBags", "Toggle bags", "gameplay", [key("KeyB"), button(8)]),
     action("ui.toggleCharacter", "Toggle character pane", "gameplay", [key("KeyC")]),

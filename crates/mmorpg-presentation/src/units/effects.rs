@@ -181,6 +181,8 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         42 => (Some(Stance::Sword), None, 0xc4c9cc),
         43 => (Some(Stance::Sword), None, 0x8fe05a),
         44 => (Some(Stance::Sword), None, 0xffa23a),
+        // Raise Skeleton (#295): a bone-white raising cast.
+        45 => (Some(Stance::Staff), None, 0xe6dfc8),
         _ => (None, None, 0xffffff),
     }
 }

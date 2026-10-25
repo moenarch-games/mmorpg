@@ -249,6 +249,35 @@ pub fn animal(
     }
     p.draws
 }
+
+/// A Necromancer's summoned skeleton (#295): a deliberately plain, bone-white placeholder
+/// humanoid with a sword, slightly hunched, until the owner's undead art exists.
+pub fn skeleton(
+    r: &mut Resources,
+    id: &str,
+    placement: Frame,
+    half: V,
+    loc: Locomotion,
+    action: Option<Action>,
+    life: Life,
+) -> Vec<Draw> {
+    const BONE: u32 = 0xd8d0b4;
+    const SHADE: u32 = 0x8f8a78;
+    humanoid_in(
+        r,
+        id,
+        placement,
+        half,
+        (BONE, SHADE, BONE, SHADE, Stance::Sword, 0.12),
+        (None, None),
+        (false, false),
+        0x9cff7a,
+        loc,
+        action,
+        life,
+    )
+}
+
 pub fn humanoid(
     r: &mut Resources,
     id: &str,
@@ -263,9 +292,7 @@ pub fn humanoid(
     action: Option<Action>,
     life: Life,
 ) -> Vec<Draw> {
-    let dead = life.dead();
-    let fall = life.fall();
-    let (skin, tunic, trousers, boots, stance, hunch) = match (family, role) {
+    let palette = match (family, role) {
         (Some(CreatureFamily::Marauder), _) => {
             (0xa07a52, accent, 0x4a4036, 0x2f2923, Stance::Sword, 0.08)
         }
@@ -286,6 +313,39 @@ pub fn humanoid(
         }
         _ => (0xe2cdb8, 0xf1f1f4, 0xf1f1f4, 0xd8d8de, Stance::Staff, 0.),
     };
+    humanoid_in(
+        r,
+        id,
+        placement,
+        half,
+        palette,
+        (family, role),
+        (elite, shielded),
+        accent,
+        loc,
+        action,
+        life,
+    )
+}
+
+/// A humanoid in `palette` (skin, tunic, trousers, boots, stance, hunch).
+#[allow(clippy::too_many_arguments)]
+fn humanoid_in(
+    r: &mut Resources,
+    id: &str,
+    placement: Frame,
+    half: V,
+    palette: (u32, u32, u32, u32, Stance, f64),
+    (family, role): (Option<CreatureFamily>, Option<NpcRole>),
+    (elite, shielded): (bool, bool),
+    accent: u32,
+    loc: Locomotion,
+    action: Option<Action>,
+    life: Life,
+) -> Vec<Draw> {
+    let dead = life.dead();
+    let fall = life.fall();
+    let (skin, tunic, trousers, boots, stance, hunch) = palette;
     let [sx, sy, sz] = [half[0] / 0.3, half[1] * 2. / 1.8, half[2] / 0.3];
     let pose = super::animation::action(
         pose(if dead { Locomotion::default() } else { loc }, stance),

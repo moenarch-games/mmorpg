@@ -41,6 +41,7 @@ The shared session runtime supplies player identity, connection epoch and comman
 | UseDoor | 4 | `[protocol, tag = 23, door: u8, open: u8]` |
 | Repair | 4 | `[protocol, tag = 24, piece: u16]` (0 stops, else the piece ID + 1) |
 | Rise | 3 | `[protocol, tag = 25, rise: i8]` (1 ascends, -1 descends, 0 neither) |
+| CommandMinions | 11 | `[protocol, tag = 26, order: u8, body: 8 bytes]` (see [Summoned minions](#summoned-minions-295)) |
 
 Version 14 adds `Rise` (tag 25, #274): held swim intent like `Move`, kept until the next `Rise`. It acts only while the player swims (feet more than 1.3 m under a water volume's surface) and is otherwise ignored; values outside -1..=1 are malformed payloads.
 
@@ -669,3 +670,23 @@ The player projection's projectile flag byte becomes a state: 0 flying, 1 stuck,
 flask or bomb showing its burst for 0.3 s where it happened). Canonical snapshots add flight 4,
 burst (remaining ticks `u16`). The protocol ID is rerolled; former payloads and checkpoints fail
 closed.
+## Summoned minions (#295)
+
+A Necromancer's skeletons are units of entity kind 4 (minion): projected like other units, with
+the summoning ability ID (45, Raise Skeleton) as appearance, their health, level and facing; only
+`in_combat` of the flags is ever set (players never attack minions, minions fight creatures
+only). Creatures may name a minion as their target or threat leader, and events may name minions
+(`Died` for a crumbled skeleton, `Miss`/`DamageTaken` for blows it takes, reported to its
+summoner). Error code 33, `no minions`, refuses an order without any minion.
+
+`CommandMinions` (tag 26, 11 bytes) orders all of the sender's minions at once: order code 1
+follow, 2 attack, 3 defend, 4 retreat, then 8 bytes: an attack's target entity reference followed
+by three zero bytes, a defended point's `x` and `z` (`i32` units each), or zeros for follow and
+retreat; any other padding is malformed. It queues as pending intent code 22 with the same 9-byte
+order. Canonical snapshots append, after the destructible pieces and before the reward history,
+the next minion ID (`u32`), a count (`u16`, at most `MAX_MINIONS`) and per minion in ID order: ID
+and summoner (`u32` each), summoning ability and level (`u8` each), health (`u32`), facing (`u16`),
+order (9 bytes), fight target (entity reference), swing timer and remaining ticks (`u16` each) and
+the exact body position and velocity (`f32` × 3 each). Ability catalog revision changes with
+Raise Skeleton (45; effect fields code 23, a summon), so content revisions (hashes) change. The protocol ID
+is rerolled; former payloads and checkpoints fail closed.

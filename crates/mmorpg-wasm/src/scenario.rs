@@ -35,7 +35,7 @@ pub enum Scenario {
     /// cavern and the inner chamber with its sealed threshold (#160).
     RedbrandCavern,
     /// A level 6 Necromancer at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
-    /// Shadow Bolt, Corruption, Drain Life and Bone Shield (#301).
+    /// Shadow Bolt, Corruption, Drain Life, Bone Shield (#301) and Raise Skeleton (#295).
     NecromancerDrain,
     /// A level 6 Rogue at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
     /// Sinister Strike, Poisoned Blade, Gouge and Adrenaline Rush (#302).

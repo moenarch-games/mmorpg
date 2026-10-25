@@ -210,7 +210,8 @@ impl Kind {
                     .creature_template(CreatureTemplateId::new(record.appearance))?
                     .family,
             ),
-            EntityRef::Npc(_) => None,
+            // Minions (#295) are procedural placeholders until their art exists.
+            EntityRef::Npc(_) | EntityRef::Minion(_) => None,
         }
     }
 

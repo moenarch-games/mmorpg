@@ -1257,12 +1257,13 @@ impl Runner<'_> {
             .map(|lease| lease.player_id)
     }
 
-    /// Players by bot name, other units as `creature:<id>` or `npc:<id>`.
+    /// Players by bot name, other units as `creature:<id>`, `npc:<id>` or `minion:<id>`.
     fn unit_name(&self, entity: EntityRef) -> String {
         match entity {
             EntityRef::Player(player_id) => self.player_name(player_id),
             EntityRef::Creature(id) => format!("creature:{}", id.get()),
             EntityRef::Npc(id) => format!("npc:{}", id.get()),
+            EntityRef::Minion(id) => format!("minion:{}", id.get()),
         }
     }
 
@@ -1786,7 +1787,7 @@ fn record_summary(record: &EntitySnapshot) -> String {
 fn player_of_entity(entity: &EntitySnapshot) -> Option<PlayerId> {
     match entity.kind {
         EntityKind::Player => Some(entity.id),
-        EntityKind::Creature | EntityKind::Npc => None,
+        EntityKind::Creature | EntityKind::Npc | EntityKind::Minion => None,
     }
 }
 

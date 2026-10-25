@@ -2,7 +2,7 @@ use mmorpg_client::session::{CharacterSelection, NetworkUpdate, PlayerInput};
 use mmorpg_client::{
     ClientError,
     camera::{CameraView, OrbitCamera},
-    controls::{ControlAction, NativeControls},
+    controls::{ControlAction, MinionCommand, NativeControls},
     gamepad::{
         PadAction, PadControls, PadMovement, PadState, camera_orbit, guard_lane, interface_key,
         read_pad,
@@ -491,7 +491,30 @@ impl App {
             ControlAction::TogglePanel(panel) => self.ui.toggle(panel),
             ControlAction::OpenChat => self.ui.open_chat(),
             ControlAction::Guard => self.guard_offset = Some(0.),
+            ControlAction::Minions(command) => {
+                if let Some(order) = self.minion_order(command) {
+                    self.send_interaction(mmorpg_core::ZoneCommand::CommandMinions(order));
+                }
+            }
         }
+    }
+
+    /// A minion group order (#295) from the latest projection: attack the selected unit or
+    /// defend where the viewer stands. The zone checks it.
+    fn minion_order(&self, command: MinionCommand) -> Option<mmorpg_core::MinionOrder> {
+        use mmorpg_core::MinionOrder;
+        let latest = self.presentation.latest()?;
+        Some(match command {
+            MinionCommand::Attack => MinionOrder::Attack(latest.viewer.target?),
+            MinionCommand::Defend => {
+                let me = latest.entities.iter().find(|unit| {
+                    unit.entity() == mmorpg_core::EntityRef::Player(latest.viewer_id)
+                })?;
+                MinionOrder::Defend([me.position[0], me.position[2]])
+            }
+            MinionCommand::Follow => MinionOrder::Follow,
+            MinionCommand::Retreat => MinionOrder::Retreat,
+        })
     }
 
     /// The held guard lane follows the pointer's vertical travel since the

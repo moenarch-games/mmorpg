@@ -35,6 +35,7 @@ mod guard;
 mod interest;
 mod inventory;
 mod loot;
+mod minion;
 mod movable;
 mod nav;
 pub mod physics;
@@ -103,7 +104,7 @@ pub use door::{
     CanonicalDoor, DOOR_COOLDOWN_TICKS, DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView,
     MAX_DOORS, NPC_SIGHT_HEIGHT_UNITS,
 };
-pub use entity::{CreatureId, CreatureTemplateId, EntityKind, EntityRef, NpcId};
+pub use entity::{CreatureId, CreatureTemplateId, EntityKind, EntityRef, MinionId, NpcId};
 pub use ephemeral::EphemeralCharacterBuild;
 pub use equipment::{
     EQUIPMENT_SLOTS, Equipment, EquipmentSlot, HEALTH_PER_STAMINA, ItemStats, MAX_EQUIPPED_STAMINA,
@@ -126,6 +127,10 @@ pub use inventory::{
 pub use loot::{
     LootOutcome, LootRewards, LootRolls, LootSettlementError, LootTable, LootTableError,
     MAX_LOOT_OUTCOMES, loot_table, settle_loot,
+};
+pub use minion::{
+    CanonicalMinion, DEFEND_RADIUS_UNITS, ENGAGE_RADIUS_UNITS, FORMATION_RADIUS_UNITS, MAX_MINIONS,
+    MAX_MINIONS_PER_SUMMONER, MINION_HALF_EXTENTS_UNITS, Minion, MinionOrder, ORDER_RANGE_UNITS,
 };
 pub use nav::NAV_CELL_UNITS;
 pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};
@@ -356,6 +361,9 @@ pub enum ZoneCommand {
     },
     /// Stops the player's own cast or channel.
     CancelCast,
+    /// Orders all of the player's minions at once (#295, Atlas 5.2.84); the zone checks the
+    /// target or point in the tick.
+    CommandMinions(MinionOrder),
     /// Chooses the class (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue, 5 Cleric, 6 Druid) and sex
     /// (0 female, 1 male) once. Invalid or repeated choices are refused in the tick.
     ChooseClass {

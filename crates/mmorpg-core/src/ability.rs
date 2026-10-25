@@ -307,6 +307,18 @@ pub enum AbilityEffect {
         duration: u16,
         period: u16,
     },
+    /// Raises a minion beside the caster (#295) with `health` + `health_per_level` health that
+    /// hits for `damage` (inclusive) + `damage_per_level` every `swing_ticks` and crumbles after
+    /// `duration` ticks. The oldest of the caster's minions crumbles when a raise would exceed
+    /// [`crate::MAX_MINIONS_PER_SUMMONER`].
+    Summon {
+        health: u16,
+        health_per_level: u16,
+        damage: [u16; 2],
+        damage_per_level: u16,
+        swing_ticks: u16,
+        duration: u16,
+    },
 }
 
 /// One catalog row.
@@ -360,7 +372,8 @@ impl Ability {
             | AbilityEffect::Smash { .. }
             | AbilityEffect::Beam { .. }
             | AbilityEffect::Chain { .. }
-            | AbilityEffect::Drain { .. } => return None,
+            | AbilityEffect::Drain { .. }
+            | AbilityEffect::Summon { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -518,6 +531,7 @@ pub mod ids {
     pub const THROWING_KNIFE: AbilityId = AbilityId::new(42);
     pub const VENOM_FLASK: AbilityId = AbilityId::new(43);
     pub const BLASTING_BOMB: AbilityId = AbilityId::new(44);
+    pub const RAISE_SKELETON: AbilityId = AbilityId::new(45);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -540,7 +554,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 44] = [
+pub const ABILITY_CATALOG: [Ability; 45] = [
     ability(
         1,
         "Heroic Strike",
@@ -1270,6 +1284,26 @@ pub const ABILITY_CATALOG: [Ability; 44] = [
         ),
         crate::ProjectileKind::Bomb,
     ),
+    // The Necromancer's summoned minions (#295): a skeleton that follows, forms up and fights
+    // for a minute. Up to four stand at once; group commands steer them (Atlas 5.2.84).
+    ability(
+        45,
+        "Raise Skeleton",
+        NECROMANCER,
+        3,
+        35,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(3_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Summon {
+            health: 45,
+            health_per_level: 12,
+            damage: [4, 7],
+            damage_per_level: 2,
+            swing_ticks: ticks_from_ms(2_000),
+            duration: ticks_from_ms(60_000),
+        },
+    ),
 ];
 
 /// The catalog row of `id`, if any.
@@ -1501,6 +1535,23 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 duration.into(),
                 period.into(),
             ],
+            AbilityEffect::Summon {
+                health,
+                health_per_level,
+                damage,
+                damage_per_level,
+                swing_ticks,
+                duration,
+            } => vec![
+                23,
+                health.into(),
+                health_per_level.into(),
+                damage[0].into(),
+                damage[1].into(),
+                damage_per_level.into(),
+                swing_ticks.into(),
+                duration.into(),
+            ],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1535,7 +1586,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(45)), None);
+        assert_eq!(ability_by_id(AbilityId::new(46)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG

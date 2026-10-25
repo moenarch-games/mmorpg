@@ -215,6 +215,7 @@ impl UnitPresenter {
                 .map_or(character, |template| {
                     metres(template.body_half_extents(record.facing))
                 }),
+            EntityRef::Minion(_) => metres(mmorpg_core::MINION_HALF_EXTENTS_UNITS),
             EntityRef::Player(_) | EntityRef::Npc(_) => character,
         }
     }
@@ -311,6 +312,7 @@ impl UnitPresenter {
                 EntityKind::Player => "player",
                 EntityKind::Creature => "creature",
                 EntityKind::Npc => "npc",
+                EntityKind::Minion => "minion",
             };
             let id = format!("unit-{name}-{}", unit.record.id);
             let dead = unit.record.flags.dead;
@@ -732,6 +734,19 @@ impl UnitPresenter {
                 root,
                 kind,
                 f64::from(t.half_extents[1]) / f64::from(UNITS_PER_METRE),
+            );
+        }
+        // A summoned skeleton (#295): a deliberately plain bone-white placeholder humanoid until
+        // the owner's undead art exists; no final minion art is invented here.
+        if entity.kind() == EntityKind::Minion {
+            return creatures::skeleton(
+                &mut self.resources,
+                id,
+                root,
+                half.map(f64::from),
+                loc,
+                action,
+                life,
             );
         }
         let family = template.map(|t| t.family);

@@ -696,7 +696,8 @@ impl ZoneSimulation {
     }
 
     /// Whether a body stops a shot by `owner`: everything but its shooter, the shooter's own side
-    /// (safe players' shots pass players; creatures' shots pass creatures) and corpses.
+    /// (safe players' shots pass players; creatures' shots pass creatures; players' shots pass
+    /// minions, #295) and corpses.
     pub(crate) fn projectile_meets(&self, owner: EntityRef, body: BodyId) -> bool {
         if body == body_id(owner) {
             return false;
@@ -708,6 +709,8 @@ impl ZoneSimulation {
                     (EntityRef::Player(attacker), EntityRef::Player(victim)) => {
                         self.players_are_hostile(attacker, victim)
                     }
+                    // Minions fight creatures only: players' shots pass them.
+                    (EntityRef::Player(_), EntityRef::Minion(_)) => false,
                     _ => std::mem::discriminant(&unit) != std::mem::discriminant(&owner),
                 };
                 opposing && self.unit_alive(unit)
@@ -726,6 +729,7 @@ impl ZoneSimulation {
                 .get(&id)
                 .is_some_and(|creature| creature.is_alive()),
             EntityRef::Npc(_) => true,
+            EntityRef::Minion(id) => self.minions.contains_key(&id),
         }
     }
 
@@ -815,13 +819,17 @@ impl ZoneSimulation {
                     self.apply_player_effect_scaled(player_id, ability, Some(unit), percent, now)?;
                 }
             }
-            (EntityRef::Creature(creature_id), EntityRef::Player(player_id)) => {
+            // A minion in the way (#295) takes the shot meant for a player.
+            (
+                EntityRef::Creature(creature_id),
+                victim @ (EntityRef::Player(_) | EntityRef::Minion(_)),
+            ) => {
                 if self
                     .creatures
                     .get(&creature_id)
                     .is_some_and(|creature| creature.is_alive())
                 {
-                    self.creature_effect_lands(creature_id, player_id, ability)?;
+                    self.creature_effect_lands(creature_id, victim, ability)?;
                 }
             }
             // Cover: an NPC in the way takes the shot without effect.

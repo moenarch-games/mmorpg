@@ -52,7 +52,7 @@ impl ZoneSimulation {
                 .creatures
                 .get(&id)
                 .is_some_and(|creature| creature.is_alive()),
-            EntityRef::Npc(_) => false,
+            EntityRef::Npc(_) | EntityRef::Minion(_) => false,
         }
     }
 

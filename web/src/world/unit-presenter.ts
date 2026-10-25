@@ -79,7 +79,7 @@ type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKi
   height: number; clip: string; time: number; tint: number | null; loadout: Loadout | null; resident: string | null; headwear: boolean };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
-const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2 };
+const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
 const CLASS_CODE = { warden: 0, ranger: 1, arcanist: 2, necromancer: 3, rogue: 4, cleric: 5, druid: 6 } as const;
 
 function triples(values: Float32Array, start: number, count: number): [number, number, number][] {

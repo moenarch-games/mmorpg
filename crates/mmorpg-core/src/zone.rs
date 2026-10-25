@@ -248,6 +248,9 @@ pub struct ZoneSimulation {
     /// The validated action graph the zone runs (#380): the baseline unless
     /// a test or the lab configured another; zone setup, not canonical state.
     pub(crate) action_graph: &'static crate::action::ActionGraph,
+    /// Summoned minions by ID (#295), and the next minion ID.
+    pub(crate) minions: BTreeMap<crate::MinionId, crate::Minion>,
+    pub(crate) next_minion: u32,
 }
 
 impl ZoneSimulation {
@@ -387,6 +390,8 @@ impl ZoneSimulation {
             nav_cache: BTreeMap::new(),
             prop_motion: BTreeMap::new(),
             action_graph: &crate::action::BASELINE,
+            minions: BTreeMap::new(),
+            next_minion: 1,
             rewards: None,
         })
     }
@@ -473,6 +478,10 @@ impl ZoneSimulation {
         }
         self.forget_caster(entity);
         self.forget_forced_unit(entity);
+        // Its minions vanish with it (#295).
+        for minion in self.minions_of(player_id) {
+            self.dismiss_minion(minion);
+        }
         for creature in self.creatures.values_mut() {
             creature.forget(entity);
             // A cast at a departed player resolves against nobody.
@@ -585,6 +594,7 @@ impl ZoneSimulation {
                 aim,
             }),
             ZoneCommand::CancelCast => Some(PlayerIntent::CancelCast),
+            ZoneCommand::CommandMinions(order) => Some(PlayerIntent::CommandMinions(order)),
             ZoneCommand::ChooseClass { class, sex } => {
                 Some(PlayerIntent::ChooseClass { class, sex })
             }
@@ -638,7 +648,8 @@ impl ZoneSimulation {
     ///    here, casts and channels start here);
     /// 2. creature AI decisions in creature-ID order (aggro, assist, chase,
     ///    wander, leash, evade and creature ability casts), which set
-    ///    creature velocities; roots and stuns stop them, snares slow them;
+    ///    creature velocities; roots and stuns stop them, snares slow them; then minion
+    ///    decisions in minion-ID order (#295: orders, fights, formation and separation);
     /// 3. player movement velocities and grounded jumps (dead and stunned
     ///    players stand still); movement or a jump interrupts a cast; large
     ///    creatures shove smaller units in their way (#297) and forced moves
@@ -649,9 +660,9 @@ impl ZoneSimulation {
     /// 6. combat: global cooldowns, cooldowns and casts or channels (players,
     ///    then creatures), aura pulses and expiry in `(EntityRef, aura slot)`
     ///    order, then swings in `EntityRef` order: swing timers, range checks
-    ///    after movement, damage, threat, deaths, tapping;
-    /// 7. health and class-resource regeneration, corpse despawns and
-    ///    respawns in ID order;
+    ///    after movement, damage, threat, deaths, tapping (minions after creatures);
+    /// 7. minions whose time ran out crumble, then health and class-resource regeneration,
+    ///    corpse despawns and respawns in ID order;
     /// 8. talk and explore quest objectives of living players in player-ID
     ///    order;
     /// 9. the tick counter.
@@ -673,6 +684,7 @@ impl ZoneSimulation {
         }
         self.consume_intents()?;
         self.decide_creatures()?;
+        self.decide_minions()?;
         self.drive_players()?;
         self.shove_with_large_creatures()?;
         self.apply_forced_moves()?;
@@ -801,7 +813,8 @@ impl ZoneSimulation {
                 })
                 .map(|(&id, _)| EntityRef::Creature(id)),
         );
-        for entity in bodies {
+        let minions = self.minions.keys().map(|&id| EntityRef::Minion(id));
+        for entity in bodies.chain(minions) {
             let position = self
                 .world
                 .body(body_id(entity))
@@ -843,6 +856,12 @@ impl ZoneSimulation {
                 interest.insert(entity, position[0], position[2]);
                 inserted += 1;
             }
+        }
+        for &id in self.minions.keys() {
+            let entity = EntityRef::Minion(id);
+            let position = self.unit_position(entity)?;
+            interest.insert(entity, position[0], position[2]);
+            inserted += 1;
         }
         self.interest = interest;
         self.interest_work.full_rebuilds += 1;

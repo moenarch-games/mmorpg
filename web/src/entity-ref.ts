@@ -2,10 +2,10 @@
  * Unit identity shared by the command and snapshot wire formats
  * (docs/PROTOCOL.md): a kind code then a `u32` ID, kind 0 meaning none.
  */
-export type EntityKind = "player" | "creature" | "npc";
+export type EntityKind = "player" | "creature" | "npc" | "minion";
 export type EntityRef = { readonly kind: EntityKind; readonly id: number };
 
-const KIND_CODES: Record<EntityKind, number> = { player: 1, creature: 2, npc: 3 };
+const KIND_CODES: Record<EntityKind, number> = { player: 1, creature: 2, npc: 3, minion: 4 };
 
 export function entityKindCode(kind: EntityKind): number {
   return KIND_CODES[kind];
@@ -22,6 +22,9 @@ export function entityKindFromCode(code: number): EntityKind | null {
       return "creature";
     case 3:
       return "npc";
+    // A Necromancer's summoned minion (#295).
+    case 4:
+      return "minion";
     default:
       throw new Error("Unknown entity kind");
   }

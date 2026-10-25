@@ -59,6 +59,7 @@ pub fn audio_entity(entity: EntityRef) -> u64 {
         EntityRef::Player(_) => 1,
         EntityRef::Creature(_) => 2,
         EntityRef::Npc(_) => 3,
+        EntityRef::Minion(_) => 4,
     };
     (kind << 32) | u64::from(entity.id())
 }
