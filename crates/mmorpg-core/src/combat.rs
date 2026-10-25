@@ -1164,7 +1164,7 @@ impl ZoneSimulation {
             player.guard = crate::GuardState::default();
         });
         self.notify(player_id, ZoneEvent::Died { entity, killer });
-        // Its minions crumble with it (#295).
+        // Its minions crumble with it (#295); a companion fights on (#296).
         self.release_minions(player_id, false)
     }
 

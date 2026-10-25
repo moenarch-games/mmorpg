@@ -120,6 +120,10 @@ impl crate::ZoneSimulation {
             let kind = choice.class.resource();
             player.resource.value += kind.max(player.level) - kind.max(old_level);
         }
+        let level = player.level;
+        if level != old_level {
+            self.level_companion(player_id, level);
+        }
         Ok(())
     }
 }

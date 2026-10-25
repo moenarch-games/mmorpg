@@ -129,8 +129,9 @@ pub use loot::{
     MAX_LOOT_OUTCOMES, loot_table, settle_loot,
 };
 pub use minion::{
-    CanonicalMinion, DEFEND_RADIUS_UNITS, ENGAGE_RADIUS_UNITS, FORMATION_RADIUS_UNITS, MAX_MINIONS,
-    MAX_MINIONS_PER_SUMMONER, MINION_HALF_EXTENTS_UNITS, Minion, MinionOrder, ORDER_RANGE_UNITS,
+    COMPANION_HALF_EXTENTS_UNITS, CanonicalMinion, DEFEND_RADIUS_UNITS, ENGAGE_RADIUS_UNITS,
+    FORMATION_RADIUS_UNITS, MAX_MINIONS, MAX_MINIONS_PER_SUMMONER, MINION_HALF_EXTENTS_UNITS,
+    Minion, MinionOrder, ORDER_RANGE_UNITS, is_companion, minion_ability, minion_half_extents,
 };
 pub use nav::NAV_CELL_UNITS;
 pub use platform::{MAX_PLATFORMS, Platform, PlatformId, PlatformPhase};

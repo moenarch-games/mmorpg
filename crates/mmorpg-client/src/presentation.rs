@@ -38,6 +38,8 @@ const GUARD_COLOR: [f32; 3] = [0.22, 0.52, 0.3];
 const TAPPED_COLOR: [f32; 3] = [0.5, 0.5, 0.5];
 /// Summoned skeletons (#295): bone white.
 const MINION_COLOR: [f32; 3] = [0.85, 0.82, 0.7];
+/// A Druid's companion (#296): leaf green.
+const COMPANION_COLOR: [f32; 3] = [0.5, 0.77, 0.42];
 const TARGET_MARKER_COLOR: [f32; 3] = [0.95, 0.82, 0.35];
 const HEALTH_BAR_WIDTH: f32 = 1.0;
 const HEALTH_BAR_BACKGROUND: [f32; 3] = [0.12, 0.12, 0.14];
@@ -889,8 +891,14 @@ impl Presentation {
         match entity {
             EntityRef::Player(id) if id == self.player_id => "you".into(),
             EntityRef::Player(id) => format!("Player {id}"),
-            // A Necromancer's summoned minion (#295).
-            EntityRef::Minion(_) => "Skeleton".into(),
+            // A Necromancer's summoned minion (#295) or a Druid's companion (#296).
+            EntityRef::Minion(_) => self
+                .latest()
+                .and_then(|latest| latest.entities.iter().find(|unit| unit.entity() == entity))
+                .map_or("Skeleton", |unit| {
+                    mmorpg_presentation::units::minion_name(unit.appearance)
+                })
+                .into(),
             EntityRef::Npc(id) => self
                 .content
                 .npc(id)
@@ -966,9 +974,16 @@ impl Presentation {
             EntityRef::Npc(id) => self.content.npc(id).map(|npc| npc.role),
             _ => None,
         };
+        // A Druid's companion (#296) is a wolf.
+        let companion = entity.kind() == EntityKind::Minion
+            && mmorpg_core::is_companion(mmorpg_core::minion_ability(record.appearance));
         UnitModel::choose(
             entity.kind(),
-            template.map(|template| template.family),
+            if companion {
+                Some(mmorpg_core::CreatureFamily::Wolf)
+            } else {
+                template.map(|template| template.family)
+            },
             template.is_some_and(|template| template.elite),
             role,
         )
@@ -980,7 +995,15 @@ impl Presentation {
         match entity {
             EntityRef::Player(id) if id == self.player_id => (SELF_COLOR, character),
             EntityRef::Player(_) => (PLAYER_COLOR, character),
-            EntityRef::Minion(_) => (MINION_COLOR, metres(mmorpg_core::MINION_HALF_EXTENTS_UNITS)),
+            EntityRef::Minion(_) => {
+                let ability = mmorpg_core::minion_ability(record.appearance);
+                let color = if mmorpg_core::is_companion(ability) {
+                    COMPANION_COLOR
+                } else {
+                    MINION_COLOR
+                };
+                (color, metres(mmorpg_core::minion_half_extents(ability)))
+            }
             EntityRef::Npc(id) => {
                 let guard = self
                     .content

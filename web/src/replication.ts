@@ -468,6 +468,8 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [44, instant(15_000)],
   // The Necromancer's Raise Skeleton (#295).
   [45, timed(1_500, false, 3_000)],
+  // The Druid's Call Companion (#296).
+  [46, timed(2_000, false, 10_000)],
 ]);
 /** Mana: 110 + 22 per level above 1; rage, focus and faith: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

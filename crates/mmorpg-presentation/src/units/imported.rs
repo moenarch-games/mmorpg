@@ -210,8 +210,13 @@ impl Kind {
                     .creature_template(CreatureTemplateId::new(record.appearance))?
                     .family,
             ),
-            // Minions (#295) are procedural placeholders until their art exists.
-            EntityRef::Npc(_) | EntityRef::Minion(_) => None,
+            // A Druid's companion (#296) borrows the CC0 Quaternius wolf as its placeholder;
+            // skeletons (#295) are procedural placeholders until their art exists.
+            EntityRef::Minion(_) => {
+                mmorpg_core::is_companion(mmorpg_core::minion_ability(record.appearance))
+                    .then_some(Self::Wolf)
+            }
+            EntityRef::Npc(_) => None,
         }
     }
 

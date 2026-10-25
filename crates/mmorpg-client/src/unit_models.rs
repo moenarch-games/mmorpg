@@ -194,8 +194,12 @@ impl UnitModel {
     ) -> Self {
         match kind {
             EntityKind::Player => Self::Humanoid(HumanoidKind::Player),
-            // Summoned skeletons (#295) stay placeholders until their art exists.
-            EntityKind::Minion => Self::Placeholder,
+            // A Druid's companion (#296) is a wolf; summoned skeletons (#295) stay placeholders
+            // until their art exists.
+            EntityKind::Minion => match family {
+                Some(CreatureFamily::Wolf) => Self::Quadruped(AnimalKind::Wolf),
+                _ => Self::Placeholder,
+            },
             EntityKind::Npc => Self::Humanoid(match role {
                 Some(NpcRole::Guard) => HumanoidKind::Guard,
                 Some(NpcRole::Vendor) => HumanoidKind::Vendor,

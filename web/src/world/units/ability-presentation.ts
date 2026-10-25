@@ -43,6 +43,7 @@ const SHARDS = "M4 2 8 10 3 12ZM11 2 15 12 9 14ZM18 2 22 10 17 14ZM7 15 11 22 4 
 const BANDAGE = "M3 9 15 3 21 15 9 21ZM10 10 14 12 12 16 8 14Z";
 const SPLAT = "M12 3L15 3 17 6 20 7 22 10 19 13 19 16 17 19 14 18 12 21 9 19 6 20 5 16 3 13 4 10 6 8 8 5 10 4Z";
 const SKULL = "M12 2C17 2 20 5 20 10 20 13 18 15 17 16L17 19 15 19 15 21 13 21 13 19 11 19 11 21 9 21 9 19 7 19 7 16C6 15 4 13 4 10 4 5 7 2 12 2ZM9 9C8 9 7 10 7 11 7 12 8 13 9 13 10 13 11 12 11 11 11 10 10 9 9 9ZM15 9C14 9 13 10 13 11 13 12 14 13 15 13 16 13 17 12 17 11 17 10 16 9 15 9Z";
+const PAW = "M12 13C15 13 18 16 18 19 18 21 16 22 12 21 8 22 6 21 6 19 6 16 9 13 12 13ZM5 8C6.7 8 8 9.6 8 11.5 8 13 7 14 5.8 14 4.2 14 3 12.4 3 10.5 3 9 3.9 8 5 8ZM19 8C20.1 8 21 9 21 10.5 21 12.4 19.8 14 18.2 14 17 14 16 13 16 11.5 16 9.6 17.3 8 19 8ZM9 3C10.7 3 12 4.6 12 6.5 12 8.4 10.9 10 9.4 10 7.9 10 7 8.6 7 6.8 7 4.7 7.9 3 9 3ZM15 3C16.1 3 17 4.7 17 6.8 17 8.6 16.1 10 14.6 10 13.1 10 12 8.4 12 6.5 12 4.6 13.3 3 15 3Z";
 
 /** Player abilities 1–12 and 16–17, creature abilities 13–15 and 18, by catalog ID. Shots (5–7, 15) fly as the zone's own projectiles (#286). */
 export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = new Map<number, AbilityPresentation>([
@@ -95,6 +96,8 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [44, { range: RANGED, description: "Lobs a bomb along your facing that bounces and rolls, then bursts when an enemy touches it or after 2.5 s, hurting and hurling back every enemy within 4 m it can see.", glyph: FLAME, accent: "#ffa23a", visual: null, pose: "swing" }],
   // The Necromancer's summoned minions (#295): Y attacks the target, U defends here, I follows, O retreats.
   [45, { range: "self", description: "Raises a skeleton that follows you and fights for a minute; up to four stand at once. Y sends them at your target, U holds this spot, I follows, O retreats.", glyph: SKULL, accent: "#e6dfc8", visual: null, pose: "cast" }],
+  // The Druid's pet companion (#296): the same Y/U/I/O orders as minions.
+  [46, { range: "self", description: "Calls your wolf companion to your side. It follows you, fights what fights you and stays until it is slain; calling it again brings it back with the health it has. Y sends it at your target, U holds this spot, I follows, O retreats.", glyph: PAW, accent: "#7fc46a", visual: null, pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

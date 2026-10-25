@@ -632,7 +632,9 @@ impl ZoneSimulation {
                     }
                 }
             }
-            AbilityEffect::Summon { .. } => self.raise_minion(player_id, ability.id)?,
+            AbilityEffect::Summon { .. } | AbilityEffect::Companion { .. } => {
+                self.raise_minion(player_id, ability.id)?;
+            }
             // Blizzard, Lightning Beam and Drain Life pulse while they channel; bandages and
             // stomps are creature-only; a flask's splash lands where it shatters.
             AbilityEffect::Blizzard { .. }

@@ -690,3 +690,10 @@ order (9 bytes), fight target (entity reference), swing timer and remaining tick
 the exact body position and velocity (`f32` × 3 each). Ability catalog revision changes with
 Raise Skeleton (45; effect fields code 23, a summon), so content revisions (hashes) change. The protocol ID
 is rerolled; former payloads and checkpoints fail closed.
+
+## Pet companion (#296)
+
+A Druid's wolf companion is a minion whose appearance is Call Companion (46; effect fields code 24,
+a companion, without a duration), so content revisions (hashes) change. Each owner keeps one; it is
+not timed (its canonical remaining ticks are always zero), outlives its owner's death and obeys the
+same `CommandMinions` orders. Layouts are unchanged.
