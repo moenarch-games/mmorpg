@@ -19,6 +19,18 @@
 //!   [`Anchor::Impact`]) is open: following it ends the action, as a landing
 //!   edge ends a landing.
 //!
+//! A trigger is performed through `input-bindings`' press/release lifecycle
+//! as a [`Gesture`]: the press, a hold-to-charge released after a minimum,
+//! or a chord pressed while a partner control is held. A trigger may also be
+//! a [`TimedFollowUp`] of another authored action: it counts only in a
+//! window after that action's use, and a press before the window waits in a
+//! buffer that may reach back into the source's startup (an edge's buffer
+//! cannot precede its anchor); a press before the buffer loses the
+//! follow-up. Holds and releases arrive as ordinary commands and are read in
+//! arrival ticks: nothing is backdated, and a late input's grace (#415)
+//! applies only to the follow-up window, as to an edge's. Like a running
+//! action, the holds are zone setup, not canonical state.
+//!
 //! A stun or death ends a running authored action. Nothing here is a second
 //! executor: the zone only times the phases, and the follow-up runs through
 //! the ordinary intent, edge and movement code. The production graph authors
@@ -26,11 +38,11 @@
 //! not canonical state: a zone restored from a snapshot runs the baseline.
 
 use super::{
-    ActionGraph, ActionId, ActionInput, Anchor, Condition, EdgeDef, EdgeId, Effect, GraphError,
-    MAX_IMPULSE_FORWARD_CMS, MAX_IMPULSE_UP_CMS, Movement, Outcome, Phase, duration_ok, input_of,
-    validate_movement_values,
+    ActionGraph, ActionId, ActionInput, Anchor, BlockReason, Condition, EdgeDef, EdgeId, Effect,
+    GraphError, MAX_IMPULSE_FORWARD_CMS, MAX_IMPULSE_UP_CMS, Movement, Outcome, Phase, Window,
+    duration_ok, input_of, validate_movement_values,
 };
-use crate::snapshot::PlayerIntent;
+use crate::snapshot::{PlayerIntent, QueuedIntent};
 use crate::zone::{Axis, PlayerState};
 use crate::{AbilityId, AbilityUser, PlayerClass, PlayerId, ZoneError, ZoneSimulation, aura};
 
@@ -89,6 +101,52 @@ impl InputContext {
     }
 }
 
+/// The held control a chord needs.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Partner {
+    /// The raised shield guard (Wardens).
+    Guard,
+    /// Another use of this input, pressed and not released yet.
+    Input(ActionInput),
+}
+
+/// How the trigger's input is performed, through `input-bindings`' press
+/// and release lifecycle (Atlas 5.9.5).
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum Gesture {
+    /// The press.
+    #[default]
+    Press,
+    /// Hold to charge, release to fire. The startup lasts while the input is
+    /// held, at most its own length (a full charge fires by itself). A
+    /// release at least `min_ms` after the press fires the use with the
+    /// action's effects; an earlier one is an ordinary tap: the action ends
+    /// and the use resolves as usual. A retired hold (focus loss, a menu)
+    /// ends the action without a use.
+    Charge { min_ms: u32 },
+    /// The press while the partner is held.
+    Chord(Partner),
+}
+
+impl Gesture {
+    const fn rank(self) -> u8 {
+        match self {
+            Self::Press | Self::Charge { .. } => 0,
+            Self::Chord(_) => 1,
+        }
+    }
+}
+
+/// A timed follow-up (Atlas 5.9.5): the trigger counts only in `window`,
+/// measured from the use of the authored action in `source`. Its buffer may
+/// exceed the window's opening and reach back into the source's startup.
+/// Following it ends the source, as taking an edge does.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TimedFollowUp {
+    pub source: u8,
+    pub window: Window,
+}
+
 /// The semantic input that starts an authored action.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Trigger {
@@ -97,6 +155,48 @@ pub struct Trigger {
     /// Only this ability's use; `None` is any use the input covers.
     pub ability: Option<AbilityId>,
     pub context: InputContext,
+    pub gesture: Gesture,
+    /// Only as this timed follow-up of another authored action.
+    pub follows: Option<TimedFollowUp>,
+}
+
+impl Trigger {
+    /// The plain press of `input` in `context`.
+    #[must_use]
+    pub const fn press(
+        input: ActionInput,
+        ability: Option<AbilityId>,
+        context: InputContext,
+    ) -> Self {
+        Self {
+            input,
+            ability,
+            context,
+            gesture: Gesture::Press,
+            follows: None,
+        }
+    }
+
+    /// Whether two triggers claim the same input: the same input, ability,
+    /// context and follow-up source, and the same chord partner or neither a
+    /// chord (a charge and a press of one input conflict).
+    fn conflicts(&self, other: &Self) -> bool {
+        let gesture = match (self.gesture, other.gesture) {
+            (Gesture::Chord(a), Gesture::Chord(b)) => a == b,
+            (Gesture::Chord(_), _) | (_, Gesture::Chord(_)) => false,
+            _ => true,
+        };
+        gesture
+            && self.input == other.input
+            && self.ability == other.ability
+            && self.context == other.context
+            && self.follows.map(|follow| follow.source) == other.follows.map(|follow| follow.source)
+    }
+
+    /// Chords first, then the more specific context.
+    const fn rank(&self) -> (u8, u8) {
+        (self.gesture.rank(), self.context.rank())
+    }
 }
 
 /// One timed phase of an authored action.
@@ -146,19 +246,20 @@ impl AuthoredAction {
         ]
     }
 
-    /// The phase `elapsed` ticks after the trigger, once the use has (or has
-    /// not yet) resolved; `None` once it is over.
+    /// The phase `elapsed` ticks after the trigger, once the use resolved
+    /// `impact` ticks after it (or before it has); `None` once it is over.
+    /// A charge's use resolves at its release, before the startup's end.
     #[must_use]
-    pub const fn phase_at(&self, elapsed: u16, released: bool) -> Option<Phase> {
+    pub const fn phase_at(&self, elapsed: u16, impact: Option<u16>) -> Option<Phase> {
         let [startup, active, recovery] = self.ticks();
-        if !released {
+        let Some(impact) = impact else {
             return if elapsed <= startup {
                 Some(Phase::Startup)
             } else {
                 None
             };
-        }
-        let since = elapsed.saturating_sub(startup);
+        };
+        let since = elapsed.saturating_sub(impact);
         if since < active {
             Some(Phase::Active)
         } else if since < active + recovery {
@@ -216,6 +317,16 @@ pub enum AuthoredProblem {
     /// waiver are allowed; a confirmed target or a kept opening need an edge
     /// source that has them.
     Effect,
+    /// A charge's minimum is zero or not a duration within its startup. (A
+    /// directed strike is sent on its release, so it is always a tap.)
+    Charge,
+    /// A chord's partner cannot be held: only the guard (for Wardens) and a
+    /// pressed Warden melee, Shield Bash or class ability are.
+    Chord,
+    /// A follow-up's source is not an earlier authored action of the same
+    /// class, or its window is malformed, buffers back past the source's
+    /// trigger or closes after the source ends.
+    FollowUp,
 }
 
 /// The input and ability an intent makes.
@@ -290,6 +401,43 @@ impl ActionGraph {
         {
             return bad(AuthoredProblem::Movement);
         }
+        match def.trigger.gesture {
+            Gesture::Press => {}
+            Gesture::Charge { min_ms } => {
+                if min_ms == 0 || !duration_ok(min_ms) || min_ms > def.startup.ms {
+                    return bad(AuthoredProblem::Charge);
+                }
+            }
+            Gesture::Chord(partner) => {
+                let holdable = match partner {
+                    Partner::Guard => def.class == PlayerClass::Warden,
+                    Partner::Input(ActionInput::WardenMelee | ActionInput::ShieldBash) => {
+                        def.class == PlayerClass::Warden
+                    }
+                    Partner::Input(input) => input == ActionInput::Ability,
+                };
+                if !holdable {
+                    return bad(AuthoredProblem::Chord);
+                }
+            }
+        }
+        if let Some(follow) = def.trigger.follows {
+            let window = follow.window;
+            let source = self.authored[..index]
+                .iter()
+                .find(|other| other.slot == follow.source && other.class == def.class);
+            let fits = source.is_some_and(|source| {
+                [window.open_after_ms, window.actionable_ms, window.buffer_ms]
+                    .into_iter()
+                    .all(duration_ok)
+                    && u64::from(window.buffer_ms)
+                        <= u64::from(window.open_after_ms) + u64::from(source.startup.ms)
+                    && window.ticks().closes() < source.after_impact_ticks()
+            });
+            if !fits {
+                return bad(AuthoredProblem::FollowUp);
+            }
+        }
         let (mut impulses, mut recoveries) = (0, 0);
         for effect in def.effects {
             match *effect {
@@ -313,11 +461,20 @@ impl ActionGraph {
         }
         if let Some(other) = self.authored[..index]
             .iter()
-            .find(|other| other.class == def.class && other.trigger == def.trigger)
+            .find(|other| other.class == def.class && other.trigger.conflicts(&def.trigger))
         {
             return Err(GraphError::ConflictingTrigger(other.slot, def.slot));
         }
         Ok(())
+    }
+
+    /// Whether a trigger reads holds and releases: a charge or a chord. The
+    /// zone tracks them only then.
+    #[must_use]
+    pub fn tracks_holds(&self) -> bool {
+        self.authored
+            .iter()
+            .any(|def| def.trigger.gesture != Gesture::Press)
     }
 
     /// The checks an edge out of an authored action passes: its source
@@ -354,29 +511,153 @@ impl ActionGraph {
     }
 }
 
+/// The most holds one player's tracker keeps.
+const MAX_HOLDS: usize = 8;
+
+/// How a hold ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Ended {
+    /// The key went up in this tick.
+    At(u64),
+    /// `input-bindings` retired the hold; it must never act.
+    Retired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Hold {
+    ability: AbilityId,
+    /// The tick the press arrived in.
+    pressed: u64,
+    ended: Option<Ended>,
+}
+
+/// Pressed abilities and their releases, in arrival ticks (#414).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Holds(Vec<Hold>);
+
+impl Holds {
+    /// `ability` was pressed in tick `now`; the new hold replaces its last.
+    pub(crate) fn press(&mut self, ability: AbilityId, now: u64) {
+        self.0.retain(|hold| hold.ability != ability);
+        if self.0.len() >= MAX_HOLDS {
+            let oldest = self
+                .0
+                .iter()
+                .position(|hold| hold.ended.is_some())
+                .unwrap_or(0);
+            self.0.remove(oldest);
+        }
+        self.0.push(Hold {
+            ability,
+            pressed: now,
+            ended: None,
+        });
+    }
+
+    /// `ability`'s hold ended in tick `now`, or was retired.
+    pub(crate) fn release(&mut self, ability: AbilityId, now: u64, retired: bool) {
+        if let Some(hold) = self
+            .0
+            .iter_mut()
+            .find(|hold| hold.ability == ability && hold.ended.is_none())
+        {
+            hold.ended = Some(if retired {
+                Ended::Retired
+            } else {
+                Ended::At(now)
+            });
+        }
+    }
+
+    /// Whether a use of `input`, other than `except`, is held.
+    fn held(&self, input: ActionInput, except: Option<AbilityId>) -> bool {
+        self.0.iter().any(|hold| {
+            hold.ended.is_none()
+                && Some(hold.ability) != except
+                && input_of(&PlayerIntent::UseAbility {
+                    ability: hold.ability.get(),
+                    target: None,
+                }) == Some(input)
+        })
+    }
+
+    fn of(&self, ability: AbilityId) -> Option<Hold> {
+        self.0.iter().find(|hold| hold.ability == ability).copied()
+    }
+}
+
+/// Where a hold-to-charge trigger stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Charge {
+    Holding,
+    /// Released after its minimum.
+    Charged,
+    /// Released before its minimum, or never held.
+    Tapped,
+    Retired,
+}
+
+/// The charge of `def`'s trigger pressed by `ability`; `None` for another
+/// gesture.
+fn charge(
+    state: &PlayerState,
+    def: &AuthoredAction,
+    ability: AbilityId,
+    directed: bool,
+) -> Option<Charge> {
+    let Gesture::Charge { min_ms } = def.trigger.gesture else {
+        return None;
+    };
+    // A directed strike is sent on its release: it is never held.
+    let hold = state.holds.of(ability).filter(|_| !directed);
+    Some(match hold.map(|hold| (hold.pressed, hold.ended)) {
+        None => Charge::Tapped,
+        Some((_, None)) => Charge::Holding,
+        Some((_, Some(Ended::Retired))) => Charge::Retired,
+        Some((pressed, Some(Ended::At(at)))) => {
+            if at.saturating_sub(pressed) >= u64::from(crate::ticks_from_ms(min_ms)) {
+                Charge::Charged
+            } else {
+                Charge::Tapped
+            }
+        }
+    })
+}
+
 /// A running authored action. Zone setup like the graph, so not canonical.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct AuthoredRun {
     pub(crate) slot: u8,
     /// Ticks since the trigger.
     pub(crate) elapsed: u16,
-    /// The triggering use has resolved: the active phase has begun.
-    pub(crate) released: bool,
+    /// Ticks from the trigger to its use, once it resolved: the active phase
+    /// began then.
+    pub(crate) impact: Option<u16>,
     /// The triggering use is resolving now.
     pub(crate) releasing: bool,
+    /// The triggering ability, and whether a directed strike pressed it: a
+    /// charge reads its hold.
+    pub(crate) ability: u8,
+    pub(crate) directed: bool,
+    /// A follow-up's input came before its buffer: this run lost it.
+    pub(crate) missed: bool,
 }
 
 impl AuthoredRun {
+    /// The triggering use has resolved: the active phase has begun.
+    pub(crate) const fn released(self) -> bool {
+        self.impact.is_some()
+    }
+
     pub(crate) fn phase(self, graph: &ActionGraph) -> Option<(&'static AuthoredAction, Phase)> {
         let def = graph.authored_action(self.slot)?;
-        Some((def, def.phase_at(self.elapsed, self.released)?))
+        Some((def, def.phase_at(self.elapsed, self.impact)?))
     }
 
     /// Ticks since the use resolved, once it has.
-    pub(crate) fn since_impact(self, graph: &ActionGraph) -> Option<u16> {
-        let def = graph.authored_action(self.slot)?;
-        self.released
-            .then(|| self.elapsed.saturating_sub(def.ticks()[0]))
+    pub(crate) fn since_impact(self) -> Option<u16> {
+        self.impact
+            .map(|impact| self.elapsed.saturating_sub(impact))
     }
 }
 
@@ -389,6 +670,14 @@ pub enum TriggerRefusal {
     Context(InputContext),
     /// A condition does not hold.
     Condition(Condition),
+    /// A chord's partner is not held.
+    Partner(Partner),
+    /// A follow-up's source is not running, or its window is not open yet
+    /// (before the buffer) or any more.
+    FollowUp(BlockReason),
+    /// A press before the buffer lost the follow-up for this run of its
+    /// source.
+    Missed,
     /// This or another authored action is running.
     Busy(u8),
     /// The ordinary graph does not let the input resolve directly now: a
@@ -407,6 +696,9 @@ pub enum TriggerStatus {
     /// The trigger, arriving now, starts it (the ability's own readiness
     /// still applies).
     Accepted,
+    /// A follow-up's trigger, arriving now, waits in its buffer for the
+    /// window to open.
+    Buffering,
     /// The trigger arrives in its context, but a more specific (or earlier)
     /// authored action of the same input wins.
     Outranked(u8),
@@ -424,25 +716,49 @@ pub struct AuthoredReport {
     pub ticks: [u16; 3],
 }
 
-/// Why `def` would not start for an input in its context now, before the
-/// ordinary arbitration.
-fn own_refusal(state: &PlayerState, def: &AuthoredAction) -> Option<TriggerRefusal> {
+/// Why `def` would not start for an input of `ability` in its context now,
+/// before the ordinary arbitration.
+fn own_refusal(
+    state: &PlayerState,
+    def: &AuthoredAction,
+    ability: Option<AbilityId>,
+) -> Option<TriggerRefusal> {
     if state.class.map(|choice| choice.class) != Some(def.class) {
         return Some(TriggerRefusal::Class);
     }
     if !def.trigger.context.holds(state) {
         return Some(TriggerRefusal::Context(def.trigger.context));
     }
-    def.conditions
+    if let Some(condition) = def
+        .conditions
         .iter()
         .copied()
         .find(|&condition| !super::holds(state, condition))
-        .map(TriggerRefusal::Condition)
+    {
+        return Some(TriggerRefusal::Condition(condition));
+    }
+    let Gesture::Chord(partner) = def.trigger.gesture else {
+        return None;
+    };
+    let held = match partner {
+        Partner::Guard => state.guard.raised.is_some(),
+        Partner::Input(input) => state.holds.held(input, ability),
+    };
+    (!held).then_some(TriggerRefusal::Partner(partner))
 }
 
-/// The authored action an input of `ability` starts now, if one does: the
-/// most specific context first, then authored order. The input must resolve
-/// directly under the ordinary graph.
+/// The best of `defs`: chords first, then the most specific context, then
+/// authored order.
+fn best<'a>(defs: impl Iterator<Item = &'a AuthoredAction>) -> Option<&'a AuthoredAction> {
+    defs.fold(None::<&AuthoredAction>, |best, def| match best {
+        Some(best) if best.trigger.rank() >= def.trigger.rank() => Some(best),
+        _ => Some(def),
+    })
+}
+
+/// The authored action an input of `ability` starts now, if one does. A
+/// follow-up starts only from its source. The input must resolve directly
+/// under the ordinary graph.
 pub(crate) fn trigger(
     graph: &ActionGraph,
     state: &PlayerState,
@@ -455,17 +771,62 @@ pub(crate) fn trigger(
     {
         return None;
     }
-    let winner = graph
-        .authored
-        .iter()
-        .filter(|def| def.matches(input, ability) && own_refusal(state, def).is_none())
-        .fold(None::<&'static AuthoredAction>, |best, def| match best {
-            Some(best) if best.trigger.context.rank() >= def.trigger.context.rank() => Some(best),
-            _ => Some(def),
-        })?;
+    let winner = best(graph.authored.iter().filter(|def| {
+        def.trigger.follows.is_none()
+            && def.matches(input, ability)
+            && own_refusal(state, def, ability).is_none()
+    }))?;
     (super::arbitrate_with(graph, state, input, false, 0).outcome
         == Outcome::Proceed(super::Candidate::Direct))
     .then_some(winner)
+}
+
+/// The follow-up of `run` an input of `ability` makes, if one does; only
+/// those whose context, conditions and partner hold when `ready`.
+fn follower(
+    graph: &ActionGraph,
+    state: &PlayerState,
+    run: AuthoredRun,
+    input: ActionInput,
+    ability: Option<AbilityId>,
+    ready: bool,
+) -> Option<&'static AuthoredAction> {
+    best(graph.authored.iter().filter(|def| {
+        def.trigger
+            .follows
+            .is_some_and(|follow| follow.source == run.slot)
+            && def.matches(input, ability)
+            && (!ready || own_refusal(state, def, ability).is_none())
+    }))
+}
+
+/// The window of a follow-up of `run`, for an input `late` ticks late: like
+/// an edge's from the source's use, with a buffer that may reach into the
+/// source's startup, and a late input's grace (#415).
+fn follow_status(
+    graph: &ActionGraph,
+    run: AuthoredRun,
+    follow: TimedFollowUp,
+    late: u8,
+) -> super::EdgeStatus {
+    use super::EdgeStatus;
+    let Some(source) = graph.authored_action(run.slot) else {
+        return EdgeStatus::Blocked(BlockReason::SourceInactive);
+    };
+    // Before the use, count toward the startup's end.
+    let since = i32::from(run.elapsed) - i32::from(run.impact.unwrap_or(source.ticks()[0]));
+    let window = follow.window.ticks();
+    let opens = i32::from(window.opens);
+    let late = i32::from(late.min(super::LATE_INPUT_GRACE_TICKS));
+    if since < opens - i32::from(window.buffer) {
+        EdgeStatus::Blocked(BlockReason::TooEarly)
+    } else if since < opens || !run.released() {
+        EdgeStatus::Buffering
+    } else if since - late <= i32::from(window.closes()) {
+        EdgeStatus::Open
+    } else {
+        EdgeStatus::Blocked(BlockReason::Expired)
+    }
 }
 
 /// Every authored action's trigger status for this player.
@@ -474,29 +835,22 @@ pub(crate) fn reports(graph: &ActionGraph, state: &PlayerState) -> Vec<AuthoredR
         .authored
         .iter()
         .map(|def| {
-            let status = if let Some(run) = state.authored {
-                match run.phase(graph) {
-                    Some((running, phase)) if running.slot == def.slot => TriggerStatus::Running {
+            let status = match (state.authored, def.trigger.follows) {
+                (Some(run), _) if run.slot == def.slot => match run.phase(graph) {
+                    Some((_, phase)) => TriggerStatus::Running {
                         phase,
                         elapsed: run.elapsed,
                     },
-                    _ => TriggerStatus::Refused(TriggerRefusal::Busy(run.slot)),
+                    None => TriggerStatus::Refused(TriggerRefusal::Busy(run.slot)),
+                },
+                (Some(run), Some(follow)) if follow.source == run.slot => {
+                    follow_report(graph, state, run, def, follow)
                 }
-            } else if let Some(refusal) = own_refusal(state, def) {
-                TriggerStatus::Refused(refusal)
-            } else {
-                let outcome =
-                    super::arbitrate_with(graph, state, def.trigger.input, false, 0).outcome;
-                if outcome == Outcome::Proceed(super::Candidate::Direct) {
-                    match trigger(graph, state, def.trigger.input, def.trigger.ability) {
-                        Some(winner) if winner.slot != def.slot => {
-                            TriggerStatus::Outranked(winner.slot)
-                        }
-                        _ => TriggerStatus::Accepted,
-                    }
-                } else {
-                    TriggerStatus::Refused(TriggerRefusal::Arbitration(outcome))
+                (Some(run), _) => TriggerStatus::Refused(TriggerRefusal::Busy(run.slot)),
+                (None, Some(_)) => {
+                    TriggerStatus::Refused(TriggerRefusal::FollowUp(BlockReason::SourceInactive))
                 }
+                (None, None) => start_report(graph, state, def),
             };
             AuthoredReport {
                 slot: def.slot,
@@ -509,6 +863,54 @@ pub(crate) fn reports(graph: &ActionGraph, state: &PlayerState) -> Vec<AuthoredR
         .collect()
 }
 
+fn start_report(graph: &ActionGraph, state: &PlayerState, def: &AuthoredAction) -> TriggerStatus {
+    if let Some(refusal) = own_refusal(state, def, def.trigger.ability) {
+        return TriggerStatus::Refused(refusal);
+    }
+    let outcome = super::arbitrate_with(graph, state, def.trigger.input, false, 0).outcome;
+    if outcome != Outcome::Proceed(super::Candidate::Direct) {
+        return TriggerStatus::Refused(TriggerRefusal::Arbitration(outcome));
+    }
+    match trigger(graph, state, def.trigger.input, def.trigger.ability) {
+        Some(winner) if winner.slot != def.slot => TriggerStatus::Outranked(winner.slot),
+        _ => TriggerStatus::Accepted,
+    }
+}
+
+fn follow_report(
+    graph: &ActionGraph,
+    state: &PlayerState,
+    run: AuthoredRun,
+    def: &AuthoredAction,
+    follow: TimedFollowUp,
+) -> TriggerStatus {
+    use super::EdgeStatus;
+    if run.missed {
+        return TriggerStatus::Refused(TriggerRefusal::Missed);
+    }
+    match follow_status(graph, run, follow, 0) {
+        EdgeStatus::Buffering => TriggerStatus::Buffering,
+        EdgeStatus::Open => match own_refusal(state, def, def.trigger.ability) {
+            Some(refusal) => TriggerStatus::Refused(refusal),
+            None => match follower(
+                graph,
+                state,
+                run,
+                def.trigger.input,
+                def.trigger.ability,
+                true,
+            ) {
+                Some(winner) if winner.slot != def.slot => TriggerStatus::Outranked(winner.slot),
+                _ => TriggerStatus::Accepted,
+            },
+        },
+        EdgeStatus::Blocked(reason) => TriggerStatus::Refused(TriggerRefusal::FollowUp(reason)),
+        EdgeStatus::Suspended(_) => {
+            TriggerStatus::Refused(TriggerRefusal::FollowUp(BlockReason::SourceInactive))
+        }
+    }
+}
+
 /// What the intent queue does with one intent, for authored actions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Step {
@@ -516,35 +918,96 @@ pub(crate) enum Step {
     Ordinary,
     /// The intent starts this authored action; it waits out the startup.
     Start(u8),
-    /// The triggering intent waits for the startup to end.
+    /// The triggering intent waits for the startup to end (or a charge's
+    /// release).
     Startup,
-    /// The startup is over: the triggering intent resolves now.
+    /// The startup is over, or a charge was released after its minimum: the
+    /// triggering intent resolves now.
     Release,
     /// The startup is over, but the ordinary graph would not resolve the use
-    /// directly (a rule holds it or an edge answers it): the action ends and
-    /// the intent is handled as usual.
+    /// directly (a rule holds it or an edge answers it), or a charge was
+    /// released before its minimum (a tap): the action ends and the intent
+    /// is handled as usual.
     Cancel,
+    /// A charge's hold was retired: the action ends and the intent is
+    /// dropped without a use.
+    Drop,
+    /// A follow-up's window is open: the intent ends the running action and
+    /// starts this one.
+    Chain(u8),
+    /// A follow-up's input waits in its buffer for the window.
+    Buffer,
+    /// A follow-up's input came before its buffer, or cannot start it when
+    /// the window is open: the run loses the follow-up and the intent is
+    /// handled as usual.
+    Miss,
 }
 
-/// The step for `intent` in `state`, before readiness checks.
-pub(crate) fn step(graph: &ActionGraph, state: &PlayerState, intent: &PlayerIntent) -> Step {
-    let Some((input, ability, _)) = intent_input(intent) else {
+impl Step {
+    /// Whether the step handled the running action's own trigger, so later
+    /// intents of the same input are not it.
+    pub(crate) const fn is_trigger(self) -> bool {
+        matches!(
+            self,
+            Self::Start(_)
+                | Self::Startup
+                | Self::Release
+                | Self::Cancel
+                | Self::Drop
+                | Self::Chain(_)
+        )
+    }
+}
+
+/// The step for `queued` in `state`, before readiness checks. The running
+/// action's trigger is the first intent of its input in the queue, unless
+/// `trigger_seen`.
+pub(crate) fn step(
+    graph: &ActionGraph,
+    state: &PlayerState,
+    queued: &QueuedIntent,
+    trigger_seen: bool,
+) -> Step {
+    let Some((input, ability, directed)) = intent_input(&queued.intent) else {
         return Step::Ordinary;
     };
-    match state.authored {
-        Some(run) if !run.released => match graph.authored_action(run.slot) {
-            Some(def) if def.matches(input, Some(ability)) => {
-                if run.elapsed >= def.ticks()[0] {
-                    Step::Release
-                } else {
-                    Step::Startup
-                }
-            }
-            _ => Step::Ordinary,
-        },
-        Some(_) => Step::Ordinary,
-        None => trigger(graph, state, input, Some(ability))
-            .map_or(Step::Ordinary, |def| Step::Start(def.slot)),
+    let Some(run) = state.authored else {
+        let Some(def) = trigger(graph, state, input, Some(ability)) else {
+            return Step::Ordinary;
+        };
+        return match charge(state, def, ability, directed) {
+            Some(Charge::Tapped) => Step::Ordinary,
+            Some(Charge::Retired) => Step::Drop,
+            _ => Step::Start(def.slot),
+        };
+    };
+    if let Some(def) = graph.authored_action(run.slot)
+        && !run.released()
+        && !trigger_seen
+        && def.matches(input, Some(ability))
+    {
+        return match charge(state, def, AbilityId::new(run.ability), run.directed) {
+            Some(Charge::Retired) => Step::Drop,
+            Some(Charge::Tapped) => Step::Cancel,
+            Some(Charge::Charged) => Step::Release,
+            _ if run.elapsed >= def.ticks()[0] => Step::Release,
+            _ => Step::Startup,
+        };
+    }
+    if run.missed {
+        return Step::Ordinary;
+    }
+    let Some(follow) = follower(graph, state, run, input, Some(ability), false)
+        .and_then(|def| def.trigger.follows)
+    else {
+        return Step::Ordinary;
+    };
+    match follow_status(graph, run, follow, queued.late) {
+        super::EdgeStatus::Blocked(BlockReason::TooEarly) => Step::Miss,
+        super::EdgeStatus::Buffering => Step::Buffer,
+        super::EdgeStatus::Open => follower(graph, state, run, input, Some(ability), true)
+            .map_or(Step::Miss, |def| Step::Chain(def.slot)),
+        _ => Step::Ordinary,
     }
 }
 
@@ -556,25 +1019,31 @@ pub(crate) fn holds_input(state: &PlayerState, input: ActionInput) -> Option<u8>
 }
 
 impl ZoneSimulation {
-    /// What the intent queue does with `intent` for authored actions. A use
+    /// What the intent queue does with `queued` for authored actions. A use
     /// the ability's own checks would refuse starts nothing: it is refused
-    /// as usual.
-    pub(crate) fn authored_step(&self, player_id: PlayerId, intent: &PlayerIntent) -> Step {
+    /// as usual (and a follow-up is lost).
+    pub(crate) fn authored_step(
+        &self,
+        player_id: PlayerId,
+        queued: &QueuedIntent,
+        trigger_seen: bool,
+    ) -> Step {
         let graph = self.action_graph;
         let Some(state) = self.players.get(&player_id) else {
             return Step::Ordinary;
         };
-        let Some((input, ability, directed)) = intent_input(intent) else {
+        let Some((input, ability, directed)) = intent_input(&queued.intent) else {
             return Step::Ordinary;
         };
-        match step(graph, state, intent) {
-            Step::Start(slot) => {
+        match step(graph, state, queued, trigger_seen) {
+            step @ (Step::Start(slot) | Step::Chain(slot)) => {
                 let waive = graph
                     .authored_action(slot)
                     .is_some_and(|def| def.effects.contains(&Effect::IgnoreGlobalCooldown));
                 match self.ready_ability(player_id, ability.get(), directed, waive) {
-                    Some(Ok(_)) => Step::Start(slot),
-                    _ => Step::Ordinary,
+                    Some(Ok(_)) => step,
+                    _ if step == Step::Start(slot) => Step::Ordinary,
+                    _ => Step::Miss,
                 }
             }
             Step::Release
@@ -587,20 +1056,41 @@ impl ZoneSimulation {
         }
     }
 
-    /// Starts the authored action in `slot`; `true` when it has no startup,
-    /// so its use resolves at once.
-    pub(crate) fn start_authored(&mut self, player_id: PlayerId, slot: u8) -> bool {
+    /// Starts the authored action in `slot` from `intent`, ending any running
+    /// one (a follow-up); `true` when it has no startup, so its use resolves
+    /// at once.
+    pub(crate) fn start_authored(
+        &mut self,
+        player_id: PlayerId,
+        slot: u8,
+        intent: &PlayerIntent,
+    ) -> bool {
         let immediate = self
             .action_graph
             .authored_action(slot)
             .is_some_and(|def| def.ticks()[0] == 0);
+        let (ability, directed) = intent_input(intent)
+            .map_or((0, false), |(_, ability, directed)| {
+                (ability.get(), directed)
+            });
         self.update_player(player_id, |player| {
             player.authored = Some(AuthoredRun {
                 slot,
+                ability,
+                directed,
                 ..AuthoredRun::default()
             });
         });
         immediate
+    }
+
+    /// The run lost its follow-up (#414).
+    pub(crate) fn miss_follow_up(&mut self, player_id: PlayerId) {
+        self.update_player(player_id, |player| {
+            if let Some(run) = &mut player.authored {
+                run.missed = true;
+            }
+        });
     }
 
     /// Resolves the triggering intent through its ordinary path with the
@@ -619,7 +1109,7 @@ impl ZoneSimulation {
         let refused = self.apply_intent(player_id, intent, self.tick + 1)?;
         self.update_player(player_id, |player| {
             player.authored = player.authored.filter(|_| !refused).map(|run| AuthoredRun {
-                released: true,
+                impact: Some(run.elapsed),
                 releasing: false,
                 ..run
             });

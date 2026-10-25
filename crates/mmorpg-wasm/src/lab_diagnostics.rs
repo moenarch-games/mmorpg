@@ -678,11 +678,11 @@ mod tests {
         slot: 0,
         name: "Slow slash",
         class: mmorpg_core::PlayerClass::Warden,
-        trigger: mmorpg_core::action::Trigger {
-            input: ActionInput::WardenMelee,
-            ability: None,
-            context: mmorpg_core::action::InputContext::Direct,
-        },
+        trigger: mmorpg_core::action::Trigger::press(
+            ActionInput::WardenMelee,
+            None,
+            mmorpg_core::action::InputContext::Direct,
+        ),
         conditions: &[],
         startup: mmorpg_core::action::AuthoredPhase::free(200),
         active: mmorpg_core::action::AuthoredPhase::free(300),

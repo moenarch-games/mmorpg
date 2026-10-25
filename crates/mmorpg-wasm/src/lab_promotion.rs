@@ -13,8 +13,8 @@
 use std::fmt::{Debug, Write as _};
 
 use mmorpg_core::action::{
-    ActionGraph, AuthoredAction, AuthoredPhase, Effect, InputContext, Interrupted, Movement,
-    Precision, Scope, Setting, Window,
+    ActionGraph, AuthoredAction, AuthoredPhase, Effect, Gesture, InputContext, Interrupted,
+    Movement, Partner, Precision, Scope, Setting, Window,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -253,6 +253,18 @@ fn context(value: InputContext) -> String {
     }
 }
 
+fn gesture(value: Gesture) -> String {
+    match value {
+        Gesture::Press => "Gesture::Press".to_owned(),
+        Gesture::Charge { min_ms } => format!("Gesture::Charge {{ min_ms: {min_ms} }}"),
+        Gesture::Chord(Partner::Guard) => "Gesture::Chord(Partner::Guard)".to_owned(),
+        Gesture::Chord(Partner::Input(input)) => format!(
+            "Gesture::Chord(Partner::Input({}))",
+            path("ActionInput", input)
+        ),
+    }
+}
+
 fn authored_phase(value: AuthoredPhase, indent: &str) -> String {
     format!(
         "AuthoredPhase {{\n{indent}    ms: {},\n{indent}    movement: {},\n{indent}}}",
@@ -264,7 +276,7 @@ fn authored_phase(value: AuthoredPhase, indent: &str) -> String {
 /// An authored action (#414) as source.
 fn authored(def: &AuthoredAction) -> String {
     format!(
-        "AuthoredAction {{\n        slot: {},\n        name: {:?},\n        class: {},\n        trigger: Trigger {{\n            input: {},\n            ability: {},\n            context: {},\n        }},\n        conditions: {},\n        startup: {},\n        active: {},\n        recovery: {},\n        effects: {},\n    }}",
+        "AuthoredAction {{\n        slot: {},\n        name: {:?},\n        class: {},\n        trigger: Trigger {{\n            input: {},\n            ability: {},\n            context: {},\n            gesture: {},\n            follows: {},\n        }},\n        conditions: {},\n        startup: {},\n        active: {},\n        recovery: {},\n        effects: {},\n    }}",
         def.slot,
         def.name,
         path("PlayerClass", def.class),
@@ -274,6 +286,15 @@ fn authored(def: &AuthoredAction) -> String {
             |id| format!("Some(AbilityId::new({}))", id.get())
         ),
         context(def.trigger.context),
+        gesture(def.trigger.gesture),
+        def.trigger.follows.map_or_else(
+            || "None".to_owned(),
+            |follow| format!(
+                "Some(TimedFollowUp {{\n                source: {},\n                window: {},\n            }})",
+                follow.source,
+                window(follow.window, "                ")
+            )
+        ),
         list("Condition", def.conditions),
         authored_phase(def.startup, "        "),
         authored_phase(def.active, "        "),
@@ -609,16 +630,16 @@ mod tests {
 
     #[test]
     fn promoted_authored_actions_are_written_as_source() {
-        use mmorpg_core::action::{ActionInput, Direction, Trigger};
-        static AUTHORED: [AuthoredAction; 1] = [AuthoredAction {
+        use mmorpg_core::action::{ActionInput, Direction, TimedFollowUp, Trigger};
+        const SLASH: AuthoredAction = AuthoredAction {
             slot: 0,
             name: "Sliding \"slash\"",
             class: mmorpg_core::PlayerClass::Warden,
-            trigger: Trigger {
-                input: ActionInput::WardenMelee,
-                ability: Some(mmorpg_core::ability::ids::HEROIC_STRIKE),
-                context: InputContext::Moving(Direction::Forward),
-            },
+            trigger: Trigger::press(
+                ActionInput::WardenMelee,
+                Some(mmorpg_core::ability::ids::HEROIC_STRIKE),
+                InputContext::Moving(Direction::Forward),
+            ),
             conditions: &[],
             startup: AuthoredPhase::free(100),
             active: AuthoredPhase::free(300),
@@ -627,17 +648,42 @@ mod tests {
                 forward_cms: 400,
                 up_cms: 0,
             }],
-        }];
+        };
+        // A Bash chorded with a held melee key, as the slash's follow-up.
+        static AUTHORED: [AuthoredAction; 2] = [
+            SLASH,
+            AuthoredAction {
+                slot: 1,
+                name: "Double bash",
+                trigger: Trigger {
+                    gesture: Gesture::Chord(Partner::Input(ActionInput::WardenMelee)),
+                    follows: Some(TimedFollowUp {
+                        source: 0,
+                        window: Window {
+                            open_after_ms: 100,
+                            actionable_ms: 200,
+                            buffer_ms: 150,
+                        },
+                    }),
+                    ..Trigger::press(ActionInput::ShieldBash, None, InputContext::Direct)
+                },
+                ..SLASH
+            },
+        ];
         let graph = ActionGraph {
             authored: &AUTHORED,
             ..action::BASELINE
         };
         let generated = rust_source(header(SOURCE).unwrap(), &graph);
         for expected in [
-            "pub const AUTHORED_ACTIONS: [AuthoredAction; 1] = [",
+            "pub const AUTHORED_ACTIONS: [AuthoredAction; 2] = [",
             "name: \"Sliding \\\"slash\\\"\",",
             "ability: Some(AbilityId::new(1)),",
             "context: InputContext::Moving(Direction::Forward),",
+            "gesture: Gesture::Press,",
+            "follows: None,",
+            "gesture: Gesture::Chord(Partner::Input(ActionInput::WardenMelee)),",
+            "follows: Some(TimedFollowUp {\n                source: 0,\n                window: Window {\n                    open_after_ms: 100,\n                    actionable_ms: 200,\n                    buffer_ms: 150,\n                },\n            }),",
             "effects: &[Effect::Impulse { forward_cms: 400, up_cms: 0 }],",
             "authored: &AUTHORED_ACTIONS,",
         ] {

@@ -10,8 +10,9 @@ use std::sync::Arc;
 use mmorpg_core::ability::ids;
 use mmorpg_core::action::{
     self, ActionGraph, ActionId, ActionInput, Anchor, AuthoredAction, AuthoredPhase,
-    AuthoredProblem, Direction, EdgeDef, EdgeId, Effect, GraphError, InputContext, Movement,
-    Origin, Outcome, Phase, Region, Trigger, TriggerRefusal, TriggerStatus, Window,
+    AuthoredProblem, BlockReason, Direction, EdgeDef, EdgeId, Effect, Gesture, GraphError,
+    InputContext, Movement, Origin, Outcome, Partner, Phase, Region, TimedFollowUp, Trigger,
+    TriggerRefusal, TriggerStatus, Window,
 };
 use mmorpg_core::{
     CreatureBehaviour, CreatureId, EntityRef, PlayerClass, StrikeAim, StrikeHeight, StrikeSide,
@@ -28,11 +29,11 @@ const SLIDING_SLASH: AuthoredAction = AuthoredAction {
     slot: 0,
     name: "Sliding slash",
     class: PlayerClass::Warden,
-    trigger: Trigger {
-        input: ActionInput::WardenMelee,
-        ability: Some(ids::HEROIC_STRIKE),
-        context: InputContext::Moving(Direction::Forward),
-    },
+    trigger: Trigger::press(
+        ActionInput::WardenMelee,
+        Some(ids::HEROIC_STRIKE),
+        InputContext::Moving(Direction::Forward),
+    ),
     conditions: &[],
     startup: AuthoredPhase::free(100),
     active: AuthoredPhase {
@@ -181,6 +182,35 @@ impl Hero {
             ability: ids::SHIELD_BASH.get(),
             target: Some(EntityRef::Creature(CreatureId::new(1))),
         });
+    }
+
+    /// The Bash key goes up, or `input-bindings` retires its hold.
+    fn release_bash(&mut self, retired: bool) {
+        self.send(ZoneCommand::ReleaseAbility {
+            ability: ids::SHIELD_BASH.get(),
+            retired,
+        });
+    }
+
+    /// A Bash sent after observing tick `observed` (#415).
+    fn observed_bash(&mut self, observed: u64) {
+        self.sequence += 1;
+        self.zone
+            .apply_observed_command(
+                1,
+                self.sequence,
+                ZoneCommand::UseAbility {
+                    ability: ids::SHIELD_BASH.get(),
+                    target: Some(EntityRef::Creature(CreatureId::new(1))),
+                },
+                observed,
+            )
+            .unwrap();
+    }
+
+    /// Ticks until a Bash resolves, at most `limit`: the tick it did.
+    fn until_bashed(&mut self, limit: u64) -> Option<u64> {
+        (1..=limit).find(|_| bashed(&self.tick()))
     }
 }
 
@@ -379,11 +409,7 @@ fn validation_reveals_unsupported_primitives_and_conflicts() {
     assert_eq!(check(&[SLIDING_SLASH], base), Ok(()));
     // Movement triggers need a primitive that does not exist.
     static MOVE: [AuthoredAction; 1] = [AuthoredAction {
-        trigger: Trigger {
-            input: ActionInput::Move,
-            ability: None,
-            context: InputContext::Direct,
-        },
+        trigger: Trigger::press(ActionInput::Move, None, InputContext::Direct),
         ..SLIDING_SLASH
     }];
     assert_eq!(
@@ -400,11 +426,11 @@ fn validation_reveals_unsupported_primitives_and_conflicts() {
         Err(GraphError::BadAuthored(0, AuthoredProblem::Input))
     );
     static FOREIGN: [AuthoredAction; 1] = [AuthoredAction {
-        trigger: Trigger {
-            input: ActionInput::Ability,
-            ability: Some(ids::FIREBOLT),
-            context: InputContext::Direct,
-        },
+        trigger: Trigger::press(
+            ActionInput::Ability,
+            Some(ids::FIREBOLT),
+            InputContext::Direct,
+        ),
         ..SLIDING_SLASH
     }];
     assert_eq!(
@@ -456,5 +482,333 @@ fn validation_reveals_unsupported_primitives_and_conflicts() {
     assert_eq!(
         check(&[SLIDING_SLASH], &LATE),
         Err(GraphError::OutlastsSource(EdgeId::Authored(0)))
+    );
+}
+
+/// Hold Shield Bash to charge it: released after at least 200 ms (or held
+/// the whole 600 ms startup) it bashes with a launch; a quicker tap is the
+/// plain Bash.
+static CHARGED: ActionGraph = ActionGraph {
+    authored: &[AuthoredAction {
+        slot: 0,
+        name: "Charged bash",
+        class: PlayerClass::Warden,
+        trigger: Trigger {
+            gesture: Gesture::Charge { min_ms: 200 },
+            ..Trigger::press(
+                ActionInput::ShieldBash,
+                Some(ids::SHIELD_BASH),
+                InputContext::Direct,
+            )
+        },
+        conditions: &[],
+        startup: AuthoredPhase::free(600),
+        active: AuthoredPhase::free(100),
+        recovery: AuthoredPhase::free(100),
+        effects: &[Effect::Impulse {
+            forward_cms: 300,
+            up_cms: 0,
+        }],
+    }],
+    ..action::BASELINE
+};
+
+#[test]
+fn a_charge_releases_after_its_minimum_and_a_tap_is_the_plain_use() {
+    // Released 300 ms after the press: charged.
+    let mut warden = Hero::new(PlayerClass::Warden, &CHARGED);
+    warden.bash();
+    assert!(!bashed(&warden.tick()), "the press starts charging");
+    assert_eq!(warden.running(), Some((0, Phase::Startup)));
+    assert_eq!(warden.until_bashed(u64::from(ticks_from_ms(300))), None);
+    warden.release_bash(false);
+    assert!(bashed(&warden.tick()), "the release bashes at once");
+    assert_eq!(warden.running(), Some((0, Phase::Active)));
+
+    // Released 100 ms after the press: a tap, the ordinary Bash.
+    let mut warden = Hero::new(PlayerClass::Warden, &CHARGED);
+    warden.bash();
+    warden.ticks(u64::from(ticks_from_ms(100)));
+    warden.release_bash(false);
+    assert!(bashed(&warden.tick()));
+    assert_eq!(warden.running(), None);
+
+    // Held throughout: the full charge fires as the startup ends.
+    let mut warden = Hero::new(PlayerClass::Warden, &CHARGED);
+    warden.bash();
+    let full = u64::from(ticks_from_ms(600));
+    assert_eq!(warden.until_bashed(full + 1), Some(full + 1));
+    assert_eq!(warden.running(), Some((0, Phase::Active)));
+
+    // A retired hold (focus loss, a menu) never acts.
+    let mut warden = Hero::new(PlayerClass::Warden, &CHARGED);
+    warden.bash();
+    warden.ticks(u64::from(ticks_from_ms(300)));
+    warden.release_bash(true);
+    assert_eq!(warden.until_bashed(full), None);
+    assert_eq!(warden.running(), None);
+}
+
+#[test]
+fn the_production_graph_ignores_releases() {
+    assert!(!action::BASELINE.tracks_holds());
+    let mut warden = Hero::new(PlayerClass::Warden, &action::BASELINE);
+    warden.bash();
+    warden.release_bash(false);
+    assert!(bashed(&warden.tick()), "the press is the Bash, as before");
+}
+
+/// Shield Bash while the guard is held, or while Heroic Strike is held.
+static CHORDS: ActionGraph = ActionGraph {
+    authored: &[
+        AuthoredAction {
+            slot: 0,
+            name: "Guarded bash",
+            class: PlayerClass::Warden,
+            trigger: Trigger {
+                gesture: Gesture::Chord(Partner::Guard),
+                ..Trigger::press(ActionInput::ShieldBash, None, InputContext::Direct)
+            },
+            conditions: &[],
+            startup: AuthoredPhase::free(100),
+            active: AuthoredPhase::free(100),
+            recovery: AuthoredPhase::free(100),
+            effects: &[],
+        },
+        AuthoredAction {
+            slot: 1,
+            name: "Double strike",
+            class: PlayerClass::Warden,
+            trigger: Trigger {
+                gesture: Gesture::Chord(Partner::Input(ActionInput::WardenMelee)),
+                ..Trigger::press(ActionInput::ShieldBash, None, InputContext::Direct)
+            },
+            conditions: &[],
+            startup: AuthoredPhase::free(100),
+            active: AuthoredPhase::free(100),
+            recovery: AuthoredPhase::free(100),
+            effects: &[],
+        },
+    ],
+    ..action::BASELINE
+};
+
+#[test]
+fn a_chord_needs_its_partner_held() {
+    let mut warden = Hero::new(PlayerClass::Warden, &CHORDS);
+    let reports = warden.inspect().authored;
+    assert_eq!(
+        reports[0].status,
+        TriggerStatus::Refused(TriggerRefusal::Partner(Partner::Guard))
+    );
+    assert_eq!(
+        reports[1].status,
+        TriggerStatus::Refused(TriggerRefusal::Partner(Partner::Input(
+            ActionInput::WardenMelee
+        )))
+    );
+    // Heroic Strike pressed and held is the second chord's partner.
+    warden.send(ZoneCommand::UseAbility {
+        ability: ids::HEROIC_STRIKE.get(),
+        target: Some(EntityRef::Creature(CreatureId::new(1))),
+    });
+    warden.tick();
+    assert!(!matches!(
+        warden.inspect().authored[1].status,
+        TriggerStatus::Refused(TriggerRefusal::Partner(_))
+    ));
+    warden.send(ZoneCommand::ReleaseAbility {
+        ability: ids::HEROIC_STRIKE.get(),
+        retired: false,
+    });
+    warden.tick();
+    assert_eq!(
+        warden.inspect().authored[1].status,
+        TriggerStatus::Refused(TriggerRefusal::Partner(Partner::Input(
+            ActionInput::WardenMelee
+        )))
+    );
+
+    // With the guard raised the Bash starts the guarded bash.
+    let mut warden = Hero::new(PlayerClass::Warden, &CHORDS);
+    warden.send(ZoneCommand::Guard {
+        lane: Some(StrikeHeight::High),
+    });
+    warden.tick();
+    assert_eq!(warden.inspect().authored[0].status, TriggerStatus::Accepted);
+    warden.bash();
+    warden.tick();
+    assert_eq!(warden.running(), Some((0, Phase::Startup)));
+}
+
+/// The sliding slash, then Shield Bash as its timed follow-up 100–300 ms
+/// after the slash's use, buffered up to `buffer_ms` before that.
+const fn finisher(buffer_ms: u32) -> AuthoredAction {
+    AuthoredAction {
+        slot: 1,
+        name: "Bash finisher",
+        class: PlayerClass::Warden,
+        trigger: Trigger {
+            follows: Some(TimedFollowUp {
+                source: 0,
+                window: Window {
+                    open_after_ms: 100,
+                    actionable_ms: 200,
+                    buffer_ms,
+                },
+            }),
+            ..Trigger::press(ActionInput::ShieldBash, None, InputContext::Direct)
+        },
+        conditions: &[],
+        startup: AuthoredPhase::free(0),
+        active: AuthoredPhase::free(100),
+        recovery: AuthoredPhase::free(100),
+        effects: &[Effect::IgnoreGlobalCooldown],
+    }
+}
+
+static FOLLOWED: ActionGraph = ActionGraph {
+    authored: &[SLIDING_SLASH, finisher(200)],
+    ..action::BASELINE
+};
+
+static TIGHT: ActionGraph = ActionGraph {
+    authored: &[SLIDING_SLASH, finisher(50)],
+    ..action::BASELINE
+};
+
+#[test]
+fn a_follow_up_pressed_in_the_source_startup_waits_for_its_window() {
+    let mut warden = Hero::new(PlayerClass::Warden, &FOLLOWED);
+    assert_eq!(
+        warden.inspect().authored[1].status,
+        TriggerStatus::Refused(TriggerRefusal::FollowUp(BlockReason::SourceInactive))
+    );
+    warden.send(arena::walk(SOUTH));
+    warden.tick();
+    warden.strike();
+    warden.tick();
+    assert_eq!(warden.running(), Some((0, Phase::Startup)));
+    // 200 ms of buffer reach back into the 100 ms startup: an edge's buffer
+    // could not precede the use.
+    assert_eq!(
+        warden.inspect().authored[1].status,
+        TriggerStatus::Buffering
+    );
+    warden.bash();
+    let opens = u64::from(ticks_from_ms(100) + ticks_from_ms(100));
+    let bashed_at = warden.until_bashed(opens + 2);
+    assert_eq!(bashed_at, Some(opens), "the Bash waits for the window");
+    assert_eq!(warden.running(), Some((1, Phase::Active)));
+}
+
+#[test]
+fn a_follow_up_pressed_before_its_buffer_is_lost() {
+    let mut warden = Hero::new(PlayerClass::Warden, &TIGHT);
+    warden.send(arena::walk(SOUTH));
+    warden.tick();
+    warden.strike();
+    warden.tick();
+    warden.bash();
+    warden.tick();
+    assert_eq!(
+        warden.inspect().authored[1].status,
+        TriggerStatus::Refused(TriggerRefusal::Missed)
+    );
+    // The early Bash waits for the slash like any input and never starts
+    // the finisher.
+    for _ in 0..ticks_from_ms(600) {
+        warden.tick();
+        assert_ne!(warden.running().map(|(slot, _)| slot), Some(1));
+    }
+}
+
+#[test]
+fn a_late_follow_up_keeps_the_grace_but_nothing_is_backdated() {
+    let closes = u64::from(ticks_from_ms(100) + ticks_from_ms(100) + ticks_from_ms(200));
+    let follow = |late: u64| {
+        let mut warden = Hero::new(PlayerClass::Warden, &FOLLOWED);
+        warden.send(arena::walk(SOUTH));
+        warden.tick();
+        warden.strike();
+        // Two ticks after the window closed.
+        warden.ticks(closes + 2);
+        let now = warden.zone.current_tick();
+        warden.observed_bash(now - late);
+        warden.tick();
+        warden.running().map(|(slot, _)| slot)
+    };
+    assert_eq!(follow(3), Some(1), "the lateness made up for the window");
+    assert_eq!(follow(0), Some(0), "an on-time Bash after it waits");
+}
+
+#[test]
+fn gestures_and_follow_ups_are_validated() {
+    let check = |authored: &'static [AuthoredAction]| {
+        ActionGraph {
+            authored,
+            ..action::BASELINE
+        }
+        .validate()
+    };
+    assert_eq!(check(CHARGED.authored), Ok(()));
+    assert_eq!(check(CHORDS.authored), Ok(()));
+    assert_eq!(check(FOLLOWED.authored), Ok(()));
+    // A charge's minimum fits its startup.
+    static LONG: [AuthoredAction; 1] = [AuthoredAction {
+        trigger: Trigger {
+            gesture: Gesture::Charge { min_ms: 700 },
+            ..CHARGED.authored[0].trigger
+        },
+        ..CHARGED.authored[0]
+    }];
+    assert_eq!(
+        check(&LONG),
+        Err(GraphError::BadAuthored(0, AuthoredProblem::Charge))
+    );
+    // Only Wardens hold a guard.
+    static RANGER: [AuthoredAction; 1] = [AuthoredAction {
+        class: PlayerClass::Ranger,
+        trigger: Trigger {
+            gesture: Gesture::Chord(Partner::Guard),
+            ..Trigger::press(ActionInput::Ability, None, InputContext::Direct)
+        },
+        ..CHARGED.authored[0]
+    }];
+    assert_eq!(
+        check(&RANGER),
+        Err(GraphError::BadAuthored(0, AuthoredProblem::Chord))
+    );
+    // A charge and a press of one input conflict; a chord does not.
+    static BOTH: [AuthoredAction; 3] = [
+        CHARGED.authored[0],
+        AuthoredAction {
+            slot: 1,
+            trigger: Trigger::press(
+                ActionInput::ShieldBash,
+                Some(ids::SHIELD_BASH),
+                InputContext::Direct,
+            ),
+            ..CHARGED.authored[0]
+        },
+        AuthoredAction {
+            slot: 2,
+            ..CHORDS.authored[0]
+        },
+    ];
+    assert_eq!(check(&BOTH), Err(GraphError::ConflictingTrigger(0, 1)));
+    static PAIR: [AuthoredAction; 2] = [BOTH[0], BOTH[2]];
+    assert_eq!(check(&PAIR), Ok(()));
+    // A follow-up buffers back at most to its source's trigger, closes
+    // before the source ends and follows an earlier action.
+    static DEEP: [AuthoredAction; 2] = [SLIDING_SLASH, finisher(250)];
+    assert_eq!(
+        check(&DEEP),
+        Err(GraphError::BadAuthored(1, AuthoredProblem::FollowUp))
+    );
+    static FIRST: [AuthoredAction; 2] = [finisher(200), SLIDING_SLASH];
+    assert_eq!(
+        check(&FIRST),
+        Err(GraphError::BadAuthored(1, AuthoredProblem::FollowUp))
     );
 }

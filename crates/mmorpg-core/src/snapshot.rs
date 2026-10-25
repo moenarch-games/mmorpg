@@ -700,6 +700,7 @@ impl ZoneSimulation {
                 swimming: false,
                 impulse: None,
                 authored: None,
+                holds: crate::action::authored::Holds::default(),
                 combo: combat.combo,
                 strike_recovery: combat.strike_recovery,
                 repairing: combat.repairing,

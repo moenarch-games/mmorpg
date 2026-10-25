@@ -333,6 +333,14 @@ pub enum ZoneCommand {
         ability: u8,
         target: Option<EntityRef>,
     },
+    /// Releases the held input that pressed `ability` (#414): `retired` when
+    /// `input-bindings` retired the hold (focus loss, a menu, a profile
+    /// change) rather than the key going up. Held state like movement: only
+    /// an experimental graph's hold-to-charge and chord triggers read it.
+    ReleaseAbility {
+        ability: u8,
+        retired: bool,
+    },
     /// Executes `ability`'s directed mode (#154; only Heroic Strike has
     /// one): the player turns to `facing` and sweeps toward `aim`; the zone
     /// resolves which creature the sweep physically covers.

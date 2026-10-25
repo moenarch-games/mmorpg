@@ -25,6 +25,12 @@ export type WorldCommand =
   | { kind: "move-item"; source: number; destination: number; quantity: number }
   /** A class ability at `target`, or at the current selection with `null`. */
   | { kind: "use-ability"; ability: number; target: EntityRef | null }
+  /**
+   * The held key that used `ability` went up, or `input-bindings` retired its hold (`retired`:
+   * focus loss, a menu, a profile change) (#414). Only an experimental graph's hold-to-charge and
+   * chord triggers read it.
+   */
+  | { kind: "release-ability"; ability: number; retired: boolean }
   /** Heroic Strike's directed mode: turn to `facing` (u16 yaw) and sweep toward `aim`. */
   | { kind: "directed-strike"; ability: number; facing: number; aim: StrikeAim }
   /** Holds the shield guard in `lane`, or lowers it with `null` (#156); the zone decides what it blocks. */
@@ -89,6 +95,7 @@ const REPAIR_TAG = 24;
 const RISE_TAG = 25;
 const COMMAND_MINIONS_TAG = 26;
 const OBSERVED_TAG = 27;
+const RELEASE_ABILITY_TAG = 28;
 const YAW_STEPS = 65_536;
 const U64_MAX = (1n << 64n) - 1n;
 
@@ -214,6 +221,12 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
       view.setUint8(2, command.ability);
       writeEntity(view, 3, command.target);
       return payload;
+    }
+    case "release-ability": {
+      if (!isU8(command.ability)) {
+        throw new Error("Ability IDs must be u8.");
+      }
+      return Uint8Array.of(PROTOCOL_BYTE, RELEASE_ABILITY_TAG, command.ability, command.retired ? 1 : 0);
     }
     case "directed-strike": {
       const side = STRIKE_SIDES.indexOf(command.aim.side);

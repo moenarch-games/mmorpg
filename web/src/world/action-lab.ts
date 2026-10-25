@@ -115,6 +115,7 @@ export type AuthoredReport = {
   status:
     | { kind: "Running"; phase: string; elapsed: number }
     | { kind: "Accepted" }
+    | { kind: "Buffering" }
     | { kind: "Outranked"; by: string }
     | { kind: "Refused"; reason: string };
 };
@@ -124,6 +125,7 @@ export function explainAuthored(report: AuthoredReport): string {
   const { status } = report;
   const verdict = status.kind === "Running" ? `running, ${status.phase} (tick ${status.elapsed})`
     : status.kind === "Accepted" ? "the trigger starts it now"
+      : status.kind === "Buffering" ? "a press now waits in its buffer for the follow-up window"
       : status.kind === "Outranked" ? `a more specific ${status.by} wins`
         : `refused: ${status.reason}`;
   return `${report.name} · ${report.trigger} · ${report.ticks.join("/")} t: ${verdict}`;

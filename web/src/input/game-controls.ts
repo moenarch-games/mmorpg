@@ -214,10 +214,25 @@ export type HeldAction = (typeof HELD_ACTIONS)[number];
  */
 export type HoldPhase = "press" | "release" | "cancel";
 
+/** Ability slots act on their press and also report its release (#414): hold-to-charge and chords. */
+export const RELEASED_ACTIONS = [
+  "ability.slot1",
+  "ability.slot2",
+  "ability.slot3",
+  "ability.slot4",
+  "ability.slot5",
+  "ability.slot6",
+  "ability.slot7",
+  "ability.slot8",
+] as const;
+export type ReleasedAction = (typeof RELEASED_ACTIONS)[number];
+
 export type GameControlsOptions = {
   screen: () => ControlScreen;
   onAction: (action: GameAction) => void;
   onHold?: (action: HeldAction, phase: HoldPhase) => void;
+  /** A pressed ability slot's key went up (`release`) or its hold was retired (`cancel`). */
+  onRelease?: (action: ReleasedAction, phase: Exclude<HoldPhase, "press">) => void;
 };
 
 /**
@@ -246,6 +261,8 @@ export class GameControls {
         }
         if (dispatch.phase === "press" && isGameAction(dispatch.action)) {
           options.onAction(dispatch.action);
+        } else if (dispatch.phase === "release" && isReleasedAction(dispatch.action)) {
+          options.onRelease?.(dispatch.action, dispatch.reason === "keyUp" ? "release" : "cancel");
         }
       },
     });
@@ -315,6 +332,10 @@ export class GameControls {
 
 function isHeldAction(action: string): action is HeldAction {
   return (HELD_ACTIONS as readonly string[]).includes(action);
+}
+
+function isReleasedAction(action: string): action is ReleasedAction {
+  return (RELEASED_ACTIONS as readonly string[]).includes(action);
 }
 
 function isGameAction(action: string): action is GameAction {
