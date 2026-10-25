@@ -139,13 +139,11 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("move.back", "Backpedal", "gameplay", [key("KeyS"), key("ArrowDown"), stick(1, "positive")]),
     action("move.strafeLeft", "Strafe left", "gameplay", [
       key("KeyA"),
-      key("KeyQ"),
       key("ArrowLeft"),
       stick(0, "negative"),
     ]),
     action("move.strafeRight", "Strafe right", "gameplay", [
       key("KeyD"),
-      key("KeyE"),
       key("ArrowRight"),
       stick(0, "positive"),
     ]),
@@ -177,8 +175,9 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ui.toggleBags", "Toggle bags", "gameplay", [key("KeyB"), button(8)]),
     action("ui.toggleCharacter", "Toggle character pane", "gameplay", [key("KeyC")]),
     action("ui.toggleVendor", "Toggle vendor", "gameplay", [key("KeyV")]),
-    // Interact (#158): talk to the selected NPC, or open or close a door in reach.
-    action("ui.talk", "Interact: talk, or open or close a door", "gameplay", [key("KeyT"), button(9)]),
+    // Interact (#158; E since #515): talk to the selected NPC, or open or close a door in reach.
+    // Q is deliberately left unbound as a spare.
+    action("ui.talk", "Interact: talk, or open or close a door", "gameplay", [key("KeyE"), button(9)]),
     action("ui.toggleQuestLog", "Toggle quest log", "gameplay", [key("KeyL")]),
     action("ui.openChat", "Chat", "gameplay", [key("Enter"), key("NumpadEnter")]),
     action("ui.closePanel", "Close panel", "panels", [key("Escape"), button(1)]),

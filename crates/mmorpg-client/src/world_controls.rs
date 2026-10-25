@@ -25,7 +25,8 @@ impl WorldAction {
         let (id, key, context) = match self {
             Self::Select => return ("world.select", "world", mouse()),
             Self::Details => ("interaction.details", "KeyH", "interaction"),
-            Self::Interact => ("world.interact", "Enter", "world"),
+            // E interacts (#515), as the browser's `ui.talk`; Enter only chats. Q stays unbound.
+            Self::Interact => ("world.interact", "KeyE", "world"),
             Self::NextNpc => ("world.nextNpc", "KeyN", "world"),
             Self::Cancel => ("world.cancel", "Escape", "world"),
             Self::Primary => ("interaction.primary", "Digit1", "interaction"),

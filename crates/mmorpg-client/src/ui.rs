@@ -756,9 +756,7 @@ impl GameUi {
                                 intents.push(UiIntent::ToggleAttack);
                             }
                         }
-                        if matches!(target, EntityRef::Npc(_))
-                            && ui.button("Talk (Enter)").clicked()
-                        {
+                        if matches!(target, EntityRef::Npc(_)) && ui.button("Talk (E)").clicked() {
                             intents.push(UiIntent::Talk);
                         }
                         if unit.is_some_and(|u| u.flags.lootable)

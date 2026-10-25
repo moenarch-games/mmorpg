@@ -277,7 +277,7 @@ export class QuestPanel {
     }
     this.#trackerKey = key;
     if (rows.length === 0) {
-      this.#elements.tracker.replaceChildren("No active quests. Look for ! over quest givers and press T to talk.");
+      this.#elements.tracker.replaceChildren("No active quests. Look for ! over quest givers and press E to talk.");
       return;
     }
     this.#elements.tracker.replaceChildren(...rows.map((row, index) => {
