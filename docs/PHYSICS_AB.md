@@ -66,7 +66,9 @@ experimental action graph whose airborne phase keeps the realized momentum and s
 6 m/s², letting go or turning back mid-air) and `vale-climb` (#490: one player jumps at a
 highland crag, climbs it, lets go, grabs it again and climbs to its top; another mantles the
 mill's loading dock; the zone decides both on rays and capsule sweeps, so the two arms answer the
-same climb and mantle queries)
+same climb and mantle queries) and `vale-roll` (#516: one player in Greyhaven Outpost rolls
+back, forward with its keys released mid-roll and diagonally; another rolls into a highland crag
+and back out; a third rolls back off the mill's loading dock and falls to the yard mid-roll)
 through the real zone simulation, from the same initial state with the same inputs and tick count.
 
 Both arms carry the mill hoist's riders in the adapter the same way: a downward support cast
@@ -98,13 +100,16 @@ On **each** backend, every run must:
   (in a unit or in the world) on both arms;
 - in `vale-climb`, end with the climber standing on the crag's top and the mantler on the
   dock's deck, each within a unit;
+- in `vale-roll`, let every player roll, never let the crag stop its roller into a climb, and
+  land the dock's roller on the ground beyond the deck's edge;
 - in `vale-mill-ramps`, carry the walker up the cart ramp onto the dock (feet 1.5 m up within 3
   units) and back to the ground, and never let the chute's player onto the dock.
 
 Across backends:
 
 - Scripted workloads (`two-bots-move`, `vale-hub-walk`, `vale-idle-16`, `vale-mill-hoist`,
-  `vale-crate-shove`, `vale-crate-smash`, `vale-missiles`, `vale-traversal` and `vale-climb`): players within **1 unit** (the
+  `vale-crate-shove`, `vale-crate-smash`, `vale-missiles`, `vale-traversal`, `vale-climb` and
+  `vale-roll`): players within **1 unit** (the
   rounding step gameplay sees; measured ≤ 0.15; in `vale-crate-shove` plus the crates' gap,
   since a player walks into its resting crate), identical command outcomes and door states,
   and the players' grounded state identical on every tick.

@@ -213,6 +213,68 @@ pub enum Workload {
     /// Climbing and mantling (#490): one player jumps at a highland crag, climbs, lets go,
     /// grabs it again and climbs to its top; another mantles the mill's loading dock.
     Climb,
+    /// Dodge rolls (#516): one player rolls back, forward and diagonally in Greyhaven Outpost,
+    /// another into a highland crag and back out, a third back off the mill's loading dock.
+    Roll,
+}
+
+/// The roll workload's length.
+pub const ROLL_TICKS: usize = mmorpg_core::golden::t30(200) as usize;
+
+/// The plaza roller, the crag roller and the dock roller, by ID, feet XZ and height above the
+/// terrain: the third stands on the dock's 1.5 m deck.
+pub const ROLL_PLAYERS: [(u32, [f32; 2], f32); 3] = [
+    (1, [2_200.0, 850.0], 0.0),
+    (2, [1_500.0, -28_900.0], 0.0),
+    (3, [8_250.0, 1_950.0], 150.0),
+];
+
+/// The roll commands at `tick` (30 Hz). A roll lasts 18 of these ticks and its cooldown 30.
+fn roll_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let held = |forward, strafe| ZoneCommand::Move {
+        forward,
+        strafe,
+        facing: 32_768,
+    };
+    match tick {
+        0 => vec![(1, held(0, 0)), (2, held(1, 0)), (3, held(0, 0))],
+        // Into the crag at full tilt; standing still, back off the dock.
+        3 => vec![(2, ZoneCommand::Roll)],
+        5 => vec![(1, ZoneCommand::Roll)],
+        10 => vec![(3, ZoneCommand::Roll)],
+        30 => vec![(2, held(0, 0))],
+        60 => vec![(1, held(1, 0))],
+        62 => vec![(1, ZoneCommand::Roll)],
+        // Keys released mid-roll: the roll carries on.
+        64 => vec![(1, held(0, 0))],
+        // Standing still, back out from the crag.
+        80 => vec![(2, ZoneCommand::Roll)],
+        120 => vec![(1, held(1, 1))],
+        122 => vec![(1, ZoneCommand::Roll)],
+        140 => vec![(1, held(0, 0))],
+        _ => Vec::new(),
+    }
+}
+
+/// The roll workload's zone: [`ROLL_PLAYERS`] placed with their feet on the terrain or the dock.
+fn roll_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    let content = mmorpg_core::greyhaven_vale::content();
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), std::sync::Arc::clone(&content))?;
+    for &(player, ..) in &ROLL_PLAYERS {
+        zone.add_player(player)?;
+    }
+    let mut state = zone.snapshot()?;
+    for &(player, [x, z], lift) in &ROLL_PLAYERS {
+        let snapshot = state
+            .players
+            .iter_mut()
+            .find(|snapshot| snapshot.player_id == player)
+            .ok_or("missing roll player")?;
+        #[allow(clippy::cast_precision_loss)]
+        let y = zone.ground_probe(x as i32, z as i32) as f32 + lift + 90.0;
+        snapshot.position = [x, y, z];
+    }
+    Ok(ZoneSimulation::from_snapshot(state, content)?)
 }
 
 /// The climb's length.
@@ -687,6 +749,7 @@ impl Workload {
             Self::Missiles => "vale-missiles",
             Self::Traversal => "vale-traversal",
             Self::Climb => "vale-climb",
+            Self::Roll => "vale-roll",
         }
     }
 
@@ -705,6 +768,7 @@ impl Workload {
             Self::Missiles => MISSILES_TICKS,
             Self::Traversal => TRAVERSAL_TICKS,
             Self::Climb => CLIMB_TICKS,
+            Self::Roll => ROLL_TICKS,
         }
     }
 }
@@ -734,6 +798,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::Missiles);
     workloads.push(Workload::Traversal);
     workloads.push(Workload::Climb);
+    workloads.push(Workload::Roll);
     Ok(workloads)
 }
 
@@ -774,6 +839,7 @@ impl Run {
             Workload::Missiles => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
             Workload::Traversal => (traversal_zone(&TRAVERSAL_PLAYERS)?, 0),
             Workload::Climb => (placed_zone(&CLIMB_PLAYERS)?, 0),
+            Workload::Roll => (roll_zone()?, 0),
         };
         Ok(Self {
             zone,
@@ -845,7 +911,8 @@ impl Run {
             | Workload::CrateSmash
             | Workload::Missiles
             | Workload::Traversal
-            | Workload::Climb => {
+            | Workload::Climb
+            | Workload::Roll => {
                 // The scripts are written in 30 Hz ticks: they run at the same moments at TICK_HZ.
                 let scale = usize::from(mmorpg_core::TICK_HZ) / 30;
                 let at = if self.tick.is_multiple_of(scale) {
@@ -864,6 +931,7 @@ impl Run {
                     Workload::Missiles => missiles_commands(at),
                     Workload::Traversal => traversal_commands(at),
                     Workload::Climb => climb_commands(at),
+                    Workload::Roll => roll_commands(at),
                     _ => mill_ramps_commands(at),
                 };
                 for (player, command) in commands {
