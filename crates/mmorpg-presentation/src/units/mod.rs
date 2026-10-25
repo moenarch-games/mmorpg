@@ -123,6 +123,8 @@ pub struct UnitPresenter {
     playbacks: BTreeMap<EntityRef, Playback>,
     /// Fall progress of each dead unit; only a witnessed death falls (#27).
     deaths: BTreeMap<EntityRef, Option<f64>>,
+    /// The projection tick each bursting flask or bomb (#290) was first seen bursting.
+    bursts: BTreeMap<u16, u64>,
     cue_tick: u64,
     effects: effects::Effects,
     durations: BTreeMap<(Kind, String), f32>,
@@ -145,6 +147,7 @@ impl UnitPresenter {
             animators: BTreeMap::new(),
             playbacks: BTreeMap::new(),
             deaths: BTreeMap::new(),
+            bursts: BTreeMap::new(),
             cue_tick: 0,
             effects: effects::Effects::default(),
             durations: BTreeMap::new(),
@@ -173,6 +176,7 @@ impl UnitPresenter {
         self.animators.clear();
         self.playbacks.clear();
         self.deaths.clear();
+        self.bursts.clear();
         self.effects.clear();
         self.resources = Resources::default();
         self.structures =
@@ -479,10 +483,22 @@ impl UnitPresenter {
     /// Arrows and bolts where the zone says they are (#286): a shaft behind the tip along its
     /// heading and pitch, and a dark head. Placeholder shapes until asset-tooling's bow and
     /// arrow bundle (asset-tooling #277) lands. A magic missile (#289) is a fiery ball with a
-    /// short trail; a shadow missile (#301) is a violet one with a green core.
+    /// short trail; a shadow missile (#301) is a violet one with a green core. A Rogue's
+    /// throwing knife (#290) is a short dark grip behind a steel blade.
     fn projectiles(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
+        self.bursts.retain(|id, _| {
+            snapshot
+                .projectiles
+                .iter()
+                .any(|projectile| projectile.burst && projectile.id == *id)
+        });
         for projectile in &snapshot.projectiles {
             let (length, width, shaft, head) = match projectile.kind {
+                ProjectileKind::Flask | ProjectileKind::Bomb => {
+                    self.thrown(draws, projectile, snapshot.tick);
+                    continue;
+                }
+                ProjectileKind::Knife => (0.22, 0.025, 0x2a2420, 0xc4c9cc),
                 ProjectileKind::Arrow => (0.8, 0.03, 0xb08a5b, 0x4a4d52),
                 ProjectileKind::Bolt => (0.45, 0.045, 0x5c3f28, 0x3a3c40),
                 ProjectileKind::Missile => (0.5, 0.08, 0xff8a2a, 0xffd36a),
@@ -527,6 +543,89 @@ impl UnitPresenter {
                 Primitive::Box([width * 2.5, width * 2.5, 0.08]),
                 head,
                 offset(tip, [0., 0., -0.04]),
+            ));
+        }
+    }
+
+    /// A Rogue's thrown flask or bomb (#290): a green glass flask with a cork, or a black bomb
+    /// with a glowing fuse, resting on its lowest point. Bursting, it is a glowing ball that
+    /// swells to the zone's splash (3 m) or blast (4 m) radius and fades.
+    fn thrown(
+        &mut self,
+        draws: &mut Vec<Draw>,
+        projectile: &mmorpg_core::ProjectileView,
+        tick: u64,
+    ) {
+        let [x, y, z] = self.rendered(projectile.position).map(f64::from);
+        let id = format!("projectile-{}", projectile.id);
+        let bomb = projectile.kind == ProjectileKind::Bomb;
+        if projectile.burst {
+            let first = *self.bursts.entry(projectile.id).or_insert(tick);
+            #[allow(clippy::cast_precision_loss)]
+            let t = (tick.saturating_sub(first) as f64 / f64::from(mmorpg_core::BURST_TICKS))
+                .clamp(0., 1.);
+            let (radius, color, glow) = if bomb {
+                (4., 0xffa23a, [1.0, 0.55, 0.15])
+            } else {
+                (3., 0x8fe05a, [0.45, 0.9, 0.25])
+            };
+            // Six sizes keep the shared mesh cache small.
+            let step = (t * 6.).ceil() / 6.;
+            let mut flash = self.resources.primitive(
+                format!("{id}-burst"),
+                Primitive::Ball(radius * (0.3 + 0.7 * step)),
+                color,
+                Frame {
+                    p: [x, y, z],
+                    q: IQ,
+                },
+            );
+            flash.material.emissive = glow;
+            flash.material.unlit = true;
+            #[allow(clippy::cast_possible_truncation)]
+            let fade = (1. - t) as f32;
+            flash.material.opacity = 0.15 + 0.6 * fade;
+            draws.push(flash);
+            return;
+        }
+        let (radius, body) = if bomb {
+            (0.13, 0x2b2b2e)
+        } else {
+            (0.09, 0x5fbf3a)
+        };
+        let centre = [x, y + radius, z];
+        let mut shell = self.resources.primitive(
+            format!("{id}-body"),
+            Primitive::Ball(radius),
+            body,
+            Frame { p: centre, q: IQ },
+        );
+        if !bomb {
+            shell.material.opacity = 0.85;
+        }
+        draws.push(shell);
+        if bomb {
+            let mut spark = self.resources.primitive(
+                format!("{id}-spark"),
+                Primitive::Ball(0.04),
+                0xffc04a,
+                Frame {
+                    p: [x, y + 2. * radius + 0.03, z],
+                    q: IQ,
+                },
+            );
+            spark.material.emissive = [1.0, 0.7, 0.2];
+            spark.material.unlit = true;
+            draws.push(spark);
+        } else {
+            draws.push(self.resources.primitive(
+                format!("{id}-cork"),
+                Primitive::Box([0.05, 0.06, 0.05]),
+                0x8a6a4a,
+                Frame {
+                    p: [x, y + 2. * radius + 0.02, z],
+                    q: IQ,
+                },
             ));
         }
     }

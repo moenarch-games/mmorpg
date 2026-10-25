@@ -298,6 +298,15 @@ pub enum AbilityEffect {
         root_ticks: u16,
         unbreakable_ticks: u16,
     },
+    /// A thrown flask's splash (#290): where it shatters, every hostile unit within `radius`
+    /// that the point can see takes a damage over time of `base` + `per_level`.
+    Splash {
+        base: u16,
+        per_level: u16,
+        radius: i32,
+        duration: u16,
+        period: u16,
+    },
 }
 
 /// One catalog row.
@@ -327,6 +336,9 @@ impl Ability {
                 duration, period, ..
             } => (AuraKind::HealOverTime, duration, period),
             AbilityEffect::DamageOverTime {
+                duration, period, ..
+            }
+            | AbilityEffect::Splash {
                 duration, period, ..
             } => (AuraKind::DamageOverTime, duration, period),
             AbilityEffect::Snare { duration, .. } | AbilityEffect::Cone { duration, .. } => {
@@ -370,11 +382,12 @@ impl Ability {
     }
 
     /// Whether the ability may also fly freely along the facing without a target: Aimed Shot
-    /// (#286), Firebolt (#289) and the aimed specials.
+    /// (#286), Firebolt (#289), Throwing Knife (#290) and the aimed specials.
     #[must_use]
     pub const fn aims_freely(&self) -> bool {
         self.id.0 == ids::AIMED_SHOT.0
             || self.id.0 == ids::FIREBOLT.0
+            || self.id.0 == ids::THROWING_KNIFE.0
             || !matches!(self.shot(), Shot::Plain)
     }
 
@@ -385,6 +398,8 @@ impl Ability {
         match self.id.0 {
             19 => Shot::Pierce,
             20 => Shot::Ricochet,
+            43 => Shot::Shatter,
+            44 => Shot::Bounce,
             _ => Shot::Plain,
         }
     }
@@ -499,6 +514,10 @@ pub mod ids {
     pub const ENTANGLING_ROOTS: AbilityId = AbilityId::new(39);
     pub const REJUVENATION: AbilityId = AbilityId::new(40);
     pub const BARKSKIN: AbilityId = AbilityId::new(41);
+    /// The Rogue's thrown weapons (#290).
+    pub const THROWING_KNIFE: AbilityId = AbilityId::new(42);
+    pub const VENOM_FLASK: AbilityId = AbilityId::new(43);
+    pub const BLASTING_BOMB: AbilityId = AbilityId::new(44);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -512,10 +531,16 @@ pub enum Shot {
     /// Mirrors off walls, props and terrain up to [`crate::RICOCHET_BOUNCES`] times and stops
     /// at the first unit.
     Ricochet,
+    /// A thrown flask (#290): lobbed in an arc, it shatters on the first thing it meets and its
+    /// effect splashes around that point.
+    Shatter,
+    /// A thrown bomb (#290): lobbed in an arc, it bounces off surfaces and rolls to rest, then
+    /// bursts when it touches a unit or its fuse ([`crate::BOMB_FUSE_TICKS`]) runs out.
+    Bounce,
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 41] = [
+pub const ABILITY_CATALOG: [Ability; 44] = [
     ability(
         1,
         "Heroic Strike",
@@ -993,8 +1018,8 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
         },
     ),
     // The Rogue (#302): a dagger strike, a poisoned blade, a stunning gouge and a burst of
-    // speed, on focus like the Ranger. Thrown weapons, traps and dashes follow in #290, #300
-    // and #294.
+    // speed, on focus like the Ranger. Thrown weapons (#290) close the catalog; traps and
+    // dashes follow in #300 and #294.
     ability(
         30,
         "Sinister Strike",
@@ -1184,6 +1209,66 @@ pub const ABILITY_CATALOG: [Ability; 41] = [
             per_level: 8,
             duration: ticks_from_ms(20_000),
         },
+    ),
+    // The Rogue's thrown weapons (#290): a knife that tracks a selected target (or flies along
+    // the facing without one), and two aimed specials lobbed along the facing: a venom flask
+    // that shatters on impact and a bomb that bounces, rolls and bursts on its fuse.
+    shot(
+        ability(
+            42,
+            "Throwing Knife",
+            ROGUE,
+            3,
+            20,
+            CastTime::Instant,
+            ticks_from_ms(3_000),
+            AbilityRange::Units(2_500),
+            AbilityEffect::WeaponStrike {
+                numerator: 1,
+                denominator: 1,
+                bonus: 6,
+            },
+        ),
+        crate::ProjectileKind::Knife,
+    ),
+    shot(
+        ability(
+            43,
+            "Venom Flask",
+            ROGUE,
+            5,
+            30,
+            CastTime::Instant,
+            ticks_from_ms(12_000),
+            RANGED,
+            AbilityEffect::Splash {
+                base: 24,
+                per_level: 4,
+                radius: 300,
+                duration: ticks_from_ms(9_000),
+                period: ticks_from_ms(3_000),
+            },
+        ),
+        crate::ProjectileKind::Flask,
+    ),
+    shot(
+        ability(
+            44,
+            "Blasting Bomb",
+            ROGUE,
+            6,
+            35,
+            CastTime::Instant,
+            ticks_from_ms(15_000),
+            RANGED,
+            AbilityEffect::Blast {
+                damage: [14, 20],
+                per_level: 2,
+                radius: 400,
+                knockback: 350,
+            },
+        ),
+        crate::ProjectileKind::Bomb,
     ),
 ];
 
@@ -1402,6 +1487,20 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 root_ticks,
                 unbreakable_ticks,
             } => vec![21, root_ticks.into(), unbreakable_ticks.into()],
+            AbilityEffect::Splash {
+                base,
+                per_level,
+                radius,
+                duration,
+                period,
+            } => vec![
+                22,
+                base.into(),
+                per_level.into(),
+                radius,
+                duration.into(),
+                period.into(),
+            ],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1436,7 +1535,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(42)), None);
+        assert_eq!(ability_by_id(AbilityId::new(45)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG

@@ -444,7 +444,12 @@ fn encode_projectile(
     }
     payload.extend_from_slice(&projectile.yaw.to_be_bytes());
     payload.extend_from_slice(&projectile.pitch.to_be_bytes());
-    payload.push(u8::from(projectile.stuck));
+    // State: 0 flying, 1 stuck, 2 bursting (#290).
+    payload.push(if projectile.burst {
+        2
+    } else {
+        u8::from(projectile.stuck)
+    });
     Ok(())
 }
 
@@ -512,7 +517,12 @@ fn decode_projectile(
     .map(i32::from);
     let yaw = u16::from_be_bytes(take(payload, offset)?);
     let pitch = i16::from_be_bytes(take(payload, offset)?);
-    let stuck = read_bool(payload, offset)?;
+    let (stuck, burst) = match read_u8(payload, offset)? {
+        0 => (false, false),
+        1 => (true, false),
+        2 => (false, true),
+        _ => return Err(ProtocolError::new("unknown projectile state")),
+    };
     Ok(mmorpg_core::ProjectileView {
         id,
         kind,
@@ -520,6 +530,7 @@ fn decode_projectile(
         yaw,
         pitch,
         stuck,
+        burst,
     })
 }
 
@@ -987,6 +998,7 @@ mod tests {
                     yaw: 16_384,
                     pitch: -900,
                     stuck: false,
+                    burst: false,
                 },
                 mmorpg_core::ProjectileView {
                     id: 65_535,
@@ -995,6 +1007,7 @@ mod tests {
                     yaw: 0,
                     pitch: 16_384,
                     stuck: true,
+                    burst: false,
                 },
                 mmorpg_core::ProjectileView {
                     id: 7,
@@ -1003,6 +1016,16 @@ mod tests {
                     yaw: 49_152,
                     pitch: 0,
                     stuck: false,
+                    burst: false,
+                },
+                mmorpg_core::ProjectileView {
+                    id: 9,
+                    kind: mmorpg_core::ProjectileKind::Bomb,
+                    position: [-40, 12, 75],
+                    yaw: 0,
+                    pitch: 0,
+                    stuck: false,
+                    burst: true,
                 },
             ],
             quests: Some(quest_sheet()),
@@ -1356,7 +1379,7 @@ mod tests {
                 + 2 * DOOR_RECORD_BYTES
                 + 2 * PIECE_RECORD_BYTES
                 + 4 * ENTITY_RECORD_BYTES
-                + 3 * PROJECTILE_RECORD_BYTES
+                + 4 * PROJECTILE_RECORD_BYTES
         );
         assert_eq!(encoded, fixture_bytes());
         assert_eq!(
@@ -1664,13 +1687,13 @@ mod tests {
         let mut more = encoded.clone();
         more[ENTITY_COUNT..FIRST_ENTITY].copy_from_slice(&5_u16.to_be_bytes());
         assert!(decode_snapshot(&more).is_err(), "count must match records");
-        // The three projectile records (arrow, bolt, missile) end the projection (#286, #289).
-        // The empty debris section (#288) follows them.
-        let projectiles = encoded.len() - 1 - 3 * PROJECTILE_RECORD_BYTES;
-        assert_eq!(encoded[projectiles - 1], 3);
+        // The four projectile records (arrow, bolt, missile, bursting bomb) end the projection
+        // (#286, #289, #290). The empty debris section (#288) follows them.
+        let projectiles = encoded.len() - 1 - 4 * PROJECTILE_RECORD_BYTES;
+        assert_eq!(encoded[projectiles - 1], 4);
         for (offset, value, message) in [
-            (projectiles + 2, 9, "unknown projectile kind"),
-            (projectiles + 13, 2, "boolean field must be 0 or 1"),
+            (projectiles + 2, 10, "unknown projectile kind"),
+            (projectiles + 13, 3, "unknown projectile state"),
             (projectiles - 1, 9, "snapshot has too many projectiles"),
         ] {
             let mut invalid = encoded.clone();

@@ -177,6 +177,10 @@ fn presentation(id: u8) -> (Option<Stance>, Option<Visual>, u32) {
         39 => (Some(Stance::Staff), Some(Visual::Roots), 0x6b8a3a),
         40 => (Some(Stance::Staff), None, 0x9ee07a),
         41 => (Some(Stance::Staff), Some(Visual::Bubble), 0xa07a4a),
+        // The Rogue's throws (#290): the zone's own knives, flasks and bombs fly.
+        42 => (Some(Stance::Sword), None, 0xc4c9cc),
+        43 => (Some(Stance::Sword), None, 0x8fe05a),
+        44 => (Some(Stance::Sword), None, 0xffa23a),
         _ => (None, None, 0xffffff),
     }
 }

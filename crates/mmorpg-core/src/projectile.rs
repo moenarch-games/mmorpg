@@ -18,8 +18,18 @@
 //! Ricochet Shot mirrors off walls, props and terrain up to [`RICOCHET_BOUNCES`] times about
 //! the hit's surface normal. Walls stop a piercing shot; raised shields stop both.
 //!
+//! The Rogue's thrown weapons (#290) fly the same way. A throwing knife is a plain shot that
+//! tracks a selected target or flies along the facing. A venom flask and a bomb are lobbed
+//! along the facing in a high arc (pitched to land on the nearest hostile straight ahead within
+//! [`THROW_RANGE_UNITS`]): the flask shatters on the first thing it meets and splashes its
+//! effect around that point; the bomb bounces off what it meets ([`BOMB_RESTITUTION`]), rolls
+//! to rest under gravity and friction, and bursts when it touches a unit or after
+//! [`BOMB_FUSE_TICKS`]. A burst stays visible for [`BURST_TICKS`] where it happened.
+//!
 //! Rapier gap noted for physics-engine parity: no continuous projectile body is used; a
-//! per-tick ray sweep stands in for CCD on a thin, fast body.
+//! per-tick ray sweep stands in for CCD on a thin, fast body. A bomb is likewise a swept point
+//! with its own restitution and friction rather than a Rapier dynamic ball, so it bounces the
+//! same on both backends and leaves no body in the world.
 
 use crate::ability::Shot;
 use crate::entity::{EntityRef, body_id, entity_of};
@@ -65,6 +75,29 @@ pub const LAUNCH_HEIGHT_UNITS: f32 = 20.0;
 /// A free missile flies level this high above the caster's feet (#289), low enough to meet
 /// wolf-sized creatures and humanoids alike.
 pub const MISSILE_FLIGHT_HEIGHT_UNITS: f32 = 50.0;
+/// Flight speed of a throwing knife (36 m/s), units per tick (#290).
+pub const KNIFE_SPEED_UNITS: f32 = crate::f32_units_per_tick(3_600.0);
+/// A flask or bomb leaves at this horizontal speed (10 m/s) …
+pub const THROW_SPEED_UNITS: f32 = crate::f32_units_per_tick(1_000.0);
+/// … and, with nothing to aim at, this upward speed (5 m/s): it lands about 12 m out.
+pub const THROW_RISE_UNITS: f32 = crate::f32_units_per_tick(500.0);
+/// A throw arcs onto the nearest hostile straight ahead within this distance (15 m).
+pub const THROW_RANGE_UNITS: i32 = 1_500;
+/// A thrown flask still flying after this many ticks (3 s) falls away.
+pub const THROWN_FLIGHT_TICKS: u16 = crate::ticks_from_ms(3_000);
+/// A bomb bursts this long after the throw (2.5 s) unless a unit sets it off sooner.
+pub const BOMB_FUSE_TICKS: u16 = crate::ticks_from_ms(2_500);
+/// A bomb keeps this share of its speed into a surface as it bounces off …
+pub const BOMB_RESTITUTION: f32 = 0.4;
+/// … and this share of its speed along the surface on a bounce, or while rolling.
+const BOMB_BOUNCE_FRICTION: f32 = 0.6;
+const BOMB_ROLL_FRICTION: f32 = 0.88;
+/// A rebound slower than this (0.6 m/s) settles the bomb onto the surface to roll.
+const BOMB_REST_SPEED_UNITS: f32 = crate::f32_units_per_tick(60.0);
+/// A burst (#290) stays visible this long (0.3 s) …
+pub const BURST_TICKS: u16 = crate::ticks_from_ms(300);
+/// … and spreads its effect from this far above the point it happened at.
+const BURST_LIFT_UNITS: f32 = 15.0;
 
 /// What flies; the wire value is its code.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -79,6 +112,12 @@ pub enum ProjectileKind {
     Holy,
     /// A Druid's nature missile (#304): flies like [`Self::Missile`], drawn in green.
     Nature,
+    /// A Rogue's throwing knife (#290): flies like an arrow.
+    Knife,
+    /// A Rogue's venom flask (#290): lobbed, shatters on impact.
+    Flask,
+    /// A Rogue's bomb (#290): lobbed, bounces and rolls, bursts on its fuse.
+    Bomb,
 }
 
 impl ProjectileKind {
@@ -91,6 +130,9 @@ impl ProjectileKind {
             Self::Shadow => 4,
             Self::Holy => 5,
             Self::Nature => 6,
+            Self::Knife => 7,
+            Self::Flask => 8,
+            Self::Bomb => 9,
         }
     }
 
@@ -103,6 +145,9 @@ impl ProjectileKind {
             4 => Some(Self::Shadow),
             5 => Some(Self::Holy),
             6 => Some(Self::Nature),
+            7 => Some(Self::Knife),
+            8 => Some(Self::Flask),
+            9 => Some(Self::Bomb),
             _ => None,
         }
     }
@@ -116,7 +161,16 @@ impl ProjectileKind {
             Self::Shadow => "shadow",
             Self::Holy => "holy",
             Self::Nature => "nature",
+            Self::Knife => "knife",
+            Self::Flask => "flask",
+            Self::Bomb => "bomb",
         }
+    }
+
+    /// Whether it is lobbed by hand in a high arc (#290): a flask or a bomb.
+    #[must_use]
+    pub const fn is_thrown(self) -> bool {
+        matches!(self, Self::Flask | Self::Bomb)
     }
 
     /// Whether it is a spell missile: no gravity, homing and flying at body height.
@@ -134,15 +188,19 @@ impl ProjectileKind {
             Self::Arrow => ARROW_SPEED_UNITS,
             Self::Bolt => BOLT_SPEED_UNITS,
             Self::Missile | Self::Shadow | Self::Holy | Self::Nature => MISSILE_SPEED_UNITS,
+            Self::Knife => KNIFE_SPEED_UNITS,
+            Self::Flask | Self::Bomb => THROW_SPEED_UNITS,
         }
     }
 
-    /// Downward acceleration in flight, units per tick²: arrows and bolts fall, missiles fly
-    /// straight.
+    /// Downward acceleration in flight, units per tick²: arrows, bolts and thrown weapons fall,
+    /// missiles fly straight.
     #[must_use]
     pub const fn gravity(self) -> f32 {
         match self {
-            Self::Arrow | Self::Bolt => PROJECTILE_GRAVITY_UNITS,
+            Self::Arrow | Self::Bolt | Self::Knife | Self::Flask | Self::Bomb => {
+                PROJECTILE_GRAVITY_UNITS
+            }
             Self::Missile | Self::Shadow | Self::Holy | Self::Nature => 0.0,
         }
     }
@@ -162,6 +220,8 @@ pub enum Flight {
         offset: [f32; 3],
         remaining: u16,
     },
+    /// A flask or bomb burst here (#290); it shows for `remaining` more ticks.
+    Burst { remaining: u16 },
 }
 
 /// One projectile; positions and velocities are exact units (per tick).
@@ -187,6 +247,20 @@ impl Projectile {
     #[must_use]
     pub const fn is_stuck(&self) -> bool {
         matches!(self.flight, Flight::Stuck { .. })
+    }
+
+    #[must_use]
+    pub const fn is_burst(&self) -> bool {
+        matches!(self.flight, Flight::Burst { .. })
+    }
+
+    /// Ticks it may fly before it falls away: longer for a lobbed flask (#290).
+    fn max_flight(&self) -> u16 {
+        if self.kind.is_thrown() {
+            THROWN_FLIGHT_TICKS
+        } else {
+            MAX_FLIGHT_TICKS
+        }
     }
 
     /// How it treats what it meets: its ability's shot.
@@ -216,6 +290,8 @@ pub struct ProjectileView {
     pub yaw: u16,
     pub pitch: i16,
     pub stuck: bool,
+    /// A flask or bomb bursting where it is (#290).
+    pub burst: bool,
 }
 
 fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
@@ -357,8 +433,18 @@ impl ZoneSimulation {
         let ahead = [unit(x), unit(z)];
         // An arrow leaves at chest height; aimed at a short creature it would sail over it, so
         // it pitches to arc through the nearest hostile body centre straight ahead (#291).
-        let rise = if kind.gravity() > 0.0 {
-            self.aim_rise(owner, from, ahead, kind)
+        // A flask or bomb is lobbed high, arcing onto the nearest hostile straight ahead (#290).
+        let rise = if kind.is_thrown() {
+            self.aim_rise(
+                owner,
+                from,
+                ahead,
+                kind,
+                THROW_RANGE_UNITS,
+                THROW_RISE_UNITS,
+            )
+        } else if kind.gravity() > 0.0 {
+            self.aim_rise(owner, from, ahead, kind, AIM_ASSIST_RANGE_UNITS, 0.0)
         } else {
             0.0
         };
@@ -378,19 +464,21 @@ impl ZoneSimulation {
     }
 
     /// The upward launch speed (units per tick) that arcs a free `kind` shot from `from` along
-    /// `ahead` through the nearest hostile unit's centre within [`AIM_ASSIST_RANGE_UNITS`] and
-    /// about 8° of it; level (0) without one. Ties go to the lower entity.
+    /// `ahead` through the nearest hostile unit's centre within `range` and about 8° of it;
+    /// `otherwise` without one. Ties go to the lower entity.
     fn aim_rise(
         &self,
         owner: EntityRef,
         from: [f32; 3],
         ahead: [f32; 2],
         kind: ProjectileKind,
+        range: i32,
+        otherwise: f32,
     ) -> f32 {
         #[allow(clippy::cast_possible_truncation)]
         let here = [from[0].round() as i32, from[2].round() as i32];
         let mut best: Option<(f32, [f32; 3])> = None;
-        for unit in self.interest.near(here[0], here[1], AIM_ASSIST_RANGE_UNITS) {
+        for unit in self.interest.near(here[0], here[1], range) {
             if !self.projectile_meets(owner, body_id(unit)) {
                 continue;
             }
@@ -400,13 +488,13 @@ impl ZoneSimulation {
             let delta = sub(centre, from);
             let distance = delta[0].hypot(delta[2]);
             #[allow(clippy::cast_precision_loss)]
-            let in_range = distance > 0.0 && distance <= AIM_ASSIST_RANGE_UNITS as f32;
+            let in_range = distance > 0.0 && distance <= range as f32;
             let along = (delta[0] * ahead[0] + delta[2] * ahead[1]) / distance;
             if in_range && along >= AIM_ASSIST_COS && best.is_none_or(|(near, _)| distance < near) {
                 best = Some((distance, delta));
             }
         }
-        best.map_or(0.0, |(distance, delta)| {
+        best.map_or(otherwise, |(distance, delta)| {
             let ticks = (distance / kind.speed()).max(1.0);
             delta[1] / ticks + kind.gravity() * (ticks - 1.0) / 2.0
         })
@@ -446,8 +534,25 @@ impl ZoneSimulation {
                 self.projectiles.insert(id, projectile);
                 continue;
             }
+            if let Flight::Burst { remaining } = projectile.flight {
+                if remaining <= 1 {
+                    self.projectiles.remove(&id);
+                } else {
+                    projectile.flight = Flight::Burst {
+                        remaining: remaining - 1,
+                    };
+                    self.projectiles.insert(id, projectile);
+                }
+                continue;
+            }
             projectile.age += 1;
-            if projectile.age > MAX_FLIGHT_TICKS {
+            let shot = projectile.shot();
+            // A bomb's fuse runs out wherever it lies (#290).
+            if shot == Shot::Bounce && projectile.age >= BOMB_FUSE_TICKS {
+                self.burst(projectile, now)?;
+                continue;
+            }
+            if projectile.age > projectile.max_flight() {
                 self.projectiles.remove(&id);
                 continue;
             }
@@ -485,7 +590,30 @@ impl ZoneSimulation {
             let point = add(projectile.position, scale(segment, hit.fraction));
             projectile.position = point;
             let unit = entity_of(hit.body);
-            let shot = projectile.shot();
+            // A flask shatters on whatever it meets; a bomb bursts on a unit (#290).
+            if shot == Shot::Shatter || (shot == Shot::Bounce && unit.is_some()) {
+                projectile.position = add(point, scale(hit.normal, BOUNCE_CLEARANCE_UNITS));
+                self.burst(projectile, now)?;
+                continue;
+            }
+            // A bomb bounces off a surface, losing speed into it and along it; a weak rebound
+            // settles it onto the surface, where it rolls on under gravity until friction stops
+            // it (#290).
+            if shot == Shot::Bounce {
+                let n = hit.normal;
+                let into = dot(projectile.velocity, n);
+                let along = sub(projectile.velocity, scale(n, into));
+                let rebound = -into * BOMB_RESTITUTION;
+                let (rebound, friction) = if rebound < BOMB_REST_SPEED_UNITS {
+                    (0.0, BOMB_ROLL_FRICTION)
+                } else {
+                    (rebound, BOMB_BOUNCE_FRICTION)
+                };
+                projectile.velocity = add(scale(along, friction), scale(n, rebound));
+                projectile.position = add(point, scale(n, BOUNCE_CLEARANCE_UNITS));
+                self.projectiles.insert(id, projectile);
+                continue;
+            }
             // A ricochet mirrors off a surface (not a unit) while it has bounces left.
             if unit.is_none() && shot == Shot::Ricochet && projectile.bounces < RICOCHET_BOUNCES {
                 let n = hit.normal;
@@ -547,6 +675,24 @@ impl ZoneSimulation {
             }
         }
         Ok(())
+    }
+
+    /// A flask or bomb bursts where it is (#290): it stays visible there for [`BURST_TICKS`] and
+    /// its ability's splash or blast spreads from just above that point.
+    fn burst(&mut self, mut projectile: Projectile, now: u64) -> Result<(), ZoneError> {
+        projectile.velocity = [0.0; 3];
+        projectile.flight = Flight::Burst {
+            remaining: BURST_TICKS,
+        };
+        self.projectiles.insert(projectile.id, projectile);
+        let EntityRef::Player(player_id) = projectile.owner else {
+            return Ok(());
+        };
+        let ability = crate::ability_by_id(projectile.ability)
+            .ok_or_else(|| ZoneError::new("projectile names an unknown ability"))?;
+        let centre =
+            crate::physics::to_units(add(projectile.position, [0.0, BURST_LIFT_UNITS, 0.0]));
+        self.player_burst(player_id, ability, centre, now)
     }
 
     /// Whether a body stops a shot by `owner`: everything but its shooter, the shooter's own side
@@ -705,6 +851,7 @@ impl ZoneSimulation {
                             yaw,
                             pitch,
                             stuck: projectile.is_stuck(),
+                            burst: projectile.is_burst(),
                         },
                     )
                 })

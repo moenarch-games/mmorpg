@@ -212,7 +212,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   u8(projectiles.length);
   for (const projectile of projectiles) {
     u16(projectile.id);
-    u8(projectile.kind === "arrow" ? 1 : 2);
+    u8(["arrow", "bolt", "missile", "shadow", "holy", "nature", "knife", "flask", "bomb"].indexOf(projectile.kind) + 1);
     for (const component of [projectile.x, projectile.y, projectile.z]) {
       view.setInt16(offset, component);
       offset += 2;
@@ -220,7 +220,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u16(projectile.yaw);
     view.setInt16(offset, projectile.pitch);
     offset += 2;
-    u8(projectile.stuck ? 1 : 0);
+    u8(projectile.burst ? 2 : projectile.stuck ? 1 : 0);
   }
   const debris = snapshot.debris ?? [];
   u8(debris.length);

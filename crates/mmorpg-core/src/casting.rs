@@ -593,15 +593,81 @@ impl ZoneSimulation {
                 }
             }
             // Blizzard, Lightning Beam and Drain Life pulse while they channel; bandages and
-            // stomps are creature-only.
+            // stomps are creature-only; a flask's splash lands where it shatters.
             AbilityEffect::Blizzard { .. }
             | AbilityEffect::Beam { .. }
             | AbilityEffect::Drain { .. }
             | AbilityEffect::Bandage { .. }
             | AbilityEffect::Stomp { .. }
-            | AbilityEffect::Smash { .. } => {}
+            | AbilityEffect::Smash { .. }
+            | AbilityEffect::Splash { .. } => {}
         }
         Ok(())
+    }
+
+    /// A player's thrown flask or bomb burst at `centre` (#290): a blast detonates there like
+    /// Fire Blast; a splash puts its damage over time on every hostile unit within reach that
+    /// the centre can see. Walls between centre and unit shield it.
+    pub(crate) fn player_burst(
+        &mut self,
+        player_id: PlayerId,
+        ability: &Ability,
+        centre: [i32; 3],
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        let Some(player) = self.players.get(&player_id) else {
+            return Ok(());
+        };
+        let level = player.level;
+        let bonus = u32::from(player.damage_bonus());
+        let (x, z) = crate::trig::direction(player.facing);
+        match ability.effect {
+            AbilityEffect::Blast {
+                damage,
+                per_level,
+                radius,
+                knockback,
+            } => self.detonate(
+                Detonation {
+                    attacker: player_id,
+                    source: None,
+                    centre,
+                    radius,
+                    damage,
+                    bonus: u32::from(scaled(0, per_level, level)) + bonus,
+                    knockback,
+                    fallback: [i64::from(x), i64::from(z)],
+                },
+                now,
+            ),
+            AbilityEffect::Splash {
+                base,
+                per_level,
+                radius,
+                ..
+            } => {
+                let Some(spec) = ability.aura() else {
+                    return Ok(());
+                };
+                let players =
+                    self.content.player_combat_policy() == crate::PlayerCombatPolicy::FreeForAll;
+                for (victim, _) in self.blast_victims(centre, radius, players)? {
+                    if matches!(victim, EntityRef::Player(id) if !self.players_are_hostile(player_id, id))
+                    {
+                        continue;
+                    }
+                    let aura = Aura {
+                        ability: ability.id,
+                        caster: EntityRef::Player(player_id),
+                        remaining: spec.duration,
+                        amount: scaled(base, per_level, level),
+                    };
+                    self.hostile_aura(player_id, victim, aura)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     /// A weapon strike's damage: weapon damage × numerator / denominator +

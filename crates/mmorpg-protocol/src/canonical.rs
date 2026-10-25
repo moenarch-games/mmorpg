@@ -971,6 +971,7 @@ fn encode_trade_intent(
 const TRACKING: u8 = 1;
 const FREE: u8 = 2;
 const STUCK: u8 = 3;
+const BURST: u8 = 4;
 
 /// Projectiles (#286): the next ID (`u32`), a `u16` count, then per projectile its ID
 /// (`u32`), kind, owner, ability, exact position and velocity, age (`u16`), bounces (`u8`) and
@@ -1020,6 +1021,10 @@ fn encode_projectiles(
                 }
                 payload.extend_from_slice(&remaining.to_be_bytes());
             }
+            mmorpg_core::Flight::Burst { remaining } => {
+                payload.push(BURST);
+                payload.extend_from_slice(&remaining.to_be_bytes());
+            }
         }
     }
     Ok(())
@@ -1065,6 +1070,9 @@ fn decode_projectiles(
             STUCK => mmorpg_core::Flight::Stuck {
                 unit: decode_entity_ref(payload, offset)?,
                 offset: crate::wire::read_f32_vector(payload, offset)?,
+                remaining: u16::from_be_bytes(take(payload, offset)?),
+            },
+            BURST => mmorpg_core::Flight::Burst {
                 remaining: u16::from_be_bytes(take(payload, offset)?),
             },
             _ => return Err(ProtocolError::new("unknown projectile flight")),
@@ -1351,6 +1359,18 @@ mod tests {
                     age: 6,
                     struck: [None; 2],
                     bounces: 1,
+                },
+                mmorpg_core::Projectile {
+                    id: 9,
+                    kind: mmorpg_core::ProjectileKind::Bomb,
+                    owner: EntityRef::Player(1),
+                    ability: mmorpg_core::ability::ids::BLASTING_BOMB,
+                    position: [40.0, 1.5, -12.0],
+                    velocity: [0.0; 3],
+                    flight: mmorpg_core::Flight::Burst { remaining: 11 },
+                    age: 150,
+                    struck: [None; 2],
+                    bounces: 0,
                 },
             ],
             loot_rng_state: 0,

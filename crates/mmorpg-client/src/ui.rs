@@ -532,7 +532,7 @@ impl GameUi {
                                 "A shadow caster who drains life and spends mana."
                             }
                             PlayerClass::Rogue => {
-                                "A dagger fighter who poisons and stuns with focus."
+                                "A dagger fighter who poisons, stuns and throws knives, flasks and bombs with focus."
                             }
                             PlayerClass::Cleric => {
                                 "A holy caster who smites, heals and shields allies with faith."
