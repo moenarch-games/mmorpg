@@ -258,7 +258,6 @@ impl Playback {
 
     /// Advances and returns the clip and time to pose this frame; `duration` gives a clip's
     /// length in seconds (zero when the model lacks it).
-    #[allow(clippy::too_many_arguments)]
     pub fn advance(
         &mut self,
         clips: Clips,
@@ -399,7 +398,7 @@ mod tests {
                 .find(|spawn| content.creature_template(spawn.template).unwrap().family == family)
                 .unwrap();
             let mut record = content_record();
-            record.appearance = u16::try_from(spawn.template.get()).unwrap();
+            record.appearance = spawn.template.get();
             Kind::of(EntityRef::Creature(CreatureId::new(1)), &record, &content)
         };
         assert_eq!(

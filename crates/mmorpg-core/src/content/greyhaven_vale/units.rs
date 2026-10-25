@@ -113,11 +113,13 @@ const TEMPLATES: [TemplateRow; 15] = {
     ]
 };
 
+type CavernRow = (u32, CreatureTemplateId, [i32; 2], u16, [u8; 2]);
+
 /// The Greyfang cavern (#160) as `(spawn id, template, feet XZ, facing, levels)`: Redbrands
 /// at levels 4–5 hold the outer cavern and the inner chamber, a Brute in each; the inner
 /// Brute guards the sealed threshold. They wander only [`CAVERN_WANDER_RADIUS_UNITS`].
 #[rustfmt::skip]
-const CAVERN: [(u32, CreatureTemplateId, [i32; 2], u16, [u8; 2]); 6] = {
+const CAVERN: [CavernRow; 6] = {
     use templates::*;
     [
         (650, REDBRAND_BRUTE, [6_100, -13_700], 0, [5, 5]),

@@ -14,7 +14,7 @@ use wasm_bindgen::prelude::{JsError, wasm_bindgen};
 /// The content revision the pinned battle-royale host stamps on its projections
 /// (`web/src/world/battle-royale/protocol.ts`); a cross-repository pin, updated on re-pin.
 const ARENA_CONTENT_REVISION: u64 = 2;
-type SceneBuffers = (String, Vec<f32>, Vec<u32>, Vec<f32>);
+use crate::static_scene::SceneBuffers;
 
 pub(crate) fn content() -> Arc<ZoneContent> {
     static CONTENT: OnceLock<Arc<ZoneContent>> = OnceLock::new();

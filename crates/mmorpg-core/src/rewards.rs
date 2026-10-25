@@ -203,34 +203,6 @@ impl RewardHistory {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn reward_history_preserves_exact_personal_and_world_receipts_across_reset() {
-        let creature = CreatureId::new(1);
-        let xp = RewardKey::KillExperience { creature, life: 3 };
-        let money = RewardKey::LootMoney { creature, life: 3 };
-        let mut history = RewardHistory::new(4, 4).unwrap();
-        history.record(1, xp).unwrap();
-        history.record(1, money).unwrap();
-        assert!(!history.allows(1, xp));
-        assert!(history.allows(2, xp));
-        assert!(!history.allows(2, money));
-        let mut reset = RewardHistory::new(4, 4).unwrap();
-        reset.load(1, xp).unwrap();
-        reset.load(1, money).unwrap();
-        assert!(reset.grants.is_empty());
-        assert!(!reset.allows(1, xp));
-        assert!(!reset.allows(2, money));
-        assert!(reset.allows(1, RewardKey::KillExperience { creature, life: 2 })); // gaps are not high-water marks
-        reset.spawned(creature, 4);
-        assert!(reset.world.is_empty());
-        assert!(reset.allows(1, RewardKey::KillExperience { creature, life: 4 }));
-        history.validate().unwrap();
-    }
-}
-
 pub(crate) fn allowed(history: &Option<RewardHistory>, player: PlayerId, key: RewardKey) -> bool {
     history
         .as_ref()
@@ -308,5 +280,33 @@ impl crate::ZoneSimulation {
     #[must_use]
     pub fn reward_history(&self) -> Option<&RewardHistory> {
         self.rewards.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn reward_history_preserves_exact_personal_and_world_receipts_across_reset() {
+        let creature = CreatureId::new(1);
+        let xp = RewardKey::KillExperience { creature, life: 3 };
+        let money = RewardKey::LootMoney { creature, life: 3 };
+        let mut history = RewardHistory::new(4, 4).unwrap();
+        history.record(1, xp).unwrap();
+        history.record(1, money).unwrap();
+        assert!(!history.allows(1, xp));
+        assert!(history.allows(2, xp));
+        assert!(!history.allows(2, money));
+        let mut reset = RewardHistory::new(4, 4).unwrap();
+        reset.load(1, xp).unwrap();
+        reset.load(1, money).unwrap();
+        assert!(reset.grants.is_empty());
+        assert!(!reset.allows(1, xp));
+        assert!(!reset.allows(2, money));
+        assert!(reset.allows(1, RewardKey::KillExperience { creature, life: 2 })); // gaps are not high-water marks
+        reset.spawned(creature, 4);
+        assert!(reset.world.is_empty());
+        assert!(reset.allows(1, RewardKey::KillExperience { creature, life: 4 }));
+        history.validate().unwrap();
     }
 }

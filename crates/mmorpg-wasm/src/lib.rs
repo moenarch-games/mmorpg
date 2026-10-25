@@ -535,7 +535,6 @@ impl UnitPresenter {
         self.0.take_audio()
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn frame(
         &mut self,
         units: &[f64],

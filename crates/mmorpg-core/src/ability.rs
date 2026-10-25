@@ -436,10 +436,6 @@ impl Ability {
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "one catalog row per call keeps the table readable"
-)]
 const fn ability(
     id: u8,
     name: &'static str,

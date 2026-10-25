@@ -946,14 +946,14 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                         dist = d;
                     }
                 }
-                if let Some(q) = best {
-                    if x < q[0] - 1e-6 || ((x - q[0]).abs() < 1e-6 && z < q[1]) {
-                        let y = h - 0.35;
-                        m.beam(TIMBER, [0., y, 0.], [q[0] - x, y, q[1] - z], 0.22, 6);
-                        let mid = [(q[0] - x) / 2., y - 0.6, (q[1] - z) / 2.];
-                        m.box_at(IRON, [mid[0], y - 0.3, mid[2]], [0.03, 0.25, 0.03]);
-                        m.box_at(GLOW, mid, [0.16, 0.2, 0.16]);
-                    }
+                if let Some(q) = best
+                    && (x < q[0] - 1e-6 || ((x - q[0]).abs() < 1e-6 && z < q[1]))
+                {
+                    let y = h - 0.35;
+                    m.beam(TIMBER, [0., y, 0.], [q[0] - x, y, q[1] - z], 0.22, 6);
+                    let mid = [(q[0] - x) / 2., y - 0.6, (q[1] - z) / 2.];
+                    m.box_at(IRON, [mid[0], y - 0.3, mid[2]], [0.03, 0.25, 0.03]);
+                    m.box_at(GLOW, mid, [0.16, 0.2, 0.16]);
                 }
             }
             PropKind::Fence => {

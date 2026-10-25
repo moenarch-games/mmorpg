@@ -18,7 +18,6 @@ fn prop((_, position, yaw, scale_permille, half_extents): Placement) -> Prop {
 
 /// Saved instance IDs and ground anchors for the selected Outpost grass.
 /// Relief is applied by clients exactly as for other scenery props.
-#[must_use]
 pub fn outpost_grass_placements() -> impl ExactSizeIterator<Item = (&'static str, Prop)> {
     SELECTED
         .iter()

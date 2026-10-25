@@ -91,7 +91,7 @@ impl LocalHost {
             match mode {
                 HostMode::Anonymous(host) => serve_match_host_with_shutdown(host, config, receiver)
                     .await
-                    .map_err(|error| Box::<dyn std::error::Error + Send + Sync>::from(error)),
+                    .map_err(Box::<dyn std::error::Error + Send + Sync>::from),
                 HostMode::Persistent(directory) => {
                     mmorpg_game_server::serve_development_character_host(
                         mmorpg_game_server::DevelopmentCharacterHostConfig {
