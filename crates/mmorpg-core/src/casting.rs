@@ -97,21 +97,32 @@ impl ZoneSimulation {
     ) -> Result<Refusal, ZoneError> {
         // A Shield Bash in an open combo window follows up on the struck
         // creature and may ignore the slash's global cooldown (#157); any
-        // other ability use ends a pending combo.
+        // other ability use ends a pending combo. The edge's typed effects,
+        // and its precision benefits when precise, apply (#380).
         let follow_up = self
             .players
             .get(&player_id)
             .filter(|_| ability == crate::ability::ids::SHIELD_BASH.get())
             .and_then(|player| {
-                crate::action::follow_up(player, crate::action::ActionInput::ShieldBash)
+                crate::action::follow_up(
+                    self.action_graph,
+                    player,
+                    crate::action::ActionInput::ShieldBash,
+                )
             });
-        self.update_player(player_id, |player| player.combo = None);
-        let target = follow_up.map_or(target, |(_, struck)| Some(struck));
-        let ignore_global_cooldown = follow_up.is_some_and(|(edge, _)| {
-            crate::action::edge(edge)
-                .effects
-                .contains(&crate::action::Effect::IgnoreGlobalCooldown)
-        });
+        let keep_opening = follow_up
+            .as_ref()
+            .is_some_and(|follow_up| follow_up.has(crate::action::Effect::KeepOpening));
+        if !keep_opening {
+            self.update_player(player_id, |player| player.combo = None);
+        }
+        let target = follow_up
+            .as_ref()
+            .and_then(|follow_up| follow_up.target)
+            .or(target);
+        let ignore_global_cooldown = follow_up
+            .as_ref()
+            .is_some_and(|follow_up| follow_up.has(crate::action::Effect::IgnoreGlobalCooldown));
         let ability = match self.ready_ability(player_id, ability, false, ignore_global_cooldown) {
             None => return Ok(None),
             Some(Err(code)) => return Ok(Some((code, None))),
@@ -195,12 +206,30 @@ impl ZoneSimulation {
             None
         };
         let source = EntityRef::Player(player_id);
+        let recovery = follow_up
+            .as_ref()
+            .and_then(crate::action::FollowUp::recovery_ticks);
+        let refund = follow_up
+            .as_ref()
+            .map_or(0, crate::action::FollowUp::refund);
         self.update_player(player_id, |player| {
-            player.global_cooldown = GLOBAL_COOLDOWN_TICKS;
+            player.global_cooldown = recovery.unwrap_or(GLOBAL_COOLDOWN_TICKS);
         });
         match ability.cast {
             CastTime::Instant => {
                 self.pay_and_cool_down(player_id, ability);
+                if refund > 0 {
+                    self.update_player(player_id, |player| {
+                        if let Some(choice) = player.class {
+                            let level = player.level;
+                            player.resource.gain(
+                                choice.class.resource(),
+                                level,
+                                refund.min(ability.cost),
+                            );
+                        }
+                    });
+                }
                 self.resolve_player_ability(player_id, ability, target, now)?;
             }
             CastTime::Cast(ticks) | CastTime::Channel(ticks) => {

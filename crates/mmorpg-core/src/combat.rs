@@ -46,7 +46,7 @@ impl ZoneSimulation {
                 let waits = self
                     .players
                     .get(&player_id)
-                    .is_some_and(|player| crate::action::waits(player, &intent));
+                    .is_some_and(|player| crate::action::waits(self.action_graph, player, &intent));
                 if waits {
                     waiting.push(intent);
                 } else {
@@ -445,10 +445,10 @@ impl ZoneSimulation {
         };
         // A stunned or landing player's ready swing waits.
         if player.swing_timer > 0
-            || crate::action::rule_applying(
+            || crate::action::holding_rule(
+                self.action_graph,
                 player,
                 crate::action::ActionInput::WardenMelee,
-                crate::action::Interaction::Hold,
             )
             .is_some()
             || crate::aura::has_kind(&player.auras, crate::AuraKind::Stun)

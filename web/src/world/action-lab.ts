@@ -31,7 +31,9 @@ export type ActionGraph = {
   actions: readonly { id: string; region: string; recoveryMs: number | null; recoveryTicks: number | null }[];
   modifiers: readonly { action: string; condition: string; recoveryMs: number; recoveryTicks: number }[];
   edges: readonly GraphEdge[];
-  rules: readonly { id: string; during: string; input: string; conditions: readonly string[]; interaction: string }[];
+  windowModifiers: readonly { edge: string; conditions: readonly string[]; actionableDeltaMs: number }[];
+  rules: readonly { id: string; during: string; input: string; conditions: readonly string[] }[];
+  interruptions: readonly { reaction: string; interrupted: string; phase: string | null; consequence: string }[];
 };
 
 export type GraphEdge = {
@@ -39,10 +41,17 @@ export type GraphEdge = {
   openAfterMs: number; actionableMs: number; bufferMs: number;
   openAfterTicks: number; actionableTicks: number; bufferTicks: number;
   conditions: readonly string[]; effects: readonly string[]; priority: number;
+  precision: { afterOpenMs: number; lengthMs: number; benefits: readonly string[] } | null;
 };
 
-export type BlockReason = { kind: "Condition"; condition: string } | { kind: "SourceInactive" | "TooEarly" | "Expired" };
-export type EdgeStatus = { kind: "Open" | "Buffering" } | { kind: "Blocked"; reason: BlockReason };
+export type BlockReason =
+  | { kind: "Condition"; condition: string }
+  | { kind: "Cancelled"; reaction: string }
+  | { kind: "SourceInactive" | "TooEarly" | "Expired" };
+export type EdgeStatus =
+  | { kind: "Open" | "Buffering" }
+  | { kind: "Suspended"; reaction: string }
+  | { kind: "Blocked"; reason: BlockReason };
 export type Verdict =
   | { kind: "Won" | "Holding" }
   | { kind: "Outranked"; by: string }
@@ -60,9 +69,14 @@ export type Inspection = {
   edges: readonly {
     edge: string; priority: number; status: EdgeStatus;
     anchorTick: number | null; bufferFrom: number | null; openFrom: number | null; openUntil: number | null;
+    precision: { from: number; until: number } | null;
   }[];
-  rules: readonly { rule: string; input: string; interaction: string; releasedAt: number | null }[];
-  arbitrations: readonly { input: string; outcome: Outcome; candidates: readonly { candidate: string; verdict: Verdict }[] }[];
+  rules: readonly { rule: string; input: string; releasedAt: number }[];
+  interruptions: readonly { interrupted: string; reaction: string; consequence: string; authored: boolean }[];
+  arbitrations: readonly {
+    input: string; outcome: Outcome; precise: boolean;
+    candidates: readonly { candidate: string; verdict: Verdict }[];
+  }[];
 };
 
 export const LAB_SCENARIO = "action-lab";
@@ -136,17 +150,25 @@ function reasonText(reason: BlockReason): string {
     case "SourceInactive": return "its source action is not running";
     case "TooEarly": return "the input is earlier than the buffer";
     case "Expired": return "the actionable window has closed";
+    case "Cancelled": return `${reason.reaction} cancels the opening`;
   }
 }
 
 /** Why an edge is or is not usable at the inspected tick, with its absolute window ticks. */
 export function explainEdge(report: Inspection["edges"][number]): string {
-  const window = report.openFrom === null ? "" : ` (buffer ${report.bufferFrom}, open ${report.openFrom}–${report.openUntil})`;
+  const precision = report.precision ? `, precise ${report.precision.from}–${report.precision.until}` : "";
+  const window = report.openFrom === null ? "" : ` (buffer ${report.bufferFrom}, open ${report.openFrom}–${report.openUntil}${precision})`;
   switch (report.status.kind) {
     case "Open": return `Open: the input follows this edge now${window}.`;
     case "Buffering": return `Buffering: an input now waits for tick ${report.openFrom}${window}.`;
+    case "Suspended": return `Suspended by ${report.status.reaction}: its clock stops and it holds a buffered input${window}.`;
     case "Blocked": return `Blocked: ${reasonText(report.status.reason)}${window}.`;
   }
+}
+
+/** What the reactions in effect do to one running action, opening or buffer. */
+export function explainInterruption(report: Inspection["interruptions"][number]): string {
+  return `${report.reaction}: ${report.consequence.toLowerCase()} ${report.interrupted}${report.authored ? "" : " (default)"}`;
 }
 
 /** What arbitration would make of one input at the next tick. */
@@ -408,13 +430,15 @@ export class ActionLabPanel {
       return button;
     });
     const rules = (inspection?.rules ?? []).map((rule) =>
-      element("li", {}, `${rule.rule}: ${rule.interaction} ${rule.input}${rule.releasedAt !== null ? ` until tick ${rule.releasedAt}` : ""}`));
+      element("li", {}, `${rule.rule}: holds ${rule.input} until tick ${rule.releasedAt}`));
+    const interruptions = (inspection?.interruptions ?? []).map((report) => element("li", {}, explainInterruption(report)));
     const tick = element("button", { type: "button", className: `lab-edge${this.#selection.kind === "tick" ? " selected" : ""}`, textContent: "Why is an input (not) legal?" });
     tick.addEventListener("click", () => this.#select({ kind: "tick" }));
     this.#chart.replaceChildren(
       element("div", { className: "lab-regions" }, ...regions),
       element("div", { className: "lab-edges" }, ...edges, tick),
       rules.length > 0 ? element("ul", { className: "lab-rules" }, ...rules) : element("p", { className: "lab-muted" }, "No compatibility rule applies."),
+      ...(interruptions.length > 0 ? [element("ul", { className: "lab-rules" }, ...interruptions)] : []),
     );
   }
 
@@ -436,7 +460,10 @@ export class ActionLabPanel {
         rows.push([`If ${modifier.condition}`, `${modifier.recoveryMs} ms · ${modifier.recoveryTicks} ticks`]);
       }
       for (const rule of this.#graph.rules.filter((entry) => entry.during === selection.id)) {
-        rows.push([`Rule ${rule.id}`, `${rule.interaction}s ${rule.input}${rule.conditions.length ? ` if ${rule.conditions.join(", ")}` : ""}`]);
+        rows.push([`Rule ${rule.id}`, `holds ${rule.input}${rule.conditions.length ? ` if ${rule.conditions.join(", ")}` : ""}`]);
+      }
+      for (const rule of this.#graph.interruptions.filter((entry) => entry.interrupted === `Action(${selection.id})` || entry.reaction === selection.id)) {
+        rows.push([`${rule.reaction} → ${rule.interrupted}`, `${rule.consequence}${rule.phase ? ` in ${rule.phase}` : ""}`]);
       }
     } else if (selection.kind === "edge") {
       const edge = this.#graph.edges.find((entry) => entry.id === selection.id);
@@ -447,14 +474,18 @@ export class ActionLabPanel {
           ["Actionable", `${edge.actionableMs} ms · ${edge.actionableTicks} ticks`],
           ["Buffer", `${edge.bufferMs} ms · ${edge.bufferTicks} ticks`],
           ["Conditions", edge.conditions.join(", ") || "none"], ["Effects", edge.effects.join(", ") || "none"],
+          ["Precision", edge.precision ? `${edge.precision.afterOpenMs} ms after opening for ${edge.precision.lengthMs} ms: ${edge.precision.benefits.join(", ")}` : "none"],
           ["Priority", String(edge.priority)]);
+        for (const modifier of this.#graph.windowModifiers.filter((entry) => entry.edge === edge.id)) {
+          rows.push([`If ${modifier.conditions.join(", ")}`, `actionable ${modifier.actionableDeltaMs > 0 ? "+" : ""}${modifier.actionableDeltaMs} ms`]);
+        }
       }
       if (report) {
         rows.push(["Status", explainEdge(report)], ["Anchor tick", String(report.anchorTick ?? "—")]);
       }
     } else {
       for (const arbitration of inspection?.arbitrations ?? []) {
-        rows.push([arbitration.input, explainOutcome(arbitration.outcome)]);
+        rows.push([arbitration.input, `${explainOutcome(arbitration.outcome)}${arbitration.precise ? " (precise)" : ""}`]);
         for (const { candidate, verdict } of arbitration.candidates) {
           rows.push([`  ${candidate}`, explainVerdict(verdict)]);
         }
