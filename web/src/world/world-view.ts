@@ -48,7 +48,7 @@ import { QuestPanel, type MarkerPoint, type QuestElements } from "./units/quest-
 import { ChatFrame, type ChatElements } from "./units/chat-frame";
 import { nearestAnimal, projectedUnit, type ProjectedUnit } from "./units/projected-units";
 import { ProgressionHud } from "./units/progression-hud";
-import { PointerClick, SecondaryClick, attackToggle } from "./units/targeting";
+import { PointerClick, SecondaryClick } from "./units/targeting";
 import { WorldPicking } from "./units/world-picking";
 import { QuaterniusUnits, type FaceFeature, type Hair, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
@@ -541,6 +541,17 @@ export class WorldView {
     this.#strikeAim.cancel();
     this.#classHud.showStrikeAim(null);
     this.#units?.units.abandonPreparation();
+  }
+
+  /**
+   * One weapon swing where the character faces (#517): the left mouse button, gamepad X or the
+   * touch Attack pill. The zone resolves what it hits; the dead swing nothing.
+   */
+  swing(): void {
+    if (!this.#lastProjection || this.#lastProjection.viewer.dead) {
+      return;
+    }
+    this.queueIntent(() => ({ kind: "swing", facing: this.#movementFacing }));
   }
 
   /** Uses action-bar slot `slot` (1–8); the viewer winds up at once while the zone decides. */
@@ -1156,6 +1167,11 @@ export class WorldView {
         return;
       }
     }
+    // The left mouse button swings at once where the character faces (#517); held, it still
+    // orbits the view. Selection moved to a right click that never became a turn drag.
+    if (event.button === 0 && event.pointerType !== "touch") {
+      this.swing();
+    }
     if (this.#drag || (event.button !== 0 && event.button !== 2)) {
       return;
     }
@@ -1172,7 +1188,7 @@ export class WorldView {
     this.#elements.canvas.dataset.drag = mode;
   }
 
-  /** Losing focus retires the gesture without selecting or toggling attack. */
+  /** Losing focus retires the gesture without selecting. */
   cancelPointer(): void {
     this.cancelDirectedStrike();
     this.endGuard();
@@ -1231,7 +1247,10 @@ export class WorldView {
       this.#endDrag();
       return;
     }
-    if (this.#primaryClick.end(event)) {
+    // A tap, or a right click that never became a turn drag, selects (#517: the left mouse
+    // button swings instead).
+    const tapped = this.#primaryClick.end(event) && event.pointerType === "touch";
+    if (this.#secondaryClick.end(event) || tapped) {
       const rect = this.#elements.canvas.getBoundingClientRect();
       const point = new THREE.Vector2(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1257,10 +1276,6 @@ export class WorldView {
           }
         });
       }
-    }
-    // A right click that never became a turn drag toggles auto-attack.
-    if (this.#secondaryClick.end(event)) {
-      this.queueIntent(attackToggle);
     }
     if (this.#drag?.pointerId === event.pointerId) {
       this.#endDrag();

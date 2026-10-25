@@ -115,21 +115,21 @@ describe("OnlineZoneSource", () => {
     expect(host.applied.map(({ sequence, payload }) => [sequence, payload])).toEqual([[1, CLASS_CHOICE], [2, JUMP], [3, `${P}0101004000`]]);
   });
 
-  test("targeting and attack intents are resent until acknowledged and applied once, in order", async () => {
+  test("targeting and swing intents are resent until acknowledged and applied once, in order", async () => {
     const { clock, host, source } = online();
     await clock.until(source.join());
     let sent = 0;
     // The first intent's first copy and every second datagram after it are lost.
     host.toHost = (datagram) => (sent++ % 2 === 0 ? [] : [datagram]);
     source.sendCommand({ kind: "select-target", target: { kind: "creature", id: 7 } });
-    source.sendCommand({ kind: "start-attack" });
-    source.sendCommand({ kind: "stop-attack" });
+    source.sendCommand({ kind: "swing", facing: 0x4000 });
+    source.sendCommand({ kind: "swing", facing: 0x8000 });
     source.sendCommand({ kind: "release-spirit" });
     for (let frames = 0; frames < 20; frames += 1) {
       await frame(clock, source);
     }
     expect(host.applied.map(({ sequence, payload }) => [sequence, payload])).toEqual([
-      [1, CLASS_CHOICE], [2, `${P}030200000007`], [3, `${P}04`], [4, `${P}05`], [5, `${P}06`],
+      [1, CLASS_CHOICE], [2, `${P}030200000007`], [3, `${P}044000`], [4, `${P}048000`], [5, `${P}06`],
     ]);
   });
 

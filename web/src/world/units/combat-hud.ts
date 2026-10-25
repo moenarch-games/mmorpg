@@ -118,9 +118,6 @@ export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): s
     const casting = cast ? `, casting ${abilityName(cast.ability, catalog)} ${cast.elapsed}/${cast.total}` : "";
     parts.push(`Target: ${name} (${detail}${casting})`);
   }
-  if (viewer.autoAttacking) {
-    parts.push("Attacking");
-  }
   return parts.join(" · ");
 }
 

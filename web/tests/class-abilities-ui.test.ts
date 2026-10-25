@@ -209,11 +209,13 @@ describe("combat text", () => {
     const used: ZoneEvent = { kind: "ability-used", source: me, target: wolf, ability: 9 };
     expect(combatTexts(snapshot({ events: [dealt(7)], targetDetail: { cast: null, auras: [dot] } }))).toEqual([{ kind: "periodic", text: "7" }]);
     expect(combatTexts(snapshot({ events: [used, dealt(12)], targetDetail: { cast: null, auras: [dot] } }))).toEqual([{ kind: "damage", text: "12" }]);
-    expect(combatTexts(snapshot({ events: [dealt(7)], targetDetail: { cast: null, auras: [dot] } }, { autoAttacking: true }))).toEqual([{ kind: "damage", text: "7" }]);
+    // The viewer's own swing (#517) this tick makes the damage ordinary.
+    const swung: ZoneEvent = { kind: "attack-performed", source: me, target: wolf };
+    expect(combatTexts(snapshot({ events: [swung, dealt(7)], targetDetail: { cast: null, auras: [dot] } }))).toEqual([{ kind: "damage", text: "7" }]);
     const channel: CastState = { ability: 12, elapsed: 30, total: 180, channel: true };
     expect(damageIsPeriodic(snapshot({ events: [dealt(5)] }, { cast: channel }))).toBe(true);
-    // Events carry no provenance: a swing during a channel or a sting tick beside auto-shots is ambiguous.
-    expect(damageIsPeriodic(snapshot({ events: [dealt(5)] }, { cast: channel, autoAttacking: true }))).toBe(false);
+    // Events carry no provenance: a swing (even a whiff) during a channel is ambiguous.
+    expect(damageIsPeriodic(snapshot({ events: [dealt(5), { kind: "attack-performed", source: me, target: null }] }, { cast: channel }))).toBe(false);
     expect(combatTexts(snapshot({ events: [dealt(20, true)] }))).toEqual([{ kind: "critical", text: "20!" }]);
   });
 

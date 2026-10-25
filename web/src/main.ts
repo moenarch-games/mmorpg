@@ -63,7 +63,7 @@ import "./world/battle-royale/style.css";
 import type { LinkState, ZoneWorld } from "./world/world-source";
 import { WorldView, webGpuProjection } from "./world/world-view";
 import type { FaceFeature } from "./world/units/quaternius-units";
-import { attackToggle, nextTabTarget } from "./world/units/targeting";
+import { nextTabTarget } from "./world/units/targeting";
 import { GameControls, type GameAction, type HeldAction, type HoldPhase, type ReleasedAction } from "./input/game-controls";
 import { actionBindingLabels } from "./input/binding-labels";
 import type { Profile } from "@moritzbrantner/input-bindings";
@@ -1689,8 +1689,8 @@ function runAction(action: GameAction): void {
         return target ? { kind: "select-target", target } : null;
       });
       return;
-    case "combat.toggleAutoAttack":
-      worldView.queueIntent(attackToggle);
+    case "combat.swing":
+      worldView.swing();
       return;
     case "ability.slot1":
     case "ability.slot2":

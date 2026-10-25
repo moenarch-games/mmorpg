@@ -3,7 +3,7 @@ import { TICK_HZ, type EntityState, type ZoneEvent, type ZoneSnapshot } from "..
 import { decodeCatalog } from "../src/world/catalog";
 import { abilitySlots, cancelCast, useAbilitySlot } from "../src/world/units/abilities";
 import { CombatHud, FEEDBACK_MS, combatStatus, eventText, unitName } from "../src/world/units/combat-hud";
-import { CLICK_SLOP_PIXELS, TOUCH_CLICK_SLOP_PIXELS, PointerClick, SecondaryClick, attackToggle, nextTabTarget } from "../src/world/units/targeting";
+import { CLICK_SLOP_PIXELS, TOUCH_CLICK_SLOP_PIXELS, PointerClick, SecondaryClick, nextTabTarget } from "../src/world/units/targeting";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -130,12 +130,7 @@ describe("targeting input", () => {
     expect(nextTabTarget(view([opponent, safe, dead], { target: { kind: "player", id: 8 } }))).toEqual({ kind: "player", id: 8 });
   });
 
-  test("F toggles auto-attack", () => {
-    expect(attackToggle(view([]))).toEqual({ kind: "start-attack" });
-    expect(attackToggle(view([], { autoAttacking: true }))).toEqual({ kind: "stop-attack" });
-  });
-
-  test("a right click toggles auto-attack; a right drag, a left click or a cancel does not", () => {
+  test("a right click (which selects, #517) is told apart from a right drag, a left click or a cancel", () => {
     const pointer = (type: string, button: number, clientX = 10, clientY = 10, pointerId = 1) =>
       ({ type, pointerId, button, clientX, clientY });
     const clicks = new SecondaryClick();
@@ -183,8 +178,8 @@ describe("targeting input", () => {
 describe("combat HUD text", () => {
   test("shows health, combat state and the target, or how to release", () => {
     const wolf = creature(108, 300, 400, { inCombat: true, targetsViewer: true });
-    expect(combatStatus(view([wolf], { health: 38, inCombat: true, autoAttacking: true, target: WOLF }), catalog))
-      .toBe("Health 38/50 · Level 1 · In combat · Target: Timber Wolf (level 2, 60%) · Attacking");
+    expect(combatStatus(view([wolf], { health: 38, inCombat: true, target: WOLF }), catalog))
+      .toBe("Health 38/50 · Level 1 · In combat · Target: Timber Wolf (level 2, 60%)");
     expect(combatStatus(view([], { target: WOLF }), catalog)).toBe("Health 50/50 · Level 1 · Target: a creature (out of sight)");
     expect(combatStatus(view([], { health: 0, dead: true }), catalog)).toContain("Press R to release");
     // A Warden's movement-dependent melee stance (#155) follows the level.

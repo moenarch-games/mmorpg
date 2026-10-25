@@ -37,10 +37,8 @@ function command(fields: readonly string[]): WorldCommand {
       const kind = entityKindFromCode(Number(first));
       return { kind: "select-target", target: kind === null ? null : { kind, id: Number(second) } };
     }
-    case "start_attack":
-      return { kind: "start-attack" };
-    case "stop_attack":
-      return { kind: "stop-attack" };
+    case "swing":
+      return { kind: "swing", facing: Number(first) };
     case "release_spirit":
       return { kind: "release-spirit" };
     case "use_ability": {
@@ -124,7 +122,7 @@ describe("Rust/browser command contract", () => {
     const kinds = new Set(commands.map(({ command }) => command.kind));
     expect([...kinds].sort()).toEqual([
       "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "command-minions", "complete-quest", "directed-strike", "emote", "equip-item", "guard", "jump",
-      "loot", "move", "move-item", "release-ability", "release-spirit", "repair", "rise", "roll", "select-target", "sell-item", "start-attack", "stop-attack", "unequip-item",
+      "loot", "move", "move-item", "release-ability", "release-spirit", "repair", "rise", "roll", "select-target", "sell-item", "swing", "unequip-item",
       "use-ability", "use-door",
     ]);
     expect(commands.filter(({ command }) => command.kind === "move").length).toBeGreaterThanOrEqual(4);

@@ -21,8 +21,8 @@ export type WorldCommand =
   | { kind: "rise"; rise: Axis }
   /** Selects a unit, or clears the selection with `null`. */
   | { kind: "select-target"; target: EntityRef | null }
-  | { kind: "start-attack" }
-  | { kind: "stop-attack" }
+  /** Swings the weapon once toward `facing` (u16 yaw, #517); the zone hits every unit in the arc. */
+  | { kind: "swing"; facing: number }
   | { kind: "release-spirit" }
   | { kind: "move-item"; source: number; destination: number; quantity: number }
   /** A class ability at `target`, or at the current selection with `null`. */
@@ -73,8 +73,8 @@ export type MinionOrder =
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
 const SELECT_TARGET_TAG = 3;
-const START_ATTACK_TAG = 4;
-const STOP_ATTACK_TAG = 5;
+/** A swing toward a facing (#517); tag 5 (the retired stop-attack) is unknown. */
+const SWING_TAG = 4;
 const RELEASE_SPIRIT_TAG = 6;
 const MOVE_ITEM_TAG = 7;
 const LOOT_TAG = 8;
@@ -333,10 +333,11 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
     }
     case "command-minions":
       return encodeMinionOrder(command.order);
-    case "start-attack":
-      return Uint8Array.of(PROTOCOL_BYTE, START_ATTACK_TAG);
-    case "stop-attack":
-      return Uint8Array.of(PROTOCOL_BYTE, STOP_ATTACK_TAG);
+    case "swing":
+      if (!Number.isInteger(command.facing) || command.facing < 0 || command.facing >= YAW_STEPS) {
+        throw new Error("Swing facing must be a u16 yaw.");
+      }
+      return Uint8Array.of(PROTOCOL_BYTE, SWING_TAG, command.facing >> 8, command.facing & 0xff);
     case "release-spirit":
       return Uint8Array.of(PROTOCOL_BYTE, RELEASE_SPIRIT_TAG);
     default: {

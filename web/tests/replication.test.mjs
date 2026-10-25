@@ -91,7 +91,7 @@ describe("Rust/browser snapshot contract", () => {
       zoneId: 42, tick: 99n, contentRevision: 4n, acknowledgedSequence: 81, viewerId: 7,
       viewer: {
         copper: 42, experience: 37, experienceToNextLevel: 400, health: 38, maxHealth: 110, level: 4, dead: false, inCombat: true,
-        autoAttacking: true, target: WOLF, classChoice: { classId: "arcanist", sex: "female" },
+        target: WOLF, classChoice: { classId: "arcanist", sex: "female" },
         resource: { kind: "mana", value: 121, max: 176 }, cast: { ability: 9, elapsed: 40, total: 120, channel: false }, globalCooldown: 25,
         damage: { min: 9, max: 12 }, guard: { raised: "high", protecting: false, broken: 30 }, stance: null, combo: null, breath: 1800,
       },
@@ -195,8 +195,8 @@ describe("Rust/browser snapshot contract", () => {
     for (const [offset, value, message] of [
       [0, 4, "protocol"],
       [3, 1, "player-visible"],
-      [53, 0b1000, "Reserved"],
-      [53, 0b111, "Inconsistent"],
+      [53, 0b100, "Reserved"],
+      [53, 0b11, "Inconsistent"],
       [54, 9, "kind"],
       [CLASS, 15, "ability state"],
       [CLASS, 1, "resource"],

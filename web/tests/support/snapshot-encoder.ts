@@ -67,7 +67,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   u32(viewer.experience);
   u32(viewer.experienceToNextLevel);
   u32(viewer.copper);
-  u8(flagByte([viewer.dead, viewer.inCombat, viewer.autoAttacking]));
+  u8(flagByte([viewer.dead, viewer.inCombat]));
   entity(viewer.target);
   const choice = viewer.classChoice;
   u8(choice === null ? 0 : 1 + CLASSES.indexOf(choice.classId) * 2 + (choice.sex === "female" ? 0 : 1));
@@ -330,7 +330,7 @@ function encodeEvent(
       u8(16);
       u8(0);
       entity(event.source);
-      entity(event.target);
+      entity(event.target ?? null);
       u16(0);
       return;
     case "damage-observed":

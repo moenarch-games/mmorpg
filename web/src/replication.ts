@@ -72,7 +72,6 @@ export type ViewerState = {
   level: number;
   dead: boolean;
   inCombat: boolean;
-  autoAttacking: boolean;
   target: EntityRef | null;
   classChoice: ClassChoice | null;
   /** Present exactly when the viewer has a class. */
@@ -155,7 +154,8 @@ export const STRIKE_HEIGHTS: readonly StrikeHeight[] = ["low", "middle", "high"]
 
 /** Feedback the viewer received in the projection's tick; cosmetic and lossy. */
 export type ZoneEvent =
-  | { kind: "attack-performed"; source: EntityRef; target: EntityRef }
+  /** An ordinary attack rolled at `target`; a player's swing that covered nobody (#517) whiffs with null. */
+  | { kind: "attack-performed"; source: EntityRef; target: EntityRef | null }
   | { kind: "damage-dealt" | "damage-taken" | "damage-observed"; source: EntityRef; target: EntityRef; amount: number; critical: boolean }
   | { kind: "miss" | "evade"; source: EntityRef; target: EntityRef }
   | { kind: "died"; entity: EntityRef; killer: EntityRef | null }
@@ -588,13 +588,20 @@ function decodeEvent(reader: Reader): ZoneEvent {
       const [from, to] = pair();
       return { kind: ({ 1: "damage-dealt", 2: "damage-taken", 17: "damage-observed" } as const)[kind], source: from, target: to, amount, critical: isCritical };
     }
-    case 3:
-    case 5:
     case 16: {
+      critical(false);
+      noAmount();
+      if (source === null) {
+        throw new Error("Malformed event record");
+      }
+      return { kind: "attack-performed", source, target };
+    }
+    case 3:
+    case 5: {
       critical(false);
       const [from, to] = pair();
       noAmount();
-      return { kind: ({ 3: "miss", 5: "evade", 16: "attack-performed" } as const)[kind], source: from, target: to };
+      return { kind: ({ 3: "miss", 5: "evade" } as const)[kind], source: from, target: to };
     }
     case 4: {
       critical(false);
@@ -887,7 +894,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const experience = reader.u32();
   const experienceToNextLevel = reader.u32();
   const copper = reader.u32();
-  const [dead = false, inCombat = false, autoAttacking = false] = reader.flags(3);
+  const [dead = false, inCombat = false] = reader.flags(2);
   const target = reader.entity();
   if (level < 1 || level > 10
     || (level === 10 && (experience !== 0 || experienceToNextLevel !== 0))
@@ -1153,7 +1160,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const snapshot: ZoneSnapshot = {
     zoneId, tick, contentRevision, acknowledgedSequence, viewerId,
     viewer: {
-      copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, autoAttacking, target,
+      copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, target,
       classChoice, resource, cast, globalCooldown, damage, guard, stance, combo, breath,
     },
     cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors, pieces,
