@@ -203,6 +203,11 @@ impl Units {
         Ok(())
     }
 
+    /// The shared presenter, for the local wind-up (Atlas 6.6.10).
+    pub fn presenter_mut(&mut self) -> &mut UnitPresenter {
+        &mut self.presenter
+    }
+
     /// The residents' appearance presets loaded (#418).
     pub fn residents_ready(&mut self) {
         self.presenter.residents_ready();

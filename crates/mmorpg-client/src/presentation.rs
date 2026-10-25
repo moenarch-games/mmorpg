@@ -470,6 +470,21 @@ impl Presentation {
         self.reduced_motion = reduced;
     }
 
+    /// The player sent an attack with `ability` at `now`: the character winds up at once and
+    /// holds short of the swing until the zone accepts or refuses it (Atlas 6.6.10).
+    /// Presentation only; the zone decides the outcome.
+    pub fn prepare_attack(&mut self, ability: u8, now: Instant) {
+        let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
+        self.units_presenter
+            .prepare(mmorpg_core::AbilityId::new(ability), seconds);
+        self.units_presenter.prepared_sent(seconds);
+    }
+
+    /// Lost focus, a menu, a retired input context or a superseding gesture: no swing.
+    pub fn abandon_attack_preparation(&mut self) {
+        self.units_presenter.abandon_preparation();
+    }
+
     /// Actual submitted unit bodies, excluding health bars, target markers and effects.
     #[must_use]
     pub fn picked_draws(&self) -> &[(EntityRef, crate::world::SceneDraw)] {

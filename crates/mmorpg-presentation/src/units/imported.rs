@@ -679,6 +679,31 @@ struct Strike {
     full_body: bool,
 }
 
+/// How far into its strike clip a local wind-up (Atlas 6.6.10) goes before it holds: this share
+/// of the clip, at most [`WINDUP_HOLD_SECONDS`], so it stops short of the swing's impact.
+pub const WINDUP_FRACTION: f32 = 0.3;
+/// The longest a wind-up plays before holding, in seconds.
+pub const WINDUP_HOLD_SECONDS: f32 = 0.3;
+
+/// The local player's reversible wind-up (Atlas 6.6.10): the opening of the strike clip the
+/// prepared input would play, on the upper body only and held before impact. The zone's
+/// accepted strike continues it; a refusal or supersession lets it fade out.
+#[derive(Clone, Copy, Debug)]
+struct Preparation {
+    clip: &'static str,
+    serial: u32,
+    started: f64,
+}
+
+impl Preparation {
+    /// The wind-up's clip time at `now` for a clip `length` seconds long.
+    #[allow(clippy::cast_possible_truncation)]
+    fn at(self, now: f64, length: f32) -> f32 {
+        let hold = (length * WINDUP_FRACTION).min(WINDUP_HOLD_SECONDS);
+        ((now - self.started).max(0.) as f32).min(hold)
+    }
+}
+
 /// Per-unit layered clip choice and clocks (Atlas 6.6.45). Presentation-owned and cosmetic:
 /// the clips follow accepted strikes, the projected guard and the projected motion, and never
 /// decide a hit, readiness, a window or the root.
@@ -686,6 +711,8 @@ struct Strike {
 pub struct Playback {
     flight: Flight,
     strike: Option<Strike>,
+    /// The local player's wind-up, until the zone answers (Atlas 6.6.10).
+    preparation: Option<Preparation>,
     guarding: bool,
     serial: u32,
     landing: u32,
@@ -718,6 +745,53 @@ impl Playback {
             until: now + f64::from(duration.max(0.3)),
             full_body: true,
         });
+    }
+
+    /// The zone accepted the prepared strike: it continues from the wind-up's phase when the
+    /// wind-up shows the same clip, so the swing commits without restarting. Otherwise it is an
+    /// ordinary [`Self::strike`] and the wind-up ends.
+    pub fn commit(&mut self, clip: &'static str, duration: f32, now: f64) {
+        match self.preparation.take() {
+            Some(preparation) if preparation.clip == clip => {
+                let started = now - f64::from(preparation.at(now, duration));
+                self.strike = Some(Strike {
+                    clip,
+                    serial: preparation.serial,
+                    started,
+                    until: started + f64::from(duration.max(0.3)),
+                    full_body: true,
+                });
+            }
+            _ => self.strike(clip, duration, now),
+        }
+    }
+
+    /// Starts a local wind-up of `clip` begun at `started`, or keeps the one showing it; a
+    /// different clip supersedes the wind-up shown.
+    pub fn prepare(&mut self, clip: &'static str, started: f64) {
+        if self
+            .preparation
+            .is_some_and(|preparation| preparation.clip == clip)
+        {
+            return;
+        }
+        self.serial = self.serial.wrapping_add(1);
+        self.preparation = Some(Preparation {
+            clip,
+            serial: self.serial,
+            started,
+        });
+    }
+
+    /// Lets the local wind-up go; it fades out over the upper body's blend.
+    pub fn abandon(&mut self) {
+        self.preparation = None;
+    }
+
+    /// A local wind-up is showing.
+    #[must_use]
+    pub const fn preparing(&self) -> bool {
+        self.preparation.is_some()
     }
 
     /// Advances the clocks and returns the layers to pose this frame; `duration` gives a clip's
@@ -783,6 +857,7 @@ impl Playback {
         // while it protects still plays over it.
         if dead || guarding && !self.guarding {
             self.strike = None;
+            self.preparation = None;
         }
         self.guarding = guarding;
         self.strike = self.strike.filter(|strike| now < strike.until);
@@ -805,6 +880,19 @@ impl Playback {
                 },
             )
         });
+        // An accepted strike outranks the local wind-up; the wind-up never moves the legs.
+        let prepared = self
+            .preparation
+            .filter(|preparation| {
+                strike.is_none() && !reduced && layered && available(preparation.clip)
+            })
+            .map(|preparation| Want {
+                // The pinned time is the wind-up's clock; a still rate keeps an abandoned wind-up
+                // from playing on toward the impact while it fades out.
+                rate: 0.,
+                at: Some(preparation.at(now, duration(preparation.clip))),
+                ..Want::hold(preparation.clip, preparation.serial)
+            });
         let ground = if speed > 3.2 {
             #[allow(clippy::cast_possible_truncation)]
             Want::looped(clips.run, (speed / 5.).clamp(0.7, 1.5) as f32)
@@ -846,6 +934,8 @@ impl Playback {
             None
         } else if let Some((false, want)) = strike {
             Some(want)
+        } else if prepared.is_some() {
+            prepared
         } else if let Some(guard) = clips.guard
             && guarding
             && base.clip != guard
@@ -1305,6 +1395,73 @@ mod tests {
             .upper
             .0,
             "Death01"
+        );
+    }
+
+    #[test]
+    fn a_local_wind_up_holds_before_impact_then_commits_or_fades() {
+        let clips = Kind::Ranger.clips();
+        let duration = |clip: &str| if clip == "Sword_Attack" { 1.5 } else { 1. };
+        let frame = |playback: &mut Playback, now: &mut f64| {
+            *now += 0.05;
+            advance(
+                playback, clips, duration, 0., 0., false, *now, 0.05, false, false,
+            )
+        };
+        let mut playback = Playback::default();
+        let mut now = 0.;
+        frame(&mut playback, &mut now);
+        playback.prepare("Sword_Attack", now);
+        for _ in 0..20 {
+            frame(&mut playback, &mut now);
+        }
+        // An unanswered wind-up holds short of the swing, on the arms only.
+        let held = frame(&mut playback, &mut now);
+        assert_eq!(held.upper, ("Sword_Attack", WINDUP_HOLD_SECONDS));
+        assert_eq!(held.lower.0, "Idle_Loop");
+        // The accepted strike continues from the hold instead of restarting.
+        playback.commit("Sword_Attack", 1.5, now);
+        assert!(!playback.preparing());
+        let swing = frame(&mut playback, &mut now);
+        assert_eq!(swing.lower.0, "Sword_Attack");
+        assert!(
+            (swing.lower.1 - (WINDUP_HOLD_SECONDS + 0.05)).abs() < 1e-3,
+            "{swing:?}"
+        );
+
+        // A refusal lets it fade out without any swing.
+        let mut refused = Playback::default();
+        let mut now = 0.;
+        frame(&mut refused, &mut now);
+        refused.prepare("Sword_Attack", now);
+        for _ in 0..10 {
+            frame(&mut refused, &mut now);
+        }
+        refused.abandon();
+        let fading = frame(&mut refused, &mut now);
+        assert!(
+            fading
+                .layers
+                .iter()
+                .any(|layer| layer.clip == "Sword_Attack")
+        );
+        assert_eq!(fading.lower.0, "Idle_Loop");
+        // The fading wind-up stays held: it never plays on toward the impact.
+        for _ in 0..10 {
+            let frame = frame(&mut refused, &mut now);
+            assert!(
+                frame
+                    .layers
+                    .iter()
+                    .all(|layer| layer.clip != "Sword_Attack" || layer.time <= WINDUP_HOLD_SECONDS),
+                "{frame:?}"
+            );
+        }
+        assert!(
+            frame(&mut refused, &mut now)
+                .layers
+                .iter()
+                .all(|layer| layer.clip == "Idle_Loop")
         );
     }
 

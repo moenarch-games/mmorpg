@@ -629,6 +629,26 @@ impl UnitPresenter {
         self.0.reset();
     }
 
+    /// The local player pressed or began aiming an attack with `ability` at `seconds`: the
+    /// viewer winds up until the zone answers (Atlas 6.6.10). Presentation only.
+    pub fn prepare(&mut self, ability: u8, seconds: f64) {
+        self.0
+            .presenter_mut()
+            .prepare(mmorpg_core::AbilityId::new(ability), seconds);
+    }
+
+    /// The prepared input went to the zone at `seconds`; an unanswered wind-up lets go later.
+    #[wasm_bindgen(js_name = preparedSent)]
+    pub fn prepared_sent(&mut self, seconds: f64) {
+        self.0.presenter_mut().prepared_sent(seconds);
+    }
+
+    /// Blur, menus, a retired input or a superseding gesture: the wind-up fades without a swing.
+    #[wasm_bindgen(js_name = abandonPreparation)]
+    pub fn abandon_preparation(&mut self) {
+        self.0.presenter_mut().abandon_preparation();
+    }
+
     /// Sound cues and fades of the projections pushed since the last call (#447), as JSON.
     #[wasm_bindgen(js_name = takeAudio)]
     pub fn take_audio(&mut self) -> String {

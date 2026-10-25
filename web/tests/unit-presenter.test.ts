@@ -75,6 +75,23 @@ describe("the shared unit presenter in the browser", () => {
     }
   });
 
+  test("an attack press winds the viewer up until the zone answers, and abandoning lets it go (Atlas 6.6.10)", async () => {
+    const { world, projection, units } = await joined();
+    units.modelReady("Ranger", [["Idle_Loop", 2], ["Walk_Loop", 1], ["Jog_Fwd_Loop", 1], ["Sword_Attack", 1.5], ["Death01", 1], ["Idle_Shield_Loop", 1]]);
+    const viewerAt = (seconds: number) => units.frame(world.source.sample(), { seconds, dt: 0.1, reducedMotion: false, barYaw: 0, look })
+      .imported.find((unit) => unit.entity.id === projection.viewerId)!;
+    viewerAt(0);
+    units.prepare(1, 0);
+    units.preparedSent(0);
+    // The arms wind up at once and hold short of the swing; the legs keep standing.
+    viewerAt(0.1);
+    expect(viewerAt(0.2).layers.some((layer) => layer.clip === "Sword_Attack" && layer.mask === "upper")).toBe(true);
+    expect(viewerAt(0.5).lower[0]).toBe("Idle_Loop");
+    units.abandonPreparation();
+    for (let step = 1; step <= 10; step += 1) { viewerAt(0.5 + step * 0.1); }
+    expect(viewerAt(1.6).layers.every((layer) => layer.clip === "Idle_Loop")).toBe(true);
+  });
+
   test("the viewer look maps to the appearance code the presenter reads", () => {
     expect([appearanceCode({ classId: "warden", sex: "female" }), appearanceCode({ classId: "arcanist", sex: "male" }),
       appearanceCode({ classId: null, sex: "female" })]).toEqual([1, 6, 0]);
