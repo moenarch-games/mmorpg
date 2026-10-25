@@ -78,8 +78,13 @@ pub(crate) struct PlayerState {
     pub(crate) breath: crate::Breath,
     /// The held shield guard and its break recovery (#156).
     pub(crate) guard: crate::GuardState,
-    /// Airborne state and landing recovery; Warden melee waits it out (#155).
+    /// Airborne state and landing recovery of every class; Warden melee
+    /// waits it out (#155).
     pub(crate) landing: crate::LandingState,
+    /// The `[forward, up]` launch (cm/s) of an edge's follow-up resolved this
+    /// tick (#413). Set by intents and spent by the same tick's movement, so
+    /// never present between ticks and not canonical.
+    pub(crate) impulse: Option<[i32; 2]>,
     /// A confirmed slash's pending Shield Bash follow-up (#157).
     pub(crate) combo: Option<crate::ComboOpening>,
     /// Ticks left of a directed strike's committed recovery; a guard raised
@@ -146,6 +151,7 @@ impl PlayerState {
             breath: crate::Breath::FULL,
             guard: crate::GuardState::default(),
             landing: crate::LandingState::default(),
+            impulse: None,
             combo: None,
             strike_recovery: 0,
             repairing: None,
@@ -770,18 +776,38 @@ impl ZoneSimulation {
                 if swim_depth.is_some() {
                     percent = percent * crate::water::SWIM_SPEED_PERCENT / 100;
                 }
-                let [x, z] = crate::aura::scale_velocity([free.x, free.z], percent);
+                let mut steered = crate::aura::scale_velocity([free.x, free.z], percent);
+                // The running action phases' authored movement (#413): the
+                // controller is asked for a mix of intent and the velocity
+                // contact let the body realize last step.
+                if let Some(movement) = crate::action::movement_of(self.action_graph, state) {
+                    let last = body.velocity();
+                    steered = movement.velocity(steered, [last.x, last.z]);
+                }
+                let [x, z] = steered;
                 Vec3i::new(x, 0, z)
             } else {
                 Vec3i::ZERO
             };
             velocity.y = vertical_velocity;
+            // A follow-up's launch (#413), along the facing and upward.
+            if let Some([forward, up]) = state.impulse.filter(|_| alive) {
+                let (dx, dz) = trig::direction(state.facing);
+                let forward = crate::action::speed_subunits(forward);
+                let along = |unit| trig::checked_scale(forward, unit).unwrap_or(0);
+                velocity.x = velocity.x.saturating_add(along(dx));
+                velocity.z = velocity.z.saturating_add(along(dz));
+                velocity.y = velocity.y.max(crate::action::speed_subunits(up));
+            }
             self.world
                 .set_velocity(body_id, velocity)
                 .map_err(physics_error)?;
             self.world
                 .set_swimming(body_id, swim_depth.is_some())
                 .map_err(physics_error)?;
+        }
+        for player in self.players.values_mut() {
+            player.impulse = None;
         }
         Ok(())
     }
@@ -872,6 +898,15 @@ impl ZoneSimulation {
         self.world
             .terrain_height(x, z)
             .map_or(0, |height| height.round() as i32)
+    }
+
+    /// A player's exact body centre (units) and the velocity (units per tick)
+    /// contact let it realize in the last step, as canonical snapshots carry
+    /// them; read-only, for the Action Lab's movement inspector (#413).
+    #[must_use]
+    pub fn player_motion(&self, player_id: PlayerId) -> Option<([f32; 3], [f32; 3])> {
+        let body = self.world.body(body_id(EntityRef::Player(player_id)))?;
+        Some((body.exact_position(), body.exact_velocity()))
     }
 
     /// The body position of a player.

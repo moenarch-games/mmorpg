@@ -49,18 +49,20 @@ pub struct LandingState {
     pub airborne: bool,
     /// Ticks of landing recovery left.
     pub recovery: u16,
-    /// A melee action was made in the current airborne phase.
+    /// A melee action was made in the current airborne phase, or in the one
+    /// the current landing recovery ends.
     pub attacked_airborne: bool,
 }
 
 impl LandingState {
     /// Consistent: recovery only on the ground, within the longest window,
-    /// and an airborne attack only while airborne.
+    /// and an airborne attack only while airborne or during the lengthened
+    /// recovery of the landing that followed it.
     #[must_use]
     pub const fn is_valid(self) -> bool {
         self.recovery <= OVERHEAD_LANDING_TICKS
             && !(self.airborne && self.recovery > 0)
-            && (self.airborne || !self.attacked_airborne)
+            && (self.airborne || !self.attacked_airborne || self.recovery > 0)
     }
 }
 
@@ -218,20 +220,20 @@ impl ZoneSimulation {
         })
     }
 
-    /// After the physics step: track Wardens' airborne state and landing
-    /// windows.
+    /// After the physics step: track every player's airborne state and
+    /// landing recovery, the action graph's movement region (#413). Only
+    /// Wardens' melee waits the recovery out; other classes' landings hold
+    /// nothing unless an experimental graph authors it.
     pub(crate) fn update_landings(&mut self) -> Result<(), ZoneError> {
-        // Only Wardens fight by stance; others skip the ground probe.
-        let ids: Vec<_> = self
-            .players
-            .iter()
-            .filter(|(_, player)| is_warden(player))
-            .map(|(&id, _)| id)
-            .collect();
+        let ids: Vec<_> = self.players.keys().copied().collect();
         for player_id in ids {
             let grounded = is_grounded(&self.world, self.player_body(player_id)?)?;
             self.update_player(player_id, |player| {
                 let state = &mut player.landing;
+                // A new airborne phase forgets the last one's attack.
+                if !grounded && !state.airborne {
+                    state.attacked_airborne = false;
+                }
                 state.recovery = if grounded && state.airborne {
                     if state.attacked_airborne {
                         OVERHEAD_LANDING_TICKS
@@ -244,7 +246,9 @@ impl ZoneSimulation {
                     0
                 };
                 state.airborne = !grounded;
-                if grounded {
+                // The airborne attack is remembered through the landing it
+                // lengthened, for the edges out of that landing.
+                if grounded && state.recovery == 0 {
                     state.attacked_airborne = false;
                 }
             });

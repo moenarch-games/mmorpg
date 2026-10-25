@@ -149,18 +149,28 @@ impl ZoneSimulation {
         aim: StrikeAim,
         now: u64,
     ) -> Result<crate::casting::Refusal, ZoneError> {
+        // An edge out of a landing may answer the strike (#413).
+        let follow_up = self.follow_up_of(player_id, crate::action::ActionInput::WardenMelee);
+        let waive = follow_up
+            .as_ref()
+            .is_some_and(|follow_up| follow_up.has(crate::action::Effect::IgnoreGlobalCooldown));
         self.update_player(player_id, |player| player.combo = None);
-        let ability = match self.ready_ability(player_id, ability, true, false) {
+        let ability = match self.ready_ability(player_id, ability, true, waive) {
             None => return Ok(None),
             Some(Err(code)) => return Ok(Some((code, None))),
             Some(Ok(ability)) => ability,
         };
         let source = EntityRef::Player(player_id);
-        let global_cooldown = self.recovery_of(
-            player_id,
-            crate::action::ActionId::GlobalCooldown,
-            ability.id,
-        );
+        let global_cooldown = follow_up
+            .as_ref()
+            .and_then(crate::action::FollowUp::recovery_ticks)
+            .unwrap_or_else(|| {
+                self.recovery_of(
+                    player_id,
+                    crate::action::ActionId::GlobalCooldown,
+                    ability.id,
+                )
+            });
         let strike_recovery = self.recovery_of(
             player_id,
             crate::action::ActionId::DirectedSlash,
@@ -175,6 +185,10 @@ impl ZoneSimulation {
             player.strike_recovery = strike_recovery;
         });
         self.pay_and_cool_down(player_id, ability);
+        if let Some(follow_up) = &follow_up {
+            self.spend_follow_up(player_id, follow_up);
+            self.refund(player_id, follow_up.refund().min(ability.cost));
+        }
         let victim = self.strike_coverage(player_id, facing, aim)?;
         let target = victim;
         self.notify_units(

@@ -60,7 +60,10 @@ watch post, whose pieces the blasts break and whose colliders leave both worlds)
 yard, then one walks into its crate where it rests) and `vale-crate-smash` (#288: two players
 smash Greyhaven Outpost's crates 900 and 901, whose panels fly, settle and despawn) and
 `vale-missiles` (#289: four level-6
-Arcanists Firebolt wolves among the Wolfrun trunks, then cast free Firebolts into the woods)
+Arcanists Firebolt wolves among the Wolfrun trunks, then cast free Firebolts into the woods) and
+`vale-traversal` (#413: a Warden and a Ranger in Greyhaven Outpost make running jumps under an
+experimental action graph whose airborne phase keeps the realized momentum and steers at most
+6 m/s², letting go or turning back mid-air)
 through the real zone simulation, from the same initial state with the same inputs and tick count.
 
 Both arms carry the mill hoist's riders in the adapter the same way: a downward support cast
@@ -86,6 +89,8 @@ On **each** backend, every run must:
 - in `vale-crate-smash`, break both crates into twelve panels at the same tick on both arms,
   keep every piece finite and above the ground, settle every piece before it despawns, and
   rest each within 150 units (the `debris` oracle bound) of Rapier's;
+- in `vale-traversal`, keep the Warden flying south on its momentum two (30 Hz) ticks after it
+  let go of the keys mid-air;
 - in `vale-missiles`, strike some wolf with a missile, with every missile spent the same way
   (in a unit or in the world) on both arms;
 - in `vale-mill-ramps`, carry the walker up the cart ramp onto the dock (feet 1.5 m up within 3
@@ -94,7 +99,7 @@ On **each** backend, every run must:
 Across backends:
 
 - Scripted workloads (`two-bots-move`, `vale-hub-walk`, `vale-idle-16`, `vale-mill-hoist`,
-  `vale-crate-shove`, `vale-crate-smash` and `vale-missiles`): players within **1 unit** (the
+  `vale-crate-shove`, `vale-crate-smash`, `vale-missiles` and `vale-traversal`): players within **1 unit** (the
   rounding step gameplay sees; measured ≤ 0.15; in `vale-crate-shove` plus the crates' gap,
   since a player walks into its resting crate), identical command outcomes and door states,
   and the players' grounded state identical on every tick.
@@ -130,6 +135,7 @@ Measured at the commit the timing table names:
 | vale-crate-shove | 5.0 / 0 (player 2 stops at its crate) | 3 apart (max 5.0); crates 5.0 short of Rapier's 265-unit slide | continues |
 | vale-crate-smash | 0 / 0 | 22 apart (max 576); settled debris within 58.3 | continues |
 | vale-missiles | 0 / 0 | 1 apart (max 6.4); same missiles strike, world hits within 0.001 | continues |
+| vale-traversal | 0.02 / 0.01 | 0 apart (max 0.875) | continues |
 
 Every query decision on identical states agreed (up to 20,468 probes per workload).
 

@@ -44,7 +44,7 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// and physics-engine pushes out, so their fights (and every position after) legitimately part.
 /// At 60 Hz (#379) `vale-wolf-hunt`'s creatures, which part from tick 1, reach the scripted
 /// hunter's fights after 38 s, so it is compared but not bounded either.
-const SCRIPTED: [&str; 7] = [
+const SCRIPTED: [&str; 8] = [
     "two-bots-move",
     "vale-hub-walk",
     "vale-idle-16",
@@ -52,6 +52,7 @@ const SCRIPTED: [&str; 7] = [
     "vale-crate-shove",
     "vale-crate-smash",
     "vale-missiles",
+    "vale-traversal",
 ];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
 /// same boxes, capsules and triangles in `f32`.
@@ -770,6 +771,22 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
             rapier_check.placed_inside.len(),
             started.elapsed(),
         );
+        if matches!(workload, Workload::Traversal) {
+            // On each backend the Warden, keys released at 30 Hz tick 22, still flies south on
+            // its momentum two ticks later (#413).
+            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+                let warden = trace.units[2 * 24]
+                    .iter()
+                    .find(|unit| unit.unit == EntityRef::Player(1))
+                    .ok_or("missing traversal Warden")?;
+                let velocity = warden.body.velocity();
+                println!("  {name} on {backend}: Warden velocity {velocity:?}");
+                assert!(
+                    !warden.grounded && velocity.z < 0,
+                    "{name} on {backend}: no momentum {warden:?}"
+                );
+            }
+        }
         if matches!(workload, Workload::MillHoist) {
             // On each backend the hoist carries its rider to the gallery (#56).
             for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
