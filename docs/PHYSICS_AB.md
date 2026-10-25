@@ -63,7 +63,10 @@ smash Greyhaven Outpost's crates 900 and 901, whose panels fly, settle and despa
 Arcanists Firebolt wolves among the Wolfrun trunks, then cast free Firebolts into the woods) and
 `vale-traversal` (#413: a Warden and a Ranger in Greyhaven Outpost make running jumps under an
 experimental action graph whose airborne phase keeps the realized momentum and steers at most
-6 m/s², letting go or turning back mid-air)
+6 m/s², letting go or turning back mid-air) and `vale-climb` (#490: one player jumps at a
+highland crag, climbs it, lets go, grabs it again and climbs to its top; another mantles the
+mill's loading dock; the zone decides both on rays and capsule sweeps, so the two arms answer the
+same climb and mantle queries)
 through the real zone simulation, from the same initial state with the same inputs and tick count.
 
 Both arms carry the mill hoist's riders in the adapter the same way: a downward support cast
@@ -93,13 +96,15 @@ On **each** backend, every run must:
   let go of the keys mid-air;
 - in `vale-missiles`, strike some wolf with a missile, with every missile spent the same way
   (in a unit or in the world) on both arms;
+- in `vale-climb`, end with the climber standing on the crag's top and the mantler on the
+  dock's deck, each within a unit;
 - in `vale-mill-ramps`, carry the walker up the cart ramp onto the dock (feet 1.5 m up within 3
   units) and back to the ground, and never let the chute's player onto the dock.
 
 Across backends:
 
 - Scripted workloads (`two-bots-move`, `vale-hub-walk`, `vale-idle-16`, `vale-mill-hoist`,
-  `vale-crate-shove`, `vale-crate-smash`, `vale-missiles` and `vale-traversal`): players within **1 unit** (the
+  `vale-crate-shove`, `vale-crate-smash`, `vale-missiles`, `vale-traversal` and `vale-climb`): players within **1 unit** (the
   rounding step gameplay sees; measured ≤ 0.15; in `vale-crate-shove` plus the crates' gap,
   since a player walks into its resting crate), identical command outcomes and door states,
   and the players' grounded state identical on every tick.
@@ -136,6 +141,7 @@ Measured at the commit the timing table names:
 | vale-crate-smash | 0 / 0 | 22 apart (max 576); settled debris within 58.3 | continues |
 | vale-missiles | 0 / 0 | 1 apart (max 6.4); same missiles strike, world hits within 0.001 | continues |
 | vale-traversal | 0.02 / 0.01 | 0 apart (max 0.875) | continues |
+| vale-climb | 0.41 / 0.85 | 26 apart (max 942) | continues |
 
 Every query decision on identical states agreed (up to 20,468 probes per workload).
 
@@ -218,7 +224,12 @@ again.
 Dynamic bodies themselves (debris #288, movable crates #58) need no engine feature: the engine
 arm runs them since mmorpg#442 (physics-engine C18).
 
-Not engine gaps after all: moving platforms (#56) need no engine feature, since both arms
+Not engine gaps after all: climbing and mantling (#490) need no engine feature: a climber or
+mantler is weightless like a swimmer and moves along the zone's velocity, and the zone decides
+both on rays and capsule sweeps both arms answer alike. A mantle lifts the body 10 units above
+the ledge before moving across, clear of both controllers' 5-unit ground snap: a body exactly at
+that distance is snapped by one arm and not the other. Moving platforms (#56) need no engine
+feature either, since both arms
 carry riders in adapter code; a ray starting exactly on a face reads differently only because
 the Rapier arm converts centimetres to metres in `f32` (Rapier's solid `cast_ray` also starts
 at time 0 on the face). A Rapier-only artefact remains on the cart ramp: its controller tops

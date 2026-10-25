@@ -143,11 +143,13 @@ pub enum PropKind {
     /// A Sunken Shrine collider (#431): drawn by asset-tooling's shrine kit at [`shrine::placements`],
     /// never procedurally.
     ShrineKit,
+    /// A ladder (#490): two rails and rungs up its collider, against a tower.
+    Ladder,
 }
 
 impl PropKind {
     /// Every kind with its variants flattened, in declaration order.
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 39] = [
         Self::Keep,
         Self::Inn,
         Self::House,
@@ -186,6 +188,7 @@ impl PropKind {
         Self::Ramp,
         Self::LoadingDock,
         Self::ShrineKit,
+        Self::Ladder,
     ];
 
     /// Stable kebab-case name with the variant, independent of `Debug`
@@ -231,6 +234,7 @@ impl PropKind {
             Self::Ramp => "ramp",
             Self::LoadingDock => "loading-dock",
             Self::ShrineKit => "shrine-kit",
+            Self::Ladder => "ladder",
         }
     }
 }
@@ -526,6 +530,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::TENTS.contains(&id) => PropKind::Tent,
         _ if ids::CRATES.contains(&id) => PropKind::Crate,
         ids::WATCHTOWER => PropKind::Keep,
+        _ if ids::LADDERS.contains(&id) => PropKind::Ladder,
         ids::MILL_DOCK => PropKind::LoadingDock,
         _ if ids::STANDING_STONES.contains(&id) => PropKind::Waystone,
         _ if ids::RUINS.contains(&id) => PropKind::House,
@@ -599,6 +604,7 @@ const fn kind_code(kind: PropKind) -> [u8; 2] {
         PropKind::Ramp => [32, 0],
         PropKind::LoadingDock => [33, 0],
         PropKind::ShrineKit => [34, 0],
+        PropKind::Ladder => [35, 0],
     }
 }
 

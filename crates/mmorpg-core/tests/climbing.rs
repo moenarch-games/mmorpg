@@ -449,3 +449,54 @@ fn climbing_and_mantling_run_in_the_movement_region() {
     )));
     assert_eq!(movement(&player), Some(ActionId::Mantle));
 }
+
+/// Climbs a boundary route from `start` toward `facing` until `beyond` holds of the feet, then
+/// walks on into `area`.
+fn take_route(start: [i32; 2], facing: u16, beyond: impl Fn([f32; 3]) -> bool, area: &str) {
+    let mut player = Player::at(start);
+    player.walk_into(facing);
+    player.jump();
+    player.ticks(1);
+    assert!(
+        matches!(player.traversal(), Traversal::Climbing { .. }),
+        "{:?} at {:?}",
+        player.traversal(),
+        player.feet()
+    );
+    assert!(
+        player.until(1, facing, 9_000, |p| beyond(p.feet())),
+        "{:?} {:?}",
+        player.feet(),
+        player.traversal()
+    );
+    let feet = player.feet();
+    assert_eq!(
+        greyhaven_vale::area_at(feet[0] as i32, feet[2] as i32).map(|area| area.name()),
+        Some(area),
+        "{feet:?}"
+    );
+}
+
+#[test]
+fn the_climbing_route_beside_the_south_road_crosses_the_farmland_ridge() {
+    let route = greyhaven_vale::CLIMBING_ROUTES[1];
+    let x = (route.min[0] + route.max[0]) / 2;
+    take_route(
+        [x, 20_400],
+        0,
+        |feet| feet[2] > 25_600.0,
+        "Farmland and Hamlets",
+    );
+}
+
+#[test]
+fn the_climbing_route_beside_the_marsh_pass_crosses_the_wetlands_ridge() {
+    let route = greyhaven_vale::CLIMBING_ROUTES[2];
+    let z = (route.min[1] + route.max[1]) / 2;
+    take_route(
+        [20_400, z],
+        16_384,
+        |feet| feet[0] > 25_600.0,
+        "Marsh-Lake Wetlands",
+    );
+}
