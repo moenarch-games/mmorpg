@@ -470,6 +470,13 @@ impl Presentation {
         &self.labels
     }
 
+    /// Shows or hides the development body overlay (#39): each unit's authoritative collision
+    /// body drawn translucent over its model.
+    pub fn toggle_body_overlay(&mut self) {
+        let shown = !self.units_presenter.body_overlay();
+        self.units_presenter.set_body_overlay(shown);
+    }
+
     pub fn set_reduced_motion(&mut self, reduced: bool) {
         self.reduced_motion = reduced;
     }

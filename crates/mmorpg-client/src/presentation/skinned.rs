@@ -166,6 +166,17 @@ struct Primitive {
     influences: Vec<[(u16, f32); 4]>,
     /// Influence slots: driving node and its inverse bind matrix.
     slots: Vec<(usize, M4)>,
+    /// Base-colour texture coordinates, so a head skin can be baked in place of the authored one.
+    uvs: Arc<[[f32; 2]]>,
+    /// Named morph targets (the face, age and build keys), shared between clones.
+    targets: Arc<[Target]>,
+}
+
+/// One named morph target of a primitive: per-vertex position and normal offsets.
+struct Target {
+    name: String,
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
 }
 
 /// One imported model: rest hierarchy, skinned primitives and named clips.
@@ -239,6 +250,13 @@ impl Model {
                 None => vec![(node.index(), IDENTITY)],
             };
             let skinned = node.skin().is_some();
+            // Blender's exporter names the targets in the mesh's `extras.targetNames`.
+            let target_names: Vec<String> = mesh
+                .extras()
+                .as_ref()
+                .and_then(|extras| serde_json::from_str::<serde_json::Value>(extras.get()).ok())
+                .map(|extras| strings(&extras["targetNames"]))
+                .unwrap_or_default();
             for primitive in mesh.primitives() {
                 let reader = primitive.reader(|b| Some(&buffers[b.index()]));
                 let Some(positions) = reader.read_positions() else {
@@ -255,10 +273,13 @@ impl Model {
                 let texture = pbr
                     .base_color_texture()
                     .map(|info| &images[info.texture().source().index()]);
-                let colors = match (texture, reader.read_tex_coords(0)) {
-                    (Some(image), Some(uvs)) => uvs
-                        .into_f32()
-                        .map(|uv| {
+                let uvs: Arc<[[f32; 2]]> = reader
+                    .read_tex_coords(0)
+                    .map_or_else(|| Arc::from([]), |uvs| uvs.into_f32().collect());
+                let colors = match texture {
+                    Some(image) if uvs.len() == positions.len() => uvs
+                        .iter()
+                        .map(|&uv| {
                             let texel = sample(image, uv);
                             Color3::new(
                                 texel[0] * factor[0],
@@ -269,6 +290,15 @@ impl Model {
                         .collect(),
                     _ => vec![Color3::new(factor[0], factor[1], factor[2]); positions.len()],
                 };
+                let targets: Arc<[Target]> = reader
+                    .read_morph_targets()
+                    .zip(&target_names)
+                    .map(|((positions, normals, _), name)| Target {
+                        name: name.clone(),
+                        positions: positions.map_or_else(Vec::new, Iterator::collect),
+                        normals: normals.map_or_else(Vec::new, Iterator::collect),
+                    })
+                    .collect();
                 let indices: Vec<u32> = reader.read_indices().map_or_else(
                     || (0..u32::try_from(positions.len()).unwrap_or(0)).collect(),
                     |i| i.into_u32().collect(),
@@ -292,6 +322,8 @@ impl Model {
                     indices,
                     influences,
                     slots: slots.clone(),
+                    uvs,
+                    targets,
                 });
             }
         }
@@ -630,6 +662,63 @@ impl Model {
                 *c = Color3::new(c.r * factor[0], c.g * factor[1], c.b * factor[2]);
             }
             p.factor = to;
+        }
+    }
+
+    /// Bakes morph target `weights` into the rest shape of the primitives of the `nodes` glTF
+    /// nodes (all with None), like the browser's `morphTargetInfluences`; each primitive takes the
+    /// targets it has. Looks are built once, so the weights never change afterwards.
+    fn morph(&mut self, nodes: Option<&[String]>, weights: &BTreeMap<String, f32>) {
+        for p in &mut self.primitives {
+            if !nodes.is_none_or(|nodes| p.node.as_ref().is_some_and(|n| nodes.contains(n))) {
+                continue;
+            }
+            let mut moved = false;
+            for target in p.targets.iter() {
+                let Some(&weight) = weights.get(&target.name).filter(|w| **w != 0.) else {
+                    continue;
+                };
+                moved = true;
+                for (position, delta) in p.positions.iter_mut().zip(&target.positions) {
+                    for i in 0..3 {
+                        position[i] += delta[i] * weight;
+                    }
+                }
+                for (normal, delta) in p.normals.iter_mut().zip(&target.normals) {
+                    for i in 0..3 {
+                        normal[i] += delta[i] * weight;
+                    }
+                }
+            }
+            if moved {
+                for normal in &mut p.normals {
+                    let len = normal.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-6);
+                    *normal = normal.map(|v| v / len);
+                }
+            }
+        }
+    }
+
+    /// Bakes `image` as the base-colour texture of the `material` primitives in place of the
+    /// authored one, under their own base colour factor: a painted head skin (asset-tooling #380).
+    fn reskin(&mut self, material: &str, image: &gltf::image::Data) {
+        for p in &mut self.primitives {
+            if p.material.as_deref() != Some(material) || p.uvs.len() != p.positions.len() {
+                continue;
+            }
+            let factor = p.factor.map(srgb);
+            p.colors = p
+                .uvs
+                .iter()
+                .map(|&uv| {
+                    let texel = sample(image, uv);
+                    Color3::new(
+                        texel[0] * factor[0],
+                        texel[1] * factor[1],
+                        texel[2] * factor[2],
+                    )
+                })
+                .collect();
         }
     }
 
@@ -1323,6 +1412,16 @@ pub(super) fn class_outfit(outfit: Outfit) -> &'static ClassOutfit {
             .map(|c| std::array::from_fn(|i| c[i].as_f64().unwrap_or(1.) as f32))
             .expect("the outfit declares its classTrim colour");
         model.retint(&strings(&trim["materials"]), from, outfit.trim());
+        // The preset's face, as the browser draws every class outfit but the viewer's own.
+        let variant = entry["skins"]
+            .as_array()
+            .and_then(|skins| skins.iter().find(|skin| skin["id"] == preset["skin"]))
+            .and_then(|skin| skin["variant"].as_str())
+            .unwrap_or_default();
+        model.morph(
+            Some(&strings(&appearance()["face"]["nodes"])),
+            &residents::face_morphs(preset, variant),
+        );
         let hood = entry["garments"]
             .as_array()
             .and_then(|garments| {

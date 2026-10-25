@@ -126,8 +126,8 @@ impl Seeded {
 /// A unit's own random-but-fixed variation of the preset `id` (asset-tooling #380: "not every
 /// man the same man with a different costume"): the preset's outfit, headwear, faction and hidden
 /// armour stay, while skin, hairstyle (of [`tintable_hair`]), hair tint (the beards follow it),
-/// facial hair, face features and, where the bundle offers them, age, build, height and skin tone
-/// are drawn from the bundle's `humanoid-appearance` options by `seed`. The same seed always gives
+/// facial hair, face features and, where the bundle offers them, age, build, height, skin tone and
+/// head-skin stubble are drawn from the bundle's `humanoid-appearance` options by `seed`. The same seed always gives
 /// the same man. None when `appearance` has no preset `id`.
 #[must_use]
 pub fn vary_preset(appearance: &Value, id: &str, seed: u32) -> Option<Value> {
@@ -225,6 +225,9 @@ pub fn vary_preset(appearance: &Value, id: &str, seed: u32) -> Option<Value> {
         _ => None,
     };
     optional("height", height);
+    // Half the men show stubble in the painted head skin when the bundle has head skins.
+    let stubble = !appearance["headSkins"].is_null() && random.next() < 0.5;
+    optional("stubble", stubble.then_some(Value::Bool(true)));
     Some(Value::Object(own))
 }
 

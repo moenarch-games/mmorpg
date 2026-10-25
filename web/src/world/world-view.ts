@@ -374,6 +374,8 @@ export class WorldView {
   #viewerAnimation: ViewerAnimation | null = null;
   /** The Action Lab's blend, or null for the presenter's default. */
   #blend: AnimationBlend | null = null;
+  /** The development body overlay (#39). */
+  #bodyOverlay = false;
   #flyTo: { eye: Vec3; target: Vec3 } | null = null;
   #lastWork: RendererWorkObservations | null = null;
   #occluders: Box[] = [];
@@ -825,6 +827,17 @@ export class WorldView {
     this.#units?.units.setBlend(blend);
   }
 
+  /** Whether the development body overlay (#39) is shown. */
+  get bodyOverlay(): boolean {
+    return this.#bodyOverlay;
+  }
+
+  /** Shows or hides each unit's authoritative body over its model (#39); kept for every later presenter. */
+  setBodyOverlay(shown: boolean): void {
+    this.#bodyOverlay = shown;
+    this.#units?.units.setBodyOverlay(shown);
+  }
+
   /** The hotbar as the touch face buttons mirror it. */
   get hotbarKey(): string {
     return this.#classHud.slotKey;
@@ -941,6 +954,7 @@ export class WorldView {
       const units = new SharedUnits(world.scenery.unitPresenter(projection.viewerId));
       for (const [kind, clips] of this.#loadedModels) { units.modelReady(kind, clips); }
       if (this.#blend) { units.setBlend(this.#blend); }
+      if (this.#bodyOverlay) { units.setBodyOverlay(true); }
       this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false };
     }
     const units = this.#units.units;
