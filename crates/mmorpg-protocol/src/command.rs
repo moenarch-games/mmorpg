@@ -39,6 +39,8 @@ const COMMAND_MINIONS_TAG: u8 = 26;
 const OBSERVED_TAG: u8 = 27;
 /// Releases a held ability input (#414).
 const RELEASE_ABILITY_TAG: u8 = 28;
+/// A dodge roll (#516).
+const ROLL_TAG: u8 = 29;
 /// Version, tag, ability (u8), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -85,6 +87,7 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             payload
         }
         ZoneCommand::Jump => vec![PROTOCOL_BYTE, JUMP_TAG],
+        ZoneCommand::Roll => vec![PROTOCOL_BYTE, ROLL_TAG],
         ZoneCommand::Rise(rise) => vec![PROTOCOL_BYTE, RISE_TAG, rise.to_be_bytes()[0]],
         ZoneCommand::UseAbility { ability, target } => {
             let mut payload = Vec::with_capacity(USE_ABILITY_COMMAND_BYTES);
@@ -526,6 +529,7 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
         }
         CANCEL_CAST_TAG => bare(ZoneCommand::CancelCast),
         JUMP_TAG => bare(ZoneCommand::Jump),
+        ROLL_TAG => bare(ZoneCommand::Roll),
         START_ATTACK_TAG => bare(ZoneCommand::StartAttack),
         STOP_ATTACK_TAG => bare(ZoneCommand::StopAttack),
         RELEASE_SPIRIT_TAG => bare(ZoneCommand::ReleaseSpirit),
@@ -721,6 +725,7 @@ mod tests {
                 facing: u16::MAX,
             },
             ZoneCommand::Jump,
+            ZoneCommand::Roll,
             ZoneCommand::Rise(1),
             ZoneCommand::Rise(0),
             ZoneCommand::Rise(-1),
@@ -924,6 +929,7 @@ mod tests {
                     facing,
                 } => format!("move {forward} {strafe} {facing}"),
                 ZoneCommand::Jump => "jump".to_owned(),
+                ZoneCommand::Roll => "roll".to_owned(),
                 ZoneCommand::Rise(rise) => format!("rise {rise}"),
                 ZoneCommand::Loot(claim) => {
                     format!("loot {} {}", claim.creature.get(), claim.died_at)

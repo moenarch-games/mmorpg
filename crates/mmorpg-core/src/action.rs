@@ -127,6 +127,8 @@ pub enum ActionId {
     Climb,
     /// Pulling up onto a ledge (#490).
     Mantle,
+    /// A dodge roll in progress (#516).
+    Roll,
     /// The Warden's directed (mouse-aimed) Heroic Strike.
     DirectedSlash,
     /// A held shield guard lane.
@@ -521,6 +523,9 @@ pub enum RuleId {
     /// Experimental graphs author it; the baseline allows attacks while
     /// climbing.
     ClimbingHolds,
+    /// An attack waits until the dodge roll ends (#516). Experimental
+    /// graphs author it; the baseline allows attacks while rolling.
+    RollingHolds,
     /// An attack in water waits until the swimmer is ashore (#413).
     SwimmingHolds,
 }
@@ -529,8 +534,8 @@ pub enum RuleId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuleEffect {
     /// While `during` recovers, the input waits (is held) until the
-    /// recovery ends. During a swim, climb or mantle, it waits until that
-    /// ends.
+    /// recovery ends. During a swim, climb, mantle or roll, it waits until
+    /// that ends.
     Hold,
     /// While `during` runs, the input ends it. Only a cast supports this,
     /// for movement and jump inputs.
@@ -705,7 +710,7 @@ pub struct ActionGraph {
 }
 
 /// The authored actions.
-pub const ACTIONS: [ActionDef; 12] = [
+pub const ACTIONS: [ActionDef; 13] = [
     ActionDef {
         id: ActionId::Airborne,
         region: Region::Movement,
@@ -730,6 +735,12 @@ pub const ACTIONS: [ActionDef; 12] = [
     },
     ActionDef {
         id: ActionId::Mantle,
+        region: Region::Movement,
+        recovery_ms: None,
+    },
+    // A dodge roll lasts its fixed time (#516); its cooldown is no recovery.
+    ActionDef {
+        id: ActionId::Roll,
         region: Region::Movement,
         recovery_ms: None,
     },
@@ -811,6 +822,7 @@ const fn action_code(id: ActionId) -> u16 {
         ActionId::Swim => 9,
         ActionId::Climb => 10,
         ActionId::Mantle => 11,
+        ActionId::Roll => 12,
         ActionId::Authored(slot) => 256 + slot as u16,
     }
 }
@@ -1000,6 +1012,7 @@ pub const fn phases(id: ActionId) -> &'static [Phase] {
         | ActionId::Swim
         | ActionId::Climb
         | ActionId::Mantle
+        | ActionId::Roll
         | ActionId::Guard
         | ActionId::Cast
         | ActionId::Stun
@@ -1625,15 +1638,19 @@ fn swimming(state: &PlayerState) -> bool {
 }
 
 /// The movement region's traversal actions, which hold while they last
-/// rather than while they recover: a swim, a climb and a mantle.
+/// rather than while they recover: a swim, a climb, a mantle and a roll.
 const fn lasting(id: ActionId) -> bool {
-    matches!(id, ActionId::Swim | ActionId::Climb | ActionId::Mantle)
+    matches!(
+        id,
+        ActionId::Swim | ActionId::Climb | ActionId::Mantle | ActionId::Roll
+    )
 }
 
-/// Whether the lasting traversal action `id` runs now (#413, #490).
+/// Whether the lasting traversal action `id` runs now (#413, #490, #516).
 fn running(state: &PlayerState, id: ActionId) -> bool {
     match id {
         ActionId::Swim => swimming(state),
+        ActionId::Roll => state.is_alive() && state.roll.rolling().is_some(),
         ActionId::Climb => {
             state.is_alive() && matches!(state.traversal, crate::Traversal::Climbing { .. })
         }
@@ -1668,6 +1685,7 @@ fn recovery_left(state: &PlayerState, id: ActionId) -> Option<u16> {
         | ActionId::Swim
         | ActionId::Climb
         | ActionId::Mantle
+        | ActionId::Roll
         | ActionId::Guard
         | ActionId::Stun
         | ActionId::Death
@@ -1739,9 +1757,14 @@ fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4]
         ability: action.and_then(|id| action_ability(state, id)),
         active_left: None,
     };
-    let traversing = [ActionId::Mantle, ActionId::Climb, ActionId::Swim]
-        .into_iter()
-        .find(|&id| running(state, id));
+    let traversing = [
+        ActionId::Roll,
+        ActionId::Mantle,
+        ActionId::Climb,
+        ActionId::Swim,
+    ]
+    .into_iter()
+    .find(|&id| running(state, id));
     let movement = if let Some(id) = traversing {
         report(Region::Movement, Some(id), Some(Phase::Active), None)
     } else if state.landing.airborne {

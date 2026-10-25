@@ -87,6 +87,8 @@ pub(crate) struct PlayerState {
     pub(crate) swimming: bool,
     /// A climb or mantle in progress (#490); canonical.
     pub(crate) traversal: crate::Traversal,
+    /// A pending press, a dodge roll in progress or its cooldown (#516); canonical.
+    pub(crate) roll: crate::Roll,
     /// The `[forward, up]` launch (cm/s) of an edge's follow-up resolved this
     /// tick (#413). Set by intents and spent by the same tick's movement, so
     /// never present between ticks and not canonical.
@@ -169,6 +171,7 @@ impl PlayerState {
             landing: crate::LandingState::default(),
             swimming: false,
             traversal: crate::Traversal::Free,
+            roll: crate::Roll::Ready,
             impulse: None,
             authored: None,
             holds: crate::action::authored::Holds::default(),
@@ -635,6 +638,13 @@ impl ZoneSimulation {
                 player.jump_pending = alive;
                 None
             }
+            // Resolved like a jump (#516); a press while rolling or recovering is dropped.
+            ZoneCommand::Roll => {
+                if alive && player.roll == crate::Roll::Ready {
+                    player.roll = crate::Roll::Pending;
+                }
+                None
+            }
             // Queued so a guard pressed after a strike stays raised (5.2.37).
             ZoneCommand::Guard { lane } => Some(PlayerIntent::Guard(lane)),
             ZoneCommand::UseDoor { door, open } => Some(PlayerIntent::UseDoor { door, open }),
@@ -821,6 +831,7 @@ impl ZoneSimulation {
         }
         let probe_ground = self.ground_body();
         let mut traversals = Vec::with_capacity(self.players.len());
+        let mut rolls = Vec::with_capacity(self.players.len());
         for (&player_id, state) in &self.players {
             let body_id = body_id(EntityRef::Player(player_id));
             let body = self
@@ -848,18 +859,45 @@ impl ZoneSimulation {
                     )
                 })
                 .flatten();
-            // A climb or mantle (#490) moves the body weightless along the zone's velocity.
+            let grounded = is_grounded(&self.world, body)?;
+            // A dodge roll (#516) starts on the ground, out of deep water, off any face and
+            // unstunned; a stun or deep water ends it early, and death outright.
+            let roll = if alive {
+                let mut roll = state.roll.advanced();
+                if stunned || swim_depth.is_some() {
+                    roll = roll.ended();
+                }
+                let can = !stunned && swim_depth.is_none() && grounded && !state.traversal.holds();
+                let yaw = movement_yaw(state)
+                    .unwrap_or_else(|| state.facing.wrapping_add(2 * YAW_QUARTER_TURN));
+                roll.start(can, yaw)
+            } else {
+                crate::Roll::Ready
+            };
+            rolls.push((player_id, roll));
+            let rolling = roll.rolling();
+            // A climb or mantle (#490) moves the body weightless along the zone's velocity. A
+            // roller's intent is set aside until the roll ends, so it grabs nothing.
             let step = if alive && swim_depth.is_none() {
+                let held = rolling.is_none();
                 crate::climb::decide(
                     &probe,
                     body.exact_position(),
                     state.traversal,
                     crate::climb::Intent {
-                        forward: i32::from(state.forward.get()),
-                        strafe: i32::from(state.strafe.get()),
-                        jump: state.jump_pending,
+                        forward: if held {
+                            i32::from(state.forward.get())
+                        } else {
+                            0
+                        },
+                        strafe: if held {
+                            i32::from(state.strafe.get())
+                        } else {
+                            0
+                        },
+                        jump: held && state.jump_pending,
                         facing: state.facing,
-                        grounded: is_grounded(&self.world, body)?,
+                        grounded,
                         stunned,
                     },
                 )
@@ -867,6 +905,19 @@ impl ZoneSimulation {
                 crate::climb::Step::FREE
             };
             traversals.push((player_id, step.traversal));
+            // The roll moves the body through the controller at its own speed, under gravity.
+            if let Some(yaw) = rolling
+                && step.velocity.is_none()
+            {
+                let [x, z] = crate::Roll::velocity(yaw, crate::aura::speed_percent(&state.auras));
+                self.world
+                    .set_velocity(body_id, Vec3i::new(x, body.velocity().y, z))
+                    .map_err(physics_error)?;
+                self.world
+                    .set_weightless(body_id, false)
+                    .map_err(physics_error)?;
+                continue;
+            }
             if let Some(velocity) = step.velocity {
                 self.world
                     .set_velocity(body_id, velocity)
@@ -879,7 +930,7 @@ impl ZoneSimulation {
             let vertical_velocity = if let Some(depth) = swim_depth {
                 let rise = if stunned { 0 } else { state.rise.get() };
                 crate::water::swim_vertical_velocity(depth, rise)
-            } else if alive && !stunned && state.jump_pending && is_grounded(&self.world, body)? {
+            } else if alive && !stunned && state.jump_pending && grounded {
                 JUMP_VELOCITY_SUBUNITS_PER_TICK
             } else if state.traversal.holds() {
                 // Letting go of a face or landing a mantle keeps no upward climb.
@@ -888,8 +939,8 @@ impl ZoneSimulation {
                 body.velocity().y
             };
             // A protecting guard slows movement (#156): ready and grounded.
-            let guarding = crate::guard::guard_ready(self.action_graph, state).is_some()
-                && is_grounded(&self.world, body)?;
+            let guarding =
+                crate::guard::guard_ready(self.action_graph, state).is_some() && grounded;
             let mut velocity = if alive {
                 let free = movement_velocity(state)?;
                 let mut percent = crate::aura::speed_percent(&state.auras);
@@ -936,6 +987,20 @@ impl ZoneSimulation {
             if let Some(player) = self.players.get_mut(&player_id) {
                 player.traversal = traversal;
             }
+        }
+        // A roll cancels the roller's cast and repair, and any started mid-roll (#516).
+        let mut rollers = Vec::new();
+        for (player_id, roll) in rolls {
+            if let Some(player) = self.players.get_mut(&player_id) {
+                player.roll = roll;
+                if roll.rolling().is_some() {
+                    player.repairing = None;
+                    rollers.push(player_id);
+                }
+            }
+        }
+        for player_id in rollers {
+            self.interrupt_cast(EntityRef::Player(player_id), None, None);
         }
         Ok(())
     }
@@ -1116,12 +1181,29 @@ fn world_limit_bodies() -> impl Iterator<Item = RigidBody> {
 /// where the offset is one of eight multiples of 45°. The character's right is
 /// `direction(facing - 90°)`. Zero intent yields zero horizontal velocity.
 fn movement_velocity(state: &PlayerState) -> Result<Vec3i, ZoneError> {
+    let Some(yaw) = movement_yaw(state) else {
+        return Ok(Vec3i::ZERO);
+    };
+    let speed = match state.forward {
+        Axis::Negative => BACKPEDAL_SPEED_SUBUNITS_PER_TICK,
+        Axis::Zero | Axis::Positive => RUN_SPEED_SUBUNITS_PER_TICK,
+    };
+    let (x, z) = trig::direction(yaw);
+    let component = |unit| {
+        trig::checked_scale(speed, unit).ok_or_else(|| ZoneError::new("movement velocity overflow"))
+    };
+    Ok(Vec3i::new(component(x)?, 0, component(z)?))
+}
+
+/// The yaw held movement intent moves along: `facing` plus one of eight multiples of 45°, or
+/// `None` without intent.
+fn movement_yaw(state: &PlayerState) -> Option<u16> {
     const FORWARD: u16 = 0;
     const LEFT: u16 = YAW_QUARTER_TURN;
     const BACKWARD: u16 = 2 * YAW_QUARTER_TURN;
     const RIGHT: u16 = 3 * YAW_QUARTER_TURN;
     let offset = match (state.forward, state.strafe) {
-        (Axis::Zero, Axis::Zero) => return Ok(Vec3i::ZERO),
+        (Axis::Zero, Axis::Zero) => return None,
         (Axis::Positive, Axis::Zero) => FORWARD,
         (Axis::Positive, Axis::Negative) => FORWARD + YAW_EIGHTH_TURN,
         (Axis::Zero, Axis::Negative) => LEFT,
@@ -1131,15 +1213,7 @@ fn movement_velocity(state: &PlayerState) -> Result<Vec3i, ZoneError> {
         (Axis::Zero, Axis::Positive) => RIGHT,
         (Axis::Positive, Axis::Positive) => RIGHT + YAW_EIGHTH_TURN,
     };
-    let speed = match state.forward {
-        Axis::Negative => BACKPEDAL_SPEED_SUBUNITS_PER_TICK,
-        Axis::Zero | Axis::Positive => RUN_SPEED_SUBUNITS_PER_TICK,
-    };
-    let (x, z) = trig::direction(state.facing.wrapping_add(offset));
-    let component = |unit| {
-        trig::checked_scale(speed, unit).ok_or_else(|| ZoneError::new("movement velocity overflow"))
-    };
-    Ok(Vec3i::new(component(x)?, 0, component(z)?))
+    Some(state.facing.wrapping_add(offset))
 }
 
 /// A thin probe directly under the feet, inset by one unit horizontally so
