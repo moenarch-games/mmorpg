@@ -9,7 +9,7 @@
 # refused or reported as events. Every command step is applied.
 name = "class-abilities"
 zone = 1
-ticks = 1840
+ticks = 2524
 digest_interval = 200
 
 [[bots]]
@@ -149,9 +149,9 @@ forward = 1
 strafe = 0
 facing = 49152
 
-# Outside the palisade, step north onto the trunk-grid line z = 1800 …
+# At the foot of the woods' cliff, north up the Wolfrun Climb's ledge (#423) …
 [[steps]]
-tick = 242
+tick = 324
 bot = "warden"
 action = "move"
 forward = 1
@@ -159,7 +159,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 252
+tick = 334
 bot = "ranger"
 action = "move"
 forward = 1
@@ -167,24 +167,24 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 262
-bot = "warden"
-action = "move"
-forward = 1
-strafe = 0
-facing = 49152
-
-[[steps]]
-tick = 262
+tick = 344
 bot = "arcanist"
 action = "move"
 forward = 1
 strafe = 0
 facing = 32768
 
-# … and follow it west into Wolfrun Woods.
+# … west across the hairpin landing …
 [[steps]]
-tick = 272
+tick = 686
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 696
 bot = "ranger"
 action = "move"
 forward = 1
@@ -192,7 +192,57 @@ strafe = 0
 facing = 49152
 
 [[steps]]
-tick = 282
+tick = 706
+bot = "arcanist"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+# … south up the cutting into the woods …
+[[steps]]
+tick = 800
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+[[steps]]
+tick = 810
+bot = "ranger"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+[[steps]]
+tick = 820
+bot = "arcanist"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+# … and west, near the trunk-grid line z = 1800, into Wolfrun Woods.
+[[steps]]
+tick = 1130
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 1140
+bot = "ranger"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+[[steps]]
+tick = 1150
 bot = "arcanist"
 action = "move"
 forward = 1
@@ -201,7 +251,7 @@ facing = 49152
 
 # North along the trunk-grid line x = -8450 toward the den clearing.
 [[steps]]
-tick = 750
+tick = 1434
 bot = "warden"
 action = "move"
 forward = 1
@@ -209,7 +259,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 760
+tick = 1444
 bot = "ranger"
 action = "move"
 forward = 1
@@ -217,18 +267,18 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 760
+tick = 1444
 bot = "warden"
 action = "select_target"
 entity = "creature:108"
 
 [[steps]]
-tick = 760
+tick = 1444
 bot = "warden"
 action = "start_attack"
 
 [[steps]]
-tick = 770
+tick = 1454
 bot = "arcanist"
 action = "move"
 forward = 1
@@ -236,20 +286,20 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 770
+tick = 1454
 bot = "ranger"
 action = "select_target"
 entity = "creature:108"
 
 [[steps]]
-tick = 770
+tick = 1454
 bot = "arcanist"
 action = "select_target"
 entity = "creature:108"
 
 # Close enough to the den that Wolf 108 engages the Warden wherever it wanders: everyone stands.
 [[steps]]
-tick = 830
+tick = 1454
 bot = "warden"
 action = "move"
 forward = 0
@@ -257,7 +307,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 830
+tick = 1454
 bot = "ranger"
 action = "move"
 forward = 0
@@ -265,7 +315,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 830
+tick = 1454
 bot = "arcanist"
 action = "move"
 forward = 0
@@ -275,13 +325,13 @@ facing = 32768
 # The Arcanist starts Firebolt and is interrupted by stepping, then starts
 # it again and cancels it. Interrupted casts cost nothing.
 [[steps]]
-tick = 832
+tick = 1456
 bot = "arcanist"
 action = "use_ability"
 ability = 9
 
 [[steps]]
-tick = 840
+tick = 1464
 bot = "arcanist"
 action = "move"
 forward = 1
@@ -289,7 +339,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 842
+tick = 1466
 bot = "arcanist"
 action = "move"
 forward = 0
@@ -297,71 +347,71 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 922
+tick = 1546
 bot = "arcanist"
 action = "use_ability"
 ability = 9
 
 [[steps]]
-tick = 940
+tick = 1564
 bot = "arcanist"
 action = "cancel_cast"
 
 # Rage comes from swings dealt and taken: too little at first, then a Heroic
 # Strike, and the global cooldown holds the next one.
 [[steps]]
-tick = 960
+tick = 1584
 bot = "warden"
 action = "use_ability"
 ability = 1
 
 [[steps]]
-tick = 1040
+tick = 1664
 bot = "warden"
 action = "use_ability"
 ability = 1
 
 # Firebolt for real; a second cast on top is refused.
 [[steps]]
-tick = 1040
+tick = 1664
 bot = "arcanist"
 action = "use_ability"
 ability = 9
 
 [[steps]]
-tick = 1042
+tick = 1666
 bot = "warden"
 action = "use_ability"
 ability = 1
 
 [[steps]]
-tick = 1060
+tick = 1684
 bot = "arcanist"
 action = "use_ability"
 ability = 9
 
 # The Warden stops swinging before the Firebolt lands.
 [[steps]]
-tick = 1090
+tick = 1714
 bot = "warden"
 action = "stop_attack"
 
 # Aimed Shot once the Firebolt has landed and the Warden holds threat: the
 # global cooldown, then the shot's own cooldown, hold the next ones.
 [[steps]]
-tick = 1194
+tick = 1818
 bot = "ranger"
 action = "use_ability"
 ability = 5
 
 [[steps]]
-tick = 1196
+tick = 1820
 bot = "ranger"
 action = "use_ability"
 ability = 5
 
 [[steps]]
-tick = 1210
+tick = 1834
 bot = "ranger"
 action = "use_ability"
 ability = 5
@@ -428,69 +478,69 @@ tick = 3
 kind = "event"
 bot = "arcanist"
 event = "cast_started"
-tick = 833
+tick = 1457
 
 [[expect]]
 kind = "event"
 bot = "arcanist"
 event = "interrupted"
-tick = 841
+tick = 1465
 
 [[expect]]
 kind = "event"
 bot = "arcanist"
 event = "interrupted"
-tick = 941
+tick = 1565
 
 [[expect]]
 kind = "resource"
 bot = "arcanist"
 resource = 110
-tick = 941
+tick = 1565
 
 # Rage from two swings dealt and two hits taken pays for Heroic Strike.
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "error:not_enough_resource"
-tick = 961
+tick = 1585
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 20
-tick = 1039
+tick = 1663
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "ability_used"
-tick = 1041
+tick = 1665
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "damage_dealt"
 entity = "creature:108"
-tick = 1041
+tick = 1665
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 5
-tick = 1041
+tick = 1665
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "error:not_ready"
-tick = 1043
+tick = 1667
 
 [[expect]]
 kind = "event"
 bot = "arcanist"
 event = "error:already_casting"
-tick = 1061
+tick = 1685
 
 # Aimed Shot: 30 focus, then the global cooldown and its own cooldown.
 [[expect]]
@@ -498,25 +548,25 @@ kind = "event"
 bot = "ranger"
 event = "ability_used"
 entity = "creature:108"
-tick = 1195
+tick = 1819
 
 [[expect]]
 kind = "resource"
 bot = "ranger"
 resource = 70
-tick = 1195
+tick = 1819
 
 [[expect]]
 kind = "event"
 bot = "ranger"
 event = "error:not_ready"
-tick = 1197
+tick = 1821
 
 [[expect]]
 kind = "event"
 bot = "ranger"
 event = "error:not_ready"
-tick = 1211
+tick = 1835
 
 # Firebolt completes 2 s after it started and pays 25 mana; its missile strikes the wolf (#289),
 # and the Aimed Shot behind it finishes the wolf.
@@ -525,34 +575,34 @@ kind = "event"
 bot = "arcanist"
 event = "ability_used"
 entity = "creature:108"
-tick = 1160
+tick = 1784
 
 [[expect]]
 kind = "event"
 bot = "arcanist"
 event = "damage_dealt"
 entity = "creature:108"
-by_tick = 1200
+by_tick = 1824
 
 [[expect]]
 kind = "resource"
 bot = "arcanist"
 resource = 85
-tick = 1160
+tick = 1784
 
 [[expect]]
 kind = "unit"
 bot = "warden"
 entity = "creature:108"
 state = "dead"
-by_tick = 1200
+by_tick = 1824
 
 # Focus regenerates 5 per second back to full.
 [[expect]]
 kind = "resource"
 bot = "ranger"
 resource = 100
-by_tick = 1440
+by_tick = 2064
 
 # The five-second rule holds mana for 5 s after spending; then 5 % of
 # 110 returns every second out of combat.
@@ -560,26 +610,26 @@ by_tick = 1440
 kind = "resource"
 bot = "arcanist"
 resource = 85
-tick = 1518
+tick = 2142
 
 [[expect]]
 kind = "resource"
 bot = "arcanist"
 resource = 91
-tick = 1519
+tick = 2143
 
 # Out of combat, rage decays by 2 per second.
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 3
-tick = 1656
+tick = 2311
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 1
-tick = 1657
+tick = 2312
 
 # #27: a visible recipient observes other actors without receiving their damage credit.
 [[expect]]
@@ -587,25 +637,25 @@ kind = "event"
 bot = "ranger"
 event = "attack_performed"
 entity = "bot:warden"
-by_tick = 940
+by_tick = 1564
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "cast_started"
 entity = "bot:arcanist"
-tick = 833
+tick = 1457
 
 [[expect]]
 kind = "event"
 bot = "ranger"
 event = "damage_observed"
 entity = "bot:warden"
-tick = 1041
+tick = 1665
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "ability_used"
 entity = "bot:ranger"
-tick = 1195
+tick = 1819

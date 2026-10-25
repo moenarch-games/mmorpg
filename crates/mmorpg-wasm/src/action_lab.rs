@@ -22,9 +22,9 @@ use serde_json::{Value, json};
 use crate::host::LocalZoneError;
 use crate::scenario::{fresh_record, restore_health};
 
-/// The lab's training spot: the eastern edge of Wolfrun Woods, facing the
-/// wolf pack (west), where every class has something to fight.
-pub const LAB_LOCATION: ([i32; 2], u16) = ([-4_000, -2_200], 49_152);
+/// The lab's training spot: the eastern edge of Wolfrun Woods on the basin's rim (#423),
+/// facing the wolf pack (west), where every class has something to fight.
+pub const LAB_LOCATION: ([i32; 2], u16) = ([-5_000, -2_800], 49_152);
 
 /// Every input the graph arbitrates, for the inspector's verdict table.
 pub(crate) const INPUTS: [ActionInput; 6] = [

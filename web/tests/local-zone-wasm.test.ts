@@ -53,10 +53,10 @@ describe("WASM local zone host", () => {
     bag.update(source.latestProjection()!);
     loot.reset(source.latestProjection());
     loot.update(source.latestProjection()!);
-    // The corpse-loot-resume scenario's script, at 60 Hz.
-    const movement = new Map([[0, [1, 0]], [72, [1, 49152]], [242, [1, 32768]],
-      [262, [1, 49152]], [750, [1, 32768]], [830, [0, 32768]]]);
-    for (let tick = 0; tick < 2104; tick += 1) {
+    // The corpse-loot-resume scenario's script at 60 Hz, up the Wolfrun Climb (#423).
+    const movement = new Map([[0, [1, 0]], [72, [1, 49152]], [324, [1, 32768]], [686, [1, 49152]],
+      [800, [1, 0]], [1130, [1, 49152]], [1434, [1, 32768]], [1514, [0, 32768]]]);
+    for (let tick = 0; tick < 2719; tick += 1) {
       const move = movement.get(tick);
       if (move) {
         source.sendCommand({ kind: "move", forward: move[0] === 0 ? 0 : 1, strafe: 0, facing: move[1] ?? 0 });
@@ -64,20 +64,20 @@ describe("WASM local zone host", () => {
       if (tick === 2) {
         source.sendCommand({ kind: "start-attack" });
       }
-      if (tick === 760) {
+      if (tick === 1444) {
         source.sendCommand({ kind: "select-target", target: { kind: "creature", id: 108 } });
         source.sendCommand({ kind: "start-attack" });
       }
       run(source, 1);
     }
     const before = source.latestProjection()!;
-    expect(before.viewer).toMatchObject({ copper: 0, health: 34, experience: 50 });
+    expect(before.viewer).toMatchObject({ copper: 0, health: 32, experience: 50 });
     loot.update(before);
     const sheet = loot.sheet;
     if (sheet === null) {
       throw new Error("Missing authoritative corpse sheet");
     }
-    expect(sheet).toEqual({ creatureId: 108, diedAt: 1956n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
+    expect(sheet).toEqual({ creatureId: 108, diedAt: 2571n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
     source.sendCommand({ kind: "loot", creatureId: sheet.creatureId, diedAt: sheet.diedAt + 1n });
     run(source, 1);
     expect(source.latestProjection()?.events).toContainEqual({ kind: "error", code: "invalid-loot", target: { kind: "creature", id: 108 } });
@@ -463,7 +463,7 @@ describe("WASM local zone host", () => {
     const actual = provider.scenery.props.filter((prop) => prop.kind === "grass-tuft" && prop.position[0] >= -3500 && prop.position[0] <= 3500 && prop.position[2] >= -1300 && prop.position[2] <= 5300);
     expect(actual).toEqual(expected);
     expect(actual.length).toBe(55);
-    expect(provider.scenery.presentationFingerprint).toBe("9aa15936beca7a9d");
+    expect(provider.scenery.presentationFingerprint).toBe("1421679c03421021");
     expect(provider.scenery.contentRevision).toBe(HOSTED_REVISION);
   });
 

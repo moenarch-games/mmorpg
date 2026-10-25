@@ -328,7 +328,13 @@ fn the_cave_roof_is_cut_away_while_the_viewer_stands_under_it() {
     let eye = floor as f32 + 5.;
     let drawn = |viewer| {
         scene
-            .frame(0., false, [x as f32, eye, z as f32], viewer, Kits::default())
+            .frame(
+                0.,
+                false,
+                [x as f32, eye, z as f32],
+                viewer,
+                Kits::default(),
+            )
             .len()
     };
     assert!(drawn(Some([x, floor, z])) < drawn(None));

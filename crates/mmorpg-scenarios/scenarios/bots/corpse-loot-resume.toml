@@ -3,7 +3,7 @@
 # rewards remain consumed across reconnect and stale connection fencing.
 name = "corpse-loot-resume"
 zone = 1
-ticks = 2290
+ticks = 2905
 digest_interval = 200
 
 [[bots]]
@@ -38,18 +38,36 @@ forward = 1
 strafe = 0
 facing = 49152
 
-# Outside the palisade, step north onto the trunk-grid line z = 1800 …
+# At the foot of the woods' cliff, north up the Wolfrun Climb's ledge (#423) …
 [[steps]]
-tick = 242
+tick = 324
 bot = "hunter"
 action = "move"
 forward = 1
 strafe = 0
 facing = 32768
 
-# … and follow it west into Wolfrun Woods.
+# … west across the hairpin landing …
 [[steps]]
-tick = 262
+tick = 686
+bot = "hunter"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+# … south up the cutting into the woods …
+[[steps]]
+tick = 800
+bot = "hunter"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+# … and west along the trunk-grid line z = 1800 into Wolfrun Woods.
+[[steps]]
+tick = 1130
 bot = "hunter"
 action = "move"
 forward = 1
@@ -58,7 +76,7 @@ facing = 49152
 
 # North along the trunk-grid line x = -8450 toward the den clearing.
 [[steps]]
-tick = 750
+tick = 1434
 bot = "hunter"
 action = "move"
 forward = 1
@@ -67,19 +85,19 @@ facing = 32768
 
 # Select the den wolf while approaching; it is still beyond melee reach.
 [[steps]]
-tick = 760
+tick = 1444
 bot = "hunter"
 action = "select_target"
 entity = "creature:108"
 
 [[steps]]
-tick = 760
+tick = 1444
 bot = "hunter"
 action = "start_attack"
 
 # Stand close enough to the den that Wolf 108 engages wherever it wanders, and let it come.
 [[steps]]
-tick = 830
+tick = 1514
 bot = "hunter"
 action = "move"
 forward = 0
@@ -88,65 +106,65 @@ facing = 32768
 
 
 [[steps]]
-tick = 2266
+tick = 2881
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1954
+died_at = 2569
 
 [[steps]]
-tick = 2268
+tick = 2883
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1956
+died_at = 2571
 
 [[steps]]
-tick = 2268
+tick = 2883
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1956
+died_at = 2571
 
 [[steps]]
-tick = 2268
+tick = 2883
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1956
+died_at = 2571
 seq = 11
 expect = "ignored_stale"
 
 [[steps]]
-tick = 2272
+tick = 2887
 bot = "hunter"
 action = "disconnect"
 
 
 [[steps]]
-tick = 2276
+tick = 2891
 bot = "hunter"
 action = "reconnect"
 
 
 [[steps]]
-tick = 2276
+tick = 2891
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1956
+died_at = 2571
 
 [[steps]]
-tick = 2278
+tick = 2893
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 1956
+died_at = 2571
 connection_epoch = 1
 expect = "rejected:stale_connection"
 
 [[steps]]
-tick = 2282
+tick = 2897
 bot = "hunter"
 action = "loot"
 creature = 108
@@ -155,55 +173,55 @@ died_at = 18446744073709551615
 [[expect]]
 kind = "loot"
 bot = "hunter"
-tick = 2263
+tick = 2878
 sheet = true
 creature = 108
-died_at = 1956
+died_at = 2571
 
 [[expect]]
 kind = "copper"
 bot = "hunter"
-tick = 2263
+tick = 2878
 copper = 0
 
 [[expect]]
 kind = "event"
 bot = "hunter"
-tick = 2267
+tick = 2882
 event = "error:invalid_loot"
 entity = "creature:108"
 
 [[expect]]
 kind = "loot"
 bot = "hunter"
-tick = 2267
+tick = 2882
 sheet = true
 creature = 108
-died_at = 1956
+died_at = 2571
 
 [[expect]]
 kind = "loot"
 bot = "hunter"
-tick = 2269
+tick = 2884
 sheet = false
 
 [[expect]]
 kind = "copper"
 bot = "hunter"
-tick = 2269
+tick = 2884
 copper = 2
 
 [[expect]]
 kind = "event"
 bot = "hunter"
-tick = 2269
+tick = 2884
 event = "error:empty_loot"
 entity = "creature:108"
 
 [[expect]]
 kind = "inventory"
 bot = "hunter"
-tick = 2269
+tick = 2884
 inventory_revision = 2
 sheet = true
 slot = 0
@@ -213,32 +231,32 @@ quantity = 5
 [[expect]]
 kind = "identity"
 bot = "hunter"
-tick = 2277
+tick = 2892
 
 
 [[expect]]
 kind = "copper"
 bot = "hunter"
-tick = 2277
+tick = 2892
 copper = 2
 
 [[expect]]
 kind = "loot"
 bot = "hunter"
-tick = 2277
+tick = 2892
 sheet = false
 
 [[expect]]
 kind = "event"
 bot = "hunter"
-tick = 2277
+tick = 2892
 event = "error:empty_loot"
 entity = "creature:108"
 
 [[expect]]
 kind = "inventory"
 bot = "hunter"
-tick = 2280
+tick = 2900
 inventory_revision = 2
 sheet = true
 slot = 0
@@ -248,12 +266,12 @@ quantity = 5
 [[expect]]
 kind = "event"
 bot = "hunter"
-tick = 2283
+tick = 2898
 event = "error:invalid_loot"
 entity = "creature:108"
 
 [[expect]]
 kind = "copper"
 bot = "hunter"
-tick = 2289
+tick = 2904
 copper = 2
