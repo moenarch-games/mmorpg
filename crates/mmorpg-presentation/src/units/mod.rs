@@ -129,6 +129,9 @@ pub struct ImportedUnit {
     pub loadout: Option<Loadout>,
     /// A named resident's appearance preset (#418); players and animals have none.
     pub resident: Option<Resident>,
+    /// The seed of a [`Resident::varied`] resident's own look: its NPC id, so each guard stays
+    /// the same man across frames and sessions (asset-tooling #380).
+    pub variety: Option<u32>,
     /// A player's class starter outfit (asset-tooling #379); residents and animals have none.
     pub outfit: Option<Outfit>,
     /// The living viewer wears their headwear on the posed head (see [`UnitPresenter::headwear`]).
@@ -533,6 +536,7 @@ impl UnitPresenter {
                         }
                         None => None,
                     },
+                    variety: resident.filter(|r| r.varied()).map(|_| entity.id()),
                     resident,
                     outfit: match entity {
                         EntityRef::Player(_) => class.map(|c| {

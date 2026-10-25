@@ -72,6 +72,8 @@ describe("the shared unit presenter in the browser", () => {
       expect(resident.resident).toMatch(/^resident\./);
       expect(resident.headwear).toBe(false);
       expect(resident.loadout).toBe(resident.resident === "resident.guard" ? "sword" : null);
+      // Each guard is his own man (asset-tooling #380); the named residents keep their presets.
+      expect(resident.variety).toBe(resident.resident === "resident.guard" ? resident.entity.id : null);
     }
   });
 
