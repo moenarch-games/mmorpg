@@ -566,7 +566,7 @@ pub struct ScenarioFile {
 }
 
 fn hex_bytes(text: &str) -> Result<Vec<u8>, String> {
-    if text.len() % 2 != 0 || !text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if !text.len().is_multiple_of(2) || !text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(format!("command bytes {text:?} are not hex"));
     }
     (0..text.len())
