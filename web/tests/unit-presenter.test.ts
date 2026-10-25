@@ -51,6 +51,9 @@ describe("the shared unit presenter in the browser", () => {
     const viewer = frame.imported.find((unit) => unit.entity.id === projection.viewerId)!;
     // The imported model itself wears the viewer's headwear (#374); no procedural hat is drawn.
     expect(viewer).toMatchObject({ kind: "Ranger", clip: "Idle_Loop", loadout: "sword-and-shield", resident: null, headwear: true, tint: null });
+    // Standing idle, the whole body plays one clip (#384).
+    expect(viewer.layers).toEqual([{ clip: "Idle_Loop", time: 0, weight: 1, mask: "all" }]);
+    expect(viewer.lower).toEqual(["Idle_Loop", 0]);
     // Residents stay procedural until their presets loaded.
     expect(frame.imported.some((unit) => unit.entity.kind === "npc")).toBe(false);
   });

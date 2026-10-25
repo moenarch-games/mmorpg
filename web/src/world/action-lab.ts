@@ -8,6 +8,7 @@
  */
 import type { ContentCatalog } from "./catalog";
 import type { ScenarioFrame } from "./scenario-source";
+import { DEFAULT_BLEND, type AnimationBlend, type ViewerAnimation } from "./unit-presenter";
 
 export type LabGear = "starter" | "standard" | "none";
 
@@ -161,6 +162,48 @@ export function timelineSegments(frames: readonly { tick: number; inspection: In
   return rows;
 }
 
+const REGION_NAMES: Readonly<Record<string, string>> = { all: "body", upper: "upper body", lower: "legs" };
+
+/**
+ * The posed layers by body region with their weights (#384), e.g.
+ * `legs Jump_Land 0.62 + Jump_Loop 0.38 · upper body Sword_Attack 1.00`.
+ */
+export function describeAnimation(animation: ViewerAnimation | null): string {
+  if (!animation) { return "procedural"; }
+  const regions = new Map<string, string[]>();
+  for (const layer of animation.layers) {
+    const name = REGION_NAMES[layer.mask] ?? layer.mask;
+    regions.set(name, [...(regions.get(name) ?? []), `${layer.clip} ${layer.weight.toFixed(2)}`]);
+  }
+  return [...regions].map(([name, layers]) => `${name} ${layers.join(" + ")}`).join(" · ") || "rest pose";
+}
+
+/** A blend from the lab's four inputs, or null while one is not a number in 0–1. */
+export function parseBlend(values: readonly [string, string, string, string]): AnimationBlend | null {
+  const numbers = values.map((value) => (value.trim() === "" ? Number.NaN : Number(value)));
+  if (numbers.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) { return null; }
+  const [lowerSeconds, upperSeconds, lowerWeight, upperWeight] = numbers as [number, number, number, number];
+  return { lowerSeconds, upperSeconds, lowerWeight, upperWeight };
+}
+
+/** What the presenter showed at one recorded tick: each region's target clip and the layers as text. */
+type AnimationRecord = { upper: string; lower: string; text: string };
+
+/** Runs of ticks one region's target clip held over `records` (ordered by tick); a frame spanning a few ticks records only its last, so short gaps join. */
+function clipSegments(records: readonly (readonly [number, string])[]): TimelineSegment[] {
+  const segments: TimelineSegment[] = [];
+  for (const [tick, clip] of records) {
+    const last = segments.at(-1);
+    if (last && last.action === clip && tick - last.to <= 4) {
+      last.to = tick;
+    } else {
+      if (last && tick - last.to <= 4) { last.to = tick - 1; }
+      segments.push({ action: clip, phase: null, from: tick, to: tick });
+    }
+  }
+  return segments;
+}
+
 function reasonText(reason: BlockReason): string {
   switch (reason.kind) {
     case "Condition": return `condition ${reason.condition} does not hold`;
@@ -223,10 +266,14 @@ export type LabControls = {
   /** A recorded tick to show, or null for live. */
   scrub(tick: number | null): void;
   apply(setup: LabSetup): void;
+  /** Tunes the visual blend only (#384); the zone's timeline and eligibility stay as they are. */
+  blend(blend: AnimationBlend): void;
 };
 
 /** The viewer facts the inspector shows besides the graph. */
-export type LabViewer = { level: number; health: number; maxHealth: number; resource: string | null; clip: string | null };
+export type LabViewer = { level: number; health: number; maxHealth: number; resource: string | null; clip: string | null;
+  /** The layered animation the shared presenter chose (#384), null when procedural. */
+  animation: ViewerAnimation | null };
 
 const TIMELINE_TICKS = 150;
 
@@ -255,6 +302,9 @@ export class ActionLabPanel {
   readonly #timeline = element("div", { className: "lab-timeline" });
   readonly #chart = element("div", { className: "lab-chart" });
   readonly #inspector = element("div", { className: "lab-inspector" });
+  readonly #animation = element("p", { className: "lab-animation" });
+  /** The presenter's animation at each live tick, so a scrubbed tick shows what was drawn then. */
+  readonly #animationAt = new Map<number, AnimationRecord>();
   #selection: LabSelection = { kind: "tick" };
   #renderedKey = "";
   #shown: { tick: number; inspection: Inspection } | null = null;
@@ -274,6 +324,7 @@ export class ActionLabPanel {
       element("header", { className: "lab-header" }, element("h2", {}, "Action Lab"), this.#status, collapse),
       section("Character", this.#setupForm(options, catalog, setup)),
       section("Timeline", this.#playback()),
+      section("Animation", this.#blendForm()),
       section("Statechart", this.#chart),
       section("Inspector", this.#inspector),
     );
@@ -334,6 +385,45 @@ export class ActionLabPanel {
     return form;
   }
 
+  /**
+   * The visual blend's exact numeric controls (Atlas 6.6.45): crossfade seconds for the legs and
+   * the upper body and the weights of a leg overlay (landing, grounded strike) and an upper-body
+   * action (strike, guard). They tune only what is drawn; eligibility stays the zone's.
+   */
+  #blendForm(): HTMLElement {
+    const form = element("form", { className: "lab-blend" });
+    const input = (name: string, value: number, title: string) =>
+      element("input", { type: "number", name, min: "0", max: "1", step: "0.01", value: String(value), title });
+    const inputs = [
+      input("lower-seconds", DEFAULT_BLEND.lowerSeconds, "Seconds a legs and pelvis change crossfades over"),
+      input("upper-seconds", DEFAULT_BLEND.upperSeconds, "Seconds a strike or guard blends in or out over"),
+      input("lower-weight", DEFAULT_BLEND.lowerWeight, "Weight of a landing or grounded strike on the legs"),
+      input("upper-weight", DEFAULT_BLEND.upperWeight, "Weight of a strike or guard on the upper body"),
+    ] as const;
+    const status = element("span", { className: "lab-muted" });
+    const send = () => {
+      const blend = parseBlend([inputs[0].value, inputs[1].value, inputs[2].value, inputs[3].value]);
+      status.textContent = blend ? "" : "Each value is a number from 0 to 1.";
+      if (blend) { this.#controls.blend(blend); }
+    };
+    form.addEventListener("input", send);
+    const reset = element("button", { type: "button" }, "Default blend");
+    reset.addEventListener("click", () => {
+      inputs[0].value = String(DEFAULT_BLEND.lowerSeconds);
+      inputs[1].value = String(DEFAULT_BLEND.upperSeconds);
+      inputs[2].value = String(DEFAULT_BLEND.lowerWeight);
+      inputs[3].value = String(DEFAULT_BLEND.upperWeight);
+      send();
+    });
+    form.addEventListener("submit", (event) => { event.preventDefault(); });
+    const label = (text: string, field: HTMLElement) => element("label", {}, text, field);
+    form.append(
+      label("Legs blend (s)", inputs[0]), label("Upper blend (s)", inputs[1]),
+      label("Legs overlay weight", inputs[2]), label("Upper action weight", inputs[3]), reset, status,
+    );
+    return element("div", {}, this.#animation, form);
+  }
+
   #playback(): HTMLElement {
     const step = element("button", { type: "button" }, "Step (F8)");
     const live = element("button", { type: "button" }, "Live");
@@ -355,12 +445,25 @@ export class ActionLabPanel {
 
   /** Redraws for the source's recorded ticks, the shown one and the viewer; skips unchanged frames. */
   update(frames: readonly ScenarioFrame[], shown: ScenarioFrame | null, paused: boolean, viewer: LabViewer): void {
-    const key = `${frames.at(-1)?.tick}|${shown?.tick}|${paused}|${JSON.stringify(this.#selection)}|${viewer.clip}|${viewer.health}|${viewer.resource}`;
-    if (key === this.#renderedKey) { return; }
-    this.#renderedKey = key;
     const shownTick = shown ? Number(shown.tick) : null;
     const first = Number(frames[0]?.tick ?? 0n);
     const last = Number(frames.at(-1)?.tick ?? 0n);
+    // The live animation is recorded against the latest tick; a scrubbed tick shows its record.
+    const live = shownTick === null || shownTick >= last;
+    const text = describeAnimation(viewer.animation);
+    if (live) {
+      this.#animationAt.set(last, { upper: viewer.animation?.upper[0] ?? "procedural", lower: viewer.animation?.lower[0] ?? "procedural", text });
+      for (const tick of this.#animationAt.keys()) {
+        if (tick >= first) { break; }
+        this.#animationAt.delete(tick);
+      }
+    }
+    const shownAnimation = live ? text : this.#animationAt.get(shownTick ?? last)?.text ?? "not recorded";
+    const readout = `${live ? "Now" : `Tick ${shownTick}`}: ${shownAnimation}`;
+    if (this.#animation.textContent !== readout) { this.#animation.textContent = readout; }
+    const key = `${frames.at(-1)?.tick}|${shown?.tick}|${paused}|${JSON.stringify(this.#selection)}|${viewer.clip}|${viewer.animation?.lower[0]}|${viewer.health}|${viewer.resource}`;
+    if (key === this.#renderedKey) { return; }
+    this.#renderedKey = key;
     // Only the timeline's window is parsed, once per recorded frame.
     const windowStart = Math.max(first, Math.min(Math.max((shownTick ?? last) + 10, TIMELINE_TICKS - 1), last) - TIMELINE_TICKS);
     const parsed = frames.flatMap((frame) => {
@@ -381,7 +484,7 @@ export class ActionLabPanel {
     this.#status.textContent = `${paused ? "Paused" : "Live"} · tick ${shownTick ?? "—"}${shownTick !== null && shownTick < last ? ` of ${last}` : ""} · ${this.#graph.tickHz} Hz`;
     this.#renderTimeline(parsed, shownTick ?? last);
     this.#renderChart();
-    this.#renderInspector(viewer);
+    this.#renderInspector(viewer, shownAnimation);
   }
 
   #select(selection: LabSelection): void {
@@ -427,7 +530,18 @@ export class ActionLabPanel {
       open.style.width = `${x(edge.openUntil + 1) - x(edge.openFrom)}%`;
       return [buffer, open];
     });
-    this.#timeline.replaceChildren(...rowsHtml, row("Edges", windows));
+    // What the presenter drew beside the zone's actions (#384): each region's target clip.
+    const recorded = [...this.#animationAt].filter(([tick]) => tick >= first && tick < first + TIMELINE_TICKS);
+    const clipRow = (name: string, region: "upper" | "lower") => row(name, clipSegments(recorded.map(([tick, record]) => [tick, record[region]]))
+      .map((segment) => {
+        const block = element("span", {
+          className: "lab-segment phase-clip", title: `${segment.action} · ticks ${segment.from}–${segment.to}`, textContent: segment.action,
+        });
+        block.style.left = `${x(segment.from)}%`;
+        block.style.width = `${Math.max(x(segment.to + 1) - x(segment.from), 0.6)}%`;
+        return block;
+      }));
+    this.#timeline.replaceChildren(...rowsHtml, row("Edges", windows), clipRow("Upper body", "upper"), clipRow("Legs", "lower"));
   }
 
   #renderChart(): void {
@@ -476,7 +590,7 @@ export class ActionLabPanel {
     return this.#selection.kind === kind && this.#selection.id === id;
   }
 
-  #renderInspector(viewer: LabViewer): void {
+  #renderInspector(viewer: LabViewer, animation: string): void {
     const rows: [string, string][] = [];
     const inspection = this.#shown?.inspection;
     const selection = this.#selection;
@@ -531,7 +645,7 @@ export class ActionLabPanel {
       }
     }
     rows.push(["Level", String(viewer.level)], ["Health", `${viewer.health} / ${viewer.maxHealth}`],
-      ["Resource", viewer.resource ?? "—"], ["Clip", viewer.clip ?? "procedural"]);
+      ["Resource", viewer.resource ?? "—"], ["Clip", viewer.clip ?? "procedural"], ["Animation", animation]);
     const list = element("dl");
     for (const [name, value] of rows) { list.append(element("dt", {}, name), element("dd", {}, value)); }
     this.#inspector.replaceChildren(list);

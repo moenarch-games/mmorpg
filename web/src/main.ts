@@ -1481,6 +1481,7 @@ function updateActionLab(): void {
     level: viewer.level, health: viewer.health, maxHealth: viewer.maxHealth,
     resource: viewer.resource ? `${viewer.resource.value} / ${viewer.resource.max} ${viewer.resource.kind}` : null,
     clip: worldView.viewerClip,
+    animation: worldView.viewerAnimation,
   });
 }
 
@@ -1494,6 +1495,7 @@ function mountActionLab(loaded: LocalWorld, choice: ScenarioChoice, source: Scen
     step: () => source.step(),
     scrub: (tick) => source.scrubTo(tick === null ? null : BigInt(tick)),
     apply: (next) => { window.location.search = labQuery(next, choice.seed); },
+    blend: (blend) => worldView.setAnimationBlend(blend),
   });
   // Experiments (#382): recorded scenarios replayed and compared under experimental rules.
   labExperimentPanel = new ExperimentPanel(labExperiments, new LabLibrary(browserStorage()), setup, choice.seed, {

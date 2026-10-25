@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { TICK_HZ } from "../src/replication";
 import {
-  explainEdge, explainOutcome, explainRule, labQuery, labSetupFromQuery, timelineSegments, type ActionGraph, type Inspection,
+  describeAnimation, explainEdge, explainOutcome, explainRule, labQuery, labSetupFromQuery, parseBlend, timelineSegments, type ActionGraph,
+  type Inspection,
 } from "../src/world/action-lab";
 import { scenarioChoice, ScenarioSource } from "../src/world/scenario-source";
 import { localZoneModule } from "./support/local-zone-module";
@@ -80,5 +81,22 @@ describe("Action Lab (#381)", () => {
       { action: "Airborne", phase: "Active", from: 1, to: 2 },
       { action: "Landing", phase: "Recovery", from: 3, to: 3 },
     ]);
+  });
+});
+
+describe("Action Lab animation (#384)", () => {
+  test("the readout names each region's layers and the blend inputs parse exactly", () => {
+    expect(describeAnimation(null)).toBe("procedural");
+    expect(describeAnimation({
+      upper: ["Sword_Attack", 0.2], lower: ["Jump_Land", 0.1],
+      layers: [
+        { clip: "Jump_Land", time: 0.1, weight: 0.625, mask: "lower" },
+        { clip: "Jump_Loop", time: 1, weight: 0.375, mask: "lower" },
+        { clip: "Sword_Attack", time: 0.2, weight: 1, mask: "upper" },
+      ],
+    })).toBe("legs Jump_Land 0.63 + Jump_Loop 0.38 · upper body Sword_Attack 1.00");
+    expect(parseBlend(["0.2", "0.05", "1", "0.5"])).toEqual({ lowerSeconds: 0.2, upperSeconds: 0.05, lowerWeight: 1, upperWeight: 0.5 });
+    expect(parseBlend(["", "0.1", "1", "1"])).toBeNull();
+    expect(parseBlend(["0.1", "2", "1", "1"])).toBeNull();
   });
 });

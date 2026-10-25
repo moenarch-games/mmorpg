@@ -5,7 +5,7 @@ import type { ThreeSceneRenderer } from "@moritzbrantner/three-d-renderer";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EntityRef } from "../../entity-ref";
-import type { ImportedModelKind, ImportedRequest, Loadout as CarriedLoadout } from "../unit-presenter";
+import type { ClipLayer, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
 /**
@@ -67,8 +67,8 @@ const ANIMAL_URLS: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> =
 /** The unpacked bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 const RANGER_BUNDLE = `${import.meta.env.BASE_URL}characters/humanoid.ranger.male/`;
 
-/** One drawn model of an asset, posed by clip name and clip time. */
-type Posable = { model: THREE.Object3D; pose(clip: string, time: number): void; dispose(): void };
+/** One drawn model of an asset, posed by weighted, masked clip layers (Atlas 6.6.45). */
+type Posable = { model: THREE.Object3D; pose(layers: readonly ClipLayer[]): void; dispose(): void };
 
 type Asset = {
   /** Clip durations in seconds by name. */
@@ -93,6 +93,8 @@ type Instance = {
   posable: Posable;
   clip: string;
   time: number;
+  /** The layers posed this frame. */
+  layers: readonly ClipLayer[];
   materials: { material: THREE.MeshStandardMaterial; base: THREE.Color }[];
   dead: boolean | null;
   head: THREE.Object3D | null;
@@ -103,7 +105,7 @@ const point = new THREE.Vector3();
 
 /** Rest bounds of a model posed at the start of its idle clip. */
 function measure(posable: Posable, idle: string): Pick<Asset, "floor" | "height" | "centre"> {
-  posable.pose(idle, 0);
+  posable.pose([{ clip: idle, time: 0, weight: 1, mask: "all" }]);
   const probe = posable.model;
   probe.updateMatrixWorld(true);
   const box = new THREE.Box3();
@@ -121,23 +123,74 @@ function measure(posable: Posable, idle: string): Pick<Asset, "floor" | "height"
   return { floor: box.min.y, height: box.max.y - box.min.y, centre: [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2] };
 }
 
-/** `model` posed by clip name and time through its own `AnimationMixer`. */
+/** The shared presenter's upper-body root (`imported::UPPER_BODY_ROOT`): spine, arms and head move under it. */
+const UPPER_BODY_ROOT = "spine_01";
+
+/** The node names of `model`'s upper body, empty for a model without one. */
+function upperBody(model: THREE.Object3D): Set<string> {
+  const names = new Set<string>();
+  model.getObjectByName(UPPER_BODY_ROOT)?.traverse((object) => { names.add(object.name); });
+  return names;
+}
+
+/** Per source clip, its masked copies by mask and slot, so each layer drives its own action. */
+const variants = new WeakMap<THREE.AnimationClip, Map<string, THREE.AnimationClip>>();
+
+/**
+ * `clip` keeping only the tracks `mask` drives. A clip in the same mask twice (a restarted strike
+ * crossfading from its previous swing) takes a copy per `slot`, since a mixer plays one action per clip.
+ */
+function variant(clip: THREE.AnimationClip, mask: LayerMask, slot: number, upper: ReadonlySet<string>): THREE.AnimationClip {
+  if (mask === "all" && slot === 0) { return clip; }
+  let byKey = variants.get(clip);
+  if (!byKey) { variants.set(clip, byKey = new Map()); }
+  const key = `${mask}:${slot}:${upper.size}`;
+  let masked = byKey.get(key);
+  if (!masked) {
+    const tracks = mask === "all" ? clip.tracks : clip.tracks.filter((track) =>
+      upper.has(THREE.PropertyBinding.parseTrackName(track.name).nodeName ?? "") === (mask === "upper"));
+    masked = new THREE.AnimationClip(`${clip.name}|${key}`, clip.duration, tracks);
+    byKey.set(key, masked);
+  }
+  return masked;
+}
+
+/**
+ * `model` posed by the shared presenter's clip layers through its own `AnimationMixer`: one action
+ * per layer, its tracks masked to the layer's region and weighted, so a joint averages the layers
+ * driving it and rests for the remainder, like the native client's CPU skinning.
+ */
 function mixerPosable(model: THREE.Object3D, sources: ReadonlyMap<string, THREE.AnimationClip>, dispose?: () => void): Posable {
   const mixer = new THREE.AnimationMixer(model);
-  let current: { clip: string; action: THREE.AnimationAction } | null = null;
+  const upper = upperBody(model);
+  const playing = new Map<string, THREE.AnimationAction>();
   return {
     model,
-    pose(clip, time) {
-      if (current?.clip !== clip) {
-        mixer.stopAllAction();
-        const source = sources.get(clip);
-        current = source ? { clip, action: mixer.clipAction(source).play() } : null;
-      }
-      if (current) {
+    pose(layers) {
+      const used = new Set<string>();
+      for (const layer of layers) {
+        const source = sources.get(layer.clip);
+        if (!source) { continue; }
+        let slot = 0;
+        while (used.has(`${layer.clip}|${layer.mask}|${slot}`)) { slot += 1; }
+        const key = `${layer.clip}|${layer.mask}|${slot}`;
+        used.add(key);
+        let action = playing.get(key);
+        if (!action) {
+          action = mixer.clipAction(variant(source, layer.mask, slot, upper)).play();
+          playing.set(key, action);
+        }
+        action.setEffectiveWeight(layer.weight);
         // Hold a one-shot clip on its last frame rather than letting the loop wrap it to 0.
-        current.action.time = Math.min(time, Math.max(0, current.action.getClip().duration - 1e-4));
-        mixer.update(0);
+        action.time = Math.min(layer.time, Math.max(0, source.duration - 1e-4));
       }
+      for (const [key, action] of playing) {
+        if (!used.has(key)) {
+          action.stop();
+          playing.delete(key);
+        }
+      }
+      mixer.update(0);
     },
     dispose: () => {
       mixer.stopAllAction();
@@ -691,7 +744,7 @@ export class QuaterniusUnits {
     root.add(model);
     const instance: Instance = {
       kind: unit.kind, dress: dressKey(dress), root, posable,
-      clip: "", time: 0, materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity,
+      clip: "", time: 0, layers: [], materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity,
     };
     this.#instances.set(unit.id, instance);
     this.#rootsChanged = true;
@@ -702,7 +755,8 @@ export class QuaterniusUnits {
     const { clip } = unit;
     instance.clip = clip;
     instance.time = Math.min(unit.time, Math.max(0, (asset.clips.get(clip) ?? 0) - 1e-4));
-    instance.posable.pose(clip, instance.time);
+    instance.layers = unit.layers;
+    instance.posable.pose(unit.layers);
     const dead = unit.tint !== null;
     if (instance.dead !== dead) {
       instance.dead = dead;
@@ -735,11 +789,11 @@ export class QuaterniusUnits {
   }
 
   /**
-   * Debug read of a drawn unit's actual pose: its clip and clip time, dead tint, root transform, the
+   * Debug read of a drawn unit's actual pose: its (upper-body) clip and clip time, its posed layers, dead tint, root transform, the
    * world-space extent of its posed skeleton and its head joint (metres, rounded to 0.1 mm); null
    * when no model is drawn.
    */
-  pose(id: string): { clip: string; role: string | null; time: number; dead: boolean; root: number[]; skeleton: number[]; head: number[] | null } | null {
+  pose(id: string): { clip: string; role: string | null; time: number; layers: readonly ClipLayer[]; dead: boolean; root: number[]; skeleton: number[]; head: number[] | null } | null {
     const instance = this.#instances.get(id);
     if (!instance) { return null; }
     const round = (value: number) => Math.round(value * 1e4) / 1e4;
@@ -751,7 +805,8 @@ export class QuaterniusUnits {
     const head = instance.head ? instance.head.getWorldPosition(point).toArray().map(round) : null;
     const { position, rotation, scale } = instance.root;
     return {
-      clip: instance.clip, role: this.#motion(instance)?.role ?? null, time: round(instance.time), dead: instance.dead === true,
+      clip: instance.clip, role: this.#motion(instance)?.role ?? null, time: round(instance.time), layers: instance.layers.map((layer) => ({ ...layer, time: round(layer.time), weight: round(layer.weight) })),
+      dead: instance.dead === true,
       root: [position.x, position.y, position.z, rotation.y, scale.x].map(round),
       skeleton: extent.isEmpty() ? [] : [...extent.min.toArray(), ...extent.max.toArray()].map(round), head,
     };

@@ -36,6 +36,9 @@ body.action-lab-open .chat-frame { right: calc(var(--lab-width, 26rem) + 1.5rem)
 
 .lab-setup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem .5rem; }
 .lab-setup label { display: grid; gap: .1rem; color: #b9c6be; }
+.lab-blend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem .5rem; }
+.lab-blend label { display: grid; gap: .1rem; color: #b9c6be; }
+.lab-animation { margin: 0 0 .35rem; font-size: .72rem; overflow-wrap: anywhere; }
 .lab-abilities, .lab-presets { grid-column: 1 / -1; margin: 0; }
 .lab-presets { display: flex; flex-wrap: wrap; gap: .3rem; }
 
@@ -52,6 +55,7 @@ body.action-lab-open .chat-frame { right: calc(var(--lab-width, 26rem) + 1.5rem)
 .lab-segment { background: rgb(96 160 210 / 55%); }
 .lab-segment.phase-recovery { background: rgb(214 128 70 / 60%); }
 .lab-segment.phase-followup { background: rgb(150 120 210 / 60%); }
+.lab-segment.phase-clip { background: rgb(120 190 150 / 45%); }
 .lab-window.buffer { background: rgb(230 200 90 / 30%); }
 .lab-window.open { background: rgb(90 200 120 / 55%); }
 .lab-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--gold-bright); pointer-events: none; }

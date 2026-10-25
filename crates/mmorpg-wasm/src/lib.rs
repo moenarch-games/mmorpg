@@ -578,6 +578,26 @@ impl UnitPresenter {
         self.0.residents_ready();
     }
 
+    /// Tunes the imported models' layered blend (the Action Lab, #384): crossfade seconds for
+    /// the legs and the upper body, and the weights of a leg overlay and an upper-body action.
+    /// Values are clamped to 0–1; presentation only.
+    #[wasm_bindgen(js_name = setBlend)]
+    pub fn set_blend(
+        &mut self,
+        lower_seconds: f32,
+        upper_seconds: f32,
+        lower_weight: f32,
+        upper_weight: f32,
+    ) {
+        self.0
+            .set_blend(mmorpg_presentation::units::imported::Blend {
+                lower_seconds,
+                upper_seconds,
+                lower_weight,
+                upper_weight,
+            });
+    }
+
     pub fn push(&mut self, projection: &[u8], seconds: f64) -> Result<(), JsError> {
         self.0
             .push(projection, seconds)

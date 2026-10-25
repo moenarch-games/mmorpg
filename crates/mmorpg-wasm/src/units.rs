@@ -70,14 +70,28 @@ struct ImportedEntry {
     feet: [f64; 3],
     yaw: f64,
     height: f64,
+    /// The upper body's target clip and time: what the unit is seen doing.
     clip: &'static str,
     time: f32,
+    /// The legs' target clip and time.
+    lower: (&'static str, f32),
+    /// The layered clips to pose (Atlas 6.6.45).
+    layers: Vec<LayerEntry>,
     tint: Option<f32>,
     /// The carried weapons by `Loadout::name`, or null.
     loadout: Option<&'static str>,
     /// A resident's `humanoid-appearance` preset id (#418), or null.
     resident: Option<&'static str>,
     headwear: bool,
+}
+
+#[derive(Serialize)]
+struct LayerEntry {
+    clip: &'static str,
+    time: f32,
+    weight: f32,
+    /// `all`, `upper` or `lower`.
+    mask: &'static str,
 }
 
 #[derive(Serialize)]
@@ -182,6 +196,11 @@ impl Units {
     /// The residents' appearance presets loaded (#418).
     pub fn residents_ready(&mut self) {
         self.presenter.residents_ready();
+    }
+
+    /// Tunes the imported models' layered blend (#384).
+    pub fn set_blend(&mut self, blend: mmorpg_presentation::units::imported::Blend) {
+        self.presenter.set_blend(blend);
     }
 
     /// Decodes and observes one received projection.
@@ -324,8 +343,20 @@ impl Units {
                     feet: unit.root.p,
                     yaw,
                     height: unit.height,
-                    clip: unit.clip,
-                    time: unit.time,
+                    clip: unit.animation.upper.0,
+                    time: unit.animation.upper.1,
+                    lower: unit.animation.lower,
+                    layers: unit
+                        .animation
+                        .layers
+                        .iter()
+                        .map(|layer| LayerEntry {
+                            clip: layer.clip,
+                            time: layer.time,
+                            weight: layer.weight,
+                            mask: layer.mask.name(),
+                        })
+                        .collect(),
                     tint: unit.tint,
                     loadout: unit.loadout.map(Loadout::name),
                     resident: unit.resident.map(Resident::preset),

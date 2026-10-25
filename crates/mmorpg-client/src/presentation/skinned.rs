@@ -3,7 +3,7 @@
 //! Presentation only; the authoritative body box still comes from content.
 use crate::world::{DrawMaterial, SceneDraw};
 use mmorpg_presentation::units::{
-    imported::{Kind, Loadout},
+    imported::{Kind, Layer, Loadout, Mask, UPPER_BODY_ROOT},
     kit::{Frame, model},
     player::Hat,
 };
@@ -89,7 +89,7 @@ fn srgb(c: f32) -> f32 {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Rest {
     t: [f32; 3],
     r: [f32; 4],
@@ -172,6 +172,8 @@ pub(super) struct Model {
     clips: BTreeMap<String, Clip>,
     /// Node names, for attaching items to joints.
     names: Vec<Option<String>>,
+    /// Whether each node is in the upper body ([`UPPER_BODY_ROOT`]'s subtree), for masked layers.
+    upper: Vec<bool>,
     /// Rest-clip bounds: lowest point and height along +Y, horizontal centre.
     pub floor: f32,
     pub height: f32,
@@ -184,13 +186,13 @@ pub(super) struct Model {
 type SkinnedPrimitive = (Vec<[f32; 3]>, Vec<[f32; 3]>);
 
 impl Model {
-    pub fn parse(bytes: &[u8], rest_clip: &str) -> Result<Self, gltf::Error> {
+    pub fn parse(bytes: &[u8], rest_clip: &'static str) -> Result<Self, gltf::Error> {
         Self::parse_with_clips(bytes, rest_clip, None)
     }
 
     fn parse_with_clips(
         bytes: &[u8],
-        rest_clip: &str,
+        rest_clip: &'static str,
         library: Option<&[u8]>,
     ) -> Result<Self, gltf::Error> {
         let (document, buffers, images) = gltf::import_slice(bytes)?;
@@ -347,10 +349,16 @@ impl Model {
             let name = name.rsplit('|').next().unwrap_or(name).to_owned();
             clips.insert(name, Clip { duration, channels });
         }
-        let names = document
+        let names: Vec<_> = document
             .nodes()
             .map(|node| node.name().map(str::to_owned))
             .collect();
+        // Parents come first in `order`, so a child inherits its parent's region.
+        let mut upper = vec![false; count];
+        for &node in &order {
+            upper[node] = names[node].as_deref() == Some(UPPER_BODY_ROOT)
+                || parents[node].is_some_and(|parent| upper[parent]);
+        }
         let mut model = Self {
             rest,
             parents,
@@ -358,13 +366,18 @@ impl Model {
             primitives,
             clips,
             names,
+            upper,
             floor: 0.,
             height: 1.,
             centre: [0.; 2],
             head: None,
         };
         let (mut min, mut max) = ([f32::MAX; 3], [f32::MIN; 3]);
-        for p in model.skin(rest_clip, 0.).iter().flat_map(|(p, _)| p) {
+        for p in model
+            .skin(&[Layer::single(rest_clip, 0.)])
+            .iter()
+            .flat_map(|(p, _)| p)
+        {
             for i in 0..3 {
                 min[i] = min[i].min(p[i]);
                 max[i] = max[i].max(p[i]);
@@ -380,10 +393,18 @@ impl Model {
     }
 
     /// Vertices mostly bound to the `Head` joint, measured in the rest pose.
-    fn rest_head(&self, document: &gltf::Document, clip: &str) -> Option<(usize, [f32; 3], f32)> {
+    fn rest_head(
+        &self,
+        document: &gltf::Document,
+        clip: &'static str,
+    ) -> Option<(usize, [f32; 3], f32)> {
         let joint = document.nodes().find(|n| n.name() == Some("Head"))?.index();
         let (mut min, mut max) = ([f32::MAX; 3], [f32::MIN; 3]);
-        for ((positions, _), p) in self.skin(clip, 0.).iter().zip(&self.primitives) {
+        for ((positions, _), p) in self
+            .skin(&[Layer::single(clip, 0.)])
+            .iter()
+            .zip(&self.primitives)
+        {
             for (q, weights) in positions.iter().zip(&p.influences) {
                 let main = weights.iter().max_by(|a, b| a.1.total_cmp(&b.1))?;
                 if p.slots.get(usize::from(main.0)).map(|s| s.0) != Some(joint) {
@@ -398,7 +419,7 @@ impl Model {
         if min[0] > max[0] {
             return None;
         }
-        let at = self.globals(clip, 0.)[joint];
+        let at = self.globals(&[Layer::single(clip, 0.)])[joint];
         let centre: [f32; 3] = std::array::from_fn(|i| (min[i] + max[i]) * 0.5);
         let radius = (0..3).map(|i| (max[i] - min[i]) * 0.5).fold(0., f32::max);
         Some((
@@ -409,9 +430,9 @@ impl Model {
     }
 
     /// The posed head centre and radius in model space, following the head joint's position.
-    pub fn head(&self, clip: &str, time: f32) -> Option<([f32; 3], f32)> {
+    pub fn head(&self, pose: &[Layer]) -> Option<([f32; 3], f32)> {
         let (joint, offset, radius) = self.head?;
-        let at = self.globals(clip, time)[joint];
+        let at = self.globals(pose)[joint];
         Some((std::array::from_fn(|i| at[12 + i] + offset[i]), radius))
     }
 
@@ -437,19 +458,11 @@ impl Model {
             .map(|(name, clip)| (name.clone(), clip.duration))
     }
 
-    fn globals(&self, clip: &str, time: f32) -> Vec<M4> {
-        let mut local = self.rest.clone();
-        if let Some(clip) = self.clips.get(clip) {
-            for channel in &clip.channels {
-                let v = channel.sample(time);
-                let r = &mut local[channel.node];
-                match channel.path {
-                    Path::Translation => r.t = [v[0], v[1], v[2]],
-                    Path::Rotation => r.r = v,
-                    Path::Scale => r.s = [v[0], v[1], v[2]],
-                }
-            }
-        }
+    /// Joint transforms for a layered pose (Atlas 6.6.45), the same weighting as three.js's
+    /// mixer: each joint property takes the weighted average of the layers that drive and
+    /// animate it, and a total weight below 1 leaves the remainder at rest. An empty pose rests.
+    fn globals(&self, pose: &[Layer]) -> Vec<M4> {
+        let local = self.locals(pose);
         let mut globals = vec![IDENTITY; self.rest.len()];
         for &n in &self.order {
             let l = trs(local[n].t, local[n].r, local[n].s);
@@ -458,9 +471,83 @@ impl Model {
         globals
     }
 
+    /// Each node's local transform in a layered pose.
+    fn locals(&self, pose: &[Layer]) -> Vec<Rest> {
+        let mut local = self.rest.clone();
+        if let [layer] = pose
+            && layer.weight >= 1.
+            && layer.mask == Mask::All
+        {
+            if let Some(clip) = self.clips.get(layer.clip) {
+                for channel in &clip.channels {
+                    let v = channel.sample(layer.time);
+                    let r = &mut local[channel.node];
+                    match channel.path {
+                        Path::Translation => r.t = [v[0], v[1], v[2]],
+                        Path::Rotation => r.r = v,
+                        Path::Scale => r.s = [v[0], v[1], v[2]],
+                    }
+                }
+            }
+        } else if !pose.is_empty() {
+            // Per node and path: the weighted sum and the total weight.
+            let mut sums = vec![[([0f32; 4], 0f32); 3]; self.rest.len()];
+            for layer in pose {
+                let Some(clip) = self.clips.get(layer.clip) else {
+                    continue;
+                };
+                for channel in &clip.channels {
+                    if !layer.mask.drives(self.upper[channel.node]) {
+                        continue;
+                    }
+                    let mut v = channel.sample(layer.time);
+                    let index = match channel.path {
+                        Path::Translation => 0,
+                        Path::Rotation => {
+                            // Quaternions average on the rest rotation's hemisphere.
+                            let rest = self.rest[channel.node].r;
+                            if v.iter().zip(&rest).map(|(a, b)| a * b).sum::<f32>() < 0. {
+                                v = v.map(|x| -x);
+                            }
+                            1
+                        }
+                        Path::Scale => 2,
+                    };
+                    let (sum, weight) = &mut sums[channel.node][index];
+                    for (s, x) in sum.iter_mut().zip(v) {
+                        *s += x * layer.weight;
+                    }
+                    *weight += layer.weight;
+                }
+            }
+            for (r, sums) in local.iter_mut().zip(&sums) {
+                let mix = |(sum, weight): ([f32; 4], f32), rest: [f32; 4]| -> [f32; 4] {
+                    let fill = (1. - weight).max(0.);
+                    let total = weight.max(1.);
+                    std::array::from_fn(|i| (sum[i] + rest[i] * fill) / total)
+                };
+                let extend = |v: [f32; 3]| [v[0], v[1], v[2], 0.];
+                if sums[0].1 > 0. {
+                    let t = mix(sums[0], extend(r.t));
+                    r.t = [t[0], t[1], t[2]];
+                }
+                if sums[1].1 > 0. {
+                    let q = mix(sums[1], r.r);
+                    let len = q.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-6);
+                    r.r = q.map(|v| v / len);
+                }
+                if sums[2].1 > 0. {
+                    let s = mix(sums[2], extend(r.s));
+                    r.s = [s[0], s[1], s[2]];
+                }
+            }
+        }
+        local
+    }
+
     /// Skinned positions and normals per primitive in model space.
-    fn skin(&self, clip: &str, time: f32) -> Vec<SkinnedPrimitive> {
-        let globals = self.globals(clip, time);
+    fn skin(&self, pose: &[Layer]) -> Vec<SkinnedPrimitive> {
+        let globals = self.globals(pose);
         self.primitives
             .iter()
             .map(|p| {
@@ -495,10 +582,10 @@ impl Model {
     }
 
     /// The model-space transform of the named joint in the posed clip.
-    pub fn joint(&self, name: &str, clip: &str, time: f32) -> Option<three_d_animation::Mat4> {
+    pub fn joint(&self, name: &str, pose: &[Layer]) -> Option<three_d_animation::Mat4> {
         let index = self.names.iter().position(|n| n.as_deref() == Some(name))?;
         let mut joint = three_d_animation::Mat4::IDENTITY;
-        joint.elements = self.globals(clip, time)[index];
+        joint.elements = self.globals(pose)[index];
         Some(joint)
     }
 
@@ -521,12 +608,11 @@ impl Model {
         id: &str,
         root: Frame,
         height: f64,
-        clip: &str,
-        time: f32,
+        pose: &[Layer],
         tint: Option<f32>,
         hidden: &[String],
     ) -> Vec<SceneDraw> {
-        self.draws_filtered(id, self.placement(root, height), clip, time, tint, hidden)
+        self.draws_filtered(id, self.placement(root, height), pose, tint, hidden)
     }
 
     /// Draws for one posed instance under an explicit model-to-world `placement`.
@@ -534,23 +620,21 @@ impl Model {
         &self,
         id: &str,
         placement: three_d_animation::Mat4,
-        clip: &str,
-        time: f32,
+        pose: &[Layer],
         tint: Option<f32>,
     ) -> Vec<SceneDraw> {
-        self.draws_filtered(id, placement, clip, time, tint, &[])
+        self.draws_filtered(id, placement, pose, tint, &[])
     }
 
     fn draws_filtered(
         &self,
         id: &str,
         placement: three_d_animation::Mat4,
-        clip: &str,
-        time: f32,
+        pose: &[Layer],
         tint: Option<f32>,
         hidden: &[String],
     ) -> Vec<SceneDraw> {
-        self.skin(clip, time)
+        self.skin(pose)
             .into_iter()
             .zip(&self.primitives)
             .enumerate()
@@ -630,8 +714,7 @@ pub(super) fn inn_draws() -> &'static [(&'static str, Vec<SceneDraw>)] {
             .map(|&(key, path)| {
                 let model = Model::parse(&bundle_glb(path, inn_bundle::FILES), "")
                     .expect("an inn entry is valid glTF");
-                let draws =
-                    model.draws_placed(key, three_d_animation::Mat4::IDENTITY, "", 0., None);
+                let draws = model.draws_placed(key, three_d_animation::Mat4::IDENTITY, &[], None);
                 (key, draws)
             })
             .collect()
@@ -654,7 +737,7 @@ pub(super) fn shrine_draws(key: &str) -> &'static [SceneDraw] {
                     let model = Model::parse(&bundle_glb(path, shrine_bundle::FILES), "")
                         .expect("a shrine kit entry is valid glTF");
                     let draws =
-                        model.draws_placed(key, three_d_animation::Mat4::IDENTITY, "", 0., None);
+                        model.draws_placed(key, three_d_animation::Mat4::IDENTITY, &[], None);
                     (key, draws)
                 })
                 .collect()
@@ -682,7 +765,7 @@ pub(super) fn outpost_draws(entry: &str) -> &'static [SceneDraw] {
                     let model = Model::parse(&bundle_glb(path, outpost_bundle::FILES), "")
                         .expect("an Outpost kit entry is valid glTF");
                     let draws =
-                        model.draws_placed(entry, three_d_animation::Mat4::IDENTITY, "", 0., None);
+                        model.draws_placed(entry, three_d_animation::Mat4::IDENTITY, &[], None);
                     (entry, draws)
                 })
                 .collect()
@@ -709,7 +792,7 @@ pub(super) fn settlement_draws(entry: &str) -> &'static [SceneDraw] {
                     let model = Model::parse(&bundle_glb(path, settlement_bundle::FILES), "")
                         .expect("a settlement prop entry is valid glTF");
                     let draws =
-                        model.draws_placed(entry, three_d_animation::Mat4::IDENTITY, "", 0., None);
+                        model.draws_placed(entry, three_d_animation::Mat4::IDENTITY, &[], None);
                     (entry, draws)
                 })
                 .collect()
@@ -1042,25 +1125,24 @@ pub fn hood_nodes() -> &'static [String] {
 }
 
 impl Equipment {
-    /// Draws of the items held by a character posed at `placement` in `clip`.
+    /// Draws of the items held by a character posed at `placement` in `pose`.
     pub fn draws(
         &self,
         id: &str,
         character: &Model,
         placement: three_d_animation::Mat4,
-        clip: &str,
-        time: f32,
+        pose: &[Layer],
         tint: Option<f32>,
     ) -> Vec<SceneDraw> {
         let mut draws = Vec::new();
         for (index, (model, joint, matrix)) in self.items.iter().enumerate() {
-            let Some(at) = character.joint(joint, clip, time) else {
+            let Some(at) = character.joint(joint, pose) else {
                 continue;
             };
             // The item's grip frame is its origin: holder = placement × joint × socket.
             let mut held = three_d_animation::Mat4::IDENTITY;
             held.elements = mul(&mul(&placement.elements, &at.elements), &matrix.elements);
-            draws.extend(model.draws_placed(&format!("{id}-item-{index}"), held, "", 0., tint));
+            draws.extend(model.draws_placed(&format!("{id}-item-{index}"), held, &[], tint));
         }
         draws
     }
@@ -1109,6 +1191,41 @@ mod rolling_ranger_tests {
     use super::*;
 
     #[test]
+    fn layered_poses_drive_each_region_from_its_own_clip() {
+        let model = &asset(Kind::Ranger).model;
+        let node = |name: &str| {
+            model
+                .names
+                .iter()
+                .position(|n| n.as_deref() == Some(name))
+                .expect(name)
+        };
+        let (hand, calf, pelvis) = (node("hand_r"), node("calf_l"), node("pelvis"));
+        assert!(model.upper[hand] && !model.upper[calf] && !model.upper[pelvis]);
+        let swing = Layer::single("Sword_Attack", 0.4);
+        let land = Layer::single("Jump_Land", 0.3);
+        let layered = model.locals(&[
+            Layer {
+                mask: Mask::Upper,
+                ..swing
+            },
+            Layer {
+                mask: Mask::Lower,
+                ..land
+            },
+        ]);
+        let (swing, land) = (model.locals(&[swing]), model.locals(&[land]));
+        let close = |a: Rest, b: Rest| {
+            a.r.iter().zip(&b.r).all(|(x, y)| (x - y).abs() < 1e-5)
+                && a.t.iter().zip(&b.t).all(|(x, y)| (x - y).abs() < 1e-5)
+        };
+        assert!(close(layered[hand], swing[hand]));
+        assert!(close(layered[calf], land[calf]));
+        assert!(close(layered[pelvis], land[pelvis]));
+        assert_ne!(swing[calf], land[calf]);
+    }
+
+    #[test]
     fn shared_ranger_clips_bind_to_character_joints() {
         let model = &asset(Kind::Ranger).model;
         let clip = &model.clips["Walk_Loop"];
@@ -1121,8 +1238,8 @@ mod rolling_ranger_tests {
         );
         assert!(model.height > 0.);
         assert_ne!(
-            model.skin("Walk_Loop", 0.),
-            model.skin("Walk_Loop", clip.duration * 0.25)
+            model.skin(&[Layer::single("Walk_Loop", 0.)]),
+            model.skin(&[Layer::single("Walk_Loop", clip.duration * 0.25)])
         );
     }
 
@@ -1143,7 +1260,10 @@ mod rolling_ranger_tests {
             assert!(model.floor.abs() < 0.03, "{key} {}", model.floor);
             let walk = clips["Walk"];
             assert!(clips["Idle"] > 0. && walk > 0.);
-            assert_ne!(model.skin("Walk", 0.), model.skin("Walk", walk * 0.5));
+            assert_ne!(
+                model.skin(&[Layer::single("Walk", 0.)]),
+                model.skin(&[Layer::single("Walk", walk * 0.5)])
+            );
         }
     }
 }
@@ -1167,8 +1287,7 @@ mod allocation_observation {
                                 q: [0.0, 0.0, 0.0, 1.0],
                             },
                             1.8,
-                            Kind::Ranger.clips().idle,
-                            0.25,
+                            &[Layer::single(Kind::Ranger.clips().idle, 0.25)],
                             None,
                             &[],
                         )
