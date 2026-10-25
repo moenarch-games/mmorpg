@@ -211,7 +211,7 @@ fn main() {
 /// SoundManifest, and every clip and the manifest as `FILES`, keyed by bundle path (the
 /// manifest's clip URLs).
 fn sound_bundle(bundle: &Path) {
-    for watched in ["SHA256", "manifest.json"] {
+    for watched in ["export.ref.json", "manifest.json"] {
         println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
     }
     let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
@@ -252,7 +252,7 @@ fn sound_bundle(bundle: &Path) {
 /// their `FILES`. With `variants`, every other variant of an entry is drawn too, keyed
 /// `<key>/<variant>`.
 fn static_bundle(name: &str, bundle: &Path, keys: Option<&[&str]>, variants: bool) {
-    for watched in ["RELEASE", "SHA256", "manifest.json"] {
+    for watched in ["RELEASE", "export.ref.json", "manifest.json"] {
         println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
     }
     let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Acquire selected rolling Ranger inputs; retain the local copy until explicitly removed."""
+"""Acquire selected entries of the live rolling Ranger release; keep the local copy while the release is unchanged."""
 import json
 from pathlib import Path
 import shutil
@@ -42,16 +42,24 @@ def selected(index):
     return PAIRS | {(entry.get("key"), entry.get("variant")) for entry in index.get("entries", [])
                     if (str(entry.get("key")).startswith("hair.") and entry.get("variant") == HAIR_VARIANT)
                     or (entry.get("key"), entry.get("variant")) == HEAD_SKINS}
-# The rolling release is pinned by the consumer's copy of its export.ref.json (#411: the bundle
-# with face morph targets); a replaced release fails acquisition until this copy is updated.
-EXPORT_REF = ROOT / "web/assets/ranger/export.ref.json"
+# The rolling release is read at whatever it currently holds, unpinned (#507): the local copy is
+# keyed on the live release's export.ref.json, so a new upload refreshes it.
 
 
-def complete():
-    """The local copy is the pinned export of this release and holds every file of the selected entries."""
+def live_ref():
+    """The live release's export.ref.json, or None when the release cannot be reached."""
+    try:
+        with urllib.request.urlopen(URL + "export.ref.json", timeout=60) as response:
+            return response.read()
+    except OSError:
+        return None
+
+
+def complete(ref):
+    """The local copy holds export `ref` (any export when None) and every file of the selected entries."""
     if not (DEST / "RELEASE").is_file() or (DEST / "RELEASE").read_text().strip() != RELEASE:
         return False
-    if not (DEST / "export.ref.json").is_file() or (DEST / "export.ref.json").read_bytes() != EXPORT_REF.read_bytes():
+    if not (DEST / "export.ref.json").is_file() or (ref is not None and (DEST / "export.ref.json").read_bytes() != ref):
         return False
     try:
         index = json.loads((DEST / (RELEASE + ".index.json")).read_text())
@@ -63,9 +71,13 @@ def complete():
 
 
 def acquire():
-    # The rolling release gains entries; a copy missing a selected one is fetched again.
-    if complete():
+    # A copy of an older upload, or missing a selected entry, is fetched again. Offline, a complete
+    # copy of any upload is kept.
+    ref = live_ref()
+    if complete(ref):
         return
+    if ref is None:
+        raise OSError(f"could not reach the {RELEASE} release")
     DEST.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".ranger-", dir=DEST.parent) as temporary:
         directory = Path(temporary)
@@ -85,7 +97,8 @@ def acquire():
         entries = [entry for entry in index["entries"] if (entry["key"], entry["variant"]) in pairs]
         if len(entries) != len(pairs) or {(entry["key"], entry["variant"]) for entry in entries} != pairs:
             raise ValueError("index must declare every selected entry exactly once")
-        files = {"export.ref.json"}
+        (directory / "export.ref.json").write_bytes(ref)
+        files = set()
         for entry in entries:
             files.update(entry["files"])
             files.update(entry["textures"])
@@ -93,8 +106,6 @@ def acquire():
                 files.add(entry["clips"])
         for name in sorted(files):
             download(name)
-        if (directory / "export.ref.json").read_bytes() != EXPORT_REF.read_bytes():
-            raise ValueError(f"{RELEASE} is not the pinned export ({EXPORT_REF.relative_to(ROOT)})")
         (directory / "RELEASE").write_text(RELEASE + "\n")
         if DEST.exists():
             shutil.rmtree(DEST)

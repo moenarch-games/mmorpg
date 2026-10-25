@@ -1639,6 +1639,22 @@ mod rolling_ranger_tests {
             );
         }
     }
+
+    /// The rolling kits are read live (#507): every module, roof variant and prop the world
+    /// places must still exist in the fetched release and load as drawable glTF.
+    #[test]
+    fn every_placed_kit_entry_loads_from_the_live_bundles() {
+        let scenery = mmorpg_scenery::greyhaven_vale_scenery();
+        for part in mmorpg_presentation::shrine::parts(&scenery) {
+            assert!(!shrine_draws(part.key).is_empty(), "{}", part.key);
+        }
+        for part in mmorpg_presentation::outpost_kit::parts(&scenery) {
+            assert!(!outpost_draws(part.entry).is_empty(), "{}", part.entry);
+        }
+        for part in mmorpg_presentation::settlement_props::parts(&scenery) {
+            assert!(!settlement_draws(part.entry).is_empty(), "{}", part.entry);
+        }
+    }
 }
 
 #[cfg(test)]

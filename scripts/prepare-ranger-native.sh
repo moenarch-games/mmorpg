@@ -43,7 +43,7 @@ if [[ ! -d "${PROCESSOR}/node_modules" ]]; then
 fi
 # The class starter outfits (asset-tooling #379): each class preset's outfit variant, its armour
 # and the knight's plate that equipped drops wear.
-entries=humanoid.ranger.male/default,equipment.sword.arming/default,equipment.dagger.blackened/default,equipment.staff.bone/default,equipment.staff.crystal/default,equipment.staff.gnarled/default,equipment.book.tome/default,equipment.mace.flanged/default,equipment.shield.heater/default,equipment.bow.long/default,equipment.quiver.back/default,equipment.cap.ranger/default,equipment.helm.ironcrest/default,hair.simple-parted/hair-1,armor.knight/default
+entries=humanoid.ranger.male/default,equipment.sword.arming/default,equipment.dagger.blackened/default,equipment.staff.bone/default,equipment.staff.crystal/default,equipment.staff.gnarled/default,equipment.book.tome/default,equipment.mace.flanged/default,equipment.shield.heater/default,equipment.bow.long/default,equipment.quiver.back/default,equipment.cap.ranger/default,equipment.helm.ironcrest/default,armor.knight/default
 for outfit in warden.skin.light ranger arcanist.skin.light necromancer.skin.grey rogue cleric.skin.light druid; do
   entries+=",humanoid.ranger.male/outfit.class.${outfit},armor.class.${outfit%%.*}/default"
 done
@@ -52,8 +52,15 @@ done
 for variant in outfit.knight outfit.knight.skin.light outfit.soldier outfit.soldier.skin.light outfit.innkeeper.skin.light outfit.farmer outfit.farmer.skin.light outfit.monk.skin.light; do
   entries+=",humanoid.ranger.male/${variant}"
 done
-entries+=",armor.soldier/default,armor.farmer/default,armor.innkeeper/default,armor.monk/default,facial-hair.beards/default,equipment.hat.straw/default,hair.buzzed/hair-1,hair.long/hair-1,hair.balding/hair-1,hair.receding/hair-1,hair.swept/hair-1,hair.tied/hair-1"
+entries+=",armor.soldier/default,armor.farmer/default,armor.innkeeper/default,armor.monk/default,facial-hair.beards/default,equipment.hat.straw/default"
 INDEX="${ROOT_DIR}/web/public/characters/humanoid.ranger.male/humanoid-ranger-male.index.json"
+# Every tintable hairstyle the live release offers, as `fetch-ranger.py` acquires them (#507).
+entries+="$(python3 - "${INDEX}" <<'PY'
+import json, sys
+entries = json.load(open(sys.argv[1]))["entries"]
+print("".join("," + e["key"] + "/hair-1" for e in entries if e["key"].startswith("hair.") and e["variant"] == "hair-1"))
+PY
+)"
 # The painted head skins (asset-tooling #380), when the release has them.
 if grep -q '"skin\.head"' "${INDEX}"; then
   entries+=",skin.head/default"

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { loadBundleGltfs } from "./static-bundle";
 import type { AmbientAnimalsSource } from "./scenery";
 
-/** The pinned `greyhaven-ambient-animals` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
+/** The rolling `greyhaven-ambient-animals` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 const AMBIENT_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.ambient-animals/`;
 
 type Animal = { root: THREE.Object3D; mixer: THREE.AnimationMixer; actions: (THREE.AnimationAction | null)[]; clip: number };

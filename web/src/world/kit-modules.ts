@@ -1,11 +1,11 @@
 import * as THREE from "three";
 import { loadStaticBundle } from "./static-bundle";
 
-/** The pinned `shrine-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
+/** The rolling `shrine-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const SHRINE_BUNDLE = `${import.meta.env.BASE_URL}scenery/shrine.kit/`;
-/** The pinned `outpost-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
+/** The rolling `outpost-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const OUTPOST_BUNDLE = `${import.meta.env.BASE_URL}buildings/outpost.kit/`;
-/** The pinned `settlement-props` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
+/** The rolling `settlement-props` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const SETTLEMENT_BUNDLE = `${import.meta.env.BASE_URL}scenery/settlement.props/`;
 
 export type KitPlacement = { key: string; matrix: Float32Array };

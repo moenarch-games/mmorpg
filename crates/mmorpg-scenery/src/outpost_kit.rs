@@ -3,7 +3,7 @@
 //!
 //! The kit's descriptor composes a house on the 8 × 6 m house footprints and a smithy on the
 //! 6 × 7 m smithy footprint, in a footprint-base-centre frame whose +Z side has the door; the
-//! [`HOUSE`] and [`SMITHY`] tables transcribe those compositions from the pinned release. Each
+//! [`HOUSE`] and [`SMITHY`] tables transcribe those compositions from the release. Each
 //! adopted building turns its composition by quarter turns only, so the walls stand exactly on
 //! the unchanged collider footprint. The doors hang closed: the buildings are not enterable and
 //! their colliders stay solid boxes. Presentation only: the colliders decide.
