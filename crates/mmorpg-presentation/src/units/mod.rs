@@ -36,6 +36,21 @@ use player::{Hat, Look};
 const HEALTH_BAR_WIDTH: f32 = 1.0;
 const HEALTH_BAR_BACKGROUND: [f32; 3] = [0.12, 0.12, 0.14];
 const HEALTH_BAR_FILL: [f32; 3] = [0.18, 0.9, 0.25];
+/// How much a corpse's imported model darkens.
+const CORPSE_TINT: f32 = 0.6;
+/// The Druid companion's green tint (#296) on the CC0 wolf model hostile Timber Wolves also use.
+pub const COMPANION_TINT: [f32; 3] = [0.6, 1.0, 0.45];
+
+/// The linear colour factor of an imported model: a companion is tinted green, a corpse
+/// darkened, anything else drawn as authored.
+fn imported_tint(dead: bool, companion: bool) -> Option<[f32; 3]> {
+    let base = companion.then_some(COMPANION_TINT);
+    if dead {
+        Some(base.unwrap_or([1.0; 3]).map(|c| c * CORPSE_TINT))
+    } else {
+        base
+    }
+}
 
 /// The display name of a minion whose projected appearance is `appearance`: a Necromancer's
 /// skeleton (#295) or a Druid's companion (#296).
@@ -92,8 +107,9 @@ pub struct ImportedUnit {
     pub height: f64,
     /// The layered clips to pose (Atlas 6.6.45) and each region's target clip.
     pub animation: imported::Animation,
-    /// Corpse darkening.
-    pub tint: Option<f32>,
+    /// Linear RGB factor on the model's colours: corpse darkening and the companion's green
+    /// (#296); `None` draws the model as authored.
+    pub tint: Option<[f32; 3]>,
     /// What the unit carries: a player its class weapons, a guard its sword.
     pub loadout: Option<Loadout>,
     /// A named resident's appearance preset (#418); players and animals have none.
@@ -402,7 +418,8 @@ impl UnitPresenter {
                     root,
                     height: f64::from(half[1]) * 2.,
                     animation,
-                    tint: dead.then_some(0.6),
+                    // Only a companion minion has an imported model (`Kind::of`).
+                    tint: imported_tint(dead, entity.kind() == EntityKind::Minion),
                     loadout: match resident {
                         Some(resident) => resident.loadout(),
                         None if matches!(entity, EntityRef::Player(_)) => {
@@ -920,4 +937,21 @@ impl UnitPresenter {
 
 fn metres(value: [i32; 3]) -> [f32; 3] {
     value.map(|component| component as f32 / UNITS_PER_METRE as f32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_companion_wolf_is_tinted_green_unlike_hostile_wolves() {
+        assert_eq!(imported_tint(false, false), None);
+        assert_eq!(imported_tint(false, true), Some(COMPANION_TINT));
+        assert!(COMPANION_TINT[1] > COMPANION_TINT[0] && COMPANION_TINT[1] > COMPANION_TINT[2]);
+        assert_eq!(imported_tint(true, false), Some([CORPSE_TINT; 3]));
+        assert_eq!(
+            imported_tint(true, true),
+            Some(COMPANION_TINT.map(|c| c * CORPSE_TINT))
+        );
+    }
 }
