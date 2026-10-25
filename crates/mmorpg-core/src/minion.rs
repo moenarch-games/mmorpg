@@ -1,4 +1,9 @@
-//! Summoned minions (#295, Atlas 5.2.84): a Necromancer's skeletons.
+//! Summoned minions (#295, Atlas 5.2.84): a Necromancer's skeletons and a Druid's companion.
+//!
+//! - **Companion** (#296): Call Companion calls one persistent wolf, a minion with no timer.
+//!   Each owner keeps one; calling it while it stands brings it back to the owner's side with
+//!   the health it has. It levels with its owner, obeys the same group orders, outlives its
+//!   owner's death and goes only when killed or when its owner leaves the zone.
 //!
 //! - **Raising** (Raise Skeleton resolving, tick steps 1 or 6): a minion stands up one step
 //!   behind its summoner at the summoner's level. A summoner keeps at most
@@ -43,6 +48,8 @@ pub const MAX_MINIONS_PER_SUMMONER: usize = 4;
 pub const MAX_MINIONS: usize = crate::MAX_PLAYERS_PER_ZONE * MAX_MINIONS_PER_SUMMONER;
 /// A skeleton's collision box: 0.5 m × 1.6 m × 0.5 m.
 pub const MINION_HALF_EXTENTS_UNITS: [i32; 3] = [25, 80, 25];
+/// A companion wolf's collision box (#296): 0.5 m × 0.8 m × 0.5 m.
+pub const COMPANION_HALF_EXTENTS_UNITS: [i32; 3] = [25, 40, 25];
 /// Minions run as fast as their summoner (6.3 m/s) …
 pub const MINION_RUN_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(630);
 /// … and catch up or retreat faster (8.1 m/s).
@@ -94,7 +101,7 @@ pub struct Minion {
     /// The creature it is fighting.
     pub target: Option<EntityRef>,
     pub swing_timer: u16,
-    /// Ticks until it crumbles.
+    /// Ticks until it crumbles; always zero for a persistent companion (#296).
     pub remaining: u16,
 }
 
@@ -104,22 +111,49 @@ pub(crate) struct MinionStats {
     pub(crate) max_health: u32,
     pub(crate) damage: [u16; 2],
     pub(crate) swing_ticks: u16,
-    pub(crate) duration: u16,
+    /// Ticks until it crumbles; `None` for a persistent companion (#296).
+    pub(crate) duration: Option<u16>,
+    /// How many of this ability's minions one summoner keeps at once.
+    pub(crate) limit: usize,
 }
 
-/// The stats a `level` caster's `ability` raises, if it summons.
+/// The stats a `level` caster's `ability` raises, if it summons or calls a companion.
 pub(crate) fn minion_stats(ability: AbilityId, level: u8) -> Option<MinionStats> {
-    let AbilityEffect::Summon {
-        health,
-        health_per_level,
-        damage,
-        damage_per_level,
-        swing_ticks,
-        duration,
-    } = crate::ability_by_id(ability)?.effect
-    else {
-        return None;
-    };
+    let (health, health_per_level, damage, damage_per_level, swing_ticks, duration, limit) =
+        match crate::ability_by_id(ability)?.effect {
+            AbilityEffect::Summon {
+                health,
+                health_per_level,
+                damage,
+                damage_per_level,
+                swing_ticks,
+                duration,
+            } => (
+                health,
+                health_per_level,
+                damage,
+                damage_per_level,
+                swing_ticks,
+                Some(duration),
+                MAX_MINIONS_PER_SUMMONER,
+            ),
+            AbilityEffect::Companion {
+                health,
+                health_per_level,
+                damage,
+                damage_per_level,
+                swing_ticks,
+            } => (
+                health,
+                health_per_level,
+                damage,
+                damage_per_level,
+                swing_ticks,
+                None,
+                1,
+            ),
+            _ => return None,
+        };
     let bonus = scaled(0, damage_per_level, level);
     Some(MinionStats {
         max_health: u32::from(scaled(health, health_per_level, level)),
@@ -129,7 +163,32 @@ pub(crate) fn minion_stats(ability: AbilityId, level: u8) -> Option<MinionStats>
         ],
         swing_ticks,
         duration,
+        limit,
     })
+}
+
+/// Whether `ability` calls a persistent companion (#296) rather than a timed minion.
+#[must_use]
+pub fn is_companion(ability: AbilityId) -> bool {
+    crate::ability_by_id(ability)
+        .is_some_and(|row| matches!(row.effect, AbilityEffect::Companion { .. }))
+}
+
+/// The summoning ability a projected minion's appearance names (#295).
+#[must_use]
+pub fn minion_ability(appearance: u16) -> AbilityId {
+    AbilityId::new(u8::try_from(appearance).unwrap_or(0))
+}
+
+/// The collision half extents of a minion raised by `ability`: a skeleton stands 1.6 m tall,
+/// a companion wolf 0.8 m. Both are 0.5 m across, so creatures reach them alike.
+#[must_use]
+pub fn minion_half_extents(ability: AbilityId) -> [i32; 3] {
+    if is_companion(ability) {
+        COMPANION_HALF_EXTENTS_UNITS
+    } else {
+        MINION_HALF_EXTENTS_UNITS
+    }
 }
 
 impl Minion {
@@ -185,7 +244,17 @@ impl ZoneSimulation {
         }
     }
 
-    /// Raises one minion of `ability` beside `summoner` (#295).
+    /// The minions `summoner` raised with `ability`, in ID order.
+    fn minions_by(&self, summoner: PlayerId, ability: AbilityId) -> Vec<MinionId> {
+        self.minions
+            .values()
+            .filter(|minion| minion.summoner == summoner && minion.ability == ability)
+            .map(|minion| minion.id)
+            .collect()
+    }
+
+    /// Raises one minion of `ability` beside `summoner` (#295). A companion called again
+    /// (#296) comes back to its owner's side with the health it has.
     pub(crate) fn raise_minion(
         &mut self,
         summoner: PlayerId,
@@ -198,11 +267,18 @@ impl ZoneSimulation {
         let Some(stats) = minion_stats(ability, level) else {
             return Ok(());
         };
-        let owned = self.minions_of(summoner);
-        if owned.len() >= MAX_MINIONS_PER_SUMMONER
+        let mut health = stats.max_health;
+        let owned = self.minions_by(summoner, ability);
+        if owned.len() >= stats.limit
             && let Some(&oldest) = owned.first()
         {
-            self.minion_crumbles(oldest, None)?;
+            if stats.duration.is_none() {
+                if let Some(pet) = self.dismiss_minion(oldest) {
+                    health = pet.health.min(stats.max_health);
+                }
+            } else {
+                self.minion_crumbles(oldest, None)?;
+            }
         }
         if self.minions.len() >= MAX_MINIONS {
             return Ok(());
@@ -217,7 +293,7 @@ impl ZoneSimulation {
         let slot = self.minions_of(summoner).len();
         let count = slot + 1;
         // The first clear spot of its formation slot, the other slots, or the summoner's back.
-        let half = MINION_HALF_EXTENTS_UNITS;
+        let half = minion_half_extents(ability);
         let mut spot = slot_point(here, facing, slot, count, false);
         for candidate in
             (0..count).map(|index| slot_point(here, facing, (slot + index) % count, count, false))
@@ -256,12 +332,12 @@ impl ZoneSimulation {
                 summoner,
                 ability,
                 level,
-                health: stats.max_health,
+                health,
                 facing,
                 order: MinionOrder::Follow,
                 target: None,
                 swing_timer: 0,
-                remaining: stats.duration,
+                remaining: stats.duration.unwrap_or(0),
             },
         );
         Ok(())
@@ -730,7 +806,8 @@ impl ZoneSimulation {
         Some(minion)
     }
 
-    /// Every minion of `summoner` crumbles (its death) or vanishes (it left).
+    /// Every minion of `summoner` crumbles (its death) or vanishes (it left). A companion
+    /// (#296) outlives its owner's death and fights on.
     pub(crate) fn release_minions(
         &mut self,
         summoner: PlayerId,
@@ -739,17 +816,36 @@ impl ZoneSimulation {
         for id in self.minions_of(summoner) {
             if quietly {
                 self.dismiss_minion(id);
-            } else {
+            } else if !self
+                .minions
+                .get(&id)
+                .is_some_and(|minion| is_companion(minion.ability))
+            {
                 self.minion_crumbles(id, None)?;
             }
         }
         Ok(())
     }
 
-    /// Step 7: minions whose time ran out crumble, in ID order.
+    /// A levelling owner's companion (#296) grows with it, keeping its missing health.
+    pub(crate) fn level_companion(&mut self, owner: PlayerId, level: u8) {
+        for minion in self.minions.values_mut() {
+            if minion.summoner != owner || !is_companion(minion.ability) {
+                continue;
+            }
+            let before = minion.max_health();
+            minion.level = level;
+            minion.health += minion.max_health().saturating_sub(before);
+        }
+    }
+
+    /// Step 7: minions whose time ran out crumble, in ID order; companions (#296) are not timed.
     pub(crate) fn age_minions(&mut self) -> Result<(), ZoneError> {
         let mut expired = Vec::new();
         for minion in self.minions.values_mut() {
+            if is_companion(minion.ability) {
+                continue;
+            }
             minion.remaining = minion.remaining.saturating_sub(1);
             if minion.remaining == 0 {
                 expired.push(minion.id);
@@ -778,10 +874,15 @@ impl ZoneSimulation {
         for record in records {
             let minion = record.minion;
             let stats = minion_stats(minion.ability, minion.level).ok_or_else(invalid)?;
-            let summoner_alive = self
+            // A companion (#296) outlives its owner's death; timed minions do not.
+            let summoner_ok = self
                 .players
                 .get(&minion.summoner)
-                .is_some_and(|player| player.is_alive());
+                .is_some_and(|player| stats.duration.is_none() || player.is_alive());
+            let remaining_ok = match stats.duration {
+                Some(duration) => (1..=duration).contains(&minion.remaining),
+                None => minion.remaining == 0,
+            };
             let target_ok = |target: Option<EntityRef>| {
                 target.is_none_or(|unit| {
                     matches!(unit, EntityRef::Creature(id) if self.creatures.contains_key(&id))
@@ -792,15 +893,15 @@ impl ZoneSimulation {
                 MinionOrder::Follow | MinionOrder::Defend(_) | MinionOrder::Retreat => true,
             };
             if minion.id.get() >= next_minion
-                || !summoner_alive
+                || !summoner_ok
                 || minion.health == 0
                 || minion.health > stats.max_health
-                || minion.remaining == 0
-                || minion.remaining > stats.duration
+                || !remaining_ok
                 || minion.swing_timer > stats.swing_ticks
                 || !target_ok(minion.target)
                 || !order_ok
                 || self.minions_of(minion.summoner).len() >= MAX_MINIONS_PER_SUMMONER
+                || self.minions_by(minion.summoner, minion.ability).len() >= stats.limit
                 || record
                     .position
                     .iter()
@@ -814,7 +915,7 @@ impl ZoneSimulation {
                     body_id(EntityRef::Minion(minion.id)),
                     record.position,
                     record.velocity,
-                    vector(MINION_HALF_EXTENTS_UNITS),
+                    vector(minion_half_extents(minion.ability)),
                 ))
                 .map_err(physics_error)?;
             self.minions.insert(minion.id, minion);

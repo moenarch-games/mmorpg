@@ -37,6 +37,17 @@ const HEALTH_BAR_WIDTH: f32 = 1.0;
 const HEALTH_BAR_BACKGROUND: [f32; 3] = [0.12, 0.12, 0.14];
 const HEALTH_BAR_FILL: [f32; 3] = [0.18, 0.9, 0.25];
 
+/// The display name of a minion whose projected appearance is `appearance`: a Necromancer's
+/// skeleton (#295) or a Druid's companion (#296).
+#[must_use]
+pub fn minion_name(appearance: u16) -> &'static str {
+    if mmorpg_core::is_companion(mmorpg_core::minion_ability(appearance)) {
+        "Wolf Companion"
+    } else {
+        "Skeleton"
+    }
+}
+
 /// A unit as sampled for this frame: its record and interpolated rendered pose.
 #[derive(Clone, Debug)]
 pub struct SampledUnit {
@@ -215,7 +226,9 @@ impl UnitPresenter {
                 .map_or(character, |template| {
                     metres(template.body_half_extents(record.facing))
                 }),
-            EntityRef::Minion(_) => metres(mmorpg_core::MINION_HALF_EXTENTS_UNITS),
+            EntityRef::Minion(_) => metres(mmorpg_core::minion_half_extents(
+                mmorpg_core::minion_ability(record.appearance),
+            )),
             EntityRef::Player(_) | EntityRef::Npc(_) => character,
         }
     }
@@ -738,7 +751,10 @@ impl UnitPresenter {
         }
         // A summoned skeleton (#295): a deliberately plain bone-white placeholder humanoid until
         // the owner's undead art exists; no final minion art is invented here.
-        if entity.kind() == EntityKind::Minion {
+        // A Druid's companion (#296) is drawn as a wolf with a leaf-green accent.
+        let companion = entity.kind() == EntityKind::Minion
+            && mmorpg_core::is_companion(mmorpg_core::minion_ability(unit.record.appearance));
+        if entity.kind() == EntityKind::Minion && !companion {
             return creatures::skeleton(
                 &mut self.resources,
                 id,
@@ -749,12 +765,20 @@ impl UnitPresenter {
                 life,
             );
         }
-        let family = template.map(|t| t.family);
+        let family = if companion {
+            Some(CreatureFamily::Wolf)
+        } else {
+            template.map(|t| t.family)
+        };
         let role = match entity {
             EntityRef::Npc(id) => self.content.npc(id).map(|n| n.role),
             _ => None,
         };
-        let accent = family.map_or(0x4f9d5d, |f| creatures::accent(&unit.record, f));
+        let accent = if companion {
+            0x7fc46a
+        } else {
+            family.map_or(0x4f9d5d, |f| creatures::accent(&unit.record, f))
+        };
         let half = half.map(f64::from);
         if let Some(f @ (CreatureFamily::Wolf | CreatureFamily::Boar | CreatureFamily::Vermin)) =
             family

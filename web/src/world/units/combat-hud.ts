@@ -3,6 +3,9 @@ import { BREATH_MAX_TICKS, findEntity, TICK_HZ, type ErrorCode, type MeleeStance
 import type { ContentCatalog } from "../catalog";
 import { objectiveLabel } from "./quest-state";
 
+/** The Druid's Call Companion (#296): a minion of this appearance is the wolf companion. */
+const CALL_COMPANION = 46;
+
 /**
  * Plain-text combat HUD lines beside the class HUD's frames, cast bars and
  * combat text (`class-hud.ts`); nameplates arrive with step 7b.
@@ -40,7 +43,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "door-blocked": "Something is in the way of the door.",
   "vendor-closed": "The shop is closed for the night.",
   "door-busy": "The door is still swinging.",
-  "no-minions": "You have no minions to command.",
+  "no-minions": "You have no minions or companion to command.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;
@@ -57,9 +60,9 @@ export function unitName(entity: EntityRef, snapshot: ZoneSnapshot, catalog: Con
       return entity.id === snapshot.viewerId ? "you" : `Player ${entity.id}`;
     case "npc":
       return catalog.npcs.get(entity.id)?.name ?? `NPC ${entity.id}`;
-    // A Necromancer's summoned minion (#295).
+    // A Necromancer's summoned minion (#295) or a Druid's companion (#296).
     case "minion":
-      return "Skeleton";
+      return findEntity(snapshot, entity)?.appearance === CALL_COMPANION ? "Wolf Companion" : "Skeleton";
     case "creature": {
       const template = findEntity(snapshot, entity)?.appearance;
       return (template === undefined ? undefined : catalog.creatureTemplates.get(template)?.name) ?? "a creature";

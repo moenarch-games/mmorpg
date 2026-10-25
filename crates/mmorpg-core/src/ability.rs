@@ -321,6 +321,18 @@ pub enum AbilityEffect {
         swing_ticks: u16,
         duration: u16,
     },
+    /// Calls the caster's one persistent companion (#296) beside it with `health` +
+    /// `health_per_level` health that bites for `damage` (inclusive) + `damage_per_level` every
+    /// `swing_ticks`. It is not timed and outlives its owner's death; it goes when killed or
+    /// when its owner leaves the zone. Calling it while it stands brings it back to the owner's
+    /// side with the health it has.
+    Companion {
+        health: u16,
+        health_per_level: u16,
+        damage: [u16; 2],
+        damage_per_level: u16,
+        swing_ticks: u16,
+    },
 }
 
 /// One catalog row.
@@ -375,7 +387,8 @@ impl Ability {
             | AbilityEffect::Beam { .. }
             | AbilityEffect::Chain { .. }
             | AbilityEffect::Drain { .. }
-            | AbilityEffect::Summon { .. } => return None,
+            | AbilityEffect::Summon { .. }
+            | AbilityEffect::Companion { .. } => return None,
         };
         Some(AuraSpec {
             kind,
@@ -534,6 +547,8 @@ pub mod ids {
     pub const VENOM_FLASK: AbilityId = AbilityId::new(43);
     pub const BLASTING_BOMB: AbilityId = AbilityId::new(44);
     pub const RAISE_SKELETON: AbilityId = AbilityId::new(45);
+    /// The Druid's pet companion (#296).
+    pub const CALL_COMPANION: AbilityId = AbilityId::new(46);
 }
 
 /// How a projectile treats what it meets (#291).
@@ -556,7 +571,7 @@ pub enum Shot {
 }
 
 /// Every ability, ordered by ID; row `i` has ID `i + 1`.
-pub const ABILITY_CATALOG: [Ability; 45] = [
+pub const ABILITY_CATALOG: [Ability; 46] = [
     ability(
         1,
         "Heroic Strike",
@@ -1164,7 +1179,7 @@ pub const ABILITY_CATALOG: [Ability; 45] = [
     ),
     // The Druid (#304) on mana like the Arcanist: a nature missile, a single-target root,
     // a heal over time on a selected friendly player or the caster, and a bark shield. The pet
-    // companion follows in #296 and stone walls in #293.
+    // companion (#296) closes the catalog; stone walls follow in #293.
     shot(
         ability(
             38,
@@ -1304,6 +1319,25 @@ pub const ABILITY_CATALOG: [Ability; 45] = [
             damage_per_level: 2,
             swing_ticks: ticks_from_ms(2_000),
             duration: ticks_from_ms(60_000),
+        },
+    ),
+    // The Druid's pet companion (#296): one wolf that follows, fights and obeys the same group
+    // orders as minions (Atlas 5.2.84). It is not timed; it stays until killed.
+    ability(
+        46,
+        "Call Companion",
+        DRUID,
+        3,
+        30,
+        CastTime::Cast(ticks_from_ms(2_000)),
+        ticks_from_ms(10_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Companion {
+            health: 80,
+            health_per_level: 20,
+            damage: [5, 8],
+            damage_per_level: 2,
+            swing_ticks: ticks_from_ms(1_800),
         },
     ),
 ];
@@ -1554,6 +1588,21 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
                 swing_ticks.into(),
                 duration.into(),
             ],
+            AbilityEffect::Companion {
+                health,
+                health_per_level,
+                damage,
+                damage_per_level,
+                swing_ticks,
+            } => vec![
+                24,
+                health.into(),
+                health_per_level.into(),
+                damage[0].into(),
+                damage[1].into(),
+                damage_per_level.into(),
+                swing_ticks.into(),
+            ],
         };
         bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap_or(0).to_be_bytes());
         for field in fields {
@@ -1588,7 +1637,7 @@ mod tests {
             }
         }
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
-        assert_eq!(ability_by_id(AbilityId::new(46)), None);
+        assert_eq!(ability_by_id(AbilityId::new(47)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
         for class in PlayerClass::ALL {
             let cooldowns = ABILITY_CATALOG
