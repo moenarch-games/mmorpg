@@ -1,9 +1,9 @@
 # Greyhaven Vale combat through the hosted runtime. A hunter leaves the hub
 # through the west gate, climbs the Wolfrun Climb (#423) and walks Wolfrun Woods
 # along trunk-grid lines, which stay clear of trunks. Timber Wolf 108 in the
-# den clearing notices it; the hunter targets and auto-attacks it to death, and
-# the corpse refuses further attacks. Wounded, the hunter walks on until
-# Timber Wolf 106 engages, stops attacking and dies. The wolf, left without
+# den clearing notices it; the hunter targets it and keeps swinging at it (#517)
+# until it dies. Wounded, the hunter walks on until Timber Wolf 106 engages,
+# swings at it for a while, stops and dies. The wolf, left without
 # threat, evades home, and the
 # released spirit returns to the graveyard with half health and stands there:
 # movement sent while dead holds no intent. Refused intents are gameplay
@@ -30,11 +30,12 @@ forward = 1
 strafe = 0
 facing = 0
 
-# Attacking without a target is refused with an event, not a session error.
+# A swing at nothing whiffs: an event, not a session error.
 [[steps]]
 tick = 2
 bot = "hunter"
-action = "start_attack"
+action = "swing"
+facing = 0
 
 # West along the trail, through the west gate.
 [[steps]]
@@ -97,11 +98,6 @@ bot = "hunter"
 action = "select_target"
 entity = "creature:108"
 
-[[steps]]
-tick = 1444
-bot = "hunter"
-action = "start_attack"
-
 # Stand close enough to the den that Wolf 108 engages wherever it wanders, and let it come.
 [[steps]]
 tick = 1514
@@ -111,11 +107,14 @@ forward = 0
 strafe = 0
 facing = 32768
 
-# The corpse cannot be attacked.
+# Keep pressing attack at the wolf, aimed where the hunter sees it.
 [[steps]]
-tick = 2964
+tick = 1514
 bot = "hunter"
-action = "start_attack"
+action = "swing"
+entity = "creature:108"
+until = 2964
+every = 20
 
 # Wounded, walk on north-west through the clearing toward Wolf 106's den.
 [[steps]]
@@ -141,23 +140,22 @@ bot = "hunter"
 action = "select_target"
 entity = "creature:106"
 
+# … swing at it, then stop swinging and keep the selection.
 [[steps]]
 tick = 3224
 bot = "hunter"
-action = "start_attack"
+action = "swing"
+entity = "creature:106"
+until = 3524
+every = 20
 
-# … then stop swinging and keep the selection.
-[[steps]]
-tick = 3524
-bot = "hunter"
-action = "stop_attack"
-
-# The dead can neither attack nor move: the walk is accepted but holds
+# The dead can neither swing nor move: the walk is accepted but holds
 # nothing, so the released spirit stands at the graveyard.
 [[steps]]
 tick = 4524
 bot = "hunter"
-action = "start_attack"
+action = "swing"
+facing = 0
 
 [[steps]]
 tick = 4524
@@ -175,7 +173,7 @@ action = "release_spirit"
 [[expect]]
 kind = "event"
 bot = "hunter"
-event = "error:no_target"
+event = "attack_performed"
 tick = 3
 
 [[expect]]
@@ -184,13 +182,6 @@ bot = "hunter"
 entity = "creature:108"
 state = "alive"
 tick = 1443
-
-[[expect]]
-kind = "event"
-bot = "hunter"
-event = "error:out_of_range"
-entity = "creature:108"
-tick = 1445
 
 [[expect]]
 kind = "unit"
@@ -232,13 +223,6 @@ kind = "target"
 bot = "hunter"
 entity = "creature:108"
 tick = 2963
-
-[[expect]]
-kind = "event"
-bot = "hunter"
-event = "error:target_dead"
-entity = "creature:108"
-tick = 2965
 
 [[expect]]
 kind = "unit"

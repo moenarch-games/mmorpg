@@ -194,12 +194,12 @@ pub struct Step {
     /// Move intent, passed through unchanged; the zone accepts `-1..=1`.
     pub forward: Option<i8>,
     pub strafe: Option<i8>,
-    /// Move or swing heading: 65 536 steps per turn, 0 faces +Z, 16 384 faces +X. A swing
-    /// without one aims at its `entity` from the bot's latest view.
+    /// Move or swing heading: 65 536 steps per turn, 0 faces +Z, 16 384 faces +X. Without one,
+    /// a move or swing turns toward its `entity` in the bot's latest view (#517).
     pub facing: Option<u16>,
-    /// The unit a `select_target` step selects (`none` clears), the unit a `swing` aims at,
-    /// or the optional target of a `use_ability` step (omitted or `none`: the current
-    /// selection; only friendly abilities use it, #517).
+    /// The unit a `select_target` step selects (`none` clears), the unit a `move` or `swing`
+    /// turns toward, or the optional target of a `use_ability` step (omitted or `none`: the
+    /// current selection; only friendly abilities use it, #517).
     pub entity: Option<UnitSpec>,
     /// `choose_class`: `warden`, `ranger` or `arcanist`, passed through as
     /// its wire value; any other name is sent as an invalid value.
@@ -447,16 +447,16 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
         let is_swing = step.action == Action::Swing;
         let intent = [step.forward.is_some(), step.strafe.is_some()];
         if intent.iter().any(|&present| present != is_move)
-            || (is_move && step.facing.is_none())
             || (step.facing.is_some() && !is_move && !is_swing)
         {
             return Err(format!(
-                "{at}: forward, strafe and facing are required for move and only for move (facing is also allowed for swing)"
+                "{at}: forward and strafe are required for move and only for move; facing only for move and swing"
             ));
         }
-        if is_swing && step.facing.is_some() == step.entity.is_some() {
+        // A move or swing turns to a fixed facing or toward a unit (#517).
+        if (is_move || is_swing) && step.facing.is_some() == step.entity.is_some() {
             return Err(format!(
-                "{at}: swing needs exactly one of facing and entity"
+                "{at}: move and swing need exactly one of facing and entity"
             ));
         }
         match (step.until, step.every) {
@@ -530,13 +530,13 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
         }
         let targets = matches!(
             step.action,
-            Action::SelectTarget | Action::UseAbility | Action::Swing
+            Action::SelectTarget | Action::UseAbility | Action::Swing | Action::Move
         );
         if (step.entity.is_some() && !targets)
             || (step.entity.is_none() && step.action == Action::SelectTarget)
         {
             return Err(format!(
-                "{at}: entity is required for select_target and allowed only for it, swing and use_ability"
+                "{at}: entity is required for select_target and allowed only for it, move, swing and use_ability"
             ));
         }
         if [step.class.is_some(), step.sex.is_some()]
@@ -949,11 +949,14 @@ impl Runner<'_> {
         };
         let (command, intent) = match step.action {
             Action::Move => {
-                let (forward, strafe, facing) = (
+                let (forward, strafe) = (
                     step.forward.unwrap_or_default(),
                     step.strafe.unwrap_or_default(),
-                    step.facing.unwrap_or_default(),
                 );
+                let facing = match step.facing {
+                    Some(facing) => facing,
+                    None => self.aim(index, step.entity.as_ref())?,
+                };
                 (
                     ZoneCommand::Move {
                         forward,
