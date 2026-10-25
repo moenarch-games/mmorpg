@@ -338,15 +338,15 @@ const MAX_PROJECTION_BYTES = 1_077;
  * two bytes per door follow its count.
  */
 const FIXED_BYTES = 117;
-const ENTITY_BYTES = 21;
+const ENTITY_BYTES = 27;
 const MAX_EVENTS = 16;
-/** (1 077 − 115) / 21: records that fit without events, sheets, doors, cooldowns or auras. */
-const MAX_ENTITIES = 45;
-/** `u16` ID, kind, `3 × i16` position, `u16` yaw, `i16` pitch and flags. */
-const PROJECTILE_BYTES = 14;
+/** (1 077 − 117) / 27: records that fit without events, sheets, doors, cooldowns or auras. */
+const MAX_ENTITIES = 35;
+/** `u16` ID, kind, `3 × i32` position, `u16` yaw, `i16` pitch and flags. */
+const PROJECTILE_BYTES = 20;
 const MAX_PROJECTILES = 8;
-/** `u16` ID, prop kind, piece, `3 × i16` position, `4 × i16` rotation and age (#288). */
-const DEBRIS_BYTES = 19;
+/** `u16` ID, prop kind, piece, `3 × i32` position, `4 × i16` rotation and age (#288). */
+const DEBRIS_BYTES = 25;
 const MAX_DEBRIS = 16;
 /** Prop kinds by wire code and how many pieces each breaks into. */
 const DEBRIS_KINDS = ["crate", "barrel", "explosive_barrel", "fence"] as const;
@@ -366,7 +366,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "not-while-swimming",
 ];
 /** Doors a zone's content may author (`mmorpg_core::MAX_DOORS`). */
-const MAX_DOORS = 16;
+const MAX_DOORS = 10;
 const MAX_QUESTS = 32;
 const MAX_QUEST_LOG = 10;
 const MAX_QUEST_OBJECTIVES = 3;
@@ -517,6 +517,10 @@ class Reader {
 
   u32(): number {
     return this.#view.getUint32(this.#advance(4));
+  }
+
+  i32(): number {
+    return this.#view.getInt32(this.#advance(4));
   }
 
   u64(): bigint {
@@ -791,7 +795,7 @@ function decodeEntity(reader: Reader): EntityState {
   }
   const entityId = reader.u32();
   const appearance = reader.u16();
-  const position: Vector3 = [reader.i16(), reader.i16(), reader.i16()];
+  const position: Vector3 = [reader.i32(), reader.i32(), reader.i32()];
   const velocity: Vector3 = [reader.i8(), reader.i8(), reader.i8()];
   const facing = reader.u16();
   const level = reader.u8();
@@ -1089,9 +1093,9 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     if (kind === undefined) {
       throw new Error("Unknown projectile kind");
     }
-    const x = reader.i16();
-    const y = reader.i16();
-    const z = reader.i16();
+    const x = reader.i32();
+    const y = reader.i32();
+    const z = reader.i32();
     const yaw = reader.u16();
     const pitch = reader.i16();
     // 0 flying, 1 stuck, 2 bursting (#290).
@@ -1114,9 +1118,9 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     if (kind === undefined || piece >= (DEBRIS_PIECES[code] ?? 0)) {
       throw new Error("Unknown debris piece");
     }
-    const x = reader.i16();
-    const y = reader.i16();
-    const z = reader.i16();
+    const x = reader.i32();
+    const y = reader.i32();
+    const z = reader.i32();
     const rotation = [reader.i16(), reader.i16(), reader.i16(), reader.i16()] as const;
     debris.push({ id, kind, piece, x, y, z, rotation, age: reader.u8() });
   }

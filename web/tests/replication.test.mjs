@@ -86,7 +86,7 @@ describe("Rust/browser snapshot contract", () => {
     }
   });
   test("decodes the same golden bytes as the Rust encoder", () => {
-    expect(fixture.length).toBe(117 + 2 * 2 + 2 * 3 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21 + 4 * 14);
+    expect(fixture.length).toBe(117 + 2 * 2 + 2 * 3 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 27 + 4 * 20);
     expect(decodeSnapshot(fixture)).toEqual({
       zoneId: 42, tick: 99n, contentRevision: 4n, acknowledgedSequence: 81, viewerId: 7,
       viewer: {
@@ -191,7 +191,7 @@ describe("Rust/browser snapshot contract", () => {
     for (let length = 0; length < fixture.length; length++) {
       expect(() => decodeSnapshot(fixture.slice(0, length))).toThrow();
     }
-    const wolfRecord = FIRST_ENTITY + 21;
+    const wolfRecord = FIRST_ENTITY + 27;
     for (const [offset, value, message] of [
       [0, 4, "protocol"],
       [3, 1, "player-visible"],
@@ -225,7 +225,7 @@ describe("Rust/browser snapshot contract", () => {
       [TARGET_OF_TARGET, 0, "absent"],
       [TARGET_CAST, 0, "cast state"],
       [TARGET_AURAS + 4, 0, "aura record"],
-      [DOORS, 17, "door capacity"],
+      [DOORS, 11, "door capacity"],
       [DOORS + 2, 2, "door section"],
       [DOORS + 3, 1, "door section"],
       [PIECES, 7, "structure piece capacity"],
@@ -260,8 +260,8 @@ describe("Rust/browser snapshot contract", () => {
       [CHAT + 7, 0x0a, "chat text"],
       [FIRST_ENTITY, 0, "kind"],
       [FIRST_ENTITY, 5, "kind"],
-      [wolfRecord + 19, 101, "Health percent"],
-      [wolfRecord + 20, 0x80, "Lootable"],
+      [wolfRecord + 25, 101, "Health percent"],
+      [wolfRecord + 26, 0x80, "Lootable"],
       [31, 9, "viewer"],
     ]) {
       const invalid = fixture.slice();
@@ -282,8 +282,8 @@ describe("Rust/browser snapshot contract", () => {
 
   test("requires the viewer to lead the priority-ordered records", () => {
     const swapped = fixture.slice();
-    swapped.set(fixture.slice(FIRST_ENTITY + 21, FIRST_ENTITY + 42), FIRST_ENTITY);
-    swapped.set(fixture.slice(FIRST_ENTITY, FIRST_ENTITY + 21), FIRST_ENTITY + 21);
+    swapped.set(fixture.slice(FIRST_ENTITY + 27, FIRST_ENTITY + 54), FIRST_ENTITY);
+    swapped.set(fixture.slice(FIRST_ENTITY, FIRST_ENTITY + 27), FIRST_ENTITY + 27);
     expect(() => decodeSnapshot(swapped)).toThrow("viewer");
     const otherViewer = fixture.slice();
     new DataView(otherViewer.buffer).setUint32(28, 9);
@@ -298,11 +298,11 @@ describe("Rust/browser snapshot contract", () => {
 
   test("rejects duplicate entity identities", () => {
     // The duplicate goes after the four entities, before the projectile section.
-    const end = FIRST_ENTITY + 4 * 21;
-    const encoded = new Uint8Array(fixture.length + 21);
+    const end = FIRST_ENTITY + 4 * 27;
+    const encoded = new Uint8Array(fixture.length + 27);
     encoded.set(fixture.slice(0, end));
-    encoded.set(fixture.slice(FIRST_ENTITY, FIRST_ENTITY + 21), end);
-    encoded.set(fixture.slice(end), end + 21);
+    encoded.set(fixture.slice(FIRST_ENTITY, FIRST_ENTITY + 27), end);
+    encoded.set(fixture.slice(end), end + 27);
     new DataView(encoded.buffer).setUint16(ENTITY_COUNT, 5);
     expect(() => decodeSnapshot(encoded)).toThrow("Duplicate");
   });

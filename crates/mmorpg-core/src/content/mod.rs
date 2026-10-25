@@ -25,9 +25,9 @@ pub const UNITS_PER_METRE: i32 = 100;
 /// Every collider bound and every spawned body lies within `±` this many units
 /// on each axis. `ZoneSimulation` closes this cube with fixed world-limit
 /// bodies, so no body admitted at a spawn slot leaves it, whatever the
-/// content's walls or gravity. Player projections carry positions as `i16`,
-/// which leaves 767 units of headroom beyond the limit.
-pub const MAX_CONTENT_COORDINATE_UNITS: i32 = 32_000;
+/// content's walls or gravity (1 km, room for regions beyond Greyhaven Vale,
+/// #424). Player projections carry positions as full `i32` units.
+pub const MAX_CONTENT_COORDINATE_UNITS: i32 = 100_000;
 
 /// Half-open XZ rectangle `[min, max)` in units.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

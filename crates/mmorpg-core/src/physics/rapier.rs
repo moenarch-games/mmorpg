@@ -61,12 +61,12 @@ struct Handles {
     collider: ColliderHandle,
 }
 
-/// The authored ground as a Rapier heightfield (#159).
+/// The authored ground as Rapier heightfield tiles (#159, #424).
 #[derive(Clone)]
 struct Ground {
     id: BodyId,
     terrain: crate::Terrain,
-    collider: Option<ColliderHandle>,
+    colliders: Vec<ColliderHandle>,
 }
 
 pub(super) struct World {
@@ -211,8 +211,55 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
     }
 }
 
-/// Inserts `terrain` as a heightfield collider: its rows run along +Z and its columns along +X.
-fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain) -> ColliderHandle {
+/// Heightfield tiles span at most this many grid cells along each axis (#424).
+const GROUND_TILE_CELLS: usize = 106;
+
+/// Inserts `terrain` as heightfield colliders, tiles of at most [`GROUND_TILE_CELLS`] cells a
+/// side that share their edge samples, from the grid's first sample on (#424). A heightfield's
+/// vertices are placed relative to its centre, so growing one grid would move every vertex by
+/// rounding and every body's motion with it; tiles keep each part's numbers to itself, and a
+/// grid that grows beyond its first tile leaves that tile's ground exactly as it was.
+fn insert_ground(
+    world: &mut PhysicsWorld,
+    id: BodyId,
+    terrain: &crate::Terrain,
+) -> Vec<ColliderHandle> {
+    let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
+    let starts = |count: usize| (0..count - 1).step_by(GROUND_TILE_CELLS);
+    let mut handles = Vec::new();
+    for row in starts(rows) {
+        for column in starts(columns) {
+            let tile_rows = GROUND_TILE_CELLS.min(rows - 1 - row) + 1;
+            let tile_columns = GROUND_TILE_CELLS.min(columns - 1 - column) + 1;
+            let heights = (row..row + tile_rows)
+                .flat_map(|r| terrain.heights[r * columns + column..][..tile_columns].to_vec())
+                .collect();
+            #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+            let offset = |index: usize| index as i32 * terrain.step;
+            let tile = crate::Terrain {
+                origin: [
+                    terrain.origin[0] + offset(column),
+                    terrain.origin[1] + offset(row),
+                ],
+                step: terrain.step,
+                columns: u16::try_from(tile_columns).unwrap_or(u16::MAX),
+                rows: u16::try_from(tile_rows).unwrap_or(u16::MAX),
+                heights,
+            };
+            handles.push(insert_tile(world, id, &tile, terrain));
+        }
+    }
+    handles
+}
+
+/// Inserts one tile of `ground` as a heightfield collider: its rows run along +Z and its
+/// columns along +X.
+fn insert_tile(
+    world: &mut PhysicsWorld,
+    id: BodyId,
+    terrain: &crate::Terrain,
+    ground: &crate::Terrain,
+) -> ColliderHandle {
     let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
     // Parry's heightfield is column-major with rows along Z: entry (row, column) at row + column × rows.
     let mut data = vec![0.0; columns * rows];
@@ -257,7 +304,7 @@ fn insert_ground(world: &mut PhysicsWorld, id: BodyId, terrain: &crate::Terrain)
                     cell_centre(column, terrain.origin[0]),
                     cell_centre(row, terrain.origin[1]),
                 );
-                terrain.low_within(x, z, terrain.step) < 0
+                ground.low_within(x, z, terrain.step) < 0
             };
             if flat && !by_basin() {
                 field.set_cell_status(
@@ -489,22 +536,27 @@ impl World {
             .map(|body| (body.id, insert(&mut world, body)))
             .collect();
         if let Some(ground) = self.ground.as_mut() {
-            ground.collider = Some(insert_ground(&mut world, ground.id, &ground.terrain));
+            ground.colliders = insert_ground(&mut world, ground.id, &ground.terrain);
         }
         self.world = world;
         self.refresh();
     }
 
-    /// Lays the authored ground as a heightfield collider identified as `id` (#159).
+    /// Lays the authored ground as heightfield colliders identified as `id` (#159).
     pub fn set_terrain(&mut self, id: BodyId, terrain: crate::Terrain) {
-        if let Some(handle) = self.ground.as_ref().and_then(|ground| ground.collider) {
+        for handle in self
+            .ground
+            .take()
+            .into_iter()
+            .flat_map(|ground| ground.colliders)
+        {
             self.world.remove_collider(handle);
         }
-        let collider = insert_ground(&mut self.world, id, &terrain);
+        let colliders = insert_ground(&mut self.world, id, &terrain);
         self.ground = Some(Ground {
             id,
             terrain,
-            collider: Some(collider),
+            colliders,
         });
         self.refresh();
     }
@@ -512,9 +564,9 @@ impl World {
     /// The height (units) of the authored ground straight below or above `(x, z)`, if any.
     #[must_use]
     pub fn terrain_height(&self, x: i32, z: i32) -> Option<f32> {
-        let handle = self.ground.as_ref()?.collider?;
+        let handles = &self.ground.as_ref()?.colliders;
         let predicate =
-            |collider: ColliderHandle, _: &rapier3d::prelude::Collider| collider == handle;
+            |collider: ColliderHandle, _: &rapier3d::prelude::Collider| handles.contains(&collider);
         let queries = self.world.broad_phase.as_query_pipeline(
             &self.queries,
             &self.world.bodies,

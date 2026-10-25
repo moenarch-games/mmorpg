@@ -470,7 +470,8 @@ mod tests {
                 "Southmeadow Downs",
                 "Hollowpine Reach",
                 "Eastwater Fen",
-                "Sunken Shrine"
+                "Sunken Shrine",
+                "Farmland and Hamlets"
             ]
         );
         assert_eq!(

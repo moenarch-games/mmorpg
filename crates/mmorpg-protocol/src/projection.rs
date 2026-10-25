@@ -65,13 +65,13 @@ pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
     + 1;
 /// Destructible piece ID (`u16`) and stage (#305).
 pub const PIECE_RECORD_BYTES: usize = 3;
-/// `u16` ID, prop kind, piece index, `3 × i16` position, `4 × i16` rotation quaternion and age
+/// `u16` ID, prop kind, piece index, `3 × i32` position, `4 × i16` rotation quaternion and age
 /// (#288).
-pub const DEBRIS_RECORD_BYTES: usize = 2 + 1 + 1 + 6 + 8 + 1;
+pub const DEBRIS_RECORD_BYTES: usize = 2 + 1 + 1 + 12 + 8 + 1;
 /// At most this many pieces of debris, nearest first, take what budget the units leave.
 pub const MAX_WIRE_DEBRIS: usize = 16;
-/// `u16` ID, kind, `3 × i16` position, `u16` yaw, `i16` pitch and flags (#286).
-pub const PROJECTILE_RECORD_BYTES: usize = 2 + 1 + 6 + 2 + 2 + 1;
+/// `u16` ID, kind, `3 × i32` position, `u16` yaw, `i16` pitch and flags (#286).
+pub const PROJECTILE_RECORD_BYTES: usize = 2 + 1 + 12 + 2 + 2 + 1;
 /// At most this many projectiles, nearest first, share a projection's budget.
 pub const MAX_WIRE_PROJECTILES: usize = 8;
 /// Door ID and open flag (#158).
@@ -85,11 +85,11 @@ const MAX_ABILITY_LIST_BYTES: usize =
     MAX_COOLDOWNS * COOLDOWN_RECORD_BYTES + 2 * MAX_AURAS * AURA_RECORD_BYTES;
 /// Kind, flags, source and target references, `u16` amount.
 pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
-/// Kind, ID, appearance, `3 × i16` position, `3 × i8` velocity, `u16`
+/// Kind, ID, appearance, `3 × i32` position, `3 × i8` velocity, `u16`
 /// facing, level, health percent and flags.
-pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 6 + 3 + 2 + 1 + 1 + 1;
+pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 12 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events, sheets, cooldowns or auras:
-/// (1,077 − 117) / 21 = 45.
+/// (1,077 − 117) / 27 = 35.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -98,7 +98,7 @@ const MAX_CHAT_SECTION_BYTES: usize = MAX_CHAT_PER_TICK * crate::chat::MAX_CHAT_
 // With every list full, both sheets (a full quest log and eight markers),
 // a full event section and four 80-byte chat lines, the viewer and its
 // target always fit:
-// 111 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + 2 × 21 = 1,009 ≤ 1,077 bytes.
+// 117 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + doors + pieces + 2 × 27 ≤ 1,077 bytes.
 const _: () = assert!(
     PLAYER_SNAPSHOT_FIXED_BYTES
         + MAX_ABILITY_LIST_BYTES
@@ -130,8 +130,7 @@ pub struct PackedSnapshot {
 /// target's target and this tick's events, then entities in the projection's
 /// priority order until the next record would exceed
 /// [`MAX_PLAYER_PROJECTION_BYTES`]. The viewer and its target lead the
-/// entities and always fit. Hosts publish this; positions outside the `i16`
-/// range fail closed rather than being clamped.
+/// entities and always fit. Hosts publish this; positions travel as full `i32` units.
 pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, ProtocolError> {
     if snapshot
         .entities
@@ -437,9 +436,6 @@ fn encode_projectile(
     payload.extend_from_slice(&projectile.id.to_be_bytes());
     payload.push(projectile.kind.code());
     for component in projectile.position {
-        let component = i16::try_from(component).map_err(|_| {
-            ProtocolError::new("projectile position is outside the compact wire range")
-        })?;
         payload.extend_from_slice(&component.to_be_bytes());
     }
     payload.extend_from_slice(&projectile.yaw.to_be_bytes());
@@ -461,8 +457,6 @@ fn encode_debris(
     payload.push(piece.kind.code());
     payload.push(piece.piece);
     for component in piece.position {
-        let component = i16::try_from(component)
-            .map_err(|_| ProtocolError::new("debris position is outside the compact wire range"))?;
         payload.extend_from_slice(&component.to_be_bytes());
     }
     for component in piece.rotation {
@@ -485,7 +479,7 @@ fn decode_debris(
     }
     let mut position = [0; 3];
     for axis in &mut position {
-        *axis = i32::from(i16::from_be_bytes(take(payload, offset)?));
+        *axis = i32::from_be_bytes(take(payload, offset)?);
     }
     let mut rotation = [0; 4];
     for axis in &mut rotation {
@@ -510,11 +504,10 @@ fn decode_projectile(
     let kind = mmorpg_core::ProjectileKind::from_code(read_u8(payload, offset)?)
         .ok_or_else(|| ProtocolError::new("unknown projectile kind"))?;
     let position = [
-        i16::from_be_bytes(take(payload, offset)?),
-        i16::from_be_bytes(take(payload, offset)?),
-        i16::from_be_bytes(take(payload, offset)?),
-    ]
-    .map(i32::from);
+        i32::from_be_bytes(take(payload, offset)?),
+        i32::from_be_bytes(take(payload, offset)?),
+        i32::from_be_bytes(take(payload, offset)?),
+    ];
     let yaw = u16::from_be_bytes(take(payload, offset)?);
     let pitch = i16::from_be_bytes(take(payload, offset)?);
     let (stuck, burst) = match read_u8(payload, offset)? {
@@ -539,8 +532,6 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
     payload.extend_from_slice(&entity.id.to_be_bytes());
     payload.extend_from_slice(&entity.appearance.to_be_bytes());
     for component in entity.position {
-        let component = i16::try_from(component)
-            .map_err(|_| ProtocolError::new("entity position is outside the compact wire range"))?;
         payload.extend_from_slice(&component.to_be_bytes());
     }
     for component in entity.velocity {
@@ -872,11 +863,10 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
     let id = u32::from_be_bytes(take(payload, offset)?);
     let appearance = u16::from_be_bytes(take(payload, offset)?);
     let position = [
-        i16::from_be_bytes(take(payload, offset)?),
-        i16::from_be_bytes(take(payload, offset)?),
-        i16::from_be_bytes(take(payload, offset)?),
-    ]
-    .map(i32::from);
+        i32::from_be_bytes(take(payload, offset)?),
+        i32::from_be_bytes(take(payload, offset)?),
+        i32::from_be_bytes(take(payload, offset)?),
+    ];
     let velocity = [
         i8::from_be_bytes(take(payload, offset)?),
         i8::from_be_bytes(take(payload, offset)?),
@@ -1655,9 +1645,9 @@ mod tests {
             (QUESTS + 14, 1, "quest markers are not ordered"),
             (FIRST_ENTITY, 0, "unknown entity kind"),
             (FIRST_ENTITY, 5, "unknown entity kind"),
-            (wolf_record + 19, 101, "health percent exceeds 100"),
+            (wolf_record + 25, 101, "health percent exceeds 100"),
             (
-                wolf_record + 20,
+                wolf_record + 26,
                 0x80,
                 "lootable entity flags are inconsistent",
             ),
@@ -1693,7 +1683,7 @@ mod tests {
         assert_eq!(encoded[projectiles - 1], 4);
         for (offset, value, message) in [
             (projectiles + 2, 10, "unknown projectile kind"),
-            (projectiles + 13, 3, "unknown projectile state"),
+            (projectiles + 19, 3, "unknown projectile state"),
             (projectiles - 1, 9, "snapshot has too many projectiles"),
         ] {
             let mut invalid = encoded.clone();
@@ -1829,17 +1819,17 @@ mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (117, 14, 21)
+            (117, 14, 27)
         );
-        assert_eq!(MAX_WIRE_ENTITIES, 45);
+        assert_eq!(MAX_WIRE_ENTITIES, 35);
         let viewer_id = u32::MAX;
         let target = EntityRef::Creature(CreatureId::new(u32::MAX));
         let entities: Vec<_> = (0..MAX_VISIBLE_ENTITIES)
             .map(|index| {
                 let (low, high) = if index % 2 == 0 {
-                    (i16::MIN, i16::MAX)
+                    (i32::MIN, i32::MAX)
                 } else {
-                    (i16::MAX, i16::MIN)
+                    (i32::MAX, i32::MIN)
                 };
                 let (kind, id) = match index {
                     0 => (EntityKind::Player, viewer_id),
@@ -1850,7 +1840,7 @@ mod tests {
                     kind,
                     id,
                     appearance: u16::MAX,
-                    position: [low, high, low].map(i32::from),
+                    position: [low, high, low],
                     velocity: [i8::MIN, i8::MAX, i8::MIN],
                     facing: u16::MAX,
                     level: u8::MAX,
@@ -1932,16 +1922,16 @@ mod tests {
             pieces: Vec::new(),
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 112 − 16 × 14 − 16 × 2) / 21 = 33 records fit beside a full event section
+        // (1,077 − 117 − 16 × 14 − 10 × 2) / 27 = 26 records fit beside a full event section
         // and every door.
-        assert_eq!(packed.packed_entities, 33);
+        assert_eq!(packed.packed_entities, 26);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
             packed.payload.len() + SESSION_SNAPSHOT_HEADER_BYTES + DATAGRAM_SAFETY_MARGIN_BYTES
                 <= MEASURED_MIN_DATAGRAM_BYTES
         );
         let decoded = decode_snapshot(&packed.payload).unwrap();
-        assert_eq!(decoded.entities[..], snapshot.entities[..33]);
+        assert_eq!(decoded.entities[..], snapshot.entities[..26]);
         assert_eq!(
             decoded.entities[1].entity(),
             target,
@@ -1952,7 +1942,7 @@ mod tests {
             encode_snapshot(&snapshot).unwrap_err().to_string(),
             "player projection exceeds the byte budget"
         );
-        // Without events, doors or a bag sheet the budget holds 45 records.
+        // Without events, doors or a bag sheet the budget holds 35 records.
         let quiet = ZoneSnapshot {
             events: Vec::new(),
             doors: Vec::new(),
@@ -1987,12 +1977,12 @@ mod tests {
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
             // With a full quest part the sheet is 84 + 70 = 154 bytes:
-            // (1,077 − 112 − 154) / 21 = 38 and (1,077 − 112 − 154 − 224) / 21 = 27.
+            // (1,077 − 117 − 154) / 27 = 29 and (1,077 − 117 − 154 − 224) / 27 = 21.
             if events == 0 {
-                assert_eq!(packed.packed_entities, 38);
+                assert_eq!(packed.packed_entities, 29);
             }
             if events == 16 {
-                assert_eq!(packed.packed_entities, 27);
+                assert_eq!(packed.packed_entities, 21);
             }
         }
         // Whole records only, within the budget.
@@ -2010,8 +2000,8 @@ mod tests {
             MAX_CHAT_PER_TICK
         ];
         let packed = pack_snapshot(&chatty).unwrap();
-        // (1,077 − 111 − 224 − 4 × 84) / 21 = 19 records.
-        assert_eq!(packed.packed_entities, 19);
+        // (1,077 − 117 − 224 − 4 × 84) / 27 = 14 records.
+        assert_eq!(packed.packed_entities, 14);
         assert_eq!(decode_snapshot(&packed.payload).unwrap().chat, chatty.chat);
         for item in [
             None,
@@ -2053,9 +2043,9 @@ mod tests {
                 assert_eq!(decoded.viewer.copper, u32::MAX);
                 assert_eq!(decoded.inventory, with_loot.inventory);
                 assert_eq!(decoded.entities[1].entity(), target);
-                // (1,077 − 112 − 154 − 26 − 224) / 21 = 26.
+                // (1,077 − 117 − 154 − 26 − 224) / 27 = 20.
                 if events == 16 && item.is_some() {
-                    assert_eq!(packed.packed_entities, 26);
+                    assert_eq!(packed.packed_entities, 20);
                 }
             }
         }
@@ -2113,8 +2103,8 @@ mod tests {
             auras: full_auras,
         };
         let packed = pack_snapshot(&loaded).unwrap();
-        // (1,077 − 111 − 108 − 154 − 16 × 14) / 21 = 22 records.
-        assert_eq!(packed.packed_entities, 22);
+        // (1,077 − 117 − 120 − 154 − 16 × 14) / 27 = 17 records.
+        assert_eq!(packed.packed_entities, 17);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         let decoded = decode_snapshot(&packed.payload).unwrap();
         assert_eq!(decoded.entities[1].entity(), target);
@@ -2125,7 +2115,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_encoding_fails_closed_on_missing_viewer_wide_positions_or_excess_events() {
+    fn snapshot_encoding_fails_closed_on_missing_viewer_or_excess_events() {
         let mut no_viewer = fixture_snapshot();
         no_viewer.entities.clear();
         let mut viewer_second = fixture_snapshot();
@@ -2136,13 +2126,12 @@ mod tests {
                 "player projection must start with the viewer"
             );
         }
+        // Positions beyond the old `i16` range travel whole (#424).
         for component in [i32::from(i16::MAX) + 1, i32::from(i16::MIN) - 1] {
             let mut wide = fixture_snapshot();
             wide.entities[1].position[2] = component;
-            assert_eq!(
-                encode_snapshot(&wide).unwrap_err().to_string(),
-                "entity position is outside the compact wire range"
-            );
+            let decoded = decode_snapshot(&encode_snapshot(&wide).unwrap()).unwrap();
+            assert_eq!(decoded.entities[1].position[2], component);
         }
         let mut chatty = fixture_snapshot();
         chatty.events = vec![chatty.events[0]; MAX_EVENTS_PER_PLAYER + 1];

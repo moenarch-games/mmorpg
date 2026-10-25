@@ -114,23 +114,21 @@ fn tone(b: Biome, x: f64, z: f64) -> u32 {
         mix(base, 0xc2cf6e, 0.2)
     }
 }
-fn grid(out: &mut Geometry, g: &TerrainGrid, far: bool, inner: f64) {
+/// Triangulates a grid. A far ring leaves out the cells inside `inner`, the near grid's
+/// rectangle `[min x, min z, max x, max z]` in metres, and sinks its vertices inside it.
+fn grid(out: &mut Geometry, g: &TerrainGrid, far: bool, inner: [f64; 4]) {
     let biomes = if far { g.biomes.clone() } else { ground(g) };
     let mut map = BTreeMap::new();
-    let reach = |c: usize, r: usize| {
-        metres(g.origin[0] + c as i32 * g.step)
-            .abs()
-            .max(metres(g.origin[1] + r as i32 * g.step).abs())
+    let within = |x: f64, z: f64| inner[0] < x && x < inner[2] && inner[1] < z && z < inner[3];
+    let at = |c: usize, r: usize| {
+        within(
+            metres(g.origin[0] + c as i32 * g.step),
+            metres(g.origin[1] + r as i32 * g.step),
+        )
     };
     for r in 0..g.rows - 1 {
         for c in 0..g.columns - 1 {
-            if far
-                && reach(c, r)
-                    .max(reach(c + 1, r))
-                    .max(reach(c, r + 1))
-                    .max(reach(c + 1, r + 1))
-                    < inner
-            {
+            if far && at(c, r) && at(c + 1, r) && at(c, r + 1) && at(c + 1, r + 1) {
                 continue;
             }
             let s = r * g.columns + c;
@@ -149,11 +147,7 @@ fn grid(out: &mut Geometry, g: &TerrainGrid, far: bool, inner: f64) {
                         metres(g.origin[1] + r as i32 * g.step),
                     );
                     let h = metres(g.heights[sample]);
-                    let y = if far && x.abs().max(z.abs()) < inner {
-                        h - 4.
-                    } else {
-                        h
-                    };
+                    let y = if far && within(x, z) { h - 4. } else { h };
                     let step = metres(g.step);
                     let dx = (height(g, c as isize + 1, r as isize)
                         - height(g, c as isize - 1, r as isize))
@@ -265,33 +259,38 @@ fn ellipse(m: &mut Geometry, c: [f64; 2], r: [f64; 2], y: f64, n: u32) {
     }
 }
 pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
-    grid(b.global("terrain", 0xffffff), g, false, 0.);
     let inner = [
-        -g.origin[0],
-        -g.origin[1],
+        g.origin[0],
+        g.origin[1],
         g.origin[0] + (g.columns as i32 - 1) * g.step,
         g.origin[1] + (g.rows as i32 - 1) * g.step,
     ]
-    .into_iter()
-    .min()
-    .map_or(0., metres);
+    .map(metres);
+    grid(b.global("terrain", 0xffffff), g, false, inner);
     grid(
         b.global("far", 0xffffff),
         &s.far_terrain_grid(2000),
         true,
         inner,
     );
-    for (name, border, color) in [("plaza", 0.6, 0xa8987a), ("farmland", 0.8, 0x7a5836)] {
-        if let Some((lo, hi)) = bounds(g, name) {
-            patch(
-                b.global("patches", shade(color, 0.84)),
-                lo.map(|v| v - border),
-                hi.map(|v| v + border),
-                0.025,
-                g,
-            );
-            patch(b.global("patches", color), lo, hi, 0.04, g);
-        }
+    // The plaza, then one patch per ploughed field (#424).
+    let fields = s
+        .farmland()
+        .iter()
+        .map(|field| (field.min.map(metres), field.max.map(metres)));
+    let patches = bounds(g, "plaza")
+        .map(|plaza| (plaza, 0.6, 0xa8987a))
+        .into_iter()
+        .chain(fields.map(|field| (field, 0.8, 0x7a5836)));
+    for ((lo, hi), border, color) in patches {
+        patch(
+            b.global("patches", shade(color, 0.84)),
+            lo.map(|v| v - border),
+            hi.map(|v| v + border),
+            0.025,
+            g,
+        );
+        patch(b.global("patches", color), lo, hi, 0.04, g);
     }
     for road in &s.roads {
         let points = road

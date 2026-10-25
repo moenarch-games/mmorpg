@@ -5,8 +5,8 @@
 //! client draws, onto that format:
 //!
 //! - **terrain**: [`Scenery::terrain_grid`] every [`TERRAIN_STEP_UNITS`]
-//!   over ±200 m, with one biome ID per sample, and **farTerrain**: the
-//!   same relief every [`FAR_TERRAIN_STEP_UNITS`] over ±600 m for a coarse
+//!   over the playable rectangle and 72 m beyond its walls, with one biome ID per sample, and **farTerrain**: the
+//!   same relief every [`FAR_TERRAIN_STEP_UNITS`] over 392 m beyond them for a coarse
 //!   ring of distant mountains around it. The browser renderer has no vertex
 //!   colours, so clients draw one surface per biome in its base colour;
 //! - **props**: a kind table (`propKinds`, [`PropKind::name`]) and one
@@ -41,9 +41,9 @@ use serde::Serialize;
 pub const SCENERY_FORMAT: &str = "mmorpg.scenery";
 /// Where this export's props and terrain come from.
 pub const SCENERY_SOURCE: &str = "mmorpg-scenery";
-/// Terrain sample spacing: 4 m, 101 × 101 samples over ±200 m.
+/// Terrain sample spacing: 4 m, 141 × 251 samples over [`mmorpg_scenery::TERRAIN_BOUNDS`].
 pub const TERRAIN_STEP_UNITS: i32 = 400;
-/// Far ring sample spacing: 20 m, 61 × 61 samples over ±600 m.
+/// Far ring sample spacing: 20 m, 61 × 83 samples over [`mmorpg_scenery::FAR_TERRAIN_BOUNDS`].
 pub const FAR_TERRAIN_STEP_UNITS: i32 = 2_000;
 
 #[derive(Clone, Debug, Serialize)]
@@ -306,7 +306,7 @@ fn hex([red, green, blue]: [u8; 3]) -> String {
 mod tests {
     use super::*;
     use mmorpg_core::{MAX_PLAYERS_PER_ZONE, greyhaven_vale::SPAWN_GRID};
-    use mmorpg_scenery::{FAR_TERRAIN_EXTENT_UNITS, TERRAIN_EXTENT_UNITS, visual_kind};
+    use mmorpg_scenery::{FAR_TERRAIN_BOUNDS, TERRAIN_BOUNDS, visual_kind};
     use serde_json::Value;
 
     use crate::host::hosted_definition;
@@ -398,12 +398,13 @@ mod tests {
         }
     }
 
-    fn assert_samples_relief(terrain: &Terrain, step: i32, extent: i32) {
-        let side = u32::try_from(2 * extent / step + 1).unwrap();
-        assert_eq!((terrain.columns, terrain.rows), (side, side));
+    fn assert_samples_relief(terrain: &Terrain, step: i32, bounds: mmorpg_core::XzBounds) {
+        let side =
+            |axis: usize| u32::try_from((bounds.max[axis] - bounds.min[axis]) / step + 1).unwrap();
+        assert_eq!((terrain.columns, terrain.rows), (side(0), side(1)));
         assert_eq!(terrain.step, step);
-        assert_eq!(terrain.origin_xz, [-extent, -extent]);
-        let samples = usize::try_from(side * side).unwrap();
+        assert_eq!(terrain.origin_xz, bounds.min);
+        let samples = usize::try_from(side(0) * side(1)).unwrap();
         assert_eq!(terrain.heights.len(), samples);
         assert_eq!(terrain.biomes.len(), samples);
         let columns = usize::try_from(terrain.columns).unwrap();
@@ -420,8 +421,8 @@ mod tests {
     fn terrain_samples_the_shared_relief_and_biomes() {
         let export = hosted_export();
         let terrain = &export.terrain;
-        assert_samples_relief(terrain, TERRAIN_STEP_UNITS, TERRAIN_EXTENT_UNITS);
-        assert_eq!((terrain.columns, terrain.rows), (141, 141));
+        assert_samples_relief(terrain, TERRAIN_STEP_UNITS, TERRAIN_BOUNDS);
+        assert_eq!((terrain.columns, terrain.rows), (141, 251));
         let biome_ids: Vec<u8> = export.biomes.iter().map(|biome| biome.id).collect();
         assert!(terrain.biomes.iter().all(|id| biome_ids.contains(id)));
         assert!(
@@ -445,8 +446,8 @@ mod tests {
     fn the_far_ring_samples_the_same_relief_more_coarsely() {
         let export = hosted_export();
         let far = &export.far_terrain;
-        assert_samples_relief(far, FAR_TERRAIN_STEP_UNITS, FAR_TERRAIN_EXTENT_UNITS);
-        assert_eq!((far.columns, far.rows), (61, 61));
+        assert_samples_relief(far, FAR_TERRAIN_STEP_UNITS, FAR_TERRAIN_BOUNDS);
+        assert_eq!((far.columns, far.rows), (61, 83));
         let biome_ids: Vec<u8> = export.biomes.iter().map(|biome| biome.id).collect();
         assert!(far.biomes.iter().all(|id| biome_ids.contains(id)));
         let highest_near = export.terrain.heights.iter().max().unwrap();
@@ -548,7 +549,8 @@ mod tests {
                 "Southmeadow Downs",
                 "Hollowpine Reach",
                 "Eastwater Fen",
-                "Sunken Shrine"
+                "Sunken Shrine",
+                "Farmland and Hamlets"
             ]
         );
         assert_eq!(

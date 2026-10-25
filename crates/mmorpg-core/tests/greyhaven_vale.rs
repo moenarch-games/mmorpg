@@ -53,12 +53,17 @@ fn content_is_a_bounded_deterministic_revision() {
         .iter()
         .filter(|collider| ids::TREES.contains(&collider.id))
         .count();
-    assert!((800..=1_200).contains(&trees), "{trees} trees");
+    assert!((800..=1_600).contains(&trees), "{trees} trees");
     for collider in definition.colliders() {
         let (min, max) = footprint(collider);
-        let reach = PLAYABLE_BOUNDS.max[0] + 200;
+        let within = |point: [i32; 2]| {
+            (0..2).all(|axis| {
+                PLAYABLE_BOUNDS.min[axis] - 200 <= point[axis]
+                    && point[axis] <= PLAYABLE_BOUNDS.max[axis] + 200
+            })
+        };
         assert!(
-            min.iter().chain(&max).all(|value| value.abs() <= reach),
+            within(min) && within(max),
             "collider {} lies beyond the boundary walls",
             collider.id
         );
@@ -304,7 +309,8 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
             "Southmeadow Downs",
             "Hollowpine Reach",
             "Eastwater Fen",
-            "Sunken Shrine"
+            "Sunken Shrine",
+            "Farmland and Hamlets"
         ]
     );
     // Area bounds are inclusive; as half-open rectangles they compare with
@@ -385,14 +391,14 @@ fn structures_and_boundary_walls_block_movement() {
     );
     assert_eq!(mmorpg_core::physics::to_units(player.velocity), [0, 0, 0]);
 
-    // Down the South Road, then jumping against the southern wall.
-    let mut zone =
-        ZoneSimulation::with_definition(ZoneId::new(1), greyhaven_vale_definition()).unwrap();
+    // Down the Farmland Road (#424), then jumping against the southern wall.
+    let definition = greyhaven_vale_definition();
+    let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition.clone()).unwrap();
     zone.add_player(1).unwrap();
     let mut snapshot = zone.snapshot().unwrap();
-    // On the downs' hills (#159): start standing on the ground.
-    let ground = greyhaven_vale::hill_height(0, 16_000);
-    snapshot.players[0].position = mmorpg_core::physics::from_units([0, ground + 92, 16_000]);
+    // On the plateau's ground: start standing on it.
+    let ground = definition.ground_at(2_800, 60_000);
+    snapshot.players[0].position = mmorpg_core::physics::from_units([2_800, ground + 92, 60_000]);
     let mut zone = ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
     zone.apply_command(1, 1, run(FACE_SOUTH)).unwrap();
     let mut sequence = 1;

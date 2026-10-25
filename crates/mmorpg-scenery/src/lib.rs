@@ -19,8 +19,8 @@
 //! units on ([`Scenery::ground_at`]). [`Scenery::height_at`] adds, on top of that ground, at
 //! most ±0.6 m of relief inside the playable square, flattened to exactly 0
 //! under and around structures, roads, the spawn plaza and water, and rises to
-//! mountains of up to 40 m beyond the boundary walls. Beyond the ±280 m
-//! terrain grid the same function keeps rising into distant ranges of up to
+//! mountains of up to 40 m beyond the boundary walls. Beyond the terrain grid
+//! (72 m past the walls) the same function keeps rising into distant ranges of up to
 //! 140 m, which clients draw as a coarse far ring. Clients render a unit at
 //! its physics position plus the relief height at its XZ; the offset never
 //! feeds back into gameplay.
@@ -46,10 +46,18 @@ use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_PLAZA, ids};
 use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, trig};
 pub use outpost_grass::outpost_grass_placements;
 
-/// Half the side of the square the terrain grid covers (±280 m).
-pub const TERRAIN_EXTENT_UNITS: i32 = 28_000;
-/// Half the side of the square the far terrain ring covers (±600 m).
-pub const FAR_TERRAIN_EXTENT_UNITS: i32 = 60_000;
+/// The rectangle the terrain grid covers: the playable rectangle and 72 m beyond its walls
+/// (80 m past the farmland's, #424, so every grid step divides it).
+pub const TERRAIN_BOUNDS: XzBounds = XzBounds {
+    min: [-28_000, -28_000],
+    max: [28_000, 72_000],
+};
+/// The rectangle the far terrain ring covers: 392 m beyond the playable rectangle's walls on
+/// every side (400 m past the farmland's).
+pub const FAR_TERRAIN_BOUNDS: XzBounds = XzBounds {
+    min: [-60_000, -60_000],
+    max: [60_000, 104_000],
+};
 /// Largest relief magnitude inside the playable square (0.6 m).
 pub const WALKABLE_RELIEF_UNITS: i32 = 60;
 /// Highest mountain relief beyond the boundary walls, within the terrain
@@ -68,6 +76,8 @@ const FAR_RISE_UNITS: i64 = 12_000;
 const ORIGINAL_HALF_EXTENT_UNITS: i32 = 12_000;
 /// Seed of the outer valley's scatter (#159).
 const SEED_OUTER_PROPS: u64 = 0x4f55_5445_5256_414c;
+/// Seed of the farmland's scatter (#424).
+const SEED_FARMLAND_PROPS: u64 = 0x4641_524d_5052_4f50;
 
 /// Visual half width of every road (3 m wide); core keeps 2 m clear.
 pub const ROAD_HALF_WIDTH_UNITS: i32 = 150;
@@ -458,7 +468,20 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::PALISADE.contains(&id) => PropKind::PalisadeSegment,
         _ if ids::GATE_POSTS.contains(&id) => PropKind::GatePost,
         _ if ids::GRAVESTONES.contains(&id) => PropKind::Gravestone,
-        _ if ids::FENCES.contains(&id) => PropKind::Fence,
+        _ if ids::FENCES.contains(&id) || ids::FARMLAND_FENCES.contains(&id) => PropKind::Fence,
+        // Farmland and Hamlets (#424) reuses the Vale's building visuals; its landmark tower is
+        // a keep, like the Eastwater watchtower.
+        _ if ids::FARMLAND_BUILDINGS.contains(&id) => {
+            use greyhaven_vale::farmland::Building;
+            match greyhaven_vale::farmland_building(id)? {
+                Building::House => PropKind::House,
+                Building::Farmhouse => PropKind::Farmhouse,
+                Building::Barn => PropKind::Barn,
+                Building::Windmill => PropKind::Windmill,
+                Building::Well => PropKind::Well,
+                Building::Tower => PropKind::Keep,
+            }
+        }
         _ if ids::CLIFFS.contains(&id) || ids::CAVE_WALLS.contains(&id) => PropKind::Cliff,
         ids::CAVE_ROOF => PropKind::CaveRoof,
         // The sealed threshold to the deeper cave (#160): a log barricade stand-in until the
@@ -589,6 +612,17 @@ const FARMLAND: Rect = Rect {
     max: [9_590, 8_390],
 };
 
+/// Every ploughed field: Millbrook's, then the farmland's (#424) inside their fences.
+fn fields() -> Vec<Rect> {
+    std::iter::once(FARMLAND)
+        .chain(
+            greyhaven_vale::farmland::FIELDS
+                .iter()
+                .map(|&(min, max)| Rect { min, max }),
+        )
+        .collect()
+}
+
 /// Builds the Greyhaven Vale scenery from the core content revision.
 #[must_use]
 pub fn base_scenery() -> Scenery {
@@ -685,7 +719,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         props: Vec::new(),
         roads,
         water,
-        farmland: vec![FARMLAND],
+        farmland: fields(),
         relief: Some(relief),
         ground: definition.terrain().cloned(),
         authored_outpost_relief: false,
@@ -746,32 +780,41 @@ impl Scenery {
             .map_or(0, |relief| relief.height_at(x, z))
     }
 
-    /// Heights and biome colours over ±[`TERRAIN_EXTENT_UNITS`] every
-    /// `step_units` (at least one unit).
+    /// Ploughed fields (#424: one rectangle per field), whose farmland clients draw as patches.
+    #[must_use]
+    pub fn farmland(&self) -> &[Rect] {
+        &self.farmland
+    }
+
+    /// Heights and biome colours over [`TERRAIN_BOUNDS`] every `step_units` (at least one
+    /// unit).
     #[must_use]
     pub fn terrain_grid(&self, step_units: i32) -> TerrainGrid {
-        self.grid_over(TERRAIN_EXTENT_UNITS, step_units)
+        self.grid_over(TERRAIN_BOUNDS, step_units)
     }
 
-    /// The same relief and biomes over ±[`FAR_TERRAIN_EXTENT_UNITS`], for a
-    /// coarse far ring around the terrain grid. Inside ±[`TERRAIN_EXTENT_UNITS`]
-    /// its samples equal [`Scenery::terrain_grid`]'s at the same positions.
+    /// The same relief and biomes over [`FAR_TERRAIN_BOUNDS`], for a coarse far ring around
+    /// the terrain grid. Inside [`TERRAIN_BOUNDS`] its samples equal
+    /// [`Scenery::terrain_grid`]'s at the same positions.
     #[must_use]
     pub fn far_terrain_grid(&self, step_units: i32) -> TerrainGrid {
-        self.grid_over(FAR_TERRAIN_EXTENT_UNITS, step_units)
+        self.grid_over(FAR_TERRAIN_BOUNDS, step_units)
     }
 
-    fn grid_over(&self, extent: i32, step_units: i32) -> TerrainGrid {
+    fn grid_over(&self, bounds: XzBounds, step_units: i32) -> TerrainGrid {
         let step = step_units.max(1);
-        let count = usize::try_from(2 * extent / step + 1).unwrap_or(1);
-        let origin = [-extent, -extent];
-        let mut heights = Vec::with_capacity(count * count);
-        let mut biomes = Vec::with_capacity(count * count);
-        let mut colors = Vec::with_capacity(count * count);
+        let count = |axis: usize| {
+            usize::try_from((bounds.max[axis] - bounds.min[axis]) / step + 1).unwrap_or(1)
+        };
+        let (columns, rows) = (count(0), count(1));
+        let origin = bounds.min;
+        let mut heights = Vec::with_capacity(columns * rows);
+        let mut biomes = Vec::with_capacity(columns * rows);
+        let mut colors = Vec::with_capacity(columns * rows);
         let mut z = origin[1];
-        for _ in 0..count {
+        for _ in 0..rows {
             let mut x = origin[0];
-            for _ in 0..count {
+            for _ in 0..columns {
                 let height = self.height_at(x, z);
                 let biome = self.biome_at(x, z, height);
                 heights.push(height + self.ground_at(x, z));
@@ -784,8 +827,8 @@ impl Scenery {
         TerrainGrid {
             origin,
             step,
-            columns: count,
-            rows: count,
+            columns,
+            rows,
             heights,
             biomes,
             colors,
@@ -940,11 +983,7 @@ fn beyond(x: i32, z: i32, bounds: XzBounds) -> i64 {
 /// Extra height of the distant ranges: zero on and inside the terrain
 /// grid's edge, rising over [`FAR_RISE_UNITS`] to seeded massifs and crags.
 fn distant_ranges(x: i32, z: i32) -> i64 {
-    let grid = XzBounds {
-        min: [-TERRAIN_EXTENT_UNITS, -TERRAIN_EXTENT_UNITS],
-        max: [TERRAIN_EXTENT_UNITS, TERRAIN_EXTENT_UNITS],
-    };
-    let outside = beyond(x, z, grid);
+    let outside = beyond(x, z, TERRAIN_BOUNDS);
     if outside <= 0 {
         return 0;
     }
@@ -1241,11 +1280,15 @@ impl Placer<'_> {
         }
         // The dock runs east from the Lakeshore Path into the shallow water.
         self.place(PropKind::Dock, [3_800, -4_900], 0, 1_000, Ground::Shore);
-        // Crop rows every two metres across the fenced field.
-        let mut z = FARMLAND.min[1] + 190;
-        while z < FARMLAND.max[1] - 100 {
-            self.place(PropKind::CropRow, [7_300, z], 0, 1_000, Ground::Shore);
-            z += 200;
+        // Crop rows every two metres across each fenced field: Millbrook's, then the
+        // farmland's (#424).
+        for field in fields() {
+            let x = (field.min[0] + field.max[0]) / 2;
+            let mut z = field.min[1] + 190;
+            while z < field.max[1] - 100 {
+                self.place(PropKind::CropRow, [x, z], 0, 1_000, Ground::Shore);
+                z += 200;
+            }
         }
     }
 
@@ -1322,14 +1365,17 @@ impl Placer<'_> {
                 placed += 1;
             }
         }
-        // Background forest on the mountain slopes beyond the walls.
-        let extent = TERRAIN_EXTENT_UNITS - 200;
+        // Background forest on the mountain slopes beyond the walls, round the Vale and the
+        // farmland (#424).
         let mut placed = 0;
-        for _ in 0..4_000 {
-            if placed == 520 {
+        for _ in 0..6_000 {
+            if placed == 700 {
                 break;
             }
-            let at = [rng.range(-extent, extent), rng.range(-extent, extent)];
+            let at = [
+                rng.range(TERRAIN_BOUNDS.min[0] + 200, TERRAIN_BOUNDS.max[0] - 200),
+                rng.range(TERRAIN_BOUNDS.min[1] + 200, TERRAIN_BOUNDS.max[1] - 200),
+            ];
             let variant = match rng.next_u64() % 10 {
                 0..=6 => TreeVariant::Pine,
                 7..=8 => TreeVariant::Oak,
@@ -1345,15 +1391,47 @@ impl Placer<'_> {
             }
         }
         self.outer_decorations();
+        self.farmland_decorations();
     }
 
-    /// Grass, flowers and undergrowth across the outer valley's ring (#159).
-    fn outer_decorations(&mut self) {
-        let mut rng = Rng::new(SEED_OUTER_PROPS);
-        let ring = |rng: &mut Rng| {
+    /// Grass, flowers and bushes across the farmland's plateau (#424), off its fields.
+    fn farmland_decorations(&mut self) {
+        let mut rng = Rng::new(SEED_FARMLAND_PROPS);
+        let scenery = self.scenery;
+        let plateau = |rng: &mut Rng| {
             let at = [
                 rng.range(PLAYABLE_BOUNDS.min[0] + 100, PLAYABLE_BOUNDS.max[0] - 100),
-                rng.range(PLAYABLE_BOUNDS.min[1] + 100, PLAYABLE_BOUNDS.max[1] - 100),
+                rng.range(
+                    greyhaven_vale::farmland::RIDGE[3] + 100,
+                    PLAYABLE_BOUNDS.max[1] - 100,
+                ),
+            ];
+            scenery
+                .farmland
+                .iter()
+                .all(|field| field.distance(at) > 0)
+                .then_some(at)
+        };
+        self.scatter(&mut rng, 1_200, 6_000, |rng| {
+            plateau(rng).map(|at| (PropKind::GrassTuft, at))
+        });
+        self.scatter(&mut rng, 400, 3_000, |rng| {
+            plateau(rng).map(|at| (PropKind::Flowers, at))
+        });
+        self.scatter(&mut rng, 120, 1_500, |rng| {
+            plateau(rng).map(|at| (PropKind::Bush, at))
+        });
+    }
+
+    /// Grass, flowers and undergrowth across the outer valley's ring (#159), on the Vale's
+    /// own square so the farmland (#424) leaves it unchanged.
+    fn outer_decorations(&mut self) {
+        let mut rng = Rng::new(SEED_OUTER_PROPS);
+        let vale = greyhaven_vale::VALE_BOUNDS;
+        let ring = |rng: &mut Rng| {
+            let at = [
+                rng.range(vale.min[0] + 100, vale.max[0] - 100),
+                rng.range(vale.min[1] + 100, vale.max[1] - 100),
             ];
             let outer = at[0].abs().max(at[1].abs()) >= ORIGINAL_HALF_EXTENT_UNITS;
             outer.then_some(at)

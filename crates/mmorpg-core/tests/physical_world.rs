@@ -176,8 +176,7 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
     let limit = MAX_CONTENT_COORDINATE_UNITS;
     let [half_x, half_y, half_z] = PLAYER_HALF_EXTENTS_UNITS;
     // Default content has no colliders and no gravity. Each player runs along
-    // one horizontal axis for longer than an `i16` position lasts at 21
-    // units per tick (about 1,561 ticks).
+    // one horizontal axis until the 1 km limit stops it (#424).
     let mut open = ZoneSimulation::new(ZoneId::new(1));
     for (player_id, facing) in [
         (1, WEST),
@@ -188,7 +187,7 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
         open.add_player(player_id).unwrap();
         open.apply_command(player_id, 1, run(facing)).unwrap();
     }
-    for _ in 0..mmorpg_core::golden::t30(1_600) {
+    for _ in 0..mmorpg_core::golden::t30(4_900) {
         open.advance_tick().unwrap();
     }
     let players = open.snapshot().unwrap().players;
@@ -220,20 +219,27 @@ fn world_limits_hold_bodies_in_the_compact_range_on_unenclosed_content() {
         );
     }
 
-    // Gravity without ground or ceiling carries a body to the floor or ceiling limit.
+    // Gravity without ground or ceiling carries a body to the floor or ceiling limit. It starts
+    // 320 m short of the limit: a 1 km fall (#424) reaches about 130 m/s, where Rapier's
+    // controller no longer stops within a unit of the ceiling slab.
     let g = mmorpg_core::STANDARD_GRAVITY[1];
     for (gravity, y) in [(g, -limit + half_y), (-g, limit - half_y)] {
         let definition = ZoneDefinition::new([0, gravity, 0], Vec::new()).unwrap();
         let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), definition).unwrap();
         zone.add_player(1).unwrap();
+        let mut state = zone.snapshot().unwrap();
+        state.players[0].position =
+            mmorpg_core::physics::from_units([0, y - y.signum() * 32_000, 0]);
+        let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
         for _ in 0..mmorpg_core::golden::t30(300) {
             zone.advance_tick().unwrap();
         }
         let player = &zone.snapshot().unwrap().players[0];
-        // Rapier's controller stops a rising body within a unit of the ceiling.
+        // Rapier's controller stops a rising body near the ceiling: within a unit at 320 m, but
+        // 1 km from the origin (#424) it overshoots into the slab by up to 0.6 m.
         let [x, at, z] = mmorpg_core::physics::to_units(player.position);
         assert!(
-            [x, z] == [0, 0] && (at - y).abs() <= 1,
+            [x, z] == [0, 0] && (at - y).abs() <= 60,
             "gravity {gravity}: {at}"
         );
         assert_eq!(

@@ -2,15 +2,23 @@
 //! reuse the server's collision boxes exactly.
 use mmorpg_client::world::{TERRAIN_STEP_UNITS, WorldScene};
 use mmorpg_core::greyhaven_vale_definition;
-use mmorpg_scenery::{PropKind, TERRAIN_EXTENT_UNITS, greyhaven_vale_scenery};
+use mmorpg_scenery::{PropKind, TERRAIN_BOUNDS, greyhaven_vale_scenery};
 
 #[test]
 fn terrain_and_water_are_valid_indexed_meshes() {
     let scenery = greyhaven_vale_scenery();
     let world = WorldScene::new(&scenery);
-    let side = usize::try_from(2 * TERRAIN_EXTENT_UNITS / TERRAIN_STEP_UNITS + 1).unwrap();
-    assert_eq!(world.terrain.vertices.len(), side * side);
-    assert_eq!(world.terrain.indices.len(), (side - 1) * (side - 1) * 6);
+    let side = |axis: usize| {
+        usize::try_from(
+            (TERRAIN_BOUNDS.max[axis] - TERRAIN_BOUNDS.min[axis]) / TERRAIN_STEP_UNITS + 1,
+        )
+        .unwrap()
+    };
+    assert_eq!(world.terrain.vertices.len(), side(0) * side(1));
+    assert_eq!(
+        world.terrain.indices.len(),
+        (side(0) - 1) * (side(1) - 1) * 6
+    );
     for mesh in [&world.terrain, &world.water] {
         assert!(!mesh.indices.is_empty());
         assert_eq!(mesh.indices.len() % 3, 0);
@@ -28,7 +36,9 @@ fn terrain_and_water_are_valid_indexed_meshes() {
         }
     }
     // Terrain vertices carry the shared relief, in metres.
-    let centre = &world.terrain.vertices[side * (side / 2) + side / 2];
+    let origin =
+        |axis: usize| usize::try_from(-TERRAIN_BOUNDS.min[axis] / TERRAIN_STEP_UNITS).unwrap();
+    let centre = &world.terrain.vertices[side(0) * origin(1) + origin(0)];
     assert_eq!(centre.position[0], 0.0);
     assert_eq!(centre.position[2], 0.0);
     assert_eq!(centre.position[1], scenery.height_at(0, 0) as f32 / 100.0);

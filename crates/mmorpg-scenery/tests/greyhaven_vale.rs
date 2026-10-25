@@ -6,9 +6,9 @@ use std::collections::BTreeMap;
 use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_GRID, SPAWN_PLAZA, ids, shrine};
 use mmorpg_core::{Area, MAX_PLAYERS_PER_ZONE, StaticCollider, greyhaven_vale_definition};
 use mmorpg_scenery::{
-    Biome, FAR_PEAK_UNITS, FAR_TERRAIN_EXTENT_UNITS, LAKE_BED_COLOR, MOUNTAIN_PEAK_UNITS,
-    PLAZA_COLOR, PropKind, ROAD_COLOR, Rect, SNOW_COLOR, SNOW_LINE_UNITS, Scenery,
-    TERRAIN_EXTENT_UNITS, WALKABLE_RELIEF_UNITS, greyhaven_vale_scenery, visual_kind,
+    Biome, FAR_PEAK_UNITS, FAR_TERRAIN_BOUNDS, LAKE_BED_COLOR, MOUNTAIN_PEAK_UNITS, PLAZA_COLOR,
+    PropKind, ROAD_COLOR, Rect, SNOW_COLOR, SNOW_LINE_UNITS, Scenery, TERRAIN_BOUNDS,
+    WALKABLE_RELIEF_UNITS, greyhaven_vale_scenery, visual_kind,
 };
 
 /// The golden [`Scenery::stable_hash`]: any change to placement, roads, water or
@@ -296,7 +296,8 @@ fn relief_is_gentle_inside_and_encloses_the_vale_with_mountains() {
     for row in 0..grid.rows {
         for column in 0..grid.columns {
             let (vertex, _) = grid.vertex(column, row).unwrap();
-            let height = vertex[1];
+            // Above the raised ground (the rim, the ridge, the farmland's plateau, #424).
+            let height = vertex[1] - scenery.ground_at(vertex[0], vertex[2]).max(0);
             // Stillwater Lake's basin (#274) sinks the ground up to 9 m under the water.
             // The Sunken Shrine's cave floor (#274) runs on under the shore, roofed.
             let floor = if scenery
@@ -324,18 +325,18 @@ fn terrain_grid_samples_relief_and_biomes() {
     let scenery: Scenery = greyhaven_vale_scenery();
     let grid = scenery.terrain_grid(200);
     assert_eq!(grid.step, 200);
-    assert_eq!((grid.columns, grid.rows), (281, 281));
-    assert_eq!(grid.origin, [-TERRAIN_EXTENT_UNITS, -TERRAIN_EXTENT_UNITS]);
-    assert_eq!(grid.heights.len(), 281 * 281);
-    assert_eq!(grid.colors.len(), 281 * 281);
+    assert_eq!((grid.columns, grid.rows), (281, 501));
+    assert_eq!(grid.origin, TERRAIN_BOUNDS.min);
+    assert_eq!(grid.heights.len(), 281 * 501);
+    assert_eq!(grid.colors.len(), 281 * 501);
     for (column, row) in [(0, 0), (100, 100), (37, 158), (200, 200)] {
         let (vertex, _) = grid.vertex(column, row).unwrap();
         assert_eq!(vertex[1], scenery.surface_at(vertex[0], vertex[2]));
     }
     assert!(grid.vertex(281, 0).is_none());
     let color = |x: i32, z: i32| {
-        let column = usize::try_from((x + TERRAIN_EXTENT_UNITS) / 200).unwrap();
-        let row = usize::try_from((z + TERRAIN_EXTENT_UNITS) / 200).unwrap();
+        let column = usize::try_from((x - TERRAIN_BOUNDS.min[0]) / 200).unwrap();
+        let row = usize::try_from((z - TERRAIN_BOUNDS.min[1]) / 200).unwrap();
         grid.vertex(column, row).unwrap().1
     };
     // Road dirt, the plaza, the lake bed, meadows, then rock and far snow on the peaks.
@@ -354,11 +355,18 @@ fn terrain_grid_samples_relief_and_biomes() {
             "green: {meadow:?}"
         );
     }
-    // The near mountains stay below the snow line; the distant ranges carry it.
+    // The near mountains stay below the snow line above the ground they rise from (the
+    // farmland's ridge and plateau continue beyond the walls, #424); the distant ranges carry it.
+    let relief = |index: usize| {
+        let (vertex, _) = grid
+            .vertex(index % grid.columns, index / grid.columns)
+            .unwrap();
+        vertex[1] - scenery.ground_at(vertex[0], vertex[2])
+    };
     let highest = (0..grid.heights.len())
-        .max_by_key(|&index| grid.heights[index])
+        .max_by_key(|&index| relief(index))
         .unwrap();
-    assert!(grid.heights[highest] < SNOW_LINE_UNITS);
+    assert!(relief(highest) < SNOW_LINE_UNITS);
     assert_eq!(grid.biomes[highest], Biome::Rock);
     let far = scenery.far_terrain_grid(2_000);
     let highest = (0..far.heights.len())
@@ -384,8 +392,8 @@ fn terrain_biomes_name_every_vertex_colour() {
     let grid = scenery.terrain_grid(200);
     assert_eq!(grid.biomes.len(), grid.heights.len());
     let at = |x: i32, z: i32| {
-        let column = usize::try_from((x + TERRAIN_EXTENT_UNITS) / 200).unwrap();
-        let row = usize::try_from((z + TERRAIN_EXTENT_UNITS) / 200).unwrap();
+        let column = usize::try_from((x - TERRAIN_BOUNDS.min[0]) / 200).unwrap();
+        let row = usize::try_from((z - TERRAIN_BOUNDS.min[1]) / 200).unwrap();
         let index = row * grid.columns + column;
         (grid.biomes[index], grid.colors[index])
     };
@@ -417,11 +425,23 @@ fn terrain_biomes_name_every_vertex_colour() {
         }
     }
     let far = scenery.far_terrain_grid(2_000);
+    // Biomes follow the relief above the physical ground (#424).
+    let relief = |grid: &mmorpg_scenery::TerrainGrid| {
+        (0..grid.heights.len())
+            .map(|index| {
+                let (vertex, _) = grid
+                    .vertex(index % grid.columns, index / grid.columns)
+                    .unwrap();
+                vertex[1] - scenery.ground_at(vertex[0], vertex[2])
+            })
+            .collect::<Vec<_>>()
+    };
+    let (near_relief, far_relief) = (relief(&grid), relief(&far));
     let beyond: Vec<_> = grid
         .biomes
         .iter()
-        .zip(&grid.heights)
-        .chain(far.biomes.iter().zip(&far.heights))
+        .zip(&near_relief)
+        .chain(far.biomes.iter().zip(&far_relief))
         .filter(|(biome, _)| {
             matches!(
                 biome,
@@ -447,7 +467,10 @@ fn prop_counts_stay_within_their_budgets() {
     for prop in &scenery.props {
         *counts.entry(prop.kind).or_default() += 1;
         let [x, _, z] = prop.position;
-        assert!(x.abs() <= TERRAIN_EXTENT_UNITS && z.abs() <= TERRAIN_EXTENT_UNITS);
+        assert!(
+            (TERRAIN_BOUNDS.min[0]..=TERRAIN_BOUNDS.max[0]).contains(&x)
+                && (TERRAIN_BOUNDS.min[1]..=TERRAIN_BOUNDS.max[1]).contains(&z)
+        );
         if matches!(prop.kind, PropKind::Tree(_)) && prop.collider.is_none() {
             background_trees += 1;
             assert!(
@@ -473,22 +496,25 @@ fn prop_counts_stay_within_their_budgets() {
         .count();
     assert_eq!(derived, structures);
     let count = |kind| counts.get(&kind).copied().unwrap_or(0);
-    // The outer valley (#159) adds its own grass, flowers and undergrowth.
-    assert!((3_500..=4_100).contains(&count(PropKind::GrassTuft)));
-    assert!((900..=1_200).contains(&count(PropKind::Flowers)));
-    assert!((250..=320).contains(&count(PropKind::Bush)));
+    // The outer valley (#159) and the farmland (#424) add their own grass, flowers and
+    // undergrowth.
+    assert!((4_700..=5_300).contains(&count(PropKind::GrassTuft)));
+    assert!((1_300..=1_600).contains(&count(PropKind::Flowers)));
+    assert!((370..=440).contains(&count(PropKind::Bush)));
     assert!((100..=140).contains(&count(PropKind::Reeds)));
-    assert!((400..=520).contains(&background_trees));
-    assert_eq!(count(PropKind::CropRow), 13);
+    assert!((600..=700).contains(&background_trees));
+    // Millbrook's 13 rows, then 14 in each of the farmland's eleven fields.
+    assert_eq!(count(PropKind::CropRow), 13 + 11 * 14);
     assert_eq!(count(PropKind::Lamp), 4);
     assert_eq!(count(PropKind::Signpost), 3);
     assert_eq!(count(PropKind::Barrel), 4);
     assert_eq!(count(PropKind::Cart), 2);
     assert_eq!(count(PropKind::Dock), 1);
-    // The Eastwater watchtower and the Southmeadow ruins join the keep and houses (#159).
-    assert_eq!(count(PropKind::Keep), 2);
-    assert_eq!(count(PropKind::House), 6);
-    assert!(scenery.props.len() <= 8_000, "{}", scenery.props.len());
+    // The Eastwater watchtower and the Southmeadow ruins join the keep and houses (#159), and
+    // the farmland's tower and hamlet houses join them (#424).
+    assert_eq!(count(PropKind::Keep), 3);
+    assert_eq!(count(PropKind::House), 15);
+    assert!(scenery.props.len() <= 10_000, "{}", scenery.props.len());
 }
 
 #[test]
@@ -513,14 +539,11 @@ fn prop_kind_names_are_unique_and_cover_every_placed_kind() {
 fn the_far_ring_continues_the_same_relief_into_distant_ranges() {
     let scenery = greyhaven_vale_scenery();
     let far = scenery.far_terrain_grid(2_000);
-    assert_eq!((far.columns, far.rows), (61, 61));
-    assert_eq!(
-        far.origin,
-        [-FAR_TERRAIN_EXTENT_UNITS, -FAR_TERRAIN_EXTENT_UNITS]
-    );
+    assert_eq!((far.columns, far.rows), (61, 83));
+    assert_eq!(far.origin, FAR_TERRAIN_BOUNDS.min);
     let near = scenery.terrain_grid(2_000);
     let offset =
-        usize::try_from((FAR_TERRAIN_EXTENT_UNITS - TERRAIN_EXTENT_UNITS) / 2_000).unwrap();
+        usize::try_from((TERRAIN_BOUNDS.min[0] - FAR_TERRAIN_BOUNDS.min[0]) / 2_000).unwrap();
     let mut peak = i32::MIN;
     for row in 0..far.rows {
         for column in 0..far.columns {
@@ -548,9 +571,9 @@ fn the_far_ring_continues_the_same_relief_into_distant_ranges() {
         "distant ranges tower over the near mountains: {peak}"
     );
     // No cliff at the terrain grid's edge: the ranges start from nothing.
-    for z in (-TERRAIN_EXTENT_UNITS..=TERRAIN_EXTENT_UNITS).step_by(500) {
-        let edge = scenery.height_at(TERRAIN_EXTENT_UNITS, z);
-        let beyond = scenery.height_at(TERRAIN_EXTENT_UNITS + 100, z);
+    for z in (TERRAIN_BOUNDS.min[1]..=TERRAIN_BOUNDS.max[1]).step_by(500) {
+        let edge = scenery.height_at(TERRAIN_BOUNDS.max[0], z);
+        let beyond = scenery.height_at(TERRAIN_BOUNDS.max[0] + 100, z);
         assert!((beyond - edge).abs() <= 200, "z {z}: {edge} -> {beyond}");
     }
 }

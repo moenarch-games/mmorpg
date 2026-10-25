@@ -474,11 +474,12 @@ describe("WASM local zone host", () => {
     const scene = buildSceneryScene(scenery.scenery, scenery.staticScene);
     const modelled = Object.values(scene.stats.props).reduce((sum, count) => sum + (count ?? 0), 0);
     expect(modelled).toBe(scenery.scenery.props.length);
-    // Draw-call and per-frame validation budgets: ~7 100 props merge into about 1 300 batches
-    // across the expanded valley (#159); distance culling keeps far batches out of a frame.
-    expect(scene.stats.staticNodes).toBeLessThanOrEqual(1_500);
-    expect(scene.stats.staticVertices).toBeLessThanOrEqual(230_000);
-    expect(scenery.scenery.props.length).toBeGreaterThan(scene.stats.staticNodes * 5);
+    // Draw-call and per-frame validation budgets: ~9 500 props merge into about 2 400 batches
+    // across the expanded valley (#159) and the farmland beyond it (#424); distance culling
+    // keeps far batches out of a frame.
+    expect(scene.stats.staticNodes).toBeLessThanOrEqual(2_600);
+    expect(scene.stats.staticVertices).toBeLessThanOrEqual(340_000);
+    expect(scenery.scenery.props.length).toBeGreaterThan(scene.stats.staticNodes * 3);
     expect(new Set(scene.batches.map((batch) => batch.node.geometry.resourceKey)).size).toBe(scene.batches.length);
     // Terrain and far-ring meshes span the whole vale, so none is ever culled: keep their palette small.
     const terrainMeshes = scene.batches.filter((batch) => /^static-all-(terrain|far):/.test(batch.node.id)).length;
