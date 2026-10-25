@@ -128,7 +128,7 @@ pub fn sound_manifest(bundle: &str) -> Result<String, JsError> {
 }
 
 /// Per area, the imported unit models its creature spawns use, and `"residents"` where a named
-/// resident with an appearance preset stands (#418), as JSON
+/// resident (#418) or a humanoid enemy (#39) with an appearance preset stands, as JSON
 /// `[{"area": id, "models": ["Wolf", …]}]` in area order (#240).
 #[wasm_bindgen(js_name = regionModels)]
 pub fn region_models() -> String {
@@ -153,10 +153,17 @@ pub fn region_models() -> String {
             models.sort();
             models.dedup();
             let mut names: Vec<_> = models.iter().map(|model| model.name()).collect();
-            if content
-                .npcs()
-                .iter()
-                .any(|npc| inside(npc.position) && Resident::of_name(&npc.name).is_some())
+            let enemies = content.creature_spawns().iter().any(|spawn| {
+                inside(spawn.position)
+                    && content
+                        .creature_template(spawn.template)
+                        .is_some_and(|template| Resident::of_creature(&template.name).is_some())
+            });
+            if enemies
+                || content
+                    .npcs()
+                    .iter()
+                    .any(|npc| inside(npc.position) && Resident::of_name(&npc.name).is_some())
             {
                 names.push("residents");
             }

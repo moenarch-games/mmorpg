@@ -127,10 +127,11 @@ pub struct ImportedUnit {
     pub tint: Option<[f32; 3]>,
     /// What the unit carries: a player its class weapons, a guard its sword.
     pub loadout: Option<Loadout>,
-    /// A named resident's appearance preset (#418); players and animals have none.
+    /// A named resident's (#418) or humanoid enemy's (#39) appearance preset; players and
+    /// animals have none.
     pub resident: Option<Resident>,
-    /// The seed of a [`Resident::varied`] resident's own look: its NPC id, so each guard stays
-    /// the same man across frames and sessions (asset-tooling #380).
+    /// The seed of a [`Resident::varied`] resident's own look: its NPC or creature id, so each
+    /// guard or bandit stays the same man across frames and sessions (asset-tooling #380).
     pub variety: Option<u32>,
     /// A player's class starter outfit (asset-tooling #379); residents and animals have none.
     pub outfit: Option<Outfit>,
@@ -350,7 +351,11 @@ impl UnitPresenter {
                 EntityRef::Player(_) => ClassChoice::from_appearance(record.appearance),
                 _ => None,
             };
-            let mut clip = kind.strike(class.map(|choice| choice.class), ability);
+            let class = class.map(|choice| choice.class).or_else(|| {
+                self.resident(source, record)
+                    .and_then(Resident::strike_class)
+            });
+            let mut clip = kind.strike(class, ability);
             if self.duration(kind, clip) <= 0. {
                 clip = kind.clips().attack;
             }
@@ -465,7 +470,7 @@ impl UnitPresenter {
             let dead = unit.record.flags.dead;
             let start = out.draws.len();
             if let Some(kind) = self.imported_kind(entity, &unit.record) {
-                let resident = self.resident(entity);
+                let resident = self.resident(entity, &unit.record);
                 // Only the viewer's guard is projected; the shield rises once the zone's guard
                 // protects (#156, #384), not while slash or landing recovery holds it back.
                 let guarding = viewer && snapshot.viewer.guard.protecting;
@@ -823,22 +828,29 @@ impl UnitPresenter {
     }
 
     fn imported_kind(&self, entity: EntityRef, record: &EntitySnapshot) -> Option<Kind> {
-        let kind = match entity {
-            EntityRef::Npc(_) => self.resident(entity).map(|_| Kind::Ranger),
-            _ => Kind::of(entity, record, &self.content),
+        let kind = match self.resident(entity, record) {
+            Some(_) => Some(Kind::Ranger),
+            None => Kind::of(entity, record, &self.content),
         };
         kind.filter(|kind| self.ready.contains(kind))
     }
 
-    /// The resident preset an NPC wears, once the client draws resident looks (#418).
-    fn resident(&self, entity: EntityRef) -> Option<Resident> {
-        let EntityRef::Npc(id) = entity else {
-            return None;
-        };
+    /// The appearance preset a named NPC (#418) or a humanoid enemy (#39) wears, once the client
+    /// draws resident looks.
+    fn resident(&self, entity: EntityRef, record: &EntitySnapshot) -> Option<Resident> {
         if !self.residents {
             return None;
         }
-        Resident::of_name(&self.content.npc(id)?.name)
+        match entity {
+            EntityRef::Npc(id) => Resident::of_name(&self.content.npc(id)?.name),
+            EntityRef::Creature(_) => Resident::of_creature(
+                &self
+                    .content
+                    .creature_template(CreatureTemplateId::new(record.appearance))?
+                    .name,
+            ),
+            EntityRef::Player(_) | EntityRef::Minion(_) => None,
+        }
     }
 
     fn procedural(
