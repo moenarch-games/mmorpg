@@ -99,17 +99,11 @@ impl ZoneSimulation {
         // creature and may ignore the slash's global cooldown (#157); any
         // other ability use ends a pending combo. The edge's typed effects,
         // and its precision benefits when precise, apply (#380).
-        let follow_up = self
-            .players
-            .get(&player_id)
-            .filter(|_| ability == crate::ability::ids::SHIELD_BASH.get())
-            .and_then(|player| {
-                crate::action::follow_up(
-                    self.action_graph,
-                    player,
-                    crate::action::ActionInput::ShieldBash,
-                )
-            });
+        // Edges out of a landing answer Warden melee and other abilities too
+        // (#413).
+        let follow_up =
+            crate::action::input_of(&crate::PlayerIntent::UseAbility { ability, target })
+                .and_then(|input| self.follow_up_of(player_id, input));
         let keep_opening = follow_up
             .as_ref()
             .is_some_and(|follow_up| follow_up.has(crate::action::Effect::KeepOpening));
@@ -222,21 +216,13 @@ impl ZoneSimulation {
         self.update_player(player_id, |player| {
             player.global_cooldown = global_cooldown;
         });
+        if let Some(follow_up) = &follow_up {
+            self.spend_follow_up(player_id, follow_up);
+        }
         match ability.cast {
             CastTime::Instant => {
                 self.pay_and_cool_down(player_id, ability);
-                if refund > 0 {
-                    self.update_player(player_id, |player| {
-                        if let Some(choice) = player.class {
-                            let level = player.level;
-                            player.resource.gain(
-                                choice.class.resource(),
-                                level,
-                                refund.min(ability.cost),
-                            );
-                        }
-                    });
-                }
+                self.refund(player_id, refund.min(ability.cost));
                 self.resolve_player_ability(player_id, ability, target, now)?;
             }
             CastTime::Cast(ticks) | CastTime::Channel(ticks) => {
@@ -274,6 +260,19 @@ impl ZoneSimulation {
             }
         }
         Ok(None)
+    }
+
+    /// Returns `amount` of the class resource a follow-up refunds.
+    pub(crate) fn refund(&mut self, player_id: PlayerId, amount: u16) {
+        if amount == 0 {
+            return;
+        }
+        self.update_player(player_id, |player| {
+            if let Some(choice) = player.class {
+                let level = player.level;
+                player.resource.gain(choice.class.resource(), level, amount);
+            }
+        });
     }
 
     /// The shared ability checks in their fixed order (class, learned, the

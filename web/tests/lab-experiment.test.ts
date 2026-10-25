@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { PROTOCOL_ID } from "../src/protocol-id";
 import { TICK_HZ } from "../src/replication";
 import {
-  copyConfig, importFile, exportBundle, insertCopy, moveCommand, removeCommand, ruleApplies, setRuleApplies, SCENARIO_FORMAT,
+  copyConfig, importFile, exportBundle, insertCopy, moveCommand, movementRule, removeCommand, removeEdge, ruleApplies, setMovementRule,
+  setRuleApplies, traversalSample, SCENARIO_FORMAT,
   type ConfigCheck, type LabComparison, type LabConfig, type LabRun, type LabScenario,
 } from "../src/world/lab-experiment";
 import { ScenarioSource, type ScenarioZoneHandle } from "../src/world/scenario-source";
@@ -108,5 +109,38 @@ describe("Action Lab experiments (#382)", () => {
     const imported = importFile(exportBundle({ scenario: null, a: production, b: longer }));
     expect(imported.b).toEqual(longer);
     expect(() => importFile("{\"format\":\"other\"}")).toThrow();
+  }, 30_000);
+
+  test("authored momentum carries a released running jump; landing edges compose (#413)", () => {
+    const production = baseline();
+    expect(production.movement ?? []).toEqual([]);
+    const sample = traversalSample(copyConfig(production, "Traversal sample"));
+    expect(check(sample)).toMatchObject({ baseline: false, error: null });
+    expect(sample.edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash", "LandingToMelee", "LandingToShieldBash"]);
+    expect(movementRule(sample, "Airborne", "Active")).toMatchObject({ steeringPercent: 100, momentumPercent: 100, maxAccelerationCms2: 600 });
+    expect(removeEdge(sample, "LandingToMelee").edges).toHaveLength(2);
+    expect(check(setMovementRule(sample, "Airborne", "Active", null)).error).toBeNull();
+    const late = copyConfig(sample, "Late");
+    late.edges[1]!.openAfterMs = 600;
+    expect(check(late).error).toContain("OutlastsSource");
+    // Run east, jump, let go: production stops at once, the sample flies on its momentum.
+    const source = new ScenarioSource(zone(null));
+    void source.join();
+    for (let tick = 0; tick < 50; tick += 1) {
+      if (tick === 1) { source.sendCommand({ kind: "move", forward: 1, strafe: 0, facing: 16_384 }); }
+      if (tick === 20) { source.sendCommand({ kind: "jump" }); }
+      if (tick === 22) { source.sendCommand({ kind: "move", forward: 0, strafe: 0, facing: 16_384 }); }
+      source.advance(TICK_SECONDS);
+    }
+    const recording = source.recording();
+    source.leave();
+    const scenario: LabScenario = { ...record(), name: "running jump", ticks: recording.ticks, commands: [...recording.commands], recorded: null };
+    const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(sample))) as LabComparison;
+    expect(comparison.divergesAt).not.toBeNull();
+    const at = (run: LabRun, tick: number) => run.ticks.find((entry) => entry.tick === tick)!;
+    expect(at(comparison.a, 30).speed).toBe(0);
+    expect(at(comparison.b, 30).speed).toBeGreaterThan(300);
+    expect(at(comparison.b, 30).regions[0]).toBe("Airborne·Active");
+    expect(comparison.differences.length).toBeGreaterThan(0);
   }, 30_000);
 });

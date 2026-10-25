@@ -95,7 +95,26 @@ export type Inspection = {
     candidates: readonly { candidate: string; verdict: Verdict }[];
   }[];
   effective: readonly EffectiveValue[];
+  /** The authored movement the next tick's controller velocity follows (#413), and its sources. */
+  movement: {
+    movement: LabMovement;
+    /** No running phase authors movement: the intent moves the body directly. */
+    free: boolean;
+    sources: readonly { action: string; phase: string; movement: LabMovement; origin: string }[];
+  };
+  /** The body after the last physics step: centre (cm), horizontal and vertical speed (cm/s). */
+  motion: { position: readonly number[]; speed: number; vertical: number } | null;
 };
+
+export type LabMovement = { steeringPercent: number; momentumPercent: number; maxAccelerationCms2: number | null; text: string };
+
+/** The running movement as one line: what it is, from which phases, and the body's speed. */
+export function explainMovement(inspection: Pick<Inspection, "movement" | "motion">): string {
+  const { movement, free, sources } = inspection.movement;
+  const from = free ? "free (no authored phase)" : `${movement.text} from ${sources.map((source) => `${source.action}·${source.phase} (${source.origin})`).join(" + ")}`;
+  const motion = inspection.motion ? ` · ${inspection.motion.speed} cm/s${inspection.motion.vertical === 0 ? "" : `, ${inspection.motion.vertical > 0 ? "↑" : "↓"} ${Math.abs(inspection.motion.vertical)} cm/s`}` : "";
+  return `${from}${motion}`;
+}
 
 export const LAB_SCENARIO = "action-lab";
 
@@ -574,12 +593,26 @@ export class ActionLabPanel {
       button.addEventListener("click", () => this.#select({ kind: "edge", id: edge.id }));
       return button;
     });
+    // Edges an experiment adds (landing edges, #413) appear from the running graph's inspection.
+    for (const report of inspection?.edges ?? []) {
+      if (this.#graph.edges.some((edge) => edge.id === report.edge)) { continue; }
+      const button = element("button", {
+        type: "button",
+        className: `lab-edge status-${report.status.kind.toLowerCase()}${this.#isSelected("edge", report.edge) ? " selected" : ""}`,
+        textContent: `${report.edge} · ${report.status.kind}`,
+        title: explainEdge(report),
+      });
+      button.addEventListener("click", () => this.#select({ kind: "edge", id: report.edge }));
+      edges.push(button);
+    }
+    const movement = inspection ? [element("p", { className: "lab-muted" }, `Movement: ${explainMovement(inspection)}`)] : [];
     const rules = (inspection?.rules ?? []).map((rule) => element("li", {}, explainRule(rule)));
     const interruptions = (inspection?.interruptions ?? []).map((report) => element("li", {}, explainInterruption(report)));
     const tick = element("button", { type: "button", className: `lab-edge${this.#selection.kind === "tick" ? " selected" : ""}`, textContent: "Why is an input (not) legal?" });
     tick.addEventListener("click", () => this.#select({ kind: "tick" }));
     this.#chart.replaceChildren(
       element("div", { className: "lab-regions" }, ...regions),
+      ...movement,
       element("div", { className: "lab-edges" }, ...edges, tick),
       rules.length > 0 ? element("ul", { className: "lab-rules" }, ...rules) : element("p", { className: "lab-muted" }, "No compatibility rule applies."),
       ...(interruptions.length > 0 ? [element("ul", { className: "lab-rules" }, ...interruptions)] : []),
@@ -611,6 +644,9 @@ export class ActionLabPanel {
       for (const rule of this.#graph.interruptions.filter((entry) => entry.interrupted === `Action(${selection.id})` || entry.reaction === selection.id)) {
         rows.push([`${rule.reaction} → ${rule.interrupted}`, `${rule.consequence}${rule.phase ? ` in ${rule.phase}` : ""}`]);
       }
+      for (const source of inspection?.movement.sources.filter((entry) => entry.action === selection.id) ?? []) {
+        rows.push([`Movement · ${source.phase}`, `${source.movement.text} · ${source.origin}`]);
+      }
     } else if (selection.kind === "edge") {
       const edge = this.#graph.edges.find((entry) => entry.id === selection.id);
       const report = inspection?.edges.find((entry) => entry.edge === selection.id);
@@ -630,6 +666,7 @@ export class ActionLabPanel {
         rows.push(["Status", explainEdge(report)], ["Anchor tick", String(report.anchorTick ?? "—")], ["Window from", report.origin]);
       }
     } else {
+      if (inspection) { rows.push(["Movement", explainMovement(inspection)]); }
       for (const arbitration of inspection?.arbitrations ?? []) {
         rows.push([arbitration.input, `${explainOutcome(arbitration.outcome)}${arbitration.precise ? " (precise)" : ""}`]);
         for (const { candidate, verdict } of arbitration.candidates) {

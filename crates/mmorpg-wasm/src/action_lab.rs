@@ -10,8 +10,8 @@
 use std::sync::Arc;
 
 use mmorpg_core::action::{
-    self, ActionInput, Anchor, BlockReason, Candidate, Condition, EdgeStatus, Effective, Origin,
-    Outcome, Scope, Setting, Verdict,
+    self, ActionInput, Anchor, BlockReason, Candidate, Condition, EdgeStatus, Effective, Movement,
+    Origin, Outcome, Scope, Setting, Verdict,
 };
 use mmorpg_core::{
     CharacterRecord, ClassChoice, EQUIPMENT_SLOTS, EphemeralCharacterBuild, Equipment, ItemId,
@@ -245,8 +245,31 @@ fn setting(setting: Setting) -> Value {
             window.open_after_ms, window.actionable_ms, window.buffer_ms
         ),
         Setting::Rule { applies, .. } => if applies { "applies" } else { "off" }.to_owned(),
+        Setting::Movement { movement, .. } => movement_text(movement),
     };
     json!({ "key": name(setting.key()), "value": value })
+}
+
+/// "steering 20%, momentum 100%, ≤ 6 m/s²".
+fn movement_text(movement: Movement) -> String {
+    let limit = movement
+        .max_acceleration_cms2
+        .map_or_else(String::new, |cms2| {
+            format!(", ≤ {} m/s²", f64::from(cms2) / 100.0)
+        });
+    format!(
+        "steering {}%, momentum {}%{limit}",
+        movement.steering_percent, movement.momentum_percent
+    )
+}
+
+fn movement_json(movement: Movement) -> Value {
+    json!({
+        "steeringPercent": movement.steering_percent,
+        "momentumPercent": movement.momentum_percent,
+        "maxAccelerationCms2": movement.max_acceleration_cms2,
+        "text": movement_text(movement),
+    })
 }
 
 fn effective(effective: &Effective) -> Value {
@@ -358,9 +381,22 @@ pub fn graph_json() -> String {
             value
         })
         .collect();
+    let movement: Vec<Value> = graph
+        .movement
+        .iter()
+        .map(|rule| {
+            json!({
+                "action": name(rule.action),
+                "phase": name(rule.phase),
+                "conditions": rule.conditions.iter().copied().map(condition_name).collect::<Vec<_>>(),
+                "movement": movement_json(rule.movement),
+            })
+        })
+        .collect();
     json!({
         "tickHz": mmorpg_core::TICK_HZ,
         "regions": ["Movement", "Offense", "Defense", "Reaction"],
+        "movement": movement,
         "actions": actions,
         "modifiers": modifiers,
         "edges": edges,
@@ -449,9 +485,38 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
             })
         })
         .collect();
+    // The movement the next tick asks the controller for, and what contact
+    // let the body realize in the last step (#413).
+    let report = &inspection.movement;
+    let sources: Vec<Value> = report
+        .sources
+        .iter()
+        .map(|source| {
+            json!({
+                "action": name(source.action),
+                "phase": name(source.phase),
+                "movement": movement_json(source.movement),
+                "origin": origin_name(source.origin),
+            })
+        })
+        .collect();
+    let hz = f32::from(mmorpg_core::TICK_HZ);
+    let motion = zone.player_motion(player).map(|(position, velocity)| {
+        json!({
+            "position": position.map(|axis| axis.round()),
+            "speed": (velocity[0].hypot(velocity[2]) * hz).round(),
+            "vertical": (velocity[1] * hz).round(),
+        })
+    });
     Some(
         json!({
             "tick": inspection.tick,
+            "movement": {
+                "movement": movement_json(report.movement),
+                "free": report.sources.is_empty(),
+                "sources": sources,
+            },
+            "motion": motion,
             "regions": regions,
             "edges": edges,
             "rules": rules,

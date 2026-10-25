@@ -17,7 +17,15 @@ export const BUNDLE_FORMAT = "mmorpg-action-lab-bundle";
 export type LabEffect =
   | { kind: "TargetConfirmed" | "IgnoreGlobalCooldown" | "KeepOpening" }
   | { kind: "Recovery"; ms: number }
-  | { kind: "ResourceRefund"; amount: number };
+  | { kind: "ResourceRefund"; amount: number }
+  /** A launch along the facing and upward in cm/s (#413). */
+  | { kind: "Impulse"; forwardCms: number; upCms: number };
+
+/** An action phase's bounded movement (#413, Atlas 5.9.2); see `mmorpg_core::action::Movement`. */
+export type LabMovementRule = {
+  action: string; phase: string; conditions: string[];
+  steeringPercent: number; momentumPercent: number; maxAccelerationCms2: number | null;
+};
 
 export type LabConfigEdge = {
   id: string; from: string; input: string; anchor: string;
@@ -31,7 +39,8 @@ export type LabScope = { kind: "Class"; class: string } | { kind: "Weapon"; item
 export type LabSetting =
   | { kind: "Recovery"; action: string; ms: number }
   | { kind: "Window"; edge: string; openAfterMs: number; actionableMs: number; bufferMs: number }
-  | { kind: "Rule"; rule: string; applies: boolean };
+  | { kind: "Rule"; rule: string; applies: boolean }
+  | { kind: "Movement"; action: string; phase: string; steeringPercent: number; momentumPercent: number; maxAccelerationCms2: number | null };
 
 /** An experimental action graph, in `actionLabBaseline()`'s format. */
 export type LabConfig = {
@@ -41,8 +50,92 @@ export type LabConfig = {
   windowModifiers: { edge: string; conditions: string[]; actionableDeltaMs: number }[];
   rules: { id: string; during: string; input: string; conditions: string[]; effect: string }[];
   interruptions: { reaction: string; interrupted: string; phase: string | null; consequence: string }[];
+  /** Per-phase movement; absent when none is authored (production). */
+  movement?: LabMovementRule[];
   overrides: { scope: LabScope; setting: LabSetting }[];
 };
+
+/** The action phases movement can be authored for (`mmorpg_core::action::phases`, reactions excluded). */
+export const MOVEMENT_PHASES: readonly { action: string; phase: string }[] = [
+  { action: "Airborne", phase: "Active" },
+  { action: "Landing", phase: "Recovery" },
+  { action: "DirectedSlash", phase: "Recovery" },
+  { action: "DirectedSlash", phase: "FollowUp" },
+  { action: "Guard", phase: "Active" },
+  { action: "Cast", phase: "Active" },
+  { action: "GlobalCooldown", phase: "Recovery" },
+];
+
+/** The authored movement of `action` in `phase`, or null when it moves freely. */
+export function movementRule(config: LabConfig, action: string, phase: string): LabMovementRule | null {
+  return config.movement?.find((rule) => rule.action === action && rule.phase === phase) ?? null;
+}
+
+/** Authors (or, with null, removes) the movement of `action` in `phase`. */
+export function setMovementRule(config: LabConfig, action: string, phase: string,
+  movement: Omit<LabMovementRule, "action" | "phase" | "conditions"> | null): LabConfig {
+  const existing = movementRule(config, action, phase);
+  const rest = (config.movement ?? []).filter((rule) => !(rule.action === action && rule.phase === phase));
+  const next = movement ? [...rest, { action, phase, conditions: existing?.conditions ?? [], ...movement }] : rest;
+  // An override of removed movement would be refused; drop it with the rule.
+  const overrides = movement ? config.overrides : config.overrides.filter((entry) =>
+    !(entry.setting.kind === "Movement" && entry.setting.action === action && entry.setting.phase === phase));
+  return { ...config, movement: next, overrides };
+}
+
+/** The edges out of a landing (#413), by id, with the input each answers. */
+export const LANDING_EDGES: readonly { id: string; input: string }[] = [
+  { id: "LandingToMelee", input: "WardenMelee" },
+  { id: "LandingToShieldBash", input: "ShieldBash" },
+  { id: "LandingToAbility", input: "Ability" },
+];
+
+/**
+ * Adds a landing edge: 100 ms after touchdown for 100 ms (inside the 300 ms landing), buffering
+ * 100 ms, after an airborne melee hit, outranking the slash combo.
+ */
+export function addLandingEdge(config: LabConfig, id: string): LabConfig {
+  const known = LANDING_EDGES.find((edge) => edge.id === id);
+  if (!known || config.edges.some((edge) => edge.id === id)) { return config; }
+  const edge: LabConfigEdge = {
+    id, from: "Landing", input: known.input, anchor: "Landing",
+    openAfterMs: 100, actionableMs: 100, bufferMs: 100,
+    conditions: ["AttackedAirborne"], effects: [], precision: null, priority: 2,
+  };
+  return { ...config, edges: [...config.edges, edge] };
+}
+
+/** Removes an edge an experiment added, with its window modifiers, overrides and interruptions. */
+export function removeEdge(config: LabConfig, id: string): LabConfig {
+  return {
+    ...config,
+    edges: config.edges.filter((edge) => edge.id !== id),
+    windowModifiers: config.windowModifiers.filter((modifier) => modifier.edge !== id),
+    interruptions: config.interruptions.filter((rule) => rule.interrupted !== `Edge(${id})`),
+    overrides: config.overrides.filter((entry) => !(entry.setting.kind === "Window" && entry.setting.edge === id)),
+  };
+}
+
+/**
+ * The traversal sample (#413, Atlas 5.9.3): momentum through the air with 6 m/s² of air control,
+ * slowed landings, and a Warden's aerial hit landing into an early Heroic Strike or Shield Bash that
+ * waives the global cooldown. Ordinary actions compose into run → jump → aerial attack → landing →
+ * follow-up without a named move.
+ */
+export function traversalSample(config: LabConfig): LabConfig {
+  let next = setMovementRule(config, "Airborne", "Active", { steeringPercent: 100, momentumPercent: 100, maxAccelerationCms2: 600 });
+  next = setMovementRule(next, "Landing", "Recovery", { steeringPercent: 50, momentumPercent: 0, maxAccelerationCms2: null });
+  for (const id of ["LandingToMelee", "LandingToShieldBash"]) {
+    next = addLandingEdge(next, id);
+    next = {
+      ...next,
+      edges: next.edges.map((edge) => edge.id === id
+        ? { ...edge, conditions: ["Warden", "AttackedAirborne"], effects: [{ kind: "IgnoreGlobalCooldown" }] }
+        : edge),
+    };
+  }
+  return next;
+}
 
 /** `actionLabCheck`: the configuration's identity, whether it equals production, or why it is invalid. */
 export type ConfigCheck = { identity: string | null; baseline: boolean; error: string | null };
@@ -64,7 +157,12 @@ export type LabScenario = {
   recorded: { config: string; digest: string } | null;
 };
 
-export type LabTick = { tick: number; regions: string[]; events: string[]; health: number; resource: number | null; digest: string };
+export type LabTick = {
+  tick: number; regions: string[]; events: string[]; health: number; resource: number | null;
+  /** Body centre in cm and horizontal speed in cm/s after the tick's physics step (#413). */
+  position: [number, number, number]; speed: number;
+  digest: string;
+};
 export type LabCommandResult = {
   index: number; tick: number; label: string; refused: string[]; effectTick: number | null; delayTicks: number | null;
 };

@@ -9,8 +9,9 @@ import { PROTOCOL_ID } from "../protocol-id";
 import { ticksFromMs } from "../replication";
 import { element, type LabSetup } from "./action-lab";
 import {
-  copyConfig, exportBundle, importFile, insertCopy, moveCommand, recoveryOverride, removeCommand, ruleApplies, setDuration,
-  setRecoveryOverride, setRuleApplies, shortLabel, SCENARIO_FORMAT,
+  addLandingEdge, copyConfig, exportBundle, importFile, insertCopy, LANDING_EDGES, MOVEMENT_PHASES, moveCommand, movementRule,
+  recoveryOverride, removeCommand, removeEdge, ruleApplies, setDuration, setMovementRule, setRecoveryOverride, setRuleApplies,
+  shortLabel, traversalSample, SCENARIO_FORMAT,
   type ConfigCheck, type LabComparison, type LabConfig, type LabConfigEdge, type LabEffect, type LabLibrary, type LabRun, type LabScenario,
 } from "./lab-experiment";
 import type { LabExperiments } from "./wasm-runtime";
@@ -264,8 +265,13 @@ export class ExperimentPanel {
       ? element("p", { className: "lab-refused" }, `Invalid: ${check.error}`)
       : element("p", { className: "lab-muted" }, `${check.identity}${check.baseline ? " · equals production" : " · experimental, lab only"}`);
     const raw = element("textarea", { className: "lab-json", rows: 6, spellcheck: false, value: JSON.stringify(config, null, 1) });
+    const landing = LANDING_EDGES.filter((edge) => !config.edges.some((entry) => entry.id === edge.id))
+      .map((edge) => action(`+ ${edge.id}`, `Add an edge out of the landing recovery answering ${edge.input}`,
+        () => this.#setConfig(slot, addLandingEdge(config, edge.id))));
     const body = element("div", { className: "lab-config" },
       ...config.edges.map((edge, index) => this.#edgeEditor(slot, edge, index)),
+      ...(landing.length ? [element("div", { className: "lab-playback" }, ...landing)] : []),
+      this.#movementEditor(slot),
       ...config.windowModifiers.map((modifier, index) => this.#numberField(`Modifier ${modifier.edge} if ${modifier.conditions.join(", ")}: actionable Δ ms`,
         modifier.actionableDeltaMs, (value) => this.#setConfig(slot, {
           ...config, windowModifiers: config.windowModifiers.map((entry, at) => at === index ? { ...entry, actionableDeltaMs: value } : entry),
@@ -293,6 +299,8 @@ export class ExperimentPanel {
       element("div", { className: "lab-playback" }, ...tabs),
       element("div", { className: "lab-playback" }, name,
         action("Production", "Reset this configuration to the production rules", () => this.#setConfig(slot, copyConfig(this.#runtime.baseline(), config.name))),
+        action("Traversal sample", "Momentum through the air, slowed landings and landing follow-ups after an aerial hit (#413)",
+          () => this.#setConfig(slot, traversalSample(config))),
         action(slot === "a" ? "Copy to B" : "Copy to A", "Copy this configuration to the other slot", () => {
           const other = slot === "a" ? "b" : "a";
           this.#setConfig(other, copyConfig(config, `${config.name} copy`));
@@ -302,6 +310,37 @@ export class ExperimentPanel {
       status, body,
       element("div", { className: "lab-playback" },
         action(`Play live with ${slot.toUpperCase()}`, "Restart the arena under this configuration", () => void this.#playLive(slot))));
+  }
+
+  /** Per action phase: authored movement or free (Atlas 5.9.2); Rapier still resolves every contact. */
+  #movementEditor(slot: Slot): HTMLElement {
+    const config = this.#configs[slot];
+    const rows = MOVEMENT_PHASES.map(({ action, phase }) => {
+      const rule = movementRule(config, action, phase);
+      const authored = element("input", { type: "checkbox", checked: rule !== null });
+      authored.addEventListener("change", () => this.#setConfig(slot, setMovementRule(config, action, phase,
+        authored.checked ? { steeringPercent: 100, momentumPercent: 100, maxAccelerationCms2: 600 } : null)));
+      const fields = rule ? [
+        this.#numberField("steering %", rule.steeringPercent, (value) => this.#setConfig(slot,
+          setMovementRule(config, action, phase, { ...rule, steeringPercent: value }))),
+        this.#numberField("momentum %", rule.momentumPercent, (value) => this.#setConfig(slot,
+          setMovementRule(config, action, phase, { ...rule, momentumPercent: value }))),
+        (() => {
+          const input = element("input", { type: "number", min: "1", step: "50", placeholder: "unlimited",
+            value: rule.maxAccelerationCms2 === null ? "" : String(rule.maxAccelerationCms2) });
+          input.addEventListener("change", () => this.#setConfig(slot, setMovementRule(config, action, phase,
+            { ...rule, maxAccelerationCms2: input.value === "" ? null : Number(input.value) })));
+          return element("label", {}, "max acceleration cm/s² ", input);
+        })(),
+      ] : [];
+      return element("div", { className: "lab-flags" },
+        element("label", { className: "lab-check" }, authored, `${action}·${phase}`), ...fields);
+    });
+    return element("fieldset", { className: "lab-edge-editor" },
+      element("legend", {}, "Movement per action phase (free when unchecked)"),
+      element("p", { className: "lab-muted" },
+        "Velocity = intent × steering + last realized velocity × momentum × (1 − steering), changing at most the acceleration limit per second; running phases combine to the lowest steering, highest momentum and lowest limit."),
+      ...rows);
   }
 
   #numberField(label: string, value: number, change: (value: number) => void, min = 0, ticks = false): HTMLElement {
@@ -320,6 +359,17 @@ export class ExperimentPanel {
     });
     const recovery = effects.find((effect) => effect.kind === "Recovery");
     const refund = effects.find((effect) => effect.kind === "ResourceRefund");
+    const impulse = effects.find((effect) => effect.kind === "Impulse");
+    const launch = (label: string, value: number | null, axis: "forwardCms" | "upCms") => {
+      const input = element("input", { type: "number", step: "50", placeholder: "none", value: value === null ? "" : String(value) });
+      input.addEventListener("change", () => {
+        const rest = effects.filter((effect) => effect.kind !== "Impulse");
+        const current = impulse?.kind === "Impulse" ? impulse : { kind: "Impulse" as const, forwardCms: 0, upCms: 0 };
+        const next = { ...current, [axis]: input.value === "" ? 0 : Number(input.value) };
+        change(next.forwardCms === 0 && next.upCms === 0 ? rest : [...rest, next]);
+      });
+      return element("label", {}, `${label} `, input);
+    };
     const optional = (label: string, value: number | null, make: (value: number) => LabEffect, kind: string) => {
       const input = element("input", { type: "number", min: "0", step: "1", placeholder: "none", value: value === null ? "" : String(value) });
       input.addEventListener("change", () => {
@@ -333,6 +383,8 @@ export class ExperimentPanel {
       optional(`Recovery ms${recovery?.kind === "Recovery" ? ` (${ticksFromMs(recovery.ms)} t)` : ""}`,
         recovery?.kind === "Recovery" ? recovery.ms : null, (value) => ({ kind: "Recovery", ms: value }), "Recovery"),
       optional("Resource refund", refund?.kind === "ResourceRefund" ? refund.amount : null, (value) => ({ kind: "ResourceRefund", amount: value }), "ResourceRefund"),
+      launch("Impulse forward cm/s", impulse?.kind === "Impulse" ? impulse.forwardCms : null, "forwardCms"),
+      launch("Impulse up cm/s", impulse?.kind === "Impulse" ? impulse.upCms : null, "upCms"),
     ];
   }
 
@@ -349,8 +401,14 @@ export class ExperimentPanel {
     const precision = edge.precision;
     const precise = element("input", { type: "checkbox", checked: precision !== null });
     precise.addEventListener("change", () => set({ precision: precise.checked ? { afterOpenMs: 0, lengthMs: 50, benefits: [{ kind: "Recovery", ms: 800 }] } : null }));
+    const remove = edge.from === "Landing" ? [(() => {
+      const node = element("button", { type: "button", title: "Remove this experimental edge" }, "Remove");
+      node.addEventListener("click", () => this.#setConfig(slot, removeEdge(config, edge.id)));
+      return node;
+    })()] : [];
     return element("fieldset", { className: "lab-edge-editor" },
       element("legend", {}, `${edge.id}: ${edge.from} —${edge.input}→ (anchor ${edge.anchor})`),
+      ...remove,
       this.#numberField("Opens after ms", edge.openAfterMs, (value) => set({ openAfterMs: value }), 0, true),
       this.#numberField("Actionable ms", edge.actionableMs, (value) => set({ actionableMs: value }), 0, true),
       this.#numberField("Buffer ms", edge.bufferMs, (value) => set({ bufferMs: value }), 0, true),
@@ -412,7 +470,7 @@ export class ExperimentPanel {
       const cell = (tick: typeof difference.a, slot: Slot) => {
         const node = element("td", { title: [...tick.regions, ...tick.events].join("\n") },
           [tick.regions.filter(Boolean).join(" · "), ...tick.events.map(shortLabel)].filter(Boolean).join(" | ") || "idle",
-          ` · hp ${tick.health}${tick.resource === null ? "" : ` · res ${tick.resource}`}`);
+          ` · hp ${tick.health}${tick.resource === null ? "" : ` · res ${tick.resource}`} · at ${tick.position.join(", ")} cm · ${tick.speed} cm/s`);
         node.addEventListener("click", () => void this.#replay(slot, difference.tick));
         return node;
       };
@@ -420,7 +478,7 @@ export class ExperimentPanel {
     });
     this.#compareBox.replaceChildren(element("h3", {}, "Compare A / B"), header, ...error, ...content,
       element("p", { className: comparison.divergesAt === null ? "lab-muted" : "lab-diverges" }, diverges), summary,
-      element("p", { className: "lab-muted" }, `${comparison.differences.length} ticks differ in actions, events, health or resource. Click a side to replay it paused there.`),
+      element("p", { className: "lab-muted" }, `${comparison.differences.length} ticks differ in actions, events, health, resource or position. Click a side to replay it paused there.`),
       element("div", { className: "lab-scroll" }, element("table", { className: "lab-table lab-diff" },
         element("thead", {}, element("tr", {}, element("th", {}, "Tick"), element("th", {}, "A"), element("th", {}, "B"))),
         element("tbody", {}, ...differences))));

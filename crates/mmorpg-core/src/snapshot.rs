@@ -667,6 +667,7 @@ impl ZoneSimulation {
                 breath: player.breath,
                 guard,
                 landing: combat.landing,
+                impulse: None,
                 combo: combat.combo,
                 strike_recovery: combat.strike_recovery,
                 repairing: combat.repairing,

@@ -18,8 +18,8 @@ use std::fmt::Debug;
 
 use mmorpg_core::action::{
     self, ActionGraph, ActionId, Anchor, CompatibilityRule, Condition, Consequence, EdgeDef,
-    EdgeId, Effect, Interrupted, InterruptionRule, Override, Phase, Precision, RuleEffect, RuleId,
-    Scope, Setting, Window, WindowModifier,
+    EdgeId, Effect, Interrupted, InterruptionRule, Movement, MovementRule, Override, Phase,
+    Precision, RuleEffect, RuleId, Scope, Setting, Window, WindowModifier,
 };
 use mmorpg_core::{AbilityId, EntityRef, ItemId, PlayerClass, ZoneCommand, ZoneEvent};
 use mmorpg_protocol::{PROTOCOL_ID, decode_command, encode_canonical_snapshot};
@@ -51,7 +51,12 @@ const CONDITIONS: [Condition; 7] = [
     Condition::Airborne,
     Condition::Stunned,
 ];
-const EDGES: [EdgeId; 1] = [EdgeId::SlashToShieldBash];
+const EDGES: [EdgeId; 4] = [
+    EdgeId::SlashToShieldBash,
+    EdgeId::LandingToMelee,
+    EdgeId::LandingToShieldBash,
+    EdgeId::LandingToAbility,
+];
 const RULES: [RuleId; 3] = [
     RuleId::LandingHoldsMelee,
     RuleId::SlashRecoveryHoldsGuard,
@@ -108,13 +113,22 @@ fn conditions(names: &[String]) -> Result<&'static [Condition], String> {
 
 /// A typed effect with its magnitude.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all_fields = "camelCase", deny_unknown_fields)]
 pub enum EffectDto {
     TargetConfirmed,
     IgnoreGlobalCooldown,
-    Recovery { ms: u32 },
-    ResourceRefund { amount: u16 },
+    Recovery {
+        ms: u32,
+    },
+    ResourceRefund {
+        amount: u16,
+    },
     KeepOpening,
+    /// A launch along the facing and upward, in cm/s (#413).
+    Impulse {
+        forward_cms: i16,
+        up_cms: u16,
+    },
 }
 
 impl EffectDto {
@@ -125,6 +139,13 @@ impl EffectDto {
             Effect::Recovery { ms } => Self::Recovery { ms },
             Effect::ResourceRefund { amount } => Self::ResourceRefund { amount },
             Effect::KeepOpening => Self::KeepOpening,
+            Effect::Impulse {
+                forward_cms,
+                up_cms,
+            } => Self::Impulse {
+                forward_cms,
+                up_cms,
+            },
         }
     }
 
@@ -135,7 +156,34 @@ impl EffectDto {
             Self::Recovery { ms } => Effect::Recovery { ms },
             Self::ResourceRefund { amount } => Effect::ResourceRefund { amount },
             Self::KeepOpening => Effect::KeepOpening,
+            Self::Impulse {
+                forward_cms,
+                up_cms,
+            } => Effect::Impulse {
+                forward_cms,
+                up_cms,
+            },
         }
+    }
+}
+
+/// An action phase's bounded movement (#413, Atlas 5.9.2).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MovementRuleDto {
+    pub action: String,
+    pub phase: String,
+    pub conditions: Vec<String>,
+    pub steering_percent: u8,
+    pub momentum_percent: u8,
+    pub max_acceleration_cms2: Option<u32>,
+}
+
+const fn movement_of(steering_percent: u8, momentum_percent: u8, max: Option<u32>) -> Movement {
+    Movement {
+        steering_percent,
+        momentum_percent,
+        max_acceleration_cms2: max,
     }
 }
 
@@ -222,6 +270,13 @@ pub enum SettingDto {
         rule: String,
         applies: bool,
     },
+    Movement {
+        action: String,
+        phase: String,
+        steering_percent: u8,
+        momentum_percent: u8,
+        max_acceleration_cms2: Option<u32>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -242,6 +297,9 @@ pub struct Config {
     pub window_modifiers: Vec<WindowModifierDto>,
     pub rules: Vec<RuleDto>,
     pub interruptions: Vec<InterruptionDto>,
+    /// Per-phase movement (#413); absent in configurations saved before it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub movement: Vec<MovementRuleDto>,
     pub overrides: Vec<OverrideDto>,
 }
 
@@ -318,6 +376,18 @@ impl Config {
                     consequence: self::name(rule.consequence),
                 })
                 .collect(),
+            movement: graph
+                .movement
+                .iter()
+                .map(|rule| MovementRuleDto {
+                    action: self::name(rule.action),
+                    phase: self::name(rule.phase),
+                    conditions: names(rule.conditions),
+                    steering_percent: rule.movement.steering_percent,
+                    momentum_percent: rule.movement.momentum_percent,
+                    max_acceleration_cms2: rule.movement.max_acceleration_cms2,
+                })
+                .collect(),
             overrides: graph
                 .overrides
                 .iter()
@@ -343,6 +413,17 @@ impl Config {
                         Setting::Rule { rule, applies } => SettingDto::Rule {
                             rule: self::name(rule),
                             applies,
+                        },
+                        Setting::Movement {
+                            action,
+                            phase,
+                            movement,
+                        } => SettingDto::Movement {
+                            action: self::name(action),
+                            phase: self::name(phase),
+                            steering_percent: movement.steering_percent,
+                            momentum_percent: movement.momentum_percent,
+                            max_acceleration_cms2: movement.max_acceleration_cms2,
                         },
                     },
                 })
@@ -478,8 +559,39 @@ impl Config {
                         rule: named(RULES, rule, "rule")?,
                         applies: *applies,
                     },
+                    SettingDto::Movement {
+                        action,
+                        phase,
+                        steering_percent,
+                        momentum_percent,
+                        max_acceleration_cms2,
+                    } => Setting::Movement {
+                        action: named(action_ids(), action, "action")?,
+                        phase: named(PHASES, phase, "phase")?,
+                        movement: movement_of(
+                            *steering_percent,
+                            *momentum_percent,
+                            *max_acceleration_cms2,
+                        ),
+                    },
                 };
                 Ok(Override { scope, setting })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let movement = self
+            .movement
+            .iter()
+            .map(|rule| {
+                Ok(MovementRule {
+                    action: named(action_ids(), &rule.action, "action")?,
+                    phase: named(PHASES, &rule.phase, "phase")?,
+                    conditions: conditions(&rule.conditions)?,
+                    movement: movement_of(
+                        rule.steering_percent,
+                        rule.momentum_percent,
+                        rule.max_acceleration_cms2,
+                    ),
+                })
             })
             .collect::<Result<Vec<_>, String>>()?;
         let graph = ActionGraph {
@@ -487,6 +599,7 @@ impl Config {
             window_modifiers: leak(window_modifiers),
             rules: leak(rules),
             interruptions: leak(interruptions),
+            movement: leak(movement),
             overrides: leak(overrides),
         };
         graph
@@ -643,6 +756,10 @@ pub struct TickRecord {
     pub events: Vec<String>,
     pub health: u32,
     pub resource: Option<u16>,
+    /// The body centre in whole cm and its horizontal speed in cm/s after the
+    /// tick's physics step (#413): the physical result of movement tuning.
+    pub position: [i32; 3],
+    pub speed: u32,
     pub digest: String,
 }
 
@@ -803,13 +920,28 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
         let state = projection.viewer;
         summary.final_health = state.health;
         summary.final_resource = state.resource.map(|resource| resource.value);
+        let snapshot = host.zone().snapshot().map_err(|error| error.to_string())?;
+        let body = snapshot
+            .players
+            .iter()
+            .find(|candidate| candidate.player_id == player)
+            .ok_or("the lab character is missing")?;
+        let hz = f32::from(mmorpg_core::TICK_HZ);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let (position, speed) = (
+            body.position.map(|axis| axis.round() as i32),
+            (body.velocity[0].hypot(body.velocity[2]) * hz).round() as u32,
+        );
+        let bytes = encode_canonical_snapshot(&snapshot).map_err(|error| format!("{error:?}"))?;
         ticks.push(TickRecord {
             tick: projection.tick,
             regions,
             events,
             health: state.health,
             resource: summary.final_resource,
-            digest: format!("{:016x}", digest(&host)?),
+            position,
+            speed,
+            digest: format!("{:016x}", fnv1a(&bytes)),
         });
     }
     summary.final_digest = ticks
@@ -871,6 +1003,7 @@ pub fn compare(scenario: &ScenarioFile, a: &Config, b: &Config) -> Result<Compar
             tick.events.clone(),
             tick.health,
             tick.resource,
+            tick.position,
         )
     };
     let differences = a

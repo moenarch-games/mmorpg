@@ -46,10 +46,23 @@
 //!   ability. The most specific override wins (ability over weapon over
 //!   class over the baseline), two overrides of one value in one scope fail
 //!   validation, and every effective value reports its [`Origin`]. The
-//!   production graph has none, so every value is the baseline's.
+//!   production graph has none, so every value is the baseline's. An
+//!   override can also replace one action phase's authored movement.
+//! - **Traversal** (#413, Atlas 5.9.1–5.9.3). The movement region runs for
+//!   every class: airborne, then a landing recovery. [`MovementRule`]s give
+//!   an action phase bounded [`Movement`] (steering, kept momentum, an
+//!   acceleration limit) that the zone turns into the controller's desired
+//!   velocity, so Rapier still resolves every contact; running phases
+//!   combine to the most restrictive values. Edges out of a landing
+//!   ([`EdgeId::LandingToMelee`] and its siblings, anchored at touchdown)
+//!   win over the landing's hold, end its recovery and may carry an
+//!   [`Effect::Impulse`]: run → jump → aerial attack → landing → follow-up
+//!   composes from ordinary actions. The baseline authors none of it, so
+//!   today's movement is unchanged. Swimming, climbing and mantling join
+//!   the movement region once they exist as authoritative actions.
 //!
 //! Every playable class runs on the same model. Wardens add the directed
-//! slash, the guard and landing recovery. Casts and channels run as
+//! slash, the guard and the landing hold. Casts and channels run as
 //! [`ActionId::Cast`]: moving or jumping cancels one through
 //! [`RuleEffect::Cancel`] rules, and a stun or death cancels it through
 //! interruptions. Every class ability starts [`ActionId::GlobalCooldown`].
@@ -273,7 +286,8 @@ pub enum Condition {
     Alive,
     /// The acting player is a Warden.
     Warden,
-    /// A melee action was made during the airborne phase that just ended.
+    /// A melee action was made during the current airborne phase, or the
+    /// one the current landing recovery ends.
     AttackedAirborne,
     /// Not grounded after the last physics step.
     Airborne,
@@ -299,13 +313,32 @@ pub enum Effect {
     /// The follow-up keeps the opening instead of consuming it, so the edge
     /// stays available for the rest of its window.
     KeepOpening,
+    /// The follow-up launches the player (Atlas 5.9.2): `forward_cms` cm/s
+    /// along its facing (negative: backward) is added to its horizontal
+    /// velocity, and its vertical velocity becomes at least `up_cms` cm/s,
+    /// for the physics step of the tick it resolves in. Rapier still resolves
+    /// every contact. At most [`MAX_IMPULSE_FORWARD_CMS`] and
+    /// [`MAX_IMPULSE_UP_CMS`].
+    Impulse { forward_cms: i16, up_cms: u16 },
 }
+
+/// The largest forward or backward [`Effect::Impulse`]: twice the run speed.
+pub const MAX_IMPULSE_FORWARD_CMS: u16 = 2 * crate::RUN_SPEED_UNITS_PER_SECOND as u16;
+/// The largest upward [`Effect::Impulse`]: the jump's launch speed.
+pub const MAX_IMPULSE_UP_CMS: u16 = crate::JUMP_VELOCITY_UNITS_PER_SECOND as u16;
 
 /// Stable edge identities.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum EdgeId {
     /// The first Warden combo, directed slash → Shield Bash (#157).
     SlashToShieldBash,
+    /// Out of a landing recovery into Warden melee (#413). Experimental
+    /// graphs author the landing edges; the baseline has none.
+    LandingToMelee,
+    /// Out of a landing recovery into Shield Bash.
+    LandingToShieldBash,
+    /// Out of a landing recovery into any other class ability.
+    LandingToAbility,
 }
 
 /// A directed, conditional transition (Atlas 5.7.2).
@@ -330,6 +363,108 @@ pub struct WindowModifier {
     pub edge: EdgeId,
     pub conditions: &'static [Condition],
     pub actionable_delta_ms: i32,
+}
+
+/// Bounded movement behavior of an action phase (Atlas 5.9.2). The zone
+/// hands the result to Rapier's character controller as the desired
+/// horizontal velocity, so collision, support and clearance stay
+/// authoritative; nothing here moves a body by itself.
+///
+/// Each tick the horizontal velocity is
+/// `intent × steering + last × momentum × (1 − steering)`, where `intent` is
+/// the steered velocity the movement intent asks for (after snares, guard
+/// and swimming) and `last` is the velocity contact let the body realize in
+/// the previous step. With an acceleration limit, the change from `last` is
+/// then shortened to it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Movement {
+    /// Percent of the movement intent the player steers with: 100 is full
+    /// control, 0 none.
+    pub steering_percent: u8,
+    /// Percent of the last realized velocity kept for the part steering
+    /// does not take: 100 keeps the momentum, 0 stops.
+    pub momentum_percent: u8,
+    /// The largest change of horizontal velocity, in cm/s²; `None` is
+    /// unlimited.
+    pub max_acceleration_cms2: Option<u32>,
+}
+
+impl Movement {
+    /// Today's movement: full steering, no momentum, no limit.
+    pub const FREE: Self = Self {
+        steering_percent: 100,
+        momentum_percent: 0,
+        max_acceleration_cms2: None,
+    };
+
+    /// The most restrictive combination of two phases running at once: the
+    /// lower steering, the higher momentum and the lower acceleration limit.
+    #[must_use]
+    pub fn combine(self, other: Self) -> Self {
+        Self {
+            steering_percent: self.steering_percent.min(other.steering_percent),
+            momentum_percent: self.momentum_percent.max(other.momentum_percent),
+            max_acceleration_cms2: match (self.max_acceleration_cms2, other.max_acceleration_cms2) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            },
+        }
+    }
+
+    /// The horizontal velocity, in subunits per tick, for a steered `intent`
+    /// and the `last` realized velocity.
+    #[must_use]
+    pub fn velocity(self, intent: [i32; 2], last: [i32; 2]) -> [i32; 2] {
+        let steering = i64::from(self.steering_percent);
+        let kept = i64::from(self.momentum_percent) * (100 - steering);
+        let mix = |intent: i32, last: i32| {
+            (i64::from(intent) * steering * 100 + i64::from(last) * kept) / 10_000
+        };
+        let mut velocity = [mix(intent[0], last[0]), mix(intent[1], last[1])];
+        if let Some(limit) = self.max_acceleration_cms2 {
+            let limit = acceleration_subunits(limit);
+            let delta = [
+                velocity[0] - i64::from(last[0]),
+                velocity[1] - i64::from(last[1]),
+            ];
+            let length = (delta[0] * delta[0] + delta[1] * delta[1]).isqrt();
+            if length > limit {
+                velocity = [
+                    i64::from(last[0]) + delta[0] * limit / length,
+                    i64::from(last[1]) + delta[1] * limit / length,
+                ];
+            }
+        }
+        velocity
+            .map(|axis| i32::try_from(axis).unwrap_or(if axis < 0 { i32::MIN } else { i32::MAX }))
+    }
+}
+
+/// Subunits per tick per tick of an acceleration in cm/s², rounded, at least 1.
+fn acceleration_subunits(cms2: u32) -> i64 {
+    let ticks_squared = i64::from(crate::TICK_HZ) * i64::from(crate::TICK_HZ);
+    ((i64::from(cms2) * i64::from(crate::physics::SUBUNITS_PER_UNIT) + ticks_squared / 2)
+        / ticks_squared)
+        .max(1)
+}
+
+/// Subunits per tick of a speed in cm/s, rounded.
+pub(crate) fn speed_subunits(cms: i32) -> i32 {
+    let hz = i32::from(crate::TICK_HZ);
+    let subunits = cms * crate::physics::SUBUNITS_PER_UNIT;
+    (subunits + subunits.signum() * hz / 2) / hz
+}
+
+/// The largest authored acceleration limit: 1 km/s², far beyond any stop.
+pub const MAX_ACCELERATION_CMS2: u32 = 100_000;
+
+/// The movement of one action phase, under conditions (Atlas 5.9.2).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MovementRule {
+    pub action: ActionId,
+    pub phase: Phase,
+    pub conditions: &'static [Condition],
+    pub movement: Movement,
 }
 
 /// Stable compatibility rule identities.
@@ -437,14 +572,30 @@ pub enum Key {
     Window(EdgeId),
     /// Whether a compatibility rule applies.
     Rule(RuleId),
+    /// An action phase's authored movement.
+    Movement(ActionId, Phase),
 }
 
 /// A value of a [`Key`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Setting {
-    Recovery { action: ActionId, ms: u32 },
-    Window { edge: EdgeId, window: Window },
-    Rule { rule: RuleId, applies: bool },
+    Recovery {
+        action: ActionId,
+        ms: u32,
+    },
+    Window {
+        edge: EdgeId,
+        window: Window,
+    },
+    Rule {
+        rule: RuleId,
+        applies: bool,
+    },
+    Movement {
+        action: ActionId,
+        phase: Phase,
+        movement: Movement,
+    },
 }
 
 impl Setting {
@@ -454,6 +605,7 @@ impl Setting {
             Self::Recovery { action, .. } => Key::Recovery(action),
             Self::Window { edge, .. } => Key::Window(edge),
             Self::Rule { rule, .. } => Key::Rule(rule),
+            Self::Movement { action, phase, .. } => Key::Movement(action, phase),
         }
     }
 }
@@ -483,14 +635,17 @@ pub struct Effective {
 }
 
 /// A complete action graph: the edges, window modifiers, compatibility
-/// rules, interruptions and overrides a zone runs. The [`ACTIONS`] and
-/// their recovery modifiers are shared by every graph.
+/// rules, interruptions, per-phase movement and overrides a zone runs. The
+/// [`ACTIONS`] and their recovery modifiers are shared by every graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ActionGraph {
     pub edges: &'static [EdgeDef],
     pub window_modifiers: &'static [WindowModifier],
     pub rules: &'static [CompatibilityRule],
     pub interruptions: &'static [InterruptionRule],
+    /// Authored movement of action phases; a phase without one moves freely
+    /// ([`Movement::FREE`]).
+    pub movement: &'static [MovementRule],
     pub overrides: &'static [Override],
 }
 
@@ -681,12 +836,14 @@ pub const INTERRUPTIONS: [InterruptionRule; 9] = [
     },
 ];
 
-/// The production graph: current gameplay, unchanged. It has no overrides.
+/// The production graph: current gameplay, unchanged. It has no overrides,
+/// no landing edges and no authored movement, so every phase moves freely.
 pub const BASELINE: ActionGraph = ActionGraph {
     edges: &EDGES,
     window_modifiers: &[],
     rules: &RULES,
     interruptions: &INTERRUPTIONS,
+    movement: &[],
     overrides: &[],
 };
 
@@ -747,9 +904,21 @@ pub enum GraphError {
     NoRecovery(RuleId),
     /// A duration is shorter than half a tick or too long for a tick timer.
     BadDuration(EdgeId),
-    /// The zone has no runtime for this edge's source or input: only a
-    /// directed slash answered by Shield Bash runs.
+    /// The zone has no runtime for this edge's source, input or anchor: a
+    /// directed slash answered by Shield Bash from its impact or confirmed
+    /// result, and a landing answered by Warden melee, Shield Bash or another
+    /// ability from the touchdown, each under its own id.
     UnsupportedEdge(EdgeId),
+    /// A landing edge's window closes after the shortest landing recovery
+    /// its conditions allow, when the landing it answers is over.
+    OutlastsSource(EdgeId),
+    /// A movement rule covers a reaction or a phase its action never runs
+    /// in, or its values are out of range.
+    BadMovement(ActionId, Phase),
+    /// Two movement rules cover the same action phase.
+    DuplicateMovement(ActionId, Phase),
+    /// An override names an action phase the graph authors no movement for.
+    UnknownMovement(ActionId, Phase),
     /// An edge confirms a target without requiring a damaging confirmed
     /// result.
     TargetUnconfirmed(EdgeId),
@@ -776,7 +945,7 @@ pub enum GraphError {
     UnsupportedRule(RuleId),
     /// The zone does not read this value per class, weapon or ability: only
     /// the directed slash's and the global cooldown's recoveries, edge
-    /// windows and rules can be overridden.
+    /// windows, rules and movement can be overridden.
     UnsupportedOverride(Key),
     /// An override's value is malformed, or outlasts the baseline value that
     /// canonical snapshots bound the timer by.
@@ -801,6 +970,45 @@ const fn input_region(input: ActionInput) -> Region {
 fn duration_ok(ms: u32) -> bool {
     let ticks = u64::from(ms) * u64::from(crate::TICK_HZ);
     (ms == 0 || ticks + 500 >= 1_000) && (ticks + 500) / 1_000 <= u64::from(u16::MAX)
+}
+
+/// The shortest landing recovery, in ticks, for an edge under `conditions`:
+/// the lengthened one when the edge requires an airborne melee action.
+fn landing_ticks(conditions: &[Condition]) -> u16 {
+    if conditions.contains(&Condition::AttackedAirborne) {
+        modified_recovery_ticks(ActionId::Landing, Condition::AttackedAirborne)
+    } else {
+        recovery_ticks(ActionId::Landing)
+    }
+}
+
+/// The phases `id` runs in, as [`ZoneSimulation::action_inspection`]
+/// reports them.
+#[must_use]
+pub const fn phases(id: ActionId) -> &'static [Phase] {
+    match id {
+        ActionId::Airborne
+        | ActionId::Guard
+        | ActionId::Cast
+        | ActionId::Stun
+        | ActionId::Death => &[Phase::Active],
+        ActionId::Landing | ActionId::GlobalCooldown | ActionId::GuardBreak => &[Phase::Recovery],
+        ActionId::DirectedSlash => &[Phase::Recovery, Phase::FollowUp],
+    }
+}
+
+/// The checks authored or overridden movement passes.
+fn validate_movement(id: ActionId, phase: Phase, movement: Movement) -> Result<(), GraphError> {
+    let in_range = movement.steering_percent <= 100
+        && movement.momentum_percent <= 100
+        && movement
+            .max_acceleration_cms2
+            .is_none_or(|limit| (1..=MAX_ACCELERATION_CMS2).contains(&limit));
+    // A reaction stops the player by its own rules (a stun stands still).
+    if action(id).region == Region::Reaction || !phases(id).contains(&phase) || !in_range {
+        return Err(GraphError::BadMovement(id, phase));
+    }
+    Ok(())
 }
 
 /// Checks the shared actions and the baseline graph for consistency.
@@ -864,6 +1072,15 @@ impl ActionGraph {
                 return Err(GraphError::ConflictingInterruption(rule.interrupted));
             }
         }
+        for (index, rule) in self.movement.iter().enumerate() {
+            validate_movement(rule.action, rule.phase, rule.movement)?;
+            if self.movement[..index]
+                .iter()
+                .any(|other| other.action == rule.action && other.phase == rule.phase)
+            {
+                return Err(GraphError::DuplicateMovement(rule.action, rule.phase));
+            }
+        }
         for (index, entry) in self.overrides.iter().enumerate() {
             self.validate_override(entry)?;
             let key = entry.setting.key();
@@ -902,19 +1119,72 @@ impl ActionGraph {
         }
         // Two recoveries for one follow-up would be ambiguous.
         if effects
+            .clone()
             .filter(|effect| matches!(effect, Effect::Recovery { .. }))
             .count()
             > 1
         {
             return Err(GraphError::BadEffect(def.id));
         }
-        if def.from != ActionId::DirectedSlash || def.input != ActionInput::ShieldBash {
+        let supported = matches!(
+            (def.id, def.from, def.input, def.anchor),
+            (
+                EdgeId::SlashToShieldBash,
+                ActionId::DirectedSlash,
+                ActionInput::ShieldBash,
+                Anchor::Impact | Anchor::ConfirmedResult,
+            ) | (
+                EdgeId::LandingToMelee,
+                ActionId::Landing,
+                ActionInput::WardenMelee,
+                Anchor::Landing,
+            ) | (
+                EdgeId::LandingToShieldBash,
+                ActionId::Landing,
+                ActionInput::ShieldBash,
+                Anchor::Landing,
+            ) | (
+                EdgeId::LandingToAbility,
+                ActionId::Landing,
+                ActionInput::Ability,
+                Anchor::Landing,
+            )
+        );
+        if !supported {
             return Err(GraphError::UnsupportedEdge(def.id));
         }
         if def.effects.contains(&Effect::TargetConfirmed)
             && !def.conditions.contains(&Condition::PositiveHealthDamage)
         {
             return Err(GraphError::TargetUnconfirmed(def.id));
+        }
+        // A landing has no target to confirm and no opening to keep: the
+        // follow-up ends its recovery.
+        if def.from == ActionId::Landing
+            && effects
+                .clone()
+                .any(|effect| matches!(effect, Effect::TargetConfirmed | Effect::KeepOpening))
+        {
+            return Err(GraphError::BadEffect(def.id));
+        }
+        let mut impulses = 0;
+        for effect in effects {
+            if let Effect::Impulse {
+                forward_cms,
+                up_cms,
+            } = *effect
+            {
+                impulses += 1;
+                if forward_cms.unsigned_abs() > MAX_IMPULSE_FORWARD_CMS
+                    || up_cms > MAX_IMPULSE_UP_CMS
+                    || (forward_cms == 0 && up_cms == 0)
+                {
+                    return Err(GraphError::BadEffect(def.id));
+                }
+            }
+        }
+        if impulses > 1 {
+            return Err(GraphError::BadEffect(def.id));
         }
         Ok(())
     }
@@ -929,6 +1199,24 @@ impl ActionGraph {
         }
         if window.buffer_ms > window.open_after_ms {
             return Err(GraphError::BufferBeforeAnchor(def.id));
+        }
+        if def.from == ActionId::Landing {
+            // Every enlargement applying at once must still end in time.
+            let enlargement: u32 = self
+                .window_modifiers
+                .iter()
+                .filter(|modifier| modifier.edge == def.id && modifier.actionable_delta_ms > 0)
+                .map(|modifier| {
+                    u32::from(crate::ticks_from_ms(
+                        modifier.actionable_delta_ms.unsigned_abs(),
+                    ))
+                })
+                .sum();
+            if u32::from(window.ticks().closes()) + enlargement
+                >= u32::from(landing_ticks(def.conditions))
+            {
+                return Err(GraphError::OutlastsSource(def.id));
+            }
         }
         if let Some(precision) = def.precision {
             let (_, last) = precision.ticks(window.open_after_ticks());
@@ -994,8 +1282,26 @@ impl ActionGraph {
                     return Err(GraphError::UnknownRule(rule));
                 }
             }
+            Setting::Movement {
+                action: id,
+                phase,
+                movement,
+            } => {
+                if self.movement_rule(id, phase).is_none() {
+                    return Err(GraphError::UnknownMovement(id, phase));
+                }
+                validate_movement(id, phase, movement)?;
+            }
         }
         Ok(())
+    }
+
+    /// The movement rule of `id` in `phase`.
+    #[must_use]
+    pub fn movement_rule(&self, id: ActionId, phase: Phase) -> Option<&'static MovementRule> {
+        self.movement
+            .iter()
+            .find(|rule| rule.action == id && rule.phase == phase)
     }
 
     fn validate_interruption(&self, rule: &InterruptionRule) -> Result<(), GraphError> {
@@ -1012,10 +1318,11 @@ impl ActionGraph {
             },
             Interrupted::Action(_) => rule.consequence == Consequence::Preserve,
             Interrupted::Edge(id) => {
-                if self.edge(id).is_none() {
+                let Some(def) = self.edge(id) else {
                     return Err(GraphError::UnknownEdge(id));
-                }
-                true
+                };
+                // A landing's recovery runs on; its edges cannot pause.
+                def.from != ActionId::Landing || rule.consequence != Consequence::Suspend
             }
             Interrupted::Held(id) => {
                 if !self.rules.iter().any(|other| other.id == id) {
@@ -1104,6 +1411,13 @@ impl ActionGraph {
                     rule: id,
                     applies: true,
                 }),
+            Key::Movement(id, phase) => {
+                self.movement_rule(id, phase).map(|rule| Setting::Movement {
+                    action: id,
+                    phase,
+                    movement: rule.movement,
+                })
+            }
         }?;
         Some(
             self.overrides
@@ -1200,6 +1514,17 @@ fn slash(graph: &ActionGraph, state: &PlayerState) -> Option<(u16, Option<Entity
         }
         None => None,
     }
+}
+
+/// The landing's runtime: ticks since the touchdown, while it recovers.
+fn landing(state: &PlayerState) -> Option<u16> {
+    let left = recovery_left(state, ActionId::Landing)?;
+    let full = if state.landing.attacked_airborne {
+        crate::OVERHEAD_LANDING_TICKS
+    } else {
+        crate::LANDING_RECOVERY_TICKS
+    };
+    Some(full.saturating_sub(left))
 }
 
 fn holds(state: &PlayerState, condition: Condition) -> bool {
@@ -1389,7 +1714,9 @@ fn target_phase(graph: &ActionGraph, state: &PlayerState, target: Interrupted) -
         Interrupted::Edge(id) => {
             let def = graph.edge(id)?;
             // Only an opening (a confirmed source) can be interrupted.
-            state.combo?;
+            if def.from == ActionId::DirectedSlash {
+                state.combo?;
+            }
             phase_of(def.from)
         }
         Interrupted::Held(id) => {
@@ -1529,10 +1856,11 @@ struct EdgeEval {
 fn evaluate(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef) -> EdgeEval {
     let window = effective_window(state, graph, def);
     let source = match def.from {
-        ActionId::DirectedSlash => slash(graph, state),
+        ActionId::DirectedSlash => slash(graph, state).map(|(elapsed, _)| elapsed),
+        ActionId::Landing => landing(state),
         _ => None,
     };
-    let Some((elapsed, _)) = source else {
+    let Some(elapsed) = source else {
         return EdgeEval {
             status: EdgeStatus::Blocked(BlockReason::SourceInactive),
             elapsed: None,
@@ -1632,7 +1960,14 @@ pub(crate) fn arbitrate(
         .collect();
     // Highest priority first; ties in authored order.
     edges.sort_by_key(|(def, _)| std::cmp::Reverse(def.priority));
-    let hold = holding_rule(graph, state, input);
+    // An open edge out of the action a rule holds the input during is that
+    // action's authored way out: it wins over the hold (a landing follow-up
+    // ends the landing recovery).
+    let hold = holding_rule(graph, state, input).filter(|rule| {
+        !edges
+            .iter()
+            .any(|(def, eval)| def.from == rule.during && eval.status == EdgeStatus::Open)
+    });
     let outcome = if let Some(rule) = hold {
         Outcome::WaitForRule(rule.id)
     } else {
@@ -1698,6 +2033,8 @@ pub(crate) fn waits(graph: &ActionGraph, state: &PlayerState, intent: &PlayerInt
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FollowUp {
     pub(crate) edge: EdgeId,
+    /// The action the edge leaves.
+    pub(crate) from: ActionId,
     /// The source's confirmed target, with [`Effect::TargetConfirmed`].
     pub(crate) target: Option<EntityRef>,
     /// The edge's effects, then the precision benefits if it was precise.
@@ -1705,6 +2042,17 @@ pub(crate) struct FollowUp {
 }
 
 impl FollowUp {
+    /// The launch the follow-up gives, `[forward, up]` in cm/s.
+    pub(crate) fn impulse(&self) -> Option<[i32; 2]> {
+        self.effects.iter().find_map(|effect| match *effect {
+            Effect::Impulse {
+                forward_cms,
+                up_cms,
+            } => Some([i32::from(forward_cms), i32::from(up_cms)]),
+            _ => None,
+        })
+    }
+
     pub(crate) fn has(&self, effect: Effect) -> bool {
         self.effects.contains(&effect)
     }
@@ -1753,9 +2101,67 @@ pub(crate) fn follow_up(
     .filter(|_| effects.contains(&Effect::TargetConfirmed));
     Some(FollowUp {
         edge: id,
+        from: def.from,
         target,
         effects,
     })
+}
+
+/// The authored movement of one running action phase, after overrides.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MovementSource {
+    pub action: ActionId,
+    pub phase: Phase,
+    pub movement: Movement,
+    pub origin: Origin,
+}
+
+/// How a player moves now (Atlas 5.9.2): the combination of every running
+/// action phase's authored movement, and those phases.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MovementReport {
+    /// [`Movement::FREE`] without a source.
+    pub movement: Movement,
+    pub sources: Vec<MovementSource>,
+}
+
+/// The authored movement of each region's running action phase whose
+/// conditions hold.
+fn movement_sources(graph: &ActionGraph, state: &PlayerState) -> Vec<MovementSource> {
+    if graph.movement.is_empty() {
+        return Vec::new();
+    }
+    region_actions(graph, state)
+        .iter()
+        .filter_map(|report| {
+            let (id, phase) = (report.action?, report.phase?);
+            let rule = graph.movement_rule(id, phase)?;
+            if !all_hold(state, rule.conditions) {
+                return None;
+            }
+            let context = Context::of(state, action_ability(state, id));
+            match graph.resolve(Key::Movement(id, phase), context)? {
+                Effective {
+                    setting: Setting::Movement { movement, .. },
+                    origin,
+                } => Some(MovementSource {
+                    action: id,
+                    phase,
+                    movement,
+                    origin,
+                }),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// The player's combined authored movement; `None` when it moves freely.
+pub(crate) fn movement_of(graph: &ActionGraph, state: &PlayerState) -> Option<Movement> {
+    movement_sources(graph, state)
+        .into_iter()
+        .map(|source| source.movement)
+        .reduce(Movement::combine)
 }
 
 /// One region's running action.
@@ -1833,8 +2239,11 @@ pub struct ActionInspection {
     /// origin: the directed slash's and the global cooldown's recoveries,
     /// each edge's window and whether each rule applies. An ability override
     /// of the global cooldown shows while that ability casts; it applies
-    /// whenever that ability starts the cooldown.
+    /// whenever that ability starts the cooldown. Each authored movement
+    /// rule's value is listed too.
     pub effective: Vec<Effective>,
+    /// The movement the next tick's controller velocity follows.
+    pub movement: MovementReport,
 }
 
 impl ZoneSimulation {
@@ -1859,6 +2268,28 @@ impl ZoneSimulation {
             || recovery_ticks(id),
             |state| recovery_for(self.action_graph, state, id, Some(ability)),
         )
+    }
+
+    /// The edge the player's `input` follows now, with its effects.
+    pub(crate) fn follow_up_of(&self, player_id: PlayerId, input: ActionInput) -> Option<FollowUp> {
+        let state = self.players.get(&player_id)?;
+        follow_up(self.action_graph, state, input)
+    }
+
+    /// Applies a resolved follow-up's movement: leaving a landing ends its
+    /// recovery, and an impulse launches the player in this tick's movement.
+    pub(crate) fn spend_follow_up(&mut self, player_id: PlayerId, follow_up: &FollowUp) {
+        let impulse = follow_up.impulse();
+        let from = follow_up.from;
+        self.update_player(player_id, |player| {
+            if from == ActionId::Landing {
+                player.landing.recovery = 0;
+                player.landing.attacked_airborne = false;
+            }
+            if impulse.is_some() {
+                player.impulse = impulse;
+            }
+        });
     }
 
     /// Whether a stun landing on the player now cancels its cast.
@@ -2005,6 +2436,7 @@ impl ZoneSimulation {
                 });
             }
         }
+        let sources = movement_sources(graph, state);
         Some(ActionInspection {
             tick,
             regions: region_actions(graph, state),
@@ -2012,6 +2444,14 @@ impl ZoneSimulation {
             rules,
             interruptions,
             effective: effective_values(graph, state),
+            movement: MovementReport {
+                movement: sources
+                    .iter()
+                    .map(|source| source.movement)
+                    .reduce(Movement::combine)
+                    .unwrap_or(Movement::FREE),
+                sources,
+            },
         })
     }
 
@@ -2045,6 +2485,12 @@ fn effective_values(graph: &ActionGraph, state: &PlayerState) -> Vec<Effective> 
             keys.push((Key::Rule(rule.id), action_ability(state, rule.during)));
         }
     }
+    keys.extend(graph.movement.iter().map(|rule| {
+        (
+            Key::Movement(rule.action, rule.phase),
+            action_ability(state, rule.action),
+        )
+    }));
     keys.into_iter()
         .filter_map(|(key, ability)| graph.resolve(key, Context::of(state, ability)))
         .collect()

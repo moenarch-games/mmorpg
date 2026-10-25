@@ -206,6 +206,66 @@ pub enum Workload {
     /// Magic missiles in Wolfrun Woods (#289): four level-6 Arcanists Firebolt wolves among the
     /// trunks (homing missiles), then cast free Firebolts along their facing into the woods.
     Missiles,
+    /// Running jumps with authored momentum (#413): a Warden and a Ranger in Greyhaven
+    /// Outpost run, jump, let go or turn mid-air, and land, under [`TRAVERSAL_GRAPH`], whose
+    /// airborne phase keeps the velocity contact realized and steers at most 6 m/s².
+    Traversal,
+}
+
+/// The traversal workload's graph: momentum through the air, slowed landings.
+pub static TRAVERSAL_GRAPH: mmorpg_core::action::ActionGraph = mmorpg_core::action::ActionGraph {
+    movement: &[
+        mmorpg_core::action::MovementRule {
+            action: mmorpg_core::action::ActionId::Airborne,
+            phase: mmorpg_core::action::Phase::Active,
+            conditions: &[],
+            movement: mmorpg_core::action::Movement {
+                steering_percent: 100,
+                momentum_percent: 100,
+                max_acceleration_cms2: Some(600),
+            },
+        },
+        mmorpg_core::action::MovementRule {
+            action: mmorpg_core::action::ActionId::Landing,
+            phase: mmorpg_core::action::Phase::Recovery,
+            conditions: &[],
+            movement: mmorpg_core::action::Movement {
+                steering_percent: 50,
+                momentum_percent: 0,
+                max_acceleration_cms2: None,
+            },
+        },
+    ],
+    ..mmorpg_core::action::BASELINE
+};
+
+/// The traversal workload's length.
+pub const TRAVERSAL_TICKS: usize = mmorpg_core::golden::t30(240) as usize;
+
+/// A Warden and a Ranger in the outpost, by ID and feet XZ.
+const TRAVERSAL_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [2_200.0, 850.0]), (2, [2_310.0, 850.0])];
+
+/// The traversal commands at `tick` (30 Hz): run, jump, let go (player 1) or turn back
+/// (player 2) in the air, land, and again.
+fn traversal_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let run = |forward, facing| ZoneCommand::Move {
+        forward,
+        strafe: 0,
+        facing,
+    };
+    let (south, east, north) = (32_768, 16_384, 0);
+    match tick {
+        0 => vec![
+            (1, ZoneCommand::ChooseClass { class: 0, sex: 0 }),
+            (2, ZoneCommand::ChooseClass { class: 1, sex: 1 }),
+        ],
+        1 => vec![(1, run(1, south)), (2, run(1, south))],
+        20 | 100 => vec![(1, ZoneCommand::Jump), (2, ZoneCommand::Jump)],
+        22 | 102 => vec![(1, run(0, south)), (2, run(1, north))],
+        60 => vec![(1, run(1, east)), (2, run(1, east))],
+        150 => vec![(1, run(0, east)), (2, run(0, east))],
+        _ => Vec::new(),
+    }
 }
 
 /// The crate-smash workload's length: the crates break, and their debris settles and
@@ -550,6 +610,14 @@ fn placed_zone_at_level(
     )?)
 }
 
+/// [`placed_zone`] running [`TRAVERSAL_GRAPH`].
+fn traversal_zone(players: &[(u32, [f32; 2])]) -> Result<ZoneSimulation, Box<dyn Error>> {
+    let mut zone = placed_zone(players)?;
+    zone.set_action_graph(&TRAVERSAL_GRAPH)
+        .map_err(|error| format!("{error:?}"))?;
+    Ok(zone)
+}
+
 /// Greyhaven with `players` placed at their feet XZ, standing on the ground.
 fn placed_zone(players: &[(u32, [f32; 2])]) -> Result<ZoneSimulation, Box<dyn Error>> {
     let content = mmorpg_core::greyhaven_vale::content();
@@ -585,6 +653,7 @@ impl Workload {
             Self::CrateShove => "vale-crate-shove",
             Self::CrateSmash => "vale-crate-smash",
             Self::Missiles => "vale-missiles",
+            Self::Traversal => "vale-traversal",
         }
     }
 
@@ -601,6 +670,7 @@ impl Workload {
             Self::CrateShove => CRATE_SHOVE_TICKS,
             Self::CrateSmash => CRATE_SMASH_TICKS,
             Self::Missiles => MISSILES_TICKS,
+            Self::Traversal => TRAVERSAL_TICKS,
         }
     }
 }
@@ -628,6 +698,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::CrateShove);
     workloads.push(Workload::CrateSmash);
     workloads.push(Workload::Missiles);
+    workloads.push(Workload::Traversal);
     Ok(workloads)
 }
 
@@ -666,6 +737,7 @@ impl Run {
             Workload::CrateShove => (crate_shove_zone()?, 0),
             Workload::CrateSmash => (placed_zone_at_level(&CRATE_SMASH_PLAYERS, 6)?, 0),
             Workload::Missiles => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
+            Workload::Traversal => (traversal_zone(&TRAVERSAL_PLAYERS)?, 0),
         };
         Ok(Self {
             zone,
@@ -682,11 +754,15 @@ impl Run {
     /// The same run restored from the zone's canonical snapshot (Atlas 2.1.5): physics is
     /// rebuilt from game state on the current thread's backend.
     pub fn recovered(&self) -> Result<Self, Box<dyn Error>> {
+        let mut zone = ZoneSimulation::from_snapshot(
+            self.zone.snapshot()?,
+            std::sync::Arc::clone(self.zone.content()),
+        )?;
+        // The graph is zone setup, not canonical state.
+        zone.set_action_graph(self.zone.action_graph())
+            .map_err(|error| format!("{error:?}"))?;
         Ok(Self {
-            zone: ZoneSimulation::from_snapshot(
-                self.zone.snapshot()?,
-                std::sync::Arc::clone(self.zone.content()),
-            )?,
+            zone,
             workload: self.workload.clone(),
             players: self.players.clone(),
             sequences: self.sequences.clone(),
@@ -731,7 +807,8 @@ impl Run {
             | Workload::WatchPost
             | Workload::CrateShove
             | Workload::CrateSmash
-            | Workload::Missiles => {
+            | Workload::Missiles
+            | Workload::Traversal => {
                 // The scripts are written in 30 Hz ticks: they run at the same moments at TICK_HZ.
                 let scale = usize::from(mmorpg_core::TICK_HZ) / 30;
                 let at = if self.tick.is_multiple_of(scale) {
@@ -748,6 +825,7 @@ impl Run {
                     Workload::CrateShove => crate_shove_commands(at),
                     Workload::CrateSmash => crate_smash_commands(at),
                     Workload::Missiles => missiles_commands(at),
+                    Workload::Traversal => traversal_commands(at),
                     _ => mill_ramps_commands(at),
                 };
                 for (player, command) in commands {
