@@ -7,6 +7,7 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
+import { varyPreset, withEnemyPresets } from "../wasm-runtime";
 import type { ClassOutfit, ClipLayer, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
@@ -647,8 +648,8 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     if (varied.has(id)) { return varied.get(id) !== null; }
     varied.set(id, null);
     void (async () => {
-      const own = varyPreset(appearance, preset, seed, hairKeys);
-      const looks = await residentLooks({ ...(appearance as object), presets: [{ ...own, id }] }, look, scene);
+      const own = varyPreset(appearance, preset, seed);
+      const looks = await residentLooks({ ...(appearance as object), presets: [{ ...(own as object), id }] }, look, scene);
       const loaded = looks.get(id);
       if (!loaded) { throw new Error(`The Ranger bundle has no resident preset ${preset}.`); }
       varied.set(id, loaded);
@@ -682,43 +683,6 @@ async function dropPieces(appearance: unknown, load: (key: string, variant: stri
 
 /** The bundle outfit whose plates an equipped drop wears (`imported::DROP_ARMOR_OUTFIT`). */
 const DROP_ARMOR_OUTFIT = "outfit.knight";
-
-/** The Redbrand band's red on the soldier and knight outfits' `faction` materials (linear). */
-const REDBRAND_RED = [0.3, 0.025, 0.02, 1];
-
-/**
- * The humanoid enemies' presets (#39, `imported::Resident::preset`), authored here over the
- * bundle's own outfits, armour, headwear, hair, beards and face options. The marauders, bandits,
- * crossbowmen and brutes each wear their own seeded variation (`varyPreset`); Garrick wears his
- * as authored. Weapons come from the shared presenter's loadout.
- */
-export const ENEMY_PRESETS: readonly PresetValue[] = [
-  // Ragged farmhands turned raiders: a smock, long unkempt hair and a full beard.
-  { id: "enemy.marauder", outfit: "outfit.farmer", skin: "skin.dark", hair: "hair.long", tint: "tint.black",
-    facialHair: ["beard.full"], face: { eyes: "eyes.narrow", face: "face.narrow", mouth: "mouth.thin", nose: "nose.long" } },
-  // The rank and file: the soldier's gambeson and sash in Redbrand red, bareheaded.
-  { id: "enemy.redbrand.bandit", outfit: "outfit.soldier", skin: "skin.light", hair: "hair.buzzed", tint: "tint.brown",
-    facialHair: ["beard.short"], hiddenArmor: ["soldier.kettle-hat"], faction: REDBRAND_RED,
-    face: { eyes: "eyes.base", face: "face.base", mouth: "mouth.thin", nose: "nose.broad" } },
-  // The outriders keep the kettle hat.
-  { id: "enemy.redbrand.crossbowman", outfit: "outfit.soldier", skin: "skin.dark", hair: "hair.buzzed", tint: "tint.black",
-    facialHair: ["beard.moustache"], faction: REDBRAND_RED,
-    face: { eyes: "eyes.narrow", face: "face.narrow", mouth: "mouth.base", nose: "nose.long" } },
-  // The shield-bearers: knight's plate in Redbrand red under the Ironcrest helm.
-  { id: "enemy.redbrand.brute", outfit: "outfit.knight", skin: "skin.dark", headwear: "equipment.helm.ironcrest", tint: "tint.black",
-    facialHair: ["beard.full"], hiddenArmor: ["knight.bascinet"], faction: REDBRAND_RED,
-    face: { eyes: "eyes.base", face: "face.broad", mouth: "mouth.full", nose: "nose.broad" } },
-  // Garrick Redbrand: bareheaded in plate and a deeper crimson, long black hair and a full beard.
-  { id: "enemy.redbrand.garrick", outfit: "outfit.knight", skin: "skin.light", hair: "hair.long", tint: "tint.black",
-    facialHair: ["beard.full", "beard.moustache"], hiddenArmor: ["knight.bascinet"], faction: [0.42, 0.015, 0.015, 1],
-    face: { eyes: "eyes.narrow", face: "face.broad", mouth: "mouth.thin", nose: "nose.broad" } },
-];
-
-/** The bundle's `humanoid-appearance` with the game's enemy presets beside its own. */
-function withEnemyPresets(appearance: unknown): unknown {
-  const value = appearance as { presets?: PresetValue[] };
-  return { ...value, presets: [...(value.presets ?? []), ...ENEMY_PRESETS] };
-}
 
 /** The class colour of a `class.<id>` preset's `classTrim` (#379): `character-visuals` accent, linear. */
 function classTrimColor(preset: string): [number, number, number] | null {
@@ -787,60 +751,6 @@ function setMorphs(model: THREE.Object3D, morphs: Readonly<Record<string, number
   });
 }
 
-/** A small deterministic generator (mulberry32) over a string seed. */
-function seeded(seed: string): () => number {
-  let state = 2166136261;
-  for (let i = 0; i < seed.length; i++) { state = Math.imul(state ^ seed.charCodeAt(i), 16777619); }
-  return () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/**
- * A resident's own random-but-fixed variation of the preset `id` (asset-tooling #380: "not every
- * man the same man with a different costume"): the preset's outfit, headwear, faction and hidden
- * armour stay, while skin, hairstyle (of `hairStyles`), hair tint (the beards follow it), facial
- * hair, face features and, where the bundle offers them, age, build, height and skin tone are
- * drawn from the bundle's `humanoid-appearance` options by `seed`. The same seed always gives the
- * same man.
- */
-export function varyPreset(appearance: unknown, id: string, seed: number, hairStyles: readonly string[]): PresetValue {
-  const value = appearance as VarietyValue;
-  const base = value.presets?.find((preset) => preset.id === id);
-  if (!base) { throw new Error(`The Ranger bundle has no resident preset ${id}.`); }
-  const random = seeded(`${id}#${seed}`);
-  const pick = <T>(list: readonly T[]): T | undefined => list[Math.floor(random() * list.length)];
-  const ids = (list: readonly { id?: unknown }[] | undefined): string[] =>
-    (list ?? []).flatMap((item) => (typeof item.id === "string" ? [item.id] : []));
-  const outfit = value.outfits?.find((candidate) => candidate.id === base.outfit);
-  const skin = pick(ids(outfit?.skins?.filter((option) => typeof option.variant === "string"))) ?? base.skin;
-  const beards = ids(value.facialHair?.options);
-  const moustaches = beards.filter((beard) => beard.includes("moustache") || beard.includes("walrus"));
-  const beard = random() < 0.2 ? undefined : pick(beards);
-  const facialHair = beard === undefined ? []
-    : !moustaches.includes(beard) && moustaches.length > 0 && random() < 0.35 ? [beard, pick(moustaches)!] : [beard];
-  const face = Object.fromEntries((value.face?.features ?? []).flatMap((feature) => {
-    const option = pick(ids(feature.options));
-    return typeof feature.id === "string" && option ? [[feature.id, option]] : [];
-  }));
-  const tones = value.skinTones?.skin === skin ? ids(value.skinTones?.tones) : [];
-  const min = Number(value.heights?.min), max = Number(value.heights?.max);
-  return {
-    ...base,
-    skin,
-    hair: base.headwear ? base.hair : pick(hairStyles) ?? base.hair,
-    tint: pick(ids(value.tints)) ?? base.tint,
-    facialHair,
-    face: { ...(base.face as object | undefined), ...face },
-    age: pick(ids(value.ages?.options)),
-    build: pick(ids(value.builds?.options)),
-    tone: pick(tones),
-    height: Number.isFinite(min) && Number.isFinite(max) && max > min ? min + random() * (max - min) : undefined,
-  };
-}
 type OutfitValue = {
   id?: unknown; skins?: { id?: unknown; variant?: unknown }[];
   armor?: { entry?: unknown; pieces?: { node?: unknown; socket?: unknown }[] };

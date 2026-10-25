@@ -25,6 +25,22 @@ export function soundManifest(bundle: string): string {
   return generated.soundManifest(bundle);
 }
 
+/**
+ * The Ranger's `humanoid-appearance` with the game's humanoid enemy presets beside the bundle's
+ * own (#39), shared with the native client; call after the module loaded.
+ */
+export function withEnemyPresets(appearance: unknown): unknown {
+  return JSON.parse(generated.withEnemyPresets(JSON.stringify(appearance)));
+}
+
+/**
+ * A unit's own seeded variation of the preset `id` (asset-tooling #380) over `appearance`: the
+ * same man the native client draws; call after the module loaded.
+ */
+export function varyPreset(appearance: unknown, id: string, seed: number): unknown {
+  return JSON.parse(generated.varyPreset(JSON.stringify(appearance), id, seed));
+}
+
 /** The authored action graph and the lab's setup choices (#381); call after the module loaded. */
 export function actionLabDefinitions(): { graph: ActionGraph; options: LabOptions } {
   return { graph: JSON.parse(generated.actionGraph()) as ActionGraph, options: JSON.parse(generated.actionLabOptions()) as LabOptions };

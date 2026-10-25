@@ -13,6 +13,9 @@ use std::{
 };
 use three_d_core::{Color3, Mesh, Vec3, VertexAttributes};
 
+mod residents;
+pub(super) use residents::{resident_look, residents_drawable};
+
 type M4 = [f32; 16];
 const IDENTITY: M4 = [
     1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
@@ -152,6 +155,8 @@ struct Primitive {
     node: Option<String>,
     /// Its material's name, so a hair tint can recolour it.
     material: Option<String>,
+    /// Its material's authored linear base colour factor, which a recolour replaces.
+    factor: [f32; 3],
     double_sided: bool,
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
@@ -164,13 +169,14 @@ struct Primitive {
 }
 
 /// One imported model: rest hierarchy, skinned primitives and named clips.
+#[derive(Clone)]
 pub(super) struct Model {
     rest: Vec<Rest>,
     parents: Vec<Option<usize>>,
     /// Nodes ordered parents first.
     order: Vec<usize>,
     primitives: Vec<Primitive>,
-    clips: BTreeMap<String, Clip>,
+    clips: Arc<BTreeMap<String, Clip>>,
     /// Node names, for attaching items to joints.
     names: Vec<Option<String>>,
     /// Whether each node is in the upper body ([`UPPER_BODY_ROOT`]'s subtree), for masked layers.
@@ -278,6 +284,7 @@ impl Model {
                 primitives.push(Primitive {
                     node: node.name().map(str::to_owned),
                     material: primitive.material().name().map(str::to_owned),
+                    factor: [base[0], base[1], base[2]],
                     double_sided: primitive.material().double_sided(),
                     positions,
                     normals,
@@ -365,7 +372,7 @@ impl Model {
             parents,
             order,
             primitives,
-            clips,
+            clips: Arc::new(clips),
             names,
             upper,
             floor: 0.,
@@ -603,6 +610,36 @@ impl Model {
         }
     }
 
+    /// Gives the `materials` the linear base colour `to` in place of their own factor, on the
+    /// primitives of the `nodes` glTF nodes (all with None), like the browser's
+    /// `tintMaterials`.
+    fn recolor(&mut self, nodes: Option<&[String]>, materials: &[String], to: [f32; 3]) {
+        for p in &mut self.primitives {
+            let node = nodes.is_none_or(|nodes| p.node.as_ref().is_some_and(|n| nodes.contains(n)));
+            if !node
+                || !p
+                    .material
+                    .as_ref()
+                    .is_some_and(|name| materials.contains(name))
+            {
+                continue;
+            }
+            let factor: [f32; 3] =
+                std::array::from_fn(|i| srgb(to[i]) / srgb(p.factor[i]).max(1e-4));
+            for c in &mut p.colors {
+                *c = Color3::new(c.r * factor[0], c.g * factor[1], c.b * factor[2]);
+            }
+            p.factor = to;
+        }
+    }
+
+    /// Raises glTF node `node` by `dy` metres in its parent's frame.
+    fn lift(&mut self, node: &str, dy: f32) {
+        if let Some(index) = self.names.iter().position(|n| n.as_deref() == Some(node)) {
+            self.rest[index].t[1] += dy;
+        }
+    }
+
     /// The model of glTF node `node` alone: one armour plate of a multi-plate entry.
     fn piece(&self, node: &str) -> Self {
         Self {
@@ -615,7 +652,7 @@ impl Model {
                 .filter(|p| p.node.as_deref() == Some(node))
                 .cloned()
                 .collect(),
-            clips: BTreeMap::new(),
+            clips: Arc::default(),
             names: self.names.clone(),
             upper: self.upper.clone(),
             floor: self.floor,
