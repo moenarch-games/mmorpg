@@ -1466,6 +1466,51 @@ mod tests {
     }
 
     #[test]
+    fn a_long_authored_startup_is_not_reported_as_lag() {
+        let mut config = Config::baseline();
+        config.name = "slow sliding slash".to_owned();
+        let mut slow = sliding_slash();
+        slow.startup.ms = 200;
+        config.authored.push(slow);
+        let facing = crate::action_lab::LAB_LOCATION.1;
+        let scenario = scenario(&[
+            (
+                2,
+                ZoneCommand::Move {
+                    forward: 1,
+                    strafe: 0,
+                    facing,
+                },
+            ),
+            (
+                8,
+                ZoneCommand::DirectedStrike {
+                    ability: mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
+                    facing,
+                    aim: mmorpg_core::StrikeAim::new(
+                        mmorpg_core::StrikeSide::Centre,
+                        mmorpg_core::StrikeHeight::Low,
+                    ),
+                },
+            ),
+        ]);
+        let replay = run(&scenario, &config).unwrap();
+        let strike = replay.commands.last().unwrap();
+        // The use waited out the 12-tick startup: past the lag threshold.
+        let delay = strike.delay_ticks.expect("the strike took effect");
+        let threshold = 1 + u64::from(mmorpg_core::ticks_from_ms(lab_diagnostics::LAG_MS));
+        assert!(delay > threshold, "{delay}");
+        assert!(
+            !replay
+                .findings
+                .iter()
+                .any(|finding| finding.kind == lab_diagnostics::Kind::InputLag),
+            "{:#?}",
+            replay.findings
+        );
+    }
+
+    #[test]
     fn scenarios_fail_closed() {
         let mut stale = scenario(&[]);
         stale.protocol_id ^= 1;
