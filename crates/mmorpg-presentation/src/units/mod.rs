@@ -29,7 +29,7 @@ use mmorpg_core::{
 use mmorpg_scenery::Scenery;
 
 use crate::{Draw, geometry::V};
-use imported::{Kind, Loadout, Playback, Resident};
+use imported::{Kind, Loadout, Outfit, Playback, Resident};
 use kit::{Frame, IQ, Primitive, Resources, offset, qa, qm, shade};
 use player::{Hat, Look};
 
@@ -114,6 +114,8 @@ pub struct ImportedUnit {
     pub loadout: Option<Loadout>,
     /// A named resident's appearance preset (#418); players and animals have none.
     pub resident: Option<Resident>,
+    /// A player's class starter outfit (asset-tooling #379); residents and animals have none.
+    pub outfit: Option<Outfit>,
     /// The living viewer wears their headwear on the posed head (see [`UnitPresenter::headwear`]).
     pub headwear: Option<Look>,
 }
@@ -157,6 +159,8 @@ pub struct UnitPresenter {
     ready: BTreeSet<Kind>,
     /// The client draws the residents' appearance presets on the Ranger (#418).
     residents: bool,
+    /// The viewer's equipment as last projected: its armour replaces outfit pieces.
+    equipment: Option<mmorpg_core::Equipment>,
     structures: crate::structures::Structures,
     /// How the imported models' body regions blend; the Action Lab tunes it (#384).
     blend: imported::Blend,
@@ -180,6 +184,7 @@ impl UnitPresenter {
             durations: BTreeMap::new(),
             ready: BTreeSet::new(),
             residents: false,
+            equipment: None,
             blend: imported::Blend::default(),
         }
     }
@@ -217,6 +222,7 @@ impl UnitPresenter {
         self.deaths.clear();
         self.bursts.clear();
         self.effects.clear();
+        self.equipment = None;
         self.resources = Resources::default();
         self.structures =
             crate::structures::Structures::on_scenery(self.content.pieces(), &self.scenery);
@@ -241,6 +247,10 @@ impl UnitPresenter {
             })
             .collect();
         self.effects.push(snapshot, seconds, &anchors);
+        // The sheet comes only on change ticks; it holds until the next one.
+        if let Some(equipment) = snapshot.equipment {
+            self.equipment = Some(equipment);
+        }
         // Accepted strikes start their clips (Atlas 6.6.45): the event, never a clip, is the
         // attack. Every received projection is read, so a frame spanning several ticks keeps them.
         for event in &snapshot.events {
@@ -423,11 +433,17 @@ impl UnitPresenter {
                     loadout: match resident {
                         Some(resident) => resident.loadout(),
                         None if matches!(entity, EntityRef::Player(_)) => {
-                            class.and_then(|c| Loadout::of_class(c.class))
+                            class.map(|c| Loadout::of_class(c.class))
                         }
                         None => None,
                     },
                     resident,
+                    outfit: match entity {
+                        EntityRef::Player(_) => class.map(|c| {
+                            Outfit::new(c.class, self.equipment.as_ref().filter(|_| viewer))
+                        }),
+                        _ => None,
+                    },
                     headwear: (viewer && !dead).then(|| {
                         Look::new(
                             input.viewer.choice.map_or(0, |c| c.class.code()),

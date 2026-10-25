@@ -746,7 +746,8 @@ function previewHatNodes(
   localPoint: LocalPoint,
   rotationQuaternion: RotationQuaternion,
 ): RendererSceneNode[] {
-  if (hat === "none") {
+  // The procedural stand-in has no class outfit to take headwear from.
+  if (hat === "none" || hat === "class") {
     return [];
   }
   if (hat === "wayfarer-hood") {

@@ -91,9 +91,9 @@ export type Intent = (projection: ZoneSnapshot) => WorldCommand | null;
 /** Outside every named area the HUD names the zone itself. */
 const ZONE_NAME = "Greyhaven Vale";
 /** The selection turntable's class weapons, as the shared presenter's `Loadout::of_class`. */
-const CLASS_LOADOUTS: Readonly<Record<NonNullable<ViewerLook["classId"]>, Loadout | null>> = {
-  warden: "sword-and-shield", ranger: "bow-and-quiver", arcanist: null, necromancer: "staff.bone",
-  rogue: "dagger", cleric: "staff.gilded", druid: "staff.gnarled",
+const CLASS_LOADOUTS: Readonly<Record<NonNullable<ViewerLook["classId"]>, Loadout>> = {
+  warden: "sword-and-shield", ranger: "bow-and-quiver", arcanist: "staff.crystal-and-tome", necromancer: "staff.bone",
+  rogue: "dagger", cleric: "mace.flanged", druid: "staff.gnarled",
 };
 /** Quest markers float this far above an NPC's feet (metres). */
 const MARKER_HEIGHT_METRES = 2.3;
@@ -669,7 +669,8 @@ export class WorldView {
     this.#models.update([{
       id: "selection-preview", kind: "Ranger", entity: { kind: "player", id: 0 }, feet, yaw, heightMetres: height,
       clip, time: seconds % length, lower: [clip, seconds % length], layers: [{ clip, time: seconds % length, weight: 1, mask: "all" }], tint: null,
-      loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null, headwear: true,
+      loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null,
+      outfit: look.classId ? { preset: `class.${look.classId}`, replaced: [] } : null, headwear: true,
     }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} });
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
@@ -1372,7 +1373,7 @@ function doorToggle(projection: ZoneSnapshot, door: number): WorldCommand {
 /** The viewer's chosen headwear for the imported Ranger (#374); no choice is no hat. */
 function viewerHeadwear(look: ViewerLook): Headwear {
   const style = look.headwear;
-  return style === "wayfarer-hood" || style === "ranger-cap" || style === "ironcrest-helm" ? style : "none";
+  return style === "class" || style === "wayfarer-hood" || style === "ranger-cap" || style === "ironcrest-helm" ? style : "none";
 }
 
 /** The viewer's hair (#376); a look without a choice keeps the starter hair. */

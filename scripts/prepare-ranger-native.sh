@@ -41,7 +41,13 @@ fi
 if [[ ! -d "${PROCESSOR}/node_modules" ]]; then
   (cd "${PROCESSOR}" && bun install --frozen-lockfile)
 fi
+# The class starter outfits (asset-tooling #379): each class preset's outfit variant, its armour
+# and the knight's plate that equipped drops wear.
+entries=humanoid.ranger.male/default,equipment.sword.arming/default,equipment.dagger.blackened/default,equipment.staff.bone/default,equipment.staff.crystal/default,equipment.staff.gnarled/default,equipment.book.tome/default,equipment.mace.flanged/default,equipment.shield.heater/default,equipment.bow.long/default,equipment.quiver.back/default,equipment.cap.ranger/default,equipment.helm.ironcrest/default,hair.simple-parted/hair-1,armor.knight/default
+for outfit in warden.skin.light ranger arcanist.skin.light necromancer.skin.grey rogue cleric.skin.light druid; do
+  entries+=",humanoid.ranger.male/outfit.class.${outfit},armor.class.${outfit%%.*}/default"
+done
 ASSET_TOOLING_KTX="${KTX}" bun "${PROCESSOR}/scripts/prepare-native-downloads.ts" \
   --index "${ROOT_DIR}/web/public/characters/humanoid.ranger.male/humanoid-ranger-male.index.json" \
-  --entries humanoid.ranger.male/default,equipment.sword.arming/default,equipment.dagger.blackened/default,equipment.staff.bone/default,equipment.staff.gilded/default,equipment.staff.gnarled/default,equipment.shield.heater/default,equipment.cap.ranger/default,equipment.helm.ironcrest/default,hair.simple-parted/hair-1 \
+  --entries "${entries}" \
   --out "${ROOT_DIR}/web/public/characters/humanoid.ranger.male/native"
