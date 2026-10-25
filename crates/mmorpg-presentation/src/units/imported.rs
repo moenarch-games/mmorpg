@@ -8,8 +8,10 @@
 //! provider; this module only decides what to pose. Presentation only, never read by gameplay.
 use mmorpg_core::{
     AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, Equipment,
-    EquipmentSlot, PlayerClass, ZoneContent,
+    EquipmentSlot, PlayerClass, WaterMode, ZoneContent,
 };
+
+use super::swim::Attitude;
 
 /// What an imported humanoid carries in its sockets: the class weapons and props (#156, #244,
 /// #302, asset-tooling #375 and #379) and the guards' sword.
@@ -344,6 +346,8 @@ pub struct Clips {
     /// A standing raised shield, for a model that carries one (#156).
     pub guard: Option<&'static str>,
     pub jump: Option<JumpClips>,
+    /// The authored water locomotion, for a model that swims (Atlas 6.6.41).
+    pub swim: Option<SwimClips>,
     /// Class- and ability-specific strikes, for a model that has them (#384).
     pub strikes: Option<StrikeClips>,
     /// The joint whose subtree is the upper body, for a model that layers its upper body over
@@ -372,6 +376,35 @@ pub struct JumpClips {
     pub airborne: &'static str,
     pub land: &'static str,
 }
+
+/// In-place authored water locomotion (Atlas 6.6.41), shown in the zone's water mode. A clip the
+/// bundle lacks falls back to the authored land clip nearest to it: the walk for wading and
+/// strokes (leaned into the stroke by [`Attitude`]), the idle for treading, and no transition at
+/// all for entry and exit.
+#[derive(Clone, Copy, Debug)]
+pub struct SwimClips {
+    /// Walking through water up to the waist.
+    pub wade: &'static str,
+    /// Treading water in place, head above the surface or holding depth.
+    pub tread: &'static str,
+    /// Horizontal swimming, at the surface or submerged.
+    pub stroke: &'static str,
+    /// Swimming downward, a dive.
+    pub descend: &'static str,
+    /// Swimming upward, toward the surface.
+    pub ascend: &'static str,
+    /// Wading or falling into swimming depth.
+    pub enter: &'static str,
+    /// Leaving swimming depth for wading depth or the shore.
+    pub exit: &'static str,
+}
+
+/// The stroke speed in metres per second at which a swim clip plays at its authored rate.
+pub const STROKE_SPEED: f64 = 1.8;
+/// Vertical speed in metres per second from which a swimmer dives or ascends.
+pub const DIVE_SPEED: f64 = 0.4;
+/// The shortest lower-body crossfade in seconds just after entering or leaving swimming depth.
+pub const WATER_BLEND_SECONDS: f32 = 0.3;
 
 impl Kind {
     pub const ALL: [Self; 4] = [Self::Ranger, Self::Wolf, Self::Rat, Self::Pig];
@@ -406,6 +439,15 @@ impl Kind {
                     airborne: "Jump_Loop",
                     land: "Jump_Land",
                 }),
+                swim: Some(SwimClips {
+                    wade: "Wade_Fwd_Loop",
+                    tread: "Swim_Idle_Loop",
+                    stroke: "Swim_Fwd_Loop",
+                    descend: "Swim_Down_Loop",
+                    ascend: "Swim_Up_Loop",
+                    enter: "Swim_Enter",
+                    exit: "Swim_Exit",
+                }),
                 strikes: Some(StrikeClips {
                     shield_bash: "Shield_OneShot",
                     bow: "Bow_Release",
@@ -421,6 +463,7 @@ impl Kind {
                 death: "Death",
                 guard: None,
                 jump: None,
+                swim: None,
                 strikes: None,
                 upper_body: None,
             },
@@ -432,6 +475,7 @@ impl Kind {
                 death: "Rat_Death",
                 guard: None,
                 jump: None,
+                swim: None,
                 strikes: None,
                 upper_body: None,
             },
@@ -444,6 +488,7 @@ impl Kind {
                 death: "Death",
                 guard: None,
                 jump: None,
+                swim: None,
                 strikes: None,
                 upper_body: None,
             },
@@ -620,6 +665,9 @@ pub struct Animation {
     pub lower: (&'static str, f32),
     /// The upper body's target clip and time; a model without layers shows it whole.
     pub upper: (&'static str, f32),
+    /// The body's cosmetic swim lean and turn about its chest (Atlas 6.6.41); upright out of
+    /// swimming depth.
+    pub attitude: Attitude,
 }
 
 /// What the projection shows of one unit this frame. Every cue is zone-accepted state or the
@@ -628,8 +676,12 @@ pub struct Animation {
 pub struct Cues {
     /// Horizontal speed in metres per second.
     pub speed: f64,
-    /// Cosmetic vertical velocity in metres per second, zero while swimming.
+    /// The horizontal travel's direction from the unit's facing, as a yaw offset in radians.
+    pub direction: f64,
+    /// Cosmetic vertical velocity in metres per second.
     pub vertical_speed: f64,
+    /// The zone's water mode at the unit's projected position (Atlas 6.6.41).
+    pub water: WaterMode,
     pub dead: bool,
     /// The zone's guard protects now: a ready, grounded raised shield (viewer only).
     pub guarding: bool,
@@ -835,6 +887,14 @@ pub struct Playback {
     guarding: bool,
     serial: u32,
     landing: u32,
+    /// In swimming depth last frame (Atlas 6.6.41).
+    swimming: bool,
+    /// The water entry or exit being shown, and how many have begun.
+    crossing: Option<&'static str>,
+    crossings: u32,
+    /// When the unit last entered or left swimming depth, on the presentation clock.
+    crossed: Option<f64>,
+    attitude: Attitude,
     /// Pelvis and legs: locomotion, flight and death.
     base: Track,
     /// Over the legs' locomotion: a landing or a grounded whole-body strike.
@@ -940,10 +1000,36 @@ impl Playback {
                 .playing(jump.land)
                 .is_none_or(|play| play.time >= duration(jump.land))
         });
+        // The zone's water mode, never the rendered water, decides the swim clips (Atlas 6.6.41).
+        let swims = cues.water.swims() && !dead;
+        let swim = |pick: fn(SwimClips) -> &'static str| {
+            clips.swim.map(pick).filter(|clip| available(clip))
+        };
+        if let Some(clip) = self.crossing
+            && self
+                .lower
+                .playing(clip)
+                .is_none_or(|play| play.time >= duration(clip))
+        {
+            self.crossing = None;
+        }
+        if swims != self.swimming {
+            self.crossings = self.crossings.wrapping_add(1);
+            self.crossed = Some(now);
+            self.crossing = if reduced || self.base.current.is_none() {
+                None
+            } else if swims {
+                swim(|clips| clips.enter)
+            } else {
+                swim(|clips| clips.exit)
+            };
+        }
+        self.swimming = swims;
         // The projection already supplies cosmetic vertical velocity. Retain the flight phase
         // through the apex instead of treating its zero velocity as a landing. This is a
-        // visual cue, not a grounded/physics decision.
-        self.flight = if dead {
+        // visual cue, not a grounded/physics decision. The water carries a swimmer: it neither
+        // jumps, falls nor lands.
+        self.flight = if dead || swims {
             Flight::Ground
         } else if vertical_speed > 0.3 {
             match self.flight {
@@ -980,7 +1066,8 @@ impl Playback {
         }
         self.guarding = guarding;
         self.strike = self.strike.filter(|strike| now < strike.until);
-        let standing = matches!(self.flight, Flight::Ground) && speed <= 0.25;
+        // A swimmer has no footing for a strike's footwork.
+        let standing = matches!(self.flight, Flight::Ground) && speed <= 0.25 && !swims;
         let layered = clips.upper_body.is_some();
         let mut split = false;
         if let Some(strike) = &mut self.strike {
@@ -1012,12 +1099,41 @@ impl Playback {
                 at: Some(preparation.at(now, duration(preparation.clip))),
                 ..Want::hold(preparation.clip, preparation.serial)
             });
-        let ground = if speed > 3.2 {
+        #[allow(clippy::cast_possible_truncation)]
+        let walk_rate = |speed: f64| (speed / 1.8).clamp(0.6, 1.6) as f32;
+        let ground = if swims {
+            // Strokes keep pace with the projected travel; a missing clip falls back to the
+            // leaned walk for travel and the idle for treading, in place either way.
+            let travel = speed.hypot(vertical_speed);
+            #[allow(clippy::cast_possible_truncation)]
+            let stroke_rate = (travel / STROKE_SPEED).clamp(0.6, 1.5) as f32;
+            let vertical = if vertical_speed < -DIVE_SPEED {
+                swim(|clips| clips.descend)
+            } else if vertical_speed > DIVE_SPEED {
+                swim(|clips| clips.ascend)
+            } else {
+                None
+            };
+            if let Some(clip) = vertical {
+                Want::looped(clip, stroke_rate)
+            } else if travel > 0.25 {
+                match swim(|clips| clips.stroke) {
+                    Some(stroke) => Want::looped(stroke, stroke_rate),
+                    None => Want::looped(clips.walk, walk_rate(travel)),
+                }
+            } else {
+                Want::looped(swim(|clips| clips.tread).unwrap_or(clips.idle), 1.)
+            }
+        } else if let Some(wade) = swim(|clips| clips.wade)
+            && cues.water == WaterMode::Wading
+            && speed > 0.25
+        {
+            Want::looped(wade, walk_rate(speed))
+        } else if speed > 3.2 {
             #[allow(clippy::cast_possible_truncation)]
             Want::looped(clips.run, (speed / 5.).clamp(0.7, 1.5) as f32)
         } else if speed > 0.25 {
-            #[allow(clippy::cast_possible_truncation)]
-            Want::looped(clips.walk, (speed / 1.8).clamp(0.6, 1.6) as f32)
+            Want::looped(clips.walk, walk_rate(speed))
         } else {
             // A standing protecting guard holds the shield up with its own stance.
             Want::looped(clips.guard.filter(|_| guarding).unwrap_or(clips.idle), 1.)
@@ -1047,7 +1163,7 @@ impl Playback {
         {
             Some(Want::hold(jump.land, self.landing))
         } else {
-            None
+            self.crossing.map(|clip| Want::hold(clip, self.crossings))
         };
         let upper = if dead || !layered {
             None
@@ -1064,14 +1180,27 @@ impl Playback {
         } else {
             None
         };
-        // The first clip a unit shows has nothing to blend from.
-        let seconds = if self.base.current.is_some() {
-            blend.lower_seconds
+        // The first clip a unit shows has nothing to blend from. Going into or out of swimming
+        // depth blends a little longer, so the body eases between land and water.
+        let first = self.base.current.is_none();
+        let lower_seconds = if self
+            .crossed
+            .is_some_and(|crossed| now - crossed < f64::from(WATER_BLEND_SECONDS))
+        {
+            blend.lower_seconds.max(WATER_BLEND_SECONDS)
         } else {
-            0.
+            blend.lower_seconds
         };
+        let seconds = if first { 0. } else { lower_seconds };
         self.base.advance(Some(base), dt, seconds, reduced);
-        self.lower.advance(lower, dt, blend.lower_seconds, reduced);
+        self.lower.advance(lower, dt, lower_seconds, reduced);
+        let attitude = Attitude::target(
+            if dead { WaterMode::Dry } else { cues.water },
+            speed,
+            cues.direction,
+            vertical_speed,
+        );
+        self.attitude = self.attitude.settle(attitude, cues.dt, reduced || first);
         if split {
             // The strike leaves the legs mid-swing: the upper body keeps it without a blend.
             self.upper = Track::default();
@@ -1121,6 +1250,7 @@ impl Playback {
             layers,
             lower,
             upper,
+            attitude: self.attitude,
         }
     }
 }
@@ -1294,6 +1424,7 @@ mod tests {
                 now,
                 dt,
                 reduced,
+                ..Cues::default()
             },
             Blend::default(),
         )
@@ -1817,5 +1948,123 @@ mod tests {
         );
         assert_eq!(Kind::Ranger.strike(None, None), "Sword_Attack");
         assert_eq!(Kind::Wolf.strike(None, Some(ids::SHIELD_BASH)), "Attack");
+    }
+
+    /// One frame of a unit in `water`, travelling at `speed` m/s straight ahead and `vertical`.
+    fn swim_frame(
+        playback: &mut Playback,
+        duration: impl Fn(&str) -> f32,
+        water: WaterMode,
+        speed: f64,
+        vertical: f64,
+        now: f64,
+    ) -> Animation {
+        playback.advance(
+            Kind::Ranger.clips(),
+            duration,
+            Cues {
+                speed,
+                vertical_speed: vertical,
+                water,
+                now,
+                dt: 0.1,
+                ..Cues::default()
+            },
+            Blend::default(),
+        )
+    }
+
+    #[test]
+    fn the_zones_water_mode_picks_wade_tread_stroke_dive_and_surface_clips() {
+        let one = |_: &str| 1.;
+        let mut playback = Playback::default();
+        let mut now = 0.;
+        let mut frame = |water, speed, vertical| {
+            now += 0.1;
+            swim_frame(&mut playback, one, water, speed, vertical, now)
+        };
+        assert_eq!(frame(WaterMode::Dry, 1., 0.).lower.0, "Walk_Loop");
+        assert_eq!(frame(WaterMode::Wading, 1., 0.).lower.0, "Wade_Fwd_Loop");
+        // Reaching swimming depth plays the entry over the stroke, then the stroke alone.
+        let entering = frame(WaterMode::Swimming, 1., 0.);
+        assert_eq!(entering.lower.0, "Swim_Enter");
+        let mut swimming = entering;
+        for _ in 0..12 {
+            swimming = frame(WaterMode::Swimming, 1., 0.);
+        }
+        assert_eq!(swimming.lower.0, "Swim_Fwd_Loop");
+        // Surface swimming never jumps or falls on vertical motion; it treads in place.
+        assert_eq!(frame(WaterMode::Swimming, 0., 0.).lower.0, "Swim_Idle_Loop");
+        assert_eq!(
+            frame(WaterMode::Submerged, 0., -1.).lower.0,
+            "Swim_Down_Loop"
+        );
+        assert_eq!(frame(WaterMode::Submerged, 0.5, 1.).lower.0, "Swim_Up_Loop");
+        // Leaving swimming depth plays the exit, then the ordinary locomotion.
+        assert_eq!(frame(WaterMode::Wading, 0., 0.).lower.0, "Swim_Exit");
+        let mut ashore = frame(WaterMode::Dry, 0., 0.);
+        for _ in 0..12 {
+            ashore = frame(WaterMode::Dry, 0., 0.);
+        }
+        assert_eq!(ashore.lower.0, "Idle_Loop");
+        assert!(ashore.attitude.pitch.abs() < 0.01 && ashore.attitude.heading.abs() < 0.01);
+    }
+
+    #[test]
+    fn a_bundle_without_swim_clips_falls_back_in_place_to_its_land_clips() {
+        let land = |clip: &str| {
+            if clip.starts_with("Swim_") || clip.starts_with("Wade_") {
+                0.
+            } else {
+                1.
+            }
+        };
+        let mut playback = Playback::default();
+        let mut now = 0.;
+        let mut frame = |water, speed, vertical| {
+            now += 0.1;
+            swim_frame(&mut playback, land, water, speed, vertical, now)
+        };
+        assert_eq!(frame(WaterMode::Wading, 1., 0.).lower.0, "Walk_Loop");
+        // No entry clip: straight to the leaned walk, never a fall or landing.
+        let stroke = frame(WaterMode::Swimming, 1.5, -2.);
+        assert_eq!(stroke.lower.0, "Walk_Loop");
+        assert!(
+            stroke
+                .layers
+                .iter()
+                .all(|layer| !layer.clip.starts_with("Jump_"))
+        );
+        assert!(stroke.attitude.pitch > 0.);
+        assert_eq!(frame(WaterMode::Submerged, 0., 0.).lower.0, "Idle_Loop");
+        assert_eq!(frame(WaterMode::Submerged, 0., -1.).lower.0, "Walk_Loop");
+        assert_eq!(frame(WaterMode::Dry, 0., 0.).lower.0, "Idle_Loop");
+    }
+
+    #[test]
+    fn a_swimmer_leans_into_its_stroke_and_stands_again_ashore() {
+        let one = |_: &str| 1.;
+        let mut playback = Playback::default();
+        let mut now = 0.;
+        let mut pitch = 0.;
+        for _ in 0..20 {
+            now += 0.1;
+            let animation = swim_frame(&mut playback, one, WaterMode::Swimming, 2., 0., now);
+            assert!(animation.attitude.pitch >= pitch);
+            pitch = animation.attitude.pitch;
+        }
+        assert!((pitch - super::super::swim::SURFACE_PITCH).abs() < 0.01);
+        // Climbing out eases back upright rather than snapping.
+        now += 0.1;
+        let out = swim_frame(&mut playback, one, WaterMode::Dry, 2., 0., now);
+        assert!(out.attitude.pitch > 0. && out.attitude.pitch < pitch);
+        // A strike while treading stays on the upper body: no footwork without footing.
+        playback.strike("Sword_Attack", 1., now);
+        now += 0.1;
+        swim_frame(&mut playback, one, WaterMode::Swimming, 0., 0., now);
+        now += 0.1;
+        let struck = swim_frame(&mut playback, one, WaterMode::Swimming, 0., 0., now);
+        assert_eq!(struck.upper.0, "Sword_Attack");
+        assert_ne!(struck.lower.0, "Sword_Attack");
     }
 }

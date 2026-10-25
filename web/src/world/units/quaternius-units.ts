@@ -1163,7 +1163,7 @@ export class QuaterniusUnits {
     }
     const { root } = instance;
     root.position.set(unit.feet[0], unit.feet[1], unit.feet[2]);
-    root.rotation.set(0, unit.yaw, 0);
+    root.rotation.set(unit.pitch, unit.yaw, 0, "YXZ");
     root.scale.setScalar((unit.heightMetres / (instance.posable.bounds ?? asset).height) * (instance.posable.scale ?? 1));
     swingHanging(instance.posable.model, unit.swing);
   }
