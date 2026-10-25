@@ -644,6 +644,13 @@ impl UnitPresenter {
             });
     }
 
+    /// Shows or hides the development body overlay (#39): each unit's authoritative collision
+    /// body drawn translucent over its model. Presentation only.
+    #[wasm_bindgen(js_name = setBodyOverlay)]
+    pub fn set_body_overlay(&mut self, shown: bool) {
+        self.0.set_body_overlay(shown);
+    }
+
     pub fn push(&mut self, projection: &[u8], seconds: f64) -> Result<(), JsError> {
         self.0
             .push(projection, seconds)

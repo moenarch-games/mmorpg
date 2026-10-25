@@ -186,6 +186,8 @@ pub struct UnitPresenter {
     blend: imported::Blend,
     /// The local player's unanswered attack preparation.
     preparation: Option<LocalPreparation>,
+    /// The development body overlay (#39): each unit's authoritative body drawn over its model.
+    bodies: bool,
 }
 
 impl UnitPresenter {
@@ -209,7 +211,21 @@ impl UnitPresenter {
             equipment: None,
             blend: imported::Blend::default(),
             preparation: None,
+            bodies: false,
         }
+    }
+
+    /// Shows or hides the development body overlay (#39): every unit's authoritative collision
+    /// body (an upright capsule, or a resident's fixed box) as a translucent shape over the
+    /// presented model, so a gross mismatch between the two is visible. Presentation only.
+    pub fn set_body_overlay(&mut self, shown: bool) {
+        self.bodies = shown;
+    }
+
+    /// Whether the body overlay is shown.
+    #[must_use]
+    pub const fn body_overlay(&self) -> bool {
+        self.bodies
     }
 
     /// The local player pressed (or began aiming) an attack with `ability` at `now`: the viewer
@@ -590,6 +606,9 @@ impl UnitPresenter {
                 ring.material.unlit = true;
                 out.draws.push(ring);
             }
+            if self.bodies {
+                self.body_shapes(&mut out.draws, &id, entity, unit.centre, half);
+            }
             out.units.push(UnitView {
                 entity,
                 id,
@@ -629,6 +648,48 @@ impl UnitPresenter {
         }
         self.resources.retire_unused();
         out
+    }
+
+    /// The body overlay's shapes for one unit around its body `centre` (metres): the upright
+    /// capsule `mmorpg-core` moves players, creatures and minions as (radius the wider horizontal
+    /// half extent, `physics::rapier::capsule`), or the fixed box a resident stands as.
+    fn body_shapes(
+        &mut self,
+        draws: &mut Vec<Draw>,
+        id: &str,
+        entity: EntityRef,
+        centre: [f32; 3],
+        half: [f32; 3],
+    ) {
+        let [x, y, z] = centre.map(f64::from);
+        let at = |dy: f64| Frame {
+            p: [x, y + dy, z],
+            q: IQ,
+        };
+        let shapes = if entity.kind() == EntityKind::Npc {
+            vec![(
+                "box",
+                Primitive::Box(half.map(|h| f64::from(h) * 2.)),
+                at(0.),
+            )]
+        } else {
+            let radius = f64::from(half[0].max(half[2]));
+            let straight = (f64::from(half[1]) - radius).max(0.);
+            vec![
+                ("shaft", Primitive::Post(radius, straight * 2.), at(0.)),
+                ("top", Primitive::Ball(radius), at(straight)),
+                ("bottom", Primitive::Ball(radius), at(-straight)),
+            ]
+        };
+        for (part, shape, frame) in shapes {
+            let mut draw =
+                self.resources
+                    .primitive(format!("{id}-body-{part}"), shape, 0x3f_d0ff, frame);
+            draw.material.opacity = 0.3;
+            draw.material.unlit = true;
+            draw.material.double_sided = true;
+            draws.push(draw);
+        }
     }
 
     /// Moving platforms (#56) where their schedule puts them at the projection's tick: a

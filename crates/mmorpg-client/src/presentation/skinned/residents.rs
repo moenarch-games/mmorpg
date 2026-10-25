@@ -2,8 +2,9 @@
 //! shared `humanoid-appearance` presets (`mmorpg_presentation::units::presets`) like the
 //! browser: the outfit variant of the preset's skin, its armour less `hiddenArmor`, beards and
 //! hair in the preset's tint, headwear, faction colour, skin tone and height, with each guard
-//! and rank-and-file enemy in his own seeded variation (asset-tooling #380). Face, age and build
-//! morph targets are not drawn natively. Presentation only.
+//! and rank-and-file enemy in his own seeded variation (asset-tooling #380). The face, age and
+//! build morph targets are baked into each look, and the painted head skin of the man's age and
+//! stubble replaces the authored one. Presentation only.
 use super::{
     Equipment, Model, Plates, appearance, hood_nodes, ranger_bundle, ranger_file, socket, strings,
 };
@@ -15,7 +16,7 @@ use mmorpg_presentation::units::{
 };
 use serde_json::Value;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::{Mutex, OnceLock},
 };
 
@@ -80,6 +81,95 @@ fn rgb(value: &Value) -> Option<[f32; 3]> {
 
 fn find<'a>(items: &'a Value, key: &str, id: &Value) -> Option<&'a Value> {
     list(items).iter().find(|item| item[key] == *id)
+}
+
+/// The morph weights of an appearance option (`face`, `ages` or `builds`); none for None.
+fn morphs(option: Option<&Value>) -> BTreeMap<String, f32> {
+    option
+        .and_then(|option| option["morphs"].as_object())
+        .into_iter()
+        .flatten()
+        .filter_map(|(target, weight)| Some((target.clone(), weight.as_f64()? as f32)))
+        .collect()
+}
+
+/// The face morph weights of `preset` on the outfit `variant`: each `face` feature's chosen
+/// option, or its default; none when the bundle's face keys do not cover the variant.
+pub(in crate::presentation) fn face_morphs(preset: &Value, variant: &str) -> BTreeMap<String, f32> {
+    let face = &appearance()["face"];
+    if !list(&face["variants"]).iter().any(|v| v == variant) {
+        return BTreeMap::new();
+    }
+    let mut weights = BTreeMap::new();
+    for feature in list(&face["features"]) {
+        let options = &feature["options"];
+        let chosen = feature["id"]
+            .as_str()
+            .and_then(|id| find(options, "id", &preset["face"][id]));
+        weights.extend(morphs(
+            chosen.or_else(|| find(options, "id", &feature["default"])),
+        ));
+    }
+    weights
+}
+
+/// The painted head skin (asset-tooling #380) `preset` wears: the head material and the
+/// base-colour image of the `headSkins` texture for its skin, its age's skin and, when it shows
+/// stubble, the stubble shade of its hair tint. None for the authored skin.
+fn head_skin(preset: &Value) -> Option<(&'static str, &'static gltf::image::Data)> {
+    let skins = &look()["headSkins"];
+    let age = find(&look()["ages"]["options"], "id", &preset["age"])
+        .and_then(|age| age["skin"].as_str())
+        .unwrap_or("base");
+    let shade = if preset["stubble"] == true {
+        preset["tint"]
+            .as_str()
+            .and_then(|tint| skins["stubbleShades"][tint].as_str())
+    } else {
+        None
+    };
+    let painted = list(&skins["textures"]).iter().find(|texture| {
+        texture["skin"] == preset["skin"]
+            && texture["age"] == age
+            && texture["stubble"].as_str() == shade
+    })?;
+    let image = head_skin_image(skins["entry"].as_str()?, painted["material"].as_str()?)?;
+    Some((skins["material"].as_str()?, image))
+}
+
+/// The base-colour image of material `name` in the prepared head-skin entry `key`, decoded once
+/// per process; None when the entry is not embedded or has no such textured material.
+fn head_skin_image(key: &str, name: &str) -> Option<&'static gltf::image::Data> {
+    type Images = HashMap<String, Option<&'static gltf::image::Data>>;
+    static ENTRY: OnceLock<Option<(gltf::Document, Vec<gltf::buffer::Data>)>> = OnceLock::new();
+    static IMAGES: OnceLock<Mutex<Images>> = OnceLock::new();
+    let (document, buffers) = ENTRY
+        .get_or_init(|| {
+            if !embedded(key, "default") {
+                eprintln!(
+                    "head skins keep the authored skin; {} is not prepared",
+                    prepared(key, "default")
+                );
+                return None;
+            }
+            let gltf = gltf::Gltf::from_slice(ranger_file(&prepared(key, "default"))).ok()?;
+            let buffers = gltf::import_buffers(&gltf.document, None, gltf.blob).ok()?;
+            Some((gltf.document, buffers))
+        })
+        .as_ref()?;
+    *IMAGES
+        .get_or_init(Mutex::default)
+        .lock()
+        .expect("the head skin cache is not poisoned")
+        .entry(name.to_owned())
+        .or_insert_with(|| {
+            let material = document.materials().find(|m| m.name() == Some(name))?;
+            let texture = material.pbr_metallic_roughness().base_color_texture()?;
+            let image =
+                gltf::image::Data::from_source(texture.texture().source().source(), None, buffers)
+                    .ok()?;
+            Some(Box::leak(Box::new(image)))
+        })
 }
 
 /// The prepared file of bundle entry `key` in `variant`.
@@ -232,6 +322,14 @@ fn dress(preset: &Value) -> ResidentLook {
     let look = look();
     let (outfit, variant) = variant(preset).expect("the preset names its skin's outfit variant");
     let mut model = entry("humanoid.ranger.male", variant).clone();
+    // The painted head skin first: the skin tone below multiplies it as it does the plain one.
+    if let Some((material, image)) = head_skin(preset) {
+        model.reskin(material, image);
+    }
+    model.morph(
+        Some(&strings(&look["face"]["nodes"])),
+        &face_morphs(preset, variant),
+    );
     let tint =
         find(&look["tints"], "id", &preset["tint"]).and_then(|tint| rgb(&tint["baseColorFactor"]));
     let eyebrows = &look["eyebrows"];
@@ -308,6 +406,23 @@ fn dress(preset: &Value) -> ResidentLook {
         let (joint, matrix) = socket(sockets(), "head.hair");
         items.push((hair, joint, matrix));
     }
+    // The age and build keys after the face, on everything worn: build targets are on the body,
+    // armour, hair and beards, age targets on the head, brows and beards.
+    let mut body = morphs(find(&look["ages"]["options"], "id", &preset["age"]));
+    body.extend(morphs(find(
+        &look["builds"]["options"],
+        "id",
+        &preset["build"],
+    )));
+    if !body.is_empty() {
+        model.morph(None, &body);
+        for (_, plate, _, _) in &mut plates {
+            plate.morph(None, &body);
+        }
+        for (item, _, _) in &mut items {
+            item.morph(None, &body);
+        }
+    }
     ResidentLook {
         model,
         plates: Plates { items: plates },
@@ -338,5 +453,21 @@ mod tests {
         ));
         // Garrick's long hair, and two beards among his plates.
         assert_eq!(garrick.items.items.len(), 1);
+        // His broad face and narrow eyes are baked into the head.
+        let (_, variant) = variant(
+            &find(&look()["presets"], "id", &"enemy.redbrand.garrick".into())
+                .cloned()
+                .expect("Garrick's preset"),
+        )
+        .expect("his outfit variant");
+        let authored = entry("humanoid.ranger.male", variant);
+        assert!(
+            garrick
+                .model
+                .primitives
+                .iter()
+                .zip(&authored.primitives)
+                .any(|(own, base)| own.positions != base.positions)
+        );
     }
 }

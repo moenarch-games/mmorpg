@@ -220,6 +220,11 @@ impl Units {
         self.presenter.set_blend(blend);
     }
 
+    /// Shows or hides the development body overlay (#39).
+    pub fn set_body_overlay(&mut self, shown: bool) {
+        self.presenter.set_body_overlay(shown);
+    }
+
     /// Decodes and observes one received projection.
     ///
     /// # Errors

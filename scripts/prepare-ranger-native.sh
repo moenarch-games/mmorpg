@@ -53,7 +53,12 @@ for variant in outfit.knight outfit.knight.skin.light outfit.soldier outfit.sold
   entries+=",humanoid.ranger.male/${variant}"
 done
 entries+=",armor.soldier/default,armor.farmer/default,armor.innkeeper/default,armor.monk/default,facial-hair.beards/default,equipment.hat.straw/default,hair.buzzed/hair-1,hair.long/hair-1"
+INDEX="${ROOT_DIR}/web/public/characters/humanoid.ranger.male/humanoid-ranger-male.index.json"
+# The painted head skins (asset-tooling #380), when the release has them.
+if grep -q '"skin\.head"' "${INDEX}"; then
+  entries+=",skin.head/default"
+fi
 ASSET_TOOLING_KTX="${KTX}" bun "${PROCESSOR}/scripts/prepare-native-downloads.ts" \
-  --index "${ROOT_DIR}/web/public/characters/humanoid.ranger.male/humanoid-ranger-male.index.json" \
+  --index "${INDEX}" \
   --entries "${entries}" \
   --out "${ROOT_DIR}/web/public/characters/humanoid.ranger.male/native"

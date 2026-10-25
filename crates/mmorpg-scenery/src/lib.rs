@@ -47,15 +47,15 @@ use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, trig};
 pub use outpost_grass::outpost_grass_placements;
 
 /// The rectangle the terrain grid covers: the playable rectangle and 72 m beyond its walls
-/// (80 m past the farmland's, #424, so every grid step divides it).
+/// (80 m past the farmland's, #424, and the highlands', #425, so every grid step divides it).
 pub const TERRAIN_BOUNDS: XzBounds = XzBounds {
-    min: [-28_000, -28_000],
+    min: [-28_000, -72_000],
     max: [28_000, 72_000],
 };
 /// The rectangle the far terrain ring covers: 392 m beyond the playable rectangle's walls on
-/// every side (400 m past the farmland's).
+/// every side (400 m past the farmland's and the highlands').
 pub const FAR_TERRAIN_BOUNDS: XzBounds = XzBounds {
-    min: [-60_000, -60_000],
+    min: [-60_000, -104_000],
     max: [60_000, 104_000],
 };
 /// Largest relief magnitude inside the playable square (0.6 m).
@@ -78,6 +78,8 @@ const ORIGINAL_HALF_EXTENT_UNITS: i32 = 12_000;
 const SEED_OUTER_PROPS: u64 = 0x4f55_5445_5256_414c;
 /// Seed of the farmland's scatter (#424).
 const SEED_FARMLAND_PROPS: u64 = 0x4641_524d_5052_4f50;
+/// Seed of the highlands' scatter (#425).
+const SEED_HIGHLAND_PROPS: u64 = 0x4849_4748_5052_4f50;
 
 /// Visual half width of every road (3 m wide); core keeps 2 m clear.
 pub const ROAD_HALF_WIDTH_UNITS: i32 = 150;
@@ -482,6 +484,20 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
                 Building::Tower => PropKind::Keep,
             }
         }
+        // Bandit Highlands (#425) reuses the Vale's camp, palisade and keep visuals; its crags
+        // are cliff rock.
+        _ if ids::HIGHLAND_BUILDINGS.contains(&id) => {
+            use greyhaven_vale::highlands::Building;
+            match greyhaven_vale::highland_building(id)? {
+                Building::Tower => PropKind::Keep,
+                Building::Palisade => PropKind::PalisadeSegment,
+                Building::GatePost => PropKind::GatePost,
+                Building::Tent => PropKind::Tent,
+                Building::Campfire => PropKind::Campfire,
+                Building::Crate => PropKind::Crate,
+            }
+        }
+        _ if ids::HIGHLAND_CRAGS.contains(&id) => PropKind::Cliff,
         _ if ids::CLIFFS.contains(&id) || ids::CAVE_WALLS.contains(&id) => PropKind::Cliff,
         ids::CAVE_ROOF => PropKind::CaveRoof,
         // The sealed threshold to the deeper cave (#160): a log barricade stand-in until the
@@ -1392,6 +1408,35 @@ impl Placer<'_> {
         }
         self.outer_decorations();
         self.farmland_decorations();
+        self.highland_decorations();
+    }
+
+    /// Sparse grass, scrub and loose rocks across the highlands' broken high ground (#425).
+    fn highland_decorations(&mut self) {
+        let mut rng = Rng::new(SEED_HIGHLAND_PROPS);
+        let high_ground = |rng: &mut Rng| {
+            [
+                rng.range(PLAYABLE_BOUNDS.min[0] + 100, PLAYABLE_BOUNDS.max[0] - 100),
+                rng.range(
+                    PLAYABLE_BOUNDS.min[1] + 100,
+                    greyhaven_vale::highlands::ESCARPMENT[3] - 100,
+                ),
+            ]
+        };
+        self.scatter(&mut rng, 700, 4_000, |rng| {
+            Some((PropKind::GrassTuft, high_ground(rng)))
+        });
+        self.scatter(&mut rng, 160, 1_500, |rng| {
+            Some((PropKind::Bush, high_ground(rng)))
+        });
+        self.scatter(&mut rng, 220, 2_000, |rng| {
+            let size = if rng.next_u64().is_multiple_of(3) {
+                RockSize::Medium
+            } else {
+                RockSize::Small
+            };
+            Some((PropKind::Rock(size), high_ground(rng)))
+        });
     }
 
     /// Grass, flowers and bushes across the farmland's plateau (#424), off its fields.

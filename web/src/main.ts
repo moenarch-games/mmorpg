@@ -1617,6 +1617,11 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (event.key === "F7") { labSource.setPaused(!labSource.paused); } else { labSource.step(); }
   }
+  // Dev builds: F4 draws every unit's authoritative body over its model (#39).
+  if (import.meta.env.DEV && event.key === "F4" && !event.repeat) {
+    event.preventDefault();
+    worldView.setBodyOverlay(!worldView.bodyOverlay);
+  }
 });
 createCharacterButton.addEventListener("click", openCharacterCreation);
 for (const button of cancelCreationButtons) {
