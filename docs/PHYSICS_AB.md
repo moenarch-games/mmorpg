@@ -169,14 +169,10 @@ Intentional or explained differences:
 The zone runs at 60 Hz; the scripted workloads keep their 30 Hz timetables at the same moments
 (commands on the matching even ticks, lengths, parity and penetration sampling in seconds).
 `vale-wolf-hunt` is no longer bounded: its creatures part from tick 1 and reach the scripted
-hunter's fights after 38 s (tick 2276), where the players part by up to 81 units. The Rapier
-backend's support test now skips a too-steep surface it meets first and looks for walkable
-ground below it (a player pressing into the mill chute's foot hovered 0.06 units above the floor,
-never grounded); physics-engine still stops at the steep face (physics-engine #395), so grounded is
-not compared for units at a too-steep ramp's foot.
-physics-engine can also carry a swimming lurker (no gravity) into a rising heightfield shore
-(physics-engine #396, met on the basin terrace of #423); such a unit is from then on treated like
-one a fixture placed inside geometry.
+hunter's fights after 38 s (tick 2276), where the players part by up to 81 units. Both arms'
+support tests skip a too-steep surface met first and look for walkable ground below it. 60 Hz
+exposed two engine gaps (gaps 3 and 4 below); both are fixed, and the check holds for every unit
+again.
 
 ## physics-engine gaps found
 
@@ -193,6 +189,14 @@ one a fixture placed inside geometry.
    the uninterrupted run holds it still (the lake lurkers in `vale-fights-8`/`-32` once Stillwater
    Lake rose onto the #423 terrace). The grounded cache is ruled out; contact state carried between
    moves is suspected. Workaround: the lake's level rim is wider and the lurkers stand on it.
+3. **Grounded at a too-steep slope's foot** (fixed, physics-engine #395 / #398). A player pressing
+   into the mill chute's foot was not grounded on the engine arm. The support cast met the 60°
+   face first and stopped there, while Rapier's arm finds the floor below. The engine's support
+   test and the adapter's grounded fallback now pass over too-steep faces.
+4. **Walking into a heightfield cliff** (fixed, physics-engine #396 / #400, rust-kernels#177).
+   A terrain is one body, so a cast reports one contact with it. A capsule touching two cliff
+   faces, or a face and the floor, could be told about the face it was leaving, and it then
+   sank into the other. Terrain casts now report what the motion runs into.
 
 Dynamic bodies themselves (debris #288, movable crates #58) need no engine feature: the engine
 arm runs them since mmorpg#442 (physics-engine C18).

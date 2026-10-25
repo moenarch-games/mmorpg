@@ -584,17 +584,20 @@ impl World {
         self.engine
             .cast_shape(cast, filter, &mut hits)
             .expect("physics-engine grounded cast failed");
+        // The nearest walkable static support: a too-steep face met first (a ramp's chute end)
+        // is passed over, as physics-engine's own support test does (physics-engine #395).
         let min_up = self.settings.max_slope.cos();
         hits.iter()
             .find(|hit| {
                 (hit.starts_overlapping || hit.normal.1 > 0.0)
+                    && hit.normal.1 >= min_up
                     && self
                         .games
                         .get(&hit.body.to_bits())
                         .and_then(|game| self.bodies.get(game))
                         .is_none_or(|body| !body.is_moving())
             })
-            .is_some_and(|hit| hit.normal.1 >= min_up && hit.fraction * reach <= predict)
+            .is_some_and(|hit| hit.fraction * reach <= predict)
     }
 
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {

@@ -258,10 +258,7 @@ fn check_invariants(
             // slope over half a unit. The Greyhaven fixture puts every player's feet at y = 0,
             // some inside a hill.
             let sunk = bottom < ground - authored - 2.0;
-            // physics-engine can carry a swimming capsule (no gravity) into a rising heightfield
-            // shore (physics-engine #396); the unit then stays embedded like one a fixture placed
-            // inside, until that is fixed.
-            if (tick == 1 || unit.body.swimming()) && sunk {
+            if tick == 1 && sunk {
                 check.placed_inside.insert(unit.unit);
             }
             if sunk && !check.placed_inside.contains(&unit.unit) {
@@ -558,21 +555,6 @@ struct Decisions {
     routes: BTreeMap<String, Option<[i32; 2]>>,
 }
 
-/// Whether a capsule of `radius` at `(x, z)` touches a ramp steeper than the controllers climb: at
-/// its foot Rapier finds the floor below the steep face and physics-engine stops at the face
-/// (physics-engine #395), so grounded is not compared there.
-fn at_steep_foot(x: f32, z: f32, radius: f32) -> bool {
-    mmorpg_core::greyhaven_vale::MILL_RAMPS.iter().any(|ramp| {
-        #[allow(clippy::cast_precision_loss)]
-        let reach = |axis: usize| ramp.half_extents[axis] as f32 + radius + 1.0;
-        #[allow(clippy::cast_precision_loss)]
-        let centre = ramp.position.map(|axis| axis as f32);
-        ramp.slope_degrees() > 45.0
-            && (x - centre[0]).abs() <= reach(0)
-            && (z - centre[2]).abs() <= reach(2)
-    })
-}
-
 fn decisions(zone: &mut ZoneSimulation) -> Result<Decisions> {
     let mut decisions = Decisions::default();
     let units = zone.physics_units();
@@ -585,10 +567,7 @@ fn decisions(zone: &mut ZoneSimulation) -> Result<Decisions> {
         #[allow(clippy::cast_precision_loss)]
         let radius = half.x.max(half.z) as f32;
         let [ex, _, ez] = unit.body.exact_position();
-        if embedded(zone, unit, &boxes)
-            || open_floor(zone, ex, ez, radius)
-            || at_steep_foot(ex, ez, radius)
-        {
+        if embedded(zone, unit, &boxes) || open_floor(zone, ex, ez, radius) {
             decisions.embedded += 1;
         } else {
             decisions
