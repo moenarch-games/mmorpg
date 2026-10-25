@@ -27,6 +27,7 @@ pub mod action_lab;
 pub mod arena_presentation;
 pub mod catalog;
 pub mod host;
+pub mod lab_experiment;
 pub mod scenario;
 pub mod scenery;
 pub mod static_scene;
@@ -213,8 +214,11 @@ impl LocalZone {
     /// A fresh Action Lab world (#381) with a configured ephemeral character
     /// of `class` at `level` wearing `gear` (`starter`, `standard` or
     /// `none`), `main_hand` replacing its weapon unless 0, and `resource`
-    /// (clamped to its maximum) unless undefined. Throws for an invalid
-    /// setup. The character is [`LocalZone::scenario_player`]; nothing is stored.
+    /// (clamped to its maximum) unless undefined. `config`, unless undefined,
+    /// is an experimental action graph (#382, `actionLabBaseline()`'s
+    /// format) the world runs instead of the production rules. Throws for an
+    /// invalid setup or configuration. The character is
+    /// [`LocalZone::scenario_player`]; nothing is stored.
     #[wasm_bindgen(js_name = forActionLab)]
     pub fn for_action_lab(
         class: &str,
@@ -223,10 +227,18 @@ impl LocalZone {
         #[wasm_bindgen(js_name = mainHand)] main_hand: u16,
         resource: Option<u16>,
         seed: u64,
+        config: Option<String>,
     ) -> Result<LocalZone, JsError> {
         let setup = action_lab::LabSetup::parse(class, level, gear, main_hand, resource)
             .map_err(|error| JsError::new(&error))?;
-        let (host, player) = LocalZoneHost::action_lab(setup, seed).map_err(js_error)?;
+        let (mut host, player) = LocalZoneHost::action_lab(setup, seed).map_err(js_error)?;
+        if let Some(config) = config {
+            let graph = lab_experiment::Config::parse(&config)
+                .and_then(|config| config.graph())
+                .map_err(|error| JsError::new(&error))?;
+            host.set_action_graph(graph)
+                .map_err(|error| JsError::new(&format!("{error:?}")))?;
+        }
         Ok(Self {
             host,
             scenario_player: Some(player),
@@ -331,6 +343,53 @@ impl LocalZone {
     pub fn current_tick(&self) -> u64 {
         self.host.current_tick()
     }
+
+    /// The canonical-snapshot digest of the world as 16 hex digits (#382):
+    /// a replay that reaches the same digest reproduced the recording.
+    #[wasm_bindgen(js_name = canonicalDigest)]
+    pub fn canonical_digest(&self) -> Result<String, JsError> {
+        lab_experiment::digest(&self.host)
+            .map(|digest| format!("{digest:016x}"))
+            .map_err(|error| JsError::new(&error))
+    }
+}
+
+/// The production action graph as an editable experiment configuration (#382).
+#[wasm_bindgen(js_name = actionLabBaseline)]
+#[must_use]
+pub fn action_lab_baseline() -> String {
+    serde_json::to_string(&lab_experiment::Config::baseline()).unwrap_or_default()
+}
+
+/// Validates an experiment configuration: `{identity, baseline, error}` JSON.
+#[wasm_bindgen(js_name = actionLabCheck)]
+#[must_use]
+pub fn action_lab_check(config: &str) -> String {
+    lab_experiment::check(config).to_string()
+}
+
+/// Replays a recorded lab scenario under a configuration (#382) and returns
+/// the run as JSON; throws for a malformed or stale scenario or configuration.
+#[wasm_bindgen(js_name = actionLabRun)]
+pub fn action_lab_run(scenario: &str, config: &str) -> Result<String, JsError> {
+    let scenario =
+        lab_experiment::ScenarioFile::parse(scenario).map_err(|error| JsError::new(&error))?;
+    let config = lab_experiment::Config::parse(config).map_err(|error| JsError::new(&error))?;
+    let run = lab_experiment::run(&scenario, &config).map_err(|error| JsError::new(&error))?;
+    serde_json::to_string(&run).map_err(|error| JsError::new(&error.to_string()))
+}
+
+/// Replays a recorded lab scenario under configurations `a` and `b` and
+/// reports where they diverge, as JSON (#382).
+#[wasm_bindgen(js_name = actionLabCompare)]
+pub fn action_lab_compare(scenario: &str, a: &str, b: &str) -> Result<String, JsError> {
+    let scenario =
+        lab_experiment::ScenarioFile::parse(scenario).map_err(|error| JsError::new(&error))?;
+    let a = lab_experiment::Config::parse(a).map_err(|error| JsError::new(&error))?;
+    let b = lab_experiment::Config::parse(b).map_err(|error| JsError::new(&error))?;
+    let comparison =
+        lab_experiment::compare(&scenario, &a, &b).map_err(|error| JsError::new(&error))?;
+    serde_json::to_string(&comparison).map_err(|error| JsError::new(&error.to_string()))
 }
 
 /// The versioned JSON scenery export of the hosted content revision.

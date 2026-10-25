@@ -1,9 +1,10 @@
 import init, * as generated from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { LocalCharacters } from "./local-characters";
 import { createLocalWorld, type LocalWorld } from "./local-world";
-import { ScenarioSource, type ScenarioChoice } from "./scenario-source";
+import { ScenarioSource, type ScenarioChoice, type ScenarioZoneHandle } from "./scenario-source";
 import { markStartup } from "../startup-marks";
-import type { ActionGraph, LabOptions } from "./action-lab";
+import type { ActionGraph, LabOptions, LabSetup } from "./action-lab";
+import type { ConfigCheck, LabComparison, LabConfig, LabRun, LabScenario } from "./lab-experiment";
 import type { ZoneWorld } from "./world-source";
 
 /**
@@ -29,6 +30,32 @@ export function actionLabDefinitions(): { graph: ActionGraph; options: LabOption
   return { graph: JSON.parse(generated.actionGraph()) as ActionGraph, options: JSON.parse(generated.actionLabOptions()) as LabOptions };
 }
 
+/** What the Action Lab's experiments (#382) run in the shared simulation; call after the module loaded. */
+export type LabExperiments = {
+  /** The production graph as an editable configuration. */
+  baseline(): LabConfig;
+  check(config: LabConfig): ConfigCheck;
+  run(scenario: LabScenario, config: LabConfig): LabRun;
+  compare(scenario: LabScenario, a: LabConfig, b: LabConfig): LabComparison;
+  /** Fresh lab worlds of `setup` and `seed` under `config` (production rules for null). */
+  zoneFactory(setup: LabSetup, seed: bigint, config: LabConfig | null): () => ScenarioZoneHandle;
+  contentRevision(): string;
+};
+
+export const labExperiments: LabExperiments = {
+  baseline: () => JSON.parse(generated.actionLabBaseline()) as LabConfig,
+  check: (config) => JSON.parse(generated.actionLabCheck(JSON.stringify(config))) as ConfigCheck,
+  run: (scenario, config) => JSON.parse(generated.actionLabRun(JSON.stringify(scenario), JSON.stringify(config))) as LabRun,
+  compare: (scenario, a, b) =>
+    JSON.parse(generated.actionLabCompare(JSON.stringify(scenario), JSON.stringify(a), JSON.stringify(b))) as LabComparison,
+  zoneFactory: (setup, seed, config) => () => generated.LocalZone.forActionLab(
+    setup.className, setup.level, setup.gear, setup.mainHand, setup.resource ?? undefined, seed, config ? JSON.stringify(config) : undefined),
+  contentRevision: () => {
+    const zone = new generated.LocalZone();
+    try { return String(zone.contentRevision()); } finally { zone.free(); }
+  },
+};
+
 /** The area id of a stored local character's committed location, or null (#240). */
 export function committedArea(characters: LocalCharacters, characterId: string): number | null {
   return generated.committedArea(characters.entries, characterId) ?? null;
@@ -47,7 +74,7 @@ export function committedLevel(characters: LocalCharacters, characterId: string)
 export function createScenarioWorld(local: LocalWorld, choice: ScenarioChoice): { world: ZoneWorld; source: ScenarioSource; area: number | null } {
   const lab = choice.lab;
   if (lab) {
-    const create = () => generated.LocalZone.forActionLab(lab.className, lab.level, lab.gear, lab.mainHand, lab.resource ?? undefined, choice.seed);
+    const create = labExperiments.zoneFactory(lab, choice.seed, null);
     // Validate the setup now, so an illegal one is reported before entry.
     create().free();
     const source = new ScenarioSource(create);

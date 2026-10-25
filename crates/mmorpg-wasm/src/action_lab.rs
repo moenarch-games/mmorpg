@@ -27,7 +27,7 @@ use crate::scenario::{fresh_record, restore_health};
 pub const LAB_LOCATION: ([i32; 2], u16) = ([-4_000, -2_200], 49_152);
 
 /// Every input the graph arbitrates, for the inspector's verdict table.
-const INPUTS: [ActionInput; 6] = [
+pub(crate) const INPUTS: [ActionInput; 6] = [
     ActionInput::WardenMelee,
     ActionInput::ShieldBash,
     ActionInput::GuardProtection,

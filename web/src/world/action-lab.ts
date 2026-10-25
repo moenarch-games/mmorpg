@@ -230,14 +230,14 @@ export type LabViewer = { level: number; health: number; maxHealth: number; reso
 
 const TIMELINE_TICKS = 150;
 
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...children: (Node | string)[]):
+export function element<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...children: (Node | string)[]):
   HTMLElementTagNameMap[K] {
   const node = Object.assign(document.createElement(tag), props);
   node.append(...children);
   return node;
 }
 
-function section(title: string, body: HTMLElement): HTMLDetailsElement {
+export function section(title: string, body: HTMLElement): HTMLDetailsElement {
   const details = element("details", { open: true });
   details.append(element("summary", {}, title), body);
   return details;
@@ -277,6 +277,11 @@ export class ActionLabPanel {
       section("Statechart", this.#chart),
       section("Inspector", this.#inspector),
     );
+  }
+
+  /** Adds a dock section after the timeline, such as the experiments (#382). */
+  addSection(title: string, body: HTMLElement): void {
+    this.#root.querySelector("details:nth-of-type(2)")?.after(section(title, body));
   }
 
   #setupForm(options: LabOptions, catalog: ContentCatalog, setup: LabSetup): HTMLElement {
