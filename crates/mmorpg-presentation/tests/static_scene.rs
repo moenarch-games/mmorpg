@@ -442,3 +442,56 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
         assert!(apart || collider.id == 1, "collider {}", collider.id);
     }
 }
+
+/// Worn handhold vertices (#512), in world space.
+fn handholds(scene: &StaticScene) -> Vec<V> {
+    scene
+        .groups
+        .iter()
+        .flat_map(|group| &group.draws)
+        .filter(|draw| draw.id.contains("all-handholds"))
+        .flat_map(|draw| draw.geometry.p.iter().map(|p| transform(&draw.model, *p)))
+        .collect()
+}
+
+#[test]
+fn climbable_rock_wears_handholds_and_sheer_rock_stays_smooth() {
+    use mmorpg_core::greyhaven_vale::{
+        CLIMBING_ROUTES, SHEER_CRAGS, SHEER_HOLLOW_WALL, SHEER_LAKE_CLIFF, ids,
+    };
+    let scenery = greyhaven_vale_scenery();
+    let by_collider = |id: u32| {
+        *scenery
+            .props
+            .iter()
+            .find(|prop| prop.collider == Some(id))
+            .unwrap()
+    };
+    let terrain = handholds(&only(Vec::new())).len();
+    let crags = ids::HIGHLAND_CRAGS.start();
+    for (prop, climbable) in [
+        (by_collider(*crags), true),
+        (by_collider(*ids::BOULDERS.start()), true),
+        (by_collider(*ids::SHORE_ROCKS.start()), true),
+        (by_collider(*ids::CLIFFS.start()), true),
+        (by_collider(crags + SHEER_CRAGS[0] as u32), false),
+        (by_collider(SHEER_HOLLOW_WALL), false),
+        (by_collider(*ids::CAVE_WALLS.start()), false),
+    ] {
+        let worn = handholds(&only(vec![prop])).len();
+        assert_eq!(worn > terrain, climbable, "{:?}", prop.collider);
+    }
+    // On the terrain: every boundary route is worn, the sheer cliff under the lake is not.
+    let worn = handholds(&StaticScene::new(&scenery));
+    let inside = |bounds: mmorpg_core::XzBounds, margin: f64, p: &V| {
+        let [x, z] = [p[0] * 100., p[2] * 100.];
+        x > f64::from(bounds.min[0]) + margin
+            && x < f64::from(bounds.max[0]) - margin
+            && z > f64::from(bounds.min[1]) + margin
+            && z < f64::from(bounds.max[1]) - margin
+    };
+    for route in CLIMBING_ROUTES {
+        assert!(worn.iter().any(|p| inside(route, 0., p)), "{route:?}");
+    }
+    assert!(!worn.iter().any(|p| inside(SHEER_LAKE_CLIFF, 50., p)));
+}

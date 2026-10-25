@@ -273,6 +273,10 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
         true,
         inner,
     );
+    // Worn handholds up the climbable rock faces of the terrain (#512).
+    crate::handholds::terrain(g, s.climbing(), &mut |c, shape, a| {
+        b.global("handholds", c).add(shape.geometry(), a);
+    });
     // The plaza, then one patch per ploughed field (#424).
     let fields = s
         .farmland()

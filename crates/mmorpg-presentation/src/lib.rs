@@ -17,6 +17,7 @@ pub mod audio;
 pub mod batching;
 pub mod buildings;
 pub mod geometry;
+mod handholds;
 pub mod outpost_kit;
 mod props;
 pub mod settlement_props;
