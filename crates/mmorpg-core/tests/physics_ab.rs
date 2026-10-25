@@ -44,7 +44,7 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// and physics-engine pushes out, so their fights (and every position after) legitimately part.
 /// At 60 Hz (#379) `vale-wolf-hunt`'s creatures, which part from tick 1, reach the scripted
 /// hunter's fights after 38 s, so it is bounded only over its scripted walk ([`CLIMBS`]).
-const SCRIPTED: [&str; 9] = [
+const SCRIPTED: [&str; 10] = [
     "two-bots-move",
     "vale-hub-walk",
     "vale-idle-16",
@@ -54,6 +54,7 @@ const SCRIPTED: [&str; 9] = [
     "vale-missiles",
     "vale-traversal",
     "vale-climb",
+    "vale-roll",
 ];
 /// The controllers walk up and down heightfield slopes at slightly different paces (open gap
 /// 5 in `docs/PHYSICS_AB.md`). Owner decision 2026-10-25 (#423): on a slope the scripted
@@ -413,6 +414,50 @@ fn check_wall_climb(trace: &Trace) -> Result<()> {
             "the climber's feet end at {} (crag top {crag}), the mantler's at {} (deck {dock})",
             feet(0),
             feet(1)
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// The rolls (#516): every player rolls at some tick, the crag roller never climbs, and the
+/// dock roller ends on the ground beyond the deck's edge.
+fn check_rolls(trace: &Trace) -> Result<()> {
+    use mmorpg_core::greyhaven_vale::ids;
+    for player in 0..drivers::ROLL_PLAYERS.len() {
+        if !trace
+            .snapshots
+            .iter()
+            .any(|snapshot| snapshot.players[player].combat.roll.rolling().is_some())
+        {
+            return Err(format!("player {} never rolls", player + 1).into());
+        }
+    }
+    if trace
+        .snapshots
+        .iter()
+        .any(|snapshot| snapshot.players[1].combat.traversal.holds())
+    {
+        return Err("the crag roller climbs".into());
+    }
+    let content = mmorpg_core::greyhaven_vale::content();
+    let deck = content
+        .definition()
+        .colliders()
+        .iter()
+        .find(|collider| collider.id == ids::MILL_DOCK)
+        .ok_or("missing dock")?;
+    let last = trace.snapshots.last().ok_or("empty roll trace")?;
+    let [_, y, z] = last.players[2].position;
+    #[allow(clippy::cast_precision_loss)]
+    let (edge, top) = (
+        (deck.position[2] + deck.half_extents[2]) as f32,
+        (deck.position[1] + deck.half_extents[1]) as f32,
+    );
+    if z < edge + 30.0 || y - 90.0 > top - 100.0 {
+        return Err(format!(
+            "the dock roller ends at {:?} (deck edge z {edge}, top {top})",
+            last.players[2].position
         )
         .into());
     }
@@ -879,6 +924,13 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
             for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
                 check_wall_climb(trace)
                     .map_err(|failure| format!("{name} on {backend}: {failure}"))?;
+            }
+        }
+        if matches!(workload, Workload::Roll) {
+            // On each backend every player rolls, the crag stops one without a climb and the
+            // dock roller lands on the ground beyond the deck (#516).
+            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+                check_rolls(trace).map_err(|failure| format!("{name} on {backend}: {failure}"))?;
             }
         }
         if matches!(workload, Workload::MillHoist) {

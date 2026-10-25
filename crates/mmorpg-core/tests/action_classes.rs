@@ -441,6 +441,33 @@ fn a_standing_arcanist_cast_completes_at_the_inspected_release() {
 }
 
 #[test]
+fn a_dodge_roll_cancels_an_arcanist_cast_and_runs_in_the_movement_region() {
+    let mut arcanist = Hero::new(PlayerClass::Arcanist, &action::BASELINE);
+    arcanist.use_ability(ids::FIREBOLT, Some(WOLF_ID));
+    assert!(arcanist.casting());
+    arcanist.send(ZoneCommand::Roll);
+    let events = arcanist.tick();
+    assert!(interrupted(&events, None, ids::FIREBOLT), "{events:?}");
+    assert!(!arcanist.casting());
+    let movement = arcanist.inspect().regions[Region::Movement as usize];
+    assert_eq!(movement.action, Some(ActionId::Roll));
+    assert_eq!(movement.phase, Some(Phase::Active));
+    arcanist.ticks(mmorpg_core::roll::ROLL_TICKS);
+    assert_ne!(
+        arcanist.inspect().regions[Region::Movement as usize].action,
+        Some(ActionId::Roll)
+    );
+
+    // A cast started mid-roll is cancelled too: the roll is movement.
+    let mut rolling = Hero::new(PlayerClass::Arcanist, &action::BASELINE);
+    rolling.send(ZoneCommand::Roll);
+    rolling.ticks(5);
+    let events = rolling.use_ability(ids::FIREBOLT, Some(WOLF_ID));
+    assert!(interrupted(&events, None, ids::FIREBOLT), "{events:?}");
+    assert!(!rolling.casting());
+}
+
+#[test]
 fn an_incoming_stun_interrupts_an_arcanist_cast() {
     let mut arcanist = Hero::new(PlayerClass::Arcanist, &action::BASELINE);
     arcanist.use_ability(ids::FIREBOLT, Some(WOLF_ID));

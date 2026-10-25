@@ -290,6 +290,7 @@ fn encode_player(
     payload.extend_from_slice(&landing.recovery.to_be_bytes());
     payload.push(u8::from(landing.attacked_airborne));
     encode_traversal(payload, combat.traversal);
+    encode_roll(payload, combat.roll);
     payload.extend_from_slice(&combat.strike_recovery.to_be_bytes());
     payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
     encode_entity_ref(payload, combat.combo.map(|combo| combo.target));
@@ -363,6 +364,39 @@ fn decode_traversal(
         return Err(ProtocolError::new("player climb or mantle is out of range"));
     }
     Ok(traversal)
+}
+
+/// 5 bytes (#516): kind (0 ready, 1 pending, 2 rolling, 3 recovering), the roll's yaw and its
+/// ticks; unused fields are zero.
+fn encode_roll(payload: &mut Vec<u8>, roll: mmorpg_core::Roll) {
+    use mmorpg_core::Roll;
+    let (kind, yaw, ticks) = match roll {
+        Roll::Ready => (0, 0, 0),
+        Roll::Pending => (1, 0, 0),
+        Roll::Rolling { yaw, ticks } => (2, yaw, ticks),
+        Roll::Recovering { ticks } => (3, 0, ticks),
+    };
+    payload.push(kind);
+    payload.extend_from_slice(&yaw.to_be_bytes());
+    payload.extend_from_slice(&ticks.to_be_bytes());
+}
+
+fn decode_roll(payload: &[u8], offset: &mut usize) -> Result<mmorpg_core::Roll, ProtocolError> {
+    use mmorpg_core::Roll;
+    let kind = read_u8(payload, offset)?;
+    let yaw = u16::from_be_bytes(take(payload, offset)?);
+    let ticks = u16::from_be_bytes(take(payload, offset)?);
+    let roll = match (kind, yaw, ticks) {
+        (0, 0, 0) => Roll::Ready,
+        (1, 0, 0) => Roll::Pending,
+        (2, yaw, ticks) => Roll::Rolling { yaw, ticks },
+        (3, 0, ticks) => Roll::Recovering { ticks },
+        _ => return Err(ProtocolError::new("player dodge roll is malformed")),
+    };
+    if !roll.is_valid() {
+        return Err(ProtocolError::new("player dodge roll is out of range"));
+    }
+    Ok(roll)
 }
 
 /// 17 bytes: ability (0 for none), elapsed ticks, target reference, point
@@ -933,6 +967,7 @@ fn decode_player(
         attacked_airborne: read_bool(payload, offset)?,
     };
     let traversal = decode_traversal(payload, offset)?;
+    let roll = decode_roll(payload, offset)?;
     let strike_recovery = u16::from_be_bytes(take(payload, offset)?);
     let repairing = crate::wire::decode_piece(u16::from_be_bytes(take(payload, offset)?));
     let combo_target = decode_entity_ref(payload, offset)?;
@@ -997,6 +1032,7 @@ fn decode_player(
             abilities,
             landing,
             traversal,
+            roll,
             combo,
             strike_recovery,
             repairing,
@@ -1642,6 +1678,7 @@ mod tests {
                             ticks: 5,
                             across: true,
                         },
+                        roll: mmorpg_core::Roll::Recovering { ticks: 9 },
                         combo: Some(mmorpg_core::ComboOpening {
                             target: EntityRef::Creature(CreatureId::new(1)),
                             elapsed: 3,

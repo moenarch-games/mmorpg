@@ -51,6 +51,7 @@ mod quest;
 mod ramp;
 mod rewards;
 pub mod rng;
+pub mod roll;
 mod routine;
 mod shapes;
 mod snapshot;
@@ -157,6 +158,7 @@ pub use quest::{
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use rewards::{RewardGrant, RewardHistory, RewardKey};
+pub use roll::Roll;
 pub use routine::{
     DAWN, DAY_TICKS, DUSK, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
     NpcPlacement, NpcRoutine, ZONE_START_TIME, is_night, time_of_day,
@@ -310,6 +312,9 @@ pub enum ZoneCommand {
     },
     /// Edge-triggered jump, honoured on the next tick only when grounded.
     Jump,
+    /// Edge-triggered dodge roll (#516), honoured on the next tick only when the player can
+    /// roll: along the held movement, or straight back without any.
+    Roll,
     /// Held swim ascent (`1`), descent (`-1`) or neither (`0`) (#274); it only acts while
     /// the player swims.
     Rise(i8),

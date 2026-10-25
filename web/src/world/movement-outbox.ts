@@ -12,6 +12,8 @@ export type MovementInput = {
   jumps: number;
   /** Held swim ascent or descent (#274); absent means neither. */
   rise?: Axis;
+  /** Counts dodge-roll presses (#516) like `jumps`; absent means none. */
+  rolls?: number;
 };
 
 /** Periodic resend of the current intent, like the native client's heartbeat. */
@@ -25,7 +27,8 @@ type SentMove = { forward: Axis; strafe: Axis; facing: number };
  * Decides which commands the current input needs, mirroring the native
  * client's outbox: a jump when the press counter advanced, then a move when
  * forward/strafe changed, a facing change is due, or the resend interval
- * elapsed. While the player is dead it sends no held movement: the intent
+ * elapsed, then a roll when its press counter advanced (after the move, so the
+ * zone rolls along the latest intent). While the player is dead it sends no held movement: the intent
  * is zero at the last sent facing and presses are dropped, so nothing held
  * through death moves the released spirit. It performs no I/O.
  */
@@ -33,16 +36,19 @@ export class MovementOutbox {
   #sent: SentMove | null = null;
   #sentAt = Number.NEGATIVE_INFINITY;
   #jumps: number;
+  #rolls: number;
   /** The swim rise last sent; a reset resends only a held one, as the native client. */
   #rise: Axis = 0;
 
   constructor(input: MovementInput) {
     this.#jumps = input.jumps;
+    this.#rolls = input.rolls ?? 0;
   }
 
   /** Starts a new session: only current input counts, earlier presses are dropped. */
   reset(input: MovementInput): void {
     this.#jumps = input.jumps;
+    this.#rolls = input.rolls ?? 0;
     this.#rise = 0;
     this.#sent = null;
     this.#sentAt = Number.NEGATIVE_INFINITY;
@@ -72,6 +78,13 @@ export class MovementOutbox {
       this.#sent = { forward: input.forward, strafe: input.strafe, facing: input.facing };
       this.#sentAt = nowMs;
       commands.push({ kind: "move", ...this.#sent });
+    }
+    const rolls = held.rolls ?? 0;
+    if (rolls !== this.#rolls) {
+      this.#rolls = rolls;
+      if (!dead) {
+        commands.push({ kind: "roll" });
+      }
     }
     return commands;
   }

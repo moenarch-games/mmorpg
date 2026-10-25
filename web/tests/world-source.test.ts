@@ -194,6 +194,21 @@ describe("movement outbox", () => {
     ]);
   });
 
+  test("each roll press sends one roll after the move it rolls along (#516)", () => {
+    const outbox = new MovementOutbox(input());
+    outbox.update(input(), 0);
+    expect(outbox.update(input({ rolls: 1, strafe: 1 }), 1)).toEqual([
+      { kind: "move", forward: 0, strafe: 1, facing: 0 },
+      { kind: "roll" },
+    ]);
+    expect(outbox.update(input({ rolls: 1, strafe: 1 }), 2)).toEqual([]);
+    // The dead roll nowhere, and the press is not replayed later.
+    expect(outbox.update(input({ rolls: 2, strafe: 1 }), 3, true)).toEqual([
+      { kind: "move", forward: 0, strafe: 0, facing: 0 },
+    ]);
+    expect(outbox.update(input({ rolls: 2 }), 4)).toEqual([]);
+  });
+
   test("the dead send no held movement or jumps; living again resumes the held keys", () => {
     const outbox = new MovementOutbox(input());
     outbox.update(input({ forward: 1, strafe: -1, facing: 300 }), 0);

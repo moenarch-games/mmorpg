@@ -209,18 +209,23 @@ impl Traversal {
     }
 }
 
-/// What a player shows other players: the projection's traversal code.
+/// What a player shows other players: the projection's traversal code, including a dodge roll
+/// (#516).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum TraversalView {
     #[default]
     Free,
     Climbing,
     Mantling,
+    Rolling,
 }
 
 impl TraversalView {
     #[must_use]
-    pub const fn of(traversal: Traversal) -> Self {
+    pub const fn of(traversal: Traversal, roll: crate::Roll) -> Self {
+        if roll.rolling().is_some() {
+            return Self::Rolling;
+        }
         match traversal {
             Traversal::Free | Traversal::Released { .. } => Self::Free,
             Traversal::Climbing { .. } => Self::Climbing,
@@ -234,6 +239,7 @@ impl TraversalView {
             Self::Free => 0,
             Self::Climbing => 1,
             Self::Mantling => 2,
+            Self::Rolling => 3,
         }
     }
 
@@ -243,6 +249,7 @@ impl TraversalView {
             0 => Some(Self::Free),
             1 => Some(Self::Climbing),
             2 => Some(Self::Mantling),
+            3 => Some(Self::Rolling),
             _ => None,
         }
     }

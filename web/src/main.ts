@@ -200,6 +200,7 @@ let worldFailure: string | null = null;
 /** The world a join is in flight for; selection stays put until it settles. */
 let joining: ZoneWorld | null = null;
 let jumps = 0;
+let rolls = 0;
 let arenaWorld: ArenaWorld | null = null;
 // A review scenario (#371, `?scenario=<name>&seed=<n>`) skips selection and enters a fresh,
 // unsaved local world in that situation; F9 or Reset scenario restarts it from the same seed.
@@ -1265,7 +1266,7 @@ function viewerLook(): ViewerLook {
 
 function worldInput() {
   const pads = typeof navigator.getGamepads === "function" ? navigator.getGamepads() : [];
-  return { held: mergeHeld(controls.heldIntent(), touchControls.heldIntent()), jumps, padGuard: padGuardLane(pads) };
+  return { held: mergeHeld(controls.heldIntent(), touchControls.heldIntent()), jumps, rolls, padGuard: padGuardLane(pads) };
 }
 
 function errorMessage(error: unknown): string {
@@ -1677,6 +1678,10 @@ function runAction(action: GameAction): void {
     case "move.jump":
       // The outbox sends one Jump per counted press; the zone decides whether it lifts off.
       jumps += 1;
+      return;
+    case "move.roll":
+      // Likewise one Roll per counted press (#516); the zone decides whether the roll starts.
+      rolls += 1;
       return;
     case "target.next":
       worldView.queueIntent((projection) => {

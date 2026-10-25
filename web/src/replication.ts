@@ -29,11 +29,11 @@ export type EntityFlags = {
   /** Its own target is the viewer. */
   targetsViewer: boolean;
   lootable: boolean;
-  /** A player climbing or mantling (#490): on a player record the tapped and evading bits carry it. */
+  /** A player climbing, mantling (#490) or rolling (#516): on a player record the tapped and evading bits carry it. */
   traversal: Traversal;
 };
 
-export type Traversal = "free" | "climbing" | "mantling";
+export type Traversal = "free" | "climbing" | "mantling" | "rolling";
 
 export type EntityState = {
   kind: EntityKind;
@@ -812,14 +812,13 @@ function decodeEntity(reader: Reader): EntityState {
   if (lootable && (kind !== "creature" || !dead || healthPercent !== 0 || attackable || tapped)) {
     throw new Error("Lootable entity flags are inconsistent");
   }
-  // Only creatures are tapped or evade: on a player record those bits are its climb or mantle (#490).
+  // Only creatures are tapped or evade: on a player record those bits are its climb or mantle (#490),
+  // both together its dodge roll (#516).
   const player = kind === "player";
-  if (player && tapped && evades) {
-    throw new Error("A player climbs or mantles, not both");
-  }
-  const traversal: Traversal = !player ? "free" : tapped ? "climbing" : evades ? "mantling" : "free";
+  const traversal: Traversal = !player ? "free"
+    : tapped && evades ? "rolling" : tapped ? "climbing" : evades ? "mantling" : "free";
   if (dead && traversal !== "free") {
-    throw new Error("A dead player cannot climb or mantle");
+    throw new Error("A dead player cannot climb, mantle or roll");
   }
   return {
     kind, entityId, appearance, position, velocity, facing, level, healthPercent,

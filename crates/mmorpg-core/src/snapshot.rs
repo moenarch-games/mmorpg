@@ -175,6 +175,8 @@ pub struct CanonicalPlayerCombat {
     pub landing: crate::LandingState,
     /// A climb or mantle in progress (#490).
     pub traversal: crate::Traversal,
+    /// A pending press, a dodge roll in progress or its cooldown (#516).
+    pub roll: crate::Roll,
     /// A pending sword → Shield Bash follow-up (#157).
     pub combo: Option<crate::ComboOpening>,
     /// Ticks left of a directed strike's committed recovery (#156).
@@ -233,6 +235,7 @@ impl Default for CanonicalPlayerCombat {
             abilities: CanonicalPlayerAbilities::default(),
             landing: crate::LandingState::default(),
             traversal: crate::Traversal::Free,
+            roll: crate::Roll::Ready,
             combo: None,
             strike_recovery: 0,
             repairing: None,
@@ -384,6 +387,7 @@ impl ZoneSimulation {
                         },
                         landing: state.landing,
                         traversal: state.traversal,
+                        roll: state.roll,
                         combo: state.combo,
                         strike_recovery: state.strike_recovery,
                         repairing: state.repairing,
@@ -679,6 +683,9 @@ impl ZoneSimulation {
         if !combat.traversal.is_valid() {
             return Err(ZoneError::new("player climb or mantle is out of range"));
         }
+        if !combat.roll.is_valid() || (!alive && combat.roll != crate::Roll::Ready) {
+            return Err(ZoneError::new("player dodge roll is out of range"));
+        }
         let guard = combat.abilities.guard;
         if guard.broken > crate::GUARD_BREAK_TICKS
             || (!alive && guard != crate::GuardState::default())
@@ -709,6 +716,7 @@ impl ZoneSimulation {
                 } else {
                     crate::Traversal::Free
                 },
+                roll: combat.roll,
                 swimming: false,
                 impulse: None,
                 authored: None,

@@ -20,6 +20,7 @@ export const GAME_ACTIONS = [
   "move.strafeLeft",
   "move.strafeRight",
   "move.jump",
+  "move.roll",
   "move.descend",
   "target.next",
   "combat.toggleAutoAttack",
@@ -130,7 +131,7 @@ function action(
 }
 
 /**
- * Standard-mapping gamepad: left stick moves, A jumps, B backs out (or cancels a cast), X attacks,
+ * Standard-mapping gamepad: left stick moves, A jumps, B rolls (#516; it closes a panel or cancels a cast while one is open or running), X attacks,
  * Y releases, and the d-pad (up, right, down, left) uses ability slots 1–4.
  */
 export const GAME_ACTION_REGISTRY: ActionRegistry = {
@@ -148,6 +149,8 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
       stick(0, "positive"),
     ]),
     action("move.jump", "Jump", "gameplay", [key("Space"), button(0)]),
+    // Tap to dodge-roll along the held movement, or straight back standing still (#516).
+    action("move.roll", "Dodge roll", "gameplay", [key("ShiftLeft"), key("ShiftRight"), button(1)]),
     // Held while swimming (#274): Space or A ascends (held Jump), X or R3 descends.
     action("move.descend", "Swim down (hold)", "gameplay", [key("KeyX"), button(11)]),
     action("target.next", "Target next", "gameplay", [key("Tab"), button(5)]),
@@ -181,7 +184,8 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     action("ui.toggleQuestLog", "Toggle quest log", "gameplay", [key("KeyL")]),
     action("ui.openChat", "Chat", "gameplay", [key("Enter"), key("NumpadEnter")]),
     action("ui.closePanel", "Close panel", "panels", [key("Escape"), button(1)]),
-    action("ui.leaveWorld", "Return to characters", "gameplay", [key("Escape"), button(1)]),
+    // B rolls in gameplay (#516), so leaving the world is keyboard-only, as on the native client.
+    action("ui.leaveWorld", "Return to characters", "gameplay", [key("Escape")]),
     action("ui.toggleDebug", "Toggle debug overlay", "world", [key("F3")]),
     action("ui.enterWorld", "Enter world", "selection", [key("Enter"), button(9)]),
     action("ui.cancelCreation", "Cancel character creation", "creation", [key("Escape"), button(1)]),

@@ -366,7 +366,13 @@ impl ZoneSimulation {
             .ok_or_else(|| ZoneError::new("forced unit physics body is missing"))?
             .velocity()
             .y;
-        // A forced move tears a climber off the face or out of a mantle (#490).
+        // A forced move ends a dodge roll (#516) …
+        if let EntityRef::Player(id) = unit
+            && let Some(player) = self.players.get_mut(&id)
+        {
+            player.roll = player.roll.ended();
+        }
+        // … and tears a climber off the face or out of a mantle (#490).
         if let EntityRef::Player(id) = unit
             && let Some(player) = self.players.get_mut(&id)
             && player.traversal.holds()

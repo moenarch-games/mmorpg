@@ -431,6 +431,14 @@ impl App {
         }
     }
 
+    /// Likewise a dodge roll (#516); the zone decides whether it starts.
+    fn roll(&self) {
+        if !self.dead() {
+            self.input
+                .send_modify(|input| input.rolls = input.rolls.wrapping_add(1));
+        }
+    }
+
     /// Tab, F and R are intents derived from the latest projection; the zone
     /// decides what happens.
     fn combat_key(&self, code: KeyCode) {
@@ -467,6 +475,7 @@ impl App {
             | ControlAction::MoveLeft
             | ControlAction::MoveRight => {}
             ControlAction::Jump => self.jump(),
+            ControlAction::Roll => self.roll(),
             ControlAction::Descend => {}
             ControlAction::TargetNext => self.combat_key(KeyCode::Tab),
             ControlAction::ToggleAttack => self.combat_key(KeyCode::KeyF),
@@ -607,6 +616,7 @@ impl App {
         self.pad_ui.extend(interface_key(action));
         match action {
             PadAction::Jump => self.jump(),
+            PadAction::Roll => self.roll(),
             PadAction::TargetNext => self.combat_key(KeyCode::Tab),
             PadAction::ToggleAutoAttack => self.combat_key(KeyCode::KeyF),
             PadAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),

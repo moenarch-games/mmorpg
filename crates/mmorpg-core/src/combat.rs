@@ -1212,6 +1212,7 @@ impl ZoneSimulation {
             player.forward = Axis::Zero;
             player.strafe = Axis::Zero;
             player.jump_pending = false;
+            player.roll = crate::Roll::Ready;
             player.guard = crate::GuardState::default();
         });
         self.notify(player_id, ZoneEvent::Died { entity, killer });

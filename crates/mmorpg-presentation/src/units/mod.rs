@@ -531,7 +531,10 @@ impl UnitPresenter {
                 // fallback holds on with the idle clip and climbs with the walk, at the speed
                 // they move along the face, facing it (the zone projects the wall's yaw), never
                 // a jump or fall from ascending or descending.
-                let traversing = unit.record.flags.traversal != mmorpg_core::TraversalView::Free;
+                // A roller (#516) plays its authored roll clip instead.
+                let rolling = unit.record.flags.traversal == mmorpg_core::TraversalView::Rolling;
+                let traversing =
+                    unit.record.flags.traversal != mmorpg_core::TraversalView::Free && !rolling;
                 let (speed, vertical) = if traversing {
                     (loc.forward.hypot(loc.right).hypot(loc.vertical), 0.)
                 } else {
@@ -568,6 +571,7 @@ impl UnitPresenter {
                         water,
                         dead,
                         guarding,
+                        rolling,
                         now: seconds,
                         dt: input.dt,
                         reduced,

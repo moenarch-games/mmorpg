@@ -38,7 +38,7 @@ pub struct EntityFlags {
     pub targets_viewer: bool,
     /// Remaining rewards on a corpse owned by this viewer. Range is checked on claim.
     pub lootable: bool,
-    /// A player climbing or mantling (#490); its facing then faces the wall.
+    /// A player climbing or mantling (#490), whose facing then faces the wall, or rolling (#516).
     pub traversal: crate::TraversalView,
 }
 
@@ -394,7 +394,7 @@ impl ZoneSimulation {
                     level: player.level,
                     health_percent: health_percent(player.health, player.max_health()),
                     flags: EntityFlags {
-                        traversal: crate::TraversalView::of(player.traversal),
+                        traversal: crate::TraversalView::of(player.traversal, player.roll),
                         hostile: self.players_are_hostile(viewer, player_id),
                         attackable: self.players_are_hostile(viewer, player_id)
                             && player.is_alive(),

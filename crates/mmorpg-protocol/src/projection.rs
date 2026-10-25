@@ -88,7 +88,7 @@ pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// Kind, ID, appearance, `3 × i32` position, `3 × i8` velocity, `u16`
 /// facing, level, health percent and flags. Only creatures are tapped or evade, so on a player
 /// record those two flag bits carry its traversal instead (#490): tapped means climbing,
-/// evading means mantling.
+/// evading means mantling, and both mean a dodge roll (#516).
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 12 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events, sheets, cooldowns or auras:
 /// (1,077 − 117) / 27 = 35.
@@ -550,13 +550,15 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
         if flags.tapped_by_other || flags.evading {
             return Err(ProtocolError::new("a player is never tapped or evading"));
         }
-        (
-            flags.traversal == mmorpg_core::TraversalView::Climbing,
-            flags.traversal == mmorpg_core::TraversalView::Mantling,
-        )
+        match flags.traversal {
+            mmorpg_core::TraversalView::Free => (false, false),
+            mmorpg_core::TraversalView::Climbing => (true, false),
+            mmorpg_core::TraversalView::Mantling => (false, true),
+            mmorpg_core::TraversalView::Rolling => (true, true),
+        }
     } else {
         if flags.traversal != mmorpg_core::TraversalView::Free {
-            return Err(ProtocolError::new("only a player climbs or mantles"));
+            return Err(ProtocolError::new("only a player climbs, mantles or rolls"));
         }
         (flags.tapped_by_other, flags.evading)
     };
@@ -913,16 +915,18 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
     {
         return Err(ProtocolError::new("lootable entity flags are inconsistent"));
     }
-    // On a player record the tapped and evading bits carry its traversal (#490).
+    // On a player record the tapped and evading bits carry its traversal (#490, #516).
     let (tapped_by_other, evading, traversal) = if kind == EntityKind::Player {
         let traversal = match (tapped_by_other, evading) {
             (false, false) => mmorpg_core::TraversalView::Free,
             (true, false) => mmorpg_core::TraversalView::Climbing,
             (false, true) => mmorpg_core::TraversalView::Mantling,
-            (true, true) => return Err(ProtocolError::new("a player climbs or mantles, not both")),
+            (true, true) => mmorpg_core::TraversalView::Rolling,
         };
         if dead && traversal != mmorpg_core::TraversalView::Free {
-            return Err(ProtocolError::new("a dead player cannot climb or mantle"));
+            return Err(ProtocolError::new(
+                "a dead player cannot climb, mantle or roll",
+            ));
         }
         (false, false, traversal)
     } else {
@@ -1888,7 +1892,7 @@ mod tests {
                         evading: kind != EntityKind::Player,
                         targets_viewer: true,
                         traversal: if kind == EntityKind::Player {
-                            mmorpg_core::TraversalView::Climbing
+                            mmorpg_core::TraversalView::Rolling
                         } else {
                             mmorpg_core::TraversalView::Free
                         },
