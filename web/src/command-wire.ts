@@ -15,6 +15,8 @@ export type WorldCommand =
   | { kind: "move"; forward: Axis; strafe: Axis; facing: number }
   | { kind: "loot"; creatureId: number; diedAt: bigint }
   | { kind: "jump" }
+  /** A dodge roll (#516) along the held movement, or straight back without any; the zone decides if it can start. */
+  | { kind: "roll" }
   /** Held swim ascent (`1`), descent (`-1`) or neither (#274); the zone ignores it out of the water. */
   | { kind: "rise"; rise: Axis }
   /** Selects a unit, or clears the selection with `null`. */
@@ -96,6 +98,7 @@ const RISE_TAG = 25;
 const COMMAND_MINIONS_TAG = 26;
 const OBSERVED_TAG = 27;
 const RELEASE_ABILITY_TAG = 28;
+const ROLL_TAG = 29;
 const YAW_STEPS = 65_536;
 const U64_MAX = (1n << 64n) - 1n;
 
@@ -197,6 +200,8 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
     }
     case "jump":
       return Uint8Array.of(PROTOCOL_BYTE, JUMP_TAG);
+    case "roll":
+      return Uint8Array.of(PROTOCOL_BYTE, ROLL_TAG);
     case "rise":
       if (!isAxis(command.rise)) {
         throw new RangeError("rise must be -1, 0 or 1");

@@ -294,6 +294,16 @@ export function climbingSample(config: LabConfig): LabConfig {
   return { ...config, rules: [...kept, hold] };
 }
 
+/**
+ * The rolling sample (#516): abilities pressed during a dodge roll (Shift) wait until it ends instead of
+ * being cancelled by it. Production keeps the roll movement only: a cast started mid-roll is cancelled.
+ */
+export function rollingSample(config: LabConfig): LabConfig {
+  const kept = config.rules.filter((rule) => rule.during !== "Roll");
+  const hold = { id: "RollingHolds", during: "Roll", input: "Ability", conditions: [], effect: "Hold" as const };
+  return { ...config, rules: [...kept, hold] };
+}
+
 /** `actionLabCheck`: the configuration's identity, whether it equals production, or why it is invalid. */
 export type ConfigCheck = { identity: string | null; baseline: boolean; error: string | null };
 

@@ -153,8 +153,8 @@ function obstructed(boxes: readonly Box[], target: Vec3, eye: Vec3): boolean {
   return false;
 }
 
-/** `padGuard` is the lane a pad holding the guard trigger aims, or `null` (#156). */
-export type WorldInput = { held: HeldIntent; jumps: number; padGuard?: StrikeHeight | null };
+/** `padGuard` is the lane a pad holding the guard trigger aims, or `null` (#156); `rolls` counts dodge-roll presses (#516) like `jumps`. */
+export type WorldInput = { held: HeldIntent; jumps: number; rolls?: number; padGuard?: StrikeHeight | null };
 
 /** Areas within this distance of the player (60 m) have their art fetched ahead of arrival. */
 const STREAM_RADIUS_UNITS = 6_000;
@@ -872,10 +872,10 @@ export class WorldView {
     this.#overlay.toggle();
   }
 
-  #input({ held, jumps }: WorldInput): MovementInput {
+  #input({ held, jumps, rolls }: WorldInput): MovementInput {
     const input = movementInput(held, this.#orbit.facing(), this.#movementFacing, jumps, this.#drag?.mode ?? "none");
     this.#movementFacing = input.facing;
-    return input;
+    return rolls === undefined ? input : { ...input, rolls };
   }
 
   #showArea(name: string): void {

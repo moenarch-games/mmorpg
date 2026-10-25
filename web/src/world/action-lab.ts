@@ -272,10 +272,10 @@ export function explainEdge(report: Inspection["edges"][number]): string {
 
 /** What an applying compatibility rule does, until when, and why it applies to this character. */
 export function explainRule(rule: RuleReport): string {
-  // A swim's or a climb's rule (#413, #490) lasts as long as the traversal does.
-  const climbing = rule.rule.startsWith("Climbing");
-  const until = rule.releasedAt === null ? (climbing ? "while climbing" : "while swimming") : `tick ${rule.releasedAt}`;
-  const over = climbing ? "off the face" : "ashore";
+  // A swim's, a climb's or a roll's rule (#413, #490, #516) lasts as long as the traversal does.
+  const [during, over] = rule.rule.startsWith("Climbing") ? ["while climbing", "off the face"]
+    : rule.rule.startsWith("Rolling") ? ["while rolling", "the roll ends"] : ["while swimming", "ashore"];
+  const until = rule.releasedAt === null ? during : `tick ${rule.releasedAt}`;
   const what = rule.effect === "Cancel" ? `${rule.input} ends the running action before ${until}`
     : rule.effect === "Refuse" ? `refuses ${rule.input} ${until}` : `holds ${rule.input} until ${rule.releasedAt === null ? over : until}`;
   return `${rule.rule}: ${what}${rule.origin === "baseline" ? "" : ` (${rule.origin})`}`;

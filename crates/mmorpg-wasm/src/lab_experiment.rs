@@ -83,13 +83,14 @@ const PARTNERS: [Partner; 4] = [
     Partner::Input(ActionInput::ShieldBash),
     Partner::Input(ActionInput::Ability),
 ];
-const RULES: [RuleId; 6] = [
+const RULES: [RuleId; 7] = [
     RuleId::LandingHoldsMelee,
     RuleId::SlashRecoveryHoldsGuard,
     RuleId::MovementCancelsCast,
     RuleId::SwimmingRefuses,
     RuleId::SwimmingHolds,
     RuleId::ClimbingHolds,
+    RuleId::RollingHolds,
 ];
 const RULE_EFFECTS: [RuleEffect; 3] = [RuleEffect::Hold, RuleEffect::Cancel, RuleEffect::Refuse];
 const PHASES: [Phase; 4] = [
@@ -1177,6 +1178,7 @@ const fn is_action(command: &ZoneCommand) -> bool {
             | ZoneCommand::DirectedStrike { .. }
             | ZoneCommand::Guard { .. }
             | ZoneCommand::Jump
+            | ZoneCommand::Roll
     )
 }
 

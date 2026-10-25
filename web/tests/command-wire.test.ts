@@ -29,6 +29,8 @@ function command(fields: readonly string[]): WorldCommand {
     }
     case "jump":
       return { kind: "jump" };
+    case "roll":
+      return { kind: "roll" };
     case "rise":
       return { kind: "rise", rise: axis(first) };
     case "select_target": {

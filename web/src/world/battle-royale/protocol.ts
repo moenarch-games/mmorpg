@@ -137,6 +137,7 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
   switch (command.kind) {
     case "move":
     case "jump":
+    case "roll":
     case "rise":
     case "select-target":
     case "chat":
