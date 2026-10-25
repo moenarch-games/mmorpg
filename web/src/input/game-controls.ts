@@ -334,7 +334,7 @@ function isHeldAction(action: string): action is HeldAction {
   return (HELD_ACTIONS as readonly string[]).includes(action);
 }
 
-function isReleasedAction(action: string): action is ReleasedAction {
+export function isReleasedAction(action: string): action is ReleasedAction {
   return (RELEASED_ACTIONS as readonly string[]).includes(action);
 }
 

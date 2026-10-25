@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ChordState, CHORD_TIMEOUT_MS, mergeHeld, stickIntent, touchContext } from "../src/input/touch-layout";
+import { ChordState, CHORD_TIMEOUT_MS, HeldFaces, mergeHeld, stickIntent, touchContext } from "../src/input/touch-layout";
 import { IDLE_INTENT } from "../src/world/orbit-camera";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -46,4 +46,24 @@ test("context buttons follow nearby loot, NPCs, doors and opponents", () => {
   const dead = touchContext({ ...testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }),
     viewer: { ...HEALTHY_VIEWER, health: 0, dead: true } }, inputs);
   expect(dead).toEqual({ combat: false, dead: true, interact: null, npc: null });
+});
+
+test("a lifted face releases its slot; a cancelled pointer or retirement releases it retired (#485)", () => {
+  const held = new HeldFaces();
+  held.press(7, "ability.slot2");
+  // Only ability slots report a release.
+  held.press(8, "move.jump");
+  expect(held.lift(8, "release")).toBeNull();
+  expect(held.lift(7, "release")).toEqual({ action: "ability.slot2", phase: "release" });
+  // The later lostpointercapture of the same finger releases nothing twice.
+  expect(held.lift(7, "cancel")).toBeNull();
+  held.press(1, "ability.slot6");
+  expect(held.lift(1, "cancel")).toEqual({ action: "ability.slot6", phase: "cancel" });
+  held.press(2, "ability.slot1");
+  held.press(3, "ability.slot4");
+  expect(held.retire()).toEqual([
+    { action: "ability.slot1", phase: "cancel" },
+    { action: "ability.slot4", phase: "cancel" },
+  ]);
+  expect(held.retire()).toEqual([]);
 });

@@ -2,7 +2,7 @@ import type { Axis } from "../command-wire";
 import { sameEntity, type EntityRef } from "../entity-ref";
 import type { ZoneSnapshot } from "../replication";
 import type { HeldIntent } from "../world/orbit-camera";
-import type { GameAction } from "./game-controls";
+import { isReleasedAction, type GameAction, type HoldPhase, type ReleasedAction } from "./game-controls";
 
 /**
  * Touch controls (#434) are a presentation of the existing semantic actions: every button fires a
@@ -52,6 +52,39 @@ export class ChordState {
 
   reset(): void {
     this.#armedAt = null;
+  }
+}
+
+/** A held face's release, as the keyboard's slot key-up reports it (#414, #485). */
+export type FaceRelease = { action: ReleasedAction; phase: Exclude<HoldPhase, "press"> };
+
+/**
+ * The ability slot each finger holds on a face button (#485): a lifted finger is a deliberate
+ * `release`; a cancelled pointer or any retirement (blur, Settings, leaving the world) is a
+ * `cancel`, so a held charge never acts on it.
+ */
+export class HeldFaces {
+  readonly #held = new Map<number, ReleasedAction>();
+
+  /** A face tap by `pointerId` fired `action`; only ability slots report a release. */
+  press(pointerId: number, action: GameAction): void {
+    if (isReleasedAction(action)) {
+      this.#held.set(pointerId, action);
+    }
+  }
+
+  /** The finger lifted (`release`) or its pointer was cancelled (`cancel`). */
+  lift(pointerId: number, phase: Exclude<HoldPhase, "press">): FaceRelease | null {
+    const action = this.#held.get(pointerId);
+    this.#held.delete(pointerId);
+    return action ? { action, phase } : null;
+  }
+
+  /** Every held face, retired. */
+  retire(): FaceRelease[] {
+    const released = [...this.#held.values()].map((action) => ({ action, phase: "cancel" as const }));
+    this.#held.clear();
+    return released;
   }
 }
 

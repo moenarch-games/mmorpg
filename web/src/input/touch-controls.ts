@@ -1,6 +1,6 @@
 import type { HeldIntent } from "../world/orbit-camera";
-import type { GameAction } from "./game-controls";
-import { ChordState, FACE_BUTTONS, INTERACT_LABELS, stickIntent, TOUCH_CHORD_PAGES, type TouchContext } from "./touch-layout";
+import { isReleasedAction, type GameAction, type HoldPhase, type ReleasedAction } from "./game-controls";
+import { ChordState, FACE_BUTTONS, HeldFaces, INTERACT_LABELS, stickIntent, TOUCH_CHORD_PAGES, type TouchContext } from "./touch-layout";
 
 /** One hotbar slot as the face buttons show it: its ability name and the action-bar button it mirrors. */
 export type SlotFace = { name: string; source: HTMLElement };
@@ -11,6 +11,8 @@ const MIRRORED_DATA = ["data-state", "data-resource", "data-range", "data-gcd"] 
 export type TouchControlsOptions = {
   /** Fires an existing semantic action, exactly as its key or gamepad button would. */
   onAction: (action: GameAction) => void;
+  /** A face's ability slot let go (#485), exactly as its key-up (`release`) or a retirement (`cancel`). */
+  onRelease?: (action: ReleasedAction, phase: Exclude<HoldPhase, "press">) => void;
   /** The context interact button: loot, trade, talk, open or repair. */
   onInteract: () => void;
   onSettings: () => void;
@@ -43,6 +45,7 @@ const MENU_ITEMS: readonly { label: string; action: GameAction | "settings" | "c
 export class TouchControls {
   readonly #options: TouchControlsOptions;
   readonly #chord = new ChordState();
+  readonly #held = new HeldFaces();
   readonly #stick: { zone: HTMLElement; base: HTMLElement; knob: HTMLElement };
   readonly #faces: HTMLButtonElement[];
   readonly #hints: HTMLElement[];
@@ -121,13 +124,25 @@ export class TouchControls {
       return hint;
     });
     this.#faces = FACE_BUTTONS.map((face, index) => {
-      const entry = button("touch-face action-slot", "", () => {
+      const entry = button("touch-face action-slot", "", (event) => {
         const action = this.#chord.press(index, performance.now());
         if (action) {
           this.#options.onAction(action);
+          if (event) {
+            // The finger owns its face until it lifts, also when it slides off the button.
+            entry.setPointerCapture?.(event.pointerId);
+            this.#held.press(event.pointerId, action);
+          } else if (isReleasedAction(action)) {
+            // Keyboard or assistive activation has no hold: it releases at once.
+            this.#options.onRelease?.(action, "release");
+          }
         }
         this.update();
       });
+      entry.addEventListener("pointerup", (event) => this.#lift(event.pointerId, "release"));
+      for (const name of ["pointercancel", "lostpointercapture"] as const) {
+        entry.addEventListener(name, (event) => this.#lift(event.pointerId, "cancel"));
+      }
       entry.dataset.face = face;
       return entry;
     });
@@ -164,10 +179,13 @@ export class TouchControls {
     return stickIntent(this.#vector.x, this.#vector.y, this.#jumpPointer !== null);
   }
 
-  /** Releases the stick, jump, chord and menu, e.g. on blur or leaving the world. */
+  /** Releases the stick, jump, held faces, chord and menu, e.g. on blur or leaving the world. */
   reset(): void {
     this.#releaseStick();
     this.#jumpPointer = null;
+    for (const { action, phase } of this.#held.retire()) {
+      this.#options.onRelease?.(action, phase);
+    }
     this.#chord.reset();
     this.#menu.hidden = true;
     this.#shownKey = "";
@@ -298,6 +316,14 @@ export class TouchControls {
     this.#stick.knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
   }
 
+  /** A held face's finger lifted (`release`) or its pointer was cancelled (`cancel`). */
+  #lift(pointerId: number, phase: Exclude<HoldPhase, "press">): void {
+    const released = this.#held.lift(pointerId, phase);
+    if (released) {
+      this.#options.onRelease?.(released.action, released.phase);
+    }
+  }
+
   #releaseStick(): void {
     const drag = this.#drag;
     this.#drag = null;
@@ -331,8 +357,11 @@ function element(tag: string, className: string): HTMLElement {
   return node;
 }
 
-/** Touch buttons act on press, never take focus and ignore the later synthetic click. */
-function button(className: string, label: string, onPress: () => void): HTMLButtonElement {
+/**
+ * Touch buttons act on press, never take focus and ignore the later synthetic click. `onPress`
+ * gets the pressing pointer, or nothing for keyboard or assistive activation.
+ */
+function button(className: string, label: string, onPress: (event?: PointerEvent) => void): HTMLButtonElement {
   const node = element("button", className) as HTMLButtonElement;
   node.type = "button";
   node.tabIndex = -1;
@@ -340,7 +369,7 @@ function button(className: string, label: string, onPress: () => void): HTMLButt
   node.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     if (!node.disabled) {
-      onPress();
+      onPress(event);
     }
   });
   // Keyboard or assistive activation (no pointer) still works.

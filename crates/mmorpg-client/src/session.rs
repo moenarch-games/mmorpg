@@ -16,7 +16,7 @@ const FACING_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / TICK_HZ a
 
 /// Latest local input published by the window: held movement plus counted
 /// discrete presses. Each counter (`jumps`, `selections`, `attack_requests`,
-/// `releases`, `ability_uses`, `cancels`) makes the session send one command
+/// `releases`, `ability_uses`, `ability_releases`, `cancels`) makes the session send one command
 /// when it advances, so coalesced watch updates can merge presses but never
 /// replay them.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -35,6 +35,9 @@ pub struct PlayerInput {
     /// The latest requested ability ID.
     pub ability: u8,
     pub ability_uses: u32,
+    /// The latest released ability ID and whether a retirement let it go (#485).
+    pub ability_release: (u8, bool),
+    pub ability_releases: u32,
     pub cancels: u32,
     /// Latest intentional NPC action, delivered once and retired on reconnect.
     pub interaction: Option<ZoneCommand>,
@@ -76,7 +79,7 @@ pub enum NetworkUpdate {
 
 /// Commands to send for one input observation, in order: a selection, an
 /// attack start or stop, a spirit release, a cast cancellation, an ability,
-/// a jump, then a move.
+/// its release, a jump, then a move.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Outgoing {
     choose: Option<(u8, u8)>,
@@ -85,6 +88,7 @@ struct Outgoing {
     release: bool,
     cancel: bool,
     ability: Option<u8>,
+    ability_release: Option<(u8, bool)>,
     interaction: Option<ZoneCommand>,
     jump: bool,
     guard: Option<Option<mmorpg_core::StrikeHeight>>,
@@ -115,6 +119,9 @@ impl Outgoing {
         if let Some(ability) = self.ability {
             session.send_use_ability(ability)?;
         }
+        if let Some((ability, retired)) = self.ability_release {
+            session.send_command(ZoneCommand::ReleaseAbility { ability, retired })?;
+        }
         if let Some(command) = self.interaction {
             session.send_command(command)?;
         }
@@ -140,6 +147,7 @@ struct Presses {
     attack_requests: u32,
     releases: u32,
     ability_uses: u32,
+    ability_releases: u32,
     cancels: u32,
     interactions: u32,
 }
@@ -152,6 +160,7 @@ impl Presses {
             attack_requests: input.attack_requests,
             releases: input.releases,
             ability_uses: input.ability_uses,
+            ability_releases: input.ability_releases,
             cancels: input.cancels,
             interactions: input.interactions,
         }
@@ -244,6 +253,8 @@ impl Outbox {
             release: pressed.releases != handled.releases,
             cancel: pressed.cancels != handled.cancels,
             ability: (pressed.ability_uses != handled.ability_uses).then_some(input.ability),
+            ability_release: (pressed.ability_releases != handled.ability_releases)
+                .then_some(input.ability_release),
             interaction: (pressed.interactions != handled.interactions)
                 .then_some(input.interaction)
                 .flatten(),
@@ -704,6 +715,39 @@ mod tests {
         );
         assert_eq!(outbox.changes(input, now), Outgoing::default());
         assert_eq!(outbox.heartbeat(input, now + TICK), only_move(0, 0, 0));
+    }
+
+    #[test]
+    fn an_ability_release_follows_its_use_once_per_release() {
+        let now = Instant::now();
+        let mut outbox = sent(PlayerInput::default(), now);
+        let tapped = PlayerInput {
+            ability: 9,
+            ability_uses: 1,
+            ability_release: (9, false),
+            ability_releases: 1,
+            ..PlayerInput::default()
+        };
+        assert_eq!(
+            outbox.changes(tapped, now),
+            Outgoing {
+                ability: Some(9),
+                ability_release: Some((9, false)),
+                ..Outgoing::default()
+            },
+            "a press and release in one observation send the use, then the release"
+        );
+        assert_eq!(outbox.changes(tapped, now), Outgoing::default());
+        assert_eq!(outbox.heartbeat(tapped, now + TICK), only_move(0, 0, 0));
+        let retired = PlayerInput {
+            ability_release: (9, true),
+            ability_releases: 2,
+            ..tapped
+        };
+        assert_eq!(
+            outbox.changes(retired, now).ability_release,
+            Some((9, true))
+        );
     }
 
     #[test]
