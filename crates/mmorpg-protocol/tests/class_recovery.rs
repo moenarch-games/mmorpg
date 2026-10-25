@@ -23,6 +23,7 @@ const COMPARED_TICKS: u64 = mmorpg_core::golden::t30(200);
 const ARCANIST: u32 = 1;
 const WARDEN: u32 = 2;
 const RANGER: u32 = 3;
+const WEST: u16 = 49_152;
 
 /// Two wolves within Frost Nova reach of the arcanist's spawn slot and a
 /// lurker a little farther away.
@@ -58,11 +59,14 @@ fn commands(tick: u64) -> Vec<(u32, ZoneCommand)> {
         0 => vec![
             (ARCANIST, ZoneCommand::ChooseClass { class: 2, sex: 0 }),
             (ARCANIST, wolf),
+            // Everyone faces the wolves to the west: abilities fire where they face (#517).
+            (ARCANIST, arena::stand(WEST)),
             (WARDEN, ZoneCommand::ChooseClass { class: 0, sex: 1 }),
             (WARDEN, wolf),
-            (WARDEN, ZoneCommand::StartAttack),
+            (WARDEN, arena::stand(WEST)),
             (RANGER, ZoneCommand::ChooseClass { class: 1, sex: 0 }),
             (RANGER, wolf),
+            (RANGER, arena::stand(WEST)),
         ],
         1 => vec![
             (ARCANIST, ability(ids::FROST_NOVA)),
@@ -117,6 +121,16 @@ impl Run {
             let sequence = &mut self.sequences[usize::try_from(player).unwrap() - 1];
             *sequence += 1;
             self.zone.apply_command(player, *sequence, command).unwrap();
+        }
+        // The Warden swings at the first wolf whenever it is in reach (#517).
+        if let Some(swing) = arena::swing_at(
+            &self.zone,
+            WARDEN,
+            EntityRef::Creature(mmorpg_core::CreatureId::new(1)),
+        ) {
+            let sequence = &mut self.sequences[usize::try_from(WARDEN).unwrap() - 1];
+            *sequence += 1;
+            self.zone.apply_command(WARDEN, *sequence, swing).unwrap();
         }
         self.zone.advance_tick().unwrap();
     }

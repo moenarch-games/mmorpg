@@ -29,7 +29,10 @@ fn observation_records_round_trip_through_the_shared_fixture() {
     let source = EntityRef::Player(2);
     let target = EntityRef::Creature(CreatureId::new(101));
     view.events = vec![
-        ZoneEvent::AttackPerformed { source, target },
+        ZoneEvent::AttackPerformed {
+            source,
+            target: Some(target),
+        },
         ZoneEvent::DamageObserved {
             source,
             target,
@@ -69,7 +72,13 @@ fn full_cosmetic_section_keeps_critical_feedback_and_required_entities_under_wir
         killer: Some(target),
     };
     view.events =
-        vec![ZoneEvent::AttackPerformed { source, target }; mmorpg_core::MAX_EVENTS_PER_PLAYER - 1];
+        vec![
+            ZoneEvent::AttackPerformed {
+                source,
+                target: Some(target),
+            };
+            mmorpg_core::MAX_EVENTS_PER_PLAYER - 1
+        ];
     view.events.push(critical);
     view.viewer.target = Some(target);
     let prototype = view.entities[0].clone();

@@ -1201,7 +1201,16 @@ mod tests {
             trailing.push(0);
             assert!(decode_command(&trailing).is_err());
         }
-        for tag in [2, 4, 5, 6, 10] {
+        // A swing (#517) carries exactly its facing; the retired stop-attack tag is unknown.
+        for length in 0..4 {
+            assert!(decode_command(&[PROTOCOL_BYTE, 4, 0, 0][..length]).is_err());
+        }
+        assert!(decode_command(&[PROTOCOL_BYTE, 4, 0, 0, 0]).is_err());
+        assert_eq!(
+            decode_command(&[PROTOCOL_BYTE, 5]).unwrap_err().to_string(),
+            "unknown command tag"
+        );
+        for tag in [2, 6, 10] {
             assert_eq!(
                 decode_command(&[PROTOCOL_BYTE, tag, 0])
                     .unwrap_err()

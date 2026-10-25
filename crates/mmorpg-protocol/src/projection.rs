@@ -1564,8 +1564,8 @@ mod tests {
         for (offset, value, message) in [
             (0, 4, "unsupported snapshot protocol id"),
             (3, 1, "unexpected snapshot scope"),
-            (53, 0b1000, "reserved flag bits are set"),
-            (53, 0b111, "viewer state is inconsistent"),
+            (53, 0b100, "reserved flag bits are set"),
+            (53, 0b11, "viewer state is inconsistent"),
             (54, 9, "unknown entity kind"),
             (CLASS, 15, "viewer ability state is inconsistent"),
             (CLASS, 1, "viewer resource is inconsistent"),

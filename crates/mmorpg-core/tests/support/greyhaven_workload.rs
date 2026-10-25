@@ -193,7 +193,10 @@ pub fn commands(
                 },
             )?;
         }
-        if let Some(facing) = in_reach.filter(|_| player.combat.health > 0) {
+        // A swing turns its bot, so none interrupts the scripted run north (ticks 30 to 35).
+        if let Some(facing) =
+            in_reach.filter(|_| player.combat.health > 0 && !(30..35).contains(&tick))
+        {
             zone.apply_command(
                 player.player_id,
                 sequence + 3,

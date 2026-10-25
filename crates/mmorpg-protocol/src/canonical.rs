@@ -1964,7 +1964,7 @@ mod tests {
         // The intent count follows the player's timers; the seven intents
         // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
         // the dropped flag, the last observation (u64) and two events.
-        let intents = 16 + 24 + 2 + 163;
+        let intents = 16 + 24 + 2 + 161;
         let player_abilities =
             intents + 1 + (8 + 8 + 7 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");

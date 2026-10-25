@@ -109,12 +109,12 @@ facing = 32768
 
 # Keep pressing attack at the wolf, aimed where the hunter sees it.
 [[steps]]
-tick = 1514
+tick = 1544
 bot = "hunter"
 action = "swing"
 entity = "creature:108"
 until = 2964
-every = 20
+every = 30
 
 # Wounded, walk on north-west through the clearing toward Wolf 106's den.
 [[steps]]
@@ -147,7 +147,7 @@ bot = "hunter"
 action = "swing"
 entity = "creature:106"
 until = 3524
-every = 20
+every = 30
 
 # The dead can neither swing nor move: the walk is accepted but holds
 # nothing, so the released spirit stands at the graveyard.

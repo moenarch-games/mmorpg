@@ -1,5 +1,6 @@
 // Native-vs-browser line-of-sight parity (#57): the WASM build plays the same scripted
-// Greyhaven session as `crates/mmorpg-wasm/tests/sight_parity.rs` and must digest the same
+// Greyhaven session as `crates/mmorpg-wasm/tests/sight_parity.rs` (a Firebolt that strikes a
+// crate, then one the inn stops) and must digest the same
 // projection bytes. The native digest is computed in this run, by running that Rust test with
 // `MMORPG_SIGHT_DIGEST_OUT`, never read from a committed file (#487).
 import { expect, test } from "bun:test";
@@ -41,11 +42,13 @@ function runNativeSession(): string {
   }
 }
 
-const MOVES = new Map<number, [number, number]>([[0, [1, 24_576]], [160, [0, 24_576]], [290, [1, 24_576]], [340, [0, 24_576]]]);
+// The arcanist turns toward the crates before each Firebolt: missiles fly where it faces (#517).
+const MOVES = new Map<number, [number, number]>([[0, [1, 24_576]], [160, [0, 13_725]], [290, [1, 24_576]], [340, [0, 11_649]]]);
 const TARGETS = new Map<number, number>([[4, 901], [342, 900]]);
-const CASTS = new Set([162, 344, 380]);
+const INN_CAST = 344;
+const CASTS = [162, INN_CAST];
 const FIREBOLT = 9;
-const TICKS = 400;
+const TICKS = 520;
 /** One debris record on the wire (`DEBRIS_RECORD_BYTES`). */
 const DEBRIS_BYTES = 19;
 
@@ -67,7 +70,9 @@ test("the WASM build reaches the native sight session digest", () => {
     expect(zone.submit(player, sequence, encodeCommand(command))).toBe(true);
   };
   let digest = 0xcbf29ce484222325n;
-  let refused = 0;
+  let struck = 0;
+  let blockedHits = 0;
+  let started = 0;
   for (let tick = 0; tick < TICKS; tick += 1) {
     const move = MOVES.get(tick);
     if (move) {
@@ -77,7 +82,7 @@ test("the WASM build reaches the native sight session digest", () => {
     if (prop !== undefined) {
       send({ kind: "select-target", target: { kind: "creature", id: prop } });
     }
-    if (CASTS.has(tick)) {
+    if (CASTS.includes(tick)) {
       send({ kind: "use-ability", ability: FIREBOLT, target: null });
     }
     zone.tick();
@@ -86,9 +91,18 @@ test("the WASM build reaches the native sight session digest", () => {
     // Broken props' debris (the trailing records) is left out, as natively: Rapier's dynamic
     // pieces are not bit-identical across targets and decide nothing.
     digest = fnv(digest, projection.subarray(0, projection.length - snapshot.debris.length * DEBRIS_BYTES));
-    refused += snapshot.events.filter((event) => event.kind === "error" && event.code === "line-of-sight").length;
+    // Only the crates can take the missiles' damage: the first strikes one, the inn stops the second.
+    const hits = snapshot.events.filter((event) => event.kind === "damage-dealt").length;
+    if (tick < INN_CAST) {
+      struck += hits;
+    } else {
+      blockedHits += hits;
+    }
+    started += snapshot.events.filter((event) => event.kind === "cast-started").length;
   }
-  expect(refused).toBeGreaterThan(0);
+  expect(started).toBe(2);
+  expect(struck).toBeGreaterThan(0);
+  expect(blockedHits).toBe(0);
   expect(nativeDigest).toMatch(/^[0-9a-f]{16}$/);
   expect(digest.toString(16).padStart(16, "0")).toBe(nativeDigest);
 });
