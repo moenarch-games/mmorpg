@@ -105,7 +105,29 @@ export type Inspection = {
   };
   /** The body after the last physics step: centre (cm), horizontal and vertical speed (cm/s). */
   motion: { position: readonly number[]; speed: number; vertical: number } | null;
+  /** The experiment's authored actions (#414) and whether their trigger would start them now. */
+  authored?: readonly AuthoredReport[];
 };
+
+/** One authored action (#414): its trigger, phase ticks and the zone's verdict on its trigger now. */
+export type AuthoredReport = {
+  slot: number; action: string; name: string; trigger: string; ticks: readonly [number, number, number];
+  status:
+    | { kind: "Running"; phase: string; elapsed: number }
+    | { kind: "Accepted" }
+    | { kind: "Outranked"; by: string }
+    | { kind: "Refused"; reason: string };
+};
+
+/** "Sliding slash · Heroic Strike (WardenMelee) · Moving(Forward) · 6/18/12 t: the trigger starts it now". */
+export function explainAuthored(report: AuthoredReport): string {
+  const { status } = report;
+  const verdict = status.kind === "Running" ? `running, ${status.phase} (tick ${status.elapsed})`
+    : status.kind === "Accepted" ? "the trigger starts it now"
+      : status.kind === "Outranked" ? `a more specific ${status.by} wins`
+        : `refused: ${status.reason}`;
+  return `${report.name} · ${report.trigger} · ${report.ticks.join("/")} t: ${verdict}`;
+}
 
 export type LabMovement = { steeringPercent: number; momentumPercent: number; maxAccelerationCms2: number | null; text: string };
 
@@ -611,6 +633,9 @@ export class ActionLabPanel {
       edges.push(button);
     }
     const movement = inspection ? [element("p", { className: "lab-muted" }, `Movement: ${explainMovement(inspection)}`)] : [];
+    const authored = (inspection?.authored ?? []).map((report) =>
+      element("li", { className: report.status.kind === "Refused" ? "lab-muted" : "" }, explainAuthored(report)));
+    const authoredList: HTMLElement[] = authored.length > 0 ? [element("ul", { className: "lab-rules" }, ...authored)] : [];
     const rules = (inspection?.rules ?? []).map((rule) => element("li", {}, explainRule(rule)));
     const interruptions = (inspection?.interruptions ?? []).map((report) => element("li", {}, explainInterruption(report)));
     const tick = element("button", { type: "button", className: `lab-edge${this.#selection.kind === "tick" ? " selected" : ""}`, textContent: "Why is an input (not) legal?" });
@@ -618,6 +643,7 @@ export class ActionLabPanel {
     this.#chart.replaceChildren(
       element("div", { className: "lab-regions" }, ...regions),
       ...movement,
+      ...authoredList,
       element("div", { className: "lab-edges" }, ...edges, tick),
       rules.length > 0 ? element("ul", { className: "lab-rules" }, ...rules) : element("p", { className: "lab-muted" }, "No compatibility rule applies."),
       ...(interruptions.length > 0 ? [element("ul", { className: "lab-rules" }, ...interruptions)] : []),
@@ -673,6 +699,7 @@ export class ActionLabPanel {
       }
     } else {
       if (inspection) { rows.push(["Movement", explainMovement(inspection)]); }
+      for (const report of inspection?.authored ?? []) { rows.push([report.action, explainAuthored(report)]); }
       for (const arbitration of inspection?.arbitrations ?? []) {
         rows.push([arbitration.input, `${explainOutcome(arbitration.outcome)}${arbitration.precise ? " (precise)" : ""}`]);
         for (const { candidate, verdict } of arbitration.candidates) {

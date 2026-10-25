@@ -3,8 +3,8 @@ import { PROTOCOL_ID } from "../src/protocol-id";
 import { TICK_HZ } from "../src/replication";
 import {
   copyConfig, importFile, exportBundle, insertCopy, LabLibrary, moveCommand, movementRule, PROMOTION_FORMAT, promotionFileName,
-  promotionRequest, RECORD_FORMAT, removeCommand, removeEdge, ruleApplies, setMovementRule, setRuleApplies, swimmingSample,
-  traversalSample, SCENARIO_FORMAT,
+  promotionRequest, RECORD_FORMAT, removeAuthored, removeCommand, removeEdge, ruleApplies, setAuthored, setMovementRule,
+  setRuleApplies, slidingSlashSample, swimmingSample, traversalSample, SCENARIO_FORMAT,
   type ConfigCheck, type LabComparison, type LabConfig, type LabRun, type LabScenario,
 } from "../src/world/lab-experiment";
 import { ScenarioSource, type ScenarioZoneHandle } from "../src/world/scenario-source";
@@ -161,6 +161,44 @@ describe("Action Lab experiments (#382)", () => {
     expect(check(moving).error).not.toBeNull();
     expect(check(setRuleApplies(sample, "SwimmingRefuses", "warden", false)).error).toBeNull();
   });
+
+  test("a new authored action validates, names unsupported primitives and replays (#414)", () => {
+    const production = baseline();
+    expect(production.authored ?? []).toEqual([]);
+    const sample = slidingSlashSample(copyConfig(production, "Sliding slash"));
+    expect(check(sample)).toMatchObject({ baseline: false, error: null });
+    expect(sample.authored).toHaveLength(1);
+    expect(sample.edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash", "Authored(0)"]);
+    const jumping = setAuthored(sample, { ...sample.authored![0]!, input: "Jump", ability: null });
+    expect(check(jumping).error).toContain("BadAuthored(0, Input)");
+    expect(removeAuthored(sample, 0).edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash"]);
+    // The authored action rides along in a saved version and its promotion request (#383).
+    const storage = new Map<string, string>();
+    const library = new LabLibrary({ getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) } as unknown as Storage);
+    const saved = library.saveConfig(sample, check(sample).identity!);
+    expect(saved.config.authored).toEqual(sample.authored);
+    const reloaded = library.configs.find((entry) => entry.version === saved.version)!;
+    expect(check(reloaded.config).identity).toBe(check(sample).identity);
+    const request = promotionRequest(reloaded, check(production).identity!, record(), "sliding slash");
+    expect(request.config.authored).toEqual(sample.authored);
+    expect(check(request.config).identity).toBe(check(sample).identity);
+    // Walk west at the wolves and strike: the sample winds up, then the ordinary strike resolves.
+    const source = new ScenarioSource(zone(null));
+    void source.join();
+    for (let tick = 0; tick < 60; tick += 1) {
+      if (tick === 1) { source.sendCommand({ kind: "move", forward: 1, strafe: 0, facing: 49_152 }); }
+      if (tick === 10) {
+        source.sendCommand({ kind: "directed-strike", ability: 1, facing: 49_152, aim: { side: "centre", height: "low" } });
+      }
+      source.advance(TICK_SECONDS);
+    }
+    const recording = source.recording();
+    source.leave();
+    const scenario: LabScenario = { ...record(), name: "sliding slash", ticks: recording.ticks, commands: [...recording.commands], recorded: null };
+    const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(sample))) as LabComparison;
+    expect(comparison.divergesAt).not.toBeNull();
+    expect(comparison.b.ticks.some((tick) => tick.regions.some((region) => region.startsWith("Authored(0)·Startup")))).toBe(true);
+  }, 30_000);
 });
 
 describe("Action Lab diagnostics and promotion (#383)", () => {

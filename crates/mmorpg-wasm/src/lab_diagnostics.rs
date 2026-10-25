@@ -308,6 +308,15 @@ fn input_lag(run: &Run, findings: &mut Vec<Finding>) {
                 ),
                 None,
             ),
+            // A running authored action holds offense inputs (#414).
+            Outcome::WaitForAuthored(slot) => (
+                Severity::Note,
+                format!(
+                    "#{} {} took effect after {lag}: authored action {slot} held it.",
+                    command.index, command.label
+                ),
+                None,
+            ),
             Outcome::WaitForEdge(edge) => (
                 Severity::Note,
                 format!(

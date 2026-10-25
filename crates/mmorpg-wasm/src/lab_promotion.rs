@@ -13,7 +13,8 @@
 use std::fmt::{Debug, Write as _};
 
 use mmorpg_core::action::{
-    ActionGraph, Effect, Interrupted, Movement, Precision, Scope, Setting, Window,
+    ActionGraph, AuthoredAction, AuthoredPhase, Effect, InputContext, Interrupted, Movement,
+    Precision, Scope, Setting, Window,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -243,6 +244,44 @@ fn movement(value: Movement, indent: &str) -> String {
     )
 }
 
+fn context(value: InputContext) -> String {
+    match value {
+        InputContext::Moving(direction) => {
+            format!("InputContext::Moving({})", path("Direction", direction))
+        }
+        other => path("InputContext", other),
+    }
+}
+
+fn authored_phase(value: AuthoredPhase, indent: &str) -> String {
+    format!(
+        "AuthoredPhase {{\n{indent}    ms: {},\n{indent}    movement: {},\n{indent}}}",
+        value.ms,
+        movement(value.movement, &format!("{indent}    "))
+    )
+}
+
+/// An authored action (#414) as source.
+fn authored(def: &AuthoredAction) -> String {
+    format!(
+        "AuthoredAction {{\n        slot: {},\n        name: {:?},\n        class: {},\n        trigger: Trigger {{\n            input: {},\n            ability: {},\n            context: {},\n        }},\n        conditions: {},\n        startup: {},\n        active: {},\n        recovery: {},\n        effects: {},\n    }}",
+        def.slot,
+        def.name,
+        path("PlayerClass", def.class),
+        path("ActionInput", def.trigger.input),
+        def.trigger.ability.map_or_else(
+            || "None".to_owned(),
+            |id| format!("Some(AbilityId::new({}))", id.get())
+        ),
+        context(def.trigger.context),
+        list("Condition", def.conditions),
+        authored_phase(def.startup, "        "),
+        authored_phase(def.active, "        "),
+        authored_phase(def.recovery, "        "),
+        effects(def.effects)
+    )
+}
+
 fn array(out: &mut String, doc: &str, name: &str, kind: &str, items: &[String]) {
     let _ = writeln!(out, "\n/// {doc}");
     if items.is_empty() {
@@ -380,8 +419,16 @@ pub fn rust_source(header: &str, graph: &ActionGraph) -> String {
         "Override",
         &overrides,
     );
+    let authored_actions: Vec<String> = graph.authored.iter().map(authored).collect();
+    array(
+        &mut out,
+        "The baseline authored actions (#414).",
+        "AUTHORED_ACTIONS",
+        "AuthoredAction",
+        &authored_actions,
+    );
     out.push_str(
-        "\n/// The production graph.\npub const BASELINE: ActionGraph = ActionGraph {\n    edges: &EDGES,\n    window_modifiers: &WINDOW_MODIFIERS,\n    rules: &RULES,\n    interruptions: &INTERRUPTIONS,\n    movement: &MOVEMENT,\n    overrides: &OVERRIDES,\n};\n",
+        "\n/// The production graph.\npub const BASELINE: ActionGraph = ActionGraph {\n    edges: &EDGES,\n    window_modifiers: &WINDOW_MODIFIERS,\n    rules: &RULES,\n    interruptions: &INTERRUPTIONS,\n    movement: &MOVEMENT,\n    overrides: &OVERRIDES,\n    authored: &AUTHORED_ACTIONS,\n};\n",
     );
     out
 }
@@ -553,6 +600,44 @@ mod tests {
             return;
         }
         assert_eq!(generated, SOURCE);
+    }
+
+    #[test]
+    fn promoted_authored_actions_are_written_as_source() {
+        use mmorpg_core::action::{ActionInput, Direction, Trigger};
+        static AUTHORED: [AuthoredAction; 1] = [AuthoredAction {
+            slot: 0,
+            name: "Sliding \"slash\"",
+            class: mmorpg_core::PlayerClass::Warden,
+            trigger: Trigger {
+                input: ActionInput::WardenMelee,
+                ability: Some(mmorpg_core::ability::ids::HEROIC_STRIKE),
+                context: InputContext::Moving(Direction::Forward),
+            },
+            conditions: &[],
+            startup: AuthoredPhase::free(100),
+            active: AuthoredPhase::free(300),
+            recovery: AuthoredPhase::free(200),
+            effects: &[Effect::Impulse {
+                forward_cms: 400,
+                up_cms: 0,
+            }],
+        }];
+        let graph = ActionGraph {
+            authored: &AUTHORED,
+            ..action::BASELINE
+        };
+        let generated = rust_source(header(SOURCE).unwrap(), &graph);
+        for expected in [
+            "pub const AUTHORED_ACTIONS: [AuthoredAction; 1] = [",
+            "name: \"Sliding \\\"slash\\\"\",",
+            "ability: Some(AbilityId::new(1)),",
+            "context: InputContext::Moving(Direction::Forward),",
+            "effects: &[Effect::Impulse { forward_cms: 400, up_cms: 0 }],",
+            "authored: &AUTHORED_ACTIONS,",
+        ] {
+            assert!(generated.contains(expected), "{expected}\n{generated}");
+        }
     }
 
     fn scenario() -> ScenarioFile {

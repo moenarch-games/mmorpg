@@ -70,6 +70,13 @@
 //!   mantling join the movement region once they exist as authoritative
 //!   actions.
 //!
+//! - **Authored actions** (#414, Atlas 5.9.4–5.9.5). An experimental graph
+//!   may compose new named actions ([`AuthoredAction`], see [`authored`]):
+//!   a contextual trigger (plain, direction + action, jump + attack), timed
+//!   startup, active and recovery phases with bounded movement, typed
+//!   effects on the ordinary use the active phase resolves, and outgoing
+//!   [`EdgeId::Authored`] edges. The baseline authors none.
+//!
 //! Every playable class runs on the same model. Wardens add the directed
 //! slash, the guard and the landing hold. Casts and channels run as
 //! [`ActionId::Cast`]: moving or jumping cancels one through
@@ -82,6 +89,14 @@
 //! guard break and health for the reaction region.
 //! [`ZoneSimulation::action_inspection`] is the read-only query surface that
 //! the Action Lab (#381) reads.
+
+pub mod authored;
+
+pub use authored::{
+    AuthoredAction, AuthoredPhase, AuthoredProblem, AuthoredReport, Direction, InputContext,
+    MAX_AUTHORED_ACTIONS, MAX_AUTHORED_EDGES, MAX_AUTHORED_MS, MAX_AUTHORED_NAME, Trigger,
+    TriggerRefusal, TriggerStatus,
+};
 
 use crate::snapshot::PlayerIntent;
 use crate::zone::PlayerState;
@@ -122,11 +137,15 @@ pub enum ActionId {
     Cast,
     /// The global cooldown a class ability started, of any class.
     GlobalCooldown,
+    /// The experimental graph's authored action in this slot (#414).
+    Authored(u8),
 }
 
 /// The phase of a running action.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Phase {
+    /// An authored action's startup: its use has not resolved yet (#414).
+    Startup,
     /// Running with no committed recovery.
     Active,
     /// Committed recovery; compatibility rules apply.
@@ -350,6 +369,9 @@ pub enum EdgeId {
     LandingToShieldBash,
     /// Out of a landing recovery into any other class ability.
     LandingToAbility,
+    /// Out of an authored action (#414), numbered below
+    /// [`MAX_AUTHORED_EDGES`].
+    Authored(u8),
 }
 
 /// A directed, conditional transition (Atlas 5.7.2).
@@ -645,6 +667,8 @@ pub enum Origin {
     Baseline,
     /// The override for this scope.
     Override(Scope),
+    /// The authored action in this slot defines it (#414).
+    Authored(u8),
 }
 
 /// An effective value and its origin.
@@ -667,6 +691,8 @@ pub struct ActionGraph {
     /// ([`Movement::FREE`]).
     pub movement: &'static [MovementRule],
     pub overrides: &'static [Override],
+    /// New experimental actions (#414); the baseline has none.
+    pub authored: &'static [AuthoredAction],
 }
 
 /// The authored actions.
@@ -738,11 +764,41 @@ pub const RECOVERY_MODIFIERS: [RecoveryModifier; 1] = [RecoveryModifier {
 // configuration; it is plain source and is reviewed like any other change.
 #[rustfmt::skip]
 mod baseline;
-pub use baseline::{BASELINE, EDGES, INTERRUPTIONS, MOVEMENT, OVERRIDES, RULES, WINDOW_MODIFIERS};
+pub use baseline::{
+    AUTHORED_ACTIONS, BASELINE, EDGES, INTERRUPTIONS, MOVEMENT, OVERRIDES, RULES, WINDOW_MODIFIERS,
+};
 
-/// The definition of `id`.
+/// The shared shape of every authored action: offense, with no committed
+/// recovery a compatibility rule could hold during.
+const AUTHORED_SHAPE: ActionDef = ActionDef {
+    id: ActionId::Authored(0),
+    region: Region::Offense,
+    recovery_ms: None,
+};
+
+/// A stable number for `id`, for comparisons in const context.
+const fn action_code(id: ActionId) -> u16 {
+    match id {
+        ActionId::Airborne => 0,
+        ActionId::Landing => 1,
+        ActionId::DirectedSlash => 2,
+        ActionId::Guard => 3,
+        ActionId::Stun => 4,
+        ActionId::GuardBreak => 5,
+        ActionId::Death => 6,
+        ActionId::Cast => 7,
+        ActionId::GlobalCooldown => 8,
+        ActionId::Swim => 9,
+        ActionId::Authored(slot) => 256 + slot as u16,
+    }
+}
+
+/// The definition of `id`; for an authored action, their shared shape.
 #[must_use]
 pub fn action(id: ActionId) -> &'static ActionDef {
+    if let ActionId::Authored(_) = id {
+        return &AUTHORED_SHAPE;
+    }
     ACTIONS
         .iter()
         .find(|def| def.id == id)
@@ -754,7 +810,7 @@ pub fn action(id: ActionId) -> &'static ActionDef {
 pub const fn recovery_ticks(id: ActionId) -> u16 {
     let mut index = 0;
     while index < ACTIONS.len() {
-        if ACTIONS[index].id as u8 == id as u8 {
+        if action_code(ACTIONS[index].id) == action_code(id) {
             return match ACTIONS[index].recovery_ms {
                 Some(ms) => crate::ticks_from_ms(ms),
                 None => 0,
@@ -771,7 +827,9 @@ pub const fn modified_recovery_ticks(id: ActionId, condition: Condition) -> u16 
     let mut index = 0;
     while index < RECOVERY_MODIFIERS.len() {
         let modifier = RECOVERY_MODIFIERS[index];
-        if modifier.action as u8 == id as u8 && modifier.condition as u8 == condition as u8 {
+        if action_code(modifier.action) == action_code(id)
+            && modifier.condition as u8 == condition as u8
+        {
             return crate::ticks_from_ms(modifier.recovery_ms);
         }
         index += 1;
@@ -849,9 +907,19 @@ pub enum GraphError {
     BadScope(Scope),
     /// Two overrides of the same value in the same scope.
     ConflictingOverride(Scope, Key),
+    /// An authored action is malformed or uses a primitive that does not
+    /// exist (#414).
+    BadAuthored(u8, AuthoredProblem),
+    /// Two authored actions share a slot.
+    DuplicateAuthored(u8),
+    /// Two authored actions of one class have the same trigger: the first
+    /// slot, then the second.
+    ConflictingTrigger(u8, u8),
+    /// An edge leaves an authored action the graph lacks.
+    UnknownAuthored(u8),
 }
 
-const fn input_region(input: ActionInput) -> Region {
+pub(crate) const fn input_region(input: ActionInput) -> Region {
     match input {
         ActionInput::WardenMelee | ActionInput::ShieldBash | ActionInput::Ability => {
             Region::Offense
@@ -890,18 +958,28 @@ pub const fn phases(id: ActionId) -> &'static [Phase] {
         | ActionId::Death => &[Phase::Active],
         ActionId::Landing | ActionId::GlobalCooldown | ActionId::GuardBreak => &[Phase::Recovery],
         ActionId::DirectedSlash => &[Phase::Recovery, Phase::FollowUp],
+        ActionId::Authored(_) => &[Phase::Startup, Phase::Active, Phase::Recovery],
     }
+}
+
+/// Whether movement values are in range.
+pub(crate) fn validate_movement_values(movement: Movement) -> bool {
+    movement.steering_percent <= 100
+        && movement.momentum_percent <= 100
+        && movement
+            .max_acceleration_cms2
+            .is_none_or(|limit| (1..=MAX_ACCELERATION_CMS2).contains(&limit))
 }
 
 /// The checks authored or overridden movement passes.
 fn validate_movement(id: ActionId, phase: Phase, movement: Movement) -> Result<(), GraphError> {
-    let in_range = movement.steering_percent <= 100
-        && movement.momentum_percent <= 100
-        && movement
-            .max_acceleration_cms2
-            .is_none_or(|limit| (1..=MAX_ACCELERATION_CMS2).contains(&limit));
-    // A reaction stops the player by its own rules (a stun stands still).
-    if action(id).region == Region::Reaction || !phases(id).contains(&phase) || !in_range {
+    // A reaction stops the player by its own rules (a stun stands still);
+    // an authored action authors its phases' movement itself.
+    if action(id).region == Region::Reaction
+        || matches!(id, ActionId::Authored(_))
+        || !phases(id).contains(&phase)
+        || !validate_movement_values(movement)
+    {
         return Err(GraphError::BadMovement(id, phase));
     }
     Ok(())
@@ -925,6 +1003,9 @@ impl ActionGraph {
             if ACTIONS[..index].iter().any(|other| other.id == def.id) {
                 return Err(GraphError::DuplicateAction(def.id));
             }
+        }
+        for (index, def) in self.authored.iter().enumerate() {
+            self.validate_authored(index, def)?;
         }
         for (index, def) in self.edges.iter().enumerate() {
             self.validate_edge(index, def)?;
@@ -1031,30 +1112,34 @@ impl ActionGraph {
         {
             return Err(GraphError::BadEffect(def.id));
         }
-        let supported = matches!(
-            (def.id, def.from, def.input, def.anchor),
-            (
-                EdgeId::SlashToShieldBash,
-                ActionId::DirectedSlash,
-                ActionInput::ShieldBash,
-                Anchor::Impact | Anchor::ConfirmedResult,
-            ) | (
-                EdgeId::LandingToMelee,
-                ActionId::Landing,
-                ActionInput::WardenMelee,
-                Anchor::Landing,
-            ) | (
-                EdgeId::LandingToShieldBash,
-                ActionId::Landing,
-                ActionInput::ShieldBash,
-                Anchor::Landing,
-            ) | (
-                EdgeId::LandingToAbility,
-                ActionId::Landing,
-                ActionInput::Ability,
-                Anchor::Landing,
-            )
-        );
+        if let ActionId::Authored(_) = def.from {
+            self.validate_authored_edge(def)?;
+        }
+        let supported = matches!(def.from, ActionId::Authored(_))
+            || matches!(
+                (def.id, def.from, def.input, def.anchor),
+                (
+                    EdgeId::SlashToShieldBash,
+                    ActionId::DirectedSlash,
+                    ActionInput::ShieldBash,
+                    Anchor::Impact | Anchor::ConfirmedResult,
+                ) | (
+                    EdgeId::LandingToMelee,
+                    ActionId::Landing,
+                    ActionInput::WardenMelee,
+                    Anchor::Landing,
+                ) | (
+                    EdgeId::LandingToShieldBash,
+                    ActionId::Landing,
+                    ActionInput::ShieldBash,
+                    Anchor::Landing,
+                ) | (
+                    EdgeId::LandingToAbility,
+                    ActionId::Landing,
+                    ActionInput::Ability,
+                    Anchor::Landing,
+                )
+            );
         if !supported {
             return Err(GraphError::UnsupportedEdge(def.id));
         }
@@ -1105,7 +1190,7 @@ impl ActionGraph {
         if window.buffer_ms > window.open_after_ms {
             return Err(GraphError::BufferBeforeAnchor(def.id));
         }
-        if def.from == ActionId::Landing {
+        if let Some(source) = self.source_ticks(def) {
             // Every enlargement applying at once must still end in time.
             let enlargement: u32 = self
                 .window_modifiers
@@ -1117,9 +1202,7 @@ impl ActionGraph {
                     ))
                 })
                 .sum();
-            if u32::from(window.ticks().closes()) + enlargement
-                >= u32::from(landing_ticks(def.conditions))
-            {
+            if u32::from(window.ticks().closes()) + enlargement >= u32::from(source) {
                 return Err(GraphError::OutlastsSource(def.id));
             }
         }
@@ -1201,6 +1284,19 @@ impl ActionGraph {
         Ok(())
     }
 
+    /// The shortest run, in ticks from its anchor, of an edge's source that
+    /// ends by itself: a landing's recovery, an authored action after its
+    /// use. An edge out of one must close before it ends.
+    fn source_ticks(&self, def: &EdgeDef) -> Option<u16> {
+        match def.from {
+            ActionId::Landing => Some(landing_ticks(def.conditions)),
+            ActionId::Authored(slot) => self
+                .authored_action(slot)
+                .map(AuthoredAction::after_impact_ticks),
+            _ => None,
+        }
+    }
+
     /// The movement rule of `id` in `phase`.
     #[must_use]
     pub fn movement_rule(&self, id: ActionId, phase: Phase) -> Option<&'static MovementRule> {
@@ -1215,6 +1311,8 @@ impl ActionGraph {
         }
         let supported = match rule.interrupted {
             Interrupted::Action(ActionId::Guard) => true,
+            // A stun or death always ends an authored action.
+            Interrupted::Action(ActionId::Authored(_)) => false,
             // Death always ends a cast; a cast cannot pause.
             Interrupted::Action(ActionId::Cast) => match rule.consequence {
                 Consequence::Cancel => true,
@@ -1226,8 +1324,10 @@ impl ActionGraph {
                 let Some(def) = self.edge(id) else {
                     return Err(GraphError::UnknownEdge(id));
                 };
-                // A landing's recovery runs on; its edges cannot pause.
-                def.from != ActionId::Landing || rule.consequence != Consequence::Suspend
+                // A landing's recovery and an authored action run on; their
+                // edges cannot pause.
+                !matches!(def.from, ActionId::Landing | ActionId::Authored(_))
+                    || rule.consequence != Consequence::Suspend
             }
             Interrupted::Held(id) => {
                 if !self.rules.iter().any(|other| other.id == id) {
@@ -1478,7 +1578,8 @@ fn recovery_left(state: &PlayerState, id: ActionId) -> Option<u16> {
         | ActionId::Guard
         | ActionId::Stun
         | ActionId::Death
-        | ActionId::Cast => 0,
+        | ActionId::Cast
+        | ActionId::Authored(_) => 0,
     };
     (left > 0).then_some(left)
 }
@@ -1595,6 +1696,22 @@ fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4]
                 Some(Phase::FollowUp),
                 None,
             ),
+        }
+    } else if let Some((def, phase)) = state.authored.and_then(|run| run.phase(graph)) {
+        // An authored action (#414): its ticks left in the active phase or
+        // its recovery.
+        let elapsed = state.authored.map_or(0, |run| run.elapsed);
+        let [startup, active, recovery] = def.ticks();
+        let since = elapsed.saturating_sub(startup);
+        RegionReport {
+            ability: def.trigger.ability,
+            active_left: (phase == Phase::Active).then(|| active.saturating_sub(since)),
+            ..report(
+                Region::Offense,
+                Some(ActionId::Authored(def.slot)),
+                Some(phase),
+                (phase == Phase::Recovery).then(|| (active + recovery).saturating_sub(since)),
+            )
         }
     } else if let Some(left) = recovery_left(state, ActionId::GlobalCooldown) {
         report(
@@ -1806,6 +1923,10 @@ fn evaluate(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef) -> EdgeEval
     let source = match def.from {
         ActionId::DirectedSlash => slash(graph, state).map(|(elapsed, _)| elapsed),
         ActionId::Landing => landing(state),
+        ActionId::Authored(slot) => state
+            .authored
+            .filter(|run| run.slot == slot)
+            .and_then(|run| run.since_impact(graph)),
         _ => None,
     };
     let Some(elapsed) = source else {
@@ -1868,6 +1989,8 @@ pub enum Verdict {
     HeldBy(RuleId),
     /// A compatibility rule refuses the input.
     RefusedBy(RuleId),
+    /// The running authored action in this slot holds the input (#414).
+    HeldByAuthored(u8),
     Blocked(BlockReason),
 }
 
@@ -1881,6 +2004,9 @@ pub enum Outcome {
     WaitForRule(RuleId),
     /// The input waits in the queue for this edge to open.
     WaitForEdge(EdgeId),
+    /// The input waits in the queue until the authored action in this slot
+    /// ends (#414).
+    WaitForAuthored(u8),
     /// The input resolves now as its ordinary use and, by this rule, ends
     /// the running action (a cast).
     Cancel(RuleId),
@@ -1904,6 +2030,16 @@ pub(crate) fn arbitrate(
     state: &PlayerState,
     input: ActionInput,
 ) -> Arbitration {
+    arbitrate_with(graph, state, input, true)
+}
+
+/// [`arbitrate`], optionally without the running authored action's hold.
+pub(crate) fn arbitrate_with(
+    graph: &ActionGraph,
+    state: &PlayerState,
+    input: ActionInput,
+    authored_hold: bool,
+) -> Arbitration {
     let mut edges: Vec<(&EdgeDef, EdgeEval)> = graph
         .edges
         .iter()
@@ -1922,10 +2058,22 @@ pub(crate) fn arbitrate(
     });
     // A refusal outranks everything: no edge leads into a refused attack.
     let refusal = refusing_rule(graph, state, input);
+    // A running authored action holds other offense inputs, unless an edge
+    // out of it is open (#414).
+    let authored = authored_hold
+        .then(|| authored::holds_input(state, input))
+        .flatten()
+        .filter(|&slot| {
+            !edges.iter().any(|(def, eval)| {
+                def.from == ActionId::Authored(slot) && eval.status == EdgeStatus::Open
+            })
+        });
     let outcome = if let Some(rule) = refusal {
         Outcome::Refuse(rule.id)
     } else if let Some(rule) = hold {
         Outcome::WaitForRule(rule.id)
+    } else if let Some(slot) = authored {
+        Outcome::WaitForAuthored(slot)
     } else {
         edges
             .iter()
@@ -1951,6 +2099,9 @@ pub(crate) fn arbitrate(
         if let Some(rule) = hold {
             return Verdict::HeldBy(rule.id);
         }
+        if let Some(slot) = authored {
+            return Verdict::HeldByAuthored(slot);
+        }
         match (outcome, status) {
             (Outcome::Proceed(winner), _) if winner == candidate => Verdict::Won,
             (Outcome::Cancel(_), _) if candidate == Candidate::Direct => Verdict::Won,
@@ -1961,6 +2112,7 @@ pub(crate) fn arbitrate(
             (Outcome::WaitForEdge(id), _) => Verdict::Outranked(Candidate::Edge(id)),
             (Outcome::WaitForRule(rule), _) => Verdict::HeldBy(rule),
             (Outcome::Refuse(rule), _) => Verdict::RefusedBy(rule),
+            (Outcome::WaitForAuthored(slot), _) => Verdict::HeldByAuthored(slot),
         }
     };
     let mut candidates: Vec<_> = edges
@@ -1984,7 +2136,7 @@ pub(crate) fn waits(graph: &ActionGraph, state: &PlayerState, intent: &PlayerInt
     input_of(intent).is_some_and(|input| {
         matches!(
             arbitrate(graph, state, input).outcome,
-            Outcome::WaitForRule(_) | Outcome::WaitForEdge(_)
+            Outcome::WaitForRule(_) | Outcome::WaitForEdge(_) | Outcome::WaitForAuthored(_)
         )
     })
 }
@@ -1997,7 +2149,8 @@ pub(crate) fn refuses(graph: &ActionGraph, state: &PlayerState, intent: &PlayerI
 /// An input resolving through an edge.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FollowUp {
-    pub(crate) edge: EdgeId,
+    /// The edge; `None` for an authored action's own use (#414).
+    pub(crate) edge: Option<EdgeId>,
     /// The action the edge leaves.
     pub(crate) from: ActionId,
     /// The source's confirmed target, with [`Effect::TargetConfirmed`].
@@ -2048,6 +2201,19 @@ pub(crate) fn follow_up(
     state: &PlayerState,
     input: ActionInput,
 ) -> Option<FollowUp> {
+    // The use an authored action's active phase resolves carries its
+    // effects (#414).
+    if let Some(run) = state.authored.filter(|run| run.releasing)
+        && let Some(def) = graph.authored_action(run.slot)
+        && def.trigger.input == input
+    {
+        return Some(FollowUp {
+            edge: None,
+            from: ActionId::Authored(run.slot),
+            target: None,
+            effects: def.effects.to_vec(),
+        });
+    }
     let arbitration = arbitrate(graph, state, input);
     let Outcome::Proceed(Candidate::Edge(id)) = arbitration.outcome else {
         return None;
@@ -2065,7 +2231,7 @@ pub(crate) fn follow_up(
     }
     .filter(|_| effects.contains(&Effect::TargetConfirmed));
     Some(FollowUp {
-        edge: id,
+        edge: Some(id),
         from: def.from,
         target,
         effects,
@@ -2093,8 +2259,20 @@ pub struct MovementReport {
 /// The authored movement of each region's running action phase whose
 /// conditions hold.
 fn movement_sources(graph: &ActionGraph, state: &PlayerState) -> Vec<MovementSource> {
+    // A running authored action's phase moves as it authors (#414); a free
+    // phase is no source.
+    let authored = state
+        .authored
+        .and_then(|run| run.phase(graph))
+        .map(|(def, phase)| MovementSource {
+            action: ActionId::Authored(def.slot),
+            phase,
+            movement: def.movement(phase),
+            origin: Origin::Authored(def.slot),
+        })
+        .filter(|source| source.movement != Movement::FREE);
     if graph.movement.is_empty() {
-        return Vec::new();
+        return authored.into_iter().collect();
     }
     region_actions(graph, state)
         .iter()
@@ -2118,6 +2296,7 @@ fn movement_sources(graph: &ActionGraph, state: &PlayerState) -> Vec<MovementSou
                 _ => None,
             }
         })
+        .chain(authored)
         .collect()
 }
 
@@ -2210,6 +2389,9 @@ pub struct ActionInspection {
     pub effective: Vec<Effective>,
     /// The movement the next tick's controller velocity follows.
     pub movement: MovementReport,
+    /// Each authored action, and whether its trigger would start it now
+    /// (#414).
+    pub authored: Vec<AuthoredReport>,
 }
 
 impl ZoneSimulation {
@@ -2224,6 +2406,10 @@ impl ZoneSimulation {
     pub fn set_action_graph(&mut self, graph: &'static ActionGraph) -> Result<(), GraphError> {
         graph.validate()?;
         self.action_graph = graph;
+        // A running authored action belongs to the graph it started under.
+        for player in self.players.values_mut() {
+            player.authored = None;
+        }
         Ok(())
     }
 
@@ -2247,10 +2433,15 @@ impl ZoneSimulation {
     pub(crate) fn spend_follow_up(&mut self, player_id: PlayerId, follow_up: &FollowUp) {
         let impulse = follow_up.impulse();
         let from = follow_up.from;
+        let edge = follow_up.edge.is_some();
         self.update_player(player_id, |player| {
             if from == ActionId::Landing {
                 player.landing.recovery = 0;
                 player.landing.attacked_airborne = false;
+            }
+            // Following an edge out of an authored action ends it (#414).
+            if edge && matches!(from, ActionId::Authored(_)) {
+                player.authored = None;
             }
             if impulse.is_some() {
                 player.impulse = impulse;
@@ -2420,6 +2611,7 @@ impl ZoneSimulation {
                     .unwrap_or(Movement::FREE),
                 sources,
             },
+            authored: authored::reports(graph, state),
         })
     }
 
@@ -2459,7 +2651,22 @@ fn effective_values(graph: &ActionGraph, state: &PlayerState) -> Vec<Effective> 
             action_ability(state, rule.action),
         )
     }));
-    keys.into_iter()
+    let mut values: Vec<Effective> = keys
+        .into_iter()
         .filter_map(|(key, ability)| graph.resolve(key, Context::of(state, ability)))
-        .collect()
+        .collect();
+    // Each authored action's phases move as it authors them (#414).
+    for def in graph.authored {
+        for phase in [Phase::Startup, Phase::Active, Phase::Recovery] {
+            values.push(Effective {
+                setting: Setting::Movement {
+                    action: ActionId::Authored(def.slot),
+                    phase,
+                    movement: def.movement(phase),
+                },
+                origin: Origin::Authored(def.slot),
+            });
+        }
+    }
+    values
 }

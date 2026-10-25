@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::physics::Vec3i;
 
+use crate::action::authored::Step;
 use crate::ai::{creature_reach, distance_squared};
 use crate::creature::Life;
 use crate::entity::body_id;
@@ -43,6 +44,29 @@ impl ZoneSimulation {
             // before the combo opens (#157).
             let mut waiting = Vec::new();
             for intent in intents {
+                // An authored action's trigger waits out its startup, then
+                // resolves as its active phase begins (#414). A refused or
+                // held input never starts one.
+                match self.authored_step(player_id, &intent) {
+                    Step::Startup => {
+                        waiting.push(intent);
+                        continue;
+                    }
+                    Step::Start(slot) => {
+                        if self.start_authored(player_id, slot) {
+                            self.release_authored(player_id, intent)?;
+                        } else {
+                            waiting.push(intent);
+                        }
+                        continue;
+                    }
+                    Step::Release => {
+                        self.release_authored(player_id, intent)?;
+                        continue;
+                    }
+                    Step::Cancel => self.update_player(player_id, |player| player.authored = None),
+                    Step::Ordinary => {}
+                }
                 let (waits, refused) =
                     self.players
                         .get(&player_id)
@@ -87,14 +111,15 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    fn apply_intent(
+    /// Applies one intent; `true` when it was refused.
+    pub(crate) fn apply_intent(
         &mut self,
         player_id: PlayerId,
         intent: PlayerIntent,
         now: u64,
-    ) -> Result<(), ZoneError> {
+    ) -> Result<bool, ZoneError> {
         let Some(player) = self.players.get(&player_id) else {
-            return Ok(());
+            return Ok(true);
         };
         let alive = player.is_alive();
         let current_target = player.target;
@@ -283,10 +308,11 @@ impl ZoneSimulation {
                 }
             },
         };
+        let refused = refusal.is_some();
         if let Some((code, target)) = refusal {
             self.notify(player_id, ZoneEvent::Error { code, target });
         }
-        Ok(())
+        Ok(refused)
     }
 
     pub(crate) fn update_player(
