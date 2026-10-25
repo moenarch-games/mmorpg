@@ -410,7 +410,8 @@ mod tests {
                 true,
             ),
             (snapshot(11, both(), vec![resolved]), false),
-            (snapshot(100, both(), vec![]), true),
+            // Overdue: past the 40-tick wind-up plus a second's grace, at any tick rate.
+            (snapshot(10 + 40 + OVERDUE_TICKS + 1, both(), vec![]), true),
         ] {
             let mut cues = AudioCues::default();
             let ops = cues.push(&snapshot(10, both(), vec![windup()]), centre);
