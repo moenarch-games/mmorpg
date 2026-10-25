@@ -138,8 +138,8 @@ impl ControlAction {
         match self {
             Self::MoveForward => ("Move forward", GAMEPLAY, &["KeyW", "ArrowUp"]),
             Self::MoveBackward => ("Move backward", GAMEPLAY, &["KeyS", "ArrowDown"]),
-            Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "KeyQ", "ArrowLeft"]),
-            Self::MoveRight => ("Strafe right", GAMEPLAY, &["KeyD", "KeyE", "ArrowRight"]),
+            Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "ArrowLeft"]),
+            Self::MoveRight => ("Strafe right", GAMEPLAY, &["KeyD", "ArrowRight"]),
             Self::Jump => ("Jump (hold to swim up)", GAMEPLAY, &["Space"]),
             Self::Descend => ("Swim down (hold)", GAMEPLAY, &["KeyX"]),
             Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),

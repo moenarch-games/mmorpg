@@ -495,7 +495,9 @@ impl UnitPresenter {
                     yaw,
                 },
             );
-            let v = unit.record.velocity.map(|v| f64::from(v) * 0.3);
+            // The projected velocity is in units per tick; the animators read metres per second
+            // (#515: a fixed 30 Hz scale halved every speed once the zone ran at 60 Hz).
+            let v = unit.record.velocity.map(velocity_metres_per_second);
             let loc = self.animators.entry(entity).or_default().update(
                 [feet[0], feet[2]],
                 yaw,
@@ -1187,6 +1189,11 @@ impl UnitPresenter {
     }
 }
 
+/// One projected velocity component (units per tick) in metres per second.
+fn velocity_metres_per_second(units_per_tick: i8) -> f64 {
+    f64::from(units_per_tick) * f64::from(mmorpg_core::TICK_HZ) / f64::from(UNITS_PER_METRE)
+}
+
 fn metres(value: [i32; 3]) -> [f32; 3] {
     value.map(|component| component as f32 / UNITS_PER_METRE as f32)
 }
@@ -1194,6 +1201,23 @@ fn metres(value: [i32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn projected_run_velocity_reads_as_the_run_speed() {
+        // The projection rounds the run's units per tick; it must still read as running.
+        let per_tick =
+            f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / f64::from(mmorpg_core::TICK_HZ);
+        #[allow(clippy::cast_possible_truncation)]
+        let projected = per_tick.round() as i8;
+        let speed = velocity_metres_per_second(projected);
+        assert!((speed - 6.3).abs() < 0.4, "{speed}");
+        // A diagonal run whose rounded components shrink still clears the run clip's speed.
+        #[allow(clippy::cast_possible_truncation)]
+        let diagonal = (per_tick * std::f64::consts::FRAC_1_SQRT_2).floor() as i8;
+        let speed =
+            velocity_metres_per_second(diagonal).hypot(velocity_metres_per_second(diagonal));
+        assert!(speed > imported::RUN_CLIP_SPEED, "{speed}");
+    }
 
     #[test]
     fn the_companion_wolf_is_tinted_green_unlike_hostile_wolves() {

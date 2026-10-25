@@ -11,6 +11,8 @@ use mmorpg_core::{
     EquipmentSlot, PlayerClass, WaterMode, ZoneContent,
 };
 
+use std::f64::consts::FRAC_PI_2;
+
 use super::swim::Attitude;
 
 /// What an imported humanoid carries in its sockets: the class weapons and props (#156, #244,
@@ -401,6 +403,9 @@ pub struct SwimClips {
 
 /// The stroke speed in metres per second at which a swim clip plays at its authored rate.
 pub const STROKE_SPEED: f64 = 1.8;
+/// Ground speed in metres per second above which forward or sideways travel plays the run clip:
+/// the player's 6.3 m/s run does, while slowed movement walks (#515).
+pub const RUN_CLIP_SPEED: f64 = 3.2;
 /// Vertical speed in metres per second from which a swimmer dives or ascends.
 pub const DIVE_SPEED: f64 = 0.4;
 /// The shortest lower-body crossfade in seconds just after entering or leaving swimming depth.
@@ -1129,7 +1134,9 @@ impl Playback {
             && speed > 0.25
         {
             Want::looped(wade, walk_rate(speed))
-        } else if speed > 3.2 {
+        } else if speed > RUN_CLIP_SPEED && cues.direction.abs() <= FRAC_PI_2 {
+            // Running forward or strafing at the player's run speed plays the run (#515);
+            // backpedalling and slowed movement keep the walk.
             #[allow(clippy::cast_possible_truncation)]
             Want::looped(clips.run, (speed / 5.).clamp(0.7, 1.5) as f32)
         } else if speed > 0.25 {
@@ -1441,6 +1448,34 @@ mod tests {
                 .sum()
         };
         (sum(true), sum(false))
+    }
+
+    #[test]
+    fn the_run_speed_runs_forward_and_backpedalling_walks() {
+        let lower = |speed: f64, direction: f64| {
+            Playback::default()
+                .advance(
+                    Kind::Ranger.clips(),
+                    |_| 1.,
+                    Cues {
+                        speed,
+                        direction,
+                        dt: 0.1,
+                        ..Cues::default()
+                    },
+                    Blend::default(),
+                )
+                .lower
+                .0
+        };
+        let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
+        let backpedal = f64::from(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND) / 100.;
+        assert_eq!(lower(run, 0.), "Jog_Fwd_Loop");
+        assert_eq!(lower(run, FRAC_PI_2), "Jog_Fwd_Loop");
+        assert_eq!(lower(run, 0.6), "Jog_Fwd_Loop");
+        assert_eq!(lower(backpedal, std::f64::consts::PI), "Walk_Loop");
+        assert_eq!(lower(backpedal, -2.4), "Walk_Loop");
+        assert_eq!(lower(run / 2., 0.), "Walk_Loop");
     }
 
     #[test]

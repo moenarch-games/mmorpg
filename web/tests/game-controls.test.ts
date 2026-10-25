@@ -98,15 +98,23 @@ describe("MMORPG semantic controls", () => {
     expect(contextStack({ phase: "world", panelOpen: true }).map((layer) => layer.id)).toEqual(["world", "gameplay", "panels"]);
   });
 
-  test("WASD, arrows and Q/E map to forward/backpedal and strafe; opposites cancel", () => {
+  test("WASD and arrows map to forward/backpedal and strafe; opposites cancel", () => {
     const app = harness();
     expect(app.controls.heldIntent()).toEqual({ forward: 0, strafe: 0, steering: false, rise: 0 });
     app.window.emit("keydown", key("KeyW"));
-    app.window.emit("keydown", key("KeyE"));
+    app.window.emit("keydown", key("KeyD"));
     expect(app.controls.heldIntent()).toEqual({ forward: 1, strafe: 1, steering: true, rise: 0 });
     app.window.emit("keydown", key("ArrowDown"));
-    app.window.emit("keydown", key("KeyQ"));
+    app.window.emit("keydown", key("ArrowLeft"));
     expect(app.controls.heldIntent()).toEqual({ forward: 0, strafe: 0, steering: true, rise: 0 });
+  });
+
+  test("E interacts, Q is unbound, and neither strafes (#515)", () => {
+    const app = harness();
+    app.window.emit("keydown", key("KeyQ"));
+    app.window.emit("keydown", key("KeyE"));
+    expect(app.controls.heldIntent()).toEqual({ forward: 0, strafe: 0, steering: false, rise: 0 });
+    expect(app.actions).toEqual(["ui.talk"]);
   });
 
   test("the gamepad drives the same semantic movement and one-shot actions as the keyboard", () => {

@@ -188,7 +188,7 @@ struct HeldMovement {
     steering: bool,
 }
 
-/// W/S run and backpedal, A/D or Q/E strafe, combined with the pad's left
+/// W/S run and backpedal, A/D strafe, combined with the pad's left
 /// stick. Dead units cannot move, so the dead hold no movement whatever keys
 /// are down.
 fn held_movement(keyboard: PadMovement, pad: PadMovement, dead: bool) -> HeldMovement {
@@ -1072,12 +1072,12 @@ impl ApplicationHandler for App {
                         binding_modifiers.clone(),
                     ) {
                         let handled = self.world_action(action);
-                        // A handled cancel or door use consumes the key (Enter does not chat).
+                        // A handled cancel or interaction consumes the key.
                         cancel_handled |=
                             matches!(action, WorldAction::Cancel | WorldAction::Interact)
                                 && handled;
                     }
-                    // Enter that opened a selected NPC's context does not also chat.
+                    // The E that opened a selected NPC's context reaches no other control.
                     let context_opened = !context_was_open && self.npc_context.npc.is_some();
                     self.show_title(Instant::now());
                     if context_was_open || context_opened || cancel_handled {
@@ -1295,7 +1295,7 @@ mod tests {
                 steering: false
             }
         );
-        let opposed = keyboard(&[KeyCode::KeyS, KeyCode::ArrowUp, KeyCode::KeyE]);
+        let opposed = keyboard(&[KeyCode::KeyS, KeyCode::ArrowUp, KeyCode::KeyD]);
         assert_eq!(
             held_movement(opposed, PadMovement::default(), false),
             HeldMovement {
