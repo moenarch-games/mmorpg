@@ -35,14 +35,17 @@ fn walk(zone: &mut ZoneSimulation, waypoints: &[[i32; 2]]) -> Vec<[f32; 3]> {
     let mut sequence = 0;
     let mut trail = vec![feet(zone)];
     for &goal in waypoints {
-        let mut ticks = 0;
+        let mut ticks: u64 = 0;
         loop {
             let at = feet(zone);
             let distance = (goal[0] as f32 - at[0]).hypot(goal[1] as f32 - at[2]);
             if distance < 40.0 {
                 break;
             }
-            assert!(ticks < 1_200, "stuck at {at:?} on the way to {goal:?}");
+            assert!(
+                ticks < mmorpg_core::golden::t30(1_200),
+                "stuck at {at:?} on the way to {goal:?}"
+            );
             sequence += 1;
             zone.apply_command(
                 1,
@@ -69,7 +72,7 @@ fn walk(zone: &mut ZoneSimulation, waypoints: &[[i32; 2]]) -> Vec<[f32; 3]> {
 }
 
 fn settle(zone: &mut ZoneSimulation) {
-    for _ in 0..30 {
+    for _ in 0..mmorpg_core::golden::t30(30) {
         zone.advance_tick().unwrap();
     }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { decodeSnapshot, findEntity, SnapshotBuffer, yawFromRadians } from "../src/replication.ts";
+import { decodeSnapshot, findEntity, GLOBAL_COOLDOWN_TICKS, GUARD_BREAK_TICKS, SnapshotBuffer, TICK_HZ, yawFromRadians } from "../src/replication.ts";
 import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots.ts";
 
 const hex = readFileSync(new URL("../../fixtures/protocol/player-snapshot.hex", import.meta.url), "utf8").trim();
@@ -92,14 +92,14 @@ describe("Rust/browser snapshot contract", () => {
       viewer: {
         copper: 42, experience: 37, experienceToNextLevel: 400, health: 38, maxHealth: 110, level: 4, dead: false, inCombat: true,
         autoAttacking: true, target: WOLF, classChoice: { classId: "arcanist", sex: "female" },
-        resource: { kind: "mana", value: 121, max: 176 }, cast: { ability: 9, elapsed: 20, total: 60, channel: false }, globalCooldown: 25,
-        damage: { min: 9, max: 12 }, guard: { raised: "high", protecting: false, broken: 30 }, stance: null, combo: null, breath: 900,
+        resource: { kind: "mana", value: 121, max: 176 }, cast: { ability: 9, elapsed: 40, total: 120, channel: false }, globalCooldown: 25,
+        damage: { min: 9, max: 12 }, guard: { raised: "high", protecting: false, broken: 30 }, stance: null, combo: null, breath: 1800,
       },
       cooldowns: [{ ability: 10, remaining: 412 }, { ability: 11, remaining: 700 }],
       auras: [{ ability: 11, kind: "absorb", remaining: 500, amount: 31 }],
       targetOfTarget: VIEWER,
       targetDetail: {
-        cast: { ability: 13, elapsed: 10, total: 45, channel: false },
+        cast: { ability: 13, elapsed: 20, total: 90, channel: false },
         auras: [{ ability: 10, kind: "root", remaining: 150, amount: 0 }],
       },
       inventoryRevision: 9n,
@@ -122,10 +122,10 @@ describe("Rust/browser snapshot contract", () => {
         { kind: "died", entity: WOLF, killer: VIEWER },
         { kind: "error", code: "out-of-range", target: WOLF },
         { kind: "strike-swept", source: { kind: "player", id: 7 }, target: { kind: "creature", id: 108 }, ability: 1, aim: { side: "left", height: "high" } },
-        { kind: "cast-started", source: WOLF, target: VIEWER, ability: 13, ticks: 45 },
+        { kind: "cast-started", source: WOLF, target: VIEWER, ability: 13, ticks: 90 },
         { kind: "ability-used", source: VIEWER, target: null, ability: 10 },
         { kind: "healed", source: VIEWER, target: VIEWER, ability: 3, amount: 2 },
-        { kind: "aura-applied", source: VIEWER, target: WOLF, ability: 10, ticks: 180 },
+        { kind: "aura-applied", source: VIEWER, target: WOLF, ability: 10, ticks: 360 },
         { kind: "aura-removed", source: VIEWER, target: VIEWER, ability: 11 },
         { kind: "interrupted", source: null, target: VIEWER, ability: 9 },
         { kind: "absorbed", source: WOLF, target: VIEWER, amount: 5 },
@@ -201,18 +201,19 @@ describe("Rust/browser snapshot contract", () => {
       [CLASS, 1, "resource"],
       [CLASS + 1, 1, "resource"],
       [CLASS + 4, 0xff, "resource"],
-      [CLASS + 7, 46, "ability state"],
+      [CLASS + 7, GLOBAL_COOLDOWN_TICKS + 1, "ability state"],
       [CAST, 1, "cast state"],
       [CAST + 1, 1, "cast state"],
       [CAST + 1, 2, "Reserved"],
-      [CAST + 3, 60, "cast state"],
+      [CAST + 3, 120, "cast state"],
       [GUARD, 4, "guard state"],
       [GUARD + 1, 1, "guard state"],
       [GUARD + 1, 2, "Reserved"],
-      [GUARD + 3, 46, "guard state"],
+      [GUARD + 3, GUARD_BREAK_TICKS + 1, "guard state"],
       [STANCE, 2, "melee stance"],
       [COMBO, 2, "combo phase"],
-      [BREATH, 4, "breath"],
+      // High byte 8: 2,048 or more ticks, beyond the 30 s breath.
+      [BREATH, 8, "breath"],
       [COOLDOWNS, 9, "too many cooldowns"],
       [COOLDOWNS + 1, 11, "cooldown record"],
       [COOLDOWNS + 2, 9, "cooldown record"],
@@ -354,8 +355,10 @@ describe("snapshot presentation", () => {
     const buffer = new SnapshotBuffer();
     for (let tick = 0; tick < 40; tick++) buffer.push(snapshot(tick));
     expect(buffer.sample(0n)[0].position[0]).toBe(8 * 12);
-    buffer.push(snapshot(1000));
-    expect(buffer.sample(39n)[0].position[0]).toBe(12_000);
+    // More than 30 s after the last projection: the buffer snaps instead of interpolating.
+    const stalled = 40 + 30 * TICK_HZ;
+    buffer.push(snapshot(stalled));
+    expect(buffer.sample(39n)[0].position[0]).toBe(stalled * 12);
     buffer.reset();
     const tick = 18_446_744_073_709_550_000n;
     buffer.push(snapshot(tick, [player(1, 0)]));

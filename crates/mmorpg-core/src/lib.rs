@@ -94,9 +94,10 @@ pub use content::{
 pub use corpse_loot::{LOOT_REACH_UNITS, LootClaim, LootView};
 pub use creature::{
     AGGRO_MAX_RADIUS_UNITS, AGGRO_MIN_RADIUS_UNITS, AGGRO_PER_LEVEL_UNITS, AGGRO_RADIUS_UNITS,
-    ARRIVAL_RADIUS_UNITS, ASSIST_RADIUS_UNITS, CREATURE_EVADE_SPEED_UNITS_PER_TICK,
-    CREATURE_RUN_SPEED_UNITS_PER_TICK, CREATURE_WALK_SPEED_UNITS_PER_TICK, EVADE_TIMEOUT_TICKS,
-    LEASH_RADIUS_UNITS, MAX_THREAT_ENTRIES, WANDER_WAIT_TICKS, WANDER_WALK_TIMEOUT_TICKS,
+    ARRIVAL_RADIUS_UNITS, ASSIST_RADIUS_UNITS, CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK,
+    CREATURE_RUN_SPEED_SUBUNITS_PER_TICK, CREATURE_WALK_SPEED_SUBUNITS_PER_TICK,
+    EVADE_TIMEOUT_TICKS, LEASH_RADIUS_UNITS, MAX_THREAT_ENTRIES, WANDER_WAIT_TICKS,
+    WANDER_WALK_TIMEOUT_TICKS,
 };
 pub use door::{
     CanonicalDoor, DOOR_COOLDOWN_TICKS, DOOR_REACH_UNITS, Door, DoorBox, DoorId, DoorView,
@@ -110,8 +111,8 @@ pub use equipment::{
 };
 pub use events::{ErrorCode, MAX_EVENTS_PER_PLAYER, ZoneEvent};
 pub use forced::{
-    CHARGE_MAX_TICKS, CHARGE_SPEED_UNITS, FORCED_IMMUNITY_TICKS, ForcedMove, ForcedState,
-    KNOCKBACK_TICKS, SHOVE_UNITS,
+    CHARGE_MAX_TICKS, CHARGE_SPEED_SUBUNITS_PER_TICK, FORCED_IMMUNITY_TICKS, ForcedMove,
+    ForcedState, KNOCKBACK_TICKS, SHOVE_UNITS,
 };
 pub use guard::{
     GUARD_ARC_HALF_WIDTH, GUARD_ARC_OFFSET, GUARD_BREAK_IMPACT, GUARD_BREAK_TICKS,
@@ -176,11 +177,11 @@ pub type PlayerId = u32;
 /// The authoritative simulation rate. Durations are authored in milliseconds and
 /// speeds in units per second; the helpers below are the only place they become
 /// ticks, and the handshake and both clients read this constant.
-pub const TICK_HZ: u16 = 30;
+pub const TICK_HZ: u16 = 60;
 
 /// Whole ticks in `ms` milliseconds at [`TICK_HZ`], rounded to the nearest tick
-/// (halves up): 1 tick lasts 33⅓ ms at 30 Hz, so a duration that is not a
-/// multiple of 100 ms is authored as its nearest whole millisecond. A nonzero
+/// (halves up): 1 tick lasts 16⅔ ms at 60 Hz, so a duration that is not a
+/// multiple of 50 ms is authored as its nearest whole millisecond. A nonzero
 /// duration shorter than half a tick, or one longer than `u16::MAX` ticks, fails
 /// to compile in const contexts.
 #[must_use]
@@ -210,17 +211,22 @@ pub const fn units_per_tick(units_per_second: i32) -> i32 {
     units_per_second / TICK_HZ as i32
 }
 
-/// Units per tick² of an acceleration authored in units per second². One that is
-/// not a whole number of units per tick² fails to compile in const contexts.
+/// Subunits ([`physics::SUBUNITS_PER_UNIT`]) per tick² of an acceleration authored in units
+/// per second². One that is not a whole number of subunits per tick² fails to compile in const
+/// contexts.
 #[must_use]
-pub const fn units_per_tick_squared(units_per_second_squared: i32) -> i32 {
+pub const fn subunits_per_tick_squared(units_per_second_squared: i32) -> i32 {
+    let subunits = units_per_second_squared * physics::SUBUNITS_PER_UNIT;
     let ticks_squared = TICK_HZ as i32 * TICK_HZ as i32;
     assert!(
-        units_per_second_squared % ticks_squared == 0,
-        "acceleration is not a whole number of units per tick squared"
+        subunits % ticks_squared == 0,
+        "acceleration is not a whole number of subunits per tick squared"
     );
-    units_per_second_squared / ticks_squared
+    subunits / ticks_squared
 }
+
+/// Gravity of the authored zones and the test arenas: 9 m/s² down, in subunits per tick².
+pub const STANDARD_GRAVITY: [i32; 3] = [0, subunits_per_tick_squared(-900), 0];
 
 /// Subunits ([`physics::SUBUNITS_PER_UNIT`]) per tick of a speed authored in units per second:
 /// the velocities the zone hands physics. One that is not a whole number of subunits per tick
@@ -235,21 +241,13 @@ pub const fn subunits_per_tick(units_per_second: i32) -> i32 {
     subunits / TICK_HZ as i32
 }
 
-/// `subunits` truncated toward zero to whole units, in subunits. The steering and speed-scaling
-/// rules truncate to whole units per tick as they did before the fixed point, which keeps 30 Hz
-/// results identical (#379 PR 2); PR 3 lets them keep the subunits.
-#[must_use]
-pub const fn whole_units(subunits: i32) -> i32 {
-    subunits / physics::SUBUNITS_PER_UNIT * physics::SUBUNITS_PER_UNIT
-}
-
 /// [`units_per_tick`] for the `f32` projectile motion, which needs no whole units.
 #[must_use]
 pub const fn f32_units_per_tick(units_per_second: f32) -> f32 {
     units_per_second / TICK_HZ as f32
 }
 
-/// [`units_per_tick_squared`] for the `f32` projectile motion.
+/// Units per tick² of an acceleration in units per second², for the `f32` projectile motion.
 #[must_use]
 pub const fn f32_units_per_tick_squared(units_per_second_squared: f32) -> f32 {
     units_per_second_squared / (TICK_HZ as f32 * TICK_HZ as f32)

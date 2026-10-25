@@ -1,6 +1,6 @@
 import { encodeCommand, type WorldCommand } from "../command-wire";
 import { FixedTickClock } from "../demo-clock";
-import { decodeSnapshot, SnapshotBuffer, type EntityState, type ZoneSnapshot } from "../replication";
+import { decodeSnapshot, SnapshotBuffer, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
 import type { LinkState, WorldSource } from "./world-source";
 import { LAB_SCENARIO, labSetupFromQuery, type LabSetup } from "./action-lab";
 
@@ -18,8 +18,8 @@ export type ScenarioZoneHandle = {
 /** One recorded tick of a scenario: the projection and, in the Action Lab, the graph inspection JSON. */
 export type ScenarioFrame = { tick: bigint; snapshot: ZoneSnapshot; inspection: string | null };
 
-/** Recorded ticks kept for stepping back and scrubbing: 30 s at 30 Hz. */
-export const SCENARIO_HISTORY_TICKS = 900;
+/** Recorded ticks kept for stepping back and scrubbing: 30 s. */
+export const SCENARIO_HISTORY_TICKS = ticksFromMs(30_000);
 
 /**
  * A review scenario chosen by URL (#371): `?scenario=<name>&seed=<n>`. The Action Lab (#381) is

@@ -21,7 +21,7 @@ const TARGET: EntityRef = EntityRef::Creature(CreatureId::new(1));
 fn content(behaviour: CreatureBehaviour, damage: [u16; 2]) -> Arc<ZoneContent> {
     let template = CreatureTemplate {
         behaviour,
-        swing_ticks: 20,
+        swing_ticks: mmorpg_core::golden::t30(20) as _,
         ..arena::wolf(5_000, damage)
     };
     Arc::new(
@@ -120,7 +120,7 @@ fn the_same_swing_hits_harder_charging_or_airborne_and_softer_backing_away() {
 fn first_blow(movement: ZoneCommand) -> u16 {
     let mut warden = Warden::new(content(CreatureBehaviour::Aggressive, [20, 20]));
     warden.send(movement);
-    for _ in 0..200 {
+    for _ in 0..mmorpg_core::golden::t30(200) {
         for event in warden.tick() {
             if let ZoneEvent::DamageTaken { amount, .. } = event {
                 return amount;

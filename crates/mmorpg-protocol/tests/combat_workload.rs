@@ -39,12 +39,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // adds its sealed threshold box, which shifts the zone RNG and the fights again. Revision 26
     // (#431) rebuilds the shrine on the asset-tooling kit with 15 more boxes in every step.
     // Revision 28 (#423) lifts the lake onto the basin terrace, which shifts the zone RNG and
-    // keeps the spread and crowded fights' creatures thinking and testing a little more.
+    // keeps the spread and crowded fights' creatures thinking and testing a little more. The
+    // 60 Hz zone (#379) covers half the time in the same ticks; its creatures run on subunit
+    // steering, which moves the crowded fights a little.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [29_160, 460_800, 224_640, 4_231_728],
         [29_160, 457_920, 80_140, 1_335_287],
         [29_160, 466_560, 389_620, 6_428_143],
-        [28_205, 477_125, 2_233_530, 24_493_481],
+        [29_041, 477_961, 2_248_200, 24_496_050],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -86,9 +88,9 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
         if fixture.crowded {
             // Whole 14-byte events and 21-byte records beside the fixed part
             // and the door section, a 93-byte self sheet, an 18-byte copper-only
-            // corpse sheet, the projectile, debris and piece counts fill 1,074 of the 1,077
-            // bytes: no further 21-byte record fits.
-            assert_eq!(report.max_projection_bytes, 1_074);
+            // corpse sheet, the projectile, debris and piece counts fill the 1,077 bytes
+            // (1,073 at 60 Hz, 1,074 at 30 Hz): no further 21-byte record fits.
+            assert!(report.max_projection_bytes + 21 > MAX_PLAYER_PROJECTION_BYTES);
             assert!(report.candidates_tested > 1_000_000);
         }
     }

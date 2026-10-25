@@ -41,7 +41,7 @@ fn ordinary_attempts_reach_visible_bystanders_once_without_participant_damage_cr
     let mut misses = 0;
     let mut player_attempt_ticks = Vec::new();
     let mut creature_attempts = 0;
-    for _ in 0..2_400 {
+    for _ in 0..mmorpg_core::golden::t30(2_400) {
         zone.advance_tick().unwrap();
         let own = zone.snapshot_for_player(1).unwrap();
         let observer = zone.snapshot_for_player(2).unwrap();
@@ -188,7 +188,7 @@ fn waiting_and_out_of_range_do_not_create_ordinary_attempts() {
     state.players[0].position = mmorpg_core::physics::from_units([0, 90, -3_000]);
     let mut zone = ZoneSimulation::from_snapshot(state, content).unwrap();
     fight(&mut zone);
-    for _ in 0..10 {
+    for _ in 0..mmorpg_core::golden::t30(10) {
         zone.advance_tick().unwrap();
         assert!(
             !zone
@@ -208,7 +208,7 @@ fn recovered_combat_reproduces_observations_and_canonical_gameplay() {
     let mut recovered =
         ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), Arc::clone(zone.content()))
             .unwrap();
-    for _ in 0..180 {
+    for _ in 0..mmorpg_core::golden::t30(180) {
         zone.advance_tick().unwrap();
         recovered.advance_tick().unwrap();
         assert_eq!(zone.snapshot().unwrap(), recovered.snapshot().unwrap());
@@ -244,7 +244,7 @@ fn observers_see_existing_creature_casts_without_acquiring_player_feedback() {
         let mut zone = ZoneSimulation::from_snapshot(state, content).unwrap();
         let mut started = false;
         let mut resolved = false;
-        for _ in 0..150 {
+        for _ in 0..mmorpg_core::golden::t30(150) {
             zone.advance_tick().unwrap();
             let own = zone.snapshot_for_player(1).unwrap();
             let other = zone.snapshot_for_player(2).unwrap();
@@ -351,7 +351,7 @@ fn visible_remote_player_ability_has_start_resolution_and_neutral_impact() {
     let mut started = false;
     let mut used = false;
     let mut impact = false;
-    for _ in 0..65 {
+    for _ in 0..mmorpg_core::golden::t30(65) {
         zone.advance_tick().unwrap();
         let observer = zone.snapshot_for_player(2).unwrap();
         started |= observer.events.iter().any(|e| matches!(e, ZoneEvent::CastStarted { source: PLAYER, ability, .. } if *ability == ids::FIREBOLT));

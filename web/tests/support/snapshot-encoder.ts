@@ -101,7 +101,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   u8(stance === null ? 0 : MELEE_STANCES.indexOf(stance) + 1);
   const combo = viewer.combo ?? null;
   u8(combo === null ? 0 : COMBO_PHASES.indexOf(combo) + 1);
-  u16(viewer.breath ?? 900);
+  u16(viewer.breath ?? BREATH_MAX_TICKS);
   u8(snapshot.cooldowns.length);
   for (const cooldown of snapshot.cooldowns) {
     u8(cooldown.ability);

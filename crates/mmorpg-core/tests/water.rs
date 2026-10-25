@@ -86,7 +86,7 @@ fn a_player_wades_in_and_swims_at_the_surface_without_touching_the_floor() {
     // West shore, on the lake's long axis.
     let mut zone =
         zone_with_player_at([lake::CENTRE[0] - 2_600, lake::SHORE_Y + 90, lake::CENTRE[1]]);
-    run(&mut zone, 5);
+    run(&mut zone, mmorpg_core::golden::t30(5) as _);
     zone.apply_command(
         1,
         1,
@@ -98,7 +98,7 @@ fn a_player_wades_in_and_swims_at_the_surface_without_touching_the_floor() {
     )
     .unwrap();
     let mut modes = Vec::new();
-    for _ in 0..240 {
+    for _ in 0..mmorpg_core::golden::t30(240) {
         zone.advance_tick().unwrap();
         let mode = water(&zone);
         if modes.last() != Some(&mode) {
@@ -116,11 +116,12 @@ fn a_player_wades_in_and_swims_at_the_surface_without_touching_the_floor() {
         "shore, wading, swimming"
     );
     // Floating: the feet hold 1.4 m under the surface, far above the 9 m floor.
-    run(&mut zone, 60);
+    run(&mut zone, mmorpg_core::golden::t30(60) as _);
     let [x, _, z] = zone.snapshot().unwrap().players[0].position;
     assert!(lake_depth(x as i32, z as i32) > 300, "out over deep water");
     assert!(
-        (feet_y(&zone) - (lake::SURFACE - FLOAT_DEPTH_UNITS) as f32).abs() <= 2.0,
+        // Within 3 units: the bank can drop under the wading feet the tick swimming begins.
+        (feet_y(&zone) - (lake::SURFACE - FLOAT_DEPTH_UNITS) as f32).abs() <= 3.0,
         "feet at {}",
         feet_y(&zone)
     );
@@ -132,16 +133,16 @@ fn a_player_wades_in_and_swims_at_the_surface_without_touching_the_floor() {
 fn diving_spends_breath_drowning_hurts_and_surfacing_refills() {
     let surface_feet = lake::SURFACE - FLOAT_DEPTH_UNITS;
     let mut zone = zone_with_player_at([lake::CENTRE[0], surface_feet + 90, lake::CENTRE[1]]);
-    run(&mut zone, 2);
+    run(&mut zone, mmorpg_core::golden::t30(2) as _);
     assert_eq!(water(&zone), WaterMode::Swimming);
     zone.apply_command(1, 1, ZoneCommand::Rise(-1)).unwrap();
-    run(&mut zone, 30);
+    run(&mut zone, mmorpg_core::golden::t30(30) as _);
     assert_eq!(water(&zone), WaterMode::Submerged);
     let dived = feet_y(&zone);
     assert!(dived < (surface_feet - 200) as f32, "dived to {dived}");
     // Level: the depth holds without input.
     zone.apply_command(1, 2, ZoneCommand::Rise(0)).unwrap();
-    run(&mut zone, 10);
+    run(&mut zone, mmorpg_core::golden::t30(10) as _);
     assert!((feet_y(&zone) - dived).abs() <= 1.0);
     let left = breath(&zone);
     assert!(left < BREATH_MAX_TICKS);
@@ -158,7 +159,7 @@ fn diving_spends_breath_drowning_hurts_and_surfacing_refills() {
     assert_eq!(restored.snapshot().unwrap(), zone.snapshot().unwrap());
     // Surface: breath refills and the drowning stops.
     zone.apply_command(1, 3, ZoneCommand::Rise(1)).unwrap();
-    run(&mut zone, 60);
+    run(&mut zone, mmorpg_core::golden::t30(60) as _);
     assert_eq!(water(&zone), WaterMode::Swimming);
     let health = zone.snapshot_for_player(1).unwrap().viewer.health;
     run(
@@ -179,7 +180,7 @@ fn drowning_kills_through_the_normal_death_rules() {
     while !zone.snapshot_for_player(1).unwrap().viewer.dead {
         zone.advance_tick().unwrap();
         ticks += 1;
-        assert!(ticks < 2_000, "the player drowns");
+        assert!(ticks < mmorpg_core::golden::t30(2_000), "the player drowns");
     }
     assert_eq!(
         breath(&zone),

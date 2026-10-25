@@ -308,7 +308,10 @@ fn the_primary_stat_raises_auto_attacks_and_the_projected_melee_range() {
             .unwrap();
         zone.apply_command(1, 3, ZoneCommand::StartAttack).unwrap();
     }
-    let (plain, geared) = (hits(&mut plain, 600), hits(&mut geared, 600));
+    let (plain, geared) = (
+        hits(&mut plain, mmorpg_core::golden::t30(600)),
+        hits(&mut geared, mmorpg_core::golden::t30(600)),
+    );
     assert_eq!(plain.len(), geared.len());
     let mut ordinary = 0;
     for ((tick, low, critical), (geared_tick, high, geared_critical)) in
@@ -361,7 +364,7 @@ fn intellect_adds_to_each_direct_bolt_and_nova_hit() {
             },
         )
         .unwrap();
-        dealt.extend(hits(zone, 70));
+        dealt.extend(hits(zone, mmorpg_core::golden::t30(70)));
         zone.apply_command(
             1,
             4,

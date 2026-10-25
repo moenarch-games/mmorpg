@@ -42,10 +42,11 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// The workloads whose players are only scripted: the bot scenarios and the idle plaza. The
 /// fighting fixtures place players inside props, boxes and hills, which Rapier leaves embedded
 /// and physics-engine pushes out, so their fights (and every position after) legitimately part.
-const SCRIPTED: [&str; 8] = [
+/// At 60 Hz (#379) `vale-wolf-hunt`'s creatures, which part from tick 1, reach the scripted
+/// hunter's fights after 38 s, so it is compared but not bounded either.
+const SCRIPTED: [&str; 7] = [
     "two-bots-move",
     "vale-hub-walk",
-    "vale-wolf-hunt",
     "vale-idle-16",
     "vale-mill-hoist",
     "vale-crate-shove",
@@ -58,9 +59,9 @@ const SHOT_FRACTION_TOLERANCE: f32 = 1.0e-4;
 /// A unit at rest this many ticks must be grounded.
 const REST_TICKS: usize = 3;
 /// Penetration is checked on every this-many-th tick (and the last), over every content box.
-const PENETRATION_EVERY: usize = 10;
+const PENETRATION_EVERY: usize = mmorpg_core::golden::t30(10) as usize;
 /// Query parity is checked on Rapier's state every this-many-th tick (and the last).
-const PARITY_EVERY: usize = 60;
+const PARITY_EVERY: usize = mmorpg_core::golden::t30(60) as usize;
 /// Pairs within this distance (units) are probed for line of sight, shots and NPC sight.
 const PROBE_RANGE_UNITS: f32 = 4_000.0;
 
@@ -355,10 +356,12 @@ fn check_mill_ramps(trace: &Trace) -> std::result::Result<(), String> {
     let feet = |tick: usize, player: usize| {
         trace.snapshots[tick - 1].players[player].position[1] - 90.0 - TERRACE
     };
-    if (feet(44, 0) - 150.0).abs() > 3.0 || feet(trace.snapshots.len(), 0).abs() > 0.5 {
+    // Where the script turns the walker back west (tick 44 at 30 Hz).
+    let top = usize::try_from(mmorpg_core::golden::t30(44)).unwrap();
+    if (feet(top, 0) - 150.0).abs() > 3.0 || feet(trace.snapshots.len(), 0).abs() > 0.5 {
         return Err(format!(
-            "the walker's feet at 44 {} and at the end {}",
-            feet(44, 0),
+            "the walker's feet at {top} {} and at the end {}",
+            feet(top, 0),
             feet(trace.snapshots.len(), 0)
         ));
     }
@@ -703,10 +706,15 @@ fn query_parity(workload: &Workload, rapier: &Trace) -> Result<(usize, usize)> {
         let differences = decision_differences(&a, &b);
         assert!(
             differences.is_empty(),
-            "{} tick {}: decisions differ on identical state:\n{}",
+            "{} tick {}: decisions differ on identical state:\n{}\n{:?}",
             workload.name(),
             snapshot.tick,
-            differences.join("\n")
+            differences.join("\n"),
+            snapshot
+                .players
+                .iter()
+                .map(|p| (p.player_id, p.position, p.velocity))
+                .collect::<Vec<_>>()
         );
     }
     Ok((probes, embedded))

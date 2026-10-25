@@ -375,7 +375,7 @@ fn structures_and_boundary_walls_block_movement() {
     // Slot 0 stands at (−15.5 m, 12.5 m); the keep's south face is at z = 7 m.
     zone.add_player(1).unwrap();
     zone.apply_command(1, 1, run(FACE_NORTH)).unwrap();
-    for _ in 0..40 {
+    for _ in 0..mmorpg_core::golden::t30(40) {
         zone.advance_tick().unwrap();
     }
     let player = &zone.snapshot().unwrap().players[0];
@@ -396,8 +396,8 @@ fn structures_and_boundary_walls_block_movement() {
     let mut zone = ZoneSimulation::from_snapshot(snapshot, Arc::clone(zone.content())).unwrap();
     zone.apply_command(1, 1, run(FACE_SOUTH)).unwrap();
     let mut sequence = 1;
-    for tick in 0..240 {
-        if tick % 20 == 0 {
+    for tick in 0..mmorpg_core::golden::t30(240) {
+        if tick % mmorpg_core::golden::t30(20) == 0 {
             sequence += 1;
             zone.apply_command(1, sequence, ZoneCommand::Jump).unwrap();
         }

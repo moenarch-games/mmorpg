@@ -125,7 +125,7 @@ impl Player {
             ability: ids::FIRE_BLAST.get(),
             target: Some(EntityRef::Creature(CreatureId::new(1))),
         });
-        self.ticks(50);
+        self.ticks(mmorpg_core::golden::t30(50) as _);
     }
 }
 
@@ -174,7 +174,7 @@ fn a_shot_chips_a_piece() {
         ability: ids::AIMED_SHOT.get(),
         target: None,
     });
-    ranger.ticks(40);
+    ranger.ticks(mmorpg_core::golden::t30(40) as _);
     assert_eq!(ranger.health(2), 7, "the arrow chipped the east wall");
     // Seven of ten is still above two thirds: intact, so not projected.
     assert!(ranger.pieces().is_empty());
@@ -190,7 +190,7 @@ fn pieces_regrow_on_their_timer_and_repair_speeds_that_up() {
         if repair {
             // Walk up to the east wall and repair it.
             arcanist.send(arena::walk(yaw(471.0, -1_168.0)));
-            arcanist.ticks(60);
+            arcanist.ticks(mmorpg_core::golden::t30(60) as _);
             arcanist.send(arena::stand(SOUTH));
             arcanist.ticks(1);
             arcanist.send(ZoneCommand::Repair {
@@ -204,7 +204,7 @@ fn pieces_regrow_on_their_timer_and_repair_speeds_that_up() {
             assert!(ticks < 400, "the wall regrew");
         }
         // The deck regrows once a wall stands again.
-        arcanist.ticks(2);
+        arcanist.ticks(mmorpg_core::golden::t30(2) as _);
         (ticks, arcanist.health(3))
     };
     let (alone, deck) = regrow(false);

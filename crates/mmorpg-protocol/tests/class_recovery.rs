@@ -19,7 +19,7 @@ use support::arena::{self, WOLF};
 use support::classes::{self, LURKER};
 
 /// Every checkpoint's copy is compared for this many ticks.
-const COMPARED_TICKS: u64 = 200;
+const COMPARED_TICKS: u64 = mmorpg_core::golden::t30(200);
 const ARCANIST: u32 = 1;
 const WARDEN: u32 = 2;
 const RANGER: u32 = 3;
@@ -46,6 +46,12 @@ fn ability(ability: AbilityId) -> ZoneCommand {
 
 /// Scripted inputs by tick for the arcanist, the warden and the ranger.
 fn commands(tick: u64) -> Vec<(u32, ZoneCommand)> {
+    // The script was written in 30 Hz ticks; it runs at the same moments at TICK_HZ.
+    let scale = u64::from(mmorpg_core::TICK_HZ) / 30;
+    if !tick.is_multiple_of(scale) {
+        return Vec::new();
+    }
+    let tick = tick / scale;
     let wolf =
         ZoneCommand::SelectTarget(Some(EntityRef::Creature(mmorpg_core::CreatureId::new(1))));
     match tick {
@@ -192,7 +198,7 @@ fn recovery_during_a_class_fight_reproduces_every_following_tick() {
             }
         }
         assert!(
-            state.tick < 3_000,
+            state.tick < mmorpg_core::golden::t30(3_000),
             "checkpoints never reached: {:?}",
             CHECKPOINTS
                 .iter()
@@ -221,7 +227,7 @@ fn recovery_during_a_class_fight_reproduces_every_following_tick() {
 fn identical_class_inputs_produce_identical_canonical_bytes() {
     let mut first = Run::new();
     let mut second = Run::new();
-    for _ in 0..600 {
+    for _ in 0..mmorpg_core::golden::t30(600) {
         first.step();
         second.step();
         assert_eq!(first.bytes(), second.bytes());

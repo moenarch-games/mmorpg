@@ -3,8 +3,8 @@
 # instead of creating a new player.
 name = "reconnect-grace-expiry"
 zone = 1
-ticks = 10
-reconnect_grace_ticks = 3
+ticks = 20
+reconnect_grace_ticks = 6
 
 [[bots]]
 name = "alice"
@@ -23,12 +23,12 @@ bot = "bob"
 action = "join"
 
 [[steps]]
-tick = 1
+tick = 2
 bot = "alice"
 action = "disconnect"
 
 [[steps]]
-tick = 8
+tick = 16
 bot = "alice"
 action = "reconnect"
 expect = "rejected:unknown_token"
@@ -37,16 +37,16 @@ expect = "rejected:unknown_token"
 kind = "sees"
 bot = "bob"
 target = "alice"
-tick = 4
+tick = 7
 
 [[expect]]
 kind = "not_sees"
 bot = "bob"
 target = "alice"
-tick = 6
+tick = 11
 
 [[expect]]
 kind = "visible_count"
 bot = "bob"
-tick = 10
+tick = 19
 count = 1

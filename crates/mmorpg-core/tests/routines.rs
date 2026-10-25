@@ -48,7 +48,7 @@ fn hilda(zone: &ZoneSimulation) -> [i32; 2] {
 
 #[test]
 fn the_zone_clock_starts_in_the_morning_and_runs_a_two_hour_day() {
-    assert_eq!(DAY_TICKS, 2 * 60 * 60 * 30);
+    assert_eq!(DAY_TICKS, 2 * 60 * 60 * u32::from(mmorpg_core::TICK_HZ));
     assert_eq!(time_of_day(0), 8 * HOUR_TICKS);
     assert_eq!(time_of_day(u64::from(DAY_TICKS)), 8 * HOUR_TICKS);
     assert!(!is_night(time_of_day(0)));

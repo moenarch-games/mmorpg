@@ -19,8 +19,9 @@
 //!   defender's facing toward the shield (left) side, so the front and the
 //!   shield flank are covered and the sword flank and the rear are not;
 //! - its **impact** is the rolled damage plus the attacker's momentum: its
-//!   physics velocity toward the defender (units per tick) scaled by its body
-//!   volume over the defender's. Below [`GUARD_BREAK_IMPACT`] the blow is
+//!   physics velocity toward the defender (units per second over
+//!   [`MOMENTUM_SPEED_DIVISOR`]) scaled by its body volume over the defender's.
+//!   Below [`GUARD_BREAK_IMPACT`] the blow is
 //!   fully blocked; at or above it the blow lands in full and breaks the
 //!   guard for [`GUARD_BREAK_TICKS`] (5.2.33, 5.2.35). Stationary blows of
 //!   ordinary creatures are blocked; charging blows of wolf-sized or larger
@@ -52,6 +53,9 @@ pub const STRIKE_RECOVERY_TICKS: u16 =
 /// recovery, 1.5 s.
 pub const GUARD_BREAK_TICKS: u16 =
     crate::action::recovery_ticks(crate::action::ActionId::GuardBreak);
+/// The momentum term takes the closing speed in units per second over this: the impact
+/// threshold was tuned against units per 30 Hz tick.
+const MOMENTUM_SPEED_DIVISOR: i64 = 30;
 /// The impact (damage plus momentum) at which a blow overpowers a guard.
 pub const GUARD_BREAK_IMPACT: u32 = 18;
 /// The coverage arc's centre turns this far from the facing toward the
@@ -174,7 +178,7 @@ impl crate::ZoneSimulation {
             .world
             .body(crate::entity::body_id(attacker))
             .ok_or_else(|| ZoneError::new("attacker physics body is missing"))?;
-        let (from, half, velocity) = (body.position(), body.half_extents(), body.velocity_units());
+        let (from, half, velocity) = (body.position(), body.half_extents(), body.velocity());
         let to = self.player_position(player_id)?;
         let feet = to.y - PLAYER_HALF_EXTENTS_UNITS[1];
         // Three quarters up the attacker's body.
@@ -197,7 +201,8 @@ impl crate::ZoneSimulation {
             0
         } else {
             (-(i64::from(velocity.x) * i64::from(dx) + i64::from(velocity.z) * i64::from(dz))
-                / length)
+                * i64::from(crate::TICK_HZ)
+                / (length * i64::from(crate::physics::SUBUNITS_PER_UNIT) * MOMENTUM_SPEED_DIVISOR))
                 .max(0)
         };
         let volume = |half: [i32; 3]| half.iter().map(|&value| i64::from(value)).product::<i64>();

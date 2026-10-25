@@ -40,7 +40,7 @@ fn template(id: CreatureTemplateId, health: u32) -> CreatureTemplate {
         max_level: 5,
         health,
         damage: [1, 1],
-        swing_ticks: 90,
+        swing_ticks: mmorpg_core::golden::t30(90) as _,
         half_extents: [40, 100, 40],
         ..arena::wolf(health, [1, 1])
     }
@@ -80,7 +80,7 @@ fn content(whirl: bool) -> Arc<ZoneContent> {
                 damage_percent_per_extra: 10,
                 engage_radius: 2_500,
                 reaction_radius: 3_000,
-                reaction_ticks: 60,
+                reaction_ticks: mmorpg_core::golden::t30(60) as _,
                 rally_point: RALLY,
             }])
             .unwrap()
@@ -210,12 +210,14 @@ fn the_boss_locks_scaling_at_combat_start_and_credits_every_contributor() {
     run.place(2, [BANDIT_AT[0], BANDIT_AT[1] - 120], true);
     run.place(3, [BOSS_AT[0] + 120, BOSS_AT[1]], true);
     run.attack(2, FIGHTING_BANDIT);
-    run.until(200, |run| {
+    run.until(mmorpg_core::golden::t30(200) as _, |run| {
         run.creature(FIGHTING_BANDIT).ai == CreatureAi::Engaged
     });
 
     run.attack(1, BOSS);
-    run.until(200, |run| run.creature(BOSS).encounter.is_some());
+    run.until(mmorpg_core::golden::t30(200) as _, |run| {
+        run.creature(BOSS).encounter.is_some()
+    });
     let boss = run.creature(BOSS);
     let encounter = boss.encounter.clone().unwrap();
     assert_eq!(
@@ -231,7 +233,7 @@ fn the_boss_locks_scaling_at_combat_start_and_credits_every_contributor() {
 
     // A later arrival contributes but never rescales the attempt.
     run.attack(3, BOSS);
-    run.until(300, |run| {
+    run.until(mmorpg_core::golden::t30(300) as _, |run| {
         run.creature(BOSS)
             .encounter
             .is_some_and(|encounter| encounter.contributors.contains(&3))
@@ -248,7 +250,9 @@ fn the_boss_locks_scaling_at_combat_start_and_credits_every_contributor() {
             .unwrap();
         boss.health = 1;
     });
-    run.until(300, |run| run.creature(BOSS).life != CreatureLife::Alive);
+    run.until(mmorpg_core::golden::t30(300) as _, |run| {
+        run.creature(BOSS).life != CreatureLife::Alive
+    });
     assert_eq!(run.progress(3), 1, "contributor 3 earns the kill objective");
     assert_eq!(run.progress(2), 0, "player 2 never fought the boss");
     let corpse = run.creature(BOSS);
@@ -262,7 +266,7 @@ fn the_boss_locks_scaling_at_combat_start_and_credits_every_contributor() {
         run.creature(IDLE_BANDIT).ai
     );
     assert_eq!(run.creature(FIGHTING_BANDIT).ai, CreatureAi::Engaged);
-    run.until(200, |run| {
+    run.until(mmorpg_core::golden::t30(200) as _, |run| {
         matches!(run.creature(IDLE_BANDIT).ai, CreatureAi::Idle { .. })
     });
 
@@ -271,11 +275,15 @@ fn the_boss_locks_scaling_at_combat_start_and_credits_every_contributor() {
         panic!("the boss left a corpse");
     };
     let after_window = died_at + u64::from(mmorpg_core::unit::CORPSE_TICKS) + 5;
-    run.until(2_000, |run| run.zone.current_tick() >= after_window);
+    run.until(mmorpg_core::golden::t30(2_000) as _, |run| {
+        run.zone.current_tick() >= after_window
+    });
     let lingering = run.creature(BOSS);
     assert!(matches!(lingering.life, CreatureLife::Corpse { .. }));
     assert!(lingering.loot.is_none());
-    run.until(2_000, |run| run.creature(BOSS).life == CreatureLife::Alive);
+    run.until(mmorpg_core::golden::t30(2_000) as _, |run| {
+        run.creature(BOSS).life == CreatureLife::Alive
+    });
     assert_eq!(run.creature(BOSS).health, BOSS_HEALTH);
 }
 
@@ -286,12 +294,14 @@ fn an_abandoned_attempt_resets_the_boss_to_its_unscaled_rest() {
     run.place(2, [BOSS_AT[0], BOSS_AT[1] + 120], false);
     run.attack(1, BOSS);
     run.attack(2, BOSS);
-    run.until(200, |run| run.creature(BOSS).encounter.is_some());
+    run.until(mmorpg_core::golden::t30(200) as _, |run| {
+        run.creature(BOSS).encounter.is_some()
+    });
     // Everybody leaves: the attempt ends without a kill.
     assert!(run.zone.remove_player(1));
     assert!(run.zone.remove_player(2));
     // It evades home (here at once: it never left), dropping the attempt's profile.
-    run.until(600, |run| {
+    run.until(mmorpg_core::golden::t30(600) as _, |run| {
         let boss = run.creature(BOSS);
         boss.encounter.is_none() && matches!(boss.ai, CreatureAi::Idle { .. })
     });
@@ -304,7 +314,7 @@ fn the_boss_telegraphs_its_whirl_before_it_lands() {
     run.place(1, [BOSS_AT[0], BOSS_AT[1] - 120], false);
     run.attack(1, BOSS);
     let whirl = ids::REDBRAND_WHIRL;
-    run.until(1_200, |run| {
+    run.until(mmorpg_core::golden::t30(1_200) as _, |run| {
         run.events.iter().any(|(_, event)| {
             matches!(event, ZoneEvent::AbilityUsed { ability, .. } if *ability == whirl)
         })
@@ -313,7 +323,7 @@ fn the_boss_telegraphs_its_whirl_before_it_lands() {
         .events
         .iter()
         .position(|(_, event)| {
-            matches!(event, ZoneEvent::CastStarted { ability, ticks: 45, .. } if *ability == whirl)
+            matches!(event, ZoneEvent::CastStarted { ability, ticks, .. } if *ability == whirl && u64::from(*ticks) == mmorpg_core::golden::t30(45))
         })
         .expect("a 1.5 s wind-up precedes the whirl");
     let used = run

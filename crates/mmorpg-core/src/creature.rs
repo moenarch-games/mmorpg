@@ -13,12 +13,12 @@ use crate::{
     ZoneSimulation,
 };
 
-/// Creatures chase at 19 units per tick (5.7 m/s), slower than a running player.
-pub const CREATURE_RUN_SPEED_UNITS_PER_TICK: i32 = crate::units_per_tick(570);
+/// Creatures chase at 5.7 m/s, slower than a running player.
+pub const CREATURE_RUN_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(570);
 /// Wandering creatures walk at 40 % of their run speed, rounded.
-pub const CREATURE_WALK_SPEED_UNITS_PER_TICK: i32 = crate::units_per_tick(240);
+pub const CREATURE_WALK_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(240);
 /// Evading creatures run home at 1.25 × their run speed, rounded up.
-pub const CREATURE_EVADE_SPEED_UNITS_PER_TICK: i32 = crate::units_per_tick(720);
+pub const CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(720);
 /// Idle creatures wait 5–15 s between wander walks.
 pub const WANDER_WAIT_TICKS: [u16; 2] = [crate::ticks_from_ms(5_000), crate::ticks_from_ms(15_000)];
 /// A wander walk that has not arrived after 10 s gives up.

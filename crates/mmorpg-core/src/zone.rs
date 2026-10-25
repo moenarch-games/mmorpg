@@ -285,9 +285,7 @@ impl ZoneSimulation {
     ) -> Result<Self, ZoneError> {
         let definition = content.definition();
         let gravity = definition.gravity();
-        // Content authors gravity in whole units per tick²; physics takes subunits.
-        let [gx, gy, gz] = gravity.map(|axis| axis * crate::physics::SUBUNITS_PER_UNIT);
-        let mut world = World::new(Vec3i::new(gx, gy, gz));
+        let mut world = World::new(Vec3i::new(gravity[0], gravity[1], gravity[2]));
         let spawn = definition.spawn_grid().feet(0).unwrap_or([0; 3]);
         for collider in definition.colliders() {
             // The flat ground the spawn grid stands on is a floor half-space at y = 0 (#271).
@@ -750,7 +748,6 @@ impl ZoneSimulation {
             let vertical_velocity = if let Some(depth) = swim_depth {
                 let rise = if stunned { 0 } else { state.rise.get() };
                 crate::water::swim_vertical_velocity(depth, rise)
-                    * crate::physics::SUBUNITS_PER_UNIT
             } else if alive && !stunned && state.jump_pending && is_grounded(&self.world, body)? {
                 JUMP_VELOCITY_SUBUNITS_PER_TICK
             } else {
@@ -768,8 +765,7 @@ impl ZoneSimulation {
                 if swim_depth.is_some() {
                     percent = percent * crate::water::SWIM_SPEED_PERCENT / 100;
                 }
-                let [x, z] =
-                    crate::aura::scale_velocity([free.x, free.z], percent).map(crate::whole_units);
+                let [x, z] = crate::aura::scale_velocity([free.x, free.z], percent);
                 Vec3i::new(x, 0, z)
             } else {
                 Vec3i::ZERO
@@ -966,8 +962,7 @@ fn movement_velocity(state: &PlayerState) -> Result<Vec3i, ZoneError> {
     };
     let (x, z) = trig::direction(state.facing.wrapping_add(offset));
     let component = |unit| {
-        trig::checked_scale_to_units(speed, unit)
-            .ok_or_else(|| ZoneError::new("movement velocity overflow"))
+        trig::checked_scale(speed, unit).ok_or_else(|| ZoneError::new("movement velocity overflow"))
     };
     Ok(Vec3i::new(component(x)?, 0, component(z)?))
 }

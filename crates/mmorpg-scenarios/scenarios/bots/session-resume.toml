@@ -3,8 +3,8 @@
 # epoch. Commands on the old epoch are rejected; sequencing continues.
 name = "session-resume"
 zone = 1
-ticks = 12
-reconnect_grace_ticks = 30
+ticks = 24
+reconnect_grace_ticks = 60
 
 [[bots]]
 name = "alice"
@@ -31,23 +31,23 @@ strafe = 0
 facing = 0
 
 [[steps]]
-tick = 2
+tick = 4
 bot = "alice"
 action = "disconnect"
 
 [[steps]]
-tick = 4
+tick = 8
 bot = "alice"
 action = "reconnect"
 
 [[steps]]
-tick = 5
+tick = 10
 bot = "alice"
 action = "reconnect"
 expect = "rejected:already_connected"
 
 [[steps]]
-tick = 6
+tick = 12
 bot = "alice"
 action = "move"
 forward = 0
@@ -57,7 +57,7 @@ connection_epoch = 1
 expect = "rejected:stale_connection"
 
 [[steps]]
-tick = 6
+tick = 12
 bot = "alice"
 action = "move"
 forward = 0
@@ -68,15 +68,15 @@ facing = 0
 kind = "sees"
 bot = "bob"
 target = "alice"
-tick = 3
+tick = 5
 
 [[expect]]
 kind = "identity"
 bot = "alice"
-tick = 5
+tick = 9
 
 [[expect]]
 kind = "acknowledged"
 bot = "alice"
-tick = 7
+tick = 13
 sequence = 3

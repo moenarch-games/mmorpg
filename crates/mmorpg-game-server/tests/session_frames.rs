@@ -55,7 +55,7 @@ fn welcomes() -> [Welcome; 2] {
             current_tick: 99,
             connection_epoch: 3,
             reconnect_token: TOKEN,
-            reconnect_grace_ticks: 600,
+            reconnect_grace_ticks: mmorpg_core::golden::t30(600),
         },
         Welcome {
             player_id: u32::MAX,

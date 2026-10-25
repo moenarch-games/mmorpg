@@ -93,12 +93,12 @@ On **each** backend, every run must:
 
 Across backends:
 
-- Scripted workloads (the bot scenarios, `vale-idle-16`, `vale-mill-hoist`,
+- Scripted workloads (`two-bots-move`, `vale-hub-walk`, `vale-idle-16`, `vale-mill-hoist`,
   `vale-crate-shove`, `vale-crate-smash` and `vale-missiles`): players within **1 unit** (the
   rounding step gameplay sees; measured ≤ 0.15; in `vale-crate-shove` plus the crates' gap,
   since a player walks into its resting crate), identical command outcomes and door states,
   and the players' grounded state identical on every tick.
-- Every query decision on **identical states** (Rapier's state every 60 ticks, recovered onto
+- Every query decision on **identical states** (Rapier's state every 2 s, recovered onto
   both backends): line of sight, shots, charge paths (a capsule `cast_shape`, #57) and creature routes
   (#307: shape casts and overlap queries on the navigation grid) for player–creature pairs
   within 40 m, NPC sight,
@@ -164,6 +164,16 @@ Intentional or explained differences:
 6. **Contact gap.** Rapier units never came closer than 0.2498 units to a box; engine units came
    as close as 0.04 (`vale-wolf-hunt`) and 0.00 (`vale-crowded-fights-64`), never inside.
 
+## 60 Hz (#379)
+
+The zone runs at 60 Hz; the scripted workloads keep their 30 Hz timetables at the same moments
+(commands on the matching even ticks, lengths, parity and penetration sampling in seconds).
+`vale-wolf-hunt` is no longer bounded: its creatures part from tick 1 and reach the scripted
+hunter's fights after 38 s (tick 2276), where the players part by up to 81 units. Both arms'
+support tests skip a too-steep surface met first and look for walkable ground below it. 60 Hz
+exposed two engine gaps (gaps 3 and 4 below); both are fixed, and the check holds for every unit
+again.
+
 ## physics-engine gaps found
 
 1. **Contact material combine rule** (fixed, physics-engine #391 / #392). Rapier averages two
@@ -179,6 +189,14 @@ Intentional or explained differences:
    the uninterrupted run holds it still (the lake lurkers in `vale-fights-8`/`-32` once Stillwater
    Lake rose onto the #423 terrace). The grounded cache is ruled out; contact state carried between
    moves is suspected. Workaround: the lake's level rim is wider and the lurkers stand on it.
+3. **Grounded at a too-steep slope's foot** (fixed, physics-engine #395 / #398). A player pressing
+   into the mill chute's foot was not grounded on the engine arm. The support cast met the 60°
+   face first and stopped there, while Rapier's arm finds the floor below. The engine's support
+   test and the adapter's grounded fallback now pass over too-steep faces.
+4. **Walking into a heightfield cliff** (fixed, physics-engine #396 / #400, rust-kernels#177).
+   A terrain is one body, so a cast reports one contact with it. A capsule touching two cliff
+   faces, or a face and the floor, could be told about the face it was leaving, and it then
+   sank into the other. Terrain casts now report what the motion runs into.
 
 Dynamic bodies themselves (debris #288, movable crates #58) need no engine feature: the engine
 arm runs them since mmorpg#442 (physics-engine C18).

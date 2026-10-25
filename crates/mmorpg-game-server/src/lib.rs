@@ -624,13 +624,26 @@ mod tests {
         assert_eq!(first_snapshot.tick, 3);
         assert_eq!(
             first_snapshot.entities[0].position,
-            [spawn_x + 3 * 21, 90, spawn_z]
+            // Three ticks at the run speed, rounded to the wire's whole units.
+            [
+                ({
+                    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+                    let run = 3.0 * mmorpg_core::RUN_SPEED_SUBUNITS_PER_TICK as f32
+                        / mmorpg_core::physics::SUBUNITS_PER_UNIT as f32;
+                    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+                    let x = (spawn_x as f32 + run).round() as i32;
+                    x
+                }),
+                90,
+                spawn_z
+            ]
         );
         assert_eq!(second_snapshot.zone_id, second_zone);
         assert_eq!(second_snapshot.tick, 1);
         assert_eq!(
             second_snapshot.entities[0].position,
-            [spawn_x, 90, spawn_z - 21]
+            // One tick at the run speed (10.5 units), rounded on the wire.
+            [spawn_x, 90, spawn_z - 10]
         );
     }
 }

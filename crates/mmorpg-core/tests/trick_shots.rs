@@ -32,7 +32,7 @@ fn content(wall: Option<([i32; 2], [i32; 2])>, wolves: &[[i32; 2]]) -> Arc<ZoneC
         });
     }
     let definition = ZoneDefinition::with_spawn_grid(
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         SpawnGrid {
             origin: [-5_000, -5_000],
             columns: 32,

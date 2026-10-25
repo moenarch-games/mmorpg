@@ -1,21 +1,31 @@
-scenario two-bots-move zone=1 bots=2 ticks=10 grace=120
+scenario two-bots-move zone=1 bots=2 ticks=20 grace=120
 t=0 alice join -> joined player=1 epoch=1
 t=0 bob join -> joined player=2 epoch=1
 t=0 alice move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=0
 t=1 expect alice sees bob ok bob at [-1450, 90, 1250]
-t=1 expect bob sees alice ok alice at [-1550, 90, 1271]
+t=1 expect bob sees alice ok alice at [-1550, 90, 1261]
 t=1 expect alice acknowledged ok ack=1
-t=1 alice p1 e1 ack1 (-1550,90,1271) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=2 alice p1 e1 ack1 (-1550,90,1292) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=3 alice p1 e1 ack1 (-1550,90,1313) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=4 alice p1 e1 ack1 (-1550,90,1334) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=5 alice p1 e1 ack1 (-1550,90,1355) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=5 bob move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=16384
-t=6 alice p1 e1 ack1 (-1550,90,1376) sees[bob] | bob p2 e1 ack1 (-1429,90,1250) sees[alice]
-t=7 alice p1 e1 ack1 (-1550,90,1397) sees[bob] | bob p2 e1 ack1 (-1408,90,1250) sees[alice]
-t=8 alice p1 e1 ack1 (-1550,90,1418) sees[bob] | bob p2 e1 ack1 (-1387,90,1250) sees[alice]
-t=9 alice p1 e1 ack1 (-1550,90,1439) sees[bob] | bob p2 e1 ack1 (-1366,90,1250) sees[alice]
-t=10 expect bob position alice ok [-1550, 90, 1460]
-t=10 expect alice position bob ok [-1345, 90, 1250]
-t=10 alice p1 e1 ack1 (-1550,90,1460) sees[bob] | bob p2 e1 ack1 (-1345,90,1250) sees[alice]
-PASS two-bots-move ticks=10 steps=4 expectations=5 failures=0
+t=1 alice p1 e1 ack1 (-1550,90,1261) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=2 alice p1 e1 ack1 (-1550,90,1271) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=3 alice p1 e1 ack1 (-1550,90,1282) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=4 alice p1 e1 ack1 (-1550,90,1292) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=5 alice p1 e1 ack1 (-1550,90,1303) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=6 alice p1 e1 ack1 (-1550,90,1313) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=7 alice p1 e1 ack1 (-1550,90,1324) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=8 alice p1 e1 ack1 (-1550,90,1334) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=9 alice p1 e1 ack1 (-1550,90,1345) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=10 alice p1 e1 ack1 (-1550,90,1355) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=10 bob move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=16384
+t=11 alice p1 e1 ack1 (-1550,90,1366) sees[bob] | bob p2 e1 ack1 (-1440,90,1250) sees[alice]
+t=12 alice p1 e1 ack1 (-1550,90,1376) sees[bob] | bob p2 e1 ack1 (-1429,90,1250) sees[alice]
+t=13 alice p1 e1 ack1 (-1550,90,1387) sees[bob] | bob p2 e1 ack1 (-1419,90,1250) sees[alice]
+t=14 alice p1 e1 ack1 (-1550,90,1397) sees[bob] | bob p2 e1 ack1 (-1408,90,1250) sees[alice]
+t=15 alice p1 e1 ack1 (-1550,90,1408) sees[bob] | bob p2 e1 ack1 (-1398,90,1250) sees[alice]
+t=16 alice p1 e1 ack1 (-1550,90,1418) sees[bob] | bob p2 e1 ack1 (-1387,90,1250) sees[alice]
+t=17 alice p1 e1 ack1 (-1550,90,1429) sees[bob] | bob p2 e1 ack1 (-1377,90,1250) sees[alice]
+t=18 alice p1 e1 ack1 (-1550,90,1439) sees[bob] | bob p2 e1 ack1 (-1366,90,1250) sees[alice]
+t=19 alice p1 e1 ack1 (-1550,90,1450) sees[bob] | bob p2 e1 ack1 (-1356,90,1250) sees[alice]
+t=20 expect bob position alice ok [-1550, 90, 1460]
+t=20 expect alice position bob ok [-1345, 90, 1250]
+t=20 alice p1 e1 ack1 (-1550,90,1460) sees[bob] | bob p2 e1 ack1 (-1345,90,1250) sees[alice]
+PASS two-bots-move ticks=20 steps=4 expectations=5 failures=0

@@ -1,31 +1,33 @@
-scenario vale-hub-walk zone=1 bots=2 ticks=280 grace=120
+scenario vale-hub-walk zone=1 bots=2 ticks=560 grace=120
 t=0 alice join -> joined player=1 epoch=1
 t=0 bob join -> joined player=2 epoch=1
 t=0 alice move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=32768
 t=0 bob move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=0
-t=1 expect alice sees bob ok bob at [-1450, 90, 1271]
-t=1 alice p1 e1 ack1 (-1550,90,1229) sees[bob] | bob p2 e1 ack1 (-1450,90,1271) sees[alice]
-t=20 alice p1 e1 ack1 (-1550,90,830) sees[bob] | bob p2 e1 ack1 (-1450,90,1670) sees[alice]
-t=36 bob move -> applied seq=2 epoch=1 forward=1 strafe=0 facing=16384
-t=37 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-1429,90,2006) sees[alice]
-t=40 expect alice position alice ok [-1550, 90, 730]
-t=40 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-1366,90,2006) sees[alice]
-t=60 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-946,90,2006) sees[alice]
-t=80 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-526,90,2006) sees[alice]
-t=100 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-106,90,2006) sees[alice]
-t=120 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (314,90,2006) sees[alice]
-t=140 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (734,90,2006) sees[alice]
-t=160 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (1154,90,2006) sees[alice]
-t=180 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (1574,90,2006) sees[alice]
-t=200 expect bob position alice ok [-1550, 90, 730]
-t=200 expect alice sees bob ok bob at [1994, 90, 2006]
-t=200 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (1994,90,2006) sees[alice]
-t=220 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (2414,90,2006) sees[alice]
-t=237 alice p1 e1 ack1 (-1550,90,730) sees[] | bob p2 e1 ack2 (2771,90,2006) sees[]
-t=240 alice p1 e1 ack1 (-1550,90,730) sees[] | bob p2 e1 ack2 (2834,90,2006) sees[]
-t=260 alice p1 e1 ack1 (-1550,90,730) sees[] | bob p2 e1 ack2 (3254,90,2006) sees[]
-t=280 expect bob position bob ok [3674, 90, 2006]
-t=280 expect alice not_sees bob ok bob not visible
-t=280 expect bob visible_count ok count=1
-t=280 alice p1 e1 ack1 (-1550,90,730) sees[] | bob p2 e1 ack2 (3674,90,2006) sees[]
-PASS vale-hub-walk ticks=280 steps=5 expectations=7 failures=0
+t=1 expect alice sees bob ok bob at [-1450, 90, 1261]
+t=1 alice p1 e1 ack1 (-1550,90,1240) sees[bob] | bob p2 e1 ack1 (-1450,90,1261) sees[alice]
+t=40 alice p1 e1 ack1 (-1550,90,830) sees[bob] | bob p2 e1 ack1 (-1450,90,1670) sees[alice]
+t=72 bob move -> applied seq=2 epoch=1 forward=1 strafe=0 facing=16384
+t=73 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-1440,90,2006) sees[alice]
+t=80 expect alice position alice ok [-1550, 90, 730]
+t=80 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-1366,90,2006) sees[alice]
+t=120 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-946,90,2006) sees[alice]
+t=160 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-526,90,2006) sees[alice]
+t=200 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (-106,90,2006) sees[alice]
+t=240 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (314,90,2006) sees[alice]
+t=280 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (734,90,2006) sees[alice]
+t=320 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (1154,90,2006) sees[alice]
+t=360 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (1574,90,2006) sees[alice]
+t=399 expect alice sees bob ok bob at [1984, 90, 2006]
+t=399 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (1984,90,2006) sees[alice]
+t=400 expect bob position alice ok [-1550, 90, 730]
+t=400 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (1994,90,2006) sees[alice]
+t=440 alice p1 e1 ack1 (-1550,90,730) sees[bob] | bob p2 e1 ack2 (2414,90,2006) sees[alice]
+t=474 alice p1 e1 ack1 (-1550,90,730) sees[] | bob p2 e1 ack2 (2771,90,2006) sees[]
+t=480 alice p1 e1 ack1 (-1550,90,730) sees[] | bob p2 e1 ack2 (2834,90,2006) sees[]
+t=520 alice p1 e1 ack1 (-1550,90,730) sees[] | bob p2 e1 ack2 (3254,90,2006) sees[]
+t=559 expect alice not_sees bob ok bob not visible
+t=559 expect bob visible_count ok count=1
+t=559 alice p1 e1 ack1 (-1550,90,730) sees[] | bob p2 e1 ack2 (3664,90,2006) sees[]
+t=560 expect bob position bob ok [3674, 90, 2006]
+t=560 alice p1 e1 ack1 (-1550,90,730) sees[] | bob p2 e1 ack2 (3674,90,2006) sees[]
+PASS vale-hub-walk ticks=560 steps=5 expectations=7 failures=0

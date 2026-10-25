@@ -22,7 +22,7 @@ pub const FORCED_IMMUNITY_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// A knockback covers its distance in this many ticks.
 pub const KNOCKBACK_TICKS: u16 = crate::ticks_from_ms(267);
 /// A charge rushes at 13.5 m/s for at most 1 s.
-pub const CHARGE_SPEED_UNITS: i32 = 45;
+pub const CHARGE_SPEED_SUBUNITS_PER_TICK: i32 = crate::subunits_per_tick(1_350);
 pub const CHARGE_MAX_TICKS: u16 = crate::ticks_from_ms(1_000);
 /// A charge's path (#57) must be clear for the charger's body above this height (units over
 /// its feet): knee height, so the ground, slopes, kerbs and campfires it runs over do not
@@ -38,7 +38,7 @@ const SHOVE_CONTACT_UNITS: i64 = 4;
 /// One forced move in progress.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ForcedMove {
-    /// Horizontal velocity, units per tick.
+    /// Horizontal velocity, subunits per tick ([`crate::physics::SUBUNITS_PER_UNIT`]).
     pub velocity: [i32; 2],
     pub remaining: u16,
     /// A charge steers toward this unit and knocks it back this many units on arrival.
@@ -102,8 +102,10 @@ impl ZoneSimulation {
         if distance <= 0 || !self.movable(unit) {
             return false;
         }
+        // The distance in subunits over the knockback's ticks, rounded up.
         let ticks = i32::from(KNOCKBACK_TICKS);
-        let Some(velocity) = scaled(direction, (distance + ticks - 1) / ticks) else {
+        let subunits = distance.saturating_mul(crate::physics::SUBUNITS_PER_UNIT);
+        let Some(velocity) = scaled(direction, (subunits + ticks - 1) / ticks) else {
             return false;
         };
         self.forced.insert(
@@ -341,7 +343,7 @@ impl ZoneSimulation {
                     }
                     continue;
                 }
-                moving.velocity = scaled(delta, CHARGE_SPEED_UNITS).unwrap_or([0, 0]);
+                moving.velocity = scaled(delta, CHARGE_SPEED_SUBUNITS_PER_TICK).unwrap_or([0, 0]);
             }
             moving.remaining -= 1;
             self.drive_forced_velocity(unit, moving.velocity)?;
@@ -364,9 +366,8 @@ impl ZoneSimulation {
             .ok_or_else(|| ZoneError::new("forced unit physics body is missing"))?
             .velocity()
             .y;
-        let [x, z] = velocity.map(|units| units * crate::physics::SUBUNITS_PER_UNIT);
         self.world
-            .set_velocity(body, Vec3i::new(x, vertical, z))
+            .set_velocity(body, Vec3i::new(velocity[0], vertical, velocity[1]))
             .map_err(crate::zone::physics_error)
     }
 
@@ -378,7 +379,8 @@ impl ZoneSimulation {
             .filter_map(|(&unit, state)| {
                 let moving = state.moving?;
                 let realized = self.world.body(body_id(unit))?.exact_velocity();
-                let wanted = [moving.velocity[0], moving.velocity[1]].map(|axis| axis as f32);
+                let wanted = [moving.velocity[0], moving.velocity[1]]
+                    .map(|axis| axis as f32 / crate::physics::SUBUNITS_PER_UNIT as f32);
                 let along = realized[0] * wanted[0] + realized[2] * wanted[1];
                 let full = wanted[0] * wanted[0] + wanted[1] * wanted[1];
                 (full > 0.0 && along < full / 4.0).then_some(unit)

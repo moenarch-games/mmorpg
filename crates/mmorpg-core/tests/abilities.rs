@@ -3,6 +3,12 @@
 //! interrupts and every aura kind, plus the creature abilities of revision 6.
 mod support;
 
+use mmorpg_core::golden::t30;
+
+/// [`t30`] as the `u16` the zone counts ticks in.
+fn t30u16(ticks: u64) -> u16 {
+    u16::try_from(t30(ticks)).unwrap()
+}
 use std::sync::Arc;
 
 use mmorpg_core::ability::ids;
@@ -253,7 +259,7 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
     assert_eq!(fight.errors_at(2), [ErrorCode::NotEnoughResource]);
 
     // Rage: +6 per swing hit dealt, +4 per hit taken.
-    fight.until(600, |fight| fight.resource() >= 60);
+    fight.until(t30(600), |fight| fight.resource() >= 60);
     let dealt = fight
         .since(0, |event| damage_dealt_to(event, TARGET).is_some())
         .len();
@@ -280,7 +286,7 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
         "global cooldown"
     );
     let me = fight.me();
-    assert_eq!(me.combat.abilities.global_cooldown, 44);
+    assert_eq!(me.combat.abilities.global_cooldown, t30u16(45) - 1);
     let strike = events
         .iter()
         .find_map(|event| damage_dealt_to(event, TARGET))
@@ -299,8 +305,8 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
         - 6;
     assert_eq!(before + gained - 15, fight.resource());
 
-    // Shield Bash after the global cooldown: a 60-tick stun and a cooldown.
-    fight.ticks(44);
+    // Shield Bash after the global cooldown: a 2 s stun and a cooldown.
+    fight.ticks(t30(45) - 1);
     fight.use_ability(ids::SHIELD_BASH);
     fight.tick();
     let bashed = fight.zone.current_tick();
@@ -308,16 +314,16 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
     assert_eq!(detail.auras.len(), 1);
     assert_eq!(
         (detail.auras[0].kind, detail.auras[0].remaining),
-        (AuraKind::Stun, 59)
+        (AuraKind::Stun, t30u16(60) - 1)
     );
     assert_eq!(
         fight.view().cooldowns,
         [mmorpg_core::Cooldown {
             ability: ids::SHIELD_BASH,
-            remaining: 359,
+            remaining: t30u16(360) - 1,
         }]
     );
-    fight.ticks(45);
+    fight.ticks(t30(45));
     fight.use_ability(ids::SHIELD_BASH);
     fight.tick();
     assert_eq!(
@@ -330,13 +336,13 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
         |event| matches!(event, ZoneEvent::DamageTaken { source, .. } | ZoneEvent::AttackPerformed { source, .. } if *source == TARGET),
     );
     assert!(
-        wolf_hits.iter().all(|(at, _)| *at > bashed + 59),
+        wolf_hits.iter().all(|(at, _)| *at > bashed + t30(60) - 1),
         "{wolf_hits:?}"
     );
 
     // Cleave hits the target and both packmates within 3 m of it, once the target the
     // bash knocked back (#287) has run back into melee.
-    fight.until(300, |fight| {
+    fight.until(t30(300), |fight| {
         let state = fight.zone.snapshot().unwrap();
         let at = |id: u32| {
             let creature = state
@@ -371,7 +377,7 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
     }
 
     // Rallying Cry heals 30 % of 125 = 38 over ten pulses.
-    fight.until(300, |fight| {
+    fight.until(t30(300), |fight| {
         fight.resource() >= 20 && fight.me().combat.abilities.global_cooldown == 0
     });
     fight.use_ability(ids::RALLYING_CRY);
@@ -382,7 +388,7 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
         (auras[0].ability, auras[0].kind, auras[0].amount),
         (ids::RALLYING_CRY, AuraKind::HealOverTime, 38)
     );
-    fight.ticks(300);
+    fight.ticks(t30(300));
     let heals = fight.since(cried, |event| matches!(event, ZoneEvent::Healed { .. }));
     assert!(!heals.is_empty());
     for (at, _) in &heals {
@@ -431,7 +437,7 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
             .is_empty()
     );
     assert_eq!(fight.view().projectiles.len(), 1);
-    let landed = fight.until(30, |fight| {
+    let landed = fight.until(t30(30), |fight| {
         !fight
             .since(fired, |event| damage_dealt_to(event, TARGET).is_some())
             .is_empty()
@@ -447,7 +453,7 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
     assert_eq!(fight.resource(), 70);
 
     // Focus regenerates 5 every 30 ticks.
-    fight.ticks(44);
+    fight.ticks(t30(45) - 1);
     assert_eq!(fight.resource(), 75);
     fight.use_ability(ids::SERPENT_STING);
     fight.tick();
@@ -455,7 +461,7 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
     let stung = fight.land();
 
     // Concussive Shot halves the charging wolf's speed.
-    fight.ticks(44);
+    fight.ticks(t30(45) - 1);
     fight.use_ability(ids::CONCUSSIVE_SHOT);
     fight.tick();
     fight.land();
@@ -470,22 +476,23 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
 
     // Serpent Sting: 30 + 4 × 5 = 50 over five pulses every 90 ticks,
     // counted from the tick it landed.
-    fight.ticks(450);
+    fight.ticks(t30(450));
     let pulses = fight.since(stung, |event| damage_dealt_to(event, TARGET).is_some());
     let pulses: Vec<_> = pulses
         .into_iter()
         .map(|(at, event)| (at - stung, damage_dealt_to(&event, TARGET).unwrap()))
         .collect();
-    assert_eq!(
-        pulses,
-        [(89, 10), (179, 10), (269, 10), (359, 10), (449, 10)]
-    );
+    assert_eq!(pulses, [90, 180, 270, 360, 450].map(|at| (t30(at) - 1, 10)));
 
-    // Rapid Fire hastes swings: 60 × 100 / 140 = 42 ticks.
+    // Rapid Fire hastes swings: 2 s × 100 / 140.
     fight.use_ability(ids::RAPID_FIRE);
     fight.send(ZoneCommand::StartAttack);
-    fight.until(200, |fight| fight.me().combat.swing_timer > 0);
-    assert_eq!(fight.me().combat.swing_timer, 42, "hasted from 60");
+    fight.until(t30(200), |fight| fight.me().combat.swing_timer > 0);
+    assert_eq!(
+        fight.me().combat.swing_timer,
+        t30u16(60) * 100 / 140,
+        "hasted from 2 s"
+    );
     assert_eq!(fight.view().auras[0].kind, AuraKind::Haste);
 }
 
@@ -515,16 +522,20 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
     fight.send(arena::stand(NORTHWARD));
 
     // Firebolt: a 60-tick cast that pays on completion.
-    fight.ticks(45);
+    fight.ticks(t30(45));
     fight.use_ability(ids::FIREBOLT);
     fight.tick();
     let started = fight.zone.current_tick();
     fight.use_ability(ids::FROST_NOVA);
     fight.tick();
     assert_eq!(fight.errors_at(started + 1), [ErrorCode::AlreadyCasting]);
-    fight.until(70, |fight| fight.view().viewer.cast.is_none());
+    fight.until(t30(70), |fight| fight.view().viewer.cast.is_none());
     let landed = fight.zone.current_tick();
-    assert_eq!(landed - started, 59, "60 ticks including the start tick");
+    assert_eq!(
+        landed - started,
+        t30(60) - 1,
+        "2 s including the start tick"
+    );
     // The missile flies the 25 m to the wolf at 30 m/s (#289).
     assert!(
         fight
@@ -533,7 +544,7 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
             .iter()
             .any(|projectile| projectile.kind == mmorpg_core::ProjectileKind::Missile)
     );
-    fight.until(30, |fight| {
+    fight.until(t30(30), |fight| {
         !fight
             .since(landed, |event| damage_dealt_to(event, TARGET).is_some())
             .is_empty()
@@ -548,15 +559,18 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
     let me = fight.me();
     // The five-second rule counts the spending tick (at the cast's end, before the flight).
     let flight = u16::try_from(fight.zone.current_tick() - landed).unwrap();
-    assert!((20..=26).contains(&flight), "flew {flight} ticks");
-    assert_eq!(me.combat.abilities.mana_delay, 149 - flight);
-    fight.ticks(u64::from(149 - flight) + 29);
+    assert!(
+        (t30u16(20)..=t30u16(26)).contains(&flight),
+        "flew {flight} ticks"
+    );
+    assert_eq!(me.combat.abilities.mana_delay, t30u16(150) - 1 - flight);
+    fight.ticks(u64::from(t30u16(150) - 1 - flight) + t30(30) - 1);
     assert_eq!(fight.resource(), 195, "no regeneration for 150 ticks");
     fight.tick();
     assert!(fight.resource() > 195);
 
     // Frost Nova roots the wolf once it reached melee and hit.
-    fight.until(300, |fight| {
+    fight.until(t30(300), |fight| {
         !fight
             .since(landed, |event| {
                 matches!(event, ZoneEvent::DamageTaken { .. })
@@ -569,15 +583,18 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
     let velocity = mmorpg_core::physics::to_units(fight.creature(FIRST).velocity);
     assert_eq!([velocity[0], velocity[2]], [0, 0]);
     let root = fight.view().target_detail.auras[0];
-    assert_eq!((root.kind, root.remaining), (AuraKind::Root, 179));
+    assert_eq!(
+        (root.kind, root.remaining),
+        (AuraKind::Root, t30u16(180) - 1)
+    );
 
     // Arcane Barrier absorbs 20 + 8 × 5 = 60 damage before health.
-    fight.ticks(44);
+    fight.ticks(t30(45) - 1);
     let health = fight.view().viewer.health;
     fight.use_ability(ids::ARCANE_BARRIER);
     fight.tick();
     let shielded = fight.zone.current_tick();
-    fight.until(200, |fight| {
+    fight.until(t30(200), |fight| {
         fight
             .since(shielded, |event| {
                 matches!(event, ZoneEvent::Absorbed { .. })
@@ -615,10 +632,16 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
         );
     }
 
-    // Damage after the first 30 ticks breaks the root.
-    assert!(fight.zone.current_tick() - rooted >= 30);
+    // Damage after the first second breaks the root.
+    assert!(fight.zone.current_tick() - rooted >= t30(30));
+    if fight.me().combat.abilities.global_cooldown > 0 {
+        fight.until(t30(60), |fight| {
+            fight.me().combat.abilities.global_cooldown == 0
+        });
+    }
     fight.use_ability(ids::FIREBOLT);
-    fight.until(70, |fight| fight.view().viewer.cast.is_none());
+    fight.until(t30(70), |fight| fight.view().viewer.cast.is_none());
+    fight.land();
     assert!(
         !fight
             .since(rooted, |event| matches!(
@@ -630,7 +653,7 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
     assert!(fight.view().target_detail.auras.is_empty());
 
     // Blizzard pays 80 at the start and pulses six times.
-    fight.until(600, |fight| {
+    fight.until(t30(600), |fight| {
         fight.resource() >= 80 && fight.me().combat.abilities.global_cooldown == 0
     });
     let before = fight.resource();
@@ -639,11 +662,11 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
     let channelled = fight.zone.current_tick();
     assert_eq!(fight.resource(), before - 80);
     let cast = fight.view().viewer.cast.unwrap();
-    assert!(cast.channel && cast.total == 180);
-    fight.ticks(180);
+    assert!(cast.channel && cast.total == t30u16(180));
+    fight.ticks(t30(180));
     let pulses = fight.since(channelled, |event| damage_dealt_to(event, TARGET).is_some());
     let offsets: Vec<_> = pulses.iter().map(|(at, _)| at - channelled).collect();
-    assert_eq!(offsets, [29, 59, 89, 119, 149, 179]);
+    assert_eq!(offsets, [30, 60, 90, 120, 150, 180].map(|at| t30(at) - 1));
     for (_, event) in pulses {
         // 4–6 + 5.
         assert!((9..=11).contains(&damage_dealt_to(&event, TARGET).unwrap()));
@@ -657,7 +680,7 @@ fn a_jump_interrupts_a_channel_that_keeps_its_cost() {
     fight.use_ability(ids::BLIZZARD);
     fight.tick();
     assert_eq!(fight.resource(), 140);
-    fight.ticks(40);
+    fight.ticks(t30(40));
     fight.send(ZoneCommand::Jump);
     let events = fight.tick();
     assert!(events.contains(&ZoneEvent::Interrupted {
@@ -685,7 +708,7 @@ fn a_lurker_casts_muck_bolt_until_a_shield_bash_interrupts_it() {
     let mut fight = Fight::with_class(content, 2, 0);
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
     fight.send(ZoneCommand::StartAttack);
-    let first = fight.until(40, |fight| {
+    let first = fight.until(t30(40), |fight| {
         !fight
             .since(0, |event| matches!(event, ZoneEvent::CastStarted { .. }))
             .is_empty()
@@ -696,12 +719,12 @@ fn a_lurker_casts_muck_bolt_until_a_shield_bash_interrupts_it() {
             source: TARGET,
             target: Some(PLAYER),
             ability: ids::MUCK_BOLT,
-            ticks: 45,
+            ticks: t30u16(45),
         }
     )));
     // Presentation must not invent ordinary attacks while this creature is casting.
     assert!(!fight.since(first, |event| matches!(event, ZoneEvent::AttackPerformed { source, .. } if *source == TARGET)).iter().any(|(tick, _)| *tick == first));
-    for _ in 0..43 {
+    for _ in 0..t30(45) - 2 {
         let events = fight.tick();
         assert!(!events.iter().any(
             |event| matches!(event, ZoneEvent::AttackPerformed { source, .. } if *source == TARGET)
@@ -709,7 +732,7 @@ fn a_lurker_casts_muck_bolt_until_a_shield_bash_interrupts_it() {
     }
     fight.tick();
     let landed = fight.since(
-        first + 44,
+        first + t30(45) - 1,
         |event| matches!(event, ZoneEvent::DamageTaken { source, .. } if *source == TARGET),
     );
     let ZoneEvent::DamageTaken { amount, .. } = landed[0].1 else {
@@ -717,7 +740,7 @@ fn a_lurker_casts_muck_bolt_until_a_shield_bash_interrupts_it() {
     };
     assert!((5..=8).contains(&amount) || amount == 1, "{amount}");
     assert!(fight.events.contains(&(
-        first + 44,
+        first + t30(45) - 1,
         ZoneEvent::AbilityUsed {
             source: TARGET,
             target: Some(PLAYER),
@@ -726,9 +749,11 @@ fn a_lurker_casts_muck_bolt_until_a_shield_bash_interrupts_it() {
     )));
 
     // The next cast follows after 240–270 ticks; Shield Bash interrupts it.
-    let second = fight.until(300, |fight| fight.creature(FIRST).abilities.cast.is_some());
+    let second = fight.until(t30(300), |fight| {
+        fight.creature(FIRST).abilities.cast.is_some()
+    });
     assert!(
-        (first + 44 + 240..=first + 44 + 270).contains(&second),
+        (first + t30(45) - 1 + t30(240)..=first + t30(45) - 1 + t30(270)).contains(&second),
         "{second}"
     );
     assert!(fight.resource() >= 10);
@@ -741,10 +766,16 @@ fn a_lurker_casts_muck_bolt_until_a_shield_bash_interrupts_it() {
     }));
     let lurker = fight.creature(FIRST);
     assert_eq!(lurker.abilities.cast, None);
-    assert_eq!(lurker.abilities.ability_timer, 119, "locked for 120 ticks");
+    assert_eq!(
+        lurker.abilities.ability_timer,
+        t30u16(120) - 1,
+        "locked for 4 s"
+    );
     let bashed = fight.zone.current_tick();
-    let next = fight.until(200, |fight| fight.creature(FIRST).abilities.cast.is_some());
-    assert_eq!(next, bashed + 120);
+    let next = fight.until(t30(200), |fight| {
+        fight.creature(FIRST).abilities.cast.is_some()
+    });
+    assert_eq!(next, bashed + t30(120));
 }
 
 #[test]
@@ -757,7 +788,7 @@ fn a_bandit_bandages_itself_only_below_half_health() {
     let mut fight = Fight::new(content, 1);
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
     fight.send(ZoneCommand::StartAttack);
-    let casting = fight.until(2_000, |fight| {
+    let casting = fight.until(t30(2_000), |fight| {
         fight.creature(FIRST).abilities.cast.is_some()
     });
     let bandit = fight.creature(FIRST);
@@ -768,12 +799,12 @@ fn a_bandit_bandages_itself_only_below_half_health() {
         .remove(0);
     assert_eq!(started.0, casting);
     let health = bandit.health;
-    fight.ticks(89);
+    fight.ticks(t30(90));
     let healed = fight.since(casting, |event| matches!(event, ZoneEvent::Healed { .. }));
     let (at, ZoneEvent::Healed { amount, .. }) = healed[0] else {
         unreachable!()
     };
-    assert_eq!((at - casting, amount), (89, 20), "20 % of 100");
+    assert_eq!((at - casting, amount), (t30(90) - 1, 20), "20 % of 100");
     assert!(fight.creature(FIRST).health > health);
 }
 
@@ -792,19 +823,19 @@ fn recovery_rejects_aura_amounts_no_player_level_reaches() {
     };
     // Arcane Barrier at level 10: 20 + 8 × 9 = 92; an empty shield is gone.
     assert_eq!(checkpoint.players[0].combat.abilities.auras[0].amount, 44);
-    assert!(restore(ids::ARCANE_BARRIER, 599, 92).is_ok());
+    assert!(restore(ids::ARCANE_BARRIER, t30u16(600) - 1, 92).is_ok());
     // Serpent Sting at level 10: 30 + 4 × 9 = 66; Rallying Cry: 30 % of
     // 185 + 10 stamina × 5 = 235, rounded up: 71.
     // (Amounts are checked before reachability, so these Arcanist-borne
     // records still fail on their amount alone.)
     for (ability, remaining, amount) in [
-        (ids::ARCANE_BARRIER, 599, 93),
-        (ids::ARCANE_BARRIER, 599, u16::MAX),
-        (ids::ARCANE_BARRIER, 599, 0),
-        (ids::SERPENT_STING, 449, 67),
-        (ids::RALLYING_CRY, 299, 72),
-        (ids::RALLYING_CRY, 299, 0),
-        (ids::FROST_NOVA, 179, 1),
+        (ids::ARCANE_BARRIER, t30u16(600) - 1, 93),
+        (ids::ARCANE_BARRIER, t30u16(600) - 1, u16::MAX),
+        (ids::ARCANE_BARRIER, t30u16(600) - 1, 0),
+        (ids::SERPENT_STING, t30u16(450) - 1, 67),
+        (ids::RALLYING_CRY, t30u16(300) - 1, 72),
+        (ids::RALLYING_CRY, t30u16(300) - 1, 0),
+        (ids::FROST_NOVA, t30u16(180) - 1, 1),
     ] {
         assert_eq!(
             restore(ability, remaining, amount).unwrap_err().message(),
@@ -842,7 +873,7 @@ fn a_pulse_that_breaks_an_earlier_root_skips_no_later_aura() {
     send(&mut zone, 2, ability(ids::SERPENT_STING));
     zone.advance_tick().unwrap();
     let stung = land(&mut zone);
-    for _ in 0..45 {
+    for _ in 0..t30(45) {
         zone.advance_tick().unwrap();
     }
     send(&mut zone, 2, ability(ids::CONCUSSIVE_SHOT));
@@ -865,15 +896,15 @@ fn a_pulse_that_breaks_an_earlier_root_skips_no_later_aura() {
     );
     // The first sting pulse (89 ticks after it landed) breaks the root in
     // slot 0; the snare behind it still counts down that tick.
-    while zone.current_tick() < stung + 89 {
+    while zone.current_tick() < stung + t30(90) - 1 {
         zone.advance_tick().unwrap();
     }
     let elapsed = u16::try_from(zone.current_tick() - snared + 1).unwrap();
     assert_eq!(
         kinds(&zone),
         [
-            (ids::SERPENT_STING, 450 - 90),
-            (ids::CONCUSSIVE_SHOT, 120 - elapsed),
+            (ids::SERPENT_STING, t30u16(450) - t30u16(90)),
+            (ids::CONCUSSIVE_SHOT, t30u16(120) - elapsed),
         ]
     );
 }
@@ -908,7 +939,9 @@ fn recovery_rejects_casts_at_the_wrong_kind_of_unit() {
         vec![arena::spawn(1, LURKER, [-200, 0])],
     );
     let mut fight = Fight::new(lurking, 1);
-    fight.until(40, |fight| fight.creature(FIRST).abilities.cast.is_some());
+    fight.until(t30(40), |fight| {
+        fight.creature(FIRST).abilities.cast.is_some()
+    });
     let mut at_creature = fight.zone.snapshot().unwrap();
     at_creature.creatures[0]
         .abilities
@@ -976,7 +1009,7 @@ fn recovery_rejects_auras_no_caster_could_have_put_there() {
         (
             vec![mmorpg_core::Aura {
                 ability: ids::RALLYING_CRY,
-                remaining: 299,
+                remaining: t30u16(300) - 1,
                 amount: 30,
                 ..barrier
             }],
@@ -1008,7 +1041,9 @@ fn a_departing_target_ends_a_creature_cast_and_recovery_stays_valid() {
         vec![arena::spawn(1, LURKER, [-200, 0])],
     );
     let mut fight = Fight::new(content, 1);
-    fight.until(40, |fight| fight.creature(FIRST).abilities.cast.is_some());
+    fight.until(t30(40), |fight| {
+        fight.creature(FIRST).abilities.cast.is_some()
+    });
     let checkpoint = fight.zone.snapshot().unwrap();
     ZoneSimulation::from_snapshot(checkpoint, Arc::clone(fight.zone.content()))
         .expect("a creature cast restores");
@@ -1028,7 +1063,9 @@ fn recovery_rejects_creature_casts_at_dead_players() {
         vec![arena::spawn(1, LURKER, [-200, 0])],
     );
     let mut fight = Fight::new(lurking, 1);
-    fight.until(40, |fight| fight.creature(FIRST).abilities.cast.is_some());
+    fight.until(t30(40), |fight| {
+        fight.creature(FIRST).abilities.cast.is_some()
+    });
     let checkpoint = fight.zone.snapshot().unwrap();
     let content = Arc::clone(fight.zone.content());
     assert!(ZoneSimulation::from_snapshot(checkpoint.clone(), Arc::clone(&content)).is_ok());
@@ -1060,7 +1097,7 @@ fn an_arcanist_level_up_grows_current_mana_with_its_maximum() {
     fight.send(arena::stand(NORTHWARD));
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
     fight.send(ZoneCommand::StartAttack);
-    fight.until(200, |fight| fight.me().combat.level == 2);
+    fight.until(t30(200), |fight| fight.me().combat.level == 2);
     assert_eq!(fight.resource(), 132);
     assert_eq!(fight.resource(), ResourceKind::Mana.max(2));
 }
@@ -1111,7 +1148,7 @@ fn a_necromancer_bolts_curses_drains_life_and_wards_itself() {
 
     // Shadow Bolt: a 60-tick cast that launches a shadow missile.
     fight.use_ability(ids::SHADOW_BOLT);
-    fight.until(70, |fight| fight.view().viewer.cast.is_none());
+    fight.until(t30(70), |fight| fight.view().viewer.cast.is_none());
     assert!(
         fight
             .zone
@@ -1129,7 +1166,9 @@ fn a_necromancer_bolts_curses_drains_life_and_wards_itself() {
     );
 
     // Corruption: an instant shadow missile that leaves a damage-over-time curse.
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     fight.use_ability(ids::CORRUPTION);
     fight.tick();
     fight.land();
@@ -1141,7 +1180,7 @@ fn a_necromancer_bolts_curses_drains_life_and_wards_itself() {
     );
 
     // Drain Life: once the wolf has bitten, a 90-tick channel that heals by what it drains.
-    fight.until(600, |fight| {
+    fight.until(t30(600), |fight| {
         fight.me().combat.health < fight.view().viewer.max_health
             && fight.me().combat.abilities.global_cooldown == 0
     });
@@ -1151,8 +1190,8 @@ fn a_necromancer_bolts_curses_drains_life_and_wards_itself() {
     let channelled = fight.zone.current_tick();
     assert_eq!(fight.resource(), before - 45);
     let cast = fight.view().viewer.cast.unwrap();
-    assert!(cast.channel && cast.total == 90);
-    fight.ticks(90);
+    assert!(cast.channel && cast.total == t30u16(90));
+    fight.ticks(t30(90));
     let heals = fight.since(channelled, |event| {
         matches!(event, ZoneEvent::Healed { ability, source, .. }
             if *ability == ids::DRAIN_LIFE && *source == PLAYER)
@@ -1160,7 +1199,9 @@ fn a_necromancer_bolts_curses_drains_life_and_wards_itself() {
     assert!(!heals.is_empty(), "the drain heals its caster");
 
     // Bone Shield: an absorb ward on the caster.
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     fight.use_ability(ids::BONE_SHIELD);
     fight.tick();
     assert!(
@@ -1181,12 +1222,12 @@ fn drain_life_breaks_when_its_target_dies() {
     let mut fight = Fight::with_class(content, 6, 3);
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
     fight.use_ability(ids::DRAIN_LIFE);
-    fight.ticks(31);
+    fight.ticks(t30(31));
     assert!(
         fight.creature(FIRST).health == 0,
         "the first pulse kills the wolf"
     );
-    fight.ticks(30);
+    fight.ticks(t30(30));
     assert!(fight.since(0, |event| matches!(
         event,
         ZoneEvent::Interrupted { ability, target, .. } if *ability == ids::DRAIN_LIFE && *target == PLAYER
@@ -1217,7 +1258,9 @@ fn a_rogue_strikes_poisons_gouges_and_rushes_on_focus() {
     );
 
     // Poisoned Blade: a damage-over-time poison on the target.
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     fight.use_ability(ids::POISONED_BLADE);
     fight.tick();
     assert!(fight.view().target_detail.auras.iter().any(|aura| {
@@ -1225,7 +1268,9 @@ fn a_rogue_strikes_poisons_gouges_and_rushes_on_focus() {
     }));
 
     // Gouge: a stun without knockback.
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     let before = fight.creature(FIRST).position;
     fight.use_ability(ids::GOUGE);
     fight.tick();
@@ -1237,11 +1282,13 @@ fn a_rogue_strikes_poisons_gouges_and_rushes_on_focus() {
             .iter()
             .any(|aura| aura.ability == ids::GOUGE && aura.kind == AuraKind::Stun)
     );
-    fight.ticks(10);
+    fight.ticks(t30(10));
     assert_eq!(fight.creature(FIRST).position, before, "stunned in place");
 
     // Adrenaline Rush hastes the Rogue's swings.
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     fight.use_ability(ids::ADRENALINE_RUSH);
     fight.tick();
     assert!(
@@ -1271,9 +1318,11 @@ fn a_cleric_builds_faith_and_heals_and_shields_a_friend_or_itself() {
     assert_eq!(fight.errors_at(refused), [ErrorCode::NotEnoughResource]);
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
     while fight.resource() < 85 {
-        fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+        fight.until(t30(60), |fight| {
+            fight.me().combat.abilities.global_cooldown == 0
+        });
         fight.use_ability(ids::SMITE);
-        fight.until(70, |fight| fight.view().viewer.cast.is_none());
+        fight.until(t30(70), |fight| fight.view().viewer.cast.is_none());
         assert!(
             fight
                 .zone
@@ -1289,12 +1338,16 @@ fn a_cleric_builds_faith_and_heals_and_shields_a_friend_or_itself() {
     // With a friendly player selected, Renew and Divine Shield land on that player.
     let friend = EntityRef::Player(2);
     fight.send(ZoneCommand::SelectTarget(Some(friend)));
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     let faith = fight.resource();
     fight.use_ability(ids::RENEW);
     fight.tick();
     assert_eq!(fight.resource(), faith - 25);
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     fight.use_ability(ids::DIVINE_SHIELD);
     fight.tick();
     let friends = fight.zone.snapshot_for_player(2).unwrap().auras;
@@ -1312,7 +1365,9 @@ fn a_cleric_builds_faith_and_heals_and_shields_a_friend_or_itself() {
 
     // Without a friendly selection, Renew lands on the Cleric itself.
     fight.send(ZoneCommand::SelectTarget(None));
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     fight.use_ability(ids::RENEW);
     fight.tick();
     assert!(
@@ -1346,9 +1401,11 @@ fn a_druid_roots_bolts_heals_a_friend_and_barks_itself() {
     );
 
     // Wrath flies as a nature missile.
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     fight.use_ability(ids::WRATH);
-    fight.until(70, |fight| fight.view().viewer.cast.is_none());
+    fight.until(t30(70), |fight| fight.view().viewer.cast.is_none());
     assert!(
         fight
             .zone
@@ -1361,7 +1418,9 @@ fn a_druid_roots_bolts_heals_a_friend_and_barks_itself() {
 
     // Rejuvenation lands on a selected friendly player; Barkskin on the Druid.
     fight.send(ZoneCommand::SelectTarget(Some(EntityRef::Player(2))));
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     fight.use_ability(ids::REJUVENATION);
     fight.tick();
     assert!(
@@ -1373,7 +1432,9 @@ fn a_druid_roots_bolts_heals_a_friend_and_barks_itself() {
             .iter()
             .any(|aura| aura.ability == ids::REJUVENATION && aura.kind == AuraKind::HealOverTime)
     );
-    fight.until(60, |fight| fight.me().combat.abilities.global_cooldown == 0);
+    fight.until(t30(60), |fight| {
+        fight.me().combat.abilities.global_cooldown == 0
+    });
     fight.use_ability(ids::BARKSKIN);
     fight.tick();
     assert!(

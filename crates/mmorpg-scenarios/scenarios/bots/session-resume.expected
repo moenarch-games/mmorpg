@@ -1,25 +1,37 @@
-scenario session-resume zone=1 bots=2 ticks=12 grace=30
+scenario session-resume zone=1 bots=2 ticks=24 grace=60
 t=0 alice join -> joined player=1 epoch=1
 t=0 bob join -> joined player=2 epoch=1
 t=0 alice move -> applied seq=1 epoch=1 forward=1 strafe=0 facing=0
-t=1 alice p1 e1 ack1 (-1550,90,1271) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=2 alice p1 e1 ack1 (-1550,90,1292) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=2 alice disconnect -> disconnected player=1
-t=3 expect bob sees alice ok alice at [-1550, 90, 1313]
-t=3 alice p1 offline | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=4 alice p1 offline | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=4 alice reconnect -> resumed player=1 epoch=2 identity=kept
-t=5 expect alice identity ok player=1 epoch=2
-t=5 alice p1 e2 ack1 (-1550,90,1355) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=5 alice reconnect -> rejected:already_connected
-t=6 alice p1 e2 ack1 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=6 alice move -> rejected:stale_connection seq=2 epoch=1 forward=0 strafe=0 facing=0
-t=6 alice move -> applied seq=3 epoch=2 forward=0 strafe=0 facing=0
-t=7 expect alice acknowledged ok ack=3
-t=7 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=8 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=9 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=10 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=11 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-t=12 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
-PASS session-resume ticks=12 steps=8 expectations=3 failures=0
+t=1 alice p1 e1 ack1 (-1550,90,1261) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=2 alice p1 e1 ack1 (-1550,90,1271) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=3 alice p1 e1 ack1 (-1550,90,1282) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=4 alice p1 e1 ack1 (-1550,90,1292) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=4 alice disconnect -> disconnected player=1
+t=5 expect bob sees alice ok alice at [-1550, 90, 1303]
+t=5 alice p1 offline | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=6 alice p1 offline | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=7 alice p1 offline | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=8 alice p1 offline | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=8 alice reconnect -> resumed player=1 epoch=2 identity=kept
+t=9 expect alice identity ok player=1 epoch=2
+t=9 alice p1 e2 ack1 (-1550,90,1345) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=10 alice p1 e2 ack1 (-1550,90,1355) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=10 alice reconnect -> rejected:already_connected
+t=11 alice p1 e2 ack1 (-1550,90,1366) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=12 alice p1 e2 ack1 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=12 alice move -> rejected:stale_connection seq=2 epoch=1 forward=0 strafe=0 facing=0
+t=12 alice move -> applied seq=3 epoch=2 forward=0 strafe=0 facing=0
+t=13 expect alice acknowledged ok ack=3
+t=13 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=14 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=15 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=16 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=17 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=18 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=19 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=20 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=21 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=22 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=23 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+t=24 alice p1 e2 ack3 (-1550,90,1376) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
+PASS session-resume ticks=24 steps=8 expectations=3 failures=0

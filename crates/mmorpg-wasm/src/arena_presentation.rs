@@ -19,7 +19,7 @@ type SceneBuffers = (String, Vec<f32>, Vec<u32>, Vec<f32>);
 pub(crate) fn content() -> Arc<ZoneContent> {
     static CONTENT: OnceLock<Arc<ZoneContent>> = OnceLock::new();
     Arc::clone(CONTENT.get_or_init(|| {
-        let definition = ZoneDefinition::new([0, -1, 0], Vec::new())
+        let definition = ZoneDefinition::new(mmorpg_core::STANDARD_GRAVITY, Vec::new())
             .expect("empty client presentation definition is valid");
         Arc::new(
             ZoneContent::from_definition(definition)

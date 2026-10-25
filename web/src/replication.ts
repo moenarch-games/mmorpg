@@ -9,7 +9,7 @@ export type Vector3 = readonly [number, number, number];
  * The authoritative simulation rate (`mmorpg_core::TICK_HZ`): the online handshake refuses another
  * rate and `createLocalWorld` refuses a WASM host at another one.
  */
-export const TICK_HZ = 30;
+export const TICK_HZ = 60;
 /** Whole ticks in `ms` milliseconds, rounded to the nearest tick like `mmorpg_core::ticks_from_ms`. */
 export function ticksFromMs(ms: number): number {
   return Math.floor((ms * TICK_HZ + 500) / 1_000);

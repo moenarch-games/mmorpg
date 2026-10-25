@@ -68,7 +68,7 @@ fn content_with(between: Between) -> Arc<ZoneContent> {
         Between::Nothing | Between::Wall | Between::Ramp => {}
     }
     let definition = ZoneDefinition::with_spawn_grid(
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         SpawnGrid {
             origin: [0, 0],
             columns: 32,

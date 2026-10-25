@@ -111,6 +111,23 @@ fn a_new_warden_reaches_level_two_and_equips_a_marauder_drop() {
             .entities
             .iter()
             .find(|unit| Some(unit.entity()) == view.viewer.target);
+        // A living target that is not fighting back gives way to the nearest attacker.
+        if let Some(unit) = target
+            && !unit.flags.dead
+            && !unit.flags.targets_viewer
+            && let Some(attacker) = view
+                .entities
+                .iter()
+                .filter(|other| other.flags.targets_viewer && !other.flags.dead)
+                .min_by_key(|other| {
+                    let [dx, _, dz] =
+                        [0, 1, 2].map(|axis| i64::from(other.position[axis] - me[axis]));
+                    (dx * dx + dz * dz, other.id)
+                })
+        {
+            script.send(ZoneCommand::SelectTarget(Some(attacker.entity())));
+            continue;
+        }
         // A living target is fought in melee; an owned corpse is walked up to
         // until its loot sheet is projected and claimed above.
         if let Some(unit) = target.filter(|unit| !unit.flags.dead || unit.flags.lootable) {
@@ -166,7 +183,31 @@ fn a_new_warden_reaches_level_two_and_equips_a_marauder_drop() {
             })
             .min_by_key(|unit| {
                 let [dx, _, dz] = [0, 1, 2].map(|axis| i64::from(unit.position[axis] - me[axis]));
-                (!unit.flags.targets_viewer, dx * dx + dz * dz, unit.id)
+                // Marauders: the one with the fewest others close enough to assist it, since
+                // pulling into the group brings three or four at once.
+                let crowd = view
+                    .entities
+                    .iter()
+                    .filter(|other| {
+                        prey == FIELD_MARAUDER
+                            && other.id != unit.id
+                            && other.appearance == FIELD_MARAUDER
+                            && !other.flags.dead
+                            && [0, 2]
+                                .map(|axis| {
+                                    i64::from(other.position[axis] - unit.position[axis]).pow(2)
+                                })
+                                .iter()
+                                .sum::<i64>()
+                                <= i64::from(mmorpg_core::ASSIST_RADIUS_UNITS + 200).pow(2)
+                    })
+                    .count();
+                (
+                    !unit.flags.targets_viewer,
+                    crowd,
+                    dx * dx + dz * dz,
+                    unit.id,
+                )
             });
         if let Some(unit) = next {
             script.send(ZoneCommand::SelectTarget(Some(unit.entity())));

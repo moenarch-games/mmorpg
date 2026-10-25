@@ -10,11 +10,11 @@ import { localZoneModule } from "./support/local-zone-module";
 
 const wasm = await localZoneModule();
 
-const MOVES = new Map<number, [number, number]>([[0, [1, 24_576]], [80, [0, 24_576]], [145, [1, 24_576]], [170, [0, 24_576]]]);
-const TARGETS = new Map<number, number>([[2, 901], [171, 900]]);
-const CASTS = new Set([81, 172, 190]);
+const MOVES = new Map<number, [number, number]>([[0, [1, 24_576]], [160, [0, 24_576]], [290, [1, 24_576]], [340, [0, 24_576]]]);
+const TARGETS = new Map<number, number>([[4, 901], [342, 900]]);
+const CASTS = new Set([162, 344, 380]);
 const FIREBOLT = 9;
-const TICKS = 200;
+const TICKS = 400;
 /** One debris record on the wire (`DEBRIS_RECORD_BYTES`). */
 const DEBRIS_BYTES = 19;
 

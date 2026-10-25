@@ -3,9 +3,9 @@
 # once-per-second limit with chat, across a reconnect.
 name = "zone-emote"
 zone = 1
-ticks = 210
-reconnect_grace_ticks = 30
-digest_interval = 30
+ticks = 420
+reconnect_grace_ticks = 60
+digest_interval = 60
 
 [[bots]]
 name = "alice"
@@ -33,7 +33,7 @@ action = "join"
 
 # Carol runs about 30 m east along the plaza: beyond /say range.
 [[steps]]
-tick = 1
+tick = 2
 bot = "carol"
 action = "move"
 forward = 1
@@ -41,7 +41,7 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 144
+tick = 288
 bot = "carol"
 action = "move"
 forward = 0
@@ -49,31 +49,31 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 160
+tick = 320
 bot = "alice"
 action = "emote"
 emote = "wave"
 
 # A line one tick later shares the emote's rate limit.
 [[steps]]
-tick = 161
+tick = 322
 bot = "alice"
 action = "chat"
 channel = "say"
 text = "Too soon"
 
 [[steps]]
-tick = 170
+tick = 340
 bot = "bob"
 action = "disconnect"
 
 [[steps]]
-tick = 175
+tick = 350
 bot = "bob"
 action = "reconnect"
 
 [[steps]]
-tick = 180
+tick = 360
 bot = "bob"
 action = "emote"
 emote = "bow"
@@ -81,38 +81,38 @@ emote = "bow"
 [[expect]]
 kind = "chat"
 bot = "alice"
-tick = 161
+tick = 321
 target = "alice"
 emote = "wave"
 
 [[expect]]
 kind = "chat"
 bot = "bob"
-tick = 161
+tick = 321
 target = "alice"
 emote = "wave"
 
 [[expect]]
 kind = "chat"
 bot = "carol"
-tick = 161
+tick = 321
 count = 0
 
 [[expect]]
 kind = "event"
 bot = "alice"
-tick = 162
+tick = 323
 event = "error:chat_throttled"
 
 [[expect]]
 kind = "chat"
 bot = "bob"
-tick = 162
+tick = 323
 count = 0
 
 [[expect]]
 kind = "chat"
 bot = "alice"
-tick = 181
+tick = 361
 target = "bob"
 emote = "bow"

@@ -378,7 +378,10 @@ mod tests {
         let chest = LabSetup::parse("warden", 5, "none", 7, None).unwrap();
         assert!(LocalZoneHost::action_lab(chest, 0).is_err());
         let graph: Value = serde_json::from_str(&graph_json()).unwrap();
-        assert_eq!(graph["edges"][0]["openAfterTicks"], 6);
+        assert_eq!(
+            graph["edges"][0]["openAfterTicks"],
+            mmorpg_core::ticks_from_ms(200)
+        );
         assert!(main_hand_items().as_array().unwrap().len() >= 3);
     }
 }

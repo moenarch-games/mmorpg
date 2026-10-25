@@ -2,7 +2,7 @@
 //! schedule, carrying whatever stands on them.
 //!
 //! The zone owns the schedule: a platform rests [`Platform::dwell`] ticks at its low stop,
-//! travels to its high stop at [`Platform::speed`] units per tick, rests again and travels
+//! travels to its high stop at [`Platform::speed`] subunits per tick, rests again and travels
 //! back, forever, as a pure function of the zone tick ([`Platform::centre_at`]). Canonical
 //! state therefore needs nothing beyond the tick, and every client derives the same position
 //! from content and a projection's tick. Physics owns the motion's consequences: each tick the
@@ -43,7 +43,7 @@ pub struct Platform {
     /// Box centre at the low and the high stop, in units.
     pub low: [i32; 3],
     pub high: [i32; 3],
-    /// Units per tick while travelling.
+    /// Subunits per tick ([`crate::physics::SUBUNITS_PER_UNIT`]) while travelling.
     pub speed: i32,
     /// Ticks resting at each stop.
     pub dwell: u32,
@@ -80,8 +80,10 @@ impl Platform {
     /// Ticks one trip between the stops takes.
     #[must_use]
     pub fn travel_ticks(&self) -> u32 {
-        let speed = self.speed.unsigned_abs().max(1);
-        self.distance().div_ceil(speed)
+        let speed = u64::from(self.speed.unsigned_abs().max(1));
+        let subunits = u64::from(self.distance())
+            * u64::from(crate::physics::SUBUNITS_PER_UNIT.unsigned_abs());
+        u32::try_from(subunits.div_ceil(speed)).unwrap_or(u32::MAX)
     }
 
     /// Ticks of one whole cycle: rest, rise, rest, fall.
@@ -114,13 +116,16 @@ impl Platform {
     pub fn centre_at(&self, tick: u64) -> [i32; 3] {
         let distance = i64::from(self.distance().max(1));
         let speed = i64::from(self.speed.unsigned_abs());
+        // Whole units covered after `elapsed` ticks at `speed` subunits per tick.
+        let covered = |elapsed: u32| {
+            (i64::from(elapsed) * speed / i64::from(crate::physics::SUBUNITS_PER_UNIT))
+                .min(distance)
+        };
         let travelled = match self.phase_at(tick) {
             (PlatformPhase::AtLow, _) => 0,
             (PlatformPhase::AtHigh, _) => distance,
-            (PlatformPhase::Rising, elapsed) => (i64::from(elapsed) * speed).min(distance),
-            (PlatformPhase::Falling, elapsed) => {
-                distance - (i64::from(elapsed) * speed).min(distance)
-            }
+            (PlatformPhase::Rising, elapsed) => covered(elapsed),
+            (PlatformPhase::Falling, elapsed) => distance - covered(elapsed),
         };
         let mut centre = self.low;
         for (axis, value) in centre.iter_mut().enumerate() {
@@ -185,7 +190,7 @@ mod tests {
             half_extents: [100, 400, 100],
             low: [0, -400, 0],
             high: [0, 400, 0],
-            speed: 6,
+            speed: 6 * crate::physics::SUBUNITS_PER_UNIT,
             dwell: 10,
         }
     }

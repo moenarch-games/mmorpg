@@ -205,7 +205,7 @@ impl Run {
         ))));
         self.send(ZoneCommand::StartAttack);
         let mut events = Vec::new();
-        for _ in 0..600 {
+        for _ in 0..mmorpg_core::golden::t30(600) {
             events.extend(self.tick());
             let state = self.zone.snapshot().unwrap();
             let record = state
@@ -222,7 +222,7 @@ impl Run {
 
     fn markers(&mut self) -> Vec<NpcMarker> {
         // An unchanged sheet is re-sent every ten ticks.
-        for _ in 0..10 {
+        for _ in 0..mmorpg_core::golden::t30(10) {
             if let Some(sheet) = self.zone.snapshot_for_player(1).unwrap().quests {
                 return sheet.markers;
             }
@@ -489,7 +489,7 @@ fn kills_credit_the_tapper_and_the_turn_in_grants_the_chosen_reward() {
     assert_eq!(run.player().quests, incomplete.quests);
 
     // The first boar respawns after a minute.
-    for _ in 0..1_800 {
+    for _ in 0..mmorpg_core::golden::t30(1_800) {
         run.tick();
     }
     run.kill(FIRST_BOAR);
@@ -585,7 +585,7 @@ fn quest_items_drop_only_while_needed_and_the_turn_in_consumes_them() {
     bag.insert(PELT, 1).unwrap();
     state.players[0].inventory = bag;
     run.zone = ZoneSimulation::from_snapshot(state, Arc::clone(run.zone.content())).unwrap();
-    for _ in 0..1_800 {
+    for _ in 0..mmorpg_core::golden::t30(1_800) {
         run.tick();
     }
     run.kill(FIRST_BOAR);
@@ -678,7 +678,7 @@ fn recovery_continues_quests_exactly_and_refuses_inconsistent_logs() {
     let checkpoint = run.zone.snapshot().unwrap();
     let mut recovered =
         ZoneSimulation::from_snapshot(checkpoint.clone(), Arc::clone(run.zone.content())).unwrap();
-    for _ in 0..200 {
+    for _ in 0..mmorpg_core::golden::t30(200) {
         run.zone.advance_tick().unwrap();
         recovered.advance_tick().unwrap();
         assert_eq!(recovered.snapshot().unwrap(), run.zone.snapshot().unwrap());

@@ -29,7 +29,7 @@ fn content(wall: bool, spawns: Vec<mmorpg_core::CreatureSpawn>) -> Arc<ZoneConte
         });
     }
     let definition = ZoneDefinition::with_spawn_grid(
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         SpawnGrid {
             origin: [-5_000, -5_000],
             columns: 32,
@@ -126,7 +126,7 @@ fn a_free_aimed_shot_flies_along_the_facing_and_hits_what_it_meets() {
     assert_eq!(view.projectiles.len(), 1);
     assert_eq!(view.projectiles[0].kind, ProjectileKind::Arrow);
     assert!(!view.projectiles[0].stuck);
-    for _ in 0..20 {
+    for _ in 0..mmorpg_core::golden::t30(20) {
         ranger.tick();
     }
     assert!(ranger.damage_to(WOLF_ONE) > 0, "the arrow struck the wolf");
@@ -146,7 +146,7 @@ fn a_wall_stops_a_free_shot_and_holds_the_arrow() {
         ability: ids::AIMED_SHOT.get(),
         target: None,
     });
-    for _ in 0..20 {
+    for _ in 0..mmorpg_core::golden::t30(20) {
         ranger.tick();
     }
     assert_eq!(ranger.damage_to(WOLF_ONE), 0, "the wall took the arrow");
@@ -174,7 +174,7 @@ fn a_raised_shield_stops_a_crossbow_bolt() {
         lane: Some(StrikeHeight::Middle),
     });
     let mut bolts = 0;
-    for _ in 0..90 {
+    for _ in 0..mmorpg_core::golden::t30(90) {
         warden.tick();
         bolts += warden
             .zone

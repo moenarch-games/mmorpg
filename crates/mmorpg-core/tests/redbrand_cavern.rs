@@ -133,7 +133,7 @@ fn brute_arena(facing: u16, shielded: bool) -> Arc<ZoneContent> {
         behaviour: CreatureBehaviour::Neutral,
         min_level: 5,
         max_level: 5,
-        swing_ticks: 300,
+        swing_ticks: mmorpg_core::golden::t30(300) as _,
         half_extents: [38, 96, 38],
         ..arena::wolf(2_000, [1, 1])
     };
@@ -215,7 +215,7 @@ impl Fight {
             ability: ids::AIMED_SHOT.get(),
             target: Some(BRUTE),
         });
-        self.ticks(30);
+        self.ticks(mmorpg_core::golden::t30(30) as _);
     }
 
     /// The smash hit the player: the brute's melee blows deal 1, the smash at least 16.
@@ -256,9 +256,9 @@ fn wind_up() -> Fight {
     let mut fight = Fight::new(brute_arena(SOUTHWARD, false), 0, [-2_000.0, 1_300.0]);
     fight.send(ZoneCommand::SelectTarget(Some(BRUTE)));
     fight.send(ZoneCommand::StartAttack);
-    for _ in 0..200 {
+    for _ in 0..mmorpg_core::golden::t30(200) {
         if fight.events.iter().any(|event| {
-            matches!(event, ZoneEvent::CastStarted { ability, ticks: 60, .. } if *ability == ids::OVERHEAD_SMASH)
+            matches!(event, ZoneEvent::CastStarted { ability, ticks, .. } if *ability == ids::OVERHEAD_SMASH && u64::from(*ticks) == mmorpg_core::golden::t30(60))
         }) {
             return fight;
         }
@@ -270,7 +270,7 @@ fn wind_up() -> Fight {
 #[test]
 fn standing_in_front_of_the_smash_hurts() {
     let mut fight = wind_up();
-    for _ in 0..70 {
+    for _ in 0..mmorpg_core::golden::t30(70) {
         if fight.smashed() {
             break;
         }
@@ -285,7 +285,7 @@ fn stepping_aside_during_the_wind_up_dodges_the_smash() {
     let mut fight = wind_up();
     // The brute keeps the facing it wound up with, so a sidestep leaves its arc.
     fight.send(arena::walk(EAST));
-    for _ in 0..70 {
+    for _ in 0..mmorpg_core::golden::t30(70) {
         if fight.smashed() {
             break;
         }

@@ -59,3 +59,10 @@ pub fn golden_hex(path: impl AsRef<Path>, actual: &[u8]) -> Vec<u8> {
 pub fn workspace_root() -> &'static Path {
     Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
 }
+
+/// `ticks` ticks of the 30 Hz rate many tests were written against, as ticks at
+/// [`crate::TICK_HZ`]: the same span of time. Test support only.
+#[must_use]
+pub const fn t30(ticks: u64) -> u64 {
+    ticks * crate::TICK_HZ as u64 / 30
+}

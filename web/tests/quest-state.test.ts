@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { EntityState, QuestSheet, ZoneEvent, ZoneSnapshot } from "../src/replication";
+import { TICK_HZ, type EntityState, type QuestSheet, type ZoneEvent, type ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
 import { dialogNpc, dialogView, QuestState, questViews, trackerLines } from "../src/world/units/quest-state";
 import { catalogJson } from "./support/catalog";
@@ -155,9 +155,9 @@ describe("quest state", () => {
     const near = { npc: MARSHAL, name: "Marshal", inReach: true };
     state.update(projection(10, { inventory: Array(16).fill(null), quests: sheet() }), catalog);
     expect(state.accept(near, 1)).not.toBeNull();
-    state.update(projection(100), catalog);
+    state.update(projection(10 + 3 * TICK_HZ), catalog);
     expect(state.busy).toBe(true);
-    state.update(projection(101), catalog);
+    state.update(projection(11 + 3 * TICK_HZ), catalog);
     expect(state.busy).toBe(false);
     expect(state.accept(near, 1)).not.toBeNull();
   });
@@ -177,12 +177,12 @@ describe("quest state", () => {
     state.update(wolves(12, 4), catalog);
     state.update(wolves(9, 2), catalog);
     expect(state.sheet?.entries[0]?.progress[0]).toBe(4);
-    state.update(wolves(11 + 90, 4), catalog);
+    state.update(wolves(11 + 3 * TICK_HZ, 4), catalog);
     expect(state.highlighted(1, 0)).toBe(true);
-    state.update(wolves(12 + 90, 4), catalog);
+    state.update(wolves(12 + 3 * TICK_HZ, 4), catalog);
     expect(state.highlighted(1, 0)).toBe(false);
     state.reset();
-    state.update(wolves(200, 5), catalog);
+    state.update(wolves(12 + 6 * TICK_HZ, 5), catalog);
     expect([state.highlighted(1, 0), state.notice]).toEqual([false, ""]);
   });
 
@@ -196,7 +196,7 @@ describe("quest state", () => {
     expect(state.freshlyReady(MARSHAL)).toBe(true);
     expect(state.freshlyReady(TANNER)).toBe(false);
     // The cue expires on its own; dismissal never gates the turn-in.
-    state.update(projection(200, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [6, 0, 0] }], markers: [{ npc: MARSHAL, marker: "complete" }] }) }), catalog);
+    state.update(projection(2 + 7 * TICK_HZ, { inventory: bag, quests: sheet({ entries: [{ quest: 1, progress: [6, 0, 0] }], markers: [{ npc: MARSHAL, marker: "complete" }] }) }), catalog);
     expect([state.notice, state.freshlyReady(MARSHAL)]).toEqual(["", false]);
   });
 });

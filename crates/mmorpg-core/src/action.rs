@@ -152,6 +152,23 @@ impl Window {
     pub const fn buffer_ticks(self) -> u16 {
         crate::ticks_from_ms(self.buffer_ms)
     }
+
+    /// The window's phase `elapsed` ticks after its anchor: too early, buffering for the
+    /// [`Self::buffer_ticks`] before it opens, open from [`Self::open_after_ticks`] through the
+    /// closing tick [`Self::actionable_ticks`] later, then expired.
+    #[must_use]
+    pub const fn status_at(self, elapsed: u16) -> EdgeStatus {
+        let opens = self.open_after_ticks();
+        if elapsed < opens.saturating_sub(self.buffer_ticks()) {
+            EdgeStatus::Blocked(BlockReason::TooEarly)
+        } else if elapsed < opens {
+            EdgeStatus::Buffering
+        } else if elapsed <= opens + self.actionable_ticks() {
+            EdgeStatus::Open
+        } else {
+            EdgeStatus::Blocked(BlockReason::Expired)
+        }
+    }
 }
 
 /// A typed, validated condition (Atlas 5.7.3, 5.8.1).
@@ -552,18 +569,10 @@ fn evaluate(state: &PlayerState, def: &EdgeDef) -> EdgeEval {
         .iter()
         .copied()
         .find(|&condition| !holds(state, condition));
-    let window = def.window;
-    let opens = window.open_after_ticks();
     let status = if let Some(condition) = failed {
         EdgeStatus::Blocked(BlockReason::Condition(condition))
-    } else if elapsed < opens.saturating_sub(window.buffer_ticks()) {
-        EdgeStatus::Blocked(BlockReason::TooEarly)
-    } else if elapsed < opens {
-        EdgeStatus::Buffering
-    } else if elapsed <= opens + window.actionable_ticks() {
-        EdgeStatus::Open
     } else {
-        EdgeStatus::Blocked(BlockReason::Expired)
+        def.window.status_at(elapsed)
     };
     EdgeEval {
         status,

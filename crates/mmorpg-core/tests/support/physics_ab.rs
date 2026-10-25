@@ -210,7 +210,7 @@ pub enum Workload {
 
 /// The crate-smash workload's length: the crates break, and their debris settles and
 /// despawns (5 s).
-pub const CRATE_SMASH_TICKS: usize = 360;
+pub const CRATE_SMASH_TICKS: usize = mmorpg_core::golden::t30(360) as usize;
 
 /// Two players 1.5 m south of crates 900 and 901.
 const CRATE_SMASH_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [2_200.0, 850.0]), (2, [2_310.0, 850.0])];
@@ -239,7 +239,7 @@ fn crate_smash_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 }
 
 /// The missile workload's length.
-pub const MISSILES_TICKS: usize = 300;
+pub const MISSILES_TICKS: usize = mmorpg_core::golden::t30(300) as usize;
 
 /// The missile commands: Arcanists, wolves as targets, homing Firebolts, then free ones.
 fn missiles_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
@@ -278,7 +278,7 @@ fn missiles_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 }
 
 /// The crate workload's length.
-pub const CRATE_SHOVE_TICKS: usize = 180;
+pub const CRATE_SHOVE_TICKS: usize = mmorpg_core::golden::t30(180) as usize;
 
 /// Two Wardens 2 m south of heavy crates 917 and 918.
 const CRATE_SHOVE_PLAYERS: [(u32, [f32; 2]); 2] =
@@ -333,7 +333,7 @@ fn crate_shove_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 }
 
 /// The charge workload's length.
-pub const CHARGE_PATH_TICKS: usize = 240;
+pub const CHARGE_PATH_TICKS: usize = mmorpg_core::golden::t30(240) as usize;
 
 /// The Wardens by ID and feet XZ, on Wolfrun Woods trunk-grid corners near wolves.
 const CHARGE_PATH_PLAYERS: [(u32, [f32; 2]); 4] = [
@@ -370,7 +370,7 @@ fn charge_path_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 }
 
 /// The watch post workload's length.
-pub const WATCH_POST_TICKS: usize = 420;
+pub const WATCH_POST_TICKS: usize = mmorpg_core::golden::t30(420) as usize;
 
 /// The arcanist just north of the watch post, inside the camp, and a ranger beside it.
 const WATCH_POST_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [700.0, -7_350.0]), (2, [300.0, -7_400.0])];
@@ -401,7 +401,7 @@ fn watch_post_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 }
 
 /// The ramp walk's length.
-pub const MILL_RAMPS_TICKS: usize = 240;
+pub const MILL_RAMPS_TICKS: usize = mmorpg_core::golden::t30(240) as usize;
 
 /// The ramp walk's players by ID and feet XZ.
 const MILL_RAMPS_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [7_300.0, 1_950.0]), (2, [8_250.0, 1_500.0])];
@@ -445,7 +445,7 @@ fn mill_ramps_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 }
 
 /// The mill hoist ride: one full cycle and a little more.
-pub const MILL_HOIST_TICKS: usize = 640;
+pub const MILL_HOIST_TICKS: usize = mmorpg_core::golden::t30(640) as usize;
 
 /// The hoist ride's commands: player 1 stands on the resting hoist from the start and walks
 /// north onto the windmill's gallery once the hoist is up.
@@ -457,9 +457,10 @@ fn mill_hoist_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
         strafe: 0,
         facing: 0,
     };
-    if tick == up + 10 {
+    let after = |ticks| up + usize::try_from(mmorpg_core::golden::t30(ticks)).expect("ticks fit");
+    if tick == after(10) {
         vec![(1, walk(1))]
-    } else if tick == up + 30 {
+    } else if tick == after(30) {
         vec![(1, walk(0))]
     } else {
         Vec::new()
@@ -484,7 +485,7 @@ fn mill_hoist_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
 }
 
 /// The ogre brawl's script length.
-pub const OGRE_BRAWL_TICKS: usize = 360;
+pub const OGRE_BRAWL_TICKS: usize = mmorpg_core::golden::t30(360) as usize;
 /// The hill ogre and its spawn point (Greyhaven content).
 const OGRE: u32 = 710;
 const OGRE_AT: [f32; 2] = [7_450.0, 18_150.0];
@@ -731,15 +732,23 @@ impl Run {
             | Workload::CrateShove
             | Workload::CrateSmash
             | Workload::Missiles => {
+                // The scripts are written in 30 Hz ticks: they run at the same moments at TICK_HZ.
+                let scale = usize::from(mmorpg_core::TICK_HZ) / 30;
+                let at = if self.tick.is_multiple_of(scale) {
+                    self.tick / scale
+                } else {
+                    usize::MAX
+                };
                 let commands = match self.workload {
-                    Workload::OgreBrawl => ogre_brawl_commands(self.tick),
+                    Workload::OgreBrawl => ogre_brawl_commands(at),
+                    // Timed from the hoist's own schedule, in zone ticks.
                     Workload::MillHoist => mill_hoist_commands(self.tick),
-                    Workload::ChargePath => charge_path_commands(self.tick),
-                    Workload::WatchPost => watch_post_commands(self.tick),
-                    Workload::CrateShove => crate_shove_commands(self.tick),
-                    Workload::CrateSmash => crate_smash_commands(self.tick),
-                    Workload::Missiles => missiles_commands(self.tick),
-                    _ => mill_ramps_commands(self.tick),
+                    Workload::ChargePath => charge_path_commands(at),
+                    Workload::WatchPost => watch_post_commands(at),
+                    Workload::CrateShove => crate_shove_commands(at),
+                    Workload::CrateSmash => crate_smash_commands(at),
+                    Workload::Missiles => missiles_commands(at),
+                    _ => mill_ramps_commands(at),
                 };
                 for (player, command) in commands {
                     let sequence = self.next_sequence(player);

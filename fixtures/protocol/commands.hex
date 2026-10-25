@@ -1,59 +1,59 @@
 # Command golden fixture, verified by mmorpg-protocol and web tests.
-400101000000 move 1 0 0
-400101014000 move 1 1 16384
-4001ffff8000 move -1 -1 32768
-40010001abcd move 0 1 43981
-40010000ffff move 0 0 65535
-4002 jump
-401901 rise 1
-401900 rise 0
-4019ff rise -1
-4003020000006c select_target 2 108
-400301ee6b2800 select_target 1 4000000000
-40030300000005 select_target 3 5
-40030000000000 select_target 0 0
-4004 start_attack
-4005 stop_attack
-4006 release_spirit
-4007000f0002 move_item 0 15 2
-40070f00ffff move_item 15 0 65535
-4007ff000000 move_item 255 0 0
-4008000000010000000000000063 loot 1 99
-4008ffffffffffffffffffffffff loot 4294967295 18446744073709551615
-4009010000000000 use_ability 1 0 0
-400909020000006c use_ability 9 2 108
-4009ff01ee6b2800 use_ability 255 1 4000000000
-400a cancel_cast
-40150100000101 directed_strike 1 0 1 1
-401501abcd0002 directed_strike 1 43981 0 2
-4015ffffff0200 directed_strike 255 65535 2 0
-401601 guard 1
-401602 guard 2
-401603 guard 3
-401600 guard 0
-400b0001 choose_class 0 1
-400b0200 choose_class 2 0
-400bff07 choose_class 255 7
-400c00 equip_item 0
-400c0f equip_item 15
-400cff equip_item 255
-400d00 unequip_item 0
-400d05 unequip_item 5
-400dff unequip_item 255
-400e00000003000001 buy_item 3 0 1
-400effffffffffffff buy_item 4294967295 255 65535
-400f00000003000003 sell_item 3 0 3
-400f00000000ff0000 sell_item 0 255 0
-401000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
-401001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
-401101 emote 1
-401105 emote 5
-40120000000101 accept_quest 1 1
-4012ffffffffff accept_quest 4294967295 255
-4013000000020201 complete_quest 2 2 1
-40130000000000ff complete_quest 0 0 255
-401403 abandon_quest 3
-40170101 use_door 1 1
-4017ff00 use_door 255 0
-40180004 repair 4
-40180000 repair 0
+b50101000000 move 1 0 0
+b50101014000 move 1 1 16384
+b501ffff8000 move -1 -1 32768
+b5010001abcd move 0 1 43981
+b5010000ffff move 0 0 65535
+b502 jump
+b51901 rise 1
+b51900 rise 0
+b519ff rise -1
+b503020000006c select_target 2 108
+b50301ee6b2800 select_target 1 4000000000
+b5030300000005 select_target 3 5
+b5030000000000 select_target 0 0
+b504 start_attack
+b505 stop_attack
+b506 release_spirit
+b507000f0002 move_item 0 15 2
+b5070f00ffff move_item 15 0 65535
+b507ff000000 move_item 255 0 0
+b508000000010000000000000063 loot 1 99
+b508ffffffffffffffffffffffff loot 4294967295 18446744073709551615
+b509010000000000 use_ability 1 0 0
+b50909020000006c use_ability 9 2 108
+b509ff01ee6b2800 use_ability 255 1 4000000000
+b50a cancel_cast
+b5150100000101 directed_strike 1 0 1 1
+b51501abcd0002 directed_strike 1 43981 0 2
+b515ffffff0200 directed_strike 255 65535 2 0
+b51601 guard 1
+b51602 guard 2
+b51603 guard 3
+b51600 guard 0
+b50b0001 choose_class 0 1
+b50b0200 choose_class 2 0
+b50bff07 choose_class 255 7
+b50c00 equip_item 0
+b50c0f equip_item 15
+b50cff equip_item 255
+b50d00 unequip_item 0
+b50d05 unequip_item 5
+b50dff unequip_item 255
+b50e00000003000001 buy_item 3 0 1
+b50effffffffffffff buy_item 4294967295 255 65535
+b50f00000003000003 sell_item 3 0 3
+b50f00000000ff0000 sell_item 0 255 0
+b51000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
+b51001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
+b51101 emote 1
+b51105 emote 5
+b5120000000101 accept_quest 1 1
+b512ffffffffff accept_quest 4294967295 255
+b513000000020201 complete_quest 2 2 1
+b5130000000000ff complete_quest 0 0 255
+b51403 abandon_quest 3
+b5170101 use_door 1 1
+b517ff00 use_door 255 0
+b5180004 repair 4
+b5180000 repair 0

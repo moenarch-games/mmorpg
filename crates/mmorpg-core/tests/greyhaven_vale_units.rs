@@ -55,8 +55,9 @@ fn templates_follow_the_design_contract() {
                 template.max_health(template.min_level),
                 template.health_per_level,
                 template.damage_at(template.min_level),
-                template.swing_ticks,
-                template.respawn_ticks,
+                // Swing interval and respawn delay in ms.
+                u32::from(template.swing_ticks) * 1_000 / u32::from(mmorpg_core::TICK_HZ),
+                template.respawn_ticks * 1_000 / u32::from(mmorpg_core::TICK_HZ),
             )
         })
         .collect();
@@ -74,8 +75,8 @@ fn templates_follow_the_design_contract() {
                 42,
                 14,
                 [2, 4],
-                60,
-                1_800
+                2000,
+                60000
             ),
             (
                 "Young Boar",
@@ -86,8 +87,8 @@ fn templates_follow_the_design_contract() {
                 48,
                 14,
                 [2, 4],
-                66,
-                1_800
+                2200,
+                60000
             ),
             (
                 "Grain Rat",
@@ -98,8 +99,8 @@ fn templates_follow_the_design_contract() {
                 30,
                 0,
                 [1, 3],
-                48,
-                1_800
+                1600,
+                60000
             ),
             (
                 "Field Marauder",
@@ -110,8 +111,8 @@ fn templates_follow_the_design_contract() {
                 60,
                 16,
                 [3, 6],
-                66,
-                1_800
+                2200,
+                60000
             ),
             (
                 "Mirefin Lurker",
@@ -122,8 +123,8 @@ fn templates_follow_the_design_contract() {
                 70,
                 0,
                 [3, 6],
-                60,
-                1_800
+                2000,
+                60000
             ),
             (
                 "Redbrand Bandit",
@@ -134,8 +135,8 @@ fn templates_follow_the_design_contract() {
                 75,
                 16,
                 [4, 7],
-                66,
-                1_800
+                2200,
+                60000
             ),
             (
                 "Garrick Redbrand",
@@ -146,8 +147,8 @@ fn templates_follow_the_design_contract() {
                 420,
                 0,
                 [8, 14],
-                72,
-                3_600
+                2400,
+                120000
             ),
             (
                 "Redbrand Crossbowman",
@@ -158,8 +159,8 @@ fn templates_follow_the_design_contract() {
                 70,
                 14,
                 [3, 6],
-                66,
-                1_800
+                2200,
+                60000
             ),
             // Breakable props (#288): a little health, 5 min respawn.
             (
@@ -171,8 +172,8 @@ fn templates_follow_the_design_contract() {
                 12,
                 0,
                 [1, 1],
-                60,
-                9_000
+                2000,
+                300000
             ),
             (
                 "Barrel",
@@ -183,8 +184,8 @@ fn templates_follow_the_design_contract() {
                 15,
                 0,
                 [1, 1],
-                60,
-                9_000
+                2000,
+                300000
             ),
             (
                 "Blasting Powder Barrel",
@@ -195,8 +196,8 @@ fn templates_follow_the_design_contract() {
                 10,
                 0,
                 [1, 1],
-                60,
-                9_000
+                2000,
+                300000
             ),
             (
                 "Fence",
@@ -207,8 +208,8 @@ fn templates_follow_the_design_contract() {
                 18,
                 0,
                 [1, 1],
-                60,
-                9_000
+                2000,
+                300000
             ),
             // A large creature (#297).
             (
@@ -220,8 +221,8 @@ fn templates_follow_the_design_contract() {
                 300,
                 0,
                 [9, 15],
-                84,
-                1_800
+                2800,
+                60000
             ),
             // A movable prop (#58).
             (
@@ -233,8 +234,8 @@ fn templates_follow_the_design_contract() {
                 30,
                 0,
                 [1, 1],
-                60,
-                9_000
+                2000,
+                300000
             ),
             // The Greyfang cavern's shield-bearer (#160).
             (
@@ -246,8 +247,8 @@ fn templates_follow_the_design_contract() {
                 215,
                 0,
                 [7, 12],
-                84,
-                1_800
+                2800,
+                60000
             ),
         ]
     );
@@ -444,7 +445,7 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
             },
         )
         .unwrap();
-    for _ in 0..600 {
+    for _ in 0..mmorpg_core::golden::t30(600) {
         first.advance_tick().unwrap();
         second.advance_tick().unwrap();
     }

@@ -30,7 +30,7 @@ fn ogre(behaviour: CreatureBehaviour) -> CreatureTemplate {
         max_level: 5,
         health: 5_000,
         damage: [1, 1],
-        swing_ticks: 84,
+        swing_ticks: mmorpg_core::golden::t30(84) as _,
         half_extents: [70, 140, 70],
         ..arena::wolf(5_000, [1, 1])
     }
@@ -147,7 +147,7 @@ fn a_charging_ogre_shoves_a_smaller_creature_out_of_its_way() {
     );
     let boar = run.creature_at(2);
     let mut shoved = false;
-    for _ in 0..60 {
+    for _ in 0..mmorpg_core::golden::t30(60) {
         run.tick();
         let (ogre, now) = (run.creature_centre(1), run.creature_centre(2));
         assert!(
@@ -175,7 +175,7 @@ fn an_ogre_body_blocks_a_player_walking_into_it() {
     // A neutral ogre standing still: the player walks straight south into it.
     let mut run = Run::new(content(CreatureBehaviour::Neutral, [0, -400], None), 1);
     run.send(1, arena::walk(SOUTHWARD));
-    for _ in 0..90 {
+    for _ in 0..mmorpg_core::golden::t30(90) {
         run.tick();
         let gap = gap(
             run.creature_centre(1),

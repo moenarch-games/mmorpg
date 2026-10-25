@@ -1,6 +1,6 @@
 # Zone snapshot protocol
 
-All multibyte fields are big-endian. Integers are unsigned unless marked `i8`/`i16`/`i32`. Simulation positions use 100 units per metre; velocities use units per 30 Hz tick. Ticks and content revisions are 64-bit values; browser decoders retain them as `bigint`.
+All multibyte fields are big-endian. Integers are unsigned unless marked `i8`/`i16`/`i32`. Simulation positions use 100 units per metre; velocities use units per tick at `TICK_HZ` (60 Hz, #379). Ticks and content revisions are 64-bit values; browser decoders retain them as `bigint`.
 
 A yaw or facing is a `u16`: 65 536 steps are one full turn. Yaw 0 faces +Z and increasing yaw turns toward +X, so the facing direction is `(sin yaw, cos yaw)` in XZ. A character's right is the direction of `yaw − 90°`; facing +Z, right is −X.
 
@@ -222,7 +222,7 @@ The pinned `game-server` sends a session snapshot frame unchanged when it fits t
 
 On loopback, path MTU discovery raises the host's value to 1,287 bytes before admission and the client's to 1,350–1,413 bytes, but on a real path the host can capture its limit before discovery completes, so the budget uses the floor. `mmorpg-client`'s `connected_world` tests log the negotiated size, pin the floor with discovery disabled on both peers, and deliver a crowded projection packed to the budget through a real host, with or without the self sheet.
 
-Encoding is budget-driven in fixed section priority: `pack_snapshot` writes the header, self (with its cooldowns and auras), target (with its cast and auras), optional bag and loot sections and this tick's events, then entities in priority order until the next record would exceed the budget, and reports how many it packed. Hosts publish with it. Without events, sheets, doors, cooldowns or auras, `(1,077 − 112) / 21 = 45` records fit (`MAX_WIRE_ENTITIES`); the door section takes at most 32 bytes. The self sheet takes 84 bytes plus its quest part: 10 bytes plus 4 per active quest and 3 per marker, at most 154 bytes with ten quests and eight markers, beside which 38 records fit. Beside all 16 events the counts are 35 without either sheet or 28 with the largest self sheet. The largest self sheet, a loot sheet with an item and a quest item and all events leave room for 26 records, and with full cooldown and aura lists for the viewer and its target (108 bytes) 22. The largest attainable payload stays within 1,077 bytes. The viewer and its target lead the entities and always fit even beside full lists, both sheets, all events and four full chat lines: `109 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + 2 × 21 = 1,007` bytes, which a compile-time assertion checks. The budget is unchanged from v8; at 30 Hz a full projection is at most 1,077 × 30 = 32,310 bytes per second per player (about 258 kbit/s), as before. Relevant units beyond the budget are omitted by priority, never truncated by transport. `encode_snapshot`, used by fixtures and tests, fails closed instead of omitting any entity. A test with extreme field values (maximum IDs, tick and revision, `i16`/`i8` extremes, a full event section and the whole relevance cap) proves the packing fits one datagram. Future payload growth requires a deliberate MMO budget and wire change; transport fragmentation alone does not raise the budget. Future sections take their place before the entities.
+Encoding is budget-driven in fixed section priority: `pack_snapshot` writes the header, self (with its cooldowns and auras), target (with its cast and auras), optional bag and loot sections and this tick's events, then entities in priority order until the next record would exceed the budget, and reports how many it packed. Hosts publish with it. Without events, sheets, doors, cooldowns or auras, `(1,077 − 112) / 21 = 45` records fit (`MAX_WIRE_ENTITIES`); the door section takes at most 32 bytes. The self sheet takes 84 bytes plus its quest part: 10 bytes plus 4 per active quest and 3 per marker, at most 154 bytes with ten quests and eight markers, beside which 38 records fit. Beside all 16 events the counts are 35 without either sheet or 28 with the largest self sheet. The largest self sheet, a loot sheet with an item and a quest item and all events leave room for 26 records, and with full cooldown and aura lists for the viewer and its target (108 bytes) 22. The largest attainable payload stays within 1,077 bytes. The viewer and its target lead the entities and always fit even beside full lists, both sheets, all events and four full chat lines: `109 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + 2 × 21 = 1,007` bytes, which a compile-time assertion checks. The budget is unchanged from v8; at 60 Hz a full projection is at most 1,077 × 60 = 64,620 bytes per second per player (about 258 kbit/s), as before. Relevant units beyond the budget are omitted by priority, never truncated by transport. `encode_snapshot`, used by fixtures and tests, fails closed instead of omitting any entity. A test with extreme field values (maximum IDs, tick and revision, `i16`/`i8` extremes, a full event section and the whole relevance cap) proves the packing fits one datagram. Future payload growth requires a deliberate MMO budget and wire change; transport fragmentation alone does not raise the budget. Future sections take their place before the entities.
 
 Player IDs are zone/session-local. These snapshots have no authority epoch field; the future online session/routing envelope must bind the stream to a grant and reset presentation on grant changes. An acknowledgement supports future prediction reconciliation, not permission to mutate authoritative state.
 
@@ -636,3 +636,21 @@ it after its first second, like a Frost Nova root), Rejuvenation (40, a friendly
 like Renew) and Barkskin (41, a self absorb). Layouts are unchanged; the root reuses aura kind 4.
 Commands stay v14 (class 6 is now a valid `ChooseClass`). Snapshot v36 / schema 36 payloads fail
 closed; `player-snapshot-v36.hex` remains as rejection evidence.
+
+## 60 Hz (#379)
+
+The zone simulates at `TICK_HZ` = 60 (16⅔ ms per tick), physics, AI, movement and replication
+alike: every tick still publishes one projection per player. Layouts are unchanged; what the
+fields mean in time changes, so the protocol ID is rerolled once and nothing is shimmed:
+
+- tick-valued fields (casts, cooldowns, auras, swing timers, breath, recovery and window
+  ticks, corpse and respawn deadlines, the zone clock, `reconnect_grace_ticks`) count 60 Hz
+  ticks, twice their former values for the same durations;
+- velocities (`i8` units per tick in projections, exact `f32` in canonical snapshots) are per
+  60 Hz tick, half their former values for the same speeds; forced-move velocities in canonical
+  snapshots are in subunits (1/256 unit) per tick;
+- content gravity is in subunits per tick², so the Greyhaven content revision (its hash)
+  changes.
+
+Payloads, canonical checkpoints and recovery bundles of the former protocol ID are rejected: a
+host restarted on old state fails closed and starts fresh (no migration).

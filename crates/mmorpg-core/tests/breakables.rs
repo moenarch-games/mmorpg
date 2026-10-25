@@ -28,7 +28,7 @@ fn prop(
         family: CreatureFamily::Prop,
         behaviour: CreatureBehaviour::Prop(kind),
         damage: [1, 1],
-        respawn_ticks: 9_000,
+        respawn_ticks: mmorpg_core::golden::t30(9_000) as _,
         half_extents,
         ..arena::wolf(health, [1, 1])
     }
@@ -99,7 +99,7 @@ impl Smasher {
     fn smash(&mut self, target: u32) {
         self.send(ZoneCommand::SelectTarget(Some(creature(target))));
         self.send(ZoneCommand::StartAttack);
-        for _ in 0..900 {
+        for _ in 0..mmorpg_core::golden::t30(900) {
             self.zone.advance_tick().unwrap();
             if self.life(target) != CreatureLife::Alive {
                 return;
@@ -127,11 +127,11 @@ fn a_smashed_crate_flies_apart_settles_vanishes_and_returns() {
     );
 
     // Recovery mid-flight continues exactly.
-    for _ in 0..5 {
+    for _ in 0..mmorpg_core::golden::t30(5) {
         player.zone.advance_tick().unwrap();
     }
     let mut copy = ZoneSimulation::from_snapshot(player.state(), content()).unwrap();
-    for _ in 0..30 {
+    for _ in 0..mmorpg_core::golden::t30(30) {
         player.zone.advance_tick().unwrap();
         copy.advance_tick().unwrap();
     }
@@ -146,7 +146,7 @@ fn a_smashed_crate_flies_apart_settles_vanishes_and_returns() {
             .zip(&broken.debris)
             .any(|(now, then)| now.body.position != then.body.position)
     );
-    for _ in 0..80 {
+    for _ in 0..mmorpg_core::golden::t30(80) {
         player.zone.advance_tick().unwrap();
     }
     let lying = player.state();
@@ -173,7 +173,7 @@ fn a_smashed_crate_flies_apart_settles_vanishes_and_returns() {
     let CreatureLife::Despawned { died_at } = state.creatures[0].life else {
         panic!("the crate is gone");
     };
-    state.tick = died_at + 9_000;
+    state.tick = died_at + mmorpg_core::golden::t30(9_000);
     state.players[0].position = [0.0, 90.0, -300.0];
     player.restore(state);
     player.zone.advance_tick().unwrap();
@@ -204,7 +204,7 @@ fn powder_barrels_chain_react_hurting_and_hurling_everything_near() {
     let boar = &after.creatures[4];
     assert!(boar.health < 2_000);
     assert!(!after.forced.is_empty(), "knockbacks are under way");
-    for _ in 0..12 {
+    for _ in 0..mmorpg_core::golden::t30(12) {
         player.zone.advance_tick().unwrap();
     }
     let later = player.state();

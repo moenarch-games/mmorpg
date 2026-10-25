@@ -4,8 +4,8 @@
 # snapshots by tick 170.
 name = "interest-exit-enter"
 zone = 1
-ticks = 175
-digest_interval = 10
+ticks = 350
+digest_interval = 20
 
 [[bots]]
 name = "alice"
@@ -40,7 +40,7 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 150
+tick = 300
 bot = "alice"
 action = "move"
 forward = 1
@@ -48,7 +48,7 @@ strafe = 0
 facing = 16384
 
 [[steps]]
-tick = 150
+tick = 300
 bot = "bob"
 action = "move"
 forward = 1
@@ -59,24 +59,24 @@ facing = 49152
 kind = "not_sees"
 bot = "alice"
 target = "bob"
-tick = 150
+tick = 299
 
 [[expect]]
 kind = "visible_count"
 bot = "bob"
-tick = 150
+tick = 299
 count = 1
 
 [[expect]]
 kind = "sees"
 bot = "alice"
 target = "bob"
-from_tick = 151
-by_tick = 170
+from_tick = 302
+by_tick = 340
 
 [[expect]]
 kind = "sees"
 bot = "bob"
 target = "alice"
-from_tick = 151
-by_tick = 170
+from_tick = 302
+by_tick = 340

@@ -1,17 +1,23 @@
-scenario stale-and-duplicate-commands zone=1 bots=1 ticks=6 grace=120
+scenario stale-and-duplicate-commands zone=1 bots=1 ticks=12 grace=120
 t=0 alice join -> joined player=1 epoch=1
 t=0 alice move -> applied seq=5 epoch=1 forward=1 strafe=0 facing=16384
-t=1 alice p1 e1 ack5 (-1529,90,1250) sees[]
-t=1 alice move -> ignored_stale seq=5 epoch=1 forward=1 strafe=0 facing=49152
-t=1 alice move -> ignored_stale seq=3 epoch=1 forward=1 strafe=0 facing=49152
-t=2 alice p1 e1 ack5 (-1508,90,1250) sees[]
-t=2 alice move -> rejected:invalid_sequence seq=0 epoch=1 forward=0 strafe=0 facing=16384
-t=2 alice move -> rejected:stale_connection seq=9 epoch=7 forward=0 strafe=0 facing=16384
-t=3 alice p1 e1 ack5 (-1487,90,1250) sees[]
-t=3 alice move -> rejected:simulation seq=10 epoch=1 forward=2 strafe=0 facing=16384
-t=4 alice p1 e1 ack5 (-1466,90,1250) sees[]
-t=5 alice p1 e1 ack5 (-1445,90,1250) sees[]
-t=6 expect alice acknowledged ok ack=5
-t=6 expect alice position alice ok [-1424, 90, 1250]
-t=6 alice p1 e1 ack5 (-1424,90,1250) sees[]
-PASS stale-and-duplicate-commands ticks=6 steps=7 expectations=2 failures=0
+t=1 alice p1 e1 ack5 (-1540,90,1250) sees[]
+t=2 alice p1 e1 ack5 (-1529,90,1250) sees[]
+t=2 alice move -> ignored_stale seq=5 epoch=1 forward=1 strafe=0 facing=49152
+t=2 alice move -> ignored_stale seq=3 epoch=1 forward=1 strafe=0 facing=49152
+t=3 alice p1 e1 ack5 (-1519,90,1250) sees[]
+t=4 alice p1 e1 ack5 (-1508,90,1250) sees[]
+t=4 alice move -> rejected:invalid_sequence seq=0 epoch=1 forward=0 strafe=0 facing=16384
+t=4 alice move -> rejected:stale_connection seq=9 epoch=7 forward=0 strafe=0 facing=16384
+t=5 alice p1 e1 ack5 (-1498,90,1250) sees[]
+t=6 alice p1 e1 ack5 (-1487,90,1250) sees[]
+t=6 alice move -> rejected:simulation seq=10 epoch=1 forward=2 strafe=0 facing=16384
+t=7 alice p1 e1 ack5 (-1477,90,1250) sees[]
+t=8 alice p1 e1 ack5 (-1466,90,1250) sees[]
+t=9 alice p1 e1 ack5 (-1456,90,1250) sees[]
+t=10 alice p1 e1 ack5 (-1445,90,1250) sees[]
+t=11 expect alice acknowledged ok ack=5
+t=11 alice p1 e1 ack5 (-1435,90,1250) sees[]
+t=12 expect alice position alice ok [-1424, 90, 1250]
+t=12 alice p1 e1 ack5 (-1424,90,1250) sees[]
+PASS stale-and-duplicate-commands ticks=12 steps=7 expectations=2 failures=0

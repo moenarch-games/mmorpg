@@ -17,13 +17,13 @@ export const SNAPSHOT_TIMEOUT_MS = 5_000;
  * so this is best effort, as in the native client.
  */
 export const RECONNECT_SETTLE_MS = 250;
-/** Presentation runs this many ticks (2 at 30 Hz) behind the newest projection and holds it when projections stall. */
+/** Presentation runs this many ticks (4 at 60 Hz) behind the newest projection and holds it when projections stall. */
 export const INTERPOLATION_DELAY_TICKS = ticksFromMs(67);
 /**
  * At most this many projections (one second) wait for the next `advance`; a backgrounded page that
  * stops rendering keeps only the newest, like lost datagrams, and the periodic sheets restore state.
  */
-export const MAX_RECEIVED_PROJECTIONS = 30;
+export const MAX_RECEIVED_PROJECTIONS = TICK_HZ;
 
 /** An ephemeral activity reuses session/reconnect delivery while supplying its game envelope. */
 export type ActivityProtocol = {

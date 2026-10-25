@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use mmorpg_core::unit::{COMBAT_LINGER_TICKS, CORPSE_TICKS, PLAYER_SWING_TICKS};
 use mmorpg_core::{
-    CREATURE_EVADE_SPEED_UNITS_PER_TICK, CanonicalCreatureSnapshot, CreatureAi, CreatureId,
+    CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK, CanonicalCreatureSnapshot, CreatureAi, CreatureId,
     CreatureLife, EntityKind, EntityRef, ErrorCode, NpcId, ThreatEntry, ZoneCommand, ZoneEvent,
     ZoneId, ZoneSimulation,
 };
@@ -105,7 +105,7 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
 
     // Walk north until the wolf notices the player (10 m aggro radius).
     session.send(arena::walk(NORTHWARD));
-    let aggro = session.until(100, |session| {
+    let aggro = session.until(mmorpg_core::golden::t30(100) as _, |session| {
         session.creature(FIRST).ai == CreatureAi::Engaged
     });
     let position =
@@ -143,7 +143,7 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
     assert!(record.flags.targets_viewer && !record.flags.tapped_by_other);
 
     // Swing until the wolf dies.
-    let died = session.until(3_000, |session| {
+    let died = session.until(mmorpg_core::golden::t30(3_000) as _, |session| {
         !matches!(session.creature(FIRST).life, CreatureLife::Alive)
     });
     let dealt: u32 = session
@@ -246,7 +246,9 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
     );
 
     // It respawns at its spawn point with full health 60 s after death.
-    session.until(1_800, |session| session.zone.current_tick() == died + 1_800);
+    session.until(mmorpg_core::golden::t30(1_800) as _, |session| {
+        session.zone.current_tick() == died + mmorpg_core::golden::t30(1_800)
+    });
     let respawned = session.creature(FIRST);
     assert_eq!(respawned.life, CreatureLife::Alive);
     assert_eq!(respawned.health, 30);
@@ -272,7 +274,7 @@ fn assist_death_release_spirit_and_evade() {
     );
     let mut session = Session::new(content);
     session.send(arena::walk(NORTHWARD));
-    session.until(100, |session| {
+    session.until(mmorpg_core::golden::t30(100) as _, |session| {
         session.creature(FIRST).ai == CreatureAi::Engaged
     });
     assert_eq!(
@@ -284,7 +286,9 @@ fn assist_death_release_spirit_and_evade() {
     session.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(FIRST))));
     session.send(ZoneCommand::StartAttack);
 
-    let died = session.until(600, |session| session.health() == 0);
+    let died = session.until(mmorpg_core::golden::t30(600) as _, |session| {
+        session.health() == 0
+    });
     assert!(
         session.events.contains(&(
             died,
@@ -341,7 +345,7 @@ fn assist_death_release_spirit_and_evade() {
             CreatureAi::Evading { .. }
         ));
     }
-    session.until(400, |session| {
+    session.until(mmorpg_core::golden::t30(400) as _, |session| {
         [FIRST, SECOND]
             .iter()
             .all(|&id| matches!(session.creature(id).ai, CreatureAi::Idle { .. }))
@@ -378,12 +382,12 @@ fn assist_death_release_spirit_and_evade() {
     );
     // Out of combat, health regenerates 3 % (rounded up) per second after
     // 6 s. The release tick was the first calm tick and the NotDead tick
-    // the second, so the first regeneration lands 178 ticks later.
-    session.ticks(177);
+    // the second, so the first regeneration lands 6 s less two ticks later.
+    session.ticks(mmorpg_core::golden::t30(180) as u64 - 3);
     assert_eq!(session.health(), 25);
     session.tick();
     assert_eq!(session.health(), 27);
-    session.ticks(30);
+    session.ticks(mmorpg_core::golden::t30(30) as _);
     assert_eq!(session.health(), 29);
     let position = session.zone.snapshot_for_player(1).unwrap().entities[0].position;
     assert_eq!(
@@ -407,7 +411,9 @@ fn held_movement_does_not_survive_death() {
     let mut session = Session::new(Arc::clone(&content));
     session.send(arena::walk(NORTHWARD));
     session.send(ZoneCommand::Jump);
-    let died = session.until(600, |session| session.health() == 0);
+    let died = session.until(mmorpg_core::golden::t30(600) as _, |session| {
+        session.health() == 0
+    });
     let player = &session.zone.snapshot().unwrap().players[0];
     assert_eq!(
         (player.forward, player.strafe, player.jump_pending),
@@ -441,7 +447,7 @@ fn held_movement_does_not_survive_death() {
     recovered
         .apply_command(1, session.sequence, ZoneCommand::ReleaseSpirit)
         .unwrap();
-    for _ in 0..90 {
+    for _ in 0..mmorpg_core::golden::t30(90) {
         session.tick();
         recovered.advance_tick().unwrap();
         assert_eq!(
@@ -458,7 +464,7 @@ fn held_movement_does_not_survive_death() {
 
     // A fresh move walks again.
     session.send(arena::walk(NORTHWARD));
-    session.ticks(10);
+    session.ticks(mmorpg_core::golden::t30(10) as _);
     let position = session.zone.snapshot_for_player(1).unwrap().entities[0].position;
     assert_eq!(position[2], GRAVEYARD[1] + 10 * 21);
 }
@@ -475,20 +481,22 @@ fn leashed_creatures_evade_and_ignore_damage() {
     let mut session = Session::new(content);
     let wolf = EntityRef::Creature(FIRST);
     session.send(arena::walk(NORTHWARD));
-    session.until(100, |session| {
+    session.until(mmorpg_core::golden::t30(100) as _, |session| {
         session.creature(FIRST).ai == CreatureAi::Engaged
     });
     session.send(ZoneCommand::SelectTarget(Some(wolf)));
     session.send(ZoneCommand::StartAttack);
     // Run south; players outrun creatures (21 vs 19 units per tick).
     session.send(arena::walk(32_768));
-    session.until(600, |session| {
+    session.until(mmorpg_core::golden::t30(600) as _, |session| {
         matches!(session.creature(FIRST).ai, CreatureAi::Evading { .. })
     });
     // The leash broke beyond 40 m; the same tick already took one step home.
     let [_, _, z] = mmorpg_core::physics::to_units(session.creature(FIRST).position);
     assert!(
-        2_000 - z > 4_000 - CREATURE_EVADE_SPEED_UNITS_PER_TICK,
+        2_000 - z
+            > 4_000
+                - CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK / mmorpg_core::physics::SUBUNITS_PER_UNIT,
         "the leash broke 40 m from the spawn (z = {z})"
     );
     assert!(
@@ -546,7 +554,7 @@ fn leashed_creatures_evade_and_ignore_damage() {
     assert!(flags.evading && !flags.in_combat && !flags.targets_viewer);
     assert_eq!(session.creature(FIRST).health, evading.health, "no damage");
     session.send(ZoneCommand::StopAttack);
-    session.until(600, |session| {
+    session.until(mmorpg_core::golden::t30(600) as _, |session| {
         matches!(session.creature(FIRST).ai, CreatureAi::Idle { .. })
     });
     assert_eq!(session.creature(FIRST).health, 60, "evading resets health");
@@ -573,7 +581,7 @@ fn chasing_creatures_close_in_to_melee_from_every_direction() {
                 vec![],
             );
             let mut session = Session::new(content);
-            session.ticks(90);
+            session.ticks(mmorpg_core::golden::t30(90) as _);
             let swung = session.events.iter().any(|(_, event)| {
                 matches!(
                     event,
@@ -601,7 +609,7 @@ fn neutral_creatures_fight_back_only_when_attacked() {
         vec![],
     );
     let mut session = Session::new(content);
-    session.ticks(300);
+    session.ticks(mmorpg_core::golden::t30(300) as _);
     assert!(
         matches!(session.creature(FIRST).ai, CreatureAi::Idle { .. }),
         "a neutral boar 4 m away ignores the player"
@@ -609,7 +617,7 @@ fn neutral_creatures_fight_back_only_when_attacked() {
     session.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(FIRST))));
     session.send(ZoneCommand::StartAttack);
     session.send(arena::walk(WEST));
-    session.until(200, |session| {
+    session.until(mmorpg_core::golden::t30(200) as _, |session| {
         session.creature(FIRST).ai == CreatureAi::Engaged
     });
     let attacked = session.events.iter().any(|(_, event)| {

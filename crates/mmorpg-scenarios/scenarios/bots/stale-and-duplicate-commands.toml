@@ -3,7 +3,7 @@
 # sequence and a command on a foreign connection epoch fail closed.
 name = "stale-and-duplicate-commands"
 zone = 1
-ticks = 6
+ticks = 12
 
 [[bots]]
 name = "alice"
@@ -23,7 +23,7 @@ facing = 16384
 seq = 5
 
 [[steps]]
-tick = 1
+tick = 2
 bot = "alice"
 action = "move"
 forward = 1
@@ -33,7 +33,7 @@ seq = 5
 expect = "ignored_stale"
 
 [[steps]]
-tick = 1
+tick = 2
 bot = "alice"
 action = "move"
 forward = 1
@@ -43,7 +43,7 @@ seq = 3
 expect = "ignored_stale"
 
 [[steps]]
-tick = 2
+tick = 4
 bot = "alice"
 action = "move"
 forward = 0
@@ -53,7 +53,7 @@ seq = 0
 expect = "rejected:invalid_sequence"
 
 [[steps]]
-tick = 2
+tick = 4
 bot = "alice"
 action = "move"
 forward = 0
@@ -64,7 +64,7 @@ connection_epoch = 7
 expect = "rejected:stale_connection"
 
 [[steps]]
-tick = 3
+tick = 6
 bot = "alice"
 action = "move"
 forward = 2
@@ -76,11 +76,11 @@ expect = "rejected:simulation"
 [[expect]]
 kind = "acknowledged"
 bot = "alice"
-tick = 6
+tick = 11
 sequence = 5
 
 [[expect]]
 kind = "position"
 bot = "alice"
-tick = 6
+tick = 12
 position = [-1424, 90, 1250]

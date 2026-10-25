@@ -1,65 +1,68 @@
-scenario vendor-resume zone=1 bots=1 ticks=280 grace=30
+scenario vendor-resume zone=1 bots=1 ticks=560 grace=60
 t=0 alice join -> joined player=1 epoch=1
 t=1 alice p1 e1 ack0 (-1550,90,1250) sees[]
-t=1 alice sell_item -> applied seq=1 epoch=1 npc=3 bag_slot=0 quantity=1
-t=2 expect alice event error:out_of_range ok events[error:out_of_range]
-t=2 expect alice copper ok copper=0
-t=2 alice p1 e1 ack1 (-1550,90,1250) sees[] events[error:out_of_range]
-t=3 alice use_door -> applied seq=2 epoch=1 door=1 open=true
-t=4 expect alice event error:out_of_range ok events[error:out_of_range]
-t=4 alice p1 e1 ack2 (-1550,90,1250) sees[] events[error:out_of_range]
-t=4 alice move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=16384
-t=5 alice p1 e1 ack3 (-1529,90,1250) sees[]
-t=25 alice p1 e1 ack3 (-1109,90,1250) sees[]
-t=50 alice p1 e1 ack3 (-584,90,1250) sees[]
-t=75 alice p1 e1 ack3 (-59,90,1250) sees[]
-t=100 alice p1 e1 ack3 (466,90,1250) sees[]
-t=125 alice p1 e1 ack3 (991,90,1250) sees[]
-t=149 alice move -> applied seq=4 epoch=1 forward=1 strafe=0 facing=32768
-t=150 alice p1 e1 ack4 (1495,90,1229) sees[]
-t=175 alice p1 e1 ack4 (1495,90,704) sees[]
-t=180 alice move -> applied seq=5 epoch=1 forward=0 strafe=0 facing=32768
-t=181 alice p1 e1 ack5 (1495,90,599) sees[]
-t=181 alice use_door -> applied seq=6 epoch=1 door=1 open=true
-t=182 alice p1 e1 ack6 (1495,90,599) sees[]
-t=183 alice move -> applied seq=7 epoch=1 forward=1 strafe=0 facing=32768
-t=184 alice p1 e1 ack7 (1495,90,578) sees[]
-t=200 alice p1 e1 ack7 (1495,90,242) sees[]
-t=212 alice move -> applied seq=8 epoch=1 forward=0 strafe=0 facing=32768
-t=213 alice p1 e1 ack8 (1495,90,-10) sees[]
-t=213 alice move -> applied seq=9 epoch=1 forward=1 strafe=0 facing=16384
-t=214 alice p1 e1 ack9 (1516,90,-10) sees[]
-t=225 alice p1 e1 ack9 (1747,90,-10) sees[]
-t=233 alice move -> applied seq=10 epoch=1 forward=1 strafe=0 facing=32768
-t=234 alice p1 e1 ack10 (1915,90,-31) sees[]
-t=241 alice move -> applied seq=11 epoch=1 forward=0 strafe=0 facing=32768
-t=242 alice p1 e1 ack11 (1915,90,-178) sees[]
-t=250 alice p1 e1 ack11 (1915,90,-178) sees[]
-t=258 expect alice position alice ok [1915, 90, -178]
-t=258 expect alice area alice ok alice in Greyhaven Outpost
-t=258 alice p1 e1 ack11 (1915,90,-178) sees[]
-t=259 alice sell_item -> applied seq=12 epoch=1 npc=3 bag_slot=0 quantity=3
-t=260 expect alice copper ok copper=3
-t=260 expect alice inventory ok revision=2 sheet=true slot=0 item=0 quantity=0
-t=260 alice p1 e1 ack12 (1915,90,-178) sees[]
-t=260 alice buy_item -> applied seq=13 epoch=1 npc=3 offer=0 quantity=1
-t=261 expect alice event error:not_enough_money ok events[error:not_enough_money]
-t=261 alice p1 e1 ack13 (1915,90,-178) sees[] events[error:not_enough_money]
-t=261 alice buy_item -> applied seq=14 epoch=1 npc=6 offer=0 quantity=1
-t=262 expect alice event error:invalid_vendor ok events[error:invalid_vendor]
-t=262 alice p1 e1 ack14 (1915,90,-178) sees[] events[error:invalid_vendor]
-t=262 alice sell_item -> applied seq=15 epoch=1 npc=3 bag_slot=1 quantity=1
-t=263 expect alice copper ok copper=5
-t=263 alice p1 e1 ack15 (1915,90,-178) sees[]
-t=264 alice disconnect -> disconnected player=1
-t=265 alice p1 offline
-t=266 alice reconnect -> resumed player=1 epoch=2 identity=kept
-t=267 expect alice identity ok player=1 epoch=2
-t=267 alice p1 e2 ack15 (1915,90,-178) sees[]
-t=270 alice buy_item -> applied seq=16 epoch=2 npc=3 offer=0 quantity=1
-t=271 expect alice copper ok copper=0
-t=271 expect alice inventory ok revision=4 sheet=true slot=0 item=2 quantity=1
-t=271 alice p1 e2 ack16 (1915,90,-178) sees[]
-t=275 alice p1 e2 ack16 (1915,90,-178) sees[]
-t=280 alice p1 e2 ack16 (1915,90,-178) sees[]
-PASS vendor-resume ticks=280 steps=19 expectations=13 failures=0
+t=2 alice sell_item -> applied seq=1 epoch=1 npc=3 bag_slot=0 quantity=1
+t=3 expect alice event error:out_of_range ok events[error:out_of_range]
+t=3 expect alice copper ok copper=0
+t=3 alice p1 e1 ack1 (-1550,90,1250) sees[] events[error:out_of_range]
+t=6 alice use_door -> applied seq=2 epoch=1 door=1 open=true
+t=7 expect alice event error:out_of_range ok events[error:out_of_range]
+t=7 alice p1 e1 ack2 (-1550,90,1250) sees[] events[error:out_of_range]
+t=8 alice move -> applied seq=3 epoch=1 forward=1 strafe=0 facing=16384
+t=9 alice p1 e1 ack3 (-1540,90,1250) sees[]
+t=50 alice p1 e1 ack3 (-1109,90,1250) sees[]
+t=100 alice p1 e1 ack3 (-584,90,1250) sees[]
+t=150 alice p1 e1 ack3 (-59,90,1250) sees[]
+t=200 alice p1 e1 ack3 (466,90,1250) sees[]
+t=250 alice p1 e1 ack3 (991,90,1250) sees[]
+t=298 alice move -> applied seq=4 epoch=1 forward=1 strafe=0 facing=32768
+t=299 alice p1 e1 ack4 (1495,90,1240) sees[]
+t=300 alice p1 e1 ack4 (1495,90,1229) sees[]
+t=350 alice p1 e1 ack4 (1495,90,704) sees[]
+t=360 alice move -> applied seq=5 epoch=1 forward=0 strafe=0 facing=32768
+t=361 alice p1 e1 ack5 (1495,90,599) sees[]
+t=362 alice use_door -> applied seq=6 epoch=1 door=1 open=true
+t=363 alice p1 e1 ack6 (1495,90,599) sees[]
+t=366 alice move -> applied seq=7 epoch=1 forward=1 strafe=0 facing=32768
+t=367 alice p1 e1 ack7 (1495,90,589) sees[]
+t=400 alice p1 e1 ack7 (1495,90,242) sees[]
+t=424 alice move -> applied seq=8 epoch=1 forward=0 strafe=0 facing=32768
+t=425 alice p1 e1 ack8 (1495,90,-10) sees[]
+t=426 alice move -> applied seq=9 epoch=1 forward=1 strafe=0 facing=16384
+t=427 alice p1 e1 ack9 (1506,90,-10) sees[]
+t=450 alice p1 e1 ack9 (1747,90,-10) sees[]
+t=466 alice move -> applied seq=10 epoch=1 forward=1 strafe=0 facing=32768
+t=467 alice p1 e1 ack10 (1915,90,-21) sees[]
+t=482 alice move -> applied seq=11 epoch=1 forward=0 strafe=0 facing=32768
+t=483 alice p1 e1 ack11 (1915,90,-178) sees[]
+t=500 alice p1 e1 ack11 (1915,90,-178) sees[]
+t=515 expect alice area alice ok alice in Greyhaven Outpost
+t=515 alice p1 e1 ack11 (1915,90,-178) sees[]
+t=516 expect alice position alice ok [1915, 90, -178]
+t=516 alice p1 e1 ack11 (1915,90,-178) sees[]
+t=518 alice sell_item -> applied seq=12 epoch=1 npc=3 bag_slot=0 quantity=3
+t=519 expect alice copper ok copper=3
+t=519 alice p1 e1 ack12 (1915,90,-178) sees[]
+t=520 expect alice inventory ok revision=2 sheet=true slot=0 item=0 quantity=0
+t=520 alice p1 e1 ack12 (1915,90,-178) sees[]
+t=520 alice buy_item -> applied seq=13 epoch=1 npc=3 offer=0 quantity=1
+t=521 expect alice event error:not_enough_money ok events[error:not_enough_money]
+t=521 alice p1 e1 ack13 (1915,90,-178) sees[] events[error:not_enough_money]
+t=522 alice buy_item -> applied seq=14 epoch=1 npc=6 offer=0 quantity=1
+t=523 expect alice event error:invalid_vendor ok events[error:invalid_vendor]
+t=523 alice p1 e1 ack14 (1915,90,-178) sees[] events[error:invalid_vendor]
+t=524 alice sell_item -> applied seq=15 epoch=1 npc=3 bag_slot=1 quantity=1
+t=525 expect alice copper ok copper=5
+t=525 alice p1 e1 ack15 (1915,90,-178) sees[]
+t=528 alice disconnect -> disconnected player=1
+t=529 alice p1 offline
+t=532 alice reconnect -> resumed player=1 epoch=2 identity=kept
+t=533 expect alice identity ok player=1 epoch=2
+t=533 alice p1 e2 ack15 (1915,90,-178) sees[]
+t=540 alice buy_item -> applied seq=16 epoch=2 npc=3 offer=0 quantity=1
+t=541 expect alice copper ok copper=0
+t=541 expect alice inventory ok revision=4 sheet=true slot=0 item=2 quantity=1
+t=541 alice p1 e2 ack16 (1915,90,-178) sees[]
+t=550 alice p1 e2 ack16 (1915,90,-178) sees[]
+t=560 alice p1 e2 ack16 (1915,90,-178) sees[]
+PASS vendor-resume ticks=560 steps=19 expectations=13 failures=0

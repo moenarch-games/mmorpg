@@ -61,7 +61,11 @@ impl ZoneSimulation {
         // Launch speed whose friction stopping distance v²/(2·μ·g) is about `distance`.
         #[allow(clippy::cast_precision_loss)]
         let gravity = {
-            let [gx, gy, gz] = self.content.definition().gravity().map(|axis| axis as f32);
+            let [gx, gy, gz] = self
+                .content
+                .definition()
+                .gravity()
+                .map(|axis| axis as f32 / crate::physics::SUBUNITS_PER_UNIT as f32);
             (gx * gx + gy * gy + gz * gz).sqrt()
         };
         #[allow(clippy::cast_precision_loss)]

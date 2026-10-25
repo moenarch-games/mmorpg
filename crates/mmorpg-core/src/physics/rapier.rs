@@ -34,8 +34,9 @@ const UNITS_PER_METRE: f32 = 100.0;
 const CONTACT_OFFSET: f32 = CONTACT_OFFSET_UNITS / UNITS_PER_METRE;
 /// Approaches within 60 degrees of head-on step fully aside in [`World::slide_around`].
 const NEAR_HEAD_ON_COS: f32 = 0.5;
-/// The outward motion (units per tick) [`World::slide_around`] adds against a touching body.
-const SEPARATION_UNITS: f32 = 1.0;
+/// The outward motion (units per tick: 30 units/s) [`World::slide_around`] adds against a
+/// touching body.
+const SEPARATION_UNITS: f32 = 30.0 / crate::TICK_HZ as f32;
 /// How far (in metres) below a body the controller still finds the ground: its contact
 /// offset plus the fixed 5 cm its grounded test predicts. Support queries and snapping use
 /// the same reach.
@@ -45,10 +46,10 @@ const TIE_UNITS: f32 = 1.0e-3;
 /// A ground gap (units) below this counts as standing on it.
 const GAP_TOLERANCE_UNITS: f32 = 1.0e-3;
 
-/// A piece slower than this (units per tick) and turning slower than [`DEBRIS_REST_SPIN`]
-/// (radians per tick) settles.
-pub(super) const DEBRIS_REST_SPEED_UNITS: f32 = 0.6;
-pub(super) const DEBRIS_REST_SPIN: f32 = 0.03;
+/// A piece slower than this (units per tick: 18 units/s) and turning slower than
+/// [`DEBRIS_REST_SPIN`] (radians per tick: 0.9 rad/s) settles.
+pub(super) const DEBRIS_REST_SPEED_UNITS: f32 = 18.0 / crate::TICK_HZ as f32;
+pub(super) const DEBRIS_REST_SPIN: f32 = 0.9 / crate::TICK_HZ as f32;
 /// Fixed geometry this far (units) around the pieces takes part in a debris step.
 pub(super) const DEBRIS_REACH_UNITS: f32 = 1_000.0;
 pub(super) const TICKS_PER_SECOND: f32 = crate::TICK_HZ as f32;

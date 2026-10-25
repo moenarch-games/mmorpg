@@ -30,7 +30,7 @@ fn kill(zone: &mut ZoneSimulation, id: u32, sequence: u32) {
     .unwrap();
     zone.apply_command(1, sequence + 1, ZoneCommand::StartAttack)
         .unwrap();
-    for _ in 0..180 {
+    for _ in 0..mmorpg_core::golden::t30(180) {
         zone.advance_tick().unwrap();
         if matches!(
             zone.snapshot().unwrap().creatures[(id - 1) as usize].life,

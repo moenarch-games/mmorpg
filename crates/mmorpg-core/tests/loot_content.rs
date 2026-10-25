@@ -174,7 +174,7 @@ fn opt_in_binding_preserves_live_content_and_complete_simulation_continuation() 
     let mut candidate = ZoneSimulation::with_content(ZoneId::new(1), authored).unwrap();
     baseline.add_player(1).unwrap();
     candidate.add_player(1).unwrap();
-    for sequence in 1..=360 {
+    for sequence in 1..=u32::try_from(mmorpg_core::golden::t30(360)).unwrap() {
         let command = ZoneCommand::Move {
             forward: 1,
             strafe: 0,

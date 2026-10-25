@@ -32,8 +32,8 @@ pub fn wolf(health: u32, damage: [u16; 2]) -> CreatureTemplate {
         health_per_level: 0,
         damage,
         damage_per_level: 0,
-        swing_ticks: 60,
-        respawn_ticks: 1_800,
+        swing_ticks: mmorpg_core::golden::t30(60) as _,
+        respawn_ticks: mmorpg_core::golden::t30(1_800) as _,
         half_extents: [40, 45, 40],
     }
 }
@@ -75,7 +75,7 @@ pub fn npc(id: u32, position: [i32; 2]) -> Npc {
 /// 200 m of flat ground with gravity; spawn slot 0 is the origin.
 pub fn ground() -> ZoneDefinition {
     ZoneDefinition::with_spawn_grid(
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         SpawnGrid {
             origin: [0, 0],
             columns: 32,

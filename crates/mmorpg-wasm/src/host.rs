@@ -776,8 +776,8 @@ mod tests {
     /// host only after reconnect grace, so nothing is compared while away.
     #[test]
     fn browser_local_session_projections_match_the_network_runtime() {
-        const GRACE_TICKS: u64 = 3;
-        const TICKS: u64 = 54;
+        const GRACE_TICKS: u64 = 6;
+        const TICKS: u64 = 108;
         let intent = |forward, strafe| ZoneCommand::Move {
             forward,
             strafe,
@@ -786,11 +786,11 @@ mod tests {
         let steps = [
             (0, SessionStep::Join),
             (0, SessionStep::Command(intent(1, 0))),
-            (10, SessionStep::Command(ZoneCommand::Jump)),
-            (20, SessionStep::Command(intent(0, 1))),
-            (30, SessionStep::Command(intent(0, 0))),
-            (44, SessionStep::Leave),
-            (50, SessionStep::Join),
+            (20, SessionStep::Command(ZoneCommand::Jump)),
+            (40, SessionStep::Command(intent(0, 1))),
+            (60, SessionStep::Command(intent(0, 0))),
+            (88, SessionStep::Leave),
+            (100, SessionStep::Join),
         ];
         let mut local = LocalZoneHost::new().unwrap();
         let (_, adapter) = build_zone_matches([LOCAL_ZONE_ID])
@@ -855,9 +855,9 @@ mod tests {
             }
         }
         assert!(steps.next().is_none(), "every scripted step ran");
-        let expected: Vec<_> = (1..=44)
+        let expected: Vec<_> = (1..=88)
             .map(|tick| (1, tick))
-            .chain((51..=TICKS).map(|tick| (2, tick)))
+            .chain((101..=TICKS).map(|tick| (2, tick)))
             .collect();
         assert_eq!(
             compared, expected,

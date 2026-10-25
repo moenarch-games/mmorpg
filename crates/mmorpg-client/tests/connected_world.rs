@@ -98,7 +98,7 @@ impl LocalHost {
                             directory,
                             recovery_directory: None,
                             zone_ids: vec![zone_id],
-                            reconnect_grace_ticks: 20,
+                            reconnect_grace_ticks: mmorpg_core::golden::t30(20),
                         },
                         config,
                         game_server::MatchHostStatusConfig { port: 0 },
@@ -199,7 +199,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
         session.send_select_target(Some(EntityRef::Creature(CreatureId::new(1))))?;
         session.send_attack(true)?;
         let mut sheet = None;
-        for _ in 0..90 {
+        for _ in 0..mmorpg_core::golden::t30(90) {
             let snapshot = session.receive_snapshot().await?;
             if let Some(view) = snapshot.loot {
                 sheet = Some(view);
@@ -213,7 +213,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
             ClientSession::connect(&local.url, Some(&local.certificate), zone_id, revision).await?;
         other.send_loot(sheet.claim)?;
         let mut rejected_owner = false;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = other.receive_snapshot().await?;
             assert_eq!(snapshot.viewer.copper, 0);
             assert!(snapshot.loot.is_none());
@@ -233,7 +233,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
         assert!(rejected_owner);
         session.send_loot(sheet.claim)?;
         let mut credited = false;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = session.receive_snapshot().await?;
             if snapshot.viewer.copper == 2 && snapshot.inventory_revision == 2 {
                 assert!(snapshot.loot.is_none());
@@ -248,7 +248,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
         session.send_loot(sheet.claim)?;
         let mut saw_refusal = false;
         let mut saw_bag = false;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = session.receive_snapshot().await?;
             assert_eq!(snapshot.viewer.copper, 2);
             assert!(snapshot.loot.is_none());
@@ -294,7 +294,7 @@ async fn bag_intents_cross_real_transport_and_resume_without_losing_items() {
         .await?;
         session.send_move_item(0, 15, 2)?;
         let mut changed = None;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = session.receive_snapshot().await?;
             if snapshot.inventory_revision == 2 && snapshot.inventory.is_some() {
                 changed = snapshot.inventory;
@@ -308,7 +308,7 @@ async fn bag_intents_cross_real_transport_and_resume_without_losing_items() {
         session.reconnect().await?;
         assert_eq!(session.player_id(), player_id);
         let mut recovered = false;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = session.receive_snapshot().await?;
             if let Some(inventory) = snapshot.inventory {
                 assert_eq!(inventory, changed);
@@ -323,7 +323,7 @@ async fn bag_intents_cross_real_transport_and_resume_without_losing_items() {
         );
         session.send_move_item(15, 0, 2)?;
         let mut merged = false;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = session.receive_snapshot().await?;
             if snapshot.inventory_revision == 3
                 && let Some(inventory) = snapshot.inventory
@@ -369,7 +369,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
             .position;
         first.send_move(1, 0, SOUTH)?;
         let mut moved = false;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = second.receive_snapshot().await?;
             assert_eq!(snapshot.viewer_id, second.player_id());
             if snapshot.entities.iter().any(|player| {
@@ -387,7 +387,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
         );
         first.send_move(0, 0, SOUTH)?;
         let mut stopped = false;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = first.receive_snapshot().await?;
             if snapshot.acknowledged_sequence >= 2 {
                 let player = snapshot
@@ -407,7 +407,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
         );
         // Commands may have reached the server even if their ACK was lost.
         // Preserve the highest sent sequence across connection replacement.
-        for _ in 0..32 {
+        for _ in 0..mmorpg_core::golden::t30(32) {
             first.send_move(0, 0, SOUTH)?;
         }
         let player_id = first.player_id();
@@ -445,7 +445,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
         assert!(again.acknowledged_sequence > resumed.acknowledged_sequence);
         first.send_move(1, 0, NORTH)?;
         let mut resumed_movement = false;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = second.receive_snapshot().await?;
             if snapshot
                 .entities
@@ -462,7 +462,7 @@ async fn clients_share_authority_resume_identity_and_reject_wrong_content() {
         );
         first.send_jump()?;
         let mut jumped = false;
-        for _ in 0..30 {
+        for _ in 0..mmorpg_core::golden::t30(30) {
             let snapshot = second.receive_snapshot().await?;
             if snapshot.entities.iter().any(|p| {
                 p.id == player_id
@@ -542,7 +542,7 @@ async fn walk(
         }
     }
     // Let the stop settle before the caller acts on the position.
-    for _ in 0..4 {
+    for _ in 0..mmorpg_core::golden::t30(4) {
         snapshot = session.receive_snapshot().await?;
     }
     Ok(snapshot)
@@ -610,7 +610,7 @@ async fn the_inn_journey_crosses_real_transport_and_both_players_see_the_door() 
             quantity: 1,
         })?;
         let mut sold = false;
-        for _ in 0..40 {
+        for _ in 0..mmorpg_core::golden::t30(40) {
             if walker.receive_snapshot().await?.viewer.copper > 0 {
                 sold = true;
                 break;
@@ -721,7 +721,7 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
         let largest = PLAYER_SNAPSHOT_FIXED_BYTES + MAX_WIRE_ENTITIES * ENTITY_RECORD_BYTES;
         assert!(largest <= MAX_PLAYER_PROJECTION_BYTES);
         let mut previous_tick = None;
-        for _ in 0..10 {
+        for _ in 0..mmorpg_core::golden::t30(10) {
             let snapshot = session.receive_snapshot().await?;
             // The self sheet: bag, equipment and stat totals, then the quest
             // part (mask, entry count, entries, marker count, markers).
@@ -864,7 +864,7 @@ async fn fragmented_projection_reaches_the_native_client() {
                 current_tick: tick,
                 connection_epoch: 1,
                 reconnect_token: [1; 16],
-                reconnect_grace_ticks: 120,
+                reconnect_grace_ticks: mmorpg_core::golden::t30(120),
             }))
             .await
             .unwrap();
@@ -1125,7 +1125,7 @@ async fn durable_character_resumes_after_logout_and_host_restart() -> Result<(),
         .map_err(|error| format!("receive durable snapshot: {error}"))?;
     client.send_move(1, 0, EAST)?;
     let mut moved = initial.clone();
-    for _ in 0..6 {
+    for _ in 0..mmorpg_core::golden::t30(6) {
         moved = client
             .receive_snapshot()
             .await

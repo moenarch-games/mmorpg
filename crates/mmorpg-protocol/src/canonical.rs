@@ -1977,7 +1977,7 @@ mod tests {
         assert_eq!(restored.snapshot().unwrap(), state);
         let other = ZoneSimulation::with_definition(
             ZoneId::new(1),
-            ZoneDefinition::new([0, -1, 0], Vec::new()).unwrap(),
+            ZoneDefinition::new(mmorpg_core::STANDARD_GRAVITY, Vec::new()).unwrap(),
         )
         .unwrap();
         assert_eq!(

@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { decodeSnapshot, type EntityState } from "../src/replication";
+import { decodeSnapshot, TICK_HZ, type EntityState } from "../src/replication";
 import { encodeCommand } from "../src/command-wire";
 import { parseSessionRoute } from "../src/session/route";
 import {
   CONNECT_TIMEOUT_MS,
+  INTERPOLATION_DELAY_TICKS,
   RECONNECT_SETTLE_MS,
   SNAPSHOT_TIMEOUT_MS,
   OnlineZoneSource,
@@ -187,7 +188,7 @@ describe("OnlineZoneSource", () => {
     let dropClassChoice = true;
     host.toHost = (datagram) => (dropClassChoice && datagram.byteLength === 12 && datagram[9] === 11 ? [] : [datagram]);
     const player = await clock.until(source.join());
-    await frame(clock, source, 3 * TICK_MS);
+    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
     expect(host.applied).toEqual([]);
     dropClassChoice = false;
     host.lose(player);
@@ -216,7 +217,7 @@ describe("OnlineZoneSource", () => {
   test("a clean close by the host is an interruption that resumes the same player", async () => {
     const { clock, host, source } = online({ graceTicks: 300n });
     const player = await clock.until(source.join());
-    await frame(clock, source, 3 * TICK_MS);
+    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
     host.closeSession(player);
     await clock.advance(0);
     expect(source.linkState()).toBe("reconnecting");
@@ -231,7 +232,7 @@ describe("OnlineZoneSource", () => {
     const { clock, host, source } = online({ graceTicks: 300n });
     const player = await clock.until(source.join());
     source.sendCommand(MOVE_EAST);
-    await frame(clock, source, 3 * TICK_MS);
+    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
     const before = source.latestProjection();
     host.lose(player);
     await clock.advance(0);
@@ -352,20 +353,22 @@ describe("OnlineZoneSource", () => {
     await expect(clock.until(source.join())).rejects.toThrow("Could not join the zone host: Opening handshake failed.");
   });
 
-  test("samples run two ticks behind the newest projection and hold it when projections stall", async () => {
+  test("samples run the interpolation delay behind the newest projection and hold it when projections stall", async () => {
+    // The fake host moves a running unit this many whole units per tick.
+    const step = Math.round(630 / TICK_HZ);
     const { clock, host, source } = online();
     const player = await clock.until(source.join());
     source.sendCommand(MOVE_EAST);
-    for (let ticks = 0; ticks < 6; ticks += 1) {
+    for (let ticks = 0; ticks < INTERPOLATION_DELAY_TICKS + 4; ticks += 1) {
       await frame(clock, source);
     }
     const newest = self(source).position[0];
     const sampled = source.sample().find((entity) => entity.entityId === player)!.position[0];
-    expect(sampled).toBeCloseTo(newest - 2 * 21, 6);
+    expect(sampled).toBeCloseTo(newest - INTERPOLATION_DELAY_TICKS * step, 6);
     host.toClient = () => [];
     await frame(clock, source, TICK_MS / 2);
-    expect(source.sample().find((entity) => entity.entityId === player)!.position[0]).toBeCloseTo(newest - 1.5 * 21, 6);
-    await frame(clock, source, 3 * TICK_MS);
+    expect(source.sample().find((entity) => entity.entityId === player)!.position[0]).toBeCloseTo(newest - (INTERPOLATION_DELAY_TICKS - 0.5) * step, 6);
+    await frame(clock, source, INTERPOLATION_DELAY_TICKS * TICK_MS);
     expect(source.sample().find((entity) => entity.entityId === player)!.position[0]).toBe(newest);
   });
 

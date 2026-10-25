@@ -9,10 +9,20 @@ use mmorpg_core::{
     ZoneSimulation,
 };
 
-// Snapshots carry units per tick; the speeds are whole units at 30 Hz.
-const RUN_SPEED_UNITS_PER_TICK: i32 = RUN_SPEED_SUBUNITS_PER_TICK / SUBUNITS_PER_UNIT;
-const BACKPEDAL_SPEED_UNITS_PER_TICK: i32 = BACKPEDAL_SPEED_SUBUNITS_PER_TICK / SUBUNITS_PER_UNIT;
-const JUMP_VELOCITY_UNITS_PER_TICK: i32 = JUMP_VELOCITY_SUBUNITS_PER_TICK / SUBUNITS_PER_UNIT;
+use mmorpg_core::golden::t30;
+
+// Snapshots carry exact units per tick.
+#[allow(clippy::cast_precision_loss)]
+const S: f32 = SUBUNITS_PER_UNIT as f32;
+#[allow(clippy::cast_precision_loss)]
+const RUN_SPEED_UNITS_PER_TICK: f32 = RUN_SPEED_SUBUNITS_PER_TICK as f32 / S;
+#[allow(clippy::cast_precision_loss)]
+const BACKPEDAL_SPEED_UNITS_PER_TICK: f32 = BACKPEDAL_SPEED_SUBUNITS_PER_TICK as f32 / S;
+#[allow(clippy::cast_precision_loss)]
+const JUMP_VELOCITY_UNITS_PER_TICK: f32 = JUMP_VELOCITY_SUBUNITS_PER_TICK as f32 / S;
+/// Gravity's pull per tick (units per tick²).
+#[allow(clippy::cast_precision_loss)]
+const GRAVITY: f32 = -(mmorpg_core::STANDARD_GRAVITY[1] as f32) / S;
 
 const REST_Y: i32 = PLAYER_HALF_EXTENTS_UNITS[1];
 
@@ -23,14 +33,16 @@ fn ground(extra: Vec<StaticCollider>) -> ZoneDefinition {
         half_extents: [10_000, 50, 10_000],
     }];
     colliders.extend(extra);
-    ZoneDefinition::new([0, -1, 0], colliders).unwrap()
+    ZoneDefinition::new(mmorpg_core::STANDARD_GRAVITY, colliders).unwrap()
 }
 
-/// The player's body as gameplay rules see it: whole units (#271).
+/// The player's body: its position as gameplay rules see it (whole units, #271) and its
+/// exact velocity (units per tick).
 #[derive(Clone, Copy, Debug)]
 struct Body {
     position: [i32; 3],
-    velocity: [i32; 3],
+    exact: [f32; 3],
+    velocity: [f32; 3],
     jump_pending: bool,
 }
 
@@ -38,16 +50,17 @@ fn player(zone: &ZoneSimulation) -> Body {
     let state = &zone.snapshot().unwrap().players[0];
     Body {
         position: mmorpg_core::physics::to_units(state.position),
-        velocity: mmorpg_core::physics::to_units(state.velocity),
+        exact: state.position,
+        velocity: state.velocity,
         jump_pending: state.jump_pending,
     }
 }
 
-fn one_tick_velocity(forward: i8, strafe: i8, facing: u16) -> [i32; 3] {
+fn one_tick_velocity(forward: i8, strafe: i8, facing: u16) -> [f32; 3] {
     // No gravity and no colliders: one tick moves the body by its velocity.
     let mut zone = ZoneSimulation::new(ZoneId::new(1));
     zone.add_player(1).unwrap();
-    let before = player(&zone).position;
+    let before = player(&zone).exact;
     zone.apply_command(
         1,
         1,
@@ -60,10 +73,14 @@ fn one_tick_velocity(forward: i8, strafe: i8, facing: u16) -> [i32; 3] {
     .unwrap();
     zone.advance_tick().unwrap();
     let after = player(&zone);
-    assert_eq!(
-        std::array::from_fn(|axis| after.position[axis] - before[axis]),
-        after.velocity
-    );
+    for ((now, then), velocity) in after.exact.iter().zip(before).zip(after.velocity) {
+        let moved = now - then;
+        assert!(
+            (moved - velocity).abs() < 1e-3,
+            "{moved} {:?}",
+            after.velocity
+        );
+    }
     after.velocity
 }
 
@@ -96,8 +113,8 @@ fn eight_directions_follow_facing_at_run_and_backpedal_speed() {
                 let velocity = one_tick_velocity(forward, strafe, facing);
                 let (expected_x, expected_z) = reference_velocity(forward, strafe, facing);
                 let context = format!("forward {forward}, strafe {strafe}, facing {facing}");
-                // Q16 trig adds at most 21 / 2^17 before rounding to whole units.
-                let tolerance = 0.5 + 1e-3;
+                // Q16 trig adds at most 21 / 2^17 before rounding to whole subunits.
+                let tolerance = 0.5 / f64::from(S) + 1e-3;
                 assert!(
                     (f64::from(velocity[0]) - expected_x).abs() <= tolerance,
                     "{context}: {velocity:?} vs ({expected_x}, {expected_z})"
@@ -106,7 +123,7 @@ fn eight_directions_follow_facing_at_run_and_backpedal_speed() {
                     (f64::from(velocity[2]) - expected_z).abs() <= tolerance,
                     "{context}: {velocity:?} vs ({expected_x}, {expected_z})"
                 );
-                assert_eq!(velocity[1], 0, "{context}");
+                assert_eq!(velocity[1], 0.0, "{context}");
                 let speed = f64::from(velocity[0]).hypot(f64::from(velocity[2]));
                 let nominal = if forward < 0 {
                     BACKPEDAL_SPEED_UNITS_PER_TICK
@@ -114,7 +131,7 @@ fn eight_directions_follow_facing_at_run_and_backpedal_speed() {
                     RUN_SPEED_UNITS_PER_TICK
                 };
                 assert!(
-                    (speed - f64::from(nominal)).abs() <= 0.75,
+                    (speed - f64::from(nominal)).abs() <= 0.01,
                     "{context}: {speed}"
                 );
             }
@@ -124,17 +141,31 @@ fn eight_directions_follow_facing_at_run_and_backpedal_speed() {
 
 #[test]
 fn facing_convention_names_forward_right_and_backpedal() {
+    let (run, back) = (RUN_SPEED_UNITS_PER_TICK, BACKPEDAL_SPEED_UNITS_PER_TICK);
+    let close = |actual: [f32; 3], expected: [f32; 3]| {
+        assert!(
+            actual
+                .iter()
+                .zip(expected)
+                .all(|(a, e)| (a - e).abs() <= 1.0 / S),
+            "{actual:?} vs {expected:?}"
+        );
+    };
     // Yaw 0 faces +Z; its right is -X.
-    assert_eq!(one_tick_velocity(1, 0, 0), [0, 0, 21]);
-    assert_eq!(one_tick_velocity(0, 1, 0), [-21, 0, 0]);
-    assert_eq!(one_tick_velocity(0, -1, 0), [21, 0, 0]);
-    assert_eq!(one_tick_velocity(-1, 0, 0), [0, 0, -13]);
+    close(one_tick_velocity(1, 0, 0), [0.0, 0.0, run]);
+    close(one_tick_velocity(0, 1, 0), [-run, 0.0, 0.0]);
+    close(one_tick_velocity(0, -1, 0), [run, 0.0, 0.0]);
+    close(one_tick_velocity(-1, 0, 0), [0.0, 0.0, -back]);
     // A quarter turn faces +X; its right is +Z.
-    assert_eq!(one_tick_velocity(1, 0, 16_384), [21, 0, 0]);
-    assert_eq!(one_tick_velocity(0, 1, 16_384), [0, 0, 21]);
+    close(one_tick_velocity(1, 0, 16_384), [run, 0.0, 0.0]);
+    close(one_tick_velocity(0, 1, 16_384), [0.0, 0.0, run]);
     // Diagonals keep the run speed rather than adding the two axes.
-    assert_eq!(one_tick_velocity(1, 1, 0), [-15, 0, 15]);
-    assert_eq!(one_tick_velocity(-1, -1, 0), [9, 0, -9]);
+    let (d, b) = (
+        run * std::f32::consts::FRAC_1_SQRT_2,
+        back * std::f32::consts::FRAC_1_SQRT_2,
+    );
+    close(one_tick_velocity(1, 1, 0), [-d, 0.0, d]);
+    close(one_tick_velocity(-1, -1, 0), [b, 0.0, -b]);
 }
 
 #[test]
@@ -147,8 +178,8 @@ fn zero_intent_stops_horizontally_but_gravity_keeps_vertical_velocity() {
     let mut zone = ZoneSimulation::from_snapshot(airborne, Arc::clone(zone.content())).unwrap();
     zone.advance_tick().unwrap();
     let falling = player(&zone);
-    assert_eq!(falling.velocity, [0, -4, 0]);
-    assert_eq!(falling.position, [0, 996, 0]);
+    assert_eq!(falling.velocity, [0.0, -3.0 - GRAVITY, 0.0]);
+    assert_eq!(falling.exact[1], 1_000.0 - 3.0 - GRAVITY);
 }
 
 #[test]
@@ -162,21 +193,29 @@ fn a_grounded_jump_rises_to_its_apex_and_lands() {
     zone.advance_tick().unwrap();
     let first = player(&zone);
     assert!(!first.jump_pending, "the tick consumes the intent");
-    assert_eq!(first.velocity[1], JUMP_VELOCITY_UNITS_PER_TICK - 1);
+    assert_eq!(first.velocity[1], JUMP_VELOCITY_UNITS_PER_TICK - GRAVITY);
     let mut apex = first.position[1];
     let mut landed_after = None;
-    for tick in 2..=60 {
+    for tick in 2..=t30(60) {
         zone.advance_tick().unwrap();
         let state = player(&zone);
         apex = apex.max(state.position[1]);
-        if state.position[1] == REST_Y && state.velocity[1] == 0 && landed_after.is_none() {
+        if state.position[1] == REST_Y && state.velocity[1] == 0.0 && landed_after.is_none() {
             landed_after = Some(tick);
         }
     }
-    // Gravity of one unit per tick: 15 + 14 + … + 1 units of rise.
-    assert_eq!(apex, REST_Y + 120);
+    // Each tick rises by the velocity after gravity: 1.2 m at 30 Hz, a little more at 60 Hz.
+    let mut rise = 0.0;
+    let mut velocity = JUMP_VELOCITY_UNITS_PER_TICK;
+    while velocity - GRAVITY > 0.0 {
+        velocity -= GRAVITY;
+        rise += velocity;
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    let rise = rise.round() as i32;
+    assert_eq!(apex, REST_Y + rise);
     assert!(
-        landed_after.is_some_and(|tick| tick <= 33),
+        landed_after.is_some_and(|tick| tick <= t30(33)),
         "{landed_after:?}"
     );
     assert_eq!(player(&zone).position[1], REST_Y);
@@ -184,7 +223,10 @@ fn a_grounded_jump_rises_to_its_apex_and_lands() {
     // Landing restores the ability to jump.
     zone.apply_command(1, 2, ZoneCommand::Jump).unwrap();
     zone.advance_tick().unwrap();
-    assert_eq!(player(&zone).velocity[1], JUMP_VELOCITY_UNITS_PER_TICK - 1);
+    assert_eq!(
+        player(&zone).velocity[1],
+        JUMP_VELOCITY_UNITS_PER_TICK - GRAVITY
+    );
 }
 
 #[test]
@@ -192,7 +234,7 @@ fn a_mid_air_jump_is_consumed_without_effect() {
     let mut zone = ZoneSimulation::with_definition(ZoneId::new(1), ground(Vec::new())).unwrap();
     zone.add_player(1).unwrap();
     zone.apply_command(1, 1, ZoneCommand::Jump).unwrap();
-    for _ in 0..5 {
+    for _ in 0..t30(5) {
         zone.advance_tick().unwrap();
     }
     let rising = player(&zone);
@@ -201,15 +243,19 @@ fn a_mid_air_jump_is_consumed_without_effect() {
     zone.apply_command(1, 2, ZoneCommand::Jump).unwrap();
     zone.advance_tick().unwrap();
     let after = player(&zone);
-    assert_eq!(after.velocity[1], rising.velocity[1] - 1, "no double jump");
+    assert_eq!(
+        after.velocity[1],
+        rising.velocity[1] - GRAVITY,
+        "no double jump"
+    );
     assert!(!after.jump_pending, "no buffering until landing");
-    for _ in 0..40 {
+    for _ in 0..t30(40) {
         zone.advance_tick().unwrap();
     }
     let landed = player(&zone);
     assert_eq!(landed.position[1], REST_Y);
     assert_eq!(
-        landed.velocity[1], 0,
+        landed.velocity[1], 0.0,
         "the ignored jump never fires on landing"
     );
 }
@@ -242,7 +288,7 @@ fn touching_only_a_wall_does_not_allow_a_jump() {
     zone.advance_tick().unwrap();
     let state = player(&zone);
     assert_eq!(state.position, [0, REST_Y, 0]);
-    assert_eq!(state.velocity[1], 0);
+    assert_eq!(state.velocity[1], 0.0);
     assert!(!state.jump_pending);
 }
 
@@ -262,7 +308,7 @@ fn a_falling_body_beside_a_wall_cannot_jump() {
     let before = player(&zone);
     zone.apply_command(1, 1, ZoneCommand::Jump).unwrap();
     zone.advance_tick().unwrap();
-    assert_eq!(player(&zone).velocity[1], before.velocity[1] - 1);
+    assert_eq!(player(&zone).velocity[1], before.velocity[1] - GRAVITY);
 }
 
 /// Another unit's body is no ground (#271, as in ARPG): a player resting on another player's

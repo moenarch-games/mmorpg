@@ -124,7 +124,7 @@ fn collision_corrections_and_extreme_bodies_preserve_reference_parity() {
         greyhaven_vale_definition(),
     );
     colliding.apply_command(2, 4, run(SOUTH)).unwrap();
-    for _ in 0..120 {
+    for _ in 0..mmorpg_core::golden::t30(120) {
         colliding.advance_tick().unwrap();
         assert_wire_parity(&colliding);
     }
@@ -148,7 +148,7 @@ fn collision_corrections_and_extreme_bodies_preserve_reference_parity() {
         ZoneDefinition::default(),
     );
     edge.apply_command(2, 4, run(EAST)).unwrap();
-    for _ in 0..3 {
+    for _ in 0..mmorpg_core::golden::t30(3) {
         edge.advance_tick().unwrap();
         assert_wire_parity(&edge);
     }
@@ -171,7 +171,7 @@ fn players_running_on_unenclosed_content_stay_encodable() {
         zone.add_player(player_id).unwrap();
         zone.apply_command(player_id, 1, run(EAST)).unwrap();
     }
-    for _ in 0..1_600 {
+    for _ in 0..mmorpg_core::golden::t30(1_600) {
         zone.advance_tick().unwrap();
         for viewer in [1, 2] {
             let projection = zone.snapshot_for_player(viewer).unwrap();
@@ -189,6 +189,6 @@ fn players_running_on_unenclosed_content_stay_encodable() {
     // Player 2 spawned 2 m ahead and rests against the limit; player 1 caught up, slid
     // around it (#273) and rests against the limit beside it.
     let front = MAX_CONTENT_COORDINATE_UNITS - 30;
-    assert_eq!(positions, [[front, 90, -64], [front, 90, 0]]);
+    assert_eq!(positions, [[front, 90, -62], [front, 90, 0]]);
     assert_wire_parity(&zone);
 }

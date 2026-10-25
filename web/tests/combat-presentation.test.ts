@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { EntityState, ZoneEvent, ZoneSnapshot } from "../src/replication";
+import { TICK_HZ, type EntityState, type ZoneEvent, type ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
 import { abilitySlots, cancelCast, useAbilitySlot } from "../src/world/units/abilities";
 import { CombatHud, FEEDBACK_MS, combatStatus, eventText, unitName } from "../src/world/units/combat-hud";
@@ -192,7 +192,7 @@ describe("combat HUD text", () => {
     // An open sword → Shield Bash follow-up (#157) is announced.
     expect(combatStatus(view([], { combo: "open" }), catalog)).toBe("Health 50/50 · Level 1 · Combo: Shield Bash now");
     // Spent breath (#274) shows while it refills or runs down, and drowning at zero.
-    expect(combatStatus(view([], { breath: 450 }), catalog)).toBe("Health 50/50 · Level 1 · Breath 15 s");
+    expect(combatStatus(view([], { breath: 15 * TICK_HZ }), catalog)).toBe("Health 50/50 · Level 1 · Breath 15 s");
     expect(combatStatus(view([], { breath: 0 }), catalog)).toBe("Health 50/50 · Level 1 · Drowning!");
     expect(unitName({ kind: "npc", id: 5 }, view([]), catalog)).toBe("Brother Aldous");
     expect(unitName({ kind: "player", id: 7 }, view([]), catalog)).toBe("you");

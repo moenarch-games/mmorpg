@@ -32,7 +32,7 @@ fn content(walls: &[([i32; 2], [i32; 2])], wolves: &[[i32; 2]]) -> Arc<ZoneConte
         });
     }
     let definition = ZoneDefinition::with_spawn_grid(
-        [0, -1, 0],
+        mmorpg_core::STANDARD_GRAVITY,
         SpawnGrid {
             origin: [-5_000, -5_000],
             columns: 32,
@@ -124,7 +124,12 @@ fn frost_breath_strikes_and_slows_what_it_can_see_in_its_arc_and_range() {
     // In the arc; 51° off the facing; beyond 8 m; behind a wall.
     let wolves = [[0, 500], [500, 400], [0, 1_000], [-500, 300]];
     let wall = ([-400, 200], [60, 60]);
-    let (zone, events) = cast(content(&[wall], &wolves), ids::FROST_BREATH, None, 2);
+    let (zone, events) = cast(
+        content(&[wall], &wolves),
+        ids::FROST_BREATH,
+        None,
+        mmorpg_core::golden::t30(2) as _,
+    );
     let hits: Vec<_> = (1..=4).map(|id| damage_to(&events, wolf(id))).collect();
     assert!(hits[0] > 0, "{hits:?}");
     assert_eq!(hits[1..], [0, 0, 0], "{hits:?}");
@@ -135,12 +140,22 @@ fn frost_breath_strikes_and_slows_what_it_can_see_in_its_arc_and_range() {
 #[test]
 fn lightning_beam_strikes_everything_on_its_line_until_a_wall() {
     let wolves = [[0, 600], [0, 1_200], [0, 1_800]];
-    let (_, events) = cast(content(&[], &wolves), ids::LIGHTNING_BEAM, None, 62);
+    let (_, events) = cast(
+        content(&[], &wolves),
+        ids::LIGHTNING_BEAM,
+        None,
+        mmorpg_core::golden::t30(62) as _,
+    );
     for id in 1..=3 {
         assert!(damage_to(&events, wolf(id)) > 0, "wolf {id} on the line");
     }
     let wall = ([0, 1_000], [500, 50]);
-    let (_, events) = cast(content(&[wall], &wolves), ids::LIGHTNING_BEAM, None, 62);
+    let (_, events) = cast(
+        content(&[wall], &wolves),
+        ids::LIGHTNING_BEAM,
+        None,
+        mmorpg_core::golden::t30(62) as _,
+    );
     assert!(damage_to(&events, wolf(1)) > 0);
     assert_eq!(
         damage_to(&events, wolf(2)) + damage_to(&events, wolf(3)),
@@ -153,7 +168,12 @@ fn lightning_beam_strikes_everything_on_its_line_until_a_wall() {
 fn chain_lightning_jumps_twice_to_the_nearest_visible_hostiles() {
     // A row 24 m out, 6 m apart: the chain reaches the third and spares the fourth.
     let row = [[0, 2_400], [600, 2_400], [1_200, 2_400], [1_800, 2_400]];
-    let (_, events) = cast(content(&[], &row), ids::CHAIN_LIGHTNING, Some(wolf(1)), 50);
+    let (_, events) = cast(
+        content(&[], &row),
+        ids::CHAIN_LIGHTNING,
+        Some(wolf(1)),
+        mmorpg_core::golden::t30(50) as _,
+    );
     let hits: Vec<_> = (1..=4).map(|id| damage_to(&events, wolf(id))).collect();
     assert!(hits[..3].iter().all(|&hit| hit > 0), "{hits:?}");
     assert_eq!(hits[3], 0, "{hits:?}");
@@ -163,7 +183,7 @@ fn chain_lightning_jumps_twice_to_the_nearest_visible_hostiles() {
         content(&[wall], &row),
         ids::CHAIN_LIGHTNING,
         Some(wolf(1)),
-        50,
+        mmorpg_core::golden::t30(50) as _,
     );
     let hits: Vec<_> = (1..=4).map(|id| damage_to(&events, wolf(id))).collect();
     assert!(hits[0] > 0);

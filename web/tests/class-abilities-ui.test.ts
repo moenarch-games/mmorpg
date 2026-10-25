@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AuraState, CastState, ViewerState, ZoneEvent } from "../src/replication";
+import { TICK_HZ, type AuraState, type CastState, type ViewerState, type ZoneEvent } from "../src/replication";
 import type { AbilityRecord, type ContentCatalog } from "../src/world/catalog";
 import { auraPolarity, undescribedAbilities } from "../src/world/units/ability-presentation";
 import { cooldownSeconds, formatRemaining, slotState, sweepDegrees, targetDistanceUnits, tooltipText } from "../src/world/units/ability-state";
@@ -9,13 +9,15 @@ import { castBarView } from "../src/world/units/cast-bar";
 import { combatTexts, damageIsPeriodic, viewerInterrupted } from "../src/world/units/combat-text";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
 
+/** Ticks of the 30 Hz rate these cases were written against, at `TICK_HZ`. */
+const t = (ticks: number) => (ticks * TICK_HZ) / 30;
 const ABILITIES: AbilityRecord[] = [
-  { id: 1, name: "Heroic Strike", user: "warden", level: 1, cost: 15, castTicks: 0, channel: false, cooldown: 0, aura: null },
-  { id: 2, name: "Shield Bash", user: "warden", level: 2, cost: 10, castTicks: 0, channel: false, cooldown: 360, aura: 6 },
-  { id: 9, name: "Firebolt", user: "arcanist", level: 1, cost: 25, castTicks: 60, channel: false, cooldown: 0, aura: null },
-  { id: 10, name: "Frost Nova", user: "arcanist", level: 2, cost: 30, castTicks: 0, channel: false, cooldown: 600, aura: 4 },
-  { id: 11, name: "Arcane Barrier", user: "arcanist", level: 4, cost: 40, castTicks: 0, channel: false, cooldown: 900, aura: 3 },
-  { id: 12, name: "Blizzard", user: "arcanist", level: 6, cost: 80, castTicks: 180, channel: true, cooldown: 0, aura: null },
+  { id: 1, name: "Heroic Strike", user: "warden", level: 1, cost: 15, castTicks: t(0), channel: false, cooldown: t(0), aura: null },
+  { id: 2, name: "Shield Bash", user: "warden", level: 2, cost: 10, castTicks: t(0), channel: false, cooldown: t(360), aura: 6 },
+  { id: 9, name: "Firebolt", user: "arcanist", level: 1, cost: 25, castTicks: t(60), channel: false, cooldown: t(0), aura: null },
+  { id: 10, name: "Frost Nova", user: "arcanist", level: 2, cost: 30, castTicks: t(0), channel: false, cooldown: t(600), aura: 4 },
+  { id: 11, name: "Arcane Barrier", user: "arcanist", level: 4, cost: 40, castTicks: t(0), channel: false, cooldown: t(900), aura: 3 },
+  { id: 12, name: "Blizzard", user: "arcanist", level: 6, cost: 80, castTicks: t(180), channel: true, cooldown: t(0), aura: null },
 ];
 const catalog: ContentCatalog = {
   items: new Map(), contentRevision: 6n,
@@ -67,17 +69,17 @@ describe("slot state", () => {
   });
 
   test("the casting slot is flagged", () => {
-    const cast: CastState = { ability: 9, elapsed: 10, total: 60, channel: false };
+    const cast: CastState = { ability: 9, elapsed: t(10), total: t(60), channel: false };
     expect(slotState(firebolt, snapshot({}, { cast }), 1_000).casting).toBe(true);
     expect(slotState(nova, snapshot({}, { cast }), 1_000).casting).toBe(false);
   });
 
   test("the longer of cooldown and global cooldown is shown", () => {
-    const cooling = snapshot({ cooldowns: [{ ability: 10, remaining: 300 }] }, { globalCooldown: 40 });
-    expect(slotState(nova, cooling, 0).cooldown).toEqual({ kind: "cooldown", remaining: 300, total: 600 });
-    expect(slotState(firebolt, cooling, 0).cooldown).toEqual({ kind: "gcd", remaining: 40, total: 45 });
-    const shortCooldown = snapshot({ cooldowns: [{ ability: 10, remaining: 20 }] }, { globalCooldown: 40 });
-    expect(slotState(nova, shortCooldown, 0).cooldown).toEqual({ kind: "gcd", remaining: 40, total: 45 });
+    const cooling = snapshot({ cooldowns: [{ ability: 10, remaining: t(300) }] }, { globalCooldown: t(40) });
+    expect(slotState(nova, cooling, 0).cooldown).toEqual({ kind: "cooldown", remaining: t(300), total: t(600) });
+    expect(slotState(firebolt, cooling, 0).cooldown).toEqual({ kind: "gcd", remaining: t(40), total: t(45) });
+    const shortCooldown = snapshot({ cooldowns: [{ ability: 10, remaining: t(20) }] }, { globalCooldown: t(40) });
+    expect(slotState(nova, shortCooldown, 0).cooldown).toEqual({ kind: "gcd", remaining: t(40), total: t(45) });
   });
 
   test("target distance is the XZ centre distance, null without a visible target", () => {
@@ -101,18 +103,18 @@ describe("sweep and labels", () => {
   });
 
   test("seconds show only while at least 2 s remain", () => {
-    expect(cooldownSeconds(59)).toBeNull();
-    expect(cooldownSeconds(60)).toBe(2);
-    expect(cooldownSeconds(61)).toBe(3);
-    expect(cooldownSeconds(360)).toBe(12);
+    expect(cooldownSeconds(t(59))).toBeNull();
+    expect(cooldownSeconds(t(60))).toBe(2);
+    expect(cooldownSeconds(t(61))).toBe(3);
+    expect(cooldownSeconds(t(360))).toBe(12);
   });
 
   test("remaining time reads as seconds, then minutes", () => {
-    expect(formatRemaining(1)).toBe("1s");
-    expect(formatRemaining(31)).toBe("2s");
-    expect(formatRemaining(300)).toBe("10s");
-    expect(formatRemaining(1_800)).toBe("1m");
-    expect(formatRemaining(2_000)).toBe("2m");
+    expect(formatRemaining(t(1))).toBe("1s");
+    expect(formatRemaining(t(31))).toBe("2s");
+    expect(formatRemaining(t(300))).toBe("10s");
+    expect(formatRemaining(t(1_800))).toBe("1m");
+    expect(formatRemaining(t(2_000))).toBe("2m");
   });
 });
 
@@ -162,21 +164,21 @@ describe("auras", () => {
   });
 
   test("labels name the ability, its effect and the time left", () => {
-    expect(auraLabel(aura(11, "absorb", 600, 60), catalog)).toBe("Arcane Barrier: Absorbs 60 damage (20s)");
-    expect(auraLabel(aura(10, "root", 31), catalog)).toBe("Frost Nova: Rooted (2s)");
-    expect(auraLabel(aura(2, "snare", 30, 50), catalog)).toBe("Shield Bash: Slowed by 50% (1s)");
-    expect(auraTimer(aura(11, "absorb", 1_800))).toBe("1m");
+    expect(auraLabel(aura(11, "absorb", t(600), 60), catalog)).toBe("Arcane Barrier: Absorbs 60 damage (20s)");
+    expect(auraLabel(aura(10, "root", t(31)), catalog)).toBe("Frost Nova: Rooted (2s)");
+    expect(auraLabel(aura(2, "snare", t(30), 50), catalog)).toBe("Shield Bash: Slowed by 50% (1s)");
+    expect(auraTimer(aura(11, "absorb", t(1_800)))).toBe("1m");
   });
 });
 
 describe("cast bars", () => {
   test("a cast fills as it runs", () => {
-    expect(castBarView({ ability: 9, elapsed: 15, total: 60, channel: false }, catalog)).toEqual({ name: "Firebolt", fill: 0.25, remaining: "1.5", channel: false });
+    expect(castBarView({ ability: 9, elapsed: t(15), total: t(60), channel: false }, catalog)).toEqual({ name: "Firebolt", fill: 0.25, remaining: "1.5", channel: false });
   });
 
   test("a channel drains backwards", () => {
-    expect(castBarView({ ability: 12, elapsed: 45, total: 180, channel: true }, catalog)).toEqual({ name: "Blizzard", fill: 0.75, remaining: "4.5", channel: true });
-    expect(castBarView({ ability: 12, elapsed: 0, total: 180, channel: true }, catalog).fill).toBe(1);
+    expect(castBarView({ ability: 12, elapsed: t(45), total: t(180), channel: true }, catalog)).toEqual({ name: "Blizzard", fill: 0.75, remaining: "4.5", channel: true });
+    expect(castBarView({ ability: 12, elapsed: t(0), total: t(180), channel: true }, catalog).fill).toBe(1);
   });
 });
 
