@@ -86,7 +86,7 @@ describe("Rust/browser snapshot contract", () => {
     }
   });
   test("decodes the same golden bytes as the Rust encoder", () => {
-    expect(fixture.length).toBe(117 + 2 * 2 + 2 * 3 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21 + 3 * 14);
+    expect(fixture.length).toBe(117 + 2 * 2 + 2 * 3 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 21 + 4 * 14);
     expect(decodeSnapshot(fixture)).toEqual({
       zoneId: 42, tick: 99n, contentRevision: 4n, acknowledgedSequence: 81, viewerId: 7,
       viewer: {
@@ -157,9 +157,10 @@ describe("Rust/browser snapshot contract", () => {
         },
       ],
       projectiles: [
-        { id: 3, kind: "arrow", x: 120, y: 110, z: -340, yaw: 16_384, pitch: -900, stuck: false },
-        { id: 65_535, kind: "bolt", x: -32_768, y: 0, z: 32_767, yaw: 0, pitch: 16_384, stuck: true },
-        { id: 7, kind: "missile", x: 60, y: 130, z: -200, yaw: 49_152, pitch: 0, stuck: false },
+        { id: 3, kind: "arrow", x: 120, y: 110, z: -340, yaw: 16_384, pitch: -900, stuck: false, burst: false },
+        { id: 65_535, kind: "bolt", x: -32_768, y: 0, z: 32_767, yaw: 0, pitch: 16_384, stuck: true, burst: false },
+        { id: 7, kind: "missile", x: 60, y: 130, z: -200, yaw: 49_152, pitch: 0, stuck: false, burst: false },
+        { id: 9, kind: "bomb", x: -40, y: 12, z: 75, yaw: 0, pitch: 0, stuck: false, burst: true },
       ],
       debris: [],
     });
@@ -243,7 +244,7 @@ describe("Rust/browser snapshot contract", () => {
       [QUESTS + 9, 9, "too many markers"],
       [QUESTS + 12, 4, "Inconsistent quest marker"],
       [QUESTS + 14, 1, "Inconsistent quest marker"],
-      [EVENTS + 1 + 7 * 14 + 1, 42, "Unknown ability"],
+      [EVENTS + 1 + 7 * 14 + 1, 45, "Unknown ability"],
       [EVENTS + 1 + 7 * 14 + 1, 0, "Unknown ability"],
       [EVENTS + 1 + 8 * 14 + 13, 1, "Malformed"],
       [EVENTS + 1 + 13 * 14 + 1, 1, "flags"],

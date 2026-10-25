@@ -41,7 +41,7 @@ const FLAKE = "M11 2 13 2 13 10 19 6 20 8 14 12 20 16 19 18 13 14 13 22 11 22 11
 const ORB = "M12 2C18 2 22 6 22 12 22 18 18 22 12 22 6 22 2 18 2 12 2 6 6 2 12 2ZM12 6C9 6 6 9 6 12 6 15 9 18 12 18 15 18 18 15 18 12 18 9 15 6 12 6Z";
 const SHARDS = "M4 2 8 10 3 12ZM11 2 15 12 9 14ZM18 2 22 10 17 14ZM7 15 11 22 4 20ZM15 16 19 22 12 22Z";
 const BANDAGE = "M3 9 15 3 21 15 9 21ZM10 10 14 12 12 16 8 14Z";
-const SPLAT = "M12 3C15 3 17 6 20 7 22 10 19 13 19 16 17 19 14 18 12 21 9 19 6 20 5 16 3 13 4 10 6 8 8 5 10 4Z";
+const SPLAT = "M12 3L15 3 17 6 20 7 22 10 19 13 19 16 17 19 14 18 12 21 9 19 6 20 5 16 3 13 4 10 6 8 8 5 10 4Z";
 const SKULL = "M12 2C17 2 20 5 20 10 20 13 18 15 17 16L17 19 15 19 15 21 13 21 13 19 11 19 11 21 9 21 9 19 7 19 7 16C6 15 4 13 4 10 4 5 7 2 12 2ZM9 9C8 9 7 10 7 11 7 12 8 13 9 13 10 13 11 12 11 11 11 10 10 9 9 9ZM15 9C14 9 13 10 13 11 13 12 14 13 15 13 16 13 17 12 17 11 17 10 16 9 15 9Z";
 
 /** Player abilities 1–12 and 16–17, creature abilities 13–15 and 18, by catalog ID. Shots (5–7, 15) fly as the zone's own projectiles (#286). */
@@ -89,6 +89,10 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [39, { range: RANGED, description: "Roots your target in place with grasping vines; damage breaks them after a moment.", glyph: SNAKE, accent: "#6b8a3a", visual: null, pose: "cast" }],
   [40, { range: "self", description: "Heals over time: your selected friendly player, or yourself without one.", glyph: HEART, accent: "#9ee07a", visual: null, pose: "cast" }],
   [41, { range: "self", description: "Your skin hardens into bark that absorbs damage.", glyph: SHIELD, accent: "#a07a4a", visual: "bubble", pose: "cast" }],
+  // The Rogue's thrown weapons (#290): the zone's own knives, flasks and bombs fly.
+  [42, { range: { units: 2_500 }, description: "Throws a knife at your target, or along your facing without one; walls and raised shields stop it.", glyph: SWORD, accent: "#c4c9cc", visual: null, pose: "swing" }],
+  [43, { range: RANGED, description: "Lobs a venom flask along your facing that shatters on what it meets, poisoning every enemy within 3 m it can see.", glyph: SPLAT, accent: "#8fe05a", visual: null, pose: "swing" }],
+  [44, { range: RANGED, description: "Lobs a bomb along your facing that bounces and rolls, then bursts when an enemy touches it or after 2.5 s, hurting and hurling back every enemy within 4 m it can see.", glyph: FLAME, accent: "#ffa23a", visual: null, pose: "swing" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

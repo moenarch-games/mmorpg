@@ -186,6 +186,7 @@ fn projected_arrows_draw_along_their_flight() {
         yaw: 16_384,
         pitch: 0,
         stuck: false,
+        burst: false,
     }];
     let frame = frame(&mut scene, 1.);
     let shaft = frame
@@ -207,6 +208,32 @@ fn projected_arrows_draw_along_their_flight() {
             .iter()
             .any(|draw| draw.id == "projectile-7-head")
     );
+}
+
+#[test]
+fn thrown_bombs_rest_with_a_fuse_and_burst_into_a_glow() {
+    let mut scene = scene();
+    let at = scene.snapshot.entities[0].position;
+    let bomb = mmorpg_core::ProjectileView {
+        id: 9,
+        kind: mmorpg_core::ProjectileKind::Bomb,
+        position: [at[0] + 200, at[1], at[2]],
+        yaw: 0,
+        pitch: 0,
+        stuck: false,
+        burst: false,
+    };
+    scene.snapshot.projectiles = vec![bomb];
+    let has = |frame: &UnitFrame, id: &str| frame.draws.iter().any(|draw| draw.id == id);
+    let resting = frame(&mut scene, 1.);
+    assert!(has(&resting, "projectile-9-body") && has(&resting, "projectile-9-spark"));
+    scene.snapshot.projectiles = vec![mmorpg_core::ProjectileView {
+        burst: true,
+        ..bomb
+    }];
+    let burst = frame(&mut scene, 1.);
+    assert!(has(&burst, "projectile-9-burst"));
+    assert!(!has(&burst, "projectile-9-body"));
 }
 
 #[test]

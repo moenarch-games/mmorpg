@@ -502,7 +502,7 @@ mod tests {
             value["contentRevision"],
             crate::host::hosted_content().revision().to_string()
         );
-        assert_eq!(value["presentationFingerprint"], "67c9a26e476ed619");
+        assert_eq!(value["presentationFingerprint"], "27d3b28d3bc7f024");
         assert_eq!(value["unitsPerMetre"], 100);
         assert_eq!(value["playerHalfExtents"], serde_json::json!([30, 90, 30]));
         let names: Vec<_> = value["areas"]

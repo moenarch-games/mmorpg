@@ -654,3 +654,18 @@ fields mean in time changes, so the protocol ID is rerolled once and nothing is 
 
 Payloads, canonical checkpoints and recovery bundles of the former protocol ID are rejected: a
 host restarted on old state fails closed and starts fresh (no migration).
+
+## The Rogue's thrown weapons (#290)
+
+Projectile kinds 7, 8 and 9 are a throwing knife, a venom flask and a bomb. The ability catalog
+adds Throwing Knife (42: a knife that tracks a selected target like an arrow, or flies along the
+facing without one), Venom Flask (43: lobbed along the facing, it shatters on the first thing it
+meets and puts a damage over time on every hostile unit within 3 m the point can see; effect
+fields code 22) and Blasting Bomb (44: lobbed along the facing, it bounces off surfaces, rolls
+to rest and bursts like Fire Blast when it touches a unit or 2.5 s after the throw). A flask or
+bomb throw arcs onto the nearest hostile straight ahead within 15 m.
+
+The player projection's projectile flag byte becomes a state: 0 flying, 1 stuck, 2 bursting (a
+flask or bomb showing its burst for 0.3 s where it happened). Canonical snapshots add flight 4,
+burst (remaining ticks `u16`). The protocol ID is rerolled; former payloads and checkpoints fail
+closed.

@@ -269,14 +269,18 @@ export type DebrisState = {
 /** One projectile: position in units, heading/pitch in 1/65 536 turns (heading 0 is +Z). */
 export type ProjectileState = {
   id: number;
-  kind: "arrow" | "bolt" | "missile" | "shadow" | "holy" | "nature";
+  kind: (typeof PROJECTILE_KINDS)[number];
   x: number;
   y: number;
   z: number;
   yaw: number;
   pitch: number;
   stuck: boolean;
+  /** A thrown flask or bomb bursting where it is (#290). */
+  burst: boolean;
 };
+/** Projectile kinds in wire order: wire code = index + 1. */
+const PROJECTILE_KINDS = ["arrow", "bolt", "missile", "shadow", "holy", "nature", "knife", "flask", "bomb"] as const;
 
 /** A line the viewer heard: player `speaker` said or yelled `text`. */
 /** The core emote vocabulary (#69), in wire order: wire ID = index + 1. */
@@ -457,6 +461,10 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [39, instant(20_000, "root", 6_000)],
   [40, instant(0, "heal-over-time", 15_000)],
   [41, instant(30_000, "absorb", 20_000)],
+  // The Rogue's thrown weapons (#290): Throwing Knife, Venom Flask and Blasting Bomb.
+  [42, instant(3_000)],
+  [43, instant(12_000, "damage-over-time", 9_000)],
+  [44, instant(15_000)],
 ]);
 /** Mana: 110 + 22 per level above 1; rage, focus and faith: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {
@@ -1070,7 +1078,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const projectiles: ProjectileState[] = [];
   for (let index = 0; index < projectileCount; index += 1) {
     const id = reader.u16();
-    const kind = (["arrow", "bolt", "missile", "shadow", "holy", "nature"] as const)[reader.u8() - 1];
+    const kind = PROJECTILE_KINDS[reader.u8() - 1];
     if (kind === undefined) {
       throw new Error("Unknown projectile kind");
     }
@@ -1079,11 +1087,12 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     const z = reader.i16();
     const yaw = reader.u16();
     const pitch = reader.i16();
-    const stuck = reader.u8();
-    if (stuck > 1) {
+    // 0 flying, 1 stuck, 2 bursting (#290).
+    const state = reader.u8();
+    if (state > 2) {
       throw new Error("Invalid projectile flags");
     }
-    projectiles.push({ id, kind, x, y, z, yaw, pitch, stuck: stuck === 1 });
+    projectiles.push({ id, kind, x, y, z, yaw, pitch, stuck: state === 1, burst: state === 2 });
   }
   const debrisCount = reader.u8();
   if (debrisCount > MAX_DEBRIS || view.byteLength !== reader.offset + debrisCount * DEBRIS_BYTES) {
