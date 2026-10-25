@@ -22,8 +22,8 @@ use crate::wire::{
 };
 
 const SELECT_TARGET_INTENT: u8 = 1;
-const START_ATTACK_INTENT: u8 = 2;
-const STOP_ATTACK_INTENT: u8 = 3;
+/// A swing (#517) carries its facing; code 3 (the retired stop-attack) is unused.
+const SWING_INTENT: u8 = 2;
 const RELEASE_SPIRIT_INTENT: u8 = 4;
 const MOVE_ITEM_INTENT: u8 = 5;
 const LOOT_INTENT: u8 = 6;
@@ -124,13 +124,8 @@ fn encode_player(
     payload.extend_from_slice(&combat.experience.to_be_bytes());
     payload.extend_from_slice(&combat.health.to_be_bytes());
     encode_entity_ref(payload, combat.target);
-    payload.push(u8::from(combat.auto_attack));
-    for timer in [
-        combat.swing_timer,
-        combat.combat_timer,
-        combat.calm_ticks,
-        combat.error_cooldown,
-    ] {
+    payload.push(u8::from(combat.swing_queued));
+    for timer in [combat.swing_timer, combat.combat_timer, combat.calm_ticks] {
         payload.extend_from_slice(&timer.to_be_bytes());
     }
     payload.push(encode_u8_count(
@@ -143,13 +138,16 @@ fn encode_player(
         payload.push(queued.late);
         let (code, target) = match queued.intent {
             PlayerIntent::SelectTarget(target) => (SELECT_TARGET_INTENT, target),
-            PlayerIntent::StartAttack => (START_ATTACK_INTENT, None),
+            PlayerIntent::Swing { facing } => {
+                payload.push(SWING_INTENT);
+                payload.extend_from_slice(&facing.to_be_bytes());
+                continue;
+            }
             PlayerIntent::Loot(claim) => {
                 payload.push(LOOT_INTENT);
                 crate::loot::encode_claim(payload, claim);
                 continue;
             }
-            PlayerIntent::StopAttack => (STOP_ATTACK_INTENT, None),
             PlayerIntent::ReleaseSpirit => (RELEASE_SPIRIT_INTENT, None),
             PlayerIntent::MoveItem {
                 source,
@@ -757,11 +755,10 @@ fn decode_player(
     let experience = u32::from_be_bytes(take(payload, offset)?);
     let health = u32::from_be_bytes(take(payload, offset)?);
     let target = decode_entity_ref(payload, offset)?;
-    let auto_attack = read_bool(payload, offset)?;
+    let swing_queued = read_bool(payload, offset)?;
     let swing_timer = u16::from_be_bytes(take(payload, offset)?);
     let combat_timer = u16::from_be_bytes(take(payload, offset)?);
     let calm_ticks = u16::from_be_bytes(take(payload, offset)?);
-    let error_cooldown = u16::from_be_bytes(take(payload, offset)?);
     let intent_count = decode_u8_count(
         payload,
         offset,
@@ -793,6 +790,12 @@ fn decode_player(
                 ability,
                 facing: u16::from_be_bytes([high, low]),
                 aim: crate::wire::decode_aim([side, height])?,
+            });
+            continue;
+        }
+        if code == SWING_INTENT {
+            intents.push(PlayerIntent::Swing {
+                facing: u16::from_be_bytes(take(payload, offset)?),
             });
             continue;
         }
@@ -900,8 +903,6 @@ fn decode_player(
         let target = decode_entity_ref(payload, offset)?;
         intents.push(match (code, target) {
             (SELECT_TARGET_INTENT, target) => PlayerIntent::SelectTarget(target),
-            (START_ATTACK_INTENT, None) => PlayerIntent::StartAttack,
-            (STOP_ATTACK_INTENT, None) => PlayerIntent::StopAttack,
             (RELEASE_SPIRIT_INTENT, None) => PlayerIntent::ReleaseSpirit,
             (CANCEL_CAST_INTENT, None) => PlayerIntent::CancelCast,
             _ => return Err(ProtocolError::new("malformed pending intent")),
@@ -1020,11 +1021,10 @@ fn decode_player(
             experience,
             health,
             target,
-            auto_attack,
+            swing_queued,
             swing_timer,
             combat_timer,
             calm_ticks,
-            error_cooldown,
             intents,
             intents_dropped,
             last_observed,
@@ -1634,16 +1634,15 @@ mod tests {
                         level: 2,
                         health: 17,
                         target: Some(wolf),
-                        auto_attack: true,
+                        swing_queued: true,
                         swing_timer: 12,
                         combat_timer: 149,
                         calm_ticks: 0,
-                        error_cooldown: 30,
                         intents: queued([
                             PlayerIntent::SelectTarget(Some(EntityRef::Npc(NpcId::new(2)))),
                             PlayerIntent::SelectTarget(None),
-                            PlayerIntent::StartAttack,
-                            PlayerIntent::StopAttack,
+                            PlayerIntent::CancelCast,
+                            PlayerIntent::Swing { facing: 0x4000 },
                             PlayerIntent::ReleaseSpirit,
                             PlayerIntent::MoveItem {
                                 source: 1,
@@ -2146,22 +2145,22 @@ mod tests {
     #[test]
     fn canonical_decoding_rejects_malformed_unit_state() {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
-        // Player 7's auto-attack flag follows its target reference.
+        // Player 7's queued-swing flag follows its target reference.
         let player = 16 + 24 + 2;
-        let auto_attack = player + 44 + 96 + 1 + 4 + 4 + 5;
-        let intents = auto_attack + 1 + 8;
+        let swing_queued = player + 44 + 96 + 1 + 4 + 4 + 5;
+        let intents = swing_queued + 1 + 6;
         let mut cases = vec![
-            (auto_attack, 2, "boolean field must be 0 or 1"),
+            (swing_queued, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
             // Each intent is its lateness, then its code and fields.
             (intents + 2, 23, "malformed pending intent"),
         ];
-        // The third intent (StartAttack) carries no target.
+        // The third intent (CancelCast) carries no target.
         cases.push((intents + 1 + 2 * 7 + 2, 2, "malformed pending intent"));
-        // The dropped-intent flag follows the six intents.
-        cases.push((intents + 1 + 6 * 7, 2, "boolean field must be 0 or 1"));
+        // The dropped-intent flag follows the six intents; the fourth (a swing) is 4 bytes.
+        cases.push((intents + 1 + 6 * 7 - 3, 2, "boolean field must be 0 or 1"));
         cases.push((
-            intents + 1 + 5 * 7 + 6,
+            intents + 1 + 5 * 7 + 3,
             1,
             "malformed pending inventory intent",
         ));

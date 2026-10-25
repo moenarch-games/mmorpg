@@ -17,9 +17,9 @@ use crate::events::push_event;
 use crate::guard::GuardOutcome;
 use crate::snapshot::{CreatureAi, PlayerIntent};
 use crate::unit::{
-    COMBAT_LINGER_TICKS, CORPSE_TICKS, OUT_OF_RANGE_ERROR_INTERVAL_TICKS, PLAYER_REACH_UNITS,
-    PLAYER_SWING_TICKS, REGEN_DELAY_TICKS, REGEN_INTERVAL_TICKS, REGEN_PERCENT,
-    RELEASE_HEALTH_PERCENT, Swing, percent_of, roll_swing,
+    COMBAT_LINGER_TICKS, CORPSE_TICKS, PLAYER_REACH_UNITS, PLAYER_SWING_TICKS, REGEN_DELAY_TICKS,
+    REGEN_INTERVAL_TICKS, REGEN_PERCENT, RELEASE_HEALTH_PERCENT, SWING_ARC_HALF_WIDTH, Swing,
+    percent_of, roll_swing,
 };
 use crate::zone::{Axis, physics_error};
 use crate::{
@@ -135,10 +135,14 @@ impl ZoneSimulation {
             return Ok(true);
         };
         let alive = player.is_alive();
-        let current_target = player.target;
         let refusal = match intent {
-            PlayerIntent::StopAttack => {
-                self.update_player(player_id, |player| player.auto_attack = false);
+            PlayerIntent::Swing { .. } if !alive => Some((ErrorCode::YouAreDead, None)),
+            // The swing turns the player; combat resolution swings once the timer allows.
+            PlayerIntent::Swing { facing } => {
+                self.update_player(player_id, |player| {
+                    player.facing = facing;
+                    player.swing_queued = true;
+                });
                 None
             }
             PlayerIntent::ReleaseSpirit if alive => Some((ErrorCode::NotDead, None)),
@@ -176,7 +180,6 @@ impl ZoneSimulation {
             }
             // Dead players can only release their spirit.
             PlayerIntent::SelectTarget(_)
-            | PlayerIntent::StartAttack
             | PlayerIntent::MoveItem { .. }
             | PlayerIntent::EquipItem { .. }
             | PlayerIntent::UnequipItem { .. }
@@ -267,59 +270,17 @@ impl ZoneSimulation {
                 now,
             )?,
             PlayerIntent::SelectTarget(None) => {
-                self.update_player(player_id, |player| {
-                    player.target = None;
-                    player.auto_attack = false;
-                });
+                self.update_player(player_id, |player| player.target = None);
                 None
             }
             PlayerIntent::SelectTarget(Some(target)) => {
                 if self.visible_to(player_id, target)? {
-                    self.update_player(player_id, |player| {
-                        if player.target != Some(target) {
-                            player.auto_attack = false;
-                        }
-                        player.target = Some(target);
-                    });
+                    self.update_player(player_id, |player| player.target = Some(target));
                     None
                 } else {
                     Some((ErrorCode::InvalidTarget, Some(target)))
                 }
             }
-            PlayerIntent::StartAttack => match current_target {
-                None => Some((ErrorCode::NoTarget, None)),
-                Some(target @ EntityRef::Player(_))
-                    if self.attackable_by_player(player_id, target) =>
-                {
-                    self.update_player(player_id, |player| player.auto_attack = true);
-                    None
-                }
-                Some(
-                    target @ (EntityRef::Player(_) | EntityRef::Npc(_) | EntityRef::Minion(_)),
-                ) => Some((ErrorCode::NotAttackable, Some(target))),
-                Some(target @ EntityRef::Creature(creature_id)) => {
-                    match self
-                        .creatures
-                        .get(&creature_id)
-                        .map(|creature| creature.life)
-                    {
-                        // Not across the water's surface (#274).
-                        Some(Life::Alive)
-                            if self.combat_blocked(EntityRef::Player(player_id), target) =>
-                        {
-                            Some((ErrorCode::NotAttackable, Some(target)))
-                        }
-                        Some(Life::Alive) => {
-                            self.update_player(player_id, |player| player.auto_attack = true);
-                            None
-                        }
-                        Some(Life::Corpse { .. }) => Some((ErrorCode::TargetDead, Some(target))),
-                        Some(Life::Despawned { .. }) | None => {
-                            Some((ErrorCode::InvalidTarget, Some(target)))
-                        }
-                    }
-                }
-            },
         };
         let refused = refusal.is_some();
         if let Some((code, target)) = refusal {
@@ -454,11 +415,10 @@ impl ZoneSimulation {
             .map_err(physics_error)?;
         self.update_player(player_id, |player| {
             player.health = percent_of(player.max_health(), RELEASE_HEALTH_PERCENT);
-            player.auto_attack = false;
+            player.swing_queued = false;
             player.swing_timer = 0;
             player.combat_timer = 0;
             player.calm_ticks = 0;
-            player.error_cooldown = 0;
         });
         self.place_in_interest(EntityRef::Player(player_id), position.x, position.z);
         Ok(())
@@ -484,27 +444,15 @@ impl ZoneSimulation {
         // Timers run for the dead too: combat ends 5 s after the killing blow.
         player.swing_timer = player.swing_timer.saturating_sub(1);
         player.combat_timer = player.combat_timer.saturating_sub(1);
-        player.error_cooldown = player.error_cooldown.saturating_sub(1);
         player.guard.broken = player.guard.broken.saturating_sub(1);
-        if !player.is_alive() || !player.auto_attack {
-            return Ok(());
-        }
-        let target = match player.target {
-            Some(target @ (EntityRef::Creature(_) | EntityRef::Player(_))) => target,
-            _ => {
-                player.auto_attack = false;
-                return Ok(());
-            }
-        };
-        if !self.attackable_by_player(player_id, target) {
-            self.update_player(player_id, |player| player.auto_attack = false);
+        if !player.is_alive() || !player.swing_queued {
             return Ok(());
         }
         let Some(player) = self.players.get(&player_id) else {
             return Ok(());
         };
-        // A stunned or landing player's ready swing waits, as does one the
-        // graph refuses in water.
+        // A pressed swing waits out the previous one, a stun or a landing, as
+        // does one the graph refuses in water.
         let melee = crate::action::ActionInput::WardenMelee;
         if player.swing_timer > 0
             || crate::action::holding_rule(self.action_graph, player, melee).is_some()
@@ -513,46 +461,89 @@ impl ZoneSimulation {
         {
             return Ok(());
         }
-        let (damage, error_ready) = (player.melee_damage(), player.error_cooldown == 0);
+        let (damage, facing) = (player.melee_damage(), player.facing);
         let swing_ticks = crate::aura::hasted_swing(PLAYER_SWING_TICKS, &player.auras);
-        let from = self.player_position(player_id)?;
-        let to = self
-            .world
-            .body(body_id(target))
-            .ok_or_else(|| ZoneError::new("creature physics body is missing"))?
-            .position();
-        let refusal = if distance_squared([from.x, from.z], [to.x, to.z])
-            > i64::from(PLAYER_REACH_UNITS).pow(2)
-        {
-            Some(ErrorCode::OutOfRange)
-        } else if matches!(target, EntityRef::Player(_))
-            && !self.line_of_sight(EntityRef::Player(player_id), target)?
-        {
-            Some(ErrorCode::LineOfSight)
-        } else {
-            None
-        };
-        if let Some(code) = refusal {
-            // Out of range holds the ready swing; the error is throttled.
-            if error_ready {
-                self.update_player(player_id, |player| {
-                    player.error_cooldown = OUT_OF_RANGE_ERROR_INTERVAL_TICKS;
-                });
-                self.notify(
-                    player_id,
-                    ZoneEvent::Error {
-                        code,
-                        target: Some(target),
-                    },
-                );
+        let victims = self.swing_coverage(player_id, facing)?;
+        self.update_player(player_id, |player| {
+            player.swing_queued = false;
+            player.swing_timer = swing_ticks;
+            if !victims.is_empty() {
+                player.combat_timer = COMBAT_LINGER_TICKS;
             }
+        });
+        if victims.is_empty() {
+            // A whiff still swings for the player and everyone watching.
+            let source = EntityRef::Player(player_id);
+            self.notify_observers(
+                &[source],
+                &BTreeSet::new(),
+                ZoneEvent::AttackPerformed {
+                    source,
+                    target: None,
+                },
+            );
             return Ok(());
         }
-        self.update_player(player_id, |player| {
-            player.swing_timer = swing_ticks;
-            player.combat_timer = COMBAT_LINGER_TICKS;
-        });
-        self.attack_unit(player_id, target, damage, now)
+        for target in victims {
+            self.attack_unit(player_id, target, damage, now)?;
+        }
+        Ok(())
+    }
+
+    /// Every attackable living unit a swing toward `facing` covers (#517), in
+    /// `EntityRef` order: within [`PLAYER_REACH_UNITS`] (XZ centre distance),
+    /// inside [`SWING_ARC_HALF_WIDTH`] either side of the facing and in line of
+    /// sight. A unit centred on the swinger is always covered.
+    pub(crate) fn swing_coverage(
+        &self,
+        player_id: PlayerId,
+        facing: u16,
+    ) -> Result<Vec<EntityRef>, ZoneError> {
+        self.facing_coverage(player_id, facing, PLAYER_REACH_UNITS, SWING_ARC_HALF_WIDTH)
+    }
+
+    /// Every unit the player may attack within `reach` (XZ centre distance)
+    /// and `half_width` either side of `facing`, in line of sight, in
+    /// `EntityRef` order.
+    pub(crate) fn facing_coverage(
+        &self,
+        player_id: PlayerId,
+        facing: u16,
+        reach: i32,
+        half_width: u16,
+    ) -> Result<Vec<EntityRef>, ZoneError> {
+        let origin = self.player_position(player_id)?;
+        let (dir_x, dir_z) = crate::trig::direction(facing);
+        let min_cos = i64::from(crate::trig::cos(half_width));
+        let reach_squared = i64::from(reach).pow(2);
+        let mut covered = Vec::new();
+        for entity in self.interest.near(origin.x, origin.z, reach) {
+            if !self.attackable_by_player(player_id, entity) {
+                continue;
+            }
+            let centre = self
+                .world
+                .body(body_id(entity))
+                .ok_or_else(|| ZoneError::new("unit physics body is missing"))?
+                .position();
+            if distance_squared([origin.x, origin.z], [centre.x, centre.z]) > reach_squared {
+                continue;
+            }
+            // |v| cos(angle to the facing) >= |v| cos(half width), both Q16.
+            let (dx, dz) = (centre.x - origin.x, centre.z - origin.z);
+            let along = i64::from(dx) * i64::from(dir_x) + i64::from(dz) * i64::from(dir_z);
+            let length = i64::try_from(crate::trig::xz_length(dx, dz))
+                .map_err(|_| ZoneError::new("swing distance overflow"))?;
+            if along < length * min_cos {
+                continue;
+            }
+            if !self.line_of_sight(EntityRef::Player(player_id), entity)? {
+                continue;
+            }
+            covered.push(entity);
+        }
+        covered.sort_unstable();
+        Ok(covered)
     }
 
     /// Resolves a player swing through the shared hit table and stance rules.
@@ -580,7 +571,10 @@ impl ZoneSimulation {
         self.notify_observers(
             &[source, target],
             &BTreeSet::new(),
-            ZoneEvent::AttackPerformed { source, target },
+            ZoneEvent::AttackPerformed {
+                source,
+                target: Some(target),
+            },
         );
         let swing = roll_swing(&mut self.rng, damage);
         let swing = match swing {
@@ -908,7 +902,10 @@ impl ZoneSimulation {
         self.notify_observers(
             &[source, target],
             &BTreeSet::new(),
-            ZoneEvent::AttackPerformed { source, target },
+            ZoneEvent::AttackPerformed {
+                source,
+                target: Some(target),
+            },
         );
         let swing = match roll_swing(&mut self.rng, template.damage_at(level)) {
             // A boss hits harder under a larger attempt's profile (#276).
@@ -1197,7 +1194,7 @@ impl ZoneSimulation {
         self.forget_caster(entity);
         self.update_player(player_id, |player| {
             player.health = 0;
-            player.auto_attack = false;
+            player.swing_queued = false;
             player.swing_timer = 0;
             player.calm_ticks = 0;
             // Death clears every aura and cast; rage and faith drain.
@@ -1300,7 +1297,6 @@ impl ZoneSimulation {
                 for player in self.players.values_mut() {
                     if player.target == Some(entity) {
                         player.target = None;
-                        player.auto_attack = false;
                     }
                 }
             }

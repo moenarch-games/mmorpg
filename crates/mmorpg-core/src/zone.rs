@@ -121,15 +121,14 @@ pub(crate) struct PlayerState {
     /// Zero means dead.
     pub(crate) health: u32,
     pub(crate) target: Option<EntityRef>,
-    pub(crate) auto_attack: bool,
+    /// A pressed swing (#517) waiting for the swing timer; it resolves toward `facing`.
+    pub(crate) swing_queued: bool,
     /// Ticks until the next swing may happen.
     pub(crate) swing_timer: u16,
     /// Ticks the player stays in combat after dealing or taking an attack.
     pub(crate) combat_timer: u16,
     /// Ticks spent out of combat, driving regeneration.
     pub(crate) calm_ticks: u16,
-    /// Ticks until another out-of-range error may be reported.
-    pub(crate) error_cooldown: u16,
     /// Discrete intents in sequence order, consumed by the next tick.
     pub(crate) intents: Vec<crate::QueuedIntent>,
     /// A well-formed intent arrived while `intents` was full and was dropped.
@@ -189,11 +188,10 @@ impl PlayerState {
             equipment: crate::Equipment::default(),
             health: player_max_health(PLAYER_START_LEVEL),
             target: None,
-            auto_attack: false,
+            swing_queued: false,
             swing_timer: 0,
             combat_timer: 0,
             calm_ticks: 0,
-            error_cooldown: 0,
             intents: Vec::new(),
             intents_dropped: false,
             last_observed: 0,
@@ -540,7 +538,6 @@ impl ZoneSimulation {
 
             if player.target == Some(entity) {
                 player.target = None;
-                player.auto_attack = false;
             }
         }
         true
@@ -650,9 +647,8 @@ impl ZoneSimulation {
             ZoneCommand::UseDoor { door, open } => Some(PlayerIntent::UseDoor { door, open }),
             ZoneCommand::Repair { piece } => Some(PlayerIntent::Repair(piece)),
             ZoneCommand::SelectTarget(target) => Some(PlayerIntent::SelectTarget(target)),
-            ZoneCommand::StartAttack => Some(PlayerIntent::StartAttack),
+            ZoneCommand::Swing { facing } => Some(PlayerIntent::Swing { facing }),
             ZoneCommand::Loot(claim) => Some(PlayerIntent::Loot(claim)),
-            ZoneCommand::StopAttack => Some(PlayerIntent::StopAttack),
             ZoneCommand::ReleaseSpirit => Some(PlayerIntent::ReleaseSpirit),
             ZoneCommand::MoveItem {
                 source,
@@ -1384,7 +1380,7 @@ mod tests {
             (4, ZoneCommand::Jump),
             (5, ZoneCommand::Jump),
             (0, ZoneCommand::Jump),
-            (5, ZoneCommand::StartAttack),
+            (5, ZoneCommand::Swing { facing: 0 }),
             (2, ZoneCommand::SelectTarget(None)),
         ] {
             let error = zone.apply_command(1, sequence, command).unwrap_err();
@@ -1401,7 +1397,7 @@ mod tests {
         let mut zone = ZoneSimulation::new(ZoneId::new(1));
         zone.add_player(1).unwrap();
         for sequence in 1..=u32::try_from(MAX_PENDING_INTENTS).unwrap() {
-            zone.apply_command(1, sequence, ZoneCommand::StopAttack)
+            zone.apply_command(1, sequence, ZoneCommand::CancelCast)
                 .unwrap();
         }
         // A well-formed intent beyond the bound is an outcome, not an error.
@@ -1413,12 +1409,12 @@ mod tests {
         assert_eq!(player.last_sequence, 101, "the sequences are consumed");
         assert_eq!(
             player.combat.intents,
-            [crate::QueuedIntent::from(PlayerIntent::StopAttack); MAX_PENDING_INTENTS],
+            [crate::QueuedIntent::from(PlayerIntent::CancelCast); MAX_PENDING_INTENTS],
             "the excess intents are dropped"
         );
         assert!(player.combat.intents_dropped);
         assert_eq!(
-            zone.apply_command(1, 101, ZoneCommand::StopAttack)
+            zone.apply_command(1, 101, ZoneCommand::CancelCast)
                 .unwrap_err()
                 .message(),
             "command sequence is stale"
@@ -1435,7 +1431,7 @@ mod tests {
             }],
             "the next tick reports the drop once"
         );
-        zone.apply_command(1, 102, ZoneCommand::StopAttack).unwrap();
+        zone.apply_command(1, 102, ZoneCommand::CancelCast).unwrap();
         zone.advance_tick().unwrap();
         assert!(zone.snapshot_for_player(1).unwrap().events.is_empty());
     }
@@ -1446,7 +1442,7 @@ mod tests {
         original.add_player(1).unwrap();
         for sequence in 1..=u32::try_from(MAX_PENDING_INTENTS).unwrap() + 1 {
             original
-                .apply_command(1, sequence, ZoneCommand::StopAttack)
+                .apply_command(1, sequence, ZoneCommand::CancelCast)
                 .unwrap();
         }
         let checkpoint = original.snapshot().unwrap();

@@ -491,12 +491,12 @@ mod tests {
         let token = ReconnectToken([3; RECONNECT_TOKEN_BYTES]);
         let mut runtime = MatchRuntime::new_with_replay_capture(hosted(), 120);
         let lease = runtime.admit(token).unwrap();
-        // The marshal stands beside the plaza; attacking an NPC is refused
-        // with an event, not a session error.
+        // The marshal stands beside the plaza; a swing never hits an NPC and
+        // whiffs with an event, not a session error.
         let marshal = EntityRef::Npc(NpcId::new(1));
         for (sequence, command) in [
             ZoneCommand::SelectTarget(Some(marshal)),
-            ZoneCommand::StartAttack,
+            ZoneCommand::Swing { facing: 0 },
             run(SOUTH),
         ]
         .into_iter()
@@ -517,9 +517,9 @@ mod tests {
         assert_eq!(projection.viewer.target, Some(marshal));
         assert_eq!(
             projection.events,
-            [mmorpg_core::ZoneEvent::Error {
-                code: mmorpg_core::ErrorCode::NotAttackable,
-                target: Some(marshal)
+            [mmorpg_core::ZoneEvent::AttackPerformed {
+                source: EntityRef::Player(lease.player_id),
+                target: None
             }]
         );
         for _ in 0..90 {

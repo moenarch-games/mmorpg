@@ -322,9 +322,10 @@ pub enum ZoneCommand {
     SelectTarget(Option<EntityRef>),
     /// Claim all remaining rewards from one fenced corpse death.
     Loot(LootClaim),
-    /// Starts auto-attacking the selected target.
-    StartAttack,
-    StopAttack,
+    /// Swings the weapon once toward `facing` (#517): the player turns to it and every
+    /// attackable unit inside the melee arc is hit; a swing that covers nobody whiffs. A press
+    /// while the previous swing recovers waits for it.
+    Swing { facing: u16 },
     /// Returns a dead player to the graveyard with half health.
     ReleaseSpirit,
     /// Moves a quantity between the player's own bag slots on the next tick.
@@ -344,10 +345,7 @@ pub enum ZoneCommand {
     /// `input-bindings` retired the hold (focus loss, a menu, a profile
     /// change) rather than the key going up. Held state like movement: only
     /// an experimental graph's hold-to-charge and chord triggers read it.
-    ReleaseAbility {
-        ability: u8,
-        retired: bool,
-    },
+    ReleaseAbility { ability: u8, retired: bool },
     /// Executes `ability`'s directed mode (#154; only Heroic Strike has
     /// one): the player turns to `facing` and sweeps toward `aim`; the zone
     /// resolves which creature the sweep physically covers.
@@ -359,22 +357,15 @@ pub enum ZoneCommand {
     /// Holds the Warden's shield guard in a lane, or lowers it with `None`
     /// (#156). Held state like movement: the zone keeps it until the next
     /// guard command, death or a directed strike.
-    Guard {
-        lane: Option<StrikeHeight>,
-    },
+    Guard { lane: Option<StrikeHeight> },
     /// Opens (`open`) or closes a door (#158). Asking for the state it
     /// already has changes nothing; reach and blocking bodies are checked in
     /// the tick.
-    UseDoor {
-        door: DoorId,
-        open: bool,
-    },
+    UseDoor { door: DoorId, open: bool },
     /// Starts repairing a destructible piece (#305), or stops with `None`: held like a guard,
     /// free, and it speeds up the piece's timed regrowth while the player stands within
     /// reach. Any movement stops it.
-    Repair {
-        piece: Option<PieceId>,
-    },
+    Repair { piece: Option<PieceId> },
     /// Stops the player's own cast or channel.
     CancelCast,
     /// Orders all of the player's minions at once (#295, Atlas 5.2.84); the zone checks the
@@ -382,20 +373,13 @@ pub enum ZoneCommand {
     CommandMinions(MinionOrder),
     /// Chooses the class (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue, 5 Cleric, 6 Druid) and sex
     /// (0 female, 1 male) once. Invalid or repeated choices are refused in the tick.
-    ChooseClass {
-        class: u8,
-        sex: u8,
-    },
+    ChooseClass { class: u8, sex: u8 },
     /// Equips the item in one of the player's own bag slots into its
     /// catalog equipment slot, swapping any item already there.
-    EquipItem {
-        bag_slot: u8,
-    },
+    EquipItem { bag_slot: u8 },
     /// Moves the item in an equipment slot (0 main hand … 5 feet) to the
     /// lowest empty bag slot.
-    UnequipItem {
-        equipment_slot: u8,
-    },
+    UnequipItem { equipment_slot: u8 },
     /// Buys `quantity` units of offer `offer` (stock index) from vendor `npc`.
     BuyItem {
         npc: NpcId,
@@ -416,21 +400,12 @@ pub enum ZoneCommand {
     /// Performs one emote for the players in `/say` range (#69).
     Emote(Emote),
     /// Accepts `quest` from its giver `npc` (#25).
-    AcceptQuest {
-        npc: NpcId,
-        quest: u8,
-    },
+    AcceptQuest { npc: NpcId, quest: u8 },
     /// Turns `quest` in at its ender `npc`, taking reward `choice` (an
     /// index into the quest's choices; 0 when it offers none).
-    CompleteQuest {
-        npc: NpcId,
-        quest: u8,
-        choice: u8,
-    },
+    CompleteQuest { npc: NpcId, quest: u8, choice: u8 },
     /// Drops `quest` from the log; its progress is lost.
-    AbandonQuest {
-        quest: u8,
-    },
+    AbandonQuest { quest: u8 },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

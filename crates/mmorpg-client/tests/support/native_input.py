@@ -43,7 +43,7 @@ try:
         if not xtst.XTestFakeMotionEvent(display, -1, x.value, y.value, 0):
             raise RuntimeError("XTest could not enqueue pointer motion")
     elif sys.argv[1] in ("press", "release"):
-        if not xtst.XTestFakeButtonEvent(display, 1, int(sys.argv[1] == "press"), 0):
+        if not xtst.XTestFakeButtonEvent(display, 3, int(sys.argv[1] == "press"), 0):
             raise RuntimeError("XTest could not enqueue pointer button")
     elif sys.argv[1] == "key":
         code = x11.XKeysymToKeycode(display, x11.XStringToKeysym(sys.argv[2].encode()))

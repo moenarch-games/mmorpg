@@ -70,8 +70,7 @@ pub enum Action {
     Move,
     Jump,
     SelectTarget,
-    StartAttack,
-    StopAttack,
+    Swing,
     ReleaseSpirit,
     MoveItem,
     EquipItem,
@@ -100,8 +99,7 @@ impl Action {
             Self::Move => "move",
             Self::Jump => "jump",
             Self::SelectTarget => "select_target",
-            Self::StartAttack => "start_attack",
-            Self::StopAttack => "stop_attack",
+            Self::Swing => "swing",
             Self::ReleaseSpirit => "release_spirit",
             Self::MoveItem => "move_item",
             Self::EquipItem => "equip_item",
@@ -130,8 +128,7 @@ impl Action {
             Self::Move
             | Self::Jump
             | Self::SelectTarget
-            | Self::StartAttack
-            | Self::StopAttack
+            | Self::Swing
             | Self::ReleaseSpirit
             | Self::MoveItem
             | Self::EquipItem
@@ -160,8 +157,7 @@ impl Action {
             Self::Move
             | Self::Jump
             | Self::SelectTarget
-            | Self::StartAttack
-            | Self::StopAttack
+            | Self::Swing
             | Self::ReleaseSpirit
             | Self::MoveItem
             | Self::EquipItem
@@ -185,20 +181,25 @@ impl Action {
 }
 
 /// One bot action, applied before the zone advances from `tick` to `tick + 1`.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Step {
     pub tick: u64,
     pub bot: String,
     pub action: Action,
+    /// `swing` only: the step repeats every `every` ticks while below `until` (#517), as a
+    /// player keeps pressing attack. Both or neither.
+    pub until: Option<u64>,
+    pub every: Option<u64>,
     /// Move intent, passed through unchanged; the zone accepts `-1..=1`.
     pub forward: Option<i8>,
     pub strafe: Option<i8>,
-    /// Move heading: 65 536 steps per turn, 0 faces +Z, 16 384 faces +X.
+    /// Move or swing heading: 65 536 steps per turn, 0 faces +Z, 16 384 faces +X. A swing
+    /// without one aims at its `entity` from the bot's latest view.
     pub facing: Option<u16>,
-    /// The unit a `select_target` step selects (`none` clears), or the
-    /// optional target of a `use_ability` step (omitted or `none`: the
-    /// current selection).
+    /// The unit a `select_target` step selects (`none` clears), the unit a `swing` aims at,
+    /// or the optional target of a `use_ability` step (omitted or `none`: the current
+    /// selection; only friendly abilities use it, #517).
     pub entity: Option<UnitSpec>,
     /// `choose_class`: `warden`, `ranger` or `arcanist`, passed through as
     /// its wire value; any other name is sent as an invalid value.
@@ -376,8 +377,28 @@ pub struct Expectation {
 
 /// Parses and validates a scenario at the file trust boundary.
 pub fn load(text: &str) -> Result<BotScenario, String> {
-    let scenario: BotScenario = toml::from_str(text).map_err(|error| error.to_string())?;
+    let mut scenario: BotScenario = toml::from_str(text).map_err(|error| error.to_string())?;
     validate(&scenario)?;
+    // Repeating swings unroll into ordinary steps, in tick order (stable: authored order
+    // within a tick).
+    let mut steps = Vec::with_capacity(scenario.steps.len());
+    for step in scenario.steps.drain(..) {
+        match (step.until, step.every) {
+            (Some(until), Some(every)) => {
+                for tick in (step.tick..until).step_by(usize::try_from(every).unwrap_or(1)) {
+                    steps.push(Step {
+                        tick,
+                        until: None,
+                        every: None,
+                        ..step.clone()
+                    });
+                }
+            }
+            _ => steps.push(step),
+        }
+    }
+    steps.sort_by_key(|step| step.tick);
+    scenario.steps = steps;
     Ok(scenario)
 }
 
@@ -423,15 +444,33 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
         }
         previous_tick = step.tick;
         let is_move = step.action == Action::Move;
-        let intent = [
-            step.forward.is_some(),
-            step.strafe.is_some(),
-            step.facing.is_some(),
-        ];
-        if intent.iter().any(|&present| present != is_move) {
+        let is_swing = step.action == Action::Swing;
+        let intent = [step.forward.is_some(), step.strafe.is_some()];
+        if intent.iter().any(|&present| present != is_move)
+            || (is_move && step.facing.is_none())
+            || (step.facing.is_some() && !is_move && !is_swing)
+        {
             return Err(format!(
-                "{at}: forward, strafe and facing are required for move and only for move"
+                "{at}: forward, strafe and facing are required for move and only for move (facing is also allowed for swing)"
             ));
+        }
+        if is_swing && step.facing.is_some() == step.entity.is_some() {
+            return Err(format!(
+                "{at}: swing needs exactly one of facing and entity"
+            ));
+        }
+        match (step.until, step.every) {
+            (None, None) => {}
+            (Some(until), Some(every)) if is_swing && every > 0 && until > step.tick => {
+                if until > scenario.ticks {
+                    return Err(format!("{at}: until must not exceed ticks"));
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "{at}: until and every repeat only a swing, both positive and until after tick"
+                ));
+            }
         }
         let is_inventory_move = step.action == Action::MoveItem;
         if [step.source_slot.is_some(), step.destination_slot.is_some()]
@@ -489,12 +528,15 @@ fn validate(scenario: &BotScenario) -> Result<(), String> {
                 "{at}: creature and died_at are required only for loot"
             ));
         }
-        let targets = matches!(step.action, Action::SelectTarget | Action::UseAbility);
+        let targets = matches!(
+            step.action,
+            Action::SelectTarget | Action::UseAbility | Action::Swing
+        );
         if (step.entity.is_some() && !targets)
             || (step.entity.is_none() && step.action == Action::SelectTarget)
         {
             return Err(format!(
-                "{at}: entity is required for select_target and allowed only for it and use_ability"
+                "{at}: entity is required for select_target and allowed only for it, swing and use_ability"
             ));
         }
         if [step.class.is_some(), step.sex.is_some()]
@@ -825,8 +867,7 @@ impl Runner<'_> {
             Action::Move
             | Action::Jump
             | Action::SelectTarget
-            | Action::StartAttack
-            | Action::StopAttack
+            | Action::Swing
             | Action::ReleaseSpirit
             | Action::MoveItem
             | Action::EquipItem
@@ -934,8 +975,21 @@ impl Runner<'_> {
                     Err(_) => return Ok(("rejected:unknown_entity".into(), String::new())),
                 }
             }
-            Action::StartAttack => (ZoneCommand::StartAttack, String::new()),
-            Action::StopAttack => (ZoneCommand::StopAttack, String::new()),
+            Action::Swing => {
+                let facing = match step.facing {
+                    Some(facing) => facing,
+                    None => self.aim(index, step.entity.as_ref())?,
+                };
+                let entity = step
+                    .entity
+                    .as_ref()
+                    .map(|entity| format!(" entity={entity}"))
+                    .unwrap_or_default();
+                (
+                    ZoneCommand::Swing { facing },
+                    format!("{entity} facing={facing}"),
+                )
+            }
             Action::ReleaseSpirit => (ZoneCommand::ReleaseSpirit, String::new()),
             Action::Loot => {
                 let creature = step.creature.ok_or("loot creature is required")?;
@@ -1281,9 +1335,6 @@ impl Runner<'_> {
         if let Some(target) = me.target {
             parts.push(format!("target={}", self.unit_name(target)));
         }
-        if me.auto_attacking {
-            parts.push("attacking".into());
-        }
         if me.in_combat {
             parts.push("in_combat".into());
         }
@@ -1355,7 +1406,6 @@ impl Runner<'_> {
                 "max_health": me.max_health,
                 "dead": me.dead,
                 "in_combat": me.in_combat,
-                "auto_attacking": me.auto_attacking,
                 "target": me.target.map(|target| self.unit_name(target)),
                 "events": events,
             }));
@@ -1748,6 +1798,27 @@ impl Runner<'_> {
                 }
             }
         }
+    }
+
+    /// The facing from the bot's own unit toward `entity` in its latest view, as a player aims
+    /// a swing (#517); the bot's own facing while either is out of view.
+    fn aim(&self, index: usize, entity: Option<&UnitSpec>) -> Result<u16, String> {
+        let Some(view) = self.bots[index].view.as_ref() else {
+            return Ok(0);
+        };
+        let Some(me) = visible_player(view, view.viewer_id) else {
+            return Ok(0);
+        };
+        let target = self.resolve_unit(entity)?;
+        let toward = target
+            .and_then(|target| view.entities.iter().find(|unit| unit.entity() == target))
+            .and_then(|unit| {
+                mmorpg_core::trig::yaw_from_vector(
+                    unit.position[0] - me.position[0],
+                    unit.position[2] - me.position[2],
+                )
+            });
+        Ok(toward.unwrap_or(me.facing))
     }
 
     /// The unit a scenario names; a bot must have joined.

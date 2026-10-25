@@ -197,9 +197,10 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
         let mut session =
             ClientSession::connect(&local.url, Some(&local.certificate), zone_id, revision).await?;
         session.send_select_target(Some(EntityRef::Creature(CreatureId::new(1))))?;
-        session.send_attack(true)?;
         let mut sheet = None;
         for _ in 0..mmorpg_core::golden::t30(90) {
+            // The wolf stands 180 units toward -X: swing that way (#517) until it falls.
+            session.send_swing(3 * mmorpg_core::trig::YAW_QUARTER_TURN)?;
             let snapshot = session.receive_snapshot().await?;
             if let Some(view) = snapshot.loot {
                 sheet = Some(view);

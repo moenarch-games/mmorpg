@@ -374,13 +374,9 @@ impl ClientSession {
         self.send_command(ZoneCommand::SelectTarget(target))
     }
 
-    /// Starts (`true`) or stops auto-attacking the selected target.
-    pub fn send_attack(&mut self, start: bool) -> Result<(), SessionError> {
-        self.send_command(if start {
-            ZoneCommand::StartAttack
-        } else {
-            ZoneCommand::StopAttack
-        })
+    /// Swings the weapon toward `facing` (#517); the zone resolves what it hits.
+    pub fn send_swing(&mut self, facing: u16) -> Result<(), SessionError> {
+        self.send_command(ZoneCommand::Swing { facing })
     }
 
     /// Asks a dead character to return to the graveyard.

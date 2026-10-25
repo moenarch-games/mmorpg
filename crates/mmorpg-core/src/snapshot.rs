@@ -30,8 +30,11 @@ use crate::{
 pub enum PlayerIntent {
     SelectTarget(Option<EntityRef>),
     Loot(crate::LootClaim),
-    StartAttack,
-    StopAttack,
+    /// A weapon swing (#517) toward `facing`, resolved by the next tick or once the swing
+    /// timer allows.
+    Swing {
+        facing: u16,
+    },
     ReleaseSpirit,
     MoveItem {
         source: u8,
@@ -155,11 +158,11 @@ pub struct CanonicalPlayerCombat {
     /// Zero means dead.
     pub health: u32,
     pub target: Option<EntityRef>,
-    pub auto_attack: bool,
+    /// A pressed weapon swing (#517) waiting for the swing timer, a stun or a held landing.
+    pub swing_queued: bool,
     pub swing_timer: u16,
     pub combat_timer: u16,
     pub calm_ticks: u16,
-    pub error_cooldown: u16,
     /// Queued intents in sequence order.
     pub intents: Vec<QueuedIntent>,
     /// A later intent found the queue full and was dropped; the next tick
@@ -223,11 +226,10 @@ impl Default for CanonicalPlayerCombat {
             experience: 0,
             health: player_max_health(PLAYER_START_LEVEL),
             target: None,
-            auto_attack: false,
+            swing_queued: false,
             swing_timer: 0,
             combat_timer: 0,
             calm_ticks: 0,
-            error_cooldown: 0,
             intents: Vec::new(),
             intents_dropped: false,
             last_observed: 0,
@@ -365,11 +367,10 @@ impl ZoneSimulation {
                         experience: state.experience,
                         health: state.health,
                         target: state.target,
-                        auto_attack: state.auto_attack,
+                        swing_queued: state.swing_queued,
                         swing_timer: state.swing_timer,
                         combat_timer: state.combat_timer,
                         calm_ticks: state.calm_ticks,
-                        error_cooldown: state.error_cooldown,
                         intents: state.intents.clone(),
                         intents_dropped: state.intents_dropped,
                         last_observed: state.last_observed,
@@ -645,8 +646,8 @@ impl ZoneSimulation {
         {
             return Err(ZoneError::new("player observation state is out of range"));
         }
-        if combat.health == 0 && combat.auto_attack {
-            return Err(ZoneError::new("a dead player cannot auto-attack"));
+        if combat.health == 0 && combat.swing_queued {
+            return Err(ZoneError::new("a dead player cannot hold a queued swing"));
         }
         // Dead players hold no movement. Earlier builds kept it at death, so a
         // v11 checkpoint may still carry it: recovery lets go of it, exactly as
@@ -735,11 +736,10 @@ impl ZoneSimulation {
                 experience: combat.experience,
                 health: combat.health,
                 target: combat.target,
-                auto_attack: combat.auto_attack,
+                swing_queued: combat.swing_queued,
                 swing_timer: combat.swing_timer,
                 combat_timer: combat.combat_timer,
                 calm_ticks: combat.calm_ticks,
-                error_cooldown: combat.error_cooldown,
                 intents: combat.intents,
                 intents_dropped: combat.intents_dropped,
                 last_observed: combat.last_observed,

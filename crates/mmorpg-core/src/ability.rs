@@ -409,14 +409,11 @@ impl Ability {
         )
     }
 
-    /// Whether the ability may also fly freely along the facing without a target: Aimed Shot
-    /// (#286), Firebolt (#289), Throwing Knife (#290) and the aimed specials.
+    /// Whether the ability flies freely along the facing without a target: every shot (#517;
+    /// earlier Aimed Shot #286, Firebolt #289, Throwing Knife #290 and the aimed specials).
     #[must_use]
     pub const fn aims_freely(&self) -> bool {
-        self.id.0 == ids::AIMED_SHOT.0
-            || self.id.0 == ids::FIREBOLT.0
-            || self.id.0 == ids::THROWING_KNIFE.0
-            || !matches!(self.shot(), Shot::Plain)
+        self.projectile.is_some()
     }
 
     /// How its projectile treats what it meets (#291). Aimed specials ignore any selected target

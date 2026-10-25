@@ -166,11 +166,7 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     payload.extend_from_slice(&viewer.experience.to_be_bytes());
     payload.extend_from_slice(&viewer.experience_to_next_level.to_be_bytes());
     payload.extend_from_slice(&viewer.copper.to_be_bytes());
-    payload.push(flag_byte(&[
-        viewer.dead,
-        viewer.in_combat,
-        viewer.auto_attacking,
-    ]));
+    payload.push(flag_byte(&[viewer.dead, viewer.in_combat]));
     encode_entity_ref(&mut payload, viewer.target);
     payload.push(
         viewer
@@ -593,7 +589,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
     let experience = u32::from_be_bytes(take(payload, &mut offset)?);
     let experience_to_next_level = u32::from_be_bytes(take(payload, &mut offset)?);
     let copper = u32::from_be_bytes(take(payload, &mut offset)?);
-    let [dead, in_combat, auto_attacking] = read_flags(read_u8(payload, &mut offset)?)?;
+    let [dead, in_combat] = read_flags(read_u8(payload, &mut offset)?)?;
     let target = decode_entity_ref(payload, &mut offset)?;
     if !(1..=10).contains(&level)
         || (level == 10 && (experience != 0 || experience_to_next_level != 0))
@@ -845,7 +841,6 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
             level,
             dead,
             in_combat,
-            auto_attacking,
             target,
             class,
             resource,
@@ -1074,7 +1069,6 @@ mod tests {
                 level: 4,
                 dead: false,
                 in_combat: true,
-                auto_attacking: true,
                 target: Some(WOLF),
                 class: Some(ClassChoice {
                     class: mmorpg_core::PlayerClass::Arcanist,
@@ -1480,7 +1474,6 @@ mod tests {
     #[test]
     fn complete_corpse_sheet_matches_shared_bytes_and_rejects_inconsistent_claims() {
         let mut snapshot = fixture_snapshot();
-        snapshot.viewer.auto_attacking = false;
         snapshot.target_of_target = None;
         let corpse = &mut snapshot.entities[1];
         corpse.position = [10, 45, -180];
@@ -1942,7 +1935,6 @@ mod tests {
                 experience_to_next_level: 900,
                 dead: false,
                 in_combat: true,
-                auto_attacking: true,
                 target: Some(target),
                 class: None,
                 resource: None,

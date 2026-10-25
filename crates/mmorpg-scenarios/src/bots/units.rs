@@ -195,14 +195,14 @@ pub fn concerned_unit(event: &ZoneEvent, viewer: EntityRef) -> Option<EntityRef>
     match *event {
         ZoneEvent::DamageDealt { target, .. } | ZoneEvent::Evade { target, .. } => Some(target),
         ZoneEvent::DamageTaken { source, .. } => Some(source),
-        ZoneEvent::AttackPerformed { source, target }
-        | ZoneEvent::DamageObserved { source, target, .. }
+        ZoneEvent::DamageObserved { source, target, .. }
         | ZoneEvent::Miss { source, target }
         | ZoneEvent::Healed { source, target, .. }
         | ZoneEvent::Absorbed { source, target, .. }
         | ZoneEvent::Blocked { source, target, .. }
         | ZoneEvent::GuardBroken { source, target, .. } => other(source, Some(target)),
-        ZoneEvent::CastStarted { source, target, .. }
+        ZoneEvent::AttackPerformed { source, target }
+        | ZoneEvent::CastStarted { source, target, .. }
         | ZoneEvent::AbilityUsed { source, target, .. }
         | ZoneEvent::StrikeSwept { source, target, .. } => other(source, target),
         ZoneEvent::Died { entity, .. } => Some(entity),
@@ -358,9 +358,15 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
             critical: crit,
             ..
         } => format!("taken:{}:{amount}{}", name(source), critical(crit)),
-        ZoneEvent::AttackPerformed { source, target } => {
-            format!("attack:{}>{}", name(source), name(target))
-        }
+        ZoneEvent::AttackPerformed {
+            source,
+            target: Some(target),
+        } => format!("attack:{}>{}", name(source), name(target)),
+        // A whiffed swing (#517).
+        ZoneEvent::AttackPerformed {
+            source,
+            target: None,
+        } => format!("whiff:{}", name(source)),
         ZoneEvent::DamageObserved {
             source,
             target,

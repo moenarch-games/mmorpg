@@ -947,9 +947,6 @@ impl Presentation {
                 );
             parts.push(format!("target {} ({detail})", self.unit_name(target)));
         }
-        if viewer.auto_attacking {
-            parts.push("attacking".into());
-        }
         Some(parts.join(" · "))
     }
 

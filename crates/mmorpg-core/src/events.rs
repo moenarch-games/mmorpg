@@ -93,10 +93,11 @@ pub enum ErrorCode {
 /// One feedback event addressed to a player.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ZoneEvent {
-    /// An ordinary attack actually rolled, independently of its hit outcome.
+    /// An ordinary attack actually rolled at `target`, independently of its hit outcome; a
+    /// player's swing that covered nobody (#517) whiffs with `None`.
     AttackPerformed {
         source: EntityRef,
-        target: EntityRef,
+        target: Option<EntityRef>,
     },
     /// Positive health damage witnessed by a non-participant. Never damage credit.
     DamageObserved {
@@ -228,8 +229,8 @@ impl ZoneEvent {
     pub fn observation_refs(self, viewer: crate::PlayerId) -> Option<[Option<EntityRef>; 2]> {
         let own = EntityRef::Player(viewer);
         match self {
-            Self::AttackPerformed { source, target }
-            | Self::DamageObserved { source, target, .. } => Some([Some(source), Some(target)]),
+            Self::AttackPerformed { source, target } => Some([Some(source), target]),
+            Self::DamageObserved { source, target, .. } => Some([Some(source), Some(target)]),
             Self::CastStarted { source, target, .. }
             | Self::AbilityUsed { source, target, .. }
             | Self::StrikeSwept { source, target, .. }

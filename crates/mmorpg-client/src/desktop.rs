@@ -361,6 +361,8 @@ impl App {
                     ),
                 );
             }
+            // A swing rebound to a key (#517); the mouse button swings from its pointer edge.
+            WorldAction::Swing => self.swing(),
             WorldAction::Select
             | WorldAction::Interact
             | WorldAction::NextNpc
@@ -439,7 +441,16 @@ impl App {
         }
     }
 
-    /// Tab, F and R are intents derived from the latest projection; the zone
+    /// One weapon swing where the character faces (#517); the zone resolves what it hits, and
+    /// a press while dead sends nothing.
+    fn swing(&self) {
+        if self.connected() && !self.dead() {
+            self.input
+                .send_modify(|input| input.swings = input.swings.wrapping_add(1));
+        }
+    }
+
+    /// Tab and R are intents derived from the latest projection; the zone
     /// decides what happens.
     fn combat_key(&self, code: KeyCode) {
         let latest = self.presentation.latest();
@@ -451,13 +462,6 @@ impl App {
                         input.selections = input.selections.wrapping_add(1);
                     });
                 }
-            }
-            KeyCode::KeyF => {
-                let start = !latest.is_some_and(|latest| latest.viewer.auto_attacking);
-                self.input.send_modify(|input| {
-                    input.attack = start;
-                    input.attack_requests = input.attack_requests.wrapping_add(1);
-                });
             }
             KeyCode::KeyR if latest.is_some_and(|latest| latest.viewer.dead) => {
                 self.input
@@ -478,7 +482,7 @@ impl App {
             ControlAction::Roll => self.roll(),
             ControlAction::Descend => {}
             ControlAction::TargetNext => self.combat_key(KeyCode::Tab),
-            ControlAction::ToggleAttack => self.combat_key(KeyCode::KeyF),
+            ControlAction::Swing => self.swing(),
             ControlAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             ControlAction::AbilitySlot(slot) => {
                 let ability = usize::from(slot)
@@ -618,7 +622,7 @@ impl App {
             PadAction::Jump => self.jump(),
             PadAction::Roll => self.roll(),
             PadAction::TargetNext => self.combat_key(KeyCode::Tab),
-            PadAction::ToggleAutoAttack => self.combat_key(KeyCode::KeyF),
+            PadAction::Swing => self.swing(),
             PadAction::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             PadAction::AbilitySlot(slot) => self.control(ControlAction::AbilitySlot(slot)),
             PadAction::CancelCast => self.control(ControlAction::CancelCast),
@@ -692,7 +696,6 @@ impl App {
                 });
             }
             UiIntent::AbilitySlot(slot) => self.control(ControlAction::AbilitySlot(slot)),
-            UiIntent::ToggleAttack => self.combat_key(KeyCode::KeyF),
             UiIntent::ReleaseSpirit => self.combat_key(KeyCode::KeyR),
             UiIntent::Select(target) => {
                 self.input.send_modify(|input| {
@@ -1017,11 +1020,15 @@ impl ApplicationHandler for App {
                     MouseButton::Other(index) => index,
                 };
                 let selecting = self.world_controls.selecting();
-                let click = self.world_controls.pointer_button(
+                let edge = self.world_controls.pointer_button(
                     index,
                     state == ElementState::Pressed,
                     binding_modifiers.clone(),
                 );
+                // The left button swings on the press (#517); a drag still orbits the camera.
+                if edge.swung {
+                    self.swing();
+                }
                 if state == ElementState::Pressed {
                     if !selecting && self.world_controls.selecting() {
                         self.pointer_origin = self.cursor;
@@ -1030,7 +1037,7 @@ impl ApplicationHandler for App {
                         self.orbit_buttons.insert(button);
                     }
                 } else {
-                    if click && self.pointer_origin.take().is_some() {
+                    if edge.selected && self.pointer_origin.take().is_some() {
                         self.select_pointer(event_loop);
                     }
                     self.orbit_buttons.remove(&button);
