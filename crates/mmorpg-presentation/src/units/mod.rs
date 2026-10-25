@@ -22,9 +22,9 @@ use std::{
 };
 
 use mmorpg_core::{
-    ClassChoice, CreatureFamily, CreatureTemplateId, EntityKind, EntityRef, EntitySnapshot,
-    PLAYER_HALF_EXTENTS_UNITS, ProjectileKind, UNITS_PER_METRE, ZoneContent, ZoneEvent,
-    ZoneSnapshot,
+    AbilityId, ClassChoice, CreatureFamily, CreatureTemplateId, EntityKind, EntityRef,
+    EntitySnapshot, PLAYER_HALF_EXTENTS_UNITS, ProjectileKind, UNITS_PER_METRE, ZoneContent,
+    ZoneEvent, ZoneSnapshot,
 };
 use mmorpg_scenery::Scenery;
 
@@ -40,6 +40,21 @@ const HEALTH_BAR_FILL: [f32; 3] = [0.18, 0.9, 0.25];
 const CORPSE_TINT: f32 = 0.6;
 /// The Druid companion's green tint (#296) on the CC0 wolf model hostile Timber Wolves also use.
 pub const COMPANION_TINT: [f32; 3] = [0.6, 1.0, 0.45];
+/// How long a sent attack's local wind-up (Atlas 6.6.10) waits for the zone's answer before it
+/// lets go: the late-input grace (150 ms) plus an ordinary round trip and a held follow-up's
+/// short wait. An acceptance after that still plays its strike, from the start.
+pub const PREPARATION_ANSWER_SECONDS: f64 = 0.75;
+
+/// The local player's reversible attack preparation (Atlas 6.6.10, #415): an instant ability
+/// pressed or aimed but not yet answered by the zone. It only poses the viewer's upper body;
+/// commands, eligibility, windows and hits stay the zone's.
+#[derive(Clone, Copy, Debug)]
+struct LocalPreparation {
+    ability: AbilityId,
+    pressed: f64,
+    /// Set once the input is sent; a held aim (the directed strike) has none.
+    answer_by: Option<f64>,
+}
 
 /// The linear colour factor of an imported model: a companion is tinted green, a corpse
 /// darkened, anything else drawn as authored.
@@ -164,6 +179,8 @@ pub struct UnitPresenter {
     structures: crate::structures::Structures,
     /// How the imported models' body regions blend; the Action Lab tunes it (#384).
     blend: imported::Blend,
+    /// The local player's unanswered attack preparation.
+    preparation: Option<LocalPreparation>,
 }
 
 impl UnitPresenter {
@@ -186,7 +203,41 @@ impl UnitPresenter {
             residents: false,
             equipment: None,
             blend: imported::Blend::default(),
+            preparation: None,
         }
+    }
+
+    /// The local player pressed (or began aiming) an attack with `ability` at `now`: the viewer
+    /// winds up at once (Atlas 6.6.10) until the zone answers. A cast-time ability shows the
+    /// zone's cast instead and does not prepare. A newer press supersedes an older one.
+    pub fn prepare(&mut self, ability: AbilityId, now: f64) {
+        let instant = mmorpg_core::ability_by_id(ability)
+            .is_some_and(|definition| definition.cast.ticks() == 0);
+        self.preparation = instant.then_some(LocalPreparation {
+            ability,
+            pressed: now,
+            answer_by: None,
+        });
+    }
+
+    /// The prepared input went to the zone at `now`; without an answer by
+    /// [`PREPARATION_ANSWER_SECONDS`] later the wind-up lets go.
+    pub fn prepared_sent(&mut self, now: f64) {
+        if let Some(preparation) = &mut self.preparation {
+            preparation.answer_by = Some(now + PREPARATION_ANSWER_SECONDS);
+        }
+    }
+
+    /// Lost focus, a menu, a retired input context or a superseding gesture: the wind-up fades
+    /// without an attack.
+    pub fn abandon_preparation(&mut self) {
+        self.preparation = None;
+    }
+
+    /// The ability the local player is winding up, if any.
+    #[must_use]
+    pub fn preparing(&self) -> Option<AbilityId> {
+        self.preparation.map(|preparation| preparation.ability)
     }
 
     /// Tunes how the imported models' body regions blend (the Action Lab, #384); clamped.
@@ -223,6 +274,7 @@ impl UnitPresenter {
         self.bursts.clear();
         self.effects.clear();
         self.equipment = None;
+        self.preparation = None;
         self.resources = Resources::default();
         self.structures =
             crate::structures::Structures::on_scenery(self.content.pieces(), &self.scenery);
@@ -253,15 +305,37 @@ impl UnitPresenter {
         }
         // Accepted strikes start their clips (Atlas 6.6.45): the event, never a clip, is the
         // attack. Every received projection is read, so a frame spanning several ticks keeps them.
+        let viewer = EntityRef::Player(snapshot.viewer_id);
         for event in &snapshot.events {
-            let (source, ability) = match *event {
-                ZoneEvent::AttackPerformed { source, .. }
-                | ZoneEvent::StrikeSwept { source, .. } => (source, None),
+            // The zone answers the local wind-up (Atlas 6.6.10): a refusal, or a cast it began
+            // instead, lets it go; its accepted strike commits it below.
+            if self.preparation.is_some()
+                && match *event {
+                    ZoneEvent::Error { .. } => true,
+                    ZoneEvent::CastStarted { source, .. } => source == viewer,
+                    _ => false,
+                }
+            {
+                self.preparation = None;
+            }
+            // The strike's clip ability, and the ability an accepted action resolved.
+            let (source, ability, resolved) = match *event {
+                ZoneEvent::AttackPerformed { source, .. } => (source, None, None),
+                ZoneEvent::StrikeSwept {
+                    source, ability, ..
+                } => (source, None, Some(ability)),
                 ZoneEvent::AbilityUsed {
                     source, ability, ..
-                } => (source, Some(ability)),
+                } => (source, Some(ability), Some(ability)),
                 _ => continue,
             };
+            // Only the zone's accepted action commits the prepared swing.
+            let commits = source == viewer
+                && resolved.is_some()
+                && resolved == self.preparation.map(|preparation| preparation.ability);
+            if commits {
+                self.preparation = None;
+            }
             let Some(record) = snapshot.entities.iter().find(|e| e.entity() == source) else {
                 continue;
             };
@@ -278,10 +352,13 @@ impl UnitPresenter {
                 clip = kind.clips().attack;
             }
             let duration = self.duration(kind, clip);
-            self.playbacks
-                .entry(source)
-                .or_default()
-                .strike(clip, duration, seconds);
+            let playback = self.playbacks.entry(source).or_default();
+            if commits {
+                // The committed swing continues the wind-up.
+                playback.commit(clip, duration, seconds);
+            } else {
+                playback.strike(clip, duration, seconds);
+            }
         }
     }
 
@@ -327,6 +404,10 @@ impl UnitPresenter {
         self.animators.retain(|e, _| present.contains(e));
         self.playbacks.retain(|e, _| present.contains(e));
         self.deaths.retain(|e, _| present.contains(e));
+        // An unanswered wind-up lets go after its bound; a dead viewer prepares nothing.
+        self.preparation = self.preparation.filter(|preparation| {
+            !snapshot.viewer.dead && preparation.answer_by.is_none_or(|by| seconds < by)
+        });
         let action = if reduced {
             None
         } else {
@@ -396,6 +477,21 @@ impl UnitPresenter {
                     )
                     .swims();
                 let vertical = if swimming { 0. } else { loc.vertical };
+                if viewer {
+                    let wind_up = self.preparation.map(|preparation| {
+                        let class = snapshot.viewer.class.map(|choice| choice.class);
+                        let mut clip = kind.strike(class, Some(preparation.ability));
+                        if self.duration(kind, clip) <= 0. {
+                            clip = kind.clips().attack;
+                        }
+                        (clip, preparation.pressed)
+                    });
+                    let playback = self.playbacks.entry(entity).or_default();
+                    match wind_up {
+                        Some((clip, pressed)) => playback.prepare(clip, pressed),
+                        None => playback.abandon(),
+                    }
+                }
                 let durations = &self.durations;
                 let animation = self.playbacks.entry(entity).or_default().advance(
                     kind.clips(),

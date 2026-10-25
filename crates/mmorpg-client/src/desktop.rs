@@ -480,6 +480,8 @@ impl App {
                         input.ability = ability;
                         input.ability_uses = input.ability_uses.wrapping_add(1);
                     });
+                    // A reversible local wind-up until the zone answers (Atlas 6.6.10).
+                    self.presentation.prepare_attack(ability, Instant::now());
                 }
             }
             ControlAction::CancelCast => {
@@ -489,7 +491,11 @@ impl App {
             }
             ControlAction::TogglePanel(panel) => self.ui.toggle(panel),
             ControlAction::OpenChat => self.ui.open_chat(),
-            ControlAction::Guard => self.guard_offset = Some(0.),
+            ControlAction::Guard => {
+                // The raised shield supersedes an unanswered wind-up.
+                self.presentation.abandon_attack_preparation();
+                self.guard_offset = Some(0.);
+            }
             ControlAction::Minions(command) => {
                 if let Some(order) = self.minion_order(command) {
                     self.send_interaction(mmorpg_core::ZoneCommand::CommandMinions(order));
@@ -641,6 +647,7 @@ impl App {
         self.guard_offset = None;
         self.pad_guard = None;
         self.pad.retire("inputContextChanged");
+        self.presentation.abandon_attack_preparation();
         self.update_guard();
         self.update_movement();
     }

@@ -184,6 +184,14 @@ class OnlineAcceptance(unittest.TestCase):
             window.__transportKinds.push(new URL(args[0]).pathname.includes('/reconnect/'));
             return transport;
           }});
+          // Optional extra uplink delay (#415): `window.__uplinkDelayMs` holds each outgoing write
+          // back, in order, on the page's real streams and datagrams.
+          const write = WritableStreamDefaultWriter.prototype.write;
+          WritableStreamDefaultWriter.prototype.write = function (chunk) {
+            const delay = window.__uplinkDelayMs ?? 0;
+            if (!delay) return write.call(this, chunk);
+            return new Promise((resolve, reject) => setTimeout(() => write.call(this, chunk).then(resolve, reject), delay));
+          };
         })();""")
         page = context.new_page()
         errors: list[str] = []
@@ -444,6 +452,94 @@ class OnlineAcceptance(unittest.TestCase):
         self.wait_for(watcher, "id => !window.__valeDebug.projection().entities.some(e => e.kind === 'player' && e.id === id)", actor_id)
         self.wait_for(watcher, "id => window.__valeDebug.unitNodes(`unit-player-${id}`).length === 0", actor_id)
         self.evidence.update({"actorId": actor_id, "remoteActionSamples": relevant, "departedActorNodes": watcher.evaluate("id => window.__valeDebug.unitNodes(`unit-player-${id}`)", actor_id)})
+
+    def wind_up_cycle(self, page, viewer_id):
+        """Presses Digit1 and returns the frames from the press until the zone's answer has played out."""
+        page.evaluate("() => { window.__windup.length = 0; window.__pressedAt = performance.now(); }")
+        page.keyboard.press("Digit1")
+        self.wait_for(page, """id => window.__windup.some(s => s.events.some(e => e.kind === 'error'
+          || (e.kind === 'ability-used' && e.source.kind === 'player' && e.source.id === id)))""", viewer_id, timeout_ms=10_000)
+        self.frames(page, 20)
+        return page.evaluate("() => ({pressedAt: window.__pressedAt, samples: window.__windup.slice()})")
+
+    @staticmethod
+    def wind_up_phases(cycle, viewer_id):
+        """Splits a cycle at the zone's answer: the wound-up clips up to it, the frames from it, the answer and its delay."""
+        samples = cycle["samples"]
+        answer = next(index for index, sample in enumerate(samples) if any(
+            event["kind"] == "error" or (event["kind"] == "ability-used" and event["source"] == {"kind": "player", "id": viewer_id})
+            for event in sample["events"]))
+        # The arms' own clips: the upper body's target (its crossfade may still be at zero weight
+        # on a slow headless frame) and upper-body layers other than the clip shared with the legs.
+        def upper(sample):
+            animation = sample["animation"] or {"layers": [], "lower": [None, 0], "upper": [None, 0]}
+            clips = {layer["clip"] for layer in animation["layers"] if layer["mask"] == "upper" and layer["weight"] > 0}
+            clips.add(animation["upper"][0])
+            return clips - {animation["lower"][0], None}
+        # A sample records the frame drawn before its events were applied, so the answer's own
+        # sample still shows the frame before the answer.
+        wound = set().union(*(upper(sample) for sample in samples[:answer + 1]))
+        events = [event["kind"] for event in samples[answer]["events"]]
+        return wound, samples[answer:], events, round(samples[answer]["at"] - cycle["pressedAt"])
+
+    def test_local_wind_up_waits_for_the_hosted_zone_with_and_without_delay(self):
+        """Atlas 6.6.10 (#415): an attack press winds the character up at once, before the real zone answers.
+
+        The zone's accepted Aimed Shot continues the wind-up into the shot; its refusal (the
+        running cooldown) lets the wind-up fade without a shot. Both run without and with 150 ms of
+        extra uplink delay on the page's real WebTransport datagrams. Nothing is mocked.
+        """
+        page = self.open_player("WindupRanger", animated=True, class_label="Ranger")
+        viewer_id = self.projection(page)["viewerId"]
+        self.wait_for(page, "window.__valeDebug.viewerAnimation() !== null", timeout_ms=30_000)
+        page.evaluate("""() => {
+          window.__windup = [];
+          const source = window.__valeDebug.worldSource();
+          const advance = source.advance.bind(source);
+          const observed = [];
+          source.advance = (...args) => { const projections = advance(...args); observed.push(...projections); return projections; };
+          const record = () => {
+            window.__windup.push({at: performance.now(), animation: window.__valeDebug.viewerAnimation(),
+              events: observed.splice(0).flatMap(snapshot => snapshot.events.filter(e => e.kind === 'error' || e.kind === 'ability-used').map(e => ({...e})))});
+            if (window.__windup.length > 4000) window.__windup.shift();
+            requestAnimationFrame(record);
+          };
+          requestAnimationFrame(record);
+        }""")
+        self.walk_online_waypoints([page], [(-1550,2000),(-3350,2000),(-3350,1800),(-8450,1800),(-8450,1376)])
+        self.wait_for(page, "window.__valeDebug.projectedUnits().some(e => e.kind === 'creature' && e.id === 108)")
+        # Standing idle again: one whole-body clip, no strike or wind-up layered over it.
+        settled = "() => { const layers = window.__valeDebug.viewerAnimation()?.layers ?? []; return layers.length === 1 && layers[0].mask === 'all' && layers[0].clip.startsWith('Idle'); }"
+        cooling = "() => window.__valeDebug.worldSource().latestProjection().cooldowns.some(c => c.ability === 5)"
+        page.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'select-target',target:{kind:'creature',id:108}})")
+        self.wait_for(page, "() => window.__valeDebug.worldSource().latestProjection().viewer.target?.id === 108")
+        runs = {}
+        for delay in (0, 150):
+            page.evaluate("ms => window.__uplinkDelayMs = ms", delay)
+            self.wait_for(page, f"() => !({cooling})() && window.__valeDebug.worldSource().latestProjection().viewer.globalCooldown === 0", timeout_ms=20_000)
+            self.wait_for(page, settled)
+            accepted = self.wind_up_phases(self.wind_up_cycle(page, viewer_id), viewer_id)
+            wound, after, events, answered_ms = accepted
+            self.assertIn("ability-used", events, f"the zone accepts the shot at {delay} ms: {events}")
+            self.assertTrue(wound, f"the press winds up before the zone answers at {delay} ms")
+            self.assertTrue(any(layer["clip"] in wound and layer["time"] > 0.31 for sample in after for layer in (sample["animation"] or {}).get("layers", [])),
+                            f"the accepted shot continues past the wind-up at {delay} ms")
+            # Aimed Shot's 6 s cooldown is still running: the zone refuses the next one.
+            self.wait_for(page, settled, timeout_ms=10_000)
+            self.assertTrue(page.evaluate(cooling), f"the cooldown still runs for the refusal at {delay} ms")
+            refused = self.wind_up_phases(self.wind_up_cycle(page, viewer_id), viewer_id)
+            wound_refused, after_refused, refused_events, refused_ms = refused
+            self.assertIn("error", refused_events, f"the zone refuses the shot on cooldown at {delay} ms")
+            self.assertTrue(wound_refused, f"the refused press also winds up first at {delay} ms")
+            self.assertFalse(any(layer["clip"] in wound_refused and layer["time"] > 0.31 for sample in after_refused for layer in (sample["animation"] or {}).get("layers", [])),
+                             f"a refused wind-up never shows the shot at {delay} ms")
+            last = after_refused[-1]["animation"]["layers"]
+            self.assertFalse(any(layer["clip"] in wound_refused for layer in last), f"the refused wind-up has faded at {delay} ms: {last}")
+            runs[delay] = {"windUp": sorted(wound), "acceptedAfterMs": answered_ms, "refusedAfterMs": refused_ms, "refusal": refused_events}
+        self.assertGreaterEqual(runs[150]["acceptedAfterMs"], 140, f"the uplink delay reached the zone: {runs}")
+        page.evaluate("window.__uplinkDelayMs = 0")
+        page.screenshot(path=str(ARTIFACTS / "wind-up-online.png"))
+        self.evidence["windUp"] = runs
 
     def test_two_pages_see_the_same_inn_door(self):
         """The inn door (#158) is zone state: one player opens and closes it, both pages see it."""

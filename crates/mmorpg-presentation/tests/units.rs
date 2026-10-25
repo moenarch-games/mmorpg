@@ -3,12 +3,16 @@
 use std::sync::Arc;
 
 use mmorpg_core::{
-    AbilityId, CreatureFamily, EntityFlags, EntityKind, EntityRef, EntitySnapshot, StrikeAim,
-    StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ZoneSimulation, ZoneSnapshot, greyhaven_vale,
+    AbilityId, CreatureFamily, EntityFlags, EntityKind, EntityRef, EntitySnapshot, ErrorCode,
+    StrikeAim, StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ZoneSimulation, ZoneSnapshot,
+    greyhaven_vale,
 };
 use mmorpg_presentation::{
     Draw,
-    units::{FrameInput, SampledUnit, UnitFrame, UnitPresenter, Viewer},
+    units::{
+        FrameInput, PREPARATION_ANSWER_SECONDS, SampledUnit, UnitFrame, UnitPresenter, Viewer,
+        imported::Kind,
+    },
 };
 
 struct Scene {
@@ -299,4 +303,79 @@ fn the_mill_hoist_is_drawn_where_its_schedule_puts_it() {
     scene.snapshot.tick = u64::from(hoist.dwell + hoist.travel_ticks());
     let high = top_y(&mut scene);
     assert!((high - low - 8.0).abs() < 0.01, "{low} -> {high}");
+}
+
+/// The viewer's imported model's upper-body clip and time this frame.
+fn viewer_upper(frame: &UnitFrame) -> (&'static str, f32) {
+    frame
+        .imported
+        .iter()
+        .find(|unit| unit.entity == EntityRef::Player(1))
+        .unwrap()
+        .animation
+        .upper
+}
+
+#[test]
+fn the_local_wind_up_waits_for_the_zone_to_commit_or_refuse_it() {
+    let heroic = AbilityId::new(1);
+    let mut scene = scene();
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        [
+            ("Idle_Loop".to_owned(), 1.),
+            ("Sword_Attack".to_owned(), 1.5),
+        ],
+    );
+    scene.presenter.push(&scene.snapshot, 0.);
+    frame(&mut scene, 0.);
+    // The press winds up at once, before any answer, and holds short of the swing.
+    scene.presenter.prepare(heroic, 0.);
+    scene.presenter.prepared_sent(0.);
+    assert_eq!(viewer_upper(&frame(&mut scene, 0.1)).0, "Sword_Attack");
+    assert_eq!(
+        viewer_upper(&frame(&mut scene, 0.6)),
+        (
+            "Sword_Attack",
+            mmorpg_presentation::units::imported::WINDUP_HOLD_SECONDS
+        )
+    );
+    // A refusal lets it go: no swing is shown.
+    scene.snapshot.tick += 1;
+    scene.snapshot.events = vec![ZoneEvent::Error {
+        code: ErrorCode::NotReady,
+        target: None,
+    }];
+    scene.presenter.push(&scene.snapshot, 0.65);
+    assert_eq!(scene.presenter.preparing(), None);
+    frame(&mut scene, 0.7);
+    assert_eq!(viewer_upper(&frame(&mut scene, 2.)).0, "Idle_Loop");
+
+    // Only the zone's accepted action commits the swing, continuing the wind-up.
+    scene.presenter.prepare(heroic, 2.);
+    scene.presenter.prepared_sent(2.);
+    frame(&mut scene, 2.1);
+    scene.snapshot.tick += 1;
+    scene.snapshot.events = vec![ZoneEvent::AbilityUsed {
+        source: EntityRef::Player(1),
+        target: Some(scene.wolf),
+        ability: heroic,
+    }];
+    scene.presenter.push(&scene.snapshot, 2.2);
+    assert_eq!(scene.presenter.preparing(), None);
+    let swing = frame(&mut scene, 2.3);
+    let (clip, at) = viewer_upper(&swing);
+    assert_eq!(clip, "Sword_Attack");
+    assert!(at > 0.25, "the swing continues past the wind-up: {at}");
+
+    // An unanswered wind-up lets go after its bound; a cast-time ability never prepares.
+    scene.snapshot.events.clear();
+    scene.presenter.prepare(heroic, 5.);
+    scene.presenter.prepared_sent(5.);
+    frame(&mut scene, 5.5);
+    assert_eq!(scene.presenter.preparing(), Some(heroic));
+    frame(&mut scene, 5. + PREPARATION_ANSWER_SECONDS + 0.01);
+    assert_eq!(scene.presenter.preparing(), None);
+    scene.presenter.prepare(AbilityId::new(9), 7.);
+    assert_eq!(scene.presenter.preparing(), None);
 }

@@ -38,7 +38,7 @@ import { SharedUnits, type AnimationBlend, type ImportedModelKind, type Loadout,
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
 import { CharacterPane, type CharacterElements } from "./units/character-pane";
 import { useAbilitySlot } from "./units/abilities";
-import { DirectedStrikeAim, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
+import { DirectedStrikeAim, HEROIC_STRIKE_ABILITY, canStrikeDirected, directedStrikeCommand } from "./units/directed-strike";
 import { ShieldGuardHold, canGuard, guardCommand } from "./units/shield-guard";
 import { ClassHud } from "./units/class-hud";
 import { CombatHud } from "./units/combat-hud";
@@ -394,7 +394,7 @@ export class WorldView {
     this.#sky = new SkyLayer(elements.sky, ENVIRONMENT);
     this.#combatHud = new CombatHud(elements.unitStatus, elements.combatFeedback);
     this.#classHud = new ClassHud(elements.classHud, {
-      onUse: (slot) => this.queueIntent((projection) => (this.#catalog ? useAbilitySlot(slot, projection, this.#catalog) : null)),
+      onUse: (slot) => this.useSlot(slot),
     });
     this.#progressionHud = new ProgressionHud(elements.experienceBar, elements.experienceStatus, elements.progressionFeedback);
     this.#bags = new BagsPanel(elements.bags, (command, onSent) => this.queueIntent(() => command, onSent));
@@ -515,6 +515,8 @@ export class WorldView {
     this.endGuard();
     this.#strikeAim.begin();
     this.#classHud.showStrikeAim(this.#strikeAim.aim());
+    // The sword winds up while the player aims (Atlas 6.6.10); only the zone's strike swings it.
+    this.#units?.units.prepare(HEROIC_STRIKE_ABILITY, this.#seconds);
   }
 
   /** A deliberate release sends one directed strike toward the view's heading; the zone resolves it. */
@@ -523,18 +525,42 @@ export class WorldView {
     this.#classHud.showStrikeAim(null);
     const catalog = this.#catalog;
     if (!aim || !catalog) {
+      this.#units?.units.abandonPreparation();
       return;
     }
     const facing = this.#orbit.facing();
     // The Warden turns to strike; later movement keeps that heading until steered.
     this.#movementFacing = facing;
-    this.queueIntent((projection) => directedStrikeCommand(projection, catalog, facing, aim));
+    this.#queuePrepared((projection) => directedStrikeCommand(projection, catalog, facing, aim));
   }
 
-  /** Blur, menus, retired input or a superseding gesture: no strike. */
+  /** Blur, menus, retired input or a superseding gesture: no strike, and no wind-up. */
   cancelDirectedStrike(): void {
     this.#strikeAim.cancel();
     this.#classHud.showStrikeAim(null);
+    this.#units?.units.abandonPreparation();
+  }
+
+  /** Uses action-bar slot `slot` (1–8); the viewer winds up at once while the zone decides. */
+  useSlot(slot: number): void {
+    this.#queuePrepared((projection) => (this.#catalog ? useAbilitySlot(slot, projection, this.#catalog) : null));
+  }
+
+  /**
+   * Queues an attack whose local wind-up (Atlas 6.6.10) starts as it is built and waits for the
+   * zone's answer once sent. Nothing to send lets the wind-up go. Presentation only.
+   */
+  #queuePrepared(intent: Intent): void {
+    this.queueIntent((projection) => {
+      const command = intent(projection);
+      const units = this.#units?.units;
+      if (command?.kind === "use-ability" || command?.kind === "directed-strike") {
+        units?.prepare(command.ability, this.#seconds);
+      } else {
+        units?.abandonPreparation();
+      }
+      return command;
+    }, () => this.#units?.units.preparedSent(this.#seconds));
   }
 
   /**
@@ -1329,6 +1355,8 @@ export class WorldView {
       ],
       /** The imported model's actual clip, clip time, root and bone world positions, or null. */
       unitModelPose: (identity: string) => this.#models.pose(identity),
+      /** The viewer's layered clips last frame (#384), including a local wind-up (Atlas 6.6.10), or null. */
+      viewerAnimation: () => structuredClone(this.#viewerAnimation),
       /** Copies of actual submitted geometry transforms, never a simulation control. */
       unitNodes: (identity: string) => structuredClone(this.#lastUnitNodes.filter((node) => node.id.startsWith(`${identity}-`))),
       /** The walk-in inn (#158): whether its bundle loaded and which entries the last frame showed. */

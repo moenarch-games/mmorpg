@@ -15,6 +15,9 @@ export type UnitPresenterHandle = {
   setBlend(lowerSeconds: number, upperSeconds: number, lowerWeight: number, upperWeight: number): void;
   push(projection: Uint8Array, seconds: number): void;
   reset(): void;
+  prepare(ability: number, seconds: number): void;
+  preparedSent(seconds: number): void;
+  abandonPreparation(): void;
   /** Sound cues and fades of the projections pushed since the last call (#447), as JSON. */
   takeAudio(): string;
   frame(units: Float64Array, seconds: number, dt: number, reducedMotion: boolean, barYaw: number,
@@ -152,6 +155,25 @@ export class SharedUnits {
   reset(): void {
     this.#handle.reset();
     this.#geometries = new Map();
+  }
+
+  /**
+   * The local player pressed or began aiming an attack (Atlas 6.6.10): the viewer winds up at
+   * once and holds short of the swing until the zone accepts (the swing continues) or refuses
+   * (the wind-up fades). Presentation only; the zone still decides every outcome.
+   */
+  prepare(ability: number, seconds: number): void {
+    this.#handle.prepare(ability, seconds);
+  }
+
+  /** The prepared input went to the zone; an unanswered wind-up lets go shortly after. */
+  preparedSent(seconds: number): void {
+    this.#handle.preparedSent(seconds);
+  }
+
+  /** Blur, menus, a retired input or a superseding gesture: no swing. */
+  abandonPreparation(): void {
+    this.#handle.abandonPreparation();
   }
 
   /** The shared presenter's sound operations since the last call, for `WorldSound.apply`. */
