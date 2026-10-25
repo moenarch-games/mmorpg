@@ -43,11 +43,25 @@ impl ZoneSimulation {
             // before the combo opens (#157).
             let mut waiting = Vec::new();
             for intent in intents {
-                let waits = self
-                    .players
-                    .get(&player_id)
-                    .is_some_and(|player| crate::action::waits(self.action_graph, player, &intent));
-                if waits {
+                let (waits, refused) =
+                    self.players
+                        .get(&player_id)
+                        .map_or((false, false), |player| {
+                            (
+                                crate::action::waits(self.action_graph, player, &intent),
+                                crate::action::refuses(self.action_graph, player, &intent),
+                            )
+                        });
+                // An experimental graph may refuse an attack in water (#413).
+                if refused {
+                    self.notify(
+                        player_id,
+                        ZoneEvent::Error {
+                            code: ErrorCode::NotWhileSwimming,
+                            target: None,
+                        },
+                    );
+                } else if waits {
                     waiting.push(intent);
                 } else {
                     self.apply_intent(player_id, intent, self.tick + 1)?;
@@ -450,14 +464,12 @@ impl ZoneSimulation {
         let Some(player) = self.players.get(&player_id) else {
             return Ok(());
         };
-        // A stunned or landing player's ready swing waits.
+        // A stunned or landing player's ready swing waits, as does one the
+        // graph refuses in water.
+        let melee = crate::action::ActionInput::WardenMelee;
         if player.swing_timer > 0
-            || crate::action::holding_rule(
-                self.action_graph,
-                player,
-                crate::action::ActionInput::WardenMelee,
-            )
-            .is_some()
+            || crate::action::holding_rule(self.action_graph, player, melee).is_some()
+            || crate::action::refusing_rule(self.action_graph, player, melee).is_some()
             || crate::aura::has_kind(&player.auras, crate::AuraKind::Stun)
         {
             return Ok(());

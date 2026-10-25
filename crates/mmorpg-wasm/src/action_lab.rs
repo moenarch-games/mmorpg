@@ -194,6 +194,7 @@ fn verdict(verdict: Verdict) -> Value {
         Verdict::Holding => json!({ "kind": "Holding" }),
         Verdict::Outranked(by) => json!({ "kind": "Outranked", "by": candidate_name(by) }),
         Verdict::HeldBy(rule) => json!({ "kind": "HeldBy", "rule": name(rule) }),
+        Verdict::RefusedBy(rule) => json!({ "kind": "RefusedBy", "rule": name(rule) }),
         Verdict::Blocked(why) => json!({ "kind": "Blocked", "reason": reason(why) }),
     }
 }
@@ -206,6 +207,7 @@ fn outcome(outcome: Outcome) -> Value {
         Outcome::WaitForRule(rule) => json!({ "kind": "WaitForRule", "rule": name(rule) }),
         Outcome::WaitForEdge(edge) => json!({ "kind": "WaitForEdge", "edge": name(edge) }),
         Outcome::Cancel(rule) => json!({ "kind": "Cancel", "rule": name(rule) }),
+        Outcome::Refuse(rule) => json!({ "kind": "Refuse", "rule": name(rule) }),
     }
 }
 

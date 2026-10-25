@@ -177,4 +177,5 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "vendor-closed": null,
   "door-busy": null,
   "no-minions": null,
+  "not-while-swimming": null,
 };

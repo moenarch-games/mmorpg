@@ -298,6 +298,8 @@ fn input_lag(run: &Run, findings: &mut Vec<Finding>) {
         let at = u64::from(command.tick);
         let lag = format!("{delay} ticks ({} ms)", ms(delay));
         let (severity, summary, edge) = match arbitration.outcome {
+            // A refused input (#413) never takes effect; refusals report it.
+            Outcome::Refuse(_) => continue,
             Outcome::WaitForRule(rule) => (
                 Severity::Note,
                 format!(

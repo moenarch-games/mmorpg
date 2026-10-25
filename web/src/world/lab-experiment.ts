@@ -59,6 +59,7 @@ export type LabConfig = {
 export const MOVEMENT_PHASES: readonly { action: string; phase: string }[] = [
   { action: "Airborne", phase: "Active" },
   { action: "Landing", phase: "Recovery" },
+  { action: "Swim", phase: "Active" },
   { action: "DirectedSlash", phase: "Recovery" },
   { action: "DirectedSlash", phase: "FollowUp" },
   { action: "Guard", phase: "Active" },
@@ -135,6 +136,25 @@ export function traversalSample(config: LabConfig): LabConfig {
     };
   }
   return next;
+}
+
+/** The water rules (#413): what the swimming sample refuses and holds while the character swims. */
+export const SWIMMING_RULES: readonly { id: string; input: string; effect: "Refuse" | "Hold" }[] = [
+  { id: "SwimmingRefuses", input: "WardenMelee", effect: "Refuse" },
+  { id: "SwimmingRefuses", input: "ShieldBash", effect: "Refuse" },
+  { id: "SwimmingHolds", input: "Ability", effect: "Hold" },
+];
+
+/**
+ * The swimming sample (#413): in deep water (Stillwater Lake, east of the lab spot) melee and Shield
+ * Bash are refused, other abilities wait until the swimmer is ashore, and the swim glides: full
+ * momentum with 4 m/s² of steering. Production keeps allowing attacks while swimming.
+ */
+export function swimmingSample(config: LabConfig): LabConfig {
+  const next = setMovementRule(config, "Swim", "Active", { steeringPercent: 100, momentumPercent: 100, maxAccelerationCms2: 400 });
+  const kept = next.rules.filter((rule) => rule.during !== "Swim");
+  const water = SWIMMING_RULES.map(({ id, input, effect }) => ({ id, during: "Swim", input, conditions: [], effect }));
+  return { ...next, rules: [...kept, ...water] };
 }
 
 /** `actionLabCheck`: the configuration's identity, whether it equals production, or why it is invalid. */

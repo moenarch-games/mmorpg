@@ -86,6 +86,8 @@ pub enum ErrorCode {
     DoorBusy,
     /// A minion order without any minion to obey it (#295).
     NoMinions,
+    /// The action graph refuses this attack in water (#413).
+    NotWhileSwimming,
 }
 
 /// One feedback event addressed to a player.

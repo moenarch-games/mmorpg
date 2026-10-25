@@ -11,7 +11,7 @@ import { element, type LabSetup } from "./action-lab";
 import {
   addLandingEdge, copyConfig, exportBundle, importFile, insertCopy, LANDING_EDGES, MOVEMENT_PHASES, moveCommand, movementRule,
   promoteCommand, promotionFileName, promotionRequest, recoveryOverride, removeCommand, removeEdge, ruleApplies, setDuration,
-  setMovementRule, setRecoveryOverride, setRuleApplies, shortLabel, traversalSample, SCENARIO_FORMAT,
+  setMovementRule, setRecoveryOverride, setRuleApplies, shortLabel, swimmingSample, traversalSample, SCENARIO_FORMAT,
   type ConfigCheck, type LabComparison, type LabConfig, type LabConfigEdge, type LabConfigVersion, type LabEffect, type LabFinding,
   type LabLibrary, type LabRun, type LabScenario,
 } from "./lab-experiment";
@@ -320,6 +320,8 @@ export class ExperimentPanel {
         action("Production", "Reset this configuration to the production rules", () => this.#setConfig(slot, copyConfig(this.#runtime.baseline(), config.name))),
         action("Traversal sample", "Momentum through the air, slowed landings and landing follow-ups after an aerial hit (#413)",
           () => this.#setConfig(slot, traversalSample(config))),
+        action("Swimming sample", "In deep water (Stillwater Lake, east of here) melee and Shield Bash are refused, other abilities wait until ashore, and the swim glides (#413)",
+          () => this.#setConfig(slot, swimmingSample(config))),
         action(slot === "a" ? "Copy to B" : "Copy to A", "Copy this configuration to the other slot", () => {
           const other = slot === "a" ? "b" : "a";
           this.#setConfig(other, copyConfig(config, `${config.name} copy`));

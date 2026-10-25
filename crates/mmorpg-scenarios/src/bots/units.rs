@@ -298,6 +298,7 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::VendorClosed => "vendor_closed",
         ErrorCode::DoorBusy => "door_busy",
         ErrorCode::NoMinions => "no_minions",
+        ErrorCode::NotWhileSwimming => "not_while_swimming",
     }
 }
 
@@ -336,6 +337,7 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "vendor_closed" => ErrorCode::VendorClosed,
         "door_busy" => ErrorCode::DoorBusy,
         "no_minions" => ErrorCode::NoMinions,
+        "not_while_swimming" => ErrorCode::NotWhileSwimming,
         _ => return None,
     })
 }
@@ -490,6 +492,7 @@ mod tests {
             ErrorCode::VendorClosed,
             ErrorCode::DoorBusy,
             ErrorCode::NoMinions,
+            ErrorCode::NotWhileSwimming,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));

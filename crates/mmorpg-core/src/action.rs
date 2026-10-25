@@ -58,8 +58,17 @@
 //!   win over the landing's hold, end its recovery and may carry an
 //!   [`Effect::Impulse`]: run → jump → aerial attack → landing → follow-up
 //!   composes from ordinary actions. The baseline authors none of it, so
-//!   today's movement is unchanged. Swimming, climbing and mantling join
-//!   the movement region once they exist as authoritative actions.
+//!   today's movement is unchanged.
+//! - **Swimming** (#413, Atlas 5.1.41–5.1.43). [`ActionId::Swim`] runs in
+//!   the movement region while a living player swims (at the surface or
+//!   under it), ahead of being airborne. Its phase can author movement like
+//!   any other, and compatibility rules can [`RuleEffect::Refuse`] an attack
+//!   in water or [`RuleEffect::Hold`] it until the swimmer is ashore, so
+//!   water never implicitly permits every attack. The baseline authors no
+//!   such rule: attacks while swimming stay allowed, and combat with
+//!   submerged units stays blocked by the zone (5.1.43). Climbing and
+//!   mantling join the movement region once they exist as authoritative
+//!   actions.
 //!
 //! Every playable class runs on the same model. Wardens add the directed
 //! slash, the guard and the landing hold. Casts and channels run as
@@ -97,6 +106,8 @@ pub enum ActionId {
     Airborne,
     /// Touchdown recovery.
     Landing,
+    /// Swimming in deep water, at the surface or under it (#274).
+    Swim,
     /// The Warden's directed (mouse-aimed) Heroic Strike.
     DirectedSlash,
     /// A held shield guard lane.
@@ -477,25 +488,34 @@ pub enum RuleId {
     SlashRecoveryHoldsGuard,
     /// Moving or jumping ends a cast or channel.
     MovementCancelsCast,
+    /// An attack in water is refused (#413). Experimental graphs author it;
+    /// the baseline allows attacks while swimming.
+    SwimmingRefuses,
+    /// An attack in water waits until the swimmer is ashore (#413).
+    SwimmingHolds,
 }
 
 /// What a compatibility rule does with its input.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuleEffect {
     /// While `during` recovers, the input waits (is held) until the
-    /// recovery ends.
+    /// recovery ends. During a swim, it waits until the swim ends.
     Hold,
     /// While `during` runs, the input ends it. Only a cast supports this,
     /// for movement and jump inputs.
     Cancel,
+    /// While `during` runs, the input is refused with
+    /// [`crate::ErrorCode::NotWhileSwimming`]. Only a swim supports this, for
+    /// offense inputs.
+    Refuse,
 }
 
 /// A region-compatibility rule (Atlas 5.7.5).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CompatibilityRule {
     pub id: RuleId,
-    /// The action the rule covers: its recovery phase for a hold, its
-    /// whole run for a cancellation.
+    /// The action the rule covers: its recovery phase for a hold (a swim's
+    /// whole run), its whole run for a cancellation or refusal.
     pub during: ActionId,
     pub input: ActionInput,
     pub conditions: &'static [Condition],
@@ -650,7 +670,7 @@ pub struct ActionGraph {
 }
 
 /// The authored actions.
-pub const ACTIONS: [ActionDef; 9] = [
+pub const ACTIONS: [ActionDef; 10] = [
     ActionDef {
         id: ActionId::Airborne,
         region: Region::Movement,
@@ -660,6 +680,12 @@ pub const ACTIONS: [ActionDef; 9] = [
         id: ActionId::Landing,
         region: Region::Movement,
         recovery_ms: Some(300),
+    },
+    // A swim lasts while the player is in deep water.
+    ActionDef {
+        id: ActionId::Swim,
+        region: Region::Movement,
+        recovery_ms: None,
     },
     ActionDef {
         id: ActionId::DirectedSlash,
@@ -767,7 +793,8 @@ pub enum GraphError {
     BufferBeforeAnchor(EdgeId),
     /// A rule covers an input of its own action's region.
     SameRegion(ActionId),
-    /// A rule covers an action that has no recovery phase.
+    /// A holding rule covers an action that has no recovery phase (other
+    /// than a swim).
     NoRecovery(RuleId),
     /// A duration is shorter than half a tick or too long for a tick timer.
     BadDuration(EdgeId),
@@ -807,8 +834,9 @@ pub enum GraphError {
     UnsupportedInterruption(Interrupted),
     /// Two interruptions of the same reaction, target and phase disagree.
     ConflictingInterruption(Interrupted),
-    /// The zone has no runtime for this cancelling rule: only movement and
-    /// jumps cancel, and only a cast.
+    /// The zone has no runtime for this rule: only movement and jumps
+    /// cancel, and only a cast; only offense inputs are refused, and only
+    /// during a swim.
     UnsupportedRule(RuleId),
     /// The zone does not read this value per class, weapon or ability: only
     /// the directed slash's and the global cooldown's recoveries, edge
@@ -855,6 +883,7 @@ fn landing_ticks(conditions: &[Condition]) -> u16 {
 pub const fn phases(id: ActionId) -> &'static [Phase] {
     match id {
         ActionId::Airborne
+        | ActionId::Swim
         | ActionId::Guard
         | ActionId::Cast
         | ActionId::Stun
@@ -916,8 +945,17 @@ impl ActionGraph {
                 return Err(GraphError::SameRegion(rule.during));
             }
             match rule.effect {
-                RuleEffect::Hold if action(rule.during).recovery_ms.is_none() => {
+                RuleEffect::Hold
+                    if action(rule.during).recovery_ms.is_none()
+                        && rule.during != ActionId::Swim =>
+                {
                     return Err(GraphError::NoRecovery(rule.id));
+                }
+                RuleEffect::Refuse
+                    if rule.during != ActionId::Swim
+                        || input_region(rule.input) != Region::Offense =>
+                {
+                    return Err(GraphError::UnsupportedRule(rule.id));
                 }
                 RuleEffect::Cancel
                     if rule.during != ActionId::Cast
@@ -1409,6 +1447,21 @@ fn holds(state: &PlayerState, condition: Condition) -> bool {
     }
 }
 
+/// Whether the player swims: alive, in deep water after the last physics
+/// step.
+fn swimming(state: &PlayerState) -> bool {
+    state.swimming && state.is_alive()
+}
+
+/// Whether a holding rule's action is in the phase it holds in: a swim
+/// while it lasts, any other action while it recovers.
+fn holds_during(state: &PlayerState, id: ActionId) -> bool {
+    match id {
+        ActionId::Swim => swimming(state),
+        _ => recovery_left(state, id).is_some(),
+    }
+}
+
 fn all_hold(state: &PlayerState, conditions: &[Condition]) -> bool {
     conditions.iter().all(|&condition| holds(state, condition))
 }
@@ -1421,6 +1474,7 @@ fn recovery_left(state: &PlayerState, id: ActionId) -> Option<u16> {
         ActionId::GuardBreak => state.guard.broken,
         ActionId::GlobalCooldown => state.global_cooldown,
         ActionId::Airborne
+        | ActionId::Swim
         | ActionId::Guard
         | ActionId::Stun
         | ActionId::Death
@@ -1446,7 +1500,22 @@ pub(crate) fn holding_rule(
     graph.rules.iter().find(|rule| {
         rule.effect == RuleEffect::Hold
             && rule.input == input
-            && recovery_left(state, rule.during).is_some()
+            && holds_during(state, rule.during)
+            && applies(graph, state, rule)
+    })
+}
+
+/// The rule of `graph` that refuses `input` now.
+pub(crate) fn refusing_rule(
+    graph: &ActionGraph,
+    state: &PlayerState,
+    input: ActionInput,
+) -> Option<&'static CompatibilityRule> {
+    graph.rules.iter().find(|rule| {
+        rule.effect == RuleEffect::Refuse
+            && rule.input == input
+            && rule.during == ActionId::Swim
+            && swimming(state)
             && applies(graph, state, rule)
     })
 }
@@ -1476,7 +1545,14 @@ fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4]
         ability: action.and_then(|id| action_ability(state, id)),
         active_left: None,
     };
-    let movement = if state.landing.airborne {
+    let movement = if swimming(state) {
+        report(
+            Region::Movement,
+            Some(ActionId::Swim),
+            Some(Phase::Active),
+            None,
+        )
+    } else if state.landing.airborne {
         report(
             Region::Movement,
             Some(ActionId::Airborne),
@@ -1587,7 +1663,7 @@ fn target_phase(graph: &ActionGraph, state: &PlayerState, target: Interrupted) -
             phase_of(def.from)
         }
         Interrupted::Held(id) => {
-            let held = graph.rules.iter().any(|rule| {
+            let held = graph.rules.iter().find(|rule| {
                 rule.id == id
                     && holding_rule(graph, state, rule.input).is_some_and(|by| by.id == id)
                     && match rule.input {
@@ -1597,8 +1673,13 @@ fn target_phase(graph: &ActionGraph, state: &PlayerState, target: Interrupted) -
                             .iter()
                             .any(|intent| input_of(intent) == Some(input)),
                     }
-            });
-            held.then_some(Phase::Recovery)
+            })?;
+            // A swim holds while it runs; every other action while it recovers.
+            Some(if held.during == ActionId::Swim {
+                Phase::Active
+            } else {
+                Phase::Recovery
+            })
         }
     }
 }
@@ -1785,6 +1866,8 @@ pub enum Verdict {
     Holding,
     /// A compatibility rule holds the input.
     HeldBy(RuleId),
+    /// A compatibility rule refuses the input.
+    RefusedBy(RuleId),
     Blocked(BlockReason),
 }
 
@@ -1801,6 +1884,8 @@ pub enum Outcome {
     /// The input resolves now as its ordinary use and, by this rule, ends
     /// the running action (a cast).
     Cancel(RuleId),
+    /// The input is refused now by this rule (an attack in water).
+    Refuse(RuleId),
 }
 
 /// The explained arbitration of one input (Atlas 5.7.4).
@@ -1835,7 +1920,11 @@ pub(crate) fn arbitrate(
             .iter()
             .any(|(def, eval)| def.from == rule.during && eval.status == EdgeStatus::Open)
     });
-    let outcome = if let Some(rule) = hold {
+    // A refusal outranks everything: no edge leads into a refused attack.
+    let refusal = refusing_rule(graph, state, input);
+    let outcome = if let Some(rule) = refusal {
+        Outcome::Refuse(rule.id)
+    } else if let Some(rule) = hold {
         Outcome::WaitForRule(rule.id)
     } else {
         edges
@@ -1856,6 +1945,9 @@ pub(crate) fn arbitrate(
         .iter()
         .any(|(def, eval)| outcome == Outcome::Proceed(Candidate::Edge(def.id)) && eval.precise);
     let verdict = |candidate: Candidate, status: Option<EdgeStatus>| -> Verdict {
+        if let Some(rule) = refusal {
+            return Verdict::RefusedBy(rule.id);
+        }
         if let Some(rule) = hold {
             return Verdict::HeldBy(rule.id);
         }
@@ -1868,6 +1960,7 @@ pub(crate) fn arbitrate(
             (Outcome::Cancel(_), _) => Verdict::Outranked(Candidate::Direct),
             (Outcome::WaitForEdge(id), _) => Verdict::Outranked(Candidate::Edge(id)),
             (Outcome::WaitForRule(rule), _) => Verdict::HeldBy(rule),
+            (Outcome::Refuse(rule), _) => Verdict::RefusedBy(rule),
         }
     };
     let mut candidates: Vec<_> = edges
@@ -1894,6 +1987,11 @@ pub(crate) fn waits(graph: &ActionGraph, state: &PlayerState, intent: &PlayerInt
             Outcome::WaitForRule(_) | Outcome::WaitForEdge(_)
         )
     })
+}
+
+/// Whether a rule refuses an intent now.
+pub(crate) fn refuses(graph: &ActionGraph, state: &PlayerState, intent: &PlayerIntent) -> bool {
+    input_of(intent).is_some_and(|input| refusing_rule(graph, state, input).is_some())
 }
 
 /// An input resolving through an edge.
@@ -2073,8 +2171,9 @@ pub struct RuleReport {
     pub input: ActionInput,
     pub effect: RuleEffect,
     /// The first tick the rule no longer applies to the input: the held
-    /// input is released, or the cast it would cancel has ended.
-    pub released_at: u64,
+    /// input is released, or the cast it would cancel has ended. `None`
+    /// while a swim holds or refuses it: until the swimmer is ashore.
+    pub released_at: Option<u64>,
     /// Why the rule applies to this player.
     pub origin: Origin,
 }
@@ -2263,19 +2362,21 @@ impl ZoneSimulation {
             .filter_map(|rule| {
                 // Recovery counts down after the next tick's intents and
                 // combat resolve; movement cancels a cast before it advances.
-                let left = match rule.effect {
-                    RuleEffect::Hold => recovery_left(state, rule.during)?,
-                    RuleEffect::Cancel => {
+                let left = match (rule.effect, rule.during) {
+                    (_, ActionId::Swim) => swimming(state).then_some(None)?,
+                    (RuleEffect::Hold, _) => Some(recovery_left(state, rule.during)?),
+                    (RuleEffect::Cancel, _) => Some(
                         cast_left(state)
                             .filter(|_| rule.during == ActionId::Cast)?
-                            .1
-                    }
+                            .1,
+                    ),
+                    (RuleEffect::Refuse, _) => return None,
                 };
                 applies(graph, state, rule).then(|| RuleReport {
                     rule: rule.id,
                     input: rule.input,
                     effect: rule.effect,
-                    released_at: next + u64::from(left),
+                    released_at: left.map(|left| next + u64::from(left)),
                     origin: rule_applies(graph, state, rule).origin,
                 })
             })

@@ -44,6 +44,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "vendor-closed": "The shop is closed for the night.",
   "door-busy": "The door is still swinging.",
   "no-minions": "You have no minions or companion to command.",
+  "not-while-swimming": "You can't do that while swimming.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

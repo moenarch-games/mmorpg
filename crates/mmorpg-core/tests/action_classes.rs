@@ -395,7 +395,7 @@ fn an_arcanist_cast_is_cancelled_by_moving_at_the_inspected_ticks() {
         assert_eq!(rule.rule, RuleId::MovementCancelsCast);
         assert_eq!(rule.input, input);
         assert_eq!(rule.effect, RuleEffect::Cancel);
-        assert_eq!(rule.released_at, tick + u64::from(cast_ticks));
+        assert_eq!(rule.released_at, Some(tick + u64::from(cast_ticks)));
         assert_eq!(rule.origin, Origin::Baseline);
     }
     let arbitration = arcanist.arbitrate(ActionInput::Move);
@@ -428,7 +428,7 @@ fn an_arcanist_cast_is_cancelled_by_moving_at_the_inspected_ticks() {
 fn a_standing_arcanist_cast_completes_at_the_inspected_release() {
     let mut arcanist = Hero::new(PlayerClass::Arcanist, &action::BASELINE);
     arcanist.use_ability(ids::FIREBOLT, Some(WOLF_ID));
-    let released = arcanist.inspect().rules[0].released_at;
+    let released = arcanist.inspect().rules[0].released_at.unwrap();
     while arcanist.inspect().tick + 2 < released {
         arcanist.tick();
     }

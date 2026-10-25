@@ -556,6 +556,7 @@ impl ZoneSimulation {
         zone.rewards = snapshot.rewards;
         zone.validate_references()?;
         zone.rebuild_interest()?;
+        zone.track_swimming()?;
         Ok(zone)
     }
 
@@ -667,6 +668,7 @@ impl ZoneSimulation {
                 breath: player.breath,
                 guard,
                 landing: combat.landing,
+                swimming: false,
                 impulse: None,
                 combo: combat.combo,
                 strike_recovery: combat.strike_recovery,

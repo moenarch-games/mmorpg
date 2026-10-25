@@ -33,7 +33,7 @@ export type ActionGraph = {
   modifiers: readonly { action: string; condition: string; recoveryMs: number; recoveryTicks: number }[];
   edges: readonly GraphEdge[];
   windowModifiers: readonly { edge: string; conditions: readonly string[]; actionableDeltaMs: number }[];
-  rules: readonly { id: string; during: string; input: string; conditions: readonly string[]; effect: "Hold" | "Cancel" }[];
+  rules: readonly { id: string; during: string; input: string; conditions: readonly string[]; effect: "Hold" | "Cancel" | "Refuse" }[];
   interruptions: readonly { reaction: string; interrupted: string; phase: string | null; consequence: string }[];
   /** Class-, weapon- and ability-specific values replacing the shared ones (none in production). */
   overrides: readonly { key: string; value: string; scope: string }[];
@@ -61,15 +61,16 @@ export type EdgeStatus =
 export type Verdict =
   | { kind: "Won" | "Holding" }
   | { kind: "Outranked"; by: string }
-  | { kind: "HeldBy"; rule: string }
+  | { kind: "HeldBy" | "RefusedBy"; rule: string }
   | { kind: "Blocked"; reason: BlockReason };
 export type Outcome =
   | { kind: "Proceed"; candidate: string }
   | { kind: "WaitForRule"; rule: string }
   | { kind: "WaitForEdge"; edge: string }
-  | { kind: "Cancel"; rule: string };
+  | { kind: "Cancel" | "Refuse"; rule: string };
 
-export type RuleReport = { rule: string; input: string; effect: "Hold" | "Cancel"; releasedAt: number; origin: string };
+/** `releasedAt` is null while a swim holds or refuses the input: until the swimmer is ashore (#413). */
+export type RuleReport = { rule: string; input: string; effect: "Hold" | "Cancel" | "Refuse"; releasedAt: number | null; origin: string };
 
 /** One tick's `actionInspection()`. */
 export type Inspection = {
@@ -247,8 +248,10 @@ export function explainEdge(report: Inspection["edges"][number]): string {
 
 /** What an applying compatibility rule does, until when, and why it applies to this character. */
 export function explainRule(rule: RuleReport): string {
-  const what = rule.effect === "Cancel" ? `${rule.input} ends the running action before tick` : `holds ${rule.input} until tick`;
-  return `${rule.rule}: ${what} ${rule.releasedAt}${rule.origin === "baseline" ? "" : ` (${rule.origin})`}`;
+  const until = rule.releasedAt === null ? "while swimming" : `tick ${rule.releasedAt}`;
+  const what = rule.effect === "Cancel" ? `${rule.input} ends the running action before ${until}`
+    : rule.effect === "Refuse" ? `refuses ${rule.input} ${until}` : `holds ${rule.input} until ${rule.releasedAt === null ? "ashore" : until}`;
+  return `${rule.rule}: ${what}${rule.origin === "baseline" ? "" : ` (${rule.origin})`}`;
 }
 
 /** What the reactions in effect do to one running action, opening or buffer. */
@@ -263,6 +266,7 @@ export function explainVerdict(verdict: Verdict): string {
     case "Holding": return "holds the input until it opens";
     case "Outranked": return `usable, outranked by ${verdict.by}`;
     case "HeldBy": return `held by rule ${verdict.rule}`;
+    case "RefusedBy": return `refused by rule ${verdict.rule}`;
     case "Blocked": return `blocked: ${reasonText(verdict.reason)}`;
   }
 }
@@ -273,6 +277,7 @@ export function explainOutcome(outcome: Outcome): string {
     case "WaitForRule": return `waits for rule ${outcome.rule}`;
     case "WaitForEdge": return `waits for edge ${outcome.edge} to open`;
     case "Cancel": return `resolves now and ends the running action (rule ${outcome.rule})`;
+    case "Refuse": return `is refused (rule ${outcome.rule})`;
   }
 }
 
@@ -639,7 +644,8 @@ export class ActionLabPanel {
         rows.push([`If ${modifier.condition}`, `${modifier.recoveryMs} ms · ${modifier.recoveryTicks} ticks`]);
       }
       for (const rule of this.#graph.rules.filter((entry) => entry.during === selection.id)) {
-        rows.push([`Rule ${rule.id}`, `${rule.effect === "Cancel" ? `${rule.input} cancels it` : `holds ${rule.input}`}${rule.conditions.length ? ` if ${rule.conditions.join(", ")}` : ""}`]);
+        const does = { Cancel: `${rule.input} cancels it`, Refuse: `refuses ${rule.input}`, Hold: `holds ${rule.input}` }[rule.effect];
+        rows.push([`Rule ${rule.id}`, `${does}${rule.conditions.length ? ` if ${rule.conditions.join(", ")}` : ""}`]);
       }
       for (const rule of this.#graph.interruptions.filter((entry) => entry.interrupted === `Action(${selection.id})` || entry.reaction === selection.id)) {
         rows.push([`${rule.reaction} → ${rule.interrupted}`, `${rule.consequence}${rule.phase ? ` in ${rule.phase}` : ""}`]);
