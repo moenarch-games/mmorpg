@@ -412,3 +412,37 @@ fn modifier_rebinding_releases_the_original_activation_when_modifiers_change() {
     assert!(!controls.is_held(ControlAction::Jump));
     assert!(controls.key_down(KeyCode::Space, false).is_empty());
 }
+
+/// #485: a held slot's key-up is a deliberate release; a retirement (focus loss) releases it as
+/// retired. Other keys and keys pressed after the focus loss release nothing.
+#[test]
+fn slot_key_ups_and_retirements_queue_releases() {
+    use mmorpg_client::controls::SlotRelease;
+    let mut controls = NativeControls::new();
+    assert_eq!(
+        press(&mut controls, KeyCode::Digit3),
+        [ControlAction::AbilitySlot(3)]
+    );
+    assert_eq!(press(&mut controls, KeyCode::Space), [ControlAction::Jump]);
+    assert_eq!(
+        controls.drain_releases(),
+        [SlotRelease {
+            slot: 3,
+            retired: false
+        }]
+    );
+    assert!(
+        controls.drain_releases().is_empty(),
+        "a drain empties the queue"
+    );
+    controls.key_down(KeyCode::Digit1, false);
+    controls.focus_lost();
+    controls.key_up(KeyCode::Digit1);
+    assert_eq!(
+        controls.drain_releases(),
+        [SlotRelease {
+            slot: 1,
+            retired: true
+        }]
+    );
+}

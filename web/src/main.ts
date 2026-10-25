@@ -436,6 +436,8 @@ const touchControls = new TouchControls(requireElement<HTMLElement>("#touch-cont
       runAction(action);
     }
   },
+  // A lifted face reports its slot's release like the key-up (#485); under Settings it is retired.
+  onRelease: (action, phase) => runRelease(action, settingsOpen ? "cancel" : phase),
   onInteract: () => worldView.touchInteract(),
   onSettings: () => requireElement<HTMLButtonElement>("#world-settings").click(),
   // On phones chat is collapsed to this button; it shows while its field has focus.

@@ -10,7 +10,7 @@
 use input_bindings_core::{
     ActionDefinition, ActionRegistry, Binding, ContextLayer, DeviceClass, InputRuntime,
     InputRuntimeOptions, InputStroke, KeyMatch, KeyStroke, Modifiers, Provenance, RepeatPolicy,
-    RuntimeDecision, SemanticControlState, WhenExpr,
+    RuntimeActionPhase, RuntimeDecision, RuntimeDispatchReason, SemanticControlState, WhenExpr,
 };
 use std::collections::BTreeMap;
 use winit::keyboard::KeyCode;
@@ -167,6 +167,36 @@ impl ControlAction {
     }
 }
 
+/// A held action-bar slot let go (#414, #485): the zone reads it only for an experimental
+/// graph's hold-to-charge and chord triggers. A key or button going up is a deliberate release;
+/// every other retirement (focus loss, a context or profile change) is `retired` and never acts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SlotRelease {
+    /// Action-bar slot 1–8.
+    pub slot: u8,
+    pub retired: bool,
+}
+
+/// The ability-slot releases among `decisions`, in order.
+pub(crate) fn slot_releases(decisions: &[RuntimeDecision]) -> impl Iterator<Item = SlotRelease> {
+    decisions
+        .iter()
+        .flat_map(|decision| &decision.dispatches)
+        .filter(|dispatch| dispatch.phase == RuntimeActionPhase::Release)
+        .filter_map(|dispatch| {
+            let slot = dispatch
+                .action
+                .strip_prefix("ability.slot")?
+                .parse::<u8>()
+                .ok()
+                .filter(|slot| (1..=8).contains(slot))?;
+            Some(SlotRelease {
+                slot,
+                retired: dispatch.reason != RuntimeDispatchReason::KeyUp,
+            })
+        })
+}
+
 const WORLD: &str = "world";
 const GAMEPLAY: &str = "gameplay";
 const CASTING: &str = "casting";
@@ -269,6 +299,8 @@ pub struct NativeControls {
     state: SemanticControlState,
     casting: bool,
     sources: KeyboardSources,
+    /// Slot releases not yet drained.
+    releases: Vec<SlotRelease>,
 }
 
 impl Default for NativeControls {
@@ -300,6 +332,7 @@ impl NativeControls {
             state: SemanticControlState::new(),
             casting: false,
             sources: KeyboardSources::default(),
+            releases: Vec::new(),
         }
     }
 
@@ -358,7 +391,8 @@ impl NativeControls {
             .collect()
     }
 
-    /// A key went up. Releases never use an action.
+    /// A key went up. Releases never use an action; a held slot's release is
+    /// queued for [`Self::drain_releases`].
     pub fn key_up(&mut self, key: KeyCode) {
         let stroke = self.sources.up(key);
         let decisions = self.runtime.input_up(&stroke, NO_CLOCK_MS);
@@ -399,7 +433,13 @@ impl NativeControls {
         self.state.axis("move.descend", "move.jump")
     }
 
+    /// The slot releases since the last drain, in order: key-ups and retirements.
+    pub fn drain_releases(&mut self) -> Vec<SlotRelease> {
+        std::mem::take(&mut self.releases)
+    }
+
     fn apply(&mut self, decisions: &[RuntimeDecision]) {
+        self.releases.extend(slot_releases(decisions));
         self.state.apply_decisions(decisions);
     }
 }

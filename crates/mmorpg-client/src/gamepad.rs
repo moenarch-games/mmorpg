@@ -23,7 +23,7 @@
 //! `gamepadStrokeActive`. The right stick orbits the presentation camera with
 //! an analog rate. Nothing here knows gameplay rules: actions become the same
 //! intents as their keys.
-use crate::controls::Panel;
+use crate::controls::{Panel, SlotRelease, slot_releases};
 use input_bindings_core::{
     ActionDefinition, ActionRegistry, AxisDirection, Binding, ContextLayer, DeviceClass,
     DeviceStroke, InputRuntime, InputRuntimeOptions, InputStroke, Provenance, RepeatPolicy,
@@ -347,6 +347,8 @@ pub struct PadControls {
     panels: bool,
     settings: bool,
     inactive: bool,
+    /// Slot releases not yet drained.
+    releases: Vec<SlotRelease>,
 }
 
 impl Default for PadControls {
@@ -388,6 +390,7 @@ impl PadControls {
             panels: false,
             settings: false,
             inactive: false,
+            releases: Vec::new(),
         }
     }
 
@@ -402,6 +405,8 @@ impl PadControls {
     pub fn set_profile(&mut self, profile: input_bindings_core::Profile) -> Result<(), String> {
         crate::bindings::validate_profile(&profile)?;
         let decision = self.runtime.update_profile(Some(profile));
+        self.releases
+            .extend(slot_releases(std::slice::from_ref(&decision)));
         self.state.apply_decisions(&[decision]);
         self.state.drain_presses();
         // Await physical release before admitting a held control under its new mapping.
@@ -474,6 +479,7 @@ impl PadControls {
     /// resumes under the new contexts; a still-held button stays latched
     /// until released, so it never fires twice.
     fn settle(&mut self, decisions: &[RuntimeDecision]) {
+        self.releases.extend(slot_releases(decisions));
         self.state.apply_decisions(decisions);
         self.state.drain_presses();
         for (stroke, active) in &mut self.triggers {
@@ -496,7 +502,8 @@ impl PadControls {
     }
 
     /// Samples every connected pad once and returns the presses dispatched,
-    /// in order. Releases never act.
+    /// in order. Releases never act; a held slot's release is queued for
+    /// [`Self::drain_releases`].
     pub fn sample(&mut self, pads: &[PadState]) -> Vec<PadAction> {
         let mut decisions = Vec::new();
         for (stroke, active) in &mut self.triggers {
@@ -508,6 +515,7 @@ impl PadControls {
             }
             *active = next;
         }
+        self.releases.extend(slot_releases(&decisions));
         self.state.apply_decisions(&decisions);
         let catalog = catalog();
         self.state
@@ -520,6 +528,11 @@ impl PadControls {
                     .and_then(|(.., action)| *action)
             })
             .collect()
+    }
+
+    /// The slot releases since the last drain, in order: button-ups and retirements.
+    pub fn drain_releases(&mut self) -> Vec<SlotRelease> {
+        std::mem::take(&mut self.releases)
     }
 
     /// Whether the pad holds the shield guard (left trigger).

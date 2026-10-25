@@ -631,6 +631,26 @@ impl App {
         }
     }
 
+    /// Sends each held slot's key or button release (#485), as the browser does on key-up:
+    /// the zone reads it only for an experimental graph's hold-to-charge and chord triggers.
+    /// A retirement (focus loss, a context or profile change) is sent as retired, so a held
+    /// charge never acts on it.
+    fn send_slot_releases(&mut self) {
+        let releases = self.controls.drain_releases();
+        let pad_releases = self.pad.drain_releases();
+        for release in releases.into_iter().chain(pad_releases) {
+            let ability = usize::from(release.slot)
+                .checked_sub(1)
+                .and_then(|index| self.abilities.get(index));
+            if let Some(&ability) = ability {
+                self.input.send_modify(|input| {
+                    input.ability_release = (ability, release.retired);
+                    input.ability_releases = input.ability_releases.wrapping_add(1);
+                });
+            }
+        }
+    }
+
     fn send_interaction(&mut self, command: mmorpg_core::ZoneCommand) {
         self.input.send_modify(|input| {
             input.interaction = Some(command);
@@ -966,6 +986,7 @@ impl ApplicationHandler for App {
                 }
                 self.pad.retire("focusLost");
                 self.controls.focus_lost();
+                self.send_slot_releases();
                 self.retire_pointer();
                 self.update_movement();
             }
@@ -1159,6 +1180,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 self.poll_pads(now);
+                self.send_slot_releases();
                 // While choosing, the viewer turns on the turntable facing the camera.
                 let preview = self.choosing.then(|| {
                     let preview = self.ui.preview();
