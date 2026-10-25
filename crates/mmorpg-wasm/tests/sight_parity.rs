@@ -1,10 +1,11 @@
 //! Native-vs-browser line-of-sight parity (#57): the local zone host plays one scripted
 //! Greyhaven session (an arcanist targets a crate and casts Firebolt in the open, then again
-//! from behind the inn, refused for line of sight) and digests every projection it publishes. This native run records the digest in
-//! `fixtures/parity/greyhaven-sight-session.txt`; `web/tests/sight-parity.test.ts` plays the
-//! same script on the WASM build and must reach the same digest, so the authoritative sight
-//! decisions (and everything else the session projects but broken props' debris) agree across
-//! targets.
+//! from behind the inn, refused for line of sight) and digests every projection it publishes.
+//! Natively, two runs must reach the same digest. `web/tests/sight-parity.test.ts` runs this
+//! test with [`DIGEST_OUT`] set, plays the same script on the WASM build in the same run and
+//! must reach the digest written there, so the authoritative sight decisions (and everything
+//! else the session projects but broken props' debris) agree across targets. No digest is
+//! committed: it would move with every content or wire change (#487).
 
 use std::collections::BTreeMap;
 
@@ -27,6 +28,8 @@ const TARGETS: [(u64, u32); 2] = [(4, 901), (342, 900)];
 const CASTS: [u64; 3] = [162, 344, 380];
 const FIREBOLT: u8 = 9;
 const TICKS: u64 = 400;
+/// When set, the path this test writes the native digest to (16 hex digits and a newline).
+const DIGEST_OUT: &str = "MMORPG_SIGHT_DIGEST_OUT";
 
 #[derive(Default)]
 struct Memory(BTreeMap<String, Vec<u8>>);
@@ -51,7 +54,26 @@ fn fnv(hash: u64, bytes: &[u8]) -> u64 {
 }
 
 #[test]
-fn the_sight_session_digest_is_recorded_for_the_browser_build() {
+fn the_sight_session_digest_is_deterministic_and_handed_to_the_browser_build() {
+    let digest = sight_session();
+    assert_eq!(
+        digest,
+        sight_session(),
+        "two native runs digest differently"
+    );
+    if let Some(path) = std::env::var_os(DIGEST_OUT) {
+        std::fs::write(&path, format!("{digest:016x}\n")).unwrap_or_else(|error| {
+            panic!(
+                "cannot write {}: {error}",
+                std::path::Path::new(&path).display()
+            )
+        });
+    }
+}
+
+/// Plays the script once and digests every projection, failing unless the session exercises
+/// both sight decisions.
+fn sight_session() -> u64 {
     let mut host = LocalZoneHost::new().unwrap();
     let mut store = mmorpg_characters::CharacterStore::new(Memory::default());
     let player = host
@@ -128,9 +150,5 @@ fn the_sight_session_digest_is_recorded_for_the_browser_build() {
         refused > 0 && started > 0,
         "refused {refused}, started {started}"
     );
-    let recorded = mmorpg_core::golden::golden(
-        mmorpg_core::golden::workspace_root().join("fixtures/parity/greyhaven-sight-session.txt"),
-        &format!("{digest:016x}\n"),
-    );
-    assert_eq!(format!("{digest:016x}\n"), recorded);
+    digest
 }

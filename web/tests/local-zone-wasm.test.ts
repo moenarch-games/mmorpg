@@ -21,6 +21,7 @@ import { immediate, worldSourceContract } from "./support/world-source-contract"
 const wasm = await localZoneModule();
 /** The hosted content revision: a content hash that changes with the content by itself. */
 const HOSTED_REVISION = (new wasm.LocalZone() as { contentRevision(): bigint }).contentRevision();
+const PRESENTATION_FINGERPRINT = readFileSync(new URL("../../fixtures/scenery/presentation-fingerprint.txt", import.meta.url), "utf8").trim();
 const TICK_SECONDS = 1 / TICK_HZ;
 const EAST = 16_384;
 /** `RUN_SPEED_UNITS_PER_SECOND` (6.3 m/s) per tick. */
@@ -463,7 +464,8 @@ describe("WASM local zone host", () => {
     const actual = provider.scenery.props.filter((prop) => prop.kind === "grass-tuft" && prop.position[0] >= -3500 && prop.position[0] <= 3500 && prop.position[2] >= -1300 && prop.position[2] <= 5300);
     expect(actual).toEqual(expected);
     expect(actual.length).toBe(55);
-    expect(provider.scenery.presentationFingerprint).toBe("1421679c03421021");
+    // The golden fingerprint `crates/mmorpg-wasm/src/scenery.rs` records (MMORPG_UPDATE_FIXTURES=1).
+    expect(provider.scenery.presentationFingerprint).toBe(PRESENTATION_FINGERPRINT);
     expect(provider.scenery.contentRevision).toBe(HOSTED_REVISION);
   });
 

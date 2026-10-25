@@ -245,10 +245,15 @@ pub(crate) fn export(
 }
 
 /// Hash every exported field at the client's actual sample resolutions.
-/// The fingerprint's own field is empty during hashing, avoiding recursion.
+/// The fingerprint's own field is empty during hashing, avoiding recursion, and
+/// so is the content revision: it is gameplay identity, carried and checked on
+/// its own, and content edits that leave the presentation unchanged must not
+/// move the fingerprint (#487).
 fn refresh_presentation_fingerprint(export: &mut SceneryExport) {
     export.presentation_fingerprint.clear();
+    let revision = std::mem::take(&mut export.content_revision);
     let bytes = serde_json::to_vec(export).expect("scenery export is plain serializable data");
+    export.content_revision = revision;
     let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
     });
@@ -480,6 +485,15 @@ mod tests {
             repeated.presentation_fingerprint,
             original.presentation_fingerprint
         );
+        // A content edit alone keeps the fingerprint and the exported revision.
+        let mut revised = original.clone();
+        revised.content_revision = "1".to_owned();
+        refresh_presentation_fingerprint(&mut revised);
+        assert_eq!(
+            revised.presentation_fingerprint,
+            original.presentation_fingerprint
+        );
+        assert_eq!(revised.content_revision, "1");
     }
 
     #[test]
@@ -502,7 +516,18 @@ mod tests {
             value["contentRevision"],
             crate::host::hosted_content().revision().to_string()
         );
-        assert_eq!(value["presentationFingerprint"], "1421679c03421021");
+        // The golden fingerprint, shared with `web/tests/local-zone-wasm.test.ts`.
+        let fingerprint = value["presentationFingerprint"].as_str().unwrap();
+        let recorded = mmorpg_core::golden::golden(
+            mmorpg_core::golden::workspace_root()
+                .join("fixtures/scenery/presentation-fingerprint.txt"),
+            &format!("{fingerprint}\n"),
+        );
+        assert_eq!(
+            fingerprint,
+            recorded.trim(),
+            "scenery export changed; rerun with MMORPG_UPDATE_FIXTURES=1 to record it"
+        );
         assert_eq!(value["unitsPerMetre"], 100);
         assert_eq!(value["playerHalfExtents"], serde_json::json!([30, 90, 30]));
         let names: Vec<_> = value["areas"]

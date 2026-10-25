@@ -16,6 +16,7 @@ on:
       - "web/**"
       - "content/**"
       - "fixtures/protocol/**"
+      - "fixtures/scenery/**"
       - "crates/mmorpg-core/**"
       - "crates/mmorpg-protocol/**"
       - "crates/mmorpg-wasm/**"

@@ -27,5 +27,5 @@ Fixtures are unversioned (`fixtures/protocol/commands.hex`, `player-snapshot.hex
 
 - Parallel PRs either merge cleanly or conflict textually on the protocol ID line. They never combine silently.
 - Any content change invalidates checkpoints and saved browser worlds, as revision bumps already did, and it cannot be forgotten.
-- Pinned values that include the content hash still move with content, as they did with every revision bump: the scenery `STABLE_HASH` and presentation fingerprint tests, and seed-dependent goldens.
+- Pinned values that include the content hash still move with content, as they did with every revision bump: seed-dependent goldens. The scenery stable hash and presentation fingerprint leave the content revision out since #487, and `scripts/rerecord.sh` re-records every golden in one step.
 - Zoo follows the same rule (`docs/decisions/merge-safe-format-identities.md` there).

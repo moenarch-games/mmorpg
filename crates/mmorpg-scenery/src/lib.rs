@@ -794,11 +794,12 @@ impl Scenery {
 
     /// FNV-1a over every prop, road, water body and coarse samples of the
     /// terrain grid and the far ring: equal on every platform for the same
-    /// content revision.
+    /// scenery. It leaves out `content_revision`, so item, ability or quest
+    /// edits that leave the vale unchanged do not move it (#487); callers
+    /// check the revision on its own.
     #[must_use]
     pub fn stable_hash(&self) -> u64 {
         let mut hash = Fnv::default();
-        hash.write(&self.content_revision.to_be_bytes());
         for prop in &self.props {
             hash.write(&kind_code(prop.kind));
             for value in prop.position.iter().chain(&prop.half_extents) {

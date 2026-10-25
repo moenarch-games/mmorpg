@@ -1,14 +1,45 @@
 // Native-vs-browser line-of-sight parity (#57): the WASM build plays the same scripted
 // Greyhaven session as `crates/mmorpg-wasm/tests/sight_parity.rs` and must digest the same
-// projection bytes the native build recorded in `fixtures/parity/greyhaven-sight-session.txt`.
+// projection bytes. The native digest is computed in this run, by running that Rust test with
+// `MMORPG_SIGHT_DIGEST_OUT`, never read from a committed file (#487).
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { encodeCommand, type WorldCommand } from "../src/command-wire";
 import { decodeSnapshot } from "../src/replication";
 import { testCharacters } from "./support/local-characters";
 import { localZoneModule } from "./support/local-zone-module";
 
 const wasm = await localZoneModule();
+const nativeDigest = runNativeSession();
+
+/** Runs the native sight session and returns its digest (16 hex digits). */
+function runNativeSession(): string {
+  const directory = mkdtempSync(join(tmpdir(), "mmorpg-sight-"));
+  const out = join(directory, "digest.txt");
+  try {
+    const result = spawnSync(
+      "cargo",
+      ["test", "--locked", "-p", "mmorpg-wasm", "--test", "sight_parity", "--", "--exact",
+        "the_sight_session_digest_is_deterministic_and_handed_to_the_browser_build"],
+      {
+        cwd: fileURLToPath(new URL("../..", import.meta.url)),
+        env: { ...process.env, MMORPG_SIGHT_DIGEST_OUT: out },
+        stdio: ["ignore", "ignore", "inherit"],
+        timeout: 20 * 60 * 1000,
+      },
+    );
+    if (result.error || result.status !== 0) {
+      throw new Error(`The native sight session failed: ${result.error?.message ?? `exit status ${result.status}`}.`);
+    }
+    return readFileSync(out, "utf8").trim();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
 
 const MOVES = new Map<number, [number, number]>([[0, [1, 24_576]], [160, [0, 24_576]], [290, [1, 24_576]], [340, [0, 24_576]]]);
 const TARGETS = new Map<number, number>([[4, 901], [342, 900]]);
@@ -58,6 +89,6 @@ test("the WASM build reaches the native sight session digest", () => {
     refused += snapshot.events.filter((event) => event.kind === "error" && event.code === "line-of-sight").length;
   }
   expect(refused).toBeGreaterThan(0);
-  const recorded = readFileSync(new URL("../../fixtures/parity/greyhaven-sight-session.txt", import.meta.url), "utf8").trim();
-  expect(digest.toString(16).padStart(16, "0")).toBe(recorded);
+  expect(nativeDigest).toMatch(/^[0-9a-f]{16}$/);
+  expect(digest.toString(16).padStart(16, "0")).toBe(nativeDigest);
 });

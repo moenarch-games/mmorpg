@@ -122,7 +122,7 @@ jobs:
                       selected = not negative
               return selected
 
-          specs = {'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
+          specs = {'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/**', 'fixtures/scenery/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
           pr = os.environ["GITHUB_EVENT_NAME"] in ("pull_request", "merge_group")
           event = json.loads(os.environ.get("PR_EVENT", "{}"))
           paths = []
