@@ -52,7 +52,7 @@ export function groundBiomes(grid: TerrainGrid, biomeNames: ReadonlyMap<number, 
  * the player's arrow in the middle and other units as dots.
  */
 export type MinimapLayers = {
-  /** The mapped rectangle's north-west (min X, min Z) and south-east corners in metres: the Vale and the farmland beyond it (#424). */
+  /** The mapped rectangle's north-west (min X, min Z) and south-east corners in metres: the Vale, the farmland south of it (#424) and the highlands north of it (#425). */
   min: readonly [number, number];
   max: readonly [number, number];
   pixelsPerMetre: number;
@@ -66,8 +66,8 @@ export type MinimapLayers = {
   trees: { center: readonly [number, number]; radius: number; color: Color }[];
 };
 
-/** The playable rectangle and 4 m beyond its walls: Greyhaven Vale and Farmland and Hamlets south of it (#424). */
-export const MINIMAP_BOUNDS_METRES = { min: [-212, -212], max: [212, 644] } as const;
+/** The playable rectangle and 4 m beyond its walls: Greyhaven Vale, Farmland and Hamlets south of it (#424) and the Bandit Highlands north of it (#425). */
+export const MINIMAP_BOUNDS_METRES = { min: [-212, -636], max: [212, 644] } as const;
 const PIXELS_PER_METRE = 2;
 /** Zoom levels: metres from the centre to the minimap's rim. */
 export const MINIMAP_RADII_METRES = [30, 45, 70, 100] as const;

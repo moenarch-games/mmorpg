@@ -3,8 +3,9 @@
 //! NPCs and graveyard of [`units`].
 //!
 //! The Vale spans ±208 m around the origin; south of it, behind a mountain ridge,
-//! the Farmland and Hamlets region of [`farmland`] reaches z = +640 m (#424). Invisible
-//! boundary walls enclose both. Map north is −Z, toward the Redbrand cliffs, matching the
+//! the Farmland and Hamlets region of [`farmland`] reaches z = +640 m (#424), and north of it,
+//! above an escarpment, the Bandit Highlands of [`highlands`] reach z = −632 m (#425).
+//! Invisible boundary walls enclose all three. Map north is −Z, toward the Redbrand cliffs, matching the
 //! layout table in `docs/STARTER_ZONE.md`. The Outpost's valley floor is physically flat (y = 0),
 //! in the basin of [`basin`], below its rim and the outer hills; relief, props
 //! without colliders, water and mountains are presentation owned by
@@ -20,6 +21,7 @@ use crate::{Area, AreaId, Terrain, ZoneAreas};
 pub mod basin;
 pub mod cave;
 pub mod farmland;
+pub mod highlands;
 pub mod inn;
 pub mod layout;
 pub mod quests;
@@ -31,13 +33,14 @@ pub mod units;
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
 /// Gravity in subunits per tick squared, authored as 9 m/s² down.
 pub const GRAVITY: [i32; 3] = crate::STANDARD_GRAVITY;
-/// The inner faces of the boundary walls enclose this rectangle: the Vale and, south of it,
-/// the Farmland and Hamlets region (#424).
+/// The inner faces of the boundary walls enclose this rectangle: the Vale, the Farmland and
+/// Hamlets region south of it (#424) and the Bandit Highlands north of it (#425).
 pub const PLAYABLE_BOUNDS: XzBounds = XzBounds {
-    min: [-20_800, -20_800],
+    min: [-20_800, highlands::BOUNDS.min[1]],
     max: [20_800, farmland::BOUNDS.max[1]],
 };
-/// Greyhaven Vale itself, the square north of the farmland's ridge.
+/// Greyhaven Vale itself, the square between the highlands' escarpment and the farmland's
+/// ridge.
 pub const VALE_BOUNDS: XzBounds = XzBounds {
     min: [-20_800, -20_800],
     max: [20_800, 20_800],
@@ -132,6 +135,20 @@ pub mod ids {
     pub const FARMLAND_BUILDINGS: RangeInclusive<u32> = 6_000..=6_099;
     /// … and the field fences in [`super::farmland::fences`] order.
     pub const FARMLAND_FENCES: RangeInclusive<u32> = 6_100..=6_199;
+
+    /// Bandit Highlands (#425): the structures in [`super::highlands::BUILDINGS`] order …
+    pub const HIGHLAND_BUILDINGS: RangeInclusive<u32> = 6_200..=6_299;
+    /// … and the rock crags in [`super::highlands::CRAGS`] order.
+    pub const HIGHLAND_CRAGS: RangeInclusive<u32> = 6_300..=6_399;
+}
+
+/// The highland structure a collider ID belongs to (#425).
+#[must_use]
+pub fn highland_building(id: u32) -> Option<highlands::Building> {
+    let index = id.checked_sub(*ids::HIGHLAND_BUILDINGS.start())?;
+    highlands::BUILDINGS
+        .get(usize::try_from(index).ok()?)
+        .map(|building| building.0)
 }
 
 /// The farmland building a collider ID belongs to (#424).
@@ -156,10 +173,12 @@ pub const EASTWATER_FEN: AreaId = AreaId::new(9);
 pub const SUNKEN_SHRINE: AreaId = AreaId::new(10);
 /// The first major region beyond the Vale (#424): its ridge and plateau.
 pub const FARMLAND_AND_HAMLETS: AreaId = AreaId::new(11);
+/// The second major region beyond the Vale (#425): its escarpment and high ground.
+pub const BANDIT_HIGHLANDS: AreaId = AreaId::new(12);
 
 /// The subzones as `(id, name, half-open bounds)`, like every other
 /// rectangle in this module. Bounds are disjoint.
-const AREA_TABLE: [(AreaId, &str, XzBounds); 11] = [
+const AREA_TABLE: [(AreaId, &str, XzBounds); 12] = [
     (
         OUTPOST,
         "Greyhaven Outpost",
@@ -246,6 +265,7 @@ const AREA_TABLE: [(AreaId, &str, XzBounds); 11] = [
         "Farmland and Hamlets",
         farmland::BOUNDS,
     ),
+    (BANDIT_HIGHLANDS, "Bandit Highlands", highlands::BOUNDS),
 ];
 
 static AREAS: LazyLock<ZoneAreas> = LazyLock::new(|| {
@@ -282,7 +302,7 @@ pub struct Road {
     pub points: &'static [[i32; 2]],
 }
 
-static ROADS: [Road; 15] = [
+static ROADS: [Road; 18] = [
     Road {
         name: "Hollow Road",
         // Up the Hollow Climb (#423): the ledge under the Hollow's cliff, the landing, the
@@ -416,6 +436,34 @@ static ROADS: [Road; 15] = [
         name: "South Hamlet Lane",
         points: &[[2_800, 54_000], [-8_000, 54_000]],
     },
+    // Bandit Highlands (#425): the pass up the escarpment from the Vale Ring Road, the trail to
+    // the stronghold and the path to the lookout.
+    Road {
+        name: "Highland Pass",
+        points: &[
+            [5_200, -15_000],
+            [5_200, -23_200],
+            [10_400, -23_200],
+            [10_400, -25_600],
+            [3_600, -25_600],
+            [3_600, -27_600],
+        ],
+    },
+    Road {
+        name: "Highland Trail",
+        points: &[
+            [3_600, -27_600],
+            [3_600, -33_000],
+            [-8_000, -38_000],
+            [-8_000, -44_000],
+            [0, -47_000],
+            [0, -53_000],
+        ],
+    },
+    Road {
+        name: "Lookout Path",
+        points: &[[3_600, -33_000], [9_000, -35_000], [12_400, -37_600]],
+    },
 ];
 
 #[must_use]
@@ -533,14 +581,17 @@ static STRUCTURES: [Footprint; 84] = [
 /// The outer valley's ground (#159): a 4 m grid of heights over the playable rectangle and a
 /// little beyond. The original valley stays flat; hills rise across the ring of outer
 /// regions and settle again before the boundary walls. South of them the farmland's ridge and
-/// plateau (#424) continue the grid.
+/// plateau (#424), and north of them the highlands' escarpment and high ground (#425),
+/// continue the grid.
 pub mod terrain {
-    /// The grid's first sample, in units; aligned with the clients' 4 m terrain grid.
-    pub const ORIGIN: [i32; 2] = [-21_200, -21_200];
+    /// The grid's first sample, in units; aligned with the clients' 4 m terrain grid. It lies
+    /// 4 m beyond the highlands' northern wall (#425), exactly 106 rows (one physics ground
+    /// tile) north of the Vale's first row, so the Vale's tile keeps its samples.
+    pub const ORIGIN: [i32; 2] = [-21_200, -63_600];
     pub const STEP: i32 = 400;
     pub const COLUMNS: u16 = 107;
     /// Rows reach 4 m beyond the farmland's southern wall (#424).
-    pub const ROWS: u16 = 215;
+    pub const ROWS: u16 = 321;
     /// Tallest hill (10 m).
     pub const HILL_UNITS: i64 = 1_000;
     /// Hills start beyond this Chebyshev distance from the origin and reach full height at
@@ -642,9 +693,9 @@ pub fn lake_depth(x: i32, z: i32) -> i32 {
 
 /// The ground wherever no cave flattens it: the hills (#159), the basin's terraces and their
 /// ways down (#423), less the lake's basin (#274); the farmland's ridge, notch and plateau
-/// beyond (#424).
+/// (#424) and the highlands' escarpment, pass and high ground (#425) beyond.
 fn open_ground(x: i32, z: i32) -> i32 {
-    if let Some(height) = farmland::height_at(x, z) {
+    if let Some(height) = farmland::height_at(x, z).or_else(|| highlands::height_at(x, z)) {
         return height;
     }
     let hill = hill_height(x, z);
@@ -724,7 +775,7 @@ mod woods {
 
 /// The outer valley's woods (#159): `(origin, cells, seed, percent of cells
 /// with a trunk)` on the same 4.5 m jittered grid as Wolfrun Woods.
-const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 5] = [
+const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 6] = [
     // Hollowpine Reach: dense pines west of Wolfrun Woods.
     ([-20_400, -11_600], [17, 52], 0x484f_4c4c_4f57_5049, 60),
     // Greyfang Ridge and Southmeadow Downs: scattered copses.
@@ -734,6 +785,9 @@ const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 5] = [
     ([12_600, -11_600], [17, 52], 0x4541_5354_5741_5445, 15),
     // Farmland and Hamlets (#424): lone trees between the fields, off the level ground.
     ([-20_400, 25_600], [90, 84], 0x4641_524d_5452_4545, 5),
+    // Bandit Highlands (#425): scattered pines across the high ground, off its level ground
+    // and clear of its crags.
+    ([-20_400, -62_800], [90, 77], 0x4849_4748_5452_4545, 4),
 ];
 
 /// SplitMix64 finaliser: a fixed integer hash, identical on every platform.
@@ -803,7 +857,7 @@ fn trees() -> Vec<StaticCollider> {
                 let z =
                     origin[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
                 // Hamlets, fields and the tower's yard, with their aprons, stay clear (#424).
-                if farmland::level(x, z) {
+                if farmland::level(x, z) || !highlands::clear_for_tree(x, z) {
                     continue;
                 }
                 let half = 30 + jitter(24) % 16;
@@ -974,6 +1028,20 @@ fn colliders() -> Vec<StaticCollider> {
         (*ids::FARMLAND_BUILDINGS.start()..)
             .zip(buildings)
             .chain((*ids::FARMLAND_FENCES.start()..).zip(fences))
+            .map(|(id, (min, max, height))| {
+                let mut collider = standing(id, min, max, height);
+                collider.position[1] += footing(min, max);
+                collider
+            }),
+    );
+    // Bandit Highlands (#425): the stronghold, the lookout and the rock crags.
+    let buildings = highlands::BUILDINGS
+        .iter()
+        .map(|&(_, min, max, height)| (min, max, height));
+    colliders.extend(
+        (*ids::HIGHLAND_BUILDINGS.start()..)
+            .zip(buildings)
+            .chain((*ids::HIGHLAND_CRAGS.start()..).zip(highlands::CRAGS))
             .map(|(id, (min, max, height))| {
                 let mut collider = standing(id, min, max, height);
                 collider.position[1] += footing(min, max);

@@ -41,9 +41,9 @@ use serde::Serialize;
 pub const SCENERY_FORMAT: &str = "mmorpg.scenery";
 /// Where this export's props and terrain come from.
 pub const SCENERY_SOURCE: &str = "mmorpg-scenery";
-/// Terrain sample spacing: 4 m, 141 × 251 samples over [`mmorpg_scenery::TERRAIN_BOUNDS`].
+/// Terrain sample spacing: 4 m, 141 × 361 samples over [`mmorpg_scenery::TERRAIN_BOUNDS`].
 pub const TERRAIN_STEP_UNITS: i32 = 400;
-/// Far ring sample spacing: 20 m, 61 × 83 samples over [`mmorpg_scenery::FAR_TERRAIN_BOUNDS`].
+/// Far ring sample spacing: 20 m, 61 × 105 samples over [`mmorpg_scenery::FAR_TERRAIN_BOUNDS`].
 pub const FAR_TERRAIN_STEP_UNITS: i32 = 2_000;
 
 #[derive(Clone, Debug, Serialize)]
@@ -422,7 +422,7 @@ mod tests {
         let export = hosted_export();
         let terrain = &export.terrain;
         assert_samples_relief(terrain, TERRAIN_STEP_UNITS, TERRAIN_BOUNDS);
-        assert_eq!((terrain.columns, terrain.rows), (141, 251));
+        assert_eq!((terrain.columns, terrain.rows), (141, 361));
         let biome_ids: Vec<u8> = export.biomes.iter().map(|biome| biome.id).collect();
         assert!(terrain.biomes.iter().all(|id| biome_ids.contains(id)));
         assert!(
@@ -447,7 +447,7 @@ mod tests {
         let export = hosted_export();
         let far = &export.far_terrain;
         assert_samples_relief(far, FAR_TERRAIN_STEP_UNITS, FAR_TERRAIN_BOUNDS);
-        assert_eq!((far.columns, far.rows), (61, 83));
+        assert_eq!((far.columns, far.rows), (61, 105));
         let biome_ids: Vec<u8> = export.biomes.iter().map(|biome| biome.id).collect();
         assert!(far.biomes.iter().all(|id| biome_ids.contains(id)));
         let highest_near = export.terrain.heights.iter().max().unwrap();
@@ -550,7 +550,8 @@ mod tests {
                 "Hollowpine Reach",
                 "Eastwater Fen",
                 "Sunken Shrine",
-                "Farmland and Hamlets"
+                "Farmland and Hamlets",
+                "Bandit Highlands"
             ]
         );
         assert_eq!(

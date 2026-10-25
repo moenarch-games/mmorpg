@@ -325,10 +325,10 @@ fn terrain_grid_samples_relief_and_biomes() {
     let scenery: Scenery = greyhaven_vale_scenery();
     let grid = scenery.terrain_grid(200);
     assert_eq!(grid.step, 200);
-    assert_eq!((grid.columns, grid.rows), (281, 501));
+    assert_eq!((grid.columns, grid.rows), (281, 721));
     assert_eq!(grid.origin, TERRAIN_BOUNDS.min);
-    assert_eq!(grid.heights.len(), 281 * 501);
-    assert_eq!(grid.colors.len(), 281 * 501);
+    assert_eq!(grid.heights.len(), 281 * 721);
+    assert_eq!(grid.colors.len(), 281 * 721);
     for (column, row) in [(0, 0), (100, 100), (37, 158), (200, 200)] {
         let (vertex, _) = grid.vertex(column, row).unwrap();
         assert_eq!(vertex[1], scenery.surface_at(vertex[0], vertex[2]));
@@ -496,13 +496,19 @@ fn prop_counts_stay_within_their_budgets() {
         .count();
     assert_eq!(derived, structures);
     let count = |kind| counts.get(&kind).copied().unwrap_or(0);
-    // The outer valley (#159) and the farmland (#424) add their own grass, flowers and
-    // undergrowth.
-    assert!((4_700..=5_300).contains(&count(PropKind::GrassTuft)));
+    // The outer valley (#159), the farmland (#424) and the highlands (#425) add their own grass,
+    // flowers and undergrowth.
+    assert!(
+        (5_400..=6_000).contains(&count(PropKind::GrassTuft)),
+        "{counts:?}"
+    );
     assert!((1_300..=1_600).contains(&count(PropKind::Flowers)));
-    assert!((370..=440).contains(&count(PropKind::Bush)));
+    assert!((530..=600).contains(&count(PropKind::Bush)), "{counts:?}");
     assert!((100..=140).contains(&count(PropKind::Reeds)));
-    assert!((600..=700).contains(&background_trees));
+    assert!(
+        (600..=700).contains(&background_trees),
+        "{background_trees}"
+    );
     // Millbrook's 13 rows, then 14 in each of the farmland's eleven fields.
     assert_eq!(count(PropKind::CropRow), 13 + 11 * 14);
     assert_eq!(count(PropKind::Lamp), 4);
@@ -511,10 +517,12 @@ fn prop_counts_stay_within_their_budgets() {
     assert_eq!(count(PropKind::Cart), 2);
     assert_eq!(count(PropKind::Dock), 1);
     // The Eastwater watchtower and the Southmeadow ruins join the keep and houses (#159), and
-    // the farmland's tower and hamlet houses join them (#424).
-    assert_eq!(count(PropKind::Keep), 3);
+    // the farmland's tower and hamlet houses join them (#424), and the highlands' stronghold
+    // and lookout towers (#425).
+    assert_eq!(count(PropKind::Keep), 5);
     assert_eq!(count(PropKind::House), 15);
-    assert!(scenery.props.len() <= 10_000, "{}", scenery.props.len());
+    // The highlands (#425) add about a tenth.
+    assert!(scenery.props.len() <= 11_500, "{}", scenery.props.len());
 }
 
 #[test]
@@ -539,7 +547,7 @@ fn prop_kind_names_are_unique_and_cover_every_placed_kind() {
 fn the_far_ring_continues_the_same_relief_into_distant_ranges() {
     let scenery = greyhaven_vale_scenery();
     let far = scenery.far_terrain_grid(2_000);
-    assert_eq!((far.columns, far.rows), (61, 83));
+    assert_eq!((far.columns, far.rows), (61, 105));
     assert_eq!(far.origin, FAR_TERRAIN_BOUNDS.min);
     let near = scenery.terrain_grid(2_000);
     let offset =

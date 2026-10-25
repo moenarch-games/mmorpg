@@ -115,7 +115,7 @@ mod tests {
         let after = greyhaven_vale_scenery();
         // The scenery the relief was accepted against (captured under content
         // revision 4; the hash leaves the revision out).
-        assert_eq!(before.stable_hash(), 0xd73f_f584_a07f_fb16);
+        assert_eq!(before.stable_hash(), 0xba72_7590_98b6_287f);
         assert_eq!(before.props, after.props);
         assert_eq!(before.roads, after.roads);
         assert_eq!(before.water, after.water);

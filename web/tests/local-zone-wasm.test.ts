@@ -432,7 +432,7 @@ describe("WASM local zone host", () => {
     expect(scenery.areaAt(-50_000, -50_000)).toBeNull();
     // Spawn slots are flat; the mountains beyond the walls are not.
     expect(scenery.reliefAt(x, z)).toBe(0);
-    expect(scenery.reliefAt(0, -27_000)).toBeGreaterThan(1_000);
+    expect(scenery.reliefAt(27_000, 0)).toBeGreaterThan(1_000);
     // The keep is its exact collider, and the lake is walkable water.
     const keep = scenery.scenery.props.find((prop) => prop.collider?.id === 100);
     expect(keep?.kind).toBe("keep");
@@ -474,11 +474,11 @@ describe("WASM local zone host", () => {
     const scene = buildSceneryScene(scenery.scenery, scenery.staticScene);
     const modelled = Object.values(scene.stats.props).reduce((sum, count) => sum + (count ?? 0), 0);
     expect(modelled).toBe(scenery.scenery.props.length);
-    // Draw-call and per-frame validation budgets: ~9 500 props merge into about 2 400 batches
-    // across the expanded valley (#159) and the farmland beyond it (#424); distance culling
+    // Draw-call and per-frame validation budgets: ~10 900 props merge into about 3 100 batches
+    // across the expanded valley (#159), the farmland (#424) and the highlands (#425); distance culling
     // keeps far batches out of a frame.
-    expect(scene.stats.staticNodes).toBeLessThanOrEqual(2_600);
-    expect(scene.stats.staticVertices).toBeLessThanOrEqual(340_000);
+    expect(scene.stats.staticNodes).toBeLessThanOrEqual(3_200);
+    expect(scene.stats.staticVertices).toBeLessThanOrEqual(400_000);
     expect(scenery.scenery.props.length).toBeGreaterThan(scene.stats.staticNodes * 3);
     expect(new Set(scene.batches.map((batch) => batch.node.geometry.resourceKey)).size).toBe(scene.batches.length);
     // Terrain and far-ring meshes span the whole vale, so none is ever culled: keep their palette small.

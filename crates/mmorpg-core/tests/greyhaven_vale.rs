@@ -310,7 +310,8 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
             "Hollowpine Reach",
             "Eastwater Fen",
             "Sunken Shrine",
-            "Farmland and Hamlets"
+            "Farmland and Hamlets",
+            "Bandit Highlands"
         ]
     );
     // Area bounds are inclusive; as half-open rectangles they compare with
