@@ -41,9 +41,9 @@ use serde::Serialize;
 pub const SCENERY_FORMAT: &str = "mmorpg.scenery";
 /// Where this export's props and terrain come from.
 pub const SCENERY_SOURCE: &str = "mmorpg-scenery";
-/// Terrain sample spacing: 4 m, 141 × 361 samples over [`mmorpg_scenery::TERRAIN_BOUNDS`].
+/// Terrain sample spacing: 4 m, 251 × 361 samples over [`mmorpg_scenery::TERRAIN_BOUNDS`].
 pub const TERRAIN_STEP_UNITS: i32 = 400;
-/// Far ring sample spacing: 20 m, 61 × 105 samples over [`mmorpg_scenery::FAR_TERRAIN_BOUNDS`].
+/// Far ring sample spacing: 20 m, 83 × 105 samples over [`mmorpg_scenery::FAR_TERRAIN_BOUNDS`].
 pub const FAR_TERRAIN_STEP_UNITS: i32 = 2_000;
 
 #[derive(Clone, Debug, Serialize)]
@@ -422,7 +422,7 @@ mod tests {
         let export = hosted_export();
         let terrain = &export.terrain;
         assert_samples_relief(terrain, TERRAIN_STEP_UNITS, TERRAIN_BOUNDS);
-        assert_eq!((terrain.columns, terrain.rows), (141, 361));
+        assert_eq!((terrain.columns, terrain.rows), (251, 361));
         let biome_ids: Vec<u8> = export.biomes.iter().map(|biome| biome.id).collect();
         assert!(terrain.biomes.iter().all(|id| biome_ids.contains(id)));
         assert!(
@@ -447,7 +447,7 @@ mod tests {
         let export = hosted_export();
         let far = &export.far_terrain;
         assert_samples_relief(far, FAR_TERRAIN_STEP_UNITS, FAR_TERRAIN_BOUNDS);
-        assert_eq!((far.columns, far.rows), (61, 105));
+        assert_eq!((far.columns, far.rows), (83, 105));
         let biome_ids: Vec<u8> = export.biomes.iter().map(|biome| biome.id).collect();
         assert!(far.biomes.iter().all(|id| biome_ids.contains(id)));
         let highest_near = export.terrain.heights.iter().max().unwrap();
@@ -509,7 +509,8 @@ mod tests {
     fn export_is_deterministic_lean_json_with_core_areas_and_roads() {
         let json = hosted_scenery_json();
         assert_eq!(json, serde_json::to_string(&hosted_export()).unwrap());
-        assert!(json.len() < 1_000_000, "{} bytes", json.len());
+        // The wetlands (#426) widen the terrain grid by three quarters.
+        assert!(json.len() < 1_500_000, "{} bytes", json.len());
         let value: Value = serde_json::from_str(json).unwrap();
         assert_eq!(value["format"], SCENERY_FORMAT);
         assert_eq!(value["source"], SCENERY_SOURCE);
@@ -551,7 +552,8 @@ mod tests {
                 "Eastwater Fen",
                 "Sunken Shrine",
                 "Farmland and Hamlets",
-                "Bandit Highlands"
+                "Bandit Highlands",
+                "Marsh-Lake Wetlands"
             ]
         );
         assert_eq!(
@@ -563,12 +565,20 @@ mod tests {
         assert_eq!(value["propKinds"][13], "tree-pine");
         assert_eq!(value["biomes"][6]["name"], "plaza");
         assert_eq!(value["biomes"][6]["color"], "#96886e");
+        // Stillwater Lake, then the wetlands' lake and pools (#426).
         assert_eq!(
-            value["water"],
-            serde_json::json!([
+            value["water"][0],
+            serde_json::json!(
                 { "centerXz": [5_500, -5_500], "radiiXz": [2_200, 1_600], "surfaceY": 1_115 }
-            ])
+            )
         );
+        assert_eq!(
+            value["water"][1],
+            serde_json::json!(
+                { "centerXz": [46_000, -2_000], "radiiXz": [10_000, 8_000], "surfaceY": 415 }
+            )
+        );
+        assert_eq!(value["water"].as_array().map(Vec::len), Some(6));
         assert_eq!(value["roads"][0]["name"], "Hollow Road");
         assert_eq!(value["roads"][0]["halfWidth"], 150);
         assert_eq!(

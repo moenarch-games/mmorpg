@@ -4,8 +4,10 @@
 //!
 //! The Vale spans ±208 m around the origin; south of it, behind a mountain ridge,
 //! the Farmland and Hamlets region of [`farmland`] reaches z = +640 m (#424), and north of it,
-//! above an escarpment, the Bandit Highlands of [`highlands`] reach z = −632 m (#425).
-//! Invisible boundary walls enclose all three. Map north is −Z, toward the Redbrand cliffs, matching the
+//! above an escarpment, the Bandit Highlands of [`highlands`] reach z = −632 m (#425); east of
+//! it, beyond a second ridge, the Marsh-Lake Wetlands of [`marsh`] reach x = +632 m (#426).
+//! Invisible boundary walls enclose all four ([`WALLED`]). Map north is −Z, toward the Redbrand
+//! cliffs, matching the
 //! layout table in `docs/STARTER_ZONE.md`. The Outpost's valley floor is physically flat (y = 0),
 //! in the basin of [`basin`], below its rim and the outer hills; relief, props
 //! without colliders, water and mountains are presentation owned by
@@ -24,6 +26,7 @@ pub mod farmland;
 pub mod highlands;
 pub mod inn;
 pub mod layout;
+pub mod marsh;
 pub mod quests;
 pub mod shrine;
 pub mod units;
@@ -33,12 +36,45 @@ pub mod units;
 pub const RNG_SEED: u64 = 0x3cbc_808b_be89_b29c;
 /// Gravity in subunits per tick squared, authored as 9 m/s² down.
 pub const GRAVITY: [i32; 3] = crate::STANDARD_GRAVITY;
-/// The inner faces of the boundary walls enclose this rectangle: the Vale, the Farmland and
-/// Hamlets region south of it (#424) and the Bandit Highlands north of it (#425).
+/// The rectangle round everything the boundary walls enclose: the Vale, the Farmland and
+/// Hamlets region south of it (#424), the Bandit Highlands north of it (#425) and the
+/// Marsh-Lake Wetlands east of it (#426). Its corners beyond the farmland and the highlands lie
+/// outside the walls ([`WALLED`]).
 pub const PLAYABLE_BOUNDS: XzBounds = XzBounds {
     min: [-20_800, highlands::BOUNDS.min[1]],
-    max: [20_800, farmland::BOUNDS.max[1]],
+    max: [marsh::BOUNDS.max[0], farmland::BOUNDS.max[1]],
 };
+/// The inner faces of the boundary walls enclose these rectangles: the column of the
+/// highlands, the Vale and the farmland, and the wetlands east of the Vale (#426).
+pub const WALLED: [XzBounds; 2] = [
+    XzBounds {
+        min: [-20_800, highlands::BOUNDS.min[1]],
+        max: [20_800, farmland::BOUNDS.max[1]],
+    },
+    marsh::BOUNDS,
+];
+
+/// Chebyshev distance (units) from `(x, z)` to the walled ground ([`WALLED`]): positive
+/// outside the walls, zero or negative inside.
+#[must_use]
+pub fn beyond_walls(x: i32, z: i32) -> i64 {
+    WALLED
+        .iter()
+        .map(|bounds| {
+            let over = |value: i32, low: i32, high: i32| {
+                (i64::from(low) - i64::from(value)).max(i64::from(value) - i64::from(high))
+            };
+            over(x, bounds.min[0], bounds.max[0]).max(over(z, bounds.min[1], bounds.max[1]))
+        })
+        .min()
+        .unwrap_or(i64::MAX)
+}
+
+/// Whether `(x, z)` lies inside the walls (half-open, like every rectangle here).
+#[must_use]
+pub fn inside_walls(x: i32, z: i32) -> bool {
+    WALLED.iter().any(|bounds| bounds.contains(x, z))
+}
 /// Greyhaven Vale itself, the square between the highlands' escarpment and the farmland's
 /// ridge.
 pub const VALE_BOUNDS: XzBounds = XzBounds {
@@ -68,8 +104,9 @@ pub mod ids {
     use std::ops::RangeInclusive;
 
     pub const GROUND: u32 = 1;
-    /// West, east, north (−Z) and south (+Z) walls.
-    pub const BOUNDARY_WALLS: RangeInclusive<u32> = 2..=5;
+    /// West, east, north (−Z) and south (+Z) walls, then the column's eastern walls north and
+    /// south of the wetlands and the wetlands' northern and southern walls (#426).
+    pub const BOUNDARY_WALLS: RangeInclusive<u32> = 2..=9;
 
     pub const KEEP: u32 = 100;
     /// The inn's footprint: a presentation anchor, not a collider (#158).
@@ -140,6 +177,18 @@ pub mod ids {
     pub const HIGHLAND_BUILDINGS: RangeInclusive<u32> = 6_200..=6_299;
     /// … and the rock crags in [`super::highlands::CRAGS`] order.
     pub const HIGHLAND_CRAGS: RangeInclusive<u32> = 6_300..=6_399;
+
+    /// Marsh-Lake Wetlands (#426): the structures in [`super::marsh::BUILDINGS`] order.
+    pub const MARSH_BUILDINGS: RangeInclusive<u32> = 6_400..=6_499;
+}
+
+/// The marsh structure a collider ID belongs to (#426).
+#[must_use]
+pub fn marsh_building(id: u32) -> Option<marsh::Building> {
+    let index = id.checked_sub(*ids::MARSH_BUILDINGS.start())?;
+    marsh::BUILDINGS
+        .get(usize::try_from(index).ok()?)
+        .map(|building| building.0)
 }
 
 /// The highland structure a collider ID belongs to (#425).
@@ -175,10 +224,12 @@ pub const SUNKEN_SHRINE: AreaId = AreaId::new(10);
 pub const FARMLAND_AND_HAMLETS: AreaId = AreaId::new(11);
 /// The second major region beyond the Vale (#425): its escarpment and high ground.
 pub const BANDIT_HIGHLANDS: AreaId = AreaId::new(12);
+/// The third major region beyond the Vale (#426): its ridge and wetlands.
+pub const MARSH_LAKE_WETLANDS: AreaId = AreaId::new(13);
 
 /// The subzones as `(id, name, half-open bounds)`, like every other
 /// rectangle in this module. Bounds are disjoint.
-const AREA_TABLE: [(AreaId, &str, XzBounds); 12] = [
+const AREA_TABLE: [(AreaId, &str, XzBounds); 13] = [
     (
         OUTPOST,
         "Greyhaven Outpost",
@@ -266,6 +317,7 @@ const AREA_TABLE: [(AreaId, &str, XzBounds); 12] = [
         farmland::BOUNDS,
     ),
     (BANDIT_HIGHLANDS, "Bandit Highlands", highlands::BOUNDS),
+    (MARSH_LAKE_WETLANDS, "Marsh-Lake Wetlands", marsh::BOUNDS),
 ];
 
 static AREAS: LazyLock<ZoneAreas> = LazyLock::new(|| {
@@ -302,7 +354,7 @@ pub struct Road {
     pub points: &'static [[i32; 2]],
 }
 
-static ROADS: [Road; 18] = [
+static ROADS: [Road; 23] = [
     Road {
         name: "Hollow Road",
         // Up the Hollow Climb (#423): the ledge under the Hollow's cliff, the landing, the
@@ -464,6 +516,46 @@ static ROADS: [Road; 18] = [
         name: "Lookout Path",
         points: &[[3_600, -33_000], [9_000, -35_000], [12_400, -37_600]],
     },
+    // Marsh-Lake Wetlands (#426): the pass through the ridge from the Vale Ring Road, the trail
+    // to the lake, the causeway to the island and the paths to the pools.
+    Road {
+        name: "Marsh Pass",
+        points: &[
+            [15_000, 4_000],
+            [22_400, 4_000],
+            [22_400, -800],
+            [24_000, -800],
+            [24_000, 2_400],
+            [25_200, 2_400],
+        ],
+    },
+    Road {
+        name: "Marsh Trail",
+        points: &[
+            [25_200, 2_400],
+            [29_000, 2_400],
+            [32_000, 5_600],
+            [34_400, 3_200],
+            [34_400, -2_000],
+        ],
+    },
+    Road {
+        name: "Causeway",
+        points: &[[34_400, -2_000], [44_000, -2_000]],
+    },
+    Road {
+        name: "Reed Path",
+        points: &[
+            [29_000, 2_400],
+            [29_000, -6_000],
+            [34_000, -12_000],
+            [54_000, -12_000],
+        ],
+    },
+    Road {
+        name: "Heron Path",
+        points: &[[32_000, 5_600], [40_000, 9_600], [50_000, 9_600]],
+    },
 ];
 
 #[must_use]
@@ -589,7 +681,9 @@ pub mod terrain {
     /// tile) north of the Vale's first row, so the Vale's tile keeps its samples.
     pub const ORIGIN: [i32; 2] = [-21_200, -63_600];
     pub const STEP: i32 = 400;
-    pub const COLUMNS: u16 = 107;
+    /// Columns reach 4 m beyond the wetlands' eastern wall (#426): exactly 106 more (one
+    /// physics ground tile) than the Vale's, so the Vale's tile keeps its samples.
+    pub const COLUMNS: u16 = 213;
     /// Rows reach 4 m beyond the farmland's southern wall (#424).
     pub const ROWS: u16 = 321;
     /// Tallest hill (10 m).
@@ -695,7 +789,10 @@ pub fn lake_depth(x: i32, z: i32) -> i32 {
 /// ways down (#423), less the lake's basin (#274); the farmland's ridge, notch and plateau
 /// (#424) and the highlands' escarpment, pass and high ground (#425) beyond.
 fn open_ground(x: i32, z: i32) -> i32 {
-    if let Some(height) = farmland::height_at(x, z).or_else(|| highlands::height_at(x, z)) {
+    if let Some(height) = farmland::height_at(x, z)
+        .or_else(|| highlands::height_at(x, z))
+        .or_else(|| marsh::height_at(x, z))
+    {
         return height;
     }
     let hill = hill_height(x, z);
@@ -775,7 +872,7 @@ mod woods {
 
 /// The outer valley's woods (#159): `(origin, cells, seed, percent of cells
 /// with a trunk)` on the same 4.5 m jittered grid as Wolfrun Woods.
-const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 6] = [
+const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 7] = [
     // Hollowpine Reach: dense pines west of Wolfrun Woods.
     ([-20_400, -11_600], [17, 52], 0x484f_4c4c_4f57_5049, 60),
     // Greyfang Ridge and Southmeadow Downs: scattered copses.
@@ -788,6 +885,8 @@ const OUTER_FORESTS: [([i32; 2], [i32; 2], u64, u64); 6] = [
     // Bandit Highlands (#425): scattered pines across the high ground, off its level ground
     // and clear of its crags.
     ([-20_400, -62_800], [90, 77], 0x4849_4748_5452_4545, 4),
+    // Marsh-Lake Wetlands (#426): lone trees across the wetlands, off the water.
+    ([25_600, -20_400], [82, 90], 0x4d41_5253_4854_5245, 3),
 ];
 
 /// SplitMix64 finaliser: a fixed integer hash, identical on every platform.
@@ -857,7 +956,10 @@ fn trees() -> Vec<StaticCollider> {
                 let z =
                     origin[1] + row * woods::CELL + woods::EDGE_MARGIN + jitter(16) % (span + 1);
                 // Hamlets, fields and the tower's yard, with their aprons, stay clear (#424).
-                if farmland::level(x, z) || !highlands::clear_for_tree(x, z) {
+                if farmland::level(x, z)
+                    || !highlands::clear_for_tree(x, z)
+                    || (x >= marsh::BOUNDS.min[0] && !marsh::clear_for_tree(x, z))
+                {
                     continue;
                 }
                 let half = 30 + jitter(24) % 16;
@@ -982,27 +1084,49 @@ fn segments_intersect(a: [i32; 2], b: [i32; 2], c: [i32; 2], d: [i32; 2]) -> boo
 
 /// Ground, boundary walls, authored structures and generated trees.
 fn colliders() -> Vec<StaticCollider> {
-    // The walls' outer faces enclose this rectangle: the Vale and the farmland (#424).
+    // The ground spans the rectangle round the walls' outer faces.
     let min = PLAYABLE_BOUNDS.min.map(|value| value - WALL_THICKNESS);
     let max = PLAYABLE_BOUNDS.max.map(|value| value + WALL_THICKNESS);
     let centre = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2];
     let half = [(max[0] - min[0]) / 2, (max[1] - min[1]) / 2];
-    let wall = |id, position: [i32; 2], half: [i32; 2]| StaticCollider {
+    // A wall over the footprint `[min, max]`.
+    let wall = |id, min: [i32; 2], max: [i32; 2]| StaticCollider {
         id,
-        position: [position[0], WALL_HEIGHT / 2, position[1]],
-        half_extents: [half[0], WALL_HEIGHT / 2, half[1]],
+        position: [
+            (min[0] + max[0]) / 2,
+            WALL_HEIGHT / 2,
+            (min[1] + max[1]) / 2,
+        ],
+        half_extents: [
+            (max[0] - min[0]) / 2,
+            WALL_HEIGHT / 2,
+            (max[1] - min[1]) / 2,
+        ],
     };
-    let thin = WALL_THICKNESS / 2;
+    // The walls close round the column of the highlands, the Vale and the farmland and round
+    // the wetlands east of the Vale (#426).
+    let [column, wetlands] = WALLED;
+    let thick = WALL_THICKNESS;
+    let ([west, north], [east, south]) = (column.min, column.max);
+    let ([_, wet_north], [wet_east, wet_south]) = (wetlands.min, wetlands.max);
     let mut colliders = vec![
         StaticCollider {
             id: ids::GROUND,
             position: [centre[0], -GROUND_THICKNESS / 2, centre[1]],
             half_extents: [half[0], GROUND_THICKNESS / 2, half[1]],
         },
-        wall(2, [min[0] + thin, centre[1]], [thin, half[1]]),
-        wall(3, [max[0] - thin, centre[1]], [thin, half[1]]),
-        wall(4, [centre[0], min[1] + thin], [half[0], thin]),
-        wall(5, [centre[0], max[1] - thin], [half[0], thin]),
+        wall(2, [west - thick, north - thick], [west, south + thick]),
+        wall(
+            3,
+            [wet_east, wet_north - thick],
+            [wet_east + thick, wet_south + thick],
+        ),
+        wall(4, [west - thick, north - thick], [east + thick, north]),
+        wall(5, [west - thick, south], [east + thick, south + thick]),
+        wall(6, [east, north - thick], [east + thick, wet_north]),
+        wall(7, [east, wet_south], [east + thick, south + thick]),
+        wall(8, [east, wet_north - thick], [wet_east + thick, wet_north]),
+        wall(9, [east, wet_south], [wet_east + thick, wet_south + thick]),
     ];
     colliders.extend(STRUCTURES.iter().map(|&(id, min, max, height)| {
         // Structures out on the hills stand on the terrain (#159).
@@ -1048,6 +1172,14 @@ fn colliders() -> Vec<StaticCollider> {
                 collider
             }),
     );
+    // Marsh-Lake Wetlands (#426): the drowned watchtower, its standing stones and the cottage.
+    colliders.extend((*ids::MARSH_BUILDINGS.start()..).zip(marsh::BUILDINGS).map(
+        |(id, (_, min, max, height))| {
+            let mut collider = standing(id, min, max, height);
+            collider.position[1] += footing(min, max);
+            collider
+        },
+    ));
     colliders
 }
 
@@ -1188,7 +1320,12 @@ pub fn content_with_definition(
             .with_ramps(MILL_RAMPS.to_vec())?
             .with_structures(structure_sites(), watch_post())?
             .with_routines(units::routines(), units::closed_at_night())?
-            .with_waters(vec![stillwater_lake(), shrine::cave_water()])?,
+            .with_waters(
+                [stillwater_lake(), shrine::cave_water()]
+                    .into_iter()
+                    .chain(marsh::water_volumes())
+                    .collect(),
+            )?,
     ))
 }
 

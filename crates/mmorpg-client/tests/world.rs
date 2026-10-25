@@ -42,15 +42,23 @@ fn terrain_and_water_are_valid_indexed_meshes() {
     assert_eq!(centre.position[0], 0.0);
     assert_eq!(centre.position[2], 0.0);
     assert_eq!(centre.position[1], scenery.height_at(0, 0) as f32 / 100.0);
-    // The lake surface floats above its flat bed.
-    let lake = scenery.water[0];
-    assert!(
-        world
-            .water
-            .vertices
-            .iter()
-            .all(|vertex| vertex.position[1] == lake.surface as f32 / 100.0)
-    );
+    // Every water body (Stillwater Lake, the wetlands' lake and pools) draws
+    // one fan at its own surface, floating above its flat bed.
+    assert!(scenery.water.len() > 1);
+    assert_eq!(world.water.vertices.len() % scenery.water.len(), 0);
+    let per_body = world.water.vertices.len() / scenery.water.len();
+    for (water, fan) in scenery
+        .water
+        .iter()
+        .zip(world.water.vertices.chunks(per_body))
+    {
+        assert_eq!(fan[0].position[0], water.centre[0] as f32 / 100.0);
+        assert_eq!(fan[0].position[2], water.centre[1] as f32 / 100.0);
+        assert!(
+            fan.iter()
+                .all(|vertex| vertex.position[1] == water.surface as f32 / 100.0)
+        );
+    }
 }
 
 #[test]

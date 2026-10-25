@@ -432,12 +432,14 @@ describe("WASM local zone host", () => {
     expect(scenery.areaAt(-50_000, -50_000)).toBeNull();
     // Spawn slots are flat; the mountains beyond the walls are not.
     expect(scenery.reliefAt(x, z)).toBe(0);
-    expect(scenery.reliefAt(27_000, 0)).toBeGreaterThan(1_000);
+    expect(scenery.reliefAt(-27_000, 0)).toBeGreaterThan(1_000);
     // The keep is its exact collider, and the lake is walkable water.
     const keep = scenery.scenery.props.find((prop) => prop.collider?.id === 100);
     expect(keep?.kind).toBe("keep");
     expect(keep?.collider?.halfExtents).toEqual(keep?.halfExtents);
-    expect(scenery.scenery.water).toEqual([{ centerXz: [5_500, -5_500], radiiXz: [2_200, 1_600], surfaceY: 1_115 }]);
+    // Stillwater Lake, then the wetlands' lake and pools (#426).
+    expect(scenery.scenery.water[0]).toEqual({ centerXz: [5_500, -5_500], radiiXz: [2_200, 1_600], surfaceY: 1_115 });
+    expect(scenery.scenery.water).toHaveLength(6);
     expect(scenery.scenery.roads.map((road) => road.name)).toContain("Hollow Road");
     expect(Math.max(...scenery.scenery.farTerrain.heights)).toBeGreaterThan(Math.max(...scenery.scenery.terrain.heights));
   });
@@ -474,11 +476,11 @@ describe("WASM local zone host", () => {
     const scene = buildSceneryScene(scenery.scenery, scenery.staticScene);
     const modelled = Object.values(scene.stats.props).reduce((sum, count) => sum + (count ?? 0), 0);
     expect(modelled).toBe(scenery.scenery.props.length);
-    // Draw-call and per-frame validation budgets: ~10 900 props merge into about 3 100 batches
-    // across the expanded valley (#159), the farmland (#424) and the highlands (#425); distance culling
+    // Draw-call and per-frame validation budgets: ~12 500 props merge into about 3 600 batches
+    // across the expanded valley (#159), the farmland (#424), the highlands (#425) and the wetlands (#426); distance culling
     // keeps far batches out of a frame.
-    expect(scene.stats.staticNodes).toBeLessThanOrEqual(3_200);
-    expect(scene.stats.staticVertices).toBeLessThanOrEqual(400_000);
+    expect(scene.stats.staticNodes).toBeLessThanOrEqual(3_800);
+    expect(scene.stats.staticVertices).toBeLessThanOrEqual(480_000);
     expect(scenery.scenery.props.length).toBeGreaterThan(scene.stats.staticNodes * 3);
     expect(new Set(scene.batches.map((batch) => batch.node.geometry.resourceKey)).size).toBe(scene.batches.length);
     // Terrain and far-ring meshes span the whole vale, so none is ever culled: keep their palette small.
