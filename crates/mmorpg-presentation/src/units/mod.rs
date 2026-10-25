@@ -16,6 +16,7 @@ pub mod kit;
 pub mod player;
 pub mod presets;
 pub mod sway;
+pub mod swim;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -516,29 +517,23 @@ impl UnitPresenter {
                 // Only the viewer's guard is projected; the shield rises once the zone's guard
                 // protects (#156, #384), not while slash or landing recovery holds it back.
                 let guarding = viewer && snapshot.viewer.guard.protecting;
-                // Swimmers (#274) have no swim clips yet: the in-place fallback (Atlas 6.6.41)
-                // treads with the idle clip and strokes with the walk, never a jump or fall
-                // from ascending or descending. The mode is the zone's, from the projected
-                // position and the content's water volumes.
-                let swimming = matches!(entity, EntityRef::Player(_))
-                    && mmorpg_core::WaterMode::of_player(
-                        self.content.waters(),
-                        unit.record.position,
-                    )
-                    .swims();
-                // Climbers and mantlers (#490) have no climb clips yet (#500): the same in-place
-                // fallback holds on with the idle clip and climbs with the walk, at the speed
-                // they move along the face, facing it (the zone projects the wall's yaw).
-                let traversing = unit.record.flags.traversal != mmorpg_core::TraversalView::Free;
-                let vertical = if swimming || traversing {
-                    0.
+                // Swimmers (#274) wade, tread, stroke, dive and surface with the authored swim
+                // clips and lean into the stroke (Atlas 6.6.41). The mode is the zone's, from the
+                // projected position and the content's water volumes.
+                let water = if matches!(entity, EntityRef::Player(_)) {
+                    mmorpg_core::WaterMode::of_player(self.content.waters(), unit.record.position)
                 } else {
-                    loc.vertical
+                    mmorpg_core::WaterMode::Dry
                 };
-                let speed = if traversing {
-                    loc.forward.hypot(loc.right).hypot(loc.vertical)
+                // Climbers and mantlers (#490) have no climb clips yet (#500): the in-place
+                // fallback holds on with the idle clip and climbs with the walk, at the speed
+                // they move along the face, facing it (the zone projects the wall's yaw), never
+                // a jump or fall from ascending or descending.
+                let traversing = unit.record.flags.traversal != mmorpg_core::TraversalView::Free;
+                let (speed, vertical) = if traversing {
+                    (loc.forward.hypot(loc.right).hypot(loc.vertical), 0.)
                 } else {
-                    loc.forward.hypot(loc.right)
+                    (loc.forward.hypot(loc.right), loc.vertical)
                 };
                 if viewer {
                     let wind_up = self.preparation.map(|preparation| {
@@ -566,7 +561,9 @@ impl UnitPresenter {
                     },
                     imported::Cues {
                         speed,
+                        direction: (-loc.right).atan2(loc.forward),
                         vertical_speed: vertical,
+                        water,
                         dead,
                         guarding,
                         now: seconds,
@@ -584,7 +581,7 @@ impl UnitPresenter {
                     entity,
                     id: id.clone(),
                     kind,
-                    root,
+                    root: swim::lean(root, animation.attitude, f64::from(half[1]) * 2.),
                     height: f64::from(half[1]) * 2.,
                     animation,
                     // Only a companion minion has an imported model (`Kind::of`).

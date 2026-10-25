@@ -68,7 +68,11 @@ struct ImportedEntry {
     entity_kind: &'static str,
     entity_id: u32,
     feet: [f64; 3],
+    /// The drawn body's heading: the unit's yaw turned by its swim attitude (Atlas 6.6.41).
     yaw: f64,
+    /// The swim attitude's forward lean in radians about the turned model's X axis
+    /// the yaw (Euler order `YXZ`); `feet` already holds the chest pivot.
+    pitch: f64,
     height: f64,
     /// The upper body's target clip and time: what the unit is seen doing.
     clip: &'static str,
@@ -370,7 +374,8 @@ impl Units {
                     entity_kind: kind_name(unit.entity.kind()),
                     entity_id: unit.entity.id(),
                     feet: unit.root.p,
-                    yaw,
+                    yaw: yaw + unit.animation.attitude.heading,
+                    pitch: unit.animation.attitude.pitch,
                     height: unit.height,
                     clip: unit.animation.upper.0,
                     time: unit.animation.upper.1,
