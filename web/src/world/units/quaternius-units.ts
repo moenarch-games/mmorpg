@@ -42,6 +42,8 @@ const HAIR_VARIANT = "hair-1";
  */
 type Dress = {
   loadout: Loadout; headwear: Headwear | null; hair: Hair | null; face: FaceChoice | null; resident: string | null;
+  /** A varied resident's look seed (asset-tooling #380), once that look has loaded. */
+  variety: number | null;
   /** A player's class starter outfit (#379), once its preset has loaded. */
   outfit: ClassOutfit | null;
 };
@@ -77,7 +79,11 @@ const ANIMAL_URLS: Readonly<Record<Exclude<QuaterniusKind, "Ranger">, string>> =
 const RANGER_BUNDLE = `${import.meta.env.BASE_URL}characters/humanoid.ranger.male/`;
 
 /** One drawn model of an asset, posed by weighted, masked clip layers (Atlas 6.6.45). */
-type Posable = { model: THREE.Object3D; pose(layers: readonly ClipLayer[]): void; dispose(): void };
+type Posable = {
+  model: THREE.Object3D; pose(layers: readonly ClipLayer[]): void; dispose(): void;
+  /** A varied resident's height factor on the collision-height scale (asset-tooling #380). */
+  scale?: number;
+};
 
 type Asset = {
   /** Clip durations in seconds by name. */
@@ -92,6 +98,12 @@ type Asset = {
    * loading it, and a failed preset stays false (the unit keeps the bundle's default look).
    */
   outfitReady?: (preset: string) => boolean;
+  /**
+   * Whether a varied resident's own look (`preset` varied by `seed`, asset-tooling #380) can be
+   * drawn, Ranger only; the first ask starts building it, and until then (or after it failed) the
+   * resident wears the plain preset.
+   */
+  variedReady?: (preset: string, seed: number) => boolean;
   /** The face features the drawn entry supports (#411); null when it carries no face morphs. */
   face?: FaceLook | null;
   /** Rest (idle at 0) bounds: lowest point, height and horizontal centre, model space. */
@@ -466,9 +478,11 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     }
     return loaded;
   };
+  // Every hairstyle the bundle offers in the tintable variant: the viewer's and the varied residents'.
+  const hairKeys = [...new Set([...Object.values(HAIR_ENTRIES), ...tintableHair(appearance)])];
   const items = new Map(await Promise.all([
     ...keys.map((key) => load(key)),
-    ...Object.values(HAIR_ENTRIES).map((key) => load(key, HAIR_VARIANT)),
+    ...hairKeys.map((key) => load(key, HAIR_VARIANT)),
   ]));
   const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
   /** Dresses `model`: socket items, then the hair tinted with its eyebrows. */
@@ -579,7 +593,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     const { loadout, headwear, hair, face: chosen, resident } = dress;
     if (dress.outfit !== null) { return mixerPosable(dressOutfit(dress.outfit, dress), sources); }
     if (resident !== null) {
-      const preset = residents?.get(resident);
+      const preset = dress.variety !== null ? varied.get(`${resident}#${dress.variety}`) : residents?.get(resident);
       if (!preset) { throw new Error(`The Ranger bundle has no resident preset ${resident}.`); }
       const model = cloneSkinned(preset.character);
       if (preset.face) { applyFace(model, preset.face, preset.choice); }
@@ -598,7 +612,13 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
       const worn = [...(loadout ? LOADOUT_ITEMS[loadout] : []), ...(preset.headwear ? [{ key: preset.headwear, socket: "head.armor" }] : [])];
       wear(model, worn, preset.hair, preset.tint);
       if (preset.faction) { tintMaterials(model, preset.faction.materials, preset.faction.color); }
-      return mixerPosable(model, sources);
+      if (preset.tone) { tintMaterials(model, preset.tone.materials, preset.tone.color); }
+      // Age and build keys (#380) after the face: build targets are on everything worn, age
+      // targets on the head, brows and beards; each mesh takes the targets it has.
+      if (Object.keys(preset.morphs).length > 0) { setMorphs(model, preset.morphs); }
+      const posable = mixerPosable(model, sources);
+      posable.scale = preset.height;
+      return posable;
     }
     const model = cloneSkinned(gltf.scene);
     if (face && chosen) { applyFace(model, face, chosen); }
@@ -620,11 +640,28 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
       .then((looks) => { residents = looks; });
     return pending;
   };
+  /** Varied residents' looks (#380) by `<preset>#<seed>`: a look, or null while building or after failing. */
+  const varied = new Map<string, ResidentLook | null>();
+  const variedReady = (preset: string, seed: number): boolean => {
+    const id = `${preset}#${seed}`;
+    if (varied.has(id)) { return varied.get(id) !== null; }
+    varied.set(id, null);
+    void (async () => {
+      const own = varyPreset(appearance, preset, seed, hairKeys);
+      const looks = await residentLooks({ ...(appearance as object), presets: [{ ...own, id }] }, look, scene);
+      const loaded = looks.get(id);
+      if (!loaded) { throw new Error(`The Ranger bundle has no resident preset ${preset}.`); }
+      varied.set(id, loaded);
+    })().catch((error: unknown) => {
+      console.warn(`The varied look ${id} failed to load; keeping the ${preset} preset.`, error);
+    });
+    return false;
+  };
   const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
-  const probe = instantiate({ loadout: null, headwear: null, hair: null, face: null, resident: null, outfit: null });
+  const probe = instantiate({ loadout: null, headwear: null, hair: null, face: null, resident: null, variety: null, outfit: null });
   const measured = measure(probe, rest);
   probe.dispose();
-  return { clips, motions, instantiate, loadResidents, outfitReady, face, ...measured };
+  return { clips, motions, instantiate, loadResidents, outfitReady, variedReady, face, ...measured };
 }
 
 /** The drop armour outfit's plates by socket (#379), from the bundle's `DROP_ARMOR_OUTFIT`. */
@@ -674,12 +711,99 @@ type ResidentLook = {
   trim: { materials: readonly string[]; color: readonly [number, number, number] } | null;
   /** The glTF nodes of the outfit's own hood garment, if it has one (#379). */
   hood: readonly string[];
+  /** The age and build morph weights (asset-tooling #380), set on every mesh carrying the target. */
+  morphs: Readonly<Record<string, number>>;
+  /** The root scale factor of the preset's height (#380). */
+  height: number;
+  /** The Light skin's skin materials in the preset's tone (linear, #380). */
+  tone: { materials: readonly string[]; color: readonly [number, number, number] } | null;
 };
 
 type PresetValue = {
   id?: unknown; outfit?: unknown; skin?: unknown; hair?: unknown; tint?: unknown; headwear?: unknown;
   facialHair?: unknown; face?: unknown; hiddenArmor?: unknown; faction?: unknown;
+  /** A varied look's `ages`/`builds`/`skinTones` option ids and height (asset-tooling #380). */
+  age?: unknown; build?: unknown; tone?: unknown; height?: unknown;
 };
+type OptionList = { default?: unknown; options?: { id?: unknown; morphs?: unknown }[] };
+type VarietyValue = {
+  presets?: PresetValue[]; outfits?: OutfitValue[]; facialHair?: FacialHairValue;
+  tints?: { id?: unknown }[]; face?: { features?: { id?: unknown; options?: { id?: unknown }[] }[] };
+  ages?: OptionList; builds?: OptionList; heights?: { min?: unknown; max?: unknown };
+  skinTones?: { skin?: unknown; materials?: unknown; tones?: { id?: unknown; baseColorFactor?: unknown }[] };
+};
+
+/** The hair entries the bundle offers in the tintable `HAIR_VARIANT`. */
+function tintableHair(appearance: unknown): string[] {
+  const hair = (appearance as { hair?: { entry?: unknown; textures?: { variant?: unknown }[] }[] }).hair ?? [];
+  return hair.flatMap((style) => (typeof style.entry === "string" && style.textures?.some((texture) => texture.variant === HAIR_VARIANT) ? [style.entry] : []));
+}
+
+/** Sets the `morphs` weights on every mesh of `model` (and its attached items) carrying the target. */
+function setMorphs(model: THREE.Object3D, morphs: Readonly<Record<string, number>>): void {
+  model.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.morphTargetInfluences || !child.morphTargetDictionary) { return; }
+    for (const [target, weight] of Object.entries(morphs)) {
+      const index = child.morphTargetDictionary[target];
+      if (index !== undefined) { child.morphTargetInfluences[index] = weight; }
+    }
+  });
+}
+
+/** A small deterministic generator (mulberry32) over a string seed. */
+function seeded(seed: string): () => number {
+  let state = 2166136261;
+  for (let i = 0; i < seed.length; i++) { state = Math.imul(state ^ seed.charCodeAt(i), 16777619); }
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * A resident's own random-but-fixed variation of the preset `id` (asset-tooling #380: "not every
+ * man the same man with a different costume"): the preset's outfit, headwear, faction and hidden
+ * armour stay, while skin, hairstyle (of `hairStyles`), hair tint (the beards follow it), facial
+ * hair, face features and, where the bundle offers them, age, build, height and skin tone are
+ * drawn from the bundle's `humanoid-appearance` options by `seed`. The same seed always gives the
+ * same man.
+ */
+export function varyPreset(appearance: unknown, id: string, seed: number, hairStyles: readonly string[]): PresetValue {
+  const value = appearance as VarietyValue;
+  const base = value.presets?.find((preset) => preset.id === id);
+  if (!base) { throw new Error(`The Ranger bundle has no resident preset ${id}.`); }
+  const random = seeded(`${id}#${seed}`);
+  const pick = <T>(list: readonly T[]): T | undefined => list[Math.floor(random() * list.length)];
+  const ids = (list: readonly { id?: unknown }[] | undefined): string[] =>
+    (list ?? []).flatMap((item) => (typeof item.id === "string" ? [item.id] : []));
+  const outfit = value.outfits?.find((candidate) => candidate.id === base.outfit);
+  const skin = pick(ids(outfit?.skins?.filter((option) => typeof option.variant === "string"))) ?? base.skin;
+  const beards = ids(value.facialHair?.options);
+  const moustaches = beards.filter((beard) => beard.includes("moustache") || beard.includes("walrus"));
+  const beard = random() < 0.2 ? undefined : pick(beards);
+  const facialHair = beard === undefined ? []
+    : !moustaches.includes(beard) && moustaches.length > 0 && random() < 0.35 ? [beard, pick(moustaches)!] : [beard];
+  const face = Object.fromEntries((value.face?.features ?? []).flatMap((feature) => {
+    const option = pick(ids(feature.options));
+    return typeof feature.id === "string" && option ? [[feature.id, option]] : [];
+  }));
+  const tones = value.skinTones?.skin === skin ? ids(value.skinTones?.tones) : [];
+  const min = Number(value.heights?.min), max = Number(value.heights?.max);
+  return {
+    ...base,
+    skin,
+    hair: base.headwear ? base.hair : pick(hairStyles) ?? base.hair,
+    tint: pick(ids(value.tints)) ?? base.tint,
+    facialHair,
+    face: { ...(base.face as object | undefined), ...face },
+    age: pick(ids(value.ages?.options)),
+    build: pick(ids(value.builds?.options)),
+    tone: pick(tones),
+    height: Number.isFinite(min) && Number.isFinite(max) && max > min ? min + random() * (max - min) : undefined,
+  };
+}
 type OutfitValue = {
   id?: unknown; skins?: { id?: unknown; variant?: unknown }[];
   armor?: { entry?: unknown; pieces?: { node?: unknown; socket?: unknown }[] };
@@ -703,7 +827,7 @@ type FacialHairValue = {
 export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "tints">,
   load: (key: string, variant: string) => Promise<THREE.Object3D>,
   select: (id: string) => boolean = () => true): Promise<Map<string, ResidentLook>> {
-  const value = appearance as { presets?: PresetValue[]; outfits?: OutfitValue[]; facialHair?: FacialHairValue };
+  const value = appearance as VarietyValue;
   const strings = (list: unknown): string[] => (Array.isArray(list) && list.every((item) => typeof item === "string") ? list : []);
   const rgb = (c: unknown): [number, number, number] | null =>
     (Array.isArray(c) && c.length >= 3 ? [Number(c[0]), Number(c[1]), Number(c[2])] : null);
@@ -747,7 +871,17 @@ export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "t
     const trimMaterials = strings(outfit.classTrim?.materials);
     const trimColor = classTrimColor(preset.id);
     const hood = outfit.garments?.find((garment) => garment.id === outfit.hood);
+    const morphsOf = (list: OptionList | undefined, option: unknown): Record<string, number> => {
+      const morphs = list?.options?.find((candidate) => candidate.id === option)?.morphs;
+      return Object.fromEntries(Object.entries((morphs ?? {}) as Record<string, unknown>).map(([target, weight]) => [target, Number(weight)]));
+    };
+    const toneColor = preset.skin === value.skinTones?.skin
+      ? rgb(value.skinTones?.tones?.find((tone) => tone.id === preset.tone)?.baseColorFactor) : null;
+    const toneMaterials = strings(value.skinTones?.materials);
     looks.set(preset.id, {
+      morphs: { ...morphsOf(value.ages, preset.age), ...morphsOf(value.builds, preset.build) },
+      height: typeof preset.height === "number" && Number.isFinite(preset.height) ? preset.height : 1,
+      tone: toneColor && toneMaterials.length > 0 ? { materials: toneMaterials, color: toneColor } : null,
       character,
       face: faceLookOf(appearance, variant, character),
       choice: Object.fromEntries(Object.entries((preset.face ?? {}) as Record<string, unknown>).map(([feature, option]) => [feature, String(option)])),
@@ -864,6 +998,8 @@ export class QuaterniusUnits {
       const outfit = unit.kind === "Ranger" && unit.outfit && asset.outfitReady?.(unit.outfit.preset) ? unit.outfit : null;      const dress: Dress = {
         loadout: unit.loadout, headwear: dressed ? viewer.headwear : null, hair: dressed ? viewer.hair : null,
         face: dressed ? viewer.face : null, resident, outfit,
+        // Until a guard's own look has built, he wears the plain preset.
+        variety: resident !== null && unit.variety !== null && asset.variedReady?.(resident, unit.variety) ? unit.variety : null,
       };
       if (instance && (instance.kind !== unit.kind || instance.dress !== dressKey(dress))) {
         this.#drop(unit.id, instance);
@@ -923,7 +1059,7 @@ export class QuaterniusUnits {
     const { root } = instance;
     root.position.set(unit.feet[0], unit.feet[1], unit.feet[2]);
     root.rotation.set(0, unit.yaw, 0);
-    root.scale.setScalar(unit.heightMetres / asset.height);
+    root.scale.setScalar((unit.heightMetres / asset.height) * (instance.posable.scale ?? 1));
   }
 
   #drop(id: string, instance: Instance): void {

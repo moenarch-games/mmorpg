@@ -23,6 +23,8 @@ With a running server and the existing Playwright setup, check that same example
 
 The production loader uses Three.js `GLTFLoader`, `MeshoptDecoder`, `KTX2Loader`, `SkeletonUtils.clone` and `AnimationMixer`. KTX2 support is detected against the actual renderer that draws the scene. Vite copies the Basis JS/WASM transcoder from the pinned Three.js package. Relative glTF resources remain beside the index. The animation-only GLB is loaded once; its tracks bind to each cloned character's named joints.
 
+The named Greyhaven residents wear their authored `humanoid-appearance` presets (#418). The four Greyhaven Guards share `resident.guard`, but each guard wears his own look that stays the same between frames and sessions (asset-tooling #380). The shared presenter marks them `Resident::varied` and seeds each look with the guard's NPC id. `varyPreset` in `quaternius-units.ts` keeps the preset's uniform, faction colour and sword, and draws the rest from the bundle's own options: skin, hairstyle, hair tint (the beard and brows take the same tint), facial hair and face features. It also picks an age, a build, a height and a skin tone when the bundle offers `ages`, `builds`, `heights` and `skinTones`. Acquisition therefore fetches the uniform in both skins and every hairstyle's tintable `hair-1` variant. A guard wears the plain preset until his own look has loaded, or if it fails to load. The painted age head skins (`headSkins`) are not applied yet.
+
 ## Native
 
 After acquisition, explicitly prepare the compatible native input:

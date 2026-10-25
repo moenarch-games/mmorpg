@@ -196,6 +196,14 @@ impl Resident {
         }
     }
 
+    /// Whether the NPCs sharing this preset each wear their own fixed variation of it
+    /// (asset-tooling #380): the guards are different men in the same uniform, while the named
+    /// residents keep their authored looks.
+    #[must_use]
+    pub const fn varied(self) -> bool {
+        matches!(self, Self::Guard)
+    }
+
     /// What the resident carries: the guards keep their sword.
     #[must_use]
     pub const fn loadout(self) -> Option<Loadout> {

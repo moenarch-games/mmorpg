@@ -11,8 +11,7 @@ DEST = ROOT / "web/public/characters/humanoid.ranger.male"
 RELEASE = "humanoid-ranger-male"
 URL = f"https://github.com/moritzbrantner/asset-tooling/releases/download/{RELEASE}/"
 # Selected entries by key and variants: the default character and equipment, the class weapons
-# (asset-tooling #375) and props (#379), the hairstyles' tintable `hair-1` texture variant (#376),
-# the Greyhaven residents' outfit variants, armour, straw hat and beards (#418) and the class
+# (asset-tooling #375) and props (#379), the Greyhaven residents' outfit variants, armour, straw hat and beards (#418) and the class
 # starter outfits' armour (#379).
 CLASSES = ("warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid")
 SELECTED = {key: {"default"} for key in (
@@ -21,14 +20,24 @@ SELECTED = {key: {"default"} for key in (
     "equipment.staff.bone", "equipment.staff.crystal", "equipment.staff.gnarled", "equipment.book.tome",
     "equipment.mace.flanged", "equipment.hat.straw", "facial-hair.beards", "armor.knight", "armor.soldier",
     "armor.farmer", "armor.innkeeper", "armor.monk", *(f"armor.class.{name}" for name in CLASSES))}
-SELECTED.update({key: {"hair-1"} for key in ("hair.buzzed", "hair.simple-parted", "hair.long")})
-# The full-detail outfit variant of each resident and class preset's outfit and skin.
-SELECTED["humanoid.ranger.male"] |= {"outfit.knight.skin.light", "outfit.soldier", "outfit.innkeeper.skin.light",
+# The full-detail outfit variant of each resident and class preset's outfit and skin, and the
+# guards' uniform in both skins (each guard draws his own look, asset-tooling #380).
+SELECTED["humanoid.ranger.male"] |= {"outfit.knight.skin.light", "outfit.soldier", "outfit.soldier.skin.light",
+                                     "outfit.innkeeper.skin.light",
                                      "outfit.farmer", "outfit.monk.skin.light",
                                      "outfit.class.warden.skin.light", "outfit.class.ranger",
                                      "outfit.class.arcanist.skin.light", "outfit.class.necromancer.skin.grey",
                                      "outfit.class.rogue", "outfit.class.cleric.skin.light", "outfit.class.druid"}
 PAIRS = {(key, variant) for key, variants in SELECTED.items() for variant in variants}
+# Plus every hairstyle the release offers, in its tintable variant: the viewer's styles and the
+# varied guards' (#376, asset-tooling #380).
+HAIR_VARIANT = "hair-1"
+
+
+def selected(index):
+    """The selected (key, variant) pairs of a release index."""
+    return PAIRS | {(entry.get("key"), HAIR_VARIANT) for entry in index.get("entries", [])
+                    if str(entry.get("key")).startswith("hair.") and entry.get("variant") == HAIR_VARIANT}
 # The rolling release is pinned by the consumer's copy of its export.ref.json (#411: the bundle
 # with face morph targets); a replaced release fails acquisition until this copy is updated.
 EXPORT_REF = ROOT / "web/assets/ranger/export.ref.json"
@@ -44,8 +53,9 @@ def complete():
         index = json.loads((DEST / (RELEASE + ".index.json")).read_text())
     except (OSError, ValueError):
         return False
-    entries = [entry for entry in index.get("entries", []) if (entry.get("key"), entry.get("variant")) in PAIRS]
-    return {(entry["key"], entry["variant"]) for entry in entries} == PAIRS and all((DEST / name).is_file() for entry in entries for name in entry["files"])
+    pairs = selected(index)
+    entries = [entry for entry in index.get("entries", []) if (entry.get("key"), entry.get("variant")) in pairs]
+    return {(entry["key"], entry["variant"]) for entry in entries} == pairs and all((DEST / name).is_file() for entry in entries for name in entry["files"])
 
 
 def acquire():
@@ -67,8 +77,9 @@ def acquire():
         index = json.loads((directory / index_name).read_text())
         if index["schema"] != "asset-downloads-v1" or index["release"] != RELEASE:
             raise ValueError("unsupported Ranger index")
-        entries = [entry for entry in index["entries"] if (entry["key"], entry["variant"]) in PAIRS]
-        if len(entries) != len(PAIRS) or {(entry["key"], entry["variant"]) for entry in entries} != PAIRS:
+        pairs = selected(index)
+        entries = [entry for entry in index["entries"] if (entry["key"], entry["variant"]) in pairs]
+        if len(entries) != len(pairs) or {(entry["key"], entry["variant"]) for entry in entries} != pairs:
             raise ValueError("index must declare every selected entry exactly once")
         files = {"export.ref.json"}
         for entry in entries:
