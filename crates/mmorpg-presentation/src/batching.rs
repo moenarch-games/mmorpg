@@ -45,6 +45,8 @@ pub struct Batcher {
     buckets: BTreeMap<String, (u32, Cull, Geometry)>,
     geometries: Vec<Arc<Geometry>>,
     instances: Vec<InstanceBatch>,
+    /// Each instance batch's index in `instances`, by key.
+    instance_keys: BTreeMap<String, usize>,
 }
 pub fn rgb(c: u32) -> [f32; 3] {
     [16, 8, 0].map(|shift| ((c >> shift) & 255) as f32 / 255.)
@@ -123,6 +125,20 @@ impl Batcher {
             self.bucket(chunk, c, cull).add(s, a);
             return;
         }
+        self.instance("scenery", c, s, a, [x, z], cull);
+    }
+    /// One instance of the shared geometry `s` placed by `a`, batched by `name`, distance
+    /// class and spatial chunk (around `at`, x and z in metres). Every batch of the same
+    /// geometry shares one vertex buffer, so many small repeated pieces cost one mesh.
+    pub fn instance(
+        &mut self,
+        name: &str,
+        c: u32,
+        s: &Geometry,
+        a: Affine,
+        at: [f64; 2],
+        cull: Cull,
+    ) {
         let index = if let Some(i) = self.geometries.iter().position(|g| **g == *s) {
             i
         } else {
@@ -132,18 +148,16 @@ impl Batcher {
         };
         let size = cull.size() * 2.;
         let key = format!(
-            "{size}m{}_{}:{}:scenery:instance-geometry:{index}",
-            (x / size).floor(),
-            (z / size).floor(),
+            "{size}m{}_{}:{}:{name}:instance-geometry:{index}",
+            (at[0] / size).floor(),
+            (at[1] / size).floor(),
             cull.name()
         );
-        let i = if let Some(i) = self.instances.iter().position(|(k, ..)| k == &key) {
-            i
-        } else {
-            let i = self.instances.len();
-            self.instances.push((key, cull, index, Vec::new()));
-            i
-        };
+        let instances = &mut self.instances;
+        let i = *self.instance_keys.entry(key).or_insert_with_key(|key| {
+            instances.push((key.clone(), cull, index, Vec::new()));
+            instances.len() - 1
+        });
         self.instances[i].3.push((a, c));
     }
     pub fn finish(self) -> Vec<Group> {

@@ -1308,8 +1308,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             PropKind::Tree(_) | PropKind::Rock(_) | PropKind::GrassTuft
         );
         for (c, shape, a) in m.handholds {
-            b.global("handholds", c)
-                .add(shape.geometry(), compose(&[f, a]));
+            crate::handholds::draw(b, c, shape, compose(&[f, a]));
         }
         for part in m.parts {
             b.put(

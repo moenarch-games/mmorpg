@@ -276,4 +276,20 @@ mod tests {
         assert_eq!(models().len(), draws * 16);
         assert_eq!(motion(1.0, true).len(), scene.animated.len() * 16);
     }
+
+    /// The node and vertex budgets the web client checks too (`local-zone-wasm.test.ts`),
+    /// here so every Rust change meets them on PR CI (#520).
+    #[test]
+    fn the_static_scene_stays_within_its_node_and_vertex_budget() {
+        let layout: serde_json::Value = serde_json::from_str(layout()).unwrap();
+        let nodes = layout["groups"].as_array().unwrap().len();
+        let vertices: u64 = layout["geometries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["vertexCount"].as_u64().unwrap())
+            .sum();
+        assert!(nodes <= 3_800, "{nodes} static nodes");
+        assert!(vertices <= 480_000, "{vertices} static vertices");
+    }
 }
