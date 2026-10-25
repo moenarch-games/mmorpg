@@ -71,14 +71,13 @@ fn full_cosmetic_section_keeps_critical_feedback_and_required_entities_under_wir
         entity: EntityRef::Player(1),
         killer: Some(target),
     };
-    view.events =
-        vec![
-            ZoneEvent::AttackPerformed {
-                source,
-                target: Some(target),
-            };
-            mmorpg_core::MAX_EVENTS_PER_PLAYER - 1
-        ];
+    view.events = vec![
+        ZoneEvent::AttackPerformed {
+            source,
+            target: Some(target),
+        };
+        mmorpg_core::MAX_EVENTS_PER_PLAYER - 1
+    ];
     view.events.push(critical);
     view.viewer.target = Some(target);
     let prototype = view.entities[0].clone();

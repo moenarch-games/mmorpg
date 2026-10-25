@@ -53,10 +53,7 @@ fn commands(tick: u64) -> Vec<(u32, ZoneCommand)> {
     let target = ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(1))));
     match tick {
         0 => vec![(1, arena::walk(NORTHWARD)), (2, arena::stand(NORTHWARD))],
-        60 => vec![
-            (1, arena::stand(NORTHWARD)),
-            (1, target),
-        ],
+        60 => vec![(1, arena::stand(NORTHWARD)), (1, target)],
         61 => vec![(2, ZoneCommand::SelectTarget(Some(EntityRef::Player(1))))],
         500 => vec![(1, ZoneCommand::ReleaseSpirit)],
         530 => vec![(1, arena::walk(NORTHWARD))],
@@ -111,7 +108,9 @@ impl Run {
                 arena::swing_at(&self.zone, 1, EntityRef::Creature(CreatureId::new(1)))
         {
             self.sequences[0] += 1;
-            self.zone.apply_command(1, self.sequences[0], swing).unwrap();
+            self.zone
+                .apply_command(1, self.sequences[0], swing)
+                .unwrap();
         }
         self.zone.advance_tick().unwrap();
     }

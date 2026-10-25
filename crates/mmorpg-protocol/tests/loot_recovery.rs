@@ -86,7 +86,8 @@ fn continue_equally(left: &mut ZoneSimulation, right: &mut ZoneSimulation, ticks
 fn pending_and_consumed_claims_survive_wire_recovery_without_double_credit() {
     let mut zone = corpse();
     let claim = zone.snapshot_for_player(1).unwrap().loot.unwrap().claim;
-    zone.apply_command(1, 1_003, ZoneCommand::Loot(claim)).unwrap();
+    zone.apply_command(1, 1_003, ZoneCommand::Loot(claim))
+        .unwrap();
     let mut copy = recovered(&zone);
     continue_equally(&mut zone, &mut copy, 10);
     let state = zone.snapshot().unwrap();
@@ -113,7 +114,8 @@ fn refusal_checkpoints_retain_the_exact_reward_and_dedicated_rng_state() {
     let rewards = state.creatures[0].loot;
     let rng = state.loot_rng_state;
     zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
-    zone.apply_command(1, 1_003, ZoneCommand::Loot(claim)).unwrap();
+    zone.apply_command(1, 1_003, ZoneCommand::Loot(claim))
+        .unwrap();
     let mut copy = recovered(&zone);
     continue_equally(&mut zone, &mut copy, 1);
     let mut copy = recovered(&zone);
@@ -129,7 +131,8 @@ fn a_looted_weapon_is_equipped_and_both_continue_identically_from_canonical_byte
     let shortsword = ItemId::new(3);
     let mut zone = corpse_dropping(shortsword, 1);
     let claim = zone.snapshot_for_player(1).unwrap().loot.unwrap().claim;
-    zone.apply_command(1, 1_003, ZoneCommand::Loot(claim)).unwrap();
+    zone.apply_command(1, 1_003, ZoneCommand::Loot(claim))
+        .unwrap();
     zone.advance_tick().unwrap();
     let state = zone.snapshot().unwrap();
     let bag_slot = state.players[0]
