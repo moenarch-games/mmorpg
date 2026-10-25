@@ -43,7 +43,7 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// fighting fixtures place players inside props, boxes and hills, which Rapier leaves embedded
 /// and physics-engine pushes out, so their fights (and every position after) legitimately part.
 /// At 60 Hz (#379) `vale-wolf-hunt`'s creatures, which part from tick 1, reach the scripted
-/// hunter's fights after 38 s, so it is compared but not bounded either.
+/// hunter's fights after 38 s, so it is bounded only over its scripted walk ([`CLIMBS`]).
 const SCRIPTED: [&str; 8] = [
     "two-bots-move",
     "vale-hub-walk",
@@ -54,6 +54,19 @@ const SCRIPTED: [&str; 8] = [
     "vale-missiles",
     "vale-traversal",
 ];
+/// The controllers walk up and down heightfield slopes at slightly different paces (open gap
+/// 5 in `docs/PHYSICS_AB.md`). Owner decision 2026-10-25 (#423): on a slope the scripted
+/// players may part by this fraction of the distance they walked on slopes so far (0.2 %, about
+/// 6 units over the Wolfrun Climb), on top of [`SCRIPTED_POSITION_TOLERANCE_UNITS`]. Flat
+/// walking adds nothing, so every comparison before the first slope stays exact.
+const SLOPE_DIVERGENCE_PER_UNIT: f32 = 0.002;
+/// A tick on which a player's feet rise or fall this far is walked on a slope (a 1:5 slope
+/// moves them about 2 units a tick; contact jitter on flat ground stays near 0.01).
+const SLOPE_STEP_UNITS: f32 = 0.5;
+/// Scripted walks over slopes, by workload, bounded with [`SLOPE_DIVERGENCE_PER_UNIT`] up to
+/// the tick their fight can begin: `vale-wolf-hunt` up the Wolfrun Climb (#423) and through
+/// Wolfrun Woods until it turns toward the den wolf.
+const CLIMBS: [(&str, usize); 1] = [("vale-wolf-hunt", 1_434)];
 /// Shot contact fractions on identical states: both backends solve the same ray against the
 /// same boxes, capsules and triangles in `f32`.
 const SHOT_FRACTION_TOLERANCE: f32 = 1.0e-4;
@@ -492,6 +505,47 @@ fn run(workload: &Workload, backend: Backend) -> Result<(Trace, Check)> {
 
 /// Largest horizontal and vertical difference between the backends' players, and the first
 /// tick their rounded positions differ.
+/// Checks the scripted players over the first `until` ticks: on every tick they agree within
+/// [`SCRIPTED_POSITION_TOLERANCE_UNITS`] plus [`SLOPE_DIVERGENCE_PER_UNIT`] of the distance
+/// each has walked on slopes so far (measured on Rapier's arm, the reference). Returns the
+/// largest divergence and the largest allowance.
+fn check_climb(
+    rapier: &Trace,
+    engine: &Trace,
+    until: usize,
+) -> std::result::Result<[f32; 2], String> {
+    let players = rapier.snapshots.first().map_or(0, |s| s.players.len());
+    let mut sloped = vec![0.0_f32; players];
+    let (mut worst_allowance, mut worst) = (0.0_f32, 0.0_f32);
+    let ticks = rapier.snapshots.iter().zip(&engine.snapshots).take(until);
+    for (index, (left, right)) in ticks.enumerate() {
+        for (player, (p, q)) in left.players.iter().zip(&right.players).enumerate() {
+            if let Some(before) = index
+                .checked_sub(1)
+                .and_then(|previous| rapier.snapshots[previous].players.get(player))
+                && let Some(walked) = sloped.get_mut(player)
+            {
+                let [dx, dy, dz] = [0, 1, 2].map(|axis| p.position[axis] - before.position[axis]);
+                if dy.abs() > SLOPE_STEP_UNITS {
+                    *walked += dx.hypot(dz);
+                }
+            }
+            let allowance = SCRIPTED_POSITION_TOLERANCE_UNITS
+                + SLOPE_DIVERGENCE_PER_UNIT * sloped.get(player).copied().unwrap_or(0.0);
+            worst_allowance = worst_allowance.max(allowance);
+            let d = [0, 1, 2].map(|axis| (p.position[axis] - q.position[axis]).abs());
+            worst = worst.max(d[0].hypot(d[2])).max(d[1]);
+            if d[0].hypot(d[2]) > allowance || d[1] > allowance {
+                return Err(format!(
+                    "tick {}: player {player} Rapier {:?} engine {:?} beyond {allowance:.2} units",
+                    left.tick, p.position, q.position
+                ));
+            }
+        }
+    }
+    Ok([worst, worst_allowance])
+}
+
 fn player_divergence(a: &Trace, b: &Trace) -> (f32, f32, Option<u64>) {
     let (mut horizontal, mut vertical, mut first) = (0.0_f32, 0.0_f32, None);
     for (left, right) in a.snapshots.iter().zip(&b.snapshots) {
@@ -990,6 +1044,15 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
                     );
                 }
             }
+        }
+        // Scripted walks over slopes agree within the owner's climb allowance until their fight.
+        if let Some(&(_, until)) = CLIMBS.iter().find(|(climb, _)| *climb == name) {
+            let [worst, allowance] = check_climb(&rapier, &engine, until)
+                .map_err(|error| format!("{name}: players diverge on the climb: {error}"))?;
+            println!(
+                "  {name}: players part by at most {worst:.2} units (allowed {allowance:.2}) to \
+                 tick {until}"
+            );
         }
         // Workloads whose players are only scripted (no fixture placement inside geometry)
         // must agree: positions within the tolerance, the same command outcomes and doors.

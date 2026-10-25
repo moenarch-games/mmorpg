@@ -137,18 +137,19 @@ impl Scenario {
         match self {
             // The ogre stands at (7 450, 18 150), outside its 10 m aggro radius.
             Self::OgreCombat => ([7_450, 16_650], 0),
-            // The nearest wolves stand about 18 m west, beyond aggro range; facing west.
-            Self::RangerRange => ([-3_500, -3_400], 49_152),
+            // On the woods' rim above the basin (#423); the nearest wolves stand about 15 m
+            // west, beyond aggro range; facing west.
+            Self::RangerRange => ([-5_000, -4_800], 49_152),
             // Beside the ranger range, nearer the pack's middle; facing west.
             // The Necromancer, the Rogue, the Cleric and the Druid review from the same spot.
             Self::ArcanistPack
             | Self::NecromancerDrain
             | Self::RogueMelee
             | Self::ClericHoly
-            | Self::DruidNature => ([-4_000, -2_200], 49_152),
+            | Self::DruidNature => ([-5_000, -2_800], 49_152),
             // On the west shore, on the lake's long axis; facing east over the water.
             Self::SunkenShrine => ([3_000, -5_400], 16_384),
-            // On the flat foot of Greyfang Ridge, 8 m south of the cave mouth; facing north into it.
+            // On the rim before Greyfang Ridge (#423), 8 m south of the cave mouth; facing north.
             Self::RedbrandCavern => ([5_800, -12_000], 32_768),
         }
     }

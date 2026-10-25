@@ -465,7 +465,7 @@ mod tests {
         );
         let (host, player) = LocalZoneHost::scenario(Scenario::RangerRange, 0).unwrap();
         let start = own_position(&host, player);
-        assert_eq!([start[0], start[2]], [-3_500, -3_400]);
+        assert_eq!([start[0], start[2]], [-5_000, -4_800]);
         assert_eq!(
             decode_snapshot(&host.projection(player).unwrap())
                 .unwrap()
@@ -483,7 +483,7 @@ mod tests {
         );
         let (host, player) = LocalZoneHost::scenario(Scenario::ArcanistPack, 0).unwrap();
         let start = own_position(&host, player);
-        assert_eq!([start[0], start[2]], [-4_000, -2_200]);
+        assert_eq!([start[0], start[2]], [-5_000, -2_800]);
         let viewer = decode_snapshot(&host.projection(player).unwrap())
             .unwrap()
             .viewer;

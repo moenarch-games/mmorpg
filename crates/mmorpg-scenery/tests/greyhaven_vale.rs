@@ -14,7 +14,7 @@ use mmorpg_scenery::{
 /// Recorded from this revision; any change to content, placement or relief
 /// must update it deliberately. Saved Outpost grass and relief masks change only
 /// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0x6193_9d13_1eaf_a0a4;
+const STABLE_HASH: u64 = 0x4b2d_a9cf_57b3_4654;
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -321,7 +321,7 @@ fn terrain_grid_samples_relief_and_biomes() {
     assert_eq!(grid.colors.len(), 281 * 281);
     for (column, row) in [(0, 0), (100, 100), (37, 158), (200, 200)] {
         let (vertex, _) = grid.vertex(column, row).unwrap();
-        assert_eq!(vertex[1], scenery.height_at(vertex[0], vertex[2]));
+        assert_eq!(vertex[1], scenery.surface_at(vertex[0], vertex[2]));
     }
     assert!(grid.vertex(281, 0).is_none());
     let color = |x: i32, z: i32| {

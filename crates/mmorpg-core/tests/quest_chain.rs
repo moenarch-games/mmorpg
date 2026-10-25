@@ -23,13 +23,25 @@ const HUB: [i32; 2] = [-1_800, 2_000];
 /// Each trip ends within quest reach of the NPC, arrival slack included.
 const TO_MARSHAL: &[[i32; 2]] = &[[-2_200, 1_150]];
 const TO_TANNER: &[[i32; 2]] = &[[-2_400, 2_850]];
-/// The Wolfrun Trail through the west gate to the den clearing.
+/// The Wolfrun Trail through the west gate and up the Wolfrun Climb (#423) to the den clearing.
 const TO_WOODS: &[[i32; 2]] = &[
     [-3_200, 2_000],
-    [-4_400, 2_000],
-    [-5_600, 900],
+    [-4_200, 2_000],
+    [-4_200, -1_800],
+    [-5_400, -1_800],
+    [-5_400, 1_200],
     [-6_600, 300],
     [-7_600, 0],
+];
+/// The same trail back down to the hub.
+const FROM_WOODS: &[[i32; 2]] = &[
+    [-6_600, 300],
+    [-5_400, 1_200],
+    [-5_400, -1_800],
+    [-4_200, -1_800],
+    [-4_200, 2_000],
+    [-3_200, 2_000],
+    HUB,
 ];
 /// The Millbrook Road through the east gate and up the Millbrook Climb (#423) to the farmhouse.
 const TO_FARMER: &[[i32; 2]] = &[
@@ -359,7 +371,7 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
     script.walk_path(TO_WOODS);
     script.hunt(|script| script.progress(TROUBLE_IN_THE_WOODS) == Some([6, 0, 0]));
     assert_eq!(script.marker(MARSHAL), Some(QuestMarker::Complete));
-    script.walk_path(&[TO_WOODS[3], TO_WOODS[2], TO_WOODS[1], TO_WOODS[0], HUB]);
+    script.walk_path(FROM_WOODS);
     script.walk_path(TO_MARSHAL);
     let copper = script.view.viewer.copper;
     script.quest_command(ZoneCommand::CompleteQuest {
@@ -386,7 +398,7 @@ fn a_new_warden_completes_the_first_quests_of_the_greyhaven_chain() {
     script.hunt(|script| script.progress(PELTS_FOR_THE_TANNER) == Some([5, 0, 0]));
     let bag = script.zone.snapshot().unwrap().players[0].inventory.clone();
     assert_eq!(bag.count(WOLF_PELT), 5, "pelts drop only while needed");
-    script.walk_path(&[TO_WOODS[3], TO_WOODS[2], TO_WOODS[1], TO_WOODS[0], HUB]);
+    script.walk_path(FROM_WOODS);
     script.walk_path(TO_TANNER);
     script.quest_command(ZoneCommand::CompleteQuest {
         npc: TANNER,

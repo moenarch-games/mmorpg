@@ -502,7 +502,7 @@ mod tests {
             value["contentRevision"],
             crate::host::hosted_content().revision().to_string()
         );
-        assert_eq!(value["presentationFingerprint"], "9aa15936beca7a9d");
+        assert_eq!(value["presentationFingerprint"], "1421679c03421021");
         assert_eq!(value["unitsPerMetre"], 100);
         assert_eq!(value["playerHalfExtents"], serde_json::json!([30, 90, 30]));
         let names: Vec<_> = value["areas"]
@@ -545,7 +545,16 @@ mod tests {
         assert_eq!(value["roads"][0]["halfWidth"], 150);
         assert_eq!(
             value["roads"][0]["points"],
-            serde_json::json!([[0, 1_200], [0, -1_000], [0, -4_000], [0, -8_600]])
+            serde_json::json!([
+                [0, 1_200],
+                [0, -1_000],
+                [0, -4_000],
+                [0, -6_200],
+                [-3_600, -6_200],
+                [-3_600, -7_000],
+                [0, -7_000],
+                [0, -8_600]
+            ])
         );
         assert_eq!(value["structures"][0]["colliderId"], 100);
     }

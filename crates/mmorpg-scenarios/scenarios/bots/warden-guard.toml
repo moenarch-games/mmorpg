@@ -4,7 +4,7 @@
 # wrong lane, lets them through again; lowering the guard is applied.
 name = "warden-guard"
 zone = 1
-ticks = 1440
+ticks = 2124
 digest_interval = 200
 
 [[bots]]
@@ -39,7 +39,7 @@ strafe = 0
 facing = 49152
 
 [[steps]]
-tick = 242
+tick = 324
 bot = "warden"
 action = "move"
 forward = 1
@@ -47,7 +47,25 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 262
+tick = 686
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 49152
+
+# … south up the cutting into the woods …
+[[steps]]
+tick = 800
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 0
+
+# … and west along the trunk-grid line z = 1800 into Wolfrun Woods.
+[[steps]]
+tick = 1142
 bot = "warden"
 action = "move"
 forward = 1
@@ -55,7 +73,7 @@ strafe = 0
 facing = 49152
 
 [[steps]]
-tick = 750
+tick = 1434
 bot = "warden"
 action = "move"
 forward = 1
@@ -63,7 +81,7 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 760
+tick = 1444
 bot = "warden"
 action = "select_target"
 entity = "creature:108"
@@ -71,7 +89,7 @@ entity = "creature:108"
 # Stand facing the den, close enough that Wolf 108 engages wherever it wanders, and raise a
 # middle guard before the wolf arrives.
 [[steps]]
-tick = 830
+tick = 1514
 bot = "warden"
 action = "move"
 forward = 0
@@ -79,20 +97,20 @@ strafe = 0
 facing = 32768
 
 [[steps]]
-tick = 830
+tick = 1514
 bot = "warden"
 action = "guard"
 lane = "middle"
 
 # The wrong lane: wolves bite middle.
 [[steps]]
-tick = 1140
+tick = 1824
 bot = "warden"
 action = "guard"
 lane = "high"
 
 [[steps]]
-tick = 1340
+tick = 2024
 bot = "warden"
 action = "guard"
 lane = "none"
@@ -102,12 +120,12 @@ kind = "event"
 bot = "warden"
 event = "blocked"
 entity = "creature:108"
-by_tick = 1140
+by_tick = 1824
 
 [[expect]]
 kind = "event"
 bot = "warden"
 event = "damage_taken"
 entity = "creature:108"
-from_tick = 1144
-by_tick = 1340
+from_tick = 1828
+by_tick = 2024

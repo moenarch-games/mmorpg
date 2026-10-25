@@ -203,6 +203,17 @@ again.
    A terrain is one body, so a cast reports one contact with it. A capsule touching two cliff
    faces, or a face and the floor, could be told about the face it was leaving, and it then
    sank into the other. Terrain casts now report what the motion runs into.
+5. **Walking up and down a heightfield slope** (open; owner decision 2026-10-25, no engine
+   change). On the Wolfrun Climb's ledge and cutting (#423 slice 3) the two controllers walk a
+   slope at slightly different paces: the engine's character travels about 0.25 % farther per
+   tick than Rapier's, and Rapier drifts a little sideways while the engine holds its line.
+   `vale-wolf-hunt`'s hunter parts by up to 9 units by the top. The owner chose a bounded climb
+   tolerance over an engine change: on every tick of its scripted walk (to tick 1,434, before
+   it turns toward the den wolf) the players agree within 1 unit plus 0.2 % of the distance
+   each has walked on slopes so far (`SLOPE_DIVERGENCE_PER_UNIT`, about 14 units by the end of
+   the climb). Flat walking adds nothing, so every comparison before the first slope stays
+   exact. The Stillwater lurkers wander only 2 m to keep to the level rim (gap 2), and wolves
+   and bandits stand clear of the new climbs.
 
 Dynamic bodies themselves (debris #288, movable crates #58) need no engine feature: the engine
 arm runs them since mmorpg#442 (physics-engine C18).
