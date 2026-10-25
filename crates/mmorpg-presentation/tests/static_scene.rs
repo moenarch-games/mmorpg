@@ -22,14 +22,20 @@ fn transform(model: &[f32; 16], p: V) -> V {
     ]
 }
 
-/// Prop draws (everything but scene-wide terrain, patches, roads and lake beds) in world space.
+/// Scene-wide draws: terrain, patches, roads, lake beds and the worn handholds (#512) that
+/// run over the terrain as well as the rock props.
+fn scene_wide(draw: &Draw) -> bool {
+    draw.id.starts_with("static-all-") || draw.id.contains(":handholds:")
+}
+
+/// Prop draws (everything but [`scene_wide`] ones) in world space.
 fn prop_triangles(scene: &StaticScene) -> Vec<[V; 3]> {
     let rest = scene.motion(0., false);
     let placed = scene
         .groups
         .iter()
         .flat_map(|group| &group.draws)
-        .filter(|draw| !draw.id.starts_with("static-all-"))
+        .filter(|draw| !scene_wide(draw))
         .map(|draw| (draw, draw.model))
         .chain(
             scene
@@ -228,7 +234,7 @@ fn repeated_props_add_instance_transforms_not_geometry() {
             scene
                 .groups
                 .iter()
-                .filter(|group| group.instanced)
+                .filter(|group| group.instanced && !scene_wide(&group.draws[0]))
                 .map(|group| (group.draws[0].resource_key.clone(), group.draws.len()))
                 .collect::<Vec<_>>()
         };
@@ -242,7 +248,7 @@ fn repeated_props_add_instance_transforms_not_geometry() {
             scene
                 .groups
                 .iter()
-                .filter(|group| !group.instanced && !group.draws[0].id.starts_with("static-all-"))
+                .filter(|group| !group.instanced && !scene_wide(&group.draws[0]))
                 .count()
         };
         assert_eq!((ordinary(&single), ordinary(&repeated)), (0, 0), "{kind:?}");
@@ -268,7 +274,7 @@ fn scenery_classes_keep_their_distance_policy() {
         let groups: Vec<_> = scene
             .groups
             .iter()
-            .filter(|group| group.instanced)
+            .filter(|group| group.instanced && !scene_wide(&group.draws[0]))
             .collect();
         assert!(!groups.is_empty(), "{kind:?}");
         for group in groups {
@@ -449,7 +455,7 @@ fn handholds(scene: &StaticScene) -> Vec<V> {
         .groups
         .iter()
         .flat_map(|group| &group.draws)
-        .filter(|draw| draw.id.contains("all-handholds"))
+        .filter(|draw| draw.id.contains(":handholds:"))
         .flat_map(|draw| draw.geometry.p.iter().map(|p| transform(&draw.model, *p)))
         .collect()
 }
