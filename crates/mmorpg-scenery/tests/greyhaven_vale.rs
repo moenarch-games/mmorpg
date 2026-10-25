@@ -11,10 +11,11 @@ use mmorpg_scenery::{
     TERRAIN_EXTENT_UNITS, WALKABLE_RELIEF_UNITS, greyhaven_vale_scenery, visual_kind,
 };
 
-/// Recorded from this revision; any change to content, placement or relief
-/// must update it deliberately. Saved Outpost grass and relief masks change only
-/// presentation, leaving authored geometry unchanged through gameplay revision 5.
-const STABLE_HASH: u64 = 0x4b2d_a9cf_57b3_4654;
+/// The golden [`Scenery::stable_hash`]: any change to placement, roads, water or
+/// relief must update it deliberately (`MMORPG_UPDATE_FIXTURES=1`, or
+/// `scripts/rerecord.sh`). It leaves out the content revision, which is checked
+/// exactly on its own.
+const STABLE_HASH: &str = "fixtures/scenery/greyhaven-stable-hash.txt";
 
 /// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
@@ -68,7 +69,15 @@ fn scenery_is_deterministic_with_a_stable_hash() {
     assert_eq!(first.content_revision, greyhaven_vale::content().revision());
     let hash = first.stable_hash();
     assert_eq!(hash, second.stable_hash());
-    assert_eq!(hash, STABLE_HASH, "scenery changed: {hash:#018x}");
+    let actual = format!("{hash:016x}\n");
+    let recorded = mmorpg_core::golden::golden(
+        mmorpg_core::golden::workspace_root().join(STABLE_HASH),
+        &actual,
+    );
+    assert_eq!(
+        actual, recorded,
+        "scenery changed; rerun with MMORPG_UPDATE_FIXTURES=1 to record it"
+    );
 }
 
 #[test]

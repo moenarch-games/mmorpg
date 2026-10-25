@@ -47,12 +47,9 @@ mod tests {
     #[test]
     fn saved_family_is_the_exact_original_acceptance_and_other_scenery_is_unchanged() {
         let before = unmasked_greyhaven_vale_scenery();
-        let mut captured_revision = before.clone();
-        captured_revision.content_revision = 4;
-        assert_eq!(captured_revision.stable_hash(), 0x3c63_432f_d278_001d);
-        let mut previous_revision = before.clone();
-        previous_revision.content_revision = 3;
-        assert_eq!(previous_revision.stable_hash(), 0xc44b_7844_191b_50a8);
+        // The scenery the family was accepted against (captured under content
+        // revisions 3 and 4; the hash leaves the revision out).
+        assert_eq!(before.stable_hash(), 0x7d25_68ee_fb17_2e59);
         let original: Vec<_> = before
             .props
             .iter()

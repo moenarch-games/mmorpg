@@ -2,7 +2,7 @@
 # Replaces the wire protocol ID (docs/adr/0006-merge-safe-format-identities.md) with fresh
 # random bytes in both copies: crates/mmorpg-protocol/src/lib.rs and web/src/protocol-id.ts.
 # Run it once in any change to the command, projection, observation or canonical layout, then
-# re-record the fixtures with `MMORPG_UPDATE_FIXTURES=1 cargo test --workspace --locked`.
+# re-record the fixtures with `scripts/rerecord.sh`.
 set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 id="$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
