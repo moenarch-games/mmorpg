@@ -170,6 +170,15 @@ impl LocalZoneHost {
         Self::with_ephemeral(content, &record)
     }
 
+    /// Runs another validated action graph (#382): the lab's experimental
+    /// rules, only ever in a fresh, unsaved lab world.
+    pub fn set_action_graph(
+        &mut self,
+        graph: &'static mmorpg_core::action::ActionGraph,
+    ) -> Result<(), mmorpg_core::action::GraphError> {
+        self.zone.set_action_graph(graph)
+    }
+
     /// The hosted zone, read-only (the Action Lab inspector reads it).
     #[must_use]
     pub const fn zone(&self) -> &ZoneSimulation {

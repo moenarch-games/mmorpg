@@ -47,9 +47,11 @@ import {
 import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, createScenarioWorld, loadLocalWorld, soundManifest } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, createScenarioWorld, labExperiments, loadLocalWorld, soundManifest } from "./world/wasm-runtime";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
+import { ExperimentPanel } from "./world/lab-experiment-panel";
+import { LabLibrary } from "./world/lab-experiment";
 import "./action-lab.css";
 import { scenarioChoice, type ScenarioChoice, type ScenarioSource } from "./world/scenario-source";
 import { webTransportConnector } from "./session/webtransport";
@@ -214,6 +216,7 @@ const scenarioReset = requireElement<HTMLButtonElement>("#scenario-reset");
 // pause/step/scrub and the inspector dock.
 const actionLabRoot = requireElement<HTMLElement>("#action-lab");
 let actionLab: ActionLabPanel | null = null;
+let labExperimentPanel: ExperimentPanel | null = null;
 let arenaServer: ZoneServer | null = null;
 let arenaError: string | null = null;
 const arenaStatus = requireElement<HTMLElement>("#battle-royale-status");
@@ -1451,11 +1454,16 @@ async function enterWorld(): Promise<void> {
 
 /** Restarts the review scenario from its seed: a fresh zone, character and encounter. */
 async function resetScenario(): Promise<void> {
+  await restartScenario((source) => source.reset());
+}
+
+/** Restarts the scenario world through `restart` (a reset, or an Action Lab replay) and re-enters the view. */
+async function restartScenario(restart: (source: ScenarioSource) => Promise<number>): Promise<void> {
   if (!scenarioWorld || activeWorld !== scenarioWorld.world || entryState.phase !== "world") {
     return;
   }
   worldView.leave();
-  await scenarioWorld.source.reset();
+  await restart(scenarioWorld.source);
   worldView.enter(worldInput(), scenarioWorld.source.latestProjection());
   lastTime = performance.now();
   canvas.focus();
@@ -1468,6 +1476,7 @@ function updateActionLab(): void {
   const shown = source.shownFrame();
   const viewer = (shown?.snapshot ?? source.latestProjection())?.viewer;
   if (!viewer) { return; }
+  labExperimentPanel?.update();
   actionLab.update(source.frames, shown, source.paused, {
     level: viewer.level, health: viewer.health, maxHealth: viewer.maxHealth,
     resource: viewer.resource ? `${viewer.resource.value} / ${viewer.resource.max} ${viewer.resource.kind}` : null,
@@ -1486,6 +1495,22 @@ function mountActionLab(loaded: LocalWorld, choice: ScenarioChoice, source: Scen
     scrub: (tick) => source.scrubTo(tick === null ? null : BigInt(tick)),
     apply: (next) => { window.location.search = labQuery(next, choice.seed); },
   });
+  // Experiments (#382): recorded scenarios replayed and compared under experimental rules.
+  labExperimentPanel = new ExperimentPanel(labExperiments, new LabLibrary(browserStorage()), setup, choice.seed, {
+    recording: () => source.recording(),
+    recordingStatus: () => source.recordingStatus(),
+    replaying: () => source.replaying,
+    playLive: async (next, config) => {
+      source.setZoneFactory(labExperiments.zoneFactory(next, choice.seed, config));
+      await restartScenario((target) => target.reset());
+    },
+    replay: async (scenario, config, pauseAt) => {
+      source.setZoneFactory(labExperiments.zoneFactory(scenario.setup, BigInt(scenario.seed), config));
+      await restartScenario((target) => target.replay(scenario.commands, pauseAt));
+    },
+    takeOver: () => source.stopReplay(),
+  });
+  actionLab.addSection("Experiments", labExperimentPanel.root);
   new ResizeObserver(() => {
     document.body.style.setProperty("--lab-width", `${actionLabRoot.offsetWidth}px`);
   }).observe(actionLabRoot);
