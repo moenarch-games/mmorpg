@@ -81,6 +81,10 @@ pub(crate) struct PlayerState {
     /// Airborne state and landing recovery of every class; Warden melee
     /// waits it out (#155).
     pub(crate) landing: crate::LandingState,
+    /// In deep water after the last physics step: the action graph's swim
+    /// (#413). Derived from the body's position, so not canonical; a
+    /// restored zone derives it again.
+    pub(crate) swimming: bool,
     /// The `[forward, up]` launch (cm/s) of an edge's follow-up resolved this
     /// tick (#413). Set by intents and spent by the same tick's movement, so
     /// never present between ticks and not canonical.
@@ -151,6 +155,7 @@ impl PlayerState {
             breath: crate::Breath::FULL,
             guard: crate::GuardState::default(),
             landing: crate::LandingState::default(),
+            swimming: false,
             impulse: None,
             combo: None,
             strike_recovery: 0,

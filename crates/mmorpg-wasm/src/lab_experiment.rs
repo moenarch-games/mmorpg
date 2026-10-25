@@ -60,12 +60,14 @@ const EDGES: [EdgeId; 4] = [
     EdgeId::LandingToShieldBash,
     EdgeId::LandingToAbility,
 ];
-const RULES: [RuleId; 3] = [
+const RULES: [RuleId; 5] = [
     RuleId::LandingHoldsMelee,
     RuleId::SlashRecoveryHoldsGuard,
     RuleId::MovementCancelsCast,
+    RuleId::SwimmingRefuses,
+    RuleId::SwimmingHolds,
 ];
-const RULE_EFFECTS: [RuleEffect; 2] = [RuleEffect::Hold, RuleEffect::Cancel];
+const RULE_EFFECTS: [RuleEffect; 3] = [RuleEffect::Hold, RuleEffect::Cancel, RuleEffect::Refuse];
 const PHASES: [Phase; 3] = [Phase::Active, Phase::Recovery, Phase::FollowUp];
 const CONSEQUENCES: [Consequence; 3] = [
     Consequence::Preserve,

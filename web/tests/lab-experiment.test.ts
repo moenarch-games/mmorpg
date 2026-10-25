@@ -3,8 +3,8 @@ import { PROTOCOL_ID } from "../src/protocol-id";
 import { TICK_HZ } from "../src/replication";
 import {
   copyConfig, importFile, exportBundle, insertCopy, LabLibrary, moveCommand, movementRule, PROMOTION_FORMAT, promotionFileName,
-  promotionRequest, RECORD_FORMAT, removeCommand, removeEdge, ruleApplies, setMovementRule, setRuleApplies, traversalSample,
-  SCENARIO_FORMAT,
+  promotionRequest, RECORD_FORMAT, removeCommand, removeEdge, ruleApplies, setMovementRule, setRuleApplies, swimmingSample,
+  traversalSample, SCENARIO_FORMAT,
   type ConfigCheck, type LabComparison, type LabConfig, type LabRun, type LabScenario,
 } from "../src/world/lab-experiment";
 import { ScenarioSource, type ScenarioZoneHandle } from "../src/world/scenario-source";
@@ -145,6 +145,22 @@ describe("Action Lab experiments (#382)", () => {
     expect(at(comparison.b, 30).regions[0]).toBe("Airborne·Active");
     expect(comparison.differences.length).toBeGreaterThan(0);
   }, 30_000);
+
+  test("the swimming sample authors water refusals and holds; production authors none (#413)", () => {
+    const production = baseline();
+    expect(production.rules.filter((rule) => rule.during === "Swim")).toEqual([]);
+    const sample = swimmingSample(copyConfig(production, "Swimming sample"));
+    expect(check(sample)).toMatchObject({ baseline: false, error: null });
+    expect(sample.rules.filter((rule) => rule.during === "Swim").map((rule) => `${rule.effect} ${rule.input}`))
+      .toEqual(["Refuse WardenMelee", "Refuse ShieldBash", "Hold Ability"]);
+    expect(movementRule(sample, "Swim", "Active")).toMatchObject({ momentumPercent: 100, maxAccelerationCms2: 400 });
+    // Applying it twice changes nothing; a refusal of movement is not supported.
+    expect(swimmingSample(sample).rules).toEqual(sample.rules);
+    const moving = copyConfig(sample, "Refuse movement");
+    moving.rules.push({ id: "SwimmingRefuses", during: "Swim", input: "Jump", conditions: [], effect: "Refuse" });
+    expect(check(moving).error).not.toBeNull();
+    expect(check(setRuleApplies(sample, "SwimmingRefuses", "warden", false)).error).toBeNull();
+  });
 });
 
 describe("Action Lab diagnostics and promotion (#383)", () => {

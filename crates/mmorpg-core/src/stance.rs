@@ -253,6 +253,21 @@ impl ZoneSimulation {
                 }
             });
         }
+        self.track_swimming()
+    }
+
+    /// Whether each player swims where the last physics step left it: the
+    /// movement region's swim (#413). Derived state, so a restored zone
+    /// calls it too.
+    pub(crate) fn track_swimming(&mut self) -> Result<(), ZoneError> {
+        let ids: Vec<_> = self.players.keys().copied().collect();
+        for player_id in ids {
+            let centre = self.player_body(player_id)?.position();
+            let swims = self.player_water_mode(centre).swims();
+            if let Some(player) = self.players.get_mut(&player_id) {
+                player.swimming = swims;
+            }
+        }
         Ok(())
     }
 

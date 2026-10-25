@@ -41,7 +41,7 @@ use std::fmt;
 /// differently and git refuses to merge them silently; decoders accept only this exact value
 /// (docs/adr/0006-merge-safe-format-identities.md). Snapshots lead with its three bytes and
 /// commands with its low byte.
-pub const PROTOCOL_ID: u32 = 0x001c_c9c4;
+pub const PROTOCOL_ID: u32 = 0x00b2_0c8a;
 
 /// Smallest WebTransport datagram payload measured over the pinned stack:
 /// QUIC's 1,200-byte initial MTU before path MTU discovery, observed as 1,161

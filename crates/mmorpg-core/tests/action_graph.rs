@@ -156,7 +156,7 @@ fn a_grounded_slash_buffers_bash_and_guard_until_the_inspected_ticks() {
         .iter()
         .find(|rule| rule.rule == RuleId::SlashRecoveryHoldsGuard)
         .unwrap();
-    assert_eq!(guard_hold.released_at, strike + IMPACT);
+    assert_eq!(guard_hold.released_at, Some(strike + IMPACT));
 
     // The combo edge outranks the Bash's direct use and holds it.
     let arbitration = warden
@@ -263,7 +263,7 @@ fn an_airborne_slash_lands_into_a_held_bash_at_the_inspected_tick() {
         .rules
         .iter()
         .find(|rule| rule.rule == RuleId::LandingHoldsMelee)
-        .map(|rule| rule.released_at)
+        .and_then(|rule| rule.released_at)
         .unwrap();
     warden.bash();
     let arbitration = warden
