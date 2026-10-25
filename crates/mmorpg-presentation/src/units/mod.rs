@@ -90,8 +90,8 @@ pub struct ImportedUnit {
     pub root: Frame,
     /// Collision height in metres; the model is scaled to it.
     pub height: f64,
-    pub clip: &'static str,
-    pub time: f32,
+    /// The layered clips to pose (Atlas 6.6.45) and each region's target clip.
+    pub animation: imported::Animation,
     /// Corpse darkening.
     pub tint: Option<f32>,
     /// What the unit carries: a player its class weapons, a guard its sword.
@@ -136,13 +136,14 @@ pub struct UnitPresenter {
     deaths: BTreeMap<EntityRef, Option<f64>>,
     /// The projection tick each bursting flask or bomb (#290) was first seen bursting.
     bursts: BTreeMap<u16, u64>,
-    cue_tick: u64,
     effects: effects::Effects,
     durations: BTreeMap<(Kind, String), f32>,
     ready: BTreeSet<Kind>,
     /// The client draws the residents' appearance presets on the Ranger (#418).
     residents: bool,
     structures: crate::structures::Structures,
+    /// How the imported models' body regions blend; the Action Lab tunes it (#384).
+    blend: imported::Blend,
 }
 
 impl UnitPresenter {
@@ -159,12 +160,23 @@ impl UnitPresenter {
             playbacks: BTreeMap::new(),
             deaths: BTreeMap::new(),
             bursts: BTreeMap::new(),
-            cue_tick: 0,
             effects: effects::Effects::default(),
             durations: BTreeMap::new(),
             ready: BTreeSet::new(),
             residents: false,
+            blend: imported::Blend::default(),
         }
+    }
+
+    /// Tunes how the imported models' body regions blend (the Action Lab, #384); clamped.
+    pub fn set_blend(&mut self, blend: imported::Blend) {
+        self.blend = blend.clamped();
+    }
+
+    /// The blend in use.
+    #[must_use]
+    pub const fn blend(&self) -> imported::Blend {
+        self.blend
     }
 
     /// The client has loaded the residents' appearance presets (#418): once the Ranger is ready
@@ -213,6 +225,38 @@ impl UnitPresenter {
             })
             .collect();
         self.effects.push(snapshot, seconds, &anchors);
+        // Accepted strikes start their clips (Atlas 6.6.45): the event, never a clip, is the
+        // attack. Every received projection is read, so a frame spanning several ticks keeps them.
+        for event in &snapshot.events {
+            let (source, ability) = match *event {
+                ZoneEvent::AttackPerformed { source, .. }
+                | ZoneEvent::StrikeSwept { source, .. } => (source, None),
+                ZoneEvent::AbilityUsed {
+                    source, ability, ..
+                } => (source, Some(ability)),
+                _ => continue,
+            };
+            let Some(record) = snapshot.entities.iter().find(|e| e.entity() == source) else {
+                continue;
+            };
+            let Some(kind) = self.imported_kind(source, record) else {
+                continue;
+            };
+            let class = match source {
+                EntityRef::Player(id) if id == snapshot.viewer_id => snapshot.viewer.class,
+                EntityRef::Player(_) => ClassChoice::from_appearance(record.appearance),
+                _ => None,
+            };
+            let mut clip = kind.strike(class.map(|choice| choice.class), ability);
+            if self.duration(kind, clip) <= 0. {
+                clip = kind.clips().attack;
+            }
+            let duration = self.duration(kind, clip);
+            self.playbacks
+                .entry(source)
+                .or_default()
+                .strike(clip, duration, seconds);
+        }
     }
 
     /// Half extents in metres of a unit's body.
@@ -262,26 +306,6 @@ impl UnitPresenter {
         } else {
             self.effects.action(snapshot, seconds)
         };
-        if snapshot.tick != self.cue_tick && !reduced {
-            self.cue_tick = snapshot.tick;
-            for event in &snapshot.events {
-                let (ZoneEvent::AttackPerformed { source, .. }
-                | ZoneEvent::AbilityUsed { source, .. }
-                | ZoneEvent::StrikeSwept { source, .. }) = *event
-                else {
-                    continue;
-                };
-                if let Some(unit) = input.units.iter().find(|u| u.record.entity() == source)
-                    && let Some(kind) = self.imported_kind(source, &unit.record)
-                {
-                    let duration = self.duration(kind, kind.clips().attack);
-                    self.playbacks
-                        .entry(source)
-                        .or_default()
-                        .attack(duration, seconds);
-                }
-            }
-        }
         let mut out = UnitFrame::default();
         let mut anchors = BTreeMap::new();
         for unit in input.units {
@@ -332,8 +356,9 @@ impl UnitPresenter {
             let start = out.draws.len();
             if let Some(kind) = self.imported_kind(entity, &unit.record) {
                 let resident = self.resident(entity);
-                // Only the viewer's guard is projected; a held one raises the shield (#156).
-                let guarding = viewer && snapshot.viewer.guard.raised.is_some();
+                // Only the viewer's guard is projected; the shield rises once the zone's guard
+                // protects (#156, #384), not while slash or landing recovery holds it back.
+                let guarding = viewer && snapshot.viewer.guard.protecting;
                 // Swimmers (#274) have no swim clips yet: the in-place fallback (Atlas 6.6.41)
                 // treads with the idle clip and strokes with the walk, never a jump or fall
                 // from ascending or descending. The mode is the zone's, from the projected
@@ -346,7 +371,7 @@ impl UnitPresenter {
                     .swims();
                 let vertical = if swimming { 0. } else { loc.vertical };
                 let durations = &self.durations;
-                let (clip, time) = self.playbacks.entry(entity).or_default().advance(
+                let animation = self.playbacks.entry(entity).or_default().advance(
                     kind.clips(),
                     |clip| {
                         durations
@@ -354,13 +379,16 @@ impl UnitPresenter {
                             .copied()
                             .unwrap_or(0.)
                     },
-                    loc.forward.hypot(loc.right),
-                    vertical,
-                    dead,
-                    seconds,
-                    input.dt,
-                    reduced,
-                    guarding,
+                    imported::Cues {
+                        speed: loc.forward.hypot(loc.right),
+                        vertical_speed: vertical,
+                        dead,
+                        guarding,
+                        now: seconds,
+                        dt: input.dt,
+                        reduced,
+                    },
+                    self.blend,
                 );
                 let class = if viewer {
                     input.viewer.choice
@@ -373,8 +401,7 @@ impl UnitPresenter {
                     kind,
                     root,
                     height: f64::from(half[1]) * 2.,
-                    clip,
-                    time,
+                    animation,
                     tint: dead.then_some(0.6),
                     loadout: match resident {
                         Some(resident) => resident.loadout(),

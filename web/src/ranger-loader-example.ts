@@ -26,8 +26,10 @@ if (await models.preload("Ranger")) {
     renderer.setSize(innerWidth, innerHeight * 0.9, devicePixelRatio);
     camera.aspect = innerWidth / (innerHeight * 0.9);
     camera.updateProjectionMatrix();
+    const time = ((now - start) / 1000) % duration!;
     models.update([{ id: "ranger-example", kind: "Ranger", entity: { kind: "player", id: 1 },
-      feet: [0, 0, 0], yaw: 0, heightMetres: 1.8, clip: "Walk_Loop", time: ((now - start) / 1000) % duration!,
+      feet: [0, 0, 0], yaw: 0, heightMetres: 1.8, clip: "Walk_Loop", time, lower: ["Walk_Loop", time],
+      layers: [{ clip: "Walk_Loop", time, weight: 1, mask: "all" }],
       tint: null, loadout: "bow-and-quiver", resident: null, headwear: false }], { headwear: "none", hair: { style: "parted", color: "brown" }, face: {} });
     const view = { viewMatrix: matrix(camera.matrixWorldInverse), projectionMatrix: matrix(camera.projectionMatrix) };
     renderer.render({ camera: view, nodes: [] });

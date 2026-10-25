@@ -12,6 +12,7 @@ import type { Color } from "./scenery";
 export type UnitPresenterHandle = {
   modelReady(kind: string, clips: string): void;
   residentsReady(): void;
+  setBlend(lowerSeconds: number, upperSeconds: number, lowerWeight: number, upperWeight: number): void;
   push(projection: Uint8Array, seconds: number): void;
   reset(): void;
   /** Sound cues and fades of the projections pushed since the last call (#447), as JSON. */
@@ -49,8 +50,13 @@ export type ImportedRequest = {
   feet: readonly [number, number, number];
   yaw: number;
   heightMetres: number;
+  /** The upper body's target clip and time: what the unit is seen doing. */
   clip: string;
   time: number;
+  /** The legs' target clip and time. */
+  lower: readonly [string, number];
+  /** The layered clips to pose (Atlas 6.6.45). */
+  layers: readonly ClipLayer[];
   /** Corpse darkening. */
   tint: number | null;
   /** What the unit carries: a player its class weapons (asset-tooling #375), a guard its sword. */
@@ -60,6 +66,17 @@ export type ImportedRequest = {
   /** The living viewer: its imported model wears the viewer's chosen headwear (#374). */
   headwear: boolean;
 };
+
+/** Which joints a layer drives: every joint, the `spine_01` subtree, or the rest (pelvis, legs). */
+export type LayerMask = "all" | "upper" | "lower";
+/** One weighted clip sample; a joint averages the layers that drive it, the rest of a total below 1 stays at rest. */
+export type ClipLayer = { clip: string; time: number; weight: number; mask: LayerMask };
+
+/** How the body regions blend (the Action Lab, #384): crossfade seconds and overlay weights, each 0–1. */
+export type AnimationBlend = { lowerSeconds: number; upperSeconds: number; lowerWeight: number; upperWeight: number };
+export const DEFAULT_BLEND: AnimationBlend = { lowerSeconds: 0.15, upperSeconds: 0.1, lowerWeight: 1, upperWeight: 1 };
+/** The viewer's layered animation (#384): each region's target clip and time, and the posed layers. */
+export type ViewerAnimation = { upper: readonly [string, number]; lower: readonly [string, number]; layers: readonly ClipLayer[] };
 
 export type UnitFrameNodes = { nodes: RendererSceneNode[]; units: PresentedUnit[]; imported: ImportedRequest[] };
 
@@ -76,7 +93,7 @@ type DrawEntry = { id: string; key: string; model: number; color: Color; emissiv
 type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number;
-  height: number; clip: string; time: number; tint: number | null; loadout: Loadout | null; resident: string | null; headwear: boolean };
+  height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: number | null; loadout: Loadout | null; resident: string | null; headwear: boolean };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
@@ -115,6 +132,11 @@ export class SharedUnits {
     this.#handle.residentsReady();
   }
 
+  /** Tunes the layered blend; the presenter clamps it. Presentation only. */
+  setBlend(blend: AnimationBlend): void {
+    this.#handle.setBlend(blend.lowerSeconds, blend.upperSeconds, blend.lowerWeight, blend.upperWeight);
+  }
+
   push(projection: Uint8Array, seconds: number): void {
     this.#handle.push(projection, seconds);
   }
@@ -151,7 +173,7 @@ export class SharedUnits {
       })),
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw,
-        heightMetres: unit.height, clip: unit.clip, time: unit.time, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, headwear: unit.headwear,
+        heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, headwear: unit.headwear,
       })),
     };
   }

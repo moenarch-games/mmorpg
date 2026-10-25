@@ -33,7 +33,8 @@ import { AmbientAnimals } from "./ambient-animals";
 import { ArtPrefetch } from "./art-prefetch";
 import { NatureReview } from "./nature-review";
 import { SkyLayer } from "./sky";
-import { SharedUnits, type ImportedModelKind, type Loadout, type ViewerLook } from "./unit-presenter";
+import { SharedUnits, type AnimationBlend, type ImportedModelKind, type Loadout, type ViewerAnimation, type ViewerLook } from "./unit-presenter";
+
 import { BagsPanel, type BagsElements } from "./units/bags-panel";
 import { CharacterPane, type CharacterElements } from "./units/character-pane";
 import { useAbilitySlot } from "./units/abilities";
@@ -370,6 +371,9 @@ export class WorldView {
   #shownArea: string | null = null;
   #seconds = 0;
   #viewerClip: string | null = null;
+  #viewerAnimation: ViewerAnimation | null = null;
+  /** The Action Lab's blend, or null for the presenter's default. */
+  #blend: AnimationBlend | null = null;
   #flyTo: { eye: Vec3; target: Vec3 } | null = null;
   #lastWork: RendererWorkObservations | null = null;
   #occluders: Box[] = [];
@@ -664,7 +668,7 @@ export class WorldView {
     const length = this.#models.clipLength("Ranger", clip) ?? 1;
     this.#models.update([{
       id: "selection-preview", kind: "Ranger", entity: { kind: "player", id: 0 }, feet, yaw, heightMetres: height,
-      clip, time: seconds % length, tint: null,
+      clip, time: seconds % length, lower: [clip, seconds % length], layers: [{ clip, time: seconds % length, weight: 1, mask: "all" }], tint: null,
       loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null, headwear: true,
     }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} });
     const { roots, changed } = this.#models.roots();
@@ -783,6 +787,17 @@ export class WorldView {
     return this.#viewerClip;
   }
 
+  /** The viewer's layered animation last frame (#384): each region's target clip and the posed layers, or null when procedural. */
+  get viewerAnimation(): ViewerAnimation | null {
+    return this.#viewerAnimation;
+  }
+
+  /** Tunes the imported models' layered blend (the Action Lab, #384); kept for every later presenter. Presentation only. */
+  setAnimationBlend(blend: AnimationBlend): void {
+    this.#blend = blend;
+    this.#units?.units.setBlend(blend);
+  }
+
   /** The hotbar as the touch face buttons mirror it. */
   get hotbarKey(): string {
     return this.#classHud.slotKey;
@@ -898,6 +913,7 @@ export class WorldView {
     if (this.#units?.viewerId !== projection.viewerId) {
       const units = new SharedUnits(world.scenery.unitPresenter(projection.viewerId));
       for (const [kind, clips] of this.#loadedModels) { units.modelReady(kind, clips); }
+      if (this.#blend) { units.setBlend(this.#blend); }
       this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false };
     }
     const units = this.#units.units;
@@ -925,6 +941,7 @@ export class WorldView {
     const presented = units.frame(sampled, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
     const viewerModel = presented.imported.find((unit) => unit.entity.kind === "player" && unit.entity.id === projection.viewerId);
     this.#viewerClip = viewerModel?.clip ?? null;
+    this.#viewerAnimation = viewerModel ? { upper: [viewerModel.clip, viewerModel.time], lower: viewerModel.lower, layers: viewerModel.layers } : null;
     const nodes: RendererSceneNode[] = [];
     const projected: ProjectedUnit[] = [];
     const others: MinimapUnit[] = [];

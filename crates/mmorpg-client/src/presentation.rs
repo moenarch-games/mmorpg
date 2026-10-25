@@ -549,8 +549,7 @@ impl Presentation {
                 &imported.id,
                 imported.root,
                 imported.height,
-                imported.clip,
-                imported.time,
+                &imported.animation.layers,
                 imported.tint,
                 hidden,
             );
@@ -561,8 +560,7 @@ impl Presentation {
                     &format!("{}-hair", imported.id),
                     asset,
                     placement,
-                    imported.clip,
-                    imported.time,
+                    &imported.animation.layers,
                     imported.tint,
                 ));
             }
@@ -571,8 +569,7 @@ impl Presentation {
                     &format!("{}-head", imported.id),
                     asset,
                     placement,
-                    imported.clip,
-                    imported.time,
+                    &imported.animation.layers,
                     imported.tint,
                 ));
             }
@@ -581,13 +578,12 @@ impl Presentation {
                     &imported.id,
                     asset,
                     placement,
-                    imported.clip,
-                    imported.time,
+                    &imported.animation.layers,
                     imported.tint,
                 ));
             }
             let head = asset
-                .head(imported.clip, imported.time)
+                .head(&imported.animation.layers)
                 .map(|(centre, radius)| {
                     let m = placement.elements;
                     let p: [f64; 3] = std::array::from_fn(|r| {
@@ -697,8 +693,9 @@ impl Presentation {
                 three_d_animation::Mat4 {
                     elements: pose.model,
                 },
-                clip,
-                time,
+                &[mmorpg_presentation::units::imported::Layer::single(
+                    clip, time,
+                )],
                 None,
             ));
         }
@@ -1118,8 +1115,10 @@ pub(crate) fn observed_imported_draws(count: usize, time: f32) -> Vec<crate::wor
                     q: [0.0, 0.0, 0.0, 1.0],
                 },
                 1.8,
-                Kind::Ranger.clips().idle,
-                time,
+                &[mmorpg_presentation::units::imported::Layer::single(
+                    Kind::Ranger.clips().idle,
+                    time,
+                )],
                 None,
                 &[],
             )
