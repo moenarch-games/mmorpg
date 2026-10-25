@@ -2,8 +2,9 @@
 //!
 //! The pad catalog mirrors the browser's standard-mapping gamepad bindings in
 //! `web/src/input/game-controls.ts` (same action ids, button/axis indices,
-//! thresholds and contexts): the left stick runs and strafes, A jumps, B
-//! closes a panel or cancels a cast, X toggles auto-attack, Y releases the
+//! thresholds and contexts): the left stick runs and strafes, A jumps, B rolls
+//! (#516; while a panel is open or a cast runs, B
+//! closes the panel or cancels the cast instead), X toggles auto-attack, Y releases the
 //! spirit, the right bumper cycles targets, the d-pad uses slots 1–4 and
 //! Select toggles bags. Native additions use otherwise unbound buttons: the
 //! left bumper cycles NPCs, Start talks to the selected NPC, the left stick
@@ -34,6 +35,8 @@ use input_bindings_core::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PadAction {
     Jump,
+    /// Dodge roll (#516).
+    Roll,
     TargetNext,
     ToggleAutoAttack,
     /// Action-bar slot 1–4.
@@ -138,6 +141,12 @@ fn catalog() -> Vec<Entry> {
         (MOVE_LEFT, GAMEPLAY, vec![stick(0, Negative)], None),
         (MOVE_RIGHT, GAMEPLAY, vec![stick(0, Positive)], None),
         (JUMP, GAMEPLAY, vec![button(A)], Some(PadAction::Jump)),
+        (
+            "move.roll",
+            GAMEPLAY,
+            vec![button(B)],
+            Some(PadAction::Roll),
+        ),
         // Held while swimming (#274): A ascends, R3 descends.
         (DESCEND, GAMEPLAY, vec![button(R3)], None),
         (
@@ -772,8 +781,8 @@ mod tests {
             assert_eq!(controls.sample(&[pressed(button)]), [action], "{button}");
             controls.sample(&[pad()]);
         }
-        // B does nothing in plain gameplay (no leaving the native world).
-        assert!(controls.sample(&[pressed(standard::B)]).is_empty());
+        // B dodge-rolls in plain gameplay (#516); it never leaves the native world.
+        assert_eq!(controls.sample(&[pressed(standard::B)]), [PadAction::Roll]);
     }
 
     #[test]

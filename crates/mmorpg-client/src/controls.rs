@@ -23,6 +23,8 @@ pub enum ControlAction {
     MoveLeft,
     MoveRight,
     Jump,
+    /// Tap to dodge-roll (#516).
+    Roll,
     /// Held while swimming: descend (#274).
     Descend,
     TargetNext,
@@ -63,12 +65,13 @@ pub enum Panel {
 
 impl ControlAction {
     /// Every control action in catalog order.
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 28] = [
         Self::MoveForward,
         Self::MoveBackward,
         Self::MoveLeft,
         Self::MoveRight,
         Self::Jump,
+        Self::Roll,
         Self::Descend,
         Self::TargetNext,
         Self::ToggleAttack,
@@ -103,6 +106,7 @@ impl ControlAction {
             Self::MoveLeft => "move.strafeLeft",
             Self::MoveRight => "move.strafeRight",
             Self::Jump => "move.jump",
+            Self::Roll => "move.roll",
             Self::Descend => "move.descend",
             Self::TargetNext => "target.next",
             Self::ToggleAttack => "combat.toggleAutoAttack",
@@ -141,6 +145,7 @@ impl ControlAction {
             Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "ArrowLeft"]),
             Self::MoveRight => ("Strafe right", GAMEPLAY, &["KeyD", "ArrowRight"]),
             Self::Jump => ("Jump (hold to swim up)", GAMEPLAY, &["Space"]),
+            Self::Roll => ("Dodge roll", GAMEPLAY, &["ShiftLeft", "ShiftRight"]),
             Self::Descend => ("Swim down (hold)", GAMEPLAY, &["KeyX"]),
             Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),
             Self::ToggleAttack => ("Toggle auto-attack", GAMEPLAY, &["KeyF"]),

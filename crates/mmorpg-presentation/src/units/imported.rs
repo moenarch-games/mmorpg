@@ -350,6 +350,8 @@ pub struct Clips {
     pub jump: Option<JumpClips>,
     /// The authored water locomotion, for a model that swims (Atlas 6.6.41).
     pub swim: Option<SwimClips>,
+    /// The in-place dodge roll, for a model that rolls (#516).
+    pub roll: Option<&'static str>,
     /// Class- and ability-specific strikes, for a model that has them (#384).
     pub strikes: Option<StrikeClips>,
     /// The joint whose subtree is the upper body, for a model that layers its upper body over
@@ -410,6 +412,8 @@ pub const RUN_CLIP_SPEED: f64 = 3.2;
 pub const DIVE_SPEED: f64 = 0.4;
 /// The shortest lower-body crossfade in seconds just after entering or leaving swimming depth.
 pub const WATER_BLEND_SECONDS: f32 = 0.3;
+/// The zone's dodge roll lasts this long in seconds (#516); its clip plays once over it.
+pub const ROLL_SECONDS: f64 = mmorpg_core::roll::ROLL_TICKS as f64 / mmorpg_core::TICK_HZ as f64;
 
 impl Kind {
     pub const ALL: [Self; 4] = [Self::Ranger, Self::Wolf, Self::Rat, Self::Pig];
@@ -453,6 +457,7 @@ impl Kind {
                     enter: "Swim_Enter",
                     exit: "Swim_Exit",
                 }),
+                roll: Some("Roll"),
                 strikes: Some(StrikeClips {
                     shield_bash: "Shield_OneShot",
                     bow: "Bow_Release",
@@ -469,6 +474,7 @@ impl Kind {
                 guard: None,
                 jump: None,
                 swim: None,
+                roll: None,
                 strikes: None,
                 upper_body: None,
             },
@@ -481,6 +487,7 @@ impl Kind {
                 guard: None,
                 jump: None,
                 swim: None,
+                roll: None,
                 strikes: None,
                 upper_body: None,
             },
@@ -494,6 +501,7 @@ impl Kind {
                 guard: None,
                 jump: None,
                 swim: None,
+                roll: None,
                 strikes: None,
                 upper_body: None,
             },
@@ -690,6 +698,8 @@ pub struct Cues {
     pub dead: bool,
     /// The zone's guard protects now: a ready, grounded raised shield (viewer only).
     pub guarding: bool,
+    /// The zone projects a dodge roll (#516).
+    pub rolling: bool,
     /// Presentation clock and the step since the previous frame, in seconds.
     pub now: f64,
     pub dt: f64,
@@ -899,6 +909,9 @@ pub struct Playback {
     crossings: u32,
     /// When the unit last entered or left swimming depth, on the presentation clock.
     crossed: Option<f64>,
+    /// Rolling last frame (#516), and how many rolls have begun.
+    rolling: bool,
+    rolls: u32,
     attitude: Attitude,
     /// Pelvis and legs: locomotion, flight and death.
     base: Track,
@@ -1145,8 +1158,23 @@ impl Playback {
             // A standing protecting guard holds the shield up with its own stance.
             Want::looped(clips.guard.filter(|_| guarding).unwrap_or(clips.idle), 1.)
         };
+        // A dodge roll (#516) plays its clip once over the roll's length, whatever the legs did.
+        if cues.rolling && !self.rolling {
+            self.rolls = self.rolls.wrapping_add(1);
+        }
+        self.rolling = cues.rolling;
+        let roll = clips
+            .roll
+            .filter(|&clip| cues.rolling && !dead && !swims && !reduced && available(clip));
         let base = if dead {
             Want::hold(clips.death, 0)
+        } else if let Some(clip) = roll {
+            #[allow(clippy::cast_possible_truncation)]
+            let rate = (f64::from(duration(clip)) / ROLL_SECONDS) as f32;
+            Want {
+                rate,
+                ..Want::hold(clip, self.rolls)
+            }
         } else {
             match (clips.jump, self.flight) {
                 (Some(jump), Flight::Rising) if !reduced && available(jump.start) => {
@@ -1160,7 +1188,7 @@ impl Playback {
                 _ => ground,
             }
         };
-        let lower = if dead {
+        let lower = if dead || roll.is_some() {
             None
         } else if let Some((true, want)) = strike {
             Some(want)
@@ -1201,13 +1229,25 @@ impl Playback {
         let seconds = if first { 0. } else { lower_seconds };
         self.base.advance(Some(base), dt, seconds, reduced);
         self.lower.advance(lower, dt, lower_seconds, reduced);
-        let attitude = Attitude::target(
-            if dead { WaterMode::Dry } else { cues.water },
-            speed,
-            cues.direction,
-            vertical_speed,
-        );
-        self.attitude = self.attitude.settle(attitude, cues.dt, reduced || first);
+        if roll.is_some() {
+            // The forward roll turns the drawn body at once toward the roll's travel (#516), and
+            // eases back to the facing after it; a roll stopped by a wall keeps its heading.
+            let heading = if speed > 1. {
+                (cues.direction + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+                    - std::f64::consts::PI
+            } else {
+                self.attitude.heading
+            };
+            self.attitude = Attitude { pitch: 0., heading };
+        } else {
+            let attitude = Attitude::target(
+                if dead { WaterMode::Dry } else { cues.water },
+                speed,
+                cues.direction,
+                vertical_speed,
+            );
+            self.attitude = self.attitude.settle(attitude, cues.dt, reduced || first);
+        }
         if split {
             // The strike leaves the legs mid-swing: the upper body keeps it without a blend.
             self.upper = Track::default();
@@ -2101,5 +2141,48 @@ mod tests {
         let struck = swim_frame(&mut playback, one, WaterMode::Swimming, 0., 0., now);
         assert_eq!(struck.upper.0, "Sword_Attack");
         assert_ne!(struck.lower.0, "Sword_Attack");
+    }
+
+    fn roll_frame(playback: &mut Playback, rolling: bool, direction: f64, now: f64) -> Animation {
+        playback.advance(
+            Kind::Ranger.clips(),
+            |clip: &str| if clip == "Roll" { 1.4667 } else { 1. },
+            Cues {
+                speed: 5.85,
+                direction,
+                rolling,
+                now,
+                dt: 0.1,
+                ..Cues::default()
+            },
+            Blend::default(),
+        )
+    }
+
+    #[test]
+    fn a_roll_plays_its_clip_once_over_the_roll_turned_toward_its_travel() {
+        let mut playback = Playback::default();
+        let back = std::f64::consts::PI;
+        let first = roll_frame(&mut playback, true, back, 0.1);
+        assert_eq!(first.lower.0, "Roll");
+        assert!((first.attitude.heading.abs() - back).abs() < 1e-9);
+        // The clip plays at the pace that fits it into the 0.6 s roll.
+        let mut last = first;
+        for frame in 2..=6 {
+            last = roll_frame(&mut playback, true, back, f64::from(frame) / 10.);
+        }
+        let expected = 0.5 * 1.4667 / ROLL_SECONDS;
+        assert!(
+            (f64::from(last.lower.1) - expected).abs() < 0.01,
+            "{:?}",
+            last.lower
+        );
+        // After the roll the run takes over and the body eases back toward its facing.
+        let after = roll_frame(&mut playback, false, 0., 0.7);
+        assert_eq!(after.lower.0, "Jog_Fwd_Loop");
+        assert!(after.attitude.heading.abs() < back);
+        // A second roll starts its clip again.
+        let again = roll_frame(&mut playback, true, 0., 0.8);
+        assert_eq!(again.lower, ("Roll", 0.));
     }
 }

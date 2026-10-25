@@ -15,7 +15,7 @@ const RESEND_INTERVAL: Duration = Duration::from_millis(50);
 const FACING_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / TICK_HZ as u64);
 
 /// Latest local input published by the window: held movement plus counted
-/// discrete presses. Each counter (`jumps`, `selections`, `attack_requests`,
+/// discrete presses. Each counter (`jumps`, `rolls`, `selections`, `attack_requests`,
 /// `releases`, `ability_uses`, `ability_releases`, `cancels`) makes the session send one command
 /// when it advances, so coalesced watch updates can merge presses but never
 /// replay them.
@@ -25,6 +25,8 @@ pub struct PlayerInput {
     pub strafe: i8,
     pub facing: u16,
     pub jumps: u32,
+    /// Dodge-roll presses (#516).
+    pub rolls: u32,
     /// The latest requested selection (`None` clears it).
     pub target: Option<EntityRef>,
     pub selections: u32,
@@ -79,7 +81,8 @@ pub enum NetworkUpdate {
 
 /// Commands to send for one input observation, in order: a selection, an
 /// attack start or stop, a spirit release, a cast cancellation, an ability,
-/// its release, a jump, then a move.
+/// its release, a jump, then a move, then a roll (after the move, so the zone rolls along the
+/// latest intent).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Outgoing {
     choose: Option<(u8, u8)>,
@@ -91,6 +94,7 @@ struct Outgoing {
     ability_release: Option<(u8, bool)>,
     interaction: Option<ZoneCommand>,
     jump: bool,
+    roll: bool,
     guard: Option<Option<mmorpg_core::StrikeHeight>>,
     rise: Option<i8>,
     movement: Option<(i8, i8, u16)>,
@@ -134,6 +138,9 @@ impl Outgoing {
         if let Some((forward, strafe, facing)) = self.movement {
             session.send_move(forward, strafe, facing)?;
         }
+        if self.roll {
+            session.send_command(ZoneCommand::Roll)?;
+        }
         Ok(())
     }
 }
@@ -143,6 +150,7 @@ impl Outgoing {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Presses {
     jumps: u32,
+    rolls: u32,
     selections: u32,
     attack_requests: u32,
     releases: u32,
@@ -156,6 +164,7 @@ impl Presses {
     const fn of(input: PlayerInput) -> Self {
         Self {
             jumps: input.jumps,
+            rolls: input.rolls,
             selections: input.selections,
             attack_requests: input.attack_requests,
             releases: input.releases,
@@ -259,6 +268,7 @@ impl Outbox {
                 .then_some(input.interaction)
                 .flatten(),
             jump: pressed.jumps != handled.jumps,
+            roll: pressed.rolls != handled.rolls,
             guard: self.guard(input),
             rise: self.rise(input),
             movement,
