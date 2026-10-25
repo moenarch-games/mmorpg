@@ -14,6 +14,7 @@ pub mod effects;
 pub mod imported;
 pub mod kit;
 pub mod player;
+pub mod presets;
 
 use std::{
     collections::{BTreeMap, BTreeSet},

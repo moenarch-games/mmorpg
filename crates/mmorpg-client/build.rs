@@ -158,6 +158,17 @@ fn main() {
         "pub const HAIR: &str = {hair:?};\npub const HAIR_KEY: &str = {HAIR:?};\npub const CAP_KEY: &str = {CAP:?};\npub const HELM_KEY: &str = {HELM:?};\n"
     ));
     files.push(hair);
+    // Every other prepared entry too: the residents' and humanoid enemies' outfit variants,
+    // armour, beards, headwear and hairstyles (#418, #39), looked up by key and variant.
+    let native = bundle.join("native");
+    println!("cargo:rerun-if-changed={}", native.display());
+    for prepared in fs::read_dir(&native).expect("run scripts/prepare-ranger-native.sh") {
+        let name = prepared.expect("a prepared file").file_name();
+        let name = name.to_str().expect("prepared file names are UTF-8");
+        if name.ends_with(".native.glb") {
+            files.push(format!("native/{name}"));
+        }
+    }
     write("ranger_bundle.rs", &bundle, code, files);
     static_bundle(
         "inn_bundle.rs",

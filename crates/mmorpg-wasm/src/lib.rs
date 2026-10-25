@@ -127,6 +127,24 @@ pub fn sound_manifest(bundle: &str) -> Result<String, JsError> {
     mmorpg_presentation::audio::sound_manifest(bundle).map_err(|error| JsError::new(&error))
 }
 
+/// The Ranger's `humanoid-appearance` JSON with the game's humanoid enemy presets beside the
+/// bundle's own (#39), the presets the native client draws too.
+#[wasm_bindgen(js_name = withEnemyPresets)]
+pub fn with_enemy_presets(appearance: &str) -> Result<String, JsError> {
+    let appearance: serde_json::Value = serde_json::from_str(appearance)?;
+    Ok(mmorpg_presentation::units::presets::with_enemy_presets(&appearance).to_string())
+}
+
+/// A unit's own seeded variation of the preset `id` (asset-tooling #380) over `appearance`
+/// (with the enemy presets), as preset JSON: the same man the native client draws for that seed.
+#[wasm_bindgen(js_name = varyPreset)]
+pub fn vary_preset(appearance: &str, id: &str, seed: u32) -> Result<String, JsError> {
+    let appearance: serde_json::Value = serde_json::from_str(appearance)?;
+    mmorpg_presentation::units::presets::vary_preset(&appearance, id, seed)
+        .map(|preset| preset.to_string())
+        .ok_or_else(|| JsError::new(&format!("the Ranger bundle has no preset {id}")))
+}
+
 /// Per area, the imported unit models its creature spawns use, and `"residents"` where a named
 /// resident (#418) or a humanoid enemy (#39) with an appearance preset stands, as JSON
 /// `[{"area": id, "models": ["Wolf", …]}]` in area order (#240).

@@ -47,6 +47,12 @@ entries=humanoid.ranger.male/default,equipment.sword.arming/default,equipment.da
 for outfit in warden.skin.light ranger arcanist.skin.light necromancer.skin.grey rogue cleric.skin.light druid; do
   entries+=",humanoid.ranger.male/outfit.class.${outfit},armor.class.${outfit%%.*}/default"
 done
+# The residents' and humanoid enemies' presets (#418, #39): the outfit variants `fetch-ranger.py`
+# acquires, their armour, the beards, the straw hat and every tintable hairstyle.
+for variant in outfit.knight outfit.knight.skin.light outfit.soldier outfit.soldier.skin.light outfit.innkeeper.skin.light outfit.farmer outfit.farmer.skin.light outfit.monk.skin.light; do
+  entries+=",humanoid.ranger.male/${variant}"
+done
+entries+=",armor.soldier/default,armor.farmer/default,armor.innkeeper/default,armor.monk/default,facial-hair.beards/default,equipment.hat.straw/default,hair.buzzed/hair-1,hair.long/hair-1"
 ASSET_TOOLING_KTX="${KTX}" bun "${PROCESSOR}/scripts/prepare-native-downloads.ts" \
   --index "${ROOT_DIR}/web/public/characters/humanoid.ranger.male/humanoid-ranger-male.index.json" \
   --entries "${entries}" \

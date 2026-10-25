@@ -3,7 +3,7 @@
 //! Players use asset-tooling's Ranger humanoid (Atlas 6.3.7); wolves, vermin and boars use the
 //! bundled Quaternius CC0 animals (Atlas 6.3.6); the named Greyhaven residents wear the Ranger in
 //! their appearance presets (#418) and the humanoid enemies (marauders, Redbrands) game-authored
-//! presets (#39) where the client draws them; other humanoid creatures and NPCs keep their
+//! presets (#39, `presets`) where the client draws them; other humanoid creatures and NPCs keep their
 //! procedural models. Each client imports and skins the models with its own
 //! provider; this module only decides what to pose. Presentation only, never read by gameplay.
 use mmorpg_core::{
@@ -162,7 +162,7 @@ impl Outfit {
 
 /// A character drawn on the Ranger figure in a `humanoid-appearance` preset: a named Greyhaven
 /// resident in the bundle's own preset (#418), or a humanoid enemy in a game-authored preset
-/// over the bundle's outfits (#39; the browser defines the `enemy.*` presets).
+/// over the bundle's outfits (#39; [`super::presets::enemy_presets`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Resident {
     Marshal,
@@ -183,6 +183,20 @@ pub enum Resident {
 }
 
 impl Resident {
+    /// Every character with a preset, so a client can check it can draw them all.
+    pub const ALL: [Self; 10] = [
+        Self::Marshal,
+        Self::Guard,
+        Self::Innkeeper,
+        Self::Farmer,
+        Self::Healer,
+        Self::Marauder,
+        Self::RedbrandBandit,
+        Self::RedbrandCrossbowman,
+        Self::RedbrandBrute,
+        Self::Garrick,
+    ];
+
     /// The resident an NPC of this canonical name is, if it has a preset. Tanner Hilda Brook has
     /// none yet (the resident outfits exist on the male figure only).
     #[must_use]
@@ -1129,6 +1143,12 @@ mod tests {
                 "enemy.redbrand.crossbowman",
                 "enemy.redbrand.brute",
             ]
+        );
+        // Each is authored in the shared presets both clients draw.
+        assert!(
+            presets
+                .iter()
+                .all(|id| super::super::presets::ENEMY_PRESET_IDS.contains(id))
         );
     }
 

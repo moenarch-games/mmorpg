@@ -173,6 +173,10 @@ impl Presentation {
         for kind in Kind::ALL {
             units_presenter.model_ready(kind, skinned::asset(kind).model.clip_durations());
         }
+        // The residents and humanoid enemies wear their presets on the Ranger (#418, #39).
+        if skinned::residents_drawable() {
+            units_presenter.residents_ready();
+        }
         Ok(Self {
             player_id,
             scenery,
@@ -544,99 +548,17 @@ impl Presentation {
         }
         for imported in &frame.imported {
             let ranger = imported.kind == mmorpg_presentation::units::imported::Kind::Ranger;
-            // A player wears their class starter outfit (asset-tooling #379).
-            let outfit = imported
-                .outfit
-                .filter(|_| ranger)
-                .map(|outfit| (outfit, skinned::class_outfit(outfit)));
-            let asset = outfit.map_or(&skinned::asset(imported.kind).model, |(_, worn)| {
-                &worn.model
-            });
-            let placement = asset.placement(imported.root, imported.height);
-            // The viewer's chosen headwear (#374): an authored item on `head.armor`, the
-            // Ranger's own hood, or none; everyone else keeps the bundle's hooded default, or in
-            // a class outfit its own headwear.
-            let hat = imported.headwear.map(|look| look.hat);
-            let mut hidden: Vec<String> = Vec::new();
-            let mut plates = Vec::new();
-            let shows_hair = if let Some((outfit, worn)) = outfit {
-                let head = hat.unwrap_or(Some(player::Hat::Class));
-                let own_hood = matches!(head, Some(player::Hat::Class | player::Hat::Hood))
-                    && !worn.hood.is_empty();
-                let base_hood =
-                    head == Some(player::Hat::Hood) && worn.hood.is_empty() && worn.base_hood;
-                // `outfit.hood` names every variant's hood, the outfit's own among them.
-                if !base_hood {
-                    hidden.extend(
-                        skinned::hood_nodes()
-                            .iter()
-                            .filter(|node| !worn.hood.contains(node))
-                            .cloned(),
-                    );
-                }
-                if !own_hood {
-                    hidden.extend_from_slice(&worn.hood);
-                }
-                // Drops replace the outfit's plates on their sockets; a chosen headwear item
-                // takes the head over a drop's helm, any headwear but the class's over the
-                // outfit's own head plate.
-                let replaced = outfit.replaced();
-                let class_head = head == Some(player::Hat::Class);
-                let item = matches!(head, Some(player::Hat::Cap | player::Hat::Helm));
-                let layers = &imported.animation.layers;
-                plates.extend(worn.plates.draws(
+            // A named resident or humanoid enemy wears its preset (#418, #39).
+            let (asset, placement, mut body) = match imported.resident.filter(|_| ranger) {
+                Some(resident) => skinned::resident_look(resident, imported.variety).draws(
                     &imported.id,
-                    asset,
-                    placement,
-                    layers,
+                    imported.root,
+                    imported.height,
+                    &imported.animation.layers,
                     imported.tint,
-                    |socket| !replaced.contains(&socket) && (class_head || socket != HEAD_ARMOR),
-                ));
-                plates.extend(skinned::drop_plates().draws(
-                    &format!("{}-drop", imported.id),
-                    asset,
-                    placement,
-                    layers,
-                    imported.tint,
-                    |socket| replaced.contains(&socket) && !(item && socket == HEAD_ARMOR),
-                ));
-                !(own_hood || base_hood)
-                    && (hat.is_some() || worn.hair)
-                    && !skinned::hides_hair(head)
-            } else {
-                let hooded = matches!(hat, None | Some(Some(player::Hat::Hood)));
-                if ranger && !hooded {
-                    hidden.extend_from_slice(skinned::hood_nodes());
-                }
-                hat.is_some_and(|hat| !skinned::hides_hair(hat))
+                ),
+                None => dressed(imported),
             };
-            let mut body = asset.draws(
-                &imported.id,
-                imported.root,
-                imported.height,
-                &imported.animation.layers,
-                imported.tint,
-                &hidden,
-            );
-            body.extend(plates);
-            if ranger && shows_hair {
-                body.extend(skinned::Equipment::hair().draws(
-                    &format!("{}-hair", imported.id),
-                    asset,
-                    placement,
-                    &imported.animation.layers,
-                    imported.tint,
-                ));
-            }
-            if let Some(items) = hat.flatten().and_then(skinned::Equipment::headwear) {
-                body.extend(items.draws(
-                    &format!("{}-head", imported.id),
-                    asset,
-                    placement,
-                    &imported.animation.layers,
-                    imported.tint,
-                ));
-            }
             if let Some(weapon) = imported.loadout.map(skinned::Equipment::loadout) {
                 body.extend(weapon.draws(
                     &imported.id,
@@ -1164,6 +1086,109 @@ fn yaw_radians(steps: f32) -> f32 {
 
 fn metres(value: [i32; 3]) -> [f32; 3] {
     value.map(|component| component as f32 / UNITS_PER_METRE as f32)
+}
+
+/// A Ranger player in their class starter outfit and chosen headwear, or the plain imported
+/// model of an animal or hooded Ranger: the posed model, its model-to-world placement and draws.
+fn dressed(
+    imported: &mmorpg_presentation::units::ImportedUnit,
+) -> (
+    &'static skinned::Model,
+    three_d_animation::Mat4,
+    Vec<crate::world::SceneDraw>,
+) {
+    let ranger = imported.kind == mmorpg_presentation::units::imported::Kind::Ranger;
+    // A player wears their class starter outfit (asset-tooling #379).
+    let outfit = imported
+        .outfit
+        .filter(|_| ranger)
+        .map(|outfit| (outfit, skinned::class_outfit(outfit)));
+    let asset = outfit.map_or(&skinned::asset(imported.kind).model, |(_, worn)| {
+        &worn.model
+    });
+    let placement = asset.placement(imported.root, imported.height);
+    // The viewer's chosen headwear (#374): an authored item on `head.armor`, the
+    // Ranger's own hood, or none; everyone else keeps the bundle's hooded default, or in
+    // a class outfit its own headwear.
+    let hat = imported.headwear.map(|look| look.hat);
+    let mut hidden: Vec<String> = Vec::new();
+    let mut plates = Vec::new();
+    let shows_hair = if let Some((outfit, worn)) = outfit {
+        let head = hat.unwrap_or(Some(player::Hat::Class));
+        let own_hood =
+            matches!(head, Some(player::Hat::Class | player::Hat::Hood)) && !worn.hood.is_empty();
+        let base_hood = head == Some(player::Hat::Hood) && worn.hood.is_empty() && worn.base_hood;
+        // `outfit.hood` names every variant's hood, the outfit's own among them.
+        if !base_hood {
+            hidden.extend(
+                skinned::hood_nodes()
+                    .iter()
+                    .filter(|node| !worn.hood.contains(node))
+                    .cloned(),
+            );
+        }
+        if !own_hood {
+            hidden.extend_from_slice(&worn.hood);
+        }
+        // Drops replace the outfit's plates on their sockets; a chosen headwear item
+        // takes the head over a drop's helm, any headwear but the class's over the
+        // outfit's own head plate.
+        let replaced = outfit.replaced();
+        let class_head = head == Some(player::Hat::Class);
+        let item = matches!(head, Some(player::Hat::Cap | player::Hat::Helm));
+        let layers = &imported.animation.layers;
+        plates.extend(worn.plates.draws(
+            &imported.id,
+            asset,
+            placement,
+            layers,
+            imported.tint,
+            |socket| !replaced.contains(&socket) && (class_head || socket != HEAD_ARMOR),
+        ));
+        plates.extend(skinned::drop_plates().draws(
+            &format!("{}-drop", imported.id),
+            asset,
+            placement,
+            layers,
+            imported.tint,
+            |socket| replaced.contains(&socket) && !(item && socket == HEAD_ARMOR),
+        ));
+        !(own_hood || base_hood) && (hat.is_some() || worn.hair) && !skinned::hides_hair(head)
+    } else {
+        let hooded = matches!(hat, None | Some(Some(player::Hat::Hood)));
+        if ranger && !hooded {
+            hidden.extend_from_slice(skinned::hood_nodes());
+        }
+        hat.is_some_and(|hat| !skinned::hides_hair(hat))
+    };
+    let mut body = asset.draws(
+        &imported.id,
+        imported.root,
+        imported.height,
+        &imported.animation.layers,
+        imported.tint,
+        &hidden,
+    );
+    body.extend(plates);
+    if ranger && shows_hair {
+        body.extend(skinned::Equipment::hair().draws(
+            &format!("{}-hair", imported.id),
+            asset,
+            placement,
+            &imported.animation.layers,
+            imported.tint,
+        ));
+    }
+    if let Some(items) = hat.flatten().and_then(skinned::Equipment::headwear) {
+        body.extend(items.draws(
+            &format!("{}-head", imported.id),
+            asset,
+            placement,
+            &imported.animation.layers,
+            imported.tint,
+        ));
+    }
+    (asset, placement, body)
 }
 
 #[cfg(test)]
