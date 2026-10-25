@@ -5,14 +5,17 @@ import { loadStaticBundle } from "./static-bundle";
 export const SHRINE_BUNDLE = `${import.meta.env.BASE_URL}scenery/shrine.kit/`;
 /** The pinned `outpost-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 export const OUTPOST_BUNDLE = `${import.meta.env.BASE_URL}buildings/outpost.kit/`;
+/** The pinned `settlement-props` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
+export const SETTLEMENT_BUNDLE = `${import.meta.env.BASE_URL}scenery/settlement.props/`;
 
 export type KitPlacement = { key: string; matrix: Float32Array };
 
 /**
  * An asset-tooling kit's static modules drawn where the shared Rust presentation places them, as
- * the native client does: the Sunken Shrine (#431) and the Outpost kit buildings (#420). Until
+ * the native client does: the Sunken Shrine (#431), the Outpost kit buildings (#420) and the
+ * market square's settlement props (#421). Until
  * the bundle loads (or when it fails) no module is drawn; the Outpost's static scene keeps its
- * blockouts meanwhile. Presentation only.
+ * blockouts and the square its prop boxes meanwhile. Presentation only.
  */
 export class KitModules {
   readonly #bundle: string;

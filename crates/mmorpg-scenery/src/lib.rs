@@ -35,6 +35,7 @@ pub mod layout;
 mod outpost_grass;
 pub mod outpost_kit;
 mod outpost_relief;
+pub mod settlement_props;
 pub mod shrine;
 
 use std::collections::BTreeMap;

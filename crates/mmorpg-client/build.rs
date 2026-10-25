@@ -1,8 +1,9 @@
 //! Embeds locally acquired assets; builds perform no network acquisition.
 //! Ranger default models and the shared clip library are standard GLBs prepared by
 //! asset-tooling (`scripts/prepare-ranger-native.sh`), with original socket metadata.
-//! The Greyhaven inn, the Sunken Shrine kit (#431), the ambient animals (#419) and the
-//! Outpost building kit (#420) keep the manifest/resource embedding path.
+//! The Greyhaven inn, the Sunken Shrine kit (#431), the ambient animals (#419), the
+//! Outpost building kit (#420) and the settlement props (#421) keep the manifest/resource
+//! embedding path.
 #[path = "build/warden_icons.rs"]
 mod warden_icons;
 
@@ -133,6 +134,13 @@ fn main() {
         &manifest_dir.join("../../web/public/buildings/outpost.kit"),
         None,
         true,
+    );
+    // Every prop of the settlement props (#421).
+    static_bundle(
+        "settlement_bundle.rs",
+        &manifest_dir.join("../../web/public/scenery/settlement.props"),
+        None,
+        false,
     );
 }
 

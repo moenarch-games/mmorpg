@@ -45,6 +45,7 @@ export function createArenaWorld(
     inn: { entries: () => [], presenter: () => ({ frame: () => emptyMotion }), reachableDoor: () => 0 },
     shrine: { entries: [], placements: [] },
     outpost: { entries: [], placements: [] },
+    settlement: { entries: [], placements: [] },
     ambient: { entries: [], clips: [], anchors: [], frame: () => emptyMotion },
     importedRestClip: (kind) => local.scenery.importedRestClip(kind),
     areaAt: () => null,
