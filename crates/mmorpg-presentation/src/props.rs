@@ -1,5 +1,6 @@
 //! Greyhaven prop compositions: one low-poly model per scenery prop kind.
 use super::{Animated, Draw, Kit, Motion, batching::*, geometry::*, terrain::*};
+use mmorpg_core::Grip;
 use mmorpg_scenery::{Prop, PropKind, Scenery, TerrainGrid, TreeVariant};
 use std::{
     collections::BTreeMap,
@@ -44,12 +45,16 @@ struct Part {
 }
 struct Model {
     parts: Vec<Part>,
+    /// Worn handhold pieces (#512): colour, shape and unit-cube transform, drawn in the shared
+    /// handhold batch rather than with the prop's own (possibly instanced) parts.
+    handholds: Vec<(u32, crate::handholds::Shape, Affine)>,
     cull: Cull,
 }
 impl Model {
     fn new(cull: Cull) -> Self {
         Self {
             parts: Vec::new(),
+            handholds: Vec::new(),
             cull,
         }
     }
@@ -553,10 +558,12 @@ fn grass(m: &mut Model, p: &Prop) {
         compose(&[translate(0., -0.02, 0.), scale(hx, hy, hx)]),
     );
 }
-fn cliff(m: &mut Model, p: &Prop) {
+/// A cliff block; `climbable` rock wears handhold routes up its sides (#512).
+fn cliff(m: &mut Model, p: &Prop, climbable: bool) {
     let [hx, hy, hz] = half(p);
     let h = hy * 2.;
     let s = seed(p);
+    let mut layers = Vec::with_capacity(3);
     for layer in 0..3 {
         let l = layer as f64;
         let from = h * l / 3.;
@@ -566,6 +573,12 @@ fn cliff(m: &mut Model, p: &Prop) {
             [0., (from + to) / 2., 0.],
             [hx - l * 0.25, (to - from) / 2., hz - l * 0.25],
         );
+        layers.push(([hx - l * 0.25, hz - l * 0.25], from, to));
+    }
+    if climbable {
+        crate::handholds::block(&layers, s, &mut |c, shape, a| {
+            m.handholds.push((c, shape, a))
+        });
     }
     m.box_at(MOSS, [0., h + 0.08, 0.], [hx - 0.7, 0.1, hz - 0.7]);
     let count = (hx * hz / 6.).round().clamp(4., 26.) as usize;
@@ -731,6 +744,11 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             continue;
         }
         let [hx, hy, hz] = half(p);
+        // Rock the content marks climbable wears worn handholds (#512).
+        let climbable = p
+            .collider
+            .and_then(|id| s.climbing().collider(id))
+            .is_some_and(|grip| grip == Grip::Rock);
         let mut m = Model::new(Cull::Always);
         let mut f = frame(p, g, 0.);
         let (mut w, mut d, mut h, mut door_yaw) = (hx, hz, hy * 2., yaw(p));
@@ -827,11 +845,19 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     Cull::Mid
                 };
                 let s = seed(p);
-                m.put(
-                    if s > 0.5 { ROCK } else { ROCK_DARK },
-                    blob(0, false, 0.25, (s * 7.).floor() + 60.),
-                    at(0., hy * 0.7, 0., hx, hy * 1.4, hz),
-                );
+                let body = blob(0, false, 0.25, (s * 7.).floor() + 60.);
+                let place = at(0., hy * 0.7, 0., hx, hy * 1.4, hz);
+                if climbable {
+                    crate::handholds::boulder(
+                        &body,
+                        place,
+                        [0., hy * 0.7, 0.],
+                        [hx, hy * 1.4, hz],
+                        s,
+                        &mut |c, shape, a| m.handholds.push((c, shape, a)),
+                    );
+                }
+                m.put(if s > 0.5 { ROCK } else { ROCK_DARK }, body, place);
                 if p.collider.is_some() {
                     m.put(
                         MOSS,
@@ -891,7 +917,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     );
                 }
             }
-            PropKind::Cliff => cliff(&mut m, p),
+            PropKind::Cliff => cliff(&mut m, p, climbable),
             PropKind::CaveRoof => {
                 animations.push(cave_roof(p, roofs));
                 roofs += 1;
@@ -1281,6 +1307,10 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             p.kind,
             PropKind::Tree(_) | PropKind::Rock(_) | PropKind::GrassTuft
         );
+        for (c, shape, a) in m.handholds {
+            b.global("handholds", c)
+                .add(shape.geometry(), compose(&[f, a]));
+        }
         for part in m.parts {
             b.put(
                 part.c,

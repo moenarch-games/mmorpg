@@ -452,6 +452,8 @@ pub struct Scenery {
     relief: Option<Relief>,
     /// The physical ground units walk on (#159); `None` is flat ground at y = 0.
     ground: Option<mmorpg_core::Terrain>,
+    /// The content's climbable surfaces (#490), which clients mark on the rock (#512).
+    climbing: mmorpg_core::ClimbSurfaces,
     authored_outpost_relief: bool,
 }
 
@@ -755,16 +757,17 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
             },
         })
         .collect();
+    let content = greyhaven_vale::content_with_definition(definition.clone())
+        .expect("built-in Greyhaven content is valid");
     let mut scenery = Scenery {
-        content_revision: greyhaven_vale::content_with_definition(definition.clone())
-            .expect("built-in Greyhaven content is valid")
-            .revision(),
+        content_revision: content.revision(),
         props: Vec::new(),
         roads,
         water,
         farmland: fields(),
         relief: Some(relief),
         ground: definition.terrain().cloned(),
+        climbing: content.climbing().clone(),
         authored_outpost_relief: false,
     };
     let blockers = Blockers::new(structures.iter().map(|(collider, _)| *collider));
@@ -791,6 +794,7 @@ impl Scenery {
             farmland: Vec::new(),
             relief: None,
             ground: None,
+            climbing: mmorpg_core::ClimbSurfaces::default(),
             authored_outpost_relief: false,
         }
     }
@@ -821,6 +825,13 @@ impl Scenery {
         self.relief
             .as_ref()
             .map_or(0, |relief| relief.height_at(x, z))
+    }
+
+    /// The content's climbable surfaces (#490): the same data the zone climbs by, so clients
+    /// mark exactly the rock a player can climb (#512).
+    #[must_use]
+    pub const fn climbing(&self) -> &mmorpg_core::ClimbSurfaces {
+        &self.climbing
     }
 
     /// Ploughed fields (#424: one rectangle per field), whose farmland clients draw as patches.
@@ -882,7 +893,8 @@ impl Scenery {
     /// terrain grid and the far ring: equal on every platform for the same
     /// scenery. It leaves out `content_revision`, so item, ability or quest
     /// edits that leave the vale unchanged do not move it (#487); callers
-    /// check the revision on its own.
+    /// check the revision on its own. The climbable surfaces are content too:
+    /// they move the revision, not this hash.
     #[must_use]
     pub fn stable_hash(&self) -> u64 {
         let mut hash = Fnv::default();
