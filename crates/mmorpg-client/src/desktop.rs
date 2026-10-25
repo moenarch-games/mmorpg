@@ -1067,6 +1067,15 @@ impl ApplicationHandler for App {
                         return;
                     }
 
+                    // Debug builds: F4 draws every unit's authoritative body over its model (#39).
+                    if cfg!(debug_assertions)
+                        && code == KeyCode::F4
+                        && event.state == ElementState::Pressed
+                        && !event.repeat
+                    {
+                        self.presentation.toggle_body_overlay();
+                        return;
+                    }
                     if event.state == ElementState::Pressed {
                         let actions = self.controls.key_down_with_modifiers(
                             code,

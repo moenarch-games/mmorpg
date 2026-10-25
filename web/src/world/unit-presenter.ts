@@ -13,6 +13,7 @@ export type UnitPresenterHandle = {
   modelReady(kind: string, clips: string): void;
   residentsReady(): void;
   setBlend(lowerSeconds: number, upperSeconds: number, lowerWeight: number, upperWeight: number): void;
+  setBodyOverlay(shown: boolean): void;
   push(projection: Uint8Array, seconds: number): void;
   reset(): void;
   prepare(ability: number, seconds: number): void;
@@ -148,6 +149,11 @@ export class SharedUnits {
   /** Tunes the layered blend; the presenter clamps it. Presentation only. */
   setBlend(blend: AnimationBlend): void {
     this.#handle.setBlend(blend.lowerSeconds, blend.upperSeconds, blend.lowerWeight, blend.upperWeight);
+  }
+
+  /** Shows or hides the development body overlay (#39): each unit's authoritative body over its model. */
+  setBodyOverlay(shown: boolean): void {
+    this.#handle.setBodyOverlay(shown);
   }
 
   push(projection: Uint8Array, seconds: number): void {

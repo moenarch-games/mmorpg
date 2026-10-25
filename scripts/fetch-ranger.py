@@ -31,14 +31,17 @@ SELECTED["humanoid.ranger.male"] |= {"outfit.knight", "outfit.knight.skin.light"
                                      "outfit.class.rogue", "outfit.class.cleric.skin.light", "outfit.class.druid"}
 PAIRS = {(key, variant) for key, variants in SELECTED.items() for variant in variants}
 # Plus every hairstyle the release offers, in its tintable variant: the viewer's styles and the
-# varied guards' (#376, asset-tooling #380).
+# varied guards' (#376, asset-tooling #380), and the painted head skins when the release has them
+# (asset-tooling #380).
 HAIR_VARIANT = "hair-1"
+HEAD_SKINS = ("skin.head", "default")
 
 
 def selected(index):
     """The selected (key, variant) pairs of a release index."""
-    return PAIRS | {(entry.get("key"), HAIR_VARIANT) for entry in index.get("entries", [])
-                    if str(entry.get("key")).startswith("hair.") and entry.get("variant") == HAIR_VARIANT}
+    return PAIRS | {(entry.get("key"), entry.get("variant")) for entry in index.get("entries", [])
+                    if (str(entry.get("key")).startswith("hair.") and entry.get("variant") == HAIR_VARIANT)
+                    or (entry.get("key"), entry.get("variant")) == HEAD_SKINS}
 # The rolling release is pinned by the consumer's copy of its export.ref.json (#411: the bundle
 # with face morph targets); a replaced release fails acquisition until this copy is updated.
 EXPORT_REF = ROOT / "web/assets/ranger/export.ref.json"

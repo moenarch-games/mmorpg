@@ -598,6 +598,8 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
       if (!preset) { throw new Error(`The Ranger bundle has no resident preset ${resident}.`); }
       const model = cloneSkinned(preset.character);
       if (preset.face) { applyFace(model, preset.face, preset.choice); }
+      // The painted head skin (#380) before the tone, which multiplies it like the plain skin.
+      if (preset.headSkin) { applyHeadSkin(model, preset.headSkin); }
       for (const name of look.hood) {
         const node = model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name));
         if (node) { node.visible = false; }
@@ -718,21 +720,70 @@ type ResidentLook = {
   height: number;
   /** The Light skin's skin materials in the preset's tone (linear, #380). */
   tone: { materials: readonly string[]; color: readonly [number, number, number] } | null;
+  /** The painted head skin (#380) the head material wears: its age's and stubble's, or null. */
+  headSkin: HeadSkin | null;
 };
+
+/** A painted head skin: the character's head material and the `skin.head` material whose maps it takes. */
+type HeadSkin = { material: string; skin: THREE.MeshStandardMaterial };
 
 type PresetValue = {
   id?: unknown; outfit?: unknown; skin?: unknown; hair?: unknown; tint?: unknown; headwear?: unknown;
   facialHair?: unknown; face?: unknown; hiddenArmor?: unknown; faction?: unknown;
-  /** A varied look's `ages`/`builds`/`skinTones` option ids and height (asset-tooling #380). */
-  age?: unknown; build?: unknown; tone?: unknown; height?: unknown;
+  /** A varied look's `ages`/`builds`/`skinTones` option ids, height and stubble (asset-tooling #380). */
+  age?: unknown; build?: unknown; tone?: unknown; height?: unknown; stubble?: unknown;
 };
-type OptionList = { default?: unknown; options?: { id?: unknown; morphs?: unknown }[] };
+type OptionList = { default?: unknown; options?: { id?: unknown; morphs?: unknown; skin?: unknown }[] };
+type HeadSkinsValue = {
+  entry?: unknown; material?: unknown; stubbleShades?: Record<string, unknown>;
+  textures?: { skin?: unknown; age?: unknown; stubble?: unknown; material?: unknown }[];
+};
 type VarietyValue = {
   presets?: PresetValue[]; outfits?: OutfitValue[]; facialHair?: FacialHairValue;
   tints?: { id?: unknown }[]; face?: { features?: { id?: unknown; options?: { id?: unknown }[] }[] };
   ages?: OptionList; builds?: OptionList; heights?: { min?: unknown; max?: unknown };
   skinTones?: { skin?: unknown; materials?: unknown; tones?: { id?: unknown; baseColorFactor?: unknown }[] };
+  headSkins?: HeadSkinsValue;
 };
+
+/**
+ * The `headSkins` texture (#380) `preset` wears: for its skin, its age's painted skin and, when it
+ * shows stubble, its hair tint's stubble shade. Null for the authored skin or a bundle without
+ * head skins.
+ */
+async function headSkinOf(value: VarietyValue, preset: PresetValue,
+  load: (key: string, variant: string) => Promise<THREE.Object3D>): Promise<HeadSkin | null> {
+  const skins = value.headSkins;
+  if (!skins || typeof skins.entry !== "string" || typeof skins.material !== "string") { return null; }
+  const age = value.ages?.options?.find((option) => option.id === preset.age)?.skin;
+  const ageSkin = typeof age === "string" ? age : "base";
+  const shade = preset.stubble === true && typeof preset.tint === "string" ? skins.stubbleShades?.[preset.tint] : undefined;
+  const painted = skins.textures?.find((texture) => texture.skin === preset.skin && texture.age === ageSkin
+    && texture.stubble === (typeof shade === "string" ? shade : undefined))?.material;
+  if (typeof painted !== "string") { return null; }
+  let skin = null as THREE.MeshStandardMaterial | null;
+  (await load(skins.entry, "default")).traverse((child) => {
+    if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial && child.material.name === painted) { skin = child.material; }
+  });
+  if (!skin) { throw new Error(`The Ranger bundle's ${skins.entry} has no material ${painted}.`); }
+  return { material: skins.material, skin };
+}
+
+/** Gives `model`'s head material its own copy wearing the painted skin's colour and normal maps. */
+function applyHeadSkin(model: THREE.Object3D, { material, skin }: HeadSkin): void {
+  model.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) { return; }
+    const swap = (own: THREE.Material): THREE.Material => {
+      if (own.name !== material || !(own instanceof THREE.MeshStandardMaterial)) { return own; }
+      const copy = own.clone();
+      copy.map = skin.map;
+      copy.normalMap = skin.normalMap;
+      copy.needsUpdate = true;
+      return copy;
+    };
+    child.material = Array.isArray(child.material) ? child.material.map(swap) : swap(child.material);
+  });
+}
 
 /** The hair entries the bundle offers in the tintable `HAIR_VARIANT`. */
 function tintableHair(appearance: unknown): string[] {
@@ -825,7 +876,9 @@ export async function residentLooks(appearance: unknown, look: Pick<HeadLook, "t
     const toneColor = preset.skin === value.skinTones?.skin
       ? rgb(value.skinTones?.tones?.find((tone) => tone.id === preset.tone)?.baseColorFactor) : null;
     const toneMaterials = strings(value.skinTones?.materials);
+    const headSkin = await headSkinOf(value, preset, scene);
     looks.set(preset.id, {
+      headSkin,
       morphs: { ...morphsOf(value.ages, preset.age), ...morphsOf(value.builds, preset.build) },
       height: typeof preset.height === "number" && Number.isFinite(preset.height) ? preset.height : 1,
       tone: toneColor && toneMaterials.length > 0 ? { materials: toneMaterials, color: toneColor } : null,
