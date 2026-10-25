@@ -89,6 +89,10 @@ pub(crate) struct PlayerState {
     /// tick (#413). Set by intents and spent by the same tick's movement, so
     /// never present between ticks and not canonical.
     pub(crate) impulse: Option<[i32; 2]>,
+    /// A running authored action of the experimental graph (#414). Zone
+    /// setup like the graph itself, so not canonical: a restored zone runs
+    /// the baseline, which authors none.
+    pub(crate) authored: Option<crate::action::authored::AuthoredRun>,
     /// A confirmed slash's pending Shield Bash follow-up (#157).
     pub(crate) combo: Option<crate::ComboOpening>,
     /// Ticks left of a directed strike's committed recovery; a guard raised
@@ -157,6 +161,7 @@ impl PlayerState {
             landing: crate::LandingState::default(),
             swimming: false,
             impulse: None,
+            authored: None,
             combo: None,
             strike_recovery: 0,
             repairing: None,
@@ -718,6 +723,7 @@ impl ZoneSimulation {
         self.update_timers(now)?;
         self.regrow_pieces(now)?;
         self.advance_combos();
+        self.advance_authored();
         self.advance_quest_objectives(now)?;
         self.tick = now;
         // Routine NPCs stand where the new tick's time of day puts them (#158).

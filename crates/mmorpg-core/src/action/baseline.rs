@@ -144,6 +144,9 @@ pub const MOVEMENT: [MovementRule; 0] = [];
 /// The baseline class, weapon and ability overrides.
 pub const OVERRIDES: [Override; 0] = [];
 
+/// The baseline authored actions (#414).
+pub const AUTHORED_ACTIONS: [AuthoredAction; 0] = [];
+
 /// The production graph.
 pub const BASELINE: ActionGraph = ActionGraph {
     edges: &EDGES,
@@ -152,4 +155,5 @@ pub const BASELINE: ActionGraph = ActionGraph {
     interruptions: &INTERRUPTIONS,
     movement: &MOVEMENT,
     overrides: &OVERRIDES,
+    authored: &AUTHORED_ACTIONS,
 };

@@ -10,8 +10,9 @@
 use std::sync::Arc;
 
 use mmorpg_core::action::{
-    self, ActionInput, Anchor, BlockReason, Candidate, Condition, EdgeStatus, Effective, Movement,
-    Origin, Outcome, Scope, Setting, Verdict,
+    self, ActionId, ActionInput, Anchor, AuthoredReport, BlockReason, Candidate, Condition,
+    EdgeStatus, Effective, Movement, Origin, Outcome, Scope, Setting, Trigger, TriggerRefusal,
+    TriggerStatus, Verdict,
 };
 use mmorpg_core::{
     CharacterRecord, ClassChoice, EQUIPMENT_SLOTS, EphemeralCharacterBuild, Equipment, ItemId,
@@ -195,6 +196,9 @@ fn verdict(verdict: Verdict) -> Value {
         Verdict::Outranked(by) => json!({ "kind": "Outranked", "by": candidate_name(by) }),
         Verdict::HeldBy(rule) => json!({ "kind": "HeldBy", "rule": name(rule) }),
         Verdict::RefusedBy(rule) => json!({ "kind": "RefusedBy", "rule": name(rule) }),
+        Verdict::HeldByAuthored(slot) => {
+            json!({ "kind": "HeldBy", "rule": name(ActionId::Authored(slot)) })
+        }
         Verdict::Blocked(why) => json!({ "kind": "Blocked", "reason": reason(why) }),
     }
 }
@@ -206,6 +210,10 @@ fn outcome(outcome: Outcome) -> Value {
         }
         Outcome::WaitForRule(rule) => json!({ "kind": "WaitForRule", "rule": name(rule) }),
         Outcome::WaitForEdge(edge) => json!({ "kind": "WaitForEdge", "edge": name(edge) }),
+        // An authored action holds the input like a rule (#414).
+        Outcome::WaitForAuthored(slot) => {
+            json!({ "kind": "WaitForRule", "rule": name(ActionId::Authored(slot)) })
+        }
         Outcome::Cancel(rule) => json!({ "kind": "Cancel", "rule": name(rule) }),
         Outcome::Refuse(rule) => json!({ "kind": "Refuse", "rule": name(rule) }),
     }
@@ -235,6 +243,7 @@ fn origin_name(origin: Origin) -> String {
     match origin {
         Origin::Baseline => "baseline".to_owned(),
         Origin::Override(scope) => scope_name(scope),
+        Origin::Authored(slot) => format!("authored action {slot}"),
     }
 }
 
@@ -410,6 +419,49 @@ pub fn graph_json() -> String {
     .to_string()
 }
 
+/// "Heroic Strike (WardenMelee) · Moving(Forward)".
+pub(crate) fn trigger_text(trigger: Trigger) -> String {
+    let what = trigger.ability.map_or_else(
+        || name(trigger.input),
+        |id| format!("{} ({})", ability_name(id), name(trigger.input)),
+    );
+    format!("{what} · {:?}", trigger.context)
+}
+
+/// One authored action (#414): its trigger, phases and whether the trigger
+/// would start it now, and why not.
+fn authored_json(report: &AuthoredReport) -> Value {
+    let status = match report.status {
+        TriggerStatus::Running { phase, elapsed } => {
+            json!({ "kind": "Running", "phase": name(phase), "elapsed": elapsed })
+        }
+        TriggerStatus::Accepted => json!({ "kind": "Accepted" }),
+        TriggerStatus::Outranked(slot) => {
+            json!({ "kind": "Outranked", "by": name(ActionId::Authored(slot)) })
+        }
+        TriggerStatus::Refused(refusal) => {
+            let why = match refusal {
+                TriggerRefusal::Class => "another class".to_owned(),
+                TriggerRefusal::Context(context) => format!("needs {context:?}"),
+                TriggerRefusal::Condition(condition) => format!("{condition:?} does not hold"),
+                TriggerRefusal::Busy(slot) => format!("{:?} is running", ActionId::Authored(slot)),
+                TriggerRefusal::Arbitration(result) => {
+                    format!("the graph decides {}", outcome(result))
+                }
+            };
+            json!({ "kind": "Refused", "reason": why })
+        }
+    };
+    json!({
+        "slot": report.slot,
+        "action": name(ActionId::Authored(report.slot)),
+        "name": report.name,
+        "trigger": trigger_text(report.trigger),
+        "ticks": report.ticks,
+        "status": status,
+    })
+}
+
 /// One player's inspection after the last completed tick, with each input's
 /// arbitration at the next tick; `None` for an unknown player.
 #[must_use]
@@ -525,6 +577,7 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
             "interruptions": interruptions,
             "arbitrations": arbitrations,
             "effective": inspection.effective.iter().map(effective).collect::<Vec<_>>(),
+            "authored": inspection.authored.iter().map(authored_json).collect::<Vec<_>>(),
         })
         .to_string(),
     )
