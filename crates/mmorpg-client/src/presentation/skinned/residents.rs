@@ -1,16 +1,19 @@
-//! The named residents (#418) and humanoid enemies (#39) on the Ranger figure, dressed in their
-//! shared `humanoid-appearance` presets (`mmorpg_presentation::units::presets`) like the
-//! browser: the outfit variant of the preset's skin, its armour less `hiddenArmor`, beards and
+//! The named residents (#418, #493) and humanoid enemies (#39) on their Ranger figures, dressed
+//! in their shared `humanoid-appearance` presets (`mmorpg_presentation::units::presets`) like
+//! the browser: the outfit variant of the preset's skin, its armour less `hiddenArmor`, beards and
 //! hair in the preset's tint, headwear, faction colour, skin tone and height, with each guard
 //! and rank-and-file enemy in his own seeded variation (asset-tooling #380). The face, age and
 //! build morph targets are baked into each look, and the painted head skin of the man's age and
-//! stubble replaces the authored one. Presentation only.
+//! stubble replaces the authored one. Each figure (`Figure`) is its own embedded bundle with its
+//! own clips, sockets and appearance; options a figure's bundle lacks (the female's beards, head
+//! skins and headwear) are simply absent. Presentation only.
 use super::{
-    Equipment, Model, Plates, appearance, hood_nodes, ranger_bundle, ranger_file, socket, strings,
+    Equipment, Model, Plates, appearance, ranger_bundle, ranger_female_bundle, ranger_file, socket,
+    strings,
 };
 use crate::world::SceneDraw;
 use mmorpg_presentation::units::{
-    imported::{Kind, Layer, Resident},
+    imported::{Figure, Kind, Layer, Resident},
     kit::Frame,
     presets,
 };
@@ -21,12 +24,13 @@ use std::{
 };
 
 /// One dressed preset: the figure, the plates and beards on their sockets, the headwear and
-/// hair, and the height factor.
+/// hair, the height factor and the figure's hood nodes, hidden on residents.
 pub(in crate::presentation) struct ResidentLook {
     model: Model,
     plates: Plates,
     items: Equipment,
     height: f32,
+    hood: &'static [String],
 }
 
 impl ResidentLook {
@@ -42,7 +46,7 @@ impl ResidentLook {
     ) -> (&Model, three_d_animation::Mat4, Vec<SceneDraw>) {
         let height = height * f64::from(self.height);
         let placement = self.model.placement(root, height);
-        let mut draws = self.model.draws(id, root, height, pose, tint, hood_nodes());
+        let mut draws = self.model.draws(id, root, height, pose, tint, self.hood);
         draws.extend(
             self.plates
                 .draws(id, &self.model, placement, pose, tint, |_| true),
@@ -55,18 +59,75 @@ impl ResidentLook {
     }
 }
 
-/// The appearance with the game's enemy presets beside the bundle's own.
-fn look() -> &'static Value {
-    static LOOK: OnceLock<Value> = OnceLock::new();
-    LOOK.get_or_init(|| presets::with_enemy_presets(appearance()))
+/// The embedded files of `figure`'s bundle.
+fn bundle(figure: Figure) -> &'static [(&'static str, &'static [u8])] {
+    match figure {
+        Figure::Male => ranger_bundle::FILES,
+        Figure::Female => ranger_female_bundle::FILES,
+    }
 }
 
-fn sockets() -> &'static Value {
-    static SOCKETS: OnceLock<Value> = OnceLock::new();
-    SOCKETS.get_or_init(|| {
-        serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
-            .expect("the sockets descriptor is JSON")
+/// The embedded file `path` of `figure`'s bundle.
+fn file(figure: Figure, path: &str) -> &'static [u8] {
+    match figure {
+        Figure::Male => ranger_file(path),
+        Figure::Female => bundle(figure)
+            .iter()
+            .find(|(name, _)| *name == path)
+            .map(|(_, bytes)| *bytes)
+            .unwrap_or_else(|| panic!("prepared {} file {path} is embedded", figure.character())),
+    }
+}
+
+/// `figure`'s appearance with the game's presets (`presets::figure_appearance`): the male's
+/// with the enemy presets beside the bundle's own, the female's as published.
+fn look(figure: Figure) -> &'static Value {
+    static MALE: OnceLock<Value> = OnceLock::new();
+    static FEMALE: OnceLock<Value> = OnceLock::new();
+    match figure {
+        Figure::Male => MALE.get_or_init(|| presets::figure_appearance(figure, appearance())),
+        Figure::Female => FEMALE.get_or_init(|| {
+            let bundle: Value =
+                serde_json::from_slice(file(figure, ranger_female_bundle::APPEARANCE))
+                    .expect("the appearance descriptor is JSON");
+            presets::figure_appearance(figure, &bundle)
+        }),
+    }
+}
+
+fn sockets(figure: Figure) -> &'static Value {
+    static MALE: OnceLock<Value> = OnceLock::new();
+    static FEMALE: OnceLock<Value> = OnceLock::new();
+    let (cell, path) = match figure {
+        Figure::Male => (&MALE, ranger_bundle::SOCKETS),
+        Figure::Female => (&FEMALE, ranger_female_bundle::SOCKETS),
+    };
+    cell.get_or_init(|| {
+        serde_json::from_slice(file(figure, path)).expect("the sockets descriptor is JSON")
     })
+}
+
+/// The glTF nodes of `figure`'s toggleable hood (`humanoid-appearance` part `outfit.hood`).
+fn hood(figure: Figure) -> &'static [String] {
+    static MALE: OnceLock<Vec<String>> = OnceLock::new();
+    static FEMALE: OnceLock<Vec<String>> = OnceLock::new();
+    let cell = match figure {
+        Figure::Male => &MALE,
+        Figure::Female => &FEMALE,
+    };
+    cell.get_or_init(|| {
+        find(&look(figure)["parts"], "id", &"outfit.hood".into())
+            .map(|part| strings(&part["nodes"]))
+            .unwrap_or_default()
+    })
+}
+
+/// The clip library prepared with `figure`'s outfit variants.
+fn clips(figure: Figure) -> &'static [u8] {
+    match figure {
+        Figure::Male => file(figure, ranger_bundle::CLIPS),
+        Figure::Female => file(figure, ranger_female_bundle::CLIPS),
+    }
 }
 
 fn list(value: &Value) -> &[Value] {
@@ -93,10 +154,14 @@ fn morphs(option: Option<&Value>) -> BTreeMap<String, f32> {
         .collect()
 }
 
-/// The face morph weights of `preset` on the outfit `variant`: each `face` feature's chosen
-/// option, or its default; none when the bundle's face keys do not cover the variant.
-pub(in crate::presentation) fn face_morphs(preset: &Value, variant: &str) -> BTreeMap<String, f32> {
-    let face = &appearance()["face"];
+/// The face morph weights of `preset` on `figure`'s outfit `variant`: each `face` feature's
+/// chosen option, or its default; none when the bundle's face keys do not cover the variant.
+pub(in crate::presentation) fn face_morphs(
+    figure: Figure,
+    preset: &Value,
+    variant: &str,
+) -> BTreeMap<String, f32> {
+    let face = &look(figure)["face"];
     if !list(&face["variants"]).iter().any(|v| v == variant) {
         return BTreeMap::new();
     }
@@ -113,12 +178,14 @@ pub(in crate::presentation) fn face_morphs(preset: &Value, variant: &str) -> BTr
     weights
 }
 
-/// The painted head skin (asset-tooling #380) `preset` wears: the head material and the
-/// base-colour image of the `headSkins` texture for its skin, its age's skin and, when it shows
-/// stubble, the stubble shade of its hair tint. None for the authored skin.
-fn head_skin(preset: &Value) -> Option<(&'static str, &'static gltf::image::Data)> {
-    let skins = &look()["headSkins"];
-    let age = find(&look()["ages"]["options"], "id", &preset["age"])
+/// The painted head skin (asset-tooling #380) `preset` wears on `figure`: the head material and
+/// the base-colour image of the `headSkins` texture for its skin, its age's skin and, when it
+/// shows stubble, the stubble shade of its hair tint. None for the authored skin, and on a
+/// figure without head skins.
+fn head_skin(figure: Figure, preset: &Value) -> Option<(&'static str, &'static gltf::image::Data)> {
+    let look = look(figure);
+    let skins = &look["headSkins"];
+    let age = find(&look["ages"]["options"], "id", &preset["age"])
         .and_then(|age| age["skin"].as_str())
         .unwrap_or("base");
     let shade = if preset["stubble"] == true {
@@ -133,26 +200,34 @@ fn head_skin(preset: &Value) -> Option<(&'static str, &'static gltf::image::Data
             && texture["age"] == age
             && texture["stubble"].as_str() == shade
     })?;
-    let image = head_skin_image(skins["entry"].as_str()?, painted["material"].as_str()?)?;
+    let image = head_skin_image(
+        figure,
+        skins["entry"].as_str()?,
+        painted["material"].as_str()?,
+    )?;
     Some((skins["material"].as_str()?, image))
 }
 
-/// The base-colour image of material `name` in the prepared head-skin entry `key`, decoded once
-/// per process; None when the entry is not embedded or has no such textured material.
-fn head_skin_image(key: &str, name: &str) -> Option<&'static gltf::image::Data> {
+/// The base-colour image of material `name` in `figure`'s prepared head-skin entry `key`,
+/// decoded once per process; None when the entry is not embedded or has no such textured
+/// material. Only the male bundle publishes head skins.
+fn head_skin_image(figure: Figure, key: &str, name: &str) -> Option<&'static gltf::image::Data> {
     type Images = HashMap<String, Option<&'static gltf::image::Data>>;
     static ENTRY: OnceLock<Option<(gltf::Document, Vec<gltf::buffer::Data>)>> = OnceLock::new();
     static IMAGES: OnceLock<Mutex<Images>> = OnceLock::new();
+    if figure != Figure::Male {
+        return None;
+    }
     let (document, buffers) = ENTRY
         .get_or_init(|| {
-            if !embedded(key, "default") {
+            if !embedded(figure, key, "default") {
                 eprintln!(
                     "head skins keep the authored skin; {} is not prepared",
                     prepared(key, "default")
                 );
                 return None;
             }
-            let gltf = gltf::Gltf::from_slice(ranger_file(&prepared(key, "default"))).ok()?;
+            let gltf = gltf::Gltf::from_slice(file(figure, &prepared(key, "default"))).ok()?;
             let buffers = gltf::import_buffers(&gltf.document, None, gltf.blob).ok()?;
             Some((gltf.document, buffers))
         })
@@ -177,28 +252,24 @@ fn prepared(key: &str, variant: &str) -> String {
     format!("native/{key}.{variant}.native.glb")
 }
 
-fn embedded(key: &str, variant: &str) -> bool {
+fn embedded(figure: Figure, key: &str, variant: &str) -> bool {
     let path = prepared(key, variant);
-    ranger_bundle::FILES.iter().any(|(name, _)| *name == path)
+    bundle(figure).iter().any(|(name, _)| *name == path)
 }
 
-/// A prepared entry imported once per process: the figure in an outfit variant with the shared
-/// clips, or an item.
-fn entry(key: &str, variant: &str) -> &'static Model {
-    static MODELS: OnceLock<Mutex<HashMap<String, &'static Model>>> = OnceLock::new();
+/// A prepared entry of `figure`'s bundle imported once per process: the figure in an outfit
+/// variant with its shared clips, or an item.
+fn entry(figure: Figure, key: &str, variant: &str) -> &'static Model {
+    static MODELS: OnceLock<Mutex<HashMap<(Figure, String), &'static Model>>> = OnceLock::new();
     let path = prepared(key, variant);
     let mut models = MODELS
         .get_or_init(Mutex::default)
         .lock()
         .expect("the model cache is not poisoned");
-    models.entry(path.clone()).or_insert_with(|| {
-        let bytes = ranger_file(&path);
-        let model = if key == "humanoid.ranger.male" {
-            Model::parse_with_clips(
-                bytes,
-                Kind::Ranger.clips().idle,
-                Some(ranger_file(ranger_bundle::CLIPS)),
-            )
+    models.entry((figure, path.clone())).or_insert_with(|| {
+        let bytes = file(figure, &path);
+        let model = if key == figure.character() {
+            Model::parse_with_clips(bytes, Kind::Ranger.clips().idle, Some(clips(figure)))
         } else {
             Model::parse(bytes, "")
         };
@@ -208,9 +279,9 @@ fn entry(key: &str, variant: &str) -> &'static Model {
     })
 }
 
-/// The outfit variant `preset` wears for its skin.
-fn variant(preset: &Value) -> Option<(&'static Value, &'static str)> {
-    let outfit = find(&look()["outfits"], "id", &preset["outfit"])?;
+/// The outfit variant `preset` wears for its skin, in `look`'s outfits.
+fn variant<'a>(look: &'a Value, preset: &Value) -> Option<(&'a Value, &'a str)> {
+    let outfit = find(&look["outfits"], "id", &preset["outfit"])?;
     let variant = find(&outfit["skins"], "id", &preset["skin"])?["variant"].as_str()?;
     Some((outfit, variant))
 }
@@ -218,8 +289,10 @@ fn variant(preset: &Value) -> Option<(&'static Value, &'static str)> {
 /// Every prepared file `resident`'s looks draw: for a varied preset, both skins and every
 /// tintable hairstyle.
 fn files(resident: Resident) -> Option<Vec<(String, String)>> {
-    let preset = find(&look()["presets"], "id", &resident.preset().into())?;
-    let (outfit, own) = variant(preset)?;
+    let figure = resident.figure();
+    let look = look(figure);
+    let preset = find(&look["presets"], "id", &resident.preset().into())?;
+    let (outfit, own) = variant(look, preset)?;
     let mut files = Vec::new();
     let variants: Vec<&str> = if resident.varied() {
         list(&outfit["skins"])
@@ -230,19 +303,19 @@ fn files(resident: Resident) -> Option<Vec<(String, String)>> {
         vec![own]
     };
     for variant in variants {
-        files.push(("humanoid.ranger.male".to_owned(), variant.to_owned()));
+        files.push((figure.character().to_owned(), variant.to_owned()));
     }
     if let Some(armor) = outfit["armor"]["entry"].as_str() {
         files.push((armor.to_owned(), "default".to_owned()));
     }
-    if let Some(beards) = look()["facialHair"]["entry"].as_str() {
+    if let Some(beards) = look["facialHair"]["entry"].as_str() {
         files.push((beards.to_owned(), "default".to_owned()));
     }
     if let Some(headwear) = preset["headwear"].as_str() {
         files.push((headwear.to_owned(), "default".to_owned()));
     }
     let hair = if resident.varied() && preset["headwear"].is_null() {
-        presets::tintable_hair(look())
+        presets::tintable_hair(look)
     } else {
         preset["hair"]
             .as_str()
@@ -268,7 +341,7 @@ pub(in crate::presentation) fn residents_drawable() -> bool {
                 |files| {
                     files
                         .into_iter()
-                        .filter(|(key, variant)| !embedded(key, variant))
+                        .filter(|(key, variant)| !embedded(resident.figure(), key, variant))
                         .map(|(key, variant)| prepared(&key, &variant))
                         .collect()
                 },
@@ -303,12 +376,13 @@ pub(in crate::presentation) fn resident_look(
     {
         return look;
     }
+    let figure = resident.figure();
     let preset = match key.1 {
-        Some(seed) => presets::vary_preset(look(), id, seed),
-        None => find(&look()["presets"], "id", &id.into()).cloned(),
+        Some(seed) => presets::vary_preset(look(figure), id, seed),
+        None => find(&look(figure)["presets"], "id", &id.into()).cloned(),
     }
     .unwrap_or_else(|| panic!("the appearance declares the preset {id}"));
-    let built: &'static ResidentLook = Box::leak(Box::new(dress(&preset)));
+    let built: &'static ResidentLook = Box::leak(Box::new(dress(figure, &preset)));
     LOOKS
         .get_or_init(Mutex::default)
         .lock()
@@ -317,18 +391,19 @@ pub(in crate::presentation) fn resident_look(
     built
 }
 
-/// Dresses the figure in `preset`, as the browser's `residentLooks` and resident `instantiate`.
-fn dress(preset: &Value) -> ResidentLook {
-    let look = look();
-    let (outfit, variant) = variant(preset).expect("the preset names its skin's outfit variant");
-    let mut model = entry("humanoid.ranger.male", variant).clone();
+/// Dresses `figure` in `preset`, as the browser's `residentLooks` and resident `instantiate`.
+fn dress(figure: Figure, preset: &Value) -> ResidentLook {
+    let look = look(figure);
+    let (outfit, variant) =
+        variant(look, preset).expect("the preset names its skin's outfit variant");
+    let mut model = entry(figure, figure.character(), variant).clone();
     // The painted head skin first: the skin tone below multiplies it as it does the plain one.
-    if let Some((material, image)) = head_skin(preset) {
+    if let Some((material, image)) = head_skin(figure, preset) {
         model.reskin(material, image);
     }
     model.morph(
         Some(&strings(&look["face"]["nodes"])),
-        &face_morphs(preset, variant),
+        &face_morphs(figure, preset, variant),
     );
     let tint =
         find(&look["tints"], "id", &preset["tint"]).and_then(|tint| rgb(&tint["baseColorFactor"]));
@@ -351,13 +426,13 @@ fn dress(preset: &Value) -> ResidentLook {
         model.recolor(None, &strings(&tones["materials"]), tone);
     }
     let held = |socket_id: &str, model: Model| {
-        let (joint, matrix) = socket(sockets(), socket_id);
+        let (joint, matrix) = socket(sockets(figure), socket_id);
         (socket_id.to_owned(), model, joint, matrix)
     };
     let mut plates = Vec::new();
     let hidden = strings(&preset["hiddenArmor"]);
     if let Some(armor) = outfit["armor"]["entry"].as_str() {
-        let armor = entry(armor, "default");
+        let armor = entry(figure, armor, "default");
         for piece in list(&outfit["armor"]["pieces"]) {
             let (Some(node), Some(at)) = (piece["node"].as_str(), piece["socket"].as_str()) else {
                 continue;
@@ -373,7 +448,11 @@ fn dress(preset: &Value) -> ResidentLook {
     for id in strings(&preset["facialHair"]) {
         let option = find(&facial["options"], "id", &id.as_str().into())
             .unwrap_or_else(|| panic!("the appearance declares the beard {id}"));
-        let beards = entry(facial["entry"].as_str().expect("a beards entry"), "default");
+        let beards = entry(
+            figure,
+            facial["entry"].as_str().expect("a beards entry"),
+            "default",
+        );
         let mut beard = beards.piece(option["node"].as_str().expect("a beard node"));
         if let Some(tint) = beard_tint {
             beard.recolor(None, &strings(&option["tintMaterials"]), tint);
@@ -388,13 +467,13 @@ fn dress(preset: &Value) -> ResidentLook {
         let at = find(&look["headwear"], "entry", &headwear.into())
             .and_then(|item| item["socket"].as_str())
             .unwrap_or("head.armor");
-        let (joint, matrix) = socket(sockets(), at);
-        items.push((entry(headwear, "default").clone(), joint, matrix));
+        let (joint, matrix) = socket(sockets(figure), at);
+        items.push((entry(figure, headwear, "default").clone(), joint, matrix));
     }
     if let Some(style) = preset["hair"].as_str() {
-        let mut hair = entry(style, presets::HAIR_VARIANT).clone();
-        if style == "hair.long" {
-            // The long locks are authored lower than the buzzed scalp in the same asset.
+        let mut hair = entry(figure, style, presets::HAIR_VARIANT).clone();
+        if figure == Figure::Male && style == "hair.long" {
+            // The male long locks are authored lower than the buzzed scalp in the same asset.
             hair.lift("Hair_Long", 0.1);
         }
         if let Some(tint) = tint {
@@ -403,7 +482,7 @@ fn dress(preset: &Value) -> ResidentLook {
                 .unwrap_or_default();
             hair.recolor(None, &materials, tint);
         }
-        let (joint, matrix) = socket(sockets(), "head.hair");
+        let (joint, matrix) = socket(sockets(figure), "head.hair");
         items.push((hair, joint, matrix));
     }
     // The age and build keys after the face, on everything worn: build targets are on the body,
@@ -431,6 +510,7 @@ fn dress(preset: &Value) -> ResidentLook {
             items,
         },
         height: preset["height"].as_f64().map_or(1., |height| height as f32),
+        hood: hood(figure),
     }
 }
 
@@ -457,15 +537,46 @@ mod tests {
         // Garrick's long hair, and two beards among his plates.
         assert_eq!(garrick.items.items.len(), 1);
         // His broad face and narrow eyes are baked into the head.
-        let (_, variant) = variant(
-            &find(&look()["presets"], "id", &"enemy.redbrand.garrick".into())
-                .cloned()
-                .expect("Garrick's preset"),
+        let preset = find(
+            &look(Figure::Male)["presets"],
+            "id",
+            &"enemy.redbrand.garrick".into(),
         )
-        .expect("his outfit variant");
-        let authored = entry("humanoid.ranger.male", variant);
+        .cloned()
+        .expect("Garrick's preset");
+        let (_, variant) = variant(look(Figure::Male), &preset).expect("his outfit variant");
+        let authored = entry(Figure::Male, "humanoid.ranger.male", variant);
         assert!(
             garrick
+                .model
+                .primitives
+                .iter()
+                .zip(&authored.primitives)
+                .any(|(own, base)| own.positions != base.positions)
+        );
+    }
+
+    #[test]
+    fn hilda_wears_the_tanner_look_on_the_female_figure() {
+        let hilda = resident_look(Resident::Tanner, Some(2));
+        // Only the tanner's belt on the pelvis: no beards on the female figure.
+        assert_eq!(hilda.plates.items.len(), 1);
+        assert_eq!(hilda.plates.items[0].0, "pelvis.armor");
+        // Her buns, and no headwear.
+        assert_eq!(hilda.items.items.len(), 1);
+        // The preset's broad face and nose are baked into her head.
+        let preset = find(
+            &look(Figure::Female)["presets"],
+            "id",
+            &"resident.tanner".into(),
+        )
+        .cloned()
+        .expect("the tanner preset");
+        let (_, variant) = variant(look(Figure::Female), &preset).expect("her outfit variant");
+        assert_eq!(variant, "outfit.tanner.skin.light");
+        let authored = entry(Figure::Female, "humanoid.ranger.female", variant);
+        assert!(
+            hilda
                 .model
                 .primitives
                 .iter()

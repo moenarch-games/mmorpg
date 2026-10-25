@@ -69,3 +69,10 @@ ASSET_TOOLING_KTX="${KTX}" bun "${PROCESSOR}/scripts/prepare-native-downloads.ts
   --index "${INDEX}" \
   --entries "${entries}" \
   --out "${ROOT_DIR}/web/public/characters/humanoid.ranger.male/native"
+# The female figure (#493): Tanner Hilda Brook's `resident.tanner` outfit variant, its armour
+# and her hairstyle; the outfit brings the figure's shared clips.
+FEMALE="${ROOT_DIR}/web/public/characters/humanoid.ranger.female"
+ASSET_TOOLING_KTX="${KTX}" bun "${PROCESSOR}/scripts/prepare-native-downloads.ts" \
+  --index "${FEMALE}/humanoid-ranger-female.index.json" \
+  --entries humanoid.ranger.female/outfit.tanner.skin.light,armor.tanner/default,hair.buns/hair-1 \
+  --out "${FEMALE}/native"

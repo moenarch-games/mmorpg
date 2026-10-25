@@ -26,11 +26,12 @@ export function soundManifest(bundle: string): string {
 }
 
 /**
- * The Ranger's `humanoid-appearance` with the game's humanoid enemy presets beside the bundle's
- * own (#39), shared with the native client; call after the module loaded.
+ * The `humanoid-appearance` the Ranger figure `character` draws from (#39, #493): the bundle's
+ * own, with the game's humanoid enemy presets beside the male figure's, shared with the native
+ * client; call after the module loaded.
  */
-export function withEnemyPresets(appearance: unknown): unknown {
-  return JSON.parse(generated.withEnemyPresets(JSON.stringify(appearance)));
+export function figureAppearance(character: string, appearance: unknown): unknown {
+  return JSON.parse(generated.figureAppearance(character, JSON.stringify(appearance)));
 }
 
 /**

@@ -73,6 +73,8 @@ export type ImportedRequest = {
   loadout: Loadout | null;
   /** A named resident's `humanoid-appearance` preset id (#418). */
   resident: string | null;
+  /** The Ranger figure a resident is drawn on, by its character key (`imported::Figure`, #493). */
+  figure: string | null;
   /** A varied resident's look seed (its NPC id; asset-tooling #380): each guard is his own man. */
   variety: number | null;
   /** A player's class starter outfit (asset-tooling #379). */
@@ -112,7 +114,7 @@ type DrawEntry = { id: string; key: string; model: number; color: Color; emissiv
 type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number;
-  height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
+  height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
   swing: readonly [number, number, number, number] | null };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
@@ -217,7 +219,7 @@ export class SharedUnits {
       })),
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw,
-        heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
+        heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, figure: unit.figure, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
         swing: unit.swing,
       })),
     };

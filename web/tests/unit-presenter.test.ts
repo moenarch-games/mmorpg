@@ -74,7 +74,10 @@ describe("the shared unit presenter in the browser", () => {
       expect(resident.loadout).toBe(resident.resident === "resident.guard" ? "sword" : null);
       // Each guard is his own man (asset-tooling #380); the named residents keep their presets.
       expect(resident.variety).toBe(resident.resident === "resident.guard" ? resident.entity.id : null);
+      // Tanner Hilda Brook is drawn on the female figure (#493), everyone else on the male.
+      expect(resident.figure).toBe(resident.resident === "resident.tanner" ? "humanoid.ranger.female" : "humanoid.ranger.male");
     }
+    expect(residents.some((resident) => resident.resident === "resident.tanner")).toBe(true);
   });
 
   test("an attack press winds the viewer up until the zone answers, and abandoning lets it go (Atlas 6.6.10)", async () => {
