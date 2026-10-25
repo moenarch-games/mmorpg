@@ -6,12 +6,12 @@
 //! NPCs keep their procedural models. Each client imports and skins the models with its own
 //! provider; this module only decides what to pose. Presentation only, never read by gameplay.
 use mmorpg_core::{
-    AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, PlayerClass,
-    ZoneContent,
+    AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, Equipment,
+    EquipmentSlot, PlayerClass, ZoneContent,
 };
 
-/// What an imported humanoid carries in its sockets: the class weapons (#156, #244, #302,
-/// asset-tooling #375) and the guards' sword.
+/// What an imported humanoid carries in its sockets: the class weapons and props (#156, #244,
+/// #302, asset-tooling #375 and #379) and the guards' sword.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Loadout {
     /// The Warden's arming sword and heater shield (#156).
@@ -24,24 +24,26 @@ pub enum Loadout {
     Dagger,
     /// The Necromancer's bone staff.
     BoneStaff,
-    /// The Cleric's gilded staff.
-    GildedStaff,
+    /// The Arcanist's crystal staff in the right hand and tome in the left (asset-tooling #379).
+    CrystalStaffAndTome,
+    /// The Cleric's flanged mace (asset-tooling #379).
+    FlangedMace,
     /// The Druid's gnarled staff.
     GnarledStaff,
 }
 
 impl Loadout {
-    /// The weapons a class carries. The Arcanist has no authored staff yet.
+    /// The weapons and props a class carries.
     #[must_use]
-    pub const fn of_class(class: PlayerClass) -> Option<Self> {
+    pub const fn of_class(class: PlayerClass) -> Self {
         match class {
-            PlayerClass::Warden => Some(Self::SwordAndShield),
-            PlayerClass::Ranger => Some(Self::BowAndQuiver),
-            PlayerClass::Rogue => Some(Self::Dagger),
-            PlayerClass::Necromancer => Some(Self::BoneStaff),
-            PlayerClass::Cleric => Some(Self::GildedStaff),
-            PlayerClass::Druid => Some(Self::GnarledStaff),
-            PlayerClass::Arcanist => None,
+            PlayerClass::Warden => Self::SwordAndShield,
+            PlayerClass::Ranger => Self::BowAndQuiver,
+            PlayerClass::Arcanist => Self::CrystalStaffAndTome,
+            PlayerClass::Rogue => Self::Dagger,
+            PlayerClass::Necromancer => Self::BoneStaff,
+            PlayerClass::Cleric => Self::FlangedMace,
+            PlayerClass::Druid => Self::GnarledStaff,
         }
     }
 
@@ -54,9 +56,106 @@ impl Loadout {
             Self::Sword => "sword",
             Self::Dagger => "dagger",
             Self::BoneStaff => "staff.bone",
-            Self::GildedStaff => "staff.gilded",
+            Self::CrystalStaffAndTome => "staff.crystal-and-tome",
+            Self::FlangedMace => "mace.flanged",
             Self::GnarledStaff => "staff.gnarled",
         }
+    }
+}
+
+/// The armour slots an equipped drop covers, and the `humanoid-sockets` armour sockets whose
+/// class outfit pieces it replaces. Hands, forearms and the belt belong to no slot and stay.
+pub const ARMOR_SOCKETS: [(EquipmentSlot, &[&str]); 4] = [
+    (EquipmentSlot::Head, &["head.armor"]),
+    (
+        EquipmentSlot::Chest,
+        &[
+            "spine_03.armor",
+            "clavicle_l.armor",
+            "clavicle_r.armor",
+            "upperarm_l.armor",
+            "upperarm_r.armor",
+        ],
+    ),
+    (
+        EquipmentSlot::Legs,
+        &[
+            "thigh_l.armor",
+            "thigh_r.armor",
+            "calf_l.armor",
+            "calf_r.armor",
+        ],
+    ),
+    (EquipmentSlot::Feet, &["foot_l.armor", "foot_r.armor"]),
+];
+
+/// The bundle outfit whose armour pieces draw an equipped drop. Catalog items carry no art of
+/// their own, so every drop wears the knight's plate on the sockets its slot covers.
+pub const DROP_ARMOR_OUTFIT: &str = "outfit.knight";
+
+/// A player's class starter outfit (asset-tooling #379): the Ranger bundle's `class.<id>`
+/// preset, its `classTrim` in the class colour, and the armour slots an equipped drop covers.
+/// Drops replace the outfit's pieces on their sockets; the trimmed tabard, sash or robe stays,
+/// so the class still reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Outfit {
+    pub class: PlayerClass,
+    /// Which of [`ARMOR_SOCKETS`] hold an equipped item. Only the viewer's equipment is
+    /// projected, so everyone else wears the starter outfit whole.
+    pub worn: [bool; 4],
+}
+
+impl Outfit {
+    /// The class's starter outfit, `equipment` (the viewer's) covering its slots.
+    #[must_use]
+    pub fn new(class: PlayerClass, equipment: Option<&Equipment>) -> Self {
+        Self {
+            class,
+            worn: ARMOR_SOCKETS
+                .map(|(slot, _)| equipment.is_some_and(|equipment| equipment.item(slot).is_some())),
+        }
+    }
+
+    /// The bundle's `humanoid-appearance.presets` id.
+    #[must_use]
+    pub const fn preset(self) -> &'static str {
+        match self.class {
+            PlayerClass::Warden => "class.warden",
+            PlayerClass::Ranger => "class.ranger",
+            PlayerClass::Arcanist => "class.arcanist",
+            PlayerClass::Necromancer => "class.necromancer",
+            PlayerClass::Rogue => "class.rogue",
+            PlayerClass::Cleric => "class.cleric",
+            PlayerClass::Druid => "class.druid",
+        }
+    }
+
+    /// The armour sockets whose outfit pieces the equipped drops replace.
+    #[must_use]
+    pub fn replaced(self) -> Vec<&'static str> {
+        ARMOR_SOCKETS
+            .iter()
+            .zip(self.worn)
+            .filter(|(_, worn)| *worn)
+            .flat_map(|((_, sockets), _)| sockets.iter().copied())
+            .collect()
+    }
+
+    /// The class colour on the outfit's `classTrim` materials as a linear base colour: the
+    /// class accent ([`super::player::Look::shoulder`], `shoulderColor` in the browser's
+    /// `character-visuals.ts`).
+    #[must_use]
+    pub fn trim(self) -> [f32; 3] {
+        let hex = super::player::Look::new(self.class.code(), false, None, false).shoulder;
+        let linear = |byte: u32| {
+            let c = (byte & 0xff) as f32 / 255.;
+            if c <= 0.040_45 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        [linear(hex >> 16), linear(hex >> 8), linear(hex)]
     }
 }
 
@@ -846,20 +945,53 @@ mod tests {
         );
         let names: Vec<_> = PlayerClass::ALL
             .into_iter()
-            .map(|class| Loadout::of_class(class).map(Loadout::name))
+            .map(|class| Loadout::of_class(class).name())
             .collect();
         assert_eq!(
             names,
             [
-                Some("sword-and-shield"),
-                Some("bow-and-quiver"),
-                None,
-                Some("staff.bone"),
-                Some("dagger"),
-                Some("staff.gilded"),
-                Some("staff.gnarled"),
+                "sword-and-shield",
+                "bow-and-quiver",
+                "staff.crystal-and-tome",
+                "staff.bone",
+                "dagger",
+                "mace.flanged",
+                "staff.gnarled",
             ]
         );
+    }
+
+    #[test]
+    fn classes_wear_their_starter_outfit_and_drops_replace_its_slot_pieces() {
+        let presets: Vec<_> = PlayerClass::ALL
+            .into_iter()
+            .map(|class| Outfit::new(class, None).preset())
+            .collect();
+        assert_eq!(
+            presets,
+            [
+                "class.warden",
+                "class.ranger",
+                "class.arcanist",
+                "class.necromancer",
+                "class.rogue",
+                "class.cleric",
+                "class.druid",
+            ]
+        );
+        assert!(Outfit::new(PlayerClass::Warden, None).replaced().is_empty());
+        // The Cloth Hood (6) and Worn Boots (9) cover the head and feet sockets only.
+        let mut slots = [None; mmorpg_core::EQUIPMENT_SLOTS];
+        slots[EquipmentSlot::Head.index() as usize] = Some(mmorpg_core::ItemId::new(6));
+        slots[EquipmentSlot::Feet.index() as usize] = Some(mmorpg_core::ItemId::new(9));
+        let equipment = Equipment::from_slots(slots).unwrap();
+        assert_eq!(
+            Outfit::new(PlayerClass::Warden, Some(&equipment)).replaced(),
+            ["head.armor", "foot_l.armor", "foot_r.armor"]
+        );
+        // The Cleric's gold accent (#d9b44a), linear.
+        let [r, g, b] = Outfit::new(PlayerClass::Cleric, None).trim();
+        assert!(r > g && g > b && (r - 0.693).abs() < 0.01);
     }
 
     #[test]

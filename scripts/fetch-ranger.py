@@ -11,17 +11,23 @@ DEST = ROOT / "web/public/characters/humanoid.ranger.male"
 RELEASE = "humanoid-ranger-male"
 URL = f"https://github.com/moritzbrantner/asset-tooling/releases/download/{RELEASE}/"
 # Selected entries by key and variants: the default character and equipment, the class weapons
-# (asset-tooling #375), the hairstyles' tintable `hair-1` texture variant (#376) and the Greyhaven
-# residents' outfit variants, armour, straw hat and beards (#418).
+# (asset-tooling #375) and props (#379), the hairstyles' tintable `hair-1` texture variant (#376),
+# the Greyhaven residents' outfit variants, armour, straw hat and beards (#418) and the class
+# starter outfits' armour (#379).
+CLASSES = ("warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid")
 SELECTED = {key: {"default"} for key in (
     "humanoid.ranger.male", "equipment.sword.arming", "equipment.shield.heater", "equipment.bow.long",
     "equipment.quiver.back", "equipment.cap.ranger", "equipment.helm.ironcrest", "equipment.dagger.blackened",
-    "equipment.staff.bone", "equipment.staff.gilded", "equipment.staff.gnarled", "equipment.hat.straw",
-    "facial-hair.beards", "armor.knight", "armor.soldier", "armor.farmer", "armor.innkeeper", "armor.monk")}
+    "equipment.staff.bone", "equipment.staff.crystal", "equipment.staff.gnarled", "equipment.book.tome",
+    "equipment.mace.flanged", "equipment.hat.straw", "facial-hair.beards", "armor.knight", "armor.soldier",
+    "armor.farmer", "armor.innkeeper", "armor.monk", *(f"armor.class.{name}" for name in CLASSES))}
 SELECTED.update({key: {"hair-1"} for key in ("hair.buzzed", "hair.simple-parted", "hair.long")})
-# The full-detail outfit variant of each resident preset's outfit and skin.
+# The full-detail outfit variant of each resident and class preset's outfit and skin.
 SELECTED["humanoid.ranger.male"] |= {"outfit.knight.skin.light", "outfit.soldier", "outfit.innkeeper.skin.light",
-                                     "outfit.farmer", "outfit.monk.skin.light"}
+                                     "outfit.farmer", "outfit.monk.skin.light",
+                                     "outfit.class.warden.skin.light", "outfit.class.ranger",
+                                     "outfit.class.arcanist.skin.light", "outfit.class.necromancer.skin.grey",
+                                     "outfit.class.rogue", "outfit.class.cleric.skin.light", "outfit.class.druid"}
 PAIRS = {(key, variant) for key, variants in SELECTED.items() for variant in variants}
 # The rolling release is pinned by the consumer's copy of its export.ref.json (#411: the bundle
 # with face morph targets); a replaced release fails acquisition until this copy is updated.

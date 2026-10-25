@@ -1,6 +1,11 @@
 import type { CharacterClassId, CharacterPreview, EquipmentItem } from "./character-selection";
 
+/**
+ * Headwear: the class starter outfit's own (asset-tooling #379: its hood, helm, mask or circlet,
+ * or none where it has none), a hood, an authored item, or nothing.
+ */
 export const HAT_OPTIONS = [
+  { id: "class", name: "Class headwear", accent: "#9a8c6a" },
   { id: "wayfarer-hood", name: "Wayfarer's Hood", accent: "#b7c6bd" },
   { id: "ranger-cap", name: "Ranger's Cap", accent: "#6f875f" },
   { id: "ironcrest-helm", name: "Ironcrest Helm", accent: "#858e91" },
@@ -40,16 +45,9 @@ const DEFAULT_LOOK = { hair: "parted", hairColor: "brown", face: {} } as const;
 
 export const DEFAULT_CHARACTER_APPEARANCE: CharacterAppearance = { hat: "wayfarer-hood", ...DEFAULT_LOOK };
 
-export function defaultAppearanceForClass(classId: CharacterClassId): CharacterAppearance {
-  switch (classId) {
-    case "warden": return { hat: "ironcrest-helm", ...DEFAULT_LOOK };
-    case "ranger": return { hat: "ranger-cap", ...DEFAULT_LOOK };
-    case "arcanist":
-    case "necromancer":
-    case "rogue":
-    case "cleric":
-    case "druid": return { hat: "wayfarer-hood", ...DEFAULT_LOOK };
-  }
+/** Every class starts in its starter outfit (asset-tooling #379), its own headwear included. */
+export function defaultAppearanceForClass(_classId: CharacterClassId): CharacterAppearance {
+  return { hat: "class", ...DEFAULT_LOOK };
 }
 /** Version 2 adds `appearance.face` (#411); version 1 saves still load, with the default face. */
 const SAVE_SCHEMA_VERSION = 2;

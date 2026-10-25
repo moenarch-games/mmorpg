@@ -183,11 +183,10 @@ fn no_viewer_does_not_consume_first_session_framing() {
 #[test]
 fn default_class_appearance_matches_published_entry_without_changing_explicit_none() {
     use mmorpg_core::{PlayerClass, ZoneCommand};
-    for (class, hat) in [
-        (0, "ironcrest-helm"),
-        (1, "ranger-cap"),
-        (2, "wayfarer-hood"),
-    ] {
+    // Every class starts in its starter outfit's headwear (asset-tooling #379): the Warden's
+    // bascinet, the Ranger's and the Necromancer's hoods. The Arcanist's outfit has none, so
+    // its explicit none draws like its default.
+    for (class, hat) in [(0, "class"), (1, "class"), (3, "class")] {
         let content = greyhaven_vale::content();
         let scenery = mmorpg_scenery::greyhaven_vale_scenery();
         let world = WorldScene::new(&scenery);

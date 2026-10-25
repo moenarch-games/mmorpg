@@ -732,6 +732,17 @@ kbd {
   border-radius: 50%;
 }
 
+/* The class outfit's own headwear: a trimmed tabard-like shield. */
+.hat-icon--class::before {
+  top: .12rem;
+  width: 1.4rem;
+  height: 1.6rem;
+  border: 1px solid #d8cba6;
+  border-radius: 12% 12% 50% 50%;
+  background: #6f6650;
+  box-shadow: inset 0 .35rem #9a8c6a;
+}
+
 .hat-icon--helm::before {
   top: .3rem;
   width: 1.75rem;

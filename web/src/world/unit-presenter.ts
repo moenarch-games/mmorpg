@@ -26,7 +26,13 @@ export type UnitPresenterHandle = {
 
 export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Pig";
 /** The shared presenter's `Loadout::name`s. */
-export type Loadout = "sword-and-shield" | "bow-and-quiver" | "sword" | "dagger" | "staff.bone" | "staff.gilded" | "staff.gnarled";
+export type Loadout = "sword-and-shield" | "bow-and-quiver" | "sword" | "dagger" | "staff.bone" | "staff.crystal-and-tome"
+  | "mace.flanged" | "staff.gnarled";
+/**
+ * A class starter outfit (asset-tooling #379, the shared `Outfit`): the `class.<id>` appearance
+ * preset and the armour sockets whose outfit pieces the viewer's equipped drops replace.
+ */
+export type ClassOutfit = { preset: string; replaced: readonly string[] };
 
 /** Where a presented unit stands, in metres and radians. */
 export type PresentedUnit = {
@@ -63,6 +69,8 @@ export type ImportedRequest = {
   loadout: Loadout | null;
   /** A named resident's `humanoid-appearance` preset id (#418). */
   resident: string | null;
+  /** A player's class starter outfit (asset-tooling #379). */
+  outfit: ClassOutfit | null;
   /** The living viewer: its imported model wears the viewer's chosen headwear (#374). */
   headwear: boolean;
 };
@@ -93,7 +101,7 @@ type DrawEntry = { id: string; key: string; model: number; color: Color; emissiv
 type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number;
-  height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; headwear: boolean };
+  height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; outfit: ClassOutfit | null; headwear: boolean };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
@@ -173,7 +181,7 @@ export class SharedUnits {
       })),
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw,
-        heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, headwear: unit.headwear,
+        heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, outfit: unit.outfit, headwear: unit.headwear,
       })),
     };
   }

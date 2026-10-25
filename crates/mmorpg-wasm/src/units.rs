@@ -82,7 +82,17 @@ struct ImportedEntry {
     loadout: Option<&'static str>,
     /// A resident's `humanoid-appearance` preset id (#418), or null.
     resident: Option<&'static str>,
+    /// A player's class starter outfit (asset-tooling #379), or null.
+    outfit: Option<OutfitEntry>,
     headwear: bool,
+}
+
+/// A class starter outfit: its `humanoid-appearance` preset id and the armour sockets whose
+/// outfit pieces equipped drops replace.
+#[derive(Serialize)]
+struct OutfitEntry {
+    preset: &'static str,
+    replaced: Vec<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -276,6 +286,7 @@ impl Units {
             "ironcrest-helm" => Some(Hat::Helm),
             "ranger-cap" => Some(Hat::Cap),
             "wayfarer-hood" => Some(Hat::Hood),
+            "class" => Some(Hat::Class),
             other => return Err(format!("unknown headwear style {other}")),
         };
         let mut sampled = Vec::with_capacity(units.len() / 6);
@@ -360,6 +371,10 @@ impl Units {
                     tint: unit.tint,
                     loadout: unit.loadout.map(Loadout::name),
                     resident: unit.resident.map(Resident::preset),
+                    outfit: unit.outfit.map(|outfit| OutfitEntry {
+                        preset: outfit.preset(),
+                        replaced: outfit.replaced(),
+                    }),
                     headwear: unit.headwear.is_some(),
                 }
             })
