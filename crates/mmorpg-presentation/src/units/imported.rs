@@ -160,9 +160,40 @@ impl Outfit {
     }
 }
 
-/// A character drawn on the Ranger figure in a `humanoid-appearance` preset: a named Greyhaven
-/// resident in the bundle's own preset (#418), or a humanoid enemy in a game-authored preset
-/// over the bundle's outfits (#39; [`super::presets::enemy_presets`]).
+/// The Ranger figure a character is drawn on. Each is its own asset-tooling bundle with its own
+/// skeleton, clips, sockets and `humanoid-appearance`: the male carries the players, the class
+/// outfits and the male residents and enemies; the female (asset-tooling #378) carries only her
+/// own presets, with no headwear, beards, head skins or variety options.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Figure {
+    Male,
+    Female,
+}
+
+impl Figure {
+    pub const ALL: [Self; 2] = [Self::Male, Self::Female];
+
+    /// The bundle's character key, also its acquisition directory under `characters/`.
+    #[must_use]
+    pub const fn character(self) -> &'static str {
+        match self {
+            Self::Male => "humanoid.ranger.male",
+            Self::Female => "humanoid.ranger.female",
+        }
+    }
+
+    /// The figure whose character key is `character`.
+    #[must_use]
+    pub fn of_character(character: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|figure| figure.character() == character)
+    }
+}
+
+/// A character drawn on a Ranger figure in a `humanoid-appearance` preset: a named Greyhaven
+/// resident in the bundle's own preset (#418, #493), or a humanoid enemy in a game-authored
+/// preset over the male bundle's outfits (#39; [`super::presets::enemy_presets`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Resident {
     Marshal,
@@ -170,6 +201,8 @@ pub enum Resident {
     Innkeeper,
     Farmer,
     Healer,
+    /// Tanner Hilda Brook (#493), on the female figure.
+    Tanner,
     /// The Millbrook field marauders: ragged farmhands turned raiders.
     Marauder,
     /// The Redbrand rank and file in the band's red.
@@ -184,12 +217,13 @@ pub enum Resident {
 
 impl Resident {
     /// Every character with a preset, so a client can check it can draw them all.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Marshal,
         Self::Guard,
         Self::Innkeeper,
         Self::Farmer,
         Self::Healer,
+        Self::Tanner,
         Self::Marauder,
         Self::RedbrandBandit,
         Self::RedbrandCrossbowman,
@@ -197,8 +231,7 @@ impl Resident {
         Self::Garrick,
     ];
 
-    /// The resident an NPC of this canonical name is, if it has a preset. Tanner Hilda Brook has
-    /// none yet (the resident outfits exist on the male figure only).
+    /// The resident an NPC of this canonical name is, if it has a preset.
     #[must_use]
     pub fn of_name(name: &str) -> Option<Self> {
         match name {
@@ -207,6 +240,7 @@ impl Resident {
             "Innkeeper Bram Tolliver" => Some(Self::Innkeeper),
             "Farmer Osric Mill" => Some(Self::Farmer),
             "Brother Aldous" => Some(Self::Healer),
+            "Tanner Hilda Brook" => Some(Self::Tanner),
             _ => None,
         }
     }
@@ -234,6 +268,7 @@ impl Resident {
             Self::Innkeeper => "resident.innkeeper",
             Self::Farmer => "resident.farmer",
             Self::Healer => "resident.healer",
+            Self::Tanner => "resident.tanner",
             Self::Marauder => "enemy.marauder",
             Self::RedbrandBandit => "enemy.redbrand.bandit",
             Self::RedbrandCrossbowman => "enemy.redbrand.crossbowman",
@@ -266,7 +301,16 @@ impl Resident {
             Self::Marauder => Some(Loadout::Dagger),
             Self::RedbrandCrossbowman => Some(Loadout::BowAndQuiver),
             Self::RedbrandBrute => Some(Loadout::SwordAndShield),
-            Self::Marshal | Self::Innkeeper | Self::Farmer | Self::Healer => None,
+            Self::Marshal | Self::Innkeeper | Self::Farmer | Self::Healer | Self::Tanner => None,
+        }
+    }
+
+    /// The figure the character is drawn on: Hilda on the female, everyone else on the male.
+    #[must_use]
+    pub const fn figure(self) -> Figure {
+        match self {
+            Self::Tanner => Figure::Female,
+            _ => Figure::Male,
         }
     }
 
@@ -1098,7 +1142,7 @@ mod tests {
             presets,
             [
                 Some("resident.marshal"),
-                None,
+                Some("resident.tanner"),
                 Some("resident.innkeeper"),
                 Some("resident.farmer"),
                 Some("resident.healer"),

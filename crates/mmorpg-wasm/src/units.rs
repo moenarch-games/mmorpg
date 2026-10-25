@@ -82,6 +82,9 @@ struct ImportedEntry {
     loadout: Option<&'static str>,
     /// A resident's or humanoid enemy's `humanoid-appearance` preset id (#418, #39), or null.
     resident: Option<&'static str>,
+    /// The Ranger figure a resident is drawn on, by its character key (`imported::Figure`, #493),
+    /// or null.
+    figure: Option<&'static str>,
     /// A varied resident's look seed, its NPC or creature id (asset-tooling #380), or null.
     variety: Option<u32>,
     /// A player's class starter outfit (asset-tooling #379), or null.
@@ -386,6 +389,7 @@ impl Units {
                     tint: unit.tint,
                     loadout: unit.loadout.map(Loadout::name),
                     resident: unit.resident.map(Resident::preset),
+                    figure: unit.resident.map(|resident| resident.figure().character()),
                     variety: unit.variety,
                     outfit: unit.outfit.map(|outfit| OutfitEntry {
                         preset: outfit.preset(),

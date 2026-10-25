@@ -13,6 +13,8 @@ use std::{
 };
 
 const CHARACTER: &str = "humanoid.ranger.male";
+/// The female figure (#493, `imported::Figure::Female`).
+const FEMALE: &str = "humanoid.ranger.female";
 const SWORD: &str = "equipment.sword.arming";
 const SHIELD: &str = "equipment.shield.heater";
 /// The Ranger's longbow and quiver stowed on the back (#244).
@@ -49,52 +51,9 @@ fn main() {
     println!("cargo:rerun-if-changed={}", art.display());
     warden_icons::validate(&art)
         .unwrap_or_else(|cause| panic!("Warden artwork validation failed: {cause}"));
-    let bundle = manifest_dir.join("../../web/public/characters/humanoid.ranger.male");
-    println!(
-        "cargo:rerun-if-changed={}",
-        bundle.join("RELEASE").display()
-    );
-    let index = bundle.join("humanoid-ranger-male.index.json");
-    println!("cargo:rerun-if-changed={}", index.display());
-    let index: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(index)
-            .expect("Ranger downloads are missing; run scripts/fetch-bundles.sh"),
-    )
-    .expect("Ranger download index is JSON");
-    assert_eq!(index["schema"], "asset-downloads-v1");
-    let character = index["entries"]
-        .as_array()
-        .expect("download entries")
-        .iter()
-        .find(|entry| entry["key"] == CHARACTER && entry["variant"] == "default")
-        .expect("default character entry");
-    let sockets = character["files"]
-        .as_array()
-        .expect("entry files")
-        .iter()
-        .filter_map(serde_json::Value::as_str)
-        .find(|file| file.ends_with(".humanoid-sockets.json"))
-        .expect("character sockets")
-        .to_owned();
-    let appearance = character["files"]
-        .as_array()
-        .expect("entry files")
-        .iter()
-        .filter_map(serde_json::Value::as_str)
-        .find(|file| file.ends_with(".humanoid-appearance.json"))
-        .expect("character appearance")
-        .to_owned();
-    let clips = format!(
-        "native/{}",
-        character["clips"]
-            .as_str()
-            .expect("shared clips")
-            .replace(".glb", ".native.glb")
-    );
-    let mut files = vec![sockets.clone(), clips.clone(), appearance.clone()];
-    let mut code = format!(
-        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\npub const APPEARANCE: &str = {appearance:?};\n"
-    );
+    let characters = manifest_dir.join("../../web/public/characters");
+    let bundle = characters.join(CHARACTER);
+    let (mut code, mut files, appearance) = figure(&bundle, CHARACTER);
     for (name, key) in [
         ("CHARACTER", CHARACTER),
         ("SWORD", SWORD),
@@ -160,16 +119,13 @@ fn main() {
     files.push(hair);
     // Every other prepared entry too: the residents' and humanoid enemies' outfit variants,
     // armour, beards, headwear and hairstyles (#418, #39), looked up by key and variant.
-    let native = bundle.join("native");
-    println!("cargo:rerun-if-changed={}", native.display());
-    for prepared in fs::read_dir(&native).expect("run scripts/prepare-ranger-native.sh") {
-        let name = prepared.expect("a prepared file").file_name();
-        let name = name.to_str().expect("prepared file names are UTF-8");
-        if name.ends_with(".native.glb") {
-            files.push(format!("native/{name}"));
-        }
-    }
+    files.extend(prepared(&bundle));
     write("ranger_bundle.rs", &bundle, code, files);
+    // The female figure (#493): Tanner Hilda Brook's outfit, armour and hair.
+    let female = characters.join(FEMALE);
+    let (code, mut files, _) = figure(&female, FEMALE);
+    files.extend(prepared(&female));
+    write("ranger_female_bundle.rs", &female, code, files);
     static_bundle(
         "inn_bundle.rs",
         &manifest_dir.join("../../web/public/buildings/greyhaven.inn"),
@@ -246,6 +202,69 @@ fn sound_bundle(bundle: &Path) {
         format!("pub const MANIFEST: &str = {sounds:?};\n"),
         files,
     );
+}
+
+/// A Ranger figure's acquired bundle (`imported::Figure`): its `SOCKETS`, prepared `CLIPS` and
+/// `APPEARANCE` as code, those files, and the appearance path.
+fn figure(bundle: &Path, character: &str) -> (String, Vec<String>, String) {
+    println!(
+        "cargo:rerun-if-changed={}",
+        bundle.join("RELEASE").display()
+    );
+    let index = bundle.join(format!("{}.index.json", character.replace('.', "-")));
+    println!("cargo:rerun-if-changed={}", index.display());
+    let index: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(index)
+            .expect("Ranger downloads are missing; run scripts/fetch-bundles.sh"),
+    )
+    .expect("Ranger download index is JSON");
+    assert_eq!(index["schema"], "asset-downloads-v1");
+    let entry = index["entries"]
+        .as_array()
+        .expect("download entries")
+        .iter()
+        .find(|entry| entry["key"] == character && entry["variant"] == "default")
+        .expect("default character entry");
+    let file = |suffix: &str| {
+        entry["files"]
+            .as_array()
+            .expect("entry files")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .find(|file| file.ends_with(suffix))
+            .unwrap_or_else(|| panic!("the {character} entry has its {suffix}"))
+            .to_owned()
+    };
+    let sockets = file(".humanoid-sockets.json");
+    let appearance = file(".humanoid-appearance.json");
+    let clips = format!(
+        "native/{}",
+        entry["clips"]
+            .as_str()
+            .expect("shared clips")
+            .replace(".glb", ".native.glb")
+    );
+    let code = format!(
+        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\npub const APPEARANCE: &str = {appearance:?};\n"
+    );
+    (code, vec![sockets, clips, appearance.clone()], appearance)
+}
+
+/// Every prepared GLB of a figure's bundle (`scripts/prepare-ranger-native.sh`).
+fn prepared(bundle: &Path) -> Vec<String> {
+    let native = bundle.join("native");
+    println!("cargo:rerun-if-changed={}", native.display());
+    fs::read_dir(&native)
+        .expect("run scripts/prepare-ranger-native.sh")
+        .map(|prepared| {
+            let name = prepared.expect("a prepared file").file_name();
+            name.to_str()
+                .expect("prepared file names are UTF-8")
+                .to_owned()
+        })
+        .filter(|name| name.ends_with(".native.glb"))
+        .map(|name| format!("native/{name}"))
+        .collect()
 }
 
 /// A static bundle's drawn entries (`keys`, or every entry) as `ENTRIES` (key, glTF path) and

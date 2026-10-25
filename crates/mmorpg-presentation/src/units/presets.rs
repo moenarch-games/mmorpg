@@ -1,8 +1,10 @@
-//! The Ranger's `humanoid-appearance` presets both clients draw: the bundle's own, the game's
-//! humanoid enemy presets ([`ENEMY_PRESET_IDS`], #39) authored over the bundle's outfits, and a
+//! The Ranger figures' `humanoid-appearance` presets both clients draw: each figure bundle's own
+//! (the male residents', and Tanner Hilda Brook's on the female figure, #493), the game's
+//! humanoid enemy presets ([`ENEMY_PRESET_IDS`], #39) authored over the male outfits, and a
 //! unit's own seeded variation of a shared preset (asset-tooling #380). The browser reads them
 //! through `mmorpg-wasm`, the native client directly, so a guard or bandit is the same man in
 //! both. Presentation only, never read by gameplay.
+use super::imported::Figure;
 use serde_json::{Map, Value, json};
 
 /// The Redbrand band's red on the soldier and knight outfits' `faction` materials (linear).
@@ -51,10 +53,16 @@ pub fn enemy_presets() -> Vec<Value> {
     ]
 }
 
-/// The bundle's `humanoid-appearance` with the game's enemy presets beside its own.
+/// The `humanoid-appearance` a figure's characters are drawn from: its bundle's own, with the
+/// game's enemy presets beside the male figure's (they wear his outfits, beards and headwear).
+/// The female figure's bundle (asset-tooling #378) is drawn as published: her residents' presets
+/// (`resident.tanner`, #493) and no male-only options.
 #[must_use]
-pub fn with_enemy_presets(appearance: &Value) -> Value {
+pub fn figure_appearance(figure: Figure, appearance: &Value) -> Value {
     let mut value = appearance.clone();
+    if figure == Figure::Female {
+        return value;
+    }
     if let Some(object) = value.as_object_mut() {
         let presets = object
             .entry("presets")
@@ -252,14 +260,17 @@ mod tests {
 
     #[test]
     fn a_varied_preset_keeps_its_gear_and_draws_the_rest() {
-        let appearance = with_enemy_presets(&json!({
-            "presets": [],
-            "outfits": [{ "id": "outfit.soldier", "skins": [
-                { "id": "skin.dark", "variant": "outfit.soldier" },
-                { "id": "skin.light", "variant": "outfit.soldier.skin.light" }] }],
-            "tints": [{ "id": "tint.black" }, { "id": "tint.grey" }],
-            "facialHair": { "options": [{ "id": "beard.full" }, { "id": "beard.moustache" }] },
-        }));
+        let appearance = figure_appearance(
+            Figure::Male,
+            &json!({
+                "presets": [],
+                "outfits": [{ "id": "outfit.soldier", "skins": [
+                    { "id": "skin.dark", "variant": "outfit.soldier" },
+                    { "id": "skin.light", "variant": "outfit.soldier.skin.light" }] }],
+                "tints": [{ "id": "tint.black" }, { "id": "tint.grey" }],
+                "facialHair": { "options": [{ "id": "beard.full" }, { "id": "beard.moustache" }] },
+            }),
+        );
         let own = vary_preset(&appearance, "enemy.redbrand.bandit", 7).expect("the bandit preset");
         assert_eq!(own["outfit"], "outfit.soldier");
         assert_eq!(own["faction"], json!(REDBRAND_RED));
@@ -269,5 +280,19 @@ mod tests {
             Some(own)
         );
         assert!(vary_preset(&appearance, "enemy.unknown", 7).is_none());
+    }
+
+    #[test]
+    fn the_female_figure_keeps_her_own_presets_only() {
+        let bundle = json!({ "presets": [{ "id": "resident.tanner", "outfit": "outfit.tanner" }] });
+        let female = figure_appearance(Figure::Female, &bundle);
+        assert_eq!(female, bundle);
+        let male = figure_appearance(Figure::Male, &bundle);
+        assert_eq!(male["presets"].as_array().map(Vec::len), Some(6));
+        assert_eq!(
+            super::super::imported::Resident::of_name("Tanner Hilda Brook")
+                .map(super::super::imported::Resident::figure),
+            Some(Figure::Female)
+        );
     }
 }

@@ -3,7 +3,7 @@
 //! Presentation only; the authoritative body box still comes from content.
 use crate::world::{DrawMaterial, SceneDraw};
 use mmorpg_presentation::units::{
-    imported::{DROP_ARMOR_OUTFIT, Kind, Layer, Loadout, Mask, Outfit, UPPER_BODY_ROOT},
+    imported::{DROP_ARMOR_OUTFIT, Figure, Kind, Layer, Loadout, Mask, Outfit, UPPER_BODY_ROOT},
     kit::{Frame, model},
     player::Hat,
     sway,
@@ -862,6 +862,11 @@ mod ranger_bundle {
     include!(concat!(env!("OUT_DIR"), "/ranger_bundle.rs"));
 }
 
+/// The female figure's bundle (#493): her sockets, clips, appearance and prepared entries.
+mod ranger_female_bundle {
+    include!(concat!(env!("OUT_DIR"), "/ranger_female_bundle.rs"));
+}
+
 /// The Greyhaven inn bundle's drawn entries and their resources, embedded by `build.rs` (#158).
 mod inn_bundle {
     include!(concat!(env!("OUT_DIR"), "/inn_bundle.rs"));
@@ -1427,7 +1432,7 @@ pub(super) fn class_outfit(outfit: Outfit) -> &'static ClassOutfit {
             .unwrap_or_default();
         model.morph(
             Some(&strings(&appearance()["face"]["nodes"])),
-            &residents::face_morphs(preset, variant),
+            &residents::face_morphs(Figure::Male, preset, variant),
         );
         let hood = entry["garments"]
             .as_array()

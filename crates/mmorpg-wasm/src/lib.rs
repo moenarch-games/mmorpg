@@ -127,12 +127,15 @@ pub fn sound_manifest(bundle: &str) -> Result<String, JsError> {
     mmorpg_presentation::audio::sound_manifest(bundle).map_err(|error| JsError::new(&error))
 }
 
-/// The Ranger's `humanoid-appearance` JSON with the game's humanoid enemy presets beside the
-/// bundle's own (#39), the presets the native client draws too.
-#[wasm_bindgen(js_name = withEnemyPresets)]
-pub fn with_enemy_presets(appearance: &str) -> Result<String, JsError> {
+/// The `humanoid-appearance` JSON the Ranger figure `character` draws from (#39, #493): the
+/// bundle's own, with the game's humanoid enemy presets beside the male figure's, the presets
+/// the native client draws too.
+#[wasm_bindgen(js_name = figureAppearance)]
+pub fn figure_appearance(character: &str, appearance: &str) -> Result<String, JsError> {
+    let figure = mmorpg_presentation::units::imported::Figure::of_character(character)
+        .ok_or_else(|| JsError::new(&format!("no Ranger figure {character}")))?;
     let appearance: serde_json::Value = serde_json::from_str(appearance)?;
-    Ok(mmorpg_presentation::units::presets::with_enemy_presets(&appearance).to_string())
+    Ok(mmorpg_presentation::units::presets::figure_appearance(figure, &appearance).to_string())
 }
 
 /// A unit's own seeded variation of the preset `id` (asset-tooling #380) over `appearance`
