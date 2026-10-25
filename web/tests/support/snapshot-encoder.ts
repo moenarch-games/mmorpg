@@ -9,7 +9,7 @@ const AURA_KINDS = ["damage-over-time", "heal-over-time", "absorb", "root", "sna
 const CLASSES = ["warden", "ranger", "arcanist"];
 const RESOURCES = ["rage", "focus", "mana", "faith"];
 const EVENT_BYTES = 14;
-const ENTITY_BYTES = 21;
+const ENTITY_BYTES = 27;
 const ERROR_CODES = [
   "no-target", "out-of-range", "target-dead", "not-attackable", "you-are-dead", "not-dead", "invalid-target", "too-many-intents", "invalid-inventory-move", "inventory-full", "invalid-loot", "not-loot-owner", "empty-loot", "money-overflow",
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
@@ -41,7 +41,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   const chatText = (line: (typeof chat)[number]) =>
     line.channel === "emote" ? null : new TextEncoder().encode(line.text);
   const chatBytes = chat.reduce((total, line) => total + 6 + (chatText(line)?.length ?? 0), 0);
-  const size = FIXED_BYTES + lists + (snapshot.inventory === null ? 0 : SHEET_BYTES) + questBytes + lootBytes + 2 * (snapshot.doors ?? []).length + 3 * (snapshot.pieces ?? []).length + EVENT_BYTES * snapshot.events.length + chatBytes + ENTITY_BYTES * snapshot.entities.length + 14 * (snapshot.projectiles ?? []).length + 19 * (snapshot.debris ?? []).length;
+  const size = FIXED_BYTES + lists + (snapshot.inventory === null ? 0 : SHEET_BYTES) + questBytes + lootBytes + 2 * (snapshot.doors ?? []).length + 3 * (snapshot.pieces ?? []).length + EVENT_BYTES * snapshot.events.length + chatBytes + ENTITY_BYTES * snapshot.entities.length + 20 * (snapshot.projectiles ?? []).length + 25 * (snapshot.debris ?? []).length;
   const bytes = new Uint8Array(size);
   const view = new DataView(bytes.buffer);
   let offset = 0;
@@ -192,11 +192,8 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u32(record.entityId);
     u16(record.appearance);
     for (const component of record.position) {
-      if (component < -32_768 || component > 32_767) {
-        throw new Error("position does not fit i16");
-      }
-      view.setInt16(offset, component);
-      offset += 2;
+      view.setInt32(offset, component);
+      offset += 4;
     }
     for (const component of record.velocity) {
       view.setInt8(offset, Math.max(-128, Math.min(127, component)));
@@ -214,8 +211,8 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u16(projectile.id);
     u8(["arrow", "bolt", "missile", "shadow", "holy", "nature", "knife", "flask", "bomb"].indexOf(projectile.kind) + 1);
     for (const component of [projectile.x, projectile.y, projectile.z]) {
-      view.setInt16(offset, component);
-      offset += 2;
+      view.setInt32(offset, component);
+      offset += 4;
     }
     u16(projectile.yaw);
     view.setInt16(offset, projectile.pitch);
@@ -228,7 +225,11 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u16(piece.id);
     u8(["crate", "barrel", "explosive_barrel", "fence"].indexOf(piece.kind));
     u8(piece.piece);
-    for (const component of [piece.x, piece.y, piece.z, ...piece.rotation]) {
+    for (const component of [piece.x, piece.y, piece.z]) {
+      view.setInt32(offset, component);
+      offset += 4;
+    }
+    for (const component of piece.rotation) {
       view.setInt16(offset, component);
       offset += 2;
     }

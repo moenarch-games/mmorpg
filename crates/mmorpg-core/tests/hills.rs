@@ -31,7 +31,7 @@ fn feet(zone: &ZoneSimulation) -> [f32; 3] {
 fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
     let definition = greyhaven_vale::greyhaven_vale_definition();
     let grid = definition.terrain().expect("Greyhaven has terrain");
-    assert_eq!((grid.columns, grid.rows), (terrain::COUNT, terrain::COUNT));
+    assert_eq!((grid.columns, grid.rows), (terrain::COLUMNS, terrain::ROWS));
     let mut tallest = 0;
     let mut steepest = 0_i64;
     for row in 0..i32::from(grid.rows) {
@@ -50,6 +50,10 @@ fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
                     || shrine::flattens(x, z)
                     || greyhaven_vale::basin::height_at(x, z).is_some()
             };
+            // The farmland's ridge and plateau beyond the Vale (#424) are not the ring's hills.
+            if z >= greyhaven_vale::farmland::RIDGE[0] - terrain::STEP {
+                continue;
+            }
             if x.abs().max(z.abs()) <= 12_500 && !basin(x) {
                 assert_eq!(height, 0, "the original valley stays flat at {x}, {z}");
             }

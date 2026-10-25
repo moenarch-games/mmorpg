@@ -52,8 +52,9 @@ export function groundBiomes(grid: TerrainGrid, biomeNames: ReadonlyMap<number, 
  * the player's arrow in the middle and other units as dots.
  */
 export type MinimapLayers = {
-  /** Half the side of the mapped square in metres, centred on the origin. */
-  extent: number;
+  /** The mapped rectangle's north-west (min X, min Z) and south-east corners in metres: the Vale and the farmland beyond it (#424). */
+  min: readonly [number, number];
+  max: readonly [number, number];
   pixelsPerMetre: number;
   width: number;
   height: number;
@@ -65,7 +66,8 @@ export type MinimapLayers = {
   trees: { center: readonly [number, number]; radius: number; color: Color }[];
 };
 
-export const MINIMAP_EXTENT_METRES = 132;
+/** The playable rectangle and 4 m beyond its walls: Greyhaven Vale and Farmland and Hamlets south of it (#424). */
+export const MINIMAP_BOUNDS_METRES = { min: [-212, -212], max: [212, 644] } as const;
 const PIXELS_PER_METRE = 2;
 /** Zoom levels: metres from the centre to the minimap's rim. */
 export const MINIMAP_RADII_METRES = [30, 45, 70, 100] as const;
@@ -83,8 +85,9 @@ const BUILDING_KINDS = new Set<Prop["kind"]>([
 /** Deterministic map layers for a scenery value; pure, no DOM. */
 export function buildMinimapLayers(scenery: Scenery, style: EnvironmentStyle): MinimapLayers {
   const { terrain, unitsPerMetre } = scenery;
-  const extent = MINIMAP_EXTENT_METRES;
-  const size = Math.round(extent * 2 * PIXELS_PER_METRE);
+  const { min, max } = MINIMAP_BOUNDS_METRES;
+  const width = Math.round((max[0] - min[0]) * PIXELS_PER_METRE);
+  const height = Math.round((max[1] - min[1]) * PIXELS_PER_METRE);
   const names = new Map(scenery.biomes.map((biome) => [biome.id, biome.name]));
   const ground = groundBiomes(terrain, names);
   const colorOf = new Map(scenery.biomes.map((biome) => [biome.id, channels(style.biomeColors[biome.name] ?? biome.color)]));
@@ -97,14 +100,14 @@ export function buildMinimapLayers(scenery: Scenery, style: EnvironmentStyle): M
     const index = r * terrain.columns + c;
     return { color: colorOf.get(ground[index] ?? 0) ?? [128, 128, 128], height: (terrain.heights[index] ?? 0) / unitsPerMetre };
   };
-  const pixels = new Uint8ClampedArray(size * size * 4);
-  for (let py = 0; py < size; py += 1) {
-    const z = -extent + (py + 0.5) / PIXELS_PER_METRE;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let py = 0; py < height; py += 1) {
+    const z = min[1] + (py + 0.5) / PIXELS_PER_METRE;
     const gz = (z - originZ) / step;
     const row = Math.floor(gz);
     const fz = gz - row;
-    for (let px = 0; px < size; px += 1) {
-      const x = -extent + (px + 0.5) / PIXELS_PER_METRE;
+    for (let px = 0; px < width; px += 1) {
+      const x = min[0] + (px + 0.5) / PIXELS_PER_METRE;
       const gx = (x - originX) / step;
       const column = Math.floor(gx);
       const fx = gx - column;
@@ -116,7 +119,7 @@ export function buildMinimapLayers(scenery: Scenery, style: EnvironmentStyle): M
       const dx = ((s10.height - s00.height) + (s11.height - s01.height)) / (2 * step);
       const dz = ((s01.height - s00.height) + (s11.height - s10.height)) / (2 * step);
       const shade = Math.min(1.25, Math.max(0.6, 1 + (dx + dz) * 0.9));
-      const offset = (py * size + px) * 4;
+      const offset = (py * width + px) * 4;
       for (let channel = 0; channel < 3; channel += 1) {
         const top = s00.color[channel]! * (1 - fx) + s10.color[channel]! * fx;
         const bottom = s01.color[channel]! * (1 - fx) + s11.color[channel]! * fx;
@@ -132,7 +135,7 @@ export function buildMinimapLayers(scenery: Scenery, style: EnvironmentStyle): M
   for (const prop of scenery.props) {
     const x = metres(prop.position[0]);
     const z = metres(prop.position[2]);
-    if (Math.abs(x) > extent + 10 || Math.abs(z) > extent + 10) {
+    if (x < min[0] - 10 || x > max[0] + 10 || z < min[1] - 10 || z > max[1] + 10) {
       continue;
     }
     if (prop.kind === "tree-oak" || prop.kind === "tree-pine" || prop.kind === "tree-birch") {
@@ -157,10 +160,11 @@ export function buildMinimapLayers(scenery: Scenery, style: EnvironmentStyle): M
     buildings.push({ corners, color });
   }
   return {
-    extent,
+    min,
+    max,
     pixelsPerMetre: PIXELS_PER_METRE,
-    width: size,
-    height: size,
+    width,
+    height,
     terrain: pixels,
     roads: scenery.roads.map((road) => ({
       points: road.points.map(([x, z]) => [metres(x), metres(z)] as const),
@@ -250,7 +254,7 @@ export function paintMinimapImage(layers: MinimapLayers): HTMLCanvasElement {
   }
   context.putImageData(new ImageData(new Uint8ClampedArray(layers.terrain), layers.width, layers.height), 0, 0);
   const scale = layers.pixelsPerMetre;
-  context.setTransform(scale, 0, 0, scale, layers.extent * scale, layers.extent * scale);
+  context.setTransform(scale, 0, 0, scale, -layers.min[0] * scale, -layers.min[1] * scale);
   for (const water of layers.water) {
     context.fillStyle = water.color;
     context.beginPath();
@@ -355,8 +359,8 @@ export class Minimap {
     context.imageSmoothingEnabled = true;
     context.drawImage(
       this.#image,
-      (-this.#layers.extent - self.x) * this.#layers.pixelsPerMetre,
-      (-this.#layers.extent - self.z) * this.#layers.pixelsPerMetre,
+      (this.#layers.min[0] - self.x) * this.#layers.pixelsPerMetre,
+      (this.#layers.min[1] - self.z) * this.#layers.pixelsPerMetre,
     );
     context.restore();
     // Units as dots, the player's arrow on top.

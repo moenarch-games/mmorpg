@@ -76,7 +76,7 @@ impl Lane {
         self.min[0] <= x && x <= self.max[0] && self.min[1] <= z && z <= self.max[1]
     }
 
-    fn height(self, x: i32, z: i32) -> i32 {
+    pub(crate) fn height(self, x: i32, z: i32) -> i32 {
         let axis = match self.along {
             Along::X => 0,
             Along::Z => 1,

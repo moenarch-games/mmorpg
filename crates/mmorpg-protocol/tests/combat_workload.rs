@@ -41,12 +41,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Revision 28 (#423) lifts the lake onto the basin terrace, which shifts the zone RNG and
     // keeps the spread and crowded fights' creatures thinking and testing a little more. The
     // 60 Hz zone (#379) covers half the time in the same ticks; its creatures run on subunit
-    // steering, which moves the crowded fights a little.
+    // steering, which moves the crowded fights a little. Farmland and Hamlets (#424) adds its
+    // buildings, fences and trees to every step's world, and `i32` positions grow every
+    // entity record by six bytes.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 460_800, 224_640, 4_231_728],
-        [29_160, 457_920, 80_140, 1_335_287],
-        [29_160, 466_560, 389_620, 6_428_143],
-        [29_041, 477_961, 2_248_200, 24_496_050],
+        [29_160, 584_280, 224_640, 5_202_864],
+        [29_160, 581_400, 80_140, 1_431_435],
+        [29_160, 590_040, 389_620, 7_150_844],
+        [29_041, 601_441, 2_248_200, 24_496_050],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
@@ -86,11 +88,11 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
             assert_eq!(report.ai_evaluations, 81 * TICKS);
         }
         if fixture.crowded {
-            // Whole 14-byte events and 21-byte records beside the fixed part
+            // Whole 14-byte events and 27-byte records beside the fixed part
             // and the door section, a 93-byte self sheet, an 18-byte copper-only
             // corpse sheet, the projectile, debris and piece counts fill the 1,077 bytes
-            // (1,073 at 60 Hz, 1,074 at 30 Hz): no further 21-byte record fits.
-            assert!(report.max_projection_bytes + 21 > MAX_PLAYER_PROJECTION_BYTES);
+            // (#424: `i32` positions): no further 27-byte record fits.
+            assert!(report.max_projection_bytes + 27 > MAX_PLAYER_PROJECTION_BYTES);
             assert!(report.candidates_tested > 1_000_000);
         }
     }

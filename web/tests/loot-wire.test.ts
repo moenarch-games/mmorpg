@@ -37,10 +37,10 @@ describe("Rust/browser corpse loot contract", () => {
       expect(() => decodeSnapshot(invalid)).toThrow();
     }
     // The 26-byte corpse sheet, two doors, two pieces, 16 events, two chat lines and an emote, the entity count and the viewer.
-    const corpse = presence + 1 + 26 + 1 + 2 * 2 + 1 + 2 * 3 + 1 + 16 * 14 + 1 + 22 + 14 + 6 + 2 + 21;
+    const corpse = presence + 1 + 26 + 1 + 2 * 2 + 1 + 2 * 3 + 1 + 16 * 14 + 1 + 22 + 14 + 6 + 2 + 27;
     for (const flags of [0x05, 0x84, 0x95, 0x8d]) {
       const invalid = bytes.slice();
-      invalid[corpse + 20] = flags;
+      invalid[corpse + 26] = flags;
       expect(() => decodeSnapshot(invalid)).toThrow();
     }
     const other = bytes.slice();
