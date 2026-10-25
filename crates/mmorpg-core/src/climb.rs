@@ -53,8 +53,9 @@ pub const MAX_CLIMBABLE_STRETCHES: usize = 64;
 
 /// The landing column stands this far inside the face: the body's radius and 10 cm more.
 const LEDGE_DEPTH_UNITS: f32 = 40.0;
-/// A mantle lifts the body this far above the ledge before moving across onto it.
-const LEDGE_CLEARANCE_UNITS: f32 = 5.0;
+/// A mantle lifts the body this far above the ledge before moving across onto it: clear of
+/// the controllers' 5-unit ground snap, so no backend pulls it down onto the edge.
+const LEDGE_CLEARANCE_UNITS: f32 = 10.0;
 /// Faces are probed at these heights above the feet: low, the body's middle and the hands.
 const PROBE_HEIGHTS: [f32; 3] = [25.0, 90.0, 170.0];
 /// The body probe's height above the feet.
@@ -677,7 +678,10 @@ fn mantle(
     let raised = y + half_height() + LEDGE_CLEARANCE_UNITS;
     // The rise ends once the feet clear the ledge by its clearance.
     let across = across || centre[1] >= raised - 0.5;
-    if across && (x - centre[0]).hypot(z - centre[2]) < 1.0 {
+    let over = across && (x - centre[0]).hypot(z - centre[2]) < 1.0;
+    // Over the goal, the feet set down onto the ledge; once they stand on it, the mantle ends.
+    let standing = y + half_height();
+    if over && centre[1] <= standing + 0.5 {
         return Step::free(Traversal::Free);
     }
     let traversal = Traversal::Mantling {
@@ -692,9 +696,15 @@ fn mantle(
             velocity: Some(Vec3i::ZERO),
         };
     }
+    let velocity = if over {
+        // Contact stops the body on the ledge.
+        subunits([0.0, standing - centre[1] - 1.0, 0.0])
+    } else {
+        mantle_velocity(centre, goal, across)
+    };
     Step {
         traversal,
-        velocity: Some(mantle_velocity(centre, goal, across)),
+        velocity: Some(velocity),
     }
 }
 
