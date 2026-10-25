@@ -47,7 +47,8 @@ import {
 import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, createScenarioWorld, loadLocalWorld } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, createScenarioWorld, loadLocalWorld, soundManifest } from "./world/wasm-runtime";
+import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
 import "./action-lab.css";
 import { scenarioChoice, type ScenarioChoice, type ScenarioSource } from "./world/scenario-source";
@@ -461,6 +462,7 @@ function applyPreferences(preferences: ClientPreferences): void {
   worldView.setLookSensitivity(preferences.lookSensitivity);
   worldView.setLookInversion(preferences.invertVerticalLook);
   worldView.setMotionPreference(preferences.reduceMotion);
+  worldView.setAudioPreferences(preferences.audio);
   if (preferences.reduceMotion === "system") {
     delete document.documentElement.dataset.motion;
   } else {
@@ -1816,6 +1818,8 @@ function loadPageWorld(): Promise<LocalWorld> {
 worldView.onArtProgress = updateEntryButton;
 void loadPageWorld().then((loaded) => {
   worldView.load(loaded);
+  // Combat sounds (#447) load beside the world; until then, and without them, play is silent.
+  void WorldSound.open(soundManifest).then((sound) => { if (sound) { worldView.attachSound(sound); } });
   markStartup("view-loaded");
   world = loaded;
   refreshSelectionPresentation();

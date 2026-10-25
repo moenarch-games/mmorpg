@@ -101,6 +101,7 @@ pub fn run(
         last_pad_sample: Instant::now(),
         bindings_revision: 0,
         modifiers: winit::keyboard::ModifiersState::empty(),
+        audio: mmorpg_client::audio::GameAudio::new(),
     };
     event_loop.run_app(&mut app)?;
     match app.error {
@@ -163,6 +164,8 @@ struct App {
     last_pad_sample: Instant,
     bindings_revision: u64,
     modifiers: winit::keyboard::ModifiersState,
+    /// Combat sounds (#447); `None` when the bundle manifest is unusable.
+    audio: Option<mmorpg_client::audio::GameAudio>,
 }
 
 /// Opens the platform's gamepads; a platform without gamepad support keeps
@@ -764,6 +767,9 @@ impl App {
             );
         }
         self.presentation.set_reduced_motion(matches!(preferences.value(mmorpg_client::settings::REDUCE_MOTION), Ok(settings_core::SettingValue::Choice(value)) if value == "reduce"));
+        if let Some(audio) = &mut self.audio {
+            audio.follow(preferences);
+        }
         let focused = self.ui.chat_focused();
         if focused && !self.chat_focused {
             self.retire_held_input();
@@ -908,10 +914,28 @@ impl ApplicationHandler for App {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.resize(size.width, size.height);
                 }
+                // A minimised window reports a zero size on some platforms.
+                if let Some(audio) = &mut self.audio {
+                    audio.set_minimised(size.width == 0 || size.height == 0);
+                }
             }
-            WindowEvent::Focused(focused) if focused => self.focused = true,
+            // Sound suspends while the window is hidden or loses focus (#447).
+            WindowEvent::Occluded(occluded) => {
+                if let Some(audio) = &mut self.audio {
+                    audio.set_minimised(occluded);
+                }
+            }
+            WindowEvent::Focused(focused) if focused => {
+                self.focused = true;
+                if let Some(audio) = &mut self.audio {
+                    audio.set_focused(true);
+                }
+            }
             WindowEvent::Focused(_) => {
                 self.focused = false;
+                if let Some(audio) = &mut self.audio {
+                    audio.set_focused(false);
+                }
                 self.pad.retire("focusLost");
                 self.controls.focus_lost();
                 self.retire_pointer();
@@ -1068,10 +1092,17 @@ impl ApplicationHandler for App {
                             self.world_controls.set_interaction(false);
                             self.retire_pointer();
                             self.connection_epoch = Some(connection_epoch);
+                            if let Some(audio) = &mut self.audio {
+                                audio.reset();
+                            }
                         }
                         if let Err(error) = self.presentation.push((*snapshot).clone(), now) {
                             self.fail(event_loop, error);
                             return;
+                        }
+                        let sounds = self.presentation.take_audio();
+                        if let Some(audio) = &mut self.audio {
+                            audio.apply(sounds, now);
                         }
                         self.follow_projection(now);
                         if let Some(refusal) = refusal {
@@ -1103,6 +1134,10 @@ impl ApplicationHandler for App {
                 let view = self
                     .presentation
                     .camera_view(&mut self.camera, &self.world, now);
+                if let Some(audio) = &mut self.audio {
+                    audio.listen(view);
+                    audio.pump();
+                }
                 let frame = self.presentation.frame(&self.world, now, view);
                 self.interface(now, view);
                 // The egui action bar replaces the flat combat HUD rectangles.

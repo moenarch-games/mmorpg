@@ -6,10 +6,10 @@
 # packageManager (Bun). cargo-nextest is latest, as in CI.
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
 
-# libudev-dev: the native client's gamepad backend (gilrs). The rest: builds, fetch scripts, git.
+# libudev-dev: the native client's gamepad backend (gilrs); libasound2-dev: its audio (kira on cpal). The rest: builds, fetch scripts, git.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      build-essential bzip2 ca-certificates curl git git-lfs libudev-dev pkg-config python3 sudo unzip xz-utils \
+      build-essential bzip2 ca-certificates curl git git-lfs libasound2-dev libudev-dev pkg-config python3 sudo unzip xz-utils \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --create-home --shell /bin/bash --uid 1001 agent \
  && echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent

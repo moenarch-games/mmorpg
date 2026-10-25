@@ -5,6 +5,7 @@
     "": {
       "name": "mmorpg-pages-tech-demo",
       "dependencies": {
+        "@moritzbrantner/game-audio": "github:moritzbrantner/game-audio#23575083299653ded66ca69257f04ff34b2d1eb5",
         "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#e8996d383d47dfaa05b684a68cc97f2bb9ed0170",
         "@moritzbrantner/input-bindings-react": "github:moritzbrantner/input-bindings#549b4edfbd6bade6173dc507c15ee59fe9fc2d9e",
         "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#7683fc7b8572b38124d3b99c3c274ae32ab24f19",
@@ -81,6 +82,8 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.28.2", "", { "os": "win32", "cpu": "ia32" }, "sha512-YmJbfTlvU7Sdn9BB+4PRES4oB6pxgS37MAONj+hBr/cpXS1aBPKXxNnDbu+QCWPj0o9dgyxeq79g6c5P8KeuYA=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.2", "", { "os": "win32", "cpu": "x64" }, "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g=="],
+
+    "@moritzbrantner/game-audio": ["@moritzbrantner/game-audio@github:moritzbrantner/game-audio#2357508", {}, "moritzbrantner-game-audio-2357508", "sha512-LXC9Ehm27cvHdsnS/+Zu51vdxtc/mfsnsdGOtnYgs5zTnXI2HdlbE22Oq2vLreIAYNnFMrQaDyqI25wB42bnSg=="],
 
     "@moritzbrantner/input-bindings": ["@moritzbrantner/input-bindings@github:moritzbrantner/input-bindings#e8996d3", {}, "moritzbrantner-input-bindings-e8996d3", "sha512-R1z0pwP0En4yjhQE1j8S7nqA9dOJzPIzVyFa4Z+doLy38bxRMWonSAHabuT0lnP8gD1pTuH/yiskw1tEQejq7g=="],
 

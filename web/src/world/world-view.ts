@@ -52,6 +52,7 @@ import { WorldPicking } from "./units/world-picking";
 import { QuaterniusUnits, type FaceFeature, type Hair, type Headwear } from "./units/quaternius-units";
 import type { ContentCatalog } from "./catalog";
 import type { ZoneWorld } from "./world-source";
+import type { AudioPreferences, WorldSound } from "./world-sound";
 import { touchContext, type TouchContext } from "../input/touch-layout";
 
 /**
@@ -317,6 +318,9 @@ export class WorldView {
   readonly #loadedModels: [ImportedModelKind, [string, number][]][] = [];
   /** The shared unit presenter (#184) of the current viewer. */
   #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean } | null = null;
+  /** Combat sounds (#447), once the bundle loaded; silent until then. */
+  #sound: WorldSound | null = null;
+  #audioPreferences: AudioPreferences | null = null;
   /** Camera heading of the last frame; health bars face it. */
   #barYaw = 0;
   #lastCamera: RendererCamera | null = null;
@@ -433,6 +437,18 @@ export class WorldView {
   /** Applies the Settings motion preference (presentation only). */
   setMotionPreference(motion: "system" | "reduce" | "full"): void {
     this.#motion = motion;
+  }
+
+  /** Plays the shared presenter's sound cues through `sound` from the next projection on. */
+  attachSound(sound: WorldSound): void {
+    this.#sound = sound;
+    if (this.#audioPreferences) { sound.setPreferences(this.#audioPreferences); }
+  }
+
+  /** Applies the Settings volume and mute preferences. */
+  setAudioPreferences(preferences: AudioPreferences): void {
+    this.#audioPreferences = preferences;
+    this.#sound?.setPreferences(preferences);
   }
 
   setLookInversion(invert: boolean): void {
@@ -900,6 +916,9 @@ export class WorldView {
     }
     // The join projection (and a paused source's) reaches the presenter without an advance.
     if (this.#units.pushed !== projection) { this.#pushProjection(units, projection); }
+    // The pushed projections' sound cues (#447); taken even while silent so none play late.
+    const sounds = units.takeAudio();
+    this.#sound?.apply(sounds);
     this.#orbit.update(deltaSeconds, !animate);
     const { unitsPerMetre } = scenery.scenery;
     const sampled = source.sample();
@@ -957,6 +976,11 @@ export class WorldView {
     this.#camera.position.set(...view.eye);
     this.#camera.lookAt(...view.target);
     this.#camera.updateMatrixWorld(true);
+    if (this.#sound) {
+      const right = new THREE.Vector3().setFromMatrixColumn(this.#camera.matrixWorld, 0);
+      this.#sound.listen(view.eye, [right.x, right.y, right.z]);
+      this.#sound.pump();
+    }
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: this.#outpost?.drawn ?? false, settlementProps: this.#settlement?.drawn ?? false } });
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
@@ -1009,8 +1033,10 @@ export class WorldView {
   #resetUnits(): void {
     if (this.#units) {
       this.#units.units.reset();
+      this.#units.units.takeAudio();
       this.#units.pushed = null;
     }
+    this.#sound?.reset();
   }
 
   #pushProjection(units: SharedUnits, projection: ZoneSnapshot): void {

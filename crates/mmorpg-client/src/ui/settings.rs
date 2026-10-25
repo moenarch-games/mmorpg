@@ -503,6 +503,10 @@ fn preference_label(id: &str) -> &str {
         LOOK_SENSITIVITY => "Look sensitivity",
         INVERT_VERTICAL_LOOK => "Invert vertical look",
         REDUCE_MOTION => "Motion",
+        "audio.master_volume" => "Master volume",
+        "audio.effects_volume" => "Effects volume",
+        "audio.ui_volume" => "Interface volume",
+        "audio.muted" => "Mute",
         _ => id,
     }
 }

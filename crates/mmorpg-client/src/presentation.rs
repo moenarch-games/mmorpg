@@ -84,6 +84,9 @@ pub struct Presentation {
     picked_draws: Vec<(EntityRef, crate::world::SceneDraw)>,
     /// Shared procedural units, poses, spell visuals and imported-model clip choice (#184).
     units_presenter: UnitPresenter,
+    /// Sound cues of the presented projections until the client plays them (#447).
+    audio: mmorpg_presentation::audio::AudioCues,
+    audio_ops: Vec<mmorpg_presentation::audio::AudioOp>,
     /// Native meshes of the shared draws, uploaded once per resource.
     lowering: crate::world::Lowering,
     headwear: Option<player::Hat>,
@@ -175,6 +178,8 @@ impl Presentation {
             picked_bodies: Vec::new(),
             picked_draws: Vec::new(),
             units_presenter,
+            audio: mmorpg_presentation::audio::AudioCues::default(),
+            audio_ops: Vec::new(),
             lowering: crate::world::Lowering::default(),
             headwear: None,
             preview: None,
@@ -199,6 +204,7 @@ impl Presentation {
         self.labels.clear();
         self.gaits.clear();
         self.units_presenter.reset();
+        self.audio_ops.extend(self.audio.reset());
         self.lowering = crate::world::Lowering::default();
         self.last_draw = now;
         self.last_scene = now;
@@ -239,12 +245,22 @@ impl Presentation {
             &snapshot,
             now.saturating_duration_since(self.origin).as_secs_f64(),
         );
+        let presenter = &self.units_presenter;
+        self.audio_ops.extend(
+            self.audio
+                .push(&snapshot, |unit| presenter.rendered(unit.position)),
+        );
         self.latest_received = now;
         self.history.push_back(snapshot);
         if self.history.len() > 32 {
             self.history.pop_front();
         }
         Ok(true)
+    }
+
+    /// Takes the sound cues and fades of the projections pushed since the last call.
+    pub fn take_audio(&mut self) -> Vec<mmorpg_presentation::audio::AudioOp> {
+        std::mem::take(&mut self.audio_ops)
     }
 
     /// The newest projection, for input decisions and status text.

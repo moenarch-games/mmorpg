@@ -117,6 +117,13 @@ pub fn committed_area(entries: &CharacterEntries, character: &str) -> Result<Opt
     }))
 }
 
+/// The `combat-sounds` bundle's SoundManifest JSON with mmorpg's cues and distance curve
+/// added, the same manifest the native client plays (#447).
+#[wasm_bindgen(js_name = soundManifest)]
+pub fn sound_manifest(bundle: &str) -> Result<String, JsError> {
+    mmorpg_presentation::audio::sound_manifest(bundle).map_err(|error| JsError::new(&error))
+}
+
 /// Per area, the imported unit models its creature spawns use, and `"residents"` where a named
 /// resident with an appearance preset stands (#418), as JSON
 /// `[{"area": id, "models": ["Wolf", …]}]` in area order (#240).
@@ -520,6 +527,12 @@ impl UnitPresenter {
 
     pub fn reset(&mut self) {
         self.0.reset();
+    }
+
+    /// Sound cues and fades of the projections pushed since the last call (#447), as JSON.
+    #[wasm_bindgen(js_name = takeAudio)]
+    pub fn take_audio(&mut self) -> String {
+        self.0.take_audio()
     }
 
     #[allow(clippy::too_many_arguments)]

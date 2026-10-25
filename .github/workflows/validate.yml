@@ -161,7 +161,7 @@ jobs:
       install_command: ${{ needs.scope.outputs.full_validation == 'true' && 'cd web && bun install --frozen-lockfile' || '' }}
       cache_bun: false
       # Once per job: libudev headers, the asset bundles and cargo-nextest (tests run per process, in parallel).
-      apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev' || '' }}
+      apt_packages: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'libudev-dev libasound2-dev' || '' }}
       pre_validate_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh && curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"' || '' }}
       cache_cargo: ${{ needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true' }}
       format_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && 'cargo fmt --all -- --check' || '' }}

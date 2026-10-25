@@ -245,6 +245,7 @@ impl NativeApplication {
             last_pad_sample: Instant::now(),
             bindings_revision: 0,
             modifiers: winit::keyboard::ModifiersState::empty(),
+            audio: None,
             egui: None,
             choosing: false,
             chat_focused: false,

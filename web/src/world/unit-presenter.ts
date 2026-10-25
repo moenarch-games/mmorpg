@@ -14,6 +14,8 @@ export type UnitPresenterHandle = {
   residentsReady(): void;
   push(projection: Uint8Array, seconds: number): void;
   reset(): void;
+  /** Sound cues and fades of the projections pushed since the last call (#447), as JSON. */
+  takeAudio(): string;
   frame(units: Float64Array, seconds: number, dt: number, reducedMotion: boolean, barYaw: number,
     choice: number, headwear: string, previewYaw: number): string;
   models(): Float32Array;
@@ -120,6 +122,11 @@ export class SharedUnits {
   reset(): void {
     this.#handle.reset();
     this.#geometries = new Map();
+  }
+
+  /** The shared presenter's sound operations since the last call, for `WorldSound.apply`. */
+  takeAudio(): string {
+    return this.#handle.takeAudio();
   }
 
   frame(units: readonly EntityState[], options: { seconds: number; dt: number; reducedMotion: boolean; barYaw: number;

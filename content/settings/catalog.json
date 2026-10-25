@@ -119,6 +119,122 @@
           ]
         }
       }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "audio.master_volume",
+        "kind": {
+          "type": "integer",
+          "min": 0,
+          "max": 100
+        },
+        "default": {
+          "type": "integer",
+          "value": 80
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "audio.master_volume",
+        "metadata": {
+          "label_key": "settings.audio.master_volume.label",
+          "category_key": "settings.category.audio",
+          "order": 10,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.volume"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "audio.effects_volume",
+        "kind": {
+          "type": "integer",
+          "min": 0,
+          "max": 100
+        },
+        "default": {
+          "type": "integer",
+          "value": 100
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "audio.effects_volume",
+        "metadata": {
+          "label_key": "settings.audio.effects_volume.label",
+          "description_key": "settings.audio.effects_volume.description",
+          "category_key": "settings.category.audio",
+          "order": 20,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.volume"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "audio.ui_volume",
+        "kind": {
+          "type": "integer",
+          "min": 0,
+          "max": 100
+        },
+        "default": {
+          "type": "integer",
+          "value": 100
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "audio.ui_volume",
+        "metadata": {
+          "label_key": "settings.audio.ui_volume.label",
+          "description_key": "settings.audio.ui_volume.description",
+          "category_key": "settings.category.audio",
+          "order": 30,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.volume"
+          ]
+        }
+      }
+    },
+    {
+      "target": "shared",
+      "definition": {
+        "id": "audio.muted",
+        "kind": {
+          "type": "bool"
+        },
+        "default": {
+          "type": "bool",
+          "value": false
+        },
+        "scope": "user",
+        "apply_mode": "immediate"
+      },
+      "presentation": {
+        "id": "audio.muted",
+        "metadata": {
+          "label_key": "settings.audio.muted.label",
+          "category_key": "settings.category.audio",
+          "order": 40,
+          "discoverability": "primary",
+          "search_keys": [
+            "settings.search.volume"
+          ]
+        }
+      }
     }
   ],
   "categories": [
@@ -133,12 +249,24 @@
     {
       "key": "settings.category.accessibility",
       "order": 30
+    },
+    {
+      "key": "settings.category.audio",
+      "order": 40
     }
   ],
   "text": {
     "settings.category.camera": "Camera",
     "settings.category.controls": "Controls",
     "settings.category.accessibility": "Accessibility",
+    "settings.category.audio": "Audio",
+    "settings.audio.master_volume.label": "Master volume (%)",
+    "settings.audio.effects_volume.label": "Effects volume (%)",
+    "settings.audio.effects_volume.description": "Combat impacts and enemy wind-up warnings.",
+    "settings.audio.ui_volume.label": "Interface volume (%)",
+    "settings.audio.ui_volume.description": "Feedback sounds such as a refused action.",
+    "settings.audio.muted.label": "Mute all sound",
+    "settings.search.volume": "audio sound volume mute",
     "settings.camera.field_of_view.label": "Field of view (\u00b0)",
     "settings.camera.field_of_view.description": "Vertical field of view of the world camera.",
     "settings.controls.invert_vertical_look.label": "Invert vertical look",
