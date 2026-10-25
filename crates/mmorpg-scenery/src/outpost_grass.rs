@@ -49,7 +49,7 @@ mod tests {
         let before = unmasked_greyhaven_vale_scenery();
         // The scenery the family was accepted against (captured under content
         // revisions 3 and 4; the hash leaves the revision out).
-        assert_eq!(before.stable_hash(), 0x0bd7_815e_31e4_aeac);
+        assert_eq!(before.stable_hash(), 0xed68_cef4_3bae_bdb9);
         let original: Vec<_> = before
             .props
             .iter()

@@ -471,7 +471,8 @@ mod tests {
                 "Hollowpine Reach",
                 "Eastwater Fen",
                 "Sunken Shrine",
-                "Farmland and Hamlets"
+                "Farmland and Hamlets",
+                "Bandit Highlands"
             ]
         );
         assert_eq!(

@@ -50,8 +50,11 @@ fn the_original_valley_is_flat_and_the_ring_has_gentle_hills() {
                     || shrine::flattens(x, z)
                     || greyhaven_vale::basin::height_at(x, z).is_some()
             };
-            // The farmland's ridge and plateau beyond the Vale (#424) are not the ring's hills.
-            if z >= greyhaven_vale::farmland::RIDGE[0] - terrain::STEP {
+            // The farmland's ridge and plateau (#424) and the highlands' escarpment and high
+            // ground (#425) beyond the Vale are not the ring's hills.
+            if z >= greyhaven_vale::farmland::RIDGE[0] - terrain::STEP
+                || z <= greyhaven_vale::highlands::ESCARPMENT[0] + terrain::STEP
+            {
                 continue;
             }
             if x.abs().max(z.abs()) <= 12_500 && !basin(x) {
