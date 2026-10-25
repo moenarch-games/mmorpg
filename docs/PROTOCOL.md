@@ -43,6 +43,7 @@ The shared session runtime supplies player identity, connection epoch and comman
 | Rise | 3 | `[protocol, tag = 25, rise: i8]` (1 ascends, -1 descends, 0 neither) |
 | CommandMinions | 11 | `[protocol, tag = 26, order: u8, body: 8 bytes]` (see [Summoned minions](#summoned-minions-295)) |
 | Observed | 9 + inner | `[protocol, tag = 27, observed: u64, inner command without its protocol byte]` (see [Observed commands](#observed-commands-and-late-combo-inputs-415)) |
+| ReleaseAbility | 4 | `[protocol, tag = 28, ability: u8, retired: u8]` (0 the key went up, 1 the hold was retired; see [Held ability inputs](#held-ability-inputs-414)) |
 
 Version 14 adds `Rise` (tag 25, #274): held swim intent like `Move`, kept until the next `Rise`. It acts only while the player swims (feet more than 1.3 m under a water volume's surface) and is otherwise ignored; values outside -1..=1 are malformed payloads.
 
@@ -716,3 +717,15 @@ closes, invisible to projections and inspection except to a late enough input.
 
 Canonical player records gain a lateness byte before each pending intent and the player's last
 observation (`u64`) after the dropped-intent flag. Layouts change, so the protocol ID changed.
+
+## Held ability inputs (#414)
+
+`ReleaseAbility` (tag 28) reports that the held key which sent `UseAbility` for `ability` went up
+(`retired` 0) or that `input-bindings` retired the hold (`retired` 1: focus loss, a menu, a profile
+or screen change), which must never act. The browser sends it for every ability-slot release; it
+is held state like `Move` and queues no intent. Only an experimental action graph with
+hold-to-charge or chord triggers tracks presses and releases, in the ticks they arrived (nothing is
+backdated); the production graph ignores it. The tracked holds are zone setup like a running
+authored action, not canonical state, so the canonical layout is unchanged. A release may be sent
+plain; lateness matters only to the edge and follow-up windows its press answers. The command
+layout changed, so the protocol ID changed.

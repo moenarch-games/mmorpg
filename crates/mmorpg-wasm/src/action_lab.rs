@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use mmorpg_core::action::{
     self, ActionId, ActionInput, Anchor, AuthoredReport, BlockReason, Candidate, Condition,
-    EdgeStatus, Effective, Movement, Origin, Outcome, Scope, Setting, Trigger, TriggerRefusal,
-    TriggerStatus, Verdict,
+    EdgeStatus, Effective, Gesture, Movement, Origin, Outcome, Partner, Scope, Setting, Trigger,
+    TriggerRefusal, TriggerStatus, Verdict,
 };
 use mmorpg_core::{
     CharacterRecord, ClassChoice, EQUIPMENT_SLOTS, EphemeralCharacterBuild, Equipment, ItemId,
@@ -419,13 +419,34 @@ pub fn graph_json() -> String {
     .to_string()
 }
 
-/// "Heroic Strike (WardenMelee) · Moving(Forward)".
+/// "Heroic Strike (WardenMelee) · Moving(Forward)", then its gesture and
+/// follow-up window (#414): "· hold ≥ 200 ms, release", "· while Guard
+/// held", "· 100–300 ms after Authored(0) (buffer 250 ms)".
 pub(crate) fn trigger_text(trigger: Trigger) -> String {
     let what = trigger.ability.map_or_else(
         || name(trigger.input),
         |id| format!("{} ({})", ability_name(id), name(trigger.input)),
     );
-    format!("{what} · {:?}", trigger.context)
+    let mut text = format!("{what} · {:?}", trigger.context);
+    match trigger.gesture {
+        Gesture::Press => {}
+        Gesture::Charge { min_ms } => text.push_str(&format!(" · hold ≥ {min_ms} ms, release")),
+        Gesture::Chord(Partner::Guard) => text.push_str(" · while Guard held"),
+        Gesture::Chord(Partner::Input(input)) => {
+            text.push_str(&format!(" · while another {input:?} held"));
+        }
+    }
+    if let Some(follow) = trigger.follows {
+        let window = follow.window;
+        text.push_str(&format!(
+            " · {}–{} ms after {:?} (buffer {} ms)",
+            window.open_after_ms,
+            window.open_after_ms + window.actionable_ms,
+            ActionId::Authored(follow.source),
+            window.buffer_ms
+        ));
+    }
+    text
 }
 
 /// One authored action (#414): its trigger, phases and whether the trigger
@@ -436,6 +457,7 @@ fn authored_json(report: &AuthoredReport) -> Value {
             json!({ "kind": "Running", "phase": name(phase), "elapsed": elapsed })
         }
         TriggerStatus::Accepted => json!({ "kind": "Accepted" }),
+        TriggerStatus::Buffering => json!({ "kind": "Buffering" }),
         TriggerStatus::Outranked(slot) => {
             json!({ "kind": "Outranked", "by": name(ActionId::Authored(slot)) })
         }
@@ -444,6 +466,15 @@ fn authored_json(report: &AuthoredReport) -> Value {
                 TriggerRefusal::Class => "another class".to_owned(),
                 TriggerRefusal::Context(context) => format!("needs {context:?}"),
                 TriggerRefusal::Condition(condition) => format!("{condition:?} does not hold"),
+                TriggerRefusal::Partner(Partner::Guard) => "the chord needs Guard held".to_owned(),
+                TriggerRefusal::Partner(Partner::Input(input)) => {
+                    format!("the chord needs another {input:?} held")
+                }
+                TriggerRefusal::FollowUp(BlockReason::SourceInactive) => {
+                    "its source is not running".to_owned()
+                }
+                TriggerRefusal::FollowUp(reason) => format!("the follow-up window is {reason:?}"),
+                TriggerRefusal::Missed => "an early press lost the follow-up".to_owned(),
                 TriggerRefusal::Busy(slot) => format!("{:?} is running", ActionId::Authored(slot)),
                 TriggerRefusal::Arbitration(result) => {
                     format!("the graph decides {}", outcome(result))

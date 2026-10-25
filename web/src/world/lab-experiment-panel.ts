@@ -12,7 +12,7 @@ import {
   addLandingEdge, copyConfig, exportBundle, importFile, arrivalText, insertCopy, isMovement, LANDING_EDGES, LOCAL_NETWORK, MOVEMENT_PHASES, moveCommand,
   movementRule, NETWORK_PRESETS, promoteCommand, promotionFileName, promotionRequest, recoveryOverride, removeAuthored, removeCommand, removeEdge,
   ruleApplies, setAuthored, setDuration, setMovementRule, setRecoveryOverride, setRuleApplies, shortLabel, slidingSlashSample,
-  swimmingSample, traversalSample, INPUT_CONTEXTS, SCENARIO_FORMAT,
+  swimmingSample, traversalSample, chargedBashSample, gestureLabel, gestureOf, CHORD_PARTNERS, INPUT_CONTEXTS, SCENARIO_FORMAT,
   type ConfigCheck, type LabAuthoredAction, type LabAuthoredPhase, type LabComparison, type LabConfig, type LabConfigEdge,
   type LabConfigVersion, type LabEffect, type LabFinding,
   type LabLibrary, type LabNetwork, type LabRun, type LabScenario,
@@ -337,6 +337,8 @@ export class ExperimentPanel {
           () => this.#setConfig(slot, swimmingSample(config))),
         action("+ Sliding slash", "Author a new Warden action from existing primitives: forward + Heroic Strike winds up, slides and recovers (#414)",
           () => this.#setConfig(slot, slidingSlashSample(config))),
+        action("+ Charged bash", "Hold Shield Bash ≥ 200 ms and release to lunge; a tap is the plain Bash. After “+ Sliding slash” it is the slash's timed, buffered follow-up instead (#414)",
+          () => this.#setConfig(slot, chargedBashSample(config))),
         action(slot === "a" ? "Copy to B" : "Copy to A", "Copy this configuration to the other slot", () => {
           const other = slot === "a" ? "b" : "a";
           this.#setConfig(other, copyConfig(config, `${config.name} copy`));
@@ -397,7 +399,37 @@ export class ExperimentPanel {
       const context = element("select", { title: "Input context" });
       for (const entry of INPUT_CONTEXTS) { context.append(element("option", { value: entry, selected: entry === authored.context }, entry)); }
       context.addEventListener("change", () => change({ ...authored, context: context.value }));
-      const phase = (label: string, key: "startup" | "active" | "recovery") => {
+      // How the input is performed (hold-to-charge, chords) and a timed follow-up (#414).
+      const gesture = element("select", { title: "Gesture: the press, hold-to-charge and release, or a chord with a held control" });
+      for (const entry of ["Press", "Charge", ...CHORD_PARTNERS.map((partner) => `Chord ${partner}`)]) {
+        gesture.append(element("option", { value: entry, selected: entry === gestureLabel(authored.gesture) }, entry));
+      }
+      gesture.addEventListener("change", () => {
+        const { gesture: _, ...rest } = authored;
+        const next = gestureOf(gesture.value, authored.gesture, authored.startup.ms);
+        change(next ? { ...rest, gesture: next } : rest);
+      });
+      const charge = authored.gesture?.kind === "Charge"
+        ? [this.#numberField("charged after ms", authored.gesture.minMs, (minMs) => change({ ...authored, gesture: { kind: "Charge", minMs } }), 0, true)]
+        : [];
+      const sources = (config.authored ?? []).filter((other) => other.slot !== authored.slot);
+      const follows = element("select", { title: "Only as a timed follow-up of another authored action" });
+      follows.append(element("option", { value: "", selected: !authored.follows }, "any time"));
+      for (const other of sources) {
+        follows.append(element("option", { value: String(other.slot), selected: authored.follows?.source === other.slot }, `after ${other.name}`));
+      }
+      follows.addEventListener("change", () => {
+        const { follows: _, ...rest } = authored;
+        change(follows.value === "" ? rest : {
+          ...rest, follows: { openAfterMs: 100, actionableMs: 200, bufferMs: 100, ...authored.follows, source: Number(follows.value) },
+        });
+      });
+      const timed = authored.follows;
+      const followFields = timed ? [element("div", { className: "lab-flags" },
+        this.#numberField("opens after its hit ms", timed.openAfterMs, (openAfterMs) => change({ ...authored, follows: { ...timed, openAfterMs } }), 0, true),
+        this.#numberField("open for ms", timed.actionableMs, (actionableMs) => change({ ...authored, follows: { ...timed, actionableMs } }), 0, true),
+        this.#numberField("buffer ms", timed.bufferMs, (bufferMs) => change({ ...authored, follows: { ...timed, bufferMs } }), 0, true))] : [];
+      const phase =(label: string, key: "startup" | "active" | "recovery") => {
         const value: LabAuthoredPhase = authored[key];
         const set = (patch: Partial<LabAuthoredPhase>) => change({ ...authored, [key]: { ...value, ...patch } });
         return element("div", { className: "lab-flags" },
@@ -417,7 +449,9 @@ export class ExperimentPanel {
       remove.addEventListener("click", () => this.#setConfig(slot, removeAuthored(config, authored.slot)));
       return element("fieldset", { className: "lab-edge-editor" },
         element("legend", {}, `Authored(${authored.slot}) · ${authored.class} · ${authored.input}${authored.ability === null ? "" : ` ability ${authored.ability}`}`),
-        element("div", { className: "lab-flags" }, name, element("label", {}, "when ", context), remove),
+        element("div", { className: "lab-flags" }, name, element("label", {}, "when ", context), element("label", {}, "as ", gesture), ...charge,
+          element("label", {}, "", follows), remove),
+        ...followFields,
         phase("Startup (the input waits)", "startup"), phase("Active (the use resolves)", "active"), phase("Recovery", "recovery"),
         launch);
     });

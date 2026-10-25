@@ -64,7 +64,7 @@ import type { LinkState, ZoneWorld } from "./world/world-source";
 import { WorldView, webGpuProjection } from "./world/world-view";
 import type { FaceFeature } from "./world/units/quaternius-units";
 import { attackToggle, nextTabTarget } from "./world/units/targeting";
-import { GameControls, type GameAction, type HeldAction, type HoldPhase } from "./input/game-controls";
+import { GameControls, type GameAction, type HeldAction, type HoldPhase, type ReleasedAction } from "./input/game-controls";
 import { actionBindingLabels } from "./input/binding-labels";
 import type { Profile } from "@moritzbrantner/input-bindings";
 import { cancelCast, minionCommand, useAbilitySlot, type MinionAction } from "./world/units/abilities";
@@ -425,6 +425,7 @@ const controls = new GameControls({
       : { phase: "selection", creating: creationDraft !== null || joining !== null, settingsOpen },
   onAction: (action) => runAction(action),
   onHold: (action, phase) => runHold(action, phase),
+  onRelease: (action, phase) => runRelease(action, phase),
 });
 // Touch (#434): the same semantic actions from a thumbstick, face-button chords and context buttons.
 trackInputMode(document.documentElement, window);
@@ -1748,6 +1749,22 @@ function runAction(action: GameAction): void {
       }
       return;
   }
+}
+/**
+ * A pressed ability slot's release (#414): the zone reads it only for an experimental graph's
+ * hold-to-charge and chord triggers. Every retirement (blur, Settings, a panel, profile or screen
+ * change) is sent as retired, so a held charge never acts on it.
+ */
+function runRelease(action: ReleasedAction, phase: Exclude<HoldPhase, "press">): void {
+  if (entryState.phase !== "world") {
+    return;
+  }
+  const slot = Number(action.slice(-1));
+  const catalog = world?.catalog;
+  worldView.queueIntent((projection) => {
+    const use = catalog ? useAbilitySlot(slot, projection, catalog) : null;
+    return use?.kind === "use-ability" ? { kind: "release-ability", ability: use.ability, retired: phase === "cancel" } : null;
+  });
 }
 /**
  * Held gestures. The shield guard (#156) is raised while its key is held and lowered by release or
