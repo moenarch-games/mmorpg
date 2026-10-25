@@ -80,9 +80,9 @@ struct ImportedEntry {
     tint: Option<[f32; 3]>,
     /// The carried weapons by `Loadout::name`, or null.
     loadout: Option<&'static str>,
-    /// A resident's `humanoid-appearance` preset id (#418), or null.
+    /// A resident's or humanoid enemy's `humanoid-appearance` preset id (#418, #39), or null.
     resident: Option<&'static str>,
-    /// A varied resident's look seed, its NPC id (asset-tooling #380), or null.
+    /// A varied resident's look seed, its NPC or creature id (asset-tooling #380), or null.
     variety: Option<u32>,
     /// A player's class starter outfit (asset-tooling #379), or null.
     outfit: Option<OutfitEntry>,

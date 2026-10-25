@@ -445,7 +445,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   ]);
   // The farmer's straw hat (#418) rides with the viewer's headwear choices.
   const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw"])];
-  const appearance = await json(entryFile(entry, ".humanoid-appearance.json"));
+  const appearance = withEnemyPresets(await json(entryFile(entry, ".humanoid-appearance.json")));
   const look = headLook(appearance);
   const face = faceLookOf(appearance, entry.variant, gltf.scene);
   if (!face) { console.info("The Ranger bundle has no face morphs for its drawn entry; faces keep the base shape."); }
@@ -636,7 +636,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   };
   let pending: Promise<void> | null = null;
   const loadResidents = () => {
-    pending ??= residentLooks(appearance, look, scene, (id) => id.startsWith("resident."))
+    pending ??= residentLooks(appearance, look, scene, (id) => id.startsWith("resident.") || id.startsWith("enemy."))
       .then((looks) => { residents = looks; });
     return pending;
   };
@@ -682,6 +682,43 @@ async function dropPieces(appearance: unknown, load: (key: string, variant: stri
 
 /** The bundle outfit whose plates an equipped drop wears (`imported::DROP_ARMOR_OUTFIT`). */
 const DROP_ARMOR_OUTFIT = "outfit.knight";
+
+/** The Redbrand band's red on the soldier and knight outfits' `faction` materials (linear). */
+const REDBRAND_RED = [0.3, 0.025, 0.02, 1];
+
+/**
+ * The humanoid enemies' presets (#39, `imported::Resident::preset`), authored here over the
+ * bundle's own outfits, armour, headwear, hair, beards and face options. The marauders, bandits,
+ * crossbowmen and brutes each wear their own seeded variation (`varyPreset`); Garrick wears his
+ * as authored. Weapons come from the shared presenter's loadout.
+ */
+export const ENEMY_PRESETS: readonly PresetValue[] = [
+  // Ragged farmhands turned raiders: a smock, long unkempt hair and a full beard.
+  { id: "enemy.marauder", outfit: "outfit.farmer", skin: "skin.dark", hair: "hair.long", tint: "tint.black",
+    facialHair: ["beard.full"], face: { eyes: "eyes.narrow", face: "face.narrow", mouth: "mouth.thin", nose: "nose.long" } },
+  // The rank and file: the soldier's gambeson and sash in Redbrand red, bareheaded.
+  { id: "enemy.redbrand.bandit", outfit: "outfit.soldier", skin: "skin.light", hair: "hair.buzzed", tint: "tint.brown",
+    facialHair: ["beard.short"], hiddenArmor: ["soldier.kettle-hat"], faction: REDBRAND_RED,
+    face: { eyes: "eyes.base", face: "face.base", mouth: "mouth.thin", nose: "nose.broad" } },
+  // The outriders keep the kettle hat.
+  { id: "enemy.redbrand.crossbowman", outfit: "outfit.soldier", skin: "skin.dark", hair: "hair.buzzed", tint: "tint.black",
+    facialHair: ["beard.moustache"], faction: REDBRAND_RED,
+    face: { eyes: "eyes.narrow", face: "face.narrow", mouth: "mouth.base", nose: "nose.long" } },
+  // The shield-bearers: knight's plate in Redbrand red under the Ironcrest helm.
+  { id: "enemy.redbrand.brute", outfit: "outfit.knight", skin: "skin.dark", headwear: "equipment.helm.ironcrest", tint: "tint.black",
+    facialHair: ["beard.full"], hiddenArmor: ["knight.bascinet"], faction: REDBRAND_RED,
+    face: { eyes: "eyes.base", face: "face.broad", mouth: "mouth.full", nose: "nose.broad" } },
+  // Garrick Redbrand: bareheaded in plate and a deeper crimson, long black hair and a full beard.
+  { id: "enemy.redbrand.garrick", outfit: "outfit.knight", skin: "skin.light", hair: "hair.long", tint: "tint.black",
+    facialHair: ["beard.full", "beard.moustache"], hiddenArmor: ["knight.bascinet"], faction: [0.42, 0.015, 0.015, 1],
+    face: { eyes: "eyes.narrow", face: "face.broad", mouth: "mouth.thin", nose: "nose.broad" } },
+];
+
+/** The bundle's `humanoid-appearance` with the game's enemy presets beside its own. */
+function withEnemyPresets(appearance: unknown): unknown {
+  const value = appearance as { presets?: PresetValue[] };
+  return { ...value, presets: [...(value.presets ?? []), ...ENEMY_PRESETS] };
+}
 
 /** The class colour of a `class.<id>` preset's `classTrim` (#379): `character-visuals` accent, linear. */
 function classTrimColor(preset: string): [number, number, number] | null {

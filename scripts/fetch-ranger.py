@@ -21,10 +21,11 @@ SELECTED = {key: {"default"} for key in (
     "equipment.mace.flanged", "equipment.hat.straw", "facial-hair.beards", "armor.knight", "armor.soldier",
     "armor.farmer", "armor.innkeeper", "armor.monk", *(f"armor.class.{name}" for name in CLASSES))}
 # The full-detail outfit variant of each resident and class preset's outfit and skin, and the
-# guards' uniform in both skins (each guard draws his own look, asset-tooling #380).
-SELECTED["humanoid.ranger.male"] |= {"outfit.knight.skin.light", "outfit.soldier", "outfit.soldier.skin.light",
+# guards' and the varied enemies' outfits in both skins (each draws his own look,
+# asset-tooling #380; the enemy presets, #39, wear the soldier, knight and farmer outfits).
+SELECTED["humanoid.ranger.male"] |= {"outfit.knight", "outfit.knight.skin.light", "outfit.soldier", "outfit.soldier.skin.light",
                                      "outfit.innkeeper.skin.light",
-                                     "outfit.farmer", "outfit.monk.skin.light",
+                                     "outfit.farmer", "outfit.farmer.skin.light", "outfit.monk.skin.light",
                                      "outfit.class.warden.skin.light", "outfit.class.ranger",
                                      "outfit.class.arcanist.skin.light", "outfit.class.necromancer.skin.grey",
                                      "outfit.class.rogue", "outfit.class.cleric.skin.light", "outfit.class.druid"}

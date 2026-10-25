@@ -2,8 +2,9 @@
 //!
 //! Players use asset-tooling's Ranger humanoid (Atlas 6.3.7); wolves, vermin and boars use the
 //! bundled Quaternius CC0 animals (Atlas 6.3.6); the named Greyhaven residents wear the Ranger in
-//! their appearance presets (#418) where the client draws them; humanoid creatures and other
-//! NPCs keep their procedural models. Each client imports and skins the models with its own
+//! their appearance presets (#418) and the humanoid enemies (marauders, Redbrands) game-authored
+//! presets (#39) where the client draws them; other humanoid creatures and NPCs keep their
+//! procedural models. Each client imports and skins the models with its own
 //! provider; this module only decides what to pose. Presentation only, never read by gameplay.
 use mmorpg_core::{
     AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, Equipment,
@@ -159,7 +160,9 @@ impl Outfit {
     }
 }
 
-/// A named Greyhaven resident drawn in the Ranger bundle's `humanoid-appearance` preset (#418).
+/// A character drawn on the Ranger figure in a `humanoid-appearance` preset: a named Greyhaven
+/// resident in the bundle's own preset (#418), or a humanoid enemy in a game-authored preset
+/// over the bundle's outfits (#39; the browser defines the `enemy.*` presets).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Resident {
     Marshal,
@@ -167,6 +170,16 @@ pub enum Resident {
     Innkeeper,
     Farmer,
     Healer,
+    /// The Millbrook field marauders: ragged farmhands turned raiders.
+    Marauder,
+    /// The Redbrand rank and file in the band's red.
+    RedbrandBandit,
+    /// The Greyfang outriders (#286), a bow standing in for their crossbows.
+    RedbrandCrossbowman,
+    /// The Greyfang cavern's shield-bearers (#160): plate, helm, sword and shield.
+    RedbrandBrute,
+    /// Garrick Redbrand (#276), the band's bareheaded leader in plate.
+    Garrick,
 }
 
 impl Resident {
@@ -184,7 +197,21 @@ impl Resident {
         }
     }
 
-    /// The bundle's `humanoid-appearance.presets` id.
+    /// The humanoid enemy a creature template of this name is, if it has a preset.
+    #[must_use]
+    pub fn of_creature(name: &str) -> Option<Self> {
+        match name {
+            "Field Marauder" => Some(Self::Marauder),
+            "Redbrand Bandit" => Some(Self::RedbrandBandit),
+            "Redbrand Crossbowman" => Some(Self::RedbrandCrossbowman),
+            "Redbrand Brute" => Some(Self::RedbrandBrute),
+            "Garrick Redbrand" => Some(Self::Garrick),
+            _ => None,
+        }
+    }
+
+    /// The `humanoid-appearance.presets` id: the bundle's for a resident, the game's for an
+    /// enemy.
     #[must_use]
     pub const fn preset(self) -> &'static str {
         match self {
@@ -193,22 +220,48 @@ impl Resident {
             Self::Innkeeper => "resident.innkeeper",
             Self::Farmer => "resident.farmer",
             Self::Healer => "resident.healer",
+            Self::Marauder => "enemy.marauder",
+            Self::RedbrandBandit => "enemy.redbrand.bandit",
+            Self::RedbrandCrossbowman => "enemy.redbrand.crossbowman",
+            Self::RedbrandBrute => "enemy.redbrand.brute",
+            Self::Garrick => "enemy.redbrand.garrick",
         }
     }
 
-    /// Whether the NPCs sharing this preset each wear their own fixed variation of it
-    /// (asset-tooling #380): the guards are different men in the same uniform, while the named
-    /// residents keep their authored looks.
+    /// Whether the units sharing this preset each wear their own fixed variation of it
+    /// (asset-tooling #380): the guards and the rank-and-file enemies are different men in the
+    /// same gear, while the named residents and Garrick keep their authored looks.
     #[must_use]
     pub const fn varied(self) -> bool {
-        matches!(self, Self::Guard)
+        matches!(
+            self,
+            Self::Guard
+                | Self::Marauder
+                | Self::RedbrandBandit
+                | Self::RedbrandCrossbowman
+                | Self::RedbrandBrute
+        )
     }
 
-    /// What the resident carries: the guards keep their sword.
+    /// What the character carries: the guards, bandits and Garrick a sword, the brute a sword
+    /// and shield, a crossbowman a bow and quiver, a marauder a dagger.
     #[must_use]
     pub const fn loadout(self) -> Option<Loadout> {
         match self {
-            Self::Guard => Some(Loadout::Sword),
+            Self::Guard | Self::RedbrandBandit | Self::Garrick => Some(Loadout::Sword),
+            Self::Marauder => Some(Loadout::Dagger),
+            Self::RedbrandCrossbowman => Some(Loadout::BowAndQuiver),
+            Self::RedbrandBrute => Some(Loadout::SwordAndShield),
+            Self::Marshal | Self::Innkeeper | Self::Farmer | Self::Healer => None,
+        }
+    }
+
+    /// The class whose authored strike the character plays ([`Kind::strike`]): a crossbowman
+    /// looses with the bow release; everyone else swings.
+    #[must_use]
+    pub const fn strike_class(self) -> Option<PlayerClass> {
+        match self {
+            Self::RedbrandCrossbowman => Some(PlayerClass::Ranger),
             _ => None,
         }
     }
@@ -1055,6 +1108,26 @@ mod tests {
                 "dagger",
                 "mace.flanged",
                 "staff.gnarled",
+            ]
+        );
+    }
+
+    #[test]
+    fn humanoid_enemies_have_presets() {
+        let content = greyhaven_vale::content();
+        let presets: Vec<_> = content
+            .creature_templates()
+            .iter()
+            .filter_map(|template| Resident::of_creature(&template.name).map(Resident::preset))
+            .collect();
+        assert_eq!(
+            presets,
+            [
+                "enemy.marauder",
+                "enemy.redbrand.bandit",
+                "enemy.redbrand.garrick",
+                "enemy.redbrand.crossbowman",
+                "enemy.redbrand.brute",
             ]
         );
     }
