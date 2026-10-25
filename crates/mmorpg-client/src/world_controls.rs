@@ -249,6 +249,26 @@ impl WorldControls {
 mod tests {
     use super::*;
     #[test]
+    fn the_left_button_swings_on_press_and_a_right_click_selects() {
+        let mut controls = WorldControls::new();
+        let press = controls.pointer_button(0, true, Modifiers::default());
+        assert!(
+            press.swung && !press.selected,
+            "the swing is immediate (#517)"
+        );
+        assert_eq!(
+            controls.pointer_button(0, false, Modifiers::default()),
+            PointerEdge::default()
+        );
+        assert!(!controls.pointer_button(2, true, Modifiers::default()).swung);
+        assert!(controls.selecting());
+        assert!(
+            controls
+                .pointer_button(2, false, Modifiers::default())
+                .selected
+        );
+    }
+    #[test]
     fn selection_uses_the_rebound_button_and_keeps_its_original_modifiers_until_release() {
         let registry = crate::bindings::action_registry();
         let mut binding = registry
