@@ -8,6 +8,7 @@
  * `actionLabCompare`). Saved scenarios and configurations live in this browser's storage only,
  * apart from characters, and never change production rules.
  */
+import { isMovementCommand } from "../command-wire";
 import type { LabSetup } from "./action-lab";
 
 export const CONFIG_FORMAT = "mmorpg-action-lab-config";
@@ -53,7 +54,76 @@ export type LabConfig = {
   /** Per-phase movement; absent when none is authored (production). */
   movement?: LabMovementRule[];
   overrides: { scope: LabScope; setting: LabSetting }[];
+  /** New experimental actions (#414); absent when none is authored (production). */
+  authored?: LabAuthoredAction[];
 };
+
+/** One timed phase of an authored action and its bounded movement. */
+export type LabAuthoredPhase = { ms: number; steeringPercent: number; momentumPercent: number; maxAccelerationCms2: number | null };
+
+/**
+ * A new experimental action composed from existing primitives (#414, Atlas 5.9.4–5.9.5); see
+ * `mmorpg_core::action::AuthoredAction`. The zone validates it; nothing here is a rule.
+ */
+export type LabAuthoredAction = {
+  slot: number; name: string; class: string;
+  /** `WardenMelee`, `ShieldBash` or `Ability`. */
+  input: string;
+  /** Only this ability's use; null is any the input covers. */
+  ability: number | null;
+  context: string;
+  conditions: string[];
+  startup: LabAuthoredPhase; active: LabAuthoredPhase; recovery: LabAuthoredPhase;
+  effects: LabEffect[];
+};
+
+/** The input contexts a trigger can need (Atlas 5.9.5): the plain binding, jump + attack, direction + action. */
+export const INPUT_CONTEXTS: readonly string[] = [
+  "Direct", "Airborne", "Moving(Any)", "Moving(Forward)", "Moving(Backward)", "Moving(Sideways)",
+];
+
+const FREE_PHASE = { steeringPercent: 100, momentumPercent: 0, maxAccelerationCms2: null };
+
+/**
+ * Adds a Warden's sliding slash (#414): Heroic Strike while moving forward winds up 100 ms, slides
+ * 300 ms on its momentum with a 4 m/s forward launch, recovers 200 ms at half steering, and may
+ * follow into Shield Bash 100–300 ms after the hit, waiving the global cooldown. Every part is an
+ * existing primitive; the strike itself resolves through its ordinary rules.
+ */
+export function slidingSlashSample(config: LabConfig): LabConfig {
+  const authored = config.authored ?? [];
+  const slot = [0, 1, 2, 3, 4, 5, 6, 7].find((candidate) => !authored.some((action) => action.slot === candidate));
+  if (slot === undefined) { return config; }
+  const action: LabAuthoredAction = {
+    slot, name: "Sliding slash", class: "warden", input: "WardenMelee", ability: 1, context: "Moving(Forward)",
+    conditions: [],
+    startup: { ms: 100, ...FREE_PHASE },
+    active: { ms: 300, steeringPercent: 0, momentumPercent: 100, maxAccelerationCms2: null },
+    recovery: { ms: 200, ...FREE_PHASE, steeringPercent: 50 },
+    effects: [{ kind: "Impulse", forwardCms: 400, upCms: 0 }],
+  };
+  const used = new Set(config.edges.map((edge) => edge.id));
+  const id = Array.from({ length: 16 }, (_, index) => `Authored(${index})`).find((candidate) => !used.has(candidate));
+  const edges = id ? [...config.edges, {
+    id, from: `Authored(${slot})`, input: "ShieldBash", anchor: "Impact",
+    openAfterMs: 100, actionableMs: 200, bufferMs: 0,
+    conditions: [], effects: [{ kind: "IgnoreGlobalCooldown" } as LabEffect], precision: null, priority: 2,
+  }] : config.edges;
+  return { ...config, authored: [...authored, action], edges };
+}
+
+/** Removes an authored action with the edges leaving it. */
+export function removeAuthored(config: LabConfig, slot: number): LabConfig {
+  const from = `Authored(${slot})`;
+  let next: LabConfig = { ...config, authored: (config.authored ?? []).filter((action) => action.slot !== slot) };
+  for (const edge of config.edges.filter((entry) => entry.from === from)) { next = removeEdge(next, edge.id); }
+  return next;
+}
+
+/** Replaces the authored action in `slot`. */
+export function setAuthored(config: LabConfig, action: LabAuthoredAction): LabConfig {
+  return { ...config, authored: (config.authored ?? []).map((entry) => entry.slot === action.slot ? action : entry) };
+}
 
 /** The action phases movement can be authored for (`mmorpg_core::action::phases`, reactions excluded). */
 export const MOVEMENT_PHASES: readonly { action: string; phase: string }[] = [
@@ -162,6 +232,15 @@ export type ConfigCheck = { identity: string | null; baseline: boolean; error: s
 
 /** One recorded command: its command-wire bytes in hex, applied before tick `tick + 1`. */
 export type LabCommand = { tick: number; bytes: string };
+
+/**
+ * Whether a recorded command is movement (Move or Rise). A recorded combo holds hundreds of them,
+ * so the timeline hides them unless asked (#382); they are still replayed.
+ */
+export function isMovement(command: LabCommand): boolean {
+  const bytes = (command.bytes.slice(0, 4).match(/../g) ?? []).map((pair) => parseInt(pair, 16));
+  return isMovementCommand(Uint8Array.from(bytes));
+}
 
 /** A named, exportable lab scenario. */
 export type LabScenario = {

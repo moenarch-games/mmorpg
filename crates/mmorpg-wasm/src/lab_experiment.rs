@@ -18,10 +18,11 @@ use std::fmt::Debug;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::action::{
-    self, ActionGraph, ActionId, ActionInput, Anchor, Arbitration, BlockReason, CompatibilityRule,
-    Condition, Consequence, EdgeDef, EdgeId, EdgeReport, EdgeStatus, Effect, Interrupted,
-    InterruptionRule, Movement, MovementRule, Override, Phase, Precision, RuleEffect, RuleId,
-    Scope, Setting, Window, WindowModifier,
+    self, ActionGraph, ActionId, ActionInput, Anchor, Arbitration, AuthoredAction, AuthoredPhase,
+    BlockReason, CompatibilityRule, Condition, Consequence, Direction, EdgeDef, EdgeId, EdgeReport,
+    EdgeStatus, Effect, InputContext, Interrupted, InterruptionRule, Movement, MovementRule,
+    Override, Phase, Precision, RuleEffect, RuleId, Scope, Setting, Trigger, Window,
+    WindowModifier,
 };
 use mmorpg_core::{AbilityId, EntityRef, ItemId, PlayerClass, ZoneCommand, ZoneEvent};
 use mmorpg_protocol::{PROTOCOL_ID, decode_command, encode_canonical_snapshot};
@@ -54,11 +55,24 @@ const CONDITIONS: [Condition; 7] = [
     Condition::Airborne,
     Condition::Stunned,
 ];
-const EDGES: [EdgeId; 4] = [
-    EdgeId::SlashToShieldBash,
-    EdgeId::LandingToMelee,
-    EdgeId::LandingToShieldBash,
-    EdgeId::LandingToAbility,
+/// Every edge id: the named ones, then `Authored(0)`… (#414).
+fn edge_ids() -> impl Iterator<Item = EdgeId> + Clone {
+    [
+        EdgeId::SlashToShieldBash,
+        EdgeId::LandingToMelee,
+        EdgeId::LandingToShieldBash,
+        EdgeId::LandingToAbility,
+    ]
+    .into_iter()
+    .chain((0..action::MAX_AUTHORED_EDGES).map(EdgeId::Authored))
+}
+const CONTEXTS: [InputContext; 6] = [
+    InputContext::Direct,
+    InputContext::Airborne,
+    InputContext::Moving(Direction::Any),
+    InputContext::Moving(Direction::Forward),
+    InputContext::Moving(Direction::Backward),
+    InputContext::Moving(Direction::Sideways),
 ];
 const RULES: [RuleId; 5] = [
     RuleId::LandingHoldsMelee,
@@ -68,21 +82,30 @@ const RULES: [RuleId; 5] = [
     RuleId::SwimmingHolds,
 ];
 const RULE_EFFECTS: [RuleEffect; 3] = [RuleEffect::Hold, RuleEffect::Cancel, RuleEffect::Refuse];
-const PHASES: [Phase; 3] = [Phase::Active, Phase::Recovery, Phase::FollowUp];
+const PHASES: [Phase; 4] = [
+    Phase::Startup,
+    Phase::Active,
+    Phase::Recovery,
+    Phase::FollowUp,
+];
 const CONSEQUENCES: [Consequence; 3] = [
     Consequence::Preserve,
     Consequence::Suspend,
     Consequence::Cancel,
 ];
 
+/// Every action id: the shared ones, then `Authored(0)`… (#414).
 fn action_ids() -> impl Iterator<Item = ActionId> {
-    action::ACTIONS.iter().map(|def| def.id)
+    action::ACTIONS
+        .iter()
+        .map(|def| def.id)
+        .chain((0..action::MAX_AUTHORED_ACTIONS).map(ActionId::Authored))
 }
 
 fn interrupted_values() -> impl Iterator<Item = Interrupted> {
     action_ids()
         .map(Interrupted::Action)
-        .chain(EDGES.into_iter().map(Interrupted::Edge))
+        .chain(edge_ids().map(Interrupted::Edge))
         .chain(RULES.into_iter().map(Interrupted::Held))
 }
 
@@ -306,6 +329,105 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub movement: Vec<MovementRuleDto>,
     pub overrides: Vec<OverrideDto>,
+    /// New experimental actions (#414); absent when none is authored.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub authored: Vec<AuthoredActionDto>,
+}
+
+/// One timed phase of an authored action and its movement (#414).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AuthoredPhaseDto {
+    pub ms: u32,
+    pub steering_percent: u8,
+    pub momentum_percent: u8,
+    pub max_acceleration_cms2: Option<u32>,
+}
+
+impl AuthoredPhaseDto {
+    const fn of(phase: AuthoredPhase) -> Self {
+        Self {
+            ms: phase.ms,
+            steering_percent: phase.movement.steering_percent,
+            momentum_percent: phase.movement.momentum_percent,
+            max_acceleration_cms2: phase.movement.max_acceleration_cms2,
+        }
+    }
+
+    const fn phase(&self) -> AuthoredPhase {
+        AuthoredPhase {
+            ms: self.ms,
+            movement: movement_of(
+                self.steering_percent,
+                self.momentum_percent,
+                self.max_acceleration_cms2,
+            ),
+        }
+    }
+}
+
+/// A new experimental action composed from existing primitives (#414).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AuthoredActionDto {
+    pub slot: u8,
+    pub name: String,
+    /// A class by name.
+    pub class: String,
+    /// `WardenMelee`, `ShieldBash` or `Ability`.
+    pub input: String,
+    /// Only this ability's use; `None` is any the input covers.
+    pub ability: Option<u8>,
+    /// `Direct`, `Airborne` or `Moving(Any|Forward|Backward|Sideways)`.
+    pub context: String,
+    pub conditions: Vec<String>,
+    pub startup: AuthoredPhaseDto,
+    pub active: AuthoredPhaseDto,
+    pub recovery: AuthoredPhaseDto,
+    pub effects: Vec<EffectDto>,
+}
+
+impl AuthoredActionDto {
+    fn of(def: &AuthoredAction) -> Self {
+        Self {
+            slot: def.slot,
+            name: def.name.to_owned(),
+            class: def.class.name().to_owned(),
+            input: name(def.trigger.input),
+            ability: def.trigger.ability.map(|id| id.get()),
+            context: name(def.trigger.context),
+            conditions: def.conditions.iter().copied().map(name).collect(),
+            startup: AuthoredPhaseDto::of(def.startup),
+            active: AuthoredPhaseDto::of(def.active),
+            recovery: AuthoredPhaseDto::of(def.recovery),
+            effects: def.effects.iter().copied().map(EffectDto::of).collect(),
+        }
+    }
+
+    fn action(&self) -> Result<AuthoredAction, String> {
+        Ok(AuthoredAction {
+            slot: self.slot,
+            name: Box::leak(self.name.clone().into_boxed_str()),
+            class: class_named(&self.class)?,
+            trigger: Trigger {
+                input: named(INPUTS, &self.input, "input")?,
+                ability: self.ability.map(AbilityId::new),
+                context: named(CONTEXTS, &self.context, "input context")?,
+            },
+            conditions: conditions(&self.conditions)?,
+            startup: self.startup.phase(),
+            active: self.active.phase(),
+            recovery: self.recovery.phase(),
+            effects: effects(&self.effects),
+        })
+    }
+}
+
+fn class_named(class: &str) -> Result<PlayerClass, String> {
+    PlayerClass::ALL
+        .into_iter()
+        .find(|candidate| candidate.name() == class)
+        .ok_or_else(|| format!("unknown class {class:?}"))
 }
 
 fn window_of(open_after_ms: u32, actionable_ms: u32, buffer_ms: u32) -> Window {
@@ -433,6 +555,7 @@ impl Config {
                     },
                 })
                 .collect(),
+            authored: graph.authored.iter().map(AuthoredActionDto::of).collect(),
         }
     }
 
@@ -472,7 +595,7 @@ impl Config {
             .iter()
             .map(|edge| {
                 Ok(EdgeDef {
-                    id: named(EDGES, &edge.id, "edge")?,
+                    id: named(edge_ids(), &edge.id, "edge")?,
                     from: named(action_ids(), &edge.from, "action")?,
                     input: named(INPUTS, &edge.input, "input")?,
                     anchor: named(ANCHORS, &edge.anchor, "anchor")?,
@@ -493,7 +616,7 @@ impl Config {
             .iter()
             .map(|modifier| {
                 Ok(WindowModifier {
-                    edge: named(EDGES, &modifier.edge, "edge")?,
+                    edge: named(edge_ids(), &modifier.edge, "edge")?,
                     conditions: conditions(&modifier.conditions)?,
                     actionable_delta_ms: modifier.actionable_delta_ms,
                 })
@@ -557,7 +680,7 @@ impl Config {
                         actionable_ms,
                         buffer_ms,
                     } => Setting::Window {
-                        edge: named(EDGES, edge, "edge")?,
+                        edge: named(edge_ids(), edge, "edge")?,
                         window: window_of(*open_after_ms, *actionable_ms, *buffer_ms),
                     },
                     SettingDto::Rule { rule, applies } => Setting::Rule {
@@ -606,6 +729,12 @@ impl Config {
             interruptions: leak(interruptions),
             movement: leak(movement),
             overrides: leak(overrides),
+            authored: leak(
+                self.authored
+                    .iter()
+                    .map(AuthoredActionDto::action)
+                    .collect::<Result<Vec<_>, String>>()?,
+            ),
         };
         graph
             .validate()
@@ -1250,6 +1379,134 @@ mod tests {
         assert_eq!(
             run(&recorded, &baseline).unwrap().reproduces_recording,
             Some(true)
+        );
+    }
+
+    /// A sliding slash: Heroic Strike while moving forward (#414).
+    fn sliding_slash() -> AuthoredActionDto {
+        let phase = |ms, steering_percent, momentum_percent| AuthoredPhaseDto {
+            ms,
+            steering_percent,
+            momentum_percent,
+            max_acceleration_cms2: None,
+        };
+        AuthoredActionDto {
+            slot: 0,
+            name: "Sliding slash".to_owned(),
+            class: "warden".to_owned(),
+            input: "WardenMelee".to_owned(),
+            ability: Some(mmorpg_core::ability::ids::HEROIC_STRIKE.get()),
+            context: "Moving(Forward)".to_owned(),
+            conditions: Vec::new(),
+            startup: phase(100, 100, 0),
+            active: phase(300, 0, 100),
+            recovery: phase(200, 50, 0),
+            effects: vec![EffectDto::Impulse {
+                forward_cms: 400,
+                up_cms: 0,
+            }],
+        }
+    }
+
+    #[test]
+    fn an_authored_action_is_validated_replayed_and_compared() {
+        let mut config = Config::baseline();
+        config.name = "sliding slash".to_owned();
+        config.authored.push(sliding_slash());
+        let json = serde_json::to_string(&config).unwrap();
+        assert_eq!(Config::parse(&json).unwrap(), config);
+        let graph = config.graph().unwrap();
+        assert_eq!(graph.authored.len(), 1);
+        assert_eq!(Config::of(graph, "sliding slash"), config);
+        assert_eq!(check(&json)["baseline"], false);
+        // An unsupported primitive is named, not guessed.
+        let mut jumping = config.clone();
+        jumping.authored[0].input = "Jump".to_owned();
+        jumping.authored[0].ability = None;
+        let error = jumping.graph().unwrap_err();
+        assert!(error.contains("BadAuthored(0, Input)"), "{error}");
+        let mut unknown = config.clone();
+        unknown.authored[0].context = "Crouching".to_owned();
+        assert!(unknown.graph().is_err());
+
+        let facing = crate::action_lab::LAB_LOCATION.1;
+        let scenario = scenario(&[
+            (
+                2,
+                ZoneCommand::Move {
+                    forward: 1,
+                    strafe: 0,
+                    facing,
+                },
+            ),
+            (
+                8,
+                ZoneCommand::DirectedStrike {
+                    ability: mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
+                    facing,
+                    aim: mmorpg_core::StrikeAim::new(
+                        mmorpg_core::StrikeSide::Centre,
+                        mmorpg_core::StrikeHeight::Low,
+                    ),
+                },
+            ),
+        ]);
+        let authored = run(&scenario, &config).unwrap();
+        assert!(!authored.baseline);
+        assert!(
+            authored.ticks.iter().any(|tick| tick
+                .regions
+                .iter()
+                .any(|region| region.contains("Authored(0)"))),
+            "the replay shows the authored action running"
+        );
+        let comparison = compare(&scenario, &Config::baseline(), &config).unwrap();
+        assert!(comparison.diverges_at.is_some());
+        assert_eq!(run(&scenario, &config).unwrap(), authored);
+    }
+
+    #[test]
+    fn a_long_authored_startup_is_not_reported_as_lag() {
+        let mut config = Config::baseline();
+        config.name = "slow sliding slash".to_owned();
+        let mut slow = sliding_slash();
+        slow.startup.ms = 200;
+        config.authored.push(slow);
+        let facing = crate::action_lab::LAB_LOCATION.1;
+        let scenario = scenario(&[
+            (
+                2,
+                ZoneCommand::Move {
+                    forward: 1,
+                    strafe: 0,
+                    facing,
+                },
+            ),
+            (
+                8,
+                ZoneCommand::DirectedStrike {
+                    ability: mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
+                    facing,
+                    aim: mmorpg_core::StrikeAim::new(
+                        mmorpg_core::StrikeSide::Centre,
+                        mmorpg_core::StrikeHeight::Low,
+                    ),
+                },
+            ),
+        ]);
+        let replay = run(&scenario, &config).unwrap();
+        let strike = replay.commands.last().unwrap();
+        // The use waited out the 12-tick startup: past the lag threshold.
+        let delay = strike.delay_ticks.expect("the strike took effect");
+        let threshold = 1 + u64::from(mmorpg_core::ticks_from_ms(lab_diagnostics::LAG_MS));
+        assert!(delay > threshold, "{delay}");
+        assert!(
+            !replay
+                .findings
+                .iter()
+                .any(|finding| finding.kind == lab_diagnostics::Kind::InputLag),
+            "{:#?}",
+            replay.findings
         );
     }
 

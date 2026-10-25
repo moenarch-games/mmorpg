@@ -670,6 +670,7 @@ impl ZoneSimulation {
                 landing: combat.landing,
                 swimming: false,
                 impulse: None,
+                authored: None,
                 combo: combat.combo,
                 strike_recovery: combat.strike_recovery,
                 repairing: combat.repairing,

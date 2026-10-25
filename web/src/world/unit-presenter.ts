@@ -57,8 +57,8 @@ export type ImportedRequest = {
   lower: readonly [string, number];
   /** The layered clips to pose (Atlas 6.6.45). */
   layers: readonly ClipLayer[];
-  /** Corpse darkening. */
-  tint: number | null;
+  /** Linear RGB colour factor: corpse darkening and the companion's green (#296); null as authored. */
+  tint: readonly [number, number, number] | null;
   /** What the unit carries: a player its class weapons (asset-tooling #375), a guard its sword. */
   loadout: Loadout | null;
   /** A named resident's `humanoid-appearance` preset id (#418). */
@@ -93,7 +93,7 @@ type DrawEntry = { id: string; key: string; model: number; color: Color; emissiv
 type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number;
-  height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: number | null; loadout: Loadout | null; resident: string | null; headwear: boolean };
+  height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; headwear: boolean };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };

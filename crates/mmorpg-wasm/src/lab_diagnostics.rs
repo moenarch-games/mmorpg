@@ -8,8 +8,8 @@
 //! ranks configurations by speed or damage.
 
 use mmorpg_core::action::{
-    ActionGraph, Arbitration, BlockReason, Candidate, EdgeId, EdgeReport, EdgeStatus, Outcome,
-    RuleId, Verdict,
+    ActionGraph, ActionId, Arbitration, AuthoredAction, BlockReason, Candidate, EdgeId, EdgeReport,
+    EdgeStatus, Outcome, Phase, RuleId, Verdict,
 };
 use serde::Serialize;
 
@@ -286,17 +286,47 @@ fn expired_buffers(run: &Run, findings: &mut Vec<Finding>) {
     }
 }
 
-fn input_lag(run: &Run, findings: &mut Vec<Finding>) {
+/// The authored action `command` started and its startup in ticks (#477):
+/// the startup is authored, intended delay before the use resolves.
+fn authored_startup(
+    run: &Run,
+    graph: &ActionGraph,
+    command: &CommandResult,
+) -> Option<(&'static AuthoredAction, u64)> {
+    let at = u64::from(command.tick);
+    let starting = |tick: u64, def: &AuthoredAction| {
+        let startup = format!("{:?}·{:?}", ActionId::Authored(def.slot), Phase::Startup);
+        record(run, tick).is_some_and(|record| record.regions.contains(&startup))
+    };
+    graph
+        .authored
+        .iter()
+        .find(|def| starting(at + 1, def) && !starting(at, def))
+        .map(|def| (def, u64::from(def.ticks()[0])))
+}
+
+fn input_lag(run: &Run, graph: &ActionGraph, findings: &mut Vec<Finding>) {
     let threshold = 1 + ticks(LAG_MS);
     for command in &run.commands {
-        let (Some(arbitration), Some(delay)) = (&command.arbitration, command.delay_ticks) else {
+        let (Some(arbitration), Some(total)) = (&command.arbitration, command.delay_ticks) else {
             continue;
         };
+        // An authored startup is the action's own timing, not lag.
+        let started = authored_startup(run, graph, command);
+        let delay = total.saturating_sub(started.map_or(0, |(_, startup)| startup));
         if delay <= threshold {
             continue;
         }
         let at = u64::from(command.tick);
-        let lag = format!("{delay} ticks ({} ms)", ms(delay));
+        let lag = match started {
+            Some((def, startup)) => format!(
+                "{delay} ticks ({} ms) beyond {}'s {startup}-tick ({} ms) startup",
+                ms(delay),
+                def.name,
+                ms(startup)
+            ),
+            None => format!("{delay} ticks ({} ms)", ms(delay)),
+        };
         let (severity, summary, edge) = match arbitration.outcome {
             // A refused input (#413) never takes effect; refusals report it.
             Outcome::Refuse(_) => continue,
@@ -304,6 +334,15 @@ fn input_lag(run: &Run, findings: &mut Vec<Finding>) {
                 Severity::Note,
                 format!(
                     "#{} {} took effect after {lag}: {rule:?} held it.",
+                    command.index, command.label
+                ),
+                None,
+            ),
+            // A running authored action holds offense inputs (#414).
+            Outcome::WaitForAuthored(slot) => (
+                Severity::Note,
+                format!(
+                    "#{} {} took effect after {lag}: authored action {slot} held it.",
                     command.index, command.label
                 ),
                 None,
@@ -442,7 +481,7 @@ pub fn diagnose(run: &Run, graph: &ActionGraph) -> Vec<Finding> {
     let mut findings = Vec::new();
     unreachable(run, graph, &mut findings);
     expired_buffers(run, &mut findings);
-    input_lag(run, &mut findings);
+    input_lag(run, graph, &mut findings);
     conflicts(run, &mut findings);
     cancel_loops(run, &mut findings);
     findings.sort_by_key(|finding| finding.tick);
@@ -627,6 +666,77 @@ mod tests {
         assert_eq!(found[0].trace.diverges_at, Some(25));
         assert!(found[0].summary.contains("refused NotReady"));
         assert!(regressions(&before, &before, None).is_empty());
+    }
+
+    /// A Warden slash with a 200 ms (12-tick) authored startup.
+    static SLOW_SLASH: [AuthoredAction; 1] = [AuthoredAction {
+        slot: 0,
+        name: "Slow slash",
+        class: mmorpg_core::PlayerClass::Warden,
+        trigger: mmorpg_core::action::Trigger {
+            input: ActionInput::WardenMelee,
+            ability: None,
+            context: mmorpg_core::action::InputContext::Direct,
+        },
+        conditions: &[],
+        startup: mmorpg_core::action::AuthoredPhase::free(200),
+        active: mmorpg_core::action::AuthoredPhase::free(300),
+        recovery: mmorpg_core::action::AuthoredPhase::free(200),
+        effects: &[],
+    }];
+    static SLOW_GRAPH: ActionGraph = ActionGraph {
+        authored: &SLOW_SLASH,
+        ..mmorpg_core::action::BASELINE
+    };
+
+    /// A slow slash triggered at tick 10 whose use took effect after `delay`
+    /// ticks; ticks 11–22 run its startup.
+    fn slow_slash(delay: u64) -> Run {
+        let ticks = (9..=10 + delay)
+            .map(|at| {
+                let mut record = tick(at, Vec::new());
+                if (11..=22).contains(&at) {
+                    record.regions[1] = "Authored(0)·Startup".to_owned();
+                }
+                record
+            })
+            .collect();
+        let mut command = bash(10, Outcome::Proceed(Candidate::Direct), Vec::new());
+        command.label = "DirectedStrike".to_owned();
+        command.effect_tick = Some(10 + delay);
+        command.delay_ticks = Some(delay);
+        run(ticks, vec![command])
+    }
+
+    #[test]
+    fn an_authored_startup_is_not_lag() {
+        assert_eq!(SLOW_SLASH[0].ticks()[0], 12);
+        let lag = |run: &Run| {
+            diagnose(run, &SLOW_GRAPH)
+                .into_iter()
+                .filter(|finding| finding.kind == Kind::InputLag)
+                .collect::<Vec<_>>()
+        };
+        // The use resolves the tick after its 200 ms startup: intended.
+        assert!(lag(&slow_slash(13)).is_empty());
+        // Twenty ticks more than the startup is still lag.
+        let late = lag(&slow_slash(32));
+        assert_eq!(late.len(), 1);
+        assert_eq!(late[0].severity, Severity::Warning);
+        assert!(
+            late[0]
+                .summary
+                .contains("20 ticks (333 ms) beyond Slow slash's 12-tick (200 ms) startup"),
+            "{}",
+            late[0].summary
+        );
+        // Without the authored action the same delay is all lag.
+        let ordinary = diagnose(&slow_slash(13), &mmorpg_core::action::BASELINE);
+        assert!(
+            ordinary
+                .iter()
+                .any(|finding| finding.kind == Kind::InputLag)
+        );
     }
 
     #[test]

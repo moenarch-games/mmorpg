@@ -9,10 +9,12 @@ import { PROTOCOL_ID } from "../protocol-id";
 import { ticksFromMs } from "../replication";
 import { element, type LabSetup } from "./action-lab";
 import {
-  addLandingEdge, copyConfig, exportBundle, importFile, insertCopy, LANDING_EDGES, MOVEMENT_PHASES, moveCommand, movementRule,
-  promoteCommand, promotionFileName, promotionRequest, recoveryOverride, removeCommand, removeEdge, ruleApplies, setDuration,
-  setMovementRule, setRecoveryOverride, setRuleApplies, shortLabel, swimmingSample, traversalSample, SCENARIO_FORMAT,
-  type ConfigCheck, type LabComparison, type LabConfig, type LabConfigEdge, type LabConfigVersion, type LabEffect, type LabFinding,
+  addLandingEdge, copyConfig, exportBundle, importFile, insertCopy, isMovement, LANDING_EDGES, MOVEMENT_PHASES, moveCommand,
+  movementRule, promoteCommand, promotionFileName, promotionRequest, recoveryOverride, removeAuthored, removeCommand, removeEdge,
+  ruleApplies, setAuthored, setDuration, setMovementRule, setRecoveryOverride, setRuleApplies, shortLabel, slidingSlashSample,
+  swimmingSample, traversalSample, INPUT_CONTEXTS, SCENARIO_FORMAT,
+  type ConfigCheck, type LabAuthoredAction, type LabAuthoredPhase, type LabComparison, type LabConfig, type LabConfigEdge,
+  type LabConfigVersion, type LabEffect, type LabFinding,
   type LabLibrary, type LabRun, type LabScenario,
 } from "./lab-experiment";
 import type { LabExperiments } from "./wasm-runtime";
@@ -73,6 +75,8 @@ export class ExperimentPanel {
   #configs: Record<Slot, LabConfig>;
   #checks: Record<Slot, ConfigCheck>;
   #editing: Slot = "b";
+  /** Whether the timeline lists movement commands; hidden by default (#382), always replayed. */
+  #showMovement = false;
   /** The configuration the arena runs now. */
   #live: Slot | null = null;
   #comparison: LabComparison | null = null;
@@ -221,7 +225,8 @@ export class ExperimentPanel {
     duration.addEventListener("change", () => this.#setScenario(setDuration(scenario, Number(duration.value))));
     const results = this.#comparison?.a.commands ?? [];
     const delaysB = new Map((this.#comparison?.b.commands ?? []).map((command) => [command.index, command]));
-    const rows = scenario.commands.map((command, index) => {
+    const rows = scenario.commands.flatMap((command, index) => {
+      if (!this.#showMovement && isMovement(command)) { return []; }
       const result = results.find((entry) => entry.index === index);
       const other = delaysB.get(index);
       const tick = element("input", { type: "number", min: "0", step: "1", value: String(command.tick), title: "Applied before this tick + 1" });
@@ -232,7 +237,7 @@ export class ExperimentPanel {
         return node;
       };
       const delay = (entry: typeof result) => entry?.delayTicks === null || !entry ? "—" : `${entry.delayTicks} t`;
-      return element("tr", {},
+      return [element("tr", {},
         element("td", {}, tick),
         element("td", { className: "lab-actions" },
           button("−", "One tick earlier", () => moveCommand(scenario, index, command.tick - 1)),
@@ -241,15 +246,19 @@ export class ExperimentPanel {
           button("✕", "Remove", () => removeCommand(scenario, index))),
         element("td", { className: "lab-label", title: result?.label ?? command.bytes }, shortLabel(result?.label ?? command.bytes)),
         element("td", { title: "Input-to-effect delay under A / B" }, `${delay(result)} / ${delay(other)}`),
-        element("td", { className: result?.refused.length ? "lab-refused" : "" }, result?.refused.length ? `refused ${result.refused.join(", ")}` : "ok"));
+        element("td", { className: result?.refused.length ? "lab-refused" : "" }, result?.refused.length ? `refused ${result.refused.join(", ")}` : "ok"))];
     });
     const recorded = scenario.recorded
       ? `recorded under ${scenario.recorded.config}`
       : "edited (no longer the recording)";
+    const movement = scenario.commands.filter(isMovement).length;
+    const showMovement = element("input", { type: "checkbox", checked: this.#showMovement, title: "Movement commands are always replayed" });
+    showMovement.addEventListener("change", () => { this.#showMovement = showMovement.checked; this.#render(); });
     this.#scenarioBox.replaceChildren(bar,
       element("p", { className: "lab-muted" },
         `${scenario.name}: ${scenario.setup.className} ${scenario.setup.level}, seed ${scenario.seed}, content ${scenario.contentRevision}, ${recorded}.`),
       element("label", {}, "Duration (ticks) ", duration),
+      element("label", {}, " ", showMovement, ` Show movement (${movement})`),
       element("div", { className: "lab-scroll" }, element("table", { className: "lab-table" },
         element("thead", {}, element("tr", {}, ...["Tick", "Edit", "Command", "Delay A/B", "Result A"].map((text) => element("th", {}, text)))),
         element("tbody", {}, ...rows))));
@@ -291,6 +300,7 @@ export class ExperimentPanel {
       ...config.edges.map((edge, index) => this.#edgeEditor(slot, edge, index)),
       ...(landing.length ? [element("div", { className: "lab-playback" }, ...landing)] : []),
       this.#movementEditor(slot),
+      this.#authoredEditor(slot),
       ...config.windowModifiers.map((modifier, index) => this.#numberField(`Modifier ${modifier.edge} if ${modifier.conditions.join(", ")}: actionable Δ ms`,
         modifier.actionableDeltaMs, (value) => this.#setConfig(slot, {
           ...config, windowModifiers: config.windowModifiers.map((entry, at) => at === index ? { ...entry, actionableDeltaMs: value } : entry),
@@ -322,6 +332,8 @@ export class ExperimentPanel {
           () => this.#setConfig(slot, traversalSample(config))),
         action("Swimming sample", "In deep water (Stillwater Lake, east of here) melee and Shield Bash are refused, other abilities wait until ashore, and the swim glides (#413)",
           () => this.#setConfig(slot, swimmingSample(config))),
+        action("+ Sliding slash", "Author a new Warden action from existing primitives: forward + Heroic Strike winds up, slides and recovers (#414)",
+          () => this.#setConfig(slot, slidingSlashSample(config))),
         action(slot === "a" ? "Copy to B" : "Copy to A", "Copy this configuration to the other slot", () => {
           const other = slot === "a" ? "b" : "a";
           this.#setConfig(other, copyConfig(config, `${config.name} copy`));
@@ -366,6 +378,49 @@ export class ExperimentPanel {
       element("p", { className: "lab-muted" },
         "Velocity = intent × steering + last realized velocity × momentum × (1 − steering), changing at most the acceleration limit per second; running phases combine to the lowest steering, highest momentum and lowest limit."),
       ...rows);
+  }
+
+  /**
+   * New experimental actions (#414, Atlas 5.9.4–5.9.5): a trigger in a context, timed phases with
+   * bounded movement and effects on the ordinary use. The zone validates the whole definition and
+   * names any unsupported primitive; outgoing edges are edited with the other edges above.
+   */
+  #authoredEditor(slot: Slot): HTMLElement {
+    const config = this.#configs[slot];
+    const rows = (config.authored ?? []).map((authored) => {
+      const change = (next: LabAuthoredAction) => this.#setConfig(slot, setAuthored(config, next));
+      const name = element("input", { type: "text", value: authored.name, title: "Action name" });
+      name.addEventListener("change", () => change({ ...authored, name: name.value }));
+      const context = element("select", { title: "Input context" });
+      for (const entry of INPUT_CONTEXTS) { context.append(element("option", { value: entry, selected: entry === authored.context }, entry)); }
+      context.addEventListener("change", () => change({ ...authored, context: context.value }));
+      const phase = (label: string, key: "startup" | "active" | "recovery") => {
+        const value: LabAuthoredPhase = authored[key];
+        const set = (patch: Partial<LabAuthoredPhase>) => change({ ...authored, [key]: { ...value, ...patch } });
+        return element("div", { className: "lab-flags" },
+          this.#numberField(`${label} ms`, value.ms, (ms) => set({ ms }), 0, true),
+          this.#numberField("steering %", value.steeringPercent, (steeringPercent) => set({ steeringPercent })),
+          this.#numberField("momentum %", value.momentumPercent, (momentumPercent) => set({ momentumPercent })));
+      };
+      const impulse = authored.effects.find((effect) => effect.kind === "Impulse");
+      const launch = this.#numberField("launch forward cm/s", impulse?.kind === "Impulse" ? impulse.forwardCms : 0, (forwardCms) => change({
+        ...authored,
+        effects: [
+          ...authored.effects.filter((effect) => effect.kind !== "Impulse"),
+          ...(forwardCms === 0 ? [] : [{ kind: "Impulse", forwardCms, upCms: impulse?.kind === "Impulse" ? impulse.upCms : 0 } as LabEffect]),
+        ],
+      }), -1_200);
+      const remove = element("button", { type: "button", title: "Remove this action and the edges leaving it" }, "Remove");
+      remove.addEventListener("click", () => this.#setConfig(slot, removeAuthored(config, authored.slot)));
+      return element("fieldset", { className: "lab-edge-editor" },
+        element("legend", {}, `Authored(${authored.slot}) · ${authored.class} · ${authored.input}${authored.ability === null ? "" : ` ability ${authored.ability}`}`),
+        element("div", { className: "lab-flags" }, name, element("label", {}, "when ", context), remove),
+        phase("Startup (the input waits)", "startup"), phase("Active (the use resolves)", "active"), phase("Recovery", "recovery"),
+        launch);
+    });
+    return element("fieldset", { className: "lab-edge-editor" },
+      element("legend", {}, "Authored actions (new experimental moves)"),
+      ...(rows.length ? rows : [element("p", { className: "lab-muted" }, "None: add one with “+ Sliding slash” or in the JSON.")]));
   }
 
   #numberField(label: string, value: number, change: (value: number) => void, min = 0, ticks = false): HTMLElement {

@@ -25,6 +25,7 @@ jobs:
     outputs:
       pages-validation: ${{ steps.pages-scope.outputs.pages-validation }}
       allow-skipped: ${{ steps.pages-scope.outputs.allow-skipped }}
+      clippy: ${{ steps.pages-scope.outputs.clippy }}
       docs_only: ${{ steps.detect.outputs.docs_only }}
       rust_changed: ${{ steps.detect.outputs.rust_changed }}
       full_validation: ${{ steps.detect.outputs.full_validation }}
@@ -100,6 +101,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           PR_EVENT: ${{ toJSON(github.event) }}
+          RUST_CHANGED: ${{ steps.detect.outputs.rust_changed }}
         run: |
           import json
           import os
@@ -142,6 +144,8 @@ jobs:
                   active = any(not included(path, spec["paths-ignore"]) for path in paths)
               # An empty comparison is not evidence that a required validation is out of scope.
               selected[job] = active
+          # Clippy is enforced at merge time only: PRs stay opt-in (full-validation), the merge queue always lints Rust changes.
+          selected["clippy"] = os.environ["GITHUB_EVENT_NAME"] == "merge_group" and os.environ.get("RUST_CHANGED") == "true"
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               for job, active in selected.items():
                   print(f"{job}={str(active).lower()}", file=output)
@@ -175,6 +179,27 @@ jobs:
       test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run -p mmorpg-core --features physics-ab --test physics_ab --locked & physics_ab=$!; cargo nextest run --workspace --locked -E "not (test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content) | test(~pages_reference_inventory_covers_current_world_scope))"; wait "$physics_ab"' || '') }}
       build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'cargo check --workspace --locked') || '' }}
 
+  clippy:
+    # Runs beside `rust` in the merge queue only and shares its Cargo cache (same reusable job).
+    needs: scope
+    if: needs.scope.outputs.clippy == 'true'
+    permissions:
+      contents: read
+      packages: read
+    uses: moritzbrantner/reusable-workflows/.github/workflows/validate-repo.yml@2ec8d067031d4e9d093701f23a00b0ddcaef42d8
+    with:
+      bun_version: latest
+      node_version: ""
+      install_command: ""
+      cache_bun: false
+      apt_packages: libudev-dev libasound2-dev
+      pre_validate_command: scripts/fetch-bundles.sh && scripts/prepare-ranger-native.sh
+      cache_cargo: true
+      lint_command: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      artifact_name_suffix: -clippy
+      # The default group is shared with `rust` in this run and would cancel it.
+      concurrency_group: ${{ github.workflow }}-${{ github.ref }}-clippy
+
   pages-validation:
     needs: scope
     if: needs.scope.outputs.pages-validation == 'true'
@@ -195,7 +220,7 @@ jobs:
       github.event.label.name == 'browser-evidence' || github.event.label.name == 'full-validation'))) &&
       'merge-ready' || 'validation-summary' }}
     if: ${{ always() }}
-    needs: [scope, rust, pages-validation]
+    needs: [scope, rust, clippy, pages-validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -203,5 +228,5 @@ jobs:
       - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@b0f25f241d76af2584dfc9e375084ff5c5cb97da
         with:
           needs: ${{ toJSON(needs) }}
-          required: '["scope", "rust", "pages-validation"]'
+          required: '["scope", "rust", "clippy", "pages-validation"]'
           allow-skipped: ${{ needs.scope.outputs.allow-skipped || '[]' }}
