@@ -5,7 +5,7 @@
 //! The playable square spans ±120 m around the origin inside invisible
 //! boundary walls. Map north is −Z, toward the Redbrand cliffs, matching the
 //! layout table in `docs/STARTER_ZONE.md`. The Outpost's valley floor is physically flat (y = 0),
-//! below the farm terrace of [`basin`] and the outer hills; relief, props
+//! in the basin of [`basin`], below its rim and the outer hills; relief, props
 //! without colliders, water and mountains are presentation owned by
 //! `mmorpg-scenery`, which derives its structures from the collider IDs in
 //! [`ids`]. [`content`] bundles it as the hosted [`ZoneContent`], whose revision
@@ -253,10 +253,21 @@ pub struct Road {
     pub points: &'static [[i32; 2]],
 }
 
-static ROADS: [Road; 10] = [
+static ROADS: [Road; 11] = [
     Road {
         name: "Hollow Road",
-        points: &[[0, 1_200], [0, -1_000], [0, -4_000], [0, -8_600]],
+        // Up the Hollow Climb (#423): the ledge under the Hollow's cliff, the landing, the
+        // cutting.
+        points: &[
+            [0, 1_200],
+            [0, -1_000],
+            [0, -4_000],
+            [0, -6_200],
+            [-3_600, -6_200],
+            [-3_600, -7_000],
+            [0, -7_000],
+            [0, -8_600],
+        ],
     },
     Road {
         name: "Lakeshore Path",
@@ -303,18 +314,35 @@ static ROADS: [Road; 10] = [
     },
     Road {
         name: "Wolfrun Trail",
+        // Up the Wolfrun Climb (#423): the cliff ledge, the hairpin landing, the cutting.
         points: &[
             [-1_600, 2_000],
             [-3_200, 2_000],
-            [-4_400, 2_000],
-            [-5_600, 900],
+            [-4_200, 2_000],
+            [-4_200, -1_800],
+            [-5_400, -1_800],
+            [-5_400, 1_200],
             [-6_600, 300],
             [-7_600, 0],
         ],
     },
     Road {
+        // Along the rim from Wolfrun Woods to Redbrand Hollow's camp (#423).
+        name: "Wolfrun Ridge Path",
+        points: &[[-6_600, 300], [-6_600, -7_700], [0, -7_700]],
+    },
+    Road {
         name: "South Road",
-        points: &[[0, 2_800], [0, 5_000], [0, 10_500], [0, 15_000]],
+        // Up the South Climb (#423) onto the rim and on to the Vale Ring Road.
+        points: &[
+            [0, 2_800],
+            [0, 5_000],
+            [0, 9_400],
+            [-3_600, 9_400],
+            [-3_600, 10_200],
+            [0, 10_200],
+            [0, 15_000],
+        ],
     },
     // The outer valley (#159): a ring road through the four outer regions and
     // two trails that join the farm and the woods to it without the outpost.
@@ -334,8 +362,9 @@ static ROADS: [Road; 10] = [
         points: &[[5_400, 1_200], [11_000, -1_000], [15_000, -3_000]],
     },
     Road {
+        // From the top of the Wolfrun Climb along the rim (#423).
         name: "Downs Trail",
-        points: &[[-4_400, 2_000], [-4_400, 6_000], [-15_000, 6_000]],
+        points: &[[-5_400, 1_200], [-5_400, 6_000], [-15_000, 6_000]],
     },
 ];
 
@@ -407,8 +436,9 @@ static STRUCTURES: [Footprint; 84] = [
     (304, [6_710, -3_780], [6_890, -3_620], 120),
     (305, [4_330, -3_760], [4_470, -3_640], 90),
     // Redbrand Hollow: cliffs under the north wall, the mine entrance, the camp.
-    (400, [-3_200, -12_000], [-2_200, -7_400], 1_200),
-    (401, [-2_200, -8_400], [-1_600, -7_400], 800),
+    // Their southern faces stand back for the Wolfrun Ridge Path (#423).
+    (400, [-3_200, -12_000], [-2_200, -8_000], 1_200),
+    (401, [-2_200, -8_400], [-1_600, -8_000], 800),
     (402, [2_200, -12_000], [3_200, -7_400], 1_200),
     (403, [1_600, -9_600], [2_200, -8_600], 900),
     (404, [-2_200, -12_000], [2_200, -11_000], 1_400),
@@ -575,7 +605,7 @@ pub fn terrain() -> Terrain {
                 let z = terrain::ORIGIN[1] + row * terrain::STEP;
                 // The cave floor stays flat inside its hillside.
                 if cave::GREYFANG.flattens(x, z) {
-                    0
+                    cave::GREYFANG.floor_y
                 } else if shrine::flattens(x, z) {
                     // The Sunken Shrine's plaza and cave floor (#274).
                     shrine::FLOOR_Y
@@ -686,9 +716,11 @@ fn trees() -> Vec<StaticCollider> {
             if dx * dx + dz * dz < keep_out * keep_out {
                 continue;
             }
+            // On the rim (#423).
+            let base = footing([x - half, z - half], [x + half, z + half]);
             let collider = StaticCollider {
                 id: next_id,
-                position: [x, woods::TRUNK_HEIGHT / 2, z],
+                position: [x, base + woods::TRUNK_HEIGHT / 2, z],
                 half_extents: [half, woods::TRUNK_HEIGHT / 2, half],
             };
             if !clear_of_roads(&collider) {
@@ -920,20 +952,25 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
             id: crate::PieceId::new(id),
             site: 1,
             body,
-            position: [x, 125, -7_200],
+            position: [x, basin::TERRACE_Y + 125, -7_200],
             half_extents: [150, 125, 20],
             health: 120,
             supports: Vec::new(),
             rubble,
         };
     vec![
-        wall(1, west, 500, Some(([500, 20, -7_200], [150, 20, 40]))),
+        wall(
+            1,
+            west,
+            500,
+            Some(([500, basin::TERRACE_Y + 20, -7_200], [150, 20, 40])),
+        ),
         wall(2, east, 900, None),
         crate::StructurePiece {
             id: crate::PieceId::new(3),
             site: 1,
             body: deck,
-            position: [700, 265, -7_200],
+            position: [700, basin::TERRACE_Y + 265, -7_200],
             half_extents: [350, 15, 120],
             health: 60,
             supports: vec![crate::PieceId::new(1), crate::PieceId::new(2)],

@@ -46,6 +46,10 @@ pub const GARRICK_RESPAWN_TICKS: u32 = crate::long_ticks_from_ms(120_000);
 pub const PROP_RESPAWN_TICKS: u32 = crate::long_ticks_from_ms(300_000);
 /// Idle creatures wander within 6 m of their spawn point.
 pub const WANDER_RADIUS_UNITS: i32 = 600;
+/// Stillwater Lake's lurkers (spawn IDs) wander only 2 m, so they stay on the level rim
+/// above the basin's slope (#423; physics-engine #394 sinks units resting on slopes).
+pub const LAKE_LURKERS: std::ops::Range<u32> = 300..308;
+pub const LAKE_WANDER_RADIUS_UNITS: i32 = 200;
 /// Released spirits return beside the graveyard, south of the gravestones'
 /// western end and clear of houses.
 pub const GRAVEYARD: [i32; 2] = [-2_000, 4_150];
@@ -180,10 +184,10 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (101, TIMBER_WOLF, [-9_350, -3_150], 8_192),
         (102, TIMBER_WOLF, [-8_000, -3_600], 16_384),
         (103, TIMBER_WOLF, [-6_650, -3_150], 24_576),
-        (104, TIMBER_WOLF, [-5_300, -3_600], 32_768),
+        (104, TIMBER_WOLF, [-6_200, -3_600], 32_768),
         (105, TIMBER_WOLF, [-10_700, -1_800], 40_960),
         (106, TIMBER_WOLF, [-9_350, -1_350], 49_152),
-        (107, TIMBER_WOLF, [-6_200, -1_800], 57_344),
+        (107, TIMBER_WOLF, [-8_000, -1_800], 57_344),
         (108, TIMBER_WOLF, [-8_450, 450], 16_384),
         (109, TIMBER_WOLF, [-10_700, 1_800], 0),
         (110, TIMBER_WOLF, [-9_800, 3_150], 8_192),
@@ -226,7 +230,7 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (306, MIREFIN_LURKER, [4_200, -6_650], 8_192),
         (307, MIREFIN_LURKER, [6_500, -6_830], 24_576),
         // Redbrand Hollow: the bandit camp between the cliffs.
-        (400, REDBRAND_BANDIT, [-1_000, -7_800], 0),
+        (400, REDBRAND_BANDIT, [-1_000, -8_200], 0),
         (401, REDBRAND_BANDIT, [1_000, -7_800], 0),
         (402, REDBRAND_BANDIT, [-500, -8_400], 0),
         (403, REDBRAND_BANDIT, [600, -8_500], 0),
@@ -239,7 +243,7 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (410, REDBRAND_BANDIT, [-2_000, -9_400], 16_384),
         (411, REDBRAND_BANDIT, [2_000, -8_200], 49_152),
         (412, REDBRAND_BANDIT, [0, -10_000], 0),
-        (413, REDBRAND_BANDIT, [-1_500, -7_700], 16_384),
+        (413, REDBRAND_BANDIT, [-500, -8_000], 16_384),
         // Garrick Redbrand holds the mine entrance.
         (450, GARRICK_REDBRAND, [0, -10_500], 0),
         // The outer valley (#159), on trunk-grid corners of its woods.
@@ -249,7 +253,7 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (502, TIMBER_WOLF, [-19_050, 550], 32_768),
         (503, TIMBER_WOLF, [-16_800, 4_150], 49_152),
         (504, YOUNG_BOAR, [-18_150, 8_200], 8_192),
-        (505, YOUNG_BOAR, [-13_200, -2_150], 40_960),
+        (505, YOUNG_BOAR, [-16_800, -2_150], 40_960),
         // Greyfang Ridge: Redbrand outriders watching the standing stones.
         (600, REDBRAND_CROSSBOWMAN, [-1_350, -17_250], 0),
         (601, REDBRAND_CROSSBOWMAN, [1_350, -17_250], 0),
@@ -335,7 +339,12 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
             template,
             position,
             facing,
-            wander_radius: WANDER_RADIUS_UNITS,
+            // Stillwater Lake's lurkers keep to its narrow level rim (#423).
+            wander_radius: if LAKE_LURKERS.contains(&id) {
+                LAKE_WANDER_RADIUS_UNITS
+            } else {
+                WANDER_RADIUS_UNITS
+            },
             levels: None,
         })
         .chain(

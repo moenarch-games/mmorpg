@@ -1,7 +1,9 @@
 //! Greyhaven's village basin (#423): Millbrook Farm's terrace stands 11 m above the Outpost's
 //! valley floor behind a cliff no unit climbs, reached up the Millbrook Climb and left down the
 //! Millbrook Steps; Stillwater Lake shares the terrace, up the Lakeshore Climb and along the
-//! Stillwater Rim Trail from the farm. All walked on the zone's own physics.
+//! Stillwater Rim Trail from the farm. The rim closes round the basin (slice 3): the Wolfrun,
+//! Hollow and South Climbs lead up to Wolfrun Woods, Redbrand Hollow and the south, and the
+//! Wolfrun Ridge Path joins the woods to the Hollow. All walked on the zone's own physics.
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{self, basin};
@@ -231,10 +233,8 @@ fn the_rim_trail_joins_the_farm_and_the_lake_on_top() {
     );
 }
 
-#[test]
-fn the_lake_terrace_cliff_cannot_be_walked_up() {
-    let mut zone = player_at([6_000, -9_000]);
-    settle(&mut zone);
+/// Walks the player `facing` for four seconds and returns where they end.
+fn push(zone: &mut ZoneSimulation, facing: u16) -> [f32; 3] {
     for sequence in 1..=240 {
         zone.apply_command(
             1,
@@ -242,15 +242,169 @@ fn the_lake_terrace_cliff_cannot_be_walked_up() {
             ZoneCommand::Move {
                 forward: 1,
                 strafe: 0,
-                facing: 0,
+                facing,
             },
         )
         .unwrap();
         zone.advance_tick().unwrap();
     }
-    let at = feet(&zone);
+    feet(zone)
+}
+
+#[test]
+fn the_rim_closes_round_the_basin_behind_cliffs() {
+    let definition = greyhaven_vale::greyhaven_vale_definition();
+    // West under the woods, south of the Outpost, north under the Hollow and the lake: the
+    // floor, then the rim one cell on.
+    for (floor, rim) in [
+        ([-4_400, 6_000], [-4_800, 6_000]),
+        ([2_000, 9_600], [2_000, 10_000]),
+        ([800, -6_400], [800, -6_800]),
+        ([1_600, -2_800], [2_000, -2_800]),
+    ] {
+        assert_eq!(definition.ground_at(floor[0], floor[1]), 0, "{floor:?}");
+        assert_eq!(
+            definition.ground_at(rim[0], rim[1]),
+            basin::TERRACE_Y,
+            "{rim:?}"
+        );
+    }
+    // Redbrand Hollow's camp, the Greyfang cave's floor and the den clearing are on the rim.
+    for at in [[0, -9_200], [6_000, -13_800], [-8_000, 0]] {
+        assert_eq!(
+            definition.ground_at(at[0], at[1]),
+            basin::TERRACE_Y,
+            "{at:?}"
+        );
+    }
+    // Beyond 128 m the rim descends into the outer valley's hills.
+    assert!(definition.ground_at(0, 16_800) < basin::TERRACE_Y);
+    // Each cliff holds a player at its foot: west under the woods, south, north under the Hollow.
+    let held = |start: [i32; 2], facing: u16, below: fn([f32; 3]) -> bool| {
+        let mut zone = player_at(start);
+        settle(&mut zone);
+        let at = push(&mut zone, facing);
+        assert!(
+            below(at) && at[1] < 400.0,
+            "the cliff holds the player at its foot: {at:?}"
+        );
+    };
+    held([-4_000, 6_000], 49_152, |at| at[0] > -4_700.0);
+    held([2_000, 8_800], 0, |at| at[2] < 9_900.0);
+    held([-400, -5_000], 32_768, |at| at[2] > -6_700.0);
+}
+
+#[test]
+fn a_player_walks_up_the_wolfrun_climb_into_the_woods() {
+    let mut zone = player_at([-3_600, 2_000]);
+    settle(&mut zone);
+    assert!(feet(&zone)[1].abs() < 10.0);
+    let trail = walk(
+        &mut zone,
+        &[
+            [-4_200, 2_000],
+            [-4_200, -1_800],
+            [-5_400, -1_800],
+            [-5_400, 1_200],
+            [-6_600, 300],
+            [-7_600, 0],
+        ],
+    );
+    let den = feet(&zone);
     assert!(
-        at[2] < -8_100.0 && at[1] < 400.0,
-        "the cliff holds the player at its foot: {at:?}"
+        (den[1] - basin::TERRACE_Y as f32).abs() < 20.0,
+        "in the den clearing on the rim: {den:?}"
+    );
+    assert!(
+        trail
+            .iter()
+            .any(|at| at[2] < -1_600.0 && (at[1] - basin::LANDING_Y as f32).abs() < 30.0)
+    );
+}
+
+#[test]
+fn a_player_walks_up_the_hollow_climb_to_the_camp() {
+    let mut zone = player_at([0, -5_000]);
+    settle(&mut zone);
+    assert!(feet(&zone)[1].abs() < 10.0);
+    let trail = walk(
+        &mut zone,
+        &[
+            [0, -6_200],
+            [-3_600, -6_200],
+            [-3_600, -7_000],
+            [0, -7_000],
+            [0, -8_600],
+        ],
+    );
+    let camp = feet(&zone);
+    assert!(
+        (camp[1] - basin::TERRACE_Y as f32).abs() < 20.0,
+        "in the Hollow's camp: {camp:?}"
+    );
+    assert!(
+        trail
+            .iter()
+            .any(|at| at[0] < -3_200.0 && (at[1] - basin::LANDING_Y as f32).abs() < 30.0)
+    );
+}
+
+#[test]
+fn a_player_walks_up_the_south_climb_onto_the_rim() {
+    let mut zone = player_at([0, 8_600]);
+    settle(&mut zone);
+    assert!(feet(&zone)[1].abs() < 10.0);
+    walk(
+        &mut zone,
+        &[
+            [0, 9_400],
+            [-3_600, 9_400],
+            [-3_600, 10_200],
+            [0, 10_200],
+            [0, 12_000],
+        ],
+    );
+    let top = feet(&zone);
+    assert!(
+        (top[1] - basin::TERRACE_Y as f32).abs() < 20.0,
+        "on the rim: {top:?}"
+    );
+}
+
+#[test]
+fn the_ridge_path_joins_the_woods_to_the_hollow_on_the_rim() {
+    let mut zone = player_at([-6_600, 300]);
+    settle(&mut zone);
+    // To the camp's western edge, short of its bandits.
+    let trail = walk(&mut zone, &[[-6_600, -7_700], [-3_200, -7_700]]);
+    assert!(
+        trail
+            .iter()
+            .all(|at| (at[1] - basin::TERRACE_Y as f32).abs() < 30.0),
+        "the path stays on the rim"
+    );
+}
+
+#[test]
+fn a_player_walks_down_the_hollow_climb_to_the_outpost() {
+    let mut zone = player_at([0, -7_000]);
+    settle(&mut zone);
+    assert!((feet(&zone)[1] - basin::TERRACE_Y as f32).abs() < 20.0);
+    walk(
+        &mut zone,
+        &[[-3_600, -7_000], [-3_600, -6_200], [0, -6_200], [0, -1_400]],
+    );
+    assert!(feet(&zone)[1].abs() < 10.0, "back on the valley floor");
+}
+
+#[test]
+fn a_player_walks_from_the_hollow_into_the_greyfang_cave() {
+    let mut zone = player_at([5_800, -11_000]);
+    settle(&mut zone);
+    walk(&mut zone, &[[5_800, -13_700]]);
+    let inside = feet(&zone);
+    assert!(
+        (inside[1] - basin::TERRACE_Y as f32).abs() < 20.0,
+        "on the cave's floor: {inside:?}"
     );
 }

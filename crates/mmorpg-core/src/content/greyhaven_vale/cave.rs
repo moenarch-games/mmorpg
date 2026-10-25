@@ -5,16 +5,20 @@
 //! Everything is authored as [`Cave`] data so a later cave reuses it unchanged. #160 makes it
 //! Redbrand Hollow's shared outer cavern: Redbrands hold both chambers, and a sealed
 //! [`THRESHOLD`] in the inner chamber marks the way to the deeper, party-private cave that
-//! later work opens. Rock walls and one roof slab are fixed
-//! boxes standing on y = 0. The terrain is flattened to y = 0 over every [`Cave::floors`] rect
+//! later work opens. Rock walls and one roof slab are fixed boxes; the walls stand on y = 0 and
+//! rise [`Cave::height`] above [`Cave::floor_y`], so they reach down into any lower ground
+//! outside. The terrain is flattened to [`Cave::floor_y`] over every [`Cave::floors`] rect
 //! (each edge on the 4 m terrain grid), so the hillside rises behind the walls while the floor
-//! inside stays flat. Clients cut the roof away while the viewer stands under it, like the inn.
+//! inside stays flat. Since #423 the floor lies on the basin's rim, level with the ground before
+//! its mouth. Clients cut the roof away while the viewer stands under it, like the inn.
 
 use crate::StaticCollider;
 
-/// A cave of authored rock boxes: `(min, max)` XZ footprints in units, standing on y = 0.
+/// A cave of authored rock boxes: `(min, max)` XZ footprints in units.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Cave {
+    /// The floor's height.
+    pub floor_y: i32,
     /// Walkable floor rects (chambers, passages, the mouth), flattened and roofed.
     pub floors: &'static [([i32; 2], [i32; 2])],
     /// Rock walls around the floors, leaving the mouth open.
@@ -50,11 +54,11 @@ impl Cave {
         self.walls
             .iter()
             .zip(first_id..)
-            .map(|(&footprint, id)| block(id, footprint, 0, self.height))
+            .map(|(&footprint, id)| block(id, footprint, 0, self.floor_y + self.height))
             .chain(std::iter::once(block(
                 first_id + u32::try_from(self.walls.len()).unwrap_or(u32::MAX),
                 self.roof,
-                self.height,
+                self.floor_y + self.height,
                 self.roof_thickness,
             )))
             .collect()
@@ -63,7 +67,7 @@ impl Cave {
 
 /// The sealed threshold to Redbrand Hollow's deeper cave (#160): a 4 m wide, 3.5 m tall
 /// barricade against the inner chamber's east wall, as a `(min, max)` XZ footprint standing on
-/// y = 0. It stays shut until the party-private depths open behind it; a stand-in box until the
+/// the cave's floor. It stays shut until the party-private depths open behind it; a stand-in box until the
 /// asset-tooling kit gives it its own look.
 pub const THRESHOLD: ([i32; 2], [i32; 2]) = ([7_930, -14_000], [7_990, -13_600]);
 /// The threshold's height.
@@ -80,7 +84,11 @@ pub fn threshold(id: u32) -> StaticCollider {
     ];
     StaticCollider {
         id,
-        position: [min[0] + half[0], half[1], min[1] + half[2]],
+        position: [
+            min[0] + half[0],
+            GREYFANG.floor_y + half[1],
+            min[1] + half[2],
+        ],
         half_extents: half,
     }
 }
@@ -88,6 +96,7 @@ pub fn threshold(id: u32) -> StaticCollider {
 /// The Greyfang cave: walls 4 m thick and 4.5 m tall under a 1 m roof.
 #[rustfmt::skip]
 pub const GREYFANG: Cave = Cave {
+    floor_y: super::basin::TERRACE_Y,
     floors: &[
         // The outer cavern.
         ([4_800, -14_400], [6_800, -13_200]),

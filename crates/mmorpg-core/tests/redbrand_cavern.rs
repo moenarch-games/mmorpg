@@ -90,7 +90,10 @@ fn the_sealed_threshold_stands_in_the_inner_chamber() {
     // Inside the inner chamber, against its east wall: nothing walks through it.
     assert!((7_200..8_000).contains(&x) && (-14_400..-13_200).contains(&z));
     assert!(GREYFANG.flattens(x, z));
-    assert_eq!(threshold.position[1] - threshold.half_extents[1], 0);
+    assert_eq!(
+        threshold.position[1] - threshold.half_extents[1],
+        GREYFANG.floor_y
+    );
 }
 
 #[test]
