@@ -10,7 +10,8 @@
 use std::sync::Arc;
 
 use mmorpg_core::action::{
-    self, ActionInput, Anchor, BlockReason, Candidate, Condition, EdgeStatus, Outcome, Verdict,
+    self, ActionInput, Anchor, BlockReason, Candidate, Condition, EdgeStatus, Effective, Origin,
+    Outcome, Scope, Setting, Verdict,
 };
 use mmorpg_core::{
     CharacterRecord, ClassChoice, EQUIPMENT_SLOTS, EphemeralCharacterBuild, Equipment, ItemId,
@@ -26,10 +27,13 @@ use crate::scenario::{fresh_record, restore_health};
 pub const LAB_LOCATION: ([i32; 2], u16) = ([-4_000, -2_200], 49_152);
 
 /// Every input the graph arbitrates, for the inspector's verdict table.
-const INPUTS: [ActionInput; 3] = [
+const INPUTS: [ActionInput; 6] = [
     ActionInput::WardenMelee,
     ActionInput::ShieldBash,
     ActionInput::GuardProtection,
+    ActionInput::Ability,
+    ActionInput::Move,
+    ActionInput::Jump,
 ];
 
 /// Which validated catalog gear the lab character wears.
@@ -201,12 +205,59 @@ fn outcome(outcome: Outcome) -> Value {
         }
         Outcome::WaitForRule(rule) => json!({ "kind": "WaitForRule", "rule": name(rule) }),
         Outcome::WaitForEdge(edge) => json!({ "kind": "WaitForEdge", "edge": name(edge) }),
+        Outcome::Cancel(rule) => json!({ "kind": "Cancel", "rule": name(rule) }),
     }
+}
+
+fn ability_name(id: mmorpg_core::AbilityId) -> String {
+    mmorpg_core::ability::ability_by_id(id).map_or_else(
+        || format!("ability {}", id.get()),
+        |ability| ability.name.to_owned(),
+    )
+}
+
+/// A scope as the page shows it: "class ranger", "weapon Oak Longbow",
+/// "ability Firebolt".
+fn scope_name(scope: Scope) -> String {
+    match scope {
+        Scope::Class(class) => format!("class {}", class.name()),
+        Scope::Weapon(item) => format!(
+            "weapon {}",
+            item_template(item).map_or("?", |template| template.name)
+        ),
+        Scope::Ability(id) => format!("ability {}", ability_name(id)),
+    }
+}
+
+fn origin_name(origin: Origin) -> String {
+    match origin {
+        Origin::Baseline => "baseline".to_owned(),
+        Origin::Override(scope) => scope_name(scope),
+    }
+}
+
+/// A setting as `{key, value}` text.
+fn setting(setting: Setting) -> Value {
+    let value = match setting {
+        Setting::Recovery { ms, .. } => format!("{ms} ms · {} ticks", ticks(ms)),
+        Setting::Window { window, .. } => format!(
+            "opens after {} ms, actionable {} ms, buffer {} ms",
+            window.open_after_ms, window.actionable_ms, window.buffer_ms
+        ),
+        Setting::Rule { applies, .. } => if applies { "applies" } else { "off" }.to_owned(),
+    };
+    json!({ "key": name(setting.key()), "value": value })
+}
+
+fn effective(effective: &Effective) -> Value {
+    let mut value = setting(effective.setting);
+    value["origin"] = json!(origin_name(effective.origin));
+    value
 }
 
 /// The authored graph: actions by region, edges with their windows in ms and
 /// ticks, precision windows, recovery and window modifiers, compatibility
-/// rules and interruptions.
+/// rules, interruptions and overrides.
 #[must_use]
 pub fn graph_json() -> String {
     let graph = action::BASELINE;
@@ -282,6 +333,7 @@ pub fn graph_json() -> String {
                 "during": name(rule.during),
                 "input": name(rule.input),
                 "conditions": rule.conditions.iter().copied().map(condition_name).collect::<Vec<_>>(),
+                "effect": name(rule.effect),
             })
         })
         .collect();
@@ -297,6 +349,15 @@ pub fn graph_json() -> String {
             })
         })
         .collect();
+    let overrides: Vec<Value> = graph
+        .overrides
+        .iter()
+        .map(|entry| {
+            let mut value = setting(entry.setting);
+            value["scope"] = json!(scope_name(entry.scope));
+            value
+        })
+        .collect();
     json!({
         "tickHz": mmorpg_core::TICK_HZ,
         "regions": ["Movement", "Offense", "Defense", "Reaction"],
@@ -306,6 +367,7 @@ pub fn graph_json() -> String {
         "windowModifiers": window_modifiers,
         "rules": rules,
         "interruptions": interruptions,
+        "overrides": overrides,
     })
     .to_string()
 }
@@ -324,6 +386,8 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
                 "action": report.action.map(name),
                 "phase": report.phase.map(name),
                 "recoveryLeft": report.recovery_left,
+                "ability": report.ability.map(ability_name),
+                "activeLeft": report.active_left,
             })
         })
         .collect();
@@ -340,6 +404,7 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
                 "openFrom": report.open_from,
                 "openUntil": report.open_until,
                 "precision": report.precision.map(|(from, until)| json!({ "from": from, "until": until })),
+                "origin": origin_name(report.origin),
             })
         })
         .collect();
@@ -350,7 +415,9 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
             json!({
                 "rule": name(report.rule),
                 "input": name(report.input),
+                "effect": name(report.effect),
                 "releasedAt": report.released_at,
+                "origin": origin_name(report.origin),
             })
         })
         .collect();
@@ -390,6 +457,7 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
             "rules": rules,
             "interruptions": interruptions,
             "arbitrations": arbitrations,
+            "effective": inspection.effective.iter().map(effective).collect::<Vec<_>>(),
         })
         .to_string(),
     )
@@ -414,11 +482,18 @@ mod tests {
             serde_json::from_str(&inspection_json(host.zone(), player).unwrap()).unwrap();
         assert_eq!(inspection["tick"], 1);
         assert_eq!(inspection["regions"].as_array().unwrap().len(), 4);
-        assert_eq!(inspection["arbitrations"].as_array().unwrap().len(), 3);
+        assert_eq!(
+            inspection["arbitrations"].as_array().unwrap().len(),
+            INPUTS.len()
+        );
         assert_eq!(
             inspection["edges"][0]["status"]["reason"]["kind"],
             "SourceInactive"
         );
+        // The production graph has no overrides: every value is the baseline's.
+        let effective = inspection["effective"].as_array().unwrap();
+        assert!(!effective.is_empty());
+        assert!(effective.iter().all(|value| value["origin"] == "baseline"));
     }
 
     #[test]

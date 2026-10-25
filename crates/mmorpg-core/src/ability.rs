@@ -8,8 +8,10 @@ use crate::class::PlayerClass;
 use crate::ticks_from_ms;
 use crate::unit::PLAYER_REACH_UNITS;
 
-/// Every player ability starts this global cooldown; haste never shortens it.
-pub const GLOBAL_COOLDOWN_TICKS: u16 = ticks_from_ms(1_500);
+/// Every player ability starts this global cooldown, the action graph's
+/// `GlobalCooldown` recovery (1.5 s); haste never shortens it.
+pub const GLOBAL_COOLDOWN_TICKS: u16 =
+    crate::action::recovery_ticks(crate::action::ActionId::GlobalCooldown);
 /// At most this many auras rest on one unit.
 pub const MAX_AURAS: usize = 8;
 /// At most this many cooldowns run on one player: one per action-bar slot (its class abilities).

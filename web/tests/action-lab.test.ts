@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { TICK_HZ } from "../src/replication";
 import {
-  explainEdge, explainOutcome, labQuery, labSetupFromQuery, timelineSegments, type ActionGraph, type Inspection,
+  explainEdge, explainOutcome, explainRule, labQuery, labSetupFromQuery, timelineSegments, type ActionGraph, type Inspection,
 } from "../src/world/action-lab";
 import { scenarioChoice, ScenarioSource } from "../src/world/scenario-source";
 import { localZoneModule } from "./support/local-zone-module";
@@ -49,6 +49,25 @@ describe("Action Lab (#381)", () => {
     const graph = JSON.parse(wasm.actionGraph()) as ActionGraph;
     expect(graph.edges[0]?.id).toBe("SlashToShieldBash");
     source.leave();
+  });
+
+  test("every class runs the shared graph, whose values all come from the baseline", () => {
+    const graph = JSON.parse(wasm.actionGraph()) as ActionGraph;
+    expect(graph.overrides).toEqual([]);
+    expect(graph.rules.filter((rule) => rule.effect === "Cancel").map((rule) => rule.input)).toEqual(["Move", "Jump"]);
+    const source = new ScenarioSource(() => wasm.LocalZone.forActionLab("arcanist", 8, "standard", 0, undefined, 0n));
+    void source.join();
+    source.advance(TICK_SECONDS);
+    const inspection = JSON.parse(source.frames.at(-1)!.inspection!) as Inspection;
+    expect(inspection.effective.length).toBeGreaterThan(0);
+    expect(inspection.effective.every((value) => value.origin === "baseline")).toBe(true);
+    expect(inspection.arbitrations.map((entry) => entry.input)).toEqual(["WardenMelee", "ShieldBash", "GuardProtection", "Ability", "Move", "Jump"]);
+    source.leave();
+    expect(explainOutcome({ kind: "Cancel", rule: "MovementCancelsCast" })).toBe("resolves now and ends the running action (rule MovementCancelsCast)");
+    expect(explainRule({ rule: "MovementCancelsCast", input: "Move", effect: "Cancel", releasedAt: 140, origin: "baseline" }))
+      .toBe("MovementCancelsCast: Move ends the running action before tick 140");
+    expect(explainRule({ rule: "MovementCancelsCast", input: "Jump", effect: "Cancel", releasedAt: 9, origin: "ability Firebolt" }))
+      .toBe("MovementCancelsCast: Jump ends the running action before tick 9 (ability Firebolt)");
   });
 
   test("timeline segments merge consecutive ticks of one action and phase", () => {

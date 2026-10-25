@@ -9,7 +9,8 @@
 //! - [`RULES`]: **compatibility rules.** An action in its recovery phase
 //!   *holds* (buffers) an input aimed at another region. For example,
 //!   landing recovery holds Warden melee, and slash recovery holds guard
-//!   protection.
+//!   protection. A cancelling rule instead lets the input end a running
+//!   action: moving or jumping ends a cast.
 //! - [`EDGES`]: **directed edges.** An edge leads from an action to a
 //!   follow-up input. Each edge has an authoritative [`Anchor`], an opening
 //!   offset, an actionable duration, a bounded early buffer, typed
@@ -39,15 +40,33 @@
 //! which tests and the lab use; it is zone setup, not canonical state, and a
 //! zone restored from a snapshot runs the baseline.
 //!
+//! - **Overrides** (Atlas 5.7.6). The graph's definitions are shared by
+//!   every class. An [`Override`] replaces one value (a recovery, an edge
+//!   window, or whether a rule applies) for one class, main-hand weapon or
+//!   ability. The most specific override wins (ability over weapon over
+//!   class over the baseline), two overrides of one value in one scope fail
+//!   validation, and every effective value reports its [`Origin`]. The
+//!   production graph has none, so every value is the baseline's.
+//!
+//! Every playable class runs on the same model. Wardens add the directed
+//! slash, the guard and landing recovery. Casts and channels run as
+//! [`ActionId::Cast`]: moving or jumping cancels one through
+//! [`RuleEffect::Cancel`] rules, and a stun or death cancels it through
+//! interruptions. Every class ability starts [`ActionId::GlobalCooldown`].
+//!
 //! Runtime state stays in the existing canonical fields: `landing` for the
-//! movement region, `strike_recovery` and `combo` for the offense region,
-//! `guard` for the defense region, and auras, the guard break and health for
-//! the reaction region. [`ZoneSimulation::action_inspection`] is the
-//! read-only query surface that the Action Lab (#381) reads.
+//! movement region, `cast`, `strike_recovery`, `combo` and `global_cooldown`
+//! for the offense region, `guard` for the defense region, and auras, the
+//! guard break and health for the reaction region.
+//! [`ZoneSimulation::action_inspection`] is the read-only query surface that
+//! the Action Lab (#381) reads.
 
 use crate::snapshot::PlayerIntent;
 use crate::zone::PlayerState;
-use crate::{AuraKind, EntityRef, PlayerClass, PlayerId, ZoneSimulation, ability::ids, aura};
+use crate::{
+    AbilityId, AbilityUser, AuraKind, EntityRef, EquipmentSlot, ItemId, PlayerClass, PlayerId,
+    ZoneSimulation, ability::ids, aura,
+};
 
 /// A concurrent part of a character's action state (Atlas 5.7.5).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -75,6 +94,10 @@ pub enum ActionId {
     GuardBreak,
     /// Dead.
     Death,
+    /// A cast or channel in progress, of any class.
+    Cast,
+    /// The global cooldown a class ability started, of any class.
+    GlobalCooldown,
 }
 
 /// The phase of a running action.
@@ -115,6 +138,12 @@ pub enum ActionInput {
     ShieldBash,
     /// The held guard protecting.
     GuardProtection,
+    /// Any other class ability use: a shot, a spell or a heal.
+    Ability,
+    /// A movement intent: walking, strafing, or swimming up or down.
+    Move,
+    /// A jump.
+    Jump,
 }
 
 /// The authoritative event a window is measured from (Atlas 5.8.2).
@@ -311,17 +340,31 @@ pub enum RuleId {
     /// A guard raised during slash recovery protects only afterwards
     /// (5.2.39, 5.2.41).
     SlashRecoveryHoldsGuard,
+    /// Moving or jumping ends a cast or channel.
+    MovementCancelsCast,
 }
 
-/// A region-compatibility rule (Atlas 5.7.5): while `during` recovers, the
-/// input waits (is held) until the recovery ends.
+/// What a compatibility rule does with its input.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuleEffect {
+    /// While `during` recovers, the input waits (is held) until the
+    /// recovery ends.
+    Hold,
+    /// While `during` runs, the input ends it. Only a cast supports this,
+    /// for movement and jump inputs.
+    Cancel,
+}
+
+/// A region-compatibility rule (Atlas 5.7.5).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CompatibilityRule {
     pub id: RuleId,
-    /// The action whose recovery phase the rule covers.
+    /// The action the rule covers: its recovery phase for a hold, its
+    /// whole run for a cancellation.
     pub during: ActionId,
     pub input: ActionInput,
     pub conditions: &'static [Condition],
+    pub effect: RuleEffect,
 }
 
 /// What an interruption acts on.
@@ -361,19 +404,98 @@ pub struct InterruptionRule {
     pub consequence: Consequence,
 }
 
+/// Who an [`Override`] is for.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Scope {
+    /// Every player of the class.
+    Class(PlayerClass),
+    /// Every player wielding this main-hand catalog item.
+    Weapon(ItemId),
+    /// The action of this class ability: its cast, its directed slash or the
+    /// global cooldown it starts.
+    Ability(AbilityId),
+}
+
+impl Scope {
+    /// More specific scopes win: ability over weapon over class.
+    const fn rank(self) -> u8 {
+        match self {
+            Self::Class(_) => 1,
+            Self::Weapon(_) => 2,
+            Self::Ability(_) => 3,
+        }
+    }
+}
+
+/// A value an [`Override`] can replace.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Key {
+    /// An action's committed recovery: the directed slash's or the global
+    /// cooldown's.
+    Recovery(ActionId),
+    /// An edge's window.
+    Window(EdgeId),
+    /// Whether a compatibility rule applies.
+    Rule(RuleId),
+}
+
+/// A value of a [`Key`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Setting {
+    Recovery { action: ActionId, ms: u32 },
+    Window { edge: EdgeId, window: Window },
+    Rule { rule: RuleId, applies: bool },
+}
+
+impl Setting {
+    #[must_use]
+    pub const fn key(self) -> Key {
+        match self {
+            Self::Recovery { action, .. } => Key::Recovery(action),
+            Self::Window { edge, .. } => Key::Window(edge),
+            Self::Rule { rule, .. } => Key::Rule(rule),
+        }
+    }
+}
+
+/// A class-, weapon- or ability-specific value replacing the shared
+/// baseline definition (Atlas 5.7.6).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Override {
+    pub scope: Scope,
+    pub setting: Setting,
+}
+
+/// Where an effective value comes from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Origin {
+    /// The shared definition.
+    Baseline,
+    /// The override for this scope.
+    Override(Scope),
+}
+
+/// An effective value and its origin.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Effective {
+    pub setting: Setting,
+    pub origin: Origin,
+}
+
 /// A complete action graph: the edges, window modifiers, compatibility
-/// rules and interruptions a zone runs. The [`ACTIONS`] and their recovery
-/// modifiers are shared by every graph.
+/// rules, interruptions and overrides a zone runs. The [`ACTIONS`] and
+/// their recovery modifiers are shared by every graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ActionGraph {
     pub edges: &'static [EdgeDef],
     pub window_modifiers: &'static [WindowModifier],
     pub rules: &'static [CompatibilityRule],
     pub interruptions: &'static [InterruptionRule],
+    pub overrides: &'static [Override],
 }
 
 /// The authored actions.
-pub const ACTIONS: [ActionDef; 7] = [
+pub const ACTIONS: [ActionDef; 9] = [
     ActionDef {
         id: ActionId::Airborne,
         region: Region::Movement,
@@ -409,6 +531,17 @@ pub const ACTIONS: [ActionDef; 7] = [
         region: Region::Reaction,
         recovery_ms: None,
     },
+    // A cast lasts its ability's cast time; it has no recovery of its own.
+    ActionDef {
+        id: ActionId::Cast,
+        region: Region::Offense,
+        recovery_ms: None,
+    },
+    ActionDef {
+        id: ActionId::GlobalCooldown,
+        region: Region::Offense,
+        recovery_ms: Some(1_500),
+    },
 ];
 
 /// The authored recovery modifiers: a landing after an airborne melee
@@ -442,30 +575,48 @@ pub const EDGES: [EdgeDef; 1] = [EdgeDef {
 }];
 
 /// The baseline compatibility rules.
-pub const RULES: [CompatibilityRule; 3] = [
+pub const RULES: [CompatibilityRule; 5] = [
     CompatibilityRule {
         id: RuleId::LandingHoldsMelee,
         during: ActionId::Landing,
         input: ActionInput::WardenMelee,
         conditions: &[Condition::Warden],
+        effect: RuleEffect::Hold,
     },
     CompatibilityRule {
         id: RuleId::LandingHoldsMelee,
         during: ActionId::Landing,
         input: ActionInput::ShieldBash,
         conditions: &[Condition::Warden],
+        effect: RuleEffect::Hold,
     },
     CompatibilityRule {
         id: RuleId::SlashRecoveryHoldsGuard,
         during: ActionId::DirectedSlash,
         input: ActionInput::GuardProtection,
         conditions: &[],
+        effect: RuleEffect::Hold,
+    },
+    // Casters stand still to cast or channel.
+    CompatibilityRule {
+        id: RuleId::MovementCancelsCast,
+        during: ActionId::Cast,
+        input: ActionInput::Move,
+        conditions: &[],
+        effect: RuleEffect::Cancel,
+    },
+    CompatibilityRule {
+        id: RuleId::MovementCancelsCast,
+        during: ActionId::Cast,
+        input: ActionInput::Jump,
+        conditions: &[],
+        effect: RuleEffect::Cancel,
     },
 ];
 
 /// The baseline interruptions: today's stun, guard-break and death
 /// behavior as data.
-pub const INTERRUPTIONS: [InterruptionRule; 7] = [
+pub const INTERRUPTIONS: [InterruptionRule; 9] = [
     // A stun pauses guard protection; the hold survives (5.2.29).
     InterruptionRule {
         reaction: ActionId::Stun,
@@ -515,14 +666,28 @@ pub const INTERRUPTIONS: [InterruptionRule; 7] = [
         phase: None,
         consequence: Consequence::Cancel,
     },
+    // A stun interrupts a cast or channel when it lands, and death ends it.
+    InterruptionRule {
+        reaction: ActionId::Stun,
+        interrupted: Interrupted::Action(ActionId::Cast),
+        phase: None,
+        consequence: Consequence::Cancel,
+    },
+    InterruptionRule {
+        reaction: ActionId::Death,
+        interrupted: Interrupted::Action(ActionId::Cast),
+        phase: None,
+        consequence: Consequence::Cancel,
+    },
 ];
 
-/// The production graph: current gameplay, unchanged.
+/// The production graph: current gameplay, unchanged. It has no overrides.
 pub const BASELINE: ActionGraph = ActionGraph {
     edges: &EDGES,
     window_modifiers: &[],
     rules: &RULES,
     interruptions: &INTERRUPTIONS,
+    overrides: &[],
 };
 
 /// The definition of `id`.
@@ -606,12 +771,29 @@ pub enum GraphError {
     UnsupportedInterruption(Interrupted),
     /// Two interruptions of the same reaction, target and phase disagree.
     ConflictingInterruption(Interrupted),
+    /// The zone has no runtime for this cancelling rule: only movement and
+    /// jumps cancel, and only a cast.
+    UnsupportedRule(RuleId),
+    /// The zone does not read this value per class, weapon or ability: only
+    /// the directed slash's and the global cooldown's recoveries, edge
+    /// windows and rules can be overridden.
+    UnsupportedOverride(Key),
+    /// An override's value is malformed, or outlasts the baseline value that
+    /// canonical snapshots bound the timer by.
+    BadOverride(Key),
+    /// An override's scope names no class ability or main-hand catalog item.
+    BadScope(Scope),
+    /// Two overrides of the same value in the same scope.
+    ConflictingOverride(Scope, Key),
 }
 
 const fn input_region(input: ActionInput) -> Region {
     match input {
-        ActionInput::WardenMelee | ActionInput::ShieldBash => Region::Offense,
+        ActionInput::WardenMelee | ActionInput::ShieldBash | ActionInput::Ability => {
+            Region::Offense
+        }
         ActionInput::GuardProtection => Region::Defense,
+        ActionInput::Move | ActionInput::Jump => Region::Movement,
     }
 }
 
@@ -652,27 +834,23 @@ impl ActionGraph {
             }
         }
         for def in self.edges {
-            // Every reduction applying at once must leave a window.
-            let reduction: u32 = self
-                .window_modifiers
-                .iter()
-                .filter(|modifier| modifier.edge == def.id && modifier.actionable_delta_ms < 0)
-                .map(|modifier| {
-                    u32::from(crate::ticks_from_ms(
-                        modifier.actionable_delta_ms.unsigned_abs(),
-                    ))
-                })
-                .sum();
-            if reduction > u32::from(def.window.actionable_ticks()) {
-                return Err(GraphError::NegativeWindow(def.id));
-            }
+            self.validate_window(def, def.window)?;
         }
         for rule in self.rules {
             if action(rule.during).region == input_region(rule.input) {
                 return Err(GraphError::SameRegion(rule.during));
             }
-            if action(rule.during).recovery_ms.is_none() {
-                return Err(GraphError::NoRecovery(rule.id));
+            match rule.effect {
+                RuleEffect::Hold if action(rule.during).recovery_ms.is_none() => {
+                    return Err(GraphError::NoRecovery(rule.id));
+                }
+                RuleEffect::Cancel
+                    if rule.during != ActionId::Cast
+                        || !matches!(rule.input, ActionInput::Move | ActionInput::Jump) =>
+                {
+                    return Err(GraphError::UnsupportedRule(rule.id));
+                }
+                _ => {}
             }
         }
         for (index, rule) in self.interruptions.iter().enumerate() {
@@ -686,6 +864,16 @@ impl ActionGraph {
                 return Err(GraphError::ConflictingInterruption(rule.interrupted));
             }
         }
+        for (index, entry) in self.overrides.iter().enumerate() {
+            self.validate_override(entry)?;
+            let key = entry.setting.key();
+            if self.overrides[..index]
+                .iter()
+                .any(|other| other.scope == entry.scope && other.setting.key() == key)
+            {
+                return Err(GraphError::ConflictingOverride(entry.scope, key));
+            }
+        }
         Ok(())
     }
 
@@ -693,8 +881,7 @@ impl ActionGraph {
         if self.edges[..index].iter().any(|other| other.id == def.id) {
             return Err(GraphError::DuplicateEdge(def.id));
         }
-        let window = def.window;
-        let mut durations = vec![window.open_after_ms, window.actionable_ms, window.buffer_ms];
+        let mut durations = Vec::new();
         if let Some(precision) = def.precision {
             durations.extend([precision.after_open_ms, precision.length_ms]);
         }
@@ -721,9 +908,6 @@ impl ActionGraph {
         {
             return Err(GraphError::BadEffect(def.id));
         }
-        if window.buffer_ms > window.open_after_ms {
-            return Err(GraphError::BufferBeforeAnchor(def.id));
-        }
         if def.from != ActionId::DirectedSlash || def.input != ActionInput::ShieldBash {
             return Err(GraphError::UnsupportedEdge(def.id));
         }
@@ -732,10 +916,83 @@ impl ActionGraph {
         {
             return Err(GraphError::TargetUnconfirmed(def.id));
         }
+        Ok(())
+    }
+
+    /// The checks an edge's window passes, authored or overridden.
+    fn validate_window(&self, def: &EdgeDef, window: Window) -> Result<(), GraphError> {
+        if ![window.open_after_ms, window.actionable_ms, window.buffer_ms]
+            .into_iter()
+            .all(duration_ok)
+        {
+            return Err(GraphError::BadDuration(def.id));
+        }
+        if window.buffer_ms > window.open_after_ms {
+            return Err(GraphError::BufferBeforeAnchor(def.id));
+        }
         if let Some(precision) = def.precision {
             let (_, last) = precision.ticks(window.open_after_ticks());
             if precision.length_ms == 0 || last > window.ticks().closes() {
                 return Err(GraphError::PrecisionOutsideWindow(def.id));
+            }
+        }
+        // Every reduction applying at once must leave a window.
+        let reduction: u32 = self
+            .window_modifiers
+            .iter()
+            .filter(|modifier| modifier.edge == def.id && modifier.actionable_delta_ms < 0)
+            .map(|modifier| {
+                u32::from(crate::ticks_from_ms(
+                    modifier.actionable_delta_ms.unsigned_abs(),
+                ))
+            })
+            .sum();
+        if reduction > u32::from(window.actionable_ticks()) {
+            return Err(GraphError::NegativeWindow(def.id));
+        }
+        Ok(())
+    }
+
+    fn validate_override(&self, entry: &Override) -> Result<(), GraphError> {
+        let scoped = match entry.scope {
+            Scope::Class(_) => true,
+            Scope::Weapon(item) => crate::item_template(item)
+                .is_some_and(|template| template.slot == Some(EquipmentSlot::MainHand)),
+            Scope::Ability(id) => crate::ability::ability_by_id(id)
+                .is_some_and(|ability| matches!(ability.user, AbilityUser::Class(_))),
+        };
+        if !scoped {
+            return Err(GraphError::BadScope(entry.scope));
+        }
+        let key = entry.setting.key();
+        match entry.setting {
+            Setting::Recovery { action: id, ms } => {
+                if !matches!(id, ActionId::DirectedSlash | ActionId::GlobalCooldown) {
+                    return Err(GraphError::UnsupportedOverride(key));
+                }
+                // Canonical snapshots bound the timer by the baseline.
+                if !duration_ok(ms) || Some(ms) > action(id).recovery_ms {
+                    return Err(GraphError::BadOverride(key));
+                }
+            }
+            Setting::Window { edge, window } => {
+                let Some(def) = self.edge(edge) else {
+                    return Err(GraphError::UnknownEdge(edge));
+                };
+                self.validate_window(def, window)?;
+                // Canonical snapshots bound an opening's age by the baseline.
+                let bound = EDGES
+                    .iter()
+                    .find(|baseline| baseline.id == edge)
+                    .map_or(def.window, |baseline| baseline.window);
+                if window.ticks().closes() > bound.ticks().closes() {
+                    return Err(GraphError::BadOverride(key));
+                }
+            }
+            Setting::Rule { rule, .. } => {
+                if !self.rules.iter().any(|other| other.id == rule) {
+                    return Err(GraphError::UnknownRule(rule));
+                }
             }
         }
         Ok(())
@@ -747,6 +1004,12 @@ impl ActionGraph {
         }
         let supported = match rule.interrupted {
             Interrupted::Action(ActionId::Guard) => true,
+            // Death always ends a cast; a cast cannot pause.
+            Interrupted::Action(ActionId::Cast) => match rule.consequence {
+                Consequence::Cancel => true,
+                Consequence::Preserve => rule.reaction != ActionId::Death,
+                Consequence::Suspend => false,
+            },
             Interrupted::Action(_) => rule.consequence == Consequence::Preserve,
             Interrupted::Edge(id) => {
                 if self.edge(id).is_none() {
@@ -759,6 +1022,10 @@ impl ActionGraph {
                     return Err(GraphError::UnknownRule(id));
                 }
                 rule.consequence != Consequence::Suspend
+                    && self
+                        .rules
+                        .iter()
+                        .any(|other| other.id == id && other.effect == RuleEffect::Hold)
             }
         };
         if supported {
@@ -782,15 +1049,150 @@ pub(crate) fn input_of(intent: &PlayerIntent) -> Option<ActionInput> {
         {
             Some(ActionInput::WardenMelee)
         }
+        PlayerIntent::UseAbility { .. } => Some(ActionInput::Ability),
         PlayerIntent::DirectedStrike { .. } => Some(ActionInput::WardenMelee),
         _ => None,
     }
 }
 
+/// Whose values apply: a player's class, main-hand weapon and the ability
+/// an action runs.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Context {
+    pub class: Option<PlayerClass>,
+    pub weapon: Option<ItemId>,
+    pub ability: Option<AbilityId>,
+}
+
+impl Context {
+    fn of(state: &PlayerState, ability: Option<AbilityId>) -> Self {
+        Self {
+            class: state.class.map(|choice| choice.class),
+            weapon: state.equipment.slots()[usize::from(EquipmentSlot::MainHand.index())],
+            ability,
+        }
+    }
+
+    fn matches(self, scope: Scope) -> bool {
+        match scope {
+            Scope::Class(class) => self.class == Some(class),
+            Scope::Weapon(item) => self.weapon == Some(item),
+            Scope::Ability(id) => self.ability == Some(id),
+        }
+    }
+}
+
+impl ActionGraph {
+    /// The effective value of `key` in `context`: the most specific
+    /// matching override, otherwise the baseline. `None` when the graph has
+    /// no such value.
+    #[must_use]
+    pub fn resolve(&self, key: Key, context: Context) -> Option<Effective> {
+        let baseline = match key {
+            Key::Recovery(id) => action(id)
+                .recovery_ms
+                .map(|ms| Setting::Recovery { action: id, ms }),
+            Key::Window(id) => self.edge(id).map(|def| Setting::Window {
+                edge: id,
+                window: def.window,
+            }),
+            Key::Rule(id) => self
+                .rules
+                .iter()
+                .any(|rule| rule.id == id)
+                .then_some(Setting::Rule {
+                    rule: id,
+                    applies: true,
+                }),
+        }?;
+        Some(
+            self.overrides
+                .iter()
+                .filter(|entry| entry.setting.key() == key && context.matches(entry.scope))
+                .max_by_key(|entry| entry.scope.rank())
+                .map_or(
+                    Effective {
+                        setting: baseline,
+                        origin: Origin::Baseline,
+                    },
+                    |entry| Effective {
+                        setting: entry.setting,
+                        origin: Origin::Override(entry.scope),
+                    },
+                ),
+        )
+    }
+}
+
+/// The ability a running action runs: Heroic Strike for the directed
+/// slash, the cast's ability for a cast.
+fn action_ability(state: &PlayerState, id: ActionId) -> Option<AbilityId> {
+    match id {
+        ActionId::DirectedSlash => Some(ids::HEROIC_STRIKE),
+        ActionId::Cast => state.cast.map(|cast| cast.ability),
+        _ => None,
+    }
+}
+
+/// The committed recovery `id` starts for `ability`, in ticks, after
+/// overrides.
+pub(crate) fn recovery_for(
+    graph: &ActionGraph,
+    state: &PlayerState,
+    id: ActionId,
+    ability: Option<AbilityId>,
+) -> u16 {
+    match graph
+        .resolve(Key::Recovery(id), Context::of(state, ability))
+        .map(|effective| effective.setting)
+    {
+        Some(Setting::Recovery { ms, .. }) => crate::ticks_from_ms(ms),
+        _ => recovery_ticks(id),
+    }
+}
+
+/// An edge's window for this player before window modifiers, and its origin.
+fn window_for(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef) -> (Window, Origin) {
+    let context = Context::of(state, action_ability(state, def.from));
+    match graph.resolve(Key::Window(def.id), context) {
+        Some(Effective {
+            setting: Setting::Window { window, .. },
+            origin,
+        }) => (window, origin),
+        _ => (def.window, Origin::Baseline),
+    }
+}
+
+/// Whether a rule applies to this player, and why.
+fn rule_applies(graph: &ActionGraph, state: &PlayerState, rule: &CompatibilityRule) -> Effective {
+    let context = Context::of(state, action_ability(state, rule.during));
+    graph
+        .resolve(Key::Rule(rule.id), context)
+        .unwrap_or(Effective {
+            setting: Setting::Rule {
+                rule: rule.id,
+                applies: true,
+            },
+            origin: Origin::Baseline,
+        })
+}
+
+fn applies(graph: &ActionGraph, state: &PlayerState, rule: &CompatibilityRule) -> bool {
+    matches!(
+        rule_applies(graph, state, rule).setting,
+        Setting::Rule { applies: true, .. }
+    ) && all_hold(state, rule.conditions)
+}
+
 /// The directed slash's runtime: ticks since it resolved, and the opponent
 /// its confirmed result damaged.
-fn slash(state: &PlayerState) -> Option<(u16, Option<EntityRef>)> {
-    let recovery = recovery_ticks(ActionId::DirectedSlash);
+fn slash(graph: &ActionGraph, state: &PlayerState) -> Option<(u16, Option<EntityRef>)> {
+    let recovery = recovery_for(
+        graph,
+        state,
+        ActionId::DirectedSlash,
+        Some(ids::HEROIC_STRIKE),
+    );
     match state.combo {
         Some(combo) => Some((combo.elapsed, Some(combo.target))),
         None if state.strike_recovery > 0 => {
@@ -825,9 +1227,22 @@ fn recovery_left(state: &PlayerState, id: ActionId) -> Option<u16> {
         ActionId::Landing => state.landing.recovery,
         ActionId::DirectedSlash => state.strike_recovery,
         ActionId::GuardBreak => state.guard.broken,
-        ActionId::Airborne | ActionId::Guard | ActionId::Stun | ActionId::Death => 0,
+        ActionId::GlobalCooldown => state.global_cooldown,
+        ActionId::Airborne
+        | ActionId::Guard
+        | ActionId::Stun
+        | ActionId::Death
+        | ActionId::Cast => 0,
     };
     (left > 0).then_some(left)
+}
+
+/// The ticks a running cast has left, with its ability.
+fn cast_left(state: &PlayerState) -> Option<(AbilityId, u16)> {
+    let cast = state.cast?;
+    let ticks =
+        crate::ability::ability_by_id(cast.ability).map_or(0, |ability| ability.cast.ticks());
+    Some((cast.ability, ticks.saturating_sub(cast.elapsed)))
 }
 
 /// The rule of `graph` that currently holds `input`.
@@ -837,44 +1252,110 @@ pub(crate) fn holding_rule(
     input: ActionInput,
 ) -> Option<&'static CompatibilityRule> {
     graph.rules.iter().find(|rule| {
-        rule.input == input
+        rule.effect == RuleEffect::Hold
+            && rule.input == input
             && recovery_left(state, rule.during).is_some()
-            && all_hold(state, rule.conditions)
+            && applies(graph, state, rule)
+    })
+}
+
+/// The rule of `graph` by which `input` now ends a running action.
+pub(crate) fn cancelling_rule(
+    graph: &ActionGraph,
+    state: &PlayerState,
+    input: ActionInput,
+) -> Option<&'static CompatibilityRule> {
+    graph.rules.iter().find(|rule| {
+        rule.effect == RuleEffect::Cancel
+            && rule.input == input
+            && rule.during == ActionId::Cast
+            && state.cast.is_some()
+            && applies(graph, state, rule)
     })
 }
 
 /// The running action and phase of each region.
-fn region_actions(state: &PlayerState) -> [(Option<ActionId>, Option<Phase>, Option<u16>); 4] {
-    let movement = if state.landing.airborne {
-        (Some(ActionId::Airborne), Some(Phase::Active), None)
-    } else if let Some(left) = recovery_left(state, ActionId::Landing) {
-        (Some(ActionId::Landing), Some(Phase::Recovery), Some(left))
-    } else {
-        (None, None, None)
+fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4] {
+    let report = |region, action: Option<ActionId>, phase, recovery_left| RegionReport {
+        region,
+        action,
+        phase,
+        recovery_left,
+        ability: action.and_then(|id| action_ability(state, id)),
+        active_left: None,
     };
-    let offense = match slash(state) {
-        Some(_) => match recovery_left(state, ActionId::DirectedSlash) {
-            Some(left) => (
+    let movement = if state.landing.airborne {
+        report(
+            Region::Movement,
+            Some(ActionId::Airborne),
+            Some(Phase::Active),
+            None,
+        )
+    } else if let Some(left) = recovery_left(state, ActionId::Landing) {
+        report(
+            Region::Movement,
+            Some(ActionId::Landing),
+            Some(Phase::Recovery),
+            Some(left),
+        )
+    } else {
+        report(Region::Movement, None, None, None)
+    };
+    // A cast outranks the slash, and both outrank the global cooldown they
+    // run alongside.
+    let offense = if let Some((_, left)) = cast_left(state) {
+        RegionReport {
+            active_left: Some(left),
+            ..report(
+                Region::Offense,
+                Some(ActionId::Cast),
+                Some(Phase::Active),
+                None,
+            )
+        }
+    } else if slash(graph, state).is_some() {
+        match recovery_left(state, ActionId::DirectedSlash) {
+            Some(left) => report(
+                Region::Offense,
                 Some(ActionId::DirectedSlash),
                 Some(Phase::Recovery),
                 Some(left),
             ),
-            None => (Some(ActionId::DirectedSlash), Some(Phase::FollowUp), None),
-        },
-        None => (None, None, None),
+            None => report(
+                Region::Offense,
+                Some(ActionId::DirectedSlash),
+                Some(Phase::FollowUp),
+                None,
+            ),
+        }
+    } else if let Some(left) = recovery_left(state, ActionId::GlobalCooldown) {
+        report(
+            Region::Offense,
+            Some(ActionId::GlobalCooldown),
+            Some(Phase::Recovery),
+            Some(left),
+        )
+    } else {
+        report(Region::Offense, None, None, None)
     };
     let defense = match state.guard.raised {
-        Some(_) => (Some(ActionId::Guard), Some(Phase::Active), None),
-        None => (None, None, None),
+        Some(_) => report(
+            Region::Defense,
+            Some(ActionId::Guard),
+            Some(Phase::Active),
+            None,
+        ),
+        None => report(Region::Defense, None, None, None),
     };
     let reaction = match active_reactions(state).first() {
-        Some(&ActionId::GuardBreak) => (
+        Some(&ActionId::GuardBreak) => report(
+            Region::Reaction,
             Some(ActionId::GuardBreak),
             Some(Phase::Recovery),
             recovery_left(state, ActionId::GuardBreak),
         ),
-        Some(&reaction) => (Some(reaction), Some(Phase::Active), None),
-        None => (None, None, None),
+        Some(&reaction) => report(Region::Reaction, Some(reaction), Some(Phase::Active), None),
+        None => report(Region::Reaction, None, None, None),
     };
     [movement, offense, defense, reaction]
 }
@@ -896,20 +1377,20 @@ fn active_reactions(state: &PlayerState) -> Vec<ActionId> {
 
 /// The phase of an interruption target, while it runs.
 fn target_phase(graph: &ActionGraph, state: &PlayerState, target: Interrupted) -> Option<Phase> {
-    let regions = region_actions(state);
-    match target {
-        Interrupted::Action(id) => regions
+    let regions = region_actions(graph, state);
+    let phase_of = |id: ActionId| {
+        regions
             .iter()
-            .find(|(action, _, _)| *action == Some(id))
-            .and_then(|(_, phase, _)| *phase),
+            .find(|report| report.action == Some(id))
+            .and_then(|report| report.phase)
+    };
+    match target {
+        Interrupted::Action(id) => phase_of(id),
         Interrupted::Edge(id) => {
             let def = graph.edge(id)?;
             // Only an opening (a confirmed source) can be interrupted.
             state.combo?;
-            regions
-                .iter()
-                .find(|(action, _, _)| *action == Some(def.from))
-                .and_then(|(_, phase, _)| *phase)
+            phase_of(def.from)
         }
         Interrupted::Held(id) => {
             let held = graph.rules.iter().any(|rule| {
@@ -926,6 +1407,25 @@ fn target_phase(graph: &ActionGraph, state: &PlayerState, target: Interrupted) -
             held.then_some(Phase::Recovery)
         }
     }
+}
+
+/// The consequence `graph` authors for `reaction` on `target` in `phase`;
+/// preserve without a rule.
+pub(crate) fn authored_consequence(
+    graph: &ActionGraph,
+    reaction: ActionId,
+    target: Interrupted,
+    phase: Phase,
+) -> Consequence {
+    graph
+        .interruptions
+        .iter()
+        .find(|rule| {
+            rule.reaction == reaction
+                && rule.interrupted == target
+                && rule.phase.is_none_or(|only| only == phase)
+        })
+        .map_or(Consequence::Preserve, |rule| rule.consequence)
 }
 
 /// How the reactions in effect treat a running target: the strongest
@@ -994,13 +1494,14 @@ pub enum BlockReason {
     Cancelled(ActionId),
 }
 
-/// An edge's window after the modifiers whose conditions hold.
+/// An edge's window after its overrides and the modifiers whose conditions
+/// hold.
 pub(crate) fn effective_window(
     state: &PlayerState,
     graph: &ActionGraph,
     def: &EdgeDef,
 ) -> TickWindow {
-    let mut window = def.window.ticks();
+    let mut window = window_for(graph, state, def).0.ticks();
     for modifier in graph.window_modifiers {
         if modifier.edge == def.id && all_hold(state, modifier.conditions) {
             let delta = crate::ticks_from_ms(modifier.actionable_delta_ms.unsigned_abs());
@@ -1028,7 +1529,7 @@ struct EdgeEval {
 fn evaluate(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef) -> EdgeEval {
     let window = effective_window(state, graph, def);
     let source = match def.from {
-        ActionId::DirectedSlash => slash(state),
+        ActionId::DirectedSlash => slash(graph, state),
         _ => None,
     };
     let Some((elapsed, _)) = source else {
@@ -1102,6 +1603,9 @@ pub enum Outcome {
     WaitForRule(RuleId),
     /// The input waits in the queue for this edge to open.
     WaitForEdge(EdgeId),
+    /// The input resolves now as its ordinary use and, by this rule, ends
+    /// the running action (a cast).
+    Cancel(RuleId),
 }
 
 /// The explained arbitration of one input (Atlas 5.7.4).
@@ -1141,7 +1645,10 @@ pub(crate) fn arbitrate(
                 }
                 _ => None,
             })
-            .unwrap_or(Outcome::Proceed(Candidate::Direct))
+            .unwrap_or_else(|| match cancelling_rule(graph, state, input) {
+                Some(rule) => Outcome::Cancel(rule.id),
+                None => Outcome::Proceed(Candidate::Direct),
+            })
     };
     let precise = edges
         .iter()
@@ -1152,9 +1659,11 @@ pub(crate) fn arbitrate(
         }
         match (outcome, status) {
             (Outcome::Proceed(winner), _) if winner == candidate => Verdict::Won,
+            (Outcome::Cancel(_), _) if candidate == Candidate::Direct => Verdict::Won,
             (Outcome::WaitForEdge(id), _) if Candidate::Edge(id) == candidate => Verdict::Holding,
             (_, Some(EdgeStatus::Blocked(reason))) => Verdict::Blocked(reason),
             (Outcome::Proceed(winner), _) => Verdict::Outranked(winner),
+            (Outcome::Cancel(_), _) => Verdict::Outranked(Candidate::Direct),
             (Outcome::WaitForEdge(id), _) => Verdict::Outranked(Candidate::Edge(id)),
             (Outcome::WaitForRule(rule), _) => Verdict::HeldBy(rule),
         }
@@ -1177,8 +1686,12 @@ pub(crate) fn arbitrate(
 
 /// Whether an intent waits in the queue rather than resolving now.
 pub(crate) fn waits(graph: &ActionGraph, state: &PlayerState, intent: &PlayerIntent) -> bool {
-    input_of(intent)
-        .is_some_and(|input| !matches!(arbitrate(graph, state, input).outcome, Outcome::Proceed(_)))
+    input_of(intent).is_some_and(|input| {
+        matches!(
+            arbitrate(graph, state, input).outcome,
+            Outcome::WaitForRule(_) | Outcome::WaitForEdge(_)
+        )
+    })
 }
 
 /// An input resolving through an edge.
@@ -1234,7 +1747,7 @@ pub(crate) fn follow_up(
         effects.extend_from_slice(precision.benefits);
     }
     let target = match def.from {
-        ActionId::DirectedSlash => slash(state).and_then(|(_, target)| target),
+        ActionId::DirectedSlash => slash(graph, state).and_then(|(_, target)| target),
         _ => None,
     }
     .filter(|_| effects.contains(&Effect::TargetConfirmed));
@@ -1253,6 +1766,11 @@ pub struct RegionReport {
     pub phase: Option<Phase>,
     /// Ticks of the committed recovery left.
     pub recovery_left: Option<u16>,
+    /// The ability the action runs: a cast's, or Heroic Strike for the
+    /// directed slash.
+    pub ability: Option<AbilityId>,
+    /// Ticks of a cast or channel left.
+    pub active_left: Option<u16>,
 }
 
 /// One edge's state, in absolute ticks.
@@ -1271,6 +1789,8 @@ pub struct EdgeReport {
     pub open_until: Option<u64>,
     /// The first and last tick of the precision window.
     pub precision: Option<(u64, u64)>,
+    /// Where the edge's window comes from.
+    pub origin: Origin,
 }
 
 /// One compatibility rule's state.
@@ -1278,8 +1798,12 @@ pub struct EdgeReport {
 pub struct RuleReport {
     pub rule: RuleId,
     pub input: ActionInput,
-    /// The first tick the input is no longer held.
+    pub effect: RuleEffect,
+    /// The first tick the rule no longer applies to the input: the held
+    /// input is released, or the cast it would cancel has ended.
     pub released_at: u64,
+    /// Why the rule applies to this player.
+    pub origin: Origin,
 }
 
 /// How the reactions in effect treat one running target.
@@ -1305,6 +1829,12 @@ pub struct ActionInspection {
     /// What the reactions in effect do to each running action, opening and
     /// buffer.
     pub interruptions: Vec<InterruptionReport>,
+    /// Every overridable value as it applies to this player now, with its
+    /// origin: the directed slash's and the global cooldown's recoveries,
+    /// each edge's window and whether each rule applies. An ability override
+    /// of the global cooldown shows while that ability casts; it applies
+    /// whenever that ability starts the cooldown.
+    pub effective: Vec<Effective>,
 }
 
 impl ZoneSimulation {
@@ -1322,11 +1852,50 @@ impl ZoneSimulation {
         Ok(())
     }
 
+    /// The committed recovery `id` starts when the player uses `ability`, in
+    /// ticks, after overrides.
+    pub(crate) fn recovery_of(&self, player_id: PlayerId, id: ActionId, ability: AbilityId) -> u16 {
+        self.players.get(&player_id).map_or_else(
+            || recovery_ticks(id),
+            |state| recovery_for(self.action_graph, state, id, Some(ability)),
+        )
+    }
+
+    /// Whether a stun landing on the player now cancels its cast.
+    pub(crate) fn stun_cancels_cast(&self) -> bool {
+        authored_consequence(
+            self.action_graph,
+            ActionId::Stun,
+            Interrupted::Action(ActionId::Cast),
+            Phase::Active,
+        ) == Consequence::Cancel
+    }
+
+    /// The players whose movement or jump this tick ends their cast.
+    pub(crate) fn moves_cancelling_casts(&self) -> Vec<PlayerId> {
+        let graph = self.action_graph;
+        self.players
+            .iter()
+            .filter(|(_, state)| {
+                let moving = state.forward != crate::zone::Axis::Zero
+                    || state.strafe != crate::zone::Axis::Zero
+                    || state.rise != crate::zone::Axis::Zero;
+                (moving && cancelling_rule(graph, state, ActionInput::Move).is_some())
+                    || (state.jump_pending
+                        && cancelling_rule(graph, state, ActionInput::Jump).is_some())
+            })
+            .map(|(&player_id, _)| player_id)
+            .collect()
+    }
+
     /// Applies the reactions' cancellations to every player, before the
-    /// tick's timers advance. Suspensions are read where they apply.
+    /// tick's timers advance. Suspensions are read where they apply. A stun
+    /// already interrupts a cast as it lands, and death clears it, so the
+    /// cast cancellation here only catches a restored state.
     pub(crate) fn apply_interruptions(&mut self) {
         let graph = self.action_graph;
-        for player in self.players.values_mut() {
+        let mut casts = Vec::new();
+        for (&player_id, player) in &mut self.players {
             for rule in graph.rules {
                 if consequence(graph, player, Interrupted::Held(rule.id)) == Consequence::Cancel {
                     if rule.input == ActionInput::GuardProtection {
@@ -1342,6 +1911,14 @@ impl ZoneSimulation {
             {
                 player.guard.raised = None;
             }
+            if consequence(graph, player, Interrupted::Action(ActionId::Cast))
+                == Consequence::Cancel
+            {
+                casts.push(player_id);
+            }
+        }
+        for player_id in casts {
+            self.interrupt_cast(EntityRef::Player(player_id), None, None);
         }
     }
 
@@ -1353,13 +1930,6 @@ impl ZoneSimulation {
         let tick = self.tick;
         // Intents of the next tick resolve before its timers advance.
         let next = tick + 1;
-        let [movement, offense, defense, reaction] = region_actions(state);
-        let report = |region, (action, phase, recovery_left)| RegionReport {
-            region,
-            action,
-            phase,
-            recovery_left,
-        };
         let edges = graph
             .edges
             .iter()
@@ -1385,21 +1955,31 @@ impl ZoneSimulation {
                         let (from, until) = precision.ticks(window.opens);
                         Some((at(from)?, at(until.min(window.closes()))?))
                     }),
+                    origin: window_for(graph, state, def).1,
                 }
             })
             .collect();
         let rules = graph
             .rules
             .iter()
-            .filter(|rule| {
-                recovery_left(state, rule.during).is_some() && all_hold(state, rule.conditions)
-            })
-            .map(|rule| RuleReport {
-                rule: rule.id,
-                input: rule.input,
+            .filter_map(|rule| {
                 // Recovery counts down after the next tick's intents and
-                // combat resolve.
-                released_at: next + u64::from(recovery_left(state, rule.during).unwrap_or(0)),
+                // combat resolve; movement cancels a cast before it advances.
+                let left = match rule.effect {
+                    RuleEffect::Hold => recovery_left(state, rule.during)?,
+                    RuleEffect::Cancel => {
+                        cast_left(state)
+                            .filter(|_| rule.during == ActionId::Cast)?
+                            .1
+                    }
+                };
+                applies(graph, state, rule).then(|| RuleReport {
+                    rule: rule.id,
+                    input: rule.input,
+                    effect: rule.effect,
+                    released_at: next + u64::from(left),
+                    origin: rule_applies(graph, state, rule).origin,
+                })
             })
             .collect();
         let targets = ACTIONS
@@ -1427,15 +2007,11 @@ impl ZoneSimulation {
         }
         Some(ActionInspection {
             tick,
-            regions: [
-                report(Region::Movement, movement),
-                report(Region::Offense, offense),
-                report(Region::Defense, defense),
-                report(Region::Reaction, reaction),
-            ],
+            regions: region_actions(graph, state),
             edges,
             rules,
             interruptions,
+            effective: effective_values(graph, state),
         })
     }
 
@@ -1446,4 +2022,30 @@ impl ZoneSimulation {
             .get(&player_id)
             .map(|state| arbitrate(self.action_graph, state, input))
     }
+}
+
+/// See [`ActionInspection::effective`].
+fn effective_values(graph: &ActionGraph, state: &PlayerState) -> Vec<Effective> {
+    let casting = state.cast.map(|cast| cast.ability);
+    let mut keys = vec![
+        (
+            Key::Recovery(ActionId::DirectedSlash),
+            Some(ids::HEROIC_STRIKE),
+        ),
+        (Key::Recovery(ActionId::GlobalCooldown), casting),
+    ];
+    keys.extend(
+        graph
+            .edges
+            .iter()
+            .map(|def| (Key::Window(def.id), action_ability(state, def.from))),
+    );
+    for rule in graph.rules {
+        if !keys.iter().any(|(key, _)| *key == Key::Rule(rule.id)) {
+            keys.push((Key::Rule(rule.id), action_ability(state, rule.during)));
+        }
+    }
+    keys.into_iter()
+        .filter_map(|(key, ability)| graph.resolve(key, Context::of(state, ability)))
+        .collect()
 }

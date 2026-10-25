@@ -156,13 +156,23 @@ impl ZoneSimulation {
             Some(Ok(ability)) => ability,
         };
         let source = EntityRef::Player(player_id);
+        let global_cooldown = self.recovery_of(
+            player_id,
+            crate::action::ActionId::GlobalCooldown,
+            ability.id,
+        );
+        let strike_recovery = self.recovery_of(
+            player_id,
+            crate::action::ActionId::DirectedSlash,
+            ability.id,
+        );
         self.update_player(player_id, |player| {
-            player.global_cooldown = crate::GLOBAL_COOLDOWN_TICKS;
+            player.global_cooldown = global_cooldown;
             player.facing = facing;
             // The sword gesture supersedes a held guard (Atlas 5.2.37) and
             // commits to its recovery (#156).
             player.guard.raised = None;
-            player.strike_recovery = crate::STRIKE_RECOVERY_TICKS;
+            player.strike_recovery = strike_recovery;
         });
         self.pay_and_cool_down(player_id, ability);
         let victim = self.strike_coverage(player_id, facing, aim)?;
