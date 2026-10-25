@@ -15,6 +15,7 @@ pub mod imported;
 pub mod kit;
 pub mod player;
 pub mod presets;
+pub mod sway;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -138,7 +139,19 @@ pub struct ImportedUnit {
     pub outfit: Option<Outfit>,
     /// The living viewer wears their headwear on the posed head (see [`UnitPresenter::headwear`]).
     pub headwear: Option<Look>,
+    /// How far the loose gear on [`sway::hangs`] sockets swings this frame (Atlas 6.6.39); at
+    /// rest it hangs as authored.
+    pub swing: sway::Swing,
 }
+
+/// What a unit wears, as far as its loose gear goes: a change starts the spring from rest.
+type Dress = (
+    Kind,
+    Option<Loadout>,
+    Option<Resident>,
+    Option<u32>,
+    Option<Outfit>,
+);
 
 /// Where one presented unit stands.
 #[derive(Clone, Debug)]
@@ -170,6 +183,9 @@ pub struct UnitPresenter {
     resources: Resources,
     animators: BTreeMap<EntityRef, animation::Animator>,
     playbacks: BTreeMap<EntityRef, Playback>,
+    /// Each imported unit's loose-gear spring (Atlas 6.6.39) and the dress it swings in: a
+    /// changed dress starts again from rest.
+    sways: BTreeMap<EntityRef, (Dress, sway::Sway)>,
     /// Fall progress of each dead unit; only a witnessed death falls (#27).
     deaths: BTreeMap<EntityRef, Option<f64>>,
     /// The projection tick each bursting flask or bomb (#290) was first seen bursting.
@@ -202,6 +218,7 @@ impl UnitPresenter {
             resources: Resources::default(),
             animators: BTreeMap::new(),
             playbacks: BTreeMap::new(),
+            sways: BTreeMap::new(),
             deaths: BTreeMap::new(),
             bursts: BTreeMap::new(),
             effects: effects::Effects::default(),
@@ -291,6 +308,7 @@ impl UnitPresenter {
     pub fn reset(&mut self) {
         self.animators.clear();
         self.playbacks.clear();
+        self.sways.clear();
         self.deaths.clear();
         self.bursts.clear();
         self.effects.clear();
@@ -428,7 +446,14 @@ impl UnitPresenter {
         let present: BTreeSet<_> = input.units.iter().map(|u| u.record.entity()).collect();
         self.animators.retain(|e, _| present.contains(e));
         self.playbacks.retain(|e, _| present.contains(e));
+        // A unit back from an interest gap swings again from rest.
+        self.sways.retain(|e, _| present.contains(e));
         self.deaths.retain(|e, _| present.contains(e));
+        let eye = input
+            .units
+            .iter()
+            .find(|unit| unit.record.entity() == EntityRef::Player(self.player_id))
+            .map(|unit| unit.centre);
         // An unanswered wind-up lets go after its bound; a dead viewer prepares nothing.
         self.preparation = self.preparation.filter(|preparation| {
             !snapshot.viewer.dead && preparation.answer_by.is_none_or(|by| seconds < by)
@@ -542,7 +567,7 @@ impl UnitPresenter {
                 } else {
                     ClassChoice::from_appearance(unit.record.appearance)
                 };
-                out.imported.push(ImportedUnit {
+                let mut imported = ImportedUnit {
                     entity,
                     id: id.clone(),
                     kind,
@@ -574,7 +599,34 @@ impl UnitPresenter {
                             false,
                         )
                     }),
+                    swing: sway::Swing::default(),
+                };
+                let dress = (
+                    kind,
+                    imported.loadout,
+                    imported.resident,
+                    imported.variety,
+                    imported.outfit,
+                );
+                let (worn, spring) = self
+                    .sways
+                    .entry(entity)
+                    .or_insert_with(|| (dress, sway::Sway::default()));
+                if *worn != dress {
+                    *worn = dress;
+                    spring.reset();
+                }
+                let distance = eye.map_or(0., |eye| {
+                    f64::from(eye[0] - unit.centre[0]).hypot(f64::from(eye[2] - unit.centre[2]))
                 });
+                imported.swing = spring.advance(sway::Motion {
+                    feet,
+                    yaw,
+                    distance,
+                    dt: input.dt,
+                    reduced,
+                });
+                out.imported.push(imported);
             } else {
                 let life = self.life(entity, dead, input.dt, reduced);
                 // The viewer plays its own projected cast; every other actor its observed attempts.

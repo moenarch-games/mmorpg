@@ -567,12 +567,13 @@ impl Presentation {
                 None => dressed(imported),
             };
             if let Some(weapon) = imported.loadout.map(skinned::Equipment::loadout) {
-                body.extend(weapon.draws(
+                body.extend(weapon.draws_swung(
                     &imported.id,
                     asset,
                     placement,
                     &imported.animation.layers,
                     imported.tint,
+                    imported.swing,
                 ));
             }
             let head = asset
