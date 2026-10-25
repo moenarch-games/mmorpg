@@ -12,6 +12,7 @@ use std::{collections::BTreeSet, sync::Arc};
 use mmorpg_core::{ClassChoice, CreatureId, EntityKind, EntityRef, NpcId, ZoneSnapshot};
 use mmorpg_presentation::{
     Draw,
+    audio::{AudioCues, AudioOp},
     units::{
         FrameInput, SampledUnit, UnitPresenter, Viewer,
         imported::{Kind, Loadout, Resident},
@@ -101,6 +102,24 @@ pub struct Units {
     /// Resources the page holds: those drawn in the previous frame.
     sent: BTreeSet<String>,
     pub buffers: Buffers,
+    /// Sound cues of the projections pushed since the page last took them (#447).
+    audio: AudioCues,
+    audio_ops: Vec<AudioOp>,
+}
+
+/// One sound operation for the page's `game-audio` handle.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+enum AudioEntry<'a> {
+    Play {
+        key: &'a str,
+        kind: &'a str,
+        entity: u64,
+        position: [f32; 3],
+    },
+    Stop {
+        entity: u64,
+    },
 }
 
 fn kind_name(kind: EntityKind) -> &'static str {
@@ -141,6 +160,8 @@ impl Units {
             latest: None,
             sent: BTreeSet::new(),
             buffers: Buffers::default(),
+            audio: AudioCues::default(),
+            audio_ops: Vec::new(),
         }
     }
 
@@ -171,14 +192,41 @@ impl Units {
         let snapshot =
             mmorpg_protocol::decode_snapshot(bytes).map_err(|error| error.to_string())?;
         self.presenter.push(&snapshot, seconds);
+        let presenter = &self.presenter;
+        self.audio_ops.extend(
+            self.audio
+                .push(&snapshot, |unit| presenter.rendered(unit.position)),
+        );
         self.latest = Some(snapshot);
         Ok(())
     }
 
     pub fn reset(&mut self) {
         self.presenter.reset();
+        self.audio_ops.extend(self.audio.reset());
         self.latest = None;
         self.sent.clear();
+    }
+
+    /// Takes the sound operations since the last call as a JSON array of
+    /// `{"play": {key, kind, entity, position}}` and `{"stop": {entity}}`.
+    pub fn take_audio(&mut self) -> String {
+        let entries: Vec<AudioEntry<'_>> = self
+            .audio_ops
+            .iter()
+            .map(|op| match op {
+                AudioOp::Play(cue) => AudioEntry::Play {
+                    key: &cue.key,
+                    kind: cue.kind,
+                    entity: cue.entity,
+                    position: cue.position,
+                },
+                AudioOp::Stop(entity) => AudioEntry::Stop { entity: *entity },
+            })
+            .collect();
+        let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned());
+        self.audio_ops.clear();
+        json
     }
 
     /// One frame. `units` holds `[kind (0 player, 1 creature, 2 npc), id, x, y, z, facing]`

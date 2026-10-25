@@ -142,6 +142,48 @@ fn main() {
         None,
         false,
     );
+    sound_bundle(&manifest_dir.join("../../web/public/sounds/combat-sounds"));
+}
+
+/// The CC0 combat sounds (#447, asset-tooling#297): `MANIFEST`, the bundle path of its
+/// SoundManifest, and every clip and the manifest as `FILES`, keyed by bundle path (the
+/// manifest's clip URLs).
+fn sound_bundle(bundle: &Path) {
+    for watched in ["SHA256", "manifest.json"] {
+        println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
+    }
+    let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
+        panic!(
+            "the bundle {} is missing ({error}); run scripts/fetch-bundles.sh",
+            bundle.display()
+        )
+    });
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest).expect("the bundle manifest is JSON");
+    let assets = manifest["assets"].as_array().expect("bundle assets");
+    let path = |asset: &serde_json::Value| {
+        asset["path"]
+            .as_str()
+            .expect("a bundle asset path")
+            .to_owned()
+    };
+    let sounds = assets
+        .iter()
+        .find(|asset| asset["key"] == "combat-sounds.sound-manifest")
+        .map(path)
+        .expect("the bundle declares its SoundManifest");
+    let files = assets
+        .iter()
+        .filter(|asset| asset["source"]["kind"] == "audio")
+        .map(path)
+        .chain([sounds.clone()])
+        .collect();
+    write(
+        "sound_bundle.rs",
+        bundle,
+        format!("pub const MANIFEST: &str = {sounds:?};\n"),
+        files,
+    );
 }
 
 /// A static bundle's drawn entries (`keys`, or every entry) as `ENTRIES` (key, glTF path) and

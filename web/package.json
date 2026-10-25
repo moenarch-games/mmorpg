@@ -10,6 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@moritzbrantner/game-audio": "github:moritzbrantner/game-audio#23575083299653ded66ca69257f04ff34b2d1eb5",
     "@moritzbrantner/input-bindings": "github:moritzbrantner/input-bindings#e8996d383d47dfaa05b684a68cc97f2bb9ed0170",
     "@moritzbrantner/input-bindings-react": "github:moritzbrantner/input-bindings#549b4edfbd6bade6173dc507c15ee59fe9fc2d9e",
     "@moritzbrantner/input-bindings-runtime": "github:moritzbrantner/input-bindings#7683fc7b8572b38124d3b99c3c274ae32ab24f19",

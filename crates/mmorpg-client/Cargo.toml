@@ -14,6 +14,9 @@ serde_json = "=1.0.154"
 serde = { version = "=1.0.229", features = ["derive"] }
 settings-presentation = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }
 settings-core = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }
+settings-adapters = { git = "https://github.com/moritzbrantner/settings.git", rev = "01e8ea5dc682adadb395e46966b4e43dc4edef67" }
+# The shared audio director on kira (#447); Linux builds need ALSA headers (libasound2-dev).
+game-audio = { git = "https://github.com/moritzbrantner/game-audio.git", rev = "2643e342a7d071445186e421082acb553141811d", features = ["kira"] }
 gltf = { version = "=1.4.1", default-features = false, features = ["import", "utils", "names"] }
 game-server.workspace = true
 mmorpg-core.workspace = true

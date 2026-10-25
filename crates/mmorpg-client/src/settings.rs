@@ -407,7 +407,8 @@ mod tests {
             &[
                 "settings.category.camera",
                 "settings.category.controls",
-                "settings.category.accessibility"
+                "settings.category.accessibility",
+                "settings.category.audio"
             ]
         );
         let controls = preferences

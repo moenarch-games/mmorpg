@@ -134,18 +134,20 @@ describe("per-character binding profiles (#41 Q21)", () => {
   });
 });
 
+const DEFAULT_AUDIO = { masterVolume: 80, effectsVolume: 100, uiVolume: 100, muted: false };
+
 describe("client preferences over the shared settings session", () => {
   test("a changed field of view persists, reloads and resets", async () => {
     const storage = new MemoryStorage();
     const first = await Preferences.open(storage);
-    expect(first.values()).toEqual({ fieldOfViewDegrees: 50, lookSensitivity: 1, invertVerticalLook: false, reduceMotion: "system" });
+    expect(first.values()).toEqual({ fieldOfViewDegrees: 50, lookSensitivity: 1, invertVerticalLook: false, reduceMotion: "system", audio: DEFAULT_AUDIO });
     first.set(SETTING.fieldOfView, { type: "integer", value: 70 });
     first.set(SETTING.reduceMotion, { type: "choice", value: "reduce" });
     expect(() => first.set(SETTING.fieldOfView, { type: "integer", value: 400 })).toThrow();
 
     const second = await Preferences.open(storage);
     expect(second.problem).toBeNull();
-    expect(second.values()).toEqual({ fieldOfViewDegrees: 70, lookSensitivity: 1, invertVerticalLook: false, reduceMotion: "reduce" });
+    expect(second.values()).toEqual({ fieldOfViewDegrees: 70, lookSensitivity: 1, invertVerticalLook: false, reduceMotion: "reduce", audio: DEFAULT_AUDIO });
     second.resetAll();
     expect((await Preferences.open(storage)).values().fieldOfViewDegrees).toBe(50);
   });

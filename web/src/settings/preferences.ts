@@ -10,7 +10,7 @@ import type {
 /**
  * MMORPG's browser settings catalog over the shared `settings` foundation. The session owns
  * validation, overrides, reset and the portable `User` snapshot; the client only applies the
- * effective values (camera, look, motion). Every entry is a real client capability; nothing here
+ * effective values (camera, look, motion, audio). Every entry is a real client capability; nothing here
  * reaches zone authority. Key bindings are not settings values: `input-bindings` owns them.
  */
 export const SETTING = {
@@ -18,6 +18,10 @@ export const SETTING = {
   lookSensitivity: "controls.look_sensitivity",
   invertVerticalLook: "controls.invert_vertical_look",
   reduceMotion: "accessibility.reduce_motion",
+  masterVolume: "audio.master_volume",
+  effectsVolume: "audio.effects_volume",
+  uiVolume: "audio.ui_volume",
+  muted: "audio.muted",
 } as const;
 
 export const MOTION_CHOICES = ["system", "reduce", "full"] as const;
@@ -48,6 +52,8 @@ export type ClientPreferences = {
   lookSensitivity: number;
   invertVerticalLook: boolean;
   reduceMotion: MotionPreference;
+  /** Volume percentages and mute for the game-audio mixer (#447). */
+  audio: { masterVolume: number; effectsVolume: number; uiVolume: number; muted: boolean };
 };
 
 export type PreferenceStorage = Pick<Storage, "getItem" | "setItem">;
@@ -65,11 +71,18 @@ function isMotionPreference(value: unknown): value is MotionPreference {
 export function clientPreferences(values: Readonly<Record<string, SettingValue>>): ClientPreferences {
   const motion = values[SETTING.reduceMotion];
   const inverted = values[SETTING.invertVerticalLook];
+  const muted = values[SETTING.muted];
   return {
     fieldOfViewDegrees: numberValue(values[SETTING.fieldOfView], 50),
     lookSensitivity: numberValue(values[SETTING.lookSensitivity], 1),
     invertVerticalLook: inverted?.type === "bool" && inverted.value === true,
     reduceMotion: motion?.type === "choice" && isMotionPreference(motion.value) ? motion.value : "system",
+    audio: {
+      masterVolume: numberValue(values[SETTING.masterVolume], 80),
+      effectsVolume: numberValue(values[SETTING.effectsVolume], 100),
+      uiVolume: numberValue(values[SETTING.uiVolume], 100),
+      muted: muted?.type === "bool" && muted.value === true,
+    },
   };
 }
 

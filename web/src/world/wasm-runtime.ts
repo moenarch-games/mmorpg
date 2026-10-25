@@ -19,6 +19,11 @@ export async function loadLocalWorld(characters: LocalCharacters): Promise<Local
   return world;
 }
 
+/** The combat-sounds SoundManifest with mmorpg's cues added (#447); call after the module loaded. */
+export function soundManifest(bundle: string): string {
+  return generated.soundManifest(bundle);
+}
+
 /** The authored action graph and the lab's setup choices (#381); call after the module loaded. */
 export function actionLabDefinitions(): { graph: ActionGraph; options: LabOptions } {
   return { graph: JSON.parse(generated.actionGraph()) as ActionGraph, options: JSON.parse(generated.actionLabOptions()) as LabOptions };
