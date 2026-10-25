@@ -123,9 +123,11 @@ pub(crate) struct PlayerState {
     /// Ticks until another out-of-range error may be reported.
     pub(crate) error_cooldown: u16,
     /// Discrete intents in sequence order, consumed by the next tick.
-    pub(crate) intents: Vec<PlayerIntent>,
+    pub(crate) intents: Vec<crate::QueuedIntent>,
     /// A well-formed intent arrived while `intents` was full and was dropped.
     pub(crate) intents_dropped: bool,
+    /// The latest zone tick a command reported having observed (#415).
+    pub(crate) last_observed: u64,
     /// Events of the current tick.
     pub(crate) events: Vec<ZoneEvent>,
     /// The one-time class choice; `None` keeps the class-agnostic baseline.
@@ -183,6 +185,7 @@ impl PlayerState {
             error_cooldown: 0,
             intents: Vec::new(),
             intents_dropped: false,
+            last_observed: 0,
             events: Vec::new(),
             class: None,
             resource: crate::class::ResourceClock::default(),
@@ -264,6 +267,9 @@ pub struct ZoneSimulation {
     /// The validated action graph the zone runs (#380): the baseline unless
     /// a test or the lab configured another; zone setup, not canonical state.
     pub(crate) action_graph: &'static crate::action::ActionGraph,
+    /// The lateness of the intent `consume_intents` is resolving (#415); 0
+    /// outside it, so never present between ticks and not canonical.
+    pub(crate) resolving_late: u8,
     /// Summoned minions by ID (#295), and the next minion ID.
     pub(crate) minions: BTreeMap<crate::MinionId, crate::Minion>,
     pub(crate) next_minion: u32,
@@ -406,6 +412,7 @@ impl ZoneSimulation {
             nav_cache: BTreeMap::new(),
             prop_motion: BTreeMap::new(),
             action_graph: &crate::action::BASELINE,
+            resolving_late: 0,
             minions: BTreeMap::new(),
             next_minion: 1,
             rewards: None,
@@ -542,6 +549,33 @@ impl ZoneSimulation {
         sequence: u32,
         command: ZoneCommand,
     ) -> Result<(), ZoneError> {
+        self.apply_command_observed(player_id, sequence, command, None)
+    }
+
+    /// [`Self::apply_command`] for a command sent after the client had
+    /// observed the zone's completed tick `observed` (Atlas 5.9.6, #415). Its
+    /// discrete intent is late by the ticks completed since, at most
+    /// [`crate::action::LATE_INPUT_GRACE_TICKS`], which an action-graph edge
+    /// window may make up for. An observation ahead of the zone, or older
+    /// than the player's previous one, fails closed like a stale sequence.
+    pub fn apply_observed_command(
+        &mut self,
+        player_id: PlayerId,
+        sequence: u32,
+        command: ZoneCommand,
+        observed: u64,
+    ) -> Result<(), ZoneError> {
+        self.apply_command_observed(player_id, sequence, command, Some(observed))
+    }
+
+    fn apply_command_observed(
+        &mut self,
+        player_id: PlayerId,
+        sequence: u32,
+        command: ZoneCommand,
+        observed: Option<u64>,
+    ) -> Result<(), ZoneError> {
+        let now = self.tick;
         let player = self
             .players
             .get_mut(&player_id)
@@ -549,6 +583,19 @@ impl ZoneSimulation {
         if sequence == 0 || sequence <= player.last_sequence {
             return Err(ZoneError::new("command sequence is stale"));
         }
+        if let Some(observed) = observed {
+            if observed > now {
+                return Err(ZoneError::new("command observation is ahead of the zone"));
+            }
+            if observed < player.last_observed {
+                return Err(ZoneError::new("command observation is stale"));
+            }
+        }
+        let late = observed.map_or(0, |observed| {
+            u8::try_from(now - observed)
+                .unwrap_or(u8::MAX)
+                .min(crate::action::LATE_INPUT_GRACE_TICKS)
+        });
 
         // Validate completely before mutating: a malformed command changes nothing.
         let alive = player.is_alive();
@@ -648,10 +695,13 @@ impl ZoneSimulation {
         };
         if let Some(intent) = intent {
             if player.intents.len() < MAX_PENDING_INTENTS {
-                player.intents.push(intent);
+                player.intents.push(crate::QueuedIntent { intent, late });
             } else {
                 player.intents_dropped = true;
             }
+        }
+        if let Some(observed) = observed {
+            player.last_observed = observed;
         }
         player.last_sequence = sequence;
         Ok(())
@@ -1222,7 +1272,7 @@ mod tests {
         assert_eq!(player.last_sequence, 101, "the sequences are consumed");
         assert_eq!(
             player.combat.intents,
-            [PlayerIntent::StopAttack; MAX_PENDING_INTENTS],
+            [crate::QueuedIntent::from(PlayerIntent::StopAttack); MAX_PENDING_INTENTS],
             "the excess intents are dropped"
         );
         assert!(player.combat.intents_dropped);

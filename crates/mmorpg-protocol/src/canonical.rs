@@ -138,8 +138,10 @@ fn encode_player(
         MAX_PENDING_INTENTS,
         "player has too many pending intents",
     )?);
-    for intent in &combat.intents {
-        let (code, target) = match *intent {
+    for queued in &combat.intents {
+        // Each intent leads with its lateness in ticks (#415).
+        payload.push(queued.late);
+        let (code, target) = match queued.intent {
             PlayerIntent::SelectTarget(target) => (SELECT_TARGET_INTENT, target),
             PlayerIntent::StartAttack => (START_ATTACK_INTENT, None),
             PlayerIntent::Loot(claim) => {
@@ -247,6 +249,7 @@ fn encode_player(
         encode_entity_ref(payload, target);
     }
     payload.push(u8::from(combat.intents_dropped));
+    payload.extend_from_slice(&combat.last_observed.to_be_bytes());
     payload.push(encode_u8_count(
         combat.events.len(),
         MAX_EVENTS_PER_PLAYER,
@@ -672,7 +675,9 @@ fn decode_player(
         "player has too many pending intents",
     )?;
     let mut intents = Vec::with_capacity(intent_count);
+    let mut lateness = Vec::with_capacity(intent_count);
     for _ in 0..intent_count {
+        lateness.push(read_u8(payload, offset)?);
         let code = read_u8(payload, offset)?;
         if code == LOOT_INTENT {
             intents.push(PlayerIntent::Loot(crate::loot::decode_claim(
@@ -808,7 +813,13 @@ fn decode_player(
             _ => return Err(ProtocolError::new("malformed pending intent")),
         });
     }
+    let intents = intents
+        .into_iter()
+        .zip(lateness)
+        .map(|(intent, late)| mmorpg_core::QueuedIntent { intent, late })
+        .collect();
     let intents_dropped = read_bool(payload, offset)?;
+    let last_observed = u64::from_be_bytes(take(payload, offset)?);
     let event_count = decode_u8_count(
         payload,
         offset,
@@ -920,6 +931,7 @@ fn decode_player(
             error_cooldown,
             intents,
             intents_dropped,
+            last_observed,
             events,
             abilities,
             landing,
@@ -1384,6 +1396,10 @@ mod tests {
     use crate::decode_snapshot;
     use mmorpg_core::{ErrorCode, NpcId, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation};
 
+    fn queued(intents: impl IntoIterator<Item = PlayerIntent>) -> Vec<mmorpg_core::QueuedIntent> {
+        intents.into_iter().map(Into::into).collect()
+    }
+
     fn snapshot() -> CanonicalZoneSnapshot {
         let wolf = EntityRef::Creature(CreatureId::new(4));
         CanonicalZoneSnapshot {
@@ -1525,7 +1541,7 @@ mod tests {
                         combat_timer: 149,
                         calm_ticks: 0,
                         error_cooldown: 30,
-                        intents: vec![
+                        intents: queued([
                             PlayerIntent::SelectTarget(Some(EntityRef::Npc(NpcId::new(2)))),
                             PlayerIntent::SelectTarget(None),
                             PlayerIntent::StartAttack,
@@ -1536,9 +1552,10 @@ mod tests {
                                 destination: 15,
                                 quantity: 4,
                             },
-                        ],
+                        ]),
                         // The decoder checks structure; core checks that only a full queue drops.
                         intents_dropped: true,
+                        last_observed: 0x0102_0304_0506,
                         events: vec![
                             ZoneEvent::DamageTaken {
                                 source: wolf,
@@ -1711,10 +1728,13 @@ mod tests {
         state.players[0]
             .combat
             .intents
-            .push(PlayerIntent::Loot(mmorpg_core::LootClaim {
-                creature: CreatureId::new(5),
-                died_at: 90,
-            }));
+            .push(mmorpg_core::QueuedIntent {
+                intent: PlayerIntent::Loot(mmorpg_core::LootClaim {
+                    creature: CreatureId::new(5),
+                    died_at: 90,
+                }),
+                late: 9,
+            });
         for item in [
             None,
             Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 20).unwrap()),
@@ -1739,7 +1759,7 @@ mod tests {
         let mut state = snapshot();
         let wolf = EntityRef::Creature(CreatureId::new(4));
         let blizzard = AbilityId::new(12);
-        state.players[0].combat.intents = vec![
+        state.players[0].combat.intents = queued([
             PlayerIntent::UseAbility {
                 ability: 9,
                 target: Some(wolf),
@@ -1763,7 +1783,7 @@ mod tests {
             },
             PlayerIntent::EquipItem { bag_slot: u8::MAX },
             PlayerIntent::UnequipItem { equipment_slot: 5 },
-        ];
+        ]);
         state.players[0].combat.abilities = CanonicalPlayerAbilities {
             class: Some(ClassChoice {
                 class: mmorpg_core::PlayerClass::Arcanist,
@@ -1838,16 +1858,18 @@ mod tests {
         // Structural checks: a class code beyond the six choices, a point
         // flag without a point and an aura without a caster.
         // The intent count follows the player's timers; the seven intents
-        // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes, then the dropped flag and two events.
+        // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
+        // the dropped flag, the last observation (u64) and two events.
         let intents = 16 + 24 + 2 + 163;
-        let player_abilities = intents + 1 + (7 + 7 + 6 + 6 + 3 + 2 + 2) + 1 + 1 + 2 * EVENT_BYTES;
+        let player_abilities =
+            intents + 1 + (8 + 8 + 7 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
         let cast = player_abilities + 1 + 8 + 1 + 2 * 3;
         let aura = cast + 17 + 1;
         for (offset, value, message) in [
             (player_abilities, 15, "unknown class choice"),
             // The directed strike's side code.
-            (intents + 1 + 7 + 7 + 4, 3, "unknown strike aim"),
+            (intents + 1 + 8 + 8 + 5, 3, "unknown strike aim"),
             (cast + 8, 2, "boolean field must be 0 or 1"),
             (aura + 1, 0, "an absent entity must have ID 0"),
         ] {
@@ -1917,7 +1939,7 @@ mod tests {
     fn pending_trades_round_trip_with_exact_records() {
         let mut snapshot = snapshot();
         let npc = mmorpg_core::NpcId::new(0x0102_0304);
-        snapshot.players[0].combat.intents = vec![
+        snapshot.players[0].combat.intents = queued([
             PlayerIntent::BuyItem {
                 npc,
                 offer: 6,
@@ -1928,17 +1950,17 @@ mod tests {
                 bag_slot: 15,
                 quantity: u16::MAX,
             },
-        ];
+        ]);
         let encoded = encode_canonical_snapshot(&snapshot).unwrap();
         assert_eq!(decode_canonical_snapshot(&encoded).unwrap(), snapshot);
-        let buy = [BUY_ITEM_INTENT, 1, 2, 3, 4, 6, 0x0a, 0x0b];
-        let sell = [SELL_ITEM_INTENT, 0, 0, 0, 3, 15, 0xff, 0xff];
+        let buy = [0, BUY_ITEM_INTENT, 1, 2, 3, 4, 6, 0x0a, 0x0b];
+        let sell = [0, SELL_ITEM_INTENT, 0, 0, 0, 3, 15, 0xff, 0xff];
         let records: Vec<u8> = [buy, sell].concat();
         assert!(
             encoded
                 .windows(records.len())
                 .any(|window| window == records.as_slice()),
-            "pending trades are 8-byte records"
+            "pending trades are 8-byte records after their lateness"
         );
         for length in 0..encoded.len() {
             assert!(decode_canonical_snapshot(&encoded[..length]).is_err());
@@ -1949,7 +1971,7 @@ mod tests {
     fn quest_logs_and_pending_quest_intents_round_trip_with_exact_records() {
         let mut snapshot = snapshot();
         let npc = mmorpg_core::NpcId::new(0x0102_0304);
-        snapshot.players[0].combat.intents = vec![
+        snapshot.players[0].combat.intents = queued([
             PlayerIntent::AcceptQuest { npc, quest: 2 },
             PlayerIntent::CompleteQuest {
                 npc: mmorpg_core::NpcId::new(1),
@@ -1957,7 +1979,7 @@ mod tests {
                 choice: u8::MAX,
             },
             PlayerIntent::AbandonQuest { quest: 0 },
-        ];
+        ]);
         snapshot.players[0].quests = mmorpg_core::QuestLog {
             entries: vec![
                 mmorpg_core::QuestEntry {
@@ -1975,9 +1997,9 @@ mod tests {
         let encoded = encode_canonical_snapshot(&snapshot).unwrap();
         assert_eq!(decode_canonical_snapshot(&encoded).unwrap(), snapshot);
         let intents = [
-            &[ACCEPT_QUEST_INTENT, 1, 2, 3, 4, 2][..],
-            &[COMPLETE_QUEST_INTENT, 0, 0, 0, 1, 9, 0xff],
-            &[ABANDON_QUEST_INTENT, 0],
+            &[0, ACCEPT_QUEST_INTENT, 1, 2, 3, 4, 2][..],
+            &[0, COMPLETE_QUEST_INTENT, 0, 0, 0, 1, 9, 0xff],
+            &[0, ABANDON_QUEST_INTENT, 0],
         ]
         .concat();
         let log = [
@@ -2026,14 +2048,15 @@ mod tests {
         let mut cases = vec![
             (auto_attack, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
-            (intents + 1, 23, "malformed pending intent"),
+            // Each intent is its lateness, then its code and fields.
+            (intents + 2, 23, "malformed pending intent"),
         ];
         // The third intent (StartAttack) carries no target.
-        cases.push((intents + 1 + 2 * 6 + 1, 2, "malformed pending intent"));
+        cases.push((intents + 1 + 2 * 7 + 2, 2, "malformed pending intent"));
         // The dropped-intent flag follows the six intents.
-        cases.push((intents + 1 + 6 * 6, 2, "boolean field must be 0 or 1"));
+        cases.push((intents + 1 + 6 * 7, 2, "boolean field must be 0 or 1"));
         cases.push((
-            intents + 1 + 5 * 6 + 5,
+            intents + 1 + 5 * 7 + 6,
             1,
             "malformed pending inventory intent",
         ));

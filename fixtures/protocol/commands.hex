@@ -1,63 +1,66 @@
 # Command golden fixture, verified by mmorpg-protocol and web tests.
-8a0101000000 move 1 0 0
-8a0101014000 move 1 1 16384
-8a01ffff8000 move -1 -1 32768
-8a010001abcd move 0 1 43981
-8a010000ffff move 0 0 65535
-8a02 jump
-8a1901 rise 1
-8a1900 rise 0
-8a19ff rise -1
-8a03020000006c select_target 2 108
-8a0301ee6b2800 select_target 1 4000000000
-8a030300000005 select_target 3 5
-8a030000000000 select_target 0 0
-8a04 start_attack
-8a05 stop_attack
-8a06 release_spirit
-8a07000f0002 move_item 0 15 2
-8a070f00ffff move_item 15 0 65535
-8a07ff000000 move_item 255 0 0
-8a08000000010000000000000063 loot 1 99
-8a08ffffffffffffffffffffffff loot 4294967295 18446744073709551615
-8a09010000000000 use_ability 1 0 0
-8a0909020000006c use_ability 9 2 108
-8a09ff01ee6b2800 use_ability 255 1 4000000000
-8a0a cancel_cast
-8a150100000101 directed_strike 1 0 1 1
-8a1501abcd0002 directed_strike 1 43981 0 2
-8a15ffffff0200 directed_strike 255 65535 2 0
-8a1601 guard 1
-8a1602 guard 2
-8a1603 guard 3
-8a1600 guard 0
-8a0b0001 choose_class 0 1
-8a0b0200 choose_class 2 0
-8a0bff07 choose_class 255 7
-8a0c00 equip_item 0
-8a0c0f equip_item 15
-8a0cff equip_item 255
-8a0d00 unequip_item 0
-8a0d05 unequip_item 5
-8a0dff unequip_item 255
-8a0e00000003000001 buy_item 3 0 1
-8a0effffffffffffff buy_item 4294967295 255 65535
-8a0f00000003000003 sell_item 3 0 3
-8a0f00000000ff0000 sell_item 0 255 0
-8a1000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
-8a1001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
-8a1101 emote 1
-8a1105 emote 5
-8a120000000101 accept_quest 1 1
-8a12ffffffffff accept_quest 4294967295 255
-8a13000000020201 complete_quest 2 2 1
-8a130000000000ff complete_quest 0 0 255
-8a1403 abandon_quest 3
-8a170101 use_door 1 1
-8a17ff00 use_door 255 0
-8a180004 repair 4
-8a180000 repair 0
-8a1a010000000000000000 command_minions follow
-8a1a02020000006c000000 command_minions attack 2 108
-8a1a03fffffb2e0000ddd5 command_minions defend -1234 56789
-8a1a040000000000000000 command_minions retreat
+9b0101000000 move 1 0 0
+9b0101014000 move 1 1 16384
+9b01ffff8000 move -1 -1 32768
+9b010001abcd move 0 1 43981
+9b010000ffff move 0 0 65535
+9b02 jump
+9b1901 rise 1
+9b1900 rise 0
+9b19ff rise -1
+9b03020000006c select_target 2 108
+9b0301ee6b2800 select_target 1 4000000000
+9b030300000005 select_target 3 5
+9b030000000000 select_target 0 0
+9b04 start_attack
+9b05 stop_attack
+9b06 release_spirit
+9b07000f0002 move_item 0 15 2
+9b070f00ffff move_item 15 0 65535
+9b07ff000000 move_item 255 0 0
+9b08000000010000000000000063 loot 1 99
+9b08ffffffffffffffffffffffff loot 4294967295 18446744073709551615
+9b09010000000000 use_ability 1 0 0
+9b0909020000006c use_ability 9 2 108
+9b09ff01ee6b2800 use_ability 255 1 4000000000
+9b0a cancel_cast
+9b150100000101 directed_strike 1 0 1 1
+9b1501abcd0002 directed_strike 1 43981 0 2
+9b15ffffff0200 directed_strike 255 65535 2 0
+9b1601 guard 1
+9b1602 guard 2
+9b1603 guard 3
+9b1600 guard 0
+9b0b0001 choose_class 0 1
+9b0b0200 choose_class 2 0
+9b0bff07 choose_class 255 7
+9b0c00 equip_item 0
+9b0c0f equip_item 15
+9b0cff equip_item 255
+9b0d00 unequip_item 0
+9b0d05 unequip_item 5
+9b0dff unequip_item 255
+9b0e00000003000001 buy_item 3 0 1
+9b0effffffffffffff buy_item 4294967295 255 65535
+9b0f00000003000003 sell_item 3 0 3
+9b0f00000000ff0000 sell_item 0 255 0
+9b1000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
+9b1001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
+9b1101 emote 1
+9b1105 emote 5
+9b120000000101 accept_quest 1 1
+9b12ffffffffff accept_quest 4294967295 255
+9b13000000020201 complete_quest 2 2 1
+9b130000000000ff complete_quest 0 0 255
+9b1403 abandon_quest 3
+9b170101 use_door 1 1
+9b17ff00 use_door 255 0
+9b180004 repair 4
+9b180000 repair 0
+9b1a010000000000000000 command_minions follow
+9b1a02020000006c000000 command_minions attack 2 108
+9b1a03fffffb2e0000ddd5 command_minions defend -1234 56789
+9b1a040000000000000000 command_minions retreat
+9b1b00000000000004d20903020000006c observed 1234 use_ability 3 2 108
+9b1bffffffffffffffff150140000002 observed 18446744073709551615 directed_strike 1 16384 0 2
+9b1b000000000000000002 observed 0 jump

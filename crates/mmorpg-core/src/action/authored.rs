@@ -463,7 +463,7 @@ pub(crate) fn trigger(
             Some(best) if best.trigger.context.rank() >= def.trigger.context.rank() => Some(best),
             _ => Some(def),
         })?;
-    (super::arbitrate_with(graph, state, input, false).outcome
+    (super::arbitrate_with(graph, state, input, false, 0).outcome
         == Outcome::Proceed(super::Candidate::Direct))
     .then_some(winner)
 }
@@ -485,7 +485,8 @@ pub(crate) fn reports(graph: &ActionGraph, state: &PlayerState) -> Vec<AuthoredR
             } else if let Some(refusal) = own_refusal(state, def) {
                 TriggerStatus::Refused(refusal)
             } else {
-                let outcome = super::arbitrate_with(graph, state, def.trigger.input, false).outcome;
+                let outcome =
+                    super::arbitrate_with(graph, state, def.trigger.input, false, 0).outcome;
                 if outcome == Outcome::Proceed(super::Candidate::Direct) {
                     match trigger(graph, state, def.trigger.input, def.trigger.ability) {
                         Some(winner) if winner.slot != def.slot => {
@@ -577,7 +578,7 @@ impl ZoneSimulation {
                 }
             }
             Step::Release
-                if super::arbitrate_with(graph, state, input, false).outcome
+                if super::arbitrate_with(graph, state, input, false, 0).outcome
                     != Outcome::Proceed(super::Candidate::Direct) =>
             {
                 Step::Cancel

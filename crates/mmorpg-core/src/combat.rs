@@ -43,25 +43,26 @@ impl ZoneSimulation {
             // Warden melee during landing recovery (#155), a Shield Bash
             // before the combo opens (#157).
             let mut waiting = Vec::new();
-            for intent in intents {
+            for queued in intents {
                 // An authored action's trigger waits out its startup, then
                 // resolves as its active phase begins (#414). A refused or
-                // held input never starts one.
-                match self.authored_step(player_id, &intent) {
+                // held input never starts one. Its lateness (#415) only
+                // matters to edges, which an authored release does not use.
+                match self.authored_step(player_id, &queued.intent) {
                     Step::Startup => {
-                        waiting.push(intent);
+                        waiting.push(queued);
                         continue;
                     }
                     Step::Start(slot) => {
                         if self.start_authored(player_id, slot) {
-                            self.release_authored(player_id, intent)?;
+                            self.release_authored(player_id, queued.intent)?;
                         } else {
-                            waiting.push(intent);
+                            waiting.push(queued);
                         }
                         continue;
                     }
                     Step::Release => {
-                        self.release_authored(player_id, intent)?;
+                        self.release_authored(player_id, queued.intent)?;
                         continue;
                     }
                     Step::Cancel => self.update_player(player_id, |player| player.authored = None),
@@ -72,8 +73,8 @@ impl ZoneSimulation {
                         .get(&player_id)
                         .map_or((false, false), |player| {
                             (
-                                crate::action::waits(self.action_graph, player, &intent),
-                                crate::action::refuses(self.action_graph, player, &intent),
+                                crate::action::waits(self.action_graph, player, &queued),
+                                crate::action::refuses(self.action_graph, player, &queued.intent),
                             )
                         });
                 // An experimental graph may refuse an attack in water (#413).
@@ -86,9 +87,13 @@ impl ZoneSimulation {
                         },
                     );
                 } else if waits {
-                    waiting.push(intent);
+                    waiting.push(queued);
                 } else {
-                    self.apply_intent(player_id, intent, self.tick + 1)?;
+                    // Edges read the intent's lateness while it resolves (#415).
+                    self.resolving_late = queued.late;
+                    let applied = self.apply_intent(player_id, queued.intent, self.tick + 1);
+                    self.resolving_late = 0;
+                    applied?;
                 }
             }
             if !waiting.is_empty() {

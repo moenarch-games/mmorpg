@@ -380,27 +380,36 @@ pub fn action_lab_changes(from: &str, to: &str) -> Result<String, JsError> {
         .map_err(|error| JsError::new(&error.to_string()))
 }
 
-/// Replays a recorded lab scenario under a configuration (#382) and returns
-/// the run as JSON; throws for a malformed or stale scenario or configuration.
+/// Replays a recorded lab scenario under a configuration (#382) across a
+/// simulated network (#415) and returns the run as JSON; throws for a
+/// malformed or stale scenario, configuration or network.
 #[wasm_bindgen(js_name = actionLabRun)]
-pub fn action_lab_run(scenario: &str, config: &str) -> Result<String, JsError> {
+pub fn action_lab_run(scenario: &str, config: &str, network: &str) -> Result<String, JsError> {
     let scenario =
         lab_experiment::ScenarioFile::parse(scenario).map_err(|error| JsError::new(&error))?;
     let config = lab_experiment::Config::parse(config).map_err(|error| JsError::new(&error))?;
-    let run = lab_experiment::run(&scenario, &config).map_err(|error| JsError::new(&error))?;
+    let network = lab_experiment::Network::parse(network).map_err(|error| JsError::new(&error))?;
+    let run =
+        lab_experiment::run(&scenario, &config, &network).map_err(|error| JsError::new(&error))?;
     serde_json::to_string(&run).map_err(|error| JsError::new(&error.to_string()))
 }
 
-/// Replays a recorded lab scenario under configurations `a` and `b` and
-/// reports where they diverge, as JSON (#382).
+/// Replays a recorded lab scenario under configurations `a` and `b` across
+/// one simulated network and reports where they diverge, as JSON (#382, #415).
 #[wasm_bindgen(js_name = actionLabCompare)]
-pub fn action_lab_compare(scenario: &str, a: &str, b: &str) -> Result<String, JsError> {
+pub fn action_lab_compare(
+    scenario: &str,
+    a: &str,
+    b: &str,
+    network: &str,
+) -> Result<String, JsError> {
     let scenario =
         lab_experiment::ScenarioFile::parse(scenario).map_err(|error| JsError::new(&error))?;
     let a = lab_experiment::Config::parse(a).map_err(|error| JsError::new(&error))?;
     let b = lab_experiment::Config::parse(b).map_err(|error| JsError::new(&error))?;
-    let comparison =
-        lab_experiment::compare(&scenario, &a, &b).map_err(|error| JsError::new(&error))?;
+    let network = lab_experiment::Network::parse(network).map_err(|error| JsError::new(&error))?;
+    let comparison = lab_experiment::compare(&scenario, &a, &b, &network)
+        .map_err(|error| JsError::new(&error))?;
     serde_json::to_string(&comparison).map_err(|error| JsError::new(&error.to_string()))
 }
 

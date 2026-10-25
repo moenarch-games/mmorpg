@@ -489,7 +489,12 @@ pub fn promote(request: &Request, source: &str) -> Result<Promotion, String> {
     if identity == production {
         return Err("the configuration equals production: nothing to promote".to_owned());
     }
-    let comparison = lab_experiment::compare(&request.scenario, &previous, &request.config)?;
+    let comparison = lab_experiment::compare(
+        &request.scenario,
+        &previous,
+        &request.config,
+        &lab_experiment::Network::LOCAL,
+    )?;
     let slug = format!("{}-v{}", slug(&request.config.name), request.version);
     let mut promoted = request.config.clone();
     promoted.name = format!("{} v{}", request.config.name, request.version);
