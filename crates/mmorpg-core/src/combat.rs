@@ -43,18 +43,21 @@ impl ZoneSimulation {
             // Warden melee during landing recovery (#155), a Shield Bash
             // before the combo opens (#157).
             let mut waiting = Vec::new();
+            let mut trigger_seen = false;
             for queued in intents {
-                // An authored action's trigger waits out its startup, then
-                // resolves as its active phase begins (#414). A refused or
-                // held input never starts one. Its lateness (#415) only
-                // matters to edges, which an authored release does not use.
-                match self.authored_step(player_id, &queued.intent) {
-                    Step::Startup => {
+                // An authored action's trigger waits out its startup (or its
+                // charge), then resolves as its active phase begins (#414).
+                // A refused or held input never starts one. Its lateness
+                // (#415) matters only to edges and a follow-up's window.
+                let step = self.authored_step(player_id, &queued, trigger_seen);
+                trigger_seen |= step.is_trigger();
+                match step {
+                    Step::Startup | Step::Buffer => {
                         waiting.push(queued);
                         continue;
                     }
-                    Step::Start(slot) => {
-                        if self.start_authored(player_id, slot) {
+                    Step::Start(slot) | Step::Chain(slot) => {
+                        if self.start_authored(player_id, slot, &queued.intent) {
                             self.release_authored(player_id, queued.intent)?;
                         } else {
                             waiting.push(queued);
@@ -65,7 +68,12 @@ impl ZoneSimulation {
                         self.release_authored(player_id, queued.intent)?;
                         continue;
                     }
+                    Step::Drop => {
+                        self.update_player(player_id, |player| player.authored = None);
+                        continue;
+                    }
                     Step::Cancel => self.update_player(player_id, |player| player.authored = None),
+                    Step::Miss => self.miss_follow_up(player_id),
                     Step::Ordinary => {}
                 }
                 let (waits, refused) =

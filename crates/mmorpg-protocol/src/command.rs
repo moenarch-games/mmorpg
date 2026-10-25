@@ -37,6 +37,10 @@ const RISE_TAG: u8 = 25;
 const COMMAND_MINIONS_TAG: u8 = 26;
 /// Wraps another command with the zone tick its client had observed (#415).
 const OBSERVED_TAG: u8 = 27;
+/// Releases a held ability input (#414).
+const RELEASE_ABILITY_TAG: u8 = 28;
+/// Version, tag, ability (u8), retired (0 key up, 1 retired).
+const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
 const OBSERVED_PREFIX_BYTES: usize = 10;
 /// Version, tag, minion order (9 bytes, #295).
@@ -88,6 +92,12 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             encode_entity_ref(&mut payload, target);
             payload
         }
+        ZoneCommand::ReleaseAbility { ability, retired } => vec![
+            PROTOCOL_BYTE,
+            RELEASE_ABILITY_TAG,
+            ability,
+            u8::from(retired),
+        ],
         ZoneCommand::DirectedStrike {
             ability,
             facing,
@@ -318,6 +328,23 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
             Ok(ZoneCommand::UseAbility {
                 ability: payload[BARE_COMMAND_BYTES],
                 target: decode_entity_ref(payload, &mut offset)?,
+            })
+        }
+        RELEASE_ABILITY_TAG => {
+            let [_, _, ability, retired] = payload else {
+                return Err(ProtocolError::new(
+                    "release ability command payload must be exactly 4 bytes",
+                ));
+            };
+            debug_assert_eq!(payload.len(), RELEASE_ABILITY_COMMAND_BYTES);
+            let retired = match retired {
+                0 => false,
+                1 => true,
+                _ => return Err(ProtocolError::new("release retired flag must be 0 or 1")),
+            };
+            Ok(ZoneCommand::ReleaseAbility {
+                ability: *ability,
+                retired,
             })
         }
         DIRECTED_STRIKE_TAG => {
@@ -846,6 +873,14 @@ mod tests {
             )))),
             ZoneCommand::CommandMinions(MinionOrder::Defend([-1_234, 56_789])),
             ZoneCommand::CommandMinions(MinionOrder::Retreat),
+            ZoneCommand::ReleaseAbility {
+                ability: 4,
+                retired: false,
+            },
+            ZoneCommand::ReleaseAbility {
+                ability: u8::MAX,
+                retired: true,
+            },
         ];
         // Observed commands (#415): the inner command after `observed <tick>`.
         let observed = [
@@ -900,6 +935,9 @@ mod tests {
                 ZoneCommand::UseAbility { ability, target } => {
                     let (kind, id) = entity_fields(target);
                     format!("use_ability {ability} {kind} {id}")
+                }
+                ZoneCommand::ReleaseAbility { ability, retired } => {
+                    format!("release_ability {ability} {}", u8::from(retired))
                 }
                 ZoneCommand::CancelCast => "cancel_cast".to_owned(),
                 ZoneCommand::DirectedStrike {
@@ -1172,6 +1210,20 @@ mod tests {
         let mut follow = encode_command(ZoneCommand::CommandMinions(MinionOrder::Follow));
         follow[5] = 1;
         assert!(decode_command(&follow).is_err());
+        // A held ability's release (#414): exact length and a 0/1 retired flag.
+        let release = encode_command(ZoneCommand::ReleaseAbility {
+            ability: 2,
+            retired: true,
+        });
+        for length in 0..release.len() {
+            assert!(decode_command(&release[..length]).is_err(), "{length}");
+        }
+        let mut trailing = release.clone();
+        trailing.push(0);
+        assert!(decode_command(&trailing).is_err());
+        let mut flag = release;
+        flag[3] = 2;
+        assert!(decode_command(&flag).is_err());
         for unknown in [0, 27, u8::MAX] {
             assert_eq!(
                 decode_command(&[PROTOCOL_BYTE, unknown])

@@ -93,9 +93,9 @@
 pub mod authored;
 
 pub use authored::{
-    AuthoredAction, AuthoredPhase, AuthoredProblem, AuthoredReport, Direction, InputContext,
-    MAX_AUTHORED_ACTIONS, MAX_AUTHORED_EDGES, MAX_AUTHORED_MS, MAX_AUTHORED_NAME, Trigger,
-    TriggerRefusal, TriggerStatus,
+    AuthoredAction, AuthoredPhase, AuthoredProblem, AuthoredReport, Direction, Gesture,
+    InputContext, MAX_AUTHORED_ACTIONS, MAX_AUTHORED_EDGES, MAX_AUTHORED_MS, MAX_AUTHORED_NAME,
+    Partner, TimedFollowUp, Trigger, TriggerRefusal, TriggerStatus,
 };
 
 use crate::snapshot::{PlayerIntent, QueuedIntent};
@@ -205,7 +205,7 @@ pub enum Anchor {
 }
 
 /// An edge's timing, measured from its anchor.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Window {
     /// The edge opens this long after the anchor.
     pub open_after_ms: u32,
@@ -1977,7 +1977,7 @@ fn evaluate(graph: &ActionGraph, state: &PlayerState, def: &EdgeDef, late: u8) -
         ActionId::Authored(slot) => state
             .authored
             .filter(|run| run.slot == slot)
-            .and_then(|run| run.since_impact(graph)),
+            .and_then(|run| run.since_impact()),
         _ => None,
     };
     let Some(elapsed) = source else {
@@ -2498,6 +2498,7 @@ impl ZoneSimulation {
         // A running authored action belongs to the graph it started under.
         for player in self.players.values_mut() {
             player.authored = None;
+            player.holds = authored::Holds::default();
         }
         Ok(())
     }

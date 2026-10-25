@@ -20,9 +20,9 @@ use mmorpg_core::ability::ids;
 use mmorpg_core::action::{
     self, ActionGraph, ActionId, ActionInput, Anchor, Arbitration, AuthoredAction, AuthoredPhase,
     BlockReason, CompatibilityRule, Condition, Consequence, Direction, EdgeDef, EdgeId, EdgeReport,
-    EdgeStatus, Effect, InputContext, Interrupted, InterruptionRule, Movement, MovementRule,
-    Override, Phase, Precision, RuleEffect, RuleId, Scope, Setting, Trigger, Window,
-    WindowModifier,
+    EdgeStatus, Effect, Gesture, InputContext, Interrupted, InterruptionRule, Movement,
+    MovementRule, Override, Partner, Phase, Precision, RuleEffect, RuleId, Scope, Setting,
+    TimedFollowUp, Trigger, Window, WindowModifier,
 };
 use mmorpg_core::{AbilityId, EntityRef, ItemId, PlayerClass, ZoneCommand, ZoneEvent};
 use mmorpg_protocol::{
@@ -75,6 +75,13 @@ const CONTEXTS: [InputContext; 6] = [
     InputContext::Moving(Direction::Forward),
     InputContext::Moving(Direction::Backward),
     InputContext::Moving(Direction::Sideways),
+];
+/// The controls a chord may hold (#414).
+const PARTNERS: [Partner; 4] = [
+    Partner::Guard,
+    Partner::Input(ActionInput::WardenMelee),
+    Partner::Input(ActionInput::ShieldBash),
+    Partner::Input(ActionInput::Ability),
 ];
 const RULES: [RuleId; 5] = [
     RuleId::LandingHoldsMelee,
@@ -382,6 +389,12 @@ pub struct AuthoredActionDto {
     pub ability: Option<u8>,
     /// `Direct`, `Airborne` or `Moving(Any|Forward|Backward|Sideways)`.
     pub context: String,
+    /// A hold-to-charge or a chord; absent for the plain press.
+    #[serde(default, skip_serializing_if = "GestureDto::is_press")]
+    pub gesture: GestureDto,
+    /// Only as a timed follow-up of another authored action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follows: Option<FollowUpDto>,
     pub conditions: Vec<String>,
     pub startup: AuthoredPhaseDto,
     pub active: AuthoredPhaseDto,
@@ -398,6 +411,13 @@ impl AuthoredActionDto {
             input: name(def.trigger.input),
             ability: def.trigger.ability.map(|id| id.get()),
             context: name(def.trigger.context),
+            gesture: GestureDto::of(def.trigger.gesture),
+            follows: def.trigger.follows.map(|follow| FollowUpDto {
+                source: follow.source,
+                open_after_ms: follow.window.open_after_ms,
+                actionable_ms: follow.window.actionable_ms,
+                buffer_ms: follow.window.buffer_ms,
+            }),
             conditions: def.conditions.iter().copied().map(name).collect(),
             startup: AuthoredPhaseDto::of(def.startup),
             active: AuthoredPhaseDto::of(def.active),
@@ -415,6 +435,11 @@ impl AuthoredActionDto {
                 input: named(INPUTS, &self.input, "input")?,
                 ability: self.ability.map(AbilityId::new),
                 context: named(CONTEXTS, &self.context, "input context")?,
+                gesture: self.gesture.gesture()?,
+                follows: self.follows.as_ref().map(|follow| TimedFollowUp {
+                    source: follow.source,
+                    window: window_of(follow.open_after_ms, follow.actionable_ms, follow.buffer_ms),
+                }),
             },
             conditions: conditions(&self.conditions)?,
             startup: self.startup.phase(),
@@ -423,6 +448,57 @@ impl AuthoredActionDto {
             effects: effects(&self.effects),
         })
     }
+}
+
+/// How an authored trigger is performed (#414): the press, a hold-to-charge
+/// released after `minMs`, or a chord while `partner` (`Guard` or
+/// `Input(WardenMelee|ShieldBash|Ability)`) is held.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all_fields = "camelCase", deny_unknown_fields)]
+pub enum GestureDto {
+    #[default]
+    Press,
+    Charge {
+        min_ms: u32,
+    },
+    Chord {
+        partner: String,
+    },
+}
+
+impl GestureDto {
+    fn is_press(&self) -> bool {
+        *self == Self::Press
+    }
+
+    fn of(gesture: Gesture) -> Self {
+        match gesture {
+            Gesture::Press => Self::Press,
+            Gesture::Charge { min_ms } => Self::Charge { min_ms },
+            Gesture::Chord(partner) => Self::Chord {
+                partner: name(partner),
+            },
+        }
+    }
+
+    fn gesture(&self) -> Result<Gesture, String> {
+        Ok(match self {
+            Self::Press => Gesture::Press,
+            Self::Charge { min_ms } => Gesture::Charge { min_ms: *min_ms },
+            Self::Chord { partner } => Gesture::Chord(named(PARTNERS, partner, "chord partner")?),
+        })
+    }
+}
+
+/// A timed follow-up's source slot and window from its use (#414).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FollowUpDto {
+    pub source: u8,
+    pub open_after_ms: u32,
+    pub actionable_ms: u32,
+    /// May exceed `openAfterMs`, reaching back into the source's startup.
+    pub buffer_ms: u32,
 }
 
 fn class_named(class: &str) -> Result<PlayerClass, String> {
@@ -1508,6 +1584,8 @@ mod tests {
             input: "WardenMelee".to_owned(),
             ability: Some(mmorpg_core::ability::ids::HEROIC_STRIKE.get()),
             context: "Moving(Forward)".to_owned(),
+            gesture: GestureDto::Press,
+            follows: None,
             conditions: Vec::new(),
             startup: phase(100, 100, 0),
             active: phase(300, 0, 100),
@@ -1619,6 +1697,90 @@ mod tests {
             "{:#?}",
             replay.findings
         );
+    }
+
+    #[test]
+    fn a_charge_and_a_timed_follow_up_round_trip_and_replay_their_release() {
+        let mut config = Config::baseline();
+        config.name = "charged".to_owned();
+        config.authored.push(sliding_slash());
+        let mut charged = sliding_slash();
+        charged.slot = 1;
+        charged.name = "Charged bash".to_owned();
+        charged.input = "ShieldBash".to_owned();
+        charged.ability = Some(mmorpg_core::ability::ids::SHIELD_BASH.get());
+        charged.context = "Direct".to_owned();
+        charged.gesture = GestureDto::Charge { min_ms: 100 };
+        charged.startup.ms = 400;
+        charged.effects = Vec::new();
+        config.authored.push(charged);
+        let mut finisher = sliding_slash();
+        finisher.slot = 2;
+        finisher.name = "Finisher".to_owned();
+        finisher.input = "Ability".to_owned();
+        finisher.ability = None;
+        finisher.context = "Direct".to_owned();
+        finisher.follows = Some(FollowUpDto {
+            source: 0,
+            open_after_ms: 100,
+            actionable_ms: 200,
+            buffer_ms: 200,
+        });
+        config.authored.push(finisher);
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(
+            json.contains(r#""gesture":{"kind":"Charge","minMs":100}"#),
+            "{json}"
+        );
+        assert!(json.contains(r#""follows":{"source":0,"#), "{json}");
+        assert_eq!(Config::parse(&json).unwrap(), config);
+        let graph = config.graph().unwrap();
+        assert_eq!(Config::of(graph, "charged"), config);
+        let mut chord = config.clone();
+        chord.authored[1].gesture = GestureDto::Chord {
+            partner: "Guard".to_owned(),
+        };
+        assert!(chord.graph().is_ok());
+        chord.authored[1].gesture = GestureDto::Chord {
+            partner: "Jump".to_owned(),
+        };
+        assert!(chord.graph().unwrap_err().contains("chord partner"));
+
+        let bash = mmorpg_core::ability::ids::SHIELD_BASH.get();
+        let scenario = scenario(&[
+            (
+                2,
+                ZoneCommand::UseAbility {
+                    ability: bash,
+                    target: None,
+                },
+            ),
+            (
+                20,
+                ZoneCommand::ReleaseAbility {
+                    ability: bash,
+                    retired: false,
+                },
+            ),
+        ]);
+        let replay = run(&scenario, &config, &Network::LOCAL).unwrap();
+        let charging: Vec<usize> = replay
+            .ticks
+            .iter()
+            .enumerate()
+            .filter(|(_, tick)| {
+                tick.regions
+                    .iter()
+                    .any(|region| region.contains("Authored(1)·Startup"))
+            })
+            .map(|(index, _)| index)
+            .collect();
+        assert!(!charging.is_empty(), "the press charges");
+        assert!(
+            charging.len() < 24,
+            "the release ends the charge before its 400 ms startup: {charging:?}"
+        );
+        assert_eq!(run(&scenario, &config, &Network::LOCAL).unwrap(), replay);
     }
 
     #[test]

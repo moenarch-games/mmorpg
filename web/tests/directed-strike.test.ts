@@ -108,3 +108,25 @@ describe("directed Heroic Strike presentation", () => {
     expect(whiff).toBe("Your high-right Heroic Strike cuts only air.");
   });
 });
+
+describe("ability slot releases (#414)", () => {
+  test("a slot acts on its press and reports a deliberate release or a retirement", () => {
+    const actions: string[] = [];
+    const releases: string[] = [];
+    const window = new FakeTarget();
+    const document = new FakeTarget();
+    const controls = new GameControls({
+      screen: () => ({ phase: "world", panelOpen: false }),
+      onAction: (action) => actions.push(action),
+      onRelease: (action, phase) => releases.push(`${action} ${phase}`),
+    });
+    controls.attach({ window, document, getGamepads: () => [] });
+    window.emit("keydown", key("Digit1"));
+    expect(actions).toEqual(["ability.slot1"]);
+    window.emit("keyup", key("Digit1"));
+    window.emit("keydown", key("Digit1"));
+    window.emit("blur");
+    expect(actions).toEqual(["ability.slot1", "ability.slot1"]);
+    expect(releases).toEqual(["ability.slot1 release", "ability.slot1 cancel"]);
+  });
+});

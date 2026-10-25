@@ -72,15 +72,48 @@ export type LabAuthoredAction = {
   /** Only this ability's use; null is any the input covers. */
   ability: number | null;
   context: string;
+  /** Absent for the plain press. */
+  gesture?: LabGesture;
+  /** Only as a timed follow-up of another authored action; absent otherwise. */
+  follows?: LabFollowUp;
   conditions: string[];
   startup: LabAuthoredPhase; active: LabAuthoredPhase; recovery: LabAuthoredPhase;
   effects: LabEffect[];
 };
 
+/**
+ * How a trigger is performed through `input-bindings`' press/release lifecycle (#414): the press,
+ * hold-to-charge (released after `minMs`, at most the startup; an earlier release is the plain
+ * use) or a chord while `partner` is held.
+ */
+export type LabGesture = { kind: "Press" } | { kind: "Charge"; minMs: number } | { kind: "Chord"; partner: string };
+
+/**
+ * A timed follow-up (#414): the trigger counts only `openAfterMs`…+`actionableMs` after the use of
+ * the authored action in `source`; an earlier press waits up to `bufferMs` before the opening,
+ * reaching back into the source's startup, and a press before that loses the follow-up.
+ */
+export type LabFollowUp = { source: number; openAfterMs: number; actionableMs: number; bufferMs: number };
+
 /** The input contexts a trigger can need (Atlas 5.9.5): the plain binding, jump + attack, direction + action. */
 export const INPUT_CONTEXTS: readonly string[] = [
   "Direct", "Airborne", "Moving(Any)", "Moving(Forward)", "Moving(Backward)", "Moving(Sideways)",
 ];
+
+/** The held controls a chord can need (#414). */
+export const CHORD_PARTNERS: readonly string[] = ["Guard", "Input(WardenMelee)", "Input(ShieldBash)", "Input(Ability)"];
+
+/** The gesture choices of the editor, by label. */
+export function gestureOf(choice: string, current: LabGesture | undefined, startupMs: number): LabGesture | undefined {
+  if (choice === "Press") { return undefined; }
+  if (choice === "Charge") { return current?.kind === "Charge" ? current : { kind: "Charge", minMs: Math.min(200, startupMs) }; }
+  return { kind: "Chord", partner: choice.slice("Chord ".length) };
+}
+
+/** The editor label of `gesture`. */
+export function gestureLabel(gesture: LabGesture | undefined): string {
+  return !gesture || gesture.kind === "Press" ? "Press" : gesture.kind === "Charge" ? "Charge" : `Chord ${gesture.partner}`;
+}
 
 const FREE_PHASE = { steeringPercent: 100, momentumPercent: 0, maxAccelerationCms2: null };
 
@@ -110,6 +143,30 @@ export function slidingSlashSample(config: LabConfig): LabConfig {
     conditions: [], effects: [{ kind: "IgnoreGlobalCooldown" } as LabEffect], precision: null, priority: 2,
   }] : config.edges;
   return { ...config, authored: [...authored, action], edges };
+}
+
+/**
+ * Adds a Warden's charged bash (#414): hold Shield Bash at least 200 ms (at most its 600 ms
+ * startup, which slows the Warden) and release to bash with a 3 m/s lunge; a quicker tap is the
+ * plain Bash. With a sliding slash present, the charged bash is instead its timed follow-up:
+ * pressed 100–300 ms after the slash's hit, buffered from the slash's own wind-up.
+ */
+export function chargedBashSample(config: LabConfig): LabConfig {
+  const authored = config.authored ?? [];
+  const slot = [0, 1, 2, 3, 4, 5, 6, 7].find((candidate) => !authored.some((action) => action.slot === candidate));
+  if (slot === undefined) { return config; }
+  const slash = authored.find((action) => action.name === "Sliding slash");
+  const action: LabAuthoredAction = {
+    slot, name: slash ? "Charged finisher" : "Charged bash", class: "warden", input: "ShieldBash", ability: 2, context: "Direct",
+    gesture: { kind: "Charge", minMs: 200 },
+    ...(slash ? { follows: { source: slash.slot, openAfterMs: 100, actionableMs: 200, bufferMs: 200 } } : {}),
+    conditions: [],
+    startup: { ms: 600, ...FREE_PHASE, steeringPercent: 50 },
+    active: { ms: 100, ...FREE_PHASE },
+    recovery: { ms: 200, ...FREE_PHASE },
+    effects: [{ kind: "Impulse", forwardCms: 300, upCms: 0 }, ...(slash ? [{ kind: "IgnoreGlobalCooldown" } as LabEffect] : [])],
+  };
+  return { ...config, authored: [...authored, action] };
 }
 
 /** Removes an authored action with the edges leaving it. */

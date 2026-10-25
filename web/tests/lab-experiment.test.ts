@@ -5,7 +5,7 @@ import { TICK_HZ } from "../src/replication";
 import {
   arrivalText, copyConfig, importFile, exportBundle, insertCopy, isMovement, LabLibrary, LOCAL_NETWORK, moveCommand, movementRule, NETWORK_PRESETS, PROMOTION_FORMAT,
   promotionFileName, promotionRequest, RECORD_FORMAT, removeAuthored, removeCommand, removeEdge, ruleApplies, setAuthored,
-  setMovementRule, setRuleApplies, slidingSlashSample, swimmingSample, traversalSample, SCENARIO_FORMAT,
+  setMovementRule, setRuleApplies, slidingSlashSample, chargedBashSample, swimmingSample, traversalSample, SCENARIO_FORMAT,
   type ConfigCheck, type LabComparison, type LabConfig, type LabRun, type LabScenario,
 } from "../src/world/lab-experiment";
 import { ScenarioSource, type ScenarioZoneHandle } from "../src/world/scenario-source";
@@ -221,6 +221,37 @@ describe("Action Lab experiments (#382)", () => {
     const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(sample), LOCAL)) as LabComparison;
     expect(comparison.divergesAt).not.toBeNull();
     expect(comparison.b.ticks.some((tick) => tick.regions.some((region) => region.startsWith("Authored(0)·Startup")))).toBe(true);
+  }, 30_000);
+
+  test("hold-to-charge and a timed follow-up validate, and a held Bash charges until released (#414)", () => {
+    const production = baseline();
+    const charged = chargedBashSample(copyConfig(production, "Charged bash"));
+    expect(check(charged)).toMatchObject({ baseline: false, error: null });
+    expect(charged.authored![0]).toMatchObject({ gesture: { kind: "Charge", minMs: 200 } });
+    expect(charged.authored![0]!.follows).toBeUndefined();
+    // After the sliding slash it is the slash's buffered follow-up instead.
+    const finisher = chargedBashSample(slidingSlashSample(copyConfig(production, "Finisher")));
+    expect(check(finisher).error).toBeNull();
+    expect(finisher.authored![1]!.follows).toMatchObject({ source: 0, bufferMs: 200 });
+    // A minimum beyond the startup is named.
+    const long = setAuthored(charged, { ...charged.authored![0]!, gesture: { kind: "Charge", minMs: 900 } });
+    expect(check(long).error).toContain("BadAuthored(0, Charge)");
+
+    // Press Shield Bash, hold 300 ms, release: the charge runs until the release.
+    const source = new ScenarioSource(zone(charged));
+    void source.join();
+    for (let tick = 0; tick < 60; tick += 1) {
+      if (tick === 2) { source.sendCommand({ kind: "use-ability", ability: 2, target: null }); }
+      if (tick === 20) { source.sendCommand({ kind: "release-ability", ability: 2, retired: false }); }
+      source.advance(TICK_SECONDS);
+    }
+    const recording = source.recording();
+    source.leave();
+    const scenario: LabScenario = { ...record(), name: "charged bash", ticks: recording.ticks, commands: [...recording.commands], recorded: null };
+    const run = JSON.parse(wasm.actionLabRun(JSON.stringify(scenario), JSON.stringify(charged), LOCAL)) as LabRun;
+    const charging = run.ticks.filter((tick) => tick.regions.some((region) => region.startsWith("Authored(0)·Startup"))).length;
+    expect(charging).toBeGreaterThan(10);
+    expect(charging).toBeLessThan(30);
   }, 30_000);
 });
 

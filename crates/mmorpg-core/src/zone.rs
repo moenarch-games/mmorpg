@@ -93,6 +93,10 @@ pub(crate) struct PlayerState {
     /// setup like the graph itself, so not canonical: a restored zone runs
     /// the baseline, which authors none.
     pub(crate) authored: Option<crate::action::authored::AuthoredRun>,
+    /// Pressed and released ability inputs, in arrival ticks, while an
+    /// experimental graph has hold-to-charge or chord triggers (#414). Zone
+    /// setup like a running authored action, so not canonical.
+    pub(crate) holds: crate::action::authored::Holds,
     /// A confirmed slash's pending Shield Bash follow-up (#157).
     pub(crate) combo: Option<crate::ComboOpening>,
     /// Ticks left of a directed strike's committed recovery; a guard raised
@@ -164,6 +168,7 @@ impl PlayerState {
             swimming: false,
             impulse: None,
             authored: None,
+            holds: crate::action::authored::Holds::default(),
             combo: None,
             strike_recovery: 0,
             repairing: None,
@@ -576,6 +581,7 @@ impl ZoneSimulation {
         observed: Option<u64>,
     ) -> Result<(), ZoneError> {
         let now = self.tick;
+        let tracks_holds = self.action_graph.tracks_holds();
         let player = self
             .players
             .get_mut(&player_id)
@@ -647,6 +653,15 @@ impl ZoneSimulation {
             ZoneCommand::UseAbility { ability, target } => {
                 Some(PlayerIntent::UseAbility { ability, target })
             }
+            // Held state like movement, in arrival ticks (#414).
+            ZoneCommand::ReleaseAbility { ability, retired } => {
+                if tracks_holds {
+                    player
+                        .holds
+                        .release(crate::AbilityId::new(ability), now, retired);
+                }
+                None
+            }
             ZoneCommand::DirectedStrike {
                 ability,
                 facing,
@@ -695,6 +710,11 @@ impl ZoneSimulation {
         };
         if let Some(intent) = intent {
             if player.intents.len() < MAX_PENDING_INTENTS {
+                // A press an experimental hold-to-charge or chord may read
+                // (#414); the production graph tracks none.
+                if tracks_holds && let PlayerIntent::UseAbility { ability, .. } = intent {
+                    player.holds.press(crate::AbilityId::new(ability), now);
+                }
                 player.intents.push(crate::QueuedIntent { intent, late });
             } else {
                 player.intents_dropped = true;
