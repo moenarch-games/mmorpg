@@ -157,14 +157,33 @@ export type LabScenario = {
   recorded: { config: string; digest: string } | null;
 };
 
+/** An edge whose source runs: its status (condition) and eligible window in absolute ticks (#383). */
+export type LabEdgeTrace = {
+  edge: string; status: string; anchorTick: number | null; bufferFrom: number | null; openFrom: number | null;
+  openUntil: number | null; precision: [number, number] | null;
+};
+/** How the zone arbitrated a command's graph input (Atlas 5.7.4). */
+export type LabDecision = { input: string; outcome: string; candidates: { candidate: string; verdict: string }[]; precise: boolean };
 export type LabTick = {
   tick: number; regions: string[]; events: string[]; health: number; resource: number | null;
   /** Body centre in cm and horizontal speed in cm/s after the tick's physics step (#413). */
   position: [number, number, number]; speed: number;
-  digest: string;
+  digest: string; edges: LabEdgeTrace[];
 };
 export type LabCommandResult = {
   index: number; tick: number; label: string; refused: string[]; effectTick: number | null; delayTicks: number | null;
+  decision: LabDecision | null;
+};
+/** An explained diagnostic (#383, Atlas 5.6.6): never a claim that a configuration is better. */
+export type LabFinding = {
+  kind: "unreachableTransition" | "expiredBuffer" | "inputLag" | "arbitrationConflict" | "cancelLoop" | "comboRegression";
+  severity: "warning" | "note";
+  tick: number;
+  summary: string;
+  trace: {
+    tick: number; regions: string[]; pending: string[]; edge: LabEdgeTrace | null; sourceEvents: string[];
+    decision: LabDecision | null; command: number | null; divergesAt: number | null;
+  };
 };
 export type LabRun = {
   config: string; configName: string; baseline: boolean; contentRevision: string; contentChanged: boolean;
@@ -174,8 +193,13 @@ export type LabRun = {
     damageDealt: number; damageTaken: number; refusals: number; kills: number;
     finalHealth: number; finalResource: number | null; finalDigest: string;
   };
+  findings: LabFinding[];
 };
-export type LabComparison = { a: LabRun; b: LabRun; divergesAt: number | null; differences: { tick: number; a: LabTick; b: LabTick }[] };
+export type LabComparison = {
+  a: LabRun; b: LabRun; divergesAt: number | null; differences: { tick: number; a: LabTick; b: LabTick }[];
+  /** Combos that succeeded under A and fail under B. */
+  regressions: LabFinding[];
+};
 
 export function hex(bytes: Uint8Array): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -260,13 +284,51 @@ export function exportBundle(bundle: Omit<LabBundle, "format">): string {
   return JSON.stringify({ format: BUNDLE_FORMAT, ...bundle }, null, 2);
 }
 
-/** Reads an exported bundle, a lone scenario or a lone configuration; the zone validates the content. */
+export const PROMOTION_FORMAT = "mmorpg-action-lab-promotion";
+export const RECORD_FORMAT = "mmorpg-action-lab-promotion-record";
+
+/** A saved, validated configuration version: the `version`-th distinct rules saved under `name`. */
+export type LabConfigVersion = { name: string; version: number; identity: string; config: LabConfig };
+
+/**
+ * What `cargo run -p mmorpg-wasm --example action-lab -- promote` turns into a reviewable change (#383, Atlas 5.6.7): an
+ * explicitly chosen saved version, the production identity it was compared against and its evidence.
+ */
+export type LabPromotion = {
+  format: typeof PROMOTION_FORMAT; version: number; production: string; config: LabConfig; scenario: LabScenario; note: string;
+};
+
+/** A checked-in promotion record: the replaced and the promoted rules and their scenario. */
+export type LabPromotionRecord = {
+  format: typeof RECORD_FORMAT; name: string; version: number; identity: string; note: string;
+  previous: LabConfig; promoted: LabConfig; scenario: LabScenario; divergesAt: number | null;
+};
+
+export function promotionRequest(version: LabConfigVersion, production: string, scenario: LabScenario, note: string): LabPromotion {
+  return { format: PROMOTION_FORMAT, version: version.version, production, config: { ...version.config, name: version.name }, scenario, note };
+}
+
+/** The checkout command that turns an exported promotion into a branch-ready change. */
+export function promoteCommand(file: string): string {
+  return `cargo run -p mmorpg-wasm --locked --example action-lab -- promote ${file}`;
+}
+
+export function promotionFileName(version: LabConfigVersion): string {
+  const slug = version.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `promote-${slug}-v${version.version}.json`;
+}
+
+/** Reads an exported bundle, a promotion record (previous as A, promoted as B), a lone scenario or configuration. */
 export function importFile(text: string): Partial<Omit<LabBundle, "format">> {
   const value = JSON.parse(text) as { format?: string };
   switch (value.format) {
     case BUNDLE_FORMAT: {
       const bundle = value as LabBundle;
       return { scenario: bundle.scenario, a: bundle.a, b: bundle.b };
+    }
+    case RECORD_FORMAT: {
+      const record = value as LabPromotionRecord;
+      return { scenario: record.scenario, a: record.previous, b: record.promoted };
     }
     case SCENARIO_FORMAT: return { scenario: value as LabScenario };
     case CONFIG_FORMAT: return { b: value as LabConfig };
@@ -283,22 +345,29 @@ export class LabLibrary {
     this.#storage = storage;
   }
 
-  #read(): { scenarios: LabScenario[]; configs: LabConfig[] } {
+  #read(): { scenarios: LabScenario[]; configs: LabConfigVersion[] } {
     try {
       const text = this.#storage?.getItem(LabLibrary.KEY);
-      if (text) { return JSON.parse(text) as { scenarios: LabScenario[]; configs: LabConfig[] }; }
+      if (text) {
+        const library = JSON.parse(text) as { scenarios: LabScenario[]; configs: LabConfigVersion[] };
+        // Configurations saved before versions (#383) carry no version: dropped.
+        return { scenarios: library.scenarios, configs: library.configs.filter((entry) => typeof entry.version === "number") };
+      }
     } catch {
       // Unreadable storage: an empty library.
     }
     return { scenarios: [], configs: [] };
   }
 
-  #write(library: { scenarios: LabScenario[]; configs: LabConfig[] }): void {
+  #write(library: { scenarios: LabScenario[]; configs: LabConfigVersion[] }): void {
     try { this.#storage?.setItem(LabLibrary.KEY, JSON.stringify(library)); } catch { /* storage denied: kept for the visit only */ }
   }
 
   get scenarios(): LabScenario[] { return this.#read().scenarios; }
-  get configs(): LabConfig[] { return this.#read().configs; }
+  /** Every saved configuration version, by name and then version. */
+  get configs(): LabConfigVersion[] {
+    return this.#read().configs.sort((left, right) => left.name.localeCompare(right.name) || left.version - right.version);
+  }
 
   /** Saves (or replaces by name) a scenario. */
   saveScenario(scenario: LabScenario): void {
@@ -307,11 +376,19 @@ export class LabLibrary {
     this.#write(library);
   }
 
-  /** Saves (or replaces by name) a configuration. */
-  saveConfig(config: LabConfig): void {
+  /**
+   * Saves a validated configuration (its `identity` from `actionLabCheck`) as the next version of its name.
+   * Saving the rules of the name's latest version again keeps that version. Versions are never replaced.
+   */
+  saveConfig(config: LabConfig, identity: string): LabConfigVersion {
     const library = this.#read();
-    library.configs = [...library.configs.filter((entry) => entry.name !== config.name), config];
+    const versions = library.configs.filter((entry) => entry.name === config.name);
+    const latest = versions.reduce<LabConfigVersion | null>((found, entry) => !found || entry.version > found.version ? entry : found, null);
+    if (latest?.identity === identity) { return latest; }
+    const saved = { name: config.name, version: (latest?.version ?? 0) + 1, identity, config: structuredClone(config) };
+    library.configs = [...library.configs, saved];
     this.#write(library);
+    return saved;
   }
 
   removeScenario(name: string): void {

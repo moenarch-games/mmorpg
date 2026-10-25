@@ -10,9 +10,10 @@ import { ticksFromMs } from "../replication";
 import { element, type LabSetup } from "./action-lab";
 import {
   addLandingEdge, copyConfig, exportBundle, importFile, insertCopy, LANDING_EDGES, MOVEMENT_PHASES, moveCommand, movementRule,
-  recoveryOverride, removeCommand, removeEdge, ruleApplies, setDuration, setMovementRule, setRecoveryOverride, setRuleApplies,
-  shortLabel, traversalSample, SCENARIO_FORMAT,
-  type ConfigCheck, type LabComparison, type LabConfig, type LabConfigEdge, type LabEffect, type LabLibrary, type LabRun, type LabScenario,
+  promoteCommand, promotionFileName, promotionRequest, recoveryOverride, removeCommand, removeEdge, ruleApplies, setDuration,
+  setMovementRule, setRecoveryOverride, setRuleApplies, shortLabel, traversalSample, SCENARIO_FORMAT,
+  type ConfigCheck, type LabComparison, type LabConfig, type LabConfigEdge, type LabConfigVersion, type LabEffect, type LabFinding,
+  type LabLibrary, type LabRun, type LabScenario,
 } from "./lab-experiment";
 import type { LabExperiments } from "./wasm-runtime";
 
@@ -36,6 +37,17 @@ const FLAG_EFFECTS = ["TargetConfirmed", "IgnoreGlobalCooldown", "KeepOpening"] 
 /** The recoveries the zone reads per class (Atlas 5.7.6). */
 const OVERRIDABLE_RECOVERIES = ["DirectedSlash", "GlobalCooldown"];
 
+const versionKey = (version: LabConfigVersion) => `${version.name}\u0000${version.version}`;
+
+const FINDING_TITLES: Record<LabFinding["kind"], string> = {
+  unreachableTransition: "Unreachable transition",
+  expiredBuffer: "Expired buffer",
+  inputLag: "Input-to-action lag",
+  arbitrationConflict: "Arbitration conflict",
+  cancelLoop: "Cancel loop",
+  comboRegression: "Combo regression",
+};
+
 function download(name: string, text: string): void {
   const link = element("a", { href: URL.createObjectURL(new Blob([text], { type: "application/json" })), download: name });
   link.click();
@@ -52,6 +64,10 @@ export class ExperimentPanel {
   readonly #scenarioBox = element("div");
   readonly #configBox = element("div");
   readonly #compareBox = element("div", { className: "lab-compare" });
+  readonly #promoteBox = element("div", { className: "lab-promote" });
+  /** The saved version explicitly chosen for promotion (`versionKey`), or "". */
+  #promoting = "";
+  #promotionNote = "";
   #setup: LabSetup;
   #scenario: LabScenario | null = null;
   #configs: Record<Slot, LabConfig>;
@@ -72,7 +88,7 @@ export class ExperimentPanel {
     const baseline = runtime.baseline();
     this.#configs = { a: baseline, b: copyConfig(baseline, "Experiment B") };
     this.#checks = { a: runtime.check(this.#configs.a), b: runtime.check(this.#configs.b) };
-    this.root.append(this.#recordingBar(), this.#scenarioBox, this.#configBox, this.#compareBox);
+    this.root.append(this.#recordingBar(), this.#scenarioBox, this.#configBox, this.#compareBox, this.#promoteBox);
     this.#render();
   }
 
@@ -169,6 +185,7 @@ export class ExperimentPanel {
     this.#renderScenario();
     this.#renderConfig();
     this.#renderComparison();
+    this.#renderPromotion();
   }
 
   #renderScenario(): void {
@@ -256,10 +273,12 @@ export class ExperimentPanel {
     };
     const savedConfigs = element("select", { title: "Saved configurations" });
     savedConfigs.append(element("option", { value: "" }, "saved configurations…"));
-    for (const entry of this.#library.configs) { savedConfigs.append(element("option", { value: entry.name }, entry.name)); }
+    for (const entry of this.#library.configs) {
+      savedConfigs.append(element("option", { value: versionKey(entry) }, `${entry.name} v${entry.version} · ${entry.identity}`));
+    }
     savedConfigs.addEventListener("change", () => {
-      const found = this.#library.configs.find((entry) => entry.name === savedConfigs.value);
-      if (found) { this.#setConfig(slot, found); }
+      const found = this.#library.configs.find((entry) => versionKey(entry) === savedConfigs.value);
+      if (found) { this.#setConfig(slot, { ...structuredClone(found.config), name: found.name }); }
     });
     const status = check.error
       ? element("p", { className: "lab-refused" }, `Invalid: ${check.error}`)
@@ -305,7 +324,11 @@ export class ExperimentPanel {
           const other = slot === "a" ? "b" : "a";
           this.#setConfig(other, copyConfig(config, `${config.name} copy`));
         }),
-        action("Save", "Save this configuration in this browser", () => { this.#library.saveConfig(config); this.#render(); }),
+        action("Save version", "Save these validated rules as the next version of this name, in this browser", () => {
+          if (check.error || !check.identity) { this.#error = `${slot.toUpperCase()}: only a valid configuration is saved`; this.#render(); return; }
+          this.#library.saveConfig(config, check.identity);
+          this.#render();
+        }),
         savedConfigs),
       status, body,
       element("div", { className: "lab-playback" },
@@ -478,9 +501,95 @@ export class ExperimentPanel {
     });
     this.#compareBox.replaceChildren(element("h3", {}, "Compare A / B"), header, ...error, ...content,
       element("p", { className: comparison.divergesAt === null ? "lab-muted" : "lab-diverges" }, diverges), summary,
+      this.#diagnostics(comparison),
       element("p", { className: "lab-muted" }, `${comparison.differences.length} ticks differ in actions, events, health, resource or position. Click a side to replay it paused there.`),
       element("div", { className: "lab-scroll" }, element("table", { className: "lab-table lab-diff" },
         element("thead", {}, element("tr", {}, element("th", {}, "Tick"), element("th", {}, "A"), element("th", {}, "B"))),
         element("tbody", {}, ...differences))));
+  }
+
+  /** The explained diagnostics of both runs and the combos B lost (#383, Atlas 5.6.6). */
+  #diagnostics(comparison: LabComparison): HTMLElement {
+    const entries: [string, Slot, LabFinding][] = [
+      ...comparison.regressions.map((finding) => ["A→B", "b", finding] as [string, Slot, LabFinding]),
+      ...comparison.a.findings.map((finding) => ["A", "a", finding] as [string, Slot, LabFinding]),
+      ...comparison.b.findings.map((finding) => ["B", "b", finding] as [string, Slot, LabFinding]),
+    ];
+    // Warnings first, then by tick.
+    entries.sort(([, , left], [, , right]) => Number(left.severity === "note") - Number(right.severity === "note") || left.tick - right.tick);
+    const warnings = entries.filter(([, , finding]) => finding.severity === "warning").length;
+    const items = entries.map(([run, slot, finding]) => {
+      const { trace } = finding;
+      const edge = trace.edge;
+      const decision = trace.decision;
+      const line = (name: string, value: string) => element("tr", {}, element("th", {}, name), element("td", {}, value));
+      const replay = element("button", { type: "button", title: `Replay ${slot.toUpperCase()} paused at this tick` }, "Replay here");
+      replay.addEventListener("click", () => void this.#replay(slot, trace.tick));
+      return element("details", { className: `lab-finding lab-${finding.severity}` },
+        element("summary", {}, `${run} · ${FINDING_TITLES[finding.kind]} · tick ${finding.tick}: ${shortLabel(finding.summary)}`),
+        element("table", { className: "lab-table lab-trace" }, element("tbody", {},
+          line("Active state", trace.regions.filter(Boolean).join(" · ") || "idle"),
+          line("Pending commands", trace.pending.map(shortLabel).join("; ") || "none"),
+          line("Edge condition", edge ? `${edge.edge}: ${edge.status}` : "—"),
+          line("Eligible window", edge?.openFrom === null || !edge
+            ? "—"
+            : `buffer ${edge.bufferFrom}, open ${edge.openFrom}–${edge.openUntil}${edge.precision ? `, precise ${edge.precision[0]}–${edge.precision[1]}` : ""}`),
+          line("Source event", edge?.anchorTick == null ? "—" : `tick ${edge.anchorTick}: ${trace.sourceEvents.map(shortLabel).join(", ") || "—"}`),
+          line("Observed decision", decision
+            ? `${decision.input} → ${decision.outcome}${decision.precise ? " (precise)" : ""} [${decision.candidates.map((entry) => `${entry.candidate}: ${entry.verdict}`).join("; ")}]`
+            : "—"),
+          line("First diverging tick", String(trace.divergesAt ?? comparison.divergesAt ?? "none")))),
+        replay);
+    });
+    return element("div", { className: "lab-findings" },
+      element("h4", {}, `Diagnostics: ${warnings} warning${warnings === 1 ? "" : "s"}, ${entries.length - warnings} notes`),
+      element("p", { className: "lab-muted" }, "Explained from the authoritative ticks of this scenario. Diagnostics, not a ranking: faster or harder-hitting rules are not automatically better."),
+      ...items);
+  }
+
+  /** Explicit promotion of a saved version as a reviewable change (#383, Atlas 5.6.7). */
+  #renderPromotion(): void {
+    const versions = this.#library.configs;
+    const chosen = versions.find((entry) => versionKey(entry) === this.#promoting) ?? null;
+    const select = element("select", { title: "The saved configuration version to promote" });
+    select.append(element("option", { value: "" }, "choose a saved version…"));
+    for (const entry of versions) {
+      select.append(element("option", { value: versionKey(entry), selected: versionKey(entry) === this.#promoting },
+        `${entry.name} v${entry.version} · ${entry.identity}`));
+    }
+    select.addEventListener("change", () => { this.#promoting = select.value; this.#render(); });
+    const intro = element("p", { className: "lab-muted" },
+      "Promotion never changes rules here. It exports a request; in a checkout, the command below writes the new production graph, "
+      + "a promotion record and a pull request description. Only the reviewed, merged pull request changes gameplay.");
+    const parts: HTMLElement[] = [element("h3", {}, "Promote"), intro, element("div", { className: "lab-playback" }, select)];
+    if (!chosen) {
+      parts.push(element("p", { className: "lab-muted" }, versions.length ? "Choose the saved version to promote." : "Save a configuration version first."));
+      this.#promoteBox.replaceChildren(...parts);
+      return;
+    }
+    const baseline = this.#runtime.baseline();
+    const production = this.#runtime.check(baseline).identity ?? "";
+    const changes = this.#runtime.changes(baseline, chosen.config);
+    const scenario = this.#scenario;
+    parts.push(changes.length
+      ? element("ul", { className: "lab-changes" }, ...changes.map((change) => element("li", {}, element("code", {}, change))))
+      : element("p", { className: "lab-refused" }, "This version equals production: nothing to promote."));
+    parts.push(element("p", { className: scenario ? "lab-muted" : "lab-refused" }, scenario
+      ? `Evidence: scenario “${scenario.name}” (${scenario.ticks} ticks, ${scenario.commands.length} commands), replayed again by the command.`
+      : "Save or import the scenario that is this promotion's evidence."));
+    const note = element("textarea", { className: "lab-json", rows: 2, placeholder: "Why this should become gameplay (for the pull request)", value: this.#promotionNote });
+    note.addEventListener("input", () => { this.#promotionNote = note.value; });
+    const ready = scenario !== null && changes.length > 0;
+    const exportButton = element("button", { type: "button", disabled: !ready, title: "Download the promotion request for the checkout command" },
+      `Export promotion of ${chosen.name} v${chosen.version}`);
+    const file = promotionFileName(chosen);
+    exportButton.addEventListener("click", () => {
+      if (!scenario) { return; }
+      download(file, JSON.stringify(promotionRequest(chosen, production, scenario, this.#promotionNote), null, 2));
+    });
+    parts.push(note, element("div", { className: "lab-playback" }, exportButton),
+      element("p", { className: "lab-muted" }, "Then, in a checkout:"),
+      element("pre", { className: "lab-command" }, promoteCommand(`path/to/${file}`)));
+    this.#promoteBox.replaceChildren(...parts);
   }
 }

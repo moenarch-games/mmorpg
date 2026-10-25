@@ -16,10 +16,12 @@
 
 use std::fmt::Debug;
 
+use mmorpg_core::ability::ids;
 use mmorpg_core::action::{
-    self, ActionGraph, ActionId, Anchor, CompatibilityRule, Condition, Consequence, EdgeDef,
-    EdgeId, Effect, Interrupted, InterruptionRule, Movement, MovementRule, Override, Phase,
-    Precision, RuleEffect, RuleId, Scope, Setting, Window, WindowModifier,
+    self, ActionGraph, ActionId, ActionInput, Anchor, Arbitration, BlockReason, CompatibilityRule,
+    Condition, Consequence, EdgeDef, EdgeId, EdgeReport, EdgeStatus, Effect, Interrupted,
+    InterruptionRule, Movement, MovementRule, Override, Phase, Precision, RuleEffect, RuleId,
+    Scope, Setting, Window, WindowModifier,
 };
 use mmorpg_core::{AbilityId, EntityRef, ItemId, PlayerClass, ZoneCommand, ZoneEvent};
 use mmorpg_protocol::{PROTOCOL_ID, decode_command, encode_canonical_snapshot};
@@ -27,6 +29,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::action_lab::{INPUTS, LabSetup};
 use crate::host::LocalZoneHost;
+use crate::lab_diagnostics::{self, Finding};
 
 /// The `format` of an exported experiment configuration.
 pub const CONFIG_FORMAT: &str = "mmorpg-action-lab-config";
@@ -761,6 +764,10 @@ pub struct TickRecord {
     pub position: [i32; 3],
     pub speed: u32,
     pub digest: String,
+    /// The edges whose source runs, as the next tick's intents meet them
+    /// (#383): status, anchor and eligible window in absolute ticks.
+    #[serde(serialize_with = "edge_traces")]
+    pub edges: Vec<EdgeReport>,
 }
 
 /// What one command led to.
@@ -777,6 +784,84 @@ pub struct CommandResult {
     pub effect_tick: Option<u64>,
     /// `effect_tick - tick`, the input-to-effect delay in ticks.
     pub delay_ticks: Option<u64>,
+    /// How the zone arbitrated the command's graph input against the state
+    /// it met (#383, Atlas 5.7.4), for commands that make one.
+    #[serde(rename = "decision", serialize_with = "decision_trace")]
+    pub arbitration: Option<Arbitration>,
+}
+
+fn edge_traces<S: serde::Serializer>(
+    edges: &[EdgeReport],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(edges.iter().map(edge_trace))
+}
+
+/// An edge report as the page shows it.
+#[must_use]
+pub fn edge_trace(report: &EdgeReport) -> serde_json::Value {
+    serde_json::json!({
+        "edge": name(report.edge),
+        "status": name(report.status),
+        "anchorTick": report.anchor_tick,
+        "bufferFrom": report.buffer_from,
+        "openFrom": report.open_from,
+        "openUntil": report.open_until,
+        "precision": report.precision.map(|(from, until)| [from, until]),
+    })
+}
+
+#[expect(clippy::ref_option, reason = "serde's serialize_with signature")]
+fn decision_trace<S: serde::Serializer>(
+    arbitration: &Option<Arbitration>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    arbitration.as_ref().map(decision).serialize(serializer)
+}
+
+/// An arbitration as the page shows it.
+#[must_use]
+pub fn decision(arbitration: &Arbitration) -> serde_json::Value {
+    let candidates: Vec<_> = arbitration
+        .candidates
+        .iter()
+        .map(|(candidate, verdict)| {
+            serde_json::json!({ "candidate": name(candidate), "verdict": name(verdict) })
+        })
+        .collect();
+    serde_json::json!({
+        "input": name(arbitration.input),
+        "outcome": name(arbitration.outcome),
+        "candidates": candidates,
+        "precise": arbitration.precise,
+    })
+}
+
+/// The graph input `command` makes for a player of `class`, as the zone
+/// classifies intents.
+fn graph_input(command: &ZoneCommand, class: PlayerClass) -> Option<ActionInput> {
+    match *command {
+        ZoneCommand::UseAbility { ability, .. } if ability == ids::SHIELD_BASH.get() => {
+            Some(ActionInput::ShieldBash)
+        }
+        ZoneCommand::UseAbility { ability, .. }
+            if [ids::HEROIC_STRIKE, ids::CLEAVE]
+                .iter()
+                .any(|id| id.get() == ability) =>
+        {
+            Some(ActionInput::WardenMelee)
+        }
+        ZoneCommand::UseAbility { .. } => Some(ActionInput::Ability),
+        ZoneCommand::DirectedStrike { .. } => Some(ActionInput::WardenMelee),
+        ZoneCommand::StartAttack if class == PlayerClass::Warden => Some(ActionInput::WardenMelee),
+        ZoneCommand::Guard { lane: Some(_) } => Some(ActionInput::GuardProtection),
+        ZoneCommand::Move {
+            forward, strafe, ..
+        } if forward != 0 || strafe != 0 => Some(ActionInput::Move),
+        ZoneCommand::Rise(rise) if rise != 0 => Some(ActionInput::Move),
+        ZoneCommand::Jump => Some(ActionInput::Jump),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -806,6 +891,8 @@ pub struct Run {
     pub ticks: Vec<TickRecord>,
     pub commands: Vec<CommandResult>,
     pub summary: Summary,
+    /// Explained timing and transition diagnostics of this run (#383).
+    pub findings: Vec<Finding>,
 }
 
 const fn is_action(command: &ZoneCommand) -> bool {
@@ -852,6 +939,7 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
     host.set_action_graph(graph)
         .map_err(|error| format!("{error:?}"))?;
     let me = EntityRef::Player(player);
+    let class = scenario.setup.setup()?.class;
     let mut ticks = Vec::with_capacity(scenario.ticks as usize);
     let mut results: Vec<CommandResult> = Vec::with_capacity(commands.len());
     let mut summary = Summary::default();
@@ -863,6 +951,8 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
         let first = results.len();
         while let Some((at, bytes, command)) = commands.get(next).filter(|(at, ..)| *at == tick) {
             sequence += 1;
+            let arbitration = graph_input(command, class)
+                .and_then(|input| host.zone().arbitrate_input(player, input));
             host.submit(player, sequence, bytes)
                 .map_err(|error| error.to_string())?;
             if is_action(command) {
@@ -875,6 +965,7 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
                 refused: Vec::new(),
                 effect_tick: None,
                 delay_ticks: None,
+                arbitration,
             });
             next += 1;
         }
@@ -912,10 +1003,19 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
             }
             events.push(name(event));
         }
-        let regions = host
-            .zone()
-            .action_inspection(player)
+        let inspection = host.zone().action_inspection(player);
+        let regions = inspection
+            .as_ref()
             .map(|inspection| inspection.regions.iter().map(region_text).collect())
+            .unwrap_or_default();
+        let edges = inspection
+            .map(|inspection| {
+                inspection
+                    .edges
+                    .into_iter()
+                    .filter(|edge| edge.status != EdgeStatus::Blocked(BlockReason::SourceInactive))
+                    .collect()
+            })
             .unwrap_or_default();
         let state = projection.viewer;
         summary.final_health = state.health;
@@ -942,6 +1042,7 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
             position,
             speed,
             digest: format!("{:016x}", fnv1a(&bytes)),
+            edges,
         });
     }
     summary.final_digest = ticks
@@ -963,6 +1064,11 @@ pub fn run(scenario: &ScenarioFile, config: &Config) -> Result<Run, String> {
         ticks,
         commands: results,
         summary,
+        findings: Vec::new(),
+    })
+    .map(|mut run| {
+        run.findings = lab_diagnostics::diagnose(&run, graph);
+        run
     })
 }
 
@@ -985,6 +1091,8 @@ pub struct Comparison {
     pub diverges_at: Option<u64>,
     /// Ticks whose regions, events, health or resource differ, at most 200.
     pub differences: Vec<Difference>,
+    /// Combos that succeeded under A and fail under B (#383).
+    pub regressions: Vec<Finding>,
 }
 
 /// Runs `scenario` under `a` and `b` and reports where they diverge.
@@ -1018,11 +1126,13 @@ pub fn compare(scenario: &ScenarioFile, a: &Config, b: &Config) -> Result<Compar
             b: right.clone(),
         })
         .collect();
+    let regressions = lab_diagnostics::regressions(&a, &b, diverges_at);
     Ok(Comparison {
         a,
         b,
         diverges_at,
         differences,
+        regressions,
     })
 }
 
