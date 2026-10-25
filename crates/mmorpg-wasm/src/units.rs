@@ -87,6 +87,9 @@ struct ImportedEntry {
     /// A player's class starter outfit (asset-tooling #379), or null.
     outfit: Option<OutfitEntry>,
     headwear: bool,
+    /// The loose gear's swing (Atlas 6.6.39) as a model-frame quaternion `[x, y, z, w]`, or
+    /// null at rest.
+    swing: Option<[f32; 4]>,
 }
 
 /// A class starter outfit: its `humanoid-appearance` preset id and the armour sockets whose
@@ -389,6 +392,7 @@ impl Units {
                         replaced: outfit.replaced(),
                     }),
                     headwear: unit.headwear.is_some(),
+                    swing: (!unit.swing.is_rest()).then(|| unit.swing.quaternion()),
                 }
             })
             .collect();

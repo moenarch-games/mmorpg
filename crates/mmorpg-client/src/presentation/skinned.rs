@@ -6,6 +6,7 @@ use mmorpg_presentation::units::{
     imported::{DROP_ARMOR_OUTFIT, Kind, Layer, Loadout, Mask, Outfit, UPPER_BODY_ROOT},
     kit::{Frame, model},
     player::Hat,
+    sway,
 };
 use std::{
     collections::BTreeMap,
@@ -1111,6 +1112,8 @@ fn bundle_glb(entry: &str, files: &[(&str, &[u8])]) -> Vec<u8> {
 /// The Warden's carried items: a model each and the joint and socket it is held at.
 pub(super) struct Equipment {
     pub items: Vec<(Model, &'static str, three_d_animation::Mat4)>,
+    /// Per item, whether it hangs loose on its socket and swings (Atlas 6.6.39, `sway::hangs`).
+    pub hanging: Vec<bool>,
 }
 
 /// The `humanoid-sockets` socket `id` as its joint and column-major transform.
@@ -1159,6 +1162,10 @@ impl Equipment {
                     let (joint, matrix) = socket(&descriptor, socket_id);
                     (model, joint, matrix)
                 })
+                .collect(),
+            hanging: items
+                .iter()
+                .map(|&(_, socket_id)| sway::hangs(socket_id))
                 .collect(),
         }
     }
@@ -1467,14 +1474,36 @@ impl Equipment {
         pose: &[Layer],
         tint: Option<[f32; 3]>,
     ) -> Vec<SceneDraw> {
+        self.draws_swung(id, character, placement, pose, tint, sway::Swing::default())
+    }
+
+    /// [`Self::draws`] with the hanging items turned by `swing` about their grip, in the
+    /// model's frame (Atlas 6.6.39).
+    pub fn draws_swung(
+        &self,
+        id: &str,
+        character: &Model,
+        placement: three_d_animation::Mat4,
+        pose: &[Layer],
+        tint: Option<[f32; 3]>,
+        swing: sway::Swing,
+    ) -> Vec<SceneDraw> {
+        let turn = (!swing.is_rest()).then(|| trs([0.; 3], swing.quaternion(), [1.; 3]));
         let mut draws = Vec::new();
         for (index, (model, joint, matrix)) in self.items.iter().enumerate() {
             let Some(at) = character.joint(joint, pose) else {
                 continue;
             };
             // The item's grip frame is its origin: holder = placement × joint × socket.
+            let mut socket = mul(&at.elements, &matrix.elements);
+            if let Some(turn) = turn.filter(|_| self.hanging.get(index) == Some(&true)) {
+                // Turn the item about its grip in the model's axes: the grip stays put.
+                let grip = [socket[12], socket[13], socket[14]];
+                socket = mul(&turn, &socket);
+                socket[12..15].copy_from_slice(&grip);
+            }
             let mut held = three_d_animation::Mat4::IDENTITY;
-            held.elements = mul(&mul(&placement.elements, &at.elements), &matrix.elements);
+            held.elements = mul(&placement.elements, &socket);
             draws.extend(model.draws_placed(&format!("{id}-item-{index}"), held, &[], tint));
         }
         draws

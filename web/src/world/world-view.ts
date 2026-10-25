@@ -698,7 +698,7 @@ export class WorldView {
       id: "selection-preview", kind: "Ranger", entity: { kind: "player", id: 0 }, feet, yaw, heightMetres: height,
       clip, time: seconds % length, lower: [clip, seconds % length], layers: [{ clip, time: seconds % length, weight: 1, mask: "all" }], tint: null,
       loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null, variety: null,
-      outfit: look.classId ? { preset: `class.${look.classId}`, replaced: [] } : null, headwear: true,
+      outfit: look.classId ? { preset: `class.${look.classId}`, replaced: [] } : null, headwear: true, swing: null,
     }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} });
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }

@@ -426,7 +426,10 @@ fn dress(preset: &Value) -> ResidentLook {
     ResidentLook {
         model,
         plates: Plates { items: plates },
-        items: Equipment { items },
+        items: Equipment {
+            hanging: vec![false; items.len()],
+            items,
+        },
         height: preset["height"].as_f64().map_or(1., |height| height as f32),
     }
 }

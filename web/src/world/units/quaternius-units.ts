@@ -242,7 +242,7 @@ async function loadAnimal(loader: GLTFLoader, kind: Exclude<QuaterniusKind, "Ran
 }
 
 /** A humanoid-sockets descriptor socket as a matrix in its joint's frame. */
-type Socket = { joint: string; matrix: THREE.Matrix4 };
+type Socket = { id: string; joint: string; matrix: THREE.Matrix4 };
 
 function socketsOf(descriptor: unknown): Map<string, Socket> {
   const sockets = new Map<string, Socket>();
@@ -254,7 +254,7 @@ function socketsOf(descriptor: unknown): Map<string, Socket> {
     const [x = 0, y = 0, z = 0] = entry.translation;
     const [qx = 0, qy = 0, qz = 0, qw = 1] = entry.rotation;
     const matrix = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(qx, qy, qz, qw), new THREE.Vector3(1, 1, 1));
-    sockets.set(entry.id, { joint: entry.joint, matrix });
+    sockets.set(entry.id, { id: entry.id, joint: entry.joint, matrix });
   }
   return sockets;
 }
@@ -324,6 +324,51 @@ function attachItem(model: THREE.Object3D, item: THREE.Object3D, gripInverse: TH
   holder.matrixAutoUpdate = false;
   holder.add(item);
   joint.add(holder);
+  if (HANGING_SOCKETS.has(socket.id)) {
+    let held = hanging.get(model);
+    if (!held) { hanging.set(model, held = []); }
+    held.push({ holder, joint, base: holder.matrix.clone() });
+  }
+}
+
+/**
+ * The sockets whose items hang loose and swing (Atlas 6.6.39): the shared presenter's
+ * `sway::hangs`. Held items follow the hands and worn plates the body.
+ */
+const HANGING_SOCKETS: ReadonlySet<string> = new Set(["back.quiver", "back.bow.stowed", "back.stowed", "hip_l.stowed"]);
+/** Each model's hanging items: the holder, its joint and its authored socket matrix. */
+const hanging = new WeakMap<THREE.Object3D, { holder: THREE.Group; joint: THREE.Object3D; base: THREE.Matrix4 }[]>();
+const modelInverse = new THREE.Matrix4();
+const jointInModel = new THREE.Matrix4();
+const swungAt = new THREE.Vector3();
+const swungTurn = new THREE.Quaternion();
+const swungScale = new THREE.Vector3();
+const swingTurn = new THREE.Quaternion();
+
+/**
+ * Turns `model`'s hanging items about their grip by the shared presenter's `swing`, a quaternion
+ * in the model's frame, or puts them back as authored for null. Call after posing and placing.
+ */
+function swingHanging(model: THREE.Object3D, swing: readonly [number, number, number, number] | null): void {
+  const held = hanging.get(model);
+  if (!held) { return; }
+  if (!swing) {
+    for (const { holder, base } of held) {
+      if (!holder.matrix.equals(base)) { holder.matrix.copy(base); }
+    }
+    return;
+  }
+  swingTurn.set(swing[0], swing[1], swing[2], swing[3]);
+  model.updateWorldMatrix(true, false);
+  modelInverse.copy(model.matrixWorld).invert();
+  for (const { holder, joint, base } of held) {
+    joint.updateWorldMatrix(true, false);
+    // The socket in model space, turned about its own origin in the model's axes.
+    jointInModel.multiplyMatrices(modelInverse, joint.matrixWorld);
+    holder.matrix.multiplyMatrices(jointInModel, base).decompose(swungAt, swungTurn, swungScale);
+    swungTurn.premultiply(swingTurn);
+    holder.matrix.compose(swungAt, swungTurn, swungScale).premultiply(jointInModel.invert());
+  }
 }
 
 /** What the bundle's `humanoid-appearance` says about the head: hood, hair tints and what headwear hides. */
@@ -1060,6 +1105,7 @@ export class QuaterniusUnits {
     root.position.set(unit.feet[0], unit.feet[1], unit.feet[2]);
     root.rotation.set(0, unit.yaw, 0);
     root.scale.setScalar((unit.heightMetres / asset.height) * (instance.posable.scale ?? 1));
+    swingHanging(instance.posable.model, unit.swing);
   }
 
   #drop(id: string, instance: Instance): void {

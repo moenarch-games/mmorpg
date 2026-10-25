@@ -79,6 +79,11 @@ export type ImportedRequest = {
   outfit: ClassOutfit | null;
   /** The living viewer: its imported model wears the viewer's chosen headwear (#374). */
   headwear: boolean;
+  /**
+   * How far its loose gear swings (Atlas 6.6.39): a model-frame quaternion `[x, y, z, w]` for the
+   * items on hanging sockets, or null where they hang as authored.
+   */
+  swing: readonly [number, number, number, number] | null;
 };
 
 /** Which joints a layer drives: every joint, the `spine_01` subtree, or the rest (pelvis, legs). */
@@ -107,7 +112,8 @@ type DrawEntry = { id: string; key: string; model: number; color: Color; emissiv
 type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number;
-  height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean };
+  height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
+  swing: readonly [number, number, number, number] | null };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
@@ -212,6 +218,7 @@ export class SharedUnits {
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw,
         heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
+        swing: unit.swing,
       })),
     };
   }
