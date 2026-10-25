@@ -127,6 +127,7 @@ fn kind_name(kind: EntityKind) -> &'static str {
         EntityKind::Player => "player",
         EntityKind::Creature => "creature",
         EntityKind::Npc => "npc",
+        EntityKind::Minion => "minion",
     }
 }
 
@@ -266,6 +267,7 @@ impl Units {
                 0 => EntityRef::Player(id),
                 1 => EntityRef::Creature(CreatureId::new(id)),
                 2 => EntityRef::Npc(NpcId::new(id)),
+                3 => EntityRef::Minion(mmorpg_core::MinionId::new(id)),
                 _ => return Err("unknown unit kind".into()),
             };
             let Some(record) = snapshot.entities.iter().find(|e| e.entity() == entity) else {

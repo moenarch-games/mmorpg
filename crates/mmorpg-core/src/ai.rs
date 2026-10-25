@@ -53,7 +53,7 @@ pub(crate) fn distance_squared(from: [i32; 2], to: [i32; 2]) -> i64 {
 /// The XZ offset from `from` to `to` that steering follows. An offset beyond
 /// the `i32` range, which only a recovered extreme player position produces,
 /// is halved on both axes, which keeps its direction.
-fn offset(from: [i32; 2], to: [i32; 2]) -> (i32, i32) {
+pub(crate) fn offset(from: [i32; 2], to: [i32; 2]) -> (i32, i32) {
     let dx = i64::from(to[0]) - i64::from(from[0]);
     let dz = i64::from(to[1]) - i64::from(from[1]);
     match (i32::try_from(dx), i32::try_from(dz)) {
@@ -86,7 +86,7 @@ fn wander_point(home: [i32; 2], yaw: u16, distance: i32) -> [i32; 2] {
 /// Integer normalisation: each component is `delta · step / length` in subunits per tick,
 /// rounded toward zero; `speed` is in subunits per tick and `(dx, dz)` in units, and a step
 /// never overshoots the target.
-fn steer(dx: i32, dz: i32, speed: i32) -> [i32; 2] {
+pub(crate) fn steer(dx: i32, dz: i32, speed: i32) -> [i32; 2] {
     let length = xz_length(dx, dz);
     if length == 0 {
         return [0, 0];
@@ -126,8 +126,9 @@ fn chase_velocity(dx: i32, dz: i32, reach: i32) -> [i32; 2] {
 /// How close a creature must get to hit `target`: its reach plus the
 /// target's half-width.
 pub(crate) const fn creature_reach(target: EntityRef) -> i32 {
-    // Only players are attacked so far.
+    // Players and minions (#295) are attacked.
     match target {
+        EntityRef::Minion(_) => CREATURE_REACH_UNITS + crate::MINION_HALF_EXTENTS_UNITS[0],
         EntityRef::Player(_) | EntityRef::Creature(_) | EntityRef::Npc(_) => {
             CREATURE_REACH_UNITS + PLAYER_HALF_EXTENTS_UNITS[0]
         }
@@ -234,6 +235,11 @@ impl ZoneSimulation {
                     let position = self.player_position(player)?;
                     Some((target, [position.x, position.z]))
                 }
+                // A minion that hit it or was put on its table (#295).
+                Some(target @ EntityRef::Minion(minion)) if self.minions.contains_key(&minion) => {
+                    let position = self.unit_position(target)?;
+                    Some((target, [position[0], position[2]]))
+                }
                 _ => None,
             },
             _ => None,
@@ -254,8 +260,11 @@ impl ZoneSimulation {
             _ => None,
         };
         // An engaged creature that keeps fighting may cast its ability.
+        // Abilities are aimed at players only; minions (#295) take swings.
         let casting = match chase {
-            Some((target, to)) if !leashed => self.try_creature_ability(id, target, here, to)?,
+            Some((target @ EntityRef::Player(_), to)) if !leashed => {
+                self.try_creature_ability(id, target, here, to)?
+            }
             _ => false,
         };
         let Some(creature) = self.creatures.get_mut(&id) else {

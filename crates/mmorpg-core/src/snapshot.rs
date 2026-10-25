@@ -58,6 +58,8 @@ pub enum PlayerIntent {
     /// Starts or stops repairing a destructible piece (#305).
     Repair(Option<crate::PieceId>),
     CancelCast,
+    /// A group order for the player's minions (#295).
+    CommandMinions(crate::MinionOrder),
     ChooseClass {
         class: u8,
         sex: u8,
@@ -300,6 +302,9 @@ pub struct CanonicalZoneSnapshot {
     pub next_debris: u32,
     /// Every destructible piece's health and last change, in content order (#305).
     pub pieces: Vec<crate::CanonicalPiece>,
+    /// Summoned minions in ID order, and the next minion ID (#295).
+    pub minions: Vec<crate::CanonicalMinion>,
+    pub next_minion: u32,
 }
 
 impl ZoneSimulation {
@@ -432,6 +437,8 @@ impl ZoneSimulation {
             debris: self.debris.values().copied().collect(),
             next_debris: self.next_debris,
             pieces: self.canonical_pieces(),
+            minions: self.canonical_minions()?,
+            next_minion: self.next_minion,
         })
     }
 
@@ -466,6 +473,7 @@ impl ZoneSimulation {
         for record in snapshot.creatures {
             zone.restore_creature(record)?;
         }
+        zone.restore_minions(snapshot.minions, snapshot.next_minion)?;
         let doors = zone.content.doors().to_vec();
         if snapshot.doors.len() != doors.len()
             || snapshot
@@ -893,6 +901,7 @@ impl ZoneSimulation {
             EntityRef::Player(player_id) => self.players.contains_key(&player_id),
             EntityRef::Creature(creature_id) => self.creatures.contains_key(&creature_id),
             EntityRef::Npc(npc_id) => self.content.npc(npc_id).is_some(),
+            EntityRef::Minion(minion_id) => self.minions.contains_key(&minion_id),
         };
         let unit_refs_exist = |cast: Option<CastState>, auras: &[Aura]| {
             cast.and_then(|cast| cast.target).is_none_or(exists)
@@ -902,7 +911,7 @@ impl ZoneSimulation {
             player.combo.is_some_and(|combo| match combo.target {
                 EntityRef::Creature(id) => !self.creatures.contains_key(&id),
                 EntityRef::Player(victim) => !self.players_are_hostile(attacker, victim),
-                EntityRef::Npc(_) => true,
+                EntityRef::Npc(_) | EntityRef::Minion(_) => true,
             })
         }) {
             return Err(ZoneError::new("a combo follows up on an ineligible unit"));
@@ -921,7 +930,7 @@ impl ZoneSimulation {
             .any(|(attacker, target)| match target {
                 EntityRef::Creature(_) => false,
                 EntityRef::Player(victim) => !self.players_are_hostile(attacker, victim),
-                EntityRef::Npc(_) => true,
+                EntityRef::Npc(_) | EntityRef::Minion(_) => true,
             })
             || creature_targets
                 .clone()
@@ -1008,8 +1017,16 @@ impl ZoneSimulation {
                 return Err(ZoneError::new("creature tap names an absent player"));
             }
             for entry in &creature.threat {
+                // Minions (#295) exist only while their summoner lives.
+                if let EntityRef::Minion(minion) = entry.entity
+                    && self.minions.contains_key(&minion)
+                {
+                    continue;
+                }
                 let EntityRef::Player(player_id) = entry.entity else {
-                    return Err(ZoneError::new("only players can be on a threat table"));
+                    return Err(ZoneError::new(
+                        "only players and minions can be on a threat table",
+                    ));
                 };
                 if !self
                     .players

@@ -73,7 +73,7 @@ impl ZoneSimulation {
         match unit {
             EntityRef::Player(id) => self.players.get(&id).is_some_and(|p| p.is_alive()),
             EntityRef::Creature(id) => self.creatures.get(&id).is_some_and(|c| c.is_alive()),
-            EntityRef::Npc(_) => false,
+            EntityRef::Npc(_) | EntityRef::Minion(_) => false,
         }
     }
 

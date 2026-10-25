@@ -84,6 +84,8 @@ pub enum ErrorCode {
     VendorClosed,
     /// The door leaf moved within the last [`crate::DOOR_COOLDOWN_TICKS`] (#158).
     DoorBusy,
+    /// A minion order without any minion to obey it (#295).
+    NoMinions,
 }
 
 /// One feedback event addressed to a player.

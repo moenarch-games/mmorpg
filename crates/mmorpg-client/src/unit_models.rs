@@ -194,6 +194,8 @@ impl UnitModel {
     ) -> Self {
         match kind {
             EntityKind::Player => Self::Humanoid(HumanoidKind::Player),
+            // Summoned skeletons (#295) stay placeholders until their art exists.
+            EntityKind::Minion => Self::Placeholder,
             EntityKind::Npc => Self::Humanoid(match role {
                 Some(NpcRole::Guard) => HumanoidKind::Guard,
                 Some(NpcRole::Vendor) => HumanoidKind::Vendor,

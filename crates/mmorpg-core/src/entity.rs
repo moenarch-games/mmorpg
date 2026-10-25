@@ -58,12 +58,30 @@ impl CreatureTemplateId {
     }
 }
 
+/// A Necromancer's summoned minion (#295): numbered by the zone in summoning order and never
+/// reused while the zone lives.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MinionId(u32);
+
+impl MinionId {
+    #[must_use]
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Kind of a unit, in [`EntityRef`] order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum EntityKind {
     Player,
     Creature,
     Npc,
+    Minion,
 }
 
 /// Any unit in a zone: `kind` then `id` order.
@@ -72,6 +90,7 @@ pub enum EntityRef {
     Player(PlayerId),
     Creature(CreatureId),
     Npc(NpcId),
+    Minion(MinionId),
 }
 
 impl EntityRef {
@@ -81,6 +100,7 @@ impl EntityRef {
             EntityKind::Player => Self::Player(id),
             EntityKind::Creature => Self::Creature(CreatureId::new(id)),
             EntityKind::Npc => Self::Npc(NpcId::new(id)),
+            EntityKind::Minion => Self::Minion(MinionId::new(id)),
         }
     }
 
@@ -90,6 +110,7 @@ impl EntityRef {
             Self::Player(_) => EntityKind::Player,
             Self::Creature(_) => EntityKind::Creature,
             Self::Npc(_) => EntityKind::Npc,
+            Self::Minion(_) => EntityKind::Minion,
         }
     }
 
@@ -99,6 +120,7 @@ impl EntityRef {
             Self::Player(id) => id,
             Self::Creature(id) => id.get(),
             Self::Npc(id) => id.get(),
+            Self::Minion(id) => id.get(),
         }
     }
 }
@@ -111,14 +133,17 @@ pub(crate) const WORLD_LIMIT_BODY_BASE: u64 = PLAYER_BODY_BASE + (1 << 32);
 const CREATURE_BODY_BASE: u64 = WORLD_LIMIT_BODY_BASE + (1 << 32);
 /// NPC bodies start above every creature body ID.
 const NPC_BODY_BASE: u64 = CREATURE_BODY_BASE + (1 << 32);
+/// Minion bodies (#295) start above every NPC body ID.
+const MINION_BODY_BASE: u64 = NPC_BODY_BASE + (1 << 32);
 
 // Each namespace spans a full `u32` of IDs and the last one ends inside `u64`.
 const _: () = assert!(WORLD_LIMIT_BODY_BASE - PLAYER_BODY_BASE > u32::MAX as u64);
 const _: () = assert!(CREATURE_BODY_BASE - WORLD_LIMIT_BODY_BASE > u32::MAX as u64);
 const _: () = assert!(NPC_BODY_BASE - CREATURE_BODY_BASE > u32::MAX as u64);
-const _: () = assert!(NPC_BODY_BASE.checked_add(u32::MAX as u64).is_some());
+const _: () = assert!(MINION_BODY_BASE - NPC_BODY_BASE > u32::MAX as u64);
+const _: () = assert!(MINION_BODY_BASE.checked_add(u32::MAX as u64).is_some());
 
-/// Whether `body` belongs to a player, creature or NPC (not content or a world limit).
+/// Whether `body` belongs to a player, creature, NPC or minion (not content or a world limit).
 pub(crate) const fn is_unit_body(body: BodyId) -> bool {
     (body.0 >= PLAYER_BODY_BASE && body.0 < WORLD_LIMIT_BODY_BASE) || body.0 >= CREATURE_BODY_BASE
 }
@@ -127,7 +152,11 @@ pub(crate) const fn is_unit_body(body: BodyId) -> bool {
 pub(crate) const fn entity_of(body: BodyId) -> Option<EntityRef> {
     let id = body.0;
     #[allow(clippy::cast_possible_truncation)]
-    if id >= NPC_BODY_BASE {
+    if id >= MINION_BODY_BASE {
+        Some(EntityRef::Minion(MinionId::new(
+            (id - MINION_BODY_BASE) as u32,
+        )))
+    } else if id >= NPC_BODY_BASE {
         Some(EntityRef::Npc(NpcId::new((id - NPC_BODY_BASE) as u32)))
     } else if id >= CREATURE_BODY_BASE {
         Some(EntityRef::Creature(CreatureId::new(
@@ -146,6 +175,7 @@ pub(crate) const fn body_id(entity: EntityRef) -> BodyId {
         EntityRef::Player(id) => BodyId(PLAYER_BODY_BASE + id as u64),
         EntityRef::Creature(id) => BodyId(CREATURE_BODY_BASE + id.get() as u64),
         EntityRef::Npc(id) => BodyId(NPC_BODY_BASE + id.get() as u64),
+        EntityRef::Minion(id) => BodyId(MINION_BODY_BASE + id.get() as u64),
     }
 }
 
@@ -195,7 +225,13 @@ mod tests {
                 body_id(EntityRef::Npc(NpcId::new(0))).0,
                 body_id(EntityRef::Npc(NpcId::new(u32::MAX))).0,
             ),
+            (
+                body_id(EntityRef::Minion(MinionId::new(0))).0,
+                body_id(EntityRef::Minion(MinionId::new(u32::MAX))).0,
+            ),
         ];
+        let minion = EntityRef::Minion(MinionId::new(u32::MAX));
+        assert_eq!(entity_of(body_id(minion)), Some(minion));
         for pair in ranges.windows(2) {
             assert!(pair[0].1 < pair[1].0, "{pair:?}");
         }

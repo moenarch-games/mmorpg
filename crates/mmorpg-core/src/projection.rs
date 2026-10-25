@@ -338,7 +338,7 @@ impl ZoneSimulation {
                 Some(creature) if creature.is_alive() => (creature.cast, creature.auras.as_slice()),
                 _ => return TargetDetail::default(),
             },
-            EntityRef::Npc(_) => return TargetDetail::default(),
+            EntityRef::Npc(_) | EntityRef::Minion(_) => return TargetDetail::default(),
         };
         TargetDetail {
             cast: cast.and_then(cast_view),
@@ -357,6 +357,7 @@ impl ZoneSimulation {
                     .then(|| creature.top_threat())
                     .flatten()
             }
+            EntityRef::Minion(minion_id) => self.minions.get(&minion_id)?.target,
             EntityRef::Npc(_) => None,
         }
     }
@@ -475,6 +476,33 @@ impl ZoneSimulation {
                     level: npc.level,
                     health_percent: 100,
                     flags: EntityFlags::default(),
+                }
+            }
+            // A summoned minion (#295): its summoning ability is its appearance. Minions fight
+            // creatures only, so no player may attack one.
+            EntityRef::Minion(minion_id) => {
+                let minion = self
+                    .minions
+                    .get(&minion_id)
+                    .ok_or_else(|| ZoneError::new("unknown minion"))?;
+                let body = self
+                    .world
+                    .body(body_id(entity))
+                    .ok_or_else(|| ZoneError::new("minion physics body is missing"))?;
+                let (position, velocity) = (body.position(), body.velocity_units());
+                EntitySnapshot {
+                    kind: EntityKind::Minion,
+                    id: minion_id.get(),
+                    appearance: u16::from(minion.ability.get()),
+                    position: [position.x, position.y, position.z],
+                    velocity: [velocity.x, velocity.y, velocity.z].map(saturate_i8),
+                    facing: minion.facing,
+                    level: minion.level,
+                    health_percent: health_percent(minion.health, minion.max_health()),
+                    flags: EntityFlags {
+                        in_combat: minion.target.is_some(),
+                        ..EntityFlags::default()
+                    },
                 }
             }
         }))

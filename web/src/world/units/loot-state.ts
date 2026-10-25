@@ -176,4 +176,5 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "door-blocked": null,
   "vendor-closed": null,
   "door-busy": null,
+  "no-minions": null,
 };

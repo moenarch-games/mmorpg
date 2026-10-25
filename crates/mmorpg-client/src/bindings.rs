@@ -37,7 +37,7 @@ pub fn action_registry() -> ActionRegistry {
         action.category_path = vec![
             match action.id.split('.').next().unwrap_or("") {
                 "move" => "Movement",
-                "combat" | "ability" | "target" | "player" => "Combat",
+                "combat" | "ability" | "target" | "player" | "minions" => "Combat",
                 "world" | "interaction" => "World",
                 _ => "Interface",
             }

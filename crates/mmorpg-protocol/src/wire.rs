@@ -19,6 +19,7 @@ const NO_ENTITY: u8 = 0;
 const PLAYER_KIND: u8 = 1;
 const CREATURE_KIND: u8 = 2;
 const NPC_KIND: u8 = 3;
+const MINION_KIND: u8 = 4;
 
 const DAMAGE_DEALT: u8 = 1;
 const DAMAGE_TAKEN: u8 = 2;
@@ -48,6 +49,7 @@ pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
         EntityKind::Player => PLAYER_KIND,
         EntityKind::Creature => CREATURE_KIND,
         EntityKind::Npc => NPC_KIND,
+        EntityKind::Minion => MINION_KIND,
     }
 }
 
@@ -56,6 +58,7 @@ pub(crate) fn decode_entity_kind(code: u8) -> Result<EntityKind, ProtocolError> 
         PLAYER_KIND => Ok(EntityKind::Player),
         CREATURE_KIND => Ok(EntityKind::Creature),
         NPC_KIND => Ok(EntityKind::Npc),
+        MINION_KIND => Ok(EntityKind::Minion),
         _ => Err(ProtocolError::new("unknown entity kind")),
     }
 }
@@ -120,6 +123,7 @@ const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::LineOfSight => 29,
         ErrorCode::VendorClosed => 31,
         ErrorCode::DoorBusy => 32,
+        ErrorCode::NoMinions => 33,
     }
 }
 
@@ -157,6 +161,7 @@ fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         30 => ErrorCode::DoorBlocked,
         31 => ErrorCode::VendorClosed,
         32 => ErrorCode::DoorBusy,
+        33 => ErrorCode::NoMinions,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -759,6 +764,67 @@ pub(crate) fn decode_piece(value: u16) -> Option<mmorpg_core::PieceId> {
     value.checked_sub(1).map(mmorpg_core::PieceId::new)
 }
 
+/// A minion order (#295): its code (1 follow, 2 attack, 3 defend, 4 retreat) then 8 bytes, the
+/// attacked unit's reference and three zero bytes, the defended point's `x` and `z` (`i32`
+/// each), or zeros.
+pub(crate) const MINION_ORDER_BYTES: usize = 9;
+
+pub(crate) fn encode_minion_order(payload: &mut Vec<u8>, order: mmorpg_core::MinionOrder) {
+    use mmorpg_core::MinionOrder;
+    match order {
+        MinionOrder::Follow => payload.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 0]),
+        MinionOrder::Attack(target) => {
+            payload.push(2);
+            encode_entity_ref(payload, Some(target));
+            payload.extend_from_slice(&[0; 3]);
+        }
+        MinionOrder::Defend([x, z]) => {
+            payload.push(3);
+            payload.extend_from_slice(&x.to_be_bytes());
+            payload.extend_from_slice(&z.to_be_bytes());
+        }
+        MinionOrder::Retreat => payload.extend_from_slice(&[4, 0, 0, 0, 0, 0, 0, 0, 0]),
+    }
+}
+
+pub(crate) fn decode_minion_order(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<mmorpg_core::MinionOrder, ProtocolError> {
+    use mmorpg_core::MinionOrder;
+    let code = read_u8(payload, offset)?;
+    let body: [u8; 8] = take(payload, offset)?;
+    let zero = |bytes: &[u8]| {
+        if bytes.iter().all(|&byte| byte == 0) {
+            Ok(())
+        } else {
+            Err(ProtocolError::new("minion order padding must be zero"))
+        }
+    };
+    Ok(match code {
+        1 => {
+            zero(&body)?;
+            MinionOrder::Follow
+        }
+        2 => {
+            zero(&body[5..])?;
+            let mut at = 0;
+            let target = decode_entity_ref(&body[..5], &mut at)?
+                .ok_or_else(|| ProtocolError::new("an attack order needs a target"))?;
+            MinionOrder::Attack(target)
+        }
+        3 => MinionOrder::Defend([
+            i32::from_be_bytes([body[0], body[1], body[2], body[3]]),
+            i32::from_be_bytes([body[4], body[5], body[6], body[7]]),
+        ]),
+        4 => {
+            zero(&body)?;
+            MinionOrder::Retreat
+        }
+        _ => return Err(ProtocolError::new("unknown minion order")),
+    })
+}
+
 /// The not-intact pieces of a projection (#305): count (`u8`), then per piece its ID (`u16`)
 /// and stage (`u8`), in ascending ID order.
 pub(crate) fn encode_piece_views(
@@ -894,12 +960,13 @@ mod tests {
             ErrorCode::DoorBlocked,
             ErrorCode::VendorClosed,
             ErrorCode::DoorBusy,
+            ErrorCode::NoMinions,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 33, u16::MAX] {
+        for unknown in [0, 34, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

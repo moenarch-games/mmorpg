@@ -137,7 +137,8 @@ export type ErrorCode =
   | "line-of-sight"
   | "door-blocked"
   | "vendor-closed"
-  | "door-busy";
+  | "door-busy"
+  | "no-minions";
 
 /** A directed strike's sweep side and height (#154); the zone resolves what it covers. */
 export type StrikeSide = "left" | "centre" | "right";
@@ -360,7 +361,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "invalid-loot", "not-loot-owner", "empty-loot", "money-overflow",
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
   "not-equippable", "invalid-vendor", "not-enough-money", "chat-throttled", "invalid-quest", "quest-log-full",
-  "quest-incomplete", "line-of-sight", "door-blocked", "vendor-closed", "door-busy",
+  "quest-incomplete", "line-of-sight", "door-blocked", "vendor-closed", "door-busy", "no-minions",
 ];
 /** Doors a zone's content may author (`mmorpg_core::MAX_DOORS`). */
 const MAX_DOORS = 16;
@@ -465,6 +466,8 @@ export const ABILITY_SHAPES: ReadonlyMap<number, AbilityShape> = new Map([
   [42, instant(3_000)],
   [43, instant(12_000, "damage-over-time", 9_000)],
   [44, instant(15_000)],
+  // The Necromancer's Raise Skeleton (#295).
+  [45, timed(1_500, false, 3_000)],
 ]);
 /** Mana: 110 + 22 per level above 1; rage, focus and faith: 100. */
 function resourceMax(kind: ResourceKind, level: number): number {

@@ -65,7 +65,7 @@ import { attackToggle, nextTabTarget } from "./world/units/targeting";
 import { GameControls, type GameAction, type HeldAction, type HoldPhase } from "./input/game-controls";
 import { actionBindingLabels } from "./input/binding-labels";
 import type { Profile } from "@moritzbrantner/input-bindings";
-import { cancelCast, useAbilitySlot } from "./world/units/abilities";
+import { cancelCast, minionCommand, useAbilitySlot, type MinionAction } from "./world/units/abilities";
 import { padGuardLane } from "./world/units/shield-guard";
 import type { ViewerLook } from "./world/unit-presenter";
 import { Preferences, type ClientPreferences } from "./settings/preferences";
@@ -1667,6 +1667,14 @@ function runAction(action: GameAction): void {
     case "combat.cancelCast":
       worldView.queueIntent(cancelCast);
       return;
+    case "minions.attack":
+    case "minions.defend":
+    case "minions.follow":
+    case "minions.retreat": {
+      const order = action.slice("minions.".length) as MinionAction;
+      worldView.queueIntent((projection) => minionCommand(order, projection));
+      return;
+    }
     case "player.releaseSpirit":
       worldView.queueIntent((projection) => (projection.viewer.dead ? { kind: "release-spirit" } : null));
       return;

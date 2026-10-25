@@ -1654,7 +1654,7 @@ mod tests {
             (QUESTS + 12, 4, "unknown quest marker"),
             (QUESTS + 14, 1, "quest markers are not ordered"),
             (FIRST_ENTITY, 0, "unknown entity kind"),
-            (FIRST_ENTITY, 4, "unknown entity kind"),
+            (FIRST_ENTITY, 5, "unknown entity kind"),
             (wolf_record + 19, 101, "health percent exceeds 100"),
             (
                 wolf_record + 20,

@@ -34,6 +34,9 @@ const GUARD_TAG: u8 = 22;
 const USE_DOOR_TAG: u8 = 23;
 const REPAIR_TAG: u8 = 24;
 const RISE_TAG: u8 = 25;
+const COMMAND_MINIONS_TAG: u8 = 26;
+/// Version, tag, minion order (9 bytes, #295).
+const COMMAND_MINIONS_COMMAND_BYTES: usize = 2 + crate::wire::MINION_ORDER_BYTES;
 /// Version, tag, rise (i8: -1, 0 or 1).
 const RISE_COMMAND_BYTES: usize = 3;
 /// Version, tag, piece reference (u16: 0 none, else the piece ID plus one).
@@ -103,6 +106,12 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             vec![PROTOCOL_BYTE, REPAIR_TAG, high, low]
         }
         ZoneCommand::CancelCast => vec![PROTOCOL_BYTE, CANCEL_CAST_TAG],
+        ZoneCommand::CommandMinions(order) => {
+            let mut payload = Vec::with_capacity(COMMAND_MINIONS_COMMAND_BYTES);
+            payload.extend_from_slice(&[PROTOCOL_BYTE, COMMAND_MINIONS_TAG]);
+            crate::wire::encode_minion_order(&mut payload, order);
+            payload
+        }
         ZoneCommand::ChooseClass { class, sex } => {
             vec![PROTOCOL_BYTE, CHOOSE_CLASS_TAG, class, sex]
         }
@@ -324,6 +333,17 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
                 open,
             })
         }
+        COMMAND_MINIONS_TAG => {
+            if payload.len() != COMMAND_MINIONS_COMMAND_BYTES {
+                return Err(ProtocolError::new(
+                    "command minions payload must be exactly 11 bytes",
+                ));
+            }
+            let mut offset = 2;
+            Ok(ZoneCommand::CommandMinions(
+                crate::wire::decode_minion_order(payload, &mut offset)?,
+            ))
+        }
         REPAIR_TAG => {
             let [_, _, high, low] = payload else {
                 return Err(ProtocolError::new(
@@ -448,7 +468,9 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mmorpg_core::{CreatureId, EntityRef, NpcId, StrikeAim, StrikeHeight, StrikeSide};
+    use mmorpg_core::{
+        CreatureId, EntityRef, MinionOrder, NpcId, StrikeAim, StrikeHeight, StrikeSide,
+    };
 
     #[test]
     fn commands_have_exact_layouts() {
@@ -777,6 +799,12 @@ mod tests {
                 piece: Some(mmorpg_core::PieceId::new(3)),
             },
             ZoneCommand::Repair { piece: None },
+            ZoneCommand::CommandMinions(MinionOrder::Follow),
+            ZoneCommand::CommandMinions(MinionOrder::Attack(EntityRef::Creature(CreatureId::new(
+                108,
+            )))),
+            ZoneCommand::CommandMinions(MinionOrder::Defend([-1_234, 56_789])),
+            ZoneCommand::CommandMinions(MinionOrder::Retreat),
         ];
         let mut fixture =
             String::from("# Command golden fixture, verified by mmorpg-protocol and web tests.\n");
@@ -823,6 +851,15 @@ mod tests {
                 ZoneCommand::Repair { piece } => {
                     format!("repair {}", crate::wire::encode_piece(piece))
                 }
+                ZoneCommand::CommandMinions(order) => match order {
+                    MinionOrder::Follow => "command_minions follow".to_owned(),
+                    MinionOrder::Attack(target) => {
+                        let (kind, id) = entity_fields(Some(target));
+                        format!("command_minions attack {kind} {id}")
+                    }
+                    MinionOrder::Defend([x, z]) => format!("command_minions defend {x} {z}"),
+                    MinionOrder::Retreat => "command_minions retreat".to_owned(),
+                },
                 ZoneCommand::ChooseClass { class, sex } => format!("choose_class {class} {sex}"),
                 ZoneCommand::EquipItem { bag_slot } => format!("equip_item {bag_slot}"),
                 ZoneCommand::UnequipItem { equipment_slot } => {
@@ -879,6 +916,7 @@ mod tests {
                 mmorpg_core::EntityKind::Player => 1,
                 mmorpg_core::EntityKind::Creature => 2,
                 mmorpg_core::EntityKind::Npc => 3,
+                mmorpg_core::EntityKind::Minion => 4,
             };
             (kind, target.id())
         })
@@ -1024,7 +1062,22 @@ mod tests {
                 "tag {tag} has no body"
             );
         }
-        for unknown in [0, 26, u8::MAX] {
+        // Minion orders (#295): exact length, known order codes, zero padding, a real target.
+        let attack = encode_command(ZoneCommand::CommandMinions(MinionOrder::Attack(
+            EntityRef::Creature(CreatureId::new(7)),
+        )));
+        for length in 0..attack.len() {
+            assert!(decode_command(&attack[..length]).is_err(), "{length}");
+        }
+        for (offset, value) in [(2, 0), (2, 5), (3, 0), (8, 1), (10, 1)] {
+            let mut invalid = attack.clone();
+            invalid[offset] = value;
+            assert!(decode_command(&invalid).is_err(), "byte {offset} = {value}");
+        }
+        let mut follow = encode_command(ZoneCommand::CommandMinions(MinionOrder::Follow));
+        follow[5] = 1;
+        assert!(decode_command(&follow).is_err());
+        for unknown in [0, 27, u8::MAX] {
             assert_eq!(
                 decode_command(&[PROTOCOL_BYTE, unknown])
                     .unwrap_err()
@@ -1054,13 +1107,13 @@ mod tests {
             );
         }
         assert_eq!(
-            decode_command(&[PROTOCOL_BYTE, 3, 4, 0, 0, 0, 1])
+            decode_command(&[PROTOCOL_BYTE, 3, 5, 0, 0, 0, 1])
                 .unwrap_err()
                 .to_string(),
             "unknown entity kind"
         );
         assert_eq!(
-            decode_command(&[PROTOCOL_BYTE, 9, 1, 4, 0, 0, 0, 1])
+            decode_command(&[PROTOCOL_BYTE, 9, 1, 5, 0, 0, 0, 1])
                 .unwrap_err()
                 .to_string(),
             "unknown entity kind"

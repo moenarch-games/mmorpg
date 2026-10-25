@@ -148,6 +148,7 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
     case "directed-strike":
     case "guard":
     case "cancel-cast":
+    case "command-minions":
       return phase === "combat";
     case "loot":
     case "release-spirit":

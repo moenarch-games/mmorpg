@@ -93,6 +93,8 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
   [42, { range: { units: 2_500 }, description: "Throws a knife at your target, or along your facing without one; walls and raised shields stop it.", glyph: SWORD, accent: "#c4c9cc", visual: null, pose: "swing" }],
   [43, { range: RANGED, description: "Lobs a venom flask along your facing that shatters on what it meets, poisoning every enemy within 3 m it can see.", glyph: SPLAT, accent: "#8fe05a", visual: null, pose: "swing" }],
   [44, { range: RANGED, description: "Lobs a bomb along your facing that bounces and rolls, then bursts when an enemy touches it or after 2.5 s, hurting and hurling back every enemy within 4 m it can see.", glyph: FLAME, accent: "#ffa23a", visual: null, pose: "swing" }],
+  // The Necromancer's summoned minions (#295): Y attacks the target, U defends here, I follows, O retreats.
+  [45, { range: "self", description: "Raises a skeleton that follows you and fights for a minute; up to four stand at once. Y sends them at your target, U holds this spot, I follows, O retreats.", glyph: SKULL, accent: "#e6dfc8", visual: null, pose: "cast" }],
 ]);
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {

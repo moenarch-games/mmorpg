@@ -23,7 +23,7 @@ impl ZoneSimulation {
                 self.players_are_hostile(attacker, id)
                     && self.players.get(&id).is_some_and(|unit| unit.is_alive())
             }
-            EntityRef::Npc(_) => false,
+            EntityRef::Npc(_) | EntityRef::Minion(_) => false,
         }
     }
 

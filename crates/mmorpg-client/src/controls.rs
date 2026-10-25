@@ -38,6 +38,19 @@ pub enum ControlAction {
     OpenChat,
     /// Hold the Warden's shield guard; pointer motion picks the lane (#156).
     Guard,
+    /// A Necromancer's group order for all its minions (#295, Atlas 5.2.84).
+    Minions(MinionCommand),
+}
+
+/// The four minion orders, as in the browser's `minions.*` actions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum MinionCommand {
+    /// Attack the selected creature.
+    Attack,
+    /// Defend the spot the summoner stands on.
+    Defend,
+    Follow,
+    Retreat,
 }
 
 /// A toggled interface window, as in the browser's `ui.toggle*` actions.
@@ -50,7 +63,7 @@ pub enum Panel {
 
 impl ControlAction {
     /// Every control action in catalog order.
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 27] = [
         Self::MoveForward,
         Self::MoveBackward,
         Self::MoveLeft,
@@ -74,6 +87,10 @@ impl ControlAction {
         Self::TogglePanel(Panel::QuestLog),
         Self::OpenChat,
         Self::Guard,
+        Self::Minions(MinionCommand::Attack),
+        Self::Minions(MinionCommand::Defend),
+        Self::Minions(MinionCommand::Follow),
+        Self::Minions(MinionCommand::Retreat),
     ];
 
     /// The shared semantic id. A slot outside 1–8 is no control action and has
@@ -105,6 +122,10 @@ impl ControlAction {
             Self::TogglePanel(Panel::QuestLog) => "ui.toggleQuestLog",
             Self::OpenChat => "ui.openChat",
             Self::Guard => "combat.guard",
+            Self::Minions(MinionCommand::Attack) => "minions.attack",
+            Self::Minions(MinionCommand::Defend) => "minions.defend",
+            Self::Minions(MinionCommand::Follow) => "minions.follow",
+            Self::Minions(MinionCommand::Retreat) => "minions.retreat",
         }
     }
 
@@ -138,6 +159,10 @@ impl ControlAction {
             Self::TogglePanel(Panel::QuestLog) => ("Toggle quest log", GAMEPLAY, &["KeyL"]),
             Self::OpenChat => ("Chat", GAMEPLAY, &["Enter", "NumpadEnter"]),
             Self::Guard => ("Shield guard (hold, aim up/down)", GAMEPLAY, &["KeyZ"]),
+            Self::Minions(MinionCommand::Attack) => ("Minions: attack target", GAMEPLAY, &["KeyY"]),
+            Self::Minions(MinionCommand::Defend) => ("Minions: defend here", GAMEPLAY, &["KeyU"]),
+            Self::Minions(MinionCommand::Follow) => ("Minions: follow", GAMEPLAY, &["KeyI"]),
+            Self::Minions(MinionCommand::Retreat) => ("Minions: retreat", GAMEPLAY, &["KeyO"]),
         }
     }
 }

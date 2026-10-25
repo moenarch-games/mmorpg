@@ -255,6 +255,9 @@ impl Logs {
                             "Something is in the way of the door.".into()
                         }
                         mmorpg_core::ErrorCode::DoorBusy => "The door is still swinging.".into(),
+                        mmorpg_core::ErrorCode::NoMinions => {
+                            "You have no minions to command.".into()
+                        }
                         mmorpg_core::ErrorCode::VendorClosed => {
                             "The shop is closed for the night.".into()
                         }

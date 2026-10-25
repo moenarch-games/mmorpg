@@ -149,7 +149,7 @@ impl ZoneSimulation {
                         self.players_are_hostile(player_id, id)
                             && self.players.get(&id).is_some_and(|unit| unit.is_alive())
                     }
-                    EntityRef::Npc(_) => false,
+                    EntityRef::Npc(_) | EntityRef::Minion(_) => false,
                 };
                 if !alive || !self.visible_to(player_id, entity)? {
                     return Ok(Some((ErrorCode::InvalidTarget, target)));
@@ -341,7 +341,7 @@ impl ZoneSimulation {
                     cast
                 })
             }
-            EntityRef::Npc(_) => None,
+            EntityRef::Npc(_) | EntityRef::Minion(_) => None,
         };
         let Some(cast) = cast else {
             return false;
@@ -621,6 +621,7 @@ impl ZoneSimulation {
                     }
                 }
             }
+            AbilityEffect::Summon { .. } => self.raise_minion(player_id, ability.id)?,
             // Blizzard, Lightning Beam and Drain Life pulse while they channel; bandages and
             // stomps are creature-only; a flask's splash lands where it shatters.
             AbilityEffect::Blizzard { .. }
@@ -998,7 +999,7 @@ impl ZoneSimulation {
                 .creatures
                 .get_mut(&creature_id)
                 .and_then(|creature| apply_aura(&mut creature.auras, aura)),
-            EntityRef::Npc(_) => return,
+            EntityRef::Npc(_) | EntityRef::Minion(_) => return,
         };
         if let Some(evicted) = evicted {
             self.notify_units(
@@ -1091,6 +1092,14 @@ impl ZoneSimulation {
                 .npc_feet(npc_id)
                 .map(|feet| [feet[0], 0, feet[1]])
                 .ok_or_else(|| ZoneError::new("unknown npc")),
+            EntityRef::Minion(_) => {
+                let position = self
+                    .world
+                    .body(crate::entity::body_id(unit))
+                    .ok_or_else(|| ZoneError::new("minion physics body is missing"))?
+                    .position();
+                Ok([position.x, position.y, position.z])
+            }
         }
     }
 
@@ -1247,6 +1256,7 @@ impl ZoneSimulation {
         match unit {
             EntityRef::Player(id) => self.players.get(&id).map_or(0, |player| player.health),
             EntityRef::Creature(id) => self.creatures.get(&id).map_or(0, |unit| unit.health),
+            EntityRef::Minion(id) => self.minions.get(&id).map_or(0, |minion| minion.health),
             EntityRef::Npc(_) => 0,
         }
     }
@@ -1464,11 +1474,12 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    /// A creature's shot of `ability` reached `player_id` (#286): its bolt damage lands.
+    /// A creature's shot of `ability` reached `victim` (#286), a player or a minion standing in
+    /// its way (#295): its bolt damage lands.
     pub(crate) fn creature_effect_lands(
         &mut self,
         creature_id: CreatureId,
-        player_id: PlayerId,
+        victim: EntityRef,
         ability: &Ability,
     ) -> Result<(), ZoneError> {
         let AbilityEffect::Bolt { damage, per_level } = ability.effect else {
@@ -1482,7 +1493,15 @@ impl ZoneSimulation {
             .rng
             .inclusive(u32::from(damage[0]), u32::from(damage[1]))
             + u32::from(scaled(0, per_level, level));
-        self.creature_damages_player(creature_id, player_id, amount, false)
+        match victim {
+            EntityRef::Player(player_id) => {
+                self.creature_damages_player(creature_id, player_id, amount, false)
+            }
+            EntityRef::Minion(minion) => {
+                self.damage_minion(EntityRef::Creature(creature_id), minion, amount, false)
+            }
+            EntityRef::Creature(_) | EntityRef::Npc(_) => Ok(()),
+        }
     }
 
     /// The creature's ability waits its cooldown plus a 0–30 tick jitter.
@@ -1672,7 +1691,7 @@ impl ZoneSimulation {
                 .creatures
                 .get_mut(&creature_id)
                 .map(|creature| &mut creature.auras),
-            EntityRef::Npc(_) => None,
+            EntityRef::Npc(_) | EntityRef::Minion(_) => None,
         }
     }
 
@@ -1786,7 +1805,7 @@ impl ZoneSimulation {
                 .creatures
                 .get_mut(&creature_id)
                 .map(|creature| &mut creature.auras),
-            EntityRef::Npc(_) => None,
+            EntityRef::Npc(_) | EntityRef::Minion(_) => None,
         };
         let Some(auras) = auras else {
             return;
@@ -1817,7 +1836,7 @@ impl ZoneSimulation {
                 .creatures
                 .get_mut(&creature_id)
                 .map(|creature| &mut creature.auras),
-            EntityRef::Npc(_) => None,
+            EntityRef::Npc(_) | EntityRef::Minion(_) => None,
         };
         let Some(auras) = auras else {
             return amount;

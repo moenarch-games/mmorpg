@@ -36,6 +36,8 @@ const PLAYER_COLOR: [f32; 3] = [0.3, 0.6, 0.95];
 const FRIENDLY_COLOR: [f32; 3] = [0.3, 0.62, 0.36];
 const GUARD_COLOR: [f32; 3] = [0.22, 0.52, 0.3];
 const TAPPED_COLOR: [f32; 3] = [0.5, 0.5, 0.5];
+/// Summoned skeletons (#295): bone white.
+const MINION_COLOR: [f32; 3] = [0.85, 0.82, 0.7];
 const TARGET_MARKER_COLOR: [f32; 3] = [0.95, 0.82, 0.35];
 const HEALTH_BAR_WIDTH: f32 = 1.0;
 const HEALTH_BAR_BACKGROUND: [f32; 3] = [0.12, 0.12, 0.14];
@@ -345,7 +347,7 @@ impl Presentation {
             .into_iter()
             .filter_map(|(entity, unit)| match entity {
                 EntityRef::Player(id) => Some((id, unit.pose)),
-                EntityRef::Creature(_) | EntityRef::Npc(_) => None,
+                EntityRef::Creature(_) | EntityRef::Npc(_) | EntityRef::Minion(_) => None,
             })
             .collect()
     }
@@ -887,6 +889,8 @@ impl Presentation {
         match entity {
             EntityRef::Player(id) if id == self.player_id => "you".into(),
             EntityRef::Player(id) => format!("Player {id}"),
+            // A Necromancer's summoned minion (#295).
+            EntityRef::Minion(_) => "Skeleton".into(),
             EntityRef::Npc(id) => self
                 .content
                 .npc(id)
@@ -976,6 +980,7 @@ impl Presentation {
         match entity {
             EntityRef::Player(id) if id == self.player_id => (SELF_COLOR, character),
             EntityRef::Player(_) => (PLAYER_COLOR, character),
+            EntityRef::Minion(_) => (MINION_COLOR, metres(mmorpg_core::MINION_HALF_EXTENTS_UNITS)),
             EntityRef::Npc(id) => {
                 let guard = self
                     .content
