@@ -62,7 +62,6 @@ fn load() -> Result<Package, Box<dyn std::error::Error>> {
         single_index: true,
         ignore_points: true,
         ignore_lines: true,
-        ..Default::default()
     };
     let (models, materials_result) =
         tobj::load_obj_buf(&mut std::io::Cursor::new(OBJ), &options, |_| {
@@ -96,7 +95,7 @@ fn load() -> Result<Package, Box<dyn std::error::Error>> {
         }
         source_vertices += (mesh.positions.len() / 3) as u64;
         let mut g = Geometry::default();
-        for tri in mesh.indices.chunks_exact(3) {
+        for tri in mesh.indices.as_chunks::<3>().0 {
             triangles += 1;
             let p: Vec<[f64; 3]> = tri
                 .iter()

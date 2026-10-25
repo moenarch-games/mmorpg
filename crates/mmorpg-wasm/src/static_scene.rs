@@ -136,12 +136,14 @@ impl Buffers {
     }
 }
 
-fn buffers() -> &'static (String, Vec<f32>, Vec<u32>, Vec<f32>) {
-    static BUFFERS: OnceLock<(String, Vec<f32>, Vec<u32>, Vec<f32>)> = OnceLock::new();
+pub(crate) type SceneBuffers = (String, Vec<f32>, Vec<u32>, Vec<f32>);
+
+fn buffers() -> &'static SceneBuffers {
+    static BUFFERS: OnceLock<SceneBuffers> = OnceLock::new();
     BUFFERS.get_or_init(|| encode(hosted_static_scene()))
 }
 
-pub(crate) fn encode(scene: &StaticScene) -> (String, Vec<f32>, Vec<u32>, Vec<f32>) {
+pub(crate) fn encode(scene: &StaticScene) -> SceneBuffers {
     let mut buffers = Buffers {
         keys: Vec::new(),
         geometries: Vec::new(),

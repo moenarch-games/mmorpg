@@ -34,7 +34,6 @@ use winit::{
     window::{Window, WindowId},
 };
 
-#[allow(clippy::too_many_arguments)]
 pub fn run(
     runtime: Arc<tokio::runtime::Runtime>,
     player_id: u32,
@@ -710,16 +709,15 @@ impl App {
         }
         let profile = self.ui.settings.bindings.profile().cloned();
         self.retire_held_input();
-        if let Some(profile) = profile {
-            if let Err(error) = self
+        if let Some(profile) = profile
+            && let Err(error) = self
                 .controls
                 .set_profile(Some(profile.clone()))
                 .and_then(|()| self.world_controls.set_profile(profile.clone()))
                 .and_then(|()| self.pad.set_profile(profile))
-            {
-                self.ui.settings.bindings.problem(error);
-                return;
-            }
+        {
+            self.ui.settings.bindings.problem(error);
+            return;
         }
         self.bindings_revision = revision;
     }

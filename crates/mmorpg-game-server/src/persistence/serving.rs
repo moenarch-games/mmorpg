@@ -552,10 +552,10 @@ pub async fn serve_postgres_character_host(
     // Transport/tick writers have stopped. Final capture uses only the worker's
     // last committed image; uncertain private state is never saved over it.
     for store in stores.0.values() {
-        if !store.is_fenced() {
-            if let Err(cause) = store.checkpoint().await {
-                failure.get_or_insert_with(|| cause.to_string());
-            }
+        if !store.is_fenced()
+            && let Err(cause) = store.checkpoint().await
+        {
+            failure.get_or_insert_with(|| cause.to_string());
         }
     }
     for worker in workers {

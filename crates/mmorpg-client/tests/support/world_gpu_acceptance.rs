@@ -12,7 +12,7 @@ fn save(name: &str, pixels: &[u8]) {
     if let Some(directory) = std::env::var_os("MMORPG_SMOKE_FRAME_DIR") {
         std::fs::create_dir_all(&directory).unwrap();
         let mut bytes = b"P6\n640 360\n255\n".to_vec();
-        for pixel in pixels.chunks_exact(4) {
+        for pixel in pixels.as_chunks::<4>().0 {
             bytes.extend_from_slice(&pixel[..3]);
         }
         std::fs::write(
@@ -328,7 +328,7 @@ fn empty_frame_renders_submitted_background_without_hidden_css_sky() {
         frame.draws.clear();
         frame.environment.background = [0.2, 0.4, 0.6];
         let before = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
-        for pixel in before.chunks_exact(4) {
+        for pixel in before.as_chunks::<4>().0 {
             for (actual, expected) in pixel.iter().take(3).zip([51_u8, 102, 153]) {
                 assert!(
                     actual.abs_diff(expected) <= 1,

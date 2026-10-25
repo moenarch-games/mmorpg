@@ -292,7 +292,7 @@ pub fn graph_json() -> String {
                 json!({
                     "afterOpenMs": precision.after_open_ms,
                     "lengthMs": precision.length_ms,
-                    "benefits": precision.benefits.iter().map(|effect| name(effect)).collect::<Vec<_>>(),
+                    "benefits": precision.benefits.iter().map(name).collect::<Vec<_>>(),
                 })
             });
             json!({
@@ -307,7 +307,7 @@ pub fn graph_json() -> String {
                 "actionableTicks": window.actionable_ticks(),
                 "bufferTicks": window.buffer_ticks(),
                 "conditions": def.conditions.iter().copied().map(condition_name).collect::<Vec<_>>(),
-                "effects": def.effects.iter().map(|effect| name(effect)).collect::<Vec<_>>(),
+                "effects": def.effects.iter().map(name).collect::<Vec<_>>(),
                 "precision": precision,
                 "priority": def.priority,
             })

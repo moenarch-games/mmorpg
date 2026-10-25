@@ -96,17 +96,17 @@ pub fn compile(source: &str) -> Result<ZoneDefinition, ZoneError> {
         }
     }
     for edit in &layout.collision {
-        if let Some(left) = colliders.iter().find(|collider| collider.id == edit.id) {
-            if colliders.iter().any(|right| {
+        if let Some(left) = colliders.iter().find(|collider| collider.id == edit.id)
+            && colliders.iter().any(|right| {
                 right.id != left.id
                     && (0..3).all(|axis| {
                         (i64::from(left.position[axis]) - i64::from(right.position[axis])).abs()
                             < i64::from(left.half_extents[axis])
                                 + i64::from(right.half_extents[axis])
                     })
-            }) {
-                return Err(ZoneError::new("layout house overlaps existing collision"));
-            }
+            })
+        {
+            return Err(ZoneError::new("layout house overlaps existing collision"));
         }
     }
     let definition = ZoneDefinition::with_spawn_grid(GRAVITY, SPAWN_GRID, colliders)?;

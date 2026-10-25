@@ -180,6 +180,9 @@ pub(super) struct Model {
     head: Option<(usize, [f32; 3], f32)>,
 }
 
+/// Skinned `(positions, normals)` of one primitive in model space.
+type SkinnedPrimitive = (Vec<[f32; 3]>, Vec<[f32; 3]>);
+
 impl Model {
     pub fn parse(bytes: &[u8], rest_clip: &str) -> Result<Self, gltf::Error> {
         Self::parse_with_clips(bytes, rest_clip, None)
@@ -325,7 +328,7 @@ impl Model {
                 let interpolation = channel.sampler().interpolation();
                 if interpolation == gltf::animation::Interpolation::CubicSpline {
                     // Keep each key's value; tangents are dropped for linear playback.
-                    values = values.chunks_exact(3).map(|k| k[1]).collect();
+                    values = values.as_chunks::<3>().0.iter().map(|k| k[1]).collect();
                 }
                 if times.is_empty() || values.len() < times.len() {
                     continue;
@@ -456,7 +459,7 @@ impl Model {
     }
 
     /// Skinned positions and normals per primitive in model space.
-    fn skin(&self, clip: &str, time: f32) -> Vec<(Vec<[f32; 3]>, Vec<[f32; 3]>)> {
+    fn skin(&self, clip: &str, time: f32) -> Vec<SkinnedPrimitive> {
         let globals = self.globals(clip, time);
         self.primitives
             .iter()
@@ -513,7 +516,6 @@ impl Model {
 
     /// Draws for one posed instance standing at `root`, scaled to `height` metres, without
     /// the primitives of the `hidden` glTF nodes.
-    #[allow(clippy::too_many_arguments)]
     pub fn draws(
         &self,
         id: &str,
@@ -722,9 +724,12 @@ mod ambient_bundle {
     include!(concat!(env!("OUT_DIR"), "/ambient_bundle.rs"));
 }
 
+/// A skinned ambient model and its clip lengths by clip name.
+type AmbientModel = (Model, BTreeMap<String, f32>);
+
 /// The skinned ambient animal of entry `key` with its clip lengths, each imported once.
-pub(super) fn ambient_model(key: &str) -> Option<&'static (Model, BTreeMap<String, f32>)> {
-    static MODELS: OnceLock<Vec<(&'static str, (Model, BTreeMap<String, f32>))>> = OnceLock::new();
+pub(super) fn ambient_model(key: &str) -> Option<&'static AmbientModel> {
+    static MODELS: OnceLock<Vec<(&'static str, AmbientModel)>> = OnceLock::new();
     MODELS
         .get_or_init(|| {
             ambient_bundle::ENTRIES

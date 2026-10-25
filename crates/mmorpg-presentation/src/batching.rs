@@ -38,11 +38,13 @@ impl Cull {
         }
     }
 }
+/// `(key, cull, geometry index, per-instance transform and color)`.
+type InstanceBatch = (String, Cull, usize, Vec<(Affine, u32)>);
 #[derive(Default)]
 pub struct Batcher {
     buckets: BTreeMap<String, (u32, Cull, Geometry)>,
     geometries: Vec<Arc<Geometry>>,
-    instances: Vec<(String, Cull, usize, Vec<(Affine, u32)>)>,
+    instances: Vec<InstanceBatch>,
 }
 pub fn rgb(c: u32) -> [f32; 3] {
     [16, 8, 0].map(|shift| ((c >> shift) & 255) as f32 / 255.)

@@ -182,6 +182,22 @@ pub(crate) fn decode_history(
     Ok(Some(history))
 }
 
+/// Versioned receipt metadata used by the PostgreSQL adapter and trusted inputs.
+pub fn encode_reward_receipt(key: RewardKey) -> Result<Vec<u8>, ProtocolError> {
+    let mut bytes = vec![1];
+    encode_key(&mut bytes, key)?;
+    Ok(bytes)
+}
+pub fn decode_reward_receipt(bytes: &[u8]) -> Result<RewardKey, ProtocolError> {
+    if bytes.first() != Some(&1) {
+        return Err(error("unsupported reward receipt version"));
+    }
+    let mut offset = 1;
+    let key = decode_key(bytes, &mut offset)?;
+    crate::wire::ensure_fully_consumed(bytes, offset)?;
+    Ok(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,20 +233,4 @@ mod tests {
         assert_eq!(offset, bytes.len());
         assert!(decode_history(&bytes[..bytes.len() - 1], &mut 0).is_err());
     }
-}
-
-/// Versioned receipt metadata used by the PostgreSQL adapter and trusted inputs.
-pub fn encode_reward_receipt(key: RewardKey) -> Result<Vec<u8>, ProtocolError> {
-    let mut bytes = vec![1];
-    encode_key(&mut bytes, key)?;
-    Ok(bytes)
-}
-pub fn decode_reward_receipt(bytes: &[u8]) -> Result<RewardKey, ProtocolError> {
-    if bytes.first() != Some(&1) {
-        return Err(error("unsupported reward receipt version"));
-    }
-    let mut offset = 1;
-    let key = decode_key(bytes, &mut offset)?;
-    crate::wire::ensure_fully_consumed(bytes, offset)?;
-    Ok(key)
 }

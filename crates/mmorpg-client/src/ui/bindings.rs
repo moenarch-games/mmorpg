@@ -70,7 +70,7 @@ impl BindingPanel {
                 .directory
                 .as_deref()
                 .ok_or("No configuration directory".to_owned())
-                .and_then(|directory| bindings::load(&directory, character));
+                .and_then(|directory| bindings::load(directory, character));
             let profile = match loaded {
                 Ok(profile) => profile,
                 Err(error) => {
@@ -182,7 +182,7 @@ impl BindingPanel {
             .directory
             .as_deref()
             .ok_or("No configuration directory".to_owned())
-            .and_then(|directory| bindings::save(&directory, character, &delta));
+            .and_then(|directory| bindings::save(directory, character, &delta));
         match result {
             Ok(()) => {
                 self.bindings = self.pending.take().expect("pending edit").bindings;

@@ -367,7 +367,7 @@ pub async fn render_offscreen(
     frame.draws.extend_from_slice(units);
     let bytes = readback(&frame, hud, view, SMOKE_SIZE, None).await?;
     let mut colors = std::collections::BTreeMap::<[u8; 3], usize>::new();
-    for p in bytes.chunks_exact(4) {
+    for p in bytes.as_chunks::<4>().0 {
         *colors.entry([p[0], p[1], p[2]]).or_default() += 1;
     }
     if colors.len() < 3 || colors.values().copied().max().unwrap_or(0) * 4 > bytes.len() / 4 * 3 {

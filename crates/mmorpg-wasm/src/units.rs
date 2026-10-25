@@ -237,7 +237,6 @@ impl Units {
     /// # Errors
     ///
     /// Before the first projection, or for a malformed unit list or headwear style.
-    #[allow(clippy::too_many_arguments)]
     pub fn frame(
         &mut self,
         units: &[f64],
@@ -261,7 +260,7 @@ impl Units {
             other => return Err(format!("unknown headwear style {other}")),
         };
         let mut sampled = Vec::with_capacity(units.len() / 6);
-        for unit in units.chunks_exact(6) {
+        for unit in units.as_chunks::<6>().0 {
             let id = unit[1] as u32;
             let entity = match unit[0] as u8 {
                 0 => EntityRef::Player(id),

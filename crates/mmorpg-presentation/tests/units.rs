@@ -31,7 +31,7 @@ fn scene() -> Scene {
     snapshot.entities.push(EntitySnapshot {
         kind: EntityKind::Creature,
         id: spawn.id.get(),
-        appearance: u16::try_from(spawn.template.get()).unwrap(),
+        appearance: spawn.template.get(),
         position: [
             viewer.position[0] + 150,
             viewer.position[1],

@@ -42,7 +42,9 @@ fn prop_triangles(scene: &StaticScene) -> Vec<[V; 3]> {
         .flat_map(|(draw, model)| {
             let g = &draw.geometry;
             g.indices
-                .chunks_exact(3)
+                .as_chunks::<3>()
+                .0
+                .iter()
                 .map(|tri| std::array::from_fn(|k| transform(&model, g.p[tri[k] as usize])))
                 .collect::<Vec<_>>()
         })
@@ -52,7 +54,7 @@ fn prop_triangles(scene: &StaticScene) -> Vec<[V; 3]> {
 fn assert_valid(draw: &Draw) {
     let g = &draw.geometry;
     assert!(
-        !g.indices.is_empty() && g.indices.len() % 3 == 0,
+        !g.indices.is_empty() && g.indices.len().is_multiple_of(3),
         "{}",
         draw.id
     );

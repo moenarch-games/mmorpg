@@ -84,7 +84,6 @@ impl MinimapLayers {
 
     /// Paints the map of `diameter` points: `forward` is the camera's XZ
     /// heading, `zoom` an index into [`RADII_METRES`].
-    #[allow(clippy::too_many_arguments)]
     pub fn paint(
         &self,
         ui: &mut egui::Ui,

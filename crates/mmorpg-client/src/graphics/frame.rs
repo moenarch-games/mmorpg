@@ -95,7 +95,7 @@ impl GpuMesh {
             }
             indices.extend_from_slice(mesh.indices());
         } else {
-            for (triangle, tri) in mesh.indices().chunks_exact(3).enumerate() {
+            for (triangle, tri) in mesh.indices().as_chunks::<3>().0.iter().enumerate() {
                 let Some(n) = mesh.triangle_normal(triangle) else {
                     continue;
                 };

@@ -681,7 +681,6 @@ impl UnitPresenter {
         Resident::of_name(&self.content.npc(id)?.name)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn procedural(
         &mut self,
         entity: EntityRef,

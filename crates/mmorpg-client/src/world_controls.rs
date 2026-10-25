@@ -196,9 +196,12 @@ impl WorldControls {
                 })
                 .clone()
         } else {
-            self.pointer_sources.remove(&button).unwrap_or_else(|| {
-                InputStroke::Device(DeviceStroke::MouseButton { button, modifiers })
-            })
+            self.pointer_sources
+                .remove(&button)
+                .unwrap_or(InputStroke::Device(DeviceStroke::MouseButton {
+                    button,
+                    modifiers,
+                }))
         };
         let decisions = if down {
             self.runtime.input_down(stroke, false, 0)

@@ -145,7 +145,7 @@ pub fn animal(
     let sway = 0.3 * idle * (time * 1.7).sin() + 0.2 * mov * phase.sin();
     let lift = if dead { 0. } else { 0.15 + 0.45 * run * mov };
     // An attempt lunges: the body pitches in, the head drops and the forelegs reach.
-    let lunge = action.map_or(0., |a| weight(a));
+    let lunge = action.map_or(0., weight);
     let pitch = pitch + lunge * 0.22;
     let head_pitch = head_pitch - lunge * 0.45;
     let body = child(root, [0., pivot + bob, 0.], tilt(pitch, 0., 0.));
@@ -329,7 +329,6 @@ pub fn humanoid(
 }
 
 /// A humanoid in `palette` (skin, tunic, trousers, boots, stance, hunch).
-#[allow(clippy::too_many_arguments)]
 fn humanoid_in(
     r: &mut Resources,
     id: &str,

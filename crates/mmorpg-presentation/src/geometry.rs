@@ -98,7 +98,7 @@ impl Geometry {
                 (co[r * 3] * n[0] + co[r * 3 + 1] * n[1] + co[r * 3 + 2] * n[2]) * inv
             }))
         }));
-        for tri in s.indices.chunks_exact(3) {
+        for tri in s.indices.as_chunks::<3>().0 {
             self.indices.extend(if det < 0. {
                 [base + tri[0], base + tri[2], base + tri[1]]
             } else {

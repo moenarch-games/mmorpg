@@ -1,0 +1,3 @@
+# Geometry builders and unit/scenery rigs take positional placement, color and pose arguments
+# (up to 12) instead of one-off parameter structs; this matches the existing code style.
+too-many-arguments-threshold = 12

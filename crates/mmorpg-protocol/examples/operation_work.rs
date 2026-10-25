@@ -145,7 +145,7 @@ fn publish_sparse(recipients: usize) -> Result<String> {
                 if players.len() == recipients {
                     break 'clusters;
                 }
-                let spread = i32::try_from(index)? * 40;
+                let spread = index * 40;
                 let at = [kx * 3 * CELL + CELL / 2 + spread, kz * 3 * CELL + CELL / 2];
                 players.push(player(players.len(), at, 0, 0)?);
             }

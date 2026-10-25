@@ -202,7 +202,6 @@ const LABEL_RANGE_METRES: f32 = 60.0;
 
 /// Paints nameplates, quest markers and floating combat text behind every
 /// interface window.
-#[allow(clippy::too_many_arguments)]
 pub fn paint(
     ctx: &egui::Context,
     snapshot: &ZoneSnapshot,
