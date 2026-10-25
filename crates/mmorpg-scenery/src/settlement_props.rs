@@ -4,7 +4,7 @@
 //! The release's descriptor composes a 12 × 9 m market square of 21 props from three families
 //! (market: stalls, handcart, crates, barrels; street: lantern post, bench, signpost;
 //! dressing: fence, planter, firewood) around a clear 3 m walkway along its X axis, in a
-//! footprint-base-centre frame. [`SQUARE`] transcribes that composition from the pinned
+//! footprint-base-centre frame. [`SQUARE`] transcribes that composition from the
 //! release. The square stands on the grass before house 106, between it and the Millbrook
 //! Road, turned a half turn so its fence and stalls back onto the house and its walkway opens
 //! toward the spawn plaza. The props are presentation only: they have no colliders, picking
