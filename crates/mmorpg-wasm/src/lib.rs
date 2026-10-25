@@ -27,7 +27,9 @@ pub mod action_lab;
 pub mod arena_presentation;
 pub mod catalog;
 pub mod host;
+pub mod lab_diagnostics;
 pub mod lab_experiment;
+pub mod lab_promotion;
 pub mod scenario;
 pub mod scenery;
 pub mod static_scene;
@@ -366,6 +368,16 @@ pub fn action_lab_baseline() -> String {
 #[must_use]
 pub fn action_lab_check(config: &str) -> String {
     lab_experiment::check(config).to_string()
+}
+
+/// The rule values that differ between two configurations, as a JSON list of
+/// `path: old → new` lines (#383); throws for a malformed configuration.
+#[wasm_bindgen(js_name = actionLabChanges)]
+pub fn action_lab_changes(from: &str, to: &str) -> Result<String, JsError> {
+    let from = lab_experiment::Config::parse(from).map_err(|error| JsError::new(&error))?;
+    let to = lab_experiment::Config::parse(to).map_err(|error| JsError::new(&error))?;
+    serde_json::to_string(&lab_promotion::changes(&from, &to))
+        .map_err(|error| JsError::new(&error.to_string()))
 }
 
 /// Replays a recorded lab scenario under a configuration (#382) and returns

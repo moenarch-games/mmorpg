@@ -105,3 +105,14 @@ body.action-lab-open .chat-frame { right: calc(var(--lab-width, 26rem) + 1.5rem)
 .lab-flags { display: flex; flex-wrap: wrap; gap: .15rem .5rem; align-items: center; }
 .lab-check { display: inline-flex; align-items: center; gap: .25rem; }
 .lab-json { width: 100%; box-sizing: border-box; font: .68rem/1.3 ui-monospace, monospace; color: #edf4ee; background: rgb(0 0 0 / 25%); border: 1px solid var(--panel-border); }
+.lab-findings { display: grid; gap: .2rem; margin: .4rem 0; }
+.lab-findings h4 { margin: .2rem 0 0; }
+.lab-finding { border-left: 3px solid var(--panel-border); padding: .1rem .4rem; font-size: .72rem; }
+.lab-finding summary { cursor: pointer; overflow-wrap: anywhere; }
+.lab-finding.lab-warning { border-left-color: #f09a86; }
+.lab-finding.lab-warning summary { color: #f6c2b6; }
+.lab-trace th { text-align: left; white-space: nowrap; color: #8d9a92; font-weight: 500; }
+.lab-trace td { overflow-wrap: anywhere; }
+.lab-changes { margin: .3rem 0; padding-left: 1.1rem; font-size: .72rem; }
+.lab-changes code, .lab-command { font: .68rem/1.35 ui-monospace, monospace; overflow-wrap: anywhere; }
+.lab-command { white-space: pre-wrap; margin: .2rem 0; padding: .3rem .4rem; background: rgb(0 0 0 / 25%); border: 1px solid var(--panel-border); border-radius: .3rem; }

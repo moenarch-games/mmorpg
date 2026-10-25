@@ -2,8 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { PROTOCOL_ID } from "../src/protocol-id";
 import { TICK_HZ } from "../src/replication";
 import {
-  copyConfig, importFile, exportBundle, insertCopy, moveCommand, movementRule, removeCommand, removeEdge, ruleApplies, setMovementRule,
-  setRuleApplies, traversalSample, SCENARIO_FORMAT,
+  copyConfig, importFile, exportBundle, insertCopy, LabLibrary, moveCommand, movementRule, PROMOTION_FORMAT, promotionFileName,
+  promotionRequest, RECORD_FORMAT, removeCommand, removeEdge, ruleApplies, setMovementRule, setRuleApplies, traversalSample,
+  SCENARIO_FORMAT,
   type ConfigCheck, type LabComparison, type LabConfig, type LabRun, type LabScenario,
 } from "../src/world/lab-experiment";
 import { ScenarioSource, type ScenarioZoneHandle } from "../src/world/scenario-source";
@@ -15,6 +16,7 @@ type LabModule = {
   actionLabCheck(config: string): string;
   actionLabRun(scenario: string, config: string): string;
   actionLabCompare(scenario: string, a: string, b: string): string;
+  actionLabChanges(from: string, to: string): string;
 };
 
 // Builds crates/mmorpg-wasm for wasm32 and runs wasm-bindgen, like `bun run build`.
@@ -142,5 +144,41 @@ describe("Action Lab experiments (#382)", () => {
     expect(at(comparison.b, 30).speed).toBeGreaterThan(300);
     expect(at(comparison.b, 30).regions[0]).toBe("Airborne·Active");
     expect(comparison.differences.length).toBeGreaterThan(0);
+  }, 30_000);
+});
+
+describe("Action Lab diagnostics and promotion (#383)", () => {
+  test("runs carry explained findings, and only an explicitly chosen saved version is promoted", () => {
+    const scenario = record();
+    const production = baseline();
+    const comparison = JSON.parse(wasm.actionLabCompare(JSON.stringify(scenario), JSON.stringify(production), JSON.stringify(production))) as LabComparison;
+    // The jump-and-swing scenario never runs the directed slash: its combo edge is not exercised.
+    expect(comparison.a.findings.some((finding) => finding.kind === "unreachableTransition" && finding.severity === "note")).toBe(true);
+    expect(comparison.regressions).toEqual([]);
+    expect(comparison.a.commands.find((command) => command.label.startsWith("Jump"))?.decision?.input).toBe("Jump");
+
+    const storage = new Map<string, string>();
+    const library = new LabLibrary({ getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) } as unknown as Storage);
+    const longer = copyConfig(production, "Longer bash window");
+    longer.edges[0]!.actionableMs = 800;
+    const first = library.saveConfig(longer, check(longer).identity!);
+    expect(library.saveConfig(longer, check(longer).identity!)).toEqual(first);
+    longer.edges[0]!.actionableMs = 900;
+    const second = library.saveConfig(longer, check(longer).identity!);
+    expect([first.version, second.version]).toEqual([1, 2]);
+    expect(library.configs.map((entry) => entry.config.edges[0]!.actionableMs)).toEqual([800, 900]);
+
+    const request = promotionRequest(first, check(production).identity!, scenario, "wider window");
+    expect(request).toMatchObject({ format: PROMOTION_FORMAT, version: 1, config: { edges: [{ actionableMs: 800 }] } });
+    expect(promotionFileName(first)).toBe("promote-longer-bash-window-v1.json");
+    expect(JSON.parse(wasm.actionLabChanges(JSON.stringify(production), JSON.stringify(first.config))) as string[])
+      .toEqual(["edges[0].actionableMs: 600 → 800"]);
+    // A checked-in record imports as A (replaced) / B (promoted) for comparison and rollback.
+    const imported = importFile(JSON.stringify({
+      format: RECORD_FORMAT, name: first.name, version: 1, identity: first.identity, note: "", previous: production,
+      promoted: first.config, scenario, divergesAt: null,
+    }));
+    expect(imported.a).toEqual(production);
+    expect(imported.b).toEqual(first.config);
   }, 30_000);
 });

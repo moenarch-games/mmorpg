@@ -35,6 +35,8 @@ export type LabExperiments = {
   /** The production graph as an editable configuration. */
   baseline(): LabConfig;
   check(config: LabConfig): ConfigCheck;
+  /** The rule values that differ from `from` to `to`, as `path: old → new` lines (#383). */
+  changes(from: LabConfig, to: LabConfig): string[];
   run(scenario: LabScenario, config: LabConfig): LabRun;
   compare(scenario: LabScenario, a: LabConfig, b: LabConfig): LabComparison;
   /** Fresh lab worlds of `setup` and `seed` under `config` (production rules for null). */
@@ -45,6 +47,7 @@ export type LabExperiments = {
 export const labExperiments: LabExperiments = {
   baseline: () => JSON.parse(generated.actionLabBaseline()) as LabConfig,
   check: (config) => JSON.parse(generated.actionLabCheck(JSON.stringify(config))) as ConfigCheck,
+  changes: (from, to) => JSON.parse(generated.actionLabChanges(JSON.stringify(from), JSON.stringify(to))) as string[],
   run: (scenario, config) => JSON.parse(generated.actionLabRun(JSON.stringify(scenario), JSON.stringify(config))) as LabRun,
   compare: (scenario, a, b) =>
     JSON.parse(generated.actionLabCompare(JSON.stringify(scenario), JSON.stringify(a), JSON.stringify(b))) as LabComparison,
