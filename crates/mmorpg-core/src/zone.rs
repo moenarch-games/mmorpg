@@ -717,21 +717,10 @@ impl ZoneSimulation {
     /// Step 3: horizontal controller velocity from intent, vertical velocity
     /// from physics or a grounded jump. Stunned players stand still, roots
     /// and snares scale the controller velocity, and a non-zero movement
-    /// intent or a jump interrupts a cast or channel.
+    /// intent or a jump interrupts a cast or channel (the action graph's
+    /// `MovementCancelsCast`).
     fn drive_players(&mut self) -> Result<(), ZoneError> {
-        let moving: Vec<_> = self
-            .players
-            .iter()
-            .filter(|(_, state)| {
-                state.cast.is_some()
-                    && (state.forward != Axis::Zero
-                        || state.strafe != Axis::Zero
-                        || state.rise != Axis::Zero
-                        || state.jump_pending)
-            })
-            .map(|(&player_id, _)| player_id)
-            .collect();
-        for player_id in moving {
+        for player_id in self.moves_cancelling_casts() {
             self.interrupt_cast(EntityRef::Player(player_id), None, None);
         }
         // Moving or jumping stops a repair (#305).

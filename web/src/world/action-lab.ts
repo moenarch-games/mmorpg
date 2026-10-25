@@ -32,9 +32,14 @@ export type ActionGraph = {
   modifiers: readonly { action: string; condition: string; recoveryMs: number; recoveryTicks: number }[];
   edges: readonly GraphEdge[];
   windowModifiers: readonly { edge: string; conditions: readonly string[]; actionableDeltaMs: number }[];
-  rules: readonly { id: string; during: string; input: string; conditions: readonly string[] }[];
+  rules: readonly { id: string; during: string; input: string; conditions: readonly string[]; effect: "Hold" | "Cancel" }[];
   interruptions: readonly { reaction: string; interrupted: string; phase: string | null; consequence: string }[];
+  /** Class-, weapon- and ability-specific values replacing the shared ones (none in production). */
+  overrides: readonly { key: string; value: string; scope: string }[];
 };
+
+/** An overridable value as it applies now: its key, value and origin ("baseline" or the override's scope). */
+export type EffectiveValue = { key: string; value: string; origin: string };
 
 export type GraphEdge = {
   id: string; from: string; input: string; anchor: string;
@@ -60,23 +65,35 @@ export type Verdict =
 export type Outcome =
   | { kind: "Proceed"; candidate: string }
   | { kind: "WaitForRule"; rule: string }
-  | { kind: "WaitForEdge"; edge: string };
+  | { kind: "WaitForEdge"; edge: string }
+  | { kind: "Cancel"; rule: string };
+
+export type RuleReport = { rule: string; input: string; effect: "Hold" | "Cancel"; releasedAt: number; origin: string };
 
 /** One tick's `actionInspection()`. */
 export type Inspection = {
   tick: number;
-  regions: readonly { region: string; action: string | null; phase: string | null; recoveryLeft: number | null }[];
+  regions: readonly {
+    region: string; action: string | null; phase: string | null; recoveryLeft: number | null;
+    /** The ability the action runs (a cast's, or Heroic Strike for the directed slash). */
+    ability: string | null;
+    /** Ticks of a cast or channel left. */
+    activeLeft: number | null;
+  }[];
   edges: readonly {
     edge: string; priority: number; status: EdgeStatus;
     anchorTick: number | null; bufferFrom: number | null; openFrom: number | null; openUntil: number | null;
     precision: { from: number; until: number } | null;
+    /** Where the edge's window comes from. */
+    origin: string;
   }[];
-  rules: readonly { rule: string; input: string; releasedAt: number }[];
+  rules: readonly RuleReport[];
   interruptions: readonly { interrupted: string; reaction: string; consequence: string; authored: boolean }[];
   arbitrations: readonly {
     input: string; outcome: Outcome; precise: boolean;
     candidates: readonly { candidate: string; verdict: Verdict }[];
   }[];
+  effective: readonly EffectiveValue[];
 };
 
 export const LAB_SCENARIO = "action-lab";
@@ -166,6 +183,12 @@ export function explainEdge(report: Inspection["edges"][number]): string {
   }
 }
 
+/** What an applying compatibility rule does, until when, and why it applies to this character. */
+export function explainRule(rule: RuleReport): string {
+  const what = rule.effect === "Cancel" ? `${rule.input} ends the running action before tick` : `holds ${rule.input} until tick`;
+  return `${rule.rule}: ${what} ${rule.releasedAt}${rule.origin === "baseline" ? "" : ` (${rule.origin})`}`;
+}
+
 /** What the reactions in effect do to one running action, opening or buffer. */
 export function explainInterruption(report: Inspection["interruptions"][number]): string {
   return `${report.reaction}: ${report.consequence.toLowerCase()} ${report.interrupted}${report.authored ? "" : " (default)"}`;
@@ -187,6 +210,7 @@ export function explainOutcome(outcome: Outcome): string {
     case "Proceed": return outcome.candidate === "Direct" ? "resolves now as its ordinary use" : `resolves now through ${outcome.candidate}`;
     case "WaitForRule": return `waits for rule ${outcome.rule}`;
     case "WaitForEdge": return `waits for edge ${outcome.edge} to open`;
+    case "Cancel": return `resolves now and ends the running action (rule ${outcome.rule})`;
   }
 }
 
@@ -410,7 +434,9 @@ export class ActionLabPanel {
         const button = element("button", {
           type: "button",
           className: `lab-node${active ? " active" : ""}${this.#isSelected("action", action.id) ? " selected" : ""}`,
-          textContent: active && report?.phase ? `${action.id} · ${report.phase}${report.recoveryLeft !== null ? ` ${report.recoveryLeft}t` : ""}` : action.id,
+          textContent: active && report?.phase
+            ? `${action.id}${report.ability ? ` (${report.ability})` : ""} · ${report.phase}${report.recoveryLeft !== null ? ` ${report.recoveryLeft}t` : ""}${report.activeLeft !== null ? ` ${report.activeLeft}t` : ""}`
+            : action.id,
         });
         button.addEventListener("click", () => this.#select({ kind: "action", id: action.id }));
         return button;
@@ -429,8 +455,7 @@ export class ActionLabPanel {
       button.addEventListener("click", () => this.#select({ kind: "edge", id: edge.id }));
       return button;
     });
-    const rules = (inspection?.rules ?? []).map((rule) =>
-      element("li", {}, `${rule.rule}: holds ${rule.input} until tick ${rule.releasedAt}`));
+    const rules = (inspection?.rules ?? []).map((rule) => element("li", {}, explainRule(rule)));
     const interruptions = (inspection?.interruptions ?? []).map((report) => element("li", {}, explainInterruption(report)));
     const tick = element("button", { type: "button", className: `lab-edge${this.#selection.kind === "tick" ? " selected" : ""}`, textContent: "Why is an input (not) legal?" });
     tick.addEventListener("click", () => this.#select({ kind: "tick" }));
@@ -455,12 +480,14 @@ export class ActionLabPanel {
       const report = inspection?.regions.find((entry) => entry.action === selection.id);
       rows.push(["Action", selection.id], ["Region", action?.region ?? "?"],
         ["Recovery", action?.recoveryMs === null || !action ? "none" : `${action.recoveryMs} ms · ${action.recoveryTicks} ticks`],
-        ["Now", report ? `${report.phase ?? "active"}${report.recoveryLeft !== null ? `, ${report.recoveryLeft} ticks left` : ""}` : "not running"]);
+        ["Now", report
+          ? `${report.phase ?? "active"}${report.ability ? ` (${report.ability})` : ""}${report.recoveryLeft !== null ? `, ${report.recoveryLeft} ticks left` : ""}${report.activeLeft !== null ? `, ${report.activeLeft} ticks left` : ""}`
+          : "not running"]);
       for (const modifier of this.#graph.modifiers.filter((entry) => entry.action === selection.id)) {
         rows.push([`If ${modifier.condition}`, `${modifier.recoveryMs} ms · ${modifier.recoveryTicks} ticks`]);
       }
       for (const rule of this.#graph.rules.filter((entry) => entry.during === selection.id)) {
-        rows.push([`Rule ${rule.id}`, `holds ${rule.input}${rule.conditions.length ? ` if ${rule.conditions.join(", ")}` : ""}`]);
+        rows.push([`Rule ${rule.id}`, `${rule.effect === "Cancel" ? `${rule.input} cancels it` : `holds ${rule.input}`}${rule.conditions.length ? ` if ${rule.conditions.join(", ")}` : ""}`]);
       }
       for (const rule of this.#graph.interruptions.filter((entry) => entry.interrupted === `Action(${selection.id})` || entry.reaction === selection.id)) {
         rows.push([`${rule.reaction} → ${rule.interrupted}`, `${rule.consequence}${rule.phase ? ` in ${rule.phase}` : ""}`]);
@@ -481,7 +508,7 @@ export class ActionLabPanel {
         }
       }
       if (report) {
-        rows.push(["Status", explainEdge(report)], ["Anchor tick", String(report.anchorTick ?? "—")]);
+        rows.push(["Status", explainEdge(report)], ["Anchor tick", String(report.anchorTick ?? "—")], ["Window from", report.origin]);
       }
     } else {
       for (const arbitration of inspection?.arbitrations ?? []) {
@@ -489,6 +516,13 @@ export class ActionLabPanel {
         for (const { candidate, verdict } of arbitration.candidates) {
           rows.push([`  ${candidate}`, explainVerdict(verdict)]);
         }
+      }
+      // Effective values and where each comes from (Atlas 5.7.6).
+      for (const value of inspection?.effective ?? []) {
+        rows.push([value.key, `${value.value} · ${value.origin}`]);
+      }
+      for (const entry of this.#graph.overrides) {
+        rows.push([`Override for ${entry.scope}`, `${entry.key}: ${entry.value}`]);
       }
     }
     rows.push(["Level", String(viewer.level)], ["Health", `${viewer.health} / ${viewer.maxHealth}`],

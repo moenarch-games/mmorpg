@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::ability::{
     Ability, AbilityEffect, AbilityId, AbilityRange, AuraKind, CREATURE_ABILITY_JITTER_TICKS,
-    CastTime, GLOBAL_COOLDOWN_TICKS, ability_by_id, learned, scaled,
+    CastTime, ability_by_id, learned, scaled,
 };
 use crate::ai::distance_squared;
 use crate::aura::{apply_aura, has_kind, pulse_amount};
@@ -212,8 +212,15 @@ impl ZoneSimulation {
         let refund = follow_up
             .as_ref()
             .map_or(0, crate::action::FollowUp::refund);
+        let global_cooldown = recovery.unwrap_or_else(|| {
+            self.recovery_of(
+                player_id,
+                crate::action::ActionId::GlobalCooldown,
+                ability.id,
+            )
+        });
         self.update_player(player_id, |player| {
-            player.global_cooldown = recovery.unwrap_or(GLOBAL_COOLDOWN_TICKS);
+            player.global_cooldown = global_cooldown;
         });
         match ability.cast {
             CastTime::Instant => {
@@ -461,7 +468,11 @@ impl ZoneSimulation {
                 ..
             } => {
                 if let Some(victim) = target {
-                    self.interrupt_cast(victim, Some(source), Some(lockout_ticks));
+                    // The stun's interruption of a player's cast follows the
+                    // action graph.
+                    if !matches!(victim, EntityRef::Player(_)) || self.stun_cancels_cast() {
+                        self.interrupt_cast(victim, Some(source), Some(lockout_ticks));
+                    }
                     if let Some(stun) = aura(0) {
                         self.hostile_aura(player_id, victim, stun)?;
                     }
@@ -959,9 +970,11 @@ impl ZoneSimulation {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
         }
+        // A player's cast follows the action graph's stun interruption.
         if self
             .ability_kind(aura.ability)
             .is_some_and(|kind| kind == AuraKind::Stun)
+            && (!matches!(target, EntityRef::Player(_)) || self.stun_cancels_cast())
         {
             self.interrupt_cast(target, Some(source), None);
         }
