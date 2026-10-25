@@ -70,6 +70,7 @@ pub struct ZoneContent {
     routines: Vec<crate::NpcRoutine>,
     closed_at_night: Vec<NpcId>,
     waters: Vec<crate::WaterVolume>,
+    climbing: crate::ClimbSurfaces,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -187,6 +188,7 @@ impl ZoneContent {
             routines: Vec::new(),
             closed_at_night: Vec::new(),
             waters: Vec::new(),
+            climbing: crate::ClimbSurfaces::default(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -227,6 +229,7 @@ impl ZoneContent {
             routines: Vec::new(),
             closed_at_night: Vec::new(),
             waters: Vec::new(),
+            climbing: crate::ClimbSurfaces::default(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -718,6 +721,34 @@ impl ZoneContent {
         &self.waters
     }
 
+    /// Marks which collision is climbable (#490): every listed collider must exist and must not
+    /// be the ground, whose climbable stretches are terrain stretches.
+    pub fn with_climbing(mut self, climbing: crate::ClimbSurfaces) -> Result<Self, ZoneError> {
+        let colliders = self.definition.colliders();
+        let spawn = self.definition.spawn_grid().feet(0).unwrap_or([0; 3]);
+        for &(id, _) in climbing.colliders() {
+            let Some(collider) = colliders.iter().find(|collider| collider.id == id) else {
+                return Err(ZoneError::new("climbable collider is not in the content"));
+            };
+            let [x, y, z] = collider.position;
+            let [hx, hy, hz] = collider.half_extents;
+            if y + hy == 0 && (x - spawn[0]).abs() <= hx && (z - spawn[2]).abs() <= hz {
+                return Err(ZoneError::new(
+                    "the ground climbs by terrain stretches, not as a collider",
+                ));
+            }
+        }
+        self.climbing = climbing;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Climbable surfaces (#490).
+    #[must_use]
+    pub const fn climbing(&self) -> &crate::ClimbSurfaces {
+        &self.climbing
+    }
+
     /// Destructible sites in ID order (#305).
     #[must_use]
     pub fn sites(&self) -> &[crate::StructureSite] {
@@ -841,7 +872,7 @@ impl ZoneContent {
     }
 
     fn compute_water_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_structure_fingerprint();
+        let fingerprint = self.compute_climbing_fingerprint();
         if self.waters.is_empty() {
             return fingerprint;
         }
@@ -859,6 +890,28 @@ impl ZoneContent {
                 hash.i32s(&pocket.min);
                 hash.i32s(&pocket.max);
             }
+        }
+        hash.finish()
+    }
+
+    fn compute_climbing_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_structure_fingerprint();
+        if self.climbing.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/climbing-v1");
+        hash.u64(fingerprint);
+        hash.len(self.climbing.colliders().len());
+        for &(id, grip) in self.climbing.colliders() {
+            hash.u32(id);
+            hash.u8(grip.code());
+        }
+        hash.len(self.climbing.terrain().len());
+        for (bounds, grip) in self.climbing.terrain() {
+            hash.i32s(&bounds.min);
+            hash.i32s(&bounds.max);
+            hash.u8(grip.map_or(0, crate::Grip::code));
         }
         hash.finish()
     }

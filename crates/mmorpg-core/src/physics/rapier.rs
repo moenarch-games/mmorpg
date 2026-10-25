@@ -489,13 +489,13 @@ impl World {
         Ok(())
     }
 
-    pub fn set_swimming(&mut self, id: BodyId, swimming: bool) -> Result<(), PhysicsError> {
+    pub fn set_weightless(&mut self, id: BodyId, weightless: bool) -> Result<(), PhysicsError> {
         let body = self
             .bodies
             .get_mut(&id)
             .filter(|body| body.is_moving())
             .ok_or_else(|| error(format!("moving physics body {} is missing", id.0)))?;
-        body.swimming = swimming;
+        body.weightless = weightless;
         Ok(())
     }
 
@@ -631,7 +631,7 @@ impl World {
             // into the ground, which the controller answers with a nudge back up. A body just
             // above the ground settles onto it.
             let mut settle = 0.0;
-            match (!body.swimming).then(|| self.ground_gap(&body, body.position)) {
+            match (!body.weightless).then(|| self.ground_gap(&body, body.position)) {
                 // A swimmer (#274) keeps the vertical velocity the zone gave it.
                 None => {}
                 Some(Some(gap)) if velocity[1] <= 0.0 => {

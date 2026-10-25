@@ -203,7 +203,11 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
     u8(record.level);
     u8(record.healthPercent);
     const flags = record.flags;
-    u8(flagByte([flags.dead, flags.inCombat, flags.hostile, flags.attackable, flags.tappedByOther, flags.evading, flags.targetsViewer, flags.lootable]));
+    // On a player record the tapped and evading bits carry its climb or mantle (#490).
+    const player = record.kind === "player";
+    const tapped = player ? flags.traversal === "climbing" : flags.tappedByOther;
+    const evades = player ? flags.traversal === "mantling" : flags.evading;
+    u8(flagByte([flags.dead, flags.inCombat, flags.hostile, flags.attackable, tapped, evades, flags.targetsViewer, flags.lootable]));
   }
   const projectiles = snapshot.projectiles ?? [];
   u8(projectiles.length);

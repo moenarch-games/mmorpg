@@ -85,6 +85,8 @@ pub(crate) struct PlayerState {
     /// (#413). Derived from the body's position, so not canonical; a
     /// restored zone derives it again.
     pub(crate) swimming: bool,
+    /// A climb or mantle in progress (#490); canonical.
+    pub(crate) traversal: crate::Traversal,
     /// The `[forward, up]` launch (cm/s) of an edge's follow-up resolved this
     /// tick (#413). Set by intents and spent by the same tick's movement, so
     /// never present between ticks and not canonical.
@@ -166,6 +168,7 @@ impl PlayerState {
             guard: crate::GuardState::default(),
             landing: crate::LandingState::default(),
             swimming: false,
+            traversal: crate::Traversal::Free,
             impulse: None,
             authored: None,
             holds: crate::action::authored::Holds::default(),
@@ -816,12 +819,20 @@ impl ZoneSimulation {
                 player.repairing = None;
             }
         }
+        let probe_ground = self.ground_body();
+        let mut traversals = Vec::with_capacity(self.players.len());
         for (&player_id, state) in &self.players {
             let body_id = body_id(EntityRef::Player(player_id));
             let body = self
                 .world
                 .body(body_id)
                 .ok_or_else(|| ZoneError::new("player physics body is missing"))?;
+            let probe = crate::climb::Probe {
+                world: &self.world,
+                surfaces: self.content.climbing(),
+                ground: probe_ground,
+                body: body_id,
+            };
             // Setting velocities never moves bodies, so every grounded probe in
             // this pass observes the same pre-step positions regardless of order.
             let alive = state.is_alive();
@@ -837,11 +848,42 @@ impl ZoneSimulation {
                     )
                 })
                 .flatten();
+            // A climb or mantle (#490) moves the body weightless along the zone's velocity.
+            let step = if alive && swim_depth.is_none() {
+                crate::climb::decide(
+                    &probe,
+                    body.exact_position(),
+                    state.traversal,
+                    crate::climb::Intent {
+                        forward: i32::from(state.forward.get()),
+                        strafe: i32::from(state.strafe.get()),
+                        jump: state.jump_pending,
+                        facing: state.facing,
+                        grounded: is_grounded(&self.world, body)?,
+                        stunned,
+                    },
+                )
+            } else {
+                crate::climb::Step::FREE
+            };
+            traversals.push((player_id, step.traversal));
+            if let Some(velocity) = step.velocity {
+                self.world
+                    .set_velocity(body_id, velocity)
+                    .map_err(physics_error)?;
+                self.world
+                    .set_weightless(body_id, true)
+                    .map_err(physics_error)?;
+                continue;
+            }
             let vertical_velocity = if let Some(depth) = swim_depth {
                 let rise = if stunned { 0 } else { state.rise.get() };
                 crate::water::swim_vertical_velocity(depth, rise)
             } else if alive && !stunned && state.jump_pending && is_grounded(&self.world, body)? {
                 JUMP_VELOCITY_SUBUNITS_PER_TICK
+            } else if state.traversal.holds() {
+                // Letting go of a face or landing a mantle keeps no upward climb.
+                body.velocity().y.min(0)
             } else {
                 body.velocity().y
             };
@@ -884,11 +926,16 @@ impl ZoneSimulation {
                 .set_velocity(body_id, velocity)
                 .map_err(physics_error)?;
             self.world
-                .set_swimming(body_id, swim_depth.is_some())
+                .set_weightless(body_id, swim_depth.is_some())
                 .map_err(physics_error)?;
         }
         for player in self.players.values_mut() {
             player.impulse = None;
+        }
+        for (player_id, traversal) in traversals {
+            if let Some(player) = self.players.get_mut(&player_id) {
+                player.traversal = traversal;
+            }
         }
         Ok(())
     }

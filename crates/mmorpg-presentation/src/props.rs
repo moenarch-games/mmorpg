@@ -1099,6 +1099,25 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     );
                 }
             }
+            // A ladder (#490): two rails up its collider and a rung every 30 cm, across its
+            // wider side.
+            PropKind::Ladder => {
+                let along = hx >= hz;
+                let (w, d) = if along { (hx, hz) } else { (hz, hx) };
+                let flip = |x: f64, z: f64| if along { [x, z] } else { [z, x] };
+                for side in [-1., 1.] {
+                    let [x, z] = flip(side * (w - 0.04), 0.);
+                    m.box_at(DARK, [x, hy, z], {
+                        let [hx, hz] = flip(0.04, d);
+                        [hx, hy, hz]
+                    });
+                }
+                let rungs = (hy * 2. / 0.3).floor() as usize;
+                for i in 1..rungs {
+                    let [hx, hz] = flip(w - 0.06, d * 0.6);
+                    m.box_at(WOOD, [0., i as f64 * 0.3, 0.], [hx, 0.025, hz]);
+                }
+            }
             // A loading dock (#59): a stone block with a plank deck.
             PropKind::LoadingDock => {
                 m.box_at(STONE, [0., hy - 0.03, 0.], [hx, hy - 0.03, hz]);

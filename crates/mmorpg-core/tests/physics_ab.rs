@@ -44,7 +44,7 @@ const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
 /// and physics-engine pushes out, so their fights (and every position after) legitimately part.
 /// At 60 Hz (#379) `vale-wolf-hunt`'s creatures, which part from tick 1, reach the scripted
 /// hunter's fights after 38 s, so it is bounded only over its scripted walk ([`CLIMBS`]).
-const SCRIPTED: [&str; 8] = [
+const SCRIPTED: [&str; 9] = [
     "two-bots-move",
     "vale-hub-walk",
     "vale-idle-16",
@@ -53,6 +53,7 @@ const SCRIPTED: [&str; 8] = [
     "vale-crate-smash",
     "vale-missiles",
     "vale-traversal",
+    "vale-climb",
 ];
 /// The controllers walk up and down heightfield slopes at slightly different paces (open gap
 /// 5 in `docs/PHYSICS_AB.md`). Owner decision 2026-10-25 (#423): on a slope the scripted
@@ -295,11 +296,11 @@ fn check_invariants(
                         && before.body.exact_velocity() == [0.0; 3]
                 })
             });
-            // A swimming unit (#274) floats without ground under it.
+            // A weightless unit (a swimmer #274, a climber #490) rests without ground under it.
             if rested
                 && unit.body.exact_velocity() == [0.0; 3]
                 && !unit.grounded
-                && !unit.body.swimming()
+                && !unit.body.weightless()
             {
                 return Err(format!("{:?} rests ungrounded at tick {tick}", unit.unit));
             }
@@ -383,6 +384,37 @@ fn check_mill_ramps(trace: &Trace) -> std::result::Result<(), String> {
         return Err(format!(
             "the chute let player 2 onto the dock at tick {tick}"
         ));
+    }
+    Ok(())
+}
+
+/// The climb (#490): the climber ends standing on the crag's top, the mantler on the dock's
+/// deck, each within a unit of it.
+fn check_wall_climb(trace: &Trace) -> Result<()> {
+    use mmorpg_core::greyhaven_vale::ids;
+    let last = trace.snapshots.last().ok_or("empty climb trace")?;
+    let content = mmorpg_core::greyhaven_vale::content();
+    let top = |id: u32| {
+        let collider = content
+            .definition()
+            .colliders()
+            .iter()
+            .find(|collider| collider.id == id)
+            .ok_or("missing climb collider")?;
+        #[allow(clippy::cast_precision_loss)]
+        let top = (collider.position[1] + collider.half_extents[1]) as f32;
+        Ok::<_, &str>(top)
+    };
+    let feet = |player: usize| last.players[player].position[1] - 90.0;
+    let crag = top(*ids::HIGHLAND_CRAGS.start())?;
+    let dock = top(ids::MILL_DOCK)?;
+    if (feet(0) - crag).abs() > 1.0 || (feet(1) - dock).abs() > 1.0 {
+        return Err(format!(
+            "the climber's feet end at {} (crag top {crag}), the mantler's at {} (deck {dock})",
+            feet(0),
+            feet(1)
+        )
+        .into());
     }
     Ok(())
 }
@@ -839,6 +871,14 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
                     !warden.grounded && velocity.z < 0,
                     "{name} on {backend}: no momentum {warden:?}"
                 );
+            }
+        }
+        if matches!(workload, Workload::Climb) {
+            // On each backend the climber ends on the crag's top and the mantler on the dock's
+            // deck (#490).
+            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+                check_wall_climb(trace)
+                    .map_err(|failure| format!("{name} on {backend}: {failure}"))?;
             }
         }
         if matches!(workload, Workload::MillHoist) {

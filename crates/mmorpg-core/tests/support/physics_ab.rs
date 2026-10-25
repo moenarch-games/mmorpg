@@ -210,6 +210,38 @@ pub enum Workload {
     /// Outpost run, jump, let go or turn mid-air, and land, under [`TRAVERSAL_GRAPH`], whose
     /// airborne phase keeps the velocity contact realized and steers at most 6 m/s².
     Traversal,
+    /// Climbing and mantling (#490): one player jumps at a highland crag, climbs, lets go,
+    /// grabs it again and climbs to its top; another mantles the mill's loading dock.
+    Climb,
+}
+
+/// The climb's length.
+pub const CLIMB_TICKS: usize = mmorpg_core::golden::t30(520) as usize;
+
+/// The climber below the crag flanking the gorge's top and the mantler in the mill's yard, by
+/// ID and feet XZ.
+const CLIMB_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [1_500.0, -28_900.0]), (2, [8_250.0, 2_300.0])];
+
+/// The climb's commands at `tick` (30 Hz): both walk north into their walls and jump; the
+/// climber climbs, lets go (a jump, releasing the keys so it drops to the ground), grabs again
+/// (another jump) and climbs on to the top; the mantler stands on the dock.
+fn climb_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    let hold = |forward| ZoneCommand::Move {
+        forward,
+        strafe: 0,
+        facing: 32_768,
+    };
+    match tick {
+        0 => vec![(1, hold(1)), (2, hold(1))],
+        20 => vec![(1, ZoneCommand::Jump), (2, ZoneCommand::Jump)],
+        50 => vec![(2, hold(0))],
+        80 => vec![(1, ZoneCommand::Jump), (1, hold(0))],
+        110 => vec![(1, hold(1))],
+        112 => vec![(1, ZoneCommand::Jump)],
+        // Mid-mantle at the top: the mantle carries on and the climber stands on the crag.
+        460 => vec![(1, hold(0))],
+        _ => Vec::new(),
+    }
 }
 
 /// The traversal workload's graph: momentum through the air, slowed landings.
@@ -654,6 +686,7 @@ impl Workload {
             Self::CrateSmash => "vale-crate-smash",
             Self::Missiles => "vale-missiles",
             Self::Traversal => "vale-traversal",
+            Self::Climb => "vale-climb",
         }
     }
 
@@ -671,6 +704,7 @@ impl Workload {
             Self::CrateSmash => CRATE_SMASH_TICKS,
             Self::Missiles => MISSILES_TICKS,
             Self::Traversal => TRAVERSAL_TICKS,
+            Self::Climb => CLIMB_TICKS,
         }
     }
 }
@@ -699,6 +733,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::CrateSmash);
     workloads.push(Workload::Missiles);
     workloads.push(Workload::Traversal);
+    workloads.push(Workload::Climb);
     Ok(workloads)
 }
 
@@ -738,6 +773,7 @@ impl Run {
             Workload::CrateSmash => (placed_zone_at_level(&CRATE_SMASH_PLAYERS, 6)?, 0),
             Workload::Missiles => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
             Workload::Traversal => (traversal_zone(&TRAVERSAL_PLAYERS)?, 0),
+            Workload::Climb => (placed_zone(&CLIMB_PLAYERS)?, 0),
         };
         Ok(Self {
             zone,
@@ -808,7 +844,8 @@ impl Run {
             | Workload::CrateShove
             | Workload::CrateSmash
             | Workload::Missiles
-            | Workload::Traversal => {
+            | Workload::Traversal
+            | Workload::Climb => {
                 // The scripts are written in 30 Hz ticks: they run at the same moments at TICK_HZ.
                 let scale = usize::from(mmorpg_core::TICK_HZ) / 30;
                 let at = if self.tick.is_multiple_of(scale) {
@@ -826,6 +863,7 @@ impl Run {
                     Workload::CrateSmash => crate_smash_commands(at),
                     Workload::Missiles => missiles_commands(at),
                     Workload::Traversal => traversal_commands(at),
+                    Workload::Climb => climb_commands(at),
                     _ => mill_ramps_commands(at),
                 };
                 for (player, command) in commands {

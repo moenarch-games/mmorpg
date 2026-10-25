@@ -227,7 +227,12 @@ impl ZoneSimulation {
     pub(crate) fn update_landings(&mut self) -> Result<(), ZoneError> {
         let ids: Vec<_> = self.players.keys().copied().collect();
         for player_id in ids {
-            let grounded = is_grounded(&self.world, self.player_body(player_id)?)?;
+            // A climber or mantler (#490) holds on: supported, not airborne.
+            let holds = self
+                .players
+                .get(&player_id)
+                .is_some_and(|player| player.traversal.holds());
+            let grounded = holds || is_grounded(&self.world, self.player_body(player_id)?)?;
             self.update_player(player_id, |player| {
                 let state = &mut player.landing;
                 // A new airborne phase forgets the last one's attack.

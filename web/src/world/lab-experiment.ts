@@ -284,6 +284,16 @@ export function swimmingSample(config: LabConfig): LabConfig {
   return { ...next, rules: [...kept, ...water] };
 }
 
+/**
+ * The climbing sample (#490): while the character holds a climbable face (jump at a crag, palisade or
+ * ladder) abilities wait until it is off the face again. Production keeps allowing attacks while climbing.
+ */
+export function climbingSample(config: LabConfig): LabConfig {
+  const kept = config.rules.filter((rule) => rule.during !== "Climb");
+  const hold = { id: "ClimbingHolds", during: "Climb", input: "Ability", conditions: [], effect: "Hold" as const };
+  return { ...config, rules: [...kept, hold] };
+}
+
 /** `actionLabCheck`: the configuration's identity, whether it equals production, or why it is invalid. */
 export type ConfigCheck = { identity: string | null; baseline: boolean; error: string | null };
 
