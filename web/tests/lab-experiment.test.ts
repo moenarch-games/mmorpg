@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { PROTOCOL_ID } from "../src/protocol-id";
+import { encodeCommand } from "../src/command-wire";
 import { TICK_HZ } from "../src/replication";
 import {
-  copyConfig, importFile, exportBundle, insertCopy, LabLibrary, moveCommand, movementRule, PROMOTION_FORMAT, promotionFileName,
-  promotionRequest, RECORD_FORMAT, removeAuthored, removeCommand, removeEdge, ruleApplies, setAuthored, setMovementRule,
-  setRuleApplies, slidingSlashSample, swimmingSample, traversalSample, SCENARIO_FORMAT,
+  copyConfig, importFile, exportBundle, insertCopy, isMovement, LabLibrary, moveCommand, movementRule, PROMOTION_FORMAT,
+  promotionFileName, promotionRequest, RECORD_FORMAT, removeAuthored, removeCommand, removeEdge, ruleApplies, setAuthored,
+  setMovementRule, setRuleApplies, slidingSlashSample, swimmingSample, traversalSample, SCENARIO_FORMAT,
   type ConfigCheck, type LabComparison, type LabConfig, type LabRun, type LabScenario,
 } from "../src/world/lab-experiment";
 import { ScenarioSource, type ScenarioZoneHandle } from "../src/world/scenario-source";
@@ -50,6 +51,14 @@ function record(): LabScenario {
 }
 
 describe("Action Lab experiments (#382)", () => {
+  test("the timeline tells movement commands from actions so it can hide them", () => {
+    const recorded = (bytes: Uint8Array) => ({ tick: 0, bytes: Buffer.from(bytes).toString("hex") });
+    expect(isMovement(recorded(encodeCommand({ kind: "move", forward: 1, strafe: 0, facing: 0 })))).toBe(true);
+    expect(isMovement(recorded(encodeCommand({ kind: "rise", rise: 1 })))).toBe(true);
+    expect(isMovement(recorded(encodeCommand({ kind: "jump" })))).toBe(false);
+    expect(isMovement(recorded(encodeCommand({ kind: "start-attack" })))).toBe(false);
+  });
+
   test("a recorded scenario replays deterministically and reproduces its recording", async () => {
     const scenario = record();
     expect(scenario.commands.map((command) => command.tick)).toEqual([3, 20]);

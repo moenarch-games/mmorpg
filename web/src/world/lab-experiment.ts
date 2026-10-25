@@ -8,6 +8,7 @@
  * `actionLabCompare`). Saved scenarios and configurations live in this browser's storage only,
  * apart from characters, and never change production rules.
  */
+import { isMovementCommand } from "../command-wire";
 import type { LabSetup } from "./action-lab";
 
 export const CONFIG_FORMAT = "mmorpg-action-lab-config";
@@ -231,6 +232,15 @@ export type ConfigCheck = { identity: string | null; baseline: boolean; error: s
 
 /** One recorded command: its command-wire bytes in hex, applied before tick `tick + 1`. */
 export type LabCommand = { tick: number; bytes: string };
+
+/**
+ * Whether a recorded command is movement (Move or Rise). A recorded combo holds hundreds of them,
+ * so the timeline hides them unless asked (#382); they are still replayed.
+ */
+export function isMovement(command: LabCommand): boolean {
+  const bytes = (command.bytes.slice(0, 4).match(/../g) ?? []).map((pair) => parseInt(pair, 16));
+  return isMovementCommand(Uint8Array.from(bytes));
+}
 
 /** A named, exportable lab scenario. */
 export type LabScenario = {
