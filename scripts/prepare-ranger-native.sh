@@ -52,7 +52,7 @@ done
 for variant in outfit.knight outfit.knight.skin.light outfit.soldier outfit.soldier.skin.light outfit.innkeeper.skin.light outfit.farmer outfit.farmer.skin.light outfit.monk.skin.light; do
   entries+=",humanoid.ranger.male/${variant}"
 done
-entries+=",armor.soldier/default,armor.farmer/default,armor.innkeeper/default,armor.monk/default,facial-hair.beards/default,equipment.hat.straw/default,hair.buzzed/hair-1,hair.long/hair-1"
+entries+=",armor.soldier/default,armor.farmer/default,armor.innkeeper/default,armor.monk/default,facial-hair.beards/default,equipment.hat.straw/default,hair.buzzed/hair-1,hair.long/hair-1,hair.balding/hair-1,hair.receding/hair-1,hair.swept/hair-1,hair.tied/hair-1"
 INDEX="${ROOT_DIR}/web/public/characters/humanoid.ranger.male/humanoid-ranger-male.index.json"
 # The painted head skins (asset-tooling #380), when the release has them.
 if grep -q '"skin\.head"' "${INDEX}"; then
