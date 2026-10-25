@@ -245,6 +245,9 @@ pub struct ZoneSimulation {
     pub(crate) nav_cache: crate::nav::NavCache,
     /// Standing movable props' exact state (#58).
     pub(crate) prop_motion: BTreeMap<CreatureId, crate::movable::PropMotion>,
+    /// The validated action graph the zone runs (#380): the baseline unless
+    /// a test or the lab configured another; zone setup, not canonical state.
+    pub(crate) action_graph: &'static crate::action::ActionGraph,
 }
 
 impl ZoneSimulation {
@@ -383,6 +386,7 @@ impl ZoneSimulation {
             pieces,
             nav_cache: BTreeMap::new(),
             prop_motion: BTreeMap::new(),
+            action_graph: &crate::action::BASELINE,
             rewards: None,
         })
     }
@@ -754,8 +758,8 @@ impl ZoneSimulation {
                 body.velocity().y
             };
             // A protecting guard slows movement (#156): ready and grounded.
-            let guarding =
-                crate::guard::guard_ready(state).is_some() && is_grounded(&self.world, body)?;
+            let guarding = crate::guard::guard_ready(self.action_graph, state).is_some()
+                && is_grounded(&self.world, body)?;
             let mut velocity = if alive {
                 let free = movement_velocity(state)?;
                 let mut percent = crate::aura::speed_percent(&state.auras);

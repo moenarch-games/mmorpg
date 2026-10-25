@@ -293,7 +293,7 @@ impl ZoneSimulation {
                         broken: viewer.guard.broken,
                     },
                     stance: self.melee_stance(player_id, viewer.target)?,
-                    combo: Self::combo_phase(viewer),
+                    combo: self.combo_phase(viewer),
                     breath: viewer.breath.remaining,
                 },
                 cooldowns: viewer.cooldowns.clone(),

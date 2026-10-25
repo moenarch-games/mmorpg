@@ -95,24 +95,28 @@ pub(crate) enum GuardOutcome {
     Broken(StrikeHeight),
 }
 
-/// Whether a player's state lets its held guard protect, physics aside.
-pub(crate) fn guard_ready(player: &crate::zone::PlayerState) -> Option<StrikeHeight> {
+/// Whether a player's state lets its held guard protect, physics aside: a
+/// living Warden whose guard no compatibility rule holds and no reaction
+/// suspends (a stun or guard break, in the baseline).
+pub(crate) fn guard_ready(
+    graph: &crate::action::ActionGraph,
+    player: &crate::zone::PlayerState,
+) -> Option<StrikeHeight> {
+    use crate::action::{ActionId, ActionInput, Consequence, Interrupted};
     let warden = player
         .class
         .is_some_and(|choice| choice.class == crate::PlayerClass::Warden);
-    let stunned = crate::aura::has_kind(&player.auras, crate::AuraKind::Stun);
     match player.guard.raised {
         Some(lane)
             if warden
                 && player.is_alive()
-                && !stunned
-                && player.guard.broken == 0
-                && crate::action::rule_applying(
+                && crate::action::consequence(
+                    graph,
                     player,
-                    crate::action::ActionInput::GuardProtection,
-                    crate::action::Interaction::Hold,
-                )
-                .is_none() =>
+                    Interrupted::Action(ActionId::Guard),
+                ) == Consequence::Preserve
+                && crate::action::holding_rule(graph, player, ActionInput::GuardProtection)
+                    .is_none() =>
         {
             Some(lane)
         }
@@ -127,7 +131,12 @@ impl crate::ZoneSimulation {
         &self,
         player_id: PlayerId,
     ) -> Result<Option<StrikeHeight>, ZoneError> {
-        let Some(lane) = self.players.get(&player_id).and_then(guard_ready) else {
+        let graph = self.action_graph;
+        let Some(lane) = self
+            .players
+            .get(&player_id)
+            .and_then(|player| guard_ready(graph, player))
+        else {
             return Ok(None);
         };
         let body = self

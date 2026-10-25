@@ -54,7 +54,7 @@ describe("Action Lab (#381)", () => {
   test("timeline segments merge consecutive ticks of one action and phase", () => {
     const at = (tick: number, action: string | null, phase: string | null): { tick: number; inspection: Inspection } => ({
       tick,
-      inspection: { tick, regions: [{ region: "Movement", action, phase, recoveryLeft: null }], edges: [], rules: [], arbitrations: [] },
+      inspection: { tick, regions: [{ region: "Movement", action, phase, recoveryLeft: null }], edges: [], rules: [], interruptions: [], arbitrations: [] },
     });
     const rows = timelineSegments([at(1, "Airborne", "Active"), at(2, "Airborne", "Active"), at(3, "Landing", "Recovery"), at(4, null, null)], ["Movement"]);
     expect(rows.get("Movement")).toEqual([

@@ -171,6 +171,7 @@ fn reason(reason: BlockReason) -> Value {
         BlockReason::Condition(condition) => {
             json!({ "kind": "Condition", "condition": condition_name(condition) })
         }
+        BlockReason::Cancelled(by) => json!({ "kind": "Cancelled", "reaction": name(by) }),
         other => json!({ "kind": name(other) }),
     }
 }
@@ -178,6 +179,7 @@ fn reason(reason: BlockReason) -> Value {
 fn status(status: EdgeStatus) -> Value {
     match status {
         EdgeStatus::Blocked(why) => json!({ "kind": "Blocked", "reason": reason(why) }),
+        EdgeStatus::Suspended(by) => json!({ "kind": "Suspended", "reaction": name(by) }),
         other => json!({ "kind": name(other) }),
     }
 }
@@ -203,9 +205,11 @@ fn outcome(outcome: Outcome) -> Value {
 }
 
 /// The authored graph: actions by region, edges with their windows in ms and
-/// ticks, recovery modifiers and compatibility rules.
+/// ticks, precision windows, recovery and window modifiers, compatibility
+/// rules and interruptions.
 #[must_use]
 pub fn graph_json() -> String {
+    let graph = action::BASELINE;
     let actions: Vec<Value> = action::ACTIONS
         .iter()
         .map(|def| {
@@ -228,10 +232,18 @@ pub fn graph_json() -> String {
             })
         })
         .collect();
-    let edges: Vec<Value> = action::EDGES
+    let edges: Vec<Value> = graph
+        .edges
         .iter()
         .map(|def| {
             let window = def.window;
+            let precision = def.precision.map(|precision| {
+                json!({
+                    "afterOpenMs": precision.after_open_ms,
+                    "lengthMs": precision.length_ms,
+                    "benefits": precision.benefits.iter().map(|effect| name(effect)).collect::<Vec<_>>(),
+                })
+            });
             json!({
                 "id": name(def.id),
                 "from": name(def.from),
@@ -245,11 +257,24 @@ pub fn graph_json() -> String {
                 "bufferTicks": window.buffer_ticks(),
                 "conditions": def.conditions.iter().copied().map(condition_name).collect::<Vec<_>>(),
                 "effects": def.effects.iter().map(|effect| name(effect)).collect::<Vec<_>>(),
+                "precision": precision,
                 "priority": def.priority,
             })
         })
         .collect();
-    let rules: Vec<Value> = action::RULES
+    let window_modifiers: Vec<Value> = graph
+        .window_modifiers
+        .iter()
+        .map(|modifier| {
+            json!({
+                "edge": name(modifier.edge),
+                "conditions": modifier.conditions.iter().copied().map(condition_name).collect::<Vec<_>>(),
+                "actionableDeltaMs": modifier.actionable_delta_ms,
+            })
+        })
+        .collect();
+    let rules: Vec<Value> = graph
+        .rules
         .iter()
         .map(|rule| {
             json!({
@@ -257,7 +282,18 @@ pub fn graph_json() -> String {
                 "during": name(rule.during),
                 "input": name(rule.input),
                 "conditions": rule.conditions.iter().copied().map(condition_name).collect::<Vec<_>>(),
-                "interaction": name(rule.interaction),
+            })
+        })
+        .collect();
+    let interruptions: Vec<Value> = graph
+        .interruptions
+        .iter()
+        .map(|rule| {
+            json!({
+                "reaction": name(rule.reaction),
+                "interrupted": name(rule.interrupted),
+                "phase": rule.phase.map(name),
+                "consequence": name(rule.consequence),
             })
         })
         .collect();
@@ -267,7 +303,9 @@ pub fn graph_json() -> String {
         "actions": actions,
         "modifiers": modifiers,
         "edges": edges,
+        "windowModifiers": window_modifiers,
         "rules": rules,
+        "interruptions": interruptions,
     })
     .to_string()
 }
@@ -301,6 +339,7 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
                 "bufferFrom": report.buffer_from,
                 "openFrom": report.open_from,
                 "openUntil": report.open_until,
+                "precision": report.precision.map(|(from, until)| json!({ "from": from, "until": until })),
             })
         })
         .collect();
@@ -311,8 +350,19 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
             json!({
                 "rule": name(report.rule),
                 "input": name(report.input),
-                "interaction": name(report.interaction),
                 "releasedAt": report.released_at,
+            })
+        })
+        .collect();
+    let interruptions: Vec<Value> = inspection
+        .interruptions
+        .iter()
+        .map(|report| {
+            json!({
+                "interrupted": name(report.interrupted),
+                "reaction": name(report.reaction),
+                "consequence": name(report.consequence),
+                "authored": report.authored,
             })
         })
         .collect();
@@ -323,6 +373,7 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
             json!({
                 "input": name(arbitration.input),
                 "outcome": outcome(arbitration.outcome),
+                "precise": arbitration.precise,
                 "candidates": arbitration
                     .candidates
                     .iter()
@@ -337,6 +388,7 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
             "regions": regions,
             "edges": edges,
             "rules": rules,
+            "interruptions": interruptions,
             "arbitrations": arbitrations,
         })
         .to_string(),

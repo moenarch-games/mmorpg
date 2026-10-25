@@ -17,8 +17,10 @@
 //!   and refusals. It consumes the opening once and starts its own global
 //!   cooldown. Any other ability use or death clears the opening.
 //!
-//! The timing and conditions are the [`crate::action`] graph's
-//! `SlashToShieldBash` edge; this module keeps the opening's runtime state.
+//! The timing, conditions, effects and interruptions are the zone's
+//! [`crate::action`] graph's `SlashToShieldBash` edge; this module keeps the
+//! opening's runtime state. [`ComboOpening::is_open`] and
+//! [`ComboOpening::is_valid`] use the baseline window.
 
 use crate::zone::PlayerState;
 use crate::{EntityRef, ZoneSimulation, action};
@@ -81,9 +83,12 @@ impl ComboPhase {
 
 impl ZoneSimulation {
     /// The viewer's combo phase, if a follow-up is pending.
-    pub(crate) fn combo_phase(state: &PlayerState) -> Option<ComboPhase> {
+    pub(crate) fn combo_phase(&self, state: &PlayerState) -> Option<ComboPhase> {
+        let graph = self.action_graph;
+        let def = graph.edge(action::EdgeId::SlashToShieldBash)?;
+        let opens = action::effective_window(state, graph, def).opens;
         state.combo.map(|combo| {
-            if combo.is_open() {
+            if combo.elapsed >= opens {
                 ComboPhase::Open
             } else {
                 ComboPhase::Impact
@@ -91,28 +96,33 @@ impl ZoneSimulation {
         })
     }
 
-    /// Ages every opening by one tick and drops expired ones and those of
-    /// the dead.
+    /// Applies the reactions' cancellations (a stun discards a guard held by
+    /// the strike recovery, in the baseline), then ages every opening by one
+    /// tick: an expired or cancelled opening (death, in the baseline) ends
+    /// and a suspended one keeps its age (Atlas 5.8.4).
     pub(crate) fn advance_combos(&mut self) {
+        self.apply_interruptions();
+        let graph = self.action_graph;
+        let def = graph.edge(action::EdgeId::SlashToShieldBash);
         for player in self.players.values_mut() {
-            // A stun before the strike recovery ends discards a pending guard.
-            if action::rule_applying(
+            let consequence = action::consequence(
+                graph,
                 player,
-                action::ActionInput::GuardProtection,
-                action::Interaction::Cancel,
-            )
-            .is_some()
-            {
-                player.guard.raised = None;
-            }
+                action::Interrupted::Edge(action::EdgeId::SlashToShieldBash),
+            );
+            let window = def.map(|def| action::effective_window(player, graph, def));
             player.strike_recovery = player.strike_recovery.saturating_sub(1);
-            player.combo = player.combo.and_then(|combo| {
-                let aged = ComboOpening {
-                    elapsed: combo.elapsed + 1,
-                    ..combo
-                };
-                (player.health > 0 && aged.is_valid()).then_some(aged)
-            });
+            player.combo = match (player.combo, window, consequence) {
+                (Some(combo), Some(window), action::Consequence::Preserve) => {
+                    let aged = ComboOpening {
+                        elapsed: combo.elapsed + 1,
+                        ..combo
+                    };
+                    (aged.elapsed <= window.closes()).then_some(aged)
+                }
+                (Some(combo), Some(_), action::Consequence::Suspend) => Some(combo),
+                _ => None,
+            };
         }
     }
 }
