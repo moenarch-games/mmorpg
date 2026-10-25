@@ -177,7 +177,16 @@ impl Hero {
         }
     }
 
+    /// Uses `ability`, first turning toward `target` (#517) without changing the held movement.
     fn use_ability(&mut self, ability: AbilityId, target: Option<EntityRef>) -> Vec<ZoneEvent> {
+        if let Some((facing, _)) = target.and_then(|target| arena::aim_at(&self.zone, 1, target)) {
+            let me = self.zone.snapshot().unwrap().players.remove(0);
+            self.send(ZoneCommand::Move {
+                forward: me.forward,
+                strafe: me.strafe,
+                facing,
+            });
+        }
         self.send(ZoneCommand::UseAbility {
             ability: ability.get(),
             target,
@@ -187,6 +196,12 @@ impl Hero {
 
     /// The hostile Warden's Shield Bash on the hero.
     fn bashed(&mut self) -> Vec<ZoneEvent> {
+        // The Warden turns to the hero first (#517).
+        self.warden_sequence += 1;
+        let face = arena::face(&self.zone, 2, EntityRef::Player(1));
+        self.zone
+            .apply_command(2, self.warden_sequence, face)
+            .unwrap();
         self.warden_sequence += 1;
         self.zone
             .apply_command(

@@ -1,6 +1,6 @@
-//! Magic missiles (#289): Firebolt carries a missile that ignores gravity. Cast at a target it
-//! homes on it and follows it; cast without a target it flies straight along the facing, so it
-//! hits what stands in that line, misses what does not, and a wall in the way stops it.
+//! Magic missiles (#289): Firebolt carries a missile that ignores gravity. It flies straight
+//! along the facing whatever is selected (#517), so it hits what stands in that line, misses
+//! what does not, and a wall in the way stops it.
 mod support;
 
 /// [`t30`] as a `usize` tick count.
@@ -148,7 +148,7 @@ impl Caster {
 }
 
 #[test]
-fn a_targeted_firebolt_homes_level_and_lands_after_its_flight() {
+fn a_firebolt_flies_level_and_lands_after_its_flight() {
     let mut arcanist = Caster::new(content(Vec::new(), &[[0, 2_000]]), NORTHWARD);
     arcanist.firebolt(Some(creature(1)));
     arcanist.ticks(t30u(60));
@@ -170,17 +170,13 @@ fn a_targeted_firebolt_homes_level_and_lands_after_its_flight() {
 }
 
 #[test]
-fn a_targeted_firebolt_follows_a_moving_target() {
-    let mut arcanist = Caster::new(content(Vec::new(), &[[0, 2_500]]), NORTHWARD);
-    arcanist.firebolt(Some(creature(1)));
-    arcanist.ticks(t30u(58));
-    // The boar is pushed 6 m east just as the missile leaves.
-    let mut state = arcanist.zone.snapshot().unwrap();
-    state.creatures[0].position[0] += 600.0;
-    arcanist.zone =
-        ZoneSimulation::from_snapshot(state, Arc::clone(arcanist.zone.content())).unwrap();
-    arcanist.ticks(t30u(40));
-    assert_eq!(arcanist.hits(creature(1)).len(), 1, "it homed on the boar");
+fn a_firebolt_ignores_a_selected_target_off_its_line() {
+    // Boar 1 straight north, boar 2 east: facing north, the bolt at boar 2 hits boar 1 (#517).
+    let mut arcanist = Caster::new(content(Vec::new(), &[[0, 2_000], [2_000, 0]]), NORTHWARD);
+    arcanist.firebolt(Some(creature(2)));
+    arcanist.ticks(t30u(100));
+    assert_eq!(arcanist.hits(creature(1)).len(), 1, "{:?}", arcanist.events);
+    assert!(arcanist.hits(creature(2)).is_empty());
 }
 
 #[test]

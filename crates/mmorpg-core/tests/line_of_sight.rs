@@ -102,7 +102,8 @@ fn content_with(between: Between) -> Arc<ZoneContent> {
     Arc::new(content.with_ramps(ramps).unwrap())
 }
 
-/// The first-tick events of an arcanist that targets the boar and casts Firebolt.
+/// The first-tick events of an arcanist facing the boar that casts Fire Blast, which lands on
+/// the nearest unit it can see in front (#517).
 fn cast_firebolt(wall: bool) -> (ZoneSimulation, Vec<ZoneEvent>, u16) {
     cast_firebolt_with(content(wall))
 }
@@ -133,7 +134,7 @@ fn cast_firebolt_with(content: Arc<ZoneContent>) -> (ZoneSimulation, Vec<ZoneEve
         1,
         3,
         ZoneCommand::UseAbility {
-            ability: ids::FIREBOLT.get(),
+            ability: ids::FIRE_BLAST.get(),
             target: None,
         },
     )
@@ -148,8 +149,8 @@ fn a_static_wall_blocks_a_ranged_ability_that_a_clear_line_allows() {
     let (blocked, events, mana) = cast_firebolt(true);
     assert!(
         events.contains(&ZoneEvent::Error {
-            code: ErrorCode::LineOfSight,
-            target: Some(TARGET),
+            code: ErrorCode::NoTarget,
+            target: None,
         }),
         "{events:?}"
     );
@@ -170,12 +171,12 @@ fn a_static_wall_blocks_a_ranged_ability_that_a_clear_line_allows() {
     );
 }
 
-/// Whether the Firebolt at the boar is refused for line of sight with `between` in the way.
+/// Whether the Fire Blast finds no boar in sight with `between` in the way.
 fn refused(between: Between) -> bool {
     let (_, events, _) = cast_firebolt_with(content_with(between));
     events.contains(&ZoneEvent::Error {
-        code: ErrorCode::LineOfSight,
-        target: Some(TARGET),
+        code: ErrorCode::NoTarget,
+        target: None,
     })
 }
 

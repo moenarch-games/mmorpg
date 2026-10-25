@@ -265,9 +265,10 @@ impl ZoneSimulation {
         Ok(None)
     }
 
-    /// The unit a facing-aimed hostile ability without a projectile lands on (#517): the nearest
-    /// attackable unit in line of sight within its reach, inside the swing arc for a melee
-    /// ability or the narrower aim cone for a ranged one; ties go in `EntityRef` order.
+    /// The unit a facing-aimed hostile ability without a projectile lands on (#517), among the
+    /// attackable units in line of sight within its reach: for a melee ability the nearest inside
+    /// the swing arc, for a ranged one the nearest to the aim line inside the narrower aim cone
+    /// (then the nearest); ties go in `EntityRef` order.
     fn aimed_unit(
         &self,
         player_id: PlayerId,
@@ -279,14 +280,35 @@ impl ZoneSimulation {
             AbilityRange::Melee => crate::unit::SWING_ARC_HALF_WIDTH,
             _ => crate::unit::AIM_CONE_HALF_WIDTH,
         };
-        let mut best: Option<(i64, EntityRef)> = None;
-        for entity in self.facing_coverage(player_id, facing, reach, half_width)? {
-            let distance = self.unit_distance_squared(EntityRef::Player(player_id), entity)?;
-            if best.is_none_or(|(nearest, _)| distance < nearest) {
-                best = Some((distance, entity));
+        let melee = matches!(ability.range, AbilityRange::Melee);
+        let origin = self.unit_position(EntityRef::Player(player_id))?;
+        let (dir_x, dir_z) = crate::trig::direction(facing);
+        // (along the facing, XZ length, squared distance, unit) of the best so far.
+        let mut best: Option<(i64, i64, i64, EntityRef)> = None;
+        // Ranged abilities need a sight line to every unit, melee ones to players (as before).
+        for entity in self.facing_coverage(player_id, facing, reach, half_width, !melee)? {
+            let at = self.unit_position(entity)?;
+            let (dx, dz) = (i64::from(at[0] - origin[0]), i64::from(at[2] - origin[2]));
+            let along = dx * i64::from(dir_x) + dz * i64::from(dir_z);
+            let length =
+                i64::try_from(crate::trig::xz_length(at[0] - origin[0], at[2] - origin[2]))
+                    .map_err(|_| ZoneError::new("aim distance overflow"))?
+                    .max(1);
+            let distance = dx * dx + dz * dz;
+            let better = best.is_none_or(|(best_along, best_length, best_distance, _)| {
+                // along / length is the cosine of the angle off the aim line.
+                let (mine, theirs) = (along * best_length, best_along * length);
+                if melee || mine == theirs {
+                    distance < best_distance
+                } else {
+                    mine > theirs
+                }
+            });
+            if better {
+                best = Some((along, length, distance, entity));
             }
         }
-        Ok(best.map(|(_, entity)| entity))
+        Ok(best.map(|(_, _, _, entity)| entity))
     }
 
     /// Returns `amount` of the class resource a follow-up refunds.

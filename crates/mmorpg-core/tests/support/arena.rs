@@ -123,3 +123,46 @@ pub fn stand(facing: u16) -> ZoneCommand {
         facing,
     }
 }
+
+/// The facing from `player` toward `target` and their XZ distance in the player's projection,
+/// as a player turns to aim (#517); `None` while either is out of view.
+pub fn aim_at(
+    zone: &mmorpg_core::ZoneSimulation,
+    player: u32,
+    target: mmorpg_core::EntityRef,
+) -> Option<(u16, i64)> {
+    let view = zone.snapshot_for_player(player).ok()?;
+    let at = |entity: mmorpg_core::EntityRef| {
+        view.entities
+            .iter()
+            .find(|unit| unit.entity() == entity)
+            .map(|unit| unit.position)
+    };
+    let (me, unit) = (at(mmorpg_core::EntityRef::Player(player))?, at(target)?);
+    let (dx, dz) = (unit[0] - me[0], unit[2] - me[2]);
+    let facing = mmorpg_core::trig::yaw_from_vector(dx, dz).unwrap_or(0);
+    Some((facing, i64::from(dx).pow(2) + i64::from(dz).pow(2)))
+}
+
+/// A player pressing attack at `target` (#517): a swing toward it while it stands within melee
+/// reach in the player's projection, otherwise nothing, as a player swings once the target is
+/// in front of them.
+pub fn swing_at(
+    zone: &mmorpg_core::ZoneSimulation,
+    player: u32,
+    target: mmorpg_core::EntityRef,
+) -> Option<ZoneCommand> {
+    let (facing, distance) = aim_at(zone, player, target)?;
+    let reach = i64::from(mmorpg_core::unit::PLAYER_REACH_UNITS);
+    (distance <= reach.pow(2)).then_some(ZoneCommand::Swing { facing })
+}
+
+/// The player turns in place to face `target` (#517), keeping still; `stand(0)` while it is out
+/// of view.
+pub fn face(
+    zone: &mmorpg_core::ZoneSimulation,
+    player: u32,
+    target: mmorpg_core::EntityRef,
+) -> ZoneCommand {
+    stand(aim_at(zone, player, target).map_or(0, |(facing, _)| facing))
+}

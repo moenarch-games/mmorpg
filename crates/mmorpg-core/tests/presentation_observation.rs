@@ -29,9 +29,17 @@ fn arena() -> ZoneSimulation {
     ZoneSimulation::from_snapshot(state, content).unwrap()
 }
 fn fight(zone: &mut ZoneSimulation) {
-    zone.apply_command(1, 1, ZoneCommand::SelectTarget(Some(WOLF)))
+    let sequence = zone.snapshot().unwrap().players[0].last_sequence + 1;
+    zone.apply_command(1, sequence, ZoneCommand::SelectTarget(Some(WOLF)))
         .unwrap();
-    zone.apply_command(1, 2, ZoneCommand::StartAttack).unwrap();
+    press(zone);
+}
+/// Player 1 swings at the wolf whenever it is in reach (#517), under its next sequence.
+fn press(zone: &mut ZoneSimulation) {
+    if let Some(swing) = arena::swing_at(zone, 1, WOLF) {
+        let sequence = zone.snapshot().unwrap().players[0].last_sequence + 1;
+        zone.apply_command(1, sequence, swing).unwrap();
+    }
 }
 #[test]
 fn ordinary_attempts_reach_visible_bystanders_once_without_participant_damage_credit() {
@@ -42,13 +50,14 @@ fn ordinary_attempts_reach_visible_bystanders_once_without_participant_damage_cr
     let mut player_attempt_ticks = Vec::new();
     let mut creature_attempts = 0;
     for _ in 0..mmorpg_core::golden::t30(2_400) {
+        press(&mut zone);
         zone.advance_tick().unwrap();
         let own = zone.snapshot_for_player(1).unwrap();
         let observer = zone.snapshot_for_player(2).unwrap();
         let distant = zone.snapshot_for_player(3).unwrap();
         let attempt = ZoneEvent::AttackPerformed {
             source: PLAYER,
-            target: WOLF,
+            target: Some(WOLF),
         };
         let own_count = own.events.iter().filter(|event| **event == attempt).count();
         let other_count = observer
@@ -136,7 +145,7 @@ fn ordinary_attempts_reach_visible_bystanders_once_without_participant_damage_cr
                     event,
                     ZoneEvent::AttackPerformed {
                         source: WOLF,
-                        target: PLAYER
+                        target: Some(PLAYER)
                     }
                 )
             })
@@ -155,7 +164,7 @@ fn ordinary_attempts_reach_visible_bystanders_once_without_participant_damage_cr
                 | ZoneEvent::CastStarted { .. }
                 | ZoneEvent::AbilityUsed { .. }
         )));
-        assert!(!observer.viewer.in_combat && !observer.viewer.auto_attacking);
+        assert!(!observer.viewer.in_combat);
     }
     assert!(
         hits > 0 && misses > 0,
@@ -209,6 +218,11 @@ fn recovered_combat_reproduces_observations_and_canonical_gameplay() {
         ZoneSimulation::from_snapshot(zone.snapshot().unwrap(), Arc::clone(zone.content()))
             .unwrap();
     for _ in 0..mmorpg_core::golden::t30(180) {
+        if let Some(swing) = arena::swing_at(&zone, 1, WOLF) {
+            let sequence = zone.snapshot().unwrap().players[0].last_sequence + 1;
+            zone.apply_command(1, sequence, swing).unwrap();
+            recovered.apply_command(1, sequence, swing).unwrap();
+        }
         zone.advance_tick().unwrap();
         recovered.advance_tick().unwrap();
         assert_eq!(zone.snapshot().unwrap(), recovered.snapshot().unwrap());
@@ -339,9 +353,11 @@ fn visible_remote_player_ability_has_start_resolution_and_neutral_impact() {
     zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 2, sex: 0 })
         .unwrap();
     zone.advance_tick().unwrap();
+    // The Firebolt flies where the arcanist faces (#517): west, at the wolf.
+    zone.apply_command(1, 2, arena::stand(49_152)).unwrap();
     zone.apply_command(
         1,
-        2,
+        3,
         ZoneCommand::UseAbility {
             ability: ids::FIREBOLT.get(),
             target: Some(WOLF),
@@ -400,7 +416,7 @@ fn observation_does_not_name_actors_omitted_by_projection_entity_cap() {
     let own = zone.snapshot_for_player(1).unwrap();
     assert!(own.events.contains(&ZoneEvent::AttackPerformed {
         source: PLAYER,
-        target: WOLF
+        target: Some(WOLF)
     }));
     let observer = zone.snapshot_for_player(2).unwrap();
     assert_eq!(observer.entities.len(), mmorpg_core::MAX_VISIBLE_ENTITIES);

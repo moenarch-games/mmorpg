@@ -1,4 +1,4 @@
-//! The Rogue's thrown weapons (#290): a throwing knife tracks its selected target; a venom
+//! The Rogue's thrown weapons (#290): a throwing knife flies along the facing (#517); a venom
 //! flask is lobbed along the facing and shatters on impact, poisoning everything near; a bomb
 //! is lobbed, bounces off walls and rolls, and bursts on a unit or after its fuse.
 mod support;
@@ -133,8 +133,8 @@ fn creature_xz(state: &mmorpg_core::CanonicalZoneSnapshot, id: u32) -> [f32; 2] 
 }
 
 #[test]
-fn a_throwing_knife_tracks_its_selected_target() {
-    // The boar stands off the facing: the knife follows the selection, not the facing.
+fn a_throwing_knife_flies_along_the_facing_whatever_is_selected() {
+    // The boar stands off the facing: the knife follows the facing, not the selection (#517).
     let (states, events) = throw(
         content(None, &[[800, 1_200]]),
         NORTHWARD,
@@ -142,10 +142,10 @@ fn a_throwing_knife_tracks_its_selected_target() {
         Some(boar(1)),
         60,
     );
-    assert!(damage_to(&events, boar(1)) > 0);
+    assert_eq!(damage_to(&events, boar(1)), 0);
     let knife = states.last().unwrap().projectiles[0];
     assert_eq!(knife.kind, ProjectileKind::Knife);
-    assert!(matches!(knife.flight, Flight::Stuck { unit: Some(unit), .. } if unit == boar(1)));
+    assert!(!matches!(knife.flight, Flight::Stuck { unit: Some(unit), .. } if unit == boar(1)));
 }
 
 #[test]

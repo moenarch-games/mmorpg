@@ -158,18 +158,19 @@ fn a_destroyed_piece_opens_the_way_and_the_sight_line() {
     let mut state = zone.snapshot().unwrap();
     state.players[0].combat.abilities.resource = 200;
     let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
-    let firebolt = ZoneCommand::UseAbility {
-        ability: ids::FIREBOLT.get(),
+    // Fire Blast lands on the nearest unit the arcanist sees in front (#517).
+    let blast = ZoneCommand::UseAbility {
+        ability: ids::FIRE_BLAST.get(),
         target: None,
     };
-    // The north wall stands between them: no sight line.
-    send(&mut zone, firebolt);
+    // The north wall stands between them: no sight line, nobody in front.
+    send(&mut zone, blast);
     zone.advance_tick().unwrap();
     let events = zone.snapshot_for_player(1).unwrap().events;
     assert!(
         events.contains(&ZoneEvent::Error {
-            code: ErrorCode::LineOfSight,
-            target: Some(EntityRef::Creature(CreatureId::new(1))),
+            code: ErrorCode::NoTarget,
+            target: None,
         }),
         "{events:?}"
     );
@@ -181,7 +182,7 @@ fn a_destroyed_piece_opens_the_way_and_the_sight_line() {
     for _ in 0..60 {
         zone.advance_tick().unwrap();
     }
-    send(&mut zone, firebolt);
+    send(&mut zone, blast);
     zone.advance_tick().unwrap();
     let view = zone.snapshot_for_player(1).unwrap();
     assert!(

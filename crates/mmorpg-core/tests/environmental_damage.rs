@@ -70,7 +70,7 @@ fn host_damage_continues_exactly_and_uses_normal_death_cleanup_without_a_killer(
     assert_eq!(player.combat.health, 0);
     assert_eq!((player.forward, player.strafe), (0, 0));
     assert!(!player.jump_pending);
-    assert!(!player.combat.auto_attack);
+    assert!(!player.combat.swing_queued);
     assert!(player.combat.abilities.cast.is_none());
     assert!(player.combat.abilities.auras.is_empty());
     assert_eq!(player.combat.abilities.guard, GuardState::default());

@@ -202,9 +202,16 @@ impl Script {
         if let Some(unit) = target {
             if !unit.flags.dead {
                 if self.steer(unit.position, 180) {
-                    if !self.view.viewer.auto_attacking {
-                        self.send(ZoneCommand::StartAttack);
-                    } else if self.rage() >= 15 {
+                    // In reach: swing at it (#517) and spend rage on Heroic Strike.
+                    let me = self.me();
+                    self.send(ZoneCommand::Swing {
+                        facing: mmorpg_core::trig::yaw_from_vector(
+                            unit.position[0] - me[0],
+                            unit.position[2] - me[2],
+                        )
+                        .unwrap_or(0),
+                    });
+                    if self.rage() >= 15 {
                         self.send(ZoneCommand::UseAbility {
                             ability: ids::HEROIC_STRIKE.get(),
                             target: None,

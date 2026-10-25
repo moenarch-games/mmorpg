@@ -34,8 +34,11 @@ enum Action {
     },
     Jump,
     SelectTarget(Unit),
-    StartAttack,
-    StopAttack,
+    /// A swing (#517) toward a fixed facing, or aimed at a unit as the bot runner aims it.
+    Swing {
+        facing: Option<u16>,
+        at: Option<Unit>,
+    },
     ReleaseSpirit,
 }
 
@@ -90,6 +93,27 @@ fn tables<'a>(table: &'a toml::Table, key: &str) -> Vec<&'a toml::Table> {
         .unwrap_or_default()
 }
 
+/// The yaw from `player` toward `target` in the player's projection, as the bot runner aims a
+/// swing (#517); the player's own facing while either is out of view.
+fn aim(zone: &ZoneSimulation, player: PlayerId, target: Option<EntityRef>) -> u16 {
+    let Ok(view) = zone.snapshot_for_player(player) else {
+        return 0;
+    };
+    let at = |entity: EntityRef| view.entities.iter().find(|unit| unit.entity() == entity);
+    let Some(me) = at(EntityRef::Player(player)) else {
+        return 0;
+    };
+    target
+        .and_then(at)
+        .and_then(|unit| {
+            mmorpg_core::trig::yaw_from_vector(
+                unit.position[0] - me.position[0],
+                unit.position[2] - me.position[2],
+            )
+        })
+        .unwrap_or(me.facing)
+}
+
 impl BotScenario {
     /// Parses a bot scenario file; fails on any action this replay does not support.
     pub fn parse(source: &str) -> Result<Self, String> {
@@ -132,17 +156,36 @@ impl BotScenario {
                 },
                 "jump" => Action::Jump,
                 "select_target" => Action::SelectTarget(unit(text(step, "entity")?)?),
-                "start_attack" => Action::StartAttack,
-                "stop_attack" => Action::StopAttack,
+                "swing" => Action::Swing {
+                    facing: step
+                        .contains_key("facing")
+                        .then(|| integer(step, "facing"))
+                        .transpose()?,
+                    at: step
+                        .contains_key("entity")
+                        .then(|| unit(text(step, "entity")?))
+                        .transpose()?,
+                },
                 "release_spirit" => Action::ReleaseSpirit,
                 other => return Err(format!("action {other} is not replayed")),
             };
-            steps.push(Step {
-                tick: integer(step, "tick")?,
-                bot: bot(text(step, "bot")?)?,
-                action,
-            });
+            let (tick, bot) = (integer(step, "tick")?, bot(text(step, "bot")?)?);
+            // A repeating swing unrolls as the bot runner unrolls it (#517).
+            if step.contains_key("until") {
+                let (until, every): (u64, usize) =
+                    (integer(step, "until")?, integer(step, "every")?);
+                for tick in (tick..until).step_by(every) {
+                    steps.push(Step {
+                        tick,
+                        bot,
+                        action: action.clone(),
+                    });
+                }
+            } else {
+                steps.push(Step { tick, bot, action });
+            }
         }
+        steps.sort_by_key(|step| step.tick);
         let mut positions = Vec::new();
         for expectation in tables(&table, "expect") {
             if text(expectation, "kind")? != "position" {
@@ -369,7 +412,8 @@ pub const CRATE_SMASH_TICKS: usize = mmorpg_core::golden::t30(360) as usize;
 /// Two players 1.5 m south of crates 900 and 901.
 const CRATE_SMASH_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [2_200.0, 850.0]), (2, [2_310.0, 850.0])];
 
-/// The crate-smash commands: face north, target the crate, attack until it breaks.
+/// The crate-smash commands: face north, target the crate, swing north at it (#517) until it
+/// breaks.
 fn crate_smash_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
     [(1, 900), (2, 901)]
         .into_iter()
@@ -386,7 +430,7 @@ fn crate_smash_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
                 player,
                 ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(prop)))),
             )),
-            2 => Some((player, ZoneCommand::StartAttack)),
+            2..CRATE_SMASH_TICKS => Some((player, ZoneCommand::Swing { facing: 0 })),
             _ => None,
         })
         .collect()
@@ -529,9 +573,16 @@ pub const WATCH_POST_TICKS: usize = mmorpg_core::golden::t30(420) as usize;
 /// The arcanist just north of the watch post, inside the camp, and a ranger beside it.
 const WATCH_POST_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [700.0, -7_350.0]), (2, [300.0, -7_400.0])];
 
-/// The watch post commands: classes, the nearest bandits as targets, Fire Blasts and arrows.
-fn watch_post_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+/// The watch post commands: classes, the nearest bandits as targets, Fire Blasts and arrows
+/// fired where the standing players turn to face them, and the ranger's swings at its bandit
+/// (#517).
+fn watch_post_commands(tick: usize, zone: &ZoneSimulation) -> Vec<(u32, ZoneCommand)> {
     let creature = |id| Some(EntityRef::Creature(CreatureId::new(id)));
+    let face = |player, id| ZoneCommand::Move {
+        forward: 0,
+        strafe: 0,
+        facing: aim(zone, player, creature(id)),
+    };
     let ability = |ability: mmorpg_core::AbilityId, target| ZoneCommand::UseAbility {
         ability: ability.get(),
         target,
@@ -545,11 +596,22 @@ fn watch_post_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
         1 => vec![
             (1, ZoneCommand::SelectTarget(creature(401))),
             (2, ZoneCommand::SelectTarget(creature(400))),
-            (2, ZoneCommand::StartAttack),
         ],
         // The bandits run at them past the post; blast whoever is at the walls.
-        30 | 340 => vec![(1, ability(ids::FIRE_BLAST, creature(401)))],
-        60 | 120 | 200 => vec![(2, ability(ids::AIMED_SHOT, creature(400)))],
+        30 | 340 => vec![
+            (1, face(1, 401)),
+            (1, ability(ids::FIRE_BLAST, creature(401))),
+        ],
+        60 | 120 | 200 => vec![
+            (2, face(2, 400)),
+            (2, ability(ids::AIMED_SHOT, creature(400))),
+        ],
+        2..WATCH_POST_TICKS => vec![(
+            2,
+            ZoneCommand::Swing {
+                facing: aim(zone, 2, creature(400)),
+            },
+        )],
         _ => Vec::new(),
     }
 }
@@ -669,15 +731,13 @@ fn ogre_brawl_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
     };
     let ogre = Some(EntityRef::Creature(CreatureId::new(OGRE)));
     match tick {
-        0 => vec![
-            (1, ZoneCommand::SelectTarget(ogre)),
-            (1, ZoneCommand::StartAttack),
-            (3, walk(WEST)),
-        ],
+        0 => vec![(1, ZoneCommand::SelectTarget(ogre)), (3, walk(WEST))],
         60 => vec![(1, walk(SOUTH)), (3, stand(WEST))],
         110 => vec![(1, stand(0))],
         200 => vec![(3, walk(WEST))],
         240 => vec![(3, stand(WEST))],
+        // While 1 stands facing the ogre to its north it keeps swinging (#517).
+        1..60 | 111..OGRE_BRAWL_TICKS => vec![(1, ZoneCommand::Swing { facing: 0 })],
         _ => Vec::new(),
     }
 }
@@ -925,7 +985,7 @@ impl Run {
                     // Timed from the hoist's own schedule, in zone ticks.
                     Workload::MillHoist => mill_hoist_commands(self.tick),
                     Workload::ChargePath => charge_path_commands(at),
-                    Workload::WatchPost => watch_post_commands(at),
+                    Workload::WatchPost => watch_post_commands(at, &self.zone),
                     Workload::CrateShove => crate_shove_commands(at),
                     Workload::CrateSmash => crate_smash_commands(at),
                     Workload::Missiles => missiles_commands(at),
@@ -995,8 +1055,18 @@ impl Run {
                 Unit::Creature(id) => Some(EntityRef::Creature(CreatureId::new(*id))),
                 Unit::Npc(id) => Some(EntityRef::Npc(NpcId::new(*id))),
             }),
-            Action::StartAttack => ZoneCommand::StartAttack,
-            Action::StopAttack => ZoneCommand::StopAttack,
+            Action::Swing { facing, at } => {
+                let player = self.player(step.bot).ok_or("bot has not joined")?;
+                let target = match at {
+                    Some(Unit::Bot(bot)) => self.player(*bot).map(EntityRef::Player),
+                    Some(Unit::Creature(id)) => Some(EntityRef::Creature(CreatureId::new(*id))),
+                    Some(Unit::Npc(id)) => Some(EntityRef::Npc(NpcId::new(*id))),
+                    Some(Unit::None) | None => None,
+                };
+                ZoneCommand::Swing {
+                    facing: facing.unwrap_or_else(|| aim(&self.zone, player, target)),
+                }
+            }
             Action::ReleaseSpirit => ZoneCommand::ReleaseSpirit,
         };
         let player = self.player(step.bot).ok_or("bot has not joined")?;

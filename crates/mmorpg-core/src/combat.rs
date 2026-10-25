@@ -492,25 +492,33 @@ impl ZoneSimulation {
 
     /// Every attackable living unit a swing toward `facing` covers (#517), in
     /// `EntityRef` order: within [`PLAYER_REACH_UNITS`] (XZ centre distance),
-    /// inside [`SWING_ARC_HALF_WIDTH`] either side of the facing and in line of
-    /// sight. A unit centred on the swinger is always covered.
+    /// inside [`SWING_ARC_HALF_WIDTH`] either side of the facing; another player
+    /// only in line of sight, as melee always required. A unit centred on the
+    /// swinger is always covered.
     pub(crate) fn swing_coverage(
         &self,
         player_id: PlayerId,
         facing: u16,
     ) -> Result<Vec<EntityRef>, ZoneError> {
-        self.facing_coverage(player_id, facing, PLAYER_REACH_UNITS, SWING_ARC_HALF_WIDTH)
+        self.facing_coverage(
+            player_id,
+            facing,
+            PLAYER_REACH_UNITS,
+            SWING_ARC_HALF_WIDTH,
+            false,
+        )
     }
 
     /// Every unit the player may attack within `reach` (XZ centre distance)
-    /// and `half_width` either side of `facing`, in line of sight, in
-    /// `EntityRef` order.
+    /// and `half_width` either side of `facing`, in `EntityRef` order: in line
+    /// of sight when `sighted`, and always for another player.
     pub(crate) fn facing_coverage(
         &self,
         player_id: PlayerId,
         facing: u16,
         reach: i32,
         half_width: u16,
+        sighted: bool,
     ) -> Result<Vec<EntityRef>, ZoneError> {
         let origin = self.player_position(player_id)?;
         let (dir_x, dir_z) = crate::trig::direction(facing);
@@ -537,7 +545,9 @@ impl ZoneSimulation {
             if along < length * min_cos {
                 continue;
             }
-            if !self.line_of_sight(EntityRef::Player(player_id), entity)? {
+            if (sighted || matches!(entity, EntityRef::Player(_)))
+                && !self.line_of_sight(EntityRef::Player(player_id), entity)?
+            {
                 continue;
             }
             covered.push(entity);
