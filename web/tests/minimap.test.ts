@@ -52,8 +52,8 @@ describe("minimap layers", () => {
   test("are built once from scenery, deterministically, as opaque pixels plus vectors", () => {
     const scenery = fixtureScenery();
     const layers = buildMinimapLayers(scenery, ENVIRONMENT);
-    // The Vale, the farmland south of it (#424) and the highlands north of it (#425), 2 px per metre.
-    expect([layers.width, layers.height]).toEqual([848, 2_560]);
+    // The Vale, the farmland south of it (#424), the highlands north of it (#425) and the wetlands east of it (#426), 2 px per metre.
+    expect([layers.width, layers.height]).toEqual([1_696, 2_560]);
     expect(layers.terrain.length).toBe(layers.width * layers.height * 4);
     for (let offset = 3; offset < layers.terrain.length; offset += 4 * 97) {
       expect(layers.terrain[offset]).toBe(255);

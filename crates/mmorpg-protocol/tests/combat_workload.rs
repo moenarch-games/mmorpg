@@ -44,12 +44,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // steering, which moves the crowded fights a little. Farmland and Hamlets (#424) adds its
     // buildings, fences and trees to every step's world, and `i32` positions grow every
     // entity record by six bytes. The Bandit Highlands (#425) add their stronghold, crags and
-    // pines to every step's world.
+    // pines to every step's world, and the Marsh-Lake Wetlands (#426) their island, cottage and
+    // trees.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 692_640, 224_640, 5_202_864],
-        [29_160, 689_760, 80_140, 1_431_435],
-        [29_160, 698_400, 389_620, 7_150_844],
-        [29_041, 709_801, 2_248_200, 24_496_050],
+        [29_160, 761_040, 224_640, 5_202_864],
+        [29_160, 758_160, 80_140, 1_431_435],
+        [29_160, 766_800, 389_620, 7_150_844],
+        [29_041, 778_201, 2_248_200, 24_496_050],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

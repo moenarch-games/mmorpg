@@ -66,8 +66,8 @@ export type MinimapLayers = {
   trees: { center: readonly [number, number]; radius: number; color: Color }[];
 };
 
-/** The playable rectangle and 4 m beyond its walls: Greyhaven Vale, Farmland and Hamlets south of it (#424) and the Bandit Highlands north of it (#425). */
-export const MINIMAP_BOUNDS_METRES = { min: [-212, -636], max: [212, 644] } as const;
+/** The playable rectangle and 4 m beyond its walls: Greyhaven Vale, Farmland and Hamlets south of it (#424), the Bandit Highlands north of it (#425) and the Marsh-Lake Wetlands east of it (#426). */
+export const MINIMAP_BOUNDS_METRES = { min: [-212, -636], max: [636, 644] } as const;
 const PIXELS_PER_METRE = 2;
 /** Zoom levels: metres from the centre to the minimap's rim. */
 export const MINIMAP_RADII_METRES = [30, 45, 70, 100] as const;

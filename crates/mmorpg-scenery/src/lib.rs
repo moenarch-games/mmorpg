@@ -47,16 +47,17 @@ use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, trig};
 pub use outpost_grass::outpost_grass_placements;
 
 /// The rectangle the terrain grid covers: the playable rectangle and 72 m beyond its walls
-/// (80 m past the farmland's, #424, and the highlands', #425, so every grid step divides it).
+/// (80 m past the farmland's, #424, and 88 m past the highlands', #425, and the wetlands', #426,
+/// so every grid step divides it).
 pub const TERRAIN_BOUNDS: XzBounds = XzBounds {
     min: [-28_000, -72_000],
-    max: [28_000, 72_000],
+    max: [72_000, 72_000],
 };
 /// The rectangle the far terrain ring covers: 392 m beyond the playable rectangle's walls on
-/// every side (400 m past the farmland's and the highlands').
+/// every side (400 m past the farmland's, 408 m past the highlands' and the wetlands').
 pub const FAR_TERRAIN_BOUNDS: XzBounds = XzBounds {
     min: [-60_000, -104_000],
-    max: [60_000, 104_000],
+    max: [104_000, 104_000],
 };
 /// Largest relief magnitude inside the playable square (0.6 m).
 pub const WALKABLE_RELIEF_UNITS: i32 = 60;
@@ -80,6 +81,8 @@ const SEED_OUTER_PROPS: u64 = 0x4f55_5445_5256_414c;
 const SEED_FARMLAND_PROPS: u64 = 0x4641_524d_5052_4f50;
 /// Seed of the highlands' scatter (#425).
 const SEED_HIGHLAND_PROPS: u64 = 0x4849_4748_5052_4f50;
+/// Seed of the wetlands' scatter (#426).
+const SEED_MARSH_PROPS: u64 = 0x4d41_5253_5052_4f50;
 
 /// Visual half width of every road (3 m wide); core keeps 2 m clear.
 pub const ROAD_HALF_WIDTH_UNITS: i32 = 150;
@@ -498,6 +501,16 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
             }
         }
         _ if ids::HIGHLAND_CRAGS.contains(&id) => PropKind::Cliff,
+        // Marsh-Lake Wetlands (#426): the drowned watchtower is a keep, its standing stones are
+        // the Greyfang stones' waystones and the cottage is a ruined house, like Southmeadow's.
+        _ if ids::MARSH_BUILDINGS.contains(&id) => {
+            use greyhaven_vale::marsh::Building;
+            match greyhaven_vale::marsh_building(id)? {
+                Building::Tower => PropKind::Keep,
+                Building::Stone => PropKind::Waystone,
+                Building::Ruin => PropKind::House,
+            }
+        }
         _ if ids::CLIFFS.contains(&id) || ids::CAVE_WALLS.contains(&id) => PropKind::Cliff,
         ids::CAVE_ROOF => PropKind::CaveRoof,
         // The sealed threshold to the deeper cave (#160): a log barricade stand-in until the
@@ -696,7 +709,15 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
             half_width: ROAD_HALF_WIDTH_UNITS,
         })
         .collect::<Vec<_>>();
-    let water = vec![LAKE];
+    // Stillwater Lake, then the wetlands' lake and pools (#426).
+    let water: Vec<Water> = std::iter::once(LAKE)
+        .chain(greyhaven_vale::marsh::WATERS.iter().map(|water| Water {
+            name: water.name,
+            centre: water.centre,
+            radii: water.radii,
+            surface: greyhaven_vale::marsh::SURFACE_Y,
+        }))
+        .collect();
     let relief = Relief::new(
         structures.iter().map(|(collider, kind)| (*collider, *kind)),
         &roads,
@@ -955,6 +976,7 @@ impl Scenery {
             Some(greyhaven_vale::WOLFRUN_WOODS) => Biome::Woods,
             Some(greyhaven_vale::REDBRAND_HOLLOW) => Biome::Hollow,
             Some(greyhaven_vale::OUTPOST) => Biome::Hub,
+            Some(greyhaven_vale::MARSH_LAKE_WETLANDS) => Biome::Woods,
             _ => Biome::Meadow,
         }
     }
@@ -983,9 +1005,10 @@ fn clamp_channel(value: i32) -> u8 {
     u8::try_from(value.clamp(0, 255)).unwrap_or(u8::MAX)
 }
 
-/// Chebyshev distance outside the playable square, zero or negative inside.
+/// Chebyshev distance outside the walled ground, zero or negative inside: the corners of the
+/// playable rectangle beside the wetlands (#426) lie outside, under mountains.
 fn beyond_playable(x: i32, z: i32) -> i64 {
-    beyond(x, z, PLAYABLE_BOUNDS)
+    greyhaven_vale::beyond_walls(x, z)
 }
 
 /// Chebyshev distance outside `bounds`, zero or negative inside.
@@ -1409,16 +1432,70 @@ impl Placer<'_> {
         self.outer_decorations();
         self.farmland_decorations();
         self.highland_decorations();
+        self.marsh_decorations();
+    }
+
+    /// Reeds round every marsh water, partly standing in it, and tussock grass, scrub and
+    /// loose rocks across the wetlands (#426).
+    fn marsh_decorations(&mut self) {
+        let mut rng = Rng::new(SEED_MARSH_PROPS);
+        for water in greyhaven_vale::marsh::WATERS {
+            // About one clump per 3 m of shore.
+            let target = usize::try_from((water.radii[0] + water.radii[1]) / 100).unwrap_or(0);
+            let mut placed = 0;
+            for _ in 0..target * 6 {
+                if placed == target {
+                    break;
+                }
+                let angle = u16::try_from(rng.next_u64() % 65_536).unwrap_or(0);
+                let offset = rng.range(-200, 120);
+                let (sin, cos) = trig::direction(angle);
+                let along = |radius: i32, unit: i32| {
+                    i32::try_from(
+                        i64::from(radius + offset) * i64::from(unit) / i64::from(trig::TRIG_ONE),
+                    )
+                    .unwrap_or(0)
+                };
+                let at = [
+                    water.centre[0] + along(water.radii[0], sin),
+                    water.centre[1] + along(water.radii[1], cos),
+                ];
+                let yaw = angle.wrapping_mul(7);
+                let scale = u16::try_from(rng.range(800, 1_400)).unwrap_or(1_000);
+                if self.scenery.road_distance(at) > 50
+                    && self.place(PropKind::Reeds, at, yaw, scale, Ground::Shore)
+                {
+                    placed += 1;
+                }
+            }
+        }
+        let wetlands = greyhaven_vale::marsh::BOUNDS;
+        let lowland = |rng: &mut Rng| {
+            [
+                rng.range(greyhaven_vale::marsh::RIDGE[3] + 100, wetlands.max[0] - 100),
+                rng.range(wetlands.min[1] + 100, wetlands.max[1] - 100),
+            ]
+        };
+        self.scatter(&mut rng, 900, 5_000, |rng| {
+            Some((PropKind::GrassTuft, lowland(rng)))
+        });
+        self.scatter(&mut rng, 220, 2_000, |rng| {
+            Some((PropKind::Bush, lowland(rng)))
+        });
+        self.scatter(&mut rng, 80, 1_000, |rng| {
+            Some((PropKind::Rock(RockSize::Small), lowland(rng)))
+        });
     }
 
     /// Sparse grass, scrub and loose rocks across the highlands' broken high ground (#425).
     fn highland_decorations(&mut self) {
         let mut rng = Rng::new(SEED_HIGHLAND_PROPS);
+        let highlands = greyhaven_vale::highlands::BOUNDS;
         let high_ground = |rng: &mut Rng| {
             [
-                rng.range(PLAYABLE_BOUNDS.min[0] + 100, PLAYABLE_BOUNDS.max[0] - 100),
+                rng.range(highlands.min[0] + 100, highlands.max[0] - 100),
                 rng.range(
-                    PLAYABLE_BOUNDS.min[1] + 100,
+                    highlands.min[1] + 100,
                     greyhaven_vale::highlands::ESCARPMENT[3] - 100,
                 ),
             ]
@@ -1442,13 +1519,14 @@ impl Placer<'_> {
     /// Grass, flowers and bushes across the farmland's plateau (#424), off its fields.
     fn farmland_decorations(&mut self) {
         let mut rng = Rng::new(SEED_FARMLAND_PROPS);
+        let farmland = greyhaven_vale::farmland::BOUNDS;
         let scenery = self.scenery;
         let plateau = |rng: &mut Rng| {
             let at = [
-                rng.range(PLAYABLE_BOUNDS.min[0] + 100, PLAYABLE_BOUNDS.max[0] - 100),
+                rng.range(farmland.min[0] + 100, farmland.max[0] - 100),
                 rng.range(
                     greyhaven_vale::farmland::RIDGE[3] + 100,
-                    PLAYABLE_BOUNDS.max[1] - 100,
+                    farmland.max[1] - 100,
                 ),
             ];
             scenery
@@ -1521,7 +1599,7 @@ impl Placer<'_> {
             let yaw = u16::try_from(rng.next_u64() % 65_536).unwrap_or(0);
             let scale = u16::try_from(rng.range(700, 1_300)).unwrap_or(1_000);
             if let Some((kind, at)) = candidate
-                && PLAYABLE_BOUNDS.contains(at[0], at[1])
+                && greyhaven_vale::inside_walls(at[0], at[1])
                 && self.place(kind, at, yaw, scale, Ground::Open)
             {
                 placed += 1;

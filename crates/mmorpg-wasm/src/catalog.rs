@@ -472,7 +472,8 @@ mod tests {
                 "Eastwater Fen",
                 "Sunken Shrine",
                 "Farmland and Hamlets",
-                "Bandit Highlands"
+                "Bandit Highlands",
+                "Marsh-Lake Wetlands"
             ]
         );
         assert_eq!(

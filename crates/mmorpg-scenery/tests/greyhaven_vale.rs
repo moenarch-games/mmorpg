@@ -54,11 +54,10 @@ fn footprint(collider: &StaticCollider) -> Rect {
     )
 }
 
-fn beyond_playable(x: i32, z: i32) -> i32 {
-    (PLAYABLE_BOUNDS.min[0] - x)
-        .max(x - PLAYABLE_BOUNDS.max[0])
-        .max(PLAYABLE_BOUNDS.min[1] - z)
-        .max(z - PLAYABLE_BOUNDS.max[1])
+/// Outside the walls, which leave out the playable rectangle's corners beside the wetlands
+/// (#426).
+fn beyond_playable(x: i32, z: i32) -> i64 {
+    greyhaven_vale::beyond_walls(x, z)
 }
 
 #[test]
@@ -194,9 +193,17 @@ fn no_prop_intersects_a_collider_it_does_not_visualise() {
 #[test]
 fn walkable_water_has_no_colliders() {
     let scenery = greyhaven_vale_scenery();
-    let [lake] = &scenery.water[..] else {
-        panic!("the vale has one lake");
+    // Stillwater Lake, then the wetlands' lake and pools (#426) beyond the Vale.
+    let [lake, wetlands @ ..] = &scenery.water[..] else {
+        panic!("the vale has a lake");
     };
+    assert_eq!(wetlands.len(), greyhaven_vale::marsh::WATERS.len());
+    for water in wetlands {
+        assert_eq!(
+            greyhaven_vale::area_at(water.centre[0], water.centre[1]).map(Area::id),
+            Some(greyhaven_vale::MARSH_LAKE_WETLANDS)
+        );
+    }
     assert!(lake.contains(5_500, -5_500));
     assert_eq!(
         greyhaven_vale::area_at(lake.centre[0], lake.centre[1]).map(Area::id),
@@ -282,6 +289,10 @@ fn relief_is_gentle_inside_and_encloses_the_vale_with_mountains() {
     let mut rolling = 0;
     for x in (PLAYABLE_BOUNDS.min[0]..=PLAYABLE_BOUNDS.max[0]).step_by(200) {
         for z in (PLAYABLE_BOUNDS.min[1]..=PLAYABLE_BOUNDS.max[1]).step_by(200) {
+            // The rectangle's corners beside the wetlands (#426) are mountains.
+            if beyond_playable(x, z) > 0 {
+                continue;
+            }
             let height = scenery.height_at(x, z);
             assert!(
                 height.abs() <= WALKABLE_RELIEF_UNITS,
@@ -325,15 +336,15 @@ fn terrain_grid_samples_relief_and_biomes() {
     let scenery: Scenery = greyhaven_vale_scenery();
     let grid = scenery.terrain_grid(200);
     assert_eq!(grid.step, 200);
-    assert_eq!((grid.columns, grid.rows), (281, 721));
+    assert_eq!((grid.columns, grid.rows), (501, 721));
     assert_eq!(grid.origin, TERRAIN_BOUNDS.min);
-    assert_eq!(grid.heights.len(), 281 * 721);
-    assert_eq!(grid.colors.len(), 281 * 721);
+    assert_eq!(grid.heights.len(), 501 * 721);
+    assert_eq!(grid.colors.len(), 501 * 721);
     for (column, row) in [(0, 0), (100, 100), (37, 158), (200, 200)] {
         let (vertex, _) = grid.vertex(column, row).unwrap();
         assert_eq!(vertex[1], scenery.surface_at(vertex[0], vertex[2]));
     }
-    assert!(grid.vertex(281, 0).is_none());
+    assert!(grid.vertex(501, 0).is_none());
     let color = |x: i32, z: i32| {
         let column = usize::try_from((x - TERRAIN_BOUNDS.min[0]) / 200).unwrap();
         let row = usize::try_from((z - TERRAIN_BOUNDS.min[1]) / 200).unwrap();
@@ -479,7 +490,7 @@ fn prop_counts_stay_within_their_budgets() {
             );
         } else {
             assert!(
-                PLAYABLE_BOUNDS.contains(x, z),
+                greyhaven_vale::inside_walls(x, z),
                 "{:?} at ({x}, {z})",
                 prop.kind
             );
@@ -496,15 +507,16 @@ fn prop_counts_stay_within_their_budgets() {
         .count();
     assert_eq!(derived, structures);
     let count = |kind| counts.get(&kind).copied().unwrap_or(0);
-    // The outer valley (#159), the farmland (#424) and the highlands (#425) add their own grass,
-    // flowers and undergrowth.
+    // The outer valley (#159), the farmland (#424), the highlands (#425) and the wetlands (#426)
+    // add their own grass, flowers and undergrowth.
     assert!(
-        (5_400..=6_000).contains(&count(PropKind::GrassTuft)),
+        (6_400..=7_000).contains(&count(PropKind::GrassTuft)),
         "{counts:?}"
     );
     assert!((1_300..=1_600).contains(&count(PropKind::Flowers)));
-    assert!((530..=600).contains(&count(PropKind::Bush)), "{counts:?}");
-    assert!((100..=140).contains(&count(PropKind::Reeds)));
+    assert!((760..=840).contains(&count(PropKind::Bush)), "{counts:?}");
+    // Stillwater Lake's shore, then every marsh water's (#426).
+    assert!((440..=500).contains(&count(PropKind::Reeds)), "{counts:?}");
     assert!(
         (600..=700).contains(&background_trees),
         "{background_trees}"
@@ -518,11 +530,11 @@ fn prop_counts_stay_within_their_budgets() {
     assert_eq!(count(PropKind::Dock), 1);
     // The Eastwater watchtower and the Southmeadow ruins join the keep and houses (#159), and
     // the farmland's tower and hamlet houses join them (#424), and the highlands' stronghold
-    // and lookout towers (#425).
-    assert_eq!(count(PropKind::Keep), 5);
-    assert_eq!(count(PropKind::House), 15);
-    // The highlands (#425) add about a tenth.
-    assert!(scenery.props.len() <= 11_500, "{}", scenery.props.len());
+    // and lookout towers (#425), and the wetlands' drowned watchtower and ruined cottage (#426).
+    assert_eq!(count(PropKind::Keep), 6);
+    assert_eq!(count(PropKind::House), 16);
+    // The highlands (#425) add about a tenth, the wetlands (#426) about another tenth.
+    assert!(scenery.props.len() <= 13_000, "{}", scenery.props.len());
 }
 
 #[test]
@@ -547,7 +559,7 @@ fn prop_kind_names_are_unique_and_cover_every_placed_kind() {
 fn the_far_ring_continues_the_same_relief_into_distant_ranges() {
     let scenery = greyhaven_vale_scenery();
     let far = scenery.far_terrain_grid(2_000);
-    assert_eq!((far.columns, far.rows), (61, 105));
+    assert_eq!((far.columns, far.rows), (83, 105));
     assert_eq!(far.origin, FAR_TERRAIN_BOUNDS.min);
     let near = scenery.terrain_grid(2_000);
     let offset =

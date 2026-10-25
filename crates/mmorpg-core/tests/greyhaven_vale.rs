@@ -53,7 +53,8 @@ fn content_is_a_bounded_deterministic_revision() {
         .iter()
         .filter(|collider| ids::TREES.contains(&collider.id))
         .count();
-    assert!((800..=1_600).contains(&trees), "{trees} trees");
+    // The wetlands (#426) add their lone trees.
+    assert!((800..=1_800).contains(&trees), "{trees} trees");
     for collider in definition.colliders() {
         let (min, max) = footprint(collider);
         let within = |point: [i32; 2]| {
@@ -102,9 +103,13 @@ fn content_is_a_bounded_deterministic_revision() {
                     collider.id
                 );
             }
-            assert!(PLAYABLE_BOUNDS.contains(min[0], min[1]), "{}", collider.id);
             assert!(
-                PLAYABLE_BOUNDS.contains(max[0] - 1, max[1] - 1),
+                greyhaven_vale::inside_walls(min[0], min[1]),
+                "{}",
+                collider.id
+            );
+            assert!(
+                greyhaven_vale::inside_walls(max[0] - 1, max[1] - 1),
                 "{}",
                 collider.id
             );
@@ -311,7 +316,8 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
             "Eastwater Fen",
             "Sunken Shrine",
             "Farmland and Hamlets",
-            "Bandit Highlands"
+            "Bandit Highlands",
+            "Marsh-Lake Wetlands"
         ]
     );
     // Area bounds are inclusive; as half-open rectangles they compare with
