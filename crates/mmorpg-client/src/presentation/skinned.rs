@@ -609,7 +609,7 @@ impl Model {
         root: Frame,
         height: f64,
         pose: &[Layer],
-        tint: Option<f32>,
+        tint: Option<[f32; 3]>,
         hidden: &[String],
     ) -> Vec<SceneDraw> {
         self.draws_filtered(id, self.placement(root, height), pose, tint, hidden)
@@ -621,7 +621,7 @@ impl Model {
         id: &str,
         placement: three_d_animation::Mat4,
         pose: &[Layer],
-        tint: Option<f32>,
+        tint: Option<[f32; 3]>,
     ) -> Vec<SceneDraw> {
         self.draws_filtered(id, placement, pose, tint, &[])
     }
@@ -631,7 +631,7 @@ impl Model {
         id: &str,
         placement: three_d_animation::Mat4,
         pose: &[Layer],
-        tint: Option<f32>,
+        tint: Option<[f32; 3]>,
         hidden: &[String],
     ) -> Vec<SceneDraw> {
         self.skin(pose)
@@ -641,10 +641,10 @@ impl Model {
             .filter(|(_, (_, p))| p.node.as_ref().is_none_or(|node| !hidden.contains(node)))
             .filter_map(|(index, ((positions, normals), p))| {
                 let colors = match tint {
-                    Some(f) => p
+                    Some([r, g, b]) => p
                         .colors
                         .iter()
-                        .map(|c| Color3::new(c.r * f, c.g * f, c.b * f))
+                        .map(|c| Color3::new(c.r * r, c.g * g, c.b * b))
                         .collect(),
                     None => p.colors.clone(),
                 };
@@ -1132,7 +1132,7 @@ impl Equipment {
         character: &Model,
         placement: three_d_animation::Mat4,
         pose: &[Layer],
-        tint: Option<f32>,
+        tint: Option<[f32; 3]>,
     ) -> Vec<SceneDraw> {
         let mut draws = Vec::new();
         for (index, (model, joint, matrix)) in self.items.iter().enumerate() {

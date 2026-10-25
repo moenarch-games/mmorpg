@@ -9,10 +9,10 @@ import { PROTOCOL_ID } from "../protocol-id";
 import { ticksFromMs } from "../replication";
 import { element, type LabSetup } from "./action-lab";
 import {
-  addLandingEdge, copyConfig, exportBundle, importFile, insertCopy, LANDING_EDGES, MOVEMENT_PHASES, moveCommand, movementRule,
-  promoteCommand, promotionFileName, promotionRequest, recoveryOverride, removeAuthored, removeCommand, removeEdge, ruleApplies,
-  setAuthored, setDuration, setMovementRule, setRecoveryOverride, setRuleApplies, shortLabel, slidingSlashSample, swimmingSample,
-  traversalSample, INPUT_CONTEXTS, SCENARIO_FORMAT,
+  addLandingEdge, copyConfig, exportBundle, importFile, insertCopy, isMovement, LANDING_EDGES, MOVEMENT_PHASES, moveCommand,
+  movementRule, promoteCommand, promotionFileName, promotionRequest, recoveryOverride, removeAuthored, removeCommand, removeEdge,
+  ruleApplies, setAuthored, setDuration, setMovementRule, setRecoveryOverride, setRuleApplies, shortLabel, slidingSlashSample,
+  swimmingSample, traversalSample, INPUT_CONTEXTS, SCENARIO_FORMAT,
   type ConfigCheck, type LabAuthoredAction, type LabAuthoredPhase, type LabComparison, type LabConfig, type LabConfigEdge,
   type LabConfigVersion, type LabEffect, type LabFinding,
   type LabLibrary, type LabRun, type LabScenario,
@@ -75,6 +75,8 @@ export class ExperimentPanel {
   #configs: Record<Slot, LabConfig>;
   #checks: Record<Slot, ConfigCheck>;
   #editing: Slot = "b";
+  /** Whether the timeline lists movement commands; hidden by default (#382), always replayed. */
+  #showMovement = false;
   /** The configuration the arena runs now. */
   #live: Slot | null = null;
   #comparison: LabComparison | null = null;
@@ -223,7 +225,8 @@ export class ExperimentPanel {
     duration.addEventListener("change", () => this.#setScenario(setDuration(scenario, Number(duration.value))));
     const results = this.#comparison?.a.commands ?? [];
     const delaysB = new Map((this.#comparison?.b.commands ?? []).map((command) => [command.index, command]));
-    const rows = scenario.commands.map((command, index) => {
+    const rows = scenario.commands.flatMap((command, index) => {
+      if (!this.#showMovement && isMovement(command)) { return []; }
       const result = results.find((entry) => entry.index === index);
       const other = delaysB.get(index);
       const tick = element("input", { type: "number", min: "0", step: "1", value: String(command.tick), title: "Applied before this tick + 1" });
@@ -234,7 +237,7 @@ export class ExperimentPanel {
         return node;
       };
       const delay = (entry: typeof result) => entry?.delayTicks === null || !entry ? "—" : `${entry.delayTicks} t`;
-      return element("tr", {},
+      return [element("tr", {},
         element("td", {}, tick),
         element("td", { className: "lab-actions" },
           button("−", "One tick earlier", () => moveCommand(scenario, index, command.tick - 1)),
@@ -243,15 +246,19 @@ export class ExperimentPanel {
           button("✕", "Remove", () => removeCommand(scenario, index))),
         element("td", { className: "lab-label", title: result?.label ?? command.bytes }, shortLabel(result?.label ?? command.bytes)),
         element("td", { title: "Input-to-effect delay under A / B" }, `${delay(result)} / ${delay(other)}`),
-        element("td", { className: result?.refused.length ? "lab-refused" : "" }, result?.refused.length ? `refused ${result.refused.join(", ")}` : "ok"));
+        element("td", { className: result?.refused.length ? "lab-refused" : "" }, result?.refused.length ? `refused ${result.refused.join(", ")}` : "ok"))];
     });
     const recorded = scenario.recorded
       ? `recorded under ${scenario.recorded.config}`
       : "edited (no longer the recording)";
+    const movement = scenario.commands.filter(isMovement).length;
+    const showMovement = element("input", { type: "checkbox", checked: this.#showMovement, title: "Movement commands are always replayed" });
+    showMovement.addEventListener("change", () => { this.#showMovement = showMovement.checked; this.#render(); });
     this.#scenarioBox.replaceChildren(bar,
       element("p", { className: "lab-muted" },
         `${scenario.name}: ${scenario.setup.className} ${scenario.setup.level}, seed ${scenario.seed}, content ${scenario.contentRevision}, ${recorded}.`),
       element("label", {}, "Duration (ticks) ", duration),
+      element("label", {}, " ", showMovement, ` Show movement (${movement})`),
       element("div", { className: "lab-scroll" }, element("table", { className: "lab-table" },
         element("thead", {}, element("tr", {}, ...["Tick", "Edit", "Command", "Delay A/B", "Result A"].map((text) => element("th", {}, text)))),
         element("tbody", {}, ...rows))));

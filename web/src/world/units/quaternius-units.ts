@@ -96,7 +96,8 @@ type Instance = {
   /** The layers posed this frame. */
   layers: readonly ClipLayer[];
   materials: { material: THREE.MeshStandardMaterial; base: THREE.Color }[];
-  dead: boolean | null;
+  /** The colour factor applied to `materials`; undefined until the first pose. */
+  tint: readonly [number, number, number] | null | undefined;
   head: THREE.Object3D | null;
   entity: EntityRef;
 };
@@ -744,7 +745,7 @@ export class QuaterniusUnits {
     root.add(model);
     const instance: Instance = {
       kind: unit.kind, dress: dressKey(dress), root, posable,
-      clip: "", time: 0, layers: [], materials, dead: null, head: model.getObjectByName("Head") ?? null, entity: unit.entity,
+      clip: "", time: 0, layers: [], materials, tint: undefined, head: model.getObjectByName("Head") ?? null, entity: unit.entity,
     };
     this.#instances.set(unit.id, instance);
     this.#rootsChanged = true;
@@ -757,11 +758,12 @@ export class QuaterniusUnits {
     instance.time = Math.min(unit.time, Math.max(0, (asset.clips.get(clip) ?? 0) - 1e-4));
     instance.layers = unit.layers;
     instance.posable.pose(unit.layers);
-    const dead = unit.tint !== null;
-    if (instance.dead !== dead) {
-      instance.dead = dead;
+    const tint = unit.tint;
+    if (instance.tint === undefined || String(instance.tint) !== String(tint)) {
+      instance.tint = tint;
       for (const { material, base } of instance.materials) {
-        material.color.copy(base).multiplyScalar(unit.tint ?? 1);
+        material.color.copy(base);
+        if (tint) { material.color.multiply(new THREE.Color(tint[0], tint[1], tint[2])); }
       }
     }
     const { root } = instance;
@@ -789,11 +791,11 @@ export class QuaterniusUnits {
   }
 
   /**
-   * Debug read of a drawn unit's actual pose: its (upper-body) clip and clip time, its posed layers, dead tint, root transform, the
+   * Debug read of a drawn unit's actual pose: its (upper-body) clip and clip time, its posed layers, colour tint, root transform, the
    * world-space extent of its posed skeleton and its head joint (metres, rounded to 0.1 mm); null
    * when no model is drawn.
    */
-  pose(id: string): { clip: string; role: string | null; time: number; layers: readonly ClipLayer[]; dead: boolean; root: number[]; skeleton: number[]; head: number[] | null } | null {
+  pose(id: string): { clip: string; role: string | null; time: number; layers: readonly ClipLayer[]; tint: readonly number[] | null; root: number[]; skeleton: number[]; head: number[] | null } | null {
     const instance = this.#instances.get(id);
     if (!instance) { return null; }
     const round = (value: number) => Math.round(value * 1e4) / 1e4;
@@ -806,7 +808,7 @@ export class QuaterniusUnits {
     const { position, rotation, scale } = instance.root;
     return {
       clip: instance.clip, role: this.#motion(instance)?.role ?? null, time: round(instance.time), layers: instance.layers.map((layer) => ({ ...layer, time: round(layer.time), weight: round(layer.weight) })),
-      dead: instance.dead === true,
+      tint: instance.tint ?? null,
       root: [position.x, position.y, position.z, rotation.y, scale.x].map(round),
       skeleton: extent.isEmpty() ? [] : [...extent.min.toArray(), ...extent.max.toArray()].map(round), head,
     };

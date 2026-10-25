@@ -90,6 +90,11 @@ const RISE_TAG = 25;
 const COMMAND_MINIONS_TAG = 26;
 const YAW_STEPS = 65_536;
 
+/** Whether an encoded command is movement intent (Move or Rise), by its tag byte. */
+export function isMovementCommand(bytes: Uint8Array): boolean {
+  return bytes[1] === MOVE_TAG || bytes[1] === RISE_TAG;
+}
+
 function isAxis(value: number): value is Axis {
   return value === -1 || value === 0 || value === 1;
 }

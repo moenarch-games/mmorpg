@@ -77,7 +77,7 @@ struct ImportedEntry {
     lower: (&'static str, f32),
     /// The layered clips to pose (Atlas 6.6.45).
     layers: Vec<LayerEntry>,
-    tint: Option<f32>,
+    tint: Option<[f32; 3]>,
     /// The carried weapons by `Loadout::name`, or null.
     loadout: Option<&'static str>,
     /// A resident's `humanoid-appearance` preset id (#418), or null.
