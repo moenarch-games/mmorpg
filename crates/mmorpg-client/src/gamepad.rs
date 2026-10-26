@@ -4,7 +4,7 @@
 //! `web/src/input/game-controls.ts` (same action ids, button/axis indices,
 //! thresholds and contexts): the left stick runs and strafes, A jumps, B rolls
 //! (#516; while a panel is open or a cast runs, B
-//! closes the panel or cancels the cast instead), X toggles auto-attack, Y releases the
+//! closes the panel or cancels the cast instead), X swings the weapon (#517), Y releases the
 //! spirit, the right bumper cycles targets, the d-pad uses slots 1–4 and
 //! Select toggles bags. Native additions use otherwise unbound buttons: the
 //! left bumper cycles NPCs, Start talks to the selected NPC, the left stick
@@ -38,7 +38,7 @@ pub enum PadAction {
     /// Dodge roll (#516).
     Roll,
     TargetNext,
-    ToggleAutoAttack,
+    Swing,
     /// Action-bar slot 1–4.
     AbilitySlot(u8),
     CancelCast,
@@ -156,10 +156,10 @@ fn catalog() -> Vec<Entry> {
             Some(PadAction::TargetNext),
         ),
         (
-            "combat.toggleAutoAttack",
+            "combat.swing",
             GAMEPLAY,
             vec![button(X)],
-            Some(PadAction::ToggleAutoAttack),
+            Some(PadAction::Swing),
         ),
         (
             "ability.slot1",
@@ -766,7 +766,7 @@ mod tests {
         assert!(controls.sample(&[pad()]).is_empty());
         for (button, action) in [
             (standard::RB, PadAction::TargetNext),
-            (standard::X, PadAction::ToggleAutoAttack),
+            (standard::X, PadAction::Swing),
             (standard::Y, PadAction::ReleaseSpirit),
             (standard::DPAD_UP, PadAction::AbilitySlot(1)),
             (standard::DPAD_RIGHT, PadAction::AbilitySlot(2)),

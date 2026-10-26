@@ -3,8 +3,8 @@
 # use yet, and walk in a column along the vale-wolf-hunt route (each bot five
 # ticks behind the one ahead, so all three keep to the clear trunk-grid
 # lines) into Wolfrun Woods. Timber Wolf 108 engages the Warden at the front.
-# The Warden auto-attacks and builds rage, the Ranger opens with Aimed Shot
-# and the Arcanist casts Firebolt; the global cooldown, the Aimed Shot
+# The Warden swings at it (#517) and builds rage; the Ranger and the Arcanist
+# loose Aimed Shot and Firebolt where they face; the global cooldown, the Aimed Shot
 # cooldown, an overlapping cast, a movement interrupt and a cancelled cast are
 # refused or reported as events. Every command step is applied.
 name = "class-abilities"
@@ -273,11 +273,6 @@ action = "select_target"
 entity = "creature:108"
 
 [[steps]]
-tick = 1444
-bot = "warden"
-action = "start_attack"
-
-[[steps]]
 tick = 1454
 bot = "arcanist"
 action = "move"
@@ -346,6 +341,16 @@ forward = 0
 strafe = 0
 facing = 32768
 
+# Once the wolf has closed in and struck, the Warden keeps pressing attack at it until
+# shortly before the Firebolt lands.
+[[steps]]
+tick = 1534
+bot = "warden"
+action = "swing"
+entity = "creature:108"
+until = 1714
+every = 30
+
 [[steps]]
 tick = 1546
 bot = "arcanist"
@@ -371,7 +376,16 @@ bot = "warden"
 action = "use_ability"
 ability = 1
 
-# Firebolt for real; a second cast on top is refused.
+# Firebolt for real, turned toward the wolf it flies at (#517); a second cast on top is
+# refused.
+[[steps]]
+tick = 1664
+bot = "arcanist"
+action = "move"
+forward = 0
+strafe = 0
+entity = "creature:108"
+
 [[steps]]
 tick = 1664
 bot = "arcanist"
@@ -390,14 +404,16 @@ bot = "arcanist"
 action = "use_ability"
 ability = 9
 
-# The Warden stops swinging before the Firebolt lands.
+# Aimed Shot once the Firebolt has landed and the Warden holds threat, turned toward the
+# wolf: the global cooldown, then the shot's own cooldown, hold the next ones.
 [[steps]]
-tick = 1714
-bot = "warden"
-action = "stop_attack"
+tick = 1818
+bot = "ranger"
+action = "move"
+forward = 0
+strafe = 0
+entity = "creature:108"
 
-# Aimed Shot once the Firebolt has landed and the Warden holds threat: the
-# global cooldown, then the shot's own cooldown, hold the next ones.
 [[steps]]
 tick = 1818
 bot = "ranger"
@@ -547,7 +563,6 @@ tick = 1685
 kind = "event"
 bot = "ranger"
 event = "ability_used"
-entity = "creature:108"
 tick = 1819
 
 [[expect]]
@@ -574,7 +589,6 @@ tick = 1835
 kind = "event"
 bot = "arcanist"
 event = "ability_used"
-entity = "creature:108"
 tick = 1784
 
 [[expect]]
@@ -623,13 +637,13 @@ tick = 2143
 kind = "resource"
 bot = "warden"
 resource = 3
-tick = 2311
+tick = 2493
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 1
-tick = 2312
+tick = 2494
 
 # #27: a visible recipient observes other actors without receiving their damage credit.
 [[expect]]

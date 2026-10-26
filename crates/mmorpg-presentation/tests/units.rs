@@ -112,7 +112,7 @@ fn another_actor_plays_its_own_attack_and_confirmed_outcomes_flash() {
     scene.snapshot.events = vec![
         ZoneEvent::AttackPerformed {
             source: scene.wolf,
-            target: viewer,
+            target: Some(viewer),
         },
         ZoneEvent::DamageTaken {
             source: scene.wolf,

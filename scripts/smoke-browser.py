@@ -290,12 +290,11 @@ class BrowserAcceptance(unittest.TestCase):
         self.assertIsNotNone(creature, "The real Greyhaven projection must include a wolf")
         x, y, _ = self.aim_at_world_unit("creature", creature["id"])
         self.page.screenshot(path=str(ARTIFACTS / "world-click-wolf-before.png"))
-        self.page.mouse.click(x, y)
+        self.page.mouse.click(x, y, button="right")
         self.click_world_step()
         expected = {"kind": "creature", "id": creature["id"]}
         self.assertEqual(self.click_world_target(), expected, "Clicking the rendered wolf must select its exact authoritative identity")
         expect(self.page.locator("[data-part=target-name]")).to_contain_text("Timber Wolf")
-        self.assertFalse(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"))
         self.page.screenshot(path=str(ARTIFACTS / "world-click-wolf.png"))
         self.page.evaluate("window.__valeDebug.follow()")
         self.frames(4)
@@ -311,18 +310,18 @@ class BrowserAcceptance(unittest.TestCase):
         # Aim at empty sky, then click the centre, which cannot denote a unit.
         self.page.evaluate("window.__valeDebug.flyToPose([0, 40, 0], [0, 80, -5])")
         self.frames(3)
-        self.page.mouse.click(x, y)
+        self.page.mouse.click(x, y, button="right")
         self.click_world_step()
-        self.assertFalse(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"))
         expect(self.page.get_by_role("complementary", name="Quest dialog", exact=True)).to_be_hidden()
         expect(self.page.get_by_role("complementary", name="Vendor", exact=True)).to_be_hidden()
         self.page.locator("#world").focus()
         self.page.keyboard.press("Tab")
         self.click_world_step()
         self.assertEqual(self.click_world_target()["kind"], "creature", "Tab remains an alternative")
-        self.page.mouse.click(x, y, button="right")
+        # A left click swings where the character faces (#517) and never selects.
+        self.page.mouse.click(x, y)
         self.click_world_step()
-        self.assertTrue(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"), "Right click still toggles attack")
+        self.assertEqual(self.click_world_target()["kind"], "creature", "A swing keeps the selection")
 
     def test_world_click_distinct_npcs_context_reach_and_no_fabricated_dialogue(self):
         self.click_world_setup()
@@ -339,11 +338,10 @@ class BrowserAcceptance(unittest.TestCase):
                     if close.is_visible():
                         close.click()
                 x, y, _ = self.aim_at_world_unit("npc", identity)
-                self.page.mouse.click(x, y)
+                self.page.mouse.click(x, y, button="right")
                 self.click_world_step()
                 self.assertEqual(self.click_world_target(), {"kind": "npc", "id": identity})
                 expect(self.page.locator("[data-part=target-name]")).to_contain_text(name)
-                self.assertFalse(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"))
                 if context == "quest":
                     # The existing semantic Talk action may reveal the clicked NPC's context.
                     self.page.locator("#world").focus()
@@ -384,16 +382,15 @@ class BrowserAcceptance(unittest.TestCase):
                 canvas = self.page.locator("#world")
                 canvas.evaluate("el => el.addEventListener('pointerdown', e => window.__clickPointerId = e.pointerId, {once:true})")
                 self.page.mouse.move(x, y)
-                self.page.mouse.down()
+                self.page.mouse.down(button="right")
                 if cancellation == "pointercancel":
                     canvas.evaluate("el => el.dispatchEvent(new PointerEvent('pointercancel', {pointerId:window.__clickPointerId, bubbles:true}))")
                 else:
                     canvas.evaluate("el => el.releasePointerCapture(window.__clickPointerId)")
                     self.page.mouse.move(x + 1, y)
-                self.page.mouse.up()
+                self.page.mouse.up(button="right")
                 self.click_world_step()
                 self.assertIsNone(self.click_world_target(), "A cancelled gesture cannot become selection")
-                self.assertFalse(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().viewer.autoAttacking"))
                 expect(self.page.get_by_role("complementary", name="Quest dialog", exact=True)).to_be_hidden()
 
     def test_world_click_solid_palisade_does_not_select_hidden_guard(self):
@@ -405,7 +402,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.frames(4)
         self.page.screenshot(path=str(ARTIFACTS / "world-click-solid-occluder.png"))
         box = self.page.locator("#world").bounding_box()
-        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, button="right")
         self.click_world_step()
         self.assertIsNone(self.click_world_target(), "A solid wall must block clicking the guard behind it")
         expect(self.page.get_by_role("complementary", name="Quest dialog", exact=True)).to_be_hidden()
@@ -430,7 +427,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.frames(4)
         box = self.page.locator("#world").bounding_box()
         self.page.screenshot(path=str(ARTIFACTS / "world-click-overlap-before.png"))
-        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, button="right")
         self.click_world_step()
         self.assertEqual(self.click_world_target(), {"kind": "creature", "id": pair[0]}, "Overlapping projection centres must choose the nearer visible body")
 
@@ -1364,7 +1361,7 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.evaluate("([y]) => window.__valeDebug.flyToPose([15.6, y + 1.3, 7.5], [14.4, y + 1.1, 3.9])", [relief])
         self.frames(6)
         box = self.page.locator("#world").bounding_box()
-        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, button="right")
         step()
         self.assertFalse(door_open(), "Clicking the leaf closed the inn door")
         self.page.evaluate("window.__valeDebug.follow()")

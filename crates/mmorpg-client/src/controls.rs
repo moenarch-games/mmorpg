@@ -28,7 +28,9 @@ pub enum ControlAction {
     /// Held while swimming: descend (#274).
     Descend,
     TargetNext,
-    ToggleAttack,
+    /// Swing the weapon where the character faces (#517); the left mouse button and gamepad X
+    /// swing by default, the keyboard has no default.
+    Swing,
     ReleaseSpirit,
     /// Action-bar slot 1–8.
     AbilitySlot(u8),
@@ -74,7 +76,7 @@ impl ControlAction {
         Self::Roll,
         Self::Descend,
         Self::TargetNext,
-        Self::ToggleAttack,
+        Self::Swing,
         Self::ReleaseSpirit,
         Self::AbilitySlot(1),
         Self::AbilitySlot(2),
@@ -109,7 +111,7 @@ impl ControlAction {
             Self::Roll => "move.roll",
             Self::Descend => "move.descend",
             Self::TargetNext => "target.next",
-            Self::ToggleAttack => "combat.toggleAutoAttack",
+            Self::Swing => "combat.swing",
             Self::ReleaseSpirit => "player.releaseSpirit",
             Self::AbilitySlot(1) => "ability.slot1",
             Self::AbilitySlot(2) => "ability.slot2",
@@ -148,7 +150,7 @@ impl ControlAction {
             Self::Roll => ("Dodge roll", GAMEPLAY, &["ShiftLeft", "ShiftRight"]),
             Self::Descend => ("Swim down (hold)", GAMEPLAY, &["KeyX"]),
             Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),
-            Self::ToggleAttack => ("Toggle auto-attack", GAMEPLAY, &["KeyF"]),
+            Self::Swing => ("Swing weapon", GAMEPLAY, &[]),
             Self::ReleaseSpirit => ("Release spirit", GAMEPLAY, &["KeyR"]),
             Self::AbilitySlot(1) => ("Ability 1", GAMEPLAY, &["Digit1"]),
             Self::AbilitySlot(2) => ("Ability 2", GAMEPLAY, &["Digit2"]),

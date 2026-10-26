@@ -15,7 +15,7 @@ const RESEND_INTERVAL: Duration = Duration::from_millis(50);
 const FACING_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / TICK_HZ as u64);
 
 /// Latest local input published by the window: held movement plus counted
-/// discrete presses. Each counter (`jumps`, `rolls`, `selections`, `attack_requests`,
+/// discrete presses. Each counter (`jumps`, `rolls`, `selections`, `swings`,
 /// `releases`, `ability_uses`, `ability_releases`, `cancels`) makes the session send one command
 /// when it advances, so coalesced watch updates can merge presses but never
 /// replay them.
@@ -30,9 +30,8 @@ pub struct PlayerInput {
     /// The latest requested selection (`None` clears it).
     pub target: Option<EntityRef>,
     pub selections: u32,
-    /// Whether the latest attack request starts or stops auto-attack.
-    pub attack: bool,
-    pub attack_requests: u32,
+    /// Weapon swings (#517); each goes toward the latest `facing`.
+    pub swings: u32,
     pub releases: u32,
     /// The latest requested ability ID.
     pub ability: u8,
@@ -79,15 +78,15 @@ pub enum NetworkUpdate {
     Failed(String),
 }
 
-/// Commands to send for one input observation, in order: a selection, an
-/// attack start or stop, a spirit release, a cast cancellation, an ability,
+/// Commands to send for one input observation, in order: a selection, a
+/// weapon swing, a spirit release, a cast cancellation, an ability,
 /// its release, a jump, then a move, then a roll (after the move, so the zone rolls along the
 /// latest intent).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Outgoing {
     choose: Option<(u8, u8)>,
     select: Option<Option<EntityRef>>,
-    attack: Option<bool>,
+    swing: Option<u16>,
     release: bool,
     cancel: bool,
     ability: Option<u8>,
@@ -108,8 +107,8 @@ impl Outgoing {
         if let Some(target) = self.select {
             session.send_select_target(target)?;
         }
-        if let Some(start) = self.attack {
-            session.send_attack(start)?;
+        if let Some(facing) = self.swing {
+            session.send_swing(facing)?;
         }
         if self.release {
             session.send_release_spirit()?;
@@ -152,7 +151,7 @@ struct Presses {
     jumps: u32,
     rolls: u32,
     selections: u32,
-    attack_requests: u32,
+    swings: u32,
     releases: u32,
     ability_uses: u32,
     ability_releases: u32,
@@ -166,7 +165,7 @@ impl Presses {
             jumps: input.jumps,
             rolls: input.rolls,
             selections: input.selections,
-            attack_requests: input.attack_requests,
+            swings: input.swings,
             releases: input.releases,
             ability_uses: input.ability_uses,
             ability_releases: input.ability_releases,
@@ -251,14 +250,17 @@ impl Outbox {
         let facing_changed = self
             .sent
             .is_none_or(|(_, _, facing)| facing != input.facing);
-        let facing_due =
-            facing_changed && now.saturating_duration_since(self.sent_at) >= FACING_INTERVAL;
+        // A swing or ability fires where the character faces (#517): it sends the facing now.
+        let aimed =
+            pressed.swings != handled.swings || pressed.ability_uses != handled.ability_uses;
+        let facing_due = facing_changed
+            && (aimed || now.saturating_duration_since(self.sent_at) >= FACING_INTERVAL);
         let movement = (intent_changed || facing_due).then(|| self.movement(input, now));
         Outgoing {
             // The heartbeat alone retries the class choice.
             choose: None,
             select: (pressed.selections != handled.selections).then_some(input.target),
-            attack: (pressed.attack_requests != handled.attack_requests).then_some(input.attack),
+            swing: (pressed.swings != handled.swings).then_some(input.facing),
             release: pressed.releases != handled.releases,
             cancel: pressed.cancels != handled.cancels,
             ability: (pressed.ability_uses != handled.ability_uses).then_some(input.ability),
@@ -791,7 +793,7 @@ mod tests {
     }
 
     #[test]
-    fn selections_attacks_and_releases_are_sent_once_per_press_in_order() {
+    fn selections_swings_and_releases_are_sent_once_per_press_in_order() {
         use mmorpg_core::CreatureId;
         let now = Instant::now();
         let mut outbox = sent(PlayerInput::default(), now);
@@ -799,18 +801,17 @@ mod tests {
         let input = PlayerInput {
             target: wolf,
             selections: 2,
-            attack: true,
-            attack_requests: 1,
+            swings: 1,
             ..PlayerInput::default()
         };
         assert_eq!(
             outbox.changes(input, now),
             Outgoing {
                 select: Some(wolf),
-                attack: Some(true),
+                swing: Some(0),
                 ..Outgoing::default()
             },
-            "merged selections send the latest target once, then the attack"
+            "merged selections send the latest target once, then the swing"
         );
         assert_eq!(outbox.changes(input, now), Outgoing::default());
         assert_eq!(
@@ -831,7 +832,7 @@ mod tests {
         );
         outbox.resume(PlayerInput {
             selections: 9,
-            attack_requests: 9,
+            swings: 9,
             releases: 9,
             ..released
         });
@@ -839,7 +840,7 @@ mod tests {
             outbox.changes(
                 PlayerInput {
                     selections: 9,
-                    attack_requests: 9,
+                    swings: 9,
                     releases: 9,
                     ..released
                 },

@@ -101,8 +101,8 @@ Creatures **navigate around blockers** (#307): a creature chasing a target or ru
 
 - A unit is a player, creature or NPC. `EntityRef = Player(u32) | Creature(u32) | Npc(u32)` on the wire as `kind: u8, id: u32`. Physics body IDs occupy disjoint namespaces per kind.
 - Unit state: level, health/max, resource kind/value/max, faction, target, cast state, auras (bounded), combat flag, death state.
-- Players: `SelectTarget(EntityRef | none)`, `StartAutoAttack`, `StopAttack`, `UseAbility { ability, target }`. The server validates range, target and resource.
-- Auto-attack uses weapon swing timers. Damage is `base + level scaling` with deterministic variance from the zone RNG. Crits apply ×1.5.
+- Players: `SelectTarget(EntityRef | none)`, `Swing { facing }`, `UseAbility { ability, target }`. The server validates range, aim and resource; offensive abilities fire where the player faces and the target names only a friendly ability's recipient (#517).
+- A swing (#517) hits everything in a 100° arc in melee reach where the player faces, targeted or not, and follows the weapon swing timer; one that hits nothing whiffs. Damage is `base + level scaling` with deterministic variance from the zone RNG. Crits apply ×1.5.
 - Death: creatures leave a lootable corpse. Players drop to a dead state and `ReleaseSpirit` respawns them at the graveyard with half health. Health and resource regenerate out of combat.
 
 ### Classes (level 1–10)
@@ -111,7 +111,7 @@ Creatures **navigate around blockers** (#307): a creature chasing a target or ru
 | --- | --- | --- |
 | Warden (tank/melee) | Rage (gain on hit dealt/taken, decays out of combat) | Heroic Strike (1), Shield Bash: interrupt + 2 s stun + 3 m knockback (2), Charge: rush up to 15 m and knock the target back 3 m (3), Rallying Cry: self heal-over-time (4), Cleave: target and two nearby enemies (6) |
 | Ranger (ranged physical) | Focus (regenerates) | Aimed Shot (1), Serpent Sting: DoT (2), Concussive Shot: snare (4), Rapid Fire: haste buff (6) |
-| Arcanist (caster) | Mana (regenerates, faster out of combat) | Firebolt: 2.0 s cast releasing a magic missile that homes on the target, or flies straight along the facing without one (1, #289), Frost Nova: AoE root (2), Fire Blast: 1.5 s cast, 5 m explosion at the target with knockback, damage and push falling off to half at the edge, walls shield (3), Arcane Barrier: absorb shield (4), Blizzard: channelled AoE (6) |
+| Arcanist (caster) | Mana (regenerates, faster out of combat) | Firebolt: 2.0 s cast releasing a magic missile that flies straight along the facing (1, #289, #517), Frost Nova: AoE root (2), Fire Blast: 1.5 s cast, 5 m explosion at the target with knockback, damage and push falling off to half at the edge, walls shield (3), Arcane Barrier: absorb shield (4), Blizzard: channelled AoE (6) |
 
 There is a 1.5 s global cooldown. Casts have a cast time, and moving or being stunned interrupts them. Auras have tick-precise durations and periodic effects.
 
@@ -119,7 +119,7 @@ Step 8a implemented the kit in core (abilities 1–12 of the catalog; lurkers ca
 
 - Cleave hits the target and up to two more living creatures within 3 m of the target in `EntityRef` order, for weapon damage each, instead of a frontal arc.
 - "Per level" amounts scale with the caster's levels above 1, like the player damage curve; weapon damage is one draw from the player's melee range. Ability damage has no miss or critical roll.
-- Rage comes from auto-attack hits dealt and from every creature hit taken (swing or ability), even a fully absorbed one; death drains it.
+- Rage comes from swing hits dealt and from every creature hit taken (swing or ability), even a fully absorbed one; death drains it.
 - Durations, cooldowns, the global cooldown and the five-second rule count the tick they start in; damage and heal over time pulse every period from there.
 - A cast completes against its target without a second range check; a target that died ends it as interrupted. Targeted ranged abilities need line of sight at use and again at completion: a deterministic physics ray between body centres must not hit static content colliders (units never block), otherwise the new `LineOfSight` error refuses it at no cost. Static content means every body in the static collider namespace: content boxes, door leaves, ramps (#59) and the mill hoist (#56); a 2-unit plank blocks, a gap lets the line through, and equally near hits are broken by body ID on both physics backends (#57). The browser's WASM build reaches the same sight decisions and projections as the native build (`web/tests/sight-parity.test.ts` runs the native session of `crates/mmorpg-wasm/tests/sight_parity.rs` and compares its digest live with the WASM digest), except broken props' debris: Rapier's dynamic pieces are not bit-identical across wasm32 and native. A Warden's **Charge** also needs a path as wide as its body (#57, Atlas 5.2.79): the Warden's capsule, raised to knee height (32 units, so ground, slopes, kerbs and the campfire do not count), swept toward the target until melee reach must meet no static geometry, or the charge is refused with `LineOfSight` at no cost; a sight line threading a gap narrower than the Warden is not enough. A creature's Muck Bolt neither starts nor lands without line of sight (a broken line fizzles as interrupted). A creature's cast at a player who dies or leaves ends silently.
 - Invalid or repeated class choices report the new `InvalidClass` error.

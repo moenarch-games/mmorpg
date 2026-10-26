@@ -733,6 +733,9 @@ fn a_late_follow_up_keeps_the_grace_but_nothing_is_backdated() {
         warden.strike();
         // Two ticks after the window closed.
         warden.ticks(closes + 2);
+        // The Bash lands where the Warden faces (#517): it turns back to the wolf it passed.
+        let face = arena::face(&warden.zone, 1, EntityRef::Creature(CreatureId::new(1)));
+        warden.send(face);
         let now = warden.zone.current_tick();
         warden.observed_bash(now - late);
         warden.tick();

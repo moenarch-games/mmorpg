@@ -45,12 +45,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // buildings, fences and trees to every step's world, and `i32` positions grow every
     // entity record by six bytes. The Bandit Highlands (#425) add their stronghold, crags and
     // pines to every step's world, and the Marsh-Lake Wetlands (#426) their island, cottage and
-    // trees. The three towers' ladders (#490) add three boxes to every step's world.
+    // trees. The three towers' ladders (#490) add three boxes to every step's world. Free-aim swings
+    // (#517) replace auto-attack: swings turn their bots and whiffs are seen, which moves the
+    // spread and crowded fights a little.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [29_160, 762_120, 224_640, 5_202_864],
         [29_160, 759_240, 80_140, 1_431_435],
-        [29_160, 767_880, 389_620, 7_150_844],
-        [29_041, 779_281, 2_248_200, 24_496_050],
+        [29_160, 767_880, 389_620, 7_171_834],
+        [29_042, 779_282, 2_248_200, 24_496_050],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

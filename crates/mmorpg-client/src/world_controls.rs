@@ -8,7 +8,10 @@ use winit::keyboard::KeyCode;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldAction {
+    /// A right click that never became a camera drag selects (#517: the left button swings).
     Select,
+    /// The left mouse button swings the weapon on press (#517).
+    Swing,
     Interact,
     NextNpc,
     Cancel,
@@ -23,7 +26,8 @@ pub enum WorldAction {
 impl WorldAction {
     fn definition(self) -> (&'static str, &'static str, InputStroke) {
         let (id, key, context) = match self {
-            Self::Select => return ("world.select", "world", mouse()),
+            Self::Select => return ("world.select", "world", mouse(2)),
+            Self::Swing => return ("world.swing", "world", mouse(0)),
             Self::Details => ("interaction.details", "KeyH", "interaction"),
             // E interacts (#515), as the browser's `ui.talk`; Enter only chats. Q stays unbound.
             Self::Interact => ("world.interact", "KeyE", "world"),
@@ -45,8 +49,9 @@ impl WorldAction {
             }),
         )
     }
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::Select,
+        Self::Swing,
         Self::Interact,
         Self::NextNpc,
         Self::Cancel,
@@ -59,9 +64,9 @@ impl WorldAction {
         Self::Details,
     ];
 }
-fn mouse() -> InputStroke {
+fn mouse(button: u16) -> InputStroke {
     InputStroke::Device(DeviceStroke::MouseButton {
-        button: 0,
+        button,
         modifiers: Modifiers::default(),
     })
 }
@@ -77,7 +82,10 @@ pub fn world_action_registry() -> ActionRegistry {
                     description: None,
                     category_path: Vec::new(),
                     repeat_policy: RepeatPolicy::Never,
-                    allowed_devices: vec![if action == WorldAction::Select {
+                    allowed_devices: vec![if matches!(
+                        action,
+                        WorldAction::Select | WorldAction::Swing
+                    ) {
                         DeviceClass::Mouse
                     } else {
                         DeviceClass::Keyboard
@@ -94,6 +102,15 @@ pub fn world_action_registry() -> ActionRegistry {
             })
             .collect(),
     }
+}
+
+/// What one mouse button edge did in the world.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PointerEdge {
+    /// The release ended a selection click.
+    pub selected: bool,
+    /// The press swung the weapon (#517).
+    pub swung: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -181,13 +198,12 @@ impl WorldControls {
             })
             .collect()
     }
-    pub fn pointer(&mut self, down: bool) -> bool {
-        self.pointer_button(0, down, Modifiers::default())
-    }
     pub fn selecting(&self) -> bool {
         self.state.is_held("world.select")
     }
-    pub fn pointer_button(&mut self, button: u16, down: bool, modifiers: Modifiers) -> bool {
+    /// One mouse button edge: whether it ended a selection click, and whether it swung the
+    /// weapon (#517), which happens on the press.
+    pub fn pointer_button(&mut self, button: u16, down: bool, modifiers: Modifiers) -> PointerEdge {
         let held = self.selecting();
         let stroke = if down {
             self.pointer_sources
@@ -210,8 +226,15 @@ impl WorldControls {
             self.runtime.input_up(&stroke, 0)
         };
         self.state.apply_decisions(&decisions);
-        self.state.drain_presses();
-        !down && held && !self.selecting()
+        let swung = self
+            .state
+            .drain_presses()
+            .iter()
+            .any(|id| id == "world.swing");
+        PointerEdge {
+            selected: !down && held && !self.selecting(),
+            swung,
+        }
     }
     pub fn reset(&mut self) {
         self.sources.clear();
@@ -225,6 +248,26 @@ impl WorldControls {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_left_button_swings_on_press_and_a_right_click_selects() {
+        let mut controls = WorldControls::new();
+        let press = controls.pointer_button(0, true, Modifiers::default());
+        assert!(
+            press.swung && !press.selected,
+            "the swing is immediate (#517)"
+        );
+        assert_eq!(
+            controls.pointer_button(0, false, Modifiers::default()),
+            PointerEdge::default()
+        );
+        assert!(!controls.pointer_button(2, true, Modifiers::default()).swung);
+        assert!(controls.selecting());
+        assert!(
+            controls
+                .pointer_button(2, false, Modifiers::default())
+                .selected
+        );
+    }
     #[test]
     fn selection_uses_the_rebound_button_and_keeps_its_original_modifiers_until_release() {
         let registry = crate::bindings::action_registry();
@@ -254,7 +297,11 @@ mod tests {
             .unwrap();
         controls.pointer_button(0, true, Modifiers::default());
         assert!(!controls.selecting());
-        assert!(!controls.pointer_button(0, false, Modifiers::default()));
+        assert!(
+            !controls
+                .pointer_button(0, false, Modifiers::default())
+                .selected
+        );
         controls.pointer_button(
             2,
             true,
@@ -264,8 +311,16 @@ mod tests {
             },
         );
         assert!(controls.selecting());
-        assert!(!controls.pointer_button(0, false, Modifiers::default()));
-        assert!(controls.pointer_button(2, false, Modifiers::default()));
+        assert!(
+            !controls
+                .pointer_button(0, false, Modifiers::default())
+                .selected
+        );
+        assert!(
+            controls
+                .pointer_button(2, false, Modifiers::default())
+                .selected
+        );
         assert!(!controls.selecting());
         controls.pointer_button(
             2,
@@ -276,6 +331,10 @@ mod tests {
             },
         );
         controls.reset();
-        assert!(!controls.pointer_button(2, false, Modifiers::default()));
+        assert!(
+            !controls
+                .pointer_button(2, false, Modifiers::default())
+                .selected
+        );
     }
 }

@@ -251,7 +251,7 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             amount,
         ),
         ZoneEvent::AttackPerformed { source, target } => {
-            (ATTACK_PERFORMED, 0, Some(source), Some(target), 0)
+            (ATTACK_PERFORMED, 0, Some(source), target, 0)
         }
         ZoneEvent::DamageObserved {
             source,
@@ -400,7 +400,18 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                 }
             }
         }
-        MISS | EVADE | ATTACK_PERFORMED => {
+        // A whiffed swing (#517) names no target.
+        ATTACK_PERFORMED => {
+            damage(false)?;
+            if amount != 0 {
+                return Err(invalid());
+            }
+            ZoneEvent::AttackPerformed {
+                source: source.ok_or_else(invalid)?,
+                target,
+            }
+        }
+        MISS | EVADE => {
             damage(false)?;
             let (source, target) = pair()?;
             if amount != 0 {
@@ -408,8 +419,6 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
             }
             if kind == MISS {
                 ZoneEvent::Miss { source, target }
-            } else if kind == ATTACK_PERFORMED {
-                ZoneEvent::AttackPerformed { source, target }
             } else {
                 ZoneEvent::Evade { source, target }
             }

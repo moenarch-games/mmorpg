@@ -144,7 +144,8 @@ describe("MMORPG semantic controls", () => {
     app.window.emit("keydown", key("KeyV"));
     app.window.emit("keydown", key("Enter"));
     app.window.emit("keydown", key("F3"));
-    expect(app.actions).toEqual(["move.jump", "target.next", "combat.toggleAutoAttack", "ui.toggleBags", "ui.toggleCharacter", "ui.toggleVendor", "ui.openChat", "ui.toggleDebug"]);
+    // F is unbound since auto-attack went away (#517).
+    expect(app.actions).toEqual(["move.jump", "target.next", "ui.toggleBags", "ui.toggleCharacter", "ui.toggleVendor", "ui.openChat", "ui.toggleDebug"]);
   });
 
   test("an open panel is a non-blocking overlay: it claims Escape while movement falls through", () => {

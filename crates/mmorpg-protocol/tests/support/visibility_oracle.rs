@@ -91,7 +91,6 @@ pub fn exhaustive_projection(
             level: combat.level,
             dead: combat.health == 0,
             in_combat: combat.combat_timer > 0,
-            auto_attacking: combat.auto_attack,
             target: combat.target,
             // The oracle's players never choose a class.
             class: None,

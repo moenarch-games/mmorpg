@@ -109,7 +109,9 @@ impl Caster {
         }
     }
 
+    /// Turns to face `target` (#517), then uses `ability`.
     fn cast(&mut self, ability: mmorpg_core::AbilityId, target: EntityRef) {
+        self.send(arena::face(&self.zone, 1, target));
         self.send(ZoneCommand::UseAbility {
             ability: ability.get(),
             target: Some(target),

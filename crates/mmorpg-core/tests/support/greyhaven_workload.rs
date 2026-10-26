@@ -152,8 +152,25 @@ pub fn commands(
                 sequence,
                 ZoneCommand::SelectTarget(target),
             )?;
-            zone.apply_command(player.player_id, sequence + 1, ZoneCommand::StartAttack)?;
         }
+        // Each living bot swings at its selected creature whenever it stands in reach (#517).
+        let in_reach = player.combat.target.and_then(|target| {
+            let EntityRef::Creature(id) = target else {
+                return None;
+            };
+            let creature = state
+                .creatures
+                .iter()
+                .find(|creature| creature.creature_id == id)?;
+            let (creature_at, player_at) = (
+                mmorpg_core::physics::to_units(creature.position),
+                mmorpg_core::physics::to_units(player.position),
+            );
+            let (dx, dz) = (creature_at[0] - player_at[0], creature_at[2] - player_at[2]);
+            let reach = i64::from(mmorpg_core::unit::PLAYER_REACH_UNITS);
+            (i64::from(dx).pow(2) + i64::from(dz).pow(2) <= reach.pow(2))
+                .then(|| mmorpg_core::trig::yaw_from_vector(dx, dz).unwrap_or(0))
+        });
         if tick == 30 {
             zone.apply_command(player.player_id, sequence, ZoneCommand::Jump)?;
             zone.apply_command(
@@ -174,6 +191,16 @@ pub fn commands(
                     strafe: 0,
                     facing: 0,
                 },
+            )?;
+        }
+        // A swing turns its bot, so none interrupts the scripted run north (ticks 30 to 35).
+        if let Some(facing) =
+            in_reach.filter(|_| player.combat.health > 0 && !(30..35).contains(&tick))
+        {
+            zone.apply_command(
+                player.player_id,
+                sequence + 3,
+                ZoneCommand::Swing { facing },
             )?;
         }
     }

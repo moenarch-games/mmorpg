@@ -36,8 +36,6 @@ pub enum UiIntent {
     Command(ZoneCommand),
     /// Use action-bar slot 1–8.
     AbilitySlot(u8),
-    /// Start auto-attacking the target, or stop.
-    ToggleAttack,
     ReleaseSpirit,
     /// Request a selection; `None` clears it.
     Select(Option<EntityRef>),
@@ -746,16 +744,6 @@ impl GameUi {
                         ui.small(format!("Target: {}", (frame.names)(tot)));
                     }
                     ui.horizontal(|ui| {
-                        if unit.is_some_and(|u| u.flags.attackable) {
-                            let label = if viewer.auto_attacking {
-                                "Stop attack (F)"
-                            } else {
-                                "Attack (F)"
-                            };
-                            if ui.button(label).clicked() {
-                                intents.push(UiIntent::ToggleAttack);
-                            }
-                        }
                         if matches!(target, EntityRef::Npc(_)) && ui.button("Talk (E)").clicked() {
                             intents.push(UiIntent::Talk);
                         }

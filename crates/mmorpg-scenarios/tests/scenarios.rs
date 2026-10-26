@@ -198,12 +198,12 @@ entity = "npc:8"
 [[steps]]
 tick = 0
 bot = "alice"
-action = "start_attack"
+action = "swing"
+facing = 0
 [[expect]]
 kind = "event"
 bot = "alice"
-event = "error:not_attackable"
-entity = "npc:8"
+event = "attack_performed"
 tick = 1
 [[expect]]
 kind = "target"
@@ -235,9 +235,10 @@ tick = 2
         text.contains("select_target -> applied seq=1 epoch=1 entity=npc:8"),
         "{text}"
     );
-    assert!(text.contains("start_attack -> applied seq=2"), "{text}");
+    // A swing never hits the guard (#517): it whiffs.
+    assert!(text.contains("swing -> applied seq=2"), "{text}");
     assert!(
-        text.contains("expect alice event error:not_attackable npc:8 ok"),
+        text.contains("expect alice event attack_performed ok"),
         "{text}"
     );
     assert!(text.contains("expect alice target npc:8 ok"), "{text}");
@@ -282,15 +283,15 @@ fn invalid_scenarios_are_rejected_at_load() {
         ),
         (
             "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"move\"",
-            "forward, strafe and facing",
+            "forward and strafe are required for move",
         ),
         (
             "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"move\"\nforward = 1\nstrafe = 0",
-            "forward, strafe and facing",
+            "exactly one of facing and entity",
         ),
         (
             "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"join\"\nfacing = 0",
-            "forward, strafe and facing",
+            "facing only for move and swing",
         ),
         (
             "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"move\"\nx = 1\nz = 0",
@@ -302,7 +303,7 @@ fn invalid_scenarios_are_rejected_at_load() {
         ),
         (
             "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"jump\"\nfacing = 0",
-            "forward, strafe and facing",
+            "facing only for move and swing",
         ),
         (
             "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"disconnect\"\nseq = 2",
@@ -317,8 +318,12 @@ fn invalid_scenarios_are_rejected_at_load() {
             "entity is required for select_target",
         ),
         (
-            "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"start_attack\"\nentity = \"creature:1\"",
-            "allowed only for it and use_ability",
+            "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"jump\"\nentity = \"creature:1\"",
+            "allowed only for it, move, swing and use_ability",
+        ),
+        (
+            "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"jump\"\nuntil = 2\nevery = 1",
+            "until and every repeat only a swing",
         ),
         (
             "name = \"x\"\nzone = 1\nticks = 2\n[[bots]]\nname = \"a\"\n[[steps]]\ntick = 0\nbot = \"a\"\naction = \"select_target\"\nentity = \"wolf:1\"",

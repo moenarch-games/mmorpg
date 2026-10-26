@@ -115,7 +115,8 @@ fn base_content() -> ZoneContent {
         vec![boar()],
         vec![
             arena::spawn(1, BOAR, [-250, 0]),
-            arena::spawn(2, BOAR, [-170, -170]),
+            // South, outside a westward swing's arc (#517).
+            arena::spawn(2, BOAR, [0, -200]),
         ],
         vec![
             npc(GIVER, NpcRole::QuestGiver, [250, -250]),
@@ -198,14 +199,16 @@ impl Run {
         })
     }
 
-    /// Kills one boar with auto-attack, standing at the origin.
+    /// Kills one boar with swings (#517), standing at the origin.
     fn kill(&mut self, creature: CreatureId) -> Vec<ZoneEvent> {
         self.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(
             creature,
         ))));
-        self.send(ZoneCommand::StartAttack);
         let mut events = Vec::new();
         for _ in 0..mmorpg_core::golden::t30(600) {
+            if let Some(swing) = arena::swing_at(&self.zone, 1, EntityRef::Creature(creature)) {
+                self.send(swing);
+            }
             events.extend(self.tick());
             let state = self.zone.snapshot().unwrap();
             let record = state
@@ -674,11 +677,15 @@ fn recovery_continues_quests_exactly_and_refuses_inconsistent_logs() {
     run.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(
         FIRST_BOAR,
     ))));
-    run.send(ZoneCommand::StartAttack);
     let checkpoint = run.zone.snapshot().unwrap();
     let mut recovered =
         ZoneSimulation::from_snapshot(checkpoint.clone(), Arc::clone(run.zone.content())).unwrap();
     for _ in 0..mmorpg_core::golden::t30(200) {
+        // Both swing at the boar whenever it is in reach (#517).
+        if let Some(swing) = arena::swing_at(&run.zone, 1, EntityRef::Creature(FIRST_BOAR)) {
+            run.send(swing);
+            recovered.apply_command(1, run.sequence, swing).unwrap();
+        }
         run.zone.advance_tick().unwrap();
         recovered.advance_tick().unwrap();
         assert_eq!(recovered.snapshot().unwrap(), run.zone.snapshot().unwrap());

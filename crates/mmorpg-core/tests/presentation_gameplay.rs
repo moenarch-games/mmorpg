@@ -18,9 +18,16 @@ fn presentation_preserves_the_prechange_combat_trace() {
         ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(1)))),
     )
     .unwrap();
-    zone.apply_command(1, 2, ZoneCommand::StartAttack).unwrap();
     let mut trace = String::new();
+    let mut sequence = 1;
     for tick in 1..=240 {
+        // Swing at the wolf whenever it is in reach (#517).
+        if let Some(swing) =
+            support::arena::swing_at(&zone, 1, EntityRef::Creature(CreatureId::new(1)))
+        {
+            sequence += 1;
+            zone.apply_command(1, sequence, swing).unwrap();
+        }
         zone.advance_tick().unwrap();
         if [1, 60, 61, 120, 121, 180, 240].contains(&tick) {
             let state = zone.snapshot().unwrap();

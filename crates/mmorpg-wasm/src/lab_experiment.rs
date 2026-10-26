@@ -1128,7 +1128,7 @@ fn graph_input(command: &ZoneCommand, class: PlayerClass) -> Option<ActionInput>
         }
         ZoneCommand::UseAbility { .. } => Some(ActionInput::Ability),
         ZoneCommand::DirectedStrike { .. } => Some(ActionInput::WardenMelee),
-        ZoneCommand::StartAttack if class == PlayerClass::Warden => Some(ActionInput::WardenMelee),
+        ZoneCommand::Swing { .. } if class == PlayerClass::Warden => Some(ActionInput::WardenMelee),
         ZoneCommand::Guard { lane: Some(_) } => Some(ActionInput::GuardProtection),
         ZoneCommand::Move {
             forward, strafe, ..
@@ -1173,7 +1173,7 @@ pub struct Run {
 const fn is_action(command: &ZoneCommand) -> bool {
     matches!(
         command,
-        ZoneCommand::StartAttack
+        ZoneCommand::Swing { .. }
             | ZoneCommand::UseAbility { .. }
             | ZoneCommand::DirectedStrike { .. }
             | ZoneCommand::Guard { .. }
@@ -1540,7 +1540,10 @@ mod tests {
 
     #[test]
     fn a_scenario_replays_deterministically_and_compares() {
-        let scenario = scenario(&[(2, ZoneCommand::Jump), (10, ZoneCommand::StartAttack)]);
+        let scenario = scenario(&[
+            (2, ZoneCommand::Jump),
+            (10, ZoneCommand::Swing { facing: 0 }),
+        ]);
         let baseline = Config::baseline();
         let first = run(&scenario, &baseline, &Network::LOCAL).unwrap();
         let second = run(&scenario, &baseline, &Network::LOCAL).unwrap();

@@ -110,10 +110,8 @@ impl ZoneSimulation {
         if !keep_opening {
             self.update_player(player_id, |player| player.combo = None);
         }
-        let target = follow_up
-            .as_ref()
-            .and_then(|follow_up| follow_up.target)
-            .or(target);
+        let followed = follow_up.as_ref().and_then(|follow_up| follow_up.target);
+        let target = followed.or(target);
         let ignore_global_cooldown = follow_up
             .as_ref()
             .is_some_and(|follow_up| follow_up.has(crate::action::Effect::IgnoreGlobalCooldown));
@@ -126,15 +124,20 @@ impl ZoneSimulation {
             return Ok(None);
         };
         let target = if ability.needs_target() {
-            let target = target.or(player.target);
-            // Aimed Shot without a target flies freely along the facing (#286); aimed specials
-            // always do (#291).
-            if (target.is_none() && ability.aims_freely()) || ability.shot() != crate::Shot::Plain {
+            // Free aim (#517): a hostile ability fires where the player faces, whatever is
+            // selected. A shot flies along the facing; any other lands on the nearest unit in
+            // front (see `aimed_unit`). Only a combo follow-up keeps its struck unit.
+            if ability.projectile.is_some() && followed.is_none() {
                 None
             } else {
-                let Some(entity) = target else {
-                    return Ok(Some((ErrorCode::InvalidTarget, target)));
+                let entity = match followed {
+                    Some(entity) => entity,
+                    None => match self.aimed_unit(player_id, ability, player.facing)? {
+                        Some(entity) => entity,
+                        None => return Ok(Some((ErrorCode::NoTarget, None))),
+                    },
                 };
+                let target = Some(entity);
                 let alive = match entity {
                     EntityRef::Creature(id) => {
                         self.creatures.get(&id).is_some_and(|unit| unit.is_alive())
@@ -260,6 +263,52 @@ impl ZoneSimulation {
             }
         }
         Ok(None)
+    }
+
+    /// The unit a facing-aimed hostile ability without a projectile lands on (#517), among the
+    /// attackable units in line of sight within its reach: for a melee ability the nearest inside
+    /// the swing arc, for a ranged one the nearest to the aim line inside the narrower aim cone
+    /// (then the nearest); ties go in `EntityRef` order.
+    fn aimed_unit(
+        &self,
+        player_id: PlayerId,
+        ability: &Ability,
+        facing: u16,
+    ) -> Result<Option<EntityRef>, ZoneError> {
+        let reach = ability.range.reach().unwrap_or(0);
+        let half_width = match ability.range {
+            AbilityRange::Melee => crate::unit::SWING_ARC_HALF_WIDTH,
+            _ => crate::unit::AIM_CONE_HALF_WIDTH,
+        };
+        let melee = matches!(ability.range, AbilityRange::Melee);
+        let origin = self.unit_position(EntityRef::Player(player_id))?;
+        let (dir_x, dir_z) = crate::trig::direction(facing);
+        // (along the facing, XZ length, squared distance, unit) of the best so far.
+        let mut best: Option<(i64, i64, i64, EntityRef)> = None;
+        // Ranged abilities need a sight line to every unit, melee ones to players (as before).
+        for entity in self.facing_coverage(player_id, facing, reach, half_width, !melee)? {
+            let at = self.unit_position(entity)?;
+            let (dx, dz) = (i64::from(at[0] - origin[0]), i64::from(at[2] - origin[2]));
+            let along = dx * i64::from(dir_x) + dz * i64::from(dir_z);
+            let length =
+                i64::try_from(crate::trig::xz_length(at[0] - origin[0], at[2] - origin[2]))
+                    .map_err(|_| ZoneError::new("aim distance overflow"))?
+                    .max(1);
+            let distance = dx * dx + dz * dz;
+            let better = best.is_none_or(|(best_along, best_length, best_distance, _)| {
+                // along / length is the cosine of the angle off the aim line.
+                let (mine, theirs) = (along * best_length, best_along * length);
+                if melee || mine == theirs {
+                    distance < best_distance
+                } else {
+                    mine > theirs
+                }
+            });
+            if better {
+                best = Some((along, length, distance, entity));
+            }
+        }
+        Ok(best.map(|(_, _, _, entity)| entity))
     }
 
     /// Returns `amount` of the class resource a follow-up refunds.

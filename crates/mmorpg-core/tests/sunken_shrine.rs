@@ -6,8 +6,8 @@ use mmorpg_core::greyhaven_vale::quests::{MARSHAL, SUNKEN_RELIC, THE_SUNKEN_SHRI
 use mmorpg_core::greyhaven_vale::{self, shrine};
 use mmorpg_core::water::{BREATH_MAX_TICKS, TRAIL_TICKS};
 use mmorpg_core::{
-    CreatureAi, CreatureId, EntityRef, ErrorCode, QuestEntry, QuestLog, ThreatEntry, WaterMode,
-    ZoneCommand, ZoneEvent, ZoneId, ZoneSimulation,
+    CreatureAi, CreatureId, EntityRef, QuestEntry, QuestLog, ThreatEntry, WaterMode, ZoneCommand,
+    ZoneEvent, ZoneId, ZoneSimulation,
 };
 
 /// World-axis heading of forward movement toward +X.
@@ -272,13 +272,21 @@ fn a_lurker_drops_a_player_who_dives_and_divers_cannot_attack() {
         ZoneCommand::SelectTarget(Some(EntityRef::Creature(LURKER))),
     )
     .unwrap();
-    zone.apply_command(1, 2, ZoneCommand::StartAttack).unwrap();
+    // A swing from under water at the lurker above whiffs (#517).
+    zone.apply_command(1, 2, ZoneCommand::Swing { facing: 0 })
+        .unwrap();
     let events = run(&mut zone, mmorpg_core::golden::t30(2) as _);
     assert!(
-        events.contains(&ZoneEvent::Error {
-            code: ErrorCode::NotAttackable,
-            target: Some(EntityRef::Creature(LURKER)),
+        events.contains(&ZoneEvent::AttackPerformed {
+            source: EntityRef::Player(1),
+            target: None,
         }),
+        "{events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, ZoneEvent::DamageDealt { .. })),
         "{events:?}"
     );
 }

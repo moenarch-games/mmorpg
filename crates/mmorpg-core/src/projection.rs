@@ -124,7 +124,6 @@ pub struct ViewerState {
     pub level: u8,
     pub dead: bool,
     pub in_combat: bool,
-    pub auto_attacking: bool,
     pub target: Option<EntityRef>,
     pub class: Option<crate::ClassChoice>,
     /// Present exactly when the viewer has a class.
@@ -275,7 +274,6 @@ impl ZoneSimulation {
                     level: viewer.level,
                     dead: !viewer.is_alive(),
                     in_combat: viewer.combat_timer > 0 || threatened.contains(&player_id),
-                    auto_attacking: viewer.auto_attack,
                     target: viewer.target,
                     class: viewer.class,
                     resource: viewer.class.map(|choice| {

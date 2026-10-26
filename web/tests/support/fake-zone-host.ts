@@ -65,7 +65,7 @@ export const TICK_MS = 1_000 / TICK_HZ;
  * complete and abandon quest, directed strike, guard, use door, repair and rise.
  */
 const COMMAND_LENGTHS = new Map([
-  [1, 6], [2, 2], [3, 7], [4, 2], [5, 2], [6, 2], [7, 6], [8, 14], [9, 8], [10, 2], [11, 4], [12, 3], [13, 3],
+  [1, 6], [2, 2], [3, 7], [4, 4], [6, 2], [7, 6], [8, 14], [9, 8], [10, 2], [11, 4], [12, 3], [13, 3],
   [14, 9], [15, 9], [17, 3], [18, 7], [19, 8], [20, 3], [21, 7], [22, 3], [23, 4], [24, 4], [25, 3],
 ]);
 /** `RUN_SPEED_UNITS_PER_SECOND` (6.3 m/s) per tick. */

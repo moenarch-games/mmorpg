@@ -1,6 +1,7 @@
 //! Native-vs-browser line-of-sight parity (#57): the local zone host plays one scripted
-//! Greyhaven session (an arcanist targets a crate and casts Firebolt in the open, then again
-//! from behind the inn, refused for line of sight) and digests every projection it publishes.
+//! Greyhaven session (an arcanist faces a crate and casts Firebolt in the open, whose missile
+//! strikes a crate, then again from behind the inn, whose missile the inn stops, #517) and
+//! digests every projection it publishes.
 //! Natively, two runs must reach the same digest. `web/tests/sight-parity.test.ts` runs this
 //! test with [`DIGEST_OUT`] set, plays the same script on the WASM build in the same run and
 //! must reach the digest written there, so the authoritative sight decisions (and everything
@@ -15,19 +16,20 @@ use mmorpg_protocol::{DEBRIS_RECORD_BYTES, decode_snapshot, encode_command};
 use mmorpg_wasm::host::{LOCAL_ZONE_ID, LocalZoneHost};
 
 /// The script: the arcanist targets a crate by the smithy (prop 901) and walks south-east
-/// from the spawn plaza; its Firebolt from the open starts and lands. It walks on behind the
-/// inn, targets the crate beside it (prop 900), and its Firebolts are refused.
+/// from the spawn plaza, then turns toward the crates; its Firebolt from the open strikes one.
+/// It walks on behind the inn, targets the crate beside it (prop 900) and turns toward it; the
+/// inn stops that Firebolt (#517: missiles fly where the caster faces).
 const MOVES: [(u64, i8, u16); 4] = [
     (0, 1, 24_576),
-    (160, 0, 24_576),
+    (160, 0, 13_725),
     (290, 1, 24_576),
-    (340, 0, 24_576),
+    (340, 0, 11_649),
 ];
 /// `(tick, prop)`: a crate by the smithy first, then the one beside it.
 const TARGETS: [(u64, u32); 2] = [(4, 901), (342, 900)];
-const CASTS: [u64; 3] = [162, 344, 380];
+const CASTS: [u64; 2] = [162, 344];
 const FIREBOLT: u8 = 9;
-const TICKS: u64 = 400;
+const TICKS: u64 = 520;
 /// When set, the path this test writes the native digest to (16 hex digits and a newline).
 const DIGEST_OUT: &str = "MMORPG_SIGHT_DIGEST_OUT";
 
@@ -97,7 +99,7 @@ fn sight_session() -> u64 {
             .unwrap();
     };
     let mut digest = 0xcbf2_9ce4_8422_2325_u64;
-    let (mut refused, mut started) = (0, 0);
+    let (mut struck, mut blocked_hits, mut started) = (0, 0, 0);
     for tick in 0..TICKS {
         if let Some(&(_, forward, facing)) = MOVES.iter().find(|(at, ..)| *at == tick) {
             send(
@@ -136,19 +138,18 @@ fn sight_session() -> u64 {
         digest = fnv(digest, &projection[..kept]);
         for event in snapshot.events {
             match event {
-                ZoneEvent::Error {
-                    code: mmorpg_core::ErrorCode::LineOfSight,
-                    ..
-                } => refused += 1,
                 ZoneEvent::CastStarted { .. } => started += 1,
+                // Only the crates can take the missiles' damage.
+                ZoneEvent::DamageDealt { .. } if tick < CASTS[1] => struck += 1,
+                ZoneEvent::DamageDealt { .. } => blocked_hits += 1,
                 _ => {}
             }
         }
     }
-    // The session exercises both sight decisions.
+    // The session exercises both sight decisions: a clear line and the inn in the way.
     assert!(
-        refused > 0 && started > 0,
-        "refused {refused}, started {started}"
+        started == 2 && struck > 0 && blocked_hits == 0,
+        "started {started}, struck {struck}, behind the inn {blocked_hits}"
     );
     digest
 }

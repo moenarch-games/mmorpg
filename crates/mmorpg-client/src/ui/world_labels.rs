@@ -51,10 +51,12 @@ fn damage_is_periodic(snapshot: &ZoneSnapshot) -> bool {
     let viewer = EntityRef::Player(snapshot.viewer_id);
     let resolved = snapshot.events.iter().any(|event| {
         matches!(event,
-            ZoneEvent::AbilityUsed { source, .. } | ZoneEvent::StrikeSwept { source, .. }
+            ZoneEvent::AbilityUsed { source, .. }
+                | ZoneEvent::StrikeSwept { source, .. }
+                | ZoneEvent::AttackPerformed { source, .. }
                 if *source == viewer)
     });
-    if resolved || snapshot.viewer.auto_attacking {
+    if resolved {
         return false;
     }
     snapshot.viewer.cast.is_some_and(|cast| cast.channel)

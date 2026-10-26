@@ -274,8 +274,18 @@ fn twins(
 /// Damage the player dealt to the target over `ticks`, with its tick and
 /// critical flag.
 fn hits(zone: &mut ZoneSimulation, ticks: u64) -> Vec<(u64, u16, bool)> {
+    hits_swinging(zone, ticks, false)
+}
+
+/// [`hits`], swinging at the target whenever it is in reach (#517) when `swinging`.
+fn hits_swinging(zone: &mut ZoneSimulation, ticks: u64, swinging: bool) -> Vec<(u64, u16, bool)> {
     let mut hits = Vec::new();
+    let mut sequence = 100;
     for _ in 0..ticks {
+        if let Some(swing) = arena::swing_at(zone, 1, TARGET).filter(|_| swinging) {
+            sequence += 1;
+            zone.apply_command(1, sequence, swing).unwrap();
+        }
         zone.advance_tick().unwrap();
         let view = zone.snapshot_for_player(1).unwrap();
         for event in view.events {
@@ -294,7 +304,7 @@ fn hits(zone: &mut ZoneSimulation, ticks: u64) -> Vec<(u64, u16, bool)> {
 }
 
 #[test]
-fn the_primary_stat_raises_auto_attacks_and_the_projected_melee_range() {
+fn the_primary_stat_raises_swings_and_the_projected_melee_range() {
     let content = classes::arena(
         vec![arena::wolf(1_000, [1, 1])],
         vec![arena::spawn(1, WOLF, [-200, 0])],
@@ -306,11 +316,10 @@ fn the_primary_stat_raises_auto_attacks_and_the_projected_melee_range() {
     for zone in [&mut plain, &mut geared] {
         zone.apply_command(1, 2, ZoneCommand::SelectTarget(Some(TARGET)))
             .unwrap();
-        zone.apply_command(1, 3, ZoneCommand::StartAttack).unwrap();
     }
     let (plain, geared) = (
-        hits(&mut plain, mmorpg_core::golden::t30(600)),
-        hits(&mut geared, mmorpg_core::golden::t30(600)),
+        hits_swinging(&mut plain, mmorpg_core::golden::t30(600), true),
+        hits_swinging(&mut geared, mmorpg_core::golden::t30(600), true),
     );
     assert_eq!(plain.len(), geared.len());
     let mut ordinary = 0;
@@ -355,9 +364,11 @@ fn intellect_adds_to_each_direct_bolt_and_nova_hit() {
     for (zone, dealt) in [&mut plain, &mut geared].into_iter().zip(&mut dealt) {
         zone.apply_command(1, 2, ZoneCommand::SelectTarget(Some(TARGET)))
             .unwrap();
+        // The bolt flies where the arcanist faces (#517): west, at the wolf.
+        zone.apply_command(1, 3, arena::stand(49_152)).unwrap();
         zone.apply_command(
             1,
-            3,
+            4,
             ZoneCommand::UseAbility {
                 ability: ids::FIREBOLT.get(),
                 target: None,
@@ -367,7 +378,7 @@ fn intellect_adds_to_each_direct_bolt_and_nova_hit() {
         dealt.extend(hits(zone, mmorpg_core::golden::t30(70)));
         zone.apply_command(
             1,
-            4,
+            5,
             ZoneCommand::UseAbility {
                 ability: ids::FROST_NOVA.get(),
                 target: None,

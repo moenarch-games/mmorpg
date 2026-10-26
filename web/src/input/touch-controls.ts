@@ -105,7 +105,7 @@ export class TouchControls {
     const context = element("div", "touch-context");
     this.#context = {
       target: button("touch-pill", "Target", () => this.#options.onAction("target.next")),
-      attack: button("touch-pill", "Attack", () => this.#options.onAction("combat.toggleAutoAttack")),
+      attack: button("touch-pill", "Attack", () => this.#options.onAction("combat.swing")),
       interact: button("touch-pill touch-interact", "Interact", () => this.#options.onInteract()),
       release: button("touch-pill", "Release spirit", () => this.#options.onAction("player.releaseSpirit")),
     };

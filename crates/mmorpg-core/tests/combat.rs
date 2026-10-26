@@ -1,6 +1,6 @@
 //! Deterministic combat scenarios through the public zone API: targeting,
-//! auto-attack, damage, tapping, death, corpses, respawn, assist, release
-//! spirit, leash, evade and refused intents.
+//! free-aim swings (#517), damage, tapping, death, corpses, respawn, assist,
+//! release spirit, leash, evade and refused intents.
 mod support;
 
 use std::sync::Arc;
@@ -23,6 +23,8 @@ struct Session {
     zone: ZoneSimulation,
     sequence: u32,
     events: Vec<(u64, ZoneEvent)>,
+    /// The unit the player keeps swinging at while it is in reach (#517).
+    attacking: Option<EntityRef>,
 }
 
 impl Session {
@@ -33,6 +35,7 @@ impl Session {
             zone,
             sequence: 0,
             events: Vec::new(),
+            attacking: None,
         }
     }
 
@@ -42,6 +45,12 @@ impl Session {
     }
 
     fn tick(&mut self) {
+        if let Some(swing) = self
+            .attacking
+            .and_then(|target| arena::swing_at(&self.zone, 1, target))
+        {
+            self.send(swing);
+        }
         self.zone.advance_tick().unwrap();
         let view = self.zone.snapshot_for_player(1).unwrap();
         let tick = self.zone.current_tick();
@@ -125,11 +134,11 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
     );
     session.send(arena::stand(NORTHWARD));
     session.send(ZoneCommand::SelectTarget(Some(wolf)));
-    session.send(ZoneCommand::StartAttack);
+    session.attacking = Some(wolf);
     session.tick();
     let view = session.zone.snapshot_for_player(1).unwrap();
     assert_eq!(view.viewer.target, Some(wolf));
-    assert!(view.viewer.auto_attacking && view.viewer.in_combat);
+    assert!(view.viewer.in_combat);
     assert_eq!(
         view.target_of_target,
         Some(PLAYER),
@@ -204,12 +213,9 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
     );
     assert_eq!((corpse.health, corpse.velocity), (0, [0.0; 3]));
 
+    session.attacking = None;
     session.tick();
     let view = session.zone.snapshot_for_player(1).unwrap();
-    assert!(
-        !view.viewer.auto_attacking,
-        "the target's death stops auto-attack"
-    );
     assert_eq!(view.viewer.target, Some(wolf), "the corpse stays selected");
     let record = view
         .entities
@@ -222,12 +228,17 @@ fn a_player_hunts_a_wolf_from_approach_to_respawn() {
         record.position,
         mmorpg_core::physics::to_units(corpse.position)
     );
-    session.send(ZoneCommand::StartAttack);
-    session.tick();
-    assert_eq!(
-        session.errors().last(),
-        Some(&(died + 2, ErrorCode::TargetDead))
-    );
+    // A swing at the corpse whiffs once the swing timer allows (#517).
+    session.send(ZoneCommand::Swing { facing: NORTHWARD });
+    session.until(u64::from(PLAYER_SWING_TICKS), |session| {
+        session.events.iter().any(|(_, event)| {
+            *event
+                == ZoneEvent::AttackPerformed {
+                    source: PLAYER,
+                    target: None,
+                }
+        })
+    });
 
     // The corpse disappears after 30 s and clears the selection.
     session.until(u64::from(CORPSE_TICKS), |session| {
@@ -284,7 +295,7 @@ fn assist_death_release_spirit_and_evade() {
     );
     session.send(arena::stand(NORTHWARD));
     session.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(FIRST))));
-    session.send(ZoneCommand::StartAttack);
+    session.attacking = Some(EntityRef::Creature(FIRST));
 
     let died = session.until(mmorpg_core::golden::t30(600) as _, |session| {
         session.health() == 0
@@ -306,7 +317,8 @@ fn assist_death_release_spirit_and_evade() {
         ))
     );
     let view = session.zone.snapshot_for_player(1).unwrap();
-    assert!(view.viewer.dead && !view.viewer.auto_attacking);
+    assert!(view.viewer.dead);
+    session.attacking = None;
     assert_eq!(view.entities[0].health_percent, 0);
     assert!(view.entities[0].flags.dead);
     for id in [FIRST, SECOND] {
@@ -322,7 +334,7 @@ fn assist_death_release_spirit_and_evade() {
     let corpse =
         mmorpg_core::physics::to_units(session.zone.snapshot().unwrap().players[0].position);
     session.send(arena::walk(NORTHWARD));
-    session.send(ZoneCommand::StartAttack);
+    session.send(ZoneCommand::Swing { facing: NORTHWARD });
     session.send(ZoneCommand::SelectTarget(None));
     session.tick();
     assert_eq!(
@@ -485,7 +497,7 @@ fn leashed_creatures_evade_and_ignore_damage() {
         session.creature(FIRST).ai == CreatureAi::Engaged
     });
     session.send(ZoneCommand::SelectTarget(Some(wolf)));
-    session.send(ZoneCommand::StartAttack);
+    session.attacking = Some(wolf);
     // Run south; players outrun creatures (21 vs 19 units per tick).
     session.send(arena::walk(32_768));
     session.until(mmorpg_core::golden::t30(600) as _, |session| {
@@ -499,27 +511,17 @@ fn leashed_creatures_evade_and_ignore_damage() {
                 - CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK / mmorpg_core::physics::SUBUNITS_PER_UNIT,
         "the leash broke 40 m from the spawn (z = {z})"
     );
-    assert!(
-        session
-            .errors()
-            .iter()
-            .any(|(_, code)| *code == ErrorCode::OutOfRange),
-        "attacking while fleeing is out of range"
-    );
-    let throttled = session.errors();
-    assert!(
-        throttled.windows(2).all(|pair| pair[1].0 - pair[0].0 >= 30),
-        "out-of-range errors are throttled: {throttled:?}"
-    );
-    // A player next to the evading wolf, with a swing ready, cannot hurt it.
+    // A player next to the evading wolf, facing it with a swing ready, cannot hurt it.
     let mut checkpoint = session.zone.snapshot().unwrap();
     let evading = checkpoint.creatures[0].clone();
     let player = &mut checkpoint.players[0];
     player.position = [evading.position[0], 90.0, evading.position[2] - 150.0];
     player.velocity = [0.0; 3];
     player.forward = 0;
+    player.facing = NORTHWARD;
     player.combat.swing_timer = 0;
-    assert!(player.combat.auto_attack && player.combat.target == Some(wolf));
+    player.combat.swing_queued = true;
+    assert_eq!(player.combat.target, Some(wolf));
     let content = Arc::clone(session.zone.content());
     session.zone = ZoneSimulation::from_snapshot(checkpoint, content).unwrap();
     session.tick();
@@ -553,7 +555,7 @@ fn leashed_creatures_evade_and_ignore_damage() {
         .flags;
     assert!(flags.evading && !flags.in_combat && !flags.targets_viewer);
     assert_eq!(session.creature(FIRST).health, evading.health, "no damage");
-    session.send(ZoneCommand::StopAttack);
+    session.attacking = None;
     session.until(mmorpg_core::golden::t30(600) as _, |session| {
         matches!(session.creature(FIRST).ai, CreatureAi::Idle { .. })
     });
@@ -615,7 +617,7 @@ fn neutral_creatures_fight_back_only_when_attacked() {
         "a neutral boar 4 m away ignores the player"
     );
     session.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(FIRST))));
-    session.send(ZoneCommand::StartAttack);
+    session.attacking = Some(EntityRef::Creature(FIRST));
     session.send(arena::walk(WEST));
     session.until(mmorpg_core::golden::t30(200) as _, |session| {
         session.creature(FIRST).ai == CreatureAi::Engaged
@@ -637,13 +639,12 @@ fn refused_intents_are_events_not_errors() {
         vec![arena::npc(3, [-300, 300])],
     );
     let mut session = Session::new(content);
-    session.send(ZoneCommand::StartAttack);
+    // A swing at the guard whiffs (#517): an event, never an error.
     session.send(ZoneCommand::SelectTarget(Some(EntityRef::Npc(NpcId::new(
         3,
     )))));
-    session.send(ZoneCommand::StartAttack);
+    session.send(ZoneCommand::Swing { facing: WEST });
     session.send(ZoneCommand::SelectTarget(Some(PLAYER)));
-    session.send(ZoneCommand::StartAttack);
     // Beyond the interest radius, unknown or not yet present.
     session.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(FIRST))));
     session.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(
@@ -655,9 +656,6 @@ fn refused_intents_are_events_not_errors() {
     assert_eq!(
         session.errors(),
         [
-            (1, ErrorCode::NoTarget),
-            (1, ErrorCode::NotAttackable),
-            (1, ErrorCode::NotAttackable),
             (1, ErrorCode::InvalidTarget),
             (1, ErrorCode::InvalidTarget),
             (1, ErrorCode::InvalidTarget),
@@ -670,7 +668,14 @@ fn refused_intents_are_events_not_errors() {
         Some(PLAYER),
         "refused selections keep the target"
     );
-    assert_eq!(view.events.len(), 7, "events stay in state for one tick");
+    assert_eq!(
+        view.events.last(),
+        Some(&ZoneEvent::AttackPerformed {
+            source: PLAYER,
+            target: None
+        })
+    );
+    assert_eq!(view.events.len(), 5, "events stay in state for one tick");
     session.tick();
     assert!(
         session
@@ -714,7 +719,7 @@ fn identical_inputs_produce_identical_canonical_state() {
         for tick in 0..900 {
             if tick == 60 {
                 session.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(FIRST))));
-                session.send(ZoneCommand::StartAttack);
+                session.attacking = Some(EntityRef::Creature(FIRST));
             }
             if tick == 400 {
                 session.send(ZoneCommand::ReleaseSpirit);
@@ -725,4 +730,63 @@ fn identical_inputs_produce_identical_canonical_state() {
         states
     };
     assert_eq!(run(), run());
+}
+
+/// A swing (#517) hits every unit inside its arc where the player faces, whatever is selected,
+/// and leaves one beside the player alone; a press during the swing timer waits for it, and a
+/// swing that covers nobody whiffs.
+#[test]
+fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
+    let content = arena::arena(
+        vec![arena::boar()],
+        vec![
+            // West, 33.7° south of west, and due south of the player at the origin.
+            arena::spawn(1, BOAR, [-180, 0]),
+            arena::spawn(2, BOAR, [-150, -100]),
+            arena::spawn(3, BOAR, [0, -180]),
+        ],
+        vec![],
+    );
+    let mut session = Session::new(content);
+    let third = EntityRef::Creature(CreatureId::new(3));
+    session.send(ZoneCommand::SelectTarget(Some(third)));
+    session.send(ZoneCommand::Swing { facing: WEST });
+    session.tick();
+    let swung: Vec<_> = session
+        .events
+        .iter()
+        .filter_map(|(tick, event)| match event {
+            ZoneEvent::AttackPerformed {
+                source: PLAYER,
+                target,
+            } => Some((*tick, *target)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        swung,
+        [
+            (1, Some(EntityRef::Creature(FIRST))),
+            (1, Some(EntityRef::Creature(SECOND)))
+        ],
+        "both boars in the arc, not the selected one beside it"
+    );
+
+    // Pressed again at once, the swing waits out the swing timer, then whiffs to the north.
+    session.send(ZoneCommand::Swing { facing: NORTHWARD });
+    let whiffed = session.until(u64::from(PLAYER_SWING_TICKS) + 1, |session| {
+        session.events.iter().any(|(_, event)| {
+            *event
+                == ZoneEvent::AttackPerformed {
+                    source: PLAYER,
+                    target: None,
+                }
+        })
+    });
+    assert_eq!(whiffed, 1 + u64::from(PLAYER_SWING_TICKS));
+    assert_eq!(
+        session.creature(CreatureId::new(3)).health,
+        40,
+        "the boar beside the player was never hit"
+    );
 }
