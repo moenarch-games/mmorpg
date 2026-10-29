@@ -67,7 +67,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   u32(viewer.experience);
   u32(viewer.experienceToNextLevel);
   u32(viewer.copper);
-  u8(flagByte([viewer.dead, viewer.inCombat]));
+  u8(flagByte([viewer.dead, viewer.inCombat]) | (viewer.waystones ?? []).reduce((bits, id) => bits | (1 << (id + 1)), 0));
   entity(viewer.target);
   const choice = viewer.classChoice;
   u8(choice === null ? 0 : 1 + CLASSES.indexOf(choice.classId) * 2 + (choice.sex === "female" ? 0 : 1));

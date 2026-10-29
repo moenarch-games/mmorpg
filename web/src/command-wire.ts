@@ -58,6 +58,8 @@ export type WorldCommand =
   | { kind: "abandon-quest"; quest: number }
   /** Opens (`open`) or closes content door `door` (#158); the zone checks reach and blockers. */
   | { kind: "use-door"; door: number; open: boolean }
+  /** Travels from the waystone in reach to unlocked waystone `waystone` (#145); the zone checks reach, unlocks and combat. */
+  | { kind: "use-waystone"; waystone: number }
   /** Starts repairing a destructible piece (#305), or stops with `null`. */
   | { kind: "repair"; piece: number | null }
   /** Orders all of a Necromancer's minions at once (#295); the zone checks the target or point. */
@@ -93,6 +95,8 @@ const ABANDON_QUEST_TAG = 20;
 const DIRECTED_STRIKE_TAG = 21;
 const GUARD_TAG = 22;
 const USE_DOOR_TAG = 23;
+/** Waystone travel (#145). */
+const USE_WAYSTONE_TAG = 30;
 const REPAIR_TAG = 24;
 const RISE_TAG = 25;
 const COMMAND_MINIONS_TAG = 26;
@@ -319,6 +323,11 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
         throw new Error("Equipment slots must be u8.");
       }
       return Uint8Array.of(PROTOCOL_BYTE, UNEQUIP_ITEM_TAG, command.equipmentSlot);
+    case "use-waystone":
+      if (!isU8(command.waystone) || command.waystone === 0) {
+        throw new Error("Waystone IDs must be 1–255.");
+      }
+      return Uint8Array.of(PROTOCOL_BYTE, USE_WAYSTONE_TAG, command.waystone);
     case "use-door":
       if (!isU8(command.door)) {
         throw new Error("Door IDs must be u8.");

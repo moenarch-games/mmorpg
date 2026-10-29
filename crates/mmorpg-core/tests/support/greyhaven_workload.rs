@@ -101,6 +101,7 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
             chat: Vec::new(),
             quests: mmorpg_core::QuestLog::default(),
             quests_changed_at: 0,
+            waystones: mmorpg_core::WaystoneSet::EMPTY,
         });
     }
     Ok(ZoneSimulation::from_snapshot(state, content)?)

@@ -164,6 +164,7 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
     case "complete-quest":
     case "abandon-quest":
     case "use-door":
+    case "use-waystone":
     case "repair":
       return false;
   }

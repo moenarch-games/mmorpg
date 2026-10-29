@@ -300,6 +300,8 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::NoMinions => "no_minions",
         ErrorCode::NotWhileSwimming => "not_while_swimming",
         ErrorCode::HandoffCorridor => "handoff_corridor",
+        ErrorCode::InCombat => "in_combat",
+        ErrorCode::InvalidWaystone => "invalid_waystone",
     }
 }
 
@@ -340,6 +342,8 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "no_minions" => ErrorCode::NoMinions,
         "not_while_swimming" => ErrorCode::NotWhileSwimming,
         "handoff_corridor" => ErrorCode::HandoffCorridor,
+        "in_combat" => ErrorCode::InCombat,
+        "invalid_waystone" => ErrorCode::InvalidWaystone,
         _ => return None,
     })
 }
@@ -502,6 +506,8 @@ mod tests {
             ErrorCode::NoMinions,
             ErrorCode::NotWhileSwimming,
             ErrorCode::HandoffCorridor,
+            ErrorCode::InCombat,
+            ErrorCode::InvalidWaystone,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));

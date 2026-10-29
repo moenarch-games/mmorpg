@@ -1,7 +1,7 @@
 //! Durable character record encoding (#30).
 //!
 //! `version u8 · schema u16 · id length u8 · id · appearance u8 · level u8 ·
-//! experience u32 · copper u32 · inventory · equipment · quest entries ·
+//! experience u32 · copper u32 · inventory · equipment · quest entries · unlocked waystones u32 ·
 //! health u32 · resource u16 · resource ticks u16 · mana delay u16 · global
 //! cooldown u16 · cooldown count u8 · (ability u8 · remaining u16)* · zone
 //! u32 · position 3 × i32 · facing u16`, big-endian. The decoder is strict:
@@ -47,6 +47,7 @@ pub fn encode_character_record(record: &CharacterRecord) -> Result<Vec<u8>, Prot
         record.quests.completed,
         &record.quests.entries,
     )?;
+    payload.extend_from_slice(&record.waystones.bits().to_be_bytes());
     payload.extend_from_slice(&record.health.to_be_bytes());
     for value in [
         record.resource,
@@ -109,6 +110,7 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
     let inventory = decode_inventory(payload, offset)?;
     let equipment = decode_equipment(payload, offset)?;
     let (completed, entries) = decode_entries(payload, offset)?;
+    let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
     let health = u32::from_be_bytes(take(payload, offset)?);
     let resource = u16::from_be_bytes(take(payload, offset)?);
     let resource_ticks = u16::from_be_bytes(take(payload, offset)?);
@@ -145,6 +147,7 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         inventory,
         equipment,
         quests: QuestLog { entries, completed },
+        waystones,
         health,
         resource,
         resource_ticks,

@@ -74,6 +74,8 @@ pub struct ZoneContent {
     handoff_corridors: Vec<crate::HandoffCorridor>,
     /// The night raid target (#530), if the zone has one.
     raid: Option<crate::RaidSite>,
+    /// Network stones standing in this zone, in ID order (#145).
+    waystones: Vec<crate::WaystoneId>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -194,6 +196,7 @@ impl ZoneContent {
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
+            waystones: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -237,6 +240,7 @@ impl ZoneContent {
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
             raid: None,
+            waystones: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -930,6 +934,16 @@ impl ZoneContent {
                     ));
                 }
             }
+            for site in self.waystones.iter().filter_map(|id| crate::waystone(*id)) {
+                let reach = i32::try_from(crate::WAYSTONE_DISCOVERY_UNITS).unwrap_or(i32::MAX);
+                if overlaps_box(bounds, site.stone, [reach, reach], 0)
+                    || overlaps_box(bounds, site.arrival, player, 0)
+                {
+                    return Err(ZoneError::new(
+                        "a waystone or its arrival is in a handoff corridor",
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -939,6 +953,25 @@ impl ZoneContent {
     pub fn with_raid(mut self, site: crate::RaidSite) -> Result<Self, ZoneError> {
         site.validate(&self)?;
         self.raid = Some(site);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Binds the network stones that stand in this zone (#145, [`crate::WAYSTONES`]): each
+    /// known, at most once, with its reach and arrival clear of every handoff corridor.
+    pub fn with_waystones(
+        mut self,
+        mut waystones: Vec<crate::WaystoneId>,
+    ) -> Result<Self, ZoneError> {
+        waystones.sort_unstable();
+        if waystones.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(ZoneError::new("a waystone is bound twice"));
+        }
+        if waystones.iter().any(|id| crate::waystone(*id).is_none()) {
+            return Err(ZoneError::new("an unknown waystone is bound"));
+        }
+        self.waystones = waystones;
+        self.validate_corridor_clearance(&self.handoff_corridors)?;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
     }
@@ -956,6 +989,12 @@ impl ZoneContent {
         self.raid
             .as_ref()
             .is_some_and(|site| site.raiders().any(|id| id == creature))
+    }
+
+    /// Network stones standing in this zone, in ID order (#145).
+    #[must_use]
+    pub fn waystones(&self) -> &[crate::WaystoneId] {
+        &self.waystones
     }
 
     /// Ordered by NPC ID.
@@ -979,13 +1018,35 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_corridor_fingerprint();
+        let fingerprint = self.compute_waystone_fingerprint();
         if self.character_persistence == CharacterPersistence::Durable {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/ephemeral-characters-v1");
         hash.u64(fingerprint);
+        hash.finish()
+    }
+
+    /// Each bound stone with its catalog entry, so moving a stone or its arrival changes the
+    /// identity of every zone it stands in.
+    fn compute_waystone_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_corridor_fingerprint();
+        if self.waystones.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/waystones-v1");
+        hash.u64(fingerprint);
+        hash.len(self.waystones.len());
+        for site in self.waystones.iter().filter_map(|id| crate::waystone(*id)) {
+            hash.u8(site.id.get());
+            hash.u32(site.zone.get());
+            hash.i32s(&site.stone);
+            hash.i32s(&site.arrival);
+            hash.bytes(&site.facing.to_be_bytes());
+            hash.bytes(site.name.as_bytes());
+        }
         hash.finish()
     }
 

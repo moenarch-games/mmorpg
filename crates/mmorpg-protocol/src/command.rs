@@ -41,6 +41,8 @@ const OBSERVED_TAG: u8 = 27;
 const RELEASE_ABILITY_TAG: u8 = 28;
 /// A dodge roll (#516).
 const ROLL_TAG: u8 = 29;
+/// Waystone travel (#145): version, tag, waystone (u8).
+const USE_WAYSTONE_TAG: u8 = 30;
 /// Version, tag, ability (u8), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -174,6 +176,9 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         }
         ZoneCommand::AbandonQuest { quest } => {
             vec![PROTOCOL_BYTE, ABANDON_QUEST_TAG, quest]
+        }
+        ZoneCommand::UseWaystone { waystone } => {
+            vec![PROTOCOL_BYTE, USE_WAYSTONE_TAG, waystone.get()]
         }
         ZoneCommand::Chat { channel, text } => {
             let mut payload = vec![PROTOCOL_BYTE, CHAT_TAG];
@@ -539,6 +544,16 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
             };
             Ok(ZoneCommand::AbandonQuest { quest: *quest })
         }
+        USE_WAYSTONE_TAG => {
+            let [_, _, waystone] = payload else {
+                return Err(ProtocolError::new(
+                    "use waystone command payload must be exactly 3 bytes",
+                ));
+            };
+            Ok(ZoneCommand::UseWaystone {
+                waystone: crate::wire::decode_waystone(*waystone)?,
+            })
+        }
         CANCEL_CAST_TAG => bare(ZoneCommand::CancelCast),
         JUMP_TAG => bare(ZoneCommand::Jump),
         ROLL_TAG => bare(ZoneCommand::Roll),
@@ -870,6 +885,9 @@ mod tests {
                 choice: u8::MAX,
             },
             ZoneCommand::AbandonQuest { quest: 3 },
+            ZoneCommand::UseWaystone {
+                waystone: mmorpg_core::SEAM_TEST_WEST,
+            },
             ZoneCommand::UseDoor {
                 door: mmorpg_core::DoorId::new(1),
                 open: true,
@@ -1019,6 +1037,9 @@ mod tests {
                     format!("complete_quest {} {quest} {choice}", npc.get())
                 }
                 ZoneCommand::AbandonQuest { quest } => format!("abandon_quest {quest}"),
+                ZoneCommand::UseWaystone { waystone } => {
+                    format!("use_waystone {}", waystone.get())
+                }
                 ZoneCommand::Swing { facing } => format!("swing {facing}"),
                 ZoneCommand::ReleaseSpirit => "release_spirit".to_owned(),
                 ZoneCommand::MoveItem {

@@ -26,10 +26,10 @@ use crate::{
     QuestLog, ZoneError, ZoneId, ZoneSimulation,
 };
 
-/// Version of the [`CharacterRecord`] schema. Bump it with every change to
-/// the record's fields or their meaning; persisted records of another version
-/// are rejected rather than reinterpreted.
-pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 1;
+/// Identity of the [`CharacterRecord`] schema: a random token (ADR 0006), replaced with a
+/// fresh one on every change to the record's fields or their meaning; persisted records of
+/// another schema are rejected rather than reinterpreted.
+pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x20a2;
 
 /// Longest [`CharacterId`] in bytes.
 pub const MAX_CHARACTER_ID_BYTES: usize = 64;
@@ -89,6 +89,8 @@ pub struct CharacterRecord {
     pub inventory: Inventory,
     pub equipment: Equipment,
     pub quests: QuestLog,
+    /// Waystones unlocked by exploration (#145).
+    pub waystones: crate::WaystoneSet,
     /// Zero means dead (a corpse or a released spirit).
     pub health: u32,
     pub resource: u16,
@@ -125,6 +127,7 @@ impl ZoneSimulation {
             inventory: player.inventory.clone(),
             equipment: player.equipment,
             quests: player.quests.clone(),
+            waystones: player.waystones,
             health: player.health,
             resource: player.resource.value,
             resource_ticks: player.resource.ticks,
@@ -208,6 +211,7 @@ impl ZoneSimulation {
         state.inventory = record.inventory.clone();
         state.equipment = record.equipment;
         state.quests = record.quests.clone();
+        state.waystones = record.waystones;
         state.health = record.health;
         state.resource.value = record.resource;
         state.resource.ticks = record.resource_ticks;

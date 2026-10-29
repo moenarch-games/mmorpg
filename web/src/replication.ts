@@ -88,7 +88,20 @@ export type ViewerState = {
   combo: ComboPhase | null;
   /** Ticks of breath left (#274), {@link BREATH_MAX_TICKS} when full; at 0 a submerged player drowns. */
   breath: number;
+  /** Waystone IDs (#145) the viewer unlocked by exploration, ascending. */
+  waystones: number[];
 };
+
+/** Stones in the waystone network (`mmorpg_core::WAYSTONES`, #145). */
+const WAYSTONE_COUNT = 3;
+
+/** Waystone IDs of the viewer flag byte's upper bits (#145), ascending; unknown stones fail. */
+function waystoneIds(bits: number): number[] {
+  if (bits >> WAYSTONE_COUNT !== 0) {
+    throw new Error("Unknown waystone unlocked");
+  }
+  return Array.from({ length: WAYSTONE_COUNT }, (_, index) => index + 1).filter((id) => (bits & (1 << (id - 1))) !== 0);
+}
 
 /** A full breath: 30 s submerged (`water::BREATH_MAX_TICKS`). */
 export const BREATH_MAX_TICKS = ticksFromMs(30_000);
@@ -143,7 +156,9 @@ export type ErrorCode =
   | "door-busy"
   | "no-minions"
   | "not-while-swimming"
-  | "handoff-corridor";
+  | "handoff-corridor"
+  | "in-combat"
+  | "invalid-waystone";
 
 /** A directed strike's sweep side and height (#154); the zone resolves what it covers. */
 export type StrikeSide = "left" | "centre" | "right";
@@ -379,7 +394,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
   "not-equippable", "invalid-vendor", "not-enough-money", "chat-throttled", "invalid-quest", "quest-log-full",
   "quest-incomplete", "line-of-sight", "door-blocked", "vendor-closed", "door-busy", "no-minions",
-  "not-while-swimming", "handoff-corridor",
+  "not-while-swimming", "handoff-corridor", "in-combat", "invalid-waystone",
 ];
 /** Doors a zone's content may author (`mmorpg_core::MAX_DOORS`). */
 const MAX_DOORS = 9;
@@ -906,7 +921,11 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const experience = reader.u32();
   const experienceToNextLevel = reader.u32();
   const copper = reader.u32();
-  const [dead = false, inCombat = false] = reader.flags(2);
+  // Bits 0–1 are flags; bits 2–7 the unlocked waystones 1–6 (#145).
+  const viewerFlags = reader.u8();
+  const dead = (viewerFlags & 1) !== 0;
+  const inCombat = (viewerFlags & 2) !== 0;
+  const waystones = waystoneIds(viewerFlags >> 2);
   const target = reader.entity();
   if (level < 1 || level > 10
     || (level === 10 && (experience !== 0 || experienceToNextLevel !== 0))
@@ -1184,7 +1203,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     zoneId, tick, contentRevision, acknowledgedSequence, viewerId,
     viewer: {
       copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, target,
-      classChoice, resource, cast, globalCooldown, damage, guard, stance, combo, breath,
+      classChoice, resource, cast, globalCooldown, damage, guard, stance, combo, breath, waystones,
     },
     cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors, pieces, raid,
     events, chat, entities, projectiles, debris,

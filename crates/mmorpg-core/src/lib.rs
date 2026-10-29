@@ -65,6 +65,7 @@ pub mod trig;
 pub mod unit;
 mod vendor;
 pub mod water;
+mod waystone;
 mod zone;
 
 pub use ability::{
@@ -90,6 +91,7 @@ pub use class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use climb::{ClimbSurfaces, Grip, Traversal, TraversalView};
 pub use combo::{COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboOpening, ComboPhase};
 pub use content::greyhaven_vale::{self, greyhaven_vale_definition};
+pub use content::seam_test::{self, content_for_zone};
 pub use content::{
     CharacterPersistence, CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
     LARGE_CREATURE_HALF_WIDTH_UNITS, MAX_CONTENT_COORDINATE_UNITS, MAX_CREATURE_HALF_EXTENT_UNITS,
@@ -190,6 +192,11 @@ pub use vendor::{
     VendorTradeError, sell_price, settle_purchase, settle_sale, starter_vendor_stock,
 };
 pub use water::{AirPocket, Breath, WaterMode, WaterVolume};
+pub use waystone::{
+    GREYHAVEN_OUTPOST, GREYHAVEN_ZONE, MAX_WAYSTONES, SEAM_TEST_EAST, SEAM_TEST_WEST,
+    WAYSTONE_DISCOVERY_UNITS, WAYSTONES, WaystoneId, WaystoneSet, WaystoneSite, waystone,
+    waystone_within_reach,
+};
 pub use zone::{MAX_PENDING_INTENTS, ZoneSimulation, ZoneTickWork};
 
 use std::error::Error;
@@ -417,6 +424,9 @@ pub enum ZoneCommand {
     CompleteQuest { npc: NpcId, quest: u8, choice: u8 },
     /// Drops `quest` from the log; its progress is lost.
     AbandonQuest { quest: u8 },
+    /// Travels from the waystone within reach to the unlocked `waystone` (#145, Atlas
+    /// 5.1.9); the zone checks reach, unlocks and combat in the tick.
+    UseWaystone { waystone: WaystoneId },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -5,6 +5,7 @@
 //! lives here; each authored zone is its own submodule.
 
 pub mod greyhaven_vale;
+pub mod seam_test;
 mod units;
 mod zone_content;
 

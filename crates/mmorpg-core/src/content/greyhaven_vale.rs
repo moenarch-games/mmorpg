@@ -1433,7 +1433,8 @@ pub fn content_with_definition(
                     .collect(),
             )?
             .with_climbing(climbing())?
-            .with_raid(raid::millbrook_barn())?,
+            .with_raid(raid::millbrook_barn())?
+            .with_waystones(vec![crate::GREYHAVEN_OUTPOST])?,
     ))
 }
 

@@ -72,6 +72,7 @@ fn zone_at(positions: &[[i32; 3]], definition: ZoneDefinition) -> ZoneSimulation
             chat: Vec::new(),
             quests: mmorpg_core::QuestLog::default(),
             quests_changed_at: 0,
+            waystones: mmorpg_core::WaystoneSet::EMPTY,
         })
         .collect();
     ZoneSimulation::from_snapshot(canonical, Arc::clone(empty.content())).unwrap()

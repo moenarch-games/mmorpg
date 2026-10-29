@@ -362,6 +362,12 @@ const worldView = new WorldView(renderer, camera, {
     feedback: requireElement<HTMLElement>("#loot-feedback"),
     copper: requireElement<HTMLElement>("#copper-status"),
   },
+  waystone: {
+    panel: requireElement<HTMLElement>("#waystone-panel"),
+    title: requireElement<HTMLElement>("#waystone-title"),
+    destinations: requireElement<HTMLElement>("#waystone-destinations"),
+    status: requireElement<HTMLElement>("#waystone-status"),
+  },
   bags: {
     panel: requireElement<HTMLElement>("#bags-panel"),
     toggle: requireElement<HTMLButtonElement>("#bags-toggle"),

@@ -46,6 +46,8 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "no-minions": "You have no minions or companion to command.",
   "not-while-swimming": "You can't do that while swimming.",
   "handoff-corridor": "Not here: you are crossing into another region.",
+  "in-combat": "You can't travel while in combat.",
+  "invalid-waystone": "The waystone cannot take you there.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

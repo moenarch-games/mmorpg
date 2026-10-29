@@ -91,6 +91,11 @@ pub enum ErrorCode {
     /// Loot, trades and quest changes do not begin in a cross-zone handoff
     /// corridor (#145).
     HandoffCorridor,
+    /// Waystone travel does not start in combat (#145).
+    InCombat,
+    /// No waystone is within reach, or the destination is locked, unknown,
+    /// the stone in reach or not reachable from this zone yet (#145).
+    InvalidWaystone,
 }
 
 /// One feedback event addressed to a player.

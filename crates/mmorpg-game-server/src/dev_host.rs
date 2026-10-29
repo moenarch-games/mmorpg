@@ -5,7 +5,7 @@ use game_server::{
     MatchId, PreparedLiveMatchHost, prepare_live_match_host_for_recovery,
     serve_prepared_live_match_host_with_status_and_control_and_shutdown,
 };
-use mmorpg_core::{ZoneId, greyhaven_vale};
+use mmorpg_core::ZoneId;
 use std::{
     collections::BTreeSet, error::Error, fs::File, path::PathBuf, sync::Arc, time::Duration,
 };
@@ -40,8 +40,9 @@ async fn prepare(
                 .parse::<u32>()
                 .map(ZoneId::new)
                 .map_err(|error| error.to_string())?;
-            let mut adapter = ZoneGameServerAdapter::with_content(zone, greyhaven_vale::content())
-                .map_err(|error| error.to_string())?;
+            let mut adapter =
+                ZoneGameServerAdapter::with_content(zone, mmorpg_core::content_for_zone(zone))
+                    .map_err(|error| error.to_string())?;
             adapter.require_character_claims(Arc::clone(&ownership));
             Ok(adapter)
         },

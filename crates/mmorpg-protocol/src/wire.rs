@@ -126,6 +126,8 @@ const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::NoMinions => 33,
         ErrorCode::NotWhileSwimming => 34,
         ErrorCode::HandoffCorridor => 35,
+        ErrorCode::InCombat => 36,
+        ErrorCode::InvalidWaystone => 37,
     }
 }
 
@@ -166,8 +168,21 @@ fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         33 => ErrorCode::NoMinions,
         34 => ErrorCode::NotWhileSwimming,
         35 => ErrorCode::HandoffCorridor,
+        36 => ErrorCode::InCombat,
+        37 => ErrorCode::InvalidWaystone,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
+}
+
+/// A waystone of the network (#145).
+pub(crate) fn decode_waystone(code: u8) -> Result<mmorpg_core::WaystoneId, ProtocolError> {
+    mmorpg_core::WaystoneId::new(code).ok_or_else(|| ProtocolError::new("unknown waystone"))
+}
+
+/// Unlocked waystones: bits of network stones only (#145).
+pub(crate) fn decode_waystones(bits: u32) -> Result<mmorpg_core::WaystoneSet, ProtocolError> {
+    mmorpg_core::WaystoneSet::from_bits(bits)
+        .ok_or_else(|| ProtocolError::new("unlocked waystones name an unknown stone"))
 }
 
 /// A quest ID, `1..=MAX_QUESTS`; whether content defines it is the
@@ -976,12 +991,14 @@ mod tests {
             ErrorCode::NoMinions,
             ErrorCode::NotWhileSwimming,
             ErrorCode::HandoffCorridor,
+            ErrorCode::InCombat,
+            ErrorCode::InvalidWaystone,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 36, u16::MAX] {
+        for unknown in [0, 38, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

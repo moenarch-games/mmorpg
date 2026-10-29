@@ -454,6 +454,23 @@ pub fn content_catalog() -> String {
     catalog::hosted_catalog_json().to_owned()
 }
 
+/// The hosted content's waystone (#145) within reach of `(x, z)` units, 0 for none.
+#[wasm_bindgen(js_name = waystoneAt)]
+#[must_use]
+pub fn waystone_at(x: i32, z: i32) -> u8 {
+    mmorpg_core::waystone_within_reach(&host::hosted_content(), [x, z]).map_or(0, |id| id.get())
+}
+
+/// Names of the waystone network (#145) in ID order: waystone `index + 1`.
+#[wasm_bindgen(js_name = waystoneNames)]
+#[must_use]
+pub fn waystone_names() -> Vec<String> {
+    mmorpg_core::WAYSTONES
+        .iter()
+        .map(|site| site.name.to_owned())
+        .collect()
+}
+
 /// The destructible pieces (#305) feet at `(x, z)` units can repair, in ID order.
 #[wasm_bindgen(js_name = reachablePieces)]
 #[must_use]

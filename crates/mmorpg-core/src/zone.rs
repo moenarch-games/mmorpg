@@ -155,6 +155,8 @@ pub(crate) struct PlayerState {
     pub(crate) quests: crate::QuestLog,
     /// The tick the quest log last changed; its sheet is sent then.
     pub(crate) quests_changed_at: u64,
+    /// Waystones the character unlocked by exploration (#145).
+    pub(crate) waystones: crate::WaystoneSet,
 }
 
 impl PlayerState {
@@ -206,6 +208,7 @@ impl PlayerState {
             chat: Vec::new(),
             quests: crate::QuestLog::default(),
             quests_changed_at: tick,
+            waystones: crate::WaystoneSet::EMPTY,
         }
     }
 
@@ -728,6 +731,7 @@ impl ZoneSimulation {
                 Some(PlayerIntent::CompleteQuest { npc, quest, choice })
             }
             ZoneCommand::AbandonQuest { quest } => Some(PlayerIntent::AbandonQuest { quest }),
+            ZoneCommand::UseWaystone { waystone } => Some(PlayerIntent::UseWaystone(waystone)),
         };
         if let Some(intent) = intent {
             if player.intents.len() < MAX_PENDING_INTENTS {
@@ -808,6 +812,7 @@ impl ZoneSimulation {
             player.jump_pending = false;
         }
         self.update_interest()?;
+        self.discover_waystones();
         self.advance_casts(now)?;
         self.advance_projectiles(now)?;
         self.advance_auras(now)?;

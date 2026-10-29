@@ -401,6 +401,7 @@ impl GameUi {
         self.quest_log(ctx, frame, &mut intents);
         self.npc_dialog(ctx, frame, snapshot, npc, &mut intents);
         self.loot(ctx, snapshot, &mut intents);
+        waystone_window(ctx, frame, snapshot, &mut intents);
         intents
     }
 
@@ -1033,6 +1034,61 @@ fn auras(ui: &mut egui::Ui, auras: &[mmorpg_core::AuraView]) {
                 .on_hover_text(aura.kind.name());
         }
     });
+}
+
+/// The waystone panel (#145): while the living viewer stands within reach of a stone, its
+/// unlocked destinations, each one click away. The zone checks reach, unlocks and combat.
+fn waystone_window(
+    ctx: &egui::Context,
+    frame: &UiFrame<'_>,
+    snapshot: &ZoneSnapshot,
+    intents: &mut Vec<UiIntent>,
+) {
+    if snapshot.viewer.dead {
+        return;
+    }
+    let Some(viewer) = snapshot.entities.first() else {
+        return;
+    };
+    let Some(here) =
+        mmorpg_core::waystone_within_reach(frame.content, [viewer.position[0], viewer.position[2]])
+    else {
+        return;
+    };
+    let name = mmorpg_core::waystone(here).map_or("Waystone", |site| site.name);
+    let unlocked = snapshot.viewer.waystones;
+    egui::Window::new("Waystone")
+        .anchor(Align2::RIGHT_CENTER, Vec2::new(-24.0, 0.0))
+        .resizable(false)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            ui.set_width(220.0);
+            ui.label(RichText::new(name).strong());
+            let destinations = mmorpg_core::WAYSTONES
+                .iter()
+                .filter(|site| site.id != here && unlocked.contains(site.id))
+                .collect::<Vec<_>>();
+            if destinations.is_empty() {
+                ui.label("Explore to discover more waystones.");
+            }
+            for site in destinations {
+                if ui
+                    .add_enabled(!snapshot.viewer.in_combat, egui::Button::new(site.name))
+                    .clicked()
+                {
+                    intents.push(UiIntent::Command(ZoneCommand::UseWaystone {
+                        waystone: site.id,
+                    }));
+                }
+            }
+            let undiscovered = mmorpg_core::WAYSTONES
+                .iter()
+                .filter(|site| !unlocked.contains(site.id))
+                .count();
+            if undiscovered > 0 {
+                ui.small(format!("{undiscovered} undiscovered"));
+            }
+        });
 }
 
 fn banner(ctx: &egui::Context, id: &str, text: &str, color: Color32, top: f32) {

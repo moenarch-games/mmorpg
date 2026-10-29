@@ -280,6 +280,7 @@ impl ZoneSimulation {
                 crate::quest::QuestRequest::Abandon { quest },
                 now,
             )?,
+            PlayerIntent::UseWaystone(waystone) => self.use_waystone(player_id, waystone)?,
             PlayerIntent::SelectTarget(None) => {
                 self.update_player(player_id, |player| player.target = None);
                 None
