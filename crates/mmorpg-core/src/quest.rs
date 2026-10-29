@@ -465,7 +465,15 @@ fn available(log: &QuestLog, quest: &Quest) -> bool {
 /// quests of this content that are available apart from being active,
 /// progress within each objective's count (zero for collect objectives),
 /// and turned-in quests whose prerequisites were turned in.
+///
+/// A quest log belongs to the character, not the zone (#145): content that
+/// offers no quests of its own, such as the Seam Test zones, checks the log
+/// against the world's quest catalog (Greyhaven Vale's) and carries it
+/// unchanged. Those quests make no progress there.
 pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), ZoneError> {
+    if content.quests().is_empty() && (log.completed != 0 || !log.entries.is_empty()) {
+        return validate_log(&crate::greyhaven_vale::content(), log);
+    }
     let invalid = || Err(ZoneError::new("player quest log is out of range"));
     if log.entries.len() > MAX_QUEST_LOG
         || log

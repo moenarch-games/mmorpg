@@ -518,6 +518,7 @@ impl ZoneSimulation {
         if self.players.remove(&player_id).is_none() {
             return false;
         }
+        self.transfers.waystone_departures.remove(&player_id);
         if let Some(rewards) = &mut self.rewards {
             rewards.remove_player(player_id);
         }

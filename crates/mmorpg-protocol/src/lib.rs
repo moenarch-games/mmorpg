@@ -16,6 +16,7 @@ mod loot;
 mod projection;
 mod quest;
 mod raid;
+mod redirect;
 mod rewards;
 mod transfer;
 mod wire;
@@ -30,6 +31,10 @@ pub use command::{
 pub use projection::{
     DEBRIS_RECORD_BYTES, ENTITY_RECORD_BYTES, EVENT_RECORD_BYTES, MAX_WIRE_ENTITIES,
     PLAYER_SNAPSHOT_FIXED_BYTES, PackedSnapshot, decode_snapshot, encode_snapshot, pack_snapshot,
+};
+pub use redirect::{
+    MAX_REDIRECT_ROUTE_BYTES, RedirectNotice, decode_redirect_notice, encode_redirect_notice,
+    is_redirect_notice,
 };
 pub use rewards::{MAX_REWARD_RECEIPT_BYTES, decode_reward_receipt, encode_reward_receipt};
 pub use transfer::{

@@ -16,7 +16,8 @@
 //! The corridor's crossing strip marks where authority moves: a living player
 //! whose body centre stands in it is due to transfer to the neighbouring zone
 //! ([`crate::ZoneSimulation::seam_crossings`]). The transfer itself is the
-//! same fenced protocol a teleport uses ([`crate::CharacterTransfer`]).
+//! same fenced protocol a teleport uses ([`crate::CharacterTransfer`]); a
+//! host reads both kinds from [`crate::ZoneSimulation::departures`].
 
 use crate::{PlayerId, XzBounds, ZoneError, ZoneId, ZoneSimulation};
 
@@ -116,10 +117,11 @@ impl HandoffCorridor {
     }
 }
 
-/// Where a player standing in a crossing strip continues: the neighbouring
-/// zone and the same body centre and facing in its coordinates.
+/// A player due to leave for another logical zone and where it continues, in
+/// that zone's coordinates: through a seam (the same body centre and facing)
+/// or by waystone (the stone's arrival).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SeamCrossing {
+pub struct Departure {
     pub player: PlayerId,
     pub destination: crate::CharacterLocation,
 }
@@ -156,7 +158,7 @@ impl ZoneSimulation {
     /// in player-ID order, with where each continues. The host starts a
     /// transfer for each one it is not already moving.
     #[must_use]
-    pub fn seam_crossings(&self) -> Vec<SeamCrossing> {
+    pub fn seam_crossings(&self) -> Vec<Departure> {
         let corridors = self.content.handoff_corridors();
         if corridors.is_empty() {
             return Vec::new();
@@ -169,7 +171,7 @@ impl ZoneSimulation {
                 let corridor = corridors
                     .iter()
                     .find(|corridor| corridor.crossing.contains(at.x, at.z))?;
-                Some(SeamCrossing {
+                Some(Departure {
                     player: player_id,
                     destination: crate::CharacterLocation {
                         zone_id: corridor.neighbor,
@@ -183,5 +185,48 @@ impl ZoneSimulation {
                 })
             })
             .collect()
+    }
+
+    /// Every player due to leave this zone, in player-ID order: the seam
+    /// crossings and the living travellers to a waystone of another zone
+    /// ([`crate::ZoneCommand::UseWaystone`]). A host freezes each one with
+    /// [`Self::freeze_for_transfer`] toward its destination; one it cannot
+    /// move cancels a waystone departure with [`Self::cancel_departure`].
+    #[must_use]
+    pub fn departures(&self) -> Vec<Departure> {
+        let mut departures = self.seam_crossings();
+        departures.extend(
+            self.transfers
+                .waystone_departures
+                .iter()
+                .filter(|(player_id, _)| {
+                    self.players
+                        .get(player_id)
+                        .is_some_and(crate::zone::PlayerState::is_alive)
+                })
+                .map(|(&player, &destination)| Departure {
+                    player,
+                    destination,
+                }),
+        );
+        departures.sort_by_key(|departure| departure.player);
+        departures.dedup_by_key(|departure| departure.player);
+        departures
+    }
+
+    /// The player's departure, if it is due to leave.
+    #[must_use]
+    pub fn departure(&self, player_id: PlayerId) -> Option<Departure> {
+        self.departures()
+            .into_iter()
+            .find(|departure| departure.player == player_id)
+    }
+
+    /// Drops the player's pending waystone departure; it stays where it is.
+    pub fn cancel_departure(&mut self, player_id: PlayerId) -> bool {
+        self.transfers
+            .waystone_departures
+            .remove(&player_id)
+            .is_some()
     }
 }

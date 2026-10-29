@@ -10,6 +10,8 @@ use crate::{PROTOCOL_ID, ProtocolError};
 
 pub(crate) const CANONICAL_SNAPSHOT_SCOPE: u8 = 1;
 pub(crate) const PLAYER_SNAPSHOT_SCOPE: u8 = 2;
+/// A departed player's redirect notice in place of its projection (#145).
+pub(crate) const REDIRECT_SCOPE: u8 = 3;
 /// Protocol ID (3 bytes), scope, zone ID and tick start every snapshot.
 pub(crate) const COMMON_HEADER_BYTES: usize = 16;
 /// Kind code then `u32` ID; kind 0 (with ID 0) means none.
