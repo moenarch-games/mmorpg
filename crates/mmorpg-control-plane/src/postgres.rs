@@ -6,7 +6,13 @@
 //! All returned grants are explicitly UNCONFIRMED. The application must confirm
 //! replicated durability before constructing/renewing a LocalZonePermit. This
 //! module owns no replication topology, placement policy, transport or gameplay.
-use crate::{HostId, ZoneLease};
+//!
+//! [`PostgresHandoffs`] keeps the fenced cross-zone handoff records (#145) in
+//! the same schema, checked against these zone grants in one transaction.
+use crate::{
+    ControlPlaneError, EntityId, HandoffAuthority, HandoffPhase, HandoffRecord, HandoffTicket,
+    HostId, TransferId, ZoneLease, speaks_for,
+};
 use mmorpg_core::ZoneId;
 use postgres::{CancelToken, Client, Config, GenericClient, NoTls, Row, Transaction};
 use std::{
@@ -15,8 +21,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const SCHEMA_VERSION: i32 = 1;
-const MIGRATION: &str = include_str!("../migrations/0001_directory.sql");
+/// The schema migrations, in order; version `n` is `MIGRATIONS[n - 1]`.
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_directory.sql"),
+    include_str!("../migrations/0002_handoffs.sql"),
+];
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+pub const SCHEMA_VERSION: i32 = MIGRATIONS.len() as i32;
 
 #[derive(Debug)]
 pub enum DirectoryStoreError {
@@ -187,18 +198,19 @@ pub fn migrate(client: &mut Client) -> Result<(), DirectoryStoreError> {
         )
         .map_err(backend)?
         .get(0);
-    match version {
-        None => {
-            transaction.batch_execute(MIGRATION).map_err(backend)?;
-            transaction
-                .execute(
-                    "INSERT INTO mmorpg_coordination.migrations (version) VALUES ($1)",
-                    &[&SCHEMA_VERSION],
-                )
-                .map_err(backend)?;
-        }
-        Some(SCHEMA_VERSION) => {}
-        Some(_) => return Err(backend("unsupported directory schema")),
+    let applied = version.unwrap_or(0);
+    if !(0..=SCHEMA_VERSION).contains(&applied) {
+        return Err(backend("unsupported directory schema"));
+    }
+    let applied = usize::try_from(applied).map_err(backend)?;
+    for (version, migration) in (1_i32..).zip(MIGRATIONS).skip(applied) {
+        transaction.batch_execute(migration).map_err(backend)?;
+        transaction
+            .execute(
+                "INSERT INTO mmorpg_coordination.migrations (version) VALUES ($1)",
+                &[&version],
+            )
+            .map_err(backend)?;
     }
     transaction.commit().map_err(backend)
 }
@@ -369,4 +381,332 @@ fn integer(value: u64) -> Result<i64, DirectoryStoreError> {
 }
 fn backend(cause: impl fmt::Display) -> DirectoryStoreError {
     DirectoryStoreError::Backend(cause.to_string())
+}
+
+/// The durable [`HandoffAuthority`] (#145): handoff records in
+/// `mmorpg_coordination.handoffs`, each step one transaction that first
+/// share-locks the zone grants it names (`lock_current_writer`), so no grant
+/// changes between the check and the record write. The rules are those of
+/// [`crate::HandoffRegistry`].
+pub struct PostgresHandoffs {
+    client: Client,
+}
+
+impl PostgresHandoffs {
+    /// Connects to `url`; `timeout` bounds connecting and every statement.
+    pub fn connect(url: &str, timeout: Duration) -> Result<Self, DirectoryStoreError> {
+        Ok(Self {
+            client: PostgresZoneDirectory::connect(url, timeout)?.client,
+        })
+    }
+
+    #[must_use]
+    pub fn cancel_token(&self) -> CancelToken {
+        self.client.cancel_token()
+    }
+
+    fn step<R>(
+        &mut self,
+        body: impl FnOnce(&mut Transaction<'_>) -> Result<R, ControlPlaneError>,
+    ) -> Result<R, ControlPlaneError> {
+        let mut transaction = self.client.transaction().map_err(unavailable)?;
+        transaction
+            .batch_execute("SET LOCAL synchronous_commit=on")
+            .map_err(unavailable)?;
+        let result = body(&mut transaction)?;
+        transaction.commit().map_err(unavailable)?;
+        Ok(result)
+    }
+}
+
+const PREPARED: i16 = 0;
+const ACCEPTED: i16 = 1;
+const COMMITTED: i16 = 2;
+const ABORTED: i16 = 3;
+
+const fn phase_code(phase: HandoffPhase) -> i16 {
+    match phase {
+        HandoffPhase::Prepared => PREPARED,
+        HandoffPhase::Accepted => ACCEPTED,
+        HandoffPhase::Committed => COMMITTED,
+        HandoffPhase::Aborted => ABORTED,
+    }
+}
+
+fn phase_of(code: i16) -> Result<HandoffPhase, ControlPlaneError> {
+    Ok(match code {
+        PREPARED => HandoffPhase::Prepared,
+        ACCEPTED => HandoffPhase::Accepted,
+        COMMITTED => HandoffPhase::Committed,
+        ABORTED => HandoffPhase::Aborted,
+        _ => return Err(unavailable("invalid handoff phase")),
+    })
+}
+
+/// Unsigned IDs are stored bit for bit in `bigint` columns.
+const fn signed(value: u64) -> i64 {
+    i64::from_be_bytes(value.to_be_bytes())
+}
+
+const fn unsigned(value: i64) -> u64 {
+    u64::from_be_bytes(value.to_be_bytes())
+}
+
+fn unavailable(cause: impl fmt::Display) -> ControlPlaneError {
+    ControlPlaneError::Backend(cause.to_string())
+}
+
+fn sql_integer(value: u64) -> Result<i64, ControlPlaneError> {
+    value.try_into().map_err(unavailable)
+}
+
+/// Share-locks `lease`'s zone row and fails unless it is the current grant.
+fn ensure_current_in(
+    client: &mut impl GenericClient,
+    lease: &ZoneLease,
+) -> Result<(), ControlPlaneError> {
+    let zone = i64::from(lease.zone_id.get());
+    let status: i16 = client
+        .query_one(
+            "SELECT mmorpg_coordination.lock_current_writer($1,$2,$3)",
+            &[&zone, &sql_integer(lease.epoch)?, &lease.host_id.as_str()],
+        )
+        .map_err(unavailable)?
+        .get(0);
+    match status {
+        2 => Ok(()),
+        1 => Err(ControlPlaneError::LeaseExpired {
+            zone_id: lease.zone_id,
+            epoch: lease.epoch,
+            expires_at_tick: lease.expires_at_tick,
+            observed_at_tick: lease.expires_at_tick,
+        }),
+        0 => {
+            let row = client
+                .query_opt(
+                    "SELECT epoch,host_id,retired FROM mmorpg_coordination.zones WHERE zone_id=$1",
+                    &[&zone],
+                )
+                .map_err(unavailable)?;
+            let Some(row) = row.filter(|row| !row.get::<_, bool>("retired")) else {
+                return Err(ControlPlaneError::ZoneNotAssigned(lease.zone_id));
+            };
+            let actual_epoch = u64::try_from(row.get::<_, i64>("epoch")).map_err(unavailable)?;
+            if actual_epoch != lease.epoch {
+                return Err(ControlPlaneError::StaleLease {
+                    zone_id: lease.zone_id,
+                    expected_epoch: lease.epoch,
+                    actual_epoch,
+                });
+            }
+            Err(ControlPlaneError::LeaseOwnerMismatch(lease.zone_id))
+        }
+        _ => Err(unavailable("invalid directory fence result")),
+    }
+}
+
+fn lease_of(row: &Row, prefix: &str) -> Result<ZoneLease, ControlPlaneError> {
+    let zone: i64 = row.get(format!("{prefix}_zone").as_str());
+    let host: String = row.get(format!("{prefix}_host").as_str());
+    let epoch: i64 = row.get(format!("{prefix}_epoch").as_str());
+    Ok(ZoneLease {
+        zone_id: ZoneId::new(zone.try_into().map_err(unavailable)?),
+        host_id: HostId::new(host).map_err(unavailable)?,
+        epoch: epoch.try_into().map_err(unavailable)?,
+        // Records name grants by identity; the directory holds the deadline.
+        expires_at_tick: 0,
+    })
+}
+
+/// The record of `transfer_id`, row-locked for this transaction.
+fn record_in(
+    client: &mut impl GenericClient,
+    transfer_id: TransferId,
+) -> Result<Option<HandoffRecord>, ControlPlaneError> {
+    let row = client
+        .query_opt(
+            "SELECT entity_id,source_zone,source_host,source_epoch,destination_zone,destination_host,destination_epoch,phase FROM mmorpg_coordination.handoffs WHERE transfer_id=$1 FOR UPDATE",
+            &[&signed(transfer_id.get())],
+        )
+        .map_err(unavailable)?;
+    row.map(|row| {
+        Ok(HandoffRecord {
+            ticket: HandoffTicket {
+                transfer_id,
+                entity_id: EntityId::new(unsigned(row.get("entity_id"))),
+                source: lease_of(&row, "source")?,
+                destination: lease_of(&row, "destination")?,
+            },
+            phase: phase_of(row.get("phase"))?,
+        })
+    })
+    .transpose()
+}
+
+fn set_phase(
+    client: &mut impl GenericClient,
+    transfer_id: TransferId,
+    phase: HandoffPhase,
+) -> Result<(), ControlPlaneError> {
+    client
+        .execute(
+            "UPDATE mmorpg_coordination.handoffs SET phase=$2 WHERE transfer_id=$1",
+            &[&signed(transfer_id.get()), &phase_code(phase)],
+        )
+        .map_err(unavailable)?;
+    Ok(())
+}
+
+impl HandoffAuthority for PostgresHandoffs {
+    fn ensure_current(&mut self, lease: &ZoneLease) -> Result<(), ControlPlaneError> {
+        self.step(|transaction| ensure_current_in(transaction, lease))
+    }
+
+    fn current_lease(&mut self, zone_id: ZoneId) -> Result<Option<ZoneLease>, ControlPlaneError> {
+        Ok(read_assignment(&mut self.client, zone_id)
+            .map_err(unavailable)?
+            .filter(|assignment| !assignment.retired)
+            .map(|assignment| assignment.lease))
+    }
+
+    fn record(
+        &mut self,
+        transfer_id: TransferId,
+    ) -> Result<Option<HandoffRecord>, ControlPlaneError> {
+        self.step(|transaction| record_in(transaction, transfer_id))
+    }
+
+    fn prepare(&mut self, ticket: HandoffTicket) -> Result<HandoffPhase, ControlPlaneError> {
+        if ticket.source.zone_id == ticket.destination.zone_id {
+            return Err(ControlPlaneError::SameZoneTransfer(ticket.source.zone_id));
+        }
+        self.step(|transaction| {
+            ensure_current_in(transaction, &ticket.source)?;
+            ensure_current_in(transaction, &ticket.destination)?;
+            // Serialize transfers of one entity, also before it has a row.
+            transaction
+                .execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+                    &[&format!("mmorpg-handoff:{}", ticket.entity_id.get())],
+                )
+                .map_err(unavailable)?;
+            if let Some(existing) = record_in(transaction, ticket.transfer_id)? {
+                if existing.ticket.entity_id != ticket.entity_id
+                    || !existing.ticket.source.same_authority(&ticket.source)
+                    || !existing
+                        .ticket
+                        .destination
+                        .same_authority(&ticket.destination)
+                {
+                    return Err(ControlPlaneError::TransferIdCollision(ticket.transfer_id));
+                }
+                return Ok(existing.phase);
+            }
+            let busy = transaction
+                .query_opt(
+                    "SELECT 1 FROM mmorpg_coordination.handoffs WHERE entity_id=$1 AND phase IN (0,1)",
+                    &[&signed(ticket.entity_id.get())],
+                )
+                .map_err(unavailable)?;
+            if busy.is_some() {
+                return Err(ControlPlaneError::EntityTransferInProgress(
+                    ticket.entity_id,
+                ));
+            }
+            let (source, destination) = (&ticket.source, &ticket.destination);
+            transaction
+                .execute(
+                    "INSERT INTO mmorpg_coordination.handoffs (transfer_id,entity_id,source_zone,source_host,source_epoch,destination_zone,destination_host,destination_epoch,phase) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+                    &[
+                        &signed(ticket.transfer_id.get()),
+                        &signed(ticket.entity_id.get()),
+                        &i64::from(source.zone_id.get()),
+                        &source.host_id.as_str(),
+                        &sql_integer(source.epoch)?,
+                        &i64::from(destination.zone_id.get()),
+                        &destination.host_id.as_str(),
+                        &sql_integer(destination.epoch)?,
+                        &PREPARED,
+                    ],
+                )
+                .map_err(unavailable)?;
+            Ok(HandoffPhase::Prepared)
+        })
+    }
+
+    fn accept(
+        &mut self,
+        transfer_id: TransferId,
+        destination: &ZoneLease,
+    ) -> Result<HandoffPhase, ControlPlaneError> {
+        self.step(|transaction| {
+            ensure_current_in(transaction, destination)?;
+            let record = record_in(transaction, transfer_id)?
+                .ok_or(ControlPlaneError::UnknownTransfer(transfer_id))?;
+            if !record.ticket.destination.same_authority(destination) {
+                return Err(ControlPlaneError::TransferLeaseMismatch(transfer_id));
+            }
+            match record.phase {
+                HandoffPhase::Aborted => Err(ControlPlaneError::TransferAborted(transfer_id)),
+                HandoffPhase::Prepared => {
+                    ensure_current_in(transaction, &record.ticket.source)?;
+                    set_phase(transaction, transfer_id, HandoffPhase::Accepted)?;
+                    Ok(HandoffPhase::Accepted)
+                }
+                phase @ (HandoffPhase::Accepted | HandoffPhase::Committed) => {
+                    ensure_current_in(transaction, &record.ticket.source)?;
+                    Ok(phase)
+                }
+            }
+        })
+    }
+
+    fn commit(
+        &mut self,
+        transfer_id: TransferId,
+        source: &ZoneLease,
+    ) -> Result<HandoffPhase, ControlPlaneError> {
+        self.step(|transaction| {
+            ensure_current_in(transaction, source)?;
+            let record = record_in(transaction, transfer_id)?
+                .ok_or(ControlPlaneError::UnknownTransfer(transfer_id))?;
+            if !speaks_for(&record.ticket.source, source) {
+                return Err(ControlPlaneError::TransferLeaseMismatch(transfer_id));
+            }
+            match record.phase {
+                HandoffPhase::Prepared => Err(ControlPlaneError::TransferNotAccepted(transfer_id)),
+                HandoffPhase::Aborted => Err(ControlPlaneError::TransferAborted(transfer_id)),
+                HandoffPhase::Accepted => {
+                    set_phase(transaction, transfer_id, HandoffPhase::Committed)?;
+                    Ok(HandoffPhase::Committed)
+                }
+                HandoffPhase::Committed => Ok(HandoffPhase::Committed),
+            }
+        })
+    }
+
+    fn abort(
+        &mut self,
+        transfer_id: TransferId,
+        source: &ZoneLease,
+    ) -> Result<HandoffPhase, ControlPlaneError> {
+        self.step(|transaction| {
+            ensure_current_in(transaction, source)?;
+            let record = record_in(transaction, transfer_id)?
+                .ok_or(ControlPlaneError::UnknownTransfer(transfer_id))?;
+            if !speaks_for(&record.ticket.source, source) {
+                return Err(ControlPlaneError::TransferLeaseMismatch(transfer_id));
+            }
+            match record.phase {
+                HandoffPhase::Prepared => {
+                    set_phase(transaction, transfer_id, HandoffPhase::Aborted)?;
+                    Ok(HandoffPhase::Aborted)
+                }
+                HandoffPhase::Aborted => Ok(HandoffPhase::Aborted),
+                HandoffPhase::Accepted | HandoffPhase::Committed => {
+                    Err(ControlPlaneError::TransferAlreadyAccepted(transfer_id))
+                }
+            }
+        })
+    }
 }

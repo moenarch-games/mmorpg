@@ -196,6 +196,8 @@ pub enum ControlPlaneError {
     TransferAborted(TransferId),
     TransferAlreadyAccepted(TransferId),
     EntityTransferInProgress(EntityId),
+    /// The durable directory could not answer; nothing is known to have changed.
+    Backend(String),
 }
 
 impl fmt::Display for ControlPlaneError {
@@ -311,6 +313,7 @@ impl fmt::Display for ControlPlaneError {
                     transfer_id.get()
                 )
             }
+            Self::Backend(message) => write!(formatter, "zone directory backend: {message}"),
         }
     }
 }
@@ -771,7 +774,7 @@ pub enum HandoffPhase {
 /// `lease` speaks for the zone of `granted`: the same authority, or a newer
 /// epoch of that zone after the control plane fenced the older host (which
 /// lost its host-phase transfer state when it stopped).
-fn speaks_for(granted: &ZoneLease, lease: &ZoneLease) -> bool {
+pub(crate) fn speaks_for(granted: &ZoneLease, lease: &ZoneLease) -> bool {
     granted.same_authority(lease)
         || (granted.zone_id == lease.zone_id && lease.epoch > granted.epoch)
 }
@@ -931,6 +934,93 @@ impl HandoffRegistry {
             }
         }
         Ok(record.phase)
+    }
+}
+
+/// The fenced zone-lease checks and handoff records one host operation needs
+/// (#145). [`ReferenceAuthority`] is the in-memory reference model; the
+/// PostgreSQL directory (`postgres::PostgresHandoffs`, TECH-001) is the
+/// durable one zone hosts share. Both follow the same rules: `Accepted` is
+/// the decision point, and every step is fenced by the leases it names.
+pub trait HandoffAuthority {
+    /// Fails unless `lease` is its zone's current, unexpired grant.
+    fn ensure_current(&mut self, lease: &ZoneLease) -> Result<(), ControlPlaneError>;
+    /// The zone's current grant, if any.
+    fn current_lease(&mut self, zone_id: ZoneId) -> Result<Option<ZoneLease>, ControlPlaneError>;
+    fn record(
+        &mut self,
+        transfer_id: TransferId,
+    ) -> Result<Option<HandoffRecord>, ControlPlaneError>;
+    fn prepare(&mut self, ticket: HandoffTicket) -> Result<HandoffPhase, ControlPlaneError>;
+    fn accept(
+        &mut self,
+        transfer_id: TransferId,
+        destination: &ZoneLease,
+    ) -> Result<HandoffPhase, ControlPlaneError>;
+    fn commit(
+        &mut self,
+        transfer_id: TransferId,
+        source: &ZoneLease,
+    ) -> Result<HandoffPhase, ControlPlaneError>;
+    fn abort(
+        &mut self,
+        transfer_id: TransferId,
+        source: &ZoneLease,
+    ) -> Result<HandoffPhase, ControlPlaneError>;
+}
+
+/// The in-memory control plane at one control-plane tick.
+pub struct ReferenceAuthority<'a> {
+    pub directory: &'a ZoneDirectory,
+    pub handoffs: &'a mut HandoffRegistry,
+    pub now_tick: u64,
+}
+
+impl HandoffAuthority for ReferenceAuthority<'_> {
+    fn ensure_current(&mut self, lease: &ZoneLease) -> Result<(), ControlPlaneError> {
+        self.directory.ensure_current(lease, self.now_tick)
+    }
+
+    fn current_lease(&mut self, zone_id: ZoneId) -> Result<Option<ZoneLease>, ControlPlaneError> {
+        Ok(self.directory.lease(zone_id).cloned())
+    }
+
+    fn record(
+        &mut self,
+        transfer_id: TransferId,
+    ) -> Result<Option<HandoffRecord>, ControlPlaneError> {
+        Ok(self.handoffs.record(transfer_id).cloned())
+    }
+
+    fn prepare(&mut self, ticket: HandoffTicket) -> Result<HandoffPhase, ControlPlaneError> {
+        self.handoffs.prepare(ticket, self.directory, self.now_tick)
+    }
+
+    fn accept(
+        &mut self,
+        transfer_id: TransferId,
+        destination: &ZoneLease,
+    ) -> Result<HandoffPhase, ControlPlaneError> {
+        self.handoffs
+            .accept(transfer_id, destination, self.directory, self.now_tick)
+    }
+
+    fn commit(
+        &mut self,
+        transfer_id: TransferId,
+        source: &ZoneLease,
+    ) -> Result<HandoffPhase, ControlPlaneError> {
+        self.handoffs
+            .commit(transfer_id, source, self.directory, self.now_tick)
+    }
+
+    fn abort(
+        &mut self,
+        transfer_id: TransferId,
+        source: &ZoneLease,
+    ) -> Result<HandoffPhase, ControlPlaneError> {
+        self.handoffs
+            .abort(transfer_id, source, self.directory, self.now_tick)
     }
 }
 
