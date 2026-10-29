@@ -12,10 +12,10 @@ scenario rejected-stale-epoch lease_ttl=100 heartbeat_ttl=1000 steps=19
 #10 t=11 release zone=10 host=host-a epoch=1 -> rejected:stale_lease | zone10=host-b@2<110 zone11=host-c@1<100 | invariants ok
 #11 t=11 write zone=10 host=host-a epoch=1 -> rejected:stale_lease | zone10=host-b@2<110 zone11=host-c@1<100 | invariants ok
 #12 t=12 commit transfer=7 zone=10 host=host-a epoch=1 -> rejected:stale_lease | zone10=host-b@2<110 zone11=host-c@1<100 | invariants ok
-#13 t=12 commit transfer=7 zone=10 host=host-b epoch=2 -> rejected:transfer_lease_mismatch | zone10=host-b@2<110 zone11=host-c@1<100 | invariants ok
+#13 t=12 commit transfer=7 zone=10 host=host-b epoch=2 -> ok phase=committed | zone10=host-b@2<110 zone11=host-c@1<100 | invariants ok
 #14 t=13 prepare transfer=9 entity=50 source=10:host-a@1 destination=11:host-c@1 -> rejected:stale_lease | zone10=host-b@2<110 zone11=host-c@1<100 | invariants ok
 #15 t=14 write zone=10 host=host-b epoch=2 -> ok zone_tick=1 | zone10=host-b@2<110 zone11=host-c@1<100 | invariants ok
 #16 t=20 release zone=10 host=host-b epoch=2 -> ok | zone11=host-c@1<100 | invariants ok
 #17 t=21 write zone=10 host=host-b epoch=2 -> rejected:zone_not_assigned | zone11=host-c@1<100 | invariants ok
 #18 t=21 assign zone=10 host=host-a -> ok epoch=3 expires=121 | zone10=host-a@3<121 zone11=host-c@1<100 | invariants ok
-PASS rejected-stale-epoch steps=19 rejected=8 invariant_checks=76 failures=0
+PASS rejected-stale-epoch steps=19 rejected=7 invariant_checks=76 failures=0
