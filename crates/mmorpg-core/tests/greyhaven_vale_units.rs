@@ -263,6 +263,11 @@ fn spawns_populate_their_subzones() {
     let content = greyhaven_vale::content();
     let mut counts: BTreeMap<(AreaId, &str), usize> = BTreeMap::new();
     for spawn in content.creature_spawns() {
+        // Night raiders (#530) stand on the farm's outskirts only for a committed incident and
+        // march rather than wander; `night_raid` covers them.
+        if content.is_raider(spawn.id) {
+            continue;
+        }
         let template = content.creature_template(spawn.template).unwrap();
         let area = area_at(spawn.position[0], spawn.position[1])
             .unwrap_or_else(|| panic!("spawn {} lies outside every area", spawn.id.get()));
@@ -313,7 +318,8 @@ fn spawns_populate_their_subzones() {
         ),
     ]);
     assert_eq!(counts, expected);
-    assert_eq!(content.creature_spawns().len(), 100);
+    // 100 authored creatures and props, then three approaches of six night raiders (#530).
+    assert_eq!(content.creature_spawns().len(), 118);
 }
 
 /// No creature wanders within the interest radius (plus a margin) of any
@@ -328,6 +334,8 @@ fn creatures_stay_out_of_sight_of_the_spawn_plaza() {
         if content
             .creature_template(spawn.template)
             .is_some_and(|template| template.prop().is_some())
+            // Night raiders (#530) stand only during an incident, on the farm's outskirts.
+            || content.is_raider(spawn.id)
         {
             continue;
         }
@@ -393,10 +401,18 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
     let mut first = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let mut second = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let start = first.snapshot().unwrap();
-    assert_eq!(start.creatures.len(), 100);
+    assert_eq!(start.creatures.len(), 118);
     for (creature, spawn) in start.creatures.iter().zip(content.creature_spawns()) {
         let template = content.creature_template(spawn.template).unwrap();
         assert_eq!(creature.creature_id, spawn.id);
+        // The 18 night raiders (#530) wait, without a body, for an incident.
+        if content.is_raider(spawn.id) {
+            assert!(matches!(
+                creature.life,
+                mmorpg_core::CreatureLife::Despawned { .. }
+            ));
+            continue;
+        }
         assert!((template.min_level..=template.max_level).contains(&creature.level));
         assert_eq!(creature.health, template.max_health(creature.level));
         // Spawned on the ground, out on the hills too (#159): the physics heightfield triangles stay
@@ -483,6 +499,9 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         .iter()
         .zip(content.creature_spawns())
     {
+        if content.is_raider(spawn.id) {
+            continue;
+        }
         let dx =
             i64::from(mmorpg_core::physics::to_units(creature.position)[0] - spawn.position[0]);
         let dz =

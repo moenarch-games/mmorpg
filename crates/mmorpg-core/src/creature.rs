@@ -75,6 +75,8 @@ pub(crate) struct CreatureState {
     pub(crate) auras: Vec<crate::Aura>,
     /// A boss's current attempt (#276): locked scaling and contributors.
     pub(crate) encounter: Option<crate::BossEncounter>,
+    /// A night raider's incident and march (#530); `None` for every other creature.
+    pub(crate) raid: Option<crate::RaidMember>,
 }
 
 impl CreatureState {
@@ -277,6 +279,39 @@ impl ZoneSimulation {
                 cast: None,
                 auras: Vec::new(),
                 encounter: None,
+                raid: None,
+            },
+        );
+        Ok(())
+    }
+
+    /// A night raider (#530) before any incident committed it: no body and no life yet, and it
+    /// never respawns on its own.
+    pub(crate) fn reserve_raider(&mut self, id: CreatureId) -> Result<(), ZoneError> {
+        let content = Arc::clone(&self.content);
+        let (_, template) = Self::creature_content(&content, id)?;
+        self.creatures.insert(
+            id,
+            CreatureState {
+                generation: 1,
+                level: template.min_level,
+                health: 0,
+                facing: 0,
+                life: Life::Despawned { died_at: 0 },
+                ai: CreatureAi::Idle {
+                    timer: 0,
+                    destination: None,
+                },
+                threat: Vec::new(),
+                swing_timer: 0,
+                combat_timer: 0,
+                tapped_by: None,
+                loot: None,
+                ability_timer: 0,
+                cast: None,
+                auras: Vec::new(),
+                encounter: None,
+                raid: None,
             },
         );
         Ok(())

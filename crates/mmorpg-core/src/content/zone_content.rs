@@ -72,6 +72,8 @@ pub struct ZoneContent {
     waters: Vec<crate::WaterVolume>,
     climbing: crate::ClimbSurfaces,
     handoff_corridors: Vec<crate::HandoffCorridor>,
+    /// The night raid target (#530), if the zone has one.
+    raid: Option<crate::RaidSite>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -191,6 +193,7 @@ impl ZoneContent {
             waters: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
+            raid: None,
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -233,6 +236,7 @@ impl ZoneContent {
             waters: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
+            raid: None,
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -930,6 +934,30 @@ impl ZoneContent {
         Ok(())
     }
 
+    /// Adds the night raid target (#530). Its reserved raiders are content spawns that stand
+    /// only while an incident commits them.
+    pub fn with_raid(mut self, site: crate::RaidSite) -> Result<Self, ZoneError> {
+        site.validate(&self)?;
+        self.raid = Some(site);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The night raid target, if any.
+    #[must_use]
+    pub const fn raid(&self) -> Option<&crate::RaidSite> {
+        self.raid.as_ref()
+    }
+
+    /// Whether `creature` is a raider reserved for night raids: it stands only while an
+    /// incident commits it and never respawns on its own.
+    #[must_use]
+    pub fn is_raider(&self, creature: CreatureId) -> bool {
+        self.raid
+            .as_ref()
+            .is_some_and(|site| site.raiders().any(|id| id == creature))
+    }
+
     /// Ordered by NPC ID.
     #[must_use]
     pub fn routines(&self) -> &[crate::NpcRoutine] {
@@ -982,7 +1010,7 @@ impl ZoneContent {
     }
 
     fn compute_player_combat_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_water_fingerprint();
+        let fingerprint = self.compute_raid_fingerprint();
         if self.player_combat == PlayerCombatPolicy::Safe {
             return fingerprint;
         }
@@ -990,6 +1018,35 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/player-combat-v1");
         hash.u64(fingerprint);
         hash.u8(1);
+        hash.finish()
+    }
+
+    fn compute_raid_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_water_fingerprint();
+        let Some(site) = &self.raid else {
+            return fingerprint;
+        };
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/raid-v1");
+        hash.u64(fingerprint);
+        hash.text(&site.name);
+        hash.u32(site.objective);
+        hash.i32s(site.footprint.as_flattened());
+        hash.len(site.approaches.len());
+        for way in &site.approaches {
+            hash.len(way.raiders.len());
+            for raider in &way.raiders {
+                hash.u32(raider.get());
+            }
+            hash.len(way.route.len());
+            hash.i32s(way.route.as_flattened());
+            hash.i32s(&way.spread);
+            hash.len(way.exit.len());
+            hash.i32s(way.exit.as_flattened());
+        }
+        hash.len(site.retreat.len());
+        hash.i32s(site.retreat.as_flattened());
+        hash.i32s(&site.camp_spread);
         hash.finish()
     }
 

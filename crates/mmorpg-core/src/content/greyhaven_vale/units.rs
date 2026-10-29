@@ -371,6 +371,7 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
                     levels: None,
                 }),
         )
+        .chain(super::raid::raider_spawns())
         .collect()
 }
 

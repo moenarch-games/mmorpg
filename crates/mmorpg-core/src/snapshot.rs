@@ -302,6 +302,8 @@ pub struct CanonicalCreatureSnapshot {
     pub abilities: CanonicalCreatureAbilities,
     /// A fighting boss's attempt (#276): locked participants and contributors.
     pub encounter: Option<crate::BossEncounter>,
+    /// A night raider's incident and march (#530).
+    pub raid: Option<crate::RaidMember>,
 }
 
 /// Everything authoritative about a zone at a tick boundary, with its
@@ -333,6 +335,8 @@ pub struct CanonicalZoneSnapshot {
     /// Summoned minions in ID order, and the next minion ID (#295).
     pub minions: Vec<crate::CanonicalMinion>,
     pub next_minion: u32,
+    /// The night raid (#530).
+    pub raid: crate::RaidState,
 }
 
 impl ZoneSimulation {
@@ -448,6 +452,7 @@ impl ZoneSimulation {
                         auras: creature.auras.clone(),
                     },
                     encounter: creature.encounter.clone(),
+                    raid: creature.raid,
                 })
             })
             .collect::<Result<Vec<_>, ZoneError>>()?;
@@ -469,6 +474,7 @@ impl ZoneSimulation {
             pieces: self.canonical_pieces(),
             minions: self.canonical_minions()?,
             next_minion: self.next_minion,
+            raid: self.raid.clone(),
         })
     }
 
@@ -491,6 +497,11 @@ impl ZoneSimulation {
         zone.tick = snapshot.tick;
         zone.rng = ZoneRng::from_state(snapshot.rng_state);
         zone.loot_rng = ZoneRng::from_state(snapshot.loot_rng_state);
+        snapshot.raid.validate(snapshot.tick)?;
+        if zone.content.raid().is_none() && snapshot.raid != crate::RaidState::default() {
+            return Err(ZoneError::new("snapshot raid state needs a raid site"));
+        }
+        zone.raid = snapshot.raid;
         let mut spawn_slots = BTreeSet::new();
         for player in snapshot.players {
             zone.restore_player(player, &mut spawn_slots)?;
@@ -778,12 +789,14 @@ impl ZoneSimulation {
             ));
         }
         let (spawn, template) = Self::creature_content(&content, record.creature_id)?;
+        self.validate_raid_member(&record)?;
         // Bodies and corpses stay inside the world limits and wander points
-        // near their spawn, so AI arithmetic stays in range.
+        // near their spawn (a raider's near its anchor), so AI arithmetic stays in range.
+        let home = record.raid.map_or(spawn.position, |member| member.anchor);
         let wanders_off = matches!(
             record.ai,
             CreatureAi::Idle { destination: Some(to), .. }
-                if !is_wander_point(spawn.position, to, spawn.wander_radius)
+                if !is_wander_point(home, to, spawn.wander_radius)
         );
         if !record
             .position
@@ -944,6 +957,7 @@ impl ZoneSimulation {
                 cast: record.abilities.cast,
                 auras: record.abilities.auras,
                 encounter: record.encounter,
+                raid: record.raid,
             },
         );
         Ok(())
