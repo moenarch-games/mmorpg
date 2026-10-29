@@ -55,6 +55,7 @@ fn player(
         chat: Vec::new(),
         quests: mmorpg_core::QuestLog::default(),
         quests_changed_at: 0,
+        waystones: mmorpg_core::WaystoneSet::EMPTY,
     })
 }
 

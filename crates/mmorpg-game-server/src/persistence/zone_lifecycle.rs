@@ -9,7 +9,6 @@ use game_server::{
     SnapshotCommitFuture,
 };
 use mmorpg_control_plane::LocalZonePermit;
-use mmorpg_core::greyhaven_vale;
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex as HostMutex},
@@ -177,7 +176,7 @@ impl ColdMatchResolver<ZoneGameServerAdapter> for ZoneLifecycle {
                 let image = frozen_resume(store.cold_restore().await?, input);
                 let mut adapter = ZoneGameServerAdapter::with_content(
                     permit.lease().zone_id,
-                    greyhaven_vale::content(),
+                    mmorpg_core::content_for_zone(permit.lease().zone_id),
                 )
                 .map_err(error)?
                 .with_authority(Arc::clone(permit))
@@ -269,7 +268,7 @@ mod tests {
             .unwrap(),
         );
         let id = zone_match_id(fence.lease.zone_id).unwrap();
-        let content = greyhaven_vale::content();
+        let content = mmorpg_core::greyhaven_vale::content();
         let mut adapter =
             ZoneGameServerAdapter::with_content(fence.lease.zone_id, Arc::clone(&content)).unwrap();
         adapter.zone_mut().enable_reward_tracking(256, 64).unwrap();

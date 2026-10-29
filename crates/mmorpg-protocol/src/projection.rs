@@ -171,7 +171,10 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     payload.extend_from_slice(&viewer.experience.to_be_bytes());
     payload.extend_from_slice(&viewer.experience_to_next_level.to_be_bytes());
     payload.extend_from_slice(&viewer.copper.to_be_bytes());
-    payload.push(flag_byte(&[viewer.dead, viewer.in_combat]));
+    // Bits 0 and 1 are the flags, bits 2.. the unlocked waystones (#145).
+    payload.push(
+        flag_byte(&[viewer.dead, viewer.in_combat]) | viewer_waystone_bits(viewer.waystones)?,
+    );
     encode_entity_ref(&mut payload, viewer.target);
     payload.push(
         viewer
@@ -351,6 +354,16 @@ const fn resource_code(kind: ResourceKind) -> u8 {
         ResourceKind::Mana => 3,
         ResourceKind::Faith => 4,
     }
+}
+
+/// The viewer's unlocked waystones in the flag byte's six upper bits: the network has at
+/// most [`mmorpg_core::MAX_WAYSTONES`] stones.
+fn viewer_waystone_bits(waystones: mmorpg_core::WaystoneSet) -> Result<u8, ProtocolError> {
+    u8::try_from(waystones.bits())
+        .ok()
+        .filter(|bits| *bits < 1 << 6)
+        .map(|bits| bits << 2)
+        .ok_or_else(|| ProtocolError::new("unlocked waystones exceed the viewer flag bits"))
 }
 
 fn encode_cast(payload: &mut Vec<u8>, cast: Option<CastView>) {
@@ -595,7 +608,9 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
     let experience = u32::from_be_bytes(take(payload, &mut offset)?);
     let experience_to_next_level = u32::from_be_bytes(take(payload, &mut offset)?);
     let copper = u32::from_be_bytes(take(payload, &mut offset)?);
-    let [dead, in_combat] = read_flags(read_u8(payload, &mut offset)?)?;
+    let flags = read_u8(payload, &mut offset)?;
+    let [dead, in_combat] = read_flags(flags & 0b11)?;
+    let waystones = crate::wire::decode_waystones(u32::from(flags >> 2))?;
     let target = decode_entity_ref(payload, &mut offset)?;
     if !(1..=10).contains(&level)
         || (level == 10 && (experience != 0 || experience_to_next_level != 0))
@@ -858,6 +873,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
             stance,
             combo,
             breath,
+            waystones,
         },
         cooldowns,
         auras,
@@ -1110,6 +1126,7 @@ mod tests {
                 stance: None,
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
+                waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: vec![
                 Cooldown {
@@ -1580,7 +1597,8 @@ mod tests {
         for (offset, value, message) in [
             (0, 4, "unsupported snapshot protocol id"),
             (3, 1, "unexpected snapshot scope"),
-            (53, 0b100, "reserved flag bits are set"),
+            // Waystone 4 does not exist (#145).
+            (53, 0b10_0000, "unlocked waystones name an unknown stone"),
             (53, 0b11, "viewer state is inconsistent"),
             (54, 9, "unknown entity kind"),
             (CLASS, 15, "viewer ability state is inconsistent"),
@@ -1965,6 +1983,7 @@ mod tests {
                 stance: None,
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
+                waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: Vec::new(),
             auras: Vec::new(),

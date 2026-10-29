@@ -14,9 +14,7 @@ use game_server::{
     MatchHostStatusConfig, MatchHostWebTransportConfig, MatchId, MatchRuntime, SnapshotCommitBatch,
     SnapshotCommitFuture, SnapshotCommitter, SnapshotPersistence,
 };
-use mmorpg_core::{
-    CharacterId, ClassChoice, ZoneId, ZoneSimulation, greyhaven_vale, long_ticks_from_ms,
-};
+use mmorpg_core::{CharacterId, ClassChoice, ZoneId, ZoneSimulation, long_ticks_from_ms};
 use std::{
     collections::{BTreeMap, BTreeSet},
     env,
@@ -86,7 +84,8 @@ fn genesis(
     known: u16,
     grants: u16,
 ) -> Result<game_server::RecoveryImage> {
-    let mut adapter = ZoneGameServerAdapter::with_content(zone, greyhaven_vale::content())?;
+    let mut adapter =
+        ZoneGameServerAdapter::with_content(zone, mmorpg_core::content_for_zone(zone))?;
     adapter.zone_mut().enable_reward_tracking(known, grants)?;
     Ok(MatchRuntime::new_with_replay_capture(adapter, grace).checkpoint_replay()?)
 }
@@ -214,8 +213,9 @@ impl Characters {
                 record
             } else {
                 let zone = zone_id(id)?;
-                let mut creation = ZoneSimulation::with_content(zone, greyhaven_vale::content())
-                    .map_err(message)?;
+                let mut creation =
+                    ZoneSimulation::with_content(zone, mmorpg_core::content_for_zone(zone))
+                        .map_err(message)?;
                 creation.create_character(1, class).map_err(message)?;
                 creation
                     .capture_character(1, character.clone())
@@ -389,7 +389,7 @@ pub async fn serve_postgres_character_host(
             for (zone, image) in baselines {
                 let previous = backend.retired_fence(zone, None).map_err(message)?;
                 let prepared = objects
-                    .prepare_world_reset(&previous, greyhaven_vale::content(), &image)
+                    .prepare_world_reset(&previous, mmorpg_core::content_for_zone(zone), &image)
                     .map_err(message)?;
                 let verified = runtime
                     .block_on(objects.upload_world_reset(&prepared))
@@ -460,7 +460,7 @@ pub async fn serve_postgres_character_host(
                 s3: s3_config()?,
                 checkpoint_limits: object_limits,
                 checkpoint_interval_ticks: interval,
-                content: greyhaven_vale::content(),
+                content: mmorpg_core::content_for_zone(zone),
                 match_id: id.clone(),
                 startup,
                 authority: Some(Arc::clone(&grant.permit)),
@@ -468,8 +468,9 @@ pub async fn serve_postgres_character_host(
             .await?;
             workers.push(worker);
             stores.insert(id.clone(), store);
-            let mut adapter = ZoneGameServerAdapter::with_content(zone, greyhaven_vale::content())?
-                .with_authority(Arc::clone(&grant.permit))?;
+            let mut adapter =
+                ZoneGameServerAdapter::with_content(zone, mmorpg_core::content_for_zone(zone))?
+                    .with_authority(Arc::clone(&grant.permit))?;
             adapter.require_durable_character_claims();
             matches.insert(id, MatchRuntime::restore_from_recovery(adapter, image)?)?;
             permits.push(grant.permit);

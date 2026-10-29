@@ -1,6 +1,6 @@
 # Seam corridors and fenced character transfer
 
-Status: accepted; parts 1 and 2 of #145 (owner decision Q5 = A: three sequential PRs). Part 3 (native/browser cutover, walking/teleport journey, exploration waystones) extends this record.
+Status: accepted; parts 1, 2 and 3a of #145 (owner decision Q5 = A: three sequential PRs; part 3 split into 3a, 3b and 3c with owner approval). Parts 3b (shared control plane, live host wiring) and 3c (client cutover, two-host journey) extend this record.
 
 ## Boundary
 
@@ -40,6 +40,14 @@ Hosts reach each other over the `transfer_link` TCP link: length-prefixed offer 
 
 Formats: `mmorpg-protocol` encodes `CharacterTransfer` (`CHARACTER_TRANSFER_WIRE_VERSION`, a random token). The character entry gains the pending handoff and the last completed handoff with its lease generation; `ENTRY_FORMAT_VERSION` became a random token, so older entries are refused (no migration, pre-1.0).
 
+## Test zones and waystones (part 3a)
+
+Owner decision Q2 (revised): the live handoff is proven between two small dedicated logical test zones, Seam Test West (zone 901) and Seam Test East (902) (`mmorpg_core::seam_test`). They share one flat layout; East coordinates are West's shifted 100 m toward −X, and each crossing strip lands a walker inside the other side's corridor but short of its crossing, so nobody is handed straight back. Greyhaven Vale keeps its geometry and has no seam into them; its outpost waystone reaches them by teleport only. Hosts pick content by zone ID (`content_for_zone`): 901 and 902 are the test zones, every other ID Greyhaven.
+
+Waystones (Q4 = A) form one global network (`mmorpg_core::WAYSTONES`): a stable ID, name, logical zone, stone and arrival point per stone; content binds the stones that stand in it. A living player within 8 m of a bound stone unlocks it for good. The unlocks are a durable character field, canonical player state and six spare bits of the projection's self flags, which caps the network at six stones until a wire change grows it. From within 8 m of a stone, travel to an unlocked stone is instant, with no cast or cooldown, and is refused in combat (error 36), in a corridor (35) and toward a locked, unknown or current stone (37). Travel within a zone moves the player there. Travel to a stone of another zone uses the same fenced transfer as walking. Until part 3b wires hosts to drive that transfer, the zone refuses it with error 37.
+
+Formats: command tag 30 (`UseWaystone`), canonical intent 23, error codes 36 and 37, a new protocol ID, and a new random `CHARACTER_RECORD_SCHEMA_VERSION` token: stored characters of the old schema are refused, with no migration.
+
 ## Not covered here
 
-Client reconnect, live-host wiring of these steps into `game-server` sessions, waystones and the second test zone are part 3. The handoff registry remains the in-memory reference model; persisting its records in PostgreSQL and a retention policy for terminal records are open.
+Client reconnect, live-host wiring of these steps into `game-server` sessions (walking seams and cross-zone waystone travel) and the two-host journey are parts 3b and 3c. The test zones bind no quests, so a character carrying Greyhaven quest state fails the destination's record validation; 3b has to settle how quest logs cross zones. The handoff registry remains the in-memory reference model; persisting its records in PostgreSQL and a retention policy for terminal records are open.

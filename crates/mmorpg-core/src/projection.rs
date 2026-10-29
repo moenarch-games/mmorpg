@@ -139,6 +139,8 @@ pub struct ViewerState {
     pub combo: Option<crate::ComboPhase>,
     /// Ticks of breath left, [`crate::water::BREATH_MAX_TICKS`] when full (#274).
     pub breath: u16,
+    /// Waystones the viewer unlocked (#145).
+    pub waystones: crate::WaystoneSet,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -297,6 +299,7 @@ impl ZoneSimulation {
                     stance: self.melee_stance(player_id, viewer.target)?,
                     combo: self.combo_phase(viewer),
                     breath: viewer.breath.remaining,
+                    waystones: viewer.waystones,
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),

@@ -6,7 +6,7 @@ use game_server::{
 use mmorpg_characters::{
     CharacterLease, CharacterStore, EntryBackend, FileEntries, LeaseHolder, decode_entry,
 };
-use mmorpg_core::{CharacterId, ClassChoice, ZoneId, ZoneSimulation, greyhaven_vale};
+use mmorpg_core::{CharacterId, ClassChoice, ZoneId, ZoneSimulation};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
@@ -273,8 +273,9 @@ impl DevCharacterService {
                     record
                 }
                 None => {
-                    let mut zone = ZoneSimulation::with_content(zone, greyhaven_vale::content())
-                        .map_err(message)?;
+                    let mut zone =
+                        ZoneSimulation::with_content(zone, mmorpg_core::content_for_zone(zone))
+                            .map_err(message)?;
                     zone.create_character(1, class).map_err(message)?;
                     let record = zone.capture_character(1, character).map_err(message)?;
                     storage

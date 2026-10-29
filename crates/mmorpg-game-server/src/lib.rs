@@ -191,7 +191,7 @@ pub fn build_zone_matches(
             let match_id = zone_match_id(zone_id).map_err(ZoneHostBuildError::MatchId)?;
             let simulation = ZoneGameServerAdapter::with_content(
                 zone_id,
-                mmorpg_core::greyhaven_vale::content(),
+                mmorpg_core::content_for_zone(zone_id),
             )
             .map_err(ZoneHostBuildError::Content)?;
             Ok((match_id, simulation))

@@ -97,6 +97,8 @@ pub enum PlayerIntent {
     AbandonQuest {
         quest: u8,
     },
+    /// Waystone travel (#145).
+    UseWaystone(crate::WaystoneId),
 }
 
 /// A pending intent and the ticks of lateness its command's observation
@@ -277,6 +279,8 @@ pub struct CanonicalPlayerSnapshot {
     pub quests: crate::QuestLog,
     /// The tick the quest log last changed.
     pub quests_changed_at: u64,
+    /// Waystones unlocked by exploration (#145).
+    pub waystones: crate::WaystoneSet,
 }
 
 /// A creature; `position` is its body or corpse, zero once despawned, and
@@ -401,6 +405,7 @@ impl ZoneSimulation {
                     chat: state.chat.clone(),
                     quests: state.quests.clone(),
                     quests_changed_at: state.quests_changed_at,
+                    waystones: state.waystones,
                 })
             })
             .collect::<Result<Vec<_>, ZoneError>>()?;
@@ -769,6 +774,7 @@ impl ZoneSimulation {
                 chat: player.chat,
                 quests: player.quests,
                 quests_changed_at: player.quests_changed_at,
+                waystones: player.waystones,
             },
         );
         Ok(())

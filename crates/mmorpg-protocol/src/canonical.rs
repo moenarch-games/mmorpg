@@ -43,6 +43,7 @@ const GUARD_INTENT: u8 = 19;
 const USE_DOOR_INTENT: u8 = 20;
 const REPAIR_INTENT: u8 = 21;
 const COMMAND_MINIONS_INTENT: u8 = 22;
+const USE_WAYSTONE_INTENT: u8 = 23;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -243,6 +244,10 @@ fn encode_player(
                 payload.extend_from_slice(&[ABANDON_QUEST_INTENT, quest]);
                 continue;
             }
+            PlayerIntent::UseWaystone(waystone) => {
+                payload.extend_from_slice(&[USE_WAYSTONE_INTENT, waystone.get()]);
+                continue;
+            }
         };
         payload.push(code);
         encode_entity_ref(payload, target);
@@ -303,7 +308,9 @@ fn encode_player(
     for line in &player.chat {
         crate::chat::encode_line(payload, line);
     }
-    crate::quest::encode_log(payload, &player.quests, player.quests_changed_at)
+    crate::quest::encode_log(payload, &player.quests, player.quests_changed_at)?;
+    payload.extend_from_slice(&player.waystones.bits().to_be_bytes());
+    Ok(())
 }
 
 /// 18 bytes (#490): kind (0 free, 1 released, 2 climbing, 3 mantling), ticks, wall yaw, the
@@ -857,6 +864,12 @@ fn decode_player(
             });
             continue;
         }
+        if code == USE_WAYSTONE_INTENT {
+            intents.push(PlayerIntent::UseWaystone(crate::wire::decode_waystone(
+                read_u8(payload, offset)?,
+            )?));
+            continue;
+        }
         if code == CHAT_INTENT {
             intents.push(PlayerIntent::Chat(crate::chat::decode_message(
                 payload, offset,
@@ -999,9 +1012,11 @@ fn decode_player(
         chat.push(crate::chat::decode_line(payload, offset)?);
     }
     let (quests, quests_changed_at) = crate::quest::decode_log(payload, offset)?;
+    let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
     Ok(CanonicalPlayerSnapshot {
         quests,
         quests_changed_at,
+        waystones,
         chat_ready_at,
         chat,
         player_id,
@@ -1693,6 +1708,7 @@ mod tests {
                     },
                     quests: mmorpg_core::QuestLog::default(),
                     quests_changed_at: 0,
+                    waystones: mmorpg_core::WaystoneSet::EMPTY,
                 },
                 CanonicalPlayerSnapshot {
                     chat_ready_at: 0,
@@ -1716,6 +1732,7 @@ mod tests {
                     combat: CanonicalPlayerCombat::default(),
                     quests: mmorpg_core::QuestLog::default(),
                     quests_changed_at: 0,
+                    waystones: mmorpg_core::WaystoneSet::EMPTY,
                 },
             ],
             creatures: vec![
@@ -2185,7 +2202,7 @@ mod tests {
             (swing_queued, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
             // Each intent is its lateness, then its code and fields.
-            (intents + 2, 23, "malformed pending intent"),
+            (intents + 2, 24, "malformed pending intent"),
         ];
         // The third intent (CancelCast) carries no target.
         cases.push((intents + 1 + 2 * 7 + 2, 2, "malformed pending intent"));
