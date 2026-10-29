@@ -16,6 +16,7 @@ mod loot;
 mod projection;
 mod quest;
 mod rewards;
+mod transfer;
 mod wire;
 
 pub use canonical::{decode_canonical_snapshot, encode_canonical_snapshot};
@@ -30,6 +31,9 @@ pub use projection::{
     PLAYER_SNAPSHOT_FIXED_BYTES, PackedSnapshot, decode_snapshot, encode_snapshot, pack_snapshot,
 };
 pub use rewards::{MAX_REWARD_RECEIPT_BYTES, decode_reward_receipt, encode_reward_receipt};
+pub use transfer::{
+    CHARACTER_TRANSFER_WIRE_VERSION, decode_character_transfer, encode_character_transfer,
+};
 
 use std::error::Error;
 use std::fmt;

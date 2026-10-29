@@ -4,8 +4,8 @@ use mmorpg_characters::{
     CharacterStore, EntryBackend, FileEntries, LeaseHolder, StoreError, decode_entry,
 };
 use mmorpg_core::{
-    CharacterId, CharacterRecord, ClassChoice, PlayerClass, Sex, ZoneCommand, ZoneId,
-    ZoneSimulation, greyhaven_vale,
+    CharacterId, CharacterRecord, CharacterTransfer, ClassChoice, PlayerClass, Sex, TransferId,
+    TransferMotion, ZoneCommand, ZoneId, ZoneSimulation, greyhaven_vale,
 };
 use mmorpg_protocol::{decode_character_record, encode_character_record};
 
@@ -208,6 +208,117 @@ fn corrupt_entries_fail_closed() {
         store.acquire(&character, holder(1, 2)),
         Err(StoreError::Corrupt(_))
     ));
+}
+
+/// `record` frozen by zone 1 for zone 2 under `transfer`.
+fn transfer(record: &CharacterRecord, transfer: u64) -> CharacterTransfer {
+    let mut record = record.clone();
+    record.location.zone_id = ZoneId::new(2);
+    CharacterTransfer {
+        transfer_id: TransferId::new(transfer).unwrap(),
+        source_zone: ZONE,
+        cutover_tick: 20,
+        cutover_sequence: 1,
+        record,
+        motion: TransferMotion {
+            forward: 1,
+            strafe: 0,
+            rise: 0,
+            velocity: [3, 0, -4],
+        },
+    }
+}
+
+#[test]
+fn a_handoff_moves_the_lease_and_record_atomically_once() {
+    let directory = tempdir("handoff");
+    let mut store = CharacterStore::new(FileEntries::open(&directory).unwrap());
+    let character = id("local-8");
+    let record = played_record(&character);
+    let source = store.acquire(&character, holder(1, 5)).unwrap().lease;
+    store.commit(&source, &record).unwrap();
+    let frozen = transfer(&record, 31);
+    let id_31 = frozen.transfer_id;
+
+    // A handoff must leave for another zone, with the record placed there.
+    assert!(matches!(
+        store.begin_handoff(&source, &frozen, holder(1, 6)),
+        Err(StoreError::InvalidHandoff(_))
+    ));
+    store.begin_handoff(&source, &frozen, holder(2, 3)).unwrap();
+    store.begin_handoff(&source, &frozen, holder(2, 3)).unwrap();
+    assert_eq!(
+        store.begin_handoff(&source, &transfer(&record, 32), holder(2, 3)),
+        Err(StoreError::HandoffPending(id_31))
+    );
+    // The pending transfer survives in the entry bytes.
+    let pending = store.pending_handoff(&character).unwrap().unwrap();
+    assert_eq!(
+        (&pending.transfer, pending.to, pending.from),
+        (&frozen, holder(2, 3), holder(1, 5))
+    );
+
+    // Nobody writes, releases or takes the character while it is pending,
+    // not even a newer epoch of the source zone.
+    for refused in [
+        store.commit(&source, &record),
+        store.release(&source, None),
+        store.acquire(&character, holder(1, 9)).map(|_| 0),
+        store.acquire(&character, holder(2, 3)).map(|_| 0),
+    ] {
+        assert_eq!(refused, Err(StoreError::HandoffPending(id_31)));
+    }
+
+    let completed = store.complete_handoff(&character, id_31).unwrap();
+    assert_eq!(completed.lease.holder, holder(2, 3));
+    assert_eq!(completed.revision, 2);
+    assert_eq!(completed.record.as_ref(), Some(&frozen.record));
+    assert_eq!(
+        store.complete_handoff(&character, id_31).unwrap(),
+        completed
+    );
+    assert_eq!(
+        store.cancel_handoff(&character, id_31),
+        Err(StoreError::HandoffCompleted(id_31))
+    );
+    assert_eq!(store.commit(&source, &record), Err(StoreError::StaleLease));
+    store.commit(&completed.lease, &frozen.record).unwrap();
+    // Once a later acquisition supersedes it, the old completion is no proof.
+    let restarted = store.acquire(&character, holder(2, 4)).unwrap();
+    assert_eq!(
+        store.complete_handoff(&character, id_31),
+        Err(StoreError::StaleLease)
+    );
+    store.release(&restarted.lease, None).unwrap();
+}
+
+#[test]
+fn a_cancelled_handoff_leaves_the_source_holding_the_character() {
+    let directory = tempdir("cancel");
+    let mut store = CharacterStore::new(FileEntries::open(&directory).unwrap());
+    let character = id("local-9");
+    let record = played_record(&character);
+    let source = store.acquire(&character, holder(1, 5)).unwrap().lease;
+    store.commit(&source, &record).unwrap();
+    let frozen = transfer(&record, 41);
+    store.begin_handoff(&source, &frozen, holder(2, 3)).unwrap();
+
+    assert_eq!(
+        store.cancel_handoff(&character, frozen.transfer_id),
+        Ok(true)
+    );
+    assert_eq!(
+        store.cancel_handoff(&character, frozen.transfer_id),
+        Ok(false)
+    );
+    assert_eq!(
+        store.complete_handoff(&character, frozen.transfer_id),
+        Err(StoreError::UnknownHandoff(frozen.transfer_id))
+    );
+    let committed = store.committed(&character).unwrap().unwrap();
+    assert_eq!((committed.revision, committed.record), (1, record.clone()));
+    assert_eq!(committed.leased_by, Some(holder(1, 5)));
+    store.commit(&source, &record).unwrap();
 }
 
 fn tempdir(name: &str) -> std::path::PathBuf {
