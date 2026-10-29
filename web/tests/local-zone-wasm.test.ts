@@ -281,7 +281,7 @@ describe("WASM local zone host", () => {
     run(source, 1);
     source.sendCommand({ kind: "use-door", door: 1, open: true });
     run(source, 2);
-    expect(source.latestProjection()?.doors).toEqual([{ door: 1, open: true }]);
+    expect(source.latestProjection()?.doors).toEqual([{ door: 1, open: true }, { door: 2, open: false }]);
     walk(32_768, t30(29));
     walk(EAST, t30(20));
     walk(32_768, t30(8));

@@ -66,11 +66,12 @@ pub fn compile(source: &str) -> Result<ZoneDefinition, ZoneError> {
         }
         colliders.retain(|collider| collider.id != edit.id);
         if !edit.removed {
-            // Reuse the existing house definition, including its exact collision footprint.
+            // Reuse an existing 8 × 6 m house definition, including its exact collision footprint
+            // (house 104: house 103 is Elden's walk-in home, #158).
             let template = base
                 .colliders()
                 .iter()
-                .find(|collider| collider.id == 103)
+                .find(|collider| collider.id == 104)
                 .ok_or_else(|| ZoneError::new("layout house source conflict"))?;
             let collider = StaticCollider {
                 id: edit.id,
