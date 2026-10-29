@@ -299,6 +299,7 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::DoorBusy => "door_busy",
         ErrorCode::NoMinions => "no_minions",
         ErrorCode::NotWhileSwimming => "not_while_swimming",
+        ErrorCode::HandoffCorridor => "handoff_corridor",
     }
 }
 
@@ -338,6 +339,7 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "door_busy" => ErrorCode::DoorBusy,
         "no_minions" => ErrorCode::NoMinions,
         "not_while_swimming" => ErrorCode::NotWhileSwimming,
+        "handoff_corridor" => ErrorCode::HandoffCorridor,
         _ => return None,
     })
 }
@@ -499,6 +501,7 @@ mod tests {
             ErrorCode::DoorBusy,
             ErrorCode::NoMinions,
             ErrorCode::NotWhileSwimming,
+            ErrorCode::HandoffCorridor,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));

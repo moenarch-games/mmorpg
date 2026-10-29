@@ -178,4 +178,5 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "door-busy": null,
   "no-minions": null,
   "not-while-swimming": null,
+  "handoff-corridor": "Not here: you are crossing into another region. The corpse keeps its rewards.",
 };

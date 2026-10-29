@@ -258,6 +258,9 @@ impl Logs {
                         mmorpg_core::ErrorCode::NoMinions => {
                             "You have no minions or companion to command.".into()
                         }
+                        mmorpg_core::ErrorCode::HandoffCorridor => {
+                            "Not here: you are crossing into another region.".into()
+                        }
                         mmorpg_core::ErrorCode::NotWhileSwimming => {
                             "You can't do that while swimming.".into()
                         }
