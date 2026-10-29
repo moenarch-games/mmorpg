@@ -55,11 +55,11 @@ impl Zone {
     }
 
     fn door_open(&self) -> bool {
-        self.zone.snapshot_for_player(1).unwrap().doors
-            == [DoorView {
+        self.zone.snapshot_for_player(1).unwrap().doors[0]
+            == DoorView {
                 door: DOOR,
                 open: true,
-            }]
+            }
     }
 
     fn walk(&mut self, facing: u16, ticks: u32) -> [i32; 3] {
@@ -154,7 +154,7 @@ fn a_body_in_the_leafs_way_blocks_it_and_recovery_keeps_the_state() {
     );
     assert!(!zone.door_open());
     let state = zone.zone.snapshot().unwrap();
-    assert_eq!(state.doors.len(), 1);
+    assert_eq!(state.doors.len(), 2, "the inn and Elden's house");
     assert!(!state.doors[0].open && state.doors[0].changed_tick > 0);
 }
 

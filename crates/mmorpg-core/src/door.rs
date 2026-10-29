@@ -137,12 +137,16 @@ impl ZoneSimulation {
         if state.open == open {
             return Ok(None);
         }
-        if state.changed_tick != 0 && self.tick < state.changed_tick + DOOR_COOLDOWN_TICKS {
-            return Ok(Some((ErrorCode::DoorBusy, None)));
-        }
         let from = self.player_position(player_id)?;
         if !door.within_reach([from.x, from.y, from.z]) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
+        }
+        // A private home's door admits only welcome characters and knocks at night (#158).
+        if let Some(outcome) = self.private_door_use(player_id, id, open) {
+            return Ok(outcome);
+        }
+        if state.changed_tick != 0 && self.tick < state.changed_tick + DOOR_COOLDOWN_TICKS {
+            return Ok(Some((ErrorCode::DoorBusy, None)));
         }
         if self.leaf_blocked(&door, open)? {
             return Ok(Some((ErrorCode::DoorBlocked, None)));

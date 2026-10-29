@@ -96,6 +96,13 @@ pub enum ErrorCode {
     /// No waystone is within reach, or the destination is locked, unknown,
     /// the stone in reach or not reachable from this zone yet (#145).
     InvalidWaystone,
+    /// The door is a private home's and the character has no quest with its resident (#158).
+    PrivateHome,
+    /// A night knock that wakes no one: the resident is not in bed or the knocker has nothing
+    /// urgent for it (#158).
+    NoAnswer,
+    /// A private-home resident offers no new quests at night (#158).
+    NotAtNight,
 }
 
 /// One feedback event addressed to a player.

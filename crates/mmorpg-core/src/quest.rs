@@ -375,7 +375,7 @@ fn progress(quest: &Quest, entry: &QuestEntry, bag: &Inventory) -> [u8; MAX_QUES
     current
 }
 
-fn objectives_done(quest: &Quest, entry: &QuestEntry, bag: &Inventory) -> bool {
+pub(crate) fn objectives_done(quest: &Quest, entry: &QuestEntry, bag: &Inventory) -> bool {
     let current = progress(quest, entry, bag);
     quest
         .objectives
@@ -385,7 +385,12 @@ fn objectives_done(quest: &Quest, entry: &QuestEntry, bag: &Inventory) -> bool {
 }
 
 /// The log, mask and markers one player sees.
-pub(crate) fn quest_sheet(content: &ZoneContent, log: &QuestLog, bag: &Inventory) -> QuestSheet {
+pub(crate) fn quest_sheet(
+    content: &ZoneContent,
+    log: &QuestLog,
+    bag: &Inventory,
+    night: bool,
+) -> QuestSheet {
     let entries = log
         .entries
         .iter()
@@ -399,14 +404,20 @@ pub(crate) fn quest_sheet(content: &ZoneContent, log: &QuestLog, bag: &Inventory
     QuestSheet {
         completed: log.completed,
         entries,
-        markers: markers(content, log, bag),
+        markers: markers(content, log, bag, night),
     }
 }
 
 /// Markers of every quest giver and ender, in NPC-ID order: `?` for a
 /// quest ready to turn in, else `!` for an available quest, else grey `?`
 /// for one still in progress.
-pub(crate) fn markers(content: &ZoneContent, log: &QuestLog, bag: &Inventory) -> Vec<NpcMarker> {
+/// At `night` a private-home resident shows no `!` (#158).
+pub(crate) fn markers(
+    content: &ZoneContent,
+    log: &QuestLog,
+    bag: &Inventory,
+    night: bool,
+) -> Vec<NpcMarker> {
     let mut npcs: Vec<NpcId> = content
         .quests()
         .iter()
@@ -426,7 +437,10 @@ pub(crate) fn markers(content: &ZoneContent, log: &QuestLog, bag: &Inventory) ->
                             Some(QuestMarker::InProgress)
                         }
                     }
-                    None if quest.giver == npc && available(log, quest) => {
+                    None if quest.giver == npc
+                        && available(log, quest)
+                        && !(night && content.private_home(npc).is_some()) =>
+                    {
                         Some(QuestMarker::Available)
                     }
                     _ => None,
@@ -603,6 +617,7 @@ impl ZoneSimulation {
         now: u64,
     ) -> Result<Refusal, ZoneError> {
         let target = Some(EntityRef::Npc(npc));
+        self.keep_awake(npc);
         let Some(definition) = self
             .content
             .quest(QuestId::new(quest))
@@ -610,6 +625,10 @@ impl ZoneSimulation {
         else {
             return Ok(Some((ErrorCode::InvalidQuest, target)));
         };
+        // A private-home resident only takes turn-ins at night (#158).
+        if self.resting(npc) {
+            return Ok(Some((ErrorCode::NotAtNight, target)));
+        }
         let id = definition.id;
         let player = self
             .players
@@ -664,6 +683,7 @@ impl ZoneSimulation {
         else {
             return Ok(Some((ErrorCode::InvalidQuest, target)));
         };
+        self.keep_awake(npc);
         let reward = match definition.rewards.choices.as_slice() {
             [] if choice == 0 => None,
             [] => return Ok(Some((ErrorCode::InvalidQuest, target))),

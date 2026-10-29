@@ -69,6 +69,7 @@ pub struct ZoneContent {
     pieces: Vec<crate::StructurePiece>,
     routines: Vec<crate::NpcRoutine>,
     closed_at_night: Vec<NpcId>,
+    private_homes: Vec<crate::PrivateHome>,
     waters: Vec<crate::WaterVolume>,
     climbing: crate::ClimbSurfaces,
     handoff_corridors: Vec<crate::HandoffCorridor>,
@@ -192,6 +193,7 @@ impl ZoneContent {
             pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
+            private_homes: Vec::new(),
             waters: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
@@ -236,6 +238,7 @@ impl ZoneContent {
             pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
+            private_homes: Vec::new(),
             waters: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
@@ -838,6 +841,63 @@ impl ZoneContent {
         self.validate_corridor_clearance(&self.handoff_corridors)?;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
+    }
+
+    /// Binds private homes (#158): each names a distinct routine NPC with quests and a distinct
+    /// content door, and has 1..=[`crate::MAX_WAKE_WAYPOINTS`] in-range wake waypoints.
+    pub fn with_private_homes(
+        mut self,
+        mut homes: Vec<crate::PrivateHome>,
+    ) -> Result<Self, ZoneError> {
+        homes.sort_by_key(|home| home.npc);
+        if homes
+            .iter()
+            .enumerate()
+            .any(|(index, home)| homes[..index].iter().any(|other| other.door == home.door))
+            || homes.windows(2).any(|pair| pair[0].npc == pair[1].npc)
+        {
+            return Err(ZoneError::new("duplicate private home npc or door"));
+        }
+        for home in &homes {
+            if self.routine(home.npc).is_none()
+                || self.door(home.door).is_none()
+                || !self
+                    .quests
+                    .iter()
+                    .any(|quest| quest.giver == home.npc || quest.ender == home.npc)
+                || home.wake_path.is_empty()
+                || home.wake_path.len() > crate::MAX_WAKE_WAYPOINTS
+                || home
+                    .wake_path
+                    .iter()
+                    .flatten()
+                    .any(|value| value.abs() > super::MAX_CONTENT_COORDINATE_UNITS)
+                || home.woken_line.is_empty()
+                || home.woken_line.len() > crate::MAX_QUEST_TEXT_BYTES
+            {
+                return Err(ZoneError::new("invalid private home"));
+            }
+        }
+        self.private_homes = homes;
+        Ok(self)
+    }
+
+    /// Ordered by NPC ID.
+    #[must_use]
+    pub fn private_homes(&self) -> &[crate::PrivateHome] {
+        &self.private_homes
+    }
+
+    /// `npc`'s private home, if it has one.
+    #[must_use]
+    pub fn private_home(&self, npc: NpcId) -> Option<&crate::PrivateHome> {
+        self.private_homes.iter().find(|home| home.npc == npc)
+    }
+
+    /// The private home behind `door`, if any.
+    #[must_use]
+    pub fn home_behind(&self, door: crate::DoorId) -> Option<&crate::PrivateHome> {
+        self.private_homes.iter().find(|home| home.door == door)
     }
 
     /// Binds the cross-zone seam corridors of this zone (#145), at most

@@ -314,7 +314,12 @@ impl ZoneSimulation {
                 inventory: sheet.then(|| viewer.inventory.clone()),
                 equipment: sheet.then_some(viewer.equipment),
                 quests: sheet.then(|| {
-                    crate::quest::quest_sheet(&self.content, &viewer.quests, &viewer.inventory)
+                    crate::quest::quest_sheet(
+                        &self.content,
+                        &viewer.quests,
+                        &viewer.inventory,
+                        crate::is_night(crate::time_of_day(self.tick)),
+                    )
                 }),
                 loot: match viewer.target {
                     Some(EntityRef::Creature(id)) => self.loot_view_for(player_id, id)?,
