@@ -1,16 +1,23 @@
 //! Byte layout of a stored [`Entry`]:
 //! `magic "MMCH" · version u8 · revision u64 · generation u64 · lease ·
-//! fence · record flag u8 · (record length u32 · record)?`, where a holder is
-//! `flag u8 · (zone u32 · epoch u64)?`. Big-endian, strict, fail-closed.
+//! fence · record flag u8 · (record length u32 · record)? · handoff flag u8 ·
+//! (to holder · transfer length u32 · transfer)? · last flag u8 · (transfer
+//! u64 · generation u64)?`, where a holder is `flag u8 · (zone u32 · epoch
+//! u64)?` and a transfer is `mmorpg_protocol`'s character transfer layout.
+//! Big-endian, strict, fail-closed.
 
-use mmorpg_core::{CharacterId, ZoneId};
-use mmorpg_protocol::{decode_character_record, encode_character_record};
+use mmorpg_core::{CharacterId, TransferId, ZoneId};
+use mmorpg_protocol::{
+    decode_character_record, decode_character_transfer, encode_character_record,
+    encode_character_transfer,
+};
 
-use crate::{Entry, LeaseHolder, StoreError};
+use crate::{Entry, LeaseHolder, PendingHandoff, StoreError};
 
-pub const ENTRY_FORMAT_VERSION: u8 = 1;
+/// Identity of the layout above: a random token, not a counter (ADR 0006).
+pub const ENTRY_FORMAT_VERSION: u8 = 0xe3;
 const MAGIC: &[u8; 4] = b"MMCH";
-/// Far above any record; bounds what a corrupt length can make us read.
+/// Far above any record or transfer; bounds what a corrupt length can make us read.
 const MAX_RECORD_BYTES: usize = 64 * 1024;
 
 pub fn encode_entry(entry: &Entry) -> Result<Vec<u8>, StoreError> {
@@ -19,31 +26,62 @@ pub fn encode_entry(entry: &Entry) -> Result<Vec<u8>, StoreError> {
     bytes.push(ENTRY_FORMAT_VERSION);
     bytes.extend_from_slice(&entry.revision.to_be_bytes());
     bytes.extend_from_slice(&entry.generation.to_be_bytes());
-    for holder in [entry.lease, entry.fence] {
-        match holder {
-            None => bytes.push(0),
-            Some(holder) => {
-                bytes.push(1);
-                bytes.extend_from_slice(&holder.zone_id.get().to_be_bytes());
-                bytes.extend_from_slice(&holder.zone_epoch.to_be_bytes());
-            }
-        }
-    }
+    encode_holder(&mut bytes, entry.lease);
+    encode_holder(&mut bytes, entry.fence);
     match &entry.record {
         None => bytes.push(0),
         Some(record) => {
             let record = encode_character_record(record)
                 .map_err(|error| StoreError::Corrupt(error.to_string()))?;
-            let length = u32::try_from(record.len())
-                .ok()
-                .filter(|_| record.len() <= MAX_RECORD_BYTES)
-                .ok_or_else(|| StoreError::Corrupt("character record is too large".into()))?;
             bytes.push(1);
-            bytes.extend_from_slice(&length.to_be_bytes());
-            bytes.extend_from_slice(&record);
+            encode_bytes(&mut bytes, &record)?;
+        }
+    }
+    match &entry.handoff {
+        None => bytes.push(0),
+        Some(pending) => {
+            if entry.lease != Some(pending.from) {
+                return Err(StoreError::Corrupt(
+                    "a pending handoff's holder no longer holds the lease".into(),
+                ));
+            }
+            let transfer = encode_character_transfer(&pending.transfer)
+                .map_err(|error| StoreError::Corrupt(error.to_string()))?;
+            bytes.push(1);
+            encode_holder(&mut bytes, Some(pending.to));
+            encode_bytes(&mut bytes, &transfer)?;
+        }
+    }
+    match entry.last_handoff {
+        None => bytes.push(0),
+        Some((transfer, generation)) => {
+            bytes.push(1);
+            bytes.extend_from_slice(&transfer.get().to_be_bytes());
+            bytes.extend_from_slice(&generation.to_be_bytes());
         }
     }
     Ok(bytes)
+}
+
+fn encode_holder(bytes: &mut Vec<u8>, holder: Option<LeaseHolder>) {
+    match holder {
+        None => bytes.push(0),
+        Some(holder) => {
+            bytes.push(1);
+            bytes.extend_from_slice(&holder.zone_id.get().to_be_bytes());
+            bytes.extend_from_slice(&holder.zone_epoch.to_be_bytes());
+        }
+    }
+}
+
+fn encode_bytes(bytes: &mut Vec<u8>, value: &[u8]) -> Result<(), StoreError> {
+    let length = u32::try_from(value.len())
+        .ok()
+        .filter(|_| value.len() <= MAX_RECORD_BYTES)
+        .ok_or_else(|| StoreError::Corrupt("character record is too large".into()))?;
+    bytes.extend_from_slice(&length.to_be_bytes());
+    bytes.extend_from_slice(value);
+    Ok(())
 }
 
 /// Decodes the entry stored under `id`; a record of another character is corrupt.
@@ -61,16 +99,33 @@ pub fn decode_entry(id: &CharacterId, bytes: &[u8]) -> Result<Entry, StoreError>
     let fence = reader.holder()?;
     let record = match reader.u8()? {
         0 => None,
-        1 => {
-            let length = usize::try_from(reader.u32()?).unwrap_or(usize::MAX);
-            if length > MAX_RECORD_BYTES {
-                return Err(corrupt("character record is too large"));
-            }
-            let record = decode_character_record(reader.take(length)?)
-                .map_err(|error| StoreError::Corrupt(error.to_string()))?;
-            Some(record)
-        }
+        1 => Some(
+            decode_character_record(reader.sized()?)
+                .map_err(|error| StoreError::Corrupt(error.to_string()))?,
+        ),
         _ => return Err(corrupt("record flag must be 0 or 1")),
+    };
+    let handoff = match reader.u8()? {
+        0 => None,
+        1 => {
+            let to = reader
+                .holder()?
+                .ok_or_else(|| corrupt("a pending handoff needs a destination"))?;
+            let transfer = decode_character_transfer(reader.sized()?)
+                .map_err(|error| StoreError::Corrupt(error.to_string()))?;
+            // The holder that began a handoff keeps the lease until it ends.
+            let from = lease.ok_or_else(|| corrupt("a pending handoff needs a holder"))?;
+            Some(PendingHandoff { transfer, to, from })
+        }
+        _ => return Err(corrupt("handoff flag must be 0 or 1")),
+    };
+    let last_handoff = match reader.u8()? {
+        0 => None,
+        1 => Some((
+            TransferId::new(reader.u64()?).map_err(|_| corrupt("transfer ID must be nonzero"))?,
+            reader.u64()?,
+        )),
+        _ => return Err(corrupt("last handoff flag must be 0 or 1")),
     };
     if reader.offset != bytes.len() {
         return Err(corrupt("character entry has trailing bytes"));
@@ -81,6 +136,8 @@ pub fn decode_entry(id: &CharacterId, bytes: &[u8]) -> Result<Entry, StoreError>
         lease,
         fence,
         record,
+        handoff,
+        last_handoff,
     };
     let consistent = entry
         .record
@@ -88,7 +145,11 @@ pub fn decode_entry(id: &CharacterId, bytes: &[u8]) -> Result<Entry, StoreError>
         .is_none_or(|record| &record.character_id == id)
         && (entry.revision == 0) == entry.record.is_none()
         && (entry.generation == 0) == entry.fence.is_none()
-        && entry.lease.is_none_or(|lease| Some(lease) == entry.fence);
+        && entry.lease.is_none_or(|lease| Some(lease) == entry.fence)
+        && entry
+            .handoff
+            .as_ref()
+            .is_none_or(|pending| &pending.transfer.record.character_id == id);
     if consistent {
         Ok(entry)
     } else {
@@ -115,6 +176,15 @@ impl<'a> Reader<'a> {
         let slice = &self.bytes[self.offset..end];
         self.offset = end;
         Ok(slice)
+    }
+
+    /// A `length u32 · bytes` field.
+    fn sized(&mut self) -> Result<&'a [u8], StoreError> {
+        let length = usize::try_from(self.u32()?).unwrap_or(usize::MAX);
+        if length > MAX_RECORD_BYTES {
+            return Err(corrupt("character record is too large"));
+        }
+        self.take(length)
     }
 
     fn array<const N: usize>(&mut self) -> Result<[u8; N], StoreError> {

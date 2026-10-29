@@ -9,6 +9,8 @@ pub mod persistence;
 pub use dev_characters::{DevCharacterService, DevCharacterStorage};
 pub use dev_host::{DevelopmentCharacterHostConfig, serve_development_character_host};
 mod fenced_runtime;
+pub mod handoff;
+pub mod transfer_link;
 pub use fenced_runtime::{FencedRuntimeError, FencedZoneRuntime};
 
 use game_server::{

@@ -354,7 +354,10 @@ pub fn check_invariants(
     }
     let mut unfinished: BTreeMap<EntityId, usize> = BTreeMap::new();
     for record in after.records.values() {
-        if record.phase != HandoffPhase::Committed {
+        if !matches!(
+            record.phase,
+            HandoffPhase::Committed | HandoffPhase::Aborted
+        ) {
             *unfinished.entry(record.ticket.entity_id).or_default() += 1;
         }
     }
@@ -393,7 +396,7 @@ fn phase_rank(phase: HandoffPhase) -> u8 {
     match phase {
         HandoffPhase::Prepared => 0,
         HandoffPhase::Accepted => 1,
-        HandoffPhase::Committed => 2,
+        HandoffPhase::Committed | HandoffPhase::Aborted => 2,
     }
 }
 
@@ -402,6 +405,7 @@ fn phase_name(phase: HandoffPhase) -> &'static str {
         HandoffPhase::Prepared => "prepared",
         HandoffPhase::Accepted => "accepted",
         HandoffPhase::Committed => "committed",
+        HandoffPhase::Aborted => "aborted",
     }
 }
 

@@ -193,6 +193,8 @@ pub enum ControlPlaneError {
     SameZoneTransfer(ZoneId),
     TransferLeaseMismatch(TransferId),
     TransferNotAccepted(TransferId),
+    TransferAborted(TransferId),
+    TransferAlreadyAccepted(TransferId),
     EntityTransferInProgress(EntityId),
 }
 
@@ -296,6 +298,16 @@ impl fmt::Display for ControlPlaneError {
                 write!(
                     formatter,
                     "transfer {} has not been accepted",
+                    transfer_id.get()
+                )
+            }
+            Self::TransferAborted(transfer_id) => {
+                write!(formatter, "transfer {} was aborted", transfer_id.get())
+            }
+            Self::TransferAlreadyAccepted(transfer_id) => {
+                write!(
+                    formatter,
+                    "transfer {} was accepted and can no longer abort",
                     transfer_id.get()
                 )
             }
@@ -743,11 +755,25 @@ pub struct HandoffTicket {
     pub destination: ZoneLease,
 }
 
+/// Where a handoff stands. `Accepted` is the decision point (#145): before
+/// it the source may abort and stays authoritative; from it on the transfer
+/// completes to the destination and nothing aborts it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HandoffPhase {
     Prepared,
     Accepted,
+    /// The source confirmed it retired its copy; the destination may go live.
     Committed,
+    /// The source took the entity back before any acceptance.
+    Aborted,
+}
+
+/// `lease` speaks for the zone of `granted`: the same authority, or a newer
+/// epoch of that zone after the control plane fenced the older host (which
+/// lost its host-phase transfer state when it stopped).
+fn speaks_for(granted: &ZoneLease, lease: &ZoneLease) -> bool {
+    granted.same_authority(lease)
+        || (granted.zone_id == lease.zone_id && lease.epoch > granted.epoch)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -818,27 +844,34 @@ impl HandoffRegistry {
         now_tick: u64,
     ) -> Result<HandoffPhase, ControlPlaneError> {
         directory.ensure_current(destination, now_tick)?;
-        let ticket = self
+        let record = self
             .transfers
             .get(&transfer_id)
-            .ok_or(ControlPlaneError::UnknownTransfer(transfer_id))?
-            .ticket
-            .clone();
-        if !ticket.destination.same_authority(destination) {
+            .ok_or(ControlPlaneError::UnknownTransfer(transfer_id))?;
+        if !record.ticket.destination.same_authority(destination) {
             return Err(ControlPlaneError::TransferLeaseMismatch(transfer_id));
         }
-        directory.ensure_current(&ticket.source, now_tick)?;
+        if record.phase == HandoffPhase::Aborted {
+            return Err(ControlPlaneError::TransferAborted(transfer_id));
+        }
+        directory.ensure_current(&record.ticket.source, now_tick)?;
 
         let record = self
             .transfers
             .get_mut(&transfer_id)
             .expect("transfer existence checked above");
-        if record.phase == HandoffPhase::Prepared {
-            record.phase = HandoffPhase::Accepted;
+        match record.phase {
+            HandoffPhase::Prepared => record.phase = HandoffPhase::Accepted,
+            HandoffPhase::Aborted => return Err(ControlPlaneError::TransferAborted(transfer_id)),
+            HandoffPhase::Accepted | HandoffPhase::Committed => {}
         }
         Ok(record.phase)
     }
 
+    /// The source confirms it retired its copy of an accepted transfer. A
+    /// newer epoch of the source zone may confirm for a fenced older host. It
+    /// does not depend on the destination: once accepted, the transfer
+    /// completes there even if the destination host is replaced.
     pub fn commit(
         &mut self,
         transfer_id: TransferId,
@@ -847,30 +880,55 @@ impl HandoffRegistry {
         now_tick: u64,
     ) -> Result<HandoffPhase, ControlPlaneError> {
         directory.ensure_current(source, now_tick)?;
-        let ticket = self
-            .transfers
-            .get(&transfer_id)
-            .ok_or(ControlPlaneError::UnknownTransfer(transfer_id))?
-            .ticket
-            .clone();
-        if !ticket.source.same_authority(source) {
-            return Err(ControlPlaneError::TransferLeaseMismatch(transfer_id));
-        }
-        directory.ensure_current(&ticket.destination, now_tick)?;
-
         let record = self
             .transfers
             .get_mut(&transfer_id)
-            .expect("transfer existence checked above");
+            .ok_or(ControlPlaneError::UnknownTransfer(transfer_id))?;
+        if !speaks_for(&record.ticket.source, source) {
+            return Err(ControlPlaneError::TransferLeaseMismatch(transfer_id));
+        }
         match record.phase {
             HandoffPhase::Prepared => {
                 return Err(ControlPlaneError::TransferNotAccepted(transfer_id));
             }
+            HandoffPhase::Aborted => return Err(ControlPlaneError::TransferAborted(transfer_id)),
             HandoffPhase::Accepted => {
                 record.phase = HandoffPhase::Committed;
                 self.active_entities.remove(&record.ticket.entity_id);
             }
             HandoffPhase::Committed => {}
+        }
+        Ok(record.phase)
+    }
+
+    /// The source takes back a transfer nobody accepted; it stays the
+    /// authority. A newer epoch of the source zone may abort for a fenced
+    /// older host. Aborting again is a no-op; an accepted transfer can no
+    /// longer abort.
+    pub fn abort(
+        &mut self,
+        transfer_id: TransferId,
+        source: &ZoneLease,
+        directory: &ZoneDirectory,
+        now_tick: u64,
+    ) -> Result<HandoffPhase, ControlPlaneError> {
+        directory.ensure_current(source, now_tick)?;
+        let record = self
+            .transfers
+            .get_mut(&transfer_id)
+            .ok_or(ControlPlaneError::UnknownTransfer(transfer_id))?;
+        if !speaks_for(&record.ticket.source, source) {
+            return Err(ControlPlaneError::TransferLeaseMismatch(transfer_id));
+        }
+        match record.phase {
+            HandoffPhase::Prepared => {
+                record.phase = HandoffPhase::Aborted;
+                self.active_entities.remove(&record.ticket.entity_id);
+            }
+            HandoffPhase::Aborted => {}
+            HandoffPhase::Accepted | HandoffPhase::Committed => {
+                return Err(ControlPlaneError::TransferAlreadyAccepted(transfer_id));
+            }
         }
         Ok(record.phase)
     }
@@ -1052,7 +1110,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_destination_epoch_cannot_commit_a_transfer() {
+    fn the_source_commits_an_accepted_transfer_after_the_destination_is_replaced() {
         let mut directory = ZoneDirectory::new(10).unwrap();
         let hosts = registered_hosts(0);
         let source = directory
@@ -1088,10 +1146,71 @@ mod tests {
             )
             .unwrap();
 
-        assert!(matches!(
+        assert_eq!(
             registry.commit(TransferId::new(4), &source, &directory, 1),
-            Err(ControlPlaneError::StaleLease { .. })
-        ));
+            Ok(HandoffPhase::Committed)
+        );
+    }
+
+    #[test]
+    fn abort_wins_only_before_acceptance_and_a_newer_source_epoch_may_abort() {
+        let mut directory = ZoneDirectory::new(10).unwrap();
+        let hosts = registered_hosts(0);
+        let source = directory
+            .assign(ZoneId::new(1), host("host-a"), &hosts, 0)
+            .unwrap();
+        let destination = directory
+            .assign(ZoneId::new(2), host("host-b"), &hosts, 0)
+            .unwrap();
+        let mut registry = HandoffRegistry::default();
+        let ticket = |transfer: u64| HandoffTicket {
+            transfer_id: TransferId::new(transfer),
+            entity_id: EntityId::new(5),
+            source: source.clone(),
+            destination: destination.clone(),
+        };
+        registry.prepare(ticket(1), &directory, 0).unwrap();
+        // The source host is replaced; its successor aborts for it.
+        let successor = directory
+            .reassign(source.zone_id, source.epoch, host("host-c"), &hosts, 1)
+            .unwrap();
+        assert_eq!(
+            registry.abort(TransferId::new(1), &source, &directory, 1),
+            Err(ControlPlaneError::StaleLease {
+                zone_id: source.zone_id,
+                expected_epoch: source.epoch,
+                actual_epoch: successor.epoch,
+            })
+        );
+        assert_eq!(
+            registry.abort(TransferId::new(1), &successor, &directory, 1),
+            Ok(HandoffPhase::Aborted)
+        );
+        assert_eq!(
+            registry.abort(TransferId::new(1), &successor, &directory, 1),
+            Ok(HandoffPhase::Aborted)
+        );
+        assert_eq!(
+            registry.accept(TransferId::new(1), &destination, &directory, 1),
+            Err(ControlPlaneError::TransferAborted(TransferId::new(1)))
+        );
+        assert_eq!(
+            registry.commit(TransferId::new(1), &successor, &directory, 1),
+            Err(ControlPlaneError::TransferAborted(TransferId::new(1)))
+        );
+        // The entity is free again; an accepted transfer can no longer abort.
+        let mut second = ticket(2);
+        second.source = successor.clone();
+        registry.prepare(second, &directory, 1).unwrap();
+        registry
+            .accept(TransferId::new(2), &destination, &directory, 1)
+            .unwrap();
+        assert_eq!(
+            registry.abort(TransferId::new(2), &successor, &directory, 1),
+            Err(ControlPlaneError::TransferAlreadyAccepted(TransferId::new(
+                2
+            )))
+        );
     }
 
     #[test]

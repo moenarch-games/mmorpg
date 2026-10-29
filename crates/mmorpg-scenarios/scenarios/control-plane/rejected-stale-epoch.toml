@@ -1,6 +1,8 @@
 # After reassignment advances the zone epoch, every operation presenting the
 # old epoch fails closed without changing state: reassign, renew, release,
 # writes through the fenced runtime, and handoff phases bound to the old grant.
+# The zone's new epoch speaks for the fenced host: it confirms the accepted
+# transfer's source retirement (#145).
 name = "rejected-stale-epoch"
 lease_ttl_ticks = 100
 heartbeat_ttl_ticks = 1000
@@ -103,7 +105,6 @@ transfer = 7
 zone = 10
 host = "host-b"
 epoch = 2
-expect = "rejected:transfer_lease_mismatch"
 
 [[steps]]
 at = 13
