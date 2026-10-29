@@ -341,6 +341,8 @@ pub struct CanonicalZoneSnapshot {
     pub next_minion: u32,
     /// The night raid (#530).
     pub raid: crate::RaidState,
+    /// Private-home residents a knock woke, in NPC-ID order (#158).
+    pub wakes: Vec<crate::NpcWake>,
 }
 
 impl ZoneSimulation {
@@ -480,6 +482,7 @@ impl ZoneSimulation {
             minions: self.canonical_minions()?,
             next_minion: self.next_minion,
             raid: self.raid.clone(),
+            wakes: self.canonical_wakes(),
         })
     }
 
@@ -569,6 +572,7 @@ impl ZoneSimulation {
         zone.restore_debris(snapshot.debris, snapshot.next_debris)?;
         // The snapshot tick's routine placements and platforms (#56); doors are already as that
         // tick left them.
+        zone.restore_wakes(&snapshot.wakes, snapshot.tick)?;
         zone.place_routine_npcs(false)?;
         zone.schedule_platforms(zone.tick, true)?;
         if let Some(rewards) = &snapshot.rewards {

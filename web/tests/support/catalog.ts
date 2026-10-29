@@ -14,11 +14,11 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
       { id: 2, name: "Young Boar", family: "boar", behaviour: "neutral", minLevel: 1, maxLevel: 2, elite: false, halfExtents: [45, 45, 45], prop: null },
     ],
     npcs: [
-      { id: 1, name: "Marshal Elden Greywatch", role: "quest_giver", level: 10 },
-      { id: 2, name: "Tanner Hilda Brook", role: "quest_giver", level: 5 },
-      { id: 3, name: "Innkeeper Bram Tolliver", role: "vendor", level: 5 },
-      { id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10 },
-      { id: 6, name: "Greyhaven Guard", role: "guard", level: 10 },
+      { id: 1, name: "Marshal Elden Greywatch", role: "quest_giver", level: 10, wokenLine: "Mm? At this hour?" },
+      { id: 2, name: "Tanner Hilda Brook", role: "quest_giver", level: 5, wokenLine: null },
+      { id: 3, name: "Innkeeper Bram Tolliver", role: "vendor", level: 5, wokenLine: null },
+      { id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10, wokenLine: null },
+      { id: 6, name: "Greyhaven Guard", role: "guard", level: 10, wokenLine: null },
     ],
     areas: [{ id: 1, name: "Greyhaven Outpost" }],
     classes: [

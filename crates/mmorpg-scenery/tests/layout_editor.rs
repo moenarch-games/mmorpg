@@ -11,7 +11,7 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
     let mut document = source();
     // Move an existing house, suppress another, add a house from the same prefab.
     document["collision"] = json!([
-        {"id": 103, "position": [-2450, 3600]},
+        {"id": 106, "position": [2350, 3600]},
         {"id": 104, "position": [-1100, 3800], "removed": true},
         {"id": 60000, "position": [-2300, 2800]}
     ]);
@@ -35,7 +35,7 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
             .any(|collider| collider.id == 104)
     );
     assert!(!scenery.props.iter().any(|prop| prop.collider == Some(104)));
-    for id in [103, 60000] {
+    for id in [106, 60000] {
         let collider = definition
             .colliders()
             .iter()
@@ -68,11 +68,12 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
 #[test]
 fn invalid_overrides_fail_closed_before_publication() {
     for edit in [
-        json!([{"id": 103, "position": [0, 2000]}]), // spawn plaza / road
-        json!([{"id": 103, "position": [-1000, 3800]}]), // another house
-        json!([{"id": 103, "position": [i32::MAX, 3800]}]),
+        json!([{"id": 106, "position": [0, 2000]}]), // spawn plaza / road
+        json!([{"id": 106, "position": [1200, 3800]}]), // another house
+        json!([{"id": 106, "position": [i32::MAX, 3800]}]),
         json!([{"id": 149, "position": [1000, 1000], "removed": true}]), // inn door locked
-        json!([{"id": 103, "position": [-2400, 3600]}, {"id": 103, "position": [-2400, 3600]}]),
+        json!([{"id": 106, "position": [2400, 3600]}, {"id": 106, "position": [2400, 3600]}]),
+        json!([{"id": 103, "position": [-2450, 3600]}]), // Elden's walk-in house (#158) is locked
     ] {
         let mut document = source();
         document["collision"] = edit;

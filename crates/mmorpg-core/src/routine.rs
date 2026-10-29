@@ -61,7 +61,7 @@ pub struct NpcPlacement {
 }
 
 /// `(from, to, length)` of each leg, starting at `start`.
-fn legs(start: [i32; 2], path: &[[i32; 2]]) -> Vec<([i32; 2], [i32; 2], i64)> {
+pub(crate) fn legs(start: [i32; 2], path: &[[i32; 2]]) -> Vec<([i32; 2], [i32; 2], i64)> {
     let mut from = start;
     path.iter()
         .map(|&to| {
@@ -75,7 +75,11 @@ fn legs(start: [i32; 2], path: &[[i32; 2]]) -> Vec<([i32; 2], [i32; 2], i64)> {
 }
 
 /// The point `distance` units along the legs, walking forward or backward, with its heading.
-fn along(legs: &[([i32; 2], [i32; 2], i64)], distance: i64, forward: bool) -> NpcPlacement {
+pub(crate) fn along(
+    legs: &[([i32; 2], [i32; 2], i64)],
+    distance: i64,
+    forward: bool,
+) -> NpcPlacement {
     let total: i64 = legs.iter().map(|leg| leg.2).sum();
     let mut remaining = if forward { distance } else { total - distance };
     for &(from, to, length) in legs {
@@ -144,6 +148,15 @@ impl ZoneSimulation {
     pub fn npc_placement(&self, npc: NpcId) -> Option<NpcPlacement> {
         let definition = self.content.npc(npc)?;
         Some(match self.content.routine(npc) {
+            // A knock woke it (#158): it walks to its door and back to bed.
+            Some(routine)
+                if let Some(placement) = self
+                    .wakes
+                    .get(&npc)
+                    .and_then(|wake| self.wake_placement(wake, *routine.path.last()?)) =>
+            {
+                placement
+            }
             Some(routine) => routine.placement(
                 definition.position,
                 definition.facing,
@@ -200,7 +213,9 @@ impl ZoneSimulation {
                 ))
                 .map_err(|error| ZoneError::new(format!("npc body update failed: {error}")))?;
             self.interest.move_if_needed(entity, x, z);
-            if !open_doors || placement.velocity == [0, 0] {
+            // A woken resident's door follows its wake (`advance_private_homes`).
+            if !open_doors || placement.velocity == [0, 0] || self.wakes.contains_key(&routine.npc)
+            {
                 continue;
             }
             if let Some(door) = routine.door.and_then(|id| self.content.door(id).copied())

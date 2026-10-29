@@ -158,7 +158,10 @@ export type ErrorCode =
   | "not-while-swimming"
   | "handoff-corridor"
   | "in-combat"
-  | "invalid-waystone";
+  | "invalid-waystone"
+  | "private-home"
+  | "no-answer"
+  | "not-at-night";
 
 /** A directed strike's sweep side and height (#154); the zone resolves what it covers. */
 export type StrikeSide = "left" | "centre" | "right";
@@ -394,7 +397,8 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
   "not-equippable", "invalid-vendor", "not-enough-money", "chat-throttled", "invalid-quest", "quest-log-full",
   "quest-incomplete", "line-of-sight", "door-blocked", "vendor-closed", "door-busy", "no-minions",
-  "not-while-swimming", "handoff-corridor", "in-combat", "invalid-waystone",
+  "not-while-swimming", "handoff-corridor", "in-combat", "invalid-waystone", "private-home", "no-answer",
+  "not-at-night",
 ];
 /** Doors a zone's content may author (`mmorpg_core::MAX_DOORS`). */
 const MAX_DOORS = 9;

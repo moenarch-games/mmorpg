@@ -290,6 +290,8 @@ pub struct ZoneSimulation {
     pub(crate) transfers: crate::transfer::Transfers,
     /// The night raid's incidents, objective integrity and last resolution (#530).
     pub(crate) raid: crate::RaidState,
+    /// Private-home residents a knock woke, by NPC (#158).
+    pub(crate) wakes: BTreeMap<crate::NpcId, crate::NpcWake>,
 }
 
 impl ZoneSimulation {
@@ -438,6 +440,7 @@ impl ZoneSimulation {
             minions: BTreeMap::new(),
             next_minion: 1,
             raid: crate::RaidState::default(),
+            wakes: BTreeMap::new(),
             rewards: None,
             transfers: crate::transfer::Transfers::default(),
         })
@@ -826,6 +829,7 @@ impl ZoneSimulation {
         self.tick = now;
         // Routine NPCs stand where the new tick's time of day puts them (#158).
         self.place_routine_npcs(true)?;
+        self.advance_private_homes()?;
         Ok(())
     }
 

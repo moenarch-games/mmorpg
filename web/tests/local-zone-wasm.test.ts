@@ -281,7 +281,7 @@ describe("WASM local zone host", () => {
     run(source, 1);
     source.sendCommand({ kind: "use-door", door: 1, open: true });
     run(source, 2);
-    expect(source.latestProjection()?.doors).toEqual([{ door: 1, open: true }]);
+    expect(source.latestProjection()?.doors).toEqual([{ door: 1, open: true }, { door: 2, open: false }]);
     walk(32_768, t30(29));
     walk(EAST, t30(20));
     walk(32_768, t30(8));
@@ -527,7 +527,7 @@ describe("WASM local zone combat intents", () => {
     ]);
     expect(catalog.creatureTemplates.get(11)?.prop).toBe("explosive_barrel");
     expect(catalog.creatureTemplates.get(13)?.family).toBe("ogre");
-    expect(catalog.npcs.get(5)).toEqual({ id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10 });
+    expect(catalog.npcs.get(5)).toEqual({ id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10, wokenLine: null });
     expect(catalog.areas.get(2)).toBe("Wolfrun Woods");
     expect([...catalog.classes.values()].map((record) => [record.name, record.resource])).toEqual([
       ["warden", "rage"], ["ranger", "focus"], ["arcanist", "mana"], ["necromancer", "mana"], ["rogue", "focus"], ["cleric", "faith"], ["druid", "mana"],

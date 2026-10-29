@@ -34,6 +34,7 @@ mod forced;
 #[doc(hidden)]
 pub mod golden;
 mod guard;
+mod home;
 mod interest;
 mod inventory;
 mod loot;
@@ -129,6 +130,9 @@ pub use forced::{
 pub use guard::{
     GUARD_ARC_HALF_WIDTH, GUARD_ARC_OFFSET, GUARD_BREAK_IMPACT, GUARD_BREAK_TICKS,
     GUARD_SPEED_PERCENT, GuardState, STRIKE_RECOVERY_TICKS, lane_of,
+};
+pub use home::{
+    MAX_WAKE_WAYPOINTS, NpcWake, PRIVATE_DOOR_CLOSE_TICKS, PrivateHome, WAKE_IDLE_TICKS,
 };
 pub use interest::{InterestMaintenanceStats, InterestQueryStats, PlayerProjection};
 pub use inventory::{

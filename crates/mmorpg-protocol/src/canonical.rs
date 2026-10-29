@@ -95,6 +95,7 @@ pub fn encode_canonical_snapshot(
     encode_pieces(&mut payload, &snapshot.pieces)?;
     encode_minions(&mut payload, snapshot.next_minion, &snapshot.minions)?;
     crate::raid::encode_state(&mut payload, &snapshot.raid)?;
+    encode_wakes(&mut payload, &snapshot.wakes)?;
     crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
     Ok(payload)
 }
@@ -590,6 +591,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let pieces = decode_pieces(payload, &mut offset)?;
     let (next_minion, minions) = decode_minions(payload, &mut offset)?;
     let raid = crate::raid::decode_state(payload, &mut offset)?;
+    let wakes = decode_wakes(payload, &mut offset)?;
     let rewards = crate::rewards::decode_history(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
@@ -611,7 +613,43 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         minions,
         next_minion,
         raid,
+        wakes,
     })
+}
+
+/// Woken private-home residents (#158): a count (`u8`), then per wake in NPC-ID order its NPC
+/// (`u32`), knock tick and last quest request tick (`u64` each).
+fn encode_wakes(
+    payload: &mut Vec<u8>,
+    wakes: &[mmorpg_core::NpcWake],
+) -> Result<(), ProtocolError> {
+    let count = u8::try_from(wakes.len())
+        .map_err(|_| ProtocolError::new("npc wakes exceed their count"))?;
+    payload.push(count);
+    for wake in wakes {
+        payload.extend_from_slice(&wake.npc.get().to_be_bytes());
+        payload.extend_from_slice(&wake.knocked.to_be_bytes());
+        payload.extend_from_slice(&wake.idle_since.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_wakes(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::NpcWake>, ProtocolError> {
+    let [count] = crate::wire::take(payload, offset)?;
+    (0..count)
+        .map(|_| {
+            Ok(mmorpg_core::NpcWake {
+                npc: mmorpg_core::NpcId::new(u32::from_be_bytes(crate::wire::take(
+                    payload, offset,
+                )?)),
+                knocked: u64::from_be_bytes(crate::wire::take(payload, offset)?),
+                idle_since: u64::from_be_bytes(crate::wire::take(payload, offset)?),
+            })
+        })
+        .collect()
 }
 
 /// Summoned minions (#295): the next minion ID (`u32`) and count (`u16`), then per minion in ID
@@ -1870,6 +1908,11 @@ mod tests {
                     outcome: mmorpg_core::RaidOutcome::Lost,
                 }),
             },
+            wakes: vec![mmorpg_core::NpcWake {
+                npc: mmorpg_core::NpcId::new(1),
+                knocked: 2,
+                idle_since: 3,
+            }],
         }
     }
 

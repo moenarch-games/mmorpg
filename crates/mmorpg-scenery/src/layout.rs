@@ -95,11 +95,15 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
     // objects in place; only author additions append. Never reroll the scatter RNG.
     scenery.props.retain_mut(|prop| {
         if let Some(id) = prop.collider.filter(|id| (103..=106).contains(id)) {
-            if let Some(collider) = definition
-                .colliders()
-                .iter()
-                .find(|collider| collider.id == id)
-            {
+            // Elden's walk-in house (#158) collides through its parts; its anchor stands for it.
+            let anchor = (id == mmorpg_core::greyhaven_vale::ids::MARSHAL_HOUSE)
+                .then(crate::marshal_house_anchor);
+            if let Some(collider) = anchor.as_ref().or_else(|| {
+                definition
+                    .colliders()
+                    .iter()
+                    .find(|collider| collider.id == id)
+            }) {
                 *prop = house(collider);
             } else {
                 return false;

@@ -17,7 +17,7 @@ use mmorpg_scenery::{
 /// exactly on its own.
 const STABLE_HASH: &str = "fixtures/scenery/greyhaven-stable-hash.txt";
 
-/// The vale's colliders as scenery sees structures: the walk-in inn's walls and furniture
+/// The vale's colliders as scenery sees structures: the walk-in inn's and Elden's house's walls and furniture
 /// (#158) stand for one building, anchored by its footprint.
 fn vale_colliders() -> &'static [StaticCollider] {
     static COLLIDERS: std::sync::OnceLock<Vec<StaticCollider>> = std::sync::OnceLock::new();
@@ -28,9 +28,14 @@ fn inn_aware_colliders() -> Vec<StaticCollider> {
     let mut colliders: Vec<_> = greyhaven_vale_definition()
         .colliders()
         .iter()
-        .filter(|collider| !ids::INN_PARTS.contains(&collider.id))
+        .filter(|collider| {
+            !ids::INN_PARTS.contains(&collider.id)
+                && !ids::MARSHAL_HOUSE_PARTS.contains(&collider.id)
+        })
         .cloned()
         .collect();
+    // Elden's house (#158) likewise.
+    colliders.push(mmorpg_scenery::marshal_house_anchor());
     colliders.push(StaticCollider {
         id: ids::INN,
         position: [

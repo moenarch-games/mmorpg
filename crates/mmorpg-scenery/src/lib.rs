@@ -676,6 +676,24 @@ pub fn greyhaven_vale_scenery() -> Scenery {
         .expect("committed scenery layout is valid")
 }
 
+/// Marshal Elden Greywatch's house (#158) collides through its walls and furniture; house
+/// 103's footprint still anchors the building, its flattened ground and the decoration
+/// keep-out. Clients draw it from its bundle (`mmorpg_presentation::buildings`), not as a
+/// procedural house.
+#[must_use]
+pub fn marshal_house_anchor() -> StaticCollider {
+    let house = &greyhaven_vale::marshal_house::FOOTPRINT_HALF_EXTENTS;
+    StaticCollider {
+        id: ids::MARSHAL_HOUSE,
+        position: [
+            greyhaven_vale::marshal_house::ORIGIN[0],
+            house[1],
+            greyhaven_vale::marshal_house::ORIGIN[2],
+        ],
+        half_extents: *house,
+    }
+}
+
 fn unmasked_greyhaven_vale_scenery() -> Scenery {
     let definition = greyhaven_vale::base_definition();
     // The walk-in inn (#158) collides through its walls and furniture; its footprint still
@@ -698,14 +716,17 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
             half_extents: ramp.half_extents,
         })
         .collect();
-    // In its former collider order, right after the keep, so placement and hashes stay put.
+    let house = marshal_house_anchor();
+    // In their former collider order, the inn right after the keep and Elden's house after the
+    // smithy, so placement and hashes stay put.
     let structures: Vec<_> = definition
         .colliders()
         .iter()
         .filter_map(|collider| visual_kind(collider).map(|kind| (collider, kind)))
         .flat_map(|structure| {
             let inn = (structure.0.id == ids::KEEP).then_some((&inn, PropKind::Inn));
-            [Some(structure), inn].into_iter().flatten()
+            let house = (structure.0.id == ids::SMITHY).then_some((&house, PropKind::House));
+            [Some(structure), inn, house].into_iter().flatten()
         })
         .chain(ramps.iter().map(|ramp| (ramp, PropKind::Ramp)))
         .collect();

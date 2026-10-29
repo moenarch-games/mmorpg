@@ -302,6 +302,9 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::HandoffCorridor => "handoff_corridor",
         ErrorCode::InCombat => "in_combat",
         ErrorCode::InvalidWaystone => "invalid_waystone",
+        ErrorCode::PrivateHome => "private_home",
+        ErrorCode::NoAnswer => "no_answer",
+        ErrorCode::NotAtNight => "not_at_night",
     }
 }
 
@@ -344,6 +347,9 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "handoff_corridor" => ErrorCode::HandoffCorridor,
         "in_combat" => ErrorCode::InCombat,
         "invalid_waystone" => ErrorCode::InvalidWaystone,
+        "private_home" => ErrorCode::PrivateHome,
+        "no_answer" => ErrorCode::NoAnswer,
+        "not_at_night" => ErrorCode::NotAtNight,
         _ => return None,
     })
 }
@@ -508,6 +514,9 @@ mod tests {
             ErrorCode::HandoffCorridor,
             ErrorCode::InCombat,
             ErrorCode::InvalidWaystone,
+            ErrorCode::PrivateHome,
+            ErrorCode::NoAnswer,
+            ErrorCode::NotAtNight,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));
