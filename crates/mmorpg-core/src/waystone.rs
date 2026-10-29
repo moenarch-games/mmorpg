@@ -18,7 +18,10 @@
 //! zone uses the same fenced transfer as walking through a seam
 //! ([`crate::CharacterTransfer`]): the traveller becomes a departure
 //! ([`crate::ZoneSimulation::departures`]) and stays put until its host
-//! freezes it toward the stone's arrival.
+//! freezes it toward the stone's arrival. A host that cannot move players
+//! between zones leaves that off, and such travel is refused with
+//! [`crate::ErrorCode::InvalidWaystone`]
+//! ([`crate::ZoneSimulation::enable_waystone_departures`]).
 
 use crate::{
     CharacterLocation, ErrorCode, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError, ZoneId,
@@ -244,6 +247,9 @@ impl ZoneSimulation {
         if !self.content.waystones().contains(&target) {
             // Another logical zone: the player departs through the fenced
             // transfer, which the host starts from `departures`.
+            if !self.transfers.waystone_departures_enabled {
+                return Ok(Some((ErrorCode::InvalidWaystone, None)));
+            }
             self.transfers
                 .waystone_departures
                 .insert(player_id, destination);

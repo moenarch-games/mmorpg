@@ -141,8 +141,10 @@ fn transfer_id(body: &[u8]) -> Result<TransferId, SimulationError> {
 
 impl ZoneGameServerAdapter {
     /// Attaches the host's handoff service; the zone publishes its
-    /// departures to it every tick.
+    /// departures to it every tick and lets travellers leave for stones of
+    /// other zones.
     pub fn attach_handoffs(&mut self, channel: HandoffChannel) {
+        self.zone.enable_waystone_departures();
         self.handoffs = Some(channel);
     }
 

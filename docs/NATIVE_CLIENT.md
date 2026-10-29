@@ -234,6 +234,33 @@ Lease/commit failures fence the host. Object-store failures retain the last veri
 Acknowledged economy depends on the designated standby's durable receipt and replay. Promotion must preserve that confirmed history and fence the former primary; automatic database failover is not implemented here.
 The focused `persistence_host` test exercises a real WebTransport claim, complete host-process loss, journal recovery, reconnect and durable logout against PostgreSQL plus RustFS, without a GPU.
 
+## Trusted-LAN handoff hosts (#145)
+
+Hosts of neighbouring logical zones hand characters to each other through seams and waystones when each runs the `postgres` build with `MMORPG_HANDOFF_DATABASE_URL`, one PostgreSQL database they share ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#shared-control-plane-and-live-hosts-part-3b)). The host migrates the character and coordination schemas at start. It cannot be combined with `MMORPG_CHARACTER_DIR` or `MMORPG_RECOVERY_DIR`. Claims and the transfer link are unauthenticated: trusted LAN only.
+
+| Environment variable | Meaning | Default |
+| --- | --- | --- |
+| `MMORPG_HOST_ID` | This host's identity; a restart under the same ID takes back its own zone grants | required |
+| `MMORPG_TRANSFER_LINK` | This host's transfer link address | `127.0.0.1:4500` |
+| `MMORPG_ZONE_ROUTES` | `zone=host:port@session-route,…`: each peer zone's transfer link and the route its clients connect to | none |
+| `MMORPG_GRANT_TTL_MS` | Zone grant lifetime; renewed every third | 30000 |
+| `MMORPG_HANDOFF_TIMEOUT_MS` | Database statements and transfer link requests | 2000 |
+
+For example, Seam Test West and East on one machine (certificates as for any host):
+
+```sh
+MMORPG_HANDOFF_DATABASE_URL=postgres://… MMORPG_HOST_ID=west MMORPG_ZONE_IDS=901 MMORPG_PORT=4433 \
+  MMORPG_STATUS_PORT=9101 MMORPG_TRANSFER_LINK=127.0.0.1:4501 \
+  MMORPG_ZONE_ROUTES=902=127.0.0.1:4502@https://localhost:4434/game/matches/zone-902 \
+  cargo run -p mmorpg-game-server --features postgres --locked --bin mmorpg-zone-host
+MMORPG_HANDOFF_DATABASE_URL=postgres://… MMORPG_HOST_ID=east MMORPG_ZONE_IDS=902 MMORPG_PORT=4434 \
+  MMORPG_STATUS_PORT=9102 MMORPG_TRANSFER_LINK=127.0.0.1:4502 \
+  MMORPG_ZONE_ROUTES=901=127.0.0.1:4501@https://localhost:4433/game/matches/zone-901 \
+  cargo run -p mmorpg-game-server --features postgres --locked --bin mmorpg-zone-host
+```
+
+A departing session receives a redirect notice ([PROTOCOL.md](PROTOCOL.md#redirect-notice-145)); the clients do not follow it yet (#145 part 3c). The focused `handoff_hosts` test runs both host processes against `MMORPG_CHARACTERS_POSTGRES_URL`: a walker crosses the seam and a traveller teleports by waystone, each continuing at the other host.
+
 ### Client Settings and character controls
 
 The **Settings** button at the bottom right opens a modal on character selection

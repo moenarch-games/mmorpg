@@ -110,6 +110,9 @@ pub(crate) struct Transfers {
     /// Teleports to a stone of another zone, waiting for the host to freeze
     /// the traveller ([`ZoneSimulation::departures`]).
     pub(crate) waystone_departures: BTreeMap<PlayerId, CharacterLocation>,
+    /// Whether the host moves travellers to other zones
+    /// ([`ZoneSimulation::enable_waystone_departures`]).
+    pub(crate) waystone_departures_enabled: bool,
 }
 
 impl Transfers {
@@ -312,6 +315,15 @@ impl ZoneSimulation {
     #[must_use]
     pub fn staged_transfer(&self, transfer_id: TransferId) -> Option<&CharacterTransfer> {
         self.transfers.staged.get(&transfer_id)
+    }
+
+    /// Declares that this zone's host carries travellers to stones of other
+    /// zones through the fenced transfer. Without it such travel is refused
+    /// with [`crate::ErrorCode::InvalidWaystone`], as on a single-zone host.
+    /// Host-phase configuration, not canonical: the host sets it on every
+    /// zone it builds or restores.
+    pub fn enable_waystone_departures(&mut self) {
+        self.transfers.waystone_departures_enabled = true;
     }
 
     /// Takes over `previous`'s host-phase transfer state (frozen, staged and

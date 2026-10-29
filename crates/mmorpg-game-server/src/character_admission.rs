@@ -300,6 +300,9 @@ impl ZoneGameServerAdapter {
             }
         }
         self.zone = zone;
+        if self.handoffs.is_some() {
+            self.zone.enable_waystone_departures();
+        }
         self.characters = characters;
         self.parked_characters = parked_characters;
         Ok(())

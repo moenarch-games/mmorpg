@@ -192,7 +192,7 @@ async fn join(
 }
 
 enum Frame {
-    Projection(mmorpg_core::ZoneSnapshot),
+    Projection(Box<mmorpg_core::ZoneSnapshot>),
     Redirect(RedirectNotice),
 }
 
@@ -203,7 +203,7 @@ async fn next_frame(connection: &Connection, reassembler: &mut SnapshotReassembl
             return if is_redirect_notice(&frame.payload) {
                 Frame::Redirect(decode_redirect_notice(&frame.payload).unwrap())
             } else {
-                Frame::Projection(decode_snapshot(&frame.payload).unwrap())
+                Frame::Projection(Box::new(decode_snapshot(&frame.payload).unwrap()))
             };
         }
     }
