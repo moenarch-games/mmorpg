@@ -50,6 +50,7 @@ export function createArenaWorld(
     importedRestClip: (kind) => local.scenery.importedRestClip(kind),
     areaAt: () => null,
     reachablePieces: () => [],
+    raidArea: null,
     reliefAt: () => 0,
     regionModels: () => [],
   };

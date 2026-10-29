@@ -27,6 +27,7 @@ import {
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
 import { ImpactEffects, impactCues } from "./impact-effects";
+import { RaidSmoke } from "./raid-smoke";
 import { InnBuilding, INN_DOOR } from "./inn-building";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
 import { AmbientAnimals } from "./ambient-animals";
@@ -312,8 +313,14 @@ export class WorldView {
   #onArtProgress: (() => void) | null = null;
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
   readonly #impacts = new ImpactEffects();
+  /** Smoke over a raided barn (#530); one permanent imported root. */
+  readonly #raidSmoke = new RaidSmoke();
+  /** The raided barn's roof centre and smoke span in metres, by objective (#530). */
+  #raidRoof: { key: string; top: [number, number, number]; span: [number, number] } | null = null;
   #reachableDoor: (x: number, z: number) => number = () => 0;
   #reachablePieces: (x: number, z: number) => readonly number[] = () => [];
+  /** The night raid target's disturbance circle in units (#530), from the scenery. */
+  #raidArea: { x: number; z: number; radius: number } | null = null;
   #restClip: (kind: ImportedModelKind) => string = () => { throw new Error("No world is loaded."); };
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][]][] = [];
@@ -495,6 +502,8 @@ export class WorldView {
     this.#regions = new RegionArt(world, this.#models, this.#inn, this.#shrine, this.#outpost, this.#settlement, this.#ambient, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.inn.reachableDoor;
     this.#reachablePieces = world.scenery.reachablePieces;
+    this.#raidArea = world.scenery.raidArea;
+    this.#raidRoof = null;
     this.#units = null;
     this.#sceneryFrame = new SceneryFrame(this.#scene);
     this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
@@ -664,7 +673,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root] });
     }
   }
 
@@ -672,6 +681,7 @@ export class WorldView {
     this.cancelDirectedStrike();
     this.#impacts.clear();
     this.#guardHold.end();
+    this.#raidSmoke.clear();
     this.#pendingNpc = null;
     this.#clearModels();
     this.#lastSceneryNodes = [];
@@ -1023,6 +1033,8 @@ export class WorldView {
       }
     }
     this.#impacts.update(now);
+    const roof = this.#roofOf(projection.raid ? this.#raidArea : null, scenery.scenery);
+    this.#raidSmoke.update(projection.raid, roof?.top ?? null, roof?.span ?? [0, 0], now);
     const unitNodes = presented.nodes.filter((node) => !node.id.startsWith("fx-"));
     if (!self) {
       throw new Error("The projection is missing the viewer's own unit.");
@@ -1078,13 +1090,18 @@ export class WorldView {
     const settlement = this.#settlement?.roots() ?? { roots: [], changed: false };
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#natureReview?.roots() ?? { roots: [], changed: false };
-    if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || ambient.changed || nature.changed || !this.#impacts.root.parent) {
-      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...ambient.roots, ...nature.roots, this.#impacts.root] });
+    if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || ambient.changed || nature.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent) {
+      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root] });
     }
     this.#lastWork = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
     this.#sky.update(this.#horizon(view.eye, view.target), seconds, true);
-    this.#minimap?.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, others);
+    // A night raid's approximate disturbance area while its assault runs (#530).
+    const area = this.#raidArea;
+    const disturbance = area && (projection.raid?.phase ?? 0) > 0
+      ? { x: area.x / unitsPerMetre, z: area.z / unitsPerMetre, radius: area.radius / unitsPerMetre }
+      : null;
+    this.#minimap?.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, others, disturbance);
     this.#frameRate.sample(now);
     this.#overlay.update({
       fps: this.#frameRate.fps,
@@ -1134,6 +1151,29 @@ export class WorldView {
       const onScreen = point.z > -1 && point.z < 1 && Math.abs(point.x) <= 1.05 && Math.abs(point.y) <= 1.05;
       return [{ npc: entity.entityId, x: ((point.x + 1) / 2) * width, y: ((1 - point.y) / 2) * height, onScreen }];
     });
+  }
+
+  /** The roof of the barn nearest the raid target's area (units), from the scenery's props. */
+  #roofOf(objective: { x: number; z: number } | null, scenery: ZoneWorld["scenery"]["scenery"]): { top: [number, number, number]; span: [number, number] } | null {
+    if (!objective) {
+      return null;
+    }
+    const key = `${objective.x},${objective.z}`;
+    if (this.#raidRoof?.key !== key) {
+      const barn = scenery.props
+        .filter((prop) => prop.kind === "barn")
+        .sort((a, b) => Math.hypot(a.position[0] - objective.x, a.position[2] - objective.z) - Math.hypot(b.position[0] - objective.x, b.position[2] - objective.z))[0];
+      if (!barn) {
+        return null;
+      }
+      const unit = scenery.unitsPerMetre;
+      this.#raidRoof = {
+        key,
+        top: [barn.position[0] / unit, (barn.position[1] + 2 * barn.halfExtents[1]) / unit, barn.position[2] / unit],
+        span: [(1.4 * barn.halfExtents[0]) / unit, (1.4 * barn.halfExtents[2]) / unit],
+      };
+    }
+    return this.#raidRoof;
   }
 
   #minimapUnit(entity: EntityState, unitsPerMetre: number): MinimapUnit {

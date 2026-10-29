@@ -242,6 +242,8 @@ export type ZoneSnapshot = {
   doors: readonly DoorState[];
   /** Destructible pieces that are not intact, in ID order (#305). */
   pieces: readonly PieceState[];
+  /** The night raid's signals while the viewer is near its target (#530); null otherwise. */
+  raid: RaidSignal | null;
   events: readonly ZoneEvent[];
   /** Chat lines the viewer heard this tick, in delivery order; cosmetic and lossy like events. */
   chat: readonly ChatLine[];
@@ -252,6 +254,15 @@ export type ZoneSnapshot = {
   /** Pieces of broken props, nearest first (#288). */
   debris: readonly DebrisState[];
 };
+
+/**
+ * The night raid as seen near its target (#530): the assault phase (1–3, or 0 once it resolved
+ * while the barn still recovers) and the barn's integrity in percent. The target's approximate
+ * disturbance circle is content (`SceneryProvider.raidArea`).
+ */
+export type RaidSignal = { phase: number; integrity: number };
+/** Assault phases per raid (`mmorpg_core::raid::RAID_PHASES`). */
+const RAID_PHASES = 3;
 
 /** A destructible piece's damage stage (#305); intact pieces are not sent. */
 export type PieceStage = "damaged" | "crumbling" | "destroyed";
@@ -371,7 +382,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "not-while-swimming", "handoff-corridor",
 ];
 /** Doors a zone's content may author (`mmorpg_core::MAX_DOORS`). */
-const MAX_DOORS = 10;
+const MAX_DOORS = 9;
 const MAX_QUESTS = 32;
 const MAX_QUEST_LOG = 10;
 const MAX_QUEST_OBJECTIVES = 3;
@@ -1056,6 +1067,17 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     }
     pieces.push({ piece, stage });
   }
+  // One code byte: 0 without a signal, otherwise one more than the phase; then the integrity.
+  let raid: RaidSignal | null = null;
+  const raidCode = reader.u8();
+  if (raidCode > 0) {
+    const phase = raidCode - 1;
+    const integrity = reader.u8();
+    if (phase > RAID_PHASES || integrity > 100) {
+      throw new Error("Invalid raid section");
+    }
+    raid = { phase, integrity };
+  }
   const eventCount = reader.u8();
   if (eventCount > MAX_EVENTS) {
     throw new Error("Snapshot exceeds the event capacity");
@@ -1164,7 +1186,7 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
       copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, target,
       classChoice, resource, cast, globalCooldown, damage, guard, stance, combo, breath,
     },
-    cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors, pieces,
+    cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors, pieces, raid,
     events, chat, entities, projectiles, debris,
   };
   PROJECTION_BYTES.set(snapshot, payload.slice());

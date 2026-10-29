@@ -466,6 +466,20 @@ pub fn reachable_pieces(x: i32, z: i32) -> Vec<u16> {
         .collect()
 }
 
+/// The night raid target's approximate disturbance circle (#530) as `[x, z, radius]` in units,
+/// or empty without a raid target.
+#[wasm_bindgen(js_name = raidArea)]
+#[must_use]
+pub fn raid_area() -> Vec<i32> {
+    host::hosted_content()
+        .raid()
+        .map(|site| {
+            let ([x, z], radius) = site.area();
+            vec![x, z, radius]
+        })
+        .unwrap_or_default()
+}
+
 /// The authored action graph as JSON (#380, #381): actions by region, edges
 /// with windows in ms and ticks, recovery modifiers and compatibility rules.
 #[wasm_bindgen(js_name = actionGraph)]
