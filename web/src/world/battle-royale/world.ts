@@ -51,6 +51,8 @@ export function createArenaWorld(
     areaAt: () => null,
     reachablePieces: () => [],
     raidArea: null,
+    waystoneAt: () => 0,
+    waystones: [],
     reliefAt: () => 0,
     regionModels: () => [],
   };

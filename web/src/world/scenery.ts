@@ -1,5 +1,6 @@
 import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
+import type { WaystoneSite } from "./units/waystone-panel";
 /**
  * Presentation scenery from the WASM `scenery()` export (format
  * `mmorpg.scenery`), which maps the Rust `mmorpg-scenery` value the native
@@ -110,6 +111,10 @@ export type SceneryContent = StaticSceneContent & {
   reachablePieces(x: number, z: number): Uint16Array;
   /** The night raid target's disturbance circle (#530): `[x, z, radius]` units, or empty. */
   raidArea(): Int32Array;
+  /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
+  waystoneAt(x: number, z: number): number;
+  /** Names of the waystone network in ID order (ID = index + 1). */
+  waystoneNames(): string[];
   reliefAt(x: number, z: number): number;
   /** Per area, the imported unit models its creatures use (#240), as JSON. */
   regionModels(): string;
@@ -155,6 +160,10 @@ export type SceneryProvider = {
   reachablePieces(x: number, z: number): readonly number[];
   /** The night raid target's approximate disturbance circle in units (#530), if the zone has one. */
   readonly raidArea: { x: number; z: number; radius: number } | null;
+  /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
+  waystoneAt(x: number, z: number): number;
+  /** The waystone network in ID order. */
+  readonly waystones: readonly WaystoneSite[];
   /** Presentation relief at `(x, z)` in units; units are drawn raised by it. */
   reliefAt(x: number, z: number): number;
   /** The imported unit models the creatures of area `id` use (#240). */
@@ -482,6 +491,10 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       const area = content.raidArea();
       return area.length === 3 ? { x: area[0]!, z: area[1]!, radius: area[2]! } : null;
     })(),
+    waystoneAt(x, z) {
+      return content.waystoneAt(Math.round(x), Math.round(z));
+    },
+    waystones: content.waystoneNames().map((name, index) => ({ id: index + 1, name })),
     areaAt(x, z) {
       const id = content.areaAt(Math.round(x), Math.round(z));
       if (id === undefined) {

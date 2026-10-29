@@ -17,6 +17,7 @@ export const HEALTHY_VIEWER: ViewerState = {
   stance: null,
   combo: null,
   breath: BREATH_MAX_TICKS,
+  waystones: [],
 };
 
 /** Nothing equipped. */

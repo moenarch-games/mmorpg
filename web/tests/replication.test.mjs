@@ -95,7 +95,7 @@ describe("Rust/browser snapshot contract", () => {
         copper: 42, experience: 37, experienceToNextLevel: 400, health: 38, maxHealth: 110, level: 4, dead: false, inCombat: true,
         target: WOLF, classChoice: { classId: "arcanist", sex: "female" },
         resource: { kind: "mana", value: 121, max: 176 }, cast: { ability: 9, elapsed: 40, total: 120, channel: false }, globalCooldown: 25,
-        damage: { min: 9, max: 12 }, guard: { raised: "high", protecting: false, broken: 30 }, stance: null, combo: null, breath: 1800,
+        damage: { min: 9, max: 12 }, guard: { raised: "high", protecting: false, broken: 30 }, stance: null, combo: null, breath: 1800, waystones: [],
       },
       cooldowns: [{ ability: 10, remaining: 412 }, { ability: 11, remaining: 700 }],
       auras: [{ ability: 11, kind: "absorb", remaining: 500, amount: 31 }],
@@ -198,7 +198,7 @@ describe("Rust/browser snapshot contract", () => {
     for (const [offset, value, message] of [
       [0, 4, "protocol"],
       [3, 1, "player-visible"],
-      [53, 0b100, "Reserved"],
+      [53, 0b10_0000, "Unknown waystone"],
       [53, 0b11, "Inconsistent"],
       [54, 9, "kind"],
       [CLASS, 15, "ability state"],

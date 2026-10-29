@@ -261,6 +261,12 @@ impl Logs {
                         mmorpg_core::ErrorCode::HandoffCorridor => {
                             "Not here: you are crossing into another region.".into()
                         }
+                        mmorpg_core::ErrorCode::InCombat => {
+                            "You can't travel while in combat.".into()
+                        }
+                        mmorpg_core::ErrorCode::InvalidWaystone => {
+                            "The waystone cannot take you there.".into()
+                        }
                         mmorpg_core::ErrorCode::NotWhileSwimming => {
                             "You can't do that while swimming.".into()
                         }

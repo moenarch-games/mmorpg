@@ -44,6 +44,7 @@ import { ShieldGuardHold, canGuard, guardCommand } from "./units/shield-guard";
 import { ClassHud } from "./units/class-hud";
 import { CombatHud } from "./units/combat-hud";
 import { LootPanel, type LootElements } from "./units/loot-panel";
+import { WaystonePanel, type WaystoneElements } from "./units/waystone-panel";
 import { VendorPanel, type VendorElements } from "./units/vendor-panel";
 import { QuestPanel, type MarkerPoint, type QuestElements } from "./units/quest-panel";
 import { ChatFrame, type ChatElements } from "./units/chat-frame";
@@ -79,6 +80,7 @@ export type WorldViewElements = {
   bags: BagsElements;
   character: CharacterElements;
   loot: LootElements;
+  waystone: WaystoneElements;
   vendor: VendorElements;
   quests: QuestElements;
   chat: ChatElements;
@@ -338,6 +340,7 @@ export class WorldView {
   readonly #bags: BagsPanel;
   readonly #character: CharacterPane;
   readonly #loot: LootPanel;
+  readonly #waystone: WaystonePanel;
   readonly #vendor: VendorPanel;
   readonly #quests: QuestPanel;
   readonly #chat: ChatFrame;
@@ -409,6 +412,7 @@ export class WorldView {
     this.#bags = new BagsPanel(elements.bags, (command, onSent) => this.queueIntent(() => command, onSent));
     // The pane and the vendor share the bags' received sheet: one revision covers bag and equipment.
     this.#character = new CharacterPane(elements.character, this.#bags.state, (command, onSent) => this.queueIntent(() => command, onSent));
+    this.#waystone = new WaystonePanel(elements.waystone, (command) => this.queueIntent(() => command));
     this.#loot = new LootPanel(elements.loot, (intent) => this.queueIntent(intent), () => {
       this.#bags.close();
       this.#character.close(false);
@@ -504,6 +508,7 @@ export class WorldView {
     this.#reachablePieces = world.scenery.reachablePieces;
     this.#raidArea = world.scenery.raidArea;
     this.#raidRoof = null;
+    this.#waystone.load(world.scenery.waystoneAt, world.scenery.waystones);
     this.#units = null;
     this.#sceneryFrame = new SceneryFrame(this.#scene);
     this.#minimap = new Minimap(this.#elements.minimap, buildMinimapLayers(scenery, ENVIRONMENT));
@@ -941,6 +946,7 @@ export class WorldView {
       this.#bags.update(received);
       this.#character.update(received);
       this.#loot.update(received);
+      this.#waystone.update(received);
       this.#vendor.update(received);
       this.#quests.update(received);
       this.#chat.update(received);
