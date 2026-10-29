@@ -28,6 +28,7 @@ pub mod inn;
 pub mod layout;
 pub mod marsh;
 pub mod quests;
+pub mod raid;
 pub mod shrine;
 pub mod units;
 
@@ -1431,7 +1432,8 @@ pub fn content_with_definition(
                     .chain(marsh::water_volumes())
                     .collect(),
             )?
-            .with_climbing(climbing())?,
+            .with_climbing(climbing())?
+            .with_raid(raid::millbrook_barn())?,
     ))
 }
 

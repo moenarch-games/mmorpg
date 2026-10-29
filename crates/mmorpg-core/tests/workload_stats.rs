@@ -12,7 +12,8 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
 
     zone.advance_tick().unwrap();
     let work = zone.tick_work();
-    // Breakable props (#288) stand on fixed bodies and decide nothing.
+    // Breakable props (#288) stand on fixed bodies and decide nothing; night raiders (#530) have
+    // no body until an incident commits them.
     let props = content
         .creature_spawns()
         .iter()
@@ -22,9 +23,10 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
                 .is_some_and(|template| template.prop().is_some())
         })
         .count();
+    let raiders = content.raid().map_or(0, |site| site.raiders().count());
     assert_eq!(
         work.creature_ai_evaluations,
-        content.creature_spawns().len() - props
+        content.creature_spawns().len() - props - raiders
     );
     let physics = work.physics.unwrap();
     assert_eq!(
@@ -33,6 +35,7 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
             + 6
             + content.npcs().len()
             + content.creature_spawns().len()
+            - raiders
             + content.doors().len()
             + content.platforms().len()
             + content.ramps().len()

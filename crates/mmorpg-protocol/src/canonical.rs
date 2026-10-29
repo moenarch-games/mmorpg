@@ -93,6 +93,7 @@ pub fn encode_canonical_snapshot(
     encode_debris(&mut payload, snapshot.next_debris, &snapshot.debris)?;
     encode_pieces(&mut payload, &snapshot.pieces)?;
     encode_minions(&mut payload, snapshot.next_minion, &snapshot.minions)?;
+    crate::raid::encode_state(&mut payload, &snapshot.raid)?;
     crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
     Ok(payload)
 }
@@ -545,6 +546,7 @@ fn encode_creature(
             }
         }
     }
+    crate::raid::encode_member(payload, creature.raid);
     Ok(())
 }
 
@@ -580,6 +582,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let (next_debris, debris) = decode_debris(payload, &mut offset)?;
     let pieces = decode_pieces(payload, &mut offset)?;
     let (next_minion, minions) = decode_minions(payload, &mut offset)?;
+    let raid = crate::raid::decode_state(payload, &mut offset)?;
     let rewards = crate::rewards::decode_history(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
@@ -600,6 +603,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         pieces,
         minions,
         next_minion,
+        raid,
     })
 }
 
@@ -1140,6 +1144,7 @@ fn decode_creature(
     } else {
         None
     };
+    let raid = crate::raid::decode_member(payload, offset)?;
     Ok(CanonicalCreatureSnapshot {
         generation,
         creature_id,
@@ -1157,6 +1162,7 @@ fn decode_creature(
         loot,
         abilities,
         encounter,
+        raid,
     })
 }
 
@@ -1736,6 +1742,7 @@ mod tests {
                         participants: vec![7],
                         contributors: vec![7],
                     }),
+                    raid: None,
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
@@ -1757,6 +1764,13 @@ mod tests {
                     tapped_by: Some(8),
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: None,
+                    raid: Some(mmorpg_core::RaidMember {
+                        incident: 2,
+                        leg: mmorpg_core::RaidLeg::Retreat,
+                        waypoint: 4,
+                        anchor: [6_400, -1_200],
+                        since: 5,
+                    }),
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
@@ -1778,6 +1792,7 @@ mod tests {
                     tapped_by: None,
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: None,
+                    raid: None,
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
@@ -1796,6 +1811,7 @@ mod tests {
                     tapped_by: None,
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: None,
+                    raid: None,
                 },
             ],
             pieces: vec![mmorpg_core::CanonicalPiece {
@@ -1821,6 +1837,22 @@ mod tests {
                 velocity: [0.5, 0.0, -0.75],
             }],
             next_minion: 6,
+            raid: mmorpg_core::RaidState {
+                incidents: 2,
+                active: Some(mmorpg_core::RaidIncident {
+                    id: 2,
+                    phase: 2,
+                    phase_started: 3,
+                    scaled_for: vec![0, 2],
+                    participants: vec![1, 2],
+                }),
+                damage: 40,
+                last: Some(mmorpg_core::RaidResolution {
+                    incident: 1,
+                    at: 1,
+                    outcome: mmorpg_core::RaidOutcome::Lost,
+                }),
+            },
         }
     }
 

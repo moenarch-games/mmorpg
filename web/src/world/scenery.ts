@@ -108,6 +108,8 @@ export type SceneryContent = StaticSceneContent & {
   areaAt(x: number, z: number): number | undefined;
   /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
   reachablePieces(x: number, z: number): Uint16Array;
+  /** The night raid target's disturbance circle (#530): `[x, z, radius]` units, or empty. */
+  raidArea(): Int32Array;
   reliefAt(x: number, z: number): number;
   /** Per area, the imported unit models its creatures use (#240), as JSON. */
   regionModels(): string;
@@ -151,6 +153,8 @@ export type SceneryProvider = {
   areaAt(x: number, z: number): Area | null;
   /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
   reachablePieces(x: number, z: number): readonly number[];
+  /** The night raid target's approximate disturbance circle in units (#530), if the zone has one. */
+  readonly raidArea: { x: number; z: number; radius: number } | null;
   /** Presentation relief at `(x, z)` in units; units are drawn raised by it. */
   reliefAt(x: number, z: number): number;
   /** The imported unit models the creatures of area `id` use (#240). */
@@ -474,6 +478,10 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     reachablePieces(x, z) {
       return [...content.reachablePieces(Math.round(x), Math.round(z))];
     },
+    raidArea: (() => {
+      const area = content.raidArea();
+      return area.length === 3 ? { x: area[0]!, z: area[1]!, radius: area[2]! } : null;
+    })(),
     areaAt(x, z) {
       const id = content.areaAt(Math.round(x), Math.round(z));
       if (id === undefined) {

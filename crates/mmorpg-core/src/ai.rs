@@ -18,6 +18,11 @@
 //!   Swimming players are never aggro candidates, and an engaged creature
 //!   drops every target it cannot fight across the water's surface.
 //!
+//! - **Raiders** (#530): a night raider leashes and evades to its anchor (where its last fight
+//!   began, or its camp spot), not its staging spawn. Idle on a march, it walks its route
+//!   instead of wandering (`raid`). A withdrawing raider picks no fights, and one back on its
+//!   march after an evade keeps its wounds.
+//!
 //! When a creature engages from idle, idle creatures of its family within
 //! the assist radius engage the same target (one level, no chains). Steering
 //! sets body velocity only; physics resolves obstacles and contact.
@@ -169,7 +174,13 @@ impl ZoneSimulation {
             creature.level,
         );
 
+        // A withdrawing raider (#530) leaves rather than picks fights; it still defends itself.
+        let withdrawing = creature
+            .raid
+            .is_some_and(|member| member.leg == crate::RaidLeg::Retreat);
+        let home = self.creature_home(id, spawn);
         if idle
+            && !withdrawing
             && template.behaviour == CreatureBehaviour::Aggressive
             && let Some(player) = self.aggro_candidate(here, level)?
             && !self.in_handoff_corridor(player)
@@ -246,7 +257,6 @@ impl ZoneSimulation {
             _ => None,
         };
 
-        let home = spawn.position;
         // Creatures also turn back before a cross-zone handoff corridor and
         // never fight a target standing in one (#145).
         let leashed = distance_squared(home, here) > i64::from(LEASH_RADIUS_UNITS).pow(2)
@@ -264,6 +274,8 @@ impl ZoneSimulation {
             }
             _ => None,
         };
+        // A raider on its march (#530) walks its route instead of wandering.
+        let march = self.march(id, centre, half)?;
         // An engaged creature that keeps fighting may cast its ability.
         // Abilities are aimed at players only; minions (#295) take swings.
         let casting = match chase {
@@ -322,6 +334,7 @@ impl ZoneSimulation {
             },
             // Large creatures (#297) hold their ground while idle instead of wandering, so they
             // draw nothing from the zone RNG until a fight.
+            CreatureAi::Idle { .. } if march.is_some() => march.unwrap_or(([0, 0], None)),
             CreatureAi::Idle { .. } if template.is_large() => ([0, 0], None),
             CreatureAi::Idle { .. } => wander(
                 &mut self.rng,
@@ -395,13 +408,23 @@ impl ZoneSimulation {
                     distance_squared(here, home) <= i64::from(ARRIVAL_RADIUS_UNITS).pow(2);
                 if arrived || ticks >= EVADE_TIMEOUT_TICKS {
                     teleport_home = !arrived;
-                    creature.health = template.max_health(creature.level);
+                    // A raider back on its march (#530) keeps its wounds and marches on at once.
+                    let marching = creature
+                        .raid
+                        .is_some_and(|member| member.leg != crate::RaidLeg::Camp);
+                    if !marching {
+                        creature.health = template.max_health(creature.level);
+                    }
                     creature.swing_timer = 0;
                     creature.combat_timer = 0;
                     creature.tapped_by = None;
                     creature.reset_abilities();
                     creature.ai = CreatureAi::Idle {
-                        timer: wander_wait(&mut self.rng),
+                        timer: if marching {
+                            0
+                        } else {
+                            wander_wait(&mut self.rng)
+                        },
                         destination: None,
                     };
                     ([0, 0], None)

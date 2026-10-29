@@ -93,6 +93,7 @@ describe("scenery provider and local world", () => {
     ambientAnimalClips: () => ["Idle", "Walk"],
     ambientAnimalAnchors: () => Int32Array.from([1_800, 600]),
     ambientAnimalFrame: () => new Float32Array(18),
+    raidArea: () => new Int32Array(),
   });
 
   test("decodes the ambient animals' anchors (#419)", () => {

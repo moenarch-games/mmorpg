@@ -285,6 +285,8 @@ pub struct ZoneSimulation {
     /// Frozen, staged and activated character transfers (#145); host-phase
     /// state the handoff record reconciles, not canonical.
     pub(crate) transfers: crate::transfer::Transfers,
+    /// The night raid's incidents, objective integrity and last resolution (#530).
+    pub(crate) raid: crate::RaidState,
 }
 
 impl ZoneSimulation {
@@ -312,7 +314,12 @@ impl ZoneSimulation {
             .map(|spawn| spawn.id)
             .collect();
         for id in spawns {
-            zone.spawn_creature(id)?;
+            // Night raiders (#530) stand only once an incident commits them.
+            if zone.content.is_raider(id) {
+                zone.reserve_raider(id)?;
+            } else {
+                zone.spawn_creature(id)?;
+            }
         }
         Ok(zone)
     }
@@ -427,6 +434,7 @@ impl ZoneSimulation {
             resolving_late: 0,
             minions: BTreeMap::new(),
             next_minion: 1,
+            raid: crate::RaidState::default(),
             rewards: None,
             transfers: crate::transfer::Transfers::default(),
         })
@@ -761,7 +769,8 @@ impl ZoneSimulation {
     ///    order, then swings in `EntityRef` order: swing timers, range checks
     ///    after movement, damage, threat, deaths, tapping (minions after creatures);
     /// 7. minions whose time ran out crumble, then health and class-resource regeneration,
-    ///    corpse despawns and respawns in ID order;
+    ///    corpse despawns and respawns in ID order, structure regrowth, then the night raid
+    ///    (#530: barn hits, phases, outcome, marches and the nightly trigger);
     /// 8. talk and explore quest objectives of living players in player-ID
     ///    order;
     /// 9. the tick counter.
@@ -805,6 +814,7 @@ impl ZoneSimulation {
         self.resolve_combat(now)?;
         self.update_timers(now)?;
         self.regrow_pieces(now)?;
+        self.advance_raid(now)?;
         self.advance_combos();
         self.advance_authored();
         self.advance_quest_objectives(now)?;

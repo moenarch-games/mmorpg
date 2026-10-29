@@ -243,6 +243,11 @@ export type MinimapElements = {
 
 export type MinimapUnit = { x: number; z: number; disposition: Disposition };
 
+/** An approximate disturbance area (#530): a night raid's circle, centre and radius in metres. */
+export type MinimapDisturbance = { x: number; z: number; radius: number };
+
+const DISTURBANCE_COLOR = "#ff7a3d";
+
 /** Paints the pre-rendered map image once; vectors are drawn over the terrain pixels. */
 export function paintMinimapImage(layers: MinimapLayers): HTMLCanvasElement {
   const image = document.createElement("canvas");
@@ -327,7 +332,13 @@ export class Minimap {
   }
 
   /** Draws the map around `self` (metres); `heading` is the camera yaw, `facing` the character's. */
-  draw(self: { x: number; z: number }, heading: number, facing: number, units: readonly MinimapUnit[]): void {
+  draw(
+    self: { x: number; z: number },
+    heading: number,
+    facing: number,
+    units: readonly MinimapUnit[],
+    disturbance: MinimapDisturbance | null = null,
+  ): void {
     const { canvas } = this.#elements;
     const context = canvas.getContext("2d");
     if (!context) {
@@ -363,6 +374,9 @@ export class Minimap {
       (this.#layers.min[1] - self.z) * this.#layers.pixelsPerMetre,
     );
     context.restore();
+    if (disturbance) {
+      this.#drawDisturbance(context, disturbance, self, heading, pixelsPerMetre, radius, ratio);
+    }
     // Units as dots, the player's arrow on top.
     for (const unit of units) {
       const [dx, dy] = clampToRim(minimapOffset(unit.x - self.x, unit.z - self.z, heading, this.#headingUp, pixelsPerMetre), radius - 5 * ratio);
@@ -398,5 +412,43 @@ export class Minimap {
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText("N", radius + nx, radius + ny);
+  }
+
+  /** A soft circle over the area, or a pip on the rim pointing at it while it is off the map. */
+  #drawDisturbance(
+    context: CanvasRenderingContext2D,
+    area: MinimapDisturbance,
+    self: { x: number; z: number },
+    heading: number,
+    pixelsPerMetre: number,
+    radius: number,
+    ratio: number,
+  ): void {
+    const [dx, dy] = minimapOffset(area.x - self.x, area.z - self.z, heading, this.#headingUp, pixelsPerMetre);
+    const size = area.radius * pixelsPerMetre;
+    context.save();
+    context.beginPath();
+    context.arc(radius, radius, radius, 0, 2 * Math.PI);
+    context.clip();
+    if (Math.hypot(dx, dy) - size < radius) {
+      context.fillStyle = "rgb(255 122 61 / 22%)";
+      context.strokeStyle = DISTURBANCE_COLOR;
+      context.lineWidth = 1.5 * ratio;
+      context.setLineDash([4 * ratio, 3 * ratio]);
+      context.beginPath();
+      context.arc(radius + dx, radius + dy, size, 0, 2 * Math.PI);
+      context.fill();
+      context.stroke();
+    } else {
+      const [px, py] = clampToRim([dx, dy], radius - 7 * ratio);
+      context.fillStyle = DISTURBANCE_COLOR;
+      context.strokeStyle = "rgb(0 0 0 / 60%)";
+      context.lineWidth = ratio;
+      context.beginPath();
+      context.arc(radius + px, radius + py, 4.5 * ratio, 0, 2 * Math.PI);
+      context.fill();
+      context.stroke();
+    }
+    context.restore();
   }
 }

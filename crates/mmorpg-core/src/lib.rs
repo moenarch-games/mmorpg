@@ -49,6 +49,7 @@ mod projectile;
 mod projection;
 mod pvp;
 mod quest;
+pub mod raid;
 mod ramp;
 mod rewards;
 pub mod rng;
@@ -160,6 +161,10 @@ pub use quest::{
     MAX_QUEST_OBJECTIVES, MAX_QUEST_TEXT_BYTES, MAX_QUESTS, MAX_REWARD_CHOICES, NpcMarker,
     QUEST_REACH_UNITS, Quest, QuestContentError, QuestEntry, QuestId, QuestLog, QuestMarker,
     QuestObjective, QuestRewards, QuestSheet,
+};
+pub use raid::{
+    RaidApproach, RaidIncident, RaidLeg, RaidMember, RaidOutcome, RaidResolution, RaidSite,
+    RaidState, RaidView,
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use rewards::{RewardGrant, RewardHistory, RewardKey};

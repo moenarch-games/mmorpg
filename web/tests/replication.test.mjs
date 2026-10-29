@@ -32,7 +32,9 @@ const STATS = EQUIPMENT + 12;
 const QUESTS = STATS + 8;
 const DOORS = INVENTORY + 8 + 1 + 84 + 16 + 1;
 const PIECES = DOORS + 1 + 2 * 2;
-const EVENTS = PIECES + 1 + 2 * 3;
+/** The night raid section (#530): code byte (phase + 1) and integrity. */
+const RAID = PIECES + 1 + 2 * 3;
+const EVENTS = RAID + 2;
 /** Two chat lines and an emote follow the sixteen events: 6 + 16, 6 + 8 and 6 bytes. */
 const CHAT = EVENTS + 1 + 16 * 14;
 const EMOTE = CHAT + 1 + 22 + 14;
@@ -86,7 +88,7 @@ describe("Rust/browser snapshot contract", () => {
     }
   });
   test("decodes the same golden bytes as the Rust encoder", () => {
-    expect(fixture.length).toBe(117 + 2 * 2 + 2 * 3 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 27 + 4 * 20);
+    expect(fixture.length).toBe(118 + 1 + 2 * 2 + 2 * 3 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 27 + 4 * 20);
     expect(decodeSnapshot(fixture)).toEqual({
       zoneId: 42, tick: 99n, contentRevision: 4n, acknowledgedSequence: 81, viewerId: 7,
       viewer: {
@@ -114,6 +116,7 @@ describe("Rust/browser snapshot contract", () => {
       loot: null,
       doors: [{ door: 1, open: true }, { door: 2, open: false }],
       pieces: [{ piece: 2, stage: "damaged" }, { piece: 0x0105, stage: "destroyed" }],
+      raid: { phase: 2, integrity: 63 },
       events: [
         { kind: "damage-dealt", source: VIEWER, target: WOLF, amount: 7, critical: true },
         { kind: "damage-taken", source: WOLF, target: VIEWER, amount: 3, critical: false },

@@ -1101,6 +1101,8 @@ impl ZoneSimulation {
         creature.threat.clear();
         creature.swing_timer = 0;
         creature.combat_timer = 0;
+        // A fallen raider (#530) stays gone: its slot stands again only for a later incident.
+        creature.raid = None;
         creature.reset_abilities();
         creature.loot = creature.tapped_by.and(loot);
         let contributors = creature
@@ -1171,7 +1173,13 @@ impl ZoneSimulation {
             if !creature.is_alive() || !matches!(creature.ai, CreatureAi::Idle { .. }) {
                 continue;
             }
-            let home = spawn.position;
+            // Raid survivors (#530) rally from their camp spot once they reinforce the camp; on
+            // a march they keep marching.
+            let home = match creature.raid {
+                None => spawn.position,
+                Some(member) if member.leg == crate::RaidLeg::Camp => member.anchor,
+                Some(_) => continue,
+            };
             let point = [
                 home[0] + (rules.rally_point[0] - home[0]) * 2 / 3,
                 home[1] + (rules.rally_point[1] - home[1]) * 2 / 3,
@@ -1331,8 +1339,10 @@ impl ZoneSimulation {
                 continue;
             };
             let (_, template) = Self::creature_content(&content, creature_id)?;
-            // A prop (#288) stands again only once no unit stands on its spot.
+            // A prop (#288) stands again only once no unit stands on its spot; night raiders
+            // (#530) only when an incident commits them.
             if let Life::Despawned { died_at } = creature.life
+                && !content.is_raider(creature_id)
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))
                 && (template.prop().is_none() || !self.prop_spot_taken(creature_id)?)
             {
