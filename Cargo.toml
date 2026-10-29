@@ -32,7 +32,7 @@ mmorpg-game-server = { path = "crates/mmorpg-game-server" }
 mmorpg-scenery = { path = "crates/mmorpg-scenery" }
 mmorpg-presentation = { path = "crates/mmorpg-presentation" }
 postgres = "=0.19.14"
-tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

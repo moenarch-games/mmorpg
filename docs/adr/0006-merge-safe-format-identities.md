@@ -19,7 +19,7 @@ Fixtures are unversioned (`fixtures/protocol/commands.hex`, `player-snapshot.hex
 ## Kept numeric
 
 - PostgreSQL schema versions are ordered migrations (`MIGRATIONS.len()`). Appending to the same list conflicts in git.
-- `CHARACTER_RECORD_WIRE_VERSION`, `ENTRY_FORMAT_VERSION`, `CHARACTER_RECORD_SCHEMA_VERSION`, the binding registry, roster and browser save versions are all still 1 or 2 and are rarely touched. The next change to one of them replaces it with a token the same way.
+- `CHARACTER_RECORD_WIRE_VERSION`, `CHARACTER_RECORD_SCHEMA_VERSION`, the binding registry, roster and browser save versions are all still 1 or 2 and are rarely touched. The next change to one of them replaces it with a token the same way, as #145 did for `ENTRY_FORMAT_VERSION`.
 - The `game-server` session frame version (3) belongs to that repository.
 - `PINNED_*_REVISION` and the Battle Royale arena content revision (`2` in `web/src/world/battle-royale/protocol.ts` and `mmorpg-wasm`) are cross-repository pins. They change when the pin moves. When battle-royale re-pins this crate, its content revision becomes its content hash and the browser pin takes that value.
 

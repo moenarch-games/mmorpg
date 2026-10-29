@@ -9,7 +9,7 @@ The scaling unit is an authoritative zone. Each zone runs one deterministic phys
 | Zone simulation | Fixed ticks in a documented order, ordered players, capacity, sequenced facing-relative movement and grounded jumps; units, targeting, free-aim swings, death, corpses, respawn, release spirit, regeneration and tapping; deterministic creature AI (wander, aggro, assist, chase, leash, evade); separate AI/combat and loot RNGs; XP/levels, bags, money and atomic corpse claims; class abilities, equipment and vendors; quests (bounded logs, kill/collect/talk/explore objectives, rewards with an item choice, per-player NPC markers) and the Greyhaven chain; bounded per-player events; interest projections; Garrick Redbrand's shared-boss rules and Redbrand Whirl (#276) | Party-based reward sharing (5.3.6, 5.4.5) |
 | Physics | Pinned engine, shared Greyhaven Vale content (colliders, spawn plaza, areas, road corridors, creature and NPC bodies), validated static and unit content, gravity, velocity-preserving recovery | Authored content pipeline, character controller, pathfinding around obstacles, workload limits |
 | Ownership | Expiring fenced directory; heartbeat-gated host placement; `FencedZoneRuntime` checks every reference-runtime operation | Durable linearizable directory, host-incarnation/local permits, lease-aware network serving |
-| Handoff | Idempotent metadata, renewal-safe identity, one active transfer per entity | Frozen state export, staged import, activation/retirement, crash reconciliation |
+| Handoff | Idempotent metadata, renewal-safe identity, one active transfer per entity; zone-local freeze/stage/activate/retire/abort; fenced abort and store-held pending transfers with lease move; trusted-LAN host link; reconciliation at every phase | Durable (PostgreSQL) handoff records, live-host wiring, client cutover (#145 part 3) |
 | Partitioning | `LogicalZone` reference model (#146): contiguous column strips per host, boundaries that move around interaction islands, coalescing instead of splitting an island, read-only ghosts, one tick barrier, fixed-timestep time dilation, zone-level command sequences across migration, declared timer clock domains | Partition-local `ZoneSimulation` hosting, ghost replication transport, island reporting from core, live entity migration |
 | Transport | Shared sessions, reconnect, WebTransport, multi-zone host, graceful recovery | Authentication, durable character binding, fleet routing |
 | Graphics | Native wgpu/winit and browser Three.js presentation of Greyhaven scenery, class/sex looks, normalized Ranger asset, procedural creature/NPC models, terrain/roads/water and instanced props; cosmetic lighting/fog/day-night and viewer ability poses/effects; native live WebTransport and bounded interpolation; browser WASM local host or development WebTransport host; targeting/ability intents and projected combat status | Remaining native interface parity (#183: roster persistence/preview, combat text, nameplates, gamepad, settings), shared presentation generation (#184), nameplates (#22 step 7b), other authored avatars, richer effects and prediction/reconciliation |
@@ -347,18 +347,15 @@ humanoid [#39](https://github.com/moenarch-games/mmorpg/issues/39), and first-sk
 
 A transfer ID is independent of connection and session identity. The metadata registry permits one unfinished transfer per entity and binds its source and destination grants by authority identity. Renewal is safe; stale epochs and transfer-ID collisions fail closed. Committing a transfer releases the entity's reservation, and retrying an old commit cannot release a newer reservation.
 
-The live protocol still needs to implement this ordering:
+Character transfers (#145, [ADR 0007](adr/0007-seam-corridors-and-character-transfer.md)) follow this ordering, in `mmorpg_game_server::handoff`:
 
-1. Validate both grants and reserve a unique transfer for the durable entity.
-2. Freeze the source entity at a tick boundary; export complete transferable state, including physics and gameplay continuation.
-3. Stage the payload at the destination idempotently and reserve capacity. A staged entity must not tick or accept gameplay commands.
-4. Record destination acceptance durably.
-5. Retire the frozen source only after acceptance; record retirement/commit evidence.
-6. Activate the destination exactly once and issue the new session route.
+1. The source freezes the player at a tick boundary and exports the `CharacterTransfer`; the character store records it as the pending handoff under the source's character lease (from then on nobody writes, releases or acquires the character); the registry prepares the transfer.
+2. The destination stages the payload idempotently. A staged character does not tick or accept commands.
+3. The destination records its acceptance: the decision point. Before it the source may abort (`HandoffPhase::Aborted`) and stays authoritative; from it on the transfer completes. The store then commits the transfer's record and grants the destination the lease in one step.
+4. The source retires its frozen copy and commits the transfer.
+5. The destination activates exactly once. Part 3 issues the new session route.
 
-Acceptance and activation are distinct. Allowing the destination to tick immediately while the source still ticks duplicates authority. Retries must bind transfer ID to payload identity as well as both epochs. Recovery must reconcile staged/frozen state with durable transfer status before either entity resumes.
-
-The current registry stores metadata only: `Accepted` does not prove a payload was durably imported and `Committed` does not itself retire an entity. Orphaned transfers intentionally retain their reservation. Automatic expiry or unilateral rollback could duplicate a player; an explicit fenced cancellation/reconciliation protocol is required before live use. Terminal records also need a durable retention/deduplication policy before an unbounded production workload.
+Every step is idempotent per transfer ID. Recovery reconciles a host's frozen or staged copy from the handoff record, and a character whose hosts both stopped is resolved from the store's pending copy by whoever next acquires it: an accepted transfer completes to its destination, an unaccepted one is taken back only by a newer epoch of the source zone. Hosts carry transfers over a trusted-LAN TCP link (`transfer_link`). The registry is still the in-memory reference model; its PostgreSQL persistence and terminal-record retention remain open.
 
 ## Logical-zone partitioning
 
