@@ -193,6 +193,17 @@ impl ZoneSimulation {
             {
                 Some((ErrorCode::YouAreDead, None))
             }
+            // Nothing economically meaningful begins at a cross-zone seam (#145).
+            PlayerIntent::Loot(_)
+            | PlayerIntent::BuyItem { .. }
+            | PlayerIntent::SellItem { .. }
+            | PlayerIntent::AcceptQuest { .. }
+            | PlayerIntent::CompleteQuest { .. }
+            | PlayerIntent::AbandonQuest { .. }
+                if self.in_handoff_corridor(player_id) =>
+            {
+                Some((ErrorCode::HandoffCorridor, None))
+            }
             PlayerIntent::MoveItem {
                 source,
                 destination,
@@ -287,6 +298,15 @@ impl ZoneSimulation {
             self.notify(player_id, ZoneEvent::Error { code, target });
         }
         Ok(refused)
+    }
+
+    /// Whether the creature ignores the player's attack: it is evading, or the
+    /// player stands in a handoff corridor, where no kill begins (#145).
+    pub(crate) fn creature_evades(&self, player_id: PlayerId, creature_id: CreatureId) -> bool {
+        self.creatures
+            .get(&creature_id)
+            .is_some_and(|creature| matches!(creature.ai, CreatureAi::Evading { .. }))
+            || self.in_handoff_corridor(player_id)
     }
 
     pub(crate) fn update_player(
@@ -570,10 +590,7 @@ impl ZoneSimulation {
             return Ok(());
         }
         if let EntityRef::Creature(creature_id) = target
-            && self
-                .creatures
-                .get(&creature_id)
-                .is_some_and(|creature| matches!(creature.ai, CreatureAi::Evading { .. }))
+            && self.creature_evades(player_id, creature_id)
         {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
@@ -697,7 +714,7 @@ impl ZoneSimulation {
         if !creature.is_alive() || self.combat_blocked(source, target) {
             return Ok(());
         }
-        if matches!(creature.ai, CreatureAi::Evading { .. }) {
+        if self.creature_evades(player_id, creature_id) {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
         }

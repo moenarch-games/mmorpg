@@ -71,6 +71,7 @@ pub struct ZoneContent {
     closed_at_night: Vec<NpcId>,
     waters: Vec<crate::WaterVolume>,
     climbing: crate::ClimbSurfaces,
+    handoff_corridors: Vec<crate::HandoffCorridor>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -189,6 +190,7 @@ impl ZoneContent {
             closed_at_night: Vec::new(),
             waters: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
+            handoff_corridors: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -230,6 +232,7 @@ impl ZoneContent {
             closed_at_night: Vec::new(),
             waters: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
+            handoff_corridors: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -824,8 +827,107 @@ impl ZoneContent {
         }
         self.routines = routines;
         self.closed_at_night = closed_at_night;
+        self.validate_corridor_clearance(&self.handoff_corridors)?;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
+    }
+
+    /// Binds the cross-zone seam corridors of this zone (#145), at most
+    /// [`crate::MAX_HANDOFF_CORRIDORS`]. Corridors must not overlap, and every
+    /// creature's wander area, NPC, routine path, the graveyard and every
+    /// player spawn slot must stay clear of each corridor and its turn-back
+    /// margin, so no unit of this zone reaches the seam.
+    pub fn with_handoff_corridors(
+        mut self,
+        corridors: Vec<crate::HandoffCorridor>,
+    ) -> Result<Self, ZoneError> {
+        if corridors.len() > crate::MAX_HANDOFF_CORRIDORS {
+            return Err(ZoneError::new("zone handoff corridor capacity reached"));
+        }
+        for (index, corridor) in corridors.iter().enumerate() {
+            corridor.validate()?;
+            if corridors[..index]
+                .iter()
+                .any(|other| other.corridor.overlaps(corridor.corridor))
+            {
+                return Err(ZoneError::new("handoff corridors overlap"));
+            }
+        }
+        self.validate_corridor_clearance(&corridors)?;
+        self.handoff_corridors = corridors;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Cross-zone seam corridors in authoring order (#145).
+    #[must_use]
+    pub fn handoff_corridors(&self) -> &[crate::HandoffCorridor] {
+        &self.handoff_corridors
+    }
+
+    fn validate_corridor_clearance(
+        &self,
+        corridors: &[crate::HandoffCorridor],
+    ) -> Result<(), ZoneError> {
+        use crate::corridor::overlaps_box;
+        let margin = crate::CORRIDOR_TURN_BACK_UNITS;
+        let player = [PLAYER_HALF_EXTENTS_UNITS[0], PLAYER_HALF_EXTENTS_UNITS[2]];
+        for corridor in corridors {
+            let bounds = corridor.corridor;
+            for spawn in &self.spawns {
+                let half = self
+                    .creature_template(spawn.template)
+                    .map_or(player, |template| {
+                        [template.half_extents[0], template.half_extents[2]]
+                    });
+                let reach = [half[0] + spawn.wander_radius, half[1] + spawn.wander_radius];
+                if overlaps_box(bounds, spawn.position, reach, margin) {
+                    return Err(ZoneError::new(
+                        "a creature can wander into a handoff corridor",
+                    ));
+                }
+            }
+            if self
+                .npcs
+                .iter()
+                .any(|npc| overlaps_box(bounds, npc.position, player, margin))
+                || overlaps_box(bounds, self.graveyard, player, margin)
+            {
+                return Err(ZoneError::new(
+                    "an npc or the graveyard is in a handoff corridor",
+                ));
+            }
+            for routine in &self.routines {
+                // Each leg's bounding box: conservative, never too lenient.
+                let legs = routine
+                    .path
+                    .windows(2)
+                    .map(|pair| (pair[0], pair[1]))
+                    .chain(routine.path.iter().map(|&point| (point, point)));
+                let reach = margin + player[0].max(player[1]);
+                if legs.into_iter().any(|(from, to)| {
+                    let leg = crate::XzBounds {
+                        min: [from[0].min(to[0]), from[1].min(to[1])],
+                        max: [from[0].max(to[0]) + 1, from[1].max(to[1]) + 1],
+                    };
+                    crate::corridor::grown(leg, reach).overlaps(bounds)
+                }) {
+                    return Err(ZoneError::new("an npc routine enters a handoff corridor"));
+                }
+            }
+            for slot in 0..MAX_PLAYERS_PER_ZONE {
+                let feet = u16::try_from(slot)
+                    .ok()
+                    .and_then(|slot| self.definition.spawn_grid().feet(slot))
+                    .ok_or_else(|| ZoneError::new("spawn grid overflows"))?;
+                if overlaps_box(bounds, [feet[0], feet[2]], player, 0) {
+                    return Err(ZoneError::new(
+                        "a player spawn slot is in a handoff corridor",
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Ordered by NPC ID.
@@ -849,13 +951,33 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_player_combat_fingerprint();
+        let fingerprint = self.compute_corridor_fingerprint();
         if self.character_persistence == CharacterPersistence::Durable {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/ephemeral-characters-v1");
         hash.u64(fingerprint);
+        hash.finish()
+    }
+
+    fn compute_corridor_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_player_combat_fingerprint();
+        if self.handoff_corridors.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/handoff-corridors-v1");
+        hash.u64(fingerprint);
+        hash.len(self.handoff_corridors.len());
+        for corridor in &self.handoff_corridors {
+            hash.u32(corridor.neighbor.get());
+            for bounds in [corridor.corridor, corridor.crossing] {
+                hash.i32s(&bounds.min);
+                hash.i32s(&bounds.max);
+            }
+            hash.i32s(&corridor.offset);
+        }
         hash.finish()
     }
 

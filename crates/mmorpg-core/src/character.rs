@@ -218,6 +218,15 @@ impl ZoneSimulation {
         Ok(())
     }
 
+    /// Validates a record a transfer brings into this zone, as admission would.
+    pub(crate) fn validate_transfer_record(
+        &self,
+        record: &CharacterRecord,
+    ) -> Result<(), ZoneError> {
+        self.require_durable_characters()?;
+        self.validate_character(record)
+    }
+
     fn require_durable_characters(&self) -> Result<(), ZoneError> {
         if self.content.character_persistence() == crate::CharacterPersistence::Ephemeral {
             return Err(ZoneError::new(

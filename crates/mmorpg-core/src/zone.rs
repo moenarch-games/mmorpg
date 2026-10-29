@@ -282,6 +282,9 @@ pub struct ZoneSimulation {
     /// Summoned minions by ID (#295), and the next minion ID.
     pub(crate) minions: BTreeMap<crate::MinionId, crate::Minion>,
     pub(crate) next_minion: u32,
+    /// Frozen, staged and activated character transfers (#145); host-phase
+    /// state the handoff record reconciles, not canonical.
+    pub(crate) transfers: crate::transfer::Transfers,
 }
 
 impl ZoneSimulation {
@@ -425,6 +428,7 @@ impl ZoneSimulation {
             minions: BTreeMap::new(),
             next_minion: 1,
             rewards: None,
+            transfers: crate::transfer::Transfers::default(),
         })
     }
 

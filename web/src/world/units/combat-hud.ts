@@ -45,6 +45,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "door-busy": "The door is still swinging.",
   "no-minions": "You have no minions or companion to command.",
   "not-while-swimming": "You can't do that while swimming.",
+  "handoff-corridor": "Not here: you are crossing into another region.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

@@ -23,6 +23,7 @@ mod combat;
 mod combo;
 mod content;
 mod corpse_loot;
+mod corridor;
 mod creature;
 mod door;
 mod entity;
@@ -58,6 +59,7 @@ mod snapshot;
 mod stance;
 mod strike;
 mod structure;
+mod transfer;
 pub mod trig;
 pub mod unit;
 mod vendor;
@@ -96,6 +98,9 @@ pub use content::{
     ZoneContent, ZoneDefinition,
 };
 pub use corpse_loot::{LOOT_REACH_UNITS, LootClaim, LootView};
+pub use corridor::{
+    CORRIDOR_TURN_BACK_UNITS, HandoffCorridor, MAX_HANDOFF_CORRIDORS, SeamCrossing,
+};
 pub use creature::{
     AGGRO_MAX_RADIUS_UNITS, AGGRO_MIN_RADIUS_UNITS, AGGRO_PER_LEVEL_UNITS, AGGRO_RADIUS_UNITS,
     ARRIVAL_RADIUS_UNITS, ASSIST_RADIUS_UNITS, CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK,
@@ -174,6 +179,7 @@ pub use structure::{
     CanonicalPiece, MAX_PIECES, MAX_SITES, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceStage,
     PieceView, REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
 };
+pub use transfer::{CharacterTransfer, MAX_REMEMBERED_TRANSFERS, TransferId, TransferMotion};
 pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError,
     VendorTradeError, sell_price, settle_purchase, settle_sale, starter_vendor_stock,

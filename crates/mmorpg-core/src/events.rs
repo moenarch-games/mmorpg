@@ -88,6 +88,9 @@ pub enum ErrorCode {
     NoMinions,
     /// The action graph refuses this attack in water (#413).
     NotWhileSwimming,
+    /// Loot, trades and quest changes do not begin in a cross-zone handoff
+    /// corridor (#145).
+    HandoffCorridor,
 }
 
 /// One feedback event addressed to a player.

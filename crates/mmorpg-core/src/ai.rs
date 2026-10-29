@@ -172,6 +172,7 @@ impl ZoneSimulation {
         if idle
             && template.behaviour == CreatureBehaviour::Aggressive
             && let Some(player) = self.aggro_candidate(here, level)?
+            && !self.in_handoff_corridor(player)
         {
             self.engage(id, EntityRef::Player(player), true)?;
         }
@@ -246,7 +247,11 @@ impl ZoneSimulation {
         };
 
         let home = spawn.position;
-        let leashed = distance_squared(home, here) > i64::from(LEASH_RADIUS_UNITS).pow(2);
+        // Creatures also turn back before a cross-zone handoff corridor and
+        // never fight a target standing in one (#145).
+        let leashed = distance_squared(home, here) > i64::from(LEASH_RADIUS_UNITS).pow(2)
+            || chase.is_some_and(|(_, to)| self.handoff_corridor_at(to[0], to[1]).is_some())
+            || self.near_handoff_corridor(here, [half.x, half.z]);
         // Walls, pieces and rubble in the way (#307): a route around them.
         let ai = self.creatures.get(&id).map(|creature| creature.ai);
         let route = match (ai, chase) {

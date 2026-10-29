@@ -1012,10 +1012,7 @@ impl ZoneSimulation {
             return Ok(());
         }
         if let EntityRef::Creature(creature_id) = target
-            && self
-                .creatures
-                .get(&creature_id)
-                .is_some_and(|creature| matches!(creature.ai, CreatureAi::Evading { .. }))
+            && self.creature_evades(player_id, creature_id)
         {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
