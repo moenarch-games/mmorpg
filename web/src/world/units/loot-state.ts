@@ -181,4 +181,7 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "handoff-corridor": "Not here: you are crossing into another region. The corpse keeps its rewards.",
   "in-combat": null,
   "invalid-waystone": null,
+  "private-home": null,
+  "no-answer": null,
+  "not-at-night": null,
 };

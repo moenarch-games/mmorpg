@@ -82,9 +82,9 @@ export type SceneryContent = StaticSceneContent & {
   reviewStaticSceneWithoutOak?(index: number): string;
   /** The shared unit presenter (#184) of one joined player. */
   UnitPresenter: new (player: number) => UnitPresenterHandle;
-  /** The shared walk-in inn presenter (#158): door swing and interior look. */
-  InnPresenter: (new () => InnPresenterHandle) & {
-    entries(): string[];
+  /** The shared walk-in building presenters (#158): door swing and interior look, one per building. */
+  BuildingPresenter: (new (index: number) => BuildingPresenterHandle) & {
+    count(): number;
     reachableDoor(x: number, z: number): number;
   };
   /** The Sunken Shrine's kit (#431): its entries, and per placed module its entry and 16 model floats. */
@@ -120,8 +120,14 @@ export type SceneryContent = StaticSceneContent & {
   regionModels(): string;
 };
 
-/** The WASM inn presenter (`mmorpg_presentation::buildings::Inn`). */
-export type InnPresenterHandle = {
+/** A WASM walk-in building presenter (`mmorpg_presentation::buildings::WalkIn`). */
+export type BuildingPresenterHandle = {
+  /** The bundle directory under `buildings/`, its door and the door leaf's entry. */
+  bundle(): string;
+  door(): number;
+  doorEntry(): string;
+  /** The bundle entries, in `frame` order. */
+  entries(): string[];
   /** Per entry 16 column-major model floats then 1 shown / 0 hidden; `viewer` is feet in metres or empty. */
   frame(open: boolean, viewer: Float64Array, dt: number, reducedMotion: boolean): Float32Array;
 };
@@ -143,8 +149,8 @@ export type SceneryProvider = {
   readonly reviewWithoutOak?: (index: number) => StaticSceneContent;
   /** A fresh shared unit presenter for `player`. */
   unitPresenter(player: number): UnitPresenterHandle;
-  /** The walk-in inn's bundle entries, its presenter, and the door feet at `(x, z)` units reach (0 none). */
-  readonly inn: { entries(): readonly string[]; presenter(): InnPresenterHandle; reachableDoor(x: number, z: number): number };
+  /** The walk-in buildings' presenters, and the door feet at `(x, z)` units reach (0 none). */
+  readonly buildings: { presenters(): BuildingPresenterHandle[]; reachableDoor(x: number, z: number): number };
   /** The Sunken Shrine's kit entries and placed modules (#431), column-major matrices in metres. */
   readonly shrine: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** The Outpost kit buildings' entries and placed modules (#420), column-major matrices in metres. */
@@ -442,10 +448,9 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       },
     } : {}),
     unitPresenter: (player) => new content.UnitPresenter(player),
-    inn: {
-      entries: () => content.InnPresenter.entries(),
-      presenter: () => new content.InnPresenter(),
-      reachableDoor: (x, z) => content.InnPresenter.reachableDoor(Math.round(x), Math.round(z)),
+    buildings: {
+      presenters: () => Array.from({ length: content.BuildingPresenter.count() }, (_, index) => new content.BuildingPresenter(index)),
+      reachableDoor: (x, z) => content.BuildingPresenter.reachableDoor(Math.round(x), Math.round(z)),
     },
     shrine: (() => {
       const models = content.shrineKitModels();

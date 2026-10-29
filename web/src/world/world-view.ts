@@ -28,7 +28,7 @@ import {
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
 import { ImpactEffects, impactCues } from "./impact-effects";
 import { RaidSmoke } from "./raid-smoke";
-import { InnBuilding, INN_DOOR } from "./inn-building";
+import { WalkInBuildings } from "./walk-in-buildings";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
 import { AmbientAnimals } from "./ambient-animals";
 import { ArtPrefetch } from "./art-prefetch";
@@ -197,7 +197,7 @@ class RegionArt {
   readonly #ambientAreas: Set<number>;
   readonly #prefetch: ArtPrefetch;
 
-  constructor(world: ZoneWorld, models: QuaterniusUnits, inn: InnBuilding, shrine: KitModules, outpost: KitModules, settlement: KitModules, ambient: AmbientAnimals, onProgress: () => void) {
+  constructor(world: ZoneWorld, models: QuaterniusUnits, inn: WalkInBuildings, shrine: KitModules, outpost: KitModules, settlement: KitModules, ambient: AmbientAnimals, onProgress: () => void) {
     this.#world = world;
     const innProp = world.scenery.scenery.props.find((prop) => prop.kind === "inn");
     this.#innArea = innProp ? world.scenery.areaAt(innProp.position[0], innProp.position[2])?.id ?? null : null;
@@ -300,8 +300,8 @@ export class WorldView {
   readonly #sky: SkyLayer;
   /** Imported unit models (Atlas 6.3.6/6.3.7), skinned once loaded; the shared presenter picks their clips. */
   readonly #models = new QuaterniusUnits((kind) => this.#restClip(kind));
-  /** The walk-in inn (#158), drawn from its asset-tooling bundle once loaded. */
-  #inn: InnBuilding | null = null;
+  /** The walk-in inn and Elden's house (#158), drawn from their asset-tooling bundles once loaded. */
+  #inn: WalkInBuildings | null = null;
   /** The Sunken Shrine (#431), drawn from asset-tooling's shrine kit once loaded. */
   #shrine: KitModules | null = null;
   /** The Outpost kit buildings (#420), drawn from asset-tooling's Outpost kit once loaded; their blockouts until then. */
@@ -496,7 +496,7 @@ export class WorldView {
     this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
     this.#natureReview = new NatureReview(world.scenery, this.#scene);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
-    this.#inn = new InnBuilding(world.scenery.inn.presenter(), world.scenery.inn.entries());
+    this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
     this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries, world.scenery.outpost.placements);
     this.#settlement = new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements);
@@ -504,7 +504,7 @@ export class WorldView {
     // starting area's pieces, and play fetches each area the player approaches.
     this.#ambient = new AmbientAnimals(world.scenery.ambient);
     this.#regions = new RegionArt(world, this.#models, this.#inn, this.#shrine, this.#outpost, this.#settlement, this.#ambient, () => this.#onArtProgress?.());
-    this.#reachableDoor = world.scenery.inn.reachableDoor;
+    this.#reachableDoor = world.scenery.buildings.reachableDoor;
     this.#reachablePieces = world.scenery.reachablePieces;
     this.#raidArea = world.scenery.raidArea;
     this.#raidRoof = null;
@@ -1052,8 +1052,7 @@ export class WorldView {
     this.#character.update(projection);
     this.#loot.update(projection);
     this.#lastSelf = { x: self.x, z: self.z, facing: self.facing };
-    const innOpen = projection.doors.some((door) => door.door === INN_DOOR && door.open);
-    this.#inn?.update(innOpen, [self.x, self.feetY, self.z], deltaSeconds, !animate);
+    this.#inn?.update(projection.doors, [self.x, self.feetY, self.z], deltaSeconds, !animate);
     this.#ambient?.update(this.#seconds, animate);
     if (this.#framePending) {
       this.#framePending = false;
@@ -1435,7 +1434,9 @@ export class WorldView {
       /** Copies of actual submitted geometry transforms, never a simulation control. */
       unitNodes: (identity: string) => structuredClone(this.#lastUnitNodes.filter((node) => node.id.startsWith(`${identity}-`))),
       /** The walk-in inn (#158): whether its bundle loaded and which entries the last frame showed. */
-      inn: () => this.#inn?.observe() ?? null,
+      inn: () => this.#inn?.observe("greyhaven.inn") ?? null,
+      /** Elden's private home (#158), likewise. */
+      marshalHouse: () => this.#inn?.observe("greyhaven.marshal-house") ?? null,
       /** The Sunken Shrine kit (#431): whether its modules loaded and which are placed. */
       shrine: () => this.#shrine?.observe() ?? null,
       /** The Outpost kit buildings (#420): whether their modules loaded and which are placed. */

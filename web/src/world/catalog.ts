@@ -26,7 +26,8 @@ export type CreatureTemplate = {
   prop: PropKind | null;
 };
 
-export type NpcRecord = { id: number; name: string; role: NpcRole; level: number };
+/** `wokenLine`: a private-home resident's night greeting (#158); such an NPC offers only turn-ins at night. */
+export type NpcRecord = { id: number; name: string; role: NpcRole; level: number; wokenLine: string | null };
 
 export type EquipmentSlotName = "mainHand" | "offHand" | "head" | "chest" | "legs" | "feet";
 /** Equipment slot names by wire index (0 main hand … 5 feet). */
@@ -147,6 +148,14 @@ function list(value: unknown, name: string, maximum: number): readonly unknown[]
   return value;
 }
 
+/** Dialog text of at most 240 bytes, like quest text. */
+function prose(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.trim().length === 0 || value.length > 240) {
+    fail(`${name} must be non-empty text of at most 240 characters`);
+  }
+  return value;
+}
+
 function text(value: unknown, name: string): string {
   if (typeof value !== "string" || value.trim().length === 0 || value.length > 64) {
     fail(`${name} must be non-empty text`);
@@ -218,12 +227,13 @@ export function decodeCatalog(json: string): ContentCatalog {
   });
   const npcs = list(root.npcs, "npcs", 256).map((value, index) => {
     const name = `npc ${index}`;
-    const record = object(value, ["id", "name", "role", "level"], name);
+    const record = object(value, ["id", "name", "role", "level", "wokenLine"], name);
     return {
       id: int(record.id, `${name} id`, 0, 0xffff),
       name: text(record.name, `${name} name`),
       role: oneOf(record.role, ROLES, `${name} role`),
       level: int(record.level, `${name} level`, 1, 255),
+      wokenLine: record.wokenLine === null ? null : prose(record.wokenLine, `${name} woken line`),
     };
   });
   const areas = list(root.areas, "areas", 64).map((value, index) => {

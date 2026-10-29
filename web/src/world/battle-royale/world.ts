@@ -42,7 +42,7 @@ export function createArenaWorld(
       surfaceY: () => 0,
     },
     unitPresenter: (player) => UnitPresenter.forArena(player),
-    inn: { entries: () => [], presenter: () => ({ frame: () => emptyMotion }), reachableDoor: () => 0 },
+    buildings: { presenters: () => [], reachableDoor: () => 0 },
     shrine: { entries: [], placements: [] },
     outpost: { entries: [], placements: [] },
     settlement: { entries: [], placements: [] },

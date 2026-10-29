@@ -104,9 +104,9 @@ pub struct Presentation {
     origin: Instant,
     last_draw: Instant,
     camera_framed: bool,
-    /// The walk-in inn's door swing and interior look (#158).
-    inn: mmorpg_presentation::buildings::Inn,
-    last_inn: Instant,
+    /// The walk-in buildings' door swings and interior looks (#158).
+    buildings: Vec<mmorpg_presentation::buildings::WalkIn>,
+    last_buildings: Instant,
     /// The Sunken Shrine's kit modules (#431), placed once.
     shrine: Vec<crate::world::SceneDraw>,
     /// The Outpost kit buildings' modules (#420), placed once.
@@ -128,7 +128,7 @@ impl Presentation {
             return Err("scenery and zone content revisions differ".into());
         }
         mmorpg_presentation::units::archer::validate()?;
-        let inn = mmorpg_presentation::buildings::Inn::new(&scenery);
+        let buildings = mmorpg_presentation::buildings::WalkIn::all(&scenery);
         let shrine = mmorpg_presentation::shrine::parts(&scenery)
             .iter()
             .flat_map(|part| {
@@ -198,8 +198,8 @@ impl Presentation {
             origin: now,
             last_draw: now,
             camera_framed: false,
-            inn,
-            last_inn: now,
+            buildings,
+            last_buildings: now,
             shrine,
             outpost,
             settlement,
@@ -657,7 +657,7 @@ impl Presentation {
             frame.environment.cloud_offset = clouds;
         }
         frame.draws.extend(self.unit_draws(now, view));
-        self.append_inn(&mut frame.draws, now);
+        self.append_buildings(&mut frame.draws, now);
         frame.draws.extend(self.shrine.iter().cloned());
         frame.draws.extend(self.outpost.iter().cloned());
         frame.draws.extend(self.settlement.iter().cloned());
@@ -695,27 +695,37 @@ impl Presentation {
         }
     }
 
-    /// The inn's bundle entries with the door at its eased swing; roof and ceiling are hidden
-    /// while the viewer stands inside (#158).
-    fn append_inn(&mut self, draws: &mut Vec<crate::world::SceneDraw>, now: Instant) {
-        let dt = now.saturating_duration_since(self.last_inn).as_secs_f64();
-        self.last_inn = self.last_inn.max(now);
-        let open = self.door_open(mmorpg_presentation::buildings::INN_DOOR);
+    /// Each walk-in building's bundle entries with its door at its eased swing; roof and
+    /// ceiling are hidden while the viewer stands inside (#158).
+    fn append_buildings(&mut self, draws: &mut Vec<crate::world::SceneDraw>, now: Instant) {
+        let dt = now
+            .saturating_duration_since(self.last_buildings)
+            .as_secs_f64();
+        self.last_buildings = self.last_buildings.max(now);
         let viewer = self
             .players(now)
             .get(&self.player_id)
             .map(|pose| pose.position.map(f64::from));
-        let parts = self.inn.frame(open, viewer, dt, self.reduced_motion);
-        for (part, (_, entry)) in parts.iter().zip(skinned::inn_draws()) {
-            if !part.visible {
-                continue;
+        let opens: Vec<bool> = self
+            .buildings
+            .iter()
+            .map(|building| self.door_open(building.spec().door))
+            .collect();
+        let reduced_motion = self.reduced_motion;
+        for (building, open) in self.buildings.iter_mut().zip(opens) {
+            let entries = skinned::building_draws_of(building.spec().bundle);
+            let parts = building.frame(open, viewer, dt, reduced_motion);
+            for (part, (_, entry)) in parts.iter().zip(entries) {
+                if !part.visible {
+                    continue;
+                }
+                draws.extend(entry.iter().map(|draw| crate::world::SceneDraw {
+                    model: three_d_animation::Mat4 {
+                        elements: part.model,
+                    },
+                    ..draw.clone()
+                }));
             }
-            draws.extend(entry.iter().map(|draw| crate::world::SceneDraw {
-                model: three_d_animation::Mat4 {
-                    elements: part.model,
-                },
-                ..draw.clone()
-            }));
         }
     }
 

@@ -48,6 +48,9 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "handoff-corridor": "Not here: you are crossing into another region.",
   "in-combat": "You can't travel while in combat.",
   "invalid-waystone": "The waystone cannot take you there.",
+  "private-home": "This is a private home.",
+  "no-answer": "You knock, but no one answers at this hour.",
+  "not-at-night": "No new quests at this hour. Come back in the morning.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

@@ -527,7 +527,7 @@ describe("WASM local zone combat intents", () => {
     ]);
     expect(catalog.creatureTemplates.get(11)?.prop).toBe("explosive_barrel");
     expect(catalog.creatureTemplates.get(13)?.family).toBe("ogre");
-    expect(catalog.npcs.get(5)).toEqual({ id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10 });
+    expect(catalog.npcs.get(5)).toEqual({ id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10, wokenLine: null });
     expect(catalog.areas.get(2)).toBe("Wolfrun Woods");
     expect([...catalog.classes.values()].map((record) => [record.name, record.resource])).toEqual([
       ["warden", "rage"], ["ranger", "focus"], ["arcanist", "mana"], ["necromancer", "mana"], ["rogue", "focus"], ["cleric", "faith"], ["druid", "mana"],

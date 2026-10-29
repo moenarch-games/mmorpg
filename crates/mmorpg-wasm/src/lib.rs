@@ -761,25 +761,56 @@ impl UnitPresenter {
     }
 }
 
-/// The walk-in inn's presented door and interior look (#158), shared with the native client;
-/// the page picks the door against the drawn leaf mesh.
+/// One walk-in building's presented door and interior look (#158): the inn or Elden's house,
+/// shared with the native client; the page picks the door against the drawn leaf mesh.
 #[wasm_bindgen]
-pub struct InnPresenter(mmorpg_presentation::buildings::Inn);
+pub struct BuildingPresenter(mmorpg_presentation::buildings::WalkIn);
 
 #[wasm_bindgen]
-impl InnPresenter {
+impl BuildingPresenter {
+    /// Building `index` of [`Self::count`].
     #[wasm_bindgen(constructor)]
-    #[must_use]
-    pub fn new() -> Self {
-        Self(mmorpg_presentation::buildings::Inn::new(
+    pub fn new(index: usize) -> Result<Self, JsError> {
+        let spec = mmorpg_presentation::buildings::BUILDINGS
+            .get(index)
+            .ok_or_else(|| JsError::new("no such walk-in building"))?;
+        Ok(Self(mmorpg_presentation::buildings::WalkIn::new(
+            *spec,
             scenery::hosted_scenery(),
-        ))
+        )))
+    }
+
+    /// How many walk-in buildings there are.
+    #[must_use]
+    pub fn count() -> usize {
+        mmorpg_presentation::buildings::BUILDINGS.len()
+    }
+
+    /// The bundle directory under `buildings/`.
+    #[must_use]
+    pub fn bundle(&self) -> String {
+        self.0.spec().bundle.to_owned()
+    }
+
+    /// The content door the building presents.
+    #[must_use]
+    pub fn door(&self) -> u8 {
+        self.0.spec().door.get()
+    }
+
+    /// The door leaf's bundle entry.
+    #[wasm_bindgen(js_name = doorEntry)]
+    #[must_use]
+    pub fn door_entry(&self) -> String {
+        self.0.spec().door_entry().to_owned()
     }
 
     /// The asset-tooling bundle entries to draw, in [`Self::frame`] order.
     #[must_use]
-    pub fn entries() -> Vec<String> {
-        mmorpg_presentation::buildings::INN_ENTRIES
+    pub fn entries(&self) -> Vec<String> {
+        self.0
+            .spec()
+            .entries
             .iter()
             .map(|&key| key.to_owned())
             .collect()
@@ -954,12 +985,6 @@ pub fn ambient_animal_frame(seconds: f64, animate: bool) -> Vec<f32> {
             pose.model.into_iter().chain(tail)
         })
         .collect()
-}
-
-impl Default for InnPresenter {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 fn js_error(error: host::LocalZoneError) -> JsError {

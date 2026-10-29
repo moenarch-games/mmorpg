@@ -9,8 +9,16 @@ fn only(props: Vec<Prop>) -> StaticScene {
     StaticScene::new(&scenery)
 }
 
+/// The first procedurally drawn prop of `kind`: Elden's house (#158) is its bundle.
 fn first(scenery: &Scenery, kind: PropKind) -> Prop {
-    *scenery.props.iter().find(|prop| prop.kind == kind).unwrap()
+    *scenery
+        .props
+        .iter()
+        .find(|prop| {
+            prop.kind == kind
+                && prop.collider != Some(mmorpg_core::greyhaven_vale::ids::MARSHAL_HOUSE)
+        })
+        .unwrap()
 }
 
 fn transform(model: &[f32; 16], p: V) -> V {

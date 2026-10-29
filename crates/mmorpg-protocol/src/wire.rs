@@ -128,6 +128,9 @@ const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::HandoffCorridor => 35,
         ErrorCode::InCombat => 36,
         ErrorCode::InvalidWaystone => 37,
+        ErrorCode::PrivateHome => 38,
+        ErrorCode::NoAnswer => 39,
+        ErrorCode::NotAtNight => 40,
     }
 }
 
@@ -170,6 +173,9 @@ fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         35 => ErrorCode::HandoffCorridor,
         36 => ErrorCode::InCombat,
         37 => ErrorCode::InvalidWaystone,
+        38 => ErrorCode::PrivateHome,
+        39 => ErrorCode::NoAnswer,
+        40 => ErrorCode::NotAtNight,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -993,12 +999,15 @@ mod tests {
             ErrorCode::HandoffCorridor,
             ErrorCode::InCombat,
             ErrorCode::InvalidWaystone,
+            ErrorCode::PrivateHome,
+            ErrorCode::NoAnswer,
+            ErrorCode::NotAtNight,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 38, u16::MAX] {
+        for unknown in [0, 41, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"
