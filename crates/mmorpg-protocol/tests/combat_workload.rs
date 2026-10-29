@@ -47,12 +47,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // pines to every step's world, and the Marsh-Lake Wetlands (#426) their island, cottage and
     // trees. The three towers' ladders (#490) add three boxes to every step's world. Free-aim swings
     // (#517) replace auto-attack: swings turn their bots and whiffs are seen, which moves the
-    // spread and crowded fights a little.
+    // spread and crowded fights a little. The night raid (#530) reserves 18 raider spawns, which
+    // reseeds the zone RNG and moves the fights, and adds its signal byte to every projection.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 762_120, 224_640, 5_202_864],
-        [29_160, 759_240, 80_140, 1_431_435],
-        [29_160, 767_880, 389_620, 7_171_834],
-        [29_042, 779_282, 2_248_200, 24_496_050],
+        [29_160, 762_120, 224_640, 5_208_624],
+        [29_160, 759_240, 80_140, 1_656_759],
+        [29_160, 767_880, 398_688, 7_290_490],
+        [29_042, 779_282, 2_248_200, 24_511_780],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();
