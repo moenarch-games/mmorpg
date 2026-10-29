@@ -12,17 +12,17 @@ use mmorpg_characters::{
     CharacterLease, CharacterStore, EntryBackend, EntryChange, LeaseHolder, StoreError,
 };
 use mmorpg_control_plane::{
-    ControlPlaneError, HandoffPhase, HandoffRegistry, HostId, HostRegistry, ZoneDirectory,
-    ZoneLease,
+    ControlPlaneError, HandoffPhase, HandoffRegistry, HostId, HostRegistry, ReferenceAuthority,
+    ZoneDirectory, ZoneLease,
 };
 use mmorpg_core::{
     CharacterId, CharacterLocation, CharacterTransfer, ClassChoice, PlayerClass, Sex, TransferId,
     ZoneCommand, ZoneId, ZoneSimulation, greyhaven_vale,
 };
 use mmorpg_game_server::handoff::{
-    Authority, HandoffError, InboundOutcome, OutboundOutcome, OutboundRequest, Resolution,
-    accept_inbound, activate_inbound, begin_outbound, handoff_id, holder, reconcile_inbound,
-    reconcile_outbound, resolve_pending_handoff, retire_outbound,
+    HandoffError, InboundOutcome, OutboundOutcome, OutboundRequest, Resolution, accept_inbound,
+    activate_inbound, begin_outbound, handoff_id, holder, reconcile_inbound, reconcile_outbound,
+    resolve_pending_handoff, retire_outbound,
 };
 use mmorpg_game_server::transfer_link::{
     LinkError, TransferLink, TransferLinkHandler, serve_transfer_link,
@@ -60,8 +60,8 @@ struct ControlPlane {
 }
 
 impl ControlPlane {
-    fn authority(&mut self) -> Authority<'_> {
-        Authority {
+    fn authority(&mut self) -> ReferenceAuthority<'_> {
+        ReferenceAuthority {
             directory: &self.directory,
             handoffs: &mut self.handoffs,
             now_tick: self.now,
@@ -228,7 +228,7 @@ impl World {
     fn activate(&mut self, transfer: u64) -> Result<(), HandoffError> {
         activate_inbound(
             &mut self.east,
-            &self.control.authority(),
+            &mut self.control.authority(),
             transfer_id(transfer),
             ARRIVAL,
         )
@@ -589,7 +589,7 @@ impl TransferLinkHandler for EastHost {
     fn offer(&self, transfer: CharacterTransfer) -> Result<(), String> {
         let mut control = self.control.lock().unwrap();
         accept_inbound(
-            &mut self.zone.lock().unwrap(),
+            &mut *self.zone.lock().unwrap(),
             &mut self.store.lock().unwrap(),
             &mut control.authority(),
             &self.lease,
@@ -602,8 +602,8 @@ impl TransferLinkHandler for EastHost {
     fn activate(&self, transfer_id: TransferId) -> Result<(), String> {
         let mut control = self.control.lock().unwrap();
         activate_inbound(
-            &mut self.zone.lock().unwrap(),
-            &control.authority(),
+            &mut *self.zone.lock().unwrap(),
+            &mut control.authority(),
             transfer_id,
             ARRIVAL,
         )

@@ -122,10 +122,13 @@ impl Characters {
             .await
             .map_err(message)?
             .map_err(message)?;
-        Ok(ZoneGameServerAdapter::stored_characters(&snapshot.payload)
-            .map_err(message)?
-            .into_iter()
-            .find(|stored| stored.player == player))
+        let content = mmorpg_core::content_for_zone(zone_id(id)?);
+        Ok(
+            ZoneGameServerAdapter::stored_characters(&snapshot.payload, content)
+                .map_err(message)?
+                .into_iter()
+                .find(|stored| stored.player == player),
+        )
     }
     async fn wait(
         &self,

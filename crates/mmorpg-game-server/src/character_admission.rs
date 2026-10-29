@@ -129,6 +129,7 @@ impl ZoneGameServerAdapter {
                 .load_reward_receipt(player, key)
                 .map_err(map_zone_error)?;
         }
+        candidate.adopt_transfers(&mut self.zone);
         self.zone = candidate;
         self.characters.insert(player, record.character_id);
         Ok(())
@@ -168,16 +169,17 @@ impl ZoneGameServerAdapter {
         Ok(bytes)
     }
 
-    /// Private tick-boundary records for off-tick persistence, never a player projection.
+    /// Private tick-boundary records for off-tick persistence, never a player
+    /// projection. `content` is the zone's own ([`mmorpg_core::content_for_zone`]).
     pub(crate) fn stored_characters(
         payload: &[u8],
+        content: std::sync::Arc<mmorpg_core::ZoneContent>,
     ) -> Result<Vec<StoredCharacter>, SimulationError> {
         if !payload.starts_with(b"MMOC") {
             decode_canonical_snapshot(payload).map_err(map_protocol_error)?;
             return Ok(Vec::new());
         }
-        Self::decode_stored_zone(payload, mmorpg_core::greyhaven_vale::content())
-            .map(|(_, records)| records)
+        Self::decode_stored_zone(payload, content).map(|(_, records)| records)
     }
 
     pub(crate) fn decode_stored_zone(
@@ -452,7 +454,11 @@ mod tests {
             runtime.snapshot_for(lease.player_id).unwrap(),
             last_projection
         );
-        let stored = ZoneGameServerAdapter::stored_characters(&snapshot.payload).unwrap();
+        let stored = ZoneGameServerAdapter::stored_characters(
+            &snapshot.payload,
+            mmorpg_core::greyhaven_vale::content(),
+        )
+        .unwrap();
         assert_eq!(stored.len(), 1);
         assert!(stored[0].parked);
         assert_eq!(stored[0].record, record);
