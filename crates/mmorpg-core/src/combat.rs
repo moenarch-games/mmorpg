@@ -423,11 +423,49 @@ impl ZoneSimulation {
         )
     }
 
+    /// Where a released spirit stands: the graveyard, or the first spot on rings around it
+    /// clear of every other living player, so spirits released together never stand inside
+    /// each other (#534).
+    fn release_spot(&self, player_id: PlayerId) -> Result<[i32; 2], ZoneError> {
+        let graveyard = self.content.graveyard();
+        let spacing = 2 * PLAYER_HALF_EXTENTS_UNITS[0] + 2;
+        let mut others = Vec::new();
+        for (&other, player) in &self.players {
+            if other != player_id && player.is_alive() {
+                let position = self.player_position(other)?;
+                others.push([position.x, position.z]);
+            }
+        }
+        let clear = |[x, z]: [i32; 2]| {
+            others.iter().all(|other| {
+                distance_squared([x, z], *other) >= i64::from(spacing) * i64::from(spacing)
+            })
+        };
+        let rings = (1..=8).flat_map(|ring: i32| {
+            let (straight, diagonal) = (ring * spacing, ring * spacing * 7 / 10);
+            [
+                [straight, 0],
+                [-straight, 0],
+                [0, straight],
+                [0, -straight],
+                [diagonal, diagonal],
+                [diagonal, -diagonal],
+                [-diagonal, diagonal],
+                [-diagonal, -diagonal],
+            ]
+        });
+        Ok(std::iter::once([0, 0])
+            .chain(rings)
+            .map(|[dx, dz]| [graveyard[0] + dx, graveyard[1] + dz])
+            .find(|&spot| clear(spot))
+            .unwrap_or(graveyard))
+    }
+
     /// A dead player returns to the graveyard with half health, out of combat.
     fn release_spirit(&mut self, player_id: PlayerId) -> Result<(), ZoneError> {
-        let graveyard = self.content.graveyard();
+        let [x, z] = self.release_spot(player_id)?;
         let body = body_id(EntityRef::Player(player_id));
-        let position = Vec3i::new(graveyard[0], PLAYER_HALF_EXTENTS_UNITS[1], graveyard[1]);
+        let position = Vec3i::new(x, self.stand_y(x, z, PLAYER_HALF_EXTENTS_UNITS), z);
         self.world
             .set_position(body, position)
             .map_err(physics_error)?;
@@ -441,6 +479,8 @@ impl ZoneSimulation {
             player.combat_timer = 0;
             player.calm_ticks = 0;
         });
+        // A knockback or charge from before death does not follow the spirit.
+        self.forced.remove(&EntityRef::Player(player_id));
         self.place_in_interest(EntityRef::Player(player_id), position.x, position.z);
         Ok(())
     }

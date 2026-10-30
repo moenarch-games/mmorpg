@@ -50,12 +50,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // spread and crowded fights a little. The night raid (#530) reserves 18 raider spawns, which
     // reseeds the zone RNG and moves the fights, and adds its signal byte to every projection.
     // Elden's walk-in house (#158) trades house 103's box for its 16 wall and furniture boxes and
-    // its door leaf in every step's world, and its door record joins every projection.
+    // its door leaf in every step's world, and its door record joins every projection. No
+    // fixture places a player inside geometry (#534): the fights' players stand on the first free
+    // slot near their spawns, which moves who meets which creature.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
         [29_160, 767_880, 224_640, 5_220_144],
-        [29_160, 765_000, 80_140, 1_662_519],
-        [29_160, 773_640, 398_688, 7_311_235],
-        [29_042, 785_042, 2_248_200, 24_529_132],
+        [29_160, 765_000, 78_240, 1_667_264],
+        [29_160, 773_640, 405_184, 7_322_027],
+        [28_804, 784_804, 2_251_970, 24_530_864],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

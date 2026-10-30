@@ -24,12 +24,14 @@
 //!
 //! Intentional differences from the Rapier backend (listed in `docs/PHYSICS_AB.md`):
 //!
-//! - Characters meeting head-on use the engine's native sidestep instead of the Rapier
-//!   backend's `slide_around` workaround; characters do not push each other.
+//! - Characters touching another moving character turn their moves with the Rapier backend's
+//!   `slide_around` before the batch (#534), which sees every body at its position from before
+//!   the step (Rapier's sees earlier movers already moved); characters do not push each other.
 //! - Grounded is the engine's own result: walkable static support within the contact offset
 //!   plus 5 cm after the last move, or snapped to (Rapier: any static ground within offset +
-//!   5 cm). A body that was placed or added since its last move is answered by the same test
-//!   as a shape cast.
+//!   5 cm). A body that was placed or added since its last move is answered by the Rapier
+//!   backend's support cast: walkable static ground within offset + 5 cm beyond the contact
+//!   offset.
 //! - Overlap queries see the terrain (Rapier skips box–heightfield pairs). Flat terrain cells
 //!   are removed on both backends and left to the floor half-space.
 
@@ -530,9 +532,15 @@ impl World {
             }
             velocities.push((body.id, velocity));
             let carry = carried.get(&body.id).copied().unwrap_or([0.0; 3]);
+            // Turned around touching characters as on the Rapier arm (#534, Rapier oracle).
+            let desired = super::rapier::World::slide_around(
+                self.bodies.values(),
+                body,
+                [0, 1, 2].map(|axis| velocity[axis] + carry[axis]),
+            );
             moves.push(CharacterMove {
                 body: self.handles[&body.id],
-                desired: vector([0, 1, 2].map(|axis| velocity[axis] + carry[axis])),
+                desired: vector(desired),
                 exclude: self.open_floor(body),
                 autostep: None,
             });
@@ -591,7 +599,8 @@ impl World {
 
     /// Whether a moving body stands on static ground: its last move's engine result, or for a
     /// body placed or added since, the engine's grounded test as a downward shape cast
-    /// (walkable static support within the contact offset plus 5 cm).
+    /// (walkable static support within the contact offset plus 5 cm beyond the contact offset,
+    /// as on the Rapier arm).
     pub fn grounded(&self, id: BodyId) -> bool {
         let Some(body) = self.bodies.get(&id).filter(|body| body.is_moving()) else {
             return false;
@@ -599,10 +608,10 @@ impl World {
         if let Some(&grounded) = self.grounded.get(&id) {
             return grounded;
         }
-        // The engine's (and Rapier's) ground prediction: offset + 5 cm.
+        // The Rapier arm's support cast: ground prediction (offset + 5 cm) beyond the contact
+        // offset the capsule keeps, so any walkable hit within the cast's reach supports.
         let offset = self.settings.offset;
-        let predict = offset + GROUND_PREDICTION_UNITS;
-        let reach = predict + offset;
+        let reach = offset + GROUND_PREDICTION_UNITS + offset;
         let cast = ShapeCast::new(
             QueryPose::new(capsule(body.half_extents), lifted(body.position)),
             Vector(0.0, -reach, 0.0),
@@ -620,18 +629,16 @@ impl World {
         // the lake basin the floor is open, as in the body's moves.
         let min_up = self.settings.max_slope.cos();
         let open = self.open_floor(body);
-        hits.iter()
-            .find(|hit| {
-                Some(hit.body) != open
-                    && (hit.starts_overlapping || hit.normal.1 > 0.0)
-                    && hit.normal.1 >= min_up
-                    && self
-                        .games
-                        .get(&hit.body.to_bits())
-                        .and_then(|game| self.bodies.get(game))
-                        .is_none_or(|body| !body.is_moving())
-            })
-            .is_some_and(|hit| hit.fraction * reach <= predict)
+        hits.iter().any(|hit| {
+            Some(hit.body) != open
+                && (hit.starts_overlapping || hit.normal.1 > 0.0)
+                && hit.normal.1 >= min_up
+                && self
+                    .games
+                    .get(&hit.body.to_bits())
+                    .and_then(|game| self.bodies.get(game))
+                    .is_none_or(|body| !body.is_moving())
+        })
     }
 
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {

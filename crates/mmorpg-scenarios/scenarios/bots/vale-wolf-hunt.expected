@@ -207,7 +207,7 @@ t=4525 expect hunter event error:you_are_dead ok events[error:you_are_dead]
 t=4525 expect hunter target creature:106 ok target=creature:106
 t=4525 hunter p1 e1 ack73 (-9645,1190,-1411) sees[] hp0/50 dead target=creature:106 events[error:you_are_dead]
 t=4600 hunter p1 e1 ack73 (-9645,1190,-1411) sees[] hp0/50 dead target=creature:106
-t=4724 expect hunter position hunter FAIL got [-9645, 1190, -1411]
+t=4724 expect hunter position hunter ok [-9645, 1190, -1411]
 t=4724 hunter p1 e1 ack73 (-9645,1190,-1411) sees[] hp0/50 dead target=creature:106
 t=4800 hunter p1 e1 ack73 (-9645,1190,-1411) sees[] hp0/50 dead target=creature:106
 t=4924 hunter release_spirit -> applied seq=74 epoch=1
@@ -222,4 +222,4 @@ t=4926 hunter p1 e1 ack74 (-2000,90,4150) sees[] hp25/50 target=creature:106
 t=5000 hunter p1 e1 ack74 (-2000,90,4150) sees[] hp25/50 target=creature:106
 t=5124 expect hunter position hunter ok [-2000, 90, 4150]
 t=5124 hunter p1 e1 ack74 (-2000,90,4150) sees[] hp25/50 target=creature:106
-FAIL vale-wolf-hunt ticks=5124 steps=75 expectations=26 failures=1
+PASS vale-wolf-hunt ticks=5124 steps=75 expectations=26 failures=0

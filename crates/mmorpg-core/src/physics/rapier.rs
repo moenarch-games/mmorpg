@@ -663,7 +663,7 @@ impl World {
                     .velocity = velocity;
                 continue;
             }
-            let desired = self.slide_around(&body, desired);
+            let desired = Self::slide_around(self.bodies.values(), &body, desired);
             let (moved, grounded) = self.move_shape(&body, desired)?;
             let to = [
                 body.position[0] + moved[0],
@@ -706,8 +706,12 @@ impl World {
     /// along it, so characters slide around each other instead of locking head-on: Rapier's
     /// controller only stops a kinematic body at another (#273; physics-engine #308 will do
     /// this natively). Within 60 degrees of head-on, both step aside to opposite sides at full
-    /// speed.
-    fn slide_around(&self, body: &RigidBody, desired: [f32; 3]) -> [f32; 3] {
+    /// speed. The engine arm turns its moves the same way, so the two agree.
+    pub(super) fn slide_around<'a>(
+        bodies: impl IntoIterator<Item = &'a RigidBody>,
+        body: &RigidBody,
+        desired: [f32; 3],
+    ) -> [f32; 3] {
         let [mut vx, vy, mut vz] = desired;
         let speed = vx.hypot(vz);
         if speed == 0.0 {
@@ -719,7 +723,7 @@ impl World {
             body.position[1] - body.half_extents.y as f32,
             body.position[1] + body.half_extents.y as f32,
         );
-        for other in self.bodies.values() {
+        for other in bodies {
             if other.id == body.id || !other.is_moving() {
                 continue;
             }

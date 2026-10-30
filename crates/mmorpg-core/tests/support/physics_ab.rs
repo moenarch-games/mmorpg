@@ -259,18 +259,18 @@ pub enum Workload {
     /// Dodge rolls (#516): one player rolls back, forward and diagonally in Greyhaven Outpost,
     /// another into a highland crag and back out, a third back off the mill's loading dock.
     Roll,
-    /// Swimming in Stillwater Lake (#274, #537): one player wades in from the west shore, swims
-    /// out and dives toward the basin's floor; another starts on the floor in the deep water,
-    /// presses down onto it, glides east along it and rises to the surface.
+    /// Swimming in Stillwater Lake (#274, #537): one player runs and jumps off the west shore's
+    /// bank into the lake, swims out, dives to the basin's floor and rises again; another starts
+    /// on the floor in the deep water, presses down onto it and rises to the surface.
     Swim,
 }
 
 /// The swim workload's length.
 pub const SWIM_TICKS: usize = mmorpg_core::golden::t30(360) as usize;
 
-/// The wader on the lake's west shore and the diver on the basin's floor near its centre, by
-/// ID and feet XZ.
-const SWIM_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [2_900.0, -5_500.0]), (2, [5_300.0, -5_400.0])];
+/// The wader on the lake's level west shore, 4 m from its bank, and the diver on the basin's
+/// floor near its centre, by ID and feet XZ.
+const SWIM_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [3_600.0, -5_500.0]), (2, [5_300.0, -5_400.0])];
 
 /// The swim's commands at `tick` (30 Hz).
 fn swim_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
@@ -280,12 +280,16 @@ fn swim_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
         strafe: 0,
         facing: 16_384,
     };
+    // The wader leaves the bank in a jump, so neither controller's ground snap meets the
+    // too-steep bank (Rapier's snaps onto it). Nobody walks along the heightfield floor, where
+    // Rapier's controller catches on cell seams.
     match tick {
         0 => vec![(1, east(1)), (2, ZoneCommand::Rise(-1))],
+        16 => vec![(1, ZoneCommand::Jump)],
         90 => vec![(1, ZoneCommand::Rise(-1))],
-        150 => vec![(2, east(1))],
+        180 => vec![(1, east(0))],
         240 => vec![(1, ZoneCommand::Rise(0)), (2, ZoneCommand::Rise(1))],
-        300 => vec![(1, ZoneCommand::Rise(1)), (2, east(0))],
+        300 => vec![(1, ZoneCommand::Rise(1))],
         _ => Vec::new(),
     }
 }
