@@ -35,6 +35,7 @@ pub mod layout;
 mod outpost_grass;
 pub mod outpost_kit;
 mod outpost_relief;
+mod seam_test;
 pub mod settlement_props;
 pub mod shrine;
 
@@ -45,6 +46,7 @@ use geometry::{Ellipse, Rng, polyline_distance, splitmix64, value_noise};
 use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_PLAZA, ids};
 use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, trig};
 pub use outpost_grass::outpost_grass_placements;
+pub use seam_test::seam_test_scenery;
 
 /// The rectangle the terrain grid covers: the playable rectangle and 72 m beyond its walls
 /// (80 m past the farmland's, #424, and 88 m past the highlands', #425, and the wetlands', #426,
@@ -455,6 +457,9 @@ pub struct Scenery {
     /// The content's climbable surfaces (#490), which clients mark on the rock (#512).
     climbing: mmorpg_core::ClimbSurfaces,
     authored_outpost_relief: bool,
+    /// Whether this is Greyhaven Vale's scenery (#145): only it has the authored kits'
+    /// buildings (the Outpost kit, the Sunken Shrine, the walk-in buildings).
+    greyhaven: bool,
 }
 
 /// The visual of a Greyhaven Vale collider, or `None` for the ground and
@@ -670,6 +675,18 @@ pub fn base_scenery() -> Scenery {
     scenery
 }
 
+/// The scenery of the content a host runs as `zone` (`mmorpg_core::content_for_zone`): a
+/// Seam Test zone's by its ID (#145), Greyhaven Vale's otherwise.
+#[must_use]
+pub fn scenery_for_zone(zone: mmorpg_core::ZoneId) -> Scenery {
+    match zone {
+        mmorpg_core::seam_test::WEST_ZONE | mmorpg_core::seam_test::EAST_ZONE => {
+            seam_test_scenery(zone)
+        }
+        _ => greyhaven_vale_scenery(),
+    }
+}
+
 pub fn greyhaven_vale_scenery() -> Scenery {
     let definition = greyhaven_vale::greyhaven_vale_definition();
     layout::compose(greyhaven_vale::layout::SOURCE, &definition)
@@ -790,6 +807,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         ground: definition.terrain().cloned(),
         climbing: content.climbing().clone(),
         authored_outpost_relief: false,
+        greyhaven: true,
     };
     let blockers = Blockers::new(structures.iter().map(|(collider, _)| *collider));
     let mut placer = Placer {
@@ -817,7 +835,16 @@ impl Scenery {
             ground: None,
             climbing: mmorpg_core::ClimbSurfaces::default(),
             authored_outpost_relief: false,
+            greyhaven: false,
         }
+    }
+
+    /// Whether this is Greyhaven Vale's scenery, the only one with the authored kits'
+    /// buildings (the Outpost kit, the Sunken Shrine and the walk-in buildings). Other zones'
+    /// scenery draws none of them.
+    #[must_use]
+    pub const fn greyhaven(&self) -> bool {
+        self.greyhaven
     }
 
     /// The physical ground's height at an XZ position, in units (#159): what units stand on.

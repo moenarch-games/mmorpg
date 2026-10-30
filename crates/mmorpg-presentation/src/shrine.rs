@@ -29,9 +29,12 @@ pub fn entries() -> Vec<&'static str> {
     shrine::entries()
 }
 
-/// Every placed kit module on `scenery`'s relief.
+/// Every placed kit module on `scenery`'s relief; none outside Greyhaven Vale.
 #[must_use]
 pub fn parts(scenery: &Scenery) -> Vec<Part> {
+    if !scenery.greyhaven() {
+        return Vec::new();
+    }
     shrine::placements()
         .iter()
         .map(|placement| {

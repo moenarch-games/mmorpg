@@ -150,7 +150,8 @@ const fn turn([x, z]: [i32; 2], quarters: u8) -> [i32; 2] {
     }
 }
 
-/// Every kit module of the adopted buildings on `scenery`'s props, in a fixed order.
+/// Every kit module of the adopted buildings on `scenery`'s props, in a fixed order; none
+/// outside Greyhaven Vale ([`Scenery::greyhaven`]).
 ///
 /// # Panics
 ///
@@ -158,6 +159,9 @@ const fn turn([x, z]: [i32; 2], quarters: u8) -> [i32; 2] {
 #[must_use]
 pub fn placements(scenery: &Scenery) -> Vec<Placement> {
     let mut placed = Vec::new();
+    if !scenery.greyhaven() {
+        return placed;
+    }
     for (collider, items, half, quarters) in BUILDINGS {
         let prop: &Prop = scenery
             .props

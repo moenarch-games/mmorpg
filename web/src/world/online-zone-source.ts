@@ -1,8 +1,8 @@
 import { encodeCommand, encodeObservedCommand, isTimingSensitive, type WorldCommand } from "../command-wire";
-import { SnapshotBuffer, TICK_HZ, decodeSnapshot, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
+import { SnapshotBuffer, TICK_HZ, decodeRedirectNotice, decodeSnapshot, isRedirectNotice, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
 import { browserClock, type SessionClock, type SessionConnection, type SessionConnector, type SessionEnd } from "../session/connection";
 import { decodeWelcome, type SnapshotFrame, type Welcome } from "../session/frames";
-import { reconnectUrl, type SessionRoute } from "../session/route";
+import { parseSessionRoute, reconnectUrl, type SessionRoute } from "../session/route";
 import { SequencedOutbox, type Delivery } from "../session/sequenced-outbox";
 import { SnapshotReassembler } from "../session/snapshot-reassembler";
 import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "./world-source";
@@ -17,6 +17,10 @@ export const SNAPSHOT_TIMEOUT_MS = 5_000;
  * so this is best effort, as in the native client.
  */
 export const RECONNECT_SETTLE_MS = 250;
+/** Following a redirect notice (#145) must reach a destination that takes the character within this bound, like the native client. */
+export const FOLLOW_TIMEOUT_MS = 20_000;
+/** A destination refuses the claim until the source retired the character; the claim is retried this often. */
+export const CLAIM_RETRY_MS = 100;
 /** Presentation runs this many ticks (4 at 60 Hz) behind the newest projection and holds it when projections stall. */
 export const INTERPOLATION_DELAY_TICKS = ticksFromMs(67);
 /**
@@ -40,6 +44,12 @@ export type OnlineZoneOptions = {
   resolveCharacterId?: (localId: string) => Promise<string>;
   activityProtocol?: ActivityProtocol;
   clock?: SessionClock;
+  /**
+   * The page presents zone `zoneId` and returns that zone's content revision (#145): on join, the
+   * route's zone, and after a redirect notice, the destination's. Without it, only the page's own
+   * content is played and a redirect fails the session closed.
+   */
+  enterZone?: (zoneId: number) => bigint;
 };
 
 /** One WebTransport session to the zone host: an admission or a resume. */
@@ -63,6 +73,11 @@ type Phase =
     barrier: number | null;
     cancelTimers(): void;
   }
+  /**
+   * Following the character to another zone's host after a redirect notice (#145): the source's
+   * route and resume token are spent; the destination's first projection connects the source.
+   */
+  | { kind: "travelling"; cancelTimeout(): void }
   /** Failed closed; the next `advance` or `sendCommand` reports it and the source is unjoined. */
   | { kind: "failed"; error: Error };
 
@@ -106,8 +121,15 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
  * Tokens stay in memory: they never appear in errors, logs or page URLs.
  */
 export class OnlineZoneSource implements WorldSource {
-  readonly #route: SessionRoute;
-  readonly #contentRevision: bigint;
+  /** The joined route; a followed redirect notice replaces it with the destination's (#145). */
+  #route: SessionRoute;
+  readonly #joinRoute: SessionRoute;
+  #contentRevision: bigint;
+  readonly #enterZone: ((zoneId: number) => bigint) | null;
+  /** The transfer last followed: its notice is never followed twice. */
+  #followed: bigint | null = null;
+  /** The claimed character's global ID, claimed again at a redirect's destination. */
+  #characterId: string | null = null;
   readonly #connector: SessionConnector;
   readonly #clock: SessionClock;
   readonly #activityProtocol: ActivityProtocol | null;
@@ -138,7 +160,9 @@ export class OnlineZoneSource implements WorldSource {
 
   constructor(options: OnlineZoneOptions) {
     this.#route = options.route;
+    this.#joinRoute = options.route;
     this.#contentRevision = options.contentRevision;
+    this.#enterZone = options.enterZone ?? null;
     this.#connector = options.connector;
     this.#resolveCharacterId = options.resolveCharacterId ?? ((id) => Promise.resolve(id));
     this.#clock = options.clock ?? browserClock;
@@ -151,6 +175,12 @@ export class OnlineZoneSource implements WorldSource {
     }
     this.#teardown();
     this.#character = character;
+    // Every entry starts at the configured route, in the page's presentation of its zone.
+    this.#route = this.#joinRoute;
+    this.#followed = null;
+    if (this.#enterZone) {
+      this.#contentRevision = this.#enterZone(this.#route.zoneId);
+    }
     return new Promise<number>((resolve, reject) => {
       const cancelTimeout = this.#clock.after(CONNECT_TIMEOUT_MS, () =>
         this.#abortJoin(new Error("The zone host did not admit this player within ten seconds.")));
@@ -174,6 +204,9 @@ export class OnlineZoneSource implements WorldSource {
       case "reconnecting":
         phase.cancelTimers();
         break;
+      case "travelling":
+        phase.cancelTimeout();
+        break;
       case "connected":
       case "failed":
         break;
@@ -186,8 +219,8 @@ export class OnlineZoneSource implements WorldSource {
     this.#reportFailure();
     if (this.#finished) { return null; }
     const phase = this.#phase;
-    if (phase.kind === "reconnecting") {
-      // Intent made during an interruption is dropped, never replayed after the resume.
+    if (phase.kind === "reconnecting" || phase.kind === "travelling") {
+      // Intent made during an interruption or a zone change is dropped, never replayed after it.
       return null;
     }
     if (phase.kind !== "connected") {
@@ -232,7 +265,8 @@ export class OnlineZoneSource implements WorldSource {
   }
 
   linkState(): LinkState {
-    return this.#phase.kind === "reconnecting" ? "reconnecting" : "connected";
+    const kind = this.#phase.kind;
+    return kind === "reconnecting" || kind === "travelling" ? kind : "connected";
   }
 
   /** Opens a session to `url` and makes it the current link; callbacks of replaced links are ignored. */
@@ -301,6 +335,23 @@ export class OnlineZoneSource implements WorldSource {
       }, (error: unknown) => this.#linkFailed(link, new Error(describe(error))));
       return;
     }
+    if (phase.kind === "travelling") {
+      link.welcome = welcome;
+      this.#welcome = welcome;
+      link.admitting = true;
+      void this.#claimArrival(link).then(() => {
+        if (link !== this.#link) { return; }
+        link.admitting = false;
+        this.#resetHistory = true;
+        // The destination applies only commands after the cutover: the sequence carries on, and the
+        // character starts there stopped, keeping its facing.
+        this.#outbox.restart(this.#encodeCommand({ kind: "move", forward: 0, strafe: 0, facing: this.#facing }));
+        try { this.#flush(); } catch (error) {
+          this.#fail(new Error(describe(error)));
+        }
+      }, (error: unknown) => this.#linkFailed(link, new Error(describe(error))));
+      return;
+    }
     if (phase.kind !== "reconnecting") {
       return;
     }
@@ -350,10 +401,48 @@ export class OnlineZoneSource implements WorldSource {
       return;
     }
     try {
-      this.#project(welcome, frame);
+      if (!this.#activityProtocol && isRedirectNotice(frame.payload)) {
+        this.#follow(frame);
+      } else {
+        this.#project(welcome, frame);
+      }
     } catch (error) {
       this.#linkFailed(link, error instanceof Error ? error : new Error(describe(error)));
     }
+  }
+
+  /**
+   * Follows a redirect notice (#145, TECH-007): the source retired the character, so this source
+   * connects to the destination's route and claims the same character there. A notice for another
+   * zone or character, back to this zone, of an already followed transfer, or naming a route of a
+   * zone other than its destination is refused, and the source's route is never used again.
+   */
+  #follow(frame: SnapshotFrame): void {
+    const notice = decodeRedirectNotice(frame.payload);
+    if (this.#phase.kind !== "connected" || !this.#durable || notice.zoneId !== this.#route.zoneId ||
+        notice.tick !== frame.tick || notice.destination === this.#route.zoneId || notice.transferId === this.#followed) {
+      throw new Error("The zone host sent an unexpected redirect notice.");
+    }
+    const route = parseSessionRoute(notice.route);
+    if (route.zoneId !== notice.destination) {
+      throw new Error(`The redirect route ${route.url} does not lead to zone ${notice.destination}.`);
+    }
+    if (!this.#enterZone) {
+      throw new Error(`This page cannot follow the character into zone ${notice.destination}.`);
+    }
+    this.#followed = notice.transferId;
+    this.#closeLink();
+    this.#welcome = null;
+    this.#route = route;
+    this.#contentRevision = this.#enterZone(notice.destination);
+    this.#history.reset();
+    this.#latest = null;
+    this.#received = [];
+    this.#resumeAvailable = true;
+    const cancelTimeout = this.#clock.after(FOLLOW_TIMEOUT_MS, () =>
+      this.#fail(new Error(`Zone ${notice.destination} did not take the character within twenty seconds.`)));
+    this.#phase = { kind: "travelling", cancelTimeout };
+    this.#open(route.url);
   }
 
   /** Validates and presents one verified snapshot frame of the current session. */
@@ -405,6 +494,10 @@ export class OnlineZoneSource implements WorldSource {
       phase.cancelTimers();
       this.#phase = { kind: "connected" };
       this.#resumeAvailable = true;
+    } else if (phase.kind === "travelling") {
+      // The character went live at the destination.
+      phase.cancelTimeout();
+      this.#phase = { kind: "connected" };
     }
     if (this.#finished) {
       // Retain the final projection for result presentation, with no more input or reconnects.
@@ -487,6 +580,8 @@ export class OnlineZoneSource implements WorldSource {
     }
     if (phase.kind === "reconnecting") {
       phase.cancelTimers();
+    } else if (phase.kind === "travelling") {
+      phase.cancelTimeout();
     }
     this.#teardown();
     this.#phase = { kind: "failed", error };
@@ -550,18 +645,46 @@ export class OnlineZoneSource implements WorldSource {
       throw new Error("The zone host has an unsupported character service.");
     }
     if (link !== this.#link) { return; }
-    const { classId, sex } = classChoiceCodes(this.#character);
-    const id = new TextEncoder().encode(await this.#resolveCharacterId(this.#character.id));
-    const request = new Uint8Array(3 + id.length);
-    request.set([1, 1, 1 + classId * 2 + sex]);
-    request.set(id, 3);
-    const claimed = await link.connection.control(request);
+    this.#characterId = await this.#resolveCharacterId(this.#character.id);
+    const claimed = await link.connection.control(this.#claimRequest(this.#characterId));
     if (!claimed.accepted || !sameBytes(claimed.payload, new Uint8Array([1, 1]))) {
       throw new Error("The zone host refused this character. It may already be in play.");
     }
     if (link !== this.#link) { return; }
     this.#durable = true;
     this.#classAcknowledged = true;
+  }
+
+  #claimRequest(characterId: string): Uint8Array {
+    const { classId, sex } = classChoiceCodes(this.#character);
+    const id = new TextEncoder().encode(characterId);
+    const request = new Uint8Array(3 + id.length);
+    request.set([1, 1, 1 + classId * 2 + sex]);
+    request.set(id, 3);
+    return request;
+  }
+
+  /**
+   * Claims the followed character at a redirect's destination (#145). The destination refuses it
+   * until the source retired the character, so the claim repeats until the follow times out.
+   */
+  async #claimArrival(link: Link): Promise<void> {
+    const control = link.connection.control?.bind(link.connection);
+    if (!control || this.#characterId === null) {
+      throw new Error("The destination zone host has no character service.");
+    }
+    const capability = await control(new Uint8Array([1, 0]));
+    if (!capability.accepted || !sameBytes(capability.payload, new Uint8Array([1, 1]))) {
+      throw new Error("The destination zone host has no supported character service.");
+    }
+    const request = this.#claimRequest(this.#characterId);
+    while (link === this.#link) {
+      const claimed = await control(request);
+      if (claimed.accepted && sameBytes(claimed.payload, new Uint8Array([1, 1]))) {
+        return;
+      }
+      await new Promise<void>((resolve) => this.#clock.after(CLAIM_RETRY_MS, resolve));
+    }
   }
 
   #encodeCommand(command: WorldCommand): Uint8Array {

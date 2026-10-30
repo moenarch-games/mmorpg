@@ -7,7 +7,11 @@ use game_server::{
     BrowserRoutePrefix, MatchId, ReconnectToken, SnapshotFrame, SnapshotReassembler, WELCOME_BYTES,
     Welcome,
 };
-use mmorpg_core::{EntityKind, EntityRef, TICK_HZ, ZoneCommand, ZoneId, ZoneSnapshot};
+use mmorpg_core::{
+    CharacterId, ClassChoice, EntityKind, EntityRef, TICK_HZ, TransferId, ZoneCommand, ZoneId,
+    ZoneSnapshot,
+};
+use mmorpg_protocol::RedirectNotice;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::BTreeSet, error::Error, fmt, path::Path, time::Duration};
 use tokio::sync::Mutex;
@@ -22,6 +26,8 @@ use wtransport::{
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
 const RECONNECT_SETTLE: Duration = Duration::from_millis(250);
+/// How long a redirect may take to reach a destination that takes the character (#145).
+const FOLLOW_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug)]
 pub enum SessionError {
@@ -31,11 +37,19 @@ pub enum SessionError {
     InvalidData(ClientError),
     InvalidMovement,
     SequenceExhausted,
+    /// The zone handed the character to another zone (#145): follow the notice with
+    /// [`ClientSession::follow`]. Not an interruption to resume.
+    Redirected(Box<RedirectNotice>),
 }
 
 impl fmt::Display for SessionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Redirected(notice) => write!(
+                formatter,
+                "the character moved on to zone {}",
+                notice.destination.get()
+            ),
             Self::Receive(error) => error.fmt(formatter),
             Self::Send(error) => error.fmt(formatter),
             Self::SnapshotTimeout => formatter.write_str("server snapshot timed out"),
@@ -121,6 +135,10 @@ pub struct ClientSession {
     content_revision: u64,
     durable_character: bool,
     character_service: Option<bool>,
+    /// The claimed character, which a redirect notice moves to another zone (#145).
+    character: Option<(CharacterId, ClassChoice)>,
+    /// The transfer this session followed last; its notice is never followed twice.
+    followed: Option<TransferId>,
 }
 
 impl ClientSession {
@@ -160,6 +178,8 @@ impl ClientSession {
                 content_revision,
                 durable_character: false,
                 character_service: None,
+                character: None,
+                followed: None,
             })
         })
         .await
@@ -217,14 +237,83 @@ impl ClientSession {
         if !self.character_service_enabled().await? {
             return Ok(false);
         }
-        let mut request = vec![1, 1, class.appearance() as u8];
-        request.extend_from_slice(id.as_str().as_bytes());
-        let result = self.character_control(&request).await?;
-        if !result.accepted || result.payload != [1, 1] {
+        if !self.try_claim(id, class).await? {
             return Err("the zone host refused this character; it may already be in play".into());
         }
         self.durable_character = true;
+        self.character = Some((id.clone(), class));
         Ok(true)
+    }
+
+    async fn try_claim(&self, id: &CharacterId, class: ClassChoice) -> Result<bool, ClientError> {
+        let mut request = vec![1, 1, class.appearance() as u8];
+        request.extend_from_slice(id.as_str().as_bytes());
+        let result = self.character_control(&request).await?;
+        Ok(result.accepted && result.payload == [1, 1])
+    }
+
+    /// The zone this session plays.
+    #[must_use]
+    pub const fn zone_id(&self) -> ZoneId {
+        self.zone_id
+    }
+
+    /// Follows a redirect notice (#145, TECH-007): connects to the destination zone's route
+    /// and claims the same character there, keeping the command sequence, so the destination
+    /// applies only commands after the cutover. The source's route and resume token are
+    /// dropped: this session never returns to them. A notice for another zone, back to this
+    /// zone, of an already followed transfer or naming a route of another zone is refused,
+    /// and so is a destination that does not take the character within the connect timeout.
+    pub async fn follow(&mut self, notice: &RedirectNotice) -> Result<(), ClientError> {
+        let (id, class) = self
+            .character
+            .clone()
+            .ok_or("an anonymous session cannot follow a redirect")?;
+        if notice.zone_id != self.zone_id
+            || notice.destination == self.zone_id
+            || self.followed == Some(notice.transfer_id)
+        {
+            return Err("the redirect notice does not move this session's character".into());
+        }
+        let route = SessionRoute::parse(&notice.route)?;
+        if route.match_id.as_str() != format!("zone-{}", notice.destination.get()) {
+            return Err("the redirect route does not name the destination zone".into());
+        }
+        self.followed = Some(notice.transfer_id);
+        // The source retired the character: its connection and resume token are spent.
+        self.connection
+            .close(VarInt::from_u32(0), b"followed redirect");
+        self.resume_available = false;
+        tokio::time::timeout(FOLLOW_TIMEOUT, async {
+            // The destination serves its route once its host is up; it takes the claim
+            // once the source retired the character.
+            let connection = loop {
+                match self.endpoint.connect(route.url.as_str()).await {
+                    Ok(connection) => break connection,
+                    Err(_) => tokio::time::sleep(RECONNECT_SETTLE).await,
+                }
+            };
+            self.welcome = read_welcome(&connection).await?;
+            self.connection = connection;
+            self.reassembler = Mutex::new(SnapshotReassembler::new());
+            self.observed.store(0, Ordering::Relaxed);
+            self.zone_id = notice.destination;
+            self.content_revision = mmorpg_core::content_for_zone(notice.destination).revision();
+            self.route = route;
+            self.character_service = None;
+            if !self.character_service_enabled().await? {
+                return Err::<(), ClientError>(
+                    "the destination zone has no character service".into(),
+                );
+            }
+            while !self.try_claim(&id, class).await? {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            self.resume_available = true;
+            Ok(())
+        })
+        .await
+        .map_err(|_| "the destination zone did not take the character in time")?
     }
 
     #[must_use]
@@ -240,6 +329,7 @@ impl ClientSession {
                 return Err("the zone host did not confirm character logout".into());
             }
             self.durable_character = false;
+            self.character = None;
         }
         Ok(())
     }
@@ -461,6 +551,13 @@ impl ClientSession {
                     .accept(&datagram)
                     .map_err(|error| SessionError::InvalidData(error.into()))?;
                 if let Some(frame) = frame {
+                    if mmorpg_protocol::is_redirect_notice(&frame.payload) {
+                        return Err(self
+                            .decode_redirect(&frame)
+                            .map_or_else(SessionError::InvalidData, |notice| {
+                                SessionError::Redirected(Box::new(notice))
+                            }));
+                    }
                     let snapshot = self
                         .decode_snapshot(frame)
                         .map_err(SessionError::InvalidData)?;
@@ -475,6 +572,15 @@ impl ClientSession {
         })
         .await
         .map_err(|_| SessionError::SnapshotTimeout)?
+    }
+
+    /// A redirect notice must come from this session's zone for a claimed character.
+    fn decode_redirect(&self, frame: &SnapshotFrame) -> Result<RedirectNotice, ClientError> {
+        let notice = mmorpg_protocol::decode_redirect_notice(&frame.payload)?;
+        if notice.zone_id != self.zone_id || notice.tick != frame.tick || !self.durable_character {
+            return Err("unexpected redirect notice".into());
+        }
+        Ok(notice)
     }
 
     fn decode_snapshot(&self, frame: SnapshotFrame) -> Result<ZoneSnapshot, ClientError> {

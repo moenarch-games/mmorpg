@@ -21,7 +21,7 @@ use mmorpg_presentation::{
 };
 use serde::Serialize;
 
-use crate::{host::hosted_content, scenery::hosted_scenery};
+use crate::scenery::{hosted_scenery, presented_content};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -182,7 +182,7 @@ impl Units {
     pub fn new(player_id: u32) -> Self {
         Self::with_content(
             player_id,
-            hosted_content(),
+            presented_content(),
             Arc::new(hosted_scenery().clone()),
         )
     }

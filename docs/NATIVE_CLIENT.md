@@ -259,7 +259,7 @@ MMORPG_HANDOFF_DATABASE_URL=postgres://… MMORPG_HOST_ID=east MMORPG_ZONE_IDS=9
   cargo run -p mmorpg-game-server --features postgres --locked --bin mmorpg-zone-host
 ```
 
-A departing session receives a redirect notice ([PROTOCOL.md](PROTOCOL.md#redirect-notice-145)); the clients do not follow it yet (#145 part 3c). The focused `handoff_hosts` test runs both host processes against `MMORPG_CHARACTERS_POSTGRES_URL`: a walker crosses the seam and a traveller teleports by waystone, each continuing at the other host.
+A departing session receives a redirect notice ([PROTOCOL.md](PROTOCOL.md#redirect-notice-145)). Both clients follow it: they connect to the destination's route, claim the same character there and draw the destination zone's scenery; the source's route and resume token are never used again ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#client-cutover-part-3c)). Start the native client in a Seam Test zone with `--zone 901 --url https://localhost:4433/game/matches/zone-901`. `python3 scripts/smoke-handoff.py` runs the whole journey: PostgreSQL 17 in Docker, both hosts, and `mmorpg-client --autopilot` walking West → East through the seam and teleporting back by waystone. The focused `handoff_hosts` test runs both host processes against `MMORPG_CHARACTERS_POSTGRES_URL`: a walker crosses the seam and a traveller teleports by waystone, each continuing at the other host.
 
 ### Client Settings and character controls
 

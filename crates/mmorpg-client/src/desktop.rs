@@ -68,6 +68,7 @@ pub fn run(
         presentation,
         title: String::new(),
         connection_epoch: None,
+        zone: None,
         last_refusal: None,
         input,
         characters,
@@ -119,6 +120,8 @@ struct App {
     /// The window title last set, so it changes only when its text does.
     title: String,
     connection_epoch: Option<u32>,
+    /// The zone of the projections presented, once one arrived.
+    zone: Option<mmorpg_core::ZoneId>,
     last_refusal: Option<(u32, mmorpg_client::session::RefusalReceipt)>,
     input: watch::Sender<PlayerInput>,
     characters: watch::Sender<Option<CharacterSelection>>,
@@ -770,6 +773,7 @@ impl App {
         let connection = match &*self.updates.borrow() {
             NetworkUpdate::Waiting => Some("Connecting to the world…"),
             NetworkUpdate::Reconnecting => Some("Reconnecting to the world…"),
+            NetworkUpdate::Travelling(_) => Some("Travelling…"),
             _ if self.presentation.is_stalled(now) => Some("Connection stalled…"),
             _ => None,
         };
@@ -1155,11 +1159,40 @@ impl ApplicationHandler for App {
                         }
                         self.title.clear();
                     }
+                    NetworkUpdate::Travelling(zone) => {
+                        self.retire_pointer();
+                        self.npc_context.close();
+                        self.world_controls.set_interaction(false);
+                        if let Some(window) = &self.window {
+                            window
+                                .set_title(&format!("MMORPG — travelling to zone {}", zone.get()));
+                        }
+                        self.title.clear();
+                    }
                     NetworkUpdate::Snapshot {
                         connection_epoch,
                         snapshot,
                         refusal,
                     } => {
+                        let entering = self.zone.is_some_and(|zone| zone != snapshot.zone_id);
+                        self.zone = Some(snapshot.zone_id);
+                        if entering {
+                            // Another zone (#145): its scenery, content and player ID.
+                            let scenery = mmorpg_scenery::scenery_for_zone(snapshot.zone_id);
+                            let content = mmorpg_core::content_for_zone(snapshot.zone_id);
+                            self.world = WorldScene::new(&scenery);
+                            self.ui.set_scenery(&scenery);
+                            if let Err(error) = self.presentation.enter_zone(
+                                snapshot.viewer_id,
+                                scenery,
+                                content,
+                                now,
+                            ) {
+                                self.fail(event_loop, error);
+                                return;
+                            }
+                            self.connection_epoch = None;
+                        }
                         if self.connection_epoch != Some(connection_epoch) {
                             self.presentation.reset(now);
                             self.ui.reset();

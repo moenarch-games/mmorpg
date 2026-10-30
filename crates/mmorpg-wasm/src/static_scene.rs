@@ -17,19 +17,17 @@
 //! Geometry is built once per page; nothing here is gameplay, and the local
 //! zone host never reads it.
 
-use std::sync::OnceLock;
-
 use mmorpg_presentation::{Draw, StaticScene};
 use serde::Serialize;
 
-use crate::scenery::hosted_scenery;
+use crate::scenery::{PerZone, hosted_scenery};
 
 pub const STATIC_SCENE_FORMAT: &str = "mmorpg.static-scene";
 
 #[must_use]
 pub fn hosted_static_scene() -> &'static StaticScene {
-    static SCENE: OnceLock<StaticScene> = OnceLock::new();
-    SCENE.get_or_init(|| StaticScene::new(hosted_scenery()))
+    static SCENE: PerZone<StaticScene> = PerZone::new();
+    SCENE.get(|_| StaticScene::new(hosted_scenery()))
 }
 
 #[derive(Serialize)]
@@ -139,8 +137,8 @@ impl Buffers {
 pub(crate) type SceneBuffers = (String, Vec<f32>, Vec<u32>, Vec<f32>);
 
 fn buffers() -> &'static SceneBuffers {
-    static BUFFERS: OnceLock<SceneBuffers> = OnceLock::new();
-    BUFFERS.get_or_init(|| encode(hosted_static_scene()))
+    static BUFFERS: PerZone<SceneBuffers> = PerZone::new();
+    BUFFERS.get(|_| encode(hosted_static_scene()))
 }
 
 pub(crate) fn encode(scene: &StaticScene) -> SceneBuffers {

@@ -441,7 +441,17 @@ pub fn action_lab_compare(
     serde_json::to_string(&comparison).map_err(|error| JsError::new(&error.to_string()))
 }
 
-/// The versioned JSON scenery export of the hosted content revision.
+/// Presents zone `zone` from now on (#145): an online session followed a redirect notice into
+/// it. Every later scenery, static-scene, kit and unit export describes that zone's content,
+/// whose revision this returns. The local zone host is unaffected.
+#[wasm_bindgen(js_name = presentZone)]
+#[must_use]
+pub fn present_zone(zone: u32) -> u64 {
+    scenery::present_zone(mmorpg_core::ZoneId::new(zone));
+    scenery::hosted_scenery().content_revision
+}
+
+/// The versioned JSON scenery export of the presented content revision.
 #[wasm_bindgen]
 pub fn scenery() -> String {
     scenery::hosted_scenery_json().to_owned()
@@ -783,7 +793,11 @@ impl BuildingPresenter {
     /// How many walk-in buildings there are.
     #[must_use]
     pub fn count() -> usize {
-        mmorpg_presentation::buildings::BUILDINGS.len()
+        if scenery::hosted_scenery().greyhaven() {
+            mmorpg_presentation::buildings::BUILDINGS.len()
+        } else {
+            0
+        }
     }
 
     /// The bundle directory under `buildings/`.
@@ -966,6 +980,9 @@ pub fn ambient_animal_clips() -> Vec<String> {
 #[wasm_bindgen(js_name = ambientAnimalAnchors)]
 #[must_use]
 pub fn ambient_animal_anchors() -> Vec<i32> {
+    if !scenery::hosted_scenery().greyhaven() {
+        return Vec::new();
+    }
     mmorpg_presentation::ambient::anchors()
         .into_iter()
         .flatten()
@@ -977,6 +994,9 @@ pub fn ambient_animal_anchors() -> Vec<i32> {
 #[wasm_bindgen(js_name = ambientAnimalFrame)]
 #[must_use]
 pub fn ambient_animal_frame(seconds: f64, animate: bool) -> Vec<f32> {
+    if !scenery::hosted_scenery().greyhaven() {
+        return Vec::new();
+    }
     mmorpg_presentation::ambient::poses(scenery::hosted_scenery(), seconds, animate)
         .iter()
         .flat_map(|pose| {

@@ -127,9 +127,13 @@ impl WalkIn {
         }
     }
 
-    /// Every walk-in building on `scenery`, in [`BUILDINGS`] order.
+    /// Every walk-in building on `scenery`, in [`BUILDINGS`] order; none outside Greyhaven
+    /// Vale.
     #[must_use]
     pub fn all(scenery: &Scenery) -> Vec<Self> {
+        if !scenery.greyhaven() {
+            return Vec::new();
+        }
         BUILDINGS
             .iter()
             .map(|&spec| Self::new(spec, scenery))

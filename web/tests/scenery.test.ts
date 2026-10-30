@@ -94,6 +94,8 @@ describe("scenery provider and local world", () => {
     ambientAnimalAnchors: () => Int32Array.from([1_800, 600]),
     ambientAnimalFrame: () => new Float32Array(18),
     raidArea: () => new Int32Array(),
+    waystoneAt: () => 0,
+    waystoneNames: () => [],
   });
 
   test("decodes the ambient animals' anchors (#419)", () => {

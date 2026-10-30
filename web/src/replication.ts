@@ -898,6 +898,54 @@ function decodeEquipment(reader: Reader): { equipment: (number | null)[]; stats:
   return { equipment, stats: { stamina, strength, agility, intellect } };
 }
 
+const REDIRECT_SCOPE = 3;
+const MAX_REDIRECT_ROUTE_BYTES = 255;
+
+/**
+ * What a departed character's session receives in place of its projection once the source zone
+ * retired it (#145, `mmorpg_protocol::RedirectNotice`): reconnect to `route` and claim the
+ * character there; the destination applies only commands after `cutoverSequence`.
+ */
+export type RedirectNotice = {
+  /** The source zone the character left and its tick. */
+  zoneId: number;
+  tick: bigint;
+  destination: number;
+  transferId: bigint;
+  cutoverSequence: number;
+  route: string;
+};
+
+/** Whether a session snapshot payload is a redirect notice rather than a player projection. */
+export function isRedirectNotice(payload: Uint8Array): boolean {
+  return payload.byteLength >= 4 && PROTOCOL_ID_BYTES.every((byte, at) => payload[at] === byte) &&
+    payload[3] === REDIRECT_SCOPE;
+}
+
+/** Strict, like the Rust decoder: a zero transfer ID, a bad route length or trailing bytes fail. */
+export function decodeRedirectNotice(payload: Uint8Array): RedirectNotice {
+  if (!isRedirectNotice(payload)) {
+    throw new Error("Not a redirect notice");
+  }
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const reader = new Reader(view);
+  reader.u32();
+  const zoneId = reader.u32();
+  const tick = reader.u64();
+  const destination = reader.u32();
+  const transferId = reader.u64();
+  const cutoverSequence = reader.u32();
+  const length = reader.u8();
+  if (length === 0 || length > MAX_REDIRECT_ROUTE_BYTES || payload.byteLength - reader.offset !== length) {
+    throw new Error("Invalid redirect route length");
+  }
+  if (transferId === 0n) {
+    throw new Error("A redirect's transfer ID must be nonzero");
+  }
+  const route = new TextDecoder("utf-8", { fatal: true }).decode(reader.bytes(length));
+  return { zoneId, tick, destination, transferId, cutoverSequence, route };
+}
+
 export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
   if (view.byteLength > MAX_PROJECTION_BYTES) {

@@ -1061,7 +1061,8 @@ async fn next_snapshot(
                 ..
             } => return Ok((*connection_epoch, Arc::clone(snapshot))),
             NetworkUpdate::Failed(error) => return Err(error.clone().into()),
-            NetworkUpdate::Waiting | NetworkUpdate::Reconnecting => {}
+            NetworkUpdate::Waiting | NetworkUpdate::Reconnecting | NetworkUpdate::Travelling(_) => {
+            }
         }
     }
 }

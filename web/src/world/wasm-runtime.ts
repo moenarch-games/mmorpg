@@ -1,6 +1,7 @@
 import init, * as generated from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { LocalCharacters } from "./local-characters";
 import { createLocalWorld, type LocalWorld } from "./local-world";
+import { createSceneryProvider, type SceneryProvider } from "./scenery";
 import { ScenarioSource, type ScenarioChoice, type ScenarioZoneHandle } from "./scenario-source";
 import { markStartup } from "../startup-marks";
 import type { ActionGraph, LabOptions, LabSetup } from "./action-lab";
@@ -18,6 +19,16 @@ export async function loadLocalWorld(characters: LocalCharacters): Promise<Local
   const world = createLocalWorld(generated, characters);
   markStartup("world-created");
   return world;
+}
+
+/**
+ * Presents zone `zoneId` (#145: an online character went to another zone's host) and returns that
+ * zone's scenery. The page's worlds share the module's presentation, so earlier providers describe
+ * it too from now on; call after the module loaded.
+ */
+export function presentZone(zoneId: number): SceneryProvider {
+  generated.presentZone(zoneId);
+  return createSceneryProvider(generated);
 }
 
 /** The combat-sounds SoundManifest with mmorpg's cues added (#447); call after the module loaded. */

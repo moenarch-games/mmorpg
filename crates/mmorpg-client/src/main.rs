@@ -12,8 +12,8 @@ use mmorpg_client::{
     session::{CharacterSelection, NetworkUpdate, PlayerInput, run_session_with_characters},
     world::WorldScene,
 };
-use mmorpg_core::{PlayerClass, Sex, ZoneId, greyhaven_vale};
-use mmorpg_scenery::greyhaven_vale_scenery;
+use mmorpg_core::{PlayerClass, Sex, ZoneId, content_for_zone};
+use mmorpg_scenery::scenery_for_zone;
 use std::{
     path::PathBuf,
     sync::Arc,
@@ -26,6 +26,8 @@ struct Options {
     certificate: Option<PathBuf>,
     zone_id: ZoneId,
     smoke: bool,
+    /// The headless Seam Test journey (#145) instead of a window.
+    autopilot: bool,
     frames: Option<u32>,
     /// Without `--class`, the window offers character selection.
     class: Option<PlayerClass>,
@@ -40,6 +42,7 @@ impl Options {
             certificate: None,
             zone_id: ZoneId::new(1),
             smoke: false,
+            autopilot: false,
             frames: None,
             class: None,
             sex: Sex::Male,
@@ -58,6 +61,7 @@ impl Options {
                     options.zone_id = ZoneId::new(args.next().ok_or("--zone needs an ID")?.parse()?)
                 }
                 "--smoke" => options.smoke = true,
+                "--autopilot" => options.autopilot = true,
                 "--class" => {
                     let name = args.next().ok_or(
                         "--class needs warden, ranger, arcanist, necromancer, rogue, cleric or druid",
@@ -99,6 +103,9 @@ impl Options {
         if options.character_id.is_some() && options.class.is_none() {
             return Err("--character-id requires --class".into());
         }
+        if options.autopilot && (options.smoke || options.character_id.is_none()) {
+            return Err("--autopilot needs --class and --character-id, without --smoke".into());
+        }
         Ok(Some(options))
     }
 }
@@ -106,15 +113,16 @@ impl Options {
 fn main() -> Result<(), ClientError> {
     let Some(options) = Options::parse(std::env::args().skip(1))? else {
         println!(
-            "mmorpg-client [--url https://host:4433/game/matches/zone-1] [--zone 1] [--certificate cert.pem] [--class warden|ranger|arcanist] [--sex female|male] [--character-id ID] [--smoke] [--frames N]\nW/S move, A/D strafe, Space jumps (hold to swim up), Shift dodge-rolls, X swims down; Tab targets the nearest creature, F attacks, 1-8 use the class abilities, Y/U/I/O order a Necromancer's skeletons to attack the target, defend here, follow or retreat, R releases a dead spirit; drag a mouse button to orbit, wheel zooms. E talks to a selected NPC or uses a door in reach, Enter chats, B bags, C character, L quests. Escape cancels a cast, closes panels, otherwise quits. --smoke connects, chooses the class and verifies an offscreen GPU frame.\nWithout --certificate, system certificate trust is used. Without --class the window offers character selection (smoke uses a male Warden)."
+            "mmorpg-client [--url https://host:4433/game/matches/zone-1] [--zone 1] [--certificate cert.pem] [--class warden|ranger|arcanist] [--sex female|male] [--character-id ID] [--smoke | --autopilot] [--frames N]\nW/S move, A/D strafe, Space jumps (hold to swim up), Shift dodge-rolls, X swims down; Tab targets the nearest creature, F attacks, 1-8 use the class abilities, Y/U/I/O order a Necromancer's skeletons to attack the target, defend here, follow or retreat, R releases a dead spirit; drag a mouse button to orbit, wheel zooms. E talks to a selected NPC or uses a door in reach, Enter chats, B bags, C character, L quests. Escape cancels a cast, closes panels, otherwise quits. --smoke connects, chooses the class and verifies an offscreen GPU frame. --autopilot claims the character in a Seam Test zone (901/902) on trusted-LAN handoff hosts, walks it through the seam and teleports it back by waystone, following each redirect, without a window.\nWithout --certificate, system certificate trust is used. Without --class the window offers character selection (smoke uses a male Warden)."
         );
         return Ok(());
     };
     let runtime = Arc::new(tokio::runtime::Runtime::new()?);
     // Scenery derives from the shared core content revision the host runs;
-    // the content names and sizes its units.
-    let scenery = greyhaven_vale_scenery();
-    let content = greyhaven_vale::content();
+    // the content names and sizes its units. A redirect to another zone (#145)
+    // swaps both for that zone's.
+    let scenery = scenery_for_zone(options.zone_id);
+    let content = content_for_zone(options.zone_id);
     let world = WorldScene::new(&scenery);
     let mut session = runtime.block_on(ClientSession::connect(
         &options.url,
@@ -135,6 +143,26 @@ fn main() -> Result<(), ClientError> {
         },
         global_id: options.character_id,
     });
+    if options.autopilot {
+        return runtime.block_on(async {
+            let selected = selected.ok_or("missing autopilot character")?;
+            let id = selected.global_id.ok_or("missing autopilot character ID")?;
+            if !session.claim_character(&id, selected.class).await? {
+                return Err::<(), ClientError>("--autopilot needs a host with character storage".into());
+            }
+            let journey = mmorpg_client::autopilot::seam_test_journey(&mut session).await?;
+            session.release_character().await?;
+            println!(
+                "{{\"event\":\"client_autopilot_passed\",\"walked\":[{},{}],\"teleported\":[{},{}],\"arrivals\":{:?}}}",
+                journey.walked.0.get(),
+                journey.walked.1.get(),
+                journey.teleported.0.get(),
+                journey.teleported.1.get(),
+                journey.arrivals,
+            );
+            Ok(())
+        });
+    }
     if options.smoke {
         return runtime.block_on(async {
             // Choose the class until the zone confirms it (a datagram may be
