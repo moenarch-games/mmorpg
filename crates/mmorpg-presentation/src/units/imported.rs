@@ -357,6 +357,10 @@ pub struct Clips {
     /// The joint whose subtree is the upper body, for a model that layers its upper body over
     /// its legs (Atlas 6.6.45); every other joint (root, pelvis, legs) is the lower body.
     pub upper_body: Option<&'static str>,
+    /// Directional, sprint and turning gaits, for a model that has them (#538).
+    pub gaits: Option<GaitClips>,
+    /// Hit, block and guard-break reactions, for a model that has them (#538).
+    pub reactions: Option<ReactionClips>,
 }
 
 /// The authored strikes a humanoid plays instead of its sword attack.
@@ -368,6 +372,112 @@ pub struct StrikeClips {
     pub bow: &'static str,
     /// A spell's release, for the staff and spell classes.
     pub spell: &'static str,
+    /// The bow cycle around the release (#538): aimed while the shot winds up, drawn and held
+    /// through a cast, recovered after the release and let down on a cancel.
+    pub bow_cycle: CastClips,
+    /// The spell hold (#538): raised, held through a cast or channel and lowered on a cancel.
+    pub spell_cycle: CastClips,
+}
+
+/// A cast's clips (#538): `enter` once, then `hold` looped until the cast resolves or stops;
+/// `recovery` after its release, `cancel` when it stops early. `aim` is the local wind-up of an
+/// instant release.
+#[derive(Clone, Copy, Debug)]
+pub struct CastClips {
+    pub aim: Option<&'static str>,
+    pub enter: &'static str,
+    pub hold: &'static str,
+    pub recovery: Option<&'static str>,
+    pub cancel: &'static str,
+    /// The cycle turns the pelvis: the whole body plays it while standing, the upper body
+    /// while moving. Otherwise only the upper body plays it.
+    pub footwork: bool,
+}
+
+/// In-place directional, sprint and turning locomotion (#538). A gait the bundle lacks falls
+/// back to the forward walk or run.
+#[derive(Clone, Copy, Debug)]
+pub struct GaitClips {
+    pub walk_back: &'static str,
+    pub walk_left: &'static str,
+    pub walk_right: &'static str,
+    pub run_back: &'static str,
+    pub run_left: &'static str,
+    pub run_right: &'static str,
+    pub sprint: &'static str,
+    pub turn_left: &'static str,
+    pub turn_right: &'static str,
+}
+
+/// The reactions to blows (#538), by [`Reaction`].
+#[derive(Clone, Copy, Debug)]
+pub struct ReactionClips {
+    pub chest: &'static str,
+    pub head: &'static str,
+    pub knockback: &'static str,
+    pub shove: &'static str,
+    pub block: &'static str,
+    pub guard_break: &'static str,
+}
+
+impl ReactionClips {
+    #[must_use]
+    pub const fn clip(self, reaction: Reaction) -> &'static str {
+        match reaction {
+            Reaction::Chest => self.chest,
+            Reaction::Head => self.head,
+            Reaction::Knockback => self.knockback,
+            Reaction::Shove => self.shove,
+            Reaction::Block => self.block,
+            Reaction::GuardBreak => self.guard_break,
+        }
+    }
+}
+
+/// How a unit reacts to a blow the zone resolved against it (#538). Presentation only.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Reaction {
+    /// An ordinary hit.
+    Chest,
+    /// A critical hit.
+    Head,
+    /// A forced-move knockback (#287): a bash, blast or charge.
+    Knockback,
+    /// A large creature's stomp or smash (#297, #160).
+    Shove,
+    /// A blow its held guard blocked (#156).
+    Block,
+    /// A blow that broke its guard (#156).
+    GuardBreak,
+}
+
+impl Reaction {
+    /// Which body the reaction drives: a hit flinches the whole body standing and the upper
+    /// body on the move; a knockback or shove always throws the whole body; a block or guard
+    /// break is the shield arm's.
+    const fn region(self) -> Region {
+        match self {
+            Self::Chest | Self::Head => Region::Footwork,
+            Self::Knockback | Self::Shove => Region::Whole,
+            Self::Block | Self::GuardBreak => Region::Upper,
+        }
+    }
+
+    /// An ordinary hit never cuts the unit's own strike short.
+    const fn interrupts(self) -> bool {
+        !matches!(self, Self::Chest | Self::Head)
+    }
+}
+
+/// Which body regions a one-shot drives.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Region {
+    /// The whole body while standing on the ground, the upper body once it moves (Atlas 6.6.2).
+    Footwork,
+    /// Always the whole body.
+    Whole,
+    /// Only the upper body.
+    Upper,
 }
 
 /// The Ranger skeleton's upper-body root: spine, arms and head move under it.
@@ -414,6 +524,28 @@ pub const DIVE_SPEED: f64 = 0.4;
 pub const WATER_BLEND_SECONDS: f32 = 0.3;
 /// The zone's dodge roll lasts this long in seconds (#516); its clip plays once over it.
 pub const ROLL_SECONDS: f64 = mmorpg_core::roll::ROLL_TICKS as f64 / mmorpg_core::TICK_HZ as f64;
+/// Ground speed in metres per second at which the forward run, and the run-speed strafes and
+/// backpedal, play at their authored rate.
+pub const RUN_CLIP_GROUND: f64 = 5.;
+/// Ground speed in metres per second above which forward travel sprints (#538): above the
+/// player's 6.3 m/s run, so only a faster mover (a charge) sprints.
+pub const SPRINT_CLIP_SPEED: f64 = 7.5;
+/// Ground speed in metres per second at which the sprint plays at its authored rate: the run's,
+/// scaled by the clips' `groundSpeedMetersPerSecond` (2.13 m/s sprint, 1.76 m/s jog).
+pub const SPRINT_CLIP_GROUND: f64 = RUN_CLIP_GROUND * 2.1345 / 1.7637;
+/// Travel within this angle of the facing, in radians, plays the forward gait; beyond
+/// [`BACKPEDAL_ANGLE`] the backward one; in between the strafes (#538). A diagonal stays
+/// forward or backward, so it never flickers between gaits.
+pub const STRAFE_ANGLE: f64 = std::f64::consts::FRAC_PI_3;
+pub const BACKPEDAL_ANGLE: f64 = 2. * std::f64::consts::FRAC_PI_3;
+/// A standing unit turning faster than this, in radians per second, steps round with the turn
+/// clips (#538), and keeps stepping [`TURN_HOLD_SECONDS`] after it slows.
+pub const TURN_CLIP_RATE: f64 = 1.5;
+pub const TURN_HOLD_SECONDS: f64 = 0.2;
+/// The turn clips' authored quarter turn plays at its rate at this many radians per clip.
+const TURN_CLIP_RADIANS: f64 = FRAC_PI_2;
+/// The longest a reaction plays, in seconds: a long shove spin stops here and blends out.
+pub const REACTION_SECONDS: f32 = 1.5;
 
 impl Kind {
     pub const ALL: [Self; 4] = [Self::Ranger, Self::Wolf, Self::Rat, Self::Pig];
@@ -462,8 +594,43 @@ impl Kind {
                     shield_bash: "Shield_OneShot",
                     bow: "Bow_Release",
                     spell: "Spell_Simple_Shoot",
+                    bow_cycle: CastClips {
+                        aim: Some("Bow_Aim_Loop"),
+                        enter: "Bow_Draw",
+                        hold: "Bow_Hold_Loop",
+                        recovery: Some("Bow_Recovery"),
+                        cancel: "Bow_Cancel",
+                        footwork: true,
+                    },
+                    spell_cycle: CastClips {
+                        aim: None,
+                        enter: "Spell_Simple_Enter",
+                        hold: "Spell_Simple_Idle_Loop",
+                        recovery: None,
+                        cancel: "Spell_Simple_Exit",
+                        footwork: false,
+                    },
                 }),
                 upper_body: Some(UPPER_BODY_ROOT),
+                gaits: Some(GaitClips {
+                    walk_back: "Walk_Bwd_Loop",
+                    walk_left: "Walk_Strafe_Left_Loop",
+                    walk_right: "Walk_Strafe_Right_Loop",
+                    run_back: "Jog_Bwd_Loop",
+                    run_left: "Jog_Strafe_Left_Loop",
+                    run_right: "Jog_Strafe_Right_Loop",
+                    sprint: "Sprint_Loop",
+                    turn_left: "Turn_Left",
+                    turn_right: "Turn_Right",
+                }),
+                reactions: Some(ReactionClips {
+                    chest: "Hit_Chest",
+                    head: "Hit_Head",
+                    knockback: "Hit_Knockback",
+                    shove: "Hit_Shove_Spin",
+                    block: "Sword_Block",
+                    guard_break: "Idle_Shield_Break",
+                }),
             },
             Self::Wolf => Clips {
                 idle: "Idle",
@@ -477,6 +644,8 @@ impl Kind {
                 roll: None,
                 strikes: None,
                 upper_body: None,
+                gaits: None,
+                reactions: None,
             },
             Self::Rat => Clips {
                 idle: "Rat_Idle",
@@ -490,6 +659,8 @@ impl Kind {
                 roll: None,
                 strikes: None,
                 upper_body: None,
+                gaits: None,
+                reactions: None,
             },
             // The farm pig has no attack clip; its jump reads as a charge.
             Self::Pig => Clips {
@@ -504,6 +675,8 @@ impl Kind {
                 roll: None,
                 strikes: None,
                 upper_body: None,
+                gaits: None,
+                reactions: None,
             },
         }
     }
@@ -530,6 +703,39 @@ impl Kind {
             ) => strikes.spell,
             Some(PlayerClass::Warden | PlayerClass::Rogue) | None => clips.attack,
         }
+    }
+
+    /// The cast cycle a `class` user shows while casting or channelling (#538): a bow class
+    /// draws and holds the bow, everyone else holds a spell.
+    #[must_use]
+    pub fn cast(self, class: Option<PlayerClass>) -> Option<CastClips> {
+        let strikes = self.clips().strikes?;
+        Some(if class == Some(PlayerClass::Ranger) {
+            strikes.bow_cycle
+        } else {
+            strikes.spell_cycle
+        })
+    }
+
+    /// The cast cycle whose release `strike` is, for its wind-up and recovery (#538).
+    #[must_use]
+    pub fn cycle_of(self, strike: &str) -> Option<CastClips> {
+        let strikes = self.clips().strikes?;
+        if strike == strikes.bow {
+            Some(strikes.bow_cycle)
+        } else if strike == strikes.spell {
+            Some(strikes.spell_cycle)
+        } else {
+            None
+        }
+    }
+
+    /// The clip of a `reaction`, for a model that has reactions.
+    #[must_use]
+    pub fn reaction(self, reaction: Reaction) -> Option<&'static str> {
+        self.clips()
+            .reactions
+            .map(|reactions| reactions.clip(reaction))
     }
 
     /// The model presenting `entity`, if it has one.
@@ -691,6 +897,8 @@ pub struct Cues {
     pub speed: f64,
     /// The horizontal travel's direction from the unit's facing, as a yaw offset in radians.
     pub direction: f64,
+    /// How fast the facing turns, in radians per second; positive turns left (#538).
+    pub turn: f64,
     /// Cosmetic vertical velocity in metres per second.
     pub vertical_speed: f64,
     /// The zone's water mode at the unit's projected position (Atlas 6.6.41).
@@ -842,6 +1050,12 @@ impl Track {
     }
 }
 
+/// The walk's rate at `speed` metres per second.
+#[allow(clippy::cast_possible_truncation)]
+fn walk_rate(speed: f64) -> f32 {
+    (speed / 1.8).clamp(0.6, 1.6) as f32
+}
+
 fn sample(play: Play, duration: &impl Fn(&str) -> f32) -> f32 {
     let length = duration(play.clip);
     if length <= 0. {
@@ -853,16 +1067,56 @@ fn sample(play: Play, duration: &impl Fn(&str) -> f32) -> f32 {
     }
 }
 
-/// An accepted strike being presented.
+/// An accepted strike, a reaction or a cast being presented.
 #[derive(Clone, Copy, Debug)]
 struct Strike {
     clip: &'static str,
+    /// `clip`'s length in seconds; `then` follows it.
+    length: f32,
+    /// What plays after `clip`: a recovery once, or a cast's hold looped.
+    then: Option<(&'static str, bool)>,
     serial: u32,
     started: f64,
     until: f64,
+    region: Region,
+    /// The reaction it shows, if it is one.
+    reaction: Option<Reaction>,
     /// Begun standing on the ground: the authored footwork plays on the legs too (Atlas 6.6.2),
     /// until the unit moves or leaves the ground; then only the upper body carries it.
     full_body: bool,
+}
+
+impl Strike {
+    fn new(clip: &'static str, length: f32, serial: u32, started: f64, region: Region) -> Self {
+        Self {
+            clip,
+            length,
+            then: None,
+            serial,
+            started,
+            until: started + f64::from(length.max(0.3)),
+            region,
+            reaction: None,
+            full_body: region != Region::Upper,
+        }
+    }
+
+    /// The clip and pinned time to show at `now`.
+    #[allow(clippy::cast_possible_truncation)]
+    fn want(self, now: f64) -> Want {
+        let at = (now - self.started).max(0.) as f32;
+        match self.then {
+            Some((next, looped)) if at >= self.length => Want {
+                once: !looped,
+                at: Some(at - self.length),
+                ..Want::hold(next, self.serial)
+            },
+            _ => Want {
+                at: Some(at),
+                ..Want::hold(self.clip, self.serial)
+            },
+        }
+    }
 }
 
 /// How far into its strike clip a local wind-up (Atlas 6.6.10) goes before it holds: this share
@@ -897,6 +1151,10 @@ impl Preparation {
 pub struct Playback {
     flight: Flight,
     strike: Option<Strike>,
+    /// A cast or channel in progress (#538), under any strike or reaction.
+    cast: Option<Strike>,
+    /// Stepping round with a turn clip until this time, turning left or right (#538).
+    turning: Option<(bool, f64)>,
     /// The local player's wind-up, until the zone answers (Atlas 6.6.10).
     preparation: Option<Preparation>,
     guarding: bool,
@@ -933,15 +1191,17 @@ enum Flight {
 
 impl Playback {
     /// Starts presenting an accepted strike's `clip`, `duration` seconds long, at `now`.
+    /// A strike resolves any cast shown before it.
     pub fn strike(&mut self, clip: &'static str, duration: f32, now: f64) {
         self.serial = self.serial.wrapping_add(1);
-        self.strike = Some(Strike {
+        self.strike = Some(Strike::new(
             clip,
-            serial: self.serial,
-            started: now,
-            until: now + f64::from(duration.max(0.3)),
-            full_body: true,
-        });
+            duration,
+            self.serial,
+            now,
+            Region::Footwork,
+        ));
+        self.cast = None;
     }
 
     /// The zone accepted the prepared strike: it continues from the wind-up's phase when the
@@ -951,15 +1211,83 @@ impl Playback {
         match self.preparation.take() {
             Some(preparation) if preparation.clip == clip => {
                 let started = now - f64::from(preparation.at(now, duration));
-                self.strike = Some(Strike {
+                self.strike = Some(Strike::new(
                     clip,
-                    serial: preparation.serial,
+                    duration,
+                    preparation.serial,
                     started,
-                    until: started + f64::from(duration.max(0.3)),
-                    full_body: true,
-                });
+                    Region::Footwork,
+                ));
+                self.cast = None;
             }
             _ => self.strike(clip, duration, now),
+        }
+    }
+
+    /// The strike just begun recovers with `clip`, `duration` seconds long, after it (#538): a
+    /// bow shot's recovery after its release.
+    pub fn recover(&mut self, clip: &'static str, duration: f32) {
+        if let Some(strike) = &mut self.strike
+            && duration > 0.
+        {
+            strike.then = Some((clip, false));
+            strike.until = strike.started + f64::from(strike.length.max(0.3) + duration);
+        }
+    }
+
+    /// Reacts to a blow the zone resolved with `clip`, `duration` seconds long (#538), for at
+    /// most [`REACTION_SECONDS`]. An ordinary hit never cuts the unit's own strike short.
+    pub fn react(&mut self, reaction: Reaction, clip: &'static str, duration: f32, now: f64) {
+        if !reaction.interrupts()
+            && self
+                .strike
+                .is_some_and(|strike| strike.reaction.is_none() && now < strike.until)
+        {
+            return;
+        }
+        self.serial = self.serial.wrapping_add(1);
+        let mut strike = Strike::new(
+            clip,
+            duration.min(REACTION_SECONDS),
+            self.serial,
+            now,
+            reaction.region(),
+        );
+        strike.reaction = Some(reaction);
+        self.strike = Some(strike);
+    }
+
+    /// Shows a cast or channel of `seconds` begun at `now` (#538): `enter` once, when the model
+    /// has it, then `hold` looped until the cast resolves, stops or runs out.
+    pub fn cast(
+        &mut self,
+        enter: Option<(&'static str, f32)>,
+        hold: &'static str,
+        footwork: bool,
+        seconds: f32,
+        now: f64,
+    ) {
+        self.serial = self.serial.wrapping_add(1);
+        let region = if footwork {
+            Region::Footwork
+        } else {
+            Region::Upper
+        };
+        let (clip, length) = enter.unwrap_or((hold, 0.));
+        let mut cast = Strike::new(clip, length, self.serial, now, region);
+        cast.then = Some((hold, true));
+        cast.until = now + f64::from(seconds.max(0.3));
+        self.cast = Some(cast);
+    }
+
+    /// The cast shown stopped early (#538): it lets down with `cancel` when the model has it.
+    pub fn cancel(&mut self, cancel: Option<(&'static str, f32)>, now: f64) {
+        let Some(cast) = self.cast.take().filter(|cast| now < cast.until) else {
+            return;
+        };
+        if let Some((clip, duration)) = cancel {
+            self.serial = self.serial.wrapping_add(1);
+            self.strike = Some(Strike::new(clip, duration, self.serial, now, cast.region));
         }
     }
 
@@ -989,6 +1317,94 @@ impl Playback {
     #[must_use]
     pub const fn preparing(&self) -> bool {
         self.preparation.is_some()
+    }
+
+    /// The legs' gait at `speed` in `direction` from the facing (#538): forward, strafing or
+    /// backpedalling at walk or run speed, sprinting beyond [`SPRINT_CLIP_SPEED`]. A gait the
+    /// model lacks keeps the earlier choice: the forward run for strafes at run speed, the walk
+    /// otherwise.
+    fn gait(
+        &self,
+        clips: Clips,
+        available: &impl Fn(&str) -> bool,
+        speed: f64,
+        direction: f64,
+    ) -> Want {
+        let gait = |pick: fn(GaitClips) -> &'static str| {
+            clips.gaits.map(pick).filter(|clip| available(clip))
+        };
+        let angle = direction.abs();
+        let left = direction > 0.;
+        #[allow(clippy::cast_possible_truncation)]
+        let run_rate = (speed / RUN_CLIP_GROUND).clamp(0.7, 1.5) as f32;
+        if speed > RUN_CLIP_SPEED {
+            let directed = if angle <= STRAFE_ANGLE {
+                if speed > SPRINT_CLIP_SPEED
+                    && let Some(sprint) = gait(|gaits| gaits.sprint)
+                {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let rate = (speed / SPRINT_CLIP_GROUND).clamp(0.7, 1.5) as f32;
+                    return Want::looped(sprint, rate);
+                }
+                Some(clips.run)
+            } else if angle >= BACKPEDAL_ANGLE {
+                gait(|gaits| gaits.run_back)
+            } else if left {
+                gait(|gaits| gaits.run_left)
+            } else {
+                gait(|gaits| gaits.run_right)
+            };
+            match directed {
+                Some(clip) => Want::looped(clip, run_rate),
+                // Running forward or strafing at the player's run speed plays the run (#515);
+                // backpedalling keeps the walk.
+                None if angle <= FRAC_PI_2 => Want::looped(clips.run, run_rate),
+                None => Want::looped(clips.walk, walk_rate(speed)),
+            }
+        } else {
+            let directed = if angle <= STRAFE_ANGLE {
+                None
+            } else if angle >= BACKPEDAL_ANGLE {
+                gait(|gaits| gaits.walk_back)
+            } else if left {
+                gait(|gaits| gaits.walk_left)
+            } else {
+                gait(|gaits| gaits.walk_right)
+            };
+            Want::looped(directed.unwrap_or(clips.walk), walk_rate(speed))
+        }
+    }
+
+    /// A standing unit turning past [`TURN_CLIP_RATE`] steps round with its turn clip (#538),
+    /// at the pace of the turn; a guard holds its stance instead.
+    fn turn(
+        &mut self,
+        clips: Clips,
+        duration: &impl Fn(&str) -> f32,
+        cues: Cues,
+        guarding: bool,
+    ) -> Option<Want> {
+        let gaits = clips
+            .gaits
+            .filter(|_| !guarding && !cues.dead && !cues.reduced)?;
+        if cues.turn.abs() > TURN_CLIP_RATE {
+            self.turning = Some((cues.turn > 0., cues.now + TURN_HOLD_SECONDS));
+        }
+        let (left, _) = self.turning.filter(|&(_, until)| cues.now < until)?;
+        let clip = if left {
+            gaits.turn_left
+        } else {
+            gaits.turn_right
+        };
+        let length = f64::from(duration(clip));
+        if length <= 0. {
+            return None;
+        }
+        // Through the hold the step keeps at least the threshold's pace.
+        #[allow(clippy::cast_possible_truncation)]
+        let rate = (cues.turn.abs().max(TURN_CLIP_RATE) * length / TURN_CLIP_RADIANS)
+            .clamp(0.7, 1.6) as f32;
+        Some(Want::looped(clip, rate))
     }
 
     /// Advances the clocks and returns the layers to pose this frame; `duration` gives a clip's
@@ -1080,30 +1496,39 @@ impl Playback {
         // while it protects still plays over it.
         if dead || guarding && !self.guarding {
             self.strike = None;
+            self.cast = None;
             self.preparation = None;
         }
         self.guarding = guarding;
         self.strike = self.strike.filter(|strike| now < strike.until);
+        self.cast = self.cast.filter(|cast| now < cast.until);
         // A swimmer has no footing for a strike's footwork.
         let standing = matches!(self.flight, Flight::Ground) && speed <= 0.25 && !swims;
         let layered = clips.upper_body.is_some();
-        let mut split = false;
-        if let Some(strike) = &mut self.strike {
-            let full_body = strike.full_body && (standing || !layered);
-            split = strike.full_body && !full_body;
-            strike.full_body = full_body;
+        let mut splits = [false; 2];
+        for (strike, split) in [&mut self.strike, &mut self.cast]
+            .into_iter()
+            .zip(&mut splits)
+        {
+            if let Some(strike) = strike {
+                let full_body =
+                    strike.full_body && (standing || !layered || strike.region == Region::Whole);
+                *split = strike.full_body && !full_body;
+                strike.full_body = full_body;
+            }
         }
-        let strike = self.strike.filter(|_| !reduced).map(|strike| {
-            #[allow(clippy::cast_possible_truncation)]
-            let at = (now - strike.started).max(0.) as f32;
-            (
-                strike.full_body,
-                Want {
-                    at: Some(at),
-                    ..Want::hold(strike.clip, strike.serial)
-                },
-            )
-        });
+        // Only the one shown leaves the legs.
+        let split = if self.strike.is_some() {
+            splits[0]
+        } else {
+            splits[1]
+        };
+        // A strike or reaction plays over the cast it interrupts for a moment.
+        let strike = self
+            .strike
+            .or(self.cast)
+            .filter(|strike| !reduced && (strike.full_body || layered))
+            .map(|strike| (strike.full_body, strike.want(now)));
         // An accepted strike outranks the local wind-up; the wind-up never moves the legs.
         let prepared = self
             .preparation
@@ -1117,8 +1542,6 @@ impl Playback {
                 at: Some(preparation.at(now, duration(preparation.clip))),
                 ..Want::hold(preparation.clip, preparation.serial)
             });
-        #[allow(clippy::cast_possible_truncation)]
-        let walk_rate = |speed: f64| (speed / 1.8).clamp(0.6, 1.6) as f32;
         let ground = if swims {
             // Strokes keep pace with the projected travel; a missing clip falls back to the
             // leaned walk for travel and the idle for treading, in place either way.
@@ -1147,13 +1570,11 @@ impl Playback {
             && speed > 0.25
         {
             Want::looped(wade, walk_rate(speed))
-        } else if speed > RUN_CLIP_SPEED && cues.direction.abs() <= FRAC_PI_2 {
-            // Running forward or strafing at the player's run speed plays the run (#515);
-            // backpedalling and slowed movement keep the walk.
-            #[allow(clippy::cast_possible_truncation)]
-            Want::looped(clips.run, (speed / 5.).clamp(0.7, 1.5) as f32)
         } else if speed > 0.25 {
-            Want::looped(clips.walk, walk_rate(speed))
+            self.turning = None;
+            self.gait(clips, &available, speed, cues.direction)
+        } else if let Some(turn) = self.turn(clips, &duration, cues, guarding) {
+            turn
         } else {
             // A standing protecting guard holds the shield up with its own stance.
             Want::looped(clips.guard.filter(|_| guarding).unwrap_or(clips.idle), 1.)
@@ -1491,12 +1912,18 @@ mod tests {
     }
 
     #[test]
-    fn the_run_speed_runs_forward_and_backpedalling_walks() {
-        let lower = |speed: f64, direction: f64| {
+    fn directional_gaits_follow_the_travel_and_fall_back_to_the_walk_and_run() {
+        let gait = |speed: f64, direction: f64, gaits: bool| {
             Playback::default()
                 .advance(
                     Kind::Ranger.clips(),
-                    |_| 1.,
+                    |clip| {
+                        if gaits || !(clip.contains("Bwd") || clip.contains("Strafe")) {
+                            1.
+                        } else {
+                            0.
+                        }
+                    },
                     Cues {
                         speed,
                         direction,
@@ -1510,12 +1937,121 @@ mod tests {
         };
         let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
         let backpedal = f64::from(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND) / 100.;
-        assert_eq!(lower(run, 0.), "Jog_Fwd_Loop");
-        assert_eq!(lower(run, FRAC_PI_2), "Jog_Fwd_Loop");
-        assert_eq!(lower(run, 0.6), "Jog_Fwd_Loop");
-        assert_eq!(lower(backpedal, std::f64::consts::PI), "Walk_Loop");
-        assert_eq!(lower(backpedal, -2.4), "Walk_Loop");
-        assert_eq!(lower(run / 2., 0.), "Walk_Loop");
+        let pi = std::f64::consts::PI;
+        assert_eq!(gait(run, 0., true), "Jog_Fwd_Loop");
+        // A diagonal stays forward.
+        assert_eq!(gait(run, pi / 4., true), "Jog_Fwd_Loop");
+        assert_eq!(gait(run, FRAC_PI_2, true), "Jog_Strafe_Left_Loop");
+        assert_eq!(gait(run, -FRAC_PI_2, true), "Jog_Strafe_Right_Loop");
+        assert_eq!(gait(run, pi, true), "Jog_Bwd_Loop");
+        assert_eq!(gait(backpedal, -2.4, true), "Jog_Bwd_Loop");
+        assert_eq!(gait(run / 2., pi, true), "Walk_Bwd_Loop");
+        assert_eq!(gait(run / 2., FRAC_PI_2, true), "Walk_Strafe_Left_Loop");
+        assert_eq!(gait(run / 2., 0., true), "Walk_Loop");
+        assert_eq!(gait(SPRINT_CLIP_SPEED + 1., 0., true), "Sprint_Loop");
+        // Without the directional clips: the run for strafes, the walk for backpedalling.
+        assert_eq!(gait(run, FRAC_PI_2, false), "Jog_Fwd_Loop");
+        assert_eq!(gait(run, pi, false), "Walk_Loop");
+        assert_eq!(gait(backpedal, pi, false), "Walk_Loop");
+        assert_eq!(gait(run / 2., FRAC_PI_2, false), "Walk_Loop");
+    }
+
+    #[test]
+    fn a_standing_turn_steps_round_and_settles_back_to_idle() {
+        let mut playback = Playback::default();
+        let mut frame = |turn: f64, now: f64| {
+            playback
+                .advance(
+                    Kind::Ranger.clips(),
+                    |_| 1.,
+                    Cues {
+                        turn,
+                        now,
+                        dt: 0.05,
+                        ..Cues::default()
+                    },
+                    Blend::default(),
+                )
+                .lower
+                .0
+        };
+        assert_eq!(frame(0.5, 0.), "Idle_Loop");
+        assert_eq!(frame(3., 0.05), "Turn_Left");
+        assert_eq!(frame(0., 0.1), "Turn_Left", "the step holds briefly");
+        assert_eq!(frame(-3., 0.15), "Turn_Right");
+        assert_eq!(frame(0., 0.6), "Idle_Loop");
+    }
+
+    #[test]
+    fn reactions_casts_and_the_bow_cycle_play_their_clips_and_fall_back() {
+        let clips = Kind::Ranger.clips();
+        let frame = |playback: &mut Playback, speed: f64, now: f64| {
+            playback.advance(
+                clips,
+                |_| 1.,
+                Cues {
+                    speed,
+                    now,
+                    dt: 0.05,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        // A hit flinches the whole body standing and the upper body on the move.
+        let mut playback = Playback::default();
+        playback.react(Reaction::Chest, "Hit_Chest", 0.33, 0.);
+        assert_eq!(frame(&mut playback, 0., 0.05).lower.0, "Hit_Chest");
+        let moving = frame(&mut playback, 4., 0.1);
+        assert_eq!(moving.upper.0, "Hit_Chest");
+        assert_ne!(moving.lower.0, "Hit_Chest");
+        // A knockback throws the whole body even while the knockback moves it.
+        playback.react(Reaction::Knockback, "Hit_Knockback", 0.83, 1.);
+        assert_eq!(frame(&mut playback, 6., 1.05).lower.0, "Hit_Knockback");
+        // A block is the shield arm's; an ordinary hit never cuts a strike short.
+        let mut playback = Playback::default();
+        playback.react(Reaction::Block, "Sword_Block", 1.2, 0.);
+        let blocked = frame(&mut playback, 0., 0.05);
+        assert_eq!(blocked.upper.0, "Sword_Block");
+        assert_eq!(blocked.lower.0, "Idle_Loop");
+        playback.strike("Sword_Attack", 1.5, 0.1);
+        playback.react(Reaction::Chest, "Hit_Chest", 0.33, 0.2);
+        assert_eq!(frame(&mut playback, 0., 0.25).upper.0, "Sword_Attack");
+        // A spell cast raises, then holds on the upper body until it resolves.
+        let mut playback = Playback::default();
+        playback.cast(
+            Some(("Spell_Simple_Enter", 0.5)),
+            "Spell_Simple_Idle_Loop",
+            false,
+            2.,
+            0.,
+        );
+        let entering = frame(&mut playback, 0., 0.1);
+        assert_eq!(entering.upper.0, "Spell_Simple_Enter");
+        assert_eq!(entering.lower.0, "Idle_Loop");
+        assert_eq!(
+            frame(&mut playback, 0., 0.8).upper.0,
+            "Spell_Simple_Idle_Loop"
+        );
+        playback.cancel(Some(("Spell_Simple_Exit", 0.4)), 1.);
+        assert_eq!(frame(&mut playback, 0., 1.1).upper.0, "Spell_Simple_Exit");
+        // The bow draws and holds through a cast, then releases and recovers, whole body.
+        let mut playback = Playback::default();
+        playback.cast(Some(("Bow_Draw", 0.7)), "Bow_Hold_Loop", true, 2., 0.);
+        assert_eq!(frame(&mut playback, 0., 0.1).lower.0, "Bow_Draw");
+        assert_eq!(frame(&mut playback, 0., 1.).lower.0, "Bow_Hold_Loop");
+        playback.strike("Bow_Release", 0.47, 2.);
+        playback.recover("Bow_Recovery", 1.1);
+        assert_eq!(frame(&mut playback, 0., 2.1).lower.0, "Bow_Release");
+        assert_eq!(frame(&mut playback, 0., 2.8).lower.0, "Bow_Recovery");
+        assert_eq!(frame(&mut playback, 0., 3.8).lower.0, "Idle_Loop");
+        // A model without casts or reactions has none to start.
+        assert!(Kind::Wolf.cast(Some(PlayerClass::Ranger)).is_none());
+        assert_eq!(Kind::Wolf.reaction(Reaction::Chest), None);
+        assert_eq!(
+            Kind::Ranger.cycle_of("Bow_Release").and_then(|c| c.aim),
+            Some("Bow_Aim_Loop")
+        );
     }
 
     #[test]
