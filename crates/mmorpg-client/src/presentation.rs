@@ -206,6 +206,28 @@ impl Presentation {
         })
     }
 
+    /// Presents another zone (#145) as `player_id` from its first projection on, keeping the
+    /// viewer's local presentation choices (headwear, reduced motion).
+    pub fn enter_zone(
+        &mut self,
+        player_id: u32,
+        scenery: Scenery,
+        content: Arc<ZoneContent>,
+        now: Instant,
+    ) -> Result<(), ClientError> {
+        let mut next = Self::new(player_id, scenery, content, now)?;
+        next.headwear = self.headwear;
+        next.reduced_motion = self.reduced_motion;
+        *self = next;
+        Ok(())
+    }
+
+    /// The scenery this presentation draws.
+    #[must_use]
+    pub const fn scenery(&self) -> &Scenery {
+        &self.scenery
+    }
+
     /// Start a new connection epoch without blending with obsolete samples.
     pub fn reset(&mut self, now: Instant) {
         self.camera_framed = false;

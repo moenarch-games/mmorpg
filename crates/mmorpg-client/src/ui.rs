@@ -163,6 +163,11 @@ pub struct GameUi {
 const REFUSAL_SECONDS: Duration = Duration::from_secs(3);
 
 impl GameUi {
+    /// Draws the minimap of another zone's scenery (#145).
+    pub fn set_scenery(&mut self, scenery: &Scenery) {
+        self.minimap = MinimapLayers::new(scenery);
+    }
+
     #[must_use]
     pub fn new(scenery: &Scenery) -> Self {
         Self {

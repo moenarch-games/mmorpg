@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod audio;
+pub mod autopilot;
 pub mod bindings;
 pub mod camera;
 pub mod controls;

@@ -68,6 +68,8 @@ pub struct RefusalReceipt {
 pub enum NetworkUpdate {
     Waiting,
     Reconnecting,
+    /// The character moves on to another zone (#145); its snapshots follow from there.
+    Travelling(mmorpg_core::ZoneId),
     // Epoch accompanies every snapshot: watch coalescing may skip intermediate
     // status updates, but must never skip the presentation reset on resume.
     Snapshot {
@@ -398,7 +400,19 @@ pub async fn run_session(
                 Err(error) => Some(error),
             },
         };
-        if let Some(error) = failure {
+        if let Some(SessionError::Redirected(notice)) = &failure {
+            updates.send_replace(NetworkUpdate::Travelling(notice.destination));
+            tokio::select! {
+                biased;
+                _ = &mut shutdown => { session.release_character().await?; return Ok(()); },
+                followed = session.follow(notice) => followed?,
+            }
+            // Another zone counts its own ticks; only current input carries over.
+            last_tick = None;
+            last_snapshot = Instant::now();
+            outbox.resume(*input.borrow_and_update());
+            heartbeat.reset();
+        } else if let Some(error) = failure {
             let recoverable = tokio::select! {
                 biased;
                 _ = &mut shutdown => { session.release_character().await?; return Ok(()); },

@@ -219,6 +219,7 @@ impl NativeApplication {
             },
             title: String::new(),
             connection_epoch: None,
+            zone: None,
             last_refusal: None,
             input,
             updates,
