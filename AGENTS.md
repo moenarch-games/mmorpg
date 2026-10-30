@@ -53,6 +53,7 @@ cargo run -p mmorpg-scenarios --locked -- control-plane crates/mmorpg-scenarios/
 MMORPG_SCENARIOS_UPDATE=1 cargo test -p mmorpg-scenarios --test scenarios --locked                              # regenerate expected scenario outputs
 MMORPG_UPDATE_FIXTURES=1 cargo nextest run --workspace --locked                                                 # regenerate every golden fixture (protocol hex, traces, scenarios); review the diff
 python3 scripts/smoke-native.py      # offscreen end-to-end: host + client + GPU frame
+python3 scripts/smoke-handoff.py     # two handoff hosts on PostgreSQL 17 (Docker): the native autopilot walks and teleports between them (#145)
 ./scripts/dev-native.sh              # full local native dev environment
 python3 scripts/smoke-browser.py     # real Chromium against the built web/dist (needs Playwright)
 python3 scripts/smoke-browser-online.py  # two Chromium pages join one real zone host over WebTransport

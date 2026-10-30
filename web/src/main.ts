@@ -47,7 +47,7 @@ import {
 import { characterVisualProfile, type CharacterVisualProfile } from "./character-visuals";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, createScenarioWorld, labExperiments, loadLocalWorld, soundManifest } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, createScenarioWorld, labExperiments, loadLocalWorld, presentZone, soundManifest } from "./world/wasm-runtime";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
 import { ExperimentPanel } from "./world/lab-experiment-panel";
@@ -1027,7 +1027,7 @@ function updateEntryButton(): void {
 
 /** A zone host world over WebTransport, drawn with the scenery the page loaded. */
 function createOnlineWorld(local: LocalWorld, server: ZoneServer): ZoneWorld {
-  return {
+  const online: ZoneWorld = {
     ...local,
     source: new OnlineZoneSource({
       route: server.route,
@@ -1035,12 +1035,35 @@ function createOnlineWorld(local: LocalWorld, server: ZoneServer): ZoneWorld {
       contentRevision: local.scenery.scenery.contentRevision,
       connector: webTransportConnector(server.certificateHash),
       resolveCharacterId: (id) => navigator.locks.request("mmorpg-online-character-ids", () => onlineCharacterId(window.localStorage, id)),
+      // The route's zone on entry, and another zone's after a redirect notice (#145).
+      enterZone: (zoneId) => presentWorldZone(online, zoneId),
     }),
   };
+  return online;
+}
+
+/** The zone the view draws: Greyhaven Vale (1) unless an online session went elsewhere (#145). */
+let presentedZone = 1;
+
+/**
+ * Draws zone `zoneId`'s scenery in `target` and returns its content revision. The page's
+ * worlds share the WASM presentation, so this reloads the view whenever the zone changes.
+ */
+function presentWorldZone(target: ZoneWorld, zoneId: number): bigint {
+  if (zoneId === presentedZone) {
+    return target.scenery.scenery.contentRevision;
+  }
+  target.scenery = presentZone(zoneId);
+  presentedZone = zoneId;
+  worldView.load(target);
+  if (activeWorld === target) {
+    worldView.enter(worldInput(), null);
+  }
+  return target.scenery.scenery.contentRevision;
 }
 
 function showLinkState(state: LinkState): void {
-  const text = state === "reconnecting" ? "Reconnecting…" : "";
+  const text = state === "reconnecting" ? "Reconnecting…" : state === "travelling" ? "Travelling…" : "";
   if (connectionStatus.textContent !== text) {
     connectionStatus.textContent = text;
   }
@@ -1416,6 +1439,10 @@ async function enterWorld(): Promise<void> {
   loading.bytesBeforeEntry = fetchedBytes();
   loading.playableMs = null;
   const server = chosenServer();
+  if (target === world) {
+    // The local world plays Greyhaven Vale, even after an online session went elsewhere (#145).
+    presentWorldZone(target, 1);
+  }
   const next = enterPreviewWorld(entryState, selectedCharacter());
   // Join before switching the page: a refused join leaves the source unjoined, so
   // the page stays on selection, says why, and entry can be retried.

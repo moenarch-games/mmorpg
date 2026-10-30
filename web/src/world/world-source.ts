@@ -4,10 +4,11 @@ import type { ContentCatalog } from "./catalog";
 import type { SceneryProvider } from "./scenery";
 
 /**
- * Whether a joined source's projections are live, or it is restoring a lost
- * connection to its zone host while the last known scene stays visible.
+ * Whether a joined source's projections are live, it is restoring a lost
+ * connection to its zone host while the last known scene stays visible, or it
+ * is following its character to another zone's host (#145).
  */
-export type LinkState = "connected" | "reconnecting";
+export type LinkState = "connected" | "reconnecting" | "travelling";
 
 /** The class and sex a new player chooses on entry; the zone takes the choice once. */
 /**

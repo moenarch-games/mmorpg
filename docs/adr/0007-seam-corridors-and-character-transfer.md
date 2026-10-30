@@ -1,6 +1,6 @@
 # Seam corridors and fenced character transfer
 
-Status: accepted; parts 1, 2, 3a and 3b of #145 (owner decision Q5 = A: three sequential PRs; part 3 split into 3a, 3b and 3c with owner approval). Part 3c (client cutover, two-host journey) extends this record.
+Status: accepted; implemented by parts 1, 2, 3a, 3b and 3c of #145 (owner decision Q5 = A: three sequential PRs; part 3 split into 3a, 3b and 3c with owner approval).
 
 ## Boundary
 
@@ -60,6 +60,14 @@ Formats: command tag 30 (`UseWaystone`), canonical intent 23, error codes 36 and
 
 **Quest logs** belong to the character. Content can carry other zones' quests for log validation (`ZoneContent::with_carried_quests`), which is part of its identity. The Seam Test zones carry Greyhaven's, so a log crosses unchanged and its quests make no progress there.
 
+## Client cutover (part 3c)
+
+**Following a redirect.** A client changes host only on the redirect notice, which comes after the source committed the handoff (TECH-007), never on staging or acceptance. Both clients check that the notice comes from their current zone for their claimed character, that it leads to another zone, that its transfer is not one they already followed, and that its route names the destination zone (`…/matches/zone-<destination>`). Then they close the source's connection and forget its route and resume token, so the old route is never used again: a later interruption resumes at the destination only. At the destination they claim the same character, repeating the claim while the destination refuses it (it does until the source retired the character), and keep their command sequence, so the destination applies only commands after the cutover sequence. Intent made while travelling is dropped, as during a resume; the character arrives stopped. A destination that does not take the character within 20 s fails the session closed; nothing falls back to an anonymous player or back to the source. The native client does this in `ClientSession::follow`, the browser in `OnlineZoneSource` (a new `travelling` link state).
+
+**Per-zone presentation.** `mmorpg_scenery::scenery_for_zone` gives each zone's scenery, as `content_for_zone` gives its content. The Seam Test zones are flat, with their waystone and palisades along their walls. Across the seam each shows the neighbour's landscape (its stone and walls, in this zone's coordinates) and none of its units (Q3 = A), so the wall that ends a zone behind its seam is not drawn. Greyhaven's authored kits (the Outpost buildings, the Sunken Shrine, the walk-in buildings and the ambient animals) need Greyhaven's props and draw only on Greyhaven's scenery (`Scenery::greyhaven`). The native window swaps the scenery, content, minimap and presentation when projections of another zone arrive. The browser's WASM module presents one zone at a time (`presentZone`, Greyhaven until an online session goes elsewhere); the page reloads its view for the new zone, and the local world switches back to Greyhaven on entry. The local zone host never reads the presentation.
+
+**The journey.** `scripts/smoke-handoff.py` starts PostgreSQL 17 in Docker, two handoff hosts for Seam Test West and East, and the native client's headless `--autopilot`: the character unlocks West's stone, walks through the seam to East, unlocks East's stone and teleports back to West, each time following the redirect to the other host.
+
 ## Not covered here
 
-Client reconnect on the redirect notice and the two-host walk/teleport smoke with real clients are part 3c. Hosts without a handoff service (the browser's local host, the file-mode development host and the journaled PostgreSQL host) keep refusing travel to another zone's stone with error 37. Production admission, transfer credentials and routing remain TECH-007's open items, and terminal handoff records have no retention policy yet.
+Hosts without a handoff service (the browser's local host, the file-mode development host and the journaled PostgreSQL host) keep refusing travel to another zone's stone with error 37. Production admission, transfer credentials and routing remain TECH-007's open items, and terminal handoff records have no retention policy yet. Without TECH-007's routing API a new entry still starts at the route the client was configured with, not at the zone holding the character. Peer hosts share one certificate trust (the native client pins one certificate hash for every route it follows).

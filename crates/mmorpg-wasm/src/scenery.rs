@@ -29,14 +29,59 @@
 //! local zone host ([`crate::host`]) never reads it, and network hosts never
 //! link `mmorpg-scenery`.
 
-use std::sync::OnceLock;
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicU32, Ordering},
+};
 
 use mmorpg_core::{
-    PLAYER_HALF_EXTENTS_UNITS, StaticCollider, UNITS_PER_METRE, ZoneAreas, greyhaven_vale,
-    greyhaven_vale_definition,
+    PLAYER_HALF_EXTENTS_UNITS, StaticCollider, UNITS_PER_METRE, ZoneAreas, ZoneContent, ZoneId,
+    content_for_zone, seam_test,
 };
-use mmorpg_scenery::{PropKind, Scenery, TerrainGrid, greyhaven_vale_scenery};
+use mmorpg_scenery::{PropKind, Scenery, TerrainGrid, scenery_for_zone};
 use serde::Serialize;
+
+/// The zone the page presents (#145): Greyhaven Vale (zone 1, the local zone host's) until an
+/// online session follows a redirect notice into another zone. Presentation only: the local
+/// zone host never reads it.
+static PRESENTED_ZONE: AtomicU32 = AtomicU32::new(1);
+
+/// The zone the page presents.
+#[must_use]
+pub fn presented_zone() -> ZoneId {
+    ZoneId::new(PRESENTED_ZONE.load(Ordering::Relaxed))
+}
+
+/// Presents `zone` from now on; every later presentation export describes its content.
+pub fn present_zone(zone: ZoneId) {
+    PRESENTED_ZONE.store(zone.get(), Ordering::Relaxed);
+}
+
+/// One value per presentable content (Greyhaven Vale and the two Seam Test zones), each
+/// built once, for the presented zone.
+pub(crate) struct PerZone<T>([OnceLock<T>; 3]);
+
+impl<T> PerZone<T> {
+    pub(crate) const fn new() -> Self {
+        Self([const { OnceLock::new() }; 3])
+    }
+
+    pub(crate) fn get(&self, init: impl FnOnce(ZoneId) -> T) -> &T {
+        let zone = presented_zone();
+        let slot = match zone {
+            seam_test::WEST_ZONE => 1,
+            seam_test::EAST_ZONE => 2,
+            _ => 0,
+        };
+        self.0[slot].get_or_init(|| init(zone))
+    }
+}
+
+/// The content of the presented zone, which names and sizes its units.
+#[must_use]
+pub fn presented_content() -> Arc<ZoneContent> {
+    content_for_zone(presented_zone())
+}
 
 pub const SCENERY_FORMAT: &str = "mmorpg.scenery";
 /// Where this export's props and terrain come from.
@@ -133,15 +178,16 @@ pub struct AreaExport {
     pub max_xz: [i32; 2],
 }
 
-/// The areas of the hosted content.
+/// The areas of the presented content.
 pub fn hosted_areas() -> &'static ZoneAreas {
-    greyhaven_vale::areas()
+    static AREAS: PerZone<ZoneAreas> = PerZone::new();
+    AREAS.get(|zone| content_for_zone(zone).areas().clone())
 }
 
-/// The presentation scenery of the hosted content, built once.
+/// The presentation scenery of the presented content, built once per zone.
 pub fn hosted_scenery() -> &'static Scenery {
-    static SCENERY: OnceLock<Scenery> = OnceLock::new();
-    SCENERY.get_or_init(greyhaven_vale_scenery)
+    static SCENERY: PerZone<Scenery> = PerZone::new();
+    SCENERY.get(scenery_for_zone)
 }
 
 /// Presentation relief at `(x, z)` in units; clients raise units by it.
@@ -152,17 +198,21 @@ pub fn relief_at(x: i32, z: i32) -> i32 {
 
 #[must_use]
 pub fn hosted_export() -> SceneryExport {
-    // The hosted content definition, which `crate::host` also loads; the
-    // scenery was derived from the same colliders.
-    let definition = greyhaven_vale_definition();
-    export(hosted_scenery(), definition.colliders(), hosted_areas())
+    // The presented content's definition, which `crate::host` also loads for Greyhaven Vale;
+    // the scenery was derived from the same colliders.
+    let content = presented_content();
+    export(
+        hosted_scenery(),
+        content.definition().colliders(),
+        hosted_areas(),
+    )
 }
 
 /// The serialized export. Serializing plain data cannot fail.
 #[must_use]
 pub fn hosted_scenery_json() -> &'static str {
-    static JSON: OnceLock<String> = OnceLock::new();
-    JSON.get_or_init(|| {
+    static JSON: PerZone<String> = PerZone::new();
+    JSON.get(|_| {
         serde_json::to_string(&hosted_export()).expect("scenery export is plain serializable data")
     })
 }
@@ -305,7 +355,7 @@ fn hex([red, green, blue]: [u8; 3]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mmorpg_core::{MAX_PLAYERS_PER_ZONE, greyhaven_vale::SPAWN_GRID};
+    use mmorpg_core::{MAX_PLAYERS_PER_ZONE, greyhaven_vale, greyhaven_vale::SPAWN_GRID};
     use mmorpg_scenery::{FAR_TERRAIN_BOUNDS, TERRAIN_BOUNDS, visual_kind};
     use serde_json::Value;
 

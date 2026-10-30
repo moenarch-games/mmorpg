@@ -312,6 +312,29 @@ fn creatures_and_npcs_render_by_size_disposition_and_state() {
 }
 
 #[test]
+fn a_followed_redirect_presents_the_destination_zone_without_greyhavens_kits() {
+    let now = Instant::now();
+    let mut presentation = presentation(now);
+    presentation.push(snapshot(40, [0, 0, 0]), now).unwrap();
+    let zone = mmorpg_core::seam_test::EAST_ZONE;
+    let content = mmorpg_core::content_for_zone(zone);
+    presentation
+        .enter_zone(
+            1,
+            mmorpg_scenery::scenery_for_zone(zone),
+            content.clone(),
+            now,
+        )
+        .unwrap();
+    let mut east = snapshot(2, [-4_800, 0, 0]);
+    east.zone_id = zone;
+    east.content_revision = content.revision();
+    assert!(presentation.push(east, now).unwrap());
+    let view = OrbitCamera::default().view(presentation.camera_target(now));
+    assert!(!presentation.unit_draws(now, view).is_empty());
+}
+
+#[test]
 fn scenery_and_content_of_different_revisions_are_refused() {
     let mut scenery = greyhaven_vale_scenery();
     scenery.content_revision += 1;
