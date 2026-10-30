@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { GRASS_PACKAGE_DIRECTORY, record } from "../scripts/grass-package";
 import { RELIEF_GRID, RELIEF_PACKAGE_DIRECTORY } from "../scripts/relief-package";
 import { encodeCommand } from "../src/command-wire";
-import { ABILITY_SHAPES, BREATH_MAX_TICKS, ITEM_SHAPES, TICK_HZ, decodeSnapshot, ticksFromMs, type EntityState } from "../src/replication";
+import { ABILITY_SHAPES, BREATH_MAX_TICKS, ITEM_SHAPES, TICK_HZ, decodeSnapshot, ticksFromMs, type EntityState, type ZoneSnapshot } from "../src/replication";
 import { abilitySlots, useAbilitySlot } from "../src/world/units/abilities";
 import { undescribedAbilities } from "../src/world/units/ability-presentation";
 import { combatStatus } from "../src/world/units/combat-hud";
@@ -39,6 +39,17 @@ function self(source: LocalZoneSource): EntityState {
 /** Ticks of the 30 Hz rate these scripts were written against, at `TICK_HZ`. */
 const t30 = (ticks: number) => (ticks * TICK_HZ) / 30;
 
+/** The yaw (65 536 steps a turn, 0 toward +Z, a quarter toward +X) from the viewer to creature `id`, or 0 out of view. */
+function yawToward(projection: ZoneSnapshot, id: number): number {
+  const me = projection.entities[0];
+  const unit = projection.entities.find((entity) => entity.kind === "creature" && entity.entityId === id);
+  if (!me || !unit) {
+    return 0;
+  }
+  const turns = Math.atan2(unit.position[0] - me.position[0], unit.position[2] - me.position[2]) / (2 * Math.PI);
+  return Math.round(((turns % 1) + 1) % 1 * 65_536) % 65_536;
+}
+
 function run(source: LocalZoneSource, ticks: number): void {
   for (let tick = 0; tick < ticks; tick += 1) {
     source.advance(TICK_SECONDS);
@@ -57,28 +68,31 @@ describe("WASM local zone host", () => {
     // The corpse-loot-resume scenario's script at 60 Hz, up the Wolfrun Climb (#423).
     const movement = new Map([[0, [1, 0]], [72, [1, 49152]], [324, [1, 32768]], [686, [1, 49152]],
       [800, [1, 0]], [1130, [1, 49152]], [1434, [1, 32768]], [1514, [0, 32768]]]);
-    for (let tick = 0; tick < 2719; tick += 1) {
+    for (let tick = 0; tick < 2863; tick += 1) {
       const move = movement.get(tick);
       if (move) {
         source.sendCommand({ kind: "move", forward: move[0] === 0 ? 0 : 1, strafe: 0, facing: move[1] ?? 0 });
       }
       if (tick === 2) {
-        source.sendCommand({ kind: "start-attack" });
+        source.sendCommand({ kind: "swing", facing: 0 });
       }
       if (tick === 1444) {
         source.sendCommand({ kind: "select-target", target: { kind: "creature", id: 108 } });
-        source.sendCommand({ kind: "start-attack" });
+      }
+      // Keep pressing attack at the wolf (#517), aimed where the viewer sees it.
+      if (tick >= 1514 && tick < 2730 && (tick - 1514) % 30 === 0) {
+        source.sendCommand({ kind: "swing", facing: yawToward(source.latestProjection()!, 108) });
       }
       run(source, 1);
     }
     const before = source.latestProjection()!;
-    expect(before.viewer).toMatchObject({ copper: 0, health: 32, experience: 50 });
+    expect(before.viewer).toMatchObject({ copper: 0, health: 30, experience: 50 });
     loot.update(before);
     const sheet = loot.sheet;
     if (sheet === null) {
       throw new Error("Missing authoritative corpse sheet");
     }
-    expect(sheet).toEqual({ creatureId: 108, diedAt: 2571n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
+    expect(sheet).toEqual({ creatureId: 108, diedAt: 2715n, money: 2, item: { itemId: 1, quantity: 2 }, questItem: null });
     source.sendCommand({ kind: "loot", creatureId: sheet.creatureId, diedAt: sheet.diedAt + 1n });
     run(source, 1);
     expect(source.latestProjection()?.events).toContainEqual({ kind: "error", code: "invalid-loot", target: { kind: "creature", id: 108 } });
@@ -267,7 +281,7 @@ describe("WASM local zone host", () => {
     run(source, 1);
     source.sendCommand({ kind: "use-door", door: 1, open: true });
     run(source, 2);
-    expect(source.latestProjection()?.doors).toEqual([{ door: 1, open: true }]);
+    expect(source.latestProjection()?.doors).toEqual([{ door: 1, open: true }, { door: 2, open: false }]);
     walk(32_768, t30(29));
     walk(EAST, t30(20));
     walk(32_768, t30(8));
@@ -299,9 +313,9 @@ describe("WASM local zone host", () => {
     expect(projection).toMatchObject({ zoneId: 1, tick: 0n, contentRevision: HOSTED_REVISION, viewerId: player, acknowledgedSequence: 0 });
     // A new character has made its class choice on entry.
     expect(projection.viewer).toEqual({
-      copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, autoAttacking: false, target: null,
+      copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, target: null,
       classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
-      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: BREATH_MAX_TICKS,
+      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: BREATH_MAX_TICKS, waystones: [],
     });
     expect(() => zone.submit(player, 1, Uint8Array.of(1, 1, 0, 0, 0, 0))).toThrow();
     expect(zone.submit(player, 1, encodeCommand({ kind: "jump" }))).toBe(true);
@@ -513,7 +527,7 @@ describe("WASM local zone combat intents", () => {
     ]);
     expect(catalog.creatureTemplates.get(11)?.prop).toBe("explosive_barrel");
     expect(catalog.creatureTemplates.get(13)?.family).toBe("ogre");
-    expect(catalog.npcs.get(5)).toEqual({ id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10 });
+    expect(catalog.npcs.get(5)).toEqual({ id: 5, name: "Brother Aldous", role: "spirit_healer", level: 10, wokenLine: null });
     expect(catalog.areas.get(2)).toBe("Wolfrun Woods");
     expect([...catalog.classes.values()].map((record) => [record.name, record.resource])).toEqual([
       ["warden", "rage"], ["ranger", "focus"], ["arcanist", "mana"], ["necromancer", "mana"], ["rogue", "focus"], ["cleric", "faith"], ["druid", "mana"],
@@ -580,12 +594,12 @@ describe("WASM local zone combat intents", () => {
     expect(guard.flags.attackable).toBe(false);
     const target = { kind: "npc", id: guard.entityId } as const;
     source.sendCommand({ kind: "select-target", target });
-    source.sendCommand({ kind: "start-attack" });
+    // A swing never hits the guard (#517): it whiffs.
+    source.sendCommand({ kind: "swing", facing: 0 });
     run(source, 1);
     const refused = source.latestProjection();
     expect(refused?.viewer.target).toEqual(target);
-    expect(refused?.viewer.autoAttacking).toBe(false);
-    expect(refused?.events).toEqual([{ kind: "error", code: "not-attackable", target }]);
+    expect(refused?.events).toEqual([{ kind: "attack-performed", source: { kind: "player", id: refused!.viewerId }, target: null }]);
     source.sendCommand({ kind: "release-spirit" });
     source.sendCommand({ kind: "select-target", target: null });
     run(source, 1);
@@ -634,11 +648,11 @@ describe("WASM local zone combat intents", () => {
     const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();
     for (let press = 0; press < 20; press += 1) {
-      expect(() => source.sendCommand({ kind: "stop-attack" })).not.toThrow();
+      expect(() => source.sendCommand({ kind: "cancel-cast" })).not.toThrow();
     }
     run(source, 1);
     expect(source.latestProjection()?.events).toEqual([{ kind: "error", code: "too-many-intents", target: null }]);
-    source.sendCommand({ kind: "stop-attack" });
+    source.sendCommand({ kind: "cancel-cast" });
     run(source, 1);
     expect(source.latestProjection()?.events).toEqual([]);
   });

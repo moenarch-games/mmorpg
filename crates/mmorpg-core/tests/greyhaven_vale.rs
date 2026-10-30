@@ -79,12 +79,13 @@ fn content_is_a_bounded_deterministic_revision() {
                 )
         );
         if !is_terrain(collider) {
-            // Structures stand on the ground (the inn's lintel spans its doorway) and stay
+            // Structures stand on the ground (the inn's and Elden's lintels span their doorways) and stay
             // inside the playable square.
             // Out on the hills they stand on the terrain, sunk 0.3 m below their lowest corner (#159).
             // The cave's roof rests on its walls.
             // The Sunken Shrine (#274) stands on its flattened floor 9 m down.
             if !ids::INN_PARTS.contains(&collider.id)
+                && !ids::MARSHAL_HOUSE_PARTS.contains(&collider.id)
                 && collider.id != ids::CAVE_ROOF
                 && !(550..=596).contains(&collider.id)
             {

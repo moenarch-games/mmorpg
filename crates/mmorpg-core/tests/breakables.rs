@@ -98,8 +98,11 @@ impl Smasher {
     /// Attacks `target` until it breaks.
     fn smash(&mut self, target: u32) {
         self.send(ZoneCommand::SelectTarget(Some(creature(target))));
-        self.send(ZoneCommand::StartAttack);
         for _ in 0..mmorpg_core::golden::t30(900) {
+            // Swing at the prop whenever it is in reach (#517).
+            if let Some(swing) = arena::swing_at(&self.zone, 1, creature(target)) {
+                self.send(swing);
+            }
             self.zone.advance_tick().unwrap();
             if self.life(target) != CreatureLife::Alive {
                 return;

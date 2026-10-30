@@ -29,6 +29,8 @@ struct Fight {
     zone: ZoneSimulation,
     sequence: u32,
     events: Vec<(u64, ZoneEvent)>,
+    /// The unit the player keeps swinging at while it is in reach (#517).
+    attacking: Option<EntityRef>,
 }
 
 impl Fight {
@@ -39,6 +41,7 @@ impl Fight {
             zone: classes::at_level(zone, 1, level),
             sequence: 0,
             events: Vec::new(),
+            attacking: None,
         }
     }
 
@@ -64,6 +67,12 @@ impl Fight {
     }
 
     fn tick(&mut self) -> Vec<ZoneEvent> {
+        if let Some(swing) = self
+            .attacking
+            .and_then(|target| arena::swing_at(&self.zone, 1, target))
+        {
+            self.send(swing);
+        }
         self.zone.advance_tick().unwrap();
         let events = self.view().events;
         let tick = self.zone.current_tick();
@@ -253,15 +262,15 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
     // Rage starts empty; the wolf that engaged at once already hit once.
     assert!(fight.resource() < 15);
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
-    fight.send(ZoneCommand::StartAttack);
+    fight.attacking = Some(TARGET);
     fight.use_ability(ids::HEROIC_STRIKE);
     fight.tick();
     assert_eq!(fight.errors_at(2), [ErrorCode::NotEnoughResource]);
 
-    // Rage: +6 per swing hit dealt, +4 per hit taken.
+    // Rage: +6 per swing hit dealt (the arc may hit packmates too, #517), +4 per hit taken.
     fight.until(t30(600), |fight| fight.resource() >= 60);
     let dealt = fight
-        .since(0, |event| damage_dealt_to(event, TARGET).is_some())
+        .since(0, |event| matches!(event, ZoneEvent::DamageDealt { .. }))
         .len();
     let taken = fight
         .since(0, |event| matches!(event, ZoneEvent::DamageTaken { .. }))
@@ -417,17 +426,12 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
     let mut fight = Fight::with_class(content, 6, 1);
     assert_eq!(fight.resource(), 100, "focus starts full");
 
-    // Beyond 30 m: out of range, nothing spent.
+    // A hostile shot ignores any given target and flies where the ranger faces (#517).
+    fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
     fight.send(ZoneCommand::UseAbility {
         ability: ids::AIMED_SHOT.get(),
         target: Some(EntityRef::Creature(CreatureId::new(2))),
     });
-    fight.tick();
-    assert_eq!(fight.errors_at(2), [ErrorCode::OutOfRange]);
-    assert_eq!(fight.resource(), 100);
-
-    fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
-    fight.use_ability(ids::AIMED_SHOT);
     let fired = fight.zone.current_tick() + 1;
     fight.tick();
     // The arrow flies 25 m at 54 m/s: the damage lands when it arrives (#286).
@@ -486,7 +490,7 @@ fn a_ranger_spends_focus_on_shots_stings_snares_and_haste() {
 
     // Rapid Fire hastes swings: 2 s × 100 / 140.
     fight.use_ability(ids::RAPID_FIRE);
-    fight.send(ZoneCommand::StartAttack);
+    fight.attacking = Some(TARGET);
     fight.until(t30(200), |fight| fight.me().combat.swing_timer > 0);
     assert_eq!(
         fight.me().combat.swing_timer,
@@ -615,9 +619,13 @@ fn an_arcanist_casts_channels_roots_and_shields_by_the_five_second_rule() {
             unreachable!()
         };
         assert!(
-            fight
-                .events
-                .contains(&(tick, ZoneEvent::AttackPerformed { source, target })),
+            fight.events.contains(&(
+                tick,
+                ZoneEvent::AttackPerformed {
+                    source,
+                    target: Some(target)
+                }
+            )),
             "fully absorbed ordinary hit still has attempt motion"
         );
         assert!(
@@ -707,7 +715,7 @@ fn a_lurker_casts_muck_bolt_until_a_shield_bash_interrupts_it() {
     );
     let mut fight = Fight::with_class(content, 2, 0);
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
-    fight.send(ZoneCommand::StartAttack);
+    fight.attacking = Some(TARGET);
     let first = fight.until(t30(40), |fight| {
         !fight
             .since(0, |event| matches!(event, ZoneEvent::CastStarted { .. }))
@@ -787,7 +795,7 @@ fn a_bandit_bandages_itself_only_below_half_health() {
     // An unchosen player keeps auto-attack; the bandit's bandage still works.
     let mut fight = Fight::new(content, 1);
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
-    fight.send(ZoneCommand::StartAttack);
+    fight.attacking = Some(TARGET);
     let casting = fight.until(t30(2_000), |fight| {
         fight.creature(FIRST).abilities.cast.is_some()
     });
@@ -868,6 +876,8 @@ fn a_pulse_that_breaks_an_earlier_root_skips_no_later_aura() {
     };
     send(&mut zone, 1, ZoneCommand::ChooseClass { class: 2, sex: 0 });
     send(&mut zone, 2, ZoneCommand::ChooseClass { class: 1, sex: 1 });
+    // Shots fly where the ranger faces (#517): west, at the wolf.
+    send(&mut zone, 2, arena::stand(49_152));
     zone.advance_tick().unwrap();
     send(&mut zone, 1, ability(ids::FROST_NOVA));
     send(&mut zone, 2, ability(ids::SERPENT_STING));
@@ -1096,7 +1106,7 @@ fn an_arcanist_level_up_grows_current_mana_with_its_maximum() {
     fight.zone = ZoneSimulation::from_snapshot(state, Arc::clone(fight.zone.content())).unwrap();
     fight.send(arena::stand(NORTHWARD));
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
-    fight.send(ZoneCommand::StartAttack);
+    fight.attacking = Some(TARGET);
     fight.until(t30(200), |fight| fight.me().combat.level == 2);
     assert_eq!(fight.resource(), 132);
     assert_eq!(fight.resource(), ResourceKind::Mana.max(2));
@@ -1245,6 +1255,8 @@ fn a_rogue_strikes_poisons_gouges_and_rushes_on_focus() {
     let mut fight = Fight::with_class(content, 6, 4);
     assert_eq!(fight.resource(), 100, "focus starts full, like the Ranger");
     fight.send(ZoneCommand::SelectTarget(Some(TARGET)));
+    // Offensive abilities land where the rogue faces (#517): west, at the wolf.
+    fight.send(arena::stand(49_152));
 
     // Sinister Strike: an instant melee weapon strike for 25 focus.
     fight.use_ability(ids::SINISTER_STRIKE);

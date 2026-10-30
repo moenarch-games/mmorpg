@@ -23,6 +23,12 @@ const DEFAULT_DRAIN_GRACE_MS: u64 = 500;
 const DEFAULT_RECONNECT_GRACE_TICKS: u64 = long_ticks_from_ms(20_000) as u64;
 const DEFAULT_ROUTE_PREFIX: &str = "/game";
 const DEFAULT_ZONE_IDS: &str = "1";
+#[cfg(feature = "postgres")]
+const DEFAULT_TRANSFER_LINK: &str = "127.0.0.1:4500";
+#[cfg(feature = "postgres")]
+const DEFAULT_GRANT_TTL_MS: u64 = 30_000;
+#[cfg(feature = "postgres")]
+const DEFAULT_HANDOFF_TIMEOUT_MS: u64 = 2_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ConfigError(String);
@@ -89,6 +95,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
             ConfigError("MMORPG_PERSISTENCE_MODE requires the postgres feature".into()).into(),
         );
     }
+    #[cfg(feature = "postgres")]
+    if let Some(database_url) = read_optional_string("MMORPG_HANDOFF_DATABASE_URL")? {
+        if character_directory.is_some() || recovery_directory.is_some() {
+            return Err(ConfigError(
+                "handoff hosts keep characters in PostgreSQL, not file directories".into(),
+            )
+            .into());
+        }
+        eprintln!("Trusted-LAN handoff host: unauthenticated character claims and transfer link.");
+        let config = mmorpg_game_server::handoff_host::HandoffHostConfig {
+            database_url,
+            host_id: mmorpg_control_plane::HostId::new(read_string("MMORPG_HOST_ID", "")?)
+                .map_err(|_| ConfigError("MMORPG_HOST_ID must name this host".into()))?,
+            zone_ids,
+            link_address: read_string("MMORPG_TRANSFER_LINK", DEFAULT_TRANSFER_LINK)?,
+            routes: parse_zone_routes(&read_string("MMORPG_ZONE_ROUTES", "")?)?,
+            reconnect_grace_ticks,
+            grant_ttl: Duration::from_millis(read_number(
+                "MMORPG_GRANT_TTL_MS",
+                DEFAULT_GRANT_TTL_MS,
+            )?),
+            timeout: Duration::from_millis(read_number(
+                "MMORPG_HANDOFF_TIMEOUT_MS",
+                DEFAULT_HANDOFF_TIMEOUT_MS,
+            )?),
+        };
+        mmorpg_game_server::handoff_host::serve_handoff_character_host(
+            config,
+            transport_config,
+            status_config,
+            shutdown_receiver,
+        )
+        .await
+        .map_err(|cause| ConfigError(cause.to_string()))?;
+        return Ok(());
+    }
+    #[cfg(not(feature = "postgres"))]
+    if env::var_os("MMORPG_HANDOFF_DATABASE_URL").is_some() {
+        return Err(ConfigError(
+            "MMORPG_HANDOFF_DATABASE_URL requires the postgres feature".into(),
+        )
+        .into());
+    }
     if let Some(directory) = character_directory {
         eprintln!("Development/LAN character claims enabled (unauthenticated).");
         serve_development_character_host(
@@ -151,6 +200,51 @@ fn parse_zone_ids(value: &str) -> Result<Vec<ZoneId>, ConfigError> {
             })
         })
         .collect()
+}
+
+/// `zone=link@session,…`: each peer zone's transfer link (`host:port`) and
+/// the session route its clients connect to.
+#[cfg_attr(not(feature = "postgres"), allow(dead_code))]
+fn parse_zone_routes(
+    value: &str,
+) -> Result<
+    std::collections::BTreeMap<ZoneId, mmorpg_game_server::handoff_host::ZoneRoute>,
+    ConfigError,
+> {
+    value
+        .split(',')
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            let invalid = || {
+                ConfigError(format!(
+                    "MMORPG_ZONE_ROUTES entry {entry:?} is not zone=host:port@route"
+                ))
+            };
+            let (zone, route) = entry.split_once('=').ok_or_else(invalid)?;
+            let (link, session) = route.split_once('@').ok_or_else(invalid)?;
+            let zone = zone.parse::<u32>().map_err(|_| invalid())?;
+            if link.is_empty() || session.is_empty() {
+                return Err(invalid());
+            }
+            Ok((
+                ZoneId::new(zone),
+                mmorpg_game_server::handoff_host::ZoneRoute {
+                    link: link.to_owned(),
+                    session: session.to_owned(),
+                },
+            ))
+        })
+        .collect()
+}
+
+#[cfg_attr(not(feature = "postgres"), allow(dead_code))]
+fn read_optional_string(name: &str) -> Result<Option<String>, ConfigError> {
+    match env::var(name) {
+        Ok(value) if value.is_empty() => Err(ConfigError(format!("{name} must not be empty"))),
+        Ok(value) => Ok(Some(value)),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(error) => Err(ConfigError(format!("{name} is invalid: {error}"))),
+    }
 }
 
 fn read_string(name: &str, default: &str) -> Result<String, ConfigError> {
@@ -235,5 +329,18 @@ mod tests {
         );
         assert!(parse_zone_ids("7,nope").is_err());
         assert!(parse_zone_ids("7,").is_err());
+    }
+
+    #[test]
+    fn parses_peer_zone_routes() {
+        let routes =
+            parse_zone_routes("902=10.0.0.2:4500@https://10.0.0.2:4433/game/matches/zone-902")
+                .unwrap();
+        let route = &routes[&ZoneId::new(902)];
+        assert_eq!(route.link, "10.0.0.2:4500");
+        assert_eq!(route.session, "https://10.0.0.2:4433/game/matches/zone-902");
+        assert!(parse_zone_routes("").unwrap().is_empty());
+        assert!(parse_zone_routes("902=10.0.0.2:4500").is_err());
+        assert!(parse_zone_routes("x=a@b").is_err());
     }
 }

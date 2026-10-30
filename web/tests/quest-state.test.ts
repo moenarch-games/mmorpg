@@ -58,6 +58,11 @@ describe("quest presentation", () => {
     const marshal = { npc: MARSHAL, name: "Marshal Elden Greywatch", inReach: true };
     const errand = sheet({ completed: 0b11, entries: [{ quest: 3, progress: [1, 1, 0] }] });
     expect(dialogView(errand, catalog, marshal).ready.map((view) => view.quest.id)).toEqual([3]);
+    // At night the woken Marshal (#158) greets you and takes only turn-ins.
+    expect(dialogView(sheet(), catalog, marshal).offered.map((quest) => quest.id)).toEqual([1]);
+    expect(dialogView(sheet(), catalog, marshal, true)).toMatchObject({ greeting: "Mm? At this hour?", offered: [] });
+    expect(dialogView(errand, catalog, marshal, true).ready.map((view) => view.quest.id)).toEqual([3]);
+    expect(dialogView(done, catalog, tanner, true).greeting).toBeNull();
     expect(trackerLines(errand, catalog)).toEqual([
       "The Missing Farmhand — return to Marshal Elden Greywatch",
       "  ✓ Speak with Marshal Elden Greywatch (done)",

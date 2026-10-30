@@ -45,6 +45,12 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "door-busy": "The door is still swinging.",
   "no-minions": "You have no minions or companion to command.",
   "not-while-swimming": "You can't do that while swimming.",
+  "handoff-corridor": "Not here: you are crossing into another region.",
+  "in-combat": "You can't travel while in combat.",
+  "invalid-waystone": "The waystone cannot take you there.",
+  "private-home": "This is a private home.",
+  "no-answer": "You knock, but no one answers at this hour.",
+  "not-at-night": "No new quests at this hour. Come back in the morning.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;
@@ -117,9 +123,6 @@ export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): s
     const cast = snapshot.targetDetail.cast;
     const casting = cast ? `, casting ${abilityName(cast.ability, catalog)} ${cast.elapsed}/${cast.total}` : "";
     parts.push(`Target: ${name} (${detail}${casting})`);
-  }
-  if (viewer.autoAttacking) {
-    parts.push("Attacking");
   }
   return parts.join(" · ");
 }

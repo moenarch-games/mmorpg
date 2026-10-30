@@ -180,6 +180,12 @@ export const DAY_SECONDS = 20 * 60;
 export const ZONE_DAY_TICKS = ticksFromMs(2 * 60 * 60 * 1_000);
 export const ZONE_START_TIME = ZONE_DAY_TICKS / 3;
 
+/** Whether the zone's `tick` falls between dusk (20:00) and dawn (06:00) (`mmorpg_core::is_night`). */
+export function isZoneNight(tick: bigint): boolean {
+  const hour = Number((tick + BigInt(ZONE_START_TIME)) % BigInt(ZONE_DAY_TICKS)) / (ZONE_DAY_TICKS / 24);
+  return hour >= 20 || hour < 6;
+}
+
 /** The zone's time of day at `tick` on the sky cycle's `DAY_SECONDS` scale, zero at noon (#158). */
 export function zoneSkySeconds(tick: bigint): number {
   const day = BigInt(ZONE_DAY_TICKS);

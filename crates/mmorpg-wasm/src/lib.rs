@@ -454,6 +454,23 @@ pub fn content_catalog() -> String {
     catalog::hosted_catalog_json().to_owned()
 }
 
+/// The hosted content's waystone (#145) within reach of `(x, z)` units, 0 for none.
+#[wasm_bindgen(js_name = waystoneAt)]
+#[must_use]
+pub fn waystone_at(x: i32, z: i32) -> u8 {
+    mmorpg_core::waystone_within_reach(&host::hosted_content(), [x, z]).map_or(0, |id| id.get())
+}
+
+/// Names of the waystone network (#145) in ID order: waystone `index + 1`.
+#[wasm_bindgen(js_name = waystoneNames)]
+#[must_use]
+pub fn waystone_names() -> Vec<String> {
+    mmorpg_core::WAYSTONES
+        .iter()
+        .map(|site| site.name.to_owned())
+        .collect()
+}
+
 /// The destructible pieces (#305) feet at `(x, z)` units can repair, in ID order.
 #[wasm_bindgen(js_name = reachablePieces)]
 #[must_use]
@@ -464,6 +481,20 @@ pub fn reachable_pieces(x: i32, z: i32) -> Vec<u16> {
         .filter(|piece| piece.within_repair_reach([x, 0, z]))
         .map(|piece| piece.id.get())
         .collect()
+}
+
+/// The night raid target's approximate disturbance circle (#530) as `[x, z, radius]` in units,
+/// or empty without a raid target.
+#[wasm_bindgen(js_name = raidArea)]
+#[must_use]
+pub fn raid_area() -> Vec<i32> {
+    host::hosted_content()
+        .raid()
+        .map(|site| {
+            let ([x, z], radius) = site.area();
+            vec![x, z, radius]
+        })
+        .unwrap_or_default()
 }
 
 /// The authored action graph as JSON (#380, #381): actions by region, edges
@@ -730,25 +761,56 @@ impl UnitPresenter {
     }
 }
 
-/// The walk-in inn's presented door and interior look (#158), shared with the native client;
-/// the page picks the door against the drawn leaf mesh.
+/// One walk-in building's presented door and interior look (#158): the inn or Elden's house,
+/// shared with the native client; the page picks the door against the drawn leaf mesh.
 #[wasm_bindgen]
-pub struct InnPresenter(mmorpg_presentation::buildings::Inn);
+pub struct BuildingPresenter(mmorpg_presentation::buildings::WalkIn);
 
 #[wasm_bindgen]
-impl InnPresenter {
+impl BuildingPresenter {
+    /// Building `index` of [`Self::count`].
     #[wasm_bindgen(constructor)]
-    #[must_use]
-    pub fn new() -> Self {
-        Self(mmorpg_presentation::buildings::Inn::new(
+    pub fn new(index: usize) -> Result<Self, JsError> {
+        let spec = mmorpg_presentation::buildings::BUILDINGS
+            .get(index)
+            .ok_or_else(|| JsError::new("no such walk-in building"))?;
+        Ok(Self(mmorpg_presentation::buildings::WalkIn::new(
+            *spec,
             scenery::hosted_scenery(),
-        ))
+        )))
+    }
+
+    /// How many walk-in buildings there are.
+    #[must_use]
+    pub fn count() -> usize {
+        mmorpg_presentation::buildings::BUILDINGS.len()
+    }
+
+    /// The bundle directory under `buildings/`.
+    #[must_use]
+    pub fn bundle(&self) -> String {
+        self.0.spec().bundle.to_owned()
+    }
+
+    /// The content door the building presents.
+    #[must_use]
+    pub fn door(&self) -> u8 {
+        self.0.spec().door.get()
+    }
+
+    /// The door leaf's bundle entry.
+    #[wasm_bindgen(js_name = doorEntry)]
+    #[must_use]
+    pub fn door_entry(&self) -> String {
+        self.0.spec().door_entry().to_owned()
     }
 
     /// The asset-tooling bundle entries to draw, in [`Self::frame`] order.
     #[must_use]
-    pub fn entries() -> Vec<String> {
-        mmorpg_presentation::buildings::INN_ENTRIES
+    pub fn entries(&self) -> Vec<String> {
+        self.0
+            .spec()
+            .entries
             .iter()
             .map(|&key| key.to_owned())
             .collect()
@@ -923,12 +985,6 @@ pub fn ambient_animal_frame(seconds: f64, animate: bool) -> Vec<f32> {
             pose.model.into_iter().chain(tail)
         })
         .collect()
-}
-
-impl Default for InnPresenter {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 fn js_error(error: host::LocalZoneError) -> JsError {

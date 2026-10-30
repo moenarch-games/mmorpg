@@ -1,13 +1,22 @@
 //! Development character admission composed with the shared graceful-recovery host.
-use crate::{DevCharacterService, DevCharacterStorage, ZoneGameServerAdapter, zone_match_id};
+use crate::handoff_host::HandoffHost;
+use crate::{
+    DevCharacterService, DevCharacterStorage, HandoffChannel, ZoneGameServerAdapter, zone_match_id,
+};
 use game_server::{
     LiveMatchHost, MatchHostRecoveryConfig, MatchHostStatusConfig, MatchHostWebTransportConfig,
     MatchId, PreparedLiveMatchHost, prepare_live_match_host_for_recovery,
     serve_prepared_live_match_host_with_status_and_control_and_shutdown,
 };
-use mmorpg_core::{ZoneId, greyhaven_vale};
+use mmorpg_characters::EntryBackend;
+use mmorpg_core::ZoneId;
 use std::{
-    collections::BTreeSet, error::Error, fs::File, path::PathBuf, sync::Arc, time::Duration,
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    fs::File,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 use tokio::sync::mpsc;
 
@@ -20,9 +29,25 @@ pub struct DevelopmentCharacterHostConfig {
     pub reconnect_grace_ticks: u64,
 }
 
+/// Live handoff between hosts (#145): each zone's channel to the service,
+/// the service's builder and its transfer link listener.
+pub(crate) struct HandoffWiring<B: EntryBackend> {
+    pub channels: BTreeMap<MatchId, HandoffChannel>,
+    pub listener: tokio::net::TcpListener,
+    #[allow(clippy::type_complexity)]
+    pub build: Box<
+        dyn FnOnce(
+                LiveMatchHost<ZoneGameServerAdapter>,
+                Arc<Mutex<DevCharacterStorage<B>>>,
+            ) -> Arc<HandoffHost<B>>
+            + Send,
+    >,
+}
+
 async fn prepare(
     ids: Vec<MatchId>,
-    ownership: Arc<File>,
+    ownership: Option<Arc<File>>,
+    channels: BTreeMap<MatchId, HandoffChannel>,
     directory: PathBuf,
     grace: u64,
 ) -> HostResult<PreparedLiveMatchHost<ZoneGameServerAdapter>> {
@@ -33,16 +58,17 @@ async fn prepare(
     let prepared = prepare_live_match_host_for_recovery(
         ids,
         move |id: &MatchId| -> Result<_, String> {
-            let zone = id
-                .as_str()
-                .strip_prefix("zone-")
-                .ok_or("invalid recovered zone route")?
-                .parse::<u32>()
-                .map(ZoneId::new)
-                .map_err(|error| error.to_string())?;
-            let mut adapter = ZoneGameServerAdapter::with_content(zone, greyhaven_vale::content())
-                .map_err(|error| error.to_string())?;
-            adapter.require_character_claims(Arc::clone(&ownership));
+            let zone = crate::dev_characters::zone_of(id)?;
+            let mut adapter =
+                ZoneGameServerAdapter::with_content(zone, mmorpg_core::content_for_zone(zone))
+                    .map_err(|error| error.to_string())?;
+            match &ownership {
+                Some(ownership) => adapter.require_character_claims(Arc::clone(ownership)),
+                None => adapter.require_durable_character_claims(),
+            }
+            if let Some(channel) = channels.get(id) {
+                adapter.attach_handoffs(channel.clone());
+            }
             Ok(adapter)
         },
         expected.len(),
@@ -88,19 +114,50 @@ pub async fn serve_development_character_host(
     let recovery = config
         .recovery_directory
         .unwrap_or_else(|| directory.join("zone-recovery"));
-    let mut storage =
+    let storage =
         tokio::task::spawn_blocking(move || DevCharacterStorage::open(&directory)).await??;
-    let ownership = storage.ownership();
     let ids: Vec<_> = config
         .zone_ids
         .into_iter()
         .map(zone_match_id)
         .collect::<Result<_, _>>()?;
+    serve_characters(
+        storage,
+        ids,
+        recovery,
+        config.reconnect_grace_ticks,
+        None,
+        transport,
+        status,
+        shutdown,
+    )
+    .await
+}
+
+/// Serves `ids` with character claims against `storage`, and, with
+/// `handoffs`, live transfers to and from other hosts.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn serve_characters<B: EntryBackend + Send + 'static>(
+    mut storage: DevCharacterStorage<B>,
+    ids: Vec<MatchId>,
+    recovery: PathBuf,
+    grace: u64,
+    handoffs: Option<HandoffWiring<B>>,
+    transport: MatchHostWebTransportConfig,
+    status: MatchHostStatusConfig,
+    shutdown: mpsc::Receiver<()>,
+) -> HostResult<()> {
+    let ownership = storage.ownership();
+    let channels = handoffs
+        .as_ref()
+        .map(|wiring| wiring.channels.clone())
+        .unwrap_or_default();
     let prepared = prepare(
         ids.clone(),
-        Arc::clone(&ownership),
+        ownership.clone(),
+        channels,
         recovery.clone(),
-        config.reconnect_grace_ticks,
+        grace,
     )
     .await?;
     let host = prepared.host();
@@ -112,7 +169,16 @@ pub async fn serve_development_character_host(
         Ok::<_, String>(storage)
     })
     .await??;
-    let service = DevCharacterService::new(host.clone(), storage);
+    let storage = Arc::new(Mutex::new(storage));
+    let (handoff_host, listener) = match handoffs {
+        Some(wiring) => (
+            Some((wiring.build)(host.clone(), Arc::clone(&storage))),
+            Some(wiring.listener),
+        ),
+        None => (None, None),
+    };
+    let service =
+        DevCharacterService::with_shared_storage(host.clone(), storage, handoff_host.clone());
     let serving = serve_prepared_live_match_host_with_status_and_control_and_shutdown(
         prepared,
         service.clone(),
@@ -121,11 +187,21 @@ pub async fn serve_development_character_host(
         shutdown,
     );
     tokio::pin!(serving);
+    let links = async move {
+        match (handoff_host, listener) {
+            (Some(handoffs), Some(listener)) => handoffs.run(listener).await,
+            _ => std::future::pending().await,
+        }
+    };
+    tokio::pin!(links);
     let mut interval = tokio::time::interval(Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
             result = &mut serving => { result?; break; }
+            result = &mut links => {
+                return Err(format!("transfer link stopped: {}", result.err().unwrap_or_default()).into());
+            }
             _ = interval.tick() => {
                 if !host.is_serving() { continue; }
                 let service = service.clone();
@@ -137,7 +213,7 @@ pub async fn serve_development_character_host(
     // Serving has stopped all writers and saved the exact final recovery image.
     // Prepare without serving: replay is shared game-server behavior, and the
     // bundle remains unconsumed for the next actual startup.
-    let stopped = prepare(ids, ownership, recovery, config.reconnect_grace_ticks).await?;
+    let stopped = prepare(ids, ownership, BTreeMap::new(), recovery, grace).await?;
     let final_snapshots = snapshots(&stopped.host()).await?;
     tokio::task::spawn_blocking(move || service.finish_snapshots(final_snapshots)).await??;
     Ok(())

@@ -145,8 +145,7 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
     // A release never acts by itself; it only ends a hold (#414).
     case "release-ability":
       return true;
-    case "start-attack":
-    case "stop-attack":
+    case "swing":
     case "use-ability":
     case "directed-strike":
     case "guard":
@@ -165,6 +164,7 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
     case "complete-quest":
     case "abandon-quest":
     case "use-door":
+    case "use-waystone":
     case "repair":
       return false;
   }

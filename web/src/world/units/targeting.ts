@@ -1,4 +1,3 @@
-import type { WorldCommand } from "../../command-wire";
 import { entityKindCode, sameEntity, type EntityRef } from "../../entity-ref";
 import type { ZoneSnapshot } from "../../replication";
 
@@ -25,11 +24,6 @@ export function nextTabTarget(snapshot: ZoneSnapshot): EntityRef | null {
   }
   const current = candidates.findIndex(({ target }) => sameEntity(target, snapshot.viewer.target));
   return candidates[(current + 1) % candidates.length]?.target ?? null;
-}
-
-/** F or a right click: start auto-attacking, or stop if already attacking. */
-export function attackToggle(snapshot: ZoneSnapshot): WorldCommand {
-  return snapshot.viewer.autoAttacking ? { kind: "stop-attack" } : { kind: "start-attack" };
 }
 
 /** Small hand movements should not cancel an intentional click. */

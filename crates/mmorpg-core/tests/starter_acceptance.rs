@@ -145,10 +145,14 @@ fn a_new_warden_reaches_level_two_and_equips_a_marauder_drop() {
                 unit.position
             };
             script.approach(me, goal);
-            if !unit.flags.dead {
-                if !view.viewer.auto_attacking {
-                    script.send(ZoneCommand::StartAttack);
-                } else if view.viewer.resource.is_some_and(|rage| rage.value >= 15) {
+            // In reach, swing at it (#517) and spend rage on Heroic Strike.
+            let (dx, dz) = (unit.position[0] - me[0], unit.position[2] - me[2]);
+            let reach = i64::from(mmorpg_core::unit::PLAYER_REACH_UNITS);
+            if !unit.flags.dead && i64::from(dx).pow(2) + i64::from(dz).pow(2) <= reach.pow(2) {
+                script.send(ZoneCommand::Swing {
+                    facing: mmorpg_core::trig::yaw_from_vector(dx, dz).unwrap_or(0),
+                });
+                if view.viewer.resource.is_some_and(|rage| rage.value >= 15) {
                     script.send(ZoneCommand::UseAbility {
                         ability: ids::HEROIC_STRIKE.get(),
                         target: None,

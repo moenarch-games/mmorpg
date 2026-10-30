@@ -36,7 +36,7 @@ function record(): LabScenario {
   void source.join();
   for (let tick = 0; tick < 60; tick += 1) {
     if (tick === 3) { source.sendCommand({ kind: "jump" }); }
-    if (tick === 20) { source.sendCommand({ kind: "start-attack" }); }
+    if (tick === 20) { source.sendCommand({ kind: "swing", facing: 0 }); }
     source.advance(TICK_SECONDS);
   }
   const recording = source.recording();
@@ -57,7 +57,7 @@ describe("Action Lab experiments (#382)", () => {
     expect(isMovement(recorded(encodeCommand({ kind: "move", forward: 1, strafe: 0, facing: 0 })))).toBe(true);
     expect(isMovement(recorded(encodeCommand({ kind: "rise", rise: 1 })))).toBe(true);
     expect(isMovement(recorded(encodeCommand({ kind: "jump" })))).toBe(false);
-    expect(isMovement(recorded(encodeCommand({ kind: "start-attack" })))).toBe(false);
+    expect(isMovement(recorded(encodeCommand({ kind: "swing", facing: 0 })))).toBe(false);
   });
 
   test("a recorded scenario replays deterministically and reproduces its recording", async () => {

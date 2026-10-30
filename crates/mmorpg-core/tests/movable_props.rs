@@ -205,8 +205,13 @@ fn a_broken_crate_leaves_and_returns_at_rest_at_its_spawn() {
     warden.send(ZoneCommand::SelectTarget(Some(EntityRef::Creature(
         CreatureId::new(1),
     ))));
-    warden.send(ZoneCommand::StartAttack);
     for _ in 0..mmorpg_core::golden::t30(300) {
+        // Swing at the crate whenever it is in reach (#517).
+        if let Some(swing) =
+            arena::swing_at(&warden.zone, 1, EntityRef::Creature(CreatureId::new(1)))
+        {
+            warden.send(swing);
+        }
         warden.zone.advance_tick().unwrap();
         if warden.zone.snapshot().unwrap().creatures[0].life != CreatureLife::Alive {
             break;

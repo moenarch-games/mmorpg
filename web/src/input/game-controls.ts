@@ -23,7 +23,7 @@ export const GAME_ACTIONS = [
   "move.roll",
   "move.descend",
   "target.next",
-  "combat.toggleAutoAttack",
+  "combat.swing",
   "ability.slot1",
   "ability.slot2",
   "ability.slot3",
@@ -154,7 +154,9 @@ export const GAME_ACTION_REGISTRY: ActionRegistry = {
     // Held while swimming (#274): Space or A ascends (held Jump), X or R3 descends.
     action("move.descend", "Swim down (hold)", "gameplay", [key("KeyX"), button(11)]),
     action("target.next", "Target next", "gameplay", [key("Tab"), button(5)]),
-    action("combat.toggleAutoAttack", "Toggle auto-attack", "gameplay", [key("KeyF"), button(2)]),
+    // One swing where the character faces (#517): gamepad X here, the left mouse button in the
+    // world view. F is unbound since auto-attack went away.
+    action("combat.swing", "Swing weapon", "gameplay", [button(2)]),
     action("ability.slot1", "Ability 1", "gameplay", [key("Digit1"), button(12)]),
     action("ability.slot2", "Ability 2", "gameplay", [key("Digit2"), button(15)]),
     action("ability.slot3", "Ability 3", "gameplay", [key("Digit3"), button(13)]),

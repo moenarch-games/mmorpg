@@ -124,7 +124,6 @@ pub struct ViewerState {
     pub level: u8,
     pub dead: bool,
     pub in_combat: bool,
-    pub auto_attacking: bool,
     pub target: Option<EntityRef>,
     pub class: Option<crate::ClassChoice>,
     /// Present exactly when the viewer has a class.
@@ -140,6 +139,8 @@ pub struct ViewerState {
     pub combo: Option<crate::ComboPhase>,
     /// Ticks of breath left, [`crate::water::BREATH_MAX_TICKS`] when full (#274).
     pub breath: u16,
+    /// Waystones the viewer unlocked (#145).
+    pub waystones: crate::WaystoneSet,
 }
 
 /// A projection addressed to `viewer_id`. Entities are in priority order: the
@@ -186,6 +187,8 @@ pub struct ZoneSnapshot {
     pub debris: Vec<crate::DebrisView>,
     /// Destructible pieces that are not intact, in ID order (#305).
     pub pieces: Vec<crate::PieceView>,
+    /// The night raid's signals while the viewer is near its target (#530).
+    pub raid: Option<crate::RaidView>,
 }
 
 impl ZoneSimulation {
@@ -275,7 +278,6 @@ impl ZoneSimulation {
                     level: viewer.level,
                     dead: !viewer.is_alive(),
                     in_combat: viewer.combat_timer > 0 || threatened.contains(&player_id),
-                    auto_attacking: viewer.auto_attack,
                     target: viewer.target,
                     class: viewer.class,
                     resource: viewer.class.map(|choice| {
@@ -297,6 +299,7 @@ impl ZoneSimulation {
                     stance: self.melee_stance(player_id, viewer.target)?,
                     combo: self.combo_phase(viewer),
                     breath: viewer.breath.remaining,
+                    waystones: viewer.waystones,
                 },
                 cooldowns: viewer.cooldowns.clone(),
                 auras: aura_views(&viewer.auras),
@@ -311,7 +314,12 @@ impl ZoneSimulation {
                 inventory: sheet.then(|| viewer.inventory.clone()),
                 equipment: sheet.then_some(viewer.equipment),
                 quests: sheet.then(|| {
-                    crate::quest::quest_sheet(&self.content, &viewer.quests, &viewer.inventory)
+                    crate::quest::quest_sheet(
+                        &self.content,
+                        &viewer.quests,
+                        &viewer.inventory,
+                        crate::is_night(crate::time_of_day(self.tick)),
+                    )
                 }),
                 loot: match viewer.target {
                     Some(EntityRef::Creature(id)) => self.loot_view_for(player_id, id)?,
@@ -324,6 +332,7 @@ impl ZoneSimulation {
                 projectiles: self.projectile_views([center.x, center.y, center.z]),
                 debris: self.debris_views([center.x, center.y, center.z]),
                 pieces: self.piece_views(),
+                raid: self.raid_view([center.x, center.z]),
             },
             stats,
         })

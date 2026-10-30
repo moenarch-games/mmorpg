@@ -2,6 +2,7 @@
 //! ledge notches running up a face, like a well-used climbing route. Both clients draw them
 //! wherever the content's [`mmorpg_core::ClimbSurfaces`] mark rock, on rock props and on
 //! steep terrain, so what looks climbable is exactly what climbs. Sheer rock stays smooth.
+use super::batching::{Batcher, Cull};
 use super::geometry::{Affine, Geometry, V, box_shape, hash, norm, point};
 use super::terrain::{height, metres, surface};
 use mmorpg_core::{ClimbSurfaces, Grip};
@@ -47,6 +48,20 @@ impl Shape {
             Self::Ledge => &LEDGE,
         }
     }
+}
+
+/// Draws one piece as an instance of its shape (#520): the thousands of pieces across the
+/// world share two tiny meshes instead of each adding its own vertices to the static scene,
+/// and like other small detail they fade out of a frame at mid distance.
+pub fn draw(b: &mut Batcher, c: u32, shape: Shape, a: Affine) {
+    b.instance(
+        "handholds",
+        c,
+        shape.geometry(),
+        a,
+        [a.t[0], a.t[2]],
+        Cull::Mid,
+    );
 }
 
 /// The unit box's faces (four corners each) whose outward normal passes `keep`.

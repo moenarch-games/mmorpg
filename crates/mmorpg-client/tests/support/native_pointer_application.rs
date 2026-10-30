@@ -433,7 +433,7 @@ impl NativeApplication {
             WindowEvent::MouseInput {
                 device_id,
                 state: ElementState::Pressed,
-                button: MouseButton::Left,
+                button: MouseButton::Right,
             },
         ]);
         if let Some(event) = end {
@@ -442,7 +442,7 @@ impl NativeApplication {
         self.dispatch([WindowEvent::MouseInput {
             device_id,
             state: ElementState::Released,
-            button: MouseButton::Left,
+            button: MouseButton::Right,
         }]);
         self.until(
             "pointer WindowEvents dispatched through actual App handler",
@@ -482,7 +482,7 @@ impl NativeApplication {
         player.forward = 0;
         player.strafe = 0;
         player.combat.target = None;
-        player.combat.auto_attack = false;
+        player.combat.swing_queued = false;
         player.combat.intents.clear();
         player.copper = 20;
         player.quests = mmorpg_core::QuestLog::default();
@@ -602,17 +602,6 @@ impl NativeApplication {
                 .is_some_and(|snapshot| snapshot.viewer.target == Some(entity))
                 && app.driver.app.rendered > rendered
         });
-        assert!(
-            !self
-                .driver
-                .app
-                .presentation
-                .latest()
-                .unwrap()
-                .viewer
-                .auto_attacking,
-            "a click selects without implicitly attacking"
-        );
         let name = match entity {
             EntityRef::Npc(id) => &self.content.npc(id).unwrap().name,
             EntityRef::Creature(id) => {

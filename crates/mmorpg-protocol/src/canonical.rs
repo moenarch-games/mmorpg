@@ -22,8 +22,8 @@ use crate::wire::{
 };
 
 const SELECT_TARGET_INTENT: u8 = 1;
-const START_ATTACK_INTENT: u8 = 2;
-const STOP_ATTACK_INTENT: u8 = 3;
+/// A swing (#517) carries its facing; code 3 (the retired stop-attack) is unused.
+const SWING_INTENT: u8 = 2;
 const RELEASE_SPIRIT_INTENT: u8 = 4;
 const MOVE_ITEM_INTENT: u8 = 5;
 const LOOT_INTENT: u8 = 6;
@@ -43,6 +43,7 @@ const GUARD_INTENT: u8 = 19;
 const USE_DOOR_INTENT: u8 = 20;
 const REPAIR_INTENT: u8 = 21;
 const COMMAND_MINIONS_INTENT: u8 = 22;
+const USE_WAYSTONE_INTENT: u8 = 23;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -93,6 +94,8 @@ pub fn encode_canonical_snapshot(
     encode_debris(&mut payload, snapshot.next_debris, &snapshot.debris)?;
     encode_pieces(&mut payload, &snapshot.pieces)?;
     encode_minions(&mut payload, snapshot.next_minion, &snapshot.minions)?;
+    crate::raid::encode_state(&mut payload, &snapshot.raid)?;
+    encode_wakes(&mut payload, &snapshot.wakes)?;
     crate::rewards::encode_history(&mut payload, snapshot.rewards.as_ref())?;
     Ok(payload)
 }
@@ -124,13 +127,8 @@ fn encode_player(
     payload.extend_from_slice(&combat.experience.to_be_bytes());
     payload.extend_from_slice(&combat.health.to_be_bytes());
     encode_entity_ref(payload, combat.target);
-    payload.push(u8::from(combat.auto_attack));
-    for timer in [
-        combat.swing_timer,
-        combat.combat_timer,
-        combat.calm_ticks,
-        combat.error_cooldown,
-    ] {
+    payload.push(u8::from(combat.swing_queued));
+    for timer in [combat.swing_timer, combat.combat_timer, combat.calm_ticks] {
         payload.extend_from_slice(&timer.to_be_bytes());
     }
     payload.push(encode_u8_count(
@@ -143,13 +141,16 @@ fn encode_player(
         payload.push(queued.late);
         let (code, target) = match queued.intent {
             PlayerIntent::SelectTarget(target) => (SELECT_TARGET_INTENT, target),
-            PlayerIntent::StartAttack => (START_ATTACK_INTENT, None),
+            PlayerIntent::Swing { facing } => {
+                payload.push(SWING_INTENT);
+                payload.extend_from_slice(&facing.to_be_bytes());
+                continue;
+            }
             PlayerIntent::Loot(claim) => {
                 payload.push(LOOT_INTENT);
                 crate::loot::encode_claim(payload, claim);
                 continue;
             }
-            PlayerIntent::StopAttack => (STOP_ATTACK_INTENT, None),
             PlayerIntent::ReleaseSpirit => (RELEASE_SPIRIT_INTENT, None),
             PlayerIntent::MoveItem {
                 source,
@@ -244,6 +245,10 @@ fn encode_player(
                 payload.extend_from_slice(&[ABANDON_QUEST_INTENT, quest]);
                 continue;
             }
+            PlayerIntent::UseWaystone(waystone) => {
+                payload.extend_from_slice(&[USE_WAYSTONE_INTENT, waystone.get()]);
+                continue;
+            }
         };
         payload.push(code);
         encode_entity_ref(payload, target);
@@ -304,7 +309,9 @@ fn encode_player(
     for line in &player.chat {
         crate::chat::encode_line(payload, line);
     }
-    crate::quest::encode_log(payload, &player.quests, player.quests_changed_at)
+    crate::quest::encode_log(payload, &player.quests, player.quests_changed_at)?;
+    payload.extend_from_slice(&player.waystones.bits().to_be_bytes());
+    Ok(())
 }
 
 /// 18 bytes (#490): kind (0 free, 1 released, 2 climbing, 3 mantling), ticks, wall yaw, the
@@ -547,6 +554,7 @@ fn encode_creature(
             }
         }
     }
+    crate::raid::encode_member(payload, creature.raid);
     Ok(())
 }
 
@@ -582,6 +590,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let (next_debris, debris) = decode_debris(payload, &mut offset)?;
     let pieces = decode_pieces(payload, &mut offset)?;
     let (next_minion, minions) = decode_minions(payload, &mut offset)?;
+    let raid = crate::raid::decode_state(payload, &mut offset)?;
+    let wakes = decode_wakes(payload, &mut offset)?;
     let rewards = crate::rewards::decode_history(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
@@ -602,7 +612,44 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         pieces,
         minions,
         next_minion,
+        raid,
+        wakes,
     })
+}
+
+/// Woken private-home residents (#158): a count (`u8`), then per wake in NPC-ID order its NPC
+/// (`u32`), knock tick and last quest request tick (`u64` each).
+fn encode_wakes(
+    payload: &mut Vec<u8>,
+    wakes: &[mmorpg_core::NpcWake],
+) -> Result<(), ProtocolError> {
+    let count = u8::try_from(wakes.len())
+        .map_err(|_| ProtocolError::new("npc wakes exceed their count"))?;
+    payload.push(count);
+    for wake in wakes {
+        payload.extend_from_slice(&wake.npc.get().to_be_bytes());
+        payload.extend_from_slice(&wake.knocked.to_be_bytes());
+        payload.extend_from_slice(&wake.idle_since.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_wakes(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::NpcWake>, ProtocolError> {
+    let [count] = crate::wire::take(payload, offset)?;
+    (0..count)
+        .map(|_| {
+            Ok(mmorpg_core::NpcWake {
+                npc: mmorpg_core::NpcId::new(u32::from_be_bytes(crate::wire::take(
+                    payload, offset,
+                )?)),
+                knocked: u64::from_be_bytes(crate::wire::take(payload, offset)?),
+                idle_since: u64::from_be_bytes(crate::wire::take(payload, offset)?),
+            })
+        })
+        .collect()
 }
 
 /// Summoned minions (#295): the next minion ID (`u32`) and count (`u16`), then per minion in ID
@@ -757,11 +804,10 @@ fn decode_player(
     let experience = u32::from_be_bytes(take(payload, offset)?);
     let health = u32::from_be_bytes(take(payload, offset)?);
     let target = decode_entity_ref(payload, offset)?;
-    let auto_attack = read_bool(payload, offset)?;
+    let swing_queued = read_bool(payload, offset)?;
     let swing_timer = u16::from_be_bytes(take(payload, offset)?);
     let combat_timer = u16::from_be_bytes(take(payload, offset)?);
     let calm_ticks = u16::from_be_bytes(take(payload, offset)?);
-    let error_cooldown = u16::from_be_bytes(take(payload, offset)?);
     let intent_count = decode_u8_count(
         payload,
         offset,
@@ -793,6 +839,12 @@ fn decode_player(
                 ability,
                 facing: u16::from_be_bytes([high, low]),
                 aim: crate::wire::decode_aim([side, height])?,
+            });
+            continue;
+        }
+        if code == SWING_INTENT {
+            intents.push(PlayerIntent::Swing {
+                facing: u16::from_be_bytes(take(payload, offset)?),
             });
             continue;
         }
@@ -850,6 +902,12 @@ fn decode_player(
             });
             continue;
         }
+        if code == USE_WAYSTONE_INTENT {
+            intents.push(PlayerIntent::UseWaystone(crate::wire::decode_waystone(
+                read_u8(payload, offset)?,
+            )?));
+            continue;
+        }
         if code == CHAT_INTENT {
             intents.push(PlayerIntent::Chat(crate::chat::decode_message(
                 payload, offset,
@@ -900,8 +958,6 @@ fn decode_player(
         let target = decode_entity_ref(payload, offset)?;
         intents.push(match (code, target) {
             (SELECT_TARGET_INTENT, target) => PlayerIntent::SelectTarget(target),
-            (START_ATTACK_INTENT, None) => PlayerIntent::StartAttack,
-            (STOP_ATTACK_INTENT, None) => PlayerIntent::StopAttack,
             (RELEASE_SPIRIT_INTENT, None) => PlayerIntent::ReleaseSpirit,
             (CANCEL_CAST_INTENT, None) => PlayerIntent::CancelCast,
             _ => return Err(ProtocolError::new("malformed pending intent")),
@@ -994,9 +1050,11 @@ fn decode_player(
         chat.push(crate::chat::decode_line(payload, offset)?);
     }
     let (quests, quests_changed_at) = crate::quest::decode_log(payload, offset)?;
+    let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
     Ok(CanonicalPlayerSnapshot {
         quests,
         quests_changed_at,
+        waystones,
         chat_ready_at,
         chat,
         player_id,
@@ -1020,11 +1078,10 @@ fn decode_player(
             experience,
             health,
             target,
-            auto_attack,
+            swing_queued,
             swing_timer,
             combat_timer,
             calm_ticks,
-            error_cooldown,
             intents,
             intents_dropped,
             last_observed,
@@ -1140,6 +1197,7 @@ fn decode_creature(
     } else {
         None
     };
+    let raid = crate::raid::decode_member(payload, offset)?;
     Ok(CanonicalCreatureSnapshot {
         generation,
         creature_id,
@@ -1157,6 +1215,7 @@ fn decode_creature(
         loot,
         abilities,
         encounter,
+        raid,
     })
 }
 
@@ -1634,16 +1693,15 @@ mod tests {
                         level: 2,
                         health: 17,
                         target: Some(wolf),
-                        auto_attack: true,
+                        swing_queued: true,
                         swing_timer: 12,
                         combat_timer: 149,
                         calm_ticks: 0,
-                        error_cooldown: 30,
                         intents: queued([
                             PlayerIntent::SelectTarget(Some(EntityRef::Npc(NpcId::new(2)))),
                             PlayerIntent::SelectTarget(None),
-                            PlayerIntent::StartAttack,
-                            PlayerIntent::StopAttack,
+                            PlayerIntent::CancelCast,
+                            PlayerIntent::Swing { facing: 0x4000 },
                             PlayerIntent::ReleaseSpirit,
                             PlayerIntent::MoveItem {
                                 source: 1,
@@ -1688,6 +1746,7 @@ mod tests {
                     },
                     quests: mmorpg_core::QuestLog::default(),
                     quests_changed_at: 0,
+                    waystones: mmorpg_core::WaystoneSet::EMPTY,
                 },
                 CanonicalPlayerSnapshot {
                     chat_ready_at: 0,
@@ -1711,6 +1770,7 @@ mod tests {
                     combat: CanonicalPlayerCombat::default(),
                     quests: mmorpg_core::QuestLog::default(),
                     quests_changed_at: 0,
+                    waystones: mmorpg_core::WaystoneSet::EMPTY,
                 },
             ],
             creatures: vec![
@@ -1737,6 +1797,7 @@ mod tests {
                         participants: vec![7],
                         contributors: vec![7],
                     }),
+                    raid: None,
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
@@ -1758,6 +1819,13 @@ mod tests {
                     tapped_by: Some(8),
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: None,
+                    raid: Some(mmorpg_core::RaidMember {
+                        incident: 2,
+                        leg: mmorpg_core::RaidLeg::Retreat,
+                        waypoint: 4,
+                        anchor: [6_400, -1_200],
+                        since: 5,
+                    }),
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
@@ -1779,6 +1847,7 @@ mod tests {
                     tapped_by: None,
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: None,
+                    raid: None,
                 },
                 CanonicalCreatureSnapshot {
                     generation: 1,
@@ -1797,6 +1866,7 @@ mod tests {
                     tapped_by: None,
                     abilities: CanonicalCreatureAbilities::default(),
                     encounter: None,
+                    raid: None,
                 },
             ],
             pieces: vec![mmorpg_core::CanonicalPiece {
@@ -1822,6 +1892,27 @@ mod tests {
                 velocity: [0.5, 0.0, -0.75],
             }],
             next_minion: 6,
+            raid: mmorpg_core::RaidState {
+                incidents: 2,
+                active: Some(mmorpg_core::RaidIncident {
+                    id: 2,
+                    phase: 2,
+                    phase_started: 3,
+                    scaled_for: vec![0, 2],
+                    participants: vec![1, 2],
+                }),
+                damage: 40,
+                last: Some(mmorpg_core::RaidResolution {
+                    incident: 1,
+                    at: 1,
+                    outcome: mmorpg_core::RaidOutcome::Lost,
+                }),
+            },
+            wakes: vec![mmorpg_core::NpcWake {
+                npc: mmorpg_core::NpcId::new(1),
+                knocked: 2,
+                idle_since: 3,
+            }],
         }
     }
 
@@ -1965,7 +2056,7 @@ mod tests {
         // The intent count follows the player's timers; the seven intents
         // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
         // the dropped flag, the last observation (u64) and two events.
-        let intents = 16 + 24 + 2 + 163;
+        let intents = 16 + 24 + 2 + 161;
         let player_abilities =
             intents + 1 + (8 + 8 + 7 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
@@ -2146,22 +2237,22 @@ mod tests {
     #[test]
     fn canonical_decoding_rejects_malformed_unit_state() {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
-        // Player 7's auto-attack flag follows its target reference.
+        // Player 7's queued-swing flag follows its target reference.
         let player = 16 + 24 + 2;
-        let auto_attack = player + 44 + 96 + 1 + 4 + 4 + 5;
-        let intents = auto_attack + 1 + 8;
+        let swing_queued = player + 44 + 96 + 1 + 4 + 4 + 5;
+        let intents = swing_queued + 1 + 6;
         let mut cases = vec![
-            (auto_attack, 2, "boolean field must be 0 or 1"),
+            (swing_queued, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
             // Each intent is its lateness, then its code and fields.
-            (intents + 2, 23, "malformed pending intent"),
+            (intents + 2, 24, "malformed pending intent"),
         ];
-        // The third intent (StartAttack) carries no target.
+        // The third intent (CancelCast) carries no target.
         cases.push((intents + 1 + 2 * 7 + 2, 2, "malformed pending intent"));
-        // The dropped-intent flag follows the six intents.
-        cases.push((intents + 1 + 6 * 7, 2, "boolean field must be 0 or 1"));
+        // The dropped-intent flag follows the six intents; the fourth (a swing) is 4 bytes.
+        cases.push((intents + 1 + 6 * 7 - 3, 2, "boolean field must be 0 or 1"));
         cases.push((
-            intents + 1 + 5 * 7 + 6,
+            intents + 1 + 5 * 7 + 3,
             1,
             "malformed pending inventory intent",
         ));

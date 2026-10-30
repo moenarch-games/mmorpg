@@ -21,6 +21,16 @@
 //! record without asking any zone; they never include uncommitted live
 //! progress. The store performs I/O and is never called inside a zone tick.
 //!
+//! A cross-zone transfer (#145) moves the lease without a gap or an overlap.
+//! The source zone, still the holder, [begins](CharacterStore::begin_handoff)
+//! a handoff with the frozen [`CharacterTransfer`]: from then on nobody may
+//! write, acquire or release the character, so neither side mutates it. The
+//! control plane's fenced handoff record decides the outcome; the store only
+//! carries it out. [Completing](CharacterStore::complete_handoff) commits the
+//! transfer's record and grants the lease to the destination in one atomic
+//! step; [cancelling](CharacterStore::cancel_handoff) leaves the source's
+//! lease and committed record as they were. Both are idempotent per transfer.
+//!
 //! The rules live once, in [`CharacterStore`], over an [`EntryBackend`] that
 //! only needs an atomic read-modify-write of one entry: [`FileEntries`] for
 //! development and LAN hosts, the browser's `localStorage` in `mmorpg-wasm`,
@@ -35,7 +45,7 @@ pub mod postgres;
 use std::error::Error;
 use std::fmt;
 
-use mmorpg_core::{CharacterId, CharacterRecord, ZoneId};
+use mmorpg_core::{CharacterId, CharacterRecord, CharacterTransfer, TransferId, ZoneId};
 
 pub use entry::{ENTRY_FORMAT_VERSION, decode_entry, encode_entry};
 #[cfg(not(target_arch = "wasm32"))]
@@ -90,10 +100,33 @@ pub struct Entry {
     /// The newest holder ever granted; older epochs of its zone are fenced.
     pub fence: Option<LeaseHolder>,
     pub record: Option<CharacterRecord>,
+    /// The handoff the holder began and the control plane has not settled.
+    pub handoff: Option<PendingHandoff>,
+    /// The last completed handoff and the lease generation it granted, so a
+    /// retried completion returns that lease while it is still current.
+    pub last_handoff: Option<(TransferId, u64)>,
+}
+
+/// A transfer out of the holding zone, waiting for its outcome.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingHandoff {
+    pub transfer: CharacterTransfer,
+    /// Who holds the lease once the handoff completes.
+    pub to: LeaseHolder,
+    /// Who held the lease when the handoff began; it holds it until the end.
+    pub from: LeaseHolder,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StoreError {
+    /// A handoff is pending; the control plane must settle it first.
+    HandoffPending(TransferId),
+    /// The handoff already completed and can no longer be cancelled.
+    HandoffCompleted(TransferId),
+    /// No pending or completed handoff has this transfer ID.
+    UnknownHandoff(TransferId),
+    /// The handoff names the holder's own zone or another character.
+    InvalidHandoff(&'static str),
     /// Another zone, or a not-newer epoch of the same zone, holds the character.
     Leased(LeaseHolder),
     /// The holder's zone has granted the character to a newer epoch.
@@ -113,6 +146,18 @@ pub enum StoreError {
 impl fmt::Display for StoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::HandoffPending(transfer) => write!(
+                formatter,
+                "the character is being handed off (transfer {})",
+                transfer.get()
+            ),
+            Self::HandoffCompleted(transfer) => {
+                write!(formatter, "transfer {} already completed", transfer.get())
+            }
+            Self::UnknownHandoff(transfer) => {
+                write!(formatter, "no handoff has transfer {}", transfer.get())
+            }
+            Self::InvalidHandoff(reason) => write!(formatter, "invalid handoff: {reason}"),
             Self::Leased(holder) => write!(
                 formatter,
                 "the character is in play in zone {} (epoch {})",
@@ -175,6 +220,9 @@ impl<B: EntryBackend> CharacterStore<B> {
     ) -> Result<Acquired, StoreError> {
         let mut acquired = None;
         self.transition(id, &mut |entry| {
+            if let Some(pending) = &entry.handoff {
+                return Err(StoreError::HandoffPending(pending.transfer.transfer_id));
+            }
             if let Some(fence) = entry.fence
                 && fence.zone_id == holder.zone_id
                 && fence.zone_epoch > holder.zone_epoch
@@ -248,6 +296,164 @@ impl<B: EntryBackend> CharacterStore<B> {
         }))
     }
 
+    /// Starts handing the character held under `lease` to `to` with the
+    /// source's frozen `transfer`. From now on the character can be neither
+    /// written, released nor acquired until the handoff completes or is
+    /// cancelled. Beginning the same handoff again is a no-op.
+    pub fn begin_handoff(
+        &mut self,
+        lease: &CharacterLease,
+        transfer: &CharacterTransfer,
+        to: LeaseHolder,
+    ) -> Result<(), StoreError> {
+        if transfer.record.character_id != lease.character_id {
+            return Err(StoreError::WrongCharacter);
+        }
+        if to.zone_id == lease.holder.zone_id || transfer.source_zone != lease.holder.zone_id {
+            return Err(StoreError::InvalidHandoff(
+                "a handoff leaves the holder's zone for another zone",
+            ));
+        }
+        if transfer.record.location.zone_id != to.zone_id {
+            return Err(StoreError::InvalidHandoff(
+                "the transferred record is not located in the destination zone",
+            ));
+        }
+        let pending = PendingHandoff {
+            transfer: transfer.clone(),
+            to,
+            from: lease.holder,
+        };
+        self.transition(&lease.character_id, &mut |entry| {
+            if entry.lease != Some(lease.holder) || entry.generation != lease.generation {
+                return Err(StoreError::StaleLease);
+            }
+            match &entry.handoff {
+                Some(existing) if *existing == pending => Ok(()),
+                Some(existing) => Err(StoreError::HandoffPending(existing.transfer.transfer_id)),
+                None => {
+                    entry.handoff = Some(pending.clone());
+                    Ok(())
+                }
+            }
+        })
+    }
+
+    /// Commits the pending handoff's record and grants its destination the
+    /// lease, atomically. Only the control plane's acceptance of the handoff
+    /// authorizes this. Completing again returns the same lease while no
+    /// later acquisition superseded it.
+    pub fn complete_handoff(
+        &mut self,
+        id: &CharacterId,
+        transfer_id: TransferId,
+    ) -> Result<Acquired, StoreError> {
+        let mut acquired = None;
+        self.transition(id, &mut |entry| {
+            let Some(pending) = entry
+                .handoff
+                .take_if(|pending| pending.transfer.transfer_id == transfer_id)
+            else {
+                if entry.last_handoff == Some((transfer_id, entry.generation))
+                    && let (Some(holder), Some(record)) = (entry.lease, &entry.record)
+                {
+                    acquired = Some(Acquired {
+                        lease: CharacterLease {
+                            character_id: id.clone(),
+                            holder,
+                            generation: entry.generation,
+                        },
+                        revision: entry.revision,
+                        record: Some(record.clone()),
+                    });
+                    return Ok(());
+                }
+                return Err(match &entry.handoff {
+                    Some(other) => StoreError::HandoffPending(other.transfer.transfer_id),
+                    None if entry
+                        .last_handoff
+                        .is_some_and(|(last, _)| last == transfer_id) =>
+                    {
+                        StoreError::StaleLease
+                    }
+                    None => StoreError::UnknownHandoff(transfer_id),
+                });
+            };
+            entry.revision = entry
+                .revision
+                .checked_add(1)
+                .ok_or_else(|| StoreError::Corrupt("revisions are exhausted".into()))?;
+            entry.generation = entry
+                .generation
+                .checked_add(1)
+                .ok_or_else(|| StoreError::Corrupt("lease generations are exhausted".into()))?;
+            entry.record = Some(pending.transfer.record.clone());
+            entry.lease = Some(pending.to);
+            entry.fence = Some(pending.to);
+            entry.last_handoff = Some((transfer_id, entry.generation));
+            acquired = Some(Acquired {
+                lease: CharacterLease {
+                    character_id: id.clone(),
+                    holder: pending.to,
+                    generation: entry.generation,
+                },
+                revision: entry.revision,
+                record: Some(pending.transfer.record),
+            });
+            Ok(())
+        })?;
+        acquired.ok_or_else(|| StoreError::Backend("the backend skipped the update".into()))
+    }
+
+    /// Drops the pending handoff: the source keeps its lease and committed
+    /// record. Only the control plane's abort of the handoff, or the absence
+    /// of any handoff record, authorizes this. Returns whether it was
+    /// pending; a completed handoff can no longer be cancelled.
+    pub fn cancel_handoff(
+        &mut self,
+        id: &CharacterId,
+        transfer_id: TransferId,
+    ) -> Result<bool, StoreError> {
+        let Some(bytes) = self.backend.read(id)? else {
+            return Ok(false);
+        };
+        let entry = decode_entry(id, &bytes)?;
+        if entry
+            .last_handoff
+            .is_some_and(|(last, _)| last == transfer_id)
+        {
+            return Err(StoreError::HandoffCompleted(transfer_id));
+        }
+        if entry
+            .handoff
+            .is_none_or(|pending| pending.transfer.transfer_id != transfer_id)
+        {
+            return Ok(false);
+        }
+        self.transition(id, &mut |entry| {
+            if entry
+                .last_handoff
+                .is_some_and(|(last, _)| last == transfer_id)
+            {
+                return Err(StoreError::HandoffCompleted(transfer_id));
+            }
+            entry
+                .handoff
+                .take_if(|pending| pending.transfer.transfer_id == transfer_id)
+                .map(|_| ())
+                .ok_or(StoreError::UnknownHandoff(transfer_id))
+        })?;
+        Ok(true)
+    }
+
+    /// The pending handoff of `id`, if any.
+    pub fn pending_handoff(&self, id: &CharacterId) -> Result<Option<PendingHandoff>, StoreError> {
+        let Some(bytes) = self.backend.read(id)? else {
+            return Ok(None);
+        };
+        Ok(decode_entry(id, &bytes)?.handoff)
+    }
+
     fn write(
         &mut self,
         lease: &CharacterLease,
@@ -262,6 +468,9 @@ impl<B: EntryBackend> CharacterStore<B> {
             }
             if entry.lease != Some(lease.holder) || entry.generation != lease.generation {
                 return Err(StoreError::StaleLease);
+            }
+            if let Some(pending) = &entry.handoff {
+                return Err(StoreError::HandoffPending(pending.transfer.transfer_id));
             }
             if let Some(expected) = expected_revision
                 && entry.revision != expected

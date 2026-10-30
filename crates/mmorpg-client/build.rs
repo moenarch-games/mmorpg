@@ -36,13 +36,21 @@ const HELM: &str = "equipment.helm.ironcrest";
 /// The starter hair (#376) in its tintable texture variant.
 const HAIR: &str = "hair.simple-parted";
 const HAIR_VARIANT: &str = "hair-1";
-/// The inn entries the clients draw (`mmorpg_presentation::buildings::INN_ENTRIES`).
+/// The inn entries the clients draw (`mmorpg_presentation::buildings::INN`).
 const INN: [&str; 5] = [
     "greyhaven.inn.shell",
     "greyhaven.inn.furniture",
     "greyhaven.inn.ceiling",
     "greyhaven.inn.roof",
     "greyhaven.inn.door",
+];
+/// Elden's house entries the clients draw (`mmorpg_presentation::buildings::MARSHAL_HOUSE`).
+const MARSHAL_HOUSE: [&str; 5] = [
+    "greyhaven.marshal-house.shell",
+    "greyhaven.marshal-house.furniture",
+    "greyhaven.marshal-house.ceiling",
+    "greyhaven.marshal-house.roof",
+    "greyhaven.marshal-house.door",
 ];
 
 fn main() {
@@ -130,6 +138,13 @@ fn main() {
         "inn_bundle.rs",
         &manifest_dir.join("../../web/public/buildings/greyhaven.inn"),
         Some(&INN),
+        false,
+    );
+    // Marshal Elden Greywatch's private home (#158).
+    static_bundle(
+        "marshal_house_bundle.rs",
+        &manifest_dir.join("../../web/public/buildings/greyhaven.marshal-house"),
+        Some(&MARSHAL_HOUSE),
         false,
     );
     // Every module of the Sunken Shrine kit (#431).

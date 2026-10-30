@@ -697,7 +697,10 @@ impl ZoneSimulation {
             self.notify_observers(
                 &[source, target],
                 &BTreeSet::new(),
-                ZoneEvent::AttackPerformed { source, target },
+                ZoneEvent::AttackPerformed {
+                    source,
+                    target: Some(target),
+                },
             );
             let EntityRef::Creature(creature_id) = target else {
                 continue;
@@ -800,7 +803,6 @@ impl ZoneSimulation {
         for player in self.players.values_mut() {
             if player.target == Some(entity) {
                 player.target = None;
-                player.auto_attack = false;
             }
         }
         Some(minion)

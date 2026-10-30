@@ -238,7 +238,7 @@ feature either, since both arms
 carry riders in adapter code; a ray starting exactly on a face reads differently only because
 the Rapier arm converts centimetres to metres in `f32` (Rapier's solid `cast_ray` also starts
 at time 0 on the face). A Rapier-only artefact remains on the cart ramp: its controller tops
-the dock's edge 2.5 units high for a tick before settling, so `vale-mill-ramps` allows 3 units.
+the dock's edge 2.5 units high for a tick before settling, so `vale-mill-ramps` allows 3 units. Free-aim swings (#517) moved `vale-wolf-hunt`'s zone RNG: with the hunter swinging from tick 1,514, a young boar stopped exactly on an integer ground-probe seam (564 or 565 at (−18 105, 8 190)), where the arms' heights round one unit apart; the hunter starts swinging at 1,544 instead, and the exact ground comparison is unchanged.
 
 Fixed at the pinned rev, and the test now
 asserts the engine arm's exact continuation:

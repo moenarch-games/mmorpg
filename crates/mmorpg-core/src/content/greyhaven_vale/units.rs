@@ -371,6 +371,7 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
                     levels: None,
                 }),
         )
+        .chain(super::raid::raider_spawns())
         .collect()
 }
 
@@ -440,20 +441,29 @@ pub(crate) fn vendors() -> Vec<(NpcId, crate::VendorStock)> {
 
 /// Tanner Hilda Brook (NPC 2) works by her tannery and spends the night in the inn's common
 /// room, crossing the square and opening the inn door on the way (#158, Atlas 5.1.45). Her
-/// quests stay available wherever she is.
+/// quests stay available wherever she is. Marshal Elden Greywatch (NPC 1) walks home to house
+/// 103 at dusk and sleeps by his bed until dawn (#158, Atlas 5.1.48).
 pub(crate) fn routines() -> Vec<crate::NpcRoutine> {
-    vec![crate::NpcRoutine {
-        npc: NpcId::new(2),
-        path: vec![
-            [-1_500, 2_000],
-            [1_500, 1_000],
-            [1_500, 620],
-            [1_500, 350],
-            [1_600, 100],
-        ],
-        home_facing: 16_384,
-        door: Some(super::inn::DOOR),
-    }]
+    vec![
+        crate::NpcRoutine {
+            npc: NpcId::new(1),
+            path: super::marshal_house::path(),
+            home_facing: super::marshal_house::BEDSIDE_FACING,
+            door: Some(super::marshal_house::DOOR),
+        },
+        crate::NpcRoutine {
+            npc: NpcId::new(2),
+            path: vec![
+                [-1_500, 2_000],
+                [1_500, 1_000],
+                [1_500, 620],
+                [1_500, 350],
+                [1_600, 100],
+            ],
+            home_facing: 16_384,
+            door: Some(super::inn::DOOR),
+        },
+    ]
 }
 
 /// Bram (NPC 3) closes his shop at night (#158, Atlas 5.1.47).

@@ -23,11 +23,12 @@ forward = 1
 strafe = 0
 facing = 0
 
-# Attacking without a target is refused with an event, not a session error.
+# A swing at nothing whiffs: an event, not a session error.
 [[steps]]
 tick = 2
 bot = "hunter"
-action = "start_attack"
+action = "swing"
+facing = 0
 
 # West along the trail, through the west gate.
 [[steps]]
@@ -90,11 +91,6 @@ bot = "hunter"
 action = "select_target"
 entity = "creature:108"
 
-[[steps]]
-tick = 1444
-bot = "hunter"
-action = "start_attack"
-
 # Stand close enough to the den that Wolf 108 engages wherever it wanders, and let it come.
 [[steps]]
 tick = 1514
@@ -104,34 +100,43 @@ forward = 0
 strafe = 0
 facing = 32768
 
+# Keep pressing attack at the wolf (#517), aimed where the hunter sees it.
+[[steps]]
+tick = 1514
+bot = "hunter"
+action = "swing"
+entity = "creature:108"
+until = 2730
+every = 30
+
 
 [[steps]]
 tick = 2881
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2569
+died_at = 2713
 
 [[steps]]
 tick = 2883
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2571
+died_at = 2715
 
 [[steps]]
 tick = 2883
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2571
+died_at = 2715
 
 [[steps]]
 tick = 2883
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2571
+died_at = 2715
 seq = 11
 expect = "ignored_stale"
 
@@ -152,14 +157,14 @@ tick = 2891
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2571
+died_at = 2715
 
 [[steps]]
 tick = 2893
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2571
+died_at = 2715
 connection_epoch = 1
 expect = "rejected:stale_connection"
 
@@ -176,7 +181,7 @@ bot = "hunter"
 tick = 2878
 sheet = true
 creature = 108
-died_at = 2571
+died_at = 2715
 
 [[expect]]
 kind = "copper"
@@ -197,7 +202,7 @@ bot = "hunter"
 tick = 2882
 sheet = true
 creature = 108
-died_at = 2571
+died_at = 2715
 
 [[expect]]
 kind = "loot"

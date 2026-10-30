@@ -105,6 +105,8 @@ struct Run {
     zone: ZoneSimulation,
     sequence: u32,
     events: Vec<(u32, ZoneEvent)>,
+    /// The creature each player keeps swinging at while it is in reach (#517).
+    attacking: std::collections::BTreeMap<u32, EntityRef>,
 }
 
 impl Run {
@@ -117,6 +119,7 @@ impl Run {
             zone,
             sequence: 0,
             events: Vec::new(),
+            attacking: std::collections::BTreeMap::new(),
         }
     }
 
@@ -146,18 +149,32 @@ impl Run {
     }
 
     fn attack(&mut self, player: u32, creature: CreatureId) {
-        for command in [
-            ZoneCommand::SelectTarget(Some(EntityRef::Creature(creature))),
-            ZoneCommand::StartAttack,
-        ] {
-            self.sequence += 1;
-            self.zone
-                .apply_command(player, self.sequence, command)
-                .unwrap();
-        }
+        let target = EntityRef::Creature(creature);
+        self.sequence += 1;
+        self.zone
+            .apply_command(
+                player,
+                self.sequence,
+                ZoneCommand::SelectTarget(Some(target)),
+            )
+            .unwrap();
+        self.attacking.insert(player, target);
     }
 
     fn tick(&mut self) {
+        let swings: Vec<_> = self
+            .attacking
+            .iter()
+            .filter_map(|(&player, &target)| {
+                arena::swing_at(&self.zone, player, target).map(|swing| (player, swing))
+            })
+            .collect();
+        for (player, swing) in swings {
+            self.sequence += 1;
+            self.zone
+                .apply_command(player, self.sequence, swing)
+                .unwrap();
+        }
         self.zone.advance_tick().unwrap();
         for player in self.zone.snapshot().unwrap().players {
             let id = player.player_id;

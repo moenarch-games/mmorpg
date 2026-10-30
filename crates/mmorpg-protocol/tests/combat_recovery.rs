@@ -53,11 +53,7 @@ fn commands(tick: u64) -> Vec<(u32, ZoneCommand)> {
     let target = ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(1))));
     match tick {
         0 => vec![(1, arena::walk(NORTHWARD)), (2, arena::stand(NORTHWARD))],
-        60 => vec![
-            (1, arena::stand(NORTHWARD)),
-            (1, target),
-            (1, ZoneCommand::StartAttack),
-        ],
+        60 => vec![(1, arena::stand(NORTHWARD)), (1, target)],
         61 => vec![(2, ZoneCommand::SelectTarget(Some(EntityRef::Player(1))))],
         500 => vec![(1, ZoneCommand::ReleaseSpirit)],
         530 => vec![(1, arena::walk(NORTHWARD))],
@@ -104,6 +100,17 @@ impl Run {
             let sequence = &mut self.sequences[usize::try_from(player).unwrap() - 1];
             *sequence += 1;
             self.zone.apply_command(player, *sequence, command).unwrap();
+        }
+        // From the stand to the release, player 1 swings at the wolf whenever it is in reach (#517).
+        let scale = u64::from(mmorpg_core::TICK_HZ) / 30;
+        if (60 * scale..500 * scale).contains(&self.zone.current_tick())
+            && let Some(swing) =
+                arena::swing_at(&self.zone, 1, EntityRef::Creature(CreatureId::new(1)))
+        {
+            self.sequences[0] += 1;
+            self.zone
+                .apply_command(1, self.sequences[0], swing)
+                .unwrap();
         }
         self.zone.advance_tick().unwrap();
     }

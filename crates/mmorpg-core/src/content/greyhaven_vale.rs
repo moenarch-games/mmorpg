@@ -27,7 +27,9 @@ pub mod highlands;
 pub mod inn;
 pub mod layout;
 pub mod marsh;
+pub mod marshal_house;
 pub mod quests;
+pub mod raid;
 pub mod shrine;
 pub mod units;
 
@@ -122,6 +124,11 @@ pub mod ids {
     pub const INN_DOOR: u32 = 149;
     /// The inn's walls and furniture (#158).
     pub const INN_PARTS: RangeInclusive<u32> = 150..=181;
+    /// Marshal Elden Greywatch's private home (#158): house 103's footprint is its presentation
+    /// anchor, not a collider; its front door leaf, then its walls and furniture.
+    pub const MARSHAL_HOUSE: u32 = 103;
+    pub const MARSHAL_HOUSE_DOOR: u32 = 182;
+    pub const MARSHAL_HOUSE_PARTS: RangeInclusive<u32> = 183..=198;
 
     pub const BARN: u32 = 200;
     pub const FARMHOUSE: u32 = 201;
@@ -1131,13 +1138,20 @@ fn colliders() -> Vec<StaticCollider> {
         wall(8, [east, wet_north - thick], [wet_east + thick, wet_north]),
         wall(9, [east, wet_south], [wet_east + thick, wet_south + thick]),
     ];
-    colliders.extend(STRUCTURES.iter().map(|&(id, min, max, height)| {
-        // Structures out on the hills stand on the terrain (#159).
-        let mut collider = standing(id, min, max, height);
-        collider.position[1] += footing(min, max);
-        collider
-    }));
+    colliders.extend(
+        STRUCTURES
+            .iter()
+            // Elden's house collides through its walls and furniture (#158).
+            .filter(|&&(id, ..)| id != ids::MARSHAL_HOUSE)
+            .map(|&(id, min, max, height)| {
+                // Structures out on the hills stand on the terrain (#159).
+                let mut collider = standing(id, min, max, height);
+                collider.position[1] += footing(min, max);
+                collider
+            }),
+    );
     colliders.extend(inn::colliders(*ids::INN_PARTS.start()));
+    colliders.extend(marshal_house::colliders(*ids::MARSHAL_HOUSE_PARTS.start()));
     colliders.extend(cave::GREYFANG.colliders(*ids::CAVE_WALLS.start()));
     colliders.push(cave::threshold(ids::CAVE_THRESHOLD));
     colliders.extend(shrine::ruins(*ids::SHRINE_RUINS.start()));
@@ -1420,18 +1434,24 @@ pub fn content_with_definition(
             .with_shielded(units::shielded())?
             .with_vendors(units::vendors())?
             .with_quests(quests::quests())?
-            .with_doors(vec![inn::door(ids::INN_DOOR)])?
+            .with_doors(vec![
+                inn::door(ids::INN_DOOR),
+                marshal_house::door(ids::MARSHAL_HOUSE_DOOR),
+            ])?
             .with_platforms(vec![MILL_HOIST])?
             .with_ramps(MILL_RAMPS.to_vec())?
             .with_structures(structure_sites(), watch_post())?
             .with_routines(units::routines(), units::closed_at_night())?
+            .with_private_homes(vec![marshal_house::home()])?
             .with_waters(
                 [stillwater_lake(), shrine::cave_water()]
                     .into_iter()
                     .chain(marsh::water_volumes())
                     .collect(),
             )?
-            .with_climbing(climbing())?,
+            .with_climbing(climbing())?
+            .with_raid(raid::millbrook_barn())?
+            .with_waystones(vec![crate::GREYHAVEN_OUTPOST])?,
     ))
 }
 

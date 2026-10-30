@@ -43,6 +43,7 @@ fn viewer_of(class: PlayerClass) -> ZoneSnapshot {
         projectiles: Vec::new(),
         debris: Vec::new(),
         pieces: Vec::new(),
+        raid: None,
         content_revision: greyhaven_vale::content().revision(),
         acknowledged_sequence: 1,
         viewer_id: 1,
@@ -445,6 +446,8 @@ fn native_warden_slot_one_spends_rage_and_projects_global_cooldown() {
     state.players[0].position = mmorpg_core::physics::from_units([0, 90, -2_000]);
     state.players[0].combat.abilities.resource = 40;
     state.creatures[0].position = mmorpg_core::physics::from_units([100, 45, -2_000]);
+    // Facing the creature to the east: Heroic Strike lands where the Warden faces (#517).
+    state.players[0].facing = 16_384;
     let target = EntityRef::Creature(state.creatures[0].creature_id);
     let mut zone = ZoneSimulation::from_snapshot(state, content).unwrap();
     zone.apply_command(1, 2, ZoneCommand::SelectTarget(Some(target)))

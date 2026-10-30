@@ -63,7 +63,7 @@ import "./world/battle-royale/style.css";
 import type { LinkState, ZoneWorld } from "./world/world-source";
 import { WorldView, webGpuProjection } from "./world/world-view";
 import type { FaceFeature } from "./world/units/quaternius-units";
-import { attackToggle, nextTabTarget } from "./world/units/targeting";
+import { nextTabTarget } from "./world/units/targeting";
 import { GameControls, type GameAction, type HeldAction, type HoldPhase, type ReleasedAction } from "./input/game-controls";
 import { actionBindingLabels } from "./input/binding-labels";
 import type { Profile } from "@moritzbrantner/input-bindings";
@@ -361,6 +361,12 @@ const worldView = new WorldView(renderer, camera, {
     claim: requireElement<HTMLButtonElement>("#loot-claim"),
     feedback: requireElement<HTMLElement>("#loot-feedback"),
     copper: requireElement<HTMLElement>("#copper-status"),
+  },
+  waystone: {
+    panel: requireElement<HTMLElement>("#waystone-panel"),
+    title: requireElement<HTMLElement>("#waystone-title"),
+    destinations: requireElement<HTMLElement>("#waystone-destinations"),
+    status: requireElement<HTMLElement>("#waystone-status"),
   },
   bags: {
     panel: requireElement<HTMLElement>("#bags-panel"),
@@ -1689,8 +1695,8 @@ function runAction(action: GameAction): void {
         return target ? { kind: "select-target", target } : null;
       });
       return;
-    case "combat.toggleAutoAttack":
-      worldView.queueIntent(attackToggle);
+    case "combat.swing":
+      worldView.swing();
       return;
     case "ability.slot1":
     case "ability.slot2":

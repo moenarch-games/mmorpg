@@ -16,6 +16,11 @@ pub const PLAYER_BASE_DAMAGE: [u16; 2] = [3, 6];
 pub const PLAYER_SWING_TICKS: u16 = crate::ticks_from_ms(2_000);
 /// Player melee reach: XZ centre distance in units.
 pub const PLAYER_REACH_UNITS: i32 = 250;
+/// Half the horizontal arc one player swing covers (#517): 50° either side of the facing, a
+/// 100° arc (yaw units: a quarter turn is 16 384).
+pub const SWING_ARC_HALF_WIDTH: u16 = 9_102;
+/// Half the cone in which a facing-aimed ranged ability picks its unit (#517): 15° either side.
+pub const AIM_CONE_HALF_WIDTH: u16 = 2_731;
 /// Creature melee reach before adding the target's half-width.
 pub const CREATURE_REACH_UNITS: i32 = 200;
 /// Hit table: this many percent of swings miss …
@@ -36,8 +41,6 @@ pub const REGEN_PERCENT: u32 = 3;
 pub const CORPSE_TICKS: u32 = crate::long_ticks_from_ms(30_000);
 /// A released spirit returns with half of its maximum health, rounded up.
 pub const RELEASE_HEALTH_PERCENT: u32 = 50;
-/// A player receives at most one out-of-range error per second.
-pub const OUT_OF_RANGE_ERROR_INTERVAL_TICKS: u16 = crate::ticks_from_ms(1_000);
 
 /// Player maximum health: 50 + 15 · (level − 1).
 #[must_use]

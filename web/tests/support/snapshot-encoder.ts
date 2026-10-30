@@ -2,7 +2,7 @@ import { entityKindCode, type EntityRef } from "../../src/entity-ref";
 import { COMBO_PHASES, EMOTES, MELEE_STANCES, STRIKE_HEIGHTS, STRIKE_SIDES, type AuraState, type CastState, type ZoneEvent, type ZoneSnapshot } from "../../src/replication";
 import { PROTOCOL_ID_BYTES } from "../../src/protocol-id";
 
-const FIXED_BYTES = 117;
+const FIXED_BYTES = 118;
 /** Bag 64, equipment 12 and stat totals 8. */
 const SHEET_BYTES = 84;
 const AURA_KINDS = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
@@ -41,7 +41,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   const chatText = (line: (typeof chat)[number]) =>
     line.channel === "emote" ? null : new TextEncoder().encode(line.text);
   const chatBytes = chat.reduce((total, line) => total + 6 + (chatText(line)?.length ?? 0), 0);
-  const size = FIXED_BYTES + lists + (snapshot.inventory === null ? 0 : SHEET_BYTES) + questBytes + lootBytes + 2 * (snapshot.doors ?? []).length + 3 * (snapshot.pieces ?? []).length + EVENT_BYTES * snapshot.events.length + chatBytes + ENTITY_BYTES * snapshot.entities.length + 20 * (snapshot.projectiles ?? []).length + 25 * (snapshot.debris ?? []).length;
+  const size = FIXED_BYTES + lists + (snapshot.inventory === null ? 0 : SHEET_BYTES) + questBytes + lootBytes + 2 * (snapshot.doors ?? []).length + 3 * (snapshot.pieces ?? []).length + (snapshot.raid ? 1 : 0) + EVENT_BYTES * snapshot.events.length + chatBytes + ENTITY_BYTES * snapshot.entities.length + 20 * (snapshot.projectiles ?? []).length + 25 * (snapshot.debris ?? []).length;
   const bytes = new Uint8Array(size);
   const view = new DataView(bytes.buffer);
   let offset = 0;
@@ -67,7 +67,7 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   u32(viewer.experience);
   u32(viewer.experienceToNextLevel);
   u32(viewer.copper);
-  u8(flagByte([viewer.dead, viewer.inCombat, viewer.autoAttacking]));
+  u8(flagByte([viewer.dead, viewer.inCombat]) | (viewer.waystones ?? []).reduce((bits, id) => bits | (1 << (id + 1)), 0));
   entity(viewer.target);
   const choice = viewer.classChoice;
   u8(choice === null ? 0 : 1 + CLASSES.indexOf(choice.classId) * 2 + (choice.sex === "female" ? 0 : 1));
@@ -167,6 +167,12 @@ export function encodeTestSnapshot(snapshot: ZoneSnapshot): Uint8Array {
   for (const piece of pieces) {
     u16(piece.piece);
     u8(["damaged", "crumbling", "destroyed"].indexOf(piece.stage) + 1);
+  }
+  // The night raid signal (#530): code byte (phase + 1, 0 without one), then the integrity.
+  const raid = snapshot.raid ?? null;
+  u8(raid ? raid.phase + 1 : 0);
+  if (raid) {
+    u8(raid.integrity);
   }
   u8(snapshot.events.length);
   for (const event of snapshot.events) {
@@ -330,7 +336,7 @@ function encodeEvent(
       u8(16);
       u8(0);
       entity(event.source);
-      entity(event.target);
+      entity(event.target ?? null);
       u16(0);
       return;
     case "damage-observed":

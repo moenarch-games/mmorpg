@@ -45,12 +45,17 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // buildings, fences and trees to every step's world, and `i32` positions grow every
     // entity record by six bytes. The Bandit Highlands (#425) add their stronghold, crags and
     // pines to every step's world, and the Marsh-Lake Wetlands (#426) their island, cottage and
-    // trees. The three towers' ladders (#490) add three boxes to every step's world.
+    // trees. The three towers' ladders (#490) add three boxes to every step's world. Free-aim swings
+    // (#517) replace auto-attack: swings turn their bots and whiffs are seen, which moves the
+    // spread and crowded fights a little. The night raid (#530) reserves 18 raider spawns, which
+    // reseeds the zone RNG and moves the fights, and adds its signal byte to every projection.
+    // Elden's walk-in house (#158) trades house 103's box for its 16 wall and furniture boxes and
+    // its door leaf in every step's world, and its door record joins every projection.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 762_120, 224_640, 5_202_864],
-        [29_160, 759_240, 80_140, 1_431_435],
-        [29_160, 767_880, 389_620, 7_150_844],
-        [29_041, 779_281, 2_248_200, 24_496_050],
+        [29_160, 767_880, 224_640, 5_220_144],
+        [29_160, 765_000, 80_140, 1_662_519],
+        [29_160, 773_640, 398_688, 7_311_235],
+        [29_042, 785_042, 2_248_200, 24_529_132],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

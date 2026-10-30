@@ -162,6 +162,26 @@ impl MinimapLayers {
                 ));
             }
         }
+        // A night raid's approximate disturbance area while its assault runs (#530): a soft
+        // circle, or a pip on the rim pointing at it while it is off the map.
+        if snapshot.raid.is_some_and(|raid| raid.phase > 0)
+            && let Some(([x, z], area)) = content.raid().map(mmorpg_core::RaidSite::area)
+        {
+            let colour = Color32::from_rgb(255, 122, 61);
+            let at = to_screen([x as f32 / UNITS_PER_METRE, z as f32 / UNITS_PER_METRE]);
+            let size = area as f32 / UNITS_PER_METRE * scale;
+            if (at - centre).length() - size < radius {
+                painter.add(CircleShape {
+                    center: at,
+                    radius: size,
+                    fill: Color32::from_rgba_unmultiplied(255, 122, 61, 56),
+                    stroke: Stroke::new(1.5, colour),
+                });
+            } else {
+                let pip = centre + (at - centre).normalized() * (radius - 7.0);
+                painter.circle(pip, 4.5, colour, Stroke::new(1.0, Color32::BLACK));
+            }
+        }
         for entity in &snapshot.entities {
             if entity.kind == EntityKind::Player && entity.id == snapshot.viewer_id {
                 continue;

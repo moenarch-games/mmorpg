@@ -5,7 +5,8 @@
 # (#431) into web/public/scenery/shrine.kit and the ambient animals (#419) into
 # web/public/scenery/greyhaven.ambient-animals and the Outpost building kit (#420) into
 # web/public/buildings/outpost.kit and the settlement props (#421) into
-# web/public/scenery/settlement.props and the CC0 combat sounds (#447) into
+# web/public/scenery/settlement.props and Elden's house (#158) into
+# web/public/buildings/greyhaven.marshal-house and the CC0 combat sounds (#447) into
 # web/public/sounds/combat-sounds, where the browser serves them and the native client build embeds them.
 # The directories are ignored build input, never committed.
 set -euo pipefail
@@ -80,5 +81,7 @@ fetch_rolling greyhaven-ambient-animals greyhaven.ambient-animals scenery/greyha
 fetch_rolling outpost-kit outpost.kit buildings/outpost.kit
 # Greyhaven's reusable settlement props (#421): the market square before house 106.
 fetch_rolling settlement-props settlement.props scenery/settlement.props
+# Marshal Elden Greywatch's furnished private home on house 103 (#158, asset-tooling#413).
+fetch_rolling greyhaven-marshal-house greyhaven.marshal-house buildings/greyhaven.marshal-house
 # The CC0 combat sounds both clients play (#447, asset-tooling#297).
 fetch_rolling combat-sounds combat-sounds sounds/combat-sounds

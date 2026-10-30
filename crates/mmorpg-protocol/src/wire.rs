@@ -10,6 +10,8 @@ use crate::{PROTOCOL_ID, ProtocolError};
 
 pub(crate) const CANONICAL_SNAPSHOT_SCOPE: u8 = 1;
 pub(crate) const PLAYER_SNAPSHOT_SCOPE: u8 = 2;
+/// A departed player's redirect notice in place of its projection (#145).
+pub(crate) const REDIRECT_SCOPE: u8 = 3;
 /// Protocol ID (3 bytes), scope, zone ID and tick start every snapshot.
 pub(crate) const COMMON_HEADER_BYTES: usize = 16;
 /// Kind code then `u32` ID; kind 0 (with ID 0) means none.
@@ -125,6 +127,12 @@ const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::DoorBusy => 32,
         ErrorCode::NoMinions => 33,
         ErrorCode::NotWhileSwimming => 34,
+        ErrorCode::HandoffCorridor => 35,
+        ErrorCode::InCombat => 36,
+        ErrorCode::InvalidWaystone => 37,
+        ErrorCode::PrivateHome => 38,
+        ErrorCode::NoAnswer => 39,
+        ErrorCode::NotAtNight => 40,
     }
 }
 
@@ -164,8 +172,25 @@ fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         32 => ErrorCode::DoorBusy,
         33 => ErrorCode::NoMinions,
         34 => ErrorCode::NotWhileSwimming,
+        35 => ErrorCode::HandoffCorridor,
+        36 => ErrorCode::InCombat,
+        37 => ErrorCode::InvalidWaystone,
+        38 => ErrorCode::PrivateHome,
+        39 => ErrorCode::NoAnswer,
+        40 => ErrorCode::NotAtNight,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
+}
+
+/// A waystone of the network (#145).
+pub(crate) fn decode_waystone(code: u8) -> Result<mmorpg_core::WaystoneId, ProtocolError> {
+    mmorpg_core::WaystoneId::new(code).ok_or_else(|| ProtocolError::new("unknown waystone"))
+}
+
+/// Unlocked waystones: bits of network stones only (#145).
+pub(crate) fn decode_waystones(bits: u32) -> Result<mmorpg_core::WaystoneSet, ProtocolError> {
+    mmorpg_core::WaystoneSet::from_bits(bits)
+        .ok_or_else(|| ProtocolError::new("unlocked waystones name an unknown stone"))
 }
 
 /// A quest ID, `1..=MAX_QUESTS`; whether content defines it is the
@@ -251,7 +276,7 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             amount,
         ),
         ZoneEvent::AttackPerformed { source, target } => {
-            (ATTACK_PERFORMED, 0, Some(source), Some(target), 0)
+            (ATTACK_PERFORMED, 0, Some(source), target, 0)
         }
         ZoneEvent::DamageObserved {
             source,
@@ -400,7 +425,18 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                 }
             }
         }
-        MISS | EVADE | ATTACK_PERFORMED => {
+        // A whiffed swing (#517) names no target.
+        ATTACK_PERFORMED => {
+            damage(false)?;
+            if amount != 0 {
+                return Err(invalid());
+            }
+            ZoneEvent::AttackPerformed {
+                source: source.ok_or_else(invalid)?,
+                target,
+            }
+        }
+        MISS | EVADE => {
             damage(false)?;
             let (source, target) = pair()?;
             if amount != 0 {
@@ -408,8 +444,6 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
             }
             if kind == MISS {
                 ZoneEvent::Miss { source, target }
-            } else if kind == ATTACK_PERFORMED {
-                ZoneEvent::AttackPerformed { source, target }
             } else {
                 ZoneEvent::Evade { source, target }
             }
@@ -964,12 +998,18 @@ mod tests {
             ErrorCode::DoorBusy,
             ErrorCode::NoMinions,
             ErrorCode::NotWhileSwimming,
+            ErrorCode::HandoffCorridor,
+            ErrorCode::InCombat,
+            ErrorCode::InvalidWaystone,
+            ErrorCode::PrivateHome,
+            ErrorCode::NoAnswer,
+            ErrorCode::NotAtNight,
         ];
         for (wire, code) in (1..).zip(codes) {
             assert_eq!(error_code(code), wire, "{code:?}");
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 35, u16::MAX] {
+        for unknown in [0, 41, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

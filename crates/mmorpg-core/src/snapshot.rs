@@ -30,8 +30,11 @@ use crate::{
 pub enum PlayerIntent {
     SelectTarget(Option<EntityRef>),
     Loot(crate::LootClaim),
-    StartAttack,
-    StopAttack,
+    /// A weapon swing (#517) toward `facing`, resolved by the next tick or once the swing
+    /// timer allows.
+    Swing {
+        facing: u16,
+    },
     ReleaseSpirit,
     MoveItem {
         source: u8,
@@ -94,6 +97,8 @@ pub enum PlayerIntent {
     AbandonQuest {
         quest: u8,
     },
+    /// Waystone travel (#145).
+    UseWaystone(crate::WaystoneId),
 }
 
 /// A pending intent and the ticks of lateness its command's observation
@@ -155,11 +160,11 @@ pub struct CanonicalPlayerCombat {
     /// Zero means dead.
     pub health: u32,
     pub target: Option<EntityRef>,
-    pub auto_attack: bool,
+    /// A pressed weapon swing (#517) waiting for the swing timer, a stun or a held landing.
+    pub swing_queued: bool,
     pub swing_timer: u16,
     pub combat_timer: u16,
     pub calm_ticks: u16,
-    pub error_cooldown: u16,
     /// Queued intents in sequence order.
     pub intents: Vec<QueuedIntent>,
     /// A later intent found the queue full and was dropped; the next tick
@@ -223,11 +228,10 @@ impl Default for CanonicalPlayerCombat {
             experience: 0,
             health: player_max_health(PLAYER_START_LEVEL),
             target: None,
-            auto_attack: false,
+            swing_queued: false,
             swing_timer: 0,
             combat_timer: 0,
             calm_ticks: 0,
-            error_cooldown: 0,
             intents: Vec::new(),
             intents_dropped: false,
             last_observed: 0,
@@ -275,6 +279,8 @@ pub struct CanonicalPlayerSnapshot {
     pub quests: crate::QuestLog,
     /// The tick the quest log last changed.
     pub quests_changed_at: u64,
+    /// Waystones unlocked by exploration (#145).
+    pub waystones: crate::WaystoneSet,
 }
 
 /// A creature; `position` is its body or corpse, zero once despawned, and
@@ -300,6 +306,8 @@ pub struct CanonicalCreatureSnapshot {
     pub abilities: CanonicalCreatureAbilities,
     /// A fighting boss's attempt (#276): locked participants and contributors.
     pub encounter: Option<crate::BossEncounter>,
+    /// A night raider's incident and march (#530).
+    pub raid: Option<crate::RaidMember>,
 }
 
 /// Everything authoritative about a zone at a tick boundary, with its
@@ -331,6 +339,10 @@ pub struct CanonicalZoneSnapshot {
     /// Summoned minions in ID order, and the next minion ID (#295).
     pub minions: Vec<crate::CanonicalMinion>,
     pub next_minion: u32,
+    /// The night raid (#530).
+    pub raid: crate::RaidState,
+    /// Private-home residents a knock woke, in NPC-ID order (#158).
+    pub wakes: Vec<crate::NpcWake>,
 }
 
 impl ZoneSimulation {
@@ -365,11 +377,10 @@ impl ZoneSimulation {
                         experience: state.experience,
                         health: state.health,
                         target: state.target,
-                        auto_attack: state.auto_attack,
+                        swing_queued: state.swing_queued,
                         swing_timer: state.swing_timer,
                         combat_timer: state.combat_timer,
                         calm_ticks: state.calm_ticks,
-                        error_cooldown: state.error_cooldown,
                         intents: state.intents.clone(),
                         intents_dropped: state.intents_dropped,
                         last_observed: state.last_observed,
@@ -396,6 +407,7 @@ impl ZoneSimulation {
                     chat: state.chat.clone(),
                     quests: state.quests.clone(),
                     quests_changed_at: state.quests_changed_at,
+                    waystones: state.waystones,
                 })
             })
             .collect::<Result<Vec<_>, ZoneError>>()?;
@@ -447,6 +459,7 @@ impl ZoneSimulation {
                         auras: creature.auras.clone(),
                     },
                     encounter: creature.encounter.clone(),
+                    raid: creature.raid,
                 })
             })
             .collect::<Result<Vec<_>, ZoneError>>()?;
@@ -468,6 +481,8 @@ impl ZoneSimulation {
             pieces: self.canonical_pieces(),
             minions: self.canonical_minions()?,
             next_minion: self.next_minion,
+            raid: self.raid.clone(),
+            wakes: self.canonical_wakes(),
         })
     }
 
@@ -490,6 +505,11 @@ impl ZoneSimulation {
         zone.tick = snapshot.tick;
         zone.rng = ZoneRng::from_state(snapshot.rng_state);
         zone.loot_rng = ZoneRng::from_state(snapshot.loot_rng_state);
+        snapshot.raid.validate(snapshot.tick)?;
+        if zone.content.raid().is_none() && snapshot.raid != crate::RaidState::default() {
+            return Err(ZoneError::new("snapshot raid state needs a raid site"));
+        }
+        zone.raid = snapshot.raid;
         let mut spawn_slots = BTreeSet::new();
         for player in snapshot.players {
             zone.restore_player(player, &mut spawn_slots)?;
@@ -552,6 +572,7 @@ impl ZoneSimulation {
         zone.restore_debris(snapshot.debris, snapshot.next_debris)?;
         // The snapshot tick's routine placements and platforms (#56); doors are already as that
         // tick left them.
+        zone.restore_wakes(&snapshot.wakes, snapshot.tick)?;
         zone.place_routine_npcs(false)?;
         zone.schedule_platforms(zone.tick, true)?;
         if let Some(rewards) = &snapshot.rewards {
@@ -645,8 +666,8 @@ impl ZoneSimulation {
         {
             return Err(ZoneError::new("player observation state is out of range"));
         }
-        if combat.health == 0 && combat.auto_attack {
-            return Err(ZoneError::new("a dead player cannot auto-attack"));
+        if combat.health == 0 && combat.swing_queued {
+            return Err(ZoneError::new("a dead player cannot hold a queued swing"));
         }
         // Dead players hold no movement. Earlier builds kept it at death, so a
         // v11 checkpoint may still carry it: recovery lets go of it, exactly as
@@ -735,11 +756,10 @@ impl ZoneSimulation {
                 experience: combat.experience,
                 health: combat.health,
                 target: combat.target,
-                auto_attack: combat.auto_attack,
+                swing_queued: combat.swing_queued,
                 swing_timer: combat.swing_timer,
                 combat_timer: combat.combat_timer,
                 calm_ticks: combat.calm_ticks,
-                error_cooldown: combat.error_cooldown,
                 intents: combat.intents,
                 intents_dropped: combat.intents_dropped,
                 last_observed: combat.last_observed,
@@ -758,6 +778,7 @@ impl ZoneSimulation {
                 chat: player.chat,
                 quests: player.quests,
                 quests_changed_at: player.quests_changed_at,
+                waystones: player.waystones,
             },
         );
         Ok(())
@@ -778,12 +799,14 @@ impl ZoneSimulation {
             ));
         }
         let (spawn, template) = Self::creature_content(&content, record.creature_id)?;
+        self.validate_raid_member(&record)?;
         // Bodies and corpses stay inside the world limits and wander points
-        // near their spawn, so AI arithmetic stays in range.
+        // near their spawn (a raider's near its anchor), so AI arithmetic stays in range.
+        let home = record.raid.map_or(spawn.position, |member| member.anchor);
         let wanders_off = matches!(
             record.ai,
             CreatureAi::Idle { destination: Some(to), .. }
-                if !is_wander_point(spawn.position, to, spawn.wander_radius)
+                if !is_wander_point(home, to, spawn.wander_radius)
         );
         if !record
             .position
@@ -944,6 +967,7 @@ impl ZoneSimulation {
                 cast: record.abilities.cast,
                 auras: record.abilities.auras,
                 encounter: record.encounter,
+                raid: record.raid,
             },
         );
         Ok(())

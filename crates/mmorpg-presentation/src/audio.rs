@@ -293,6 +293,7 @@ mod tests {
             projectiles: Vec::new(),
             debris: Vec::new(),
             pieces: Vec::new(),
+            raid: None,
             content_revision: 6,
             acknowledged_sequence: 1,
             viewer_id: 1,

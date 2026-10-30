@@ -49,7 +49,7 @@ name = "alice"
 [[steps]]                   # applied at `tick`, before it advances to tick + 1
 tick = 0
 bot = "alice"
-action = "join"             # join | move | jump | select_target | start_attack | stop_attack | release_spirit | move_item | loot | guard | disconnect | reconnect
+action = "join"             # join | move | jump | select_target | swing | release_spirit | move_item | loot | guard | disconnect | reconnect
 
 [[steps]]
 tick = 0
@@ -57,7 +57,16 @@ bot = "alice"
 action = "move"
 forward = 1                 # move requires forward, strafe (i8; the zone accepts -1..=1)
 strafe = 0
-facing = 16384              # and facing (u16 yaw, 65536 per turn; 0 faces +Z, 16384 faces +X)
+facing = 16384              # and facing (u16 yaw, 65536 per turn; 0 faces +Z, 16384 faces +X),
+                            # or entity = "creature:108" to turn toward that unit (#517)
+
+[[steps]]
+tick = 30
+bot = "alice"
+action = "swing"             # one weapon swing (#517) toward facing, or aimed at entity
+entity = "creature:108"     # from the bot's latest view (its own facing while either is out of view)
+until = 600                 # optional, with every: the step repeats every `every` ticks below `until`
+every = 30
 seq = 5                     # optional (commands); default is the bot's next sequence
 connection_epoch = 1        # optional (commands); default is the bot's current epoch
 expect = "applied"          # optional; default is the action's success tag
@@ -100,11 +109,11 @@ Step outcome tags are `joined`, `applied`, `ignored_stale`, `disconnected`, `res
 
 Error codes are `no_target`, `out_of_range`, `target_dead`, `not_attackable`, `you_are_dead`, `not_dead`, `invalid_target`, `too_many_intents`, `invalid_inventory_move`, `inventory_full`, `invalid_loot`, `not_loot_owner`, `empty_loot`, `money_overflow`, `no_class`, `not_learned`, `not_ready`, `not_enough_resource`, `stunned`, `already_casting`, `invalid_class`, `not_equippable`, `invalid_vendor`, `not_enough_money`, `chat_throttled`, `invalid_quest`, `quest_log_full` and `quest_incomplete`. Units are named `bot:<name>`, `creature:<id>` (the spawn ID of the vale content) or `npc:<id>`.
 
-A `jump`, `start_attack`, `stop_attack` or `release_spirit` step submits that bare command; `select_target` submits `SelectTarget` for its `entity`. Like `move`, every command takes optional `seq` and `connection_epoch` overrides. A well-formed command the zone refuses, such as attacking without a target, is still `applied`: the refusal arrives as an `error:<code>` event in the next snapshot. `select_target` of a bot that has not joined yet is `rejected:unknown_entity` and sends nothing.
+A `jump` or `release_spirit` step submits that bare command; `select_target` submits `SelectTarget` for its `entity`; `swing` submits `Swing` with its `facing`, or the facing toward its `entity` in the bot's latest view, and with `until` and `every` it unrolls into one step every `every` ticks below `until`, as a player keeps pressing attack. Like `move`, every command takes optional `seq` and `connection_epoch` overrides. A well-formed command the zone refuses, such as a swing while dead, is still `applied`: the refusal arrives as an `error:<code>` event in the next snapshot. `select_target` of a bot that has not joined yet is `rejected:unknown_entity` and sends nothing.
 
 A disconnected bot receives no snapshot, so any expectation on it fails. Other bots keep seeing it until reconnect grace expires.
 
-Digest lines have the form `t=<tick> <bot> p<player> e<connection epoch> ack<sequence> (<x>,<y>,<z>) sees[<bots>] | …`. A bot's own combat state follows while it is not unhurt and idle: `hp<health>/<max>`, `dead`, `target=<unit>`, `attacking` and `in_combat`, then `events[…]` with the tick's feedback (`dealt:<unit>:<amount>`, `taken:<unit>:<amount>`, a trailing `!` for critical hits, `miss:<source>><target>`, `died:<unit>`, `evade:<unit>`, `error:<code>`). Ticks where any bot's combat state changes or events arrive are always printed. JSON tick lines carry the same state in `health`, `max_health`, `dead`, `in_combat`, `auto_attacking`, `target` and `events`.
+Digest lines have the form `t=<tick> <bot> p<player> e<connection epoch> ack<sequence> (<x>,<y>,<z>) sees[<bots>] | …`. A bot's own combat state follows while it is not unhurt and idle: `hp<health>/<max>`, `dead`, `target=<unit>` and `in_combat`, then `events[…]` with the tick's feedback (`attack:<source>><target>`, `whiff:<source>` for a swing that hit nothing, `dealt:<unit>:<amount>`, `taken:<unit>:<amount>`, a trailing `!` for critical hits, `miss:<source>><target>`, `died:<unit>`, `evade:<unit>`, `error:<code>`). Ticks where any bot's combat state changes or events arrive are always printed. JSON tick lines carry the same state in `health`, `max_health`, `dead`, `in_combat`, `target` and `events`.
 
 ## Control-plane scenarios
 

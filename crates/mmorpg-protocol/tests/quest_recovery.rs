@@ -1,5 +1,8 @@
 //! Continue an active quest, its pending intents and a quest-item corpse
 //! through real canonical bytes on the hosted Greyhaven content.
+#[path = "../../mmorpg-core/tests/support/arena.rs"]
+mod arena;
+
 use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::quests::{MARSHAL, TANNER, TROUBLE_IN_THE_WOODS, WOLF_PELT};
@@ -108,9 +111,20 @@ fn an_active_quest_and_its_pending_intents_continue_through_canonical_bytes() {
         ZoneCommand::SelectTarget(Some(EntityRef::Creature(DEN_WOLF))),
     )
     .unwrap();
-    zone.apply_command(1, 5, ZoneCommand::StartAttack).unwrap();
+    // A swing at the wolf (#517) is pending when the copy is taken; then both keep swinging
+    // at it whenever it is in reach.
+    let mut sequence = 4;
+    if let Some(swing) = arena::swing_at(&zone, 1, EntityRef::Creature(DEN_WOLF)) {
+        sequence += 1;
+        zone.apply_command(1, sequence, swing).unwrap();
+    }
     let mut restored = recovered(&zone);
     for _ in 0..1_200 {
+        if let Some(swing) = arena::swing_at(&zone, 1, EntityRef::Creature(DEN_WOLF)) {
+            sequence += 1;
+            zone.apply_command(1, sequence, swing).unwrap();
+            restored.apply_command(1, sequence, swing).unwrap();
+        }
         continue_equally(&mut zone, &mut restored, 1);
         let state = zone.snapshot().unwrap();
         let wolf = state

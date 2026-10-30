@@ -747,9 +747,9 @@ mod tests {
             .unwrap();
         let player = local.join().unwrap();
         let commands = [
-            ZoneCommand::StartAttack,
+            ZoneCommand::Swing { facing: 0 },
             ZoneCommand::SelectTarget(Some(EntityRef::Npc(NpcId::new(1)))),
-            ZoneCommand::StartAttack,
+            ZoneCommand::Swing { facing: 0 },
             ZoneCommand::ReleaseSpirit,
             ZoneCommand::SelectTarget(None),
         ];

@@ -405,7 +405,8 @@ class OnlineAcceptance(unittest.TestCase):
         actor.keyboard.press("Digit1")
         self.wait_for(watcher, """id => window.__actionSamples.some(s => s.events.some(e => e.kind === 'cast-started' && e.source.kind === 'player' && e.source.id === id))""", actor_id)
         self.wait_for(watcher, """id => window.__actionSamples.some(s => s.events.some(e => e.kind === 'damage-observed' && e.source.kind === 'player' && e.source.id === id && e.amount > 0))""", actor_id)
-        actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'start-attack'})")
+        # A swing (#517); even a whiff is an observed attempt.
+        actor.evaluate("window.__valeDebug.worldSource().sendCommand({kind:'swing', facing: 0})")
         self.wait_for(watcher, """id => window.__actionSamples.some(s => s.events.some(e => e.kind === 'attack-performed' && e.source.kind === 'player' && e.source.id === id))""", actor_id, timeout_ms=20_000)
         samples = watcher.evaluate("window.__actionSamples")
         relevant = [sample for sample in samples if any(event.get("source") == {"kind": "player", "id": actor_id} for event in sample["events"])]

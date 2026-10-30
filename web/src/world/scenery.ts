@@ -1,5 +1,6 @@
 import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
+import type { WaystoneSite } from "./units/waystone-panel";
 /**
  * Presentation scenery from the WASM `scenery()` export (format
  * `mmorpg.scenery`), which maps the Rust `mmorpg-scenery` value the native
@@ -81,9 +82,9 @@ export type SceneryContent = StaticSceneContent & {
   reviewStaticSceneWithoutOak?(index: number): string;
   /** The shared unit presenter (#184) of one joined player. */
   UnitPresenter: new (player: number) => UnitPresenterHandle;
-  /** The shared walk-in inn presenter (#158): door swing and interior look. */
-  InnPresenter: (new () => InnPresenterHandle) & {
-    entries(): string[];
+  /** The shared walk-in building presenters (#158): door swing and interior look, one per building. */
+  BuildingPresenter: (new (index: number) => BuildingPresenterHandle) & {
+    count(): number;
     reachableDoor(x: number, z: number): number;
   };
   /** The Sunken Shrine's kit (#431): its entries, and per placed module its entry and 16 model floats. */
@@ -108,13 +109,25 @@ export type SceneryContent = StaticSceneContent & {
   areaAt(x: number, z: number): number | undefined;
   /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
   reachablePieces(x: number, z: number): Uint16Array;
+  /** The night raid target's disturbance circle (#530): `[x, z, radius]` units, or empty. */
+  raidArea(): Int32Array;
+  /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
+  waystoneAt(x: number, z: number): number;
+  /** Names of the waystone network in ID order (ID = index + 1). */
+  waystoneNames(): string[];
   reliefAt(x: number, z: number): number;
   /** Per area, the imported unit models its creatures use (#240), as JSON. */
   regionModels(): string;
 };
 
-/** The WASM inn presenter (`mmorpg_presentation::buildings::Inn`). */
-export type InnPresenterHandle = {
+/** A WASM walk-in building presenter (`mmorpg_presentation::buildings::WalkIn`). */
+export type BuildingPresenterHandle = {
+  /** The bundle directory under `buildings/`, its door and the door leaf's entry. */
+  bundle(): string;
+  door(): number;
+  doorEntry(): string;
+  /** The bundle entries, in `frame` order. */
+  entries(): string[];
   /** Per entry 16 column-major model floats then 1 shown / 0 hidden; `viewer` is feet in metres or empty. */
   frame(open: boolean, viewer: Float64Array, dt: number, reducedMotion: boolean): Float32Array;
 };
@@ -136,8 +149,8 @@ export type SceneryProvider = {
   readonly reviewWithoutOak?: (index: number) => StaticSceneContent;
   /** A fresh shared unit presenter for `player`. */
   unitPresenter(player: number): UnitPresenterHandle;
-  /** The walk-in inn's bundle entries, its presenter, and the door feet at `(x, z)` units reach (0 none). */
-  readonly inn: { entries(): readonly string[]; presenter(): InnPresenterHandle; reachableDoor(x: number, z: number): number };
+  /** The walk-in buildings' presenters, and the door feet at `(x, z)` units reach (0 none). */
+  readonly buildings: { presenters(): BuildingPresenterHandle[]; reachableDoor(x: number, z: number): number };
   /** The Sunken Shrine's kit entries and placed modules (#431), column-major matrices in metres. */
   readonly shrine: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** The Outpost kit buildings' entries and placed modules (#420), column-major matrices in metres. */
@@ -151,6 +164,12 @@ export type SceneryProvider = {
   areaAt(x: number, z: number): Area | null;
   /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
   reachablePieces(x: number, z: number): readonly number[];
+  /** The night raid target's approximate disturbance circle in units (#530), if the zone has one. */
+  readonly raidArea: { x: number; z: number; radius: number } | null;
+  /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
+  waystoneAt(x: number, z: number): number;
+  /** The waystone network in ID order. */
+  readonly waystones: readonly WaystoneSite[];
   /** Presentation relief at `(x, z)` in units; units are drawn raised by it. */
   reliefAt(x: number, z: number): number;
   /** The imported unit models the creatures of area `id` use (#240). */
@@ -429,10 +448,9 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       },
     } : {}),
     unitPresenter: (player) => new content.UnitPresenter(player),
-    inn: {
-      entries: () => content.InnPresenter.entries(),
-      presenter: () => new content.InnPresenter(),
-      reachableDoor: (x, z) => content.InnPresenter.reachableDoor(Math.round(x), Math.round(z)),
+    buildings: {
+      presenters: () => Array.from({ length: content.BuildingPresenter.count() }, (_, index) => new content.BuildingPresenter(index)),
+      reachableDoor: (x, z) => content.BuildingPresenter.reachableDoor(Math.round(x), Math.round(z)),
     },
     shrine: (() => {
       const models = content.shrineKitModels();
@@ -474,6 +492,14 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     reachablePieces(x, z) {
       return [...content.reachablePieces(Math.round(x), Math.round(z))];
     },
+    raidArea: (() => {
+      const area = content.raidArea();
+      return area.length === 3 ? { x: area[0]!, z: area[1]!, radius: area[2]! } : null;
+    })(),
+    waystoneAt(x, z) {
+      return content.waystoneAt(Math.round(x), Math.round(z));
+    },
+    waystones: content.waystoneNames().map((name, index) => ({ id: index + 1, name })),
     areaAt(x, z) {
       const id = content.areaAt(Math.round(x), Math.round(z));
       if (id === undefined) {

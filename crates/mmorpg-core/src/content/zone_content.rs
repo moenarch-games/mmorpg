@@ -62,6 +62,8 @@ pub struct ZoneContent {
     vendors: Vec<(NpcId, VendorStock)>,
     quest_bound: bool,
     quests: Vec<crate::Quest>,
+    /// Other zones' quests a character's log may carry here (#145).
+    carried_quests: Vec<crate::Quest>,
     doors: Vec<crate::Door>,
     platforms: Vec<crate::Platform>,
     ramps: Vec<crate::Ramp>,
@@ -69,8 +71,14 @@ pub struct ZoneContent {
     pieces: Vec<crate::StructurePiece>,
     routines: Vec<crate::NpcRoutine>,
     closed_at_night: Vec<NpcId>,
+    private_homes: Vec<crate::PrivateHome>,
     waters: Vec<crate::WaterVolume>,
     climbing: crate::ClimbSurfaces,
+    handoff_corridors: Vec<crate::HandoffCorridor>,
+    /// The night raid target (#530), if the zone has one.
+    raid: Option<crate::RaidSite>,
+    /// Network stones standing in this zone, in ID order (#145).
+    waystones: Vec<crate::WaystoneId>,
 }
 
 /// A body as `(centre, half extents)` in units.
@@ -180,6 +188,7 @@ impl ZoneContent {
             vendors: Vec::new(),
             quest_bound: false,
             quests: Vec::new(),
+            carried_quests: Vec::new(),
             doors: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
@@ -187,8 +196,12 @@ impl ZoneContent {
             pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
+            private_homes: Vec::new(),
             waters: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
+            handoff_corridors: Vec::new(),
+            raid: None,
+            waystones: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -221,6 +234,7 @@ impl ZoneContent {
             vendors: Vec::new(),
             quest_bound: false,
             quests: Vec::new(),
+            carried_quests: Vec::new(),
             doors: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
@@ -228,8 +242,12 @@ impl ZoneContent {
             pieces: Vec::new(),
             routines: Vec::new(),
             closed_at_night: Vec::new(),
+            private_homes: Vec::new(),
             waters: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
+            handoff_corridors: Vec::new(),
+            raid: None,
+            waystones: Vec::new(),
         };
         content.rng_seed = content.compute_simulation_fingerprint();
         content.fingerprint = content.compute_fingerprint();
@@ -560,6 +578,36 @@ impl ZoneContent {
             .map(|index| &self.quests[index])
     }
 
+    /// Lets characters carry other zones' quests in their logs here (#145):
+    /// a log stays valid in this zone while it holds these quests, which make
+    /// no progress here. Quests this content offers itself take precedence.
+    pub fn with_carried_quests(mut self, mut quests: Vec<crate::Quest>) -> Self {
+        quests.sort_by_key(|quest| quest.id);
+        quests.dedup_by_key(|quest| quest.id);
+        self.carried_quests = quests;
+        self.fingerprint = self.compute_fingerprint();
+        self
+    }
+
+    /// The quests a log may hold here: this content's, then the carried ones.
+    pub(crate) fn log_quests(&self) -> impl Iterator<Item = &crate::Quest> {
+        self.quests.iter().chain(
+            self.carried_quests
+                .iter()
+                .filter(|carried| self.quest(carried.id).is_none()),
+        )
+    }
+
+    /// The quest `id` of [`Self::log_quests`].
+    pub(crate) fn log_quest(&self, id: crate::QuestId) -> Option<&crate::Quest> {
+        self.quest(id).or_else(|| {
+            self.carried_quests
+                .binary_search_by_key(&id, |quest| quest.id)
+                .ok()
+                .map(|index| &self.carried_quests[index])
+        })
+    }
+
     /// Binds doors (#158): unique IDs, leaf bodies in the static collider namespace that no
     /// content collider uses, and non-empty leaf boxes inside the content range.
     pub fn with_doors(mut self, mut doors: Vec<crate::Door>) -> Result<Self, ZoneError> {
@@ -824,8 +872,223 @@ impl ZoneContent {
         }
         self.routines = routines;
         self.closed_at_night = closed_at_night;
+        self.validate_corridor_clearance(&self.handoff_corridors)?;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
+    }
+
+    /// Binds private homes (#158): each names a distinct routine NPC with quests and a distinct
+    /// content door, and has 1..=[`crate::MAX_WAKE_WAYPOINTS`] in-range wake waypoints.
+    pub fn with_private_homes(
+        mut self,
+        mut homes: Vec<crate::PrivateHome>,
+    ) -> Result<Self, ZoneError> {
+        homes.sort_by_key(|home| home.npc);
+        if homes
+            .iter()
+            .enumerate()
+            .any(|(index, home)| homes[..index].iter().any(|other| other.door == home.door))
+            || homes.windows(2).any(|pair| pair[0].npc == pair[1].npc)
+        {
+            return Err(ZoneError::new("duplicate private home npc or door"));
+        }
+        for home in &homes {
+            if self.routine(home.npc).is_none()
+                || self.door(home.door).is_none()
+                || !self
+                    .quests
+                    .iter()
+                    .any(|quest| quest.giver == home.npc || quest.ender == home.npc)
+                || home.wake_path.is_empty()
+                || home.wake_path.len() > crate::MAX_WAKE_WAYPOINTS
+                || home
+                    .wake_path
+                    .iter()
+                    .flatten()
+                    .any(|value| value.abs() > super::MAX_CONTENT_COORDINATE_UNITS)
+                || home.woken_line.is_empty()
+                || home.woken_line.len() > crate::MAX_QUEST_TEXT_BYTES
+            {
+                return Err(ZoneError::new("invalid private home"));
+            }
+        }
+        self.private_homes = homes;
+        Ok(self)
+    }
+
+    /// Ordered by NPC ID.
+    #[must_use]
+    pub fn private_homes(&self) -> &[crate::PrivateHome] {
+        &self.private_homes
+    }
+
+    /// `npc`'s private home, if it has one.
+    #[must_use]
+    pub fn private_home(&self, npc: NpcId) -> Option<&crate::PrivateHome> {
+        self.private_homes.iter().find(|home| home.npc == npc)
+    }
+
+    /// The private home behind `door`, if any.
+    #[must_use]
+    pub fn home_behind(&self, door: crate::DoorId) -> Option<&crate::PrivateHome> {
+        self.private_homes.iter().find(|home| home.door == door)
+    }
+
+    /// Binds the cross-zone seam corridors of this zone (#145), at most
+    /// [`crate::MAX_HANDOFF_CORRIDORS`]. Corridors must not overlap, and every
+    /// creature's wander area, NPC, routine path, the graveyard and every
+    /// player spawn slot must stay clear of each corridor and its turn-back
+    /// margin, so no unit of this zone reaches the seam.
+    pub fn with_handoff_corridors(
+        mut self,
+        corridors: Vec<crate::HandoffCorridor>,
+    ) -> Result<Self, ZoneError> {
+        if corridors.len() > crate::MAX_HANDOFF_CORRIDORS {
+            return Err(ZoneError::new("zone handoff corridor capacity reached"));
+        }
+        for (index, corridor) in corridors.iter().enumerate() {
+            corridor.validate()?;
+            if corridors[..index]
+                .iter()
+                .any(|other| other.corridor.overlaps(corridor.corridor))
+            {
+                return Err(ZoneError::new("handoff corridors overlap"));
+            }
+        }
+        self.validate_corridor_clearance(&corridors)?;
+        self.handoff_corridors = corridors;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Cross-zone seam corridors in authoring order (#145).
+    #[must_use]
+    pub fn handoff_corridors(&self) -> &[crate::HandoffCorridor] {
+        &self.handoff_corridors
+    }
+
+    fn validate_corridor_clearance(
+        &self,
+        corridors: &[crate::HandoffCorridor],
+    ) -> Result<(), ZoneError> {
+        use crate::corridor::overlaps_box;
+        let margin = crate::CORRIDOR_TURN_BACK_UNITS;
+        let player = [PLAYER_HALF_EXTENTS_UNITS[0], PLAYER_HALF_EXTENTS_UNITS[2]];
+        for corridor in corridors {
+            let bounds = corridor.corridor;
+            for spawn in &self.spawns {
+                let half = self
+                    .creature_template(spawn.template)
+                    .map_or(player, |template| {
+                        [template.half_extents[0], template.half_extents[2]]
+                    });
+                let reach = [half[0] + spawn.wander_radius, half[1] + spawn.wander_radius];
+                if overlaps_box(bounds, spawn.position, reach, margin) {
+                    return Err(ZoneError::new(
+                        "a creature can wander into a handoff corridor",
+                    ));
+                }
+            }
+            if self
+                .npcs
+                .iter()
+                .any(|npc| overlaps_box(bounds, npc.position, player, margin))
+                || overlaps_box(bounds, self.graveyard, player, margin)
+            {
+                return Err(ZoneError::new(
+                    "an npc or the graveyard is in a handoff corridor",
+                ));
+            }
+            for routine in &self.routines {
+                // Each leg's bounding box: conservative, never too lenient.
+                let legs = routine
+                    .path
+                    .windows(2)
+                    .map(|pair| (pair[0], pair[1]))
+                    .chain(routine.path.iter().map(|&point| (point, point)));
+                let reach = margin + player[0].max(player[1]);
+                if legs.into_iter().any(|(from, to)| {
+                    let leg = crate::XzBounds {
+                        min: [from[0].min(to[0]), from[1].min(to[1])],
+                        max: [from[0].max(to[0]) + 1, from[1].max(to[1]) + 1],
+                    };
+                    crate::corridor::grown(leg, reach).overlaps(bounds)
+                }) {
+                    return Err(ZoneError::new("an npc routine enters a handoff corridor"));
+                }
+            }
+            for slot in 0..MAX_PLAYERS_PER_ZONE {
+                let feet = u16::try_from(slot)
+                    .ok()
+                    .and_then(|slot| self.definition.spawn_grid().feet(slot))
+                    .ok_or_else(|| ZoneError::new("spawn grid overflows"))?;
+                if overlaps_box(bounds, [feet[0], feet[2]], player, 0) {
+                    return Err(ZoneError::new(
+                        "a player spawn slot is in a handoff corridor",
+                    ));
+                }
+            }
+            for site in self.waystones.iter().filter_map(|id| crate::waystone(*id)) {
+                let reach = i32::try_from(crate::WAYSTONE_DISCOVERY_UNITS).unwrap_or(i32::MAX);
+                if overlaps_box(bounds, site.stone, [reach, reach], 0)
+                    || overlaps_box(bounds, site.arrival, player, 0)
+                {
+                    return Err(ZoneError::new(
+                        "a waystone or its arrival is in a handoff corridor",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds the night raid target (#530). Its reserved raiders are content spawns that stand
+    /// only while an incident commits them.
+    pub fn with_raid(mut self, site: crate::RaidSite) -> Result<Self, ZoneError> {
+        site.validate(&self)?;
+        self.raid = Some(site);
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Binds the network stones that stand in this zone (#145, [`crate::WAYSTONES`]): each
+    /// known, at most once, with its reach and arrival clear of every handoff corridor.
+    pub fn with_waystones(
+        mut self,
+        mut waystones: Vec<crate::WaystoneId>,
+    ) -> Result<Self, ZoneError> {
+        waystones.sort_unstable();
+        if waystones.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(ZoneError::new("a waystone is bound twice"));
+        }
+        if waystones.iter().any(|id| crate::waystone(*id).is_none()) {
+            return Err(ZoneError::new("an unknown waystone is bound"));
+        }
+        self.waystones = waystones;
+        self.validate_corridor_clearance(&self.handoff_corridors)?;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The night raid target, if any.
+    #[must_use]
+    pub const fn raid(&self) -> Option<&crate::RaidSite> {
+        self.raid.as_ref()
+    }
+
+    /// Whether `creature` is a raider reserved for night raids: it stands only while an
+    /// incident commits it and never respawns on its own.
+    #[must_use]
+    pub fn is_raider(&self, creature: CreatureId) -> bool {
+        self.raid
+            .as_ref()
+            .is_some_and(|site| site.raiders().any(|id| id == creature))
+    }
+
+    /// Network stones standing in this zone, in ID order (#145).
+    #[must_use]
+    pub fn waystones(&self) -> &[crate::WaystoneId] {
+        &self.waystones
     }
 
     /// Ordered by NPC ID.
@@ -849,7 +1112,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_player_combat_fingerprint();
+        let fingerprint = self.compute_carried_quest_fingerprint();
         if self.character_persistence == CharacterPersistence::Durable {
             return fingerprint;
         }
@@ -859,8 +1122,72 @@ impl ZoneContent {
         hash.finish()
     }
 
+    /// What log validation reads of each carried quest.
+    fn compute_carried_quest_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_waystone_fingerprint();
+        if self.carried_quests.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/carried-quests-v1");
+        hash.u64(fingerprint);
+        hash.len(self.carried_quests.len());
+        for quest in &self.carried_quests {
+            hash.u8(quest.id.get());
+            hash.u8(quest.prerequisite.map_or(0, crate::QuestId::get));
+            hash.len(quest.objectives.len());
+            for objective in &quest.objectives {
+                hash.u8(objective.required());
+                hash.u8(u8::from(objective.carried_item().is_some()));
+            }
+        }
+        hash.finish()
+    }
+
+    /// Each bound stone with its catalog entry, so moving a stone or its arrival changes the
+    /// identity of every zone it stands in.
+    fn compute_waystone_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_corridor_fingerprint();
+        if self.waystones.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/waystones-v1");
+        hash.u64(fingerprint);
+        hash.len(self.waystones.len());
+        for site in self.waystones.iter().filter_map(|id| crate::waystone(*id)) {
+            hash.u8(site.id.get());
+            hash.u32(site.zone.get());
+            hash.i32s(&site.stone);
+            hash.i32s(&site.arrival);
+            hash.bytes(&site.facing.to_be_bytes());
+            hash.bytes(site.name.as_bytes());
+        }
+        hash.finish()
+    }
+
+    fn compute_corridor_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_player_combat_fingerprint();
+        if self.handoff_corridors.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/handoff-corridors-v1");
+        hash.u64(fingerprint);
+        hash.len(self.handoff_corridors.len());
+        for corridor in &self.handoff_corridors {
+            hash.u32(corridor.neighbor.get());
+            for bounds in [corridor.corridor, corridor.crossing] {
+                hash.i32s(&bounds.min);
+                hash.i32s(&bounds.max);
+            }
+            hash.i32s(&corridor.offset);
+        }
+        hash.finish()
+    }
+
     fn compute_player_combat_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_water_fingerprint();
+        let fingerprint = self.compute_raid_fingerprint();
         if self.player_combat == PlayerCombatPolicy::Safe {
             return fingerprint;
         }
@@ -868,6 +1195,35 @@ impl ZoneContent {
         hash.bytes(b"mmorpg.zone-content/player-combat-v1");
         hash.u64(fingerprint);
         hash.u8(1);
+        hash.finish()
+    }
+
+    fn compute_raid_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_water_fingerprint();
+        let Some(site) = &self.raid else {
+            return fingerprint;
+        };
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/raid-v1");
+        hash.u64(fingerprint);
+        hash.text(&site.name);
+        hash.u32(site.objective);
+        hash.i32s(site.footprint.as_flattened());
+        hash.len(site.approaches.len());
+        for way in &site.approaches {
+            hash.len(way.raiders.len());
+            for raider in &way.raiders {
+                hash.u32(raider.get());
+            }
+            hash.len(way.route.len());
+            hash.i32s(way.route.as_flattened());
+            hash.i32s(&way.spread);
+            hash.len(way.exit.len());
+            hash.i32s(way.exit.as_flattened());
+        }
+        hash.len(site.retreat.len());
+        hash.i32s(site.retreat.as_flattened());
+        hash.i32s(&site.camp_spread);
         hash.finish()
     }
 

@@ -15,9 +15,10 @@ use crate::{EntityRef, ErrorCode, PlayerId, ZoneError, ZoneSimulation};
 pub const DOOR_REACH_UNITS: i32 = 250;
 /// NPC service sight lines run between heads, this far above the feet (1.6 m).
 pub const NPC_SIGHT_HEIGHT_UNITS: i32 = 160;
-/// Doors a zone's content may author: ten, so a projection's viewer and target records still
-/// fit beside every other full section with `i32` positions (#424).
-pub const MAX_DOORS: usize = 10;
+/// Doors a zone's content may author: nine, so a projection's viewer and target records still
+/// fit beside every other full section with `i32` positions (#424) and the night raid's signal
+/// (#530).
+pub const MAX_DOORS: usize = 9;
 /// Players cannot move a door leaf again within 1.5 s of its last change.
 pub const DOOR_COOLDOWN_TICKS: u64 = crate::ticks_from_ms(1_500) as u64;
 
@@ -136,12 +137,16 @@ impl ZoneSimulation {
         if state.open == open {
             return Ok(None);
         }
-        if state.changed_tick != 0 && self.tick < state.changed_tick + DOOR_COOLDOWN_TICKS {
-            return Ok(Some((ErrorCode::DoorBusy, None)));
-        }
         let from = self.player_position(player_id)?;
         if !door.within_reach([from.x, from.y, from.z]) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
+        }
+        // A private home's door admits only welcome characters and knocks at night (#158).
+        if let Some(outcome) = self.private_door_use(player_id, id, open) {
+            return Ok(outcome);
+        }
+        if state.changed_tick != 0 && self.tick < state.changed_tick + DOOR_COOLDOWN_TICKS {
+            return Ok(Some((ErrorCode::DoorBusy, None)));
         }
         if self.leaf_blocked(&door, open)? {
             return Ok(Some((ErrorCode::DoorBlocked, None)));

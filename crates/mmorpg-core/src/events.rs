@@ -88,15 +88,31 @@ pub enum ErrorCode {
     NoMinions,
     /// The action graph refuses this attack in water (#413).
     NotWhileSwimming,
+    /// Loot, trades and quest changes do not begin in a cross-zone handoff
+    /// corridor (#145).
+    HandoffCorridor,
+    /// Waystone travel does not start in combat (#145).
+    InCombat,
+    /// No waystone is within reach, or the destination is locked, unknown,
+    /// the stone in reach or not reachable from this zone yet (#145).
+    InvalidWaystone,
+    /// The door is a private home's and the character has no quest with its resident (#158).
+    PrivateHome,
+    /// A night knock that wakes no one: the resident is not in bed or the knocker has nothing
+    /// urgent for it (#158).
+    NoAnswer,
+    /// A private-home resident offers no new quests at night (#158).
+    NotAtNight,
 }
 
 /// One feedback event addressed to a player.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ZoneEvent {
-    /// An ordinary attack actually rolled, independently of its hit outcome.
+    /// An ordinary attack actually rolled at `target`, independently of its hit outcome; a
+    /// player's swing that covered nobody (#517) whiffs with `None`.
     AttackPerformed {
         source: EntityRef,
-        target: EntityRef,
+        target: Option<EntityRef>,
     },
     /// Positive health damage witnessed by a non-participant. Never damage credit.
     DamageObserved {
@@ -228,8 +244,8 @@ impl ZoneEvent {
     pub fn observation_refs(self, viewer: crate::PlayerId) -> Option<[Option<EntityRef>; 2]> {
         let own = EntityRef::Player(viewer);
         match self {
-            Self::AttackPerformed { source, target }
-            | Self::DamageObserved { source, target, .. } => Some([Some(source), Some(target)]),
+            Self::AttackPerformed { source, target } => Some([Some(source), target]),
+            Self::DamageObserved { source, target, .. } => Some([Some(source), Some(target)]),
             Self::CastStarted { source, target, .. }
             | Self::AbilityUsed { source, target, .. }
             | Self::StrikeSwept { source, target, .. }

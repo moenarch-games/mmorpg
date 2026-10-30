@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 mod character_admission;
+mod departures;
+pub use departures::{HandoffChannel, Redirect};
 mod dev_characters;
 mod dev_host;
 pub mod lifecycle;
@@ -9,6 +11,9 @@ pub mod persistence;
 pub use dev_characters::{DevCharacterService, DevCharacterStorage};
 pub use dev_host::{DevelopmentCharacterHostConfig, serve_development_character_host};
 mod fenced_runtime;
+pub mod handoff;
+pub mod handoff_host;
+pub mod transfer_link;
 pub use fenced_runtime::{FencedRuntimeError, FencedZoneRuntime};
 
 use game_server::{
@@ -69,6 +74,12 @@ pub struct ZoneGameServerAdapter {
     character_ownership: Option<Arc<std::fs::File>>,
     requires_character_claims: bool,
     authority: Option<Arc<mmorpg_control_plane::LocalZonePermit>>,
+    /// Sessions whose character left through a transfer (#145).
+    departing: std::collections::BTreeMap<game_server::PlayerId, departures::Departing>,
+    /// Players whose transfer was taken back: not offered again until they
+    /// leave the crossing strip.
+    held_back: std::collections::BTreeSet<game_server::PlayerId>,
+    handoffs: Option<departures::HandoffChannel>,
 }
 
 impl ZoneGameServerAdapter {
@@ -98,7 +109,10 @@ impl ZoneGameServerAdapter {
     }
     fn remove_bound_player(&mut self, player_id: game_server::PlayerId) -> bool {
         self.characters.remove(&player_id);
-        self.parked_characters.remove(&player_id).is_some() || self.zone.remove_player(player_id)
+        self.held_back.remove(&player_id);
+        self.departing.remove(&player_id).is_some()
+            || self.parked_characters.remove(&player_id).is_some()
+            || self.zone.remove_player(player_id)
     }
 
     #[must_use]
@@ -110,6 +124,9 @@ impl ZoneGameServerAdapter {
             character_ownership: None,
             requires_character_claims: false,
             authority: None,
+            departing: Default::default(),
+            held_back: Default::default(),
+            handoffs: None,
         }
     }
 
@@ -126,6 +143,9 @@ impl ZoneGameServerAdapter {
             character_ownership: None,
             requires_character_claims: false,
             authority: None,
+            departing: Default::default(),
+            held_back: Default::default(),
+            handoffs: None,
         })
     }
 
@@ -189,7 +209,7 @@ pub fn build_zone_matches(
             let match_id = zone_match_id(zone_id).map_err(ZoneHostBuildError::MatchId)?;
             let simulation = ZoneGameServerAdapter::with_content(
                 zone_id,
-                mmorpg_core::greyhaven_vale::content(),
+                mmorpg_core::content_for_zone(zone_id),
             )
             .map_err(ZoneHostBuildError::Content)?;
             Ok((match_id, simulation))
@@ -237,13 +257,18 @@ impl GameSimulation for ZoneGameServerAdapter {
         payload: &[u8],
     ) -> Result<(), SimulationError> {
         self.ensure_authority()?;
-        if self.requires_character_claims && !self.characters.contains_key(&player_id) {
+        if self.requires_character_claims
+            && !self.characters.contains_key(&player_id)
+            && !self.departing.contains_key(&player_id)
+        {
             return Err(SimulationError::new(
                 "claim a durable character before gameplay",
             ));
         }
         let (command, observed) = decode_observed_command(payload).map_err(map_protocol_error)?;
-        if self.parked_characters.contains_key(&player_id) {
+        if self.parked_characters.contains_key(&player_id)
+            || self.departing.contains_key(&player_id)
+        {
             // Ignore in-flight gameplay after logout without interrupting its reply.
             return Ok(());
         }
@@ -262,12 +287,17 @@ impl GameSimulation for ZoneGameServerAdapter {
         payload: &[u8],
     ) -> Result<(), SimulationError> {
         self.ensure_authority()?;
+        if self.apply_transfer_input(player_id, payload)? {
+            return Ok(());
+        }
         self.admit_stored_character(player_id, payload)
     }
 
     fn advance_tick(&mut self) -> Result<(), SimulationError> {
         self.ensure_authority()?;
-        self.zone.advance_tick().map_err(map_zone_error)
+        self.zone.advance_tick().map_err(map_zone_error)?;
+        self.exchange_departures();
+        Ok(())
     }
 
     fn restore_checkpoint(
@@ -297,6 +327,9 @@ impl GameSimulation for ZoneGameServerAdapter {
         self.ensure_authority()?;
         if let Some(parked) = self.parked_characters.get(&player_id) {
             return Ok(parked.projection.clone());
+        }
+        if let Some(departing) = self.departing.get(&player_id) {
+            return self.departing_projection(departing);
         }
         let snapshot = self
             .zone
@@ -491,12 +524,12 @@ mod tests {
         let token = ReconnectToken([3; RECONNECT_TOKEN_BYTES]);
         let mut runtime = MatchRuntime::new_with_replay_capture(hosted(), 120);
         let lease = runtime.admit(token).unwrap();
-        // The marshal stands beside the plaza; attacking an NPC is refused
-        // with an event, not a session error.
+        // The marshal stands beside the plaza; a swing never hits an NPC and
+        // whiffs with an event, not a session error.
         let marshal = EntityRef::Npc(NpcId::new(1));
         for (sequence, command) in [
             ZoneCommand::SelectTarget(Some(marshal)),
-            ZoneCommand::StartAttack,
+            ZoneCommand::Swing { facing: 0 },
             run(SOUTH),
         ]
         .into_iter()
@@ -517,9 +550,9 @@ mod tests {
         assert_eq!(projection.viewer.target, Some(marshal));
         assert_eq!(
             projection.events,
-            [mmorpg_core::ZoneEvent::Error {
-                code: mmorpg_core::ErrorCode::NotAttackable,
-                target: Some(marshal)
+            [mmorpg_core::ZoneEvent::AttackPerformed {
+                source: EntityRef::Player(lease.player_id),
+                target: None
             }]
         );
         for _ in 0..90 {
@@ -533,7 +566,7 @@ mod tests {
         let canonical = decode_canonical_snapshot(&expected).unwrap();
         assert_eq!(
             canonical.creatures.len(),
-            100,
+            118,
             "the vale's creatures are hosted"
         );
         assert_eq!(

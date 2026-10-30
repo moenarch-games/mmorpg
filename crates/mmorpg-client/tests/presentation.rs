@@ -22,6 +22,7 @@ fn facing_snapshot(tick: u64, position: [i32; 3], facing: u16) -> ZoneSnapshot {
         projectiles: Vec::new(),
         debris: Vec::new(),
         pieces: Vec::new(),
+        raid: None,
         loot: None,
         zone_id: ZoneId::new(1),
         tick,
@@ -210,7 +211,6 @@ fn creatures_and_npcs_render_by_size_disposition_and_state() {
     let mut snapshot = snapshot(1, [0, 90, -2_000]);
     let wolf = EntityRef::Creature(CreatureId::new(108));
     snapshot.viewer.target = Some(wolf);
-    snapshot.viewer.auto_attacking = true;
     snapshot.viewer.in_combat = true;
     snapshot.viewer.health = 38;
     snapshot.entities.extend([
@@ -280,7 +280,7 @@ fn creatures_and_npcs_render_by_size_disposition_and_state() {
 
     assert_eq!(
         presentation.status().unwrap(),
-        "HP 38/50 · in combat · target Timber Wolf (L2, 43%) · attacking"
+        "HP 38/50 · in combat · target Timber Wolf (L2, 43%)"
     );
     let mut caster = presentation.latest().unwrap().clone();
     caster.tick += 1;
@@ -298,7 +298,7 @@ fn creatures_and_npcs_render_by_size_disposition_and_state() {
     presentation.push(caster, now).unwrap();
     assert_eq!(
         presentation.status().unwrap(),
-        "HP 38/50 · mana 85/110 · casting Firebolt 40/120 · in combat · target Timber Wolf (L2, 43%) · attacking"
+        "HP 38/50 · mana 85/110 · casting Firebolt 40/120 · in combat · target Timber Wolf (L2, 43%)"
     );
     assert_eq!(
         presentation.unit_name(EntityRef::Npc(NpcId::new(6))),

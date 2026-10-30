@@ -37,10 +37,8 @@ function command(fields: readonly string[]): WorldCommand {
       const kind = entityKindFromCode(Number(first));
       return { kind: "select-target", target: kind === null ? null : { kind, id: Number(second) } };
     }
-    case "start_attack":
-      return { kind: "start-attack" };
-    case "stop_attack":
-      return { kind: "stop-attack" };
+    case "swing":
+      return { kind: "swing", facing: Number(first) };
     case "release_spirit":
       return { kind: "release-spirit" };
     case "use_ability": {
@@ -82,6 +80,8 @@ function command(fields: readonly string[]): WorldCommand {
       return { kind: "abandon-quest", quest: Number(first) };
     case "use_door":
       return { kind: "use-door", door: Number(first), open: second === "1" };
+    case "use_waystone":
+      return { kind: "use-waystone", waystone: Number(first) };
     case "repair":
       return { kind: "repair", piece: Number(first) === 0 ? null : Number(first) - 1 };
     case "command_minions": {
@@ -124,8 +124,8 @@ describe("Rust/browser command contract", () => {
     const kinds = new Set(commands.map(({ command }) => command.kind));
     expect([...kinds].sort()).toEqual([
       "abandon-quest", "accept-quest", "buy-item", "cancel-cast", "chat", "choose-class", "command-minions", "complete-quest", "directed-strike", "emote", "equip-item", "guard", "jump",
-      "loot", "move", "move-item", "release-ability", "release-spirit", "repair", "rise", "roll", "select-target", "sell-item", "start-attack", "stop-attack", "unequip-item",
-      "use-ability", "use-door",
+      "loot", "move", "move-item", "release-ability", "release-spirit", "repair", "rise", "roll", "select-target", "sell-item", "swing", "unequip-item",
+      "use-ability", "use-door", "use-waystone",
     ]);
     expect(commands.filter(({ command }) => command.kind === "move").length).toBeGreaterThanOrEqual(4);
     expect(commands.filter(({ command }) => command.kind === "select-target").length).toBe(4);

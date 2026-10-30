@@ -12,8 +12,8 @@ const PROTOCOL_BYTE: u8 = crate::PROTOCOL_ID.to_be_bytes()[3];
 const MOVE_TAG: u8 = 1;
 const JUMP_TAG: u8 = 2;
 const SELECT_TARGET_TAG: u8 = 3;
-const START_ATTACK_TAG: u8 = 4;
-const STOP_ATTACK_TAG: u8 = 5;
+/// A weapon swing toward a facing (#517); tag 5 (the retired stop-attack) is unknown.
+const SWING_TAG: u8 = 4;
 const RELEASE_SPIRIT_TAG: u8 = 6;
 const MOVE_ITEM_TAG: u8 = 7;
 const LOOT_TAG: u8 = 8;
@@ -41,6 +41,8 @@ const OBSERVED_TAG: u8 = 27;
 const RELEASE_ABILITY_TAG: u8 = 28;
 /// A dodge roll (#516).
 const ROLL_TAG: u8 = 29;
+/// Waystone travel (#145): version, tag, waystone (u8).
+const USE_WAYSTONE_TAG: u8 = 30;
 /// Version, tag, ability (u8), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -144,8 +146,10 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             encode_entity_ref(&mut payload, target);
             payload
         }
-        ZoneCommand::StartAttack => vec![PROTOCOL_BYTE, START_ATTACK_TAG],
-        ZoneCommand::StopAttack => vec![PROTOCOL_BYTE, STOP_ATTACK_TAG],
+        ZoneCommand::Swing { facing } => {
+            let [high, low] = facing.to_be_bytes();
+            vec![PROTOCOL_BYTE, SWING_TAG, high, low]
+        }
         ZoneCommand::ReleaseSpirit => vec![PROTOCOL_BYTE, RELEASE_SPIRIT_TAG],
         ZoneCommand::BuyItem {
             npc,
@@ -172,6 +176,9 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         }
         ZoneCommand::AbandonQuest { quest } => {
             vec![PROTOCOL_BYTE, ABANDON_QUEST_TAG, quest]
+        }
+        ZoneCommand::UseWaystone { waystone } => {
+            vec![PROTOCOL_BYTE, USE_WAYSTONE_TAG, waystone.get()]
         }
         ZoneCommand::Chat { channel, text } => {
             let mut payload = vec![PROTOCOL_BYTE, CHAT_TAG];
@@ -376,6 +383,16 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
             }
             Ok(ZoneCommand::Rise(rise))
         }
+        SWING_TAG => {
+            let [_, _, high, low] = payload else {
+                return Err(ProtocolError::new(
+                    "swing command payload must be exactly 4 bytes",
+                ));
+            };
+            Ok(ZoneCommand::Swing {
+                facing: u16::from_be_bytes([*high, *low]),
+            })
+        }
         GUARD_TAG => {
             let [_, _, lane] = payload else {
                 return Err(ProtocolError::new(
@@ -527,11 +544,19 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
             };
             Ok(ZoneCommand::AbandonQuest { quest: *quest })
         }
+        USE_WAYSTONE_TAG => {
+            let [_, _, waystone] = payload else {
+                return Err(ProtocolError::new(
+                    "use waystone command payload must be exactly 3 bytes",
+                ));
+            };
+            Ok(ZoneCommand::UseWaystone {
+                waystone: crate::wire::decode_waystone(*waystone)?,
+            })
+        }
         CANCEL_CAST_TAG => bare(ZoneCommand::CancelCast),
         JUMP_TAG => bare(ZoneCommand::Jump),
         ROLL_TAG => bare(ZoneCommand::Roll),
-        START_ATTACK_TAG => bare(ZoneCommand::StartAttack),
-        STOP_ATTACK_TAG => bare(ZoneCommand::StopAttack),
         RELEASE_SPIRIT_TAG => bare(ZoneCommand::ReleaseSpirit),
         _ => Err(ProtocolError::new("unknown command tag")),
     }
@@ -566,8 +591,10 @@ mod tests {
             encode_command(ZoneCommand::SelectTarget(None)),
             [PROTOCOL_BYTE, 3, 0, 0, 0, 0, 0]
         );
-        assert_eq!(encode_command(ZoneCommand::StartAttack), [PROTOCOL_BYTE, 4]);
-        assert_eq!(encode_command(ZoneCommand::StopAttack), [PROTOCOL_BYTE, 5]);
+        assert_eq!(
+            encode_command(ZoneCommand::Swing { facing: 0x1234 }),
+            [PROTOCOL_BYTE, 4, 0x12, 0x34]
+        );
         assert_eq!(
             encode_command(ZoneCommand::ReleaseSpirit),
             [PROTOCOL_BYTE, 6]
@@ -644,8 +671,7 @@ mod tests {
             ZoneCommand::SelectTarget(Some(EntityRef::Player(u32::MAX))),
             ZoneCommand::SelectTarget(Some(EntityRef::Npc(NpcId::new(9)))),
             ZoneCommand::SelectTarget(None),
-            ZoneCommand::StartAttack,
-            ZoneCommand::StopAttack,
+            ZoneCommand::Swing { facing: u16::MAX },
             ZoneCommand::ReleaseSpirit,
             ZoneCommand::CancelCast,
             // Abilities without a directed mode are tick-time refusals.
@@ -733,8 +759,7 @@ mod tests {
             ZoneCommand::SelectTarget(Some(EntityRef::Player(4_000_000_000))),
             ZoneCommand::SelectTarget(Some(EntityRef::Npc(NpcId::new(5)))),
             ZoneCommand::SelectTarget(None),
-            ZoneCommand::StartAttack,
-            ZoneCommand::StopAttack,
+            ZoneCommand::Swing { facing: u16::MAX },
             ZoneCommand::ReleaseSpirit,
             ZoneCommand::MoveItem {
                 source: 0,
@@ -860,6 +885,9 @@ mod tests {
                 choice: u8::MAX,
             },
             ZoneCommand::AbandonQuest { quest: 3 },
+            ZoneCommand::UseWaystone {
+                waystone: mmorpg_core::SEAM_TEST_WEST,
+            },
             ZoneCommand::UseDoor {
                 door: mmorpg_core::DoorId::new(1),
                 open: true,
@@ -1009,8 +1037,10 @@ mod tests {
                     format!("complete_quest {} {quest} {choice}", npc.get())
                 }
                 ZoneCommand::AbandonQuest { quest } => format!("abandon_quest {quest}"),
-                ZoneCommand::StartAttack => "start_attack".to_owned(),
-                ZoneCommand::StopAttack => "stop_attack".to_owned(),
+                ZoneCommand::UseWaystone { waystone } => {
+                    format!("use_waystone {}", waystone.get())
+                }
+                ZoneCommand::Swing { facing } => format!("swing {facing}"),
                 ZoneCommand::ReleaseSpirit => "release_spirit".to_owned(),
                 ZoneCommand::MoveItem {
                     source,
@@ -1058,14 +1088,14 @@ mod tests {
 
     #[test]
     fn observed_commands_wrap_exactly_one_plain_command() {
-        let observed = encode_observed_command(ZoneCommand::StartAttack, 77);
+        let observed = encode_observed_command(ZoneCommand::Swing { facing: 9 }, 77);
         assert!(
             decode_command(&observed).is_err(),
             "plain decoding is strict"
         );
         assert_eq!(
             decode_observed_command(&observed).unwrap(),
-            (ZoneCommand::StartAttack, Some(77))
+            (ZoneCommand::Swing { facing: 9 }, Some(77))
         );
         assert_eq!(
             decode_observed_command(&encode_command(ZoneCommand::Jump)).unwrap(),
@@ -1083,7 +1113,7 @@ mod tests {
         for command in [
             ZoneCommand::Jump,
             ZoneCommand::Rise(1),
-            ZoneCommand::StartAttack,
+            ZoneCommand::Swing { facing: u16::MAX },
         ] {
             let mut other = encode_command(command);
             for byte in [0, PROTOCOL_BYTE ^ 1, PROTOCOL_BYTE.wrapping_add(1), u8::MAX] {
@@ -1192,7 +1222,16 @@ mod tests {
             trailing.push(0);
             assert!(decode_command(&trailing).is_err());
         }
-        for tag in [2, 4, 5, 6, 10] {
+        // A swing (#517) carries exactly its facing; the retired stop-attack tag is unknown.
+        for length in 0..4 {
+            assert!(decode_command(&[PROTOCOL_BYTE, 4, 0, 0][..length]).is_err());
+        }
+        assert!(decode_command(&[PROTOCOL_BYTE, 4, 0, 0, 0]).is_err());
+        assert_eq!(
+            decode_command(&[PROTOCOL_BYTE, 5]).unwrap_err().to_string(),
+            "unknown command tag"
+        );
+        for tag in [2, 6, 10] {
             assert_eq!(
                 decode_command(&[PROTOCOL_BYTE, tag, 0])
                     .unwrap_err()

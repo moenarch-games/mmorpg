@@ -258,8 +258,10 @@ fn the_brutes_shield_stops_arrows_at_its_front_but_not_its_back() {
 fn wind_up() -> Fight {
     let mut fight = Fight::new(brute_arena(SOUTHWARD, false), 0, [-2_000.0, 1_300.0]);
     fight.send(ZoneCommand::SelectTarget(Some(BRUTE)));
-    fight.send(ZoneCommand::StartAttack);
     for _ in 0..mmorpg_core::golden::t30(200) {
+        if let Some(swing) = arena::swing_at(&fight.zone, 1, BRUTE) {
+            fight.send(swing);
+        }
         if fight.events.iter().any(|event| {
             matches!(event, ZoneEvent::CastStarted { ability, ticks, .. } if *ability == ids::OVERHEAD_SMASH && u64::from(*ticks) == mmorpg_core::golden::t30(60))
         }) {

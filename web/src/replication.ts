@@ -72,7 +72,6 @@ export type ViewerState = {
   level: number;
   dead: boolean;
   inCombat: boolean;
-  autoAttacking: boolean;
   target: EntityRef | null;
   classChoice: ClassChoice | null;
   /** Present exactly when the viewer has a class. */
@@ -89,7 +88,20 @@ export type ViewerState = {
   combo: ComboPhase | null;
   /** Ticks of breath left (#274), {@link BREATH_MAX_TICKS} when full; at 0 a submerged player drowns. */
   breath: number;
+  /** Waystone IDs (#145) the viewer unlocked by exploration, ascending. */
+  waystones: number[];
 };
+
+/** Stones in the waystone network (`mmorpg_core::WAYSTONES`, #145). */
+const WAYSTONE_COUNT = 3;
+
+/** Waystone IDs of the viewer flag byte's upper bits (#145), ascending; unknown stones fail. */
+function waystoneIds(bits: number): number[] {
+  if (bits >> WAYSTONE_COUNT !== 0) {
+    throw new Error("Unknown waystone unlocked");
+  }
+  return Array.from({ length: WAYSTONE_COUNT }, (_, index) => index + 1).filter((id) => (bits & (1 << (id - 1))) !== 0);
+}
 
 /** A full breath: 30 s submerged (`water::BREATH_MAX_TICKS`). */
 export const BREATH_MAX_TICKS = ticksFromMs(30_000);
@@ -143,7 +155,13 @@ export type ErrorCode =
   | "vendor-closed"
   | "door-busy"
   | "no-minions"
-  | "not-while-swimming";
+  | "not-while-swimming"
+  | "handoff-corridor"
+  | "in-combat"
+  | "invalid-waystone"
+  | "private-home"
+  | "no-answer"
+  | "not-at-night";
 
 /** A directed strike's sweep side and height (#154); the zone resolves what it covers. */
 export type StrikeSide = "left" | "centre" | "right";
@@ -155,7 +173,8 @@ export const STRIKE_HEIGHTS: readonly StrikeHeight[] = ["low", "middle", "high"]
 
 /** Feedback the viewer received in the projection's tick; cosmetic and lossy. */
 export type ZoneEvent =
-  | { kind: "attack-performed"; source: EntityRef; target: EntityRef }
+  /** An ordinary attack rolled at `target`; a player's swing that covered nobody (#517) whiffs with null. */
+  | { kind: "attack-performed"; source: EntityRef; target: EntityRef | null }
   | { kind: "damage-dealt" | "damage-taken" | "damage-observed"; source: EntityRef; target: EntityRef; amount: number; critical: boolean }
   | { kind: "miss" | "evade"; source: EntityRef; target: EntityRef }
   | { kind: "died"; entity: EntityRef; killer: EntityRef | null }
@@ -241,6 +260,8 @@ export type ZoneSnapshot = {
   doors: readonly DoorState[];
   /** Destructible pieces that are not intact, in ID order (#305). */
   pieces: readonly PieceState[];
+  /** The night raid's signals while the viewer is near its target (#530); null otherwise. */
+  raid: RaidSignal | null;
   events: readonly ZoneEvent[];
   /** Chat lines the viewer heard this tick, in delivery order; cosmetic and lossy like events. */
   chat: readonly ChatLine[];
@@ -251,6 +272,15 @@ export type ZoneSnapshot = {
   /** Pieces of broken props, nearest first (#288). */
   debris: readonly DebrisState[];
 };
+
+/**
+ * The night raid as seen near its target (#530): the assault phase (1–3, or 0 once it resolved
+ * while the barn still recovers) and the barn's integrity in percent. The target's approximate
+ * disturbance circle is content (`SceneryProvider.raidArea`).
+ */
+export type RaidSignal = { phase: number; integrity: number };
+/** Assault phases per raid (`mmorpg_core::raid::RAID_PHASES`). */
+const RAID_PHASES = 3;
 
 /** A destructible piece's damage stage (#305); intact pieces are not sent. */
 export type PieceStage = "damaged" | "crumbling" | "destroyed";
@@ -367,10 +397,11 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "no-class", "not-learned", "not-ready", "not-enough-resource", "stunned", "already-casting", "invalid-class",
   "not-equippable", "invalid-vendor", "not-enough-money", "chat-throttled", "invalid-quest", "quest-log-full",
   "quest-incomplete", "line-of-sight", "door-blocked", "vendor-closed", "door-busy", "no-minions",
-  "not-while-swimming",
+  "not-while-swimming", "handoff-corridor", "in-combat", "invalid-waystone", "private-home", "no-answer",
+  "not-at-night",
 ];
 /** Doors a zone's content may author (`mmorpg_core::MAX_DOORS`). */
-const MAX_DOORS = 10;
+const MAX_DOORS = 9;
 const MAX_QUESTS = 32;
 const MAX_QUEST_LOG = 10;
 const MAX_QUEST_OBJECTIVES = 3;
@@ -588,13 +619,20 @@ function decodeEvent(reader: Reader): ZoneEvent {
       const [from, to] = pair();
       return { kind: ({ 1: "damage-dealt", 2: "damage-taken", 17: "damage-observed" } as const)[kind], source: from, target: to, amount, critical: isCritical };
     }
-    case 3:
-    case 5:
     case 16: {
+      critical(false);
+      noAmount();
+      if (source === null) {
+        throw new Error("Malformed event record");
+      }
+      return { kind: "attack-performed", source, target };
+    }
+    case 3:
+    case 5: {
       critical(false);
       const [from, to] = pair();
       noAmount();
-      return { kind: ({ 3: "miss", 5: "evade", 16: "attack-performed" } as const)[kind], source: from, target: to };
+      return { kind: ({ 3: "miss", 5: "evade" } as const)[kind], source: from, target: to };
     }
     case 4: {
       critical(false);
@@ -887,7 +925,11 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const experience = reader.u32();
   const experienceToNextLevel = reader.u32();
   const copper = reader.u32();
-  const [dead = false, inCombat = false, autoAttacking = false] = reader.flags(3);
+  // Bits 0–1 are flags; bits 2–7 the unlocked waystones 1–6 (#145).
+  const viewerFlags = reader.u8();
+  const dead = (viewerFlags & 1) !== 0;
+  const inCombat = (viewerFlags & 2) !== 0;
+  const waystones = waystoneIds(viewerFlags >> 2);
   const target = reader.entity();
   if (level < 1 || level > 10
     || (level === 10 && (experience !== 0 || experienceToNextLevel !== 0))
@@ -1048,6 +1090,17 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
     }
     pieces.push({ piece, stage });
   }
+  // One code byte: 0 without a signal, otherwise one more than the phase; then the integrity.
+  let raid: RaidSignal | null = null;
+  const raidCode = reader.u8();
+  if (raidCode > 0) {
+    const phase = raidCode - 1;
+    const integrity = reader.u8();
+    if (phase > RAID_PHASES || integrity > 100) {
+      throw new Error("Invalid raid section");
+    }
+    raid = { phase, integrity };
+  }
   const eventCount = reader.u8();
   if (eventCount > MAX_EVENTS) {
     throw new Error("Snapshot exceeds the event capacity");
@@ -1153,10 +1206,10 @@ export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const snapshot: ZoneSnapshot = {
     zoneId, tick, contentRevision, acknowledgedSequence, viewerId,
     viewer: {
-      copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, autoAttacking, target,
-      classChoice, resource, cast, globalCooldown, damage, guard, stance, combo, breath,
+      copper, experience, experienceToNextLevel, health, maxHealth, level, dead, inCombat, target,
+      classChoice, resource, cast, globalCooldown, damage, guard, stance, combo, breath, waystones,
     },
-    cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors, pieces,
+    cooldowns, auras, targetOfTarget, targetDetail, inventoryRevision, inventory, equipment, stats, quests, loot, doors, pieces, raid,
     events, chat, entities, projectiles, debris,
   };
   PROJECTION_BYTES.set(snapshot, payload.slice());

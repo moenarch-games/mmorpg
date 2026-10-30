@@ -47,7 +47,8 @@ const MAX_SELF_SHEET_BYTES: usize = SELF_SHEET_BYTES + crate::quest::MAX_QUEST_S
 /// The target's own target, the target's cast and its aura count.
 const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES + 1;
 /// Every section's fixed part: header, self, target, inventory revision
-/// and presence, loot presence, door count (`u8`), piece count (`u8`), event count (`u8`),
+/// and presence, loot presence, door count (`u8`), piece count (`u8`), raid code (`u8`, #530),
+/// event count (`u8`),
 /// chat count (`u8`), entity count (`u16`), projectile count (`u8`) and debris count (`u8`).
 pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
     + SELF_BYTES
@@ -59,12 +60,15 @@ pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
     + 1
     + 1
     + 1
+    + 1
     + 2
     + 1
     + 1
     + 1;
 /// Destructible piece ID (`u16`) and stage (#305).
 pub const PIECE_RECORD_BYTES: usize = 3;
+/// A night raid's signal (#530) after its code byte: the integrity.
+pub const RAID_VIEW_BYTES: usize = 1;
 /// `u16` ID, prop kind, piece index, `3 × i32` position, `4 × i16` rotation quaternion and age
 /// (#288).
 pub const DEBRIS_RECORD_BYTES: usize = 2 + 1 + 1 + 12 + 8 + 1;
@@ -91,7 +95,7 @@ pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// evading means mantling, and both mean a dodge roll (#516).
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 12 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events, sheets, cooldowns or auras:
-/// (1,077 − 117) / 27 = 35.
+/// (1,077 − 118) / 27 = 35.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -100,7 +104,7 @@ const MAX_CHAT_SECTION_BYTES: usize = MAX_CHAT_PER_TICK * crate::chat::MAX_CHAT_
 // With every list full, both sheets (a full quest log and eight markers),
 // a full event section and four 80-byte chat lines, the viewer and its
 // target always fit:
-// 117 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + doors + pieces + 2 × 27 ≤ 1,077 bytes.
+// 118 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + doors + pieces + raid + 2 × 27 ≤ 1,077 bytes.
 const _: () = assert!(
     PLAYER_SNAPSHOT_FIXED_BYTES
         + MAX_ABILITY_LIST_BYTES
@@ -110,6 +114,7 @@ const _: () = assert!(
         + MAX_CHAT_SECTION_BYTES
         + mmorpg_core::MAX_DOORS * DOOR_RECORD_BYTES
         + mmorpg_core::MAX_PIECES * PIECE_RECORD_BYTES
+        + RAID_VIEW_BYTES
         + 2 * ENTITY_RECORD_BYTES
         <= MAX_PLAYER_PROJECTION_BYTES
 );
@@ -166,11 +171,10 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     payload.extend_from_slice(&viewer.experience.to_be_bytes());
     payload.extend_from_slice(&viewer.experience_to_next_level.to_be_bytes());
     payload.extend_from_slice(&viewer.copper.to_be_bytes());
-    payload.push(flag_byte(&[
-        viewer.dead,
-        viewer.in_combat,
-        viewer.auto_attacking,
-    ]));
+    // Bits 0 and 1 are the flags, bits 2.. the unlocked waystones (#145).
+    payload.push(
+        flag_byte(&[viewer.dead, viewer.in_combat]) | viewer_waystone_bits(viewer.waystones)?,
+    );
     encode_entity_ref(&mut payload, viewer.target);
     payload.push(
         viewer
@@ -241,6 +245,7 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     }
     crate::wire::encode_doors(&mut payload, &snapshot.doors)?;
     crate::wire::encode_piece_views(&mut payload, &snapshot.pieces)?;
+    crate::raid::encode_view(&mut payload, snapshot.raid);
     let mut chat_payload = Vec::new();
     chat_payload.push(encode_u8_count(
         snapshot.chat.len(),
@@ -349,6 +354,16 @@ const fn resource_code(kind: ResourceKind) -> u8 {
         ResourceKind::Mana => 3,
         ResourceKind::Faith => 4,
     }
+}
+
+/// The viewer's unlocked waystones in the flag byte's six upper bits: the network has at
+/// most [`mmorpg_core::MAX_WAYSTONES`] stones.
+fn viewer_waystone_bits(waystones: mmorpg_core::WaystoneSet) -> Result<u8, ProtocolError> {
+    u8::try_from(waystones.bits())
+        .ok()
+        .filter(|bits| *bits < 1 << 6)
+        .map(|bits| bits << 2)
+        .ok_or_else(|| ProtocolError::new("unlocked waystones exceed the viewer flag bits"))
 }
 
 fn encode_cast(payload: &mut Vec<u8>, cast: Option<CastView>) {
@@ -593,7 +608,9 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
     let experience = u32::from_be_bytes(take(payload, &mut offset)?);
     let experience_to_next_level = u32::from_be_bytes(take(payload, &mut offset)?);
     let copper = u32::from_be_bytes(take(payload, &mut offset)?);
-    let [dead, in_combat, auto_attacking] = read_flags(read_u8(payload, &mut offset)?)?;
+    let flags = read_u8(payload, &mut offset)?;
+    let [dead, in_combat] = read_flags(flags & 0b11)?;
+    let waystones = crate::wire::decode_waystones(u32::from(flags >> 2))?;
     let target = decode_entity_ref(payload, &mut offset)?;
     if !(1..=10).contains(&level)
         || (level == 10 && (experience != 0 || experience_to_next_level != 0))
@@ -744,6 +761,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
     };
     let doors = crate::wire::decode_doors(payload, &mut offset)?;
     let pieces = crate::wire::decode_piece_views(payload, &mut offset)?;
+    let raid = crate::raid::decode_view(payload, &mut offset)?;
     let event_count = decode_u8_count(
         payload,
         &mut offset,
@@ -845,7 +863,6 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
             level,
             dead,
             in_combat,
-            auto_attacking,
             target,
             class,
             resource,
@@ -856,6 +873,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
             stance,
             combo,
             breath,
+            waystones,
         },
         cooldowns,
         auras,
@@ -872,6 +890,7 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         projectiles,
         debris,
         pieces,
+        raid,
         quests,
     })
 }
@@ -996,6 +1015,10 @@ mod tests {
         slots[15] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 20).unwrap());
         ZoneSnapshot {
             debris: Vec::new(),
+            raid: Some(mmorpg_core::RaidView {
+                phase: 2,
+                integrity: 63,
+            }),
             pieces: vec![
                 mmorpg_core::PieceView {
                     piece: mmorpg_core::PieceId::new(2),
@@ -1074,7 +1097,6 @@ mod tests {
                 level: 4,
                 dead: false,
                 in_combat: true,
-                auto_attacking: true,
                 target: Some(WOLF),
                 class: Some(ClassChoice {
                     class: mmorpg_core::PlayerClass::Arcanist,
@@ -1104,6 +1126,7 @@ mod tests {
                 stance: None,
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
+                waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: vec![
                 Cooldown {
@@ -1382,7 +1405,10 @@ mod tests {
     const DOORS: usize = 1 + 2 * DOOR_RECORD_BYTES;
     /// The fixture's piece section (#305): count and two piece records.
     const PIECES: usize = 1 + 2 * PIECE_RECORD_BYTES;
-    const EVENTS: usize = INVENTORY + 8 + 1 + SELF_SHEET_BYTES + QUEST_BYTES + 1 + DOORS + PIECES;
+    /// The fixture's raid section (#530): code and integrity.
+    const RAID: usize = 1 + RAID_VIEW_BYTES;
+    const EVENTS: usize =
+        INVENTORY + 8 + 1 + SELF_SHEET_BYTES + QUEST_BYTES + 1 + DOORS + PIECES + RAID;
     /// The fixture's chat records: 6 + 16 and 6 + 8 bytes, then a 6-byte emote.
     const CHAT_BYTES: usize = 22 + 14 + 6;
     const CHAT: usize = EVENTS + 1 + EVENT_COUNT * EVENT_RECORD_BYTES;
@@ -1405,6 +1431,7 @@ mod tests {
                 + CHAT_BYTES
                 + 2 * DOOR_RECORD_BYTES
                 + 2 * PIECE_RECORD_BYTES
+                + RAID_VIEW_BYTES
                 + 4 * ENTITY_RECORD_BYTES
                 + 4 * PROJECTILE_RECORD_BYTES
         );
@@ -1417,7 +1444,7 @@ mod tests {
         assert_eq!(encoded[CLASS], 5, "Arcanist, female");
         assert_eq!(encoded[EVENTS], 16);
         assert_eq!(
-            encoded[QUESTS..EVENTS - 1 - DOORS - PIECES],
+            encoded[QUESTS..EVENTS - 1 - DOORS - PIECES - RAID],
             [0, 0, 0, 1, 1, 2, 3, 0, 0, 2, 0, 1, 1, 0, 2, 2],
             "the quest sheet ends the self sheet"
         );
@@ -1480,7 +1507,6 @@ mod tests {
     #[test]
     fn complete_corpse_sheet_matches_shared_bytes_and_rejects_inconsistent_claims() {
         let mut snapshot = fixture_snapshot();
-        snapshot.viewer.auto_attacking = false;
         snapshot.target_of_target = None;
         let corpse = &mut snapshot.entities[1];
         corpse.position = [10, 45, -180];
@@ -1515,7 +1541,7 @@ mod tests {
         assert_eq!(bytes, expected);
         assert_eq!(decode_snapshot(&bytes).unwrap(), snapshot);
         // Without target detail auras the sheet sits one aura record earlier.
-        let presence = EVENTS - 1 - DOORS - PIECES - AURA_RECORD_BYTES;
+        let presence = EVENTS - 1 - DOORS - PIECES - RAID - AURA_RECORD_BYTES;
         for length in 0..bytes.len() {
             assert!(decode_snapshot(&bytes[..length]).is_err());
         }
@@ -1571,8 +1597,9 @@ mod tests {
         for (offset, value, message) in [
             (0, 4, "unsupported snapshot protocol id"),
             (3, 1, "unexpected snapshot scope"),
-            (53, 0b1000, "reserved flag bits are set"),
-            (53, 0b111, "viewer state is inconsistent"),
+            // Waystone 4 does not exist (#145).
+            (53, 0b10_0000, "unlocked waystones name an unknown stone"),
+            (53, 0b11, "viewer state is inconsistent"),
             (54, 9, "unknown entity kind"),
             (CLASS, 15, "viewer ability state is inconsistent"),
             (CLASS, 1, "viewer resource is inconsistent"),
@@ -1856,7 +1883,7 @@ mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (117, 14, 27)
+            (118, 14, 27)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 35);
         let viewer_id = u32::MAX;
@@ -1907,6 +1934,10 @@ mod tests {
             critical: true,
         };
         let snapshot = ZoneSnapshot {
+            raid: Some(mmorpg_core::RaidView {
+                phase: 2,
+                integrity: 63,
+            }),
             projectiles: Vec::new(),
             debris: Vec::new(),
             doors: vec![
@@ -1942,7 +1973,6 @@ mod tests {
                 experience_to_next_level: 900,
                 dead: false,
                 in_combat: true,
-                auto_attacking: true,
                 target: Some(target),
                 class: None,
                 resource: None,
@@ -1953,6 +1983,7 @@ mod tests {
                 stance: None,
                 combo: None,
                 breath: mmorpg_core::water::BREATH_MAX_TICKS,
+                waystones: mmorpg_core::WaystoneSet::EMPTY,
             },
             cooldowns: Vec::new(),
             auras: Vec::new(),
@@ -1964,8 +1995,8 @@ mod tests {
             pieces: Vec::new(),
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 117 − 16 × 14 − 10 × 2) / 27 = 26 records fit beside a full event section
-        // and every door.
+        // (1,077 − 118 − 1 − 16 × 14 − 9 × 2) / 27 = 26 records fit beside a full event section,
+        // every door and a raid signal.
         assert_eq!(packed.packed_entities, 26);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
@@ -1984,10 +2015,11 @@ mod tests {
             encode_snapshot(&snapshot).unwrap_err().to_string(),
             "player projection exceeds the byte budget"
         );
-        // Without events, doors or a bag sheet the budget holds 35 records.
+        // Without events, doors, a raid signal or a bag sheet the budget holds 35 records.
         let quiet = ZoneSnapshot {
             events: Vec::new(),
             doors: Vec::new(),
+            raid: None,
             ..snapshot
         };
         let packed = pack_snapshot(&quiet).unwrap();

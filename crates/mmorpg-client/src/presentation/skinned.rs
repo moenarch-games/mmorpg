@@ -872,21 +872,43 @@ mod inn_bundle {
     include!(concat!(env!("OUT_DIR"), "/inn_bundle.rs"));
 }
 
-/// The inn's entries as `(key, draws in the entry frame)`, imported once. Static meshes never
-/// re-skin: callers only replace each draw's model matrix, so the GPU upload happens once.
-pub(super) fn inn_draws() -> &'static [(&'static str, Vec<SceneDraw>)] {
-    static DRAWS: OnceLock<Vec<(&'static str, Vec<SceneDraw>)>> = OnceLock::new();
-    DRAWS.get_or_init(|| {
-        inn_bundle::ENTRIES
-            .iter()
-            .map(|&(key, path)| {
-                let model = Model::parse(&bundle_glb(path, inn_bundle::FILES), "")
-                    .expect("an inn entry is valid glTF");
-                let draws = model.draws_placed(key, three_d_animation::Mat4::IDENTITY, &[], None);
-                (key, draws)
-            })
-            .collect()
-    })
+/// Marshal Elden Greywatch's house bundle's drawn entries and resources (#158).
+mod marshal_house_bundle {
+    include!(concat!(env!("OUT_DIR"), "/marshal_house_bundle.rs"));
+}
+
+type BuildingDraws = Vec<(&'static str, Vec<SceneDraw>)>;
+
+fn building_draws(
+    entries: &'static [(&'static str, &'static str)],
+    files: &[(&str, &[u8])],
+) -> BuildingDraws {
+    entries
+        .iter()
+        .map(|&(key, path)| {
+            let model = Model::parse(&bundle_glb(path, files), "")
+                .expect("a walk-in building entry is valid glTF");
+            let draws = model.draws_placed(key, three_d_animation::Mat4::IDENTITY, &[], None);
+            (key, draws)
+        })
+        .collect()
+}
+
+/// A walk-in building's entries (by its bundle, `mmorpg_presentation::buildings::Spec::bundle`)
+/// as `(key, draws in the entry frame)`, imported once. Static meshes never re-skin: callers
+/// only replace each draw's model matrix, so the GPU upload happens once.
+pub(super) fn building_draws_of(bundle: &str) -> &'static [(&'static str, Vec<SceneDraw>)] {
+    static INN: OnceLock<BuildingDraws> = OnceLock::new();
+    static MARSHAL_HOUSE: OnceLock<BuildingDraws> = OnceLock::new();
+    match bundle {
+        "greyhaven.inn" => {
+            INN.get_or_init(|| building_draws(inn_bundle::ENTRIES, inn_bundle::FILES))
+        }
+        "greyhaven.marshal-house" => MARSHAL_HOUSE.get_or_init(|| {
+            building_draws(marshal_house_bundle::ENTRIES, marshal_house_bundle::FILES)
+        }),
+        _ => &[],
+    }
 }
 
 /// The Sunken Shrine kit's modules and their resources, embedded by `build.rs` (#431).

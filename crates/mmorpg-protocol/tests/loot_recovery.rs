@@ -53,8 +53,12 @@ fn corpse_dropping(item: ItemId, quantity: u16) -> ZoneSimulation {
         ZoneCommand::SelectTarget(Some(EntityRef::Creature(CreatureId::new(1)))),
     )
     .unwrap();
-    zone.apply_command(1, 2, ZoneCommand::StartAttack).unwrap();
-    for _ in 0..180 {
+    // The kill's swings use sequences 2 to 181; later commands start at 1 003.
+    for sequence in 2..182 {
+        // Swing at the wolf whenever it is in reach (#517).
+        if let Some(swing) = arena::swing_at(&zone, 1, EntityRef::Creature(CreatureId::new(1))) {
+            zone.apply_command(1, sequence, swing).unwrap();
+        }
         zone.advance_tick().unwrap();
         if zone.snapshot_for_player(1).unwrap().loot.is_some() {
             return zone;
@@ -82,7 +86,8 @@ fn continue_equally(left: &mut ZoneSimulation, right: &mut ZoneSimulation, ticks
 fn pending_and_consumed_claims_survive_wire_recovery_without_double_credit() {
     let mut zone = corpse();
     let claim = zone.snapshot_for_player(1).unwrap().loot.unwrap().claim;
-    zone.apply_command(1, 3, ZoneCommand::Loot(claim)).unwrap();
+    zone.apply_command(1, 1_003, ZoneCommand::Loot(claim))
+        .unwrap();
     let mut copy = recovered(&zone);
     continue_equally(&mut zone, &mut copy, 10);
     let state = zone.snapshot().unwrap();
@@ -92,7 +97,7 @@ fn pending_and_consumed_claims_survive_wire_recovery_without_double_credit() {
     let mut copy = recovered(&zone);
     for simulation in [&mut zone, &mut copy] {
         simulation
-            .apply_command(1, 4, ZoneCommand::Loot(claim))
+            .apply_command(1, 1_004, ZoneCommand::Loot(claim))
             .unwrap();
     }
     continue_equally(&mut zone, &mut copy, 10);
@@ -109,7 +114,8 @@ fn refusal_checkpoints_retain_the_exact_reward_and_dedicated_rng_state() {
     let rewards = state.creatures[0].loot;
     let rng = state.loot_rng_state;
     zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
-    zone.apply_command(1, 3, ZoneCommand::Loot(claim)).unwrap();
+    zone.apply_command(1, 1_003, ZoneCommand::Loot(claim))
+        .unwrap();
     let mut copy = recovered(&zone);
     continue_equally(&mut zone, &mut copy, 1);
     let mut copy = recovered(&zone);
@@ -125,7 +131,8 @@ fn a_looted_weapon_is_equipped_and_both_continue_identically_from_canonical_byte
     let shortsword = ItemId::new(3);
     let mut zone = corpse_dropping(shortsword, 1);
     let claim = zone.snapshot_for_player(1).unwrap().loot.unwrap().claim;
-    zone.apply_command(1, 3, ZoneCommand::Loot(claim)).unwrap();
+    zone.apply_command(1, 1_003, ZoneCommand::Loot(claim))
+        .unwrap();
     zone.advance_tick().unwrap();
     let state = zone.snapshot().unwrap();
     let bag_slot = state.players[0]
@@ -137,7 +144,7 @@ fn a_looted_weapon_is_equipped_and_both_continue_identically_from_canonical_byte
     // The equip is still pending when the checkpoint is taken.
     zone.apply_command(
         1,
-        4,
+        1_004,
         ZoneCommand::EquipItem {
             bag_slot: u8::try_from(bag_slot).unwrap(),
         },
@@ -155,7 +162,7 @@ fn a_looted_weapon_is_equipped_and_both_continue_identically_from_canonical_byte
     // Equipped gear and a pending unequip survive another round trip.
     for simulation in [&mut zone, &mut copy] {
         simulation
-            .apply_command(1, 5, ZoneCommand::UnequipItem { equipment_slot: 0 })
+            .apply_command(1, 1_005, ZoneCommand::UnequipItem { equipment_slot: 0 })
             .unwrap();
     }
     let mut copy = recovered(&zone);

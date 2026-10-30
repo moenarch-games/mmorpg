@@ -64,8 +64,11 @@ fn command(zone: &mut ZoneSimulation, player: u32, command: ZoneCommand) {
 
 fn kill(zone: &mut ZoneSimulation) -> LootClaim {
     command(zone, 1, ZoneCommand::SelectTarget(Some(TARGET)));
-    command(zone, 1, ZoneCommand::StartAttack);
     for _ in 0..180 {
+        // Swing at the wolf whenever it is in reach (#517).
+        if let Some(swing) = arena::swing_at(zone, 1, TARGET) {
+            command(zone, 1, swing);
+        }
         zone.advance_tick().unwrap();
         if let CreatureLife::Corpse { died_at } = zone.snapshot().unwrap().creatures[0].life {
             return LootClaim {
@@ -429,10 +432,14 @@ fn binding_and_generating_loot_leave_combat_ai_physics_and_their_rng_unchanged()
     let mut candidate = fixture(Some(mmorpg_core::loot_table(WOLF).unwrap().clone()));
     for zone in [&mut baseline, &mut candidate] {
         command(zone, 1, ZoneCommand::SelectTarget(Some(TARGET)));
-        command(zone, 1, ZoneCommand::StartAttack);
     }
     let mut saw_corpse = false;
     for _ in 0..240 {
+        for zone in [&mut baseline, &mut candidate] {
+            if let Some(swing) = arena::swing_at(zone, 1, TARGET) {
+                command(zone, 1, swing);
+            }
+        }
         baseline.advance_tick().unwrap();
         candidate.advance_tick().unwrap();
         let expected = baseline.snapshot().unwrap();

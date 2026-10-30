@@ -5,7 +5,7 @@
 //! [`CATALOG_FORMAT`]) exports those
 //! tables of the hosted [`ZoneContent`] as compact JSON: creature templates
 //! (name, family, behaviour, levels, elite, body size, breakable prop kind), NPCs (name, role,
-//! level), areas (name), items (name, stack limit, equipment slot, stats,
+//! level, a private-home resident's night greeting), areas (name), items (name, stack limit, equipment slot, stats,
 //! sale value), vendors (NPC and priced offers), classes (name, resource),
 //! abilities (name, user, unlock level, cost, cast time, cooldown, aura) and
 //! quests (name, text, giver, ender, prerequisite, objectives, rewards). It carries the content
@@ -154,6 +154,9 @@ pub struct NpcExport {
     pub name: String,
     pub role: &'static str,
     pub level: u8,
+    /// A private-home resident's night greeting (#158); such an NPC offers only turn-ins at night.
+    #[serde(rename = "wokenLine")]
+    pub woken_line: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -290,6 +293,9 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                 name: npc.name.clone(),
                 role: npc.role.name(),
                 level: npc.level,
+                woken_line: content
+                    .private_home(npc.id)
+                    .map(|home| home.woken_line.clone()),
             })
             .collect(),
         areas: content
@@ -429,7 +435,7 @@ mod tests {
         );
         assert_eq!(
             value["npcs"][4],
-            json!({ "id": 5, "name": "Brother Aldous", "role": "spirit_healer", "level": 10 })
+            json!({ "id": 5, "name": "Brother Aldous", "role": "spirit_healer", "level": 10, "wokenLine": null })
         );
         assert_eq!(
             value["classes"],

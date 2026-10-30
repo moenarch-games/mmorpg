@@ -121,15 +121,14 @@ pub(crate) struct PlayerState {
     /// Zero means dead.
     pub(crate) health: u32,
     pub(crate) target: Option<EntityRef>,
-    pub(crate) auto_attack: bool,
+    /// A pressed swing (#517) waiting for the swing timer; it resolves toward `facing`.
+    pub(crate) swing_queued: bool,
     /// Ticks until the next swing may happen.
     pub(crate) swing_timer: u16,
     /// Ticks the player stays in combat after dealing or taking an attack.
     pub(crate) combat_timer: u16,
     /// Ticks spent out of combat, driving regeneration.
     pub(crate) calm_ticks: u16,
-    /// Ticks until another out-of-range error may be reported.
-    pub(crate) error_cooldown: u16,
     /// Discrete intents in sequence order, consumed by the next tick.
     pub(crate) intents: Vec<crate::QueuedIntent>,
     /// A well-formed intent arrived while `intents` was full and was dropped.
@@ -156,6 +155,8 @@ pub(crate) struct PlayerState {
     pub(crate) quests: crate::QuestLog,
     /// The tick the quest log last changed; its sheet is sent then.
     pub(crate) quests_changed_at: u64,
+    /// Waystones the character unlocked by exploration (#145).
+    pub(crate) waystones: crate::WaystoneSet,
 }
 
 impl PlayerState {
@@ -189,11 +190,10 @@ impl PlayerState {
             equipment: crate::Equipment::default(),
             health: player_max_health(PLAYER_START_LEVEL),
             target: None,
-            auto_attack: false,
+            swing_queued: false,
             swing_timer: 0,
             combat_timer: 0,
             calm_ticks: 0,
-            error_cooldown: 0,
             intents: Vec::new(),
             intents_dropped: false,
             last_observed: 0,
@@ -208,6 +208,7 @@ impl PlayerState {
             chat: Vec::new(),
             quests: crate::QuestLog::default(),
             quests_changed_at: tick,
+            waystones: crate::WaystoneSet::EMPTY,
         }
     }
 
@@ -284,6 +285,13 @@ pub struct ZoneSimulation {
     /// Summoned minions by ID (#295), and the next minion ID.
     pub(crate) minions: BTreeMap<crate::MinionId, crate::Minion>,
     pub(crate) next_minion: u32,
+    /// Frozen, staged and activated character transfers (#145); host-phase
+    /// state the handoff record reconciles, not canonical.
+    pub(crate) transfers: crate::transfer::Transfers,
+    /// The night raid's incidents, objective integrity and last resolution (#530).
+    pub(crate) raid: crate::RaidState,
+    /// Private-home residents a knock woke, by NPC (#158).
+    pub(crate) wakes: BTreeMap<crate::NpcId, crate::NpcWake>,
 }
 
 impl ZoneSimulation {
@@ -311,7 +319,12 @@ impl ZoneSimulation {
             .map(|spawn| spawn.id)
             .collect();
         for id in spawns {
-            zone.spawn_creature(id)?;
+            // Night raiders (#530) stand only once an incident commits them.
+            if zone.content.is_raider(id) {
+                zone.reserve_raider(id)?;
+            } else {
+                zone.spawn_creature(id)?;
+            }
         }
         Ok(zone)
     }
@@ -426,7 +439,10 @@ impl ZoneSimulation {
             resolving_late: 0,
             minions: BTreeMap::new(),
             next_minion: 1,
+            raid: crate::RaidState::default(),
+            wakes: BTreeMap::new(),
             rewards: None,
+            transfers: crate::transfer::Transfers::default(),
         })
     }
 
@@ -502,6 +518,7 @@ impl ZoneSimulation {
         if self.players.remove(&player_id).is_none() {
             return false;
         }
+        self.transfers.waystone_departures.remove(&player_id);
         if let Some(rewards) = &mut self.rewards {
             rewards.remove_player(player_id);
         }
@@ -540,7 +557,6 @@ impl ZoneSimulation {
 
             if player.target == Some(entity) {
                 player.target = None;
-                player.auto_attack = false;
             }
         }
         true
@@ -650,9 +666,8 @@ impl ZoneSimulation {
             ZoneCommand::UseDoor { door, open } => Some(PlayerIntent::UseDoor { door, open }),
             ZoneCommand::Repair { piece } => Some(PlayerIntent::Repair(piece)),
             ZoneCommand::SelectTarget(target) => Some(PlayerIntent::SelectTarget(target)),
-            ZoneCommand::StartAttack => Some(PlayerIntent::StartAttack),
+            ZoneCommand::Swing { facing } => Some(PlayerIntent::Swing { facing }),
             ZoneCommand::Loot(claim) => Some(PlayerIntent::Loot(claim)),
-            ZoneCommand::StopAttack => Some(PlayerIntent::StopAttack),
             ZoneCommand::ReleaseSpirit => Some(PlayerIntent::ReleaseSpirit),
             ZoneCommand::MoveItem {
                 source,
@@ -720,6 +735,7 @@ impl ZoneSimulation {
                 Some(PlayerIntent::CompleteQuest { npc, quest, choice })
             }
             ZoneCommand::AbandonQuest { quest } => Some(PlayerIntent::AbandonQuest { quest }),
+            ZoneCommand::UseWaystone { waystone } => Some(PlayerIntent::UseWaystone(waystone)),
         };
         if let Some(intent) = intent {
             if player.intents.len() < MAX_PENDING_INTENTS {
@@ -761,7 +777,8 @@ impl ZoneSimulation {
     ///    order, then swings in `EntityRef` order: swing timers, range checks
     ///    after movement, damage, threat, deaths, tapping (minions after creatures);
     /// 7. minions whose time ran out crumble, then health and class-resource regeneration,
-    ///    corpse despawns and respawns in ID order;
+    ///    corpse despawns and respawns in ID order, structure regrowth, then the night raid
+    ///    (#530: barn hits, phases, outcome, marches and the nightly trigger);
     /// 8. talk and explore quest objectives of living players in player-ID
     ///    order;
     /// 9. the tick counter.
@@ -799,18 +816,21 @@ impl ZoneSimulation {
             player.jump_pending = false;
         }
         self.update_interest()?;
+        self.discover_waystones();
         self.advance_casts(now)?;
         self.advance_projectiles(now)?;
         self.advance_auras(now)?;
         self.resolve_combat(now)?;
         self.update_timers(now)?;
         self.regrow_pieces(now)?;
+        self.advance_raid(now)?;
         self.advance_combos();
         self.advance_authored();
         self.advance_quest_objectives(now)?;
         self.tick = now;
         // Routine NPCs stand where the new tick's time of day puts them (#158).
         self.place_routine_npcs(true)?;
+        self.advance_private_homes()?;
         Ok(())
     }
 
@@ -1384,7 +1404,7 @@ mod tests {
             (4, ZoneCommand::Jump),
             (5, ZoneCommand::Jump),
             (0, ZoneCommand::Jump),
-            (5, ZoneCommand::StartAttack),
+            (5, ZoneCommand::Swing { facing: 0 }),
             (2, ZoneCommand::SelectTarget(None)),
         ] {
             let error = zone.apply_command(1, sequence, command).unwrap_err();
@@ -1401,7 +1421,7 @@ mod tests {
         let mut zone = ZoneSimulation::new(ZoneId::new(1));
         zone.add_player(1).unwrap();
         for sequence in 1..=u32::try_from(MAX_PENDING_INTENTS).unwrap() {
-            zone.apply_command(1, sequence, ZoneCommand::StopAttack)
+            zone.apply_command(1, sequence, ZoneCommand::CancelCast)
                 .unwrap();
         }
         // A well-formed intent beyond the bound is an outcome, not an error.
@@ -1413,12 +1433,12 @@ mod tests {
         assert_eq!(player.last_sequence, 101, "the sequences are consumed");
         assert_eq!(
             player.combat.intents,
-            [crate::QueuedIntent::from(PlayerIntent::StopAttack); MAX_PENDING_INTENTS],
+            [crate::QueuedIntent::from(PlayerIntent::CancelCast); MAX_PENDING_INTENTS],
             "the excess intents are dropped"
         );
         assert!(player.combat.intents_dropped);
         assert_eq!(
-            zone.apply_command(1, 101, ZoneCommand::StopAttack)
+            zone.apply_command(1, 101, ZoneCommand::CancelCast)
                 .unwrap_err()
                 .message(),
             "command sequence is stale"
@@ -1435,7 +1455,7 @@ mod tests {
             }],
             "the next tick reports the drop once"
         );
-        zone.apply_command(1, 102, ZoneCommand::StopAttack).unwrap();
+        zone.apply_command(1, 102, ZoneCommand::CancelCast).unwrap();
         zone.advance_tick().unwrap();
         assert!(zone.snapshot_for_player(1).unwrap().events.is_empty());
     }
@@ -1446,7 +1466,7 @@ mod tests {
         original.add_player(1).unwrap();
         for sequence in 1..=u32::try_from(MAX_PENDING_INTENTS).unwrap() + 1 {
             original
-                .apply_command(1, sequence, ZoneCommand::StopAttack)
+                .apply_command(1, sequence, ZoneCommand::CancelCast)
                 .unwrap();
         }
         let checkpoint = original.snapshot().unwrap();

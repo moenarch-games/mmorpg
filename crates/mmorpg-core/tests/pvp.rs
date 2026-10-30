@@ -117,6 +117,8 @@ fn two_classes_on(content: Arc<ZoneContent>, classes: [u8; 2]) -> ZoneSimulation
     for (index, player) in state.players.iter_mut().enumerate() {
         player.position = mmorpg_core::physics::from_units([index as i32 * 100, 90, -2000]);
         player.combat.abilities.resource = 40;
+        // The two face each other (+X and -X), so aimed abilities find the opponent (#517).
+        player.facing = if index == 0 { 16_384 } else { 49_152 };
     }
     ZoneSimulation::from_snapshot(state, content).unwrap()
 }
@@ -168,15 +170,20 @@ fn an_arena_weapon_hit_respects_the_existing_raised_shield() {
 }
 
 #[test]
-fn arena_auto_attacks_use_the_existing_swing_clock() {
+fn arena_swings_use_the_existing_swing_clock() {
     use mmorpg_core::{EntityRef, ZoneCommand};
     for policy in [PlayerCombatPolicy::Safe, PlayerCombatPolicy::FreeForAll] {
         let mut zone = two_players(policy);
         let before = zone.snapshot_for_player(2).unwrap().viewer.health;
         zone.apply_command(1, 2, ZoneCommand::SelectTarget(Some(EntityRef::Player(2))))
             .unwrap();
-        zone.apply_command(1, 3, ZoneCommand::StartAttack).unwrap();
+        let mut sequence = 3;
         for _ in 0..mmorpg_core::golden::t30(150) {
+            // Swing at the opponent whenever it is in reach (#517).
+            if let Some(swing) = support::arena::swing_at(&zone, 1, EntityRef::Player(2)) {
+                zone.apply_command(1, sequence, swing).unwrap();
+                sequence += 1;
+            }
             zone.advance_tick().unwrap();
         }
         let after = zone.snapshot_for_player(2).unwrap();
@@ -473,7 +480,7 @@ fn arena_death_reports_the_player_killer_and_restores_without_pve_rewards() {
 }
 
 #[test]
-fn a_physics_wall_stops_targeted_melee_auto_attacks_and_directed_arena_sweeps() {
+fn a_physics_wall_stops_aimed_melee_swings_and_directed_arena_sweeps() {
     use mmorpg_core::{
         EntityRef, StaticCollider, StrikeAim, StrikeHeight, StrikeSide, ZoneAreas, ZoneCommand,
         ZoneDefinition,
@@ -503,9 +510,12 @@ fn a_physics_wall_stops_targeted_melee_auto_attacks_and_directed_arena_sweeps() 
     );
     let mut zone = two_classes_on(content, [0, 0]);
     let health = zone.snapshot_for_player(2).unwrap().viewer.health;
+    // Facing the opponent across the wall, Heroic Strike finds nobody in front (#517).
+    zone.apply_command(1, 2, support::arena::stand(16_384))
+        .unwrap();
     zone.apply_command(
         1,
-        2,
+        3,
         ZoneCommand::UseAbility {
             ability: 1,
             target: Some(EntityRef::Player(2)),
@@ -518,19 +528,21 @@ fn a_physics_wall_stops_targeted_melee_auto_attacks_and_directed_arena_sweeps() 
     assert!(attacker.events.iter().any(|event| matches!(
         event,
         mmorpg_core::ZoneEvent::Error {
-            code: mmorpg_core::ErrorCode::LineOfSight,
+            code: mmorpg_core::ErrorCode::NoTarget,
             ..
         }
     )));
-    zone.apply_command(1, 3, ZoneCommand::SelectTarget(Some(EntityRef::Player(2))))
+    zone.apply_command(1, 4, ZoneCommand::SelectTarget(Some(EntityRef::Player(2))))
         .unwrap();
-    zone.apply_command(1, 4, ZoneCommand::StartAttack).unwrap();
-    for _ in 0..mmorpg_core::golden::t30(10) {
+    // Swings at it whiff against the wall.
+    for sequence in 5..5 + u32::try_from(mmorpg_core::golden::t30(10)).unwrap() {
+        zone.apply_command(1, sequence, ZoneCommand::Swing { facing: 16_384 })
+            .unwrap();
         zone.advance_tick().unwrap();
     }
     zone.apply_command(
         1,
-        5,
+        100,
         ZoneCommand::DirectedStrike {
             ability: 1,
             facing: 16384,
@@ -620,7 +632,15 @@ fn retirement_during_arena_cast_combo_or_charge_leaves_valid_continuation() {
         zone.advance_tick().unwrap();
         assert!(zone.remove_player(2));
         let state = zone.snapshot().unwrap();
-        assert!(state.players[0].combat.abilities.cast.is_none());
+        // A Firebolt flies freely (#517): its cast names nobody and goes on; nothing else
+        // outlives the opponent.
+        assert!(
+            state.players[0]
+                .combat
+                .abilities
+                .cast
+                .is_none_or(|cast| cast.target.is_none())
+        );
         assert!(state.players[0].combat.combo.is_none());
         ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     }

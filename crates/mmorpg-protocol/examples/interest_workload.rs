@@ -72,6 +72,7 @@ fn measure(name: &str) -> Result<(), Box<dyn Error>> {
             chat: Vec::new(),
             quests: mmorpg_core::QuestLog::default(),
             quests_changed_at: 0,
+            waystones: mmorpg_core::WaystoneSet::EMPTY,
         });
     }
     let mut zone = ZoneSimulation::from_snapshot(canonical, Arc::clone(empty.content()))?;

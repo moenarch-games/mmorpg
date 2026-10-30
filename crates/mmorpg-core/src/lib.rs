@@ -23,6 +23,7 @@ mod combat;
 mod combo;
 mod content;
 mod corpse_loot;
+mod corridor;
 mod creature;
 mod door;
 mod entity;
@@ -33,6 +34,7 @@ mod forced;
 #[doc(hidden)]
 pub mod golden;
 mod guard;
+mod home;
 mod interest;
 mod inventory;
 mod loot;
@@ -48,6 +50,7 @@ mod projectile;
 mod projection;
 mod pvp;
 mod quest;
+pub mod raid;
 mod ramp;
 mod rewards;
 pub mod rng;
@@ -58,10 +61,12 @@ mod snapshot;
 mod stance;
 mod strike;
 mod structure;
+mod transfer;
 pub mod trig;
 pub mod unit;
 mod vendor;
 pub mod water;
+mod waystone;
 mod zone;
 
 pub use ability::{
@@ -87,6 +92,7 @@ pub use class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use climb::{ClimbSurfaces, Grip, Traversal, TraversalView};
 pub use combo::{COMBO_IMPACT_TICKS, COMBO_WINDOW_TICKS, ComboOpening, ComboPhase};
 pub use content::greyhaven_vale::{self, greyhaven_vale_definition};
+pub use content::seam_test::{self, content_for_zone};
 pub use content::{
     CharacterPersistence, CreatureBehaviour, CreatureFamily, CreatureSpawn, CreatureTemplate,
     LARGE_CREATURE_HALF_WIDTH_UNITS, MAX_CONTENT_COORDINATE_UNITS, MAX_CREATURE_HALF_EXTENT_UNITS,
@@ -96,6 +102,7 @@ pub use content::{
     ZoneContent, ZoneDefinition,
 };
 pub use corpse_loot::{LOOT_REACH_UNITS, LootClaim, LootView};
+pub use corridor::{CORRIDOR_TURN_BACK_UNITS, Departure, HandoffCorridor, MAX_HANDOFF_CORRIDORS};
 pub use creature::{
     AGGRO_MAX_RADIUS_UNITS, AGGRO_MIN_RADIUS_UNITS, AGGRO_PER_LEVEL_UNITS, AGGRO_RADIUS_UNITS,
     ARRIVAL_RADIUS_UNITS, ASSIST_RADIUS_UNITS, CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK,
@@ -121,6 +128,9 @@ pub use forced::{
 pub use guard::{
     GUARD_ARC_HALF_WIDTH, GUARD_ARC_OFFSET, GUARD_BREAK_IMPACT, GUARD_BREAK_TICKS,
     GUARD_SPEED_PERCENT, GuardState, STRIKE_RECOVERY_TICKS, lane_of,
+};
+pub use home::{
+    MAX_WAKE_WAYPOINTS, NpcWake, PRIVATE_DOOR_CLOSE_TICKS, PrivateHome, WAKE_IDLE_TICKS,
 };
 pub use interest::{InterestMaintenanceStats, InterestQueryStats, PlayerProjection};
 pub use inventory::{
@@ -156,6 +166,10 @@ pub use quest::{
     QUEST_REACH_UNITS, Quest, QuestContentError, QuestEntry, QuestId, QuestLog, QuestMarker,
     QuestObjective, QuestRewards, QuestSheet,
 };
+pub use raid::{
+    RaidApproach, RaidIncident, RaidLeg, RaidMember, RaidOutcome, RaidResolution, RaidSite,
+    RaidState, RaidView,
+};
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use rewards::{RewardGrant, RewardHistory, RewardKey};
 pub use roll::Roll;
@@ -174,11 +188,17 @@ pub use structure::{
     CanonicalPiece, MAX_PIECES, MAX_SITES, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceStage,
     PieceView, REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
 };
+pub use transfer::{CharacterTransfer, MAX_REMEMBERED_TRANSFERS, TransferId, TransferMotion};
 pub use vendor::{
     MAX_VENDOR_OFFERS, VENDOR_REACH_UNITS, VendorOffer, VendorStock, VendorStockError,
     VendorTradeError, sell_price, settle_purchase, settle_sale, starter_vendor_stock,
 };
 pub use water::{AirPocket, Breath, WaterMode, WaterVolume};
+pub use waystone::{
+    GREYHAVEN_OUTPOST, GREYHAVEN_ZONE, MAX_WAYSTONES, SEAM_TEST_EAST, SEAM_TEST_WEST,
+    WAYSTONE_DISCOVERY_UNITS, WAYSTONES, WaystoneId, WaystoneSet, WaystoneSite, waystone,
+    waystone_within_reach,
+};
 pub use zone::{MAX_PENDING_INTENTS, ZoneSimulation, ZoneTickWork};
 
 use std::error::Error;
@@ -322,9 +342,10 @@ pub enum ZoneCommand {
     SelectTarget(Option<EntityRef>),
     /// Claim all remaining rewards from one fenced corpse death.
     Loot(LootClaim),
-    /// Starts auto-attacking the selected target.
-    StartAttack,
-    StopAttack,
+    /// Swings the weapon once toward `facing` (#517): the player turns to it and every
+    /// attackable unit inside the melee arc is hit; a swing that covers nobody whiffs. A press
+    /// while the previous swing recovers waits for it.
+    Swing { facing: u16 },
     /// Returns a dead player to the graveyard with half health.
     ReleaseSpirit,
     /// Moves a quantity between the player's own bag slots on the next tick.
@@ -344,10 +365,7 @@ pub enum ZoneCommand {
     /// `input-bindings` retired the hold (focus loss, a menu, a profile
     /// change) rather than the key going up. Held state like movement: only
     /// an experimental graph's hold-to-charge and chord triggers read it.
-    ReleaseAbility {
-        ability: u8,
-        retired: bool,
-    },
+    ReleaseAbility { ability: u8, retired: bool },
     /// Executes `ability`'s directed mode (#154; only Heroic Strike has
     /// one): the player turns to `facing` and sweeps toward `aim`; the zone
     /// resolves which creature the sweep physically covers.
@@ -359,22 +377,15 @@ pub enum ZoneCommand {
     /// Holds the Warden's shield guard in a lane, or lowers it with `None`
     /// (#156). Held state like movement: the zone keeps it until the next
     /// guard command, death or a directed strike.
-    Guard {
-        lane: Option<StrikeHeight>,
-    },
+    Guard { lane: Option<StrikeHeight> },
     /// Opens (`open`) or closes a door (#158). Asking for the state it
     /// already has changes nothing; reach and blocking bodies are checked in
     /// the tick.
-    UseDoor {
-        door: DoorId,
-        open: bool,
-    },
+    UseDoor { door: DoorId, open: bool },
     /// Starts repairing a destructible piece (#305), or stops with `None`: held like a guard,
     /// free, and it speeds up the piece's timed regrowth while the player stands within
     /// reach. Any movement stops it.
-    Repair {
-        piece: Option<PieceId>,
-    },
+    Repair { piece: Option<PieceId> },
     /// Stops the player's own cast or channel.
     CancelCast,
     /// Orders all of the player's minions at once (#295, Atlas 5.2.84); the zone checks the
@@ -382,20 +393,13 @@ pub enum ZoneCommand {
     CommandMinions(MinionOrder),
     /// Chooses the class (0 Warden, 1 Ranger, 2 Arcanist, 3 Necromancer, 4 Rogue, 5 Cleric, 6 Druid) and sex
     /// (0 female, 1 male) once. Invalid or repeated choices are refused in the tick.
-    ChooseClass {
-        class: u8,
-        sex: u8,
-    },
+    ChooseClass { class: u8, sex: u8 },
     /// Equips the item in one of the player's own bag slots into its
     /// catalog equipment slot, swapping any item already there.
-    EquipItem {
-        bag_slot: u8,
-    },
+    EquipItem { bag_slot: u8 },
     /// Moves the item in an equipment slot (0 main hand … 5 feet) to the
     /// lowest empty bag slot.
-    UnequipItem {
-        equipment_slot: u8,
-    },
+    UnequipItem { equipment_slot: u8 },
     /// Buys `quantity` units of offer `offer` (stock index) from vendor `npc`.
     BuyItem {
         npc: NpcId,
@@ -416,21 +420,15 @@ pub enum ZoneCommand {
     /// Performs one emote for the players in `/say` range (#69).
     Emote(Emote),
     /// Accepts `quest` from its giver `npc` (#25).
-    AcceptQuest {
-        npc: NpcId,
-        quest: u8,
-    },
+    AcceptQuest { npc: NpcId, quest: u8 },
     /// Turns `quest` in at its ender `npc`, taking reward `choice` (an
     /// index into the quest's choices; 0 when it offers none).
-    CompleteQuest {
-        npc: NpcId,
-        quest: u8,
-        choice: u8,
-    },
+    CompleteQuest { npc: NpcId, quest: u8, choice: u8 },
     /// Drops `quest` from the log; its progress is lost.
-    AbandonQuest {
-        quest: u8,
-    },
+    AbandonQuest { quest: u8 },
+    /// Travels from the waystone within reach to the unlocked `waystone` (#145, Atlas
+    /// 5.1.9); the zone checks reach, unlocks and combat in the tick.
+    UseWaystone { waystone: WaystoneId },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

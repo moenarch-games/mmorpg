@@ -259,6 +259,12 @@ impl GameUi {
                             return;
                         };
                         let rows: Vec<&Quest> = context.quest_rows(content, npc.id);
+                        // At night a private-home resident answers woken, turn-ins only (#158).
+                        let night = mmorpg_core::is_night(mmorpg_core::time_of_day(snapshot.tick));
+                        let woken = content.private_home(npc.id).filter(|_| night);
+                        if let Some(home) = woken {
+                            ui.label(RichText::new(home.woken_line.as_str()).italics());
+                        }
                         if rows.is_empty() {
                             ui.label("No quests here.");
                         }
@@ -272,6 +278,8 @@ impl GameUi {
                                 ("ready to turn in?", Some("Complete quest"))
                             } else if entry.is_some() {
                                 ("in progress", None)
+                            } else if unlocked && quest.giver == npc.id && woken.is_some() {
+                                ("not at this hour", None)
                             } else if unlocked && quest.giver == npc.id {
                                 ("available", Some("Accept"))
                             } else if unlocked {

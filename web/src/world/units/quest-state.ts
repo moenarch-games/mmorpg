@@ -13,6 +13,8 @@ export type QuestNpc = { npc: number; name: string; inReach: boolean };
 /** What one NPC offers the viewer: quests to accept, quests to turn in and quests still in progress. */
 export type DialogView = {
   npc: QuestNpc;
+  /** A woken private-home resident's line before its turn-ins (#158), else null. */
+  greeting: string | null;
   offered: readonly QuestRecord[];
   ready: readonly QuestView[];
   inProgress: readonly QuestView[];
@@ -114,11 +116,17 @@ export function dialogNpc(snapshot: ZoneSnapshot, catalog: ContentCatalog): Ques
   };
 }
 
-export function dialogView(sheet: QuestSheet, catalog: ContentCatalog, npc: QuestNpc): DialogView {
+/**
+ * At `night` a private-home resident (an NPC with a woken line, #158) greets with that line and
+ * offers no new quests, only turn-ins; the zone enforces both.
+ */
+export function dialogView(sheet: QuestSheet, catalog: ContentCatalog, npc: QuestNpc, night = false): DialogView {
   const active = questViews(sheet, catalog).filter((view) => view.quest.ender === npc.npc);
+  const woken = night ? catalog.npcs.get(npc.npc)?.wokenLine ?? null : null;
   return {
     npc,
-    offered: [...catalog.quests.values()].filter((quest) => quest.giver === npc.npc && offered(sheet, quest)),
+    greeting: woken,
+    offered: woken !== null ? [] : [...catalog.quests.values()].filter((quest) => quest.giver === npc.npc && offered(sheet, quest)),
     ready: active.filter((view) => view.complete),
     inProgress: active.filter((view) => !view.complete),
   };

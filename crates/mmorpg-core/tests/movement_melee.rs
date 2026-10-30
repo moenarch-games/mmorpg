@@ -75,11 +75,11 @@ impl Warden {
     }
 }
 
-/// The first auto-attack swing's damage and the stance shown that tick.
+/// The first swing's damage and the stance shown that tick.
 fn first_swing(movement: &[ZoneCommand]) -> (u16, Option<MeleeStance>) {
     let mut warden = Warden::new(content(CreatureBehaviour::Neutral, [1, 1]));
     warden.send(ZoneCommand::SelectTarget(Some(TARGET)));
-    warden.send(ZoneCommand::StartAttack);
+    warden.send(ZoneCommand::Swing { facing: SOUTH });
     for &command in movement {
         warden.send(command);
     }

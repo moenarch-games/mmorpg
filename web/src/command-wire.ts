@@ -21,8 +21,8 @@ export type WorldCommand =
   | { kind: "rise"; rise: Axis }
   /** Selects a unit, or clears the selection with `null`. */
   | { kind: "select-target"; target: EntityRef | null }
-  | { kind: "start-attack" }
-  | { kind: "stop-attack" }
+  /** Swings the weapon once toward `facing` (u16 yaw, #517); the zone hits every unit in the arc. */
+  | { kind: "swing"; facing: number }
   | { kind: "release-spirit" }
   | { kind: "move-item"; source: number; destination: number; quantity: number }
   /** A class ability at `target`, or at the current selection with `null`. */
@@ -58,6 +58,8 @@ export type WorldCommand =
   | { kind: "abandon-quest"; quest: number }
   /** Opens (`open`) or closes content door `door` (#158); the zone checks reach and blockers. */
   | { kind: "use-door"; door: number; open: boolean }
+  /** Travels from the waystone in reach to unlocked waystone `waystone` (#145); the zone checks reach, unlocks and combat. */
+  | { kind: "use-waystone"; waystone: number }
   /** Starts repairing a destructible piece (#305), or stops with `null`. */
   | { kind: "repair"; piece: number | null }
   /** Orders all of a Necromancer's minions at once (#295); the zone checks the target or point. */
@@ -73,8 +75,8 @@ export type MinionOrder =
 const MOVE_TAG = 1;
 const JUMP_TAG = 2;
 const SELECT_TARGET_TAG = 3;
-const START_ATTACK_TAG = 4;
-const STOP_ATTACK_TAG = 5;
+/** A swing toward a facing (#517); tag 5 (the retired stop-attack) is unknown. */
+const SWING_TAG = 4;
 const RELEASE_SPIRIT_TAG = 6;
 const MOVE_ITEM_TAG = 7;
 const LOOT_TAG = 8;
@@ -93,6 +95,8 @@ const ABANDON_QUEST_TAG = 20;
 const DIRECTED_STRIKE_TAG = 21;
 const GUARD_TAG = 22;
 const USE_DOOR_TAG = 23;
+/** Waystone travel (#145). */
+const USE_WAYSTONE_TAG = 30;
 const REPAIR_TAG = 24;
 const RISE_TAG = 25;
 const COMMAND_MINIONS_TAG = 26;
@@ -319,6 +323,11 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
         throw new Error("Equipment slots must be u8.");
       }
       return Uint8Array.of(PROTOCOL_BYTE, UNEQUIP_ITEM_TAG, command.equipmentSlot);
+    case "use-waystone":
+      if (!isU8(command.waystone) || command.waystone === 0) {
+        throw new Error("Waystone IDs must be 1–255.");
+      }
+      return Uint8Array.of(PROTOCOL_BYTE, USE_WAYSTONE_TAG, command.waystone);
     case "use-door":
       if (!isU8(command.door)) {
         throw new Error("Door IDs must be u8.");
@@ -333,10 +342,11 @@ export function encodeCommand(command: WorldCommand): Uint8Array {
     }
     case "command-minions":
       return encodeMinionOrder(command.order);
-    case "start-attack":
-      return Uint8Array.of(PROTOCOL_BYTE, START_ATTACK_TAG);
-    case "stop-attack":
-      return Uint8Array.of(PROTOCOL_BYTE, STOP_ATTACK_TAG);
+    case "swing":
+      if (!Number.isInteger(command.facing) || command.facing < 0 || command.facing >= YAW_STEPS) {
+        throw new Error("Swing facing must be a u16 yaw.");
+      }
+      return Uint8Array.of(PROTOCOL_BYTE, SWING_TAG, command.facing >> 8, command.facing & 0xff);
     case "release-spirit":
       return Uint8Array.of(PROTOCOL_BYTE, RELEASE_SPIRIT_TAG);
     default: {

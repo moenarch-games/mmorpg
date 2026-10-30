@@ -740,7 +740,10 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     for p in &s.props {
         // The inn is asset-tooling's walk-in bundle (`crate::buildings`), not a procedural block.
         // The shrine (#431) is asset-tooling's kit (`crate::shrine`).
-        if matches!(p.kind, PropKind::Inn | PropKind::ShrineKit) {
+        // Elden's house (#158) is its walk-in bundle too.
+        if matches!(p.kind, PropKind::Inn | PropKind::ShrineKit)
+            || p.collider == Some(mmorpg_core::greyhaven_vale::ids::MARSHAL_HOUSE)
+        {
             continue;
         }
         let [hx, hy, hz] = half(p);
@@ -1308,8 +1311,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             PropKind::Tree(_) | PropKind::Rock(_) | PropKind::GrassTuft
         );
         for (c, shape, a) in m.handholds {
-            b.global("handholds", c)
-                .add(shape.geometry(), compose(&[f, a]));
+            crate::handholds::draw(b, c, shape, compose(&[f, a]));
         }
         for part in m.parts {
             b.put(

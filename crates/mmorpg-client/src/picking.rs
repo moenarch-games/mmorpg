@@ -14,9 +14,6 @@ pub enum Picked {
     Door(DoorId),
 }
 
-/// World draws with this id prefix are the inn's door leaf (#158).
-pub const DOOR_DRAW_PREFIX: &str = "greyhaven.inn.door";
-
 /// How far outside a creature's, NPC's or door leaf's projected bounds a click may
 /// still select it, in logical pixels: the browser's mouse margin (#369, #370).
 pub const NEAR_MISS_PIXELS: f64 = 8.0;
@@ -71,8 +68,7 @@ impl WorldPicking {
                 && hit.distance < nearest
             {
                 nearest = hit.distance;
-                selected =
-                    is_door(draw).then_some(Picked::Door(mmorpg_presentation::buildings::INN_DOOR));
+                selected = door_of(draw).map(Picked::Door);
             }
         }
         for (entity, draw) in &self.bodies {
@@ -103,8 +99,8 @@ impl WorldPicking {
                 None => proxies.push((target, bounds)),
             }
         };
-        for draw in self.world.iter().filter(|d| is_door(d)) {
-            add(Picked::Door(mmorpg_presentation::buildings::INN_DOOR), draw);
+        for (door, draw) in self.world.iter().filter_map(|d| Some((door_of(d)?, d))) {
+            add(Picked::Door(door), draw);
         }
         for (entity, draw) in &self.bodies {
             if matches!(entity, EntityRef::Creature(_) | EntityRef::Npc(_)) {
@@ -151,8 +147,12 @@ impl WorldPicking {
     }
 }
 
-fn is_door(draw: &SceneDraw) -> bool {
-    draw.id.starts_with(DOOR_DRAW_PREFIX)
+/// The door whose leaf `draw` is: world draws of a walk-in building's door entry (#158).
+fn door_of(draw: &SceneDraw) -> Option<DoorId> {
+    mmorpg_presentation::buildings::BUILDINGS
+        .iter()
+        .find(|spec| draw.id.starts_with(spec.door_entry()))
+        .map(|spec| spec.door)
 }
 
 fn cull(draw: &SceneDraw) -> CullMode {
@@ -397,7 +397,7 @@ mod tests {
         let out = (x - pixel_of([0., 1., -0.05])[0]).signum();
         assert_eq!(
             click(&p, [x + 4. * out, y]),
-            Some(Picked::Door(mmorpg_presentation::buildings::INN_DOOR))
+            Some(Picked::Door(mmorpg_presentation::buildings::INN.door))
         );
     }
 }

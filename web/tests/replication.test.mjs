@@ -32,7 +32,9 @@ const STATS = EQUIPMENT + 12;
 const QUESTS = STATS + 8;
 const DOORS = INVENTORY + 8 + 1 + 84 + 16 + 1;
 const PIECES = DOORS + 1 + 2 * 2;
-const EVENTS = PIECES + 1 + 2 * 3;
+/** The night raid section (#530): code byte (phase + 1) and integrity. */
+const RAID = PIECES + 1 + 2 * 3;
+const EVENTS = RAID + 2;
 /** Two chat lines and an emote follow the sixteen events: 6 + 16, 6 + 8 and 6 bytes. */
 const CHAT = EVENTS + 1 + 16 * 14;
 const EMOTE = CHAT + 1 + 22 + 14;
@@ -86,14 +88,14 @@ describe("Rust/browser snapshot contract", () => {
     }
   });
   test("decodes the same golden bytes as the Rust encoder", () => {
-    expect(fixture.length).toBe(117 + 2 * 2 + 2 * 3 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 27 + 4 * 20);
+    expect(fixture.length).toBe(118 + 1 + 2 * 2 + 2 * 3 + 2 * 3 + 2 * 6 + 84 + 16 + 16 * 14 + 22 + 14 + 6 + 4 * 27 + 4 * 20);
     expect(decodeSnapshot(fixture)).toEqual({
       zoneId: 42, tick: 99n, contentRevision: 4n, acknowledgedSequence: 81, viewerId: 7,
       viewer: {
         copper: 42, experience: 37, experienceToNextLevel: 400, health: 38, maxHealth: 110, level: 4, dead: false, inCombat: true,
-        autoAttacking: true, target: WOLF, classChoice: { classId: "arcanist", sex: "female" },
+        target: WOLF, classChoice: { classId: "arcanist", sex: "female" },
         resource: { kind: "mana", value: 121, max: 176 }, cast: { ability: 9, elapsed: 40, total: 120, channel: false }, globalCooldown: 25,
-        damage: { min: 9, max: 12 }, guard: { raised: "high", protecting: false, broken: 30 }, stance: null, combo: null, breath: 1800,
+        damage: { min: 9, max: 12 }, guard: { raised: "high", protecting: false, broken: 30 }, stance: null, combo: null, breath: 1800, waystones: [],
       },
       cooldowns: [{ ability: 10, remaining: 412 }, { ability: 11, remaining: 700 }],
       auras: [{ ability: 11, kind: "absorb", remaining: 500, amount: 31 }],
@@ -114,6 +116,7 @@ describe("Rust/browser snapshot contract", () => {
       loot: null,
       doors: [{ door: 1, open: true }, { door: 2, open: false }],
       pieces: [{ piece: 2, stage: "damaged" }, { piece: 0x0105, stage: "destroyed" }],
+      raid: { phase: 2, integrity: 63 },
       events: [
         { kind: "damage-dealt", source: VIEWER, target: WOLF, amount: 7, critical: true },
         { kind: "damage-taken", source: WOLF, target: VIEWER, amount: 3, critical: false },
@@ -195,8 +198,8 @@ describe("Rust/browser snapshot contract", () => {
     for (const [offset, value, message] of [
       [0, 4, "protocol"],
       [3, 1, "player-visible"],
-      [53, 0b1000, "Reserved"],
-      [53, 0b111, "Inconsistent"],
+      [53, 0b10_0000, "Unknown waystone"],
+      [53, 0b11, "Inconsistent"],
       [54, 9, "kind"],
       [CLASS, 15, "ability state"],
       [CLASS, 1, "resource"],

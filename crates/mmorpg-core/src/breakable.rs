@@ -196,7 +196,6 @@ impl ZoneSimulation {
         for player in self.players.values_mut() {
             if player.target == Some(entity) {
                 player.target = None;
-                player.auto_attack = false;
             }
         }
         if let EntityRef::Player(player_id) = killer {
