@@ -78,12 +78,9 @@ fn lowered(position: Vector) -> [f32; 3] {
     [position.0, position.1 - CONTACT_OFFSET_UNITS, position.2]
 }
 
-/// An upright capsule as wide and tall as `half_extents`, in units.
+/// A unit's upright capsule inside its box (`super::capsule_dimensions`), in units.
 fn capsule(half_extents: Vec3i) -> Shape {
-    #[allow(clippy::cast_precision_loss)]
-    let radius = half_extents.x.max(half_extents.z) as f32;
-    #[allow(clippy::cast_precision_loss)]
-    let half_height = (half_extents.y as f32 - radius).max(0.0);
+    let (half_height, radius) = super::capsule_dimensions(half_extents);
     Shape::capsule(half_height, radius)
 }
 
@@ -91,11 +88,13 @@ fn engine_error(what: &str, failure: impl fmt::Debug) -> PhysicsError {
     error(format!("physics-engine {what} failed: {failure:?}"))
 }
 
-/// The authored ground: the content it came from and its engine body.
+/// The authored ground: the content it came from, its engine body and the game ID it shares
+/// with the floor it rises from.
 #[derive(Clone)]
 struct Ground {
     terrain: crate::Terrain,
     body: EngineId,
+    floor: BodyId,
 }
 
 #[derive(Clone)]
@@ -367,14 +366,22 @@ impl World {
             .add_heightfield(heightfield(&terrain), None)
             .expect("validated content terrain is a valid heightfield");
         self.games.insert(body.to_bits(), id);
-        self.ground = Some(Ground { terrain, body });
+        self.ground = Some(Ground {
+            terrain,
+            body,
+            floor: id,
+        });
     }
 }
 
 /// `terrain` as an engine heightfield (see [`World::set_terrain`]).
 fn heightfield(terrain: &crate::Terrain) -> HeightfieldDesc {
     let (columns, rows) = (usize::from(terrain.columns), usize::from(terrain.rows));
-    // Flat cells are left to the floor half-space, as on the Rapier backend.
+    // Flat cells are left to the floor half-space, as on the Rapier backend; flat cells next to
+    // a basin stay, since a body straddling its edge has the floor opened under it (#274).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    let cell_centre =
+        |index: usize, origin: i32| origin + index as i32 * terrain.step + terrain.step / 2;
     let removed_cells = (0..rows - 1)
         .flat_map(|row| (0..columns - 1).map(move |column| (row, column)))
         .map(|(row, column)| {
@@ -386,6 +393,11 @@ fn heightfield(terrain: &crate::Terrain) -> HeightfieldDesc {
             ]
             .iter()
             .all(|&(r, c)| terrain.heights[r * columns + c] == 0)
+                && terrain.low_within(
+                    cell_centre(column, terrain.origin[0]),
+                    cell_centre(row, terrain.origin[1]),
+                    terrain.step,
+                ) >= 0
         })
         .collect();
     #[allow(clippy::cast_precision_loss)]
@@ -506,8 +518,7 @@ impl World {
         velocities.clear();
         for body in self.bodies.values().filter(|body| body.is_moving()) {
             let mut velocity = body.velocity;
-            // A swimmer (#274) keeps the zone's vertical velocity. The lake basin's open floor
-            // is a Rapier-only workaround; this arm still has the floor half-space there.
+            // A swimmer (#274) keeps the zone's vertical velocity.
             if !body.weightless {
                 if self.grounded(body.id) && velocity[1] <= 0.0 {
                     velocity[1] = 0.0;
@@ -522,6 +533,8 @@ impl World {
             moves.push(CharacterMove {
                 body: self.handles[&body.id],
                 desired: vector([0, 1, 2].map(|axis| velocity[axis] + carry[axis])),
+                exclude: self.open_floor(body),
+                autostep: None,
             });
         }
         let outcome = self.run_batch(&moves);
@@ -558,6 +571,24 @@ impl World {
         })
     }
 
+    /// The floor half-space's engine body when `body` stands over terrain that dips below it
+    /// (a lake basin, #274; the same footprint test as the Rapier backend): there only the
+    /// heightfield is ground, and the body's move (`CharacterMove::exclude`) and support cast
+    /// pass through the floor.
+    fn open_floor(&self, body: &RigidBody) -> Option<EngineId> {
+        let ground = self.ground.as_ref()?;
+        #[allow(clippy::cast_possible_truncation)]
+        let (x, z) = (
+            body.position[0].round() as i32,
+            body.position[2].round() as i32,
+        );
+        let reach = body.half_extents.x.max(body.half_extents.z) + 1;
+        if ground.terrain.low_within(x, z, reach) >= 0 {
+            return None;
+        }
+        self.handles.get(&ground.floor).copied()
+    }
+
     /// Whether a moving body stands on static ground: its last move's engine result, or for a
     /// body placed or added since, the engine's grounded test as a downward shape cast
     /// (walkable static support within the contact offset plus 5 cm).
@@ -585,11 +616,14 @@ impl World {
             .cast_shape(cast, filter, &mut hits)
             .expect("physics-engine grounded cast failed");
         // The nearest walkable static support: a too-steep face met first (a ramp's chute end)
-        // is passed over, as physics-engine's own support test does (physics-engine #395).
+        // is passed over, as physics-engine's own support test does (physics-engine #395). Over
+        // the lake basin the floor is open, as in the body's moves.
         let min_up = self.settings.max_slope.cos();
+        let open = self.open_floor(body);
         hits.iter()
             .find(|hit| {
-                (hit.starts_overlapping || hit.normal.1 > 0.0)
+                Some(hit.body) != open
+                    && (hit.starts_overlapping || hit.normal.1 > 0.0)
                     && hit.normal.1 >= min_up
                     && self
                         .games

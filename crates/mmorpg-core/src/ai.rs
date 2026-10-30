@@ -472,7 +472,7 @@ impl ZoneSimulation {
                     body,
                     Vec3i::new(
                         home[0],
-                        self.ground_y(home[0], home[1]) + template.half_extents[1],
+                        self.stand_y(home[0], home[1], template.half_extents),
                         home[1],
                     ),
                 )

@@ -33,6 +33,18 @@ mod rapier;
 /// coordinates.
 const CONTACT_OFFSET_UNITS: f32 = 0.25;
 
+/// A unit's upright capsule as `(half segment, radius)` in units: as wide and tall as its
+/// `half_extents` box, and never reaching out of it. A squat body (half height below its half
+/// width, the rats) is a sphere as tall as its box, so its feet are the box's bottom like every
+/// other unit's and it is never authored into the floor (#534).
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn capsule_dimensions(half_extents: Vec3i) -> (f32, f32) {
+    let half_height = half_extents.y as f32;
+    let radius = (half_extents.x.max(half_extents.z) as f32).min(half_height);
+    (half_height - radius, radius)
+}
+
 /// An integer vector in units: the rounded view gameplay rules read, and static geometry.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Vec3i {
@@ -701,6 +713,45 @@ mod tests {
     #[test]
     fn a_unit_falls_lands_and_walks_into_a_wall() {
         on_each_backend(a_unit_falls_lands_and_walks_into_a_wall_on);
+    }
+
+    #[test]
+    fn a_unit_falls_through_the_open_floor_into_a_basin() {
+        on_each_backend(a_unit_falls_through_the_open_floor_into_a_basin_on);
+    }
+
+    /// Over terrain that dips below the floor (a lake basin, #274) both backends open the floor
+    /// half-space (physics-engine through `CharacterMove::exclude`, #537): the unit lands on
+    /// the basin's bottom, grounded.
+    fn a_unit_falls_through_the_open_floor_into_a_basin_on() {
+        let mut world = world();
+        let mut heights = vec![0; 25];
+        heights[12] = -200;
+        world.set_terrain(
+            BodyId(1),
+            crate::Terrain {
+                origin: [-800, -800],
+                step: 400,
+                columns: 5,
+                rows: 5,
+                heights,
+            },
+        );
+        let unit = BodyId(10);
+        world
+            .add_body(RigidBody::dynamic(
+                unit,
+                Vec3i::new(0, 100, 0),
+                Vec3i::ZERO,
+                BODY,
+            ))
+            .unwrap();
+        for _ in 0..120 {
+            world.step().unwrap();
+        }
+        let feet = world.body(unit).unwrap().exact_position()[1] - 90.0;
+        assert!((-200.5..-150.0).contains(&feet), "feet at {feet}");
+        assert!(world.grounded(unit));
     }
 
     fn a_unit_falls_lands_and_walks_into_a_wall_on() {

@@ -259,6 +259,35 @@ pub enum Workload {
     /// Dodge rolls (#516): one player rolls back, forward and diagonally in Greyhaven Outpost,
     /// another into a highland crag and back out, a third back off the mill's loading dock.
     Roll,
+    /// Swimming in Stillwater Lake (#274, #537): one player wades in from the west shore, swims
+    /// out and dives toward the basin's floor; another starts on the floor in the deep water,
+    /// presses down onto it, glides east along it and rises to the surface.
+    Swim,
+}
+
+/// The swim workload's length.
+pub const SWIM_TICKS: usize = mmorpg_core::golden::t30(360) as usize;
+
+/// The wader on the lake's west shore and the diver on the basin's floor near its centre, by
+/// ID and feet XZ.
+const SWIM_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [2_900.0, -5_500.0]), (2, [5_300.0, -5_400.0])];
+
+/// The swim's commands at `tick` (30 Hz).
+fn swim_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
+    // East, along the lake's long axis.
+    let east = |forward| ZoneCommand::Move {
+        forward,
+        strafe: 0,
+        facing: 16_384,
+    };
+    match tick {
+        0 => vec![(1, east(1)), (2, ZoneCommand::Rise(-1))],
+        90 => vec![(1, ZoneCommand::Rise(-1))],
+        150 => vec![(2, east(1))],
+        240 => vec![(1, ZoneCommand::Rise(0)), (2, ZoneCommand::Rise(1))],
+        300 => vec![(1, ZoneCommand::Rise(1)), (2, east(0))],
+        _ => Vec::new(),
+    }
 }
 
 /// The roll workload's length.
@@ -810,6 +839,7 @@ impl Workload {
             Self::Traversal => "vale-traversal",
             Self::Climb => "vale-climb",
             Self::Roll => "vale-roll",
+            Self::Swim => "vale-swim",
         }
     }
 
@@ -829,6 +859,7 @@ impl Workload {
             Self::Traversal => TRAVERSAL_TICKS,
             Self::Climb => CLIMB_TICKS,
             Self::Roll => ROLL_TICKS,
+            Self::Swim => SWIM_TICKS,
         }
     }
 }
@@ -859,6 +890,7 @@ pub fn workloads() -> Result<Vec<Workload>, String> {
     workloads.push(Workload::Traversal);
     workloads.push(Workload::Climb);
     workloads.push(Workload::Roll);
+    workloads.push(Workload::Swim);
     Ok(workloads)
 }
 
@@ -900,6 +932,7 @@ impl Run {
             Workload::Traversal => (traversal_zone(&TRAVERSAL_PLAYERS)?, 0),
             Workload::Climb => (placed_zone(&CLIMB_PLAYERS)?, 0),
             Workload::Roll => (roll_zone()?, 0),
+            Workload::Swim => (placed_zone(&SWIM_PLAYERS)?, 0),
         };
         Ok(Self {
             zone,
@@ -972,7 +1005,8 @@ impl Run {
             | Workload::Missiles
             | Workload::Traversal
             | Workload::Climb
-            | Workload::Roll => {
+            | Workload::Roll
+            | Workload::Swim => {
                 // The scripts are written in 30 Hz ticks: they run at the same moments at TICK_HZ.
                 let scale = usize::from(mmorpg_core::TICK_HZ) / 30;
                 let at = if self.tick.is_multiple_of(scale) {
@@ -992,6 +1026,7 @@ impl Run {
                     Workload::Traversal => traversal_commands(at),
                     Workload::Climb => climb_commands(at),
                     Workload::Roll => roll_commands(at),
+                    Workload::Swim => swim_commands(at),
                     _ => mill_ramps_commands(at),
                 };
                 for (player, command) in commands {

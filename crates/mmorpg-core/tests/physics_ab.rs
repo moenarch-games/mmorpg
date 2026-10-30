@@ -10,9 +10,10 @@
 //! [`SCRIPTED_POSITION_TOLERANCE_UNITS`] with the same command outcomes and door states, and
 //! every query decision gameplay makes (line of sight, NPC sight, projectile contact, door
 //! occupancy, ground height, grounded) must agree on identical states: Rapier's state at
-//! sampled ticks, recovered onto both backends. Creatures (AI and a shared RNG react to every
-//! position) and the fighting fixtures are compared but not bounded; their divergences are
-//! printed (`--nocapture`) and listed in `docs/PHYSICS_AB.md`.
+//! sampled ticks, recovered onto both backends. No workload places a unit inside geometry
+//! (#534). Creatures' positions (AI and a shared RNG react to every position) are compared but
+//! not bounded; their divergences are printed (`--nocapture`) and listed in
+//! `docs/PHYSICS_AB.md`.
 
 #[path = "support/physics_ab.rs"]
 mod drivers;
@@ -39,15 +40,18 @@ const CONTACT_OFFSET_UNITS: f32 = 0.25;
 /// controllers slide and stop at the same 0.25-unit gap, so their positions may differ only by
 /// sub-unit contact-resolution detail. One unit is the rounding step gameplay sees.
 const SCRIPTED_POSITION_TOLERANCE_UNITS: f32 = 1.0;
-/// The workloads whose players are only scripted: the bot scenarios and the idle plaza. The
-/// fighting fixtures place players inside props, boxes and hills, which Rapier leaves embedded
-/// and physics-engine pushes out, so their fights (and every position after) legitimately part.
+/// The workloads whose players' positions are bounded: the bot scenarios, the idle plaza, the
+/// fighting fixtures (their bots stand clear of all geometry, #534) and the scripted scenes.
 /// At 60 Hz (#379) `vale-wolf-hunt`'s creatures, which part from tick 1, reach the scripted
 /// hunter's fights after 38 s, so it is bounded only over its scripted walk ([`CLIMBS`]).
-const SCRIPTED: [&str; 10] = [
+const SCRIPTED: [&str; 14] = [
     "two-bots-move",
     "vale-hub-walk",
     "vale-idle-16",
+    "vale-fights-8",
+    "vale-fights-32",
+    "vale-crowded-fights-64",
+    "vale-swim",
     "vale-mill-hoist",
     "vale-crate-shove",
     "vale-crate-smash",
@@ -89,12 +93,10 @@ struct Check {
     ogre_gap: f32,
     shoved_ticks: usize,
     stomped: bool,
-    /// The smallest capsule-to-box gap (units), authored ground overlap excluded.
+    /// The smallest capsule-to-box gap (units).
     closest: f32,
     /// The first tick the zone restored halfway differs from the uninterrupted one.
     departed: Option<u64>,
-    /// Units the workload placed overlapping a box or the terrain at the first tick.
-    placed_inside: std::collections::BTreeSet<EntityRef>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -104,15 +106,18 @@ struct Trace {
     outcomes: Vec<String>,
 }
 
+/// A unit's capsule as both backends build it: `(half segment, radius)` in units.
+fn capsule(unit: &UnitBody) -> (f32, f32) {
+    mmorpg_core::physics::capsule_dimensions(unit.body.half_extents())
+}
+
 /// An upright capsule's distance outside an axis-aligned box (negative inside).
 fn capsule_box_gap(
     centre: [f32; 3],
-    half: [f32; 3],
+    (segment, radius): (f32, f32),
     box_centre: [f32; 3],
     box_half: [f32; 3],
 ) -> f32 {
-    let radius = half[0].max(half[2]);
-    let segment = (half[1] - radius).max(0.0);
     // Horizontal: the centre's distance from the box footprint; vertical: the axis segment's
     // distance from the box's height span. The capsule is a swept sphere along the axis.
     let dx = (centre[0] - box_centre[0]).abs() - box_half[0];
@@ -164,41 +169,17 @@ fn boxes(zone: &ZoneSimulation) -> Vec<([f32; 3], [f32; 3])> {
     boxes
 }
 
-/// Whether the floor half-space is open at `(x, z)`: over terrain that dips below it (Stillwater
+/// Whether the floor half-space is open under `unit`: over terrain that dips below it (Stillwater
 /// Lake's basin, #274) only the heightfield is ground, which the sink check covers. Mirrors the
-/// Rapier backend: it opens under a footprint over any terrain cell with a sample below zero.
-fn open_floor(zone: &ZoneSimulation, x: f32, z: f32, radius: f32) -> bool {
+/// backends: it opens under `unit`'s footprint over any terrain cell with a sample below zero.
+fn open_floor(zone: &ZoneSimulation, unit: &UnitBody) -> bool {
+    let [x, _, z] = unit.body.exact_position();
+    let half = unit.body.half_extents();
     #[allow(clippy::cast_possible_truncation)]
-    let (x, z, reach) = (x.round() as i32, z.round() as i32, radius.ceil() as i32 + 1);
+    let (x, z, reach) = (x.round() as i32, z.round() as i32, half.x.max(half.z) + 1);
     zone.definition()
         .terrain()
         .is_some_and(|terrain| terrain.low_within(x, z, reach) < 0)
-}
-
-/// Whether `unit`'s capsule overlaps a content box, door leaf, prop or the terrain beyond the
-/// tolerances (the ground's authored overlap excepted).
-fn embedded(zone: &ZoneSimulation, unit: &UnitBody, boxes: &[([f32; 3], [f32; 3])]) -> bool {
-    let [x, y, z] = unit.body.exact_position();
-    let half = unit.body.half_extents();
-    #[allow(clippy::cast_precision_loss)]
-    let half = [half.x, half.y, half.z].map(|v| v as f32);
-    let radius = half[0].max(half[2]);
-    let authored = (radius - half[1]).max(0.0);
-    #[allow(clippy::cast_possible_truncation)]
-    let ground = zone
-        .physics()
-        .terrain_height(x.round() as i32, z.round() as i32)
-        .unwrap_or(0.0);
-    if y + CONTACT_OFFSET_UNITS - half[1].max(radius) < ground - authored - 2.0 {
-        return true;
-    }
-    let open = open_floor(zone, x, z, radius);
-    boxes.iter().any(|&(box_centre, box_half)| {
-        let ground = box_centre[1] + box_half[1] <= 0.0;
-        !(ground && open)
-            && capsule_box_gap([x, y + CONTACT_OFFSET_UNITS, z], half, box_centre, box_half)
-                < -(PENETRATION_TOLERANCE_UNITS + if ground { authored } else { 0.0 })
-    })
 }
 
 /// Shared invariants of one tick on one backend.
@@ -222,46 +203,33 @@ fn check_invariants(
         let boxes = boxes(zone);
         for unit in units {
             let [x, y, z] = unit.body.exact_position();
-            let half = unit.body.half_extents();
-            #[allow(clippy::cast_precision_loss)]
-            let half = [half.x, half.y, half.z].map(|v| v as f32);
-            let radius = half[0].max(half[2]);
-            // Squat creatures' capsules (radius above half height) are authored overlapping
-            // the ground by the difference: Rapier keeps that overlap, so it is allowed
-            // against the ground only, never against walls.
-            let authored = (radius - half[1]).max(0.0);
+            let shape = capsule(unit);
             let centre = [x, y + CONTACT_OFFSET_UNITS, z];
             let mut deepest = None;
             let mut closest = f32::INFINITY;
-            let open = open_floor(zone, x, z, radius);
+            let open = open_floor(zone, unit);
             for &(box_centre, box_half) in &boxes {
                 let ground = box_centre[1] + box_half[1] <= 0.0;
                 if ground && open {
                     continue;
                 }
-                let gap = capsule_box_gap(centre, half, box_centre, box_half);
-                let allowed = PENETRATION_TOLERANCE_UNITS + if ground { authored } else { 0.0 };
-                if gap < -allowed && deepest.is_none_or(|(depth, _)| -gap > depth) {
+                let gap = capsule_box_gap(centre, shape, box_centre, box_half);
+                if gap < -PENETRATION_TOLERANCE_UNITS
+                    && deepest.is_none_or(|(depth, _)| -gap > depth)
+                {
                     deepest = Some((-gap, (box_centre, box_half)));
                 }
-                closest = closest.min(gap + if ground { authored } else { 0.0 });
+                closest = closest.min(gap);
             }
+            // No workload places a unit inside geometry (#534), so this holds from tick 1.
             if let Some((depth, (box_centre, box_half))) = deepest {
-                // The Greyhaven fixture places players by spawn table, some inside a box or
-                // hill: no backend owes them a way out, so they are exempt from then on.
-                if tick == 1 {
-                    check.placed_inside.insert(unit.unit);
-                } else if !check.placed_inside.contains(&unit.unit) {
-                    return Err(format!(
-                        "{:?} at {:?} penetrates box {box_centre:?}±{box_half:?} by {depth} at tick {tick}",
-                        unit.unit,
-                        [x, y, z]
-                    ));
-                }
+                return Err(format!(
+                    "{:?} at {:?} penetrates box {box_centre:?}±{box_half:?} by {depth} at tick {tick}",
+                    unit.unit,
+                    [x, y, z]
+                ));
             }
-            if !check.placed_inside.contains(&unit.unit) {
-                check.closest = check.closest.min(closest);
-            }
+            check.closest = check.closest.min(closest);
             #[allow(clippy::cast_possible_truncation)]
             let terrain = zone
                 .physics()
@@ -269,17 +237,12 @@ fn check_invariants(
                 .unwrap_or(0.0);
             // The floor half-space holds units at y = 0 except where it is open.
             let ground = if open { terrain } else { terrain.max(0.0) };
-            let bottom = centre[1] - half[1].max(radius);
+            let bottom = centre[1] - shape.0 - shape.1;
             // The terrain sample is the ray height at the rounded column, so allow for its
-            // slope over half a unit. The Greyhaven fixture puts every player's feet at y = 0,
-            // some inside a hill.
-            let sunk = bottom < ground - authored - 2.0;
-            if tick == 1 && sunk {
-                check.placed_inside.insert(unit.unit);
-            }
-            if sunk && !check.placed_inside.contains(&unit.unit) {
+            // slope over half a unit.
+            if bottom < ground - 2.0 {
                 return Err(format!(
-                    "{:?} at {:?} (half {half:?}) sinks {} below the ground {ground} at tick {tick}",
+                    "{:?} at {:?} (capsule {shape:?}) sinks {} below the ground {ground} at tick {tick}",
                     unit.unit,
                     [x, y, z],
                     ground - bottom
@@ -312,13 +275,7 @@ fn check_invariants(
 
 /// The gap between two upright capsules given as unit bodies (their game centres).
 fn capsule_gap(a: &UnitBody, b: &UnitBody) -> f32 {
-    let shape = |unit: &UnitBody| {
-        let half = unit.body.half_extents();
-        #[allow(clippy::cast_precision_loss)]
-        let (radius, half_height) = (half.x.max(half.z) as f32, half.y as f32);
-        (radius, (half_height - radius).max(0.0))
-    };
-    let ((ra, sa), (rb, sb)) = (shape(a), shape(b));
+    let ((sa, ra), (sb, rb)) = (capsule(a), capsule(b));
     let (p, q) = (a.body.exact_position(), b.body.exact_position());
     let vertical = ((p[1] - q[1]).abs() - sa - sb).max(0.0);
     (p[0] - q[0]).hypot(p[2] - q[2]).hypot(vertical) - ra - rb
@@ -551,7 +508,6 @@ fn run(workload: &Workload, backend: Backend) -> Result<(Trace, Check)> {
             stomped: false,
             closest: f32::INFINITY,
             departed: None,
-            placed_inside: std::collections::BTreeSet::new(),
         };
         while !run.finished() {
             run.advance()?;
@@ -672,9 +628,7 @@ fn creature_divergence(a: &Trace, b: &Trace) -> (f32, usize, Option<u64>) {
 /// Query decisions on one state, by probe: the same probes on both backends must agree.
 #[derive(Debug, Default, PartialEq)]
 struct Decisions {
-    /// Units embedded in a box or hill (placed there by a fixture), or over the lake basin's
-    /// open floor (a Rapier-only workaround, #274): grounded is not compared for them.
-    embedded: usize,
+    /// Every unit's grounded state, over the lake basin's open floor (#274) too.
     grounded: BTreeMap<String, bool>,
     sight: BTreeMap<String, bool>,
     npc_sight: BTreeMap<String, bool>,
@@ -690,22 +644,12 @@ struct Decisions {
 fn decisions(zone: &mut ZoneSimulation) -> Result<Decisions> {
     let mut decisions = Decisions::default();
     let units = zone.physics_units();
-    let boxes = boxes(zone);
     for unit in &units {
         let position = unit.body.position();
         let (x, z) = (position.x, position.z);
-        // Inside a box or hill, "ground" is whichever face the penetration normal picks.
-        let half = unit.body.half_extents();
-        #[allow(clippy::cast_precision_loss)]
-        let radius = half.x.max(half.z) as f32;
-        let [ex, _, ez] = unit.body.exact_position();
-        if embedded(zone, unit, &boxes) || open_floor(zone, ex, ez, radius) {
-            decisions.embedded += 1;
-        } else {
-            decisions
-                .grounded
-                .insert(format!("{:?}", unit.unit), unit.grounded);
-        }
+        decisions
+            .grounded
+            .insert(format!("{:?}", unit.unit), unit.grounded);
         decisions
             .ground
             .insert(format!("{:?}", unit.unit), zone.ground_probe(x, z));
@@ -810,9 +754,9 @@ fn decision_differences(rapier: &Decisions, engine: &Decisions) -> Vec<String> {
 
 /// Rapier's state at sampled ticks, recovered onto each backend, must yield the same
 /// decisions. Returns the number of probes compared.
-fn query_parity(workload: &Workload, rapier: &Trace) -> Result<(usize, usize)> {
+fn query_parity(workload: &Workload, rapier: &Trace) -> Result<usize> {
     let content = mmorpg_core::greyhaven_vale::content();
-    let (mut probes, mut embedded) = (0, 0);
+    let mut probes = 0;
     let last = rapier.snapshots.len() - 1;
     for (index, snapshot) in rapier.snapshots.iter().enumerate() {
         if index % PARITY_EVERY != 0 && index != last {
@@ -826,7 +770,6 @@ fn query_parity(workload: &Workload, rapier: &Trace) -> Result<(usize, usize)> {
         let (mut left, mut right) = (on(Backend::Rapier)?, on(Backend::Engine)?);
         assert_eq!(right.physics().backend(), Backend::Engine);
         let (a, b) = (decisions(&mut left)?, decisions(&mut right)?);
-        embedded = embedded.max(a.embedded);
         probes += a.grounded.len()
             + a.sight.len()
             + a.npc_sight.len()
@@ -849,7 +792,7 @@ fn query_parity(workload: &Workload, rapier: &Trace) -> Result<(usize, usize)> {
                 .collect::<Vec<_>>()
         );
     }
-    Ok((probes, embedded))
+    Ok(probes)
 }
 
 #[test]
@@ -889,17 +832,15 @@ fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<(
         let outcomes_differ = rapier.outcomes != engine.outcomes;
         // Units that walk into a settled crate stop where it rests (`vale-crate-shove`).
         let mut crate_gap = 0.0_f32;
-        let (probes, embedded) = query_parity(&workload, &rapier)?;
+        let probes = query_parity(&workload, &rapier)?;
         println!(
             "{name}: ticks={} players max Δxz={horizontal:.4} Δy={vertical:.4} first rounded \
              difference at {first:?}; creatures max final Δxz={creatures:.3} ({creatures_differing} \
              differ, first rounded difference at {creatures_first:?}); doors differ={doors_differ}; command outcomes differ={outcomes_differ}; \
-             closest box gap rapier={:.4} engine={:.4}; placed overlapping {}; {probes} \
-             query probes agree ({embedded} embedded units' grounded not compared) [{:?}]",
+             closest box gap rapier={:.4} engine={:.4}; {probes} query probes agree [{:?}]",
             rapier.snapshots.len(),
             rapier_check.closest,
             engine_check.closest,
-            rapier_check.placed_inside.len(),
             started.elapsed(),
         );
         if matches!(workload, Workload::Traversal) {

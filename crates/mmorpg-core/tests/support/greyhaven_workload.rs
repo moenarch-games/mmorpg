@@ -46,10 +46,63 @@ pub const FIXTURES: [Fixture; 4] = [
     },
 ];
 
+/// Fight slots step this far (units) from a blocked one: a player's width and a little.
+const SLOT_STEP_UNITS: i32 = 65;
+
+/// The first fight slot at or around `at` (feet XZ) where a player stands clear of every content
+/// box, prop, door leaf, creature and already `placed` player, with the terrain under its whole
+/// footprint below its feet (#534): the player's body centre there. Slots step outward in
+/// [`SLOT_STEP_UNITS`] along X, then also along Z.
+fn clear_stand(zone: &ZoneSimulation, placed: &[[i32; 3]], at: [i32; 2]) -> Option<[i32; 3]> {
+    let [radius, half_y, _] = PLAYER_HALF_EXTENTS_UNITS;
+    let terrain = |x: i32, z: i32| zone.physics().terrain_height(x, z).unwrap_or(0.0);
+    let offsets = (0..12).flat_map(|ring: i32| {
+        [0, 1, -1, 2, -2].map(move |side: i32| (ring, side * SLOT_STEP_UNITS))
+    });
+    for (ring, dz) in offsets {
+        let [x, z] = [at[0] + ring * SLOT_STEP_UNITS, at[1] + dz];
+        // The highest ground under the footprint, sampled across its square.
+        let mut ground = f32::MIN;
+        for i in -2..=2 {
+            for j in -2..=2 {
+                ground = ground.max(terrain(x + i * radius / 2, z + j * radius / 2));
+            }
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        let feet = (ground - 0.01).ceil() as i32;
+        let centre = [x, feet + half_y, z];
+        let apart = placed.iter().all(|other| {
+            (i64::from(other[0] - x).pow(2) + i64::from(other[2] - z).pow(2))
+                > i64::from(2 * radius + 2).pow(2)
+        });
+        // One unit up and around: only the ground (floors and the terrain on them, whose
+        // bodies have no extent) may meet the probe.
+        #[allow(clippy::cast_precision_loss)]
+        let clear = zone
+            .physics()
+            .overlap_box(
+                [x as f32, (centre[1] + 1) as f32, z as f32],
+                [(radius + 1) as f32, half_y as f32, (radius + 1) as f32],
+            )
+            .is_ok_and(|hits| {
+                hits.iter().all(|&hit| {
+                    zone.physics().body(hit).is_some_and(|body| {
+                        body.half_extents() == mmorpg_core::physics::Vec3i::ZERO
+                    })
+                })
+            });
+        if apart && clear {
+            return Some(centre);
+        }
+    }
+    None
+}
+
 pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> {
     let content = greyhaven_vale::content();
     let empty = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content))?;
     let mut state = empty.snapshot()?;
+    let mut placed = Vec::new();
     for index in 0..fixture.players {
         let position = if !fixture.fighting {
             let feet = greyhaven_vale::SPAWN_GRID
@@ -74,10 +127,9 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
             };
             let row = i32::try_from(index / 6)?;
             let [x, z] = [spawn.position[0] + 150 + row * 65, spawn.position[1]];
-            // Feet on the basin's terraces, such as Millbrook Farm's (#423); elsewhere on the
-            // valley floor as before, so the outer hills' fights keep their geometry.
-            let ground = greyhaven_vale::basin::height_at(x, z).unwrap_or(0);
-            [x, ground + PLAYER_HALF_EXTENTS_UNITS[1], z]
+            let position = clear_stand(&empty, &placed, [x, z]).ok_or("no clear fight slot")?;
+            placed.push(position);
+            position
         };
         state.players.push(CanonicalPlayerSnapshot {
             copper: 0,

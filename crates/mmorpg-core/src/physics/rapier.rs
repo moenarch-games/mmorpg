@@ -123,12 +123,9 @@ fn empty_world() -> PhysicsWorld {
     world
 }
 
-/// An upright capsule as wide and tall as `half_extents`, in metres.
+/// A unit's upright capsule inside its box (`super::capsule_dimensions`), in metres.
 fn capsule(half_extents: Vec3i) -> Capsule {
-    #[allow(clippy::cast_precision_loss)]
-    let radius = half_extents.x.max(half_extents.z) as f32;
-    #[allow(clippy::cast_precision_loss)]
-    let half_height = (half_extents.y as f32 - radius).max(0.0);
+    let (half_height, radius) = super::capsule_dimensions(half_extents);
     Capsule::new_y(half_height / UNITS_PER_METRE, radius / UNITS_PER_METRE)
 }
 
@@ -716,8 +713,7 @@ impl World {
         if speed == 0.0 {
             return desired;
         }
-        #[allow(clippy::cast_precision_loss)]
-        let radius = |half: Vec3i| half.x.max(half.z) as f32;
+        let radius = |half: Vec3i| super::capsule_dimensions(half).1;
         #[allow(clippy::cast_precision_loss)]
         let (low, high) = (
             body.position[1] - body.half_extents.y as f32,
