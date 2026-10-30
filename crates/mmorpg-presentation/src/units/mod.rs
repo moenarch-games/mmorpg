@@ -32,7 +32,7 @@ use mmorpg_core::{
 use mmorpg_scenery::Scenery;
 
 use crate::{Draw, geometry::V};
-use imported::{Kind, Loadout, Outfit, Playback, Resident};
+use imported::{Kind, Loadout, Outfit, Playback, Reaction, Resident};
 use kit::{Frame, IQ, Primitive, Resources, offset, qa, qm, shade};
 use player::{Hat, Look};
 
@@ -47,6 +47,27 @@ pub const COMPANION_TINT: [f32; 3] = [0.6, 1.0, 0.45];
 /// lets go: the late-input grace (150 ms) plus an ordinary round trip and a held follow-up's
 /// short wait. An acceptance after that still plays its strike, from the start.
 pub const PREPARATION_ANSWER_SECONDS: f64 = 0.75;
+
+/// The reaction a hit of `ability` shows (#538): a bash, blast or charge knocks the target back;
+/// a large creature's stomp or smash shoves it round.
+fn knockback(ability: AbilityId) -> Option<Reaction> {
+    use mmorpg_core::AbilityEffect;
+    match mmorpg_core::ability_by_id(ability)?.effect {
+        AbilityEffect::Bash { knockback, .. }
+        | AbilityEffect::Blast { knockback, .. }
+        | AbilityEffect::Charge { knockback }
+            if knockback > 0 =>
+        {
+            Some(Reaction::Knockback)
+        }
+        AbilityEffect::Stomp { knockback, .. } | AbilityEffect::Smash { knockback, .. }
+            if knockback > 0 =>
+        {
+            Some(Reaction::Shove)
+        }
+        _ => None,
+    }
+}
 
 /// The local player's reversible attack preparation (Atlas 6.6.10, #415): an instant ability
 /// pressed or aimed but not yet answered by the zone. It only poses the viewer's upper body;
@@ -346,7 +367,77 @@ impl UnitPresenter {
         // Accepted strikes start their clips (Atlas 6.6.45): the event, never a clip, is the
         // attack. Every received projection is read, so a frame spanning several ticks keeps them.
         let viewer = EntityRef::Player(snapshot.viewer_id);
+        // The units that resolved a knockback this projection (#538): their hits throw the
+        // target back, a large creature's stomp or smash shoves it round.
+        let knockers: BTreeMap<EntityRef, Reaction> = snapshot
+            .events
+            .iter()
+            .filter_map(|event| match *event {
+                ZoneEvent::AbilityUsed {
+                    source, ability, ..
+                } => knockback(ability).map(|reaction| (source, reaction)),
+                _ => None,
+            })
+            .collect();
         for event in &snapshot.events {
+            // Reactions and casts (#538) follow the zone's resolved blows and casts.
+            match *event {
+                ZoneEvent::DamageTaken {
+                    source,
+                    target,
+                    critical,
+                    ..
+                }
+                | ZoneEvent::DamageDealt {
+                    source,
+                    target,
+                    critical,
+                    ..
+                }
+                | ZoneEvent::DamageObserved {
+                    source,
+                    target,
+                    critical,
+                    ..
+                } => {
+                    let reaction = knockers.get(&source).copied().unwrap_or(if critical {
+                        Reaction::Head
+                    } else {
+                        Reaction::Chest
+                    });
+                    self.react(snapshot, target, reaction, seconds);
+                }
+                // A bash knocks back without damage.
+                ZoneEvent::AbilityUsed {
+                    ability,
+                    target: Some(target),
+                    ..
+                } => {
+                    if let Some(reaction) = knockback(ability) {
+                        self.react(snapshot, target, reaction, seconds);
+                    }
+                }
+                ZoneEvent::Blocked { target, .. } => {
+                    self.react(snapshot, target, Reaction::Block, seconds);
+                }
+                ZoneEvent::GuardBroken { target, .. } => {
+                    self.react(snapshot, target, Reaction::GuardBreak, seconds);
+                }
+                ZoneEvent::CastStarted { source, ticks, .. } => {
+                    self.cast(snapshot, source, ticks, seconds);
+                }
+                ZoneEvent::Interrupted { target, .. } => {
+                    if let Some((kind, class)) = self.class_of(snapshot, target)
+                        && let Some(cycle) = kind.cast(class)
+                    {
+                        let cancel = self.clip(kind, cycle.cancel);
+                        if let Some(playback) = self.playbacks.get_mut(&target) {
+                            playback.cancel(cancel, seconds);
+                        }
+                    }
+                }
+                _ => {}
+            }
             // The zone answers the local wind-up (Atlas 6.6.10): a refusal, or a cast it began
             // instead, lets it go; its accepted strike commits it below.
             if self.preparation.is_some()
@@ -376,26 +467,19 @@ impl UnitPresenter {
             if commits {
                 self.preparation = None;
             }
-            let Some(record) = snapshot.entities.iter().find(|e| e.entity() == source) else {
+            let Some((kind, class)) = self.class_of(snapshot, source) else {
                 continue;
             };
-            let Some(kind) = self.imported_kind(source, record) else {
-                continue;
-            };
-            let class = match source {
-                EntityRef::Player(id) if id == snapshot.viewer_id => snapshot.viewer.class,
-                EntityRef::Player(_) => ClassChoice::from_appearance(record.appearance),
-                _ => None,
-            };
-            let class = class.map(|choice| choice.class).or_else(|| {
-                self.resident(source, record)
-                    .and_then(Resident::strike_class)
-            });
             let mut clip = kind.strike(class, ability);
             if self.duration(kind, clip) <= 0. {
                 clip = kind.clips().attack;
             }
             let duration = self.duration(kind, clip);
+            // A bow shot recovers after its release (#538).
+            let recovery = kind
+                .cycle_of(clip)
+                .and_then(|cycle| cycle.recovery)
+                .and_then(|recovery| self.clip(kind, recovery));
             let playback = self.playbacks.entry(source).or_default();
             if commits {
                 // The committed swing continues the wind-up.
@@ -403,7 +487,84 @@ impl UnitPresenter {
             } else {
                 playback.strike(clip, duration, seconds);
             }
+            if let Some((recovery, length)) = recovery {
+                playback.recover(recovery, length);
+            }
         }
+    }
+
+    /// The imported model presenting `entity` in `snapshot` and the class whose strikes and
+    /// casts it plays.
+    fn class_of(
+        &self,
+        snapshot: &ZoneSnapshot,
+        entity: EntityRef,
+    ) -> Option<(Kind, Option<mmorpg_core::PlayerClass>)> {
+        let record = snapshot.entities.iter().find(|e| e.entity() == entity)?;
+        let kind = self.imported_kind(entity, record)?;
+        let class = match entity {
+            EntityRef::Player(id) if id == snapshot.viewer_id => snapshot.viewer.class,
+            EntityRef::Player(_) => ClassChoice::from_appearance(record.appearance),
+            _ => None,
+        };
+        let class = class.map(|choice| choice.class).or_else(|| {
+            self.resident(entity, record)
+                .and_then(Resident::strike_class)
+        });
+        Some((kind, class))
+    }
+
+    /// `clip` and its length, when the model has it.
+    fn clip(&self, kind: Kind, clip: &'static str) -> Option<(&'static str, f32)> {
+        let length = self.duration(kind, clip);
+        (length > 0.).then_some((clip, length))
+    }
+
+    /// `entity` reacts to a blow the zone resolved (#538), when its model has the reaction.
+    fn react(
+        &mut self,
+        snapshot: &ZoneSnapshot,
+        entity: EntityRef,
+        reaction: Reaction,
+        seconds: f64,
+    ) {
+        let Some((kind, _)) = self.class_of(snapshot, entity) else {
+            return;
+        };
+        let Some((clip, length)) = kind
+            .reaction(reaction)
+            .and_then(|clip| self.clip(kind, clip))
+        else {
+            return;
+        };
+        self.playbacks
+            .entry(entity)
+            .or_default()
+            .react(reaction, clip, length, seconds);
+    }
+
+    /// `entity` began a cast or channel of `ticks` (#538): it draws and holds its bow, or
+    /// raises and holds a spell, when its model has the hold.
+    fn cast(&mut self, snapshot: &ZoneSnapshot, entity: EntityRef, ticks: u16, seconds: f64) {
+        let Some((kind, class)) = self.class_of(snapshot, entity) else {
+            return;
+        };
+        let Some(cycle) = kind.cast(class) else {
+            return;
+        };
+        let Some((hold, _)) = self.clip(kind, cycle.hold) else {
+            return;
+        };
+        let enter = self.clip(kind, cycle.enter);
+        #[allow(clippy::cast_possible_truncation)]
+        let length = (f64::from(ticks) / f64::from(mmorpg_core::TICK_HZ)) as f32;
+        self.playbacks.entry(entity).or_default().cast(
+            enter,
+            hold,
+            cycle.footwork,
+            length,
+            seconds,
+        );
     }
 
     /// Half extents in metres of a unit's body.
@@ -547,7 +708,12 @@ impl UnitPresenter {
                         if self.duration(kind, clip) <= 0. {
                             clip = kind.clips().attack;
                         }
-                        (clip, preparation.pressed)
+                        // A bow shot winds up aiming (#538).
+                        let aim = kind
+                            .cycle_of(clip)
+                            .and_then(|cycle| cycle.aim)
+                            .filter(|&aim| self.duration(kind, aim) > 0.);
+                        (aim.unwrap_or(clip), preparation.pressed)
                     });
                     let playback = self.playbacks.entry(entity).or_default();
                     match wind_up {
@@ -567,6 +733,7 @@ impl UnitPresenter {
                     imported::Cues {
                         speed,
                         direction: (-loc.right).atan2(loc.forward),
+                        turn: loc.turn,
                         vertical_speed: vertical,
                         water,
                         dead,
