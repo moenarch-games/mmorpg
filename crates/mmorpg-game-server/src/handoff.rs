@@ -2,15 +2,18 @@
 //!
 //! Three authorities take part and none of them decides alone:
 //!
-//! - each zone's `ZoneSimulation` holds the character live in at most one
-//!   place (freeze, stage, activate, retire, abort);
+//! - each zone holds the character live in at most one place (freeze,
+//!   stage, activate, retire, abort), through a [`TransferZone`]: a
+//!   `ZoneSimulation` directly, or a live zone host's simulation through its
+//!   trusted host inputs ([`crate::handoff_host`]);
 //! - the character store (`mmorpg-characters`) holds the character's lease
 //!   and, while a handoff is pending, the frozen transfer itself, so it
 //!   survives either host stopping;
-//! - the control plane's fenced handoff record decides the outcome:
-//!   `Accepted` is the decision point. Before it the source may abort and
-//!   stays authoritative; from it on the transfer completes to the
-//!   destination.
+//! - the control plane's fenced handoff record, through a
+//!   [`HandoffAuthority`] (the in-memory reference model or the PostgreSQL
+//!   directory), decides the outcome: `Accepted` is the decision point.
+//!   Before it the source may abort and stays authoritative; from it on the
+//!   transfer completes to the destination.
 //!
 //! The happy path is [`begin_outbound`] (source) → [`accept_inbound`]
 //! (destination) → [`retire_outbound`] (source) → [`activate_inbound`]
@@ -30,20 +33,12 @@ use mmorpg_characters::{
     Acquired, CharacterLease, CharacterStore, EntryBackend, LeaseHolder, PendingHandoff, StoreError,
 };
 use mmorpg_control_plane::{
-    ControlPlaneError, EntityId, HandoffPhase, HandoffRegistry, HandoffTicket, ZoneDirectory,
-    ZoneLease,
+    ControlPlaneError, EntityId, HandoffAuthority, HandoffPhase, HandoffTicket, ZoneLease,
 };
 use mmorpg_core::{
-    CharacterId, CharacterLocation, CharacterTransfer, PlayerId, TransferId, ZoneError,
+    CharacterId, CharacterLocation, CharacterTransfer, PlayerId, TransferId, ZoneError, ZoneId,
     ZoneSimulation,
 };
-
-/// The control plane as one host operation sees it, at one control-plane tick.
-pub struct Authority<'a> {
-    pub directory: &'a ZoneDirectory,
-    pub handoffs: &'a mut HandoffRegistry,
-    pub now_tick: u64,
-}
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum HandoffError {
@@ -54,6 +49,8 @@ pub enum HandoffError {
     Invalid(&'static str),
     /// The destination may not go live before the source retired.
     NotCommitted(TransferId),
+    /// A live zone host could not run the step.
+    Host(String),
 }
 
 impl fmt::Display for HandoffError {
@@ -68,6 +65,7 @@ impl fmt::Display for HandoffError {
                 "transfer {} has not retired its source yet",
                 transfer.get()
             ),
+            Self::Host(message) => write!(formatter, "zone host: {message}"),
         }
     }
 }
@@ -89,6 +87,77 @@ impl From<StoreError> for HandoffError {
 impl From<ControlPlaneError> for HandoffError {
     fn from(error: ControlPlaneError) -> Self {
         Self::ControlPlane(error)
+    }
+}
+
+/// One zone's side of a transfer: where the character is live, frozen or
+/// staged. Every step is idempotent per transfer ID.
+pub trait TransferZone {
+    fn zone_id(&self) -> ZoneId;
+    /// Takes the player out of the live zone at the cutover toward
+    /// `arrival`; a refused freeze changes nothing.
+    fn freeze(
+        &mut self,
+        player: PlayerId,
+        character: CharacterId,
+        transfer_id: TransferId,
+        arrival: CharacterLocation,
+    ) -> Result<CharacterTransfer, HandoffError>;
+    /// Whether this zone holds the frozen copy of `transfer_id`.
+    fn has_frozen(&self, transfer_id: TransferId) -> bool;
+    /// Puts the frozen player back live; returns its player ID.
+    fn abort(&mut self, transfer_id: TransferId) -> Result<PlayerId, HandoffError>;
+    /// Drops the frozen copy for good once the destination accepted.
+    fn retire(&mut self, transfer_id: TransferId);
+    /// Validates and holds an arriving transfer, not yet live.
+    fn stage(&mut self, transfer: CharacterTransfer) -> Result<(), HandoffError>;
+    fn has_staged(&self, transfer_id: TransferId) -> bool;
+    fn discard(&mut self, transfer_id: TransferId);
+    /// Makes a staged transfer live as `player`.
+    fn activate(&mut self, transfer_id: TransferId, player: PlayerId) -> Result<(), HandoffError>;
+}
+
+impl TransferZone for ZoneSimulation {
+    fn zone_id(&self) -> ZoneId {
+        Self::zone_id(self)
+    }
+
+    fn freeze(
+        &mut self,
+        player: PlayerId,
+        character: CharacterId,
+        transfer_id: TransferId,
+        arrival: CharacterLocation,
+    ) -> Result<CharacterTransfer, HandoffError> {
+        Ok(self.freeze_for_transfer(player, character, transfer_id, arrival)?)
+    }
+
+    fn has_frozen(&self, transfer_id: TransferId) -> bool {
+        self.outbound_transfer(transfer_id).is_some()
+    }
+
+    fn abort(&mut self, transfer_id: TransferId) -> Result<PlayerId, HandoffError> {
+        Ok(self.abort_transfer(transfer_id)?)
+    }
+
+    fn retire(&mut self, transfer_id: TransferId) {
+        self.retire_transfer(transfer_id);
+    }
+
+    fn stage(&mut self, transfer: CharacterTransfer) -> Result<(), HandoffError> {
+        Ok(self.stage_transfer(transfer)?)
+    }
+
+    fn has_staged(&self, transfer_id: TransferId) -> bool {
+        self.staged_transfer(transfer_id).is_some()
+    }
+
+    fn discard(&mut self, transfer_id: TransferId) {
+        self.discard_staged_transfer(transfer_id);
+    }
+
+    fn activate(&mut self, transfer_id: TransferId, player: PlayerId) -> Result<(), HandoffError> {
+        Ok(self.activate_transfer(transfer_id, player)?)
     }
 }
 
@@ -121,6 +190,15 @@ pub const fn holder(lease: &ZoneLease) -> LeaseHolder {
     }
 }
 
+fn phase<A: HandoffAuthority + ?Sized>(
+    authority: &mut A,
+    transfer_id: TransferId,
+) -> Result<Option<HandoffPhase>, HandoffError> {
+    Ok(authority
+        .record(handoff_id(transfer_id))?
+        .map(|record| record.phase))
+}
+
 /// What the source asks for when one of its players crosses a seam or
 /// teleports.
 pub struct OutboundRequest<'a> {
@@ -137,12 +215,17 @@ pub struct OutboundRequest<'a> {
 /// with the character's lease and prepares the handoff. Returns the transfer
 /// to send to the destination. A refused step undoes the earlier ones, so
 /// the player is live at the source again.
-pub fn begin_outbound<B: EntryBackend>(
-    zone: &mut ZoneSimulation,
+pub fn begin_outbound<Z, B, A>(
+    zone: &mut Z,
     store: &mut CharacterStore<B>,
-    authority: &mut Authority<'_>,
+    authority: &mut A,
     request: &OutboundRequest<'_>,
-) -> Result<CharacterTransfer, HandoffError> {
+) -> Result<CharacterTransfer, HandoffError>
+where
+    Z: TransferZone + ?Sized,
+    B: EntryBackend,
+    A: HandoffAuthority + ?Sized,
+{
     if request.source.zone_id != zone.zone_id()
         || request.character.holder != holder(request.source)
         || request.arrival.zone_id != request.destination.zone_id
@@ -151,17 +234,15 @@ pub fn begin_outbound<B: EntryBackend>(
             "the transfer does not leave this zone lease for the destination lease",
         ));
     }
-    authority
-        .directory
-        .ensure_current(request.source, authority.now_tick)?;
+    authority.ensure_current(request.source)?;
     let character = &request.character.character_id;
-    let transfer = zone.freeze_for_transfer(
+    let transfer = zone.freeze(
         request.player,
         character.clone(),
         request.transfer_id,
         request.arrival,
     )?;
-    let undo = |zone: &mut ZoneSimulation| zone.abort_transfer(request.transfer_id).map(|_| ());
+    let undo = |zone: &mut Z| zone.abort(request.transfer_id).map(|_| ());
     if let Err(error) =
         store.begin_handoff(request.character, &transfer, holder(request.destination))
     {
@@ -174,10 +255,7 @@ pub fn begin_outbound<B: EntryBackend>(
         source: request.source.clone(),
         destination: request.destination.clone(),
     };
-    match authority
-        .handoffs
-        .prepare(ticket, authority.directory, authority.now_tick)
-    {
+    match authority.prepare(ticket) {
         Ok(HandoffPhase::Aborted) => {
             store.cancel_handoff(character, request.transfer_id)?;
             undo(zone)?;
@@ -197,26 +275,26 @@ pub fn begin_outbound<B: EntryBackend>(
 /// transfer's record committed. The character is not live until
 /// [`activate_inbound`]. A refused acceptance discards the staged copy; a
 /// failure after acceptance keeps it for [`reconcile_inbound`].
-pub fn accept_inbound<B: EntryBackend>(
-    zone: &mut ZoneSimulation,
+pub fn accept_inbound<Z, B, A>(
+    zone: &mut Z,
     store: &mut CharacterStore<B>,
-    authority: &mut Authority<'_>,
+    authority: &mut A,
     destination: &ZoneLease,
     transfer: CharacterTransfer,
-) -> Result<Acquired, HandoffError> {
+) -> Result<Acquired, HandoffError>
+where
+    Z: TransferZone + ?Sized,
+    B: EntryBackend,
+    A: HandoffAuthority + ?Sized,
+{
     if destination.zone_id != zone.zone_id() {
         return Err(HandoffError::Invalid("the lease is not this zone's"));
     }
     let transfer_id = transfer.transfer_id;
     let character = transfer.record.character_id.clone();
-    zone.stage_transfer(transfer)?;
-    if let Err(error) = authority.handoffs.accept(
-        handoff_id(transfer_id),
-        destination,
-        authority.directory,
-        authority.now_tick,
-    ) {
-        zone.discard_staged_transfer(transfer_id);
+    zone.stage(transfer)?;
+    if let Err(error) = authority.accept(handoff_id(transfer_id), destination) {
+        zone.discard(transfer_id);
         return Err(error.into());
     }
     Ok(store.complete_handoff(&character, transfer_id)?)
@@ -224,50 +302,62 @@ pub fn accept_inbound<B: EntryBackend>(
 
 /// Source, once the destination accepted: confirms the retirement and drops
 /// the frozen copy for good.
-pub fn retire_outbound(
-    zone: &mut ZoneSimulation,
-    authority: &mut Authority<'_>,
+pub fn retire_outbound<Z, A>(
+    zone: &mut Z,
+    authority: &mut A,
     source: &ZoneLease,
     transfer_id: TransferId,
-) -> Result<(), HandoffError> {
-    authority.handoffs.commit(
-        handoff_id(transfer_id),
-        source,
-        authority.directory,
-        authority.now_tick,
-    )?;
-    zone.retire_transfer(transfer_id);
+) -> Result<(), HandoffError>
+where
+    Z: TransferZone + ?Sized,
+    A: HandoffAuthority + ?Sized,
+{
+    authority.commit(handoff_id(transfer_id), source)?;
+    zone.retire(transfer_id);
     Ok(())
 }
 
-/// Destination, once the source retired: makes the staged character live as
-/// `player`. Only commands after the cutover sequence apply.
-///
-/// The source has retired when it committed the handoff, or when the
-/// transfer is accepted and the source's zone lease is no longer current: a
-/// fenced host has lost its frozen copy or can no longer act on it, and an
-/// accepted transfer never aborts back to it.
-pub fn activate_inbound(
-    zone: &mut ZoneSimulation,
-    authority: &Authority<'_>,
+/// Whether the source of `transfer_id` has retired: it committed the
+/// handoff, or the transfer is accepted and the source's zone lease is no
+/// longer current. A fenced host has lost its frozen copy or can no longer
+/// act on it, and an accepted transfer never aborts back to it.
+pub fn source_retired<A: HandoffAuthority + ?Sized>(
+    authority: &mut A,
+    transfer_id: TransferId,
+) -> Result<bool, HandoffError> {
+    let Some(record) = authority.record(handoff_id(transfer_id))? else {
+        return Ok(false);
+    };
+    Ok(match record.phase {
+        HandoffPhase::Committed => true,
+        HandoffPhase::Accepted => match authority.ensure_current(&record.ticket.source) {
+            Ok(()) => false,
+            Err(ControlPlaneError::Backend(message)) => {
+                return Err(ControlPlaneError::Backend(message).into());
+            }
+            Err(_) => true,
+        },
+        HandoffPhase::Prepared | HandoffPhase::Aborted => false,
+    })
+}
+
+/// Destination, once the source retired ([`source_retired`]): makes the
+/// staged character live as `player`. Only commands after the cutover
+/// sequence apply.
+pub fn activate_inbound<Z, A>(
+    zone: &mut Z,
+    authority: &mut A,
     transfer_id: TransferId,
     player: PlayerId,
-) -> Result<(), HandoffError> {
-    let retired = authority
-        .handoffs
-        .record(handoff_id(transfer_id))
-        .is_some_and(|record| match record.phase {
-            HandoffPhase::Committed => true,
-            HandoffPhase::Accepted => authority
-                .directory
-                .ensure_current(&record.ticket.source, authority.now_tick)
-                .is_err(),
-            HandoffPhase::Prepared | HandoffPhase::Aborted => false,
-        });
-    if !retired {
+) -> Result<(), HandoffError>
+where
+    Z: TransferZone + ?Sized,
+    A: HandoffAuthority + ?Sized,
+{
+    if !source_retired(authority, transfer_id)? {
         return Err(HandoffError::NotCommitted(transfer_id));
     }
-    Ok(zone.activate_transfer(transfer_id, player)?)
+    zone.activate(transfer_id, player)
 }
 
 /// How a source's transfer ended.
@@ -284,40 +374,36 @@ pub enum OutboundOutcome {
 /// handoff record. Aborts it while nobody accepted it (the abort races the
 /// destination's acceptance in the control plane, and exactly one wins),
 /// otherwise retires.
-pub fn reconcile_outbound<B: EntryBackend>(
-    zone: &mut ZoneSimulation,
+pub fn reconcile_outbound<Z, B, A>(
+    zone: &mut Z,
     store: &mut CharacterStore<B>,
-    authority: &mut Authority<'_>,
+    authority: &mut A,
     source: &ZoneLease,
     character: &CharacterId,
     transfer_id: TransferId,
-) -> Result<OutboundOutcome, HandoffError> {
+) -> Result<OutboundOutcome, HandoffError>
+where
+    Z: TransferZone + ?Sized,
+    B: EntryBackend,
+    A: HandoffAuthority + ?Sized,
+{
     let id = handoff_id(transfer_id);
-    let phase = authority.handoffs.record(id).map(|record| record.phase);
-    let phase = match phase {
-        Some(HandoffPhase::Prepared) => {
-            match authority
-                .handoffs
-                .abort(id, source, authority.directory, authority.now_tick)
-            {
-                Ok(phase) => Some(phase),
-                Err(ControlPlaneError::TransferAlreadyAccepted(_)) => {
-                    authority.handoffs.record(id).map(|record| record.phase)
-                }
-                Err(error) => return Err(error.into()),
-            }
-        }
+    let current = match phase(authority, transfer_id)? {
+        Some(HandoffPhase::Prepared) => match authority.abort(id, source) {
+            Ok(phase) => Some(phase),
+            Err(ControlPlaneError::TransferAlreadyAccepted(_)) => phase(authority, transfer_id)?,
+            Err(error) => return Err(error.into()),
+        },
         phase => phase,
     };
-    match phase {
+    match current {
         None | Some(HandoffPhase::Aborted) => {
-            authority
-                .directory
-                .ensure_current(source, authority.now_tick)?;
+            authority.ensure_current(source)?;
             store.cancel_handoff(character, transfer_id)?;
-            let restored = match zone.outbound_transfer(transfer_id) {
-                Some(_) => Some(zone.abort_transfer(transfer_id)?),
-                None => None,
+            let restored = if zone.has_frozen(transfer_id) {
+                Some(zone.abort(transfer_id)?)
+            } else {
+                None
             };
             Ok(OutboundOutcome::Restored(restored))
         }
@@ -342,34 +428,34 @@ pub enum InboundOutcome {
 
 /// Destination, after a failed or timed-out step: settles its staged
 /// transfer from the handoff record.
-pub fn reconcile_inbound<B: EntryBackend>(
-    zone: &mut ZoneSimulation,
+pub fn reconcile_inbound<Z, B, A>(
+    zone: &mut Z,
     store: &mut CharacterStore<B>,
-    authority: &mut Authority<'_>,
+    authority: &mut A,
     destination: &ZoneLease,
     character: &CharacterId,
     transfer_id: TransferId,
-) -> Result<InboundOutcome, HandoffError> {
+) -> Result<InboundOutcome, HandoffError>
+where
+    Z: TransferZone + ?Sized,
+    B: EntryBackend,
+    A: HandoffAuthority + ?Sized,
+{
     let id = handoff_id(transfer_id);
-    let mut phase = authority.handoffs.record(id).map(|record| record.phase);
-    if phase == Some(HandoffPhase::Prepared) {
-        if zone.staged_transfer(transfer_id).is_none() {
+    let mut current = phase(authority, transfer_id)?;
+    if current == Some(HandoffPhase::Prepared) {
+        if !zone.has_staged(transfer_id) {
             return Ok(InboundOutcome::Waiting);
         }
-        phase = match authority.handoffs.accept(
-            id,
-            destination,
-            authority.directory,
-            authority.now_tick,
-        ) {
+        current = match authority.accept(id, destination) {
             Ok(phase) => Some(phase),
             Err(ControlPlaneError::TransferAborted(_)) => Some(HandoffPhase::Aborted),
             Err(error) => return Err(error.into()),
         };
     }
-    match phase {
+    match current {
         None | Some(HandoffPhase::Aborted) => {
-            zone.discard_staged_transfer(transfer_id);
+            zone.discard(transfer_id);
             Ok(InboundOutcome::Discarded)
         }
         Some(HandoffPhase::Accepted | HandoffPhase::Committed) => Ok(InboundOutcome::Accepted(
@@ -397,56 +483,51 @@ pub enum Resolution {
 /// unaccepted one is taken back only by a newer epoch of the source zone,
 /// which proves the source host that began it is fenced and can no longer
 /// prepare or accept it.
-pub fn resolve_pending_handoff<B: EntryBackend>(
+pub fn resolve_pending_handoff<B, A>(
     store: &mut CharacterStore<B>,
-    authority: &mut Authority<'_>,
+    authority: &mut A,
     resolver: &ZoneLease,
     character: &CharacterId,
-) -> Result<Resolution, HandoffError> {
-    authority
-        .directory
-        .ensure_current(resolver, authority.now_tick)?;
+) -> Result<Resolution, HandoffError>
+where
+    B: EntryBackend,
+    A: HandoffAuthority + ?Sized,
+{
+    authority.ensure_current(resolver)?;
     let Some(pending) = store.pending_handoff(character)? else {
         return Ok(Resolution::Clear);
     };
     let transfer_id = pending.transfer.transfer_id;
     let id = handoff_id(transfer_id);
-    let mut phase = authority.handoffs.record(id).map(|record| record.phase);
-    if matches!(phase, None | Some(HandoffPhase::Prepared)) {
+    let mut current = phase(authority, transfer_id)?;
+    if matches!(current, None | Some(HandoffPhase::Prepared)) {
         let fenced_source =
             resolver.zone_id == pending.from.zone_id && resolver.epoch > pending.from.zone_epoch;
         if !fenced_source {
             return Err(StoreError::HandoffPending(transfer_id).into());
         }
-        if phase.is_some() {
-            phase = match authority.handoffs.abort(
-                id,
-                resolver,
-                authority.directory,
-                authority.now_tick,
-            ) {
+        if current.is_some() {
+            current = match authority.abort(id, resolver) {
                 Ok(phase) => Some(phase),
                 Err(ControlPlaneError::TransferAlreadyAccepted(_)) => {
-                    authority.handoffs.record(id).map(|record| record.phase)
+                    phase(authority, transfer_id)?
                 }
                 Err(error) => return Err(error.into()),
             };
         }
     }
-    match phase {
+    match current {
         None | Some(HandoffPhase::Aborted) => {
             store.cancel_handoff(character, transfer_id)?;
             Ok(Resolution::Cancelled(pending))
         }
         Some(HandoffPhase::Accepted | HandoffPhase::Committed) => {
             let acquired = store.complete_handoff(character, transfer_id)?;
-            if phase == Some(HandoffPhase::Accepted)
+            if current == Some(HandoffPhase::Accepted)
                 && resolver.zone_id == pending.transfer.source_zone
             {
                 // The resolver speaks for the source, whose copy is gone.
-                authority
-                    .handoffs
-                    .commit(id, resolver, authority.directory, authority.now_tick)?;
+                authority.commit(id, resolver)?;
             }
             Ok(Resolution::Completed(acquired))
         }

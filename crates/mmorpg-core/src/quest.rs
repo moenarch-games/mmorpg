@@ -465,6 +465,10 @@ fn available(log: &QuestLog, quest: &Quest) -> bool {
 /// quests of this content that are available apart from being active,
 /// progress within each objective's count (zero for collect objectives),
 /// and turned-in quests whose prerequisites were turned in.
+///
+/// A quest log belongs to the character, not the zone (#145): the quests
+/// content carries for other zones ([`ZoneContent::with_carried_quests`])
+/// count as this content's here, so the log crosses unchanged.
 pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), ZoneError> {
     let invalid = || Err(ZoneError::new("player quest log is out of range"));
     if log.entries.len() > MAX_QUEST_LOG
@@ -476,7 +480,7 @@ pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), 
         return invalid();
     }
     let mut known = 0_u32;
-    for quest in content.quests() {
+    for quest in content.log_quests() {
         known |= quest.id.bit().unwrap_or(0);
         if log.is_completed(quest.id)
             && quest
@@ -490,7 +494,7 @@ pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), 
         return invalid();
     }
     for entry in &log.entries {
-        let Some(quest) = content.quest(entry.quest) else {
+        let Some(quest) = content.log_quest(entry.quest) else {
             return invalid();
         };
         if log.is_completed(quest.id)

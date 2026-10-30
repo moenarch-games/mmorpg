@@ -111,7 +111,9 @@ fn content(
     )?
     .with_creature_abilities(Vec::new())?
     .with_handoff_corridors(vec![corridor])?
-    .with_waystones(vec![waystone])?;
+    .with_waystones(vec![waystone])?
+    // Greyhaven travellers keep their quest logs here; the quests wait.
+    .with_carried_quests(crate::greyhaven_vale::quests::quests());
     Ok(Arc::new(content))
 }
 

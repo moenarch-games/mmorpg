@@ -166,19 +166,46 @@ fn travel_is_refused_in_combat_away_from_stones_and_across_zones() {
     let mut west = ZoneSimulation::with_content(seam_test::WEST_ZONE, seam_test::west()).unwrap();
     west.admit_character(1, &record).unwrap();
     west.advance_tick().unwrap();
+    assert!(west.departures().is_empty());
+    // A host that moves nobody between zones refuses the travel.
     assert_eq!(
-        travel(&mut west, 1, GREYHAVEN_OUTPOST),
+        travel(&mut west, 1, SEAM_TEST_EAST),
         [ErrorCode::InvalidWaystone]
     );
+    // Otherwise travel there departs through the fenced transfer: the zone
+    // only marks the departure and the host freezes the traveller.
+    west.enable_waystone_departures();
+    assert_eq!(travel(&mut west, 2, SEAM_TEST_EAST), []);
+    let departure = west.departure(1).expect("the traveller departs");
+    let site = waystone(SEAM_TEST_EAST).unwrap();
+    assert_eq!(departure.destination.zone_id, seam_test::EAST_ZONE);
     assert_eq!(
-        travel(&mut west, 2, SEAM_TEST_EAST),
-        [ErrorCode::InvalidWaystone]
+        [
+            departure.destination.position[0],
+            departure.destination.position[2]
+        ],
+        site.arrival
     );
     let (position, _) = west.player_motion(1).unwrap();
     assert!(
         (position[2] - (z + 300.0)).abs() < 30.0,
-        "the traveller stays put"
+        "the traveller stays put until its host moves it"
     );
+    assert!(west.cancel_departure(1));
+    assert!(west.departures().is_empty());
+    assert_eq!(travel(&mut west, 3, GREYHAVEN_OUTPOST), []);
+    assert_eq!(
+        west.departure(1).unwrap().destination.zone_id,
+        mmorpg_core::GREYHAVEN_ZONE
+    );
+    west.freeze_for_transfer(
+        1,
+        CharacterId::new("traveller").unwrap(),
+        mmorpg_core::TransferId::new(1).unwrap(),
+        west.departure(1).unwrap().destination,
+    )
+    .unwrap();
+    assert!(west.departures().is_empty(), "freezing takes the departure");
 }
 
 #[test]
@@ -237,4 +264,31 @@ fn every_bound_stone_arrival_is_clear_of_colliders() {
             }
         }
     }
+}
+
+#[test]
+fn greyhaven_quest_logs_cross_into_the_seam_test_zones_unchanged() {
+    let quest = mmorpg_core::greyhaven_vale::quests::quests()
+        .into_iter()
+        .find(|quest| quest.prerequisite.is_none())
+        .unwrap();
+    let mut west = ZoneSimulation::with_content(seam_test::WEST_ZONE, seam_test::west()).unwrap();
+    west.create_character(1, warden()).unwrap();
+    let mut record = west
+        .capture_character(1, CharacterId::new("quester").unwrap())
+        .unwrap();
+    record.quests.entries = vec![mmorpg_core::QuestEntry {
+        quest: quest.id,
+        progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
+    }];
+    let mut east = ZoneSimulation::with_content(seam_test::EAST_ZONE, seam_test::east()).unwrap();
+    east.admit_character(1, &record).unwrap();
+    let carried = east
+        .capture_character(1, CharacterId::new("quester").unwrap())
+        .unwrap();
+    assert_eq!(carried.quests, record.quests, "the log crosses unchanged");
+
+    // Content that carries no other zone's quests still holds no such log.
+    let mut plain = ZoneSimulation::with_content(ZONE, two_stone_content()).unwrap();
+    assert!(plain.admit_character(1, &record).is_err());
 }

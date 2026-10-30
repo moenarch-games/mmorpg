@@ -102,9 +102,7 @@ pub use content::{
     ZoneContent, ZoneDefinition,
 };
 pub use corpse_loot::{LOOT_REACH_UNITS, LootClaim, LootView};
-pub use corridor::{
-    CORRIDOR_TURN_BACK_UNITS, HandoffCorridor, MAX_HANDOFF_CORRIDORS, SeamCrossing,
-};
+pub use corridor::{CORRIDOR_TURN_BACK_UNITS, Departure, HandoffCorridor, MAX_HANDOFF_CORRIDORS};
 pub use creature::{
     AGGRO_MAX_RADIUS_UNITS, AGGRO_MIN_RADIUS_UNITS, AGGRO_PER_LEVEL_UNITS, AGGRO_RADIUS_UNITS,
     ARRIVAL_RADIUS_UNITS, ASSIST_RADIUS_UNITS, CREATURE_EVADE_SPEED_SUBUNITS_PER_TICK,

@@ -1,10 +1,14 @@
-//! Development/LAN persistence. One process owns the shared directory for its lifetime.
+//! Development/LAN persistence. In file mode one process owns the shared
+//! directory for its lifetime; in handoff mode (#145) the characters live in
+//! a store several hosts share, under each zone's control-plane lease epoch.
 use crate::ZoneGameServerAdapter;
+use crate::handoff_host::HandoffHost;
 use game_server::{
     ControlContext, ControlServiceError, LiveMatchHost, MatchControlService, MatchId,
 };
 use mmorpg_characters::{
-    CharacterLease, CharacterStore, EntryBackend, FileEntries, LeaseHolder, decode_entry,
+    CharacterLease, CharacterStore, EntryBackend, FileEntries, LeaseHolder, StoreError,
+    decode_entry,
 };
 use mmorpg_core::{CharacterId, ClassChoice, ZoneId, ZoneSimulation};
 use std::{
@@ -15,17 +19,20 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-type Key = (MatchId, u32);
+pub(crate) type Key = (MatchId, u32);
 
-pub struct DevCharacterStorage {
-    ownership: Arc<File>,
+pub struct DevCharacterStorage<B: EntryBackend = FileEntries> {
+    ownership: Option<Arc<File>>,
+    /// The host epoch every zone's leases use in file mode.
     epoch: u64,
-    store: CharacterStore<FileEntries>,
-    leases: BTreeMap<Key, CharacterLease>,
+    /// Per-zone lease epochs (handoff mode: the zones' control-plane grants).
+    zone_epochs: BTreeMap<ZoneId, u64>,
+    pub(crate) store: CharacterStore<B>,
+    pub(crate) leases: BTreeMap<Key, CharacterLease>,
     released: BTreeSet<Key>,
 }
 
-impl DevCharacterStorage {
+impl DevCharacterStorage<FileEntries> {
     /// The OS lock prevents a new epoch while any simulation still owns the directory.
     /// This deliberately permits only one development host per shared directory.
     pub fn open(directory: &Path) -> Result<Self, String> {
@@ -95,17 +102,45 @@ impl DevCharacterStorage {
             }
         }
         Ok(Self {
-            ownership: Arc::new(ownership),
+            ownership: Some(Arc::new(ownership)),
             epoch,
+            zone_epochs: BTreeMap::new(),
             store,
             leases: BTreeMap::new(),
             released: BTreeSet::new(),
         })
     }
+}
+
+impl<B: EntryBackend> DevCharacterStorage<B> {
+    /// A store shared by several hosts: each zone's leases use that zone's
+    /// control-plane epoch. A held lease of an older epoch of the same zone
+    /// is superseded on the next acquisition.
+    pub fn shared(store: CharacterStore<B>, zone_epochs: BTreeMap<ZoneId, u64>) -> Self {
+        Self {
+            ownership: None,
+            epoch: 0,
+            zone_epochs,
+            store,
+            leases: BTreeMap::new(),
+            released: BTreeSet::new(),
+        }
+    }
+
+    pub(crate) fn holder(&self, zone_id: ZoneId) -> LeaseHolder {
+        LeaseHolder {
+            zone_id,
+            zone_epoch: self
+                .zone_epochs
+                .get(&zone_id)
+                .copied()
+                .unwrap_or(self.epoch),
+        }
+    }
 
     /// Reacquires restored bindings while the prepared host is still stopped.
     pub fn restore_snapshot(&mut self, id: &MatchId, payload: &[u8]) -> Result<(), String> {
-        for stored in ZoneGameServerAdapter::stored_characters(payload).map_err(message)? {
+        for stored in stored_characters(id, payload)? {
             let key = (id.clone(), stored.player);
             self.persist(key, stored)?;
         }
@@ -123,10 +158,7 @@ impl DevCharacterStorage {
         let lease = if let Some(lease) = self.leases.get(&key) {
             lease.clone()
         } else {
-            let holder = LeaseHolder {
-                zone_id: stored.record.location.zone_id,
-                zone_epoch: self.epoch,
-            };
+            let holder = self.holder(stored.record.location.zone_id);
             let acquired = self
                 .store
                 .acquire(&stored.record.character_id, holder)
@@ -146,24 +178,65 @@ impl DevCharacterStorage {
         Ok(())
     }
 
-    pub fn ownership(&self) -> Arc<File> {
-        Arc::clone(&self.ownership)
+    /// The directory lock a file-mode host's simulations hold.
+    pub fn ownership(&self) -> Option<Arc<File>> {
+        self.ownership.clone()
     }
 }
 
-#[derive(Clone)]
-pub struct DevCharacterService {
-    host: LiveMatchHost<ZoneGameServerAdapter>,
-    storage: Arc<Mutex<DevCharacterStorage>>,
-    runtime: tokio::runtime::Handle,
+pub(crate) fn zone_of(id: &MatchId) -> Result<ZoneId, String> {
+    id.as_str()
+        .strip_prefix("zone-")
+        .ok_or("not a zone match")?
+        .parse::<u32>()
+        .map(ZoneId::new)
+        .map_err(message)
 }
 
-impl DevCharacterService {
-    pub fn new(host: LiveMatchHost<ZoneGameServerAdapter>, storage: DevCharacterStorage) -> Self {
+fn stored_characters(
+    id: &MatchId,
+    payload: &[u8],
+) -> Result<Vec<crate::character_admission::StoredCharacter>, String> {
+    let content = mmorpg_core::content_for_zone(zone_of(id)?);
+    ZoneGameServerAdapter::stored_characters(payload, content).map_err(message)
+}
+
+pub struct DevCharacterService<B: EntryBackend = FileEntries> {
+    host: LiveMatchHost<ZoneGameServerAdapter>,
+    storage: Arc<Mutex<DevCharacterStorage<B>>>,
+    runtime: tokio::runtime::Handle,
+    handoffs: Option<Arc<HandoffHost<B>>>,
+}
+
+impl<B: EntryBackend> Clone for DevCharacterService<B> {
+    fn clone(&self) -> Self {
+        Self {
+            host: self.host.clone(),
+            storage: Arc::clone(&self.storage),
+            runtime: self.runtime.clone(),
+            handoffs: self.handoffs.clone(),
+        }
+    }
+}
+
+impl<B: EntryBackend> DevCharacterService<B> {
+    pub fn new(
+        host: LiveMatchHost<ZoneGameServerAdapter>,
+        storage: DevCharacterStorage<B>,
+    ) -> Self {
+        Self::with_shared_storage(host, Arc::new(Mutex::new(storage)), None)
+    }
+
+    pub(crate) fn with_shared_storage(
+        host: LiveMatchHost<ZoneGameServerAdapter>,
+        storage: Arc<Mutex<DevCharacterStorage<B>>>,
+        handoffs: Option<Arc<HandoffHost<B>>>,
+    ) -> Self {
         Self {
             host,
-            storage: Arc::new(Mutex::new(storage)),
+            storage,
             runtime: tokio::runtime::Handle::current(),
+            handoffs,
         }
     }
 
@@ -176,7 +249,7 @@ impl DevCharacterService {
             .block_on(self.host.inspect(id, |runtime| runtime.snapshot()))
             .map_err(message)?
             .map_err(message)?;
-        ZoneGameServerAdapter::stored_characters(&snapshot.payload).map_err(message)
+        stored_characters(id, &snapshot.payload)
     }
 
     /// Called from a blocking worker, never the simulation tick or async executor.
@@ -193,6 +266,8 @@ impl DevCharacterService {
         }
         // Abruptly lost sessions keep their last periodic commit. Stronger reward
         // acknowledgement/crash journaling belongs to #40, not this dev adapter.
+        // A character leaving through a transfer is never live here, and its
+        // handoff removes its lease before this storage owner is free again.
         let departed: Vec<_> = storage
             .leases
             .keys()
@@ -243,13 +318,7 @@ impl DevCharacterService {
             ClassChoice::from_appearance(u16::from(appearance)).ok_or("invalid character class")?;
         let character = CharacterId::new(std::str::from_utf8(raw_id).map_err(message)?.to_owned())
             .map_err(message)?;
-        let zone = id
-            .as_str()
-            .strip_prefix("zone-")
-            .ok_or("not a zone match")?
-            .parse::<u32>()
-            .map(ZoneId::new)
-            .map_err(message)?;
+        let zone = zone_of(id)?;
         let mut storage = self.storage.lock().map_err(message)?;
         let key = (id.clone(), context.player_id);
         if let Some(lease) = storage.leases.get(&key) {
@@ -259,11 +328,18 @@ impl DevCharacterService {
                 Err("session already has a character".into())
             };
         }
-        let holder = LeaseHolder {
-            zone_id: zone,
-            zone_epoch: storage.epoch,
+        if let Some(handoffs) = &self.handoffs
+            && handoffs.claim_arrival(&mut storage, id, context, &character, class)?
+        {
+            return Ok(vec![1, 1]);
+        }
+        let holder = storage.holder(zone);
+        let acquired = match (storage.store.acquire(&character, holder), &self.handoffs) {
+            (Err(StoreError::HandoffPending(_)), Some(handoffs)) => {
+                handoffs.resolve_pending(&mut storage, zone, &character)?
+            }
+            (acquired, _) => acquired.map_err(message)?,
         };
-        let acquired = storage.store.acquire(&character, holder).map_err(message)?;
         let admission = (|| {
             let record = match acquired.record {
                 Some(record) => {
@@ -307,13 +383,16 @@ impl DevCharacterService {
     }
 }
 
-impl MatchControlService for DevCharacterService {
+impl<B: EntryBackend + Send + 'static> MatchControlService for DevCharacterService<B> {
     fn handle(
         &self,
         id: &MatchId,
         context: ControlContext,
         payload: &[u8],
     ) -> Result<Vec<u8>, ControlServiceError> {
+        if let Some(handoffs) = &self.handoffs {
+            handoffs.track_session(id, context);
+        }
         let result = match payload {
             [1, 0] => Ok(vec![1, 1]), // development character capability
             [1, 1, claim @ ..] => self.claim(id, context, claim),
@@ -334,7 +413,7 @@ impl MatchControlService for DevCharacterService {
     }
 }
 
-fn message(error: impl std::fmt::Display) -> String {
+pub(crate) fn message(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 

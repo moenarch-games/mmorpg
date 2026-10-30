@@ -107,6 +107,12 @@ pub(crate) struct Transfers {
     activated: BTreeMap<TransferId, PlayerId>,
     /// `activated` in activation order.
     activation_order: VecDeque<TransferId>,
+    /// Teleports to a stone of another zone, waiting for the host to freeze
+    /// the traveller ([`ZoneSimulation::departures`]).
+    pub(crate) waystone_departures: BTreeMap<PlayerId, CharacterLocation>,
+    /// Whether the host moves travellers to other zones
+    /// ([`ZoneSimulation::enable_waystone_departures`]).
+    pub(crate) waystone_departures_enabled: bool,
 }
 
 impl Transfers {
@@ -309,6 +315,27 @@ impl ZoneSimulation {
     #[must_use]
     pub fn staged_transfer(&self, transfer_id: TransferId) -> Option<&CharacterTransfer> {
         self.transfers.staged.get(&transfer_id)
+    }
+
+    /// Declares that this zone's host carries travellers to stones of other
+    /// zones through the fenced transfer. Without it such travel is refused
+    /// with [`crate::ErrorCode::InvalidWaystone`], as on a single-zone host.
+    /// Host-phase configuration, not canonical: the host sets it on every
+    /// zone it builds or restores.
+    pub fn enable_waystone_departures(&mut self) {
+        self.transfers.waystone_departures_enabled = true;
+    }
+
+    /// Takes over `previous`'s host-phase transfer state (frozen, staged and
+    /// activated transfers and pending waystone departures) when a host
+    /// replaces its zone with one restored from `previous`'s canonical
+    /// snapshot. Departures of players this zone no longer holds are dropped.
+    pub fn adopt_transfers(&mut self, previous: &mut ZoneSimulation) {
+        self.transfers = std::mem::take(&mut previous.transfers);
+        let players = &self.players;
+        self.transfers
+            .waystone_departures
+            .retain(|player, _| players.contains_key(player));
     }
 
     /// Makes a staged character live as `player_id`, continuing its held

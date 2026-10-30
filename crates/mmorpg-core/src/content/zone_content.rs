@@ -62,6 +62,8 @@ pub struct ZoneContent {
     vendors: Vec<(NpcId, VendorStock)>,
     quest_bound: bool,
     quests: Vec<crate::Quest>,
+    /// Other zones' quests a character's log may carry here (#145).
+    carried_quests: Vec<crate::Quest>,
     doors: Vec<crate::Door>,
     platforms: Vec<crate::Platform>,
     ramps: Vec<crate::Ramp>,
@@ -186,6 +188,7 @@ impl ZoneContent {
             vendors: Vec::new(),
             quest_bound: false,
             quests: Vec::new(),
+            carried_quests: Vec::new(),
             doors: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
@@ -231,6 +234,7 @@ impl ZoneContent {
             vendors: Vec::new(),
             quest_bound: false,
             quests: Vec::new(),
+            carried_quests: Vec::new(),
             doors: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
@@ -572,6 +576,36 @@ impl ZoneContent {
             .binary_search_by_key(&id, |quest| quest.id)
             .ok()
             .map(|index| &self.quests[index])
+    }
+
+    /// Lets characters carry other zones' quests in their logs here (#145):
+    /// a log stays valid in this zone while it holds these quests, which make
+    /// no progress here. Quests this content offers itself take precedence.
+    pub fn with_carried_quests(mut self, mut quests: Vec<crate::Quest>) -> Self {
+        quests.sort_by_key(|quest| quest.id);
+        quests.dedup_by_key(|quest| quest.id);
+        self.carried_quests = quests;
+        self.fingerprint = self.compute_fingerprint();
+        self
+    }
+
+    /// The quests a log may hold here: this content's, then the carried ones.
+    pub(crate) fn log_quests(&self) -> impl Iterator<Item = &crate::Quest> {
+        self.quests.iter().chain(
+            self.carried_quests
+                .iter()
+                .filter(|carried| self.quest(carried.id).is_none()),
+        )
+    }
+
+    /// The quest `id` of [`Self::log_quests`].
+    pub(crate) fn log_quest(&self, id: crate::QuestId) -> Option<&crate::Quest> {
+        self.quest(id).or_else(|| {
+            self.carried_quests
+                .binary_search_by_key(&id, |quest| quest.id)
+                .ok()
+                .map(|index| &self.carried_quests[index])
+        })
     }
 
     /// Binds doors (#158): unique IDs, leaf bodies in the static collider namespace that no
@@ -1078,13 +1112,35 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_waystone_fingerprint();
+        let fingerprint = self.compute_carried_quest_fingerprint();
         if self.character_persistence == CharacterPersistence::Durable {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/ephemeral-characters-v1");
         hash.u64(fingerprint);
+        hash.finish()
+    }
+
+    /// What log validation reads of each carried quest.
+    fn compute_carried_quest_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_waystone_fingerprint();
+        if self.carried_quests.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/carried-quests-v1");
+        hash.u64(fingerprint);
+        hash.len(self.carried_quests.len());
+        for quest in &self.carried_quests {
+            hash.u8(quest.id.get());
+            hash.u8(quest.prerequisite.map_or(0, crate::QuestId::get));
+            hash.len(quest.objectives.len());
+            for objective in &quest.objectives {
+                hash.u8(objective.required());
+                hash.u8(u8::from(objective.carried_item().is_some()));
+            }
+        }
         hash.finish()
     }
 
