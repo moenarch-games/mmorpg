@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use mmorpg_core::greyhaven_vale::{self, highlands, ids};
 use mmorpg_core::{
-    StaticCollider, Traversal, ZoneAreas, ZoneCommand, ZoneContent, ZoneDefinition, ZoneId,
-    ZoneSimulation,
+    Grip, Ledge, StaticCollider, Traversal, ZoneAreas, ZoneCommand, ZoneContent, ZoneDefinition,
+    ZoneId, ZoneSimulation,
 };
 
 /// Yaw 32 768 faces −Z, north on the map.
@@ -260,7 +260,13 @@ fn a_player_climbs_a_ladder_onto_the_lookout_tower() {
     player.walk_into(NORTH);
     player.jump();
     player.ticks(1);
-    assert!(matches!(player.traversal(), Traversal::Climbing { .. }));
+    assert!(matches!(
+        player.traversal(),
+        Traversal::Climbing {
+            grip: Grip::Ladder,
+            ..
+        }
+    ));
     assert!(
         player.until(1, NORTH, 2_400, |p| p.traversal() == Traversal::Free
             && p.feet()[1] > top(&tower) - 10.0),
@@ -371,7 +377,13 @@ fn a_roofed_ledge_refuses_a_mantle_its_open_twin_allows() {
     open.walk_into(NORTH);
     open.jump();
     open.ticks(1);
-    assert!(matches!(open.traversal(), Traversal::Mantling { .. }));
+    assert!(matches!(
+        open.traversal(),
+        Traversal::Mantling {
+            ledge: Ledge::Mid,
+            ..
+        }
+    ));
     open.until(0, NORTH, 120, |p| p.traversal() == Traversal::Free);
     assert!((open.feet()[1] - 150.0).abs() < 2.0, "{:?}", open.feet());
 

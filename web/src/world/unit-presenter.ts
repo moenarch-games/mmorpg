@@ -11,6 +11,7 @@ import type { Color } from "./scenery";
  */
 export type UnitPresenterHandle = {
   modelReady(kind: string, clips: string): void;
+  modelMotions(kind: string, descriptor: string): void;
   residentsReady(): void;
   setBlend(lowerSeconds: number, upperSeconds: number, lowerWeight: number, upperWeight: number): void;
   setBodyOverlay(shown: boolean): void;
@@ -154,9 +155,13 @@ export class SharedUnits {
     this.#handle = handle;
   }
 
-  /** An imported model finished loading, with its clip lengths in seconds. */
-  modelReady(kind: ImportedModelKind, clips: readonly (readonly [string, number])[]): void {
+  /**
+   * An imported model finished loading, with its clip lengths in seconds and, for the Ranger, its
+   * `humanoid-clips` descriptor JSON: the traversal clips' speeds and authored root paths (#500).
+   */
+  modelReady(kind: ImportedModelKind, clips: readonly (readonly [string, number])[], descriptor: string | null = null): void {
     this.#handle.modelReady(kind, JSON.stringify(clips));
+    if (descriptor !== null) { this.#handle.modelMotions(kind, descriptor); }
   }
 
   /** The residents' appearance presets loaded (#418): named residents become Rangers. */

@@ -17,6 +17,7 @@ pub mod player;
 pub mod presets;
 pub mod sway;
 pub mod swim;
+pub mod traversal;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -218,6 +219,10 @@ pub struct UnitPresenter {
     bursts: BTreeMap<u16, u64>,
     effects: effects::Effects,
     durations: BTreeMap<(Kind, String), f32>,
+    /// Each model's `humanoid-clips` traversal data (#500), once the client has read it.
+    motions: BTreeMap<Kind, traversal::Motions>,
+    /// Each imported unit's drawn root through a mantle (#500).
+    aligns: BTreeMap<EntityRef, traversal::Align>,
     ready: BTreeSet<Kind>,
     /// The client draws the residents' appearance presets on the Ranger (#418).
     residents: bool,
@@ -249,6 +254,8 @@ impl UnitPresenter {
             bursts: BTreeMap::new(),
             effects: effects::Effects::default(),
             durations: BTreeMap::new(),
+            motions: BTreeMap::new(),
+            aligns: BTreeMap::new(),
             ready: BTreeSet::new(),
             residents: false,
             equipment: None,
@@ -330,11 +337,19 @@ impl UnitPresenter {
         self.ready.insert(kind);
     }
 
+    /// An imported model's `humanoid-clips` traversal data (#500): its climb loops' speeds and
+    /// its mantles' ledge heights and authored root paths. Until then the climb loops play at
+    /// the zone's speeds and the mantles stay on the projected body.
+    pub fn model_motions(&mut self, kind: Kind, motions: traversal::Motions) {
+        self.motions.insert(kind, motions);
+    }
+
     /// A new connection epoch: drop every per-unit and visual state.
     pub fn reset(&mut self) {
         self.animators.clear();
         self.playbacks.clear();
         self.sways.clear();
+        self.aligns.clear();
         self.deaths.clear();
         self.bursts.clear();
         self.effects.clear();
@@ -614,6 +629,7 @@ impl UnitPresenter {
         self.playbacks.retain(|e, _| present.contains(e));
         // A unit back from an interest gap swings again from rest.
         self.sways.retain(|e, _| present.contains(e));
+        self.aligns.retain(|e, _| present.contains(e));
         self.deaths.retain(|e, _| present.contains(e));
         let eye = input
             .units
@@ -692,19 +708,13 @@ impl UnitPresenter {
                 } else {
                     mmorpg_core::WaterMode::Dry
                 };
-                // Climbers and mantlers (#490) have no climb clips yet (#500): the in-place
-                // fallback holds on with the idle clip and climbs with the walk, at the speed
-                // they move along the face, facing it (the zone projects the wall's yaw), never
-                // a jump or fall from ascending or descending.
-                // A roller (#516) plays its authored roll clip instead.
-                let rolling = unit.record.flags.traversal == mmorpg_core::TraversalView::Rolling;
-                let traversing =
-                    unit.record.flags.traversal != mmorpg_core::TraversalView::Free && !rolling;
-                let (speed, vertical) = if traversing {
-                    (loc.forward.hypot(loc.right).hypot(loc.vertical), 0.)
-                } else {
-                    (loc.forward.hypot(loc.right), loc.vertical)
-                };
+                // Climbers and mantlers (#490) play the authored climb, ladder, rope and mantle
+                // clips the projection's traversal picks (#500), facing the face (the zone
+                // projects the wall's yaw); a roller (#516) plays its authored roll clip.
+                let traversal = unit.record.flags.traversal;
+                let rolling = traversal == mmorpg_core::TraversalView::Rolling;
+                let (speed, vertical) = (loc.forward.hypot(loc.right), loc.vertical);
+                let motions = self.motions.get(&kind);
                 if viewer {
                     let wind_up = self.preparation.map(|preparation| {
                         let class = snapshot.viewer.class.map(|choice| choice.class);
@@ -735,6 +745,8 @@ impl UnitPresenter {
                             .unwrap_or(0.)
                     },
                     imported::Cues {
+                        traversal,
+                        motions,
                         speed,
                         direction: (-loc.right).atan2(loc.forward),
                         turn: loc.turn,
@@ -749,6 +761,20 @@ impl UnitPresenter {
                     },
                     self.blend,
                 );
+                // A mantle's in-place clip holds the drawn body on its authored root path,
+                // trailing the projected body within a bound (#500).
+                let lift = self.aligns.entry(entity).or_default().advance(
+                    motions,
+                    animation.lower,
+                    feet,
+                    yaw,
+                    input.dt,
+                    reduced,
+                );
+                let root = Frame {
+                    p: std::array::from_fn(|axis| feet[axis] + lift[axis]),
+                    ..root
+                };
                 let class = if viewer {
                     input.viewer.choice
                 } else {
