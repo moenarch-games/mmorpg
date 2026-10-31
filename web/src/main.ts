@@ -168,6 +168,8 @@ type RotationQuaternion = [number, number, number, number];
 type LocalPoint = (x: number, y: number, z: number) => [number, number, number];
 
 let lastTime = performance.now();
+/** While Enter World prepares the first world frame (#547): no frame draws. */
+let preparingWorld = false;
 let rosterStorageHealthy = true;
 let characters: CharacterPreview[] = [PREVIEW_CHARACTER, ...loadCreatedRoster()];
 let entryState: EntryState = initialEntryState(PREVIEW_CHARACTER);
@@ -1322,6 +1324,8 @@ function errorMessage(error: unknown): string {
 function frame(now: number) {
   // Re-arm first: one failed frame must never stop the render loop.
   requestAnimationFrame(frame);
+  // Drawing anything while the world prepares would evict what it compiled and uploaded.
+  if (preparingWorld) { return; }
   const deltaSeconds = frameDeltaSeconds(now, lastTime);
   lastTime = now;
   syncBindingProfile();
@@ -1502,6 +1506,18 @@ async function enterWorld(): Promise<void> {
   arenaEntry.setLocked(true);
   controls.retire("enteredWorld");
   worldView.enter(worldInput(), target.source.latestProjection());
+  // Compile the first world frame's shaders and upload its textures while selection still
+  // shows (#547); the canvas keeps its last selection frame meanwhile.
+  preparingWorld = true;
+  try {
+    await worldView.prepare(target, worldInput(), viewerLook(), performance.now());
+    markStartup("world-prepared");
+  } catch (error) {
+    // The first drawn frame compiles instead, and fails visibly there if the world is broken.
+    console.error(error);
+  } finally {
+    preparingWorld = false;
+  }
   characterSelect.hidden = true;
   for (const element of worldUi) {
     element.hidden = false;

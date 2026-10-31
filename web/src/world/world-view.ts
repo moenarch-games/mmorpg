@@ -390,6 +390,8 @@ export class WorldView {
   #bodyOverlay = false;
   #flyTo: { eye: Vec3; target: Vec3 } | null = null;
   #lastWork: RendererWorkObservations | null = null;
+  /** While `prepare` runs its frame: the renderer's pending preparations. */
+  #preparing: Promise<unknown>[] | null = null;
   #occluders: Box[] = [];
   /** The viewer's projected unit as last drawn, for debug readouts. */
   #lastSelf: { x: number; z: number; facing: number } | null = null;
@@ -658,6 +660,22 @@ export class WorldView {
     this.#pendingNpc = null;
     this.#frameRate.reset();
     this.#sky.show(true);
+  }
+
+  /**
+   * Runs the entered world's first frame without drawing it and resolves once the renderer has
+   * compiled its programs and uploaded its textures (#547), so the first drawn world frame does
+   * not stall for most of a second. Call it after `enter` and draw nothing else until it resolves.
+   */
+  async prepare(world: ZoneWorld, input: WorldInput, look: ViewerLook, now: number): Promise<void> {
+    const pending: Promise<unknown>[] = [];
+    this.#preparing = pending;
+    try {
+      this.frame(world, input, look, 0, now);
+    } finally {
+      this.#preparing = null;
+    }
+    await Promise.all(pending);
   }
 
   /**
@@ -1104,10 +1122,17 @@ export class WorldView {
     const settlement = this.#settlement?.roots() ?? { roots: [], changed: false };
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#natureReview?.roots() ?? { roots: [], changed: false };
-    if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || ambient.changed || nature.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent) {
-      this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root] });
+    const roots = [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root];
+    const rendererFrame = { camera, nodes, instanceBatches: frame.instanceBatches, environment };
+    if (this.#preparing) {
+      // `prepare` (#547): the first world frame's programs and textures, without drawing it.
+      this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
+      return;
     }
-    const work = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
+    if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || ambient.changed || nature.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent) {
+      this.#renderer.renderImportedRoots({ camera, roots });
+    }
+    const work = this.#renderer.render(rendererFrame);
     this.#lastWork = work;
     profilePhase("render");
     if (profiling()) {
