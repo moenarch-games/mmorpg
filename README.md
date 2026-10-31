@@ -221,6 +221,7 @@ The PostgreSQL/S3 host now [suspends empty zones and cold-restores them on admis
 - `rapier3d`: `=0.36.1` (crates.io, default features)
 - `physics-engine`: git rev `ae64adbdb2d1af74f89f5befe287a8029eeaa072`, optional in `mmorpg-core` behind the test/bench-only `physics-ab` feature ([physics backend A/B](docs/PHYSICS_AB.md)); never in production or WASM builds
 - `game-server`: `a3cdf8c8bf915167988de2ef5e1f9b39cf847d13`
+- `render-engine` (native client rendering and lighting, #529): `d5afb5deefa9b22e7f187ae6e6e2e8460aaa4b28`
 - `3d-lab` (`three-d-core`, `three-d-camera`, `three-d-projective`, `three-d-animation` and the browser `@moritzbrantner/three-d-renderer`, kept on one commit): `235774615f1367065093deb6988f5217bdf4d7e1`
 - reusable validation workflow: `45042e56be120b438096e774027637cac0280075`
 

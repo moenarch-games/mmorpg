@@ -1,30 +1,18 @@
-//! Cosmetic Greyhaven lighting, fog and sky. No simulation clock is read here.
+//! Cosmetic Greyhaven lighting inputs: the hour the sun and moon follow, distance fog and the
+//! content's point lights. The renderer (render-engine) turns them into its physical scene.
+//! No simulation clock is read here.
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Environment {
-    /// CSS-equivalent cloud drift in screen pixels; frozen by reduced motion.
-    pub cloud_offset: f32,
-    pub background: [f32; 3],
-    pub sky: Hemisphere,
-    pub sun: Sun,
+pub struct Lighting {
+    /// Hours since midnight on the zone's clock; render-engine's `DayCycle` places the sun
+    /// and moon from it.
+    pub hour: f32,
     pub fog: Fog,
-    pub sky_stops: SkyStops,
+    /// The scenery's lights (campfires, lantern posts) at this frame's flicker.
+    pub point_lights: Vec<PointLight>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Hemisphere {
-    pub sky_color: [f32; 3],
-    pub ground_color: [f32; 3],
-    pub intensity: f32,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Sun {
-    pub direction: [f32; 3],
-    pub color: [f32; 3],
-    pub intensity: f32,
-}
-
+/// Linear distance fog in metres; its colour is sRGB and displayed as is (not exposed).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Fog {
     pub color: [f32; 3],
@@ -33,15 +21,16 @@ pub struct Fog {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct SkyStops {
-    pub zenith: [f32; 3],
-    pub upper: [f32; 3],
-    pub horizon: [f32; 3],
-    pub ground: [f32; 3],
+pub struct PointLight {
+    /// Metres.
+    pub position: [f32; 3],
+    /// sRGB colour.
+    pub color: [f32; 3],
+    pub lumens: f32,
+    pub range: f32,
 }
 
-// Match the browser's quantized sRGB palette interpolation before the renderer
-// converts to linear light. Keeping the rounding here avoids color drift at dusk.
+// Match the browser's quantized sRGB palette interpolation, so both clients fog alike.
 fn mix(from: u32, to: u32, amount: f64) -> u32 {
     let t = amount.clamp(0.0, 1.0);
     [16, 8, 0].into_iter().fold(0, |color, shift| {
@@ -51,28 +40,33 @@ fn mix(from: u32, to: u32, amount: f64) -> u32 {
     })
 }
 
-fn rgb(color: u32) -> [f32; 3] {
+pub(crate) fn rgb(color: u32) -> [f32; 3] {
     [16, 8, 0].map(|shift| ((color >> shift) & 255) as f32 / 255.0)
 }
 
-/// The zone's time of day at `tick` on the presentation cycle's 1,200-second scale, whose zero
-/// is noon (#158): the sky follows the zone's clock rather than the client's.
+/// The zone's hour at `tick` (#158): the sky follows the zone's clock rather than the client's.
 #[must_use]
-pub fn zone_sky_seconds(tick: u64) -> f64 {
-    let fraction = f64::from(mmorpg_core::time_of_day(tick)) / f64::from(mmorpg_core::DAY_TICKS);
-    (fraction - 0.5).rem_euclid(1.0) * 1200.0
+pub fn zone_hour(tick: u64) -> f32 {
+    (f64::from(mmorpg_core::time_of_day(tick)) / f64::from(mmorpg_core::DAY_TICKS) * 24.0) as f32
 }
 
-impl Environment {
-    /// The current Pages twenty-minute cycle; reduced motion holds noon.
+/// The Pages twenty-minute cycle's hour at `seconds`, whose zero is noon; reduced motion holds
+/// noon.
+#[must_use]
+pub fn pages_hour(seconds: f64, animate: bool) -> f32 {
+    let phase = if animate && seconds.is_finite() {
+        (seconds / 1200.0).rem_euclid(1.0)
+    } else {
+        0.0
+    };
+    ((12.0 + phase * 24.0) % 24.0) as f32
+}
+
+impl Lighting {
+    /// Lighting at `hour` without point lights.
     #[must_use]
-    pub fn at(seconds: f64, animate: bool) -> Self {
-        let phase = if animate && seconds.is_finite() {
-            (seconds / 1200.0).rem_euclid(1.0)
-        } else {
-            0.0
-        };
-        let angle = phase * std::f64::consts::TAU;
+    pub fn at(hour: f32) -> Self {
+        let angle = f64::from(hour - 12.0) / 24.0 * std::f64::consts::TAU;
         let elevation = angle.cos();
         let amount = ((elevation + 0.15) / 0.8).clamp(0.0, 1.0);
         let daylight = amount * amount * (3.0 - 2.0 * amount);
@@ -80,37 +74,26 @@ impl Environment {
         let blend = |day, night, twilight| mix(mix(night, day, daylight), twilight, dusk * 0.55);
         let horizon = blend(0xcfe0ea, 0x38475e, 0xe4a176);
         Self {
-            cloud_offset: if animate && seconds.is_finite() {
-                (seconds.rem_euclid(480.0) / 480.0 * 1400.0) as f32
-            } else {
-                0.0
-            },
-            background: rgb(horizon),
-            sky: Hemisphere {
-                sky_color: rgb(mix(0x8fa4c9, 0x78a9dd, daylight)),
-                ground_color: rgb(mix(0x56657b, 0xb8c9c8, daylight)),
-                intensity: (0.9 + daylight * 0.8) as f32,
-            },
-            sun: Sun {
-                direction: [
-                    (angle.sin() * 18.0 + 10.0 * angle.cos()) as f32,
-                    (6.0 + 12.0 * angle.cos().powi(2)) as f32,
-                    8.0,
-                ],
-                color: rgb(mix(mix(0x9cb8eb, 0xfff4df, daylight), 0xffc08a, dusk * 0.7)),
-                intensity: (0.35 + daylight * 1.85) as f32,
-            },
+            hour,
             fog: Fog {
                 color: rgb(mix(horizon, 0xb9cddb, daylight)),
                 near: 140.0,
                 far: 620.0,
             },
-            sky_stops: SkyStops {
-                zenith: rgb(blend(0x3f78c4, 0x10223f, 0x554f78)),
-                upper: rgb(blend(0x78a9dd, 0x1a3553, 0x986f89)),
-                horizon: rgb(horizon),
-                ground: rgb(blend(0xb8c9c8, 0x26394a, 0x8e7774)),
-            },
+            point_lights: Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_pages_cycle_starts_at_noon_and_the_zone_at_eight() {
+        assert_eq!(pages_hour(0.0, true), 12.0);
+        assert_eq!(pages_hour(600.0, true), 0.0);
+        assert_eq!(pages_hour(600.0, false), 12.0);
+        assert!((zone_hour(0) - 8.0).abs() < 1e-4);
     }
 }
