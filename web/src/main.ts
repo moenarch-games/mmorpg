@@ -1,4 +1,5 @@
 import { onlineCharacterId, hasOnlineCharacterId } from "./world/online-character-identity";
+import { enableFrameProfile, profileBegin, profileEnd } from "./world/frame-profile";
 import * as THREE from "three";
 import {
   createThreeSceneRenderer,
@@ -567,6 +568,10 @@ for (const button of [requireElement<HTMLButtonElement>("#world-settings"), requ
 if (new URLSearchParams(window.location.search).has("debug")) {
   Object.assign(window, { __valeDebug: { ...worldView.debugApi(), worldSource: () => (activeWorld ?? chosenWorld())?.source ?? null,
     loadingReport: () => ({ ...loading, marks: startupMarks(), startArea: startArea(), art: worldView.artProgress(startArea()), allArt: worldView.artProgress(null) }) } });
+}
+// Opt-in per-frame phase timings for scripts/profile-browser.py (#546).
+if (new URLSearchParams(window.location.search).has("profile")) {
+  Object.assign(window, { __valeProfile: enableFrameProfile() });
 }
 
 const selectionStageNodes: RendererSceneNode[] = [
@@ -1311,6 +1316,7 @@ function frame(now: number) {
   if (entryState.phase === "world" && activeWorld) {
     // Settings pauses the browser-local zone; an online zone keeps running with input blocked.
     const paused = settingsOpen && activeWorld !== onlineWorld && activeWorld !== arenaWorld?.world;
+    profileBegin(now);
     try {
       worldView.frame(activeWorld, worldInput(), viewerLook(), paused ? 0 : deltaSeconds, now);
       touchControls.update();
@@ -1327,6 +1333,8 @@ function frame(now: number) {
       // Fail closed and visibly: leave the world and say why on the selection screen.
       console.error(error);
       returnToCharacters(`Left the world after an error: ${errorMessage(error)}`);
+    } finally {
+      profileEnd();
     }
     return;
   }
