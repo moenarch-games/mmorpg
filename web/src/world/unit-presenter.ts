@@ -88,7 +88,15 @@ export type ImportedRequest = {
    * items on hanging sockets, or null where they hang as authored.
    */
   swing: readonly [number, number, number, number] | null;
+  /**
+   * A bow carrier's shot (#556): the bow cycle clip and time whose `bow.drawMeters` the nock
+   * follows, with the bow in the left hand (`hand_l.bow`); null keeps it on `back.bow.stowed`.
+   */
+  bow: BowShot | null;
 };
+
+/** The bow cycle clip a unit's upper body shows and its time (`imported::BowShot`, #556). */
+export type BowShot = { clip: string; time: number };
 
 /** Which joints a layer drives: every joint, the `spine_01` subtree, or the rest (pelvis, legs). */
 export type LayerMask = "all" | "upper" | "lower";
@@ -117,7 +125,7 @@ type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; c
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number; pitch: number;
   height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
-  swing: readonly [number, number, number, number] | null };
+  swing: readonly [number, number, number, number] | null; bow: BowShot | null };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
@@ -222,7 +230,7 @@ export class SharedUnits {
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw, pitch: unit.pitch,
         heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, figure: unit.figure, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
-        swing: unit.swing,
+        swing: unit.swing, bow: unit.bow,
       })),
     };
   }

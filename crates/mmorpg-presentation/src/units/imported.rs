@@ -379,6 +379,55 @@ pub struct CastClips {
     pub footwork: bool,
 }
 
+impl CastClips {
+    /// Whether `clip` is one of the cycle's clips.
+    #[must_use]
+    pub fn contains(self, clip: &str) -> bool {
+        [
+            Some(self.enter),
+            Some(self.hold),
+            Some(self.cancel),
+            self.aim,
+            self.recovery,
+        ]
+        .contains(&Some(clip))
+    }
+}
+
+/// Where the Ranger's longbow rides (#556): stowed on the back, and in the left hand through the
+/// bow cycle.
+pub const BOW_STOWED_SOCKET: &str = "back.bow.stowed";
+pub const BOW_HAND_SOCKET: &str = "hand_l.bow";
+/// The longbow's draw contract (asset-tooling `BOW_DRAW_CONTRACT`): its `nock` joint moves
+/// along the bow's `-Z` by the clip's `humanoid-clips` `bow.drawMeters`.
+pub const BOW_NOCK_JOINT: &str = "nock";
+pub const BOW_DRAW_AXIS: [f32; 3] = [0., 0., -1.];
+
+/// The bow cycle clip a unit's upper body shows (#556): while it plays, the bow is in hand and
+/// its nock follows the clip's `bow.drawMeters` at `time`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BowShot {
+    pub clip: &'static str,
+    pub time: f32,
+}
+
+/// The draw in metres at `time` seconds of a clip's `bow.drawMeters` (one value per frame at
+/// `sample_rate`), linear between frames and held at either end; 0 for an empty table.
+#[must_use]
+pub fn draw_meters(table: &[f32], sample_rate: f32, time: f32) -> f32 {
+    let Some(last) = table.len().checked_sub(1) else {
+        return 0.;
+    };
+    #[allow(clippy::cast_precision_loss)]
+    let frame = (time * sample_rate).clamp(0., last as f32);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let below = (frame.floor() as usize).min(last);
+    let above = (below + 1).min(last);
+    #[allow(clippy::cast_precision_loss)]
+    let share = frame - below as f32;
+    table[below] + (table[above] - table[below]) * share
+}
+
 /// In-place directional, sprint and turning locomotion (#538). A gait the bundle lacks falls
 /// back to the forward walk or run.
 #[derive(Clone, Copy, Debug)]
@@ -714,6 +763,15 @@ impl Kind {
         } else {
             None
         }
+    }
+
+    /// The bow shot `animation` shows (#556): its upper-body target is the bow release or a
+    /// clip of the bow cycle.
+    #[must_use]
+    pub fn bow_shot(self, animation: &Animation) -> Option<BowShot> {
+        let strikes = self.clips().strikes?;
+        let (clip, time) = animation.upper;
+        (clip == strikes.bow || strikes.bow_cycle.contains(clip)).then_some(BowShot { clip, time })
     }
 
     /// The clip of a `reaction`, for a model that has reactions.
@@ -1969,6 +2027,38 @@ mod tests {
         assert_eq!(frame(0., 0.1), "Turn_Left", "the step holds briefly");
         assert_eq!(frame(-3., 0.15), "Turn_Right");
         assert_eq!(frame(0., 0.6), "Idle_Loop");
+    }
+
+    #[test]
+    fn the_bow_cycle_holds_the_bow_and_its_draw_samples_between_frames() {
+        let shows = |clip: &'static str| Animation {
+            layers: vec![Layer::single(clip, 0.2)],
+            lower: (clip, 0.2),
+            upper: (clip, 0.2),
+            attitude: Attitude::default(),
+        };
+        for clip in [
+            "Bow_Aim_Loop",
+            "Bow_Draw",
+            "Bow_Hold_Loop",
+            "Bow_Release",
+            "Bow_Recovery",
+            "Bow_Cancel",
+        ] {
+            assert_eq!(
+                Kind::Ranger.bow_shot(&shows(clip)),
+                Some(BowShot { clip, time: 0.2 })
+            );
+        }
+        for clip in ["Idle_Loop", "Spell_Simple_Enter", "Sword_Attack"] {
+            assert_eq!(Kind::Ranger.bow_shot(&shows(clip)), None, "{clip}");
+        }
+        assert_eq!(Kind::Wolf.bow_shot(&shows("Bow_Draw")), None);
+        let table = [0.2, 0.4, 0.5];
+        assert!((draw_meters(&table, 10., 0.05) - 0.3).abs() < 1e-6);
+        assert!((draw_meters(&table, 10., 9.) - 0.5).abs() < 1e-6);
+        assert!((draw_meters(&table, 10., -1.) - 0.2).abs() < 1e-6);
+        assert!(draw_meters(&[], 30., 0.5).abs() < f32::EPSILON);
     }
 
     #[test]

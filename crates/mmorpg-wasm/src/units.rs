@@ -97,6 +97,15 @@ struct ImportedEntry {
     /// The loose gear's swing (Atlas 6.6.39) as a model-frame quaternion `[x, y, z, w]`, or
     /// null at rest.
     swing: Option<[f32; 4]>,
+    /// A bow carrier's shot (#556): the bow cycle clip and time whose draw the nock follows,
+    /// with the bow in the left hand; null keeps the bow stowed.
+    bow: Option<BowEntry>,
+}
+
+#[derive(Serialize)]
+struct BowEntry {
+    clip: &'static str,
+    time: f32,
 }
 
 /// A class starter outfit: its `humanoid-appearance` preset id and the armour sockets whose
@@ -402,6 +411,10 @@ impl Units {
                     }),
                     headwear: unit.headwear.is_some(),
                     swing: (!unit.swing.is_rest()).then(|| unit.swing.quaternion()),
+                    bow: unit.bow.map(|shot| BowEntry {
+                        clip: shot.clip,
+                        time: shot.time,
+                    }),
                 }
             })
             .collect();

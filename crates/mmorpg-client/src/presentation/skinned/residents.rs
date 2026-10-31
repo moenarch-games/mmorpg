@@ -509,6 +509,7 @@ fn dress(figure: Figure, preset: &Value) -> ResidentLook {
         items: Equipment {
             hanging: vec![false; items.len()],
             items,
+            bow: None,
         },
         height: preset["height"].as_f64().map_or(1., |height| height as f32),
         hood: hood(figure),
