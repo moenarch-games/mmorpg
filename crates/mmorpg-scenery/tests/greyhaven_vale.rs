@@ -53,6 +53,18 @@ fn is_terrain(collider: &StaticCollider) -> bool {
     collider.id == ids::GROUND || ids::BOUNDARY_WALLS.contains(&collider.id)
 }
 
+/// The market square's collision proxies (#577): drawn by its kit at
+/// `settlement_props::placements`, not as scenery props.
+fn is_market(collider: &StaticCollider) -> bool {
+    ids::MARKET.contains(&collider.id)
+}
+
+/// The Lakeshore dock's deck (#577), which reaches out over the shallows.
+fn is_dock(collider: &StaticCollider) -> bool {
+    greyhaven_vale::dressing::piece(collider.id)
+        .is_some_and(|piece| piece.kind == greyhaven_vale::dressing::Kind::Dock)
+}
+
 fn footprint(collider: &StaticCollider) -> Rect {
     Rect::around(
         [collider.position[0], collider.position[2]],
@@ -102,8 +114,15 @@ fn authored_grass_retains_stable_ids_and_clears_the_selected_approach() {
         ids, ordered,
         "saved IDs remain unique and in accepted order"
     );
+    let market: Vec<_> = vale_colliders()
+        .iter()
+        .filter(|collider| is_market(collider))
+        .map(footprint)
+        .collect();
     for (_, prop) in placements {
-        assert!(scenery.props.contains(&prop));
+        // One saved tuft stood under a market stall, which now collides (#577).
+        let under_market = market.iter().any(|area| prop.footprint().intersects(*area));
+        assert_eq!(scenery.props.contains(&prop), !under_market);
         assert!(prop.collider.is_none());
         assert!(!prop.footprint().intersects(clearing));
     }
@@ -124,7 +143,14 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
         .collect();
     for collider in vale_colliders() {
         let kinds = visuals.get(&collider.id);
-        if is_terrain(collider) {
+        if is_market(collider) {
+            assert!(visual_kind(collider).is_none());
+            assert!(
+                kinds.is_none(),
+                "market collider {} has a prop",
+                collider.id
+            );
+        } else if is_terrain(collider) {
             assert!(visual_kind(collider).is_none());
             assert!(
                 kinds.is_none(),
@@ -146,9 +172,22 @@ fn every_structure_collider_has_exactly_one_visual_and_vice_versa() {
     }
     for prop in scenery.props.iter().filter(|prop| prop.collider.is_some()) {
         let collider = colliders[&prop.collider.unwrap()];
-        assert_eq!(prop.half_extents, collider.half_extents);
         assert_eq!(prop.footprint(), footprint(collider));
-        assert_eq!(prop.yaw, 0);
+        if mmorpg_scenery::is_dressing(collider.id) {
+            // Solid dressing (#577) turns by quarter turns inside its box, feet on its bottom
+            // (the dock's deck floats above its feet).
+            assert_eq!(prop.yaw % 16_384, 0);
+            if prop.kind != PropKind::Dock {
+                assert_eq!(prop.half_extents[1], collider.half_extents[1]);
+                assert_eq!(
+                    prop.position[1],
+                    collider.position[1] - collider.half_extents[1]
+                );
+            }
+        } else {
+            assert_eq!(prop.half_extents, collider.half_extents);
+            assert_eq!(prop.yaw, 0);
+        }
     }
 }
 
@@ -223,7 +262,7 @@ fn walkable_water_has_no_colliders() {
     };
     for collider in vale_colliders()
         .iter()
-        .filter(|c| !is_terrain(c) && !sunken(c.id))
+        .filter(|c| !is_terrain(c) && !sunken(c.id) && !is_dock(c))
     {
         // The nearest footprint point to the centre is the clamped centre.
         let rect = footprint(collider);
@@ -243,7 +282,12 @@ fn walkable_water_has_no_colliders() {
 fn relief_is_flat_under_structures_roads_plaza_spawns_and_water() {
     let scenery = greyhaven_vale_scenery();
     let flat = |x: i32, z: i32| scenery.height_at(x, z) == 0;
-    for collider in vale_colliders().iter().filter(|c| !is_terrain(c)) {
+    // Solid dressing and the market square (#577) stand on the drawn surface, like the
+    // scatter they replaced; units beside them are drawn raised by the same relief.
+    for collider in vale_colliders()
+        .iter()
+        .filter(|c| !is_terrain(c) && !is_market(c) && !mmorpg_scenery::is_dressing(c.id))
+    {
         let rect = footprint(collider);
         let xs = [rect.min[0], (rect.min[0] + rect.max[0]) / 2, rect.max[0]];
         let zs = [rect.min[1], (rect.min[1] + rect.max[1]) / 2, rect.max[1]];
@@ -504,7 +548,7 @@ fn prop_counts_stay_within_their_budgets() {
     }
     let structures = vale_colliders()
         .iter()
-        .filter(|collider| !is_terrain(collider))
+        .filter(|collider| !is_terrain(collider) && !is_market(collider))
         .count();
     let derived = scenery
         .props

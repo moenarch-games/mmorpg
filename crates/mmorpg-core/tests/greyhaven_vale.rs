@@ -84,10 +84,14 @@ fn content_is_a_bounded_deterministic_revision() {
             // Out on the hills they stand on the terrain, sunk 0.3 m below their lowest corner (#159).
             // The cave's roof rests on its walls.
             // The Sunken Shrine (#274) stands on its flattened floor 9 m down.
+            // The market square's stacked crate and stall awnings and the dock's deck (#577)
+            // stand above it.
             if !ids::INN_PARTS.contains(&collider.id)
                 && !ids::MARSHAL_HOUSE_PARTS.contains(&collider.id)
                 && collider.id != ids::CAVE_ROOF
                 && !(550..=596).contains(&collider.id)
+                && !ids::MARKET.contains(&collider.id)
+                && collider.id != greyhaven_vale::dressing::dock().id
             {
                 let ground = definition.terrain().map_or(0, |terrain| {
                     [min, [max[0], min[1]], max, [min[0], max[1]]]
@@ -128,6 +132,11 @@ fn structures_touch_but_never_overlap() {
         .collect();
     for (index, left) in structures.iter().enumerate() {
         for right in &structures[index + 1..] {
+            // The market square's props (#577) stand as the kit composes them, their turned
+            // proxies' boxes touching.
+            if ids::MARKET.contains(&left.id) && ids::MARKET.contains(&right.id) {
+                continue;
+            }
             let overlaps = (0..3).all(|axis| {
                 (left.position[axis] - right.position[axis]).abs()
                     < left.half_extents[axis] + right.half_extents[axis]
@@ -191,7 +200,8 @@ fn roads_are_open_corridors() {
         }
     }
     for collider in definition.colliders() {
-        if !is_terrain(collider) {
+        // The Lakeshore Path ends on the dock (#577), up its plank step.
+        if !is_terrain(collider) && collider.id != greyhaven_vale::dressing::dock().id {
             assert!(
                 clear_of_roads(collider),
                 "collider {} blocks a road",

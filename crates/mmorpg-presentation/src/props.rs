@@ -1377,7 +1377,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     if !square.is_empty() {
         let mut m = Model::new(Cull::Always);
         for (entry, frame) in square {
-            for &([x, y, z], [hx, hy, hz], colour) in crate::settlement_props::fallback(entry) {
+            for ([x, y, z], [hx, hy, hz], colour) in crate::settlement_props::fallback(entry) {
                 m.put(
                     colour,
                     box_shape(),

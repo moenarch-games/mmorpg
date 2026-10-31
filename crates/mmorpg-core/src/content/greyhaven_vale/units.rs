@@ -290,7 +290,8 @@ const NPCS: [NpcRow; 9] = [
     (6, GUARD, NpcRole::Guard, 10, [-500, -800], 32_768),
     (7, GUARD, NpcRole::Guard, 10, [500, 4_800], 0),
     (8, GUARD, NpcRole::Guard, 10, [-2_900, 1_500], 49_152),
-    (9, GUARD, NpcRole::Guard, 10, [2_900, 2_500], 16_384),
+    // The east guard stands a metre south of the market square's front crate (#577).
+    (9, GUARD, NpcRole::Guard, 10, [2_900, 2_600], 16_384),
 ];
 
 pub(super) fn creature_templates() -> Vec<CreatureTemplate> {

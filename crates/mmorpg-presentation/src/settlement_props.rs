@@ -68,24 +68,32 @@ const IRON: u32 = 0x55585e;
 const SOIL: u32 = 0x6b5a3e;
 
 /// The fallback boxes of `entry` in its own frame: the descriptor's solid collision proxies
-/// as `(centre, half extents, colour)`, metres.
-pub(crate) fn fallback(entry: &str) -> &'static [([f64; 3], [f64; 3], u32)] {
-    match entry.strip_prefix("settlement.props.") {
-        Some("barrel") => &[([0., 0.45, 0.], [0.31, 0.45, 0.31], WOOD)],
-        Some("bench") => &[([0., 0.23, 0.], [0.8, 0.23, 0.21], WOOD)],
-        Some("cart") => &[([0., 0.44, 0.38], [0.68, 0.44, 1.22], WOOD)],
-        Some("crate") => &[([0., 0.35, 0.], [0.355, 0.35, 0.355], WOOD)],
-        Some("fence") => &[([0., 0.57, 0.], [1., 0.57, 0.08], DARK)],
-        Some("firewood") => &[([0., 0.571_875, 0.], [0.87, 0.571_875, 0.42], WOOD)],
-        Some("lantern-post") => &[([0., 1.53, 0.], [0.2, 1.53, 0.2], IRON)],
-        Some("planter") => &[([0., 0.245, 0.], [0.6, 0.245, 0.25], SOIL)],
-        Some("signpost") => &[([0., 1.48, 0.], [0.22, 1.48, 0.22], DARK)],
-        Some("stall") => &[
-            ([0., 0.5, 0.04], [1.24, 0.5, 0.74], WOOD),
-            ([0., 2.375, 0.135], [1.3, 0.225, 0.915], CANVAS),
-        ],
-        _ => &[],
-    }
+/// the zone collides with (`mmorpg_core::greyhaven_vale::market`), as
+/// `(centre, half extents, colour)` in metres.
+pub(crate) fn fallback(entry: &str) -> Vec<([f64; 3], [f64; 3], u32)> {
+    use mmorpg_core::greyhaven_vale::market::Item;
+    let Some(item) = settlement_props::item(entry) else {
+        return Vec::new();
+    };
+    let colour = match item {
+        Item::Fence | Item::Signpost => DARK,
+        Item::LanternPost => IRON,
+        Item::Planter => SOIL,
+        _ => WOOD,
+    };
+    item.proxies()
+        .iter()
+        .enumerate()
+        .map(|(index, (centre, half))| {
+            // A stall's second proxy is its canvas awning.
+            let colour = if item == Item::Stall && index == 1 {
+                CANVAS
+            } else {
+                colour
+            };
+            (centre.map(metres), half.map(metres), colour)
+        })
+        .collect()
 }
 
 #[cfg(test)]

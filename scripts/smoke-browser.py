@@ -916,6 +916,94 @@ class BrowserAcceptance(unittest.TestCase):
         self.frames(3)
         self.assertGreater(self.page.evaluate("window.__calls.draws"), draws, "The render loop must keep running")
 
+    HOLLOW_ROAD = ((0.0, 12.5), (0.0, -62.0), (-36.0, -62.0), (-36.0, -70.0), (0.0, -70.0))
+    # Solid props (#577): (name, route waypoints in metres, push facing in core yaw, the prop's
+    # collider footprint [min x, min z, max x, max z] in metres). Each route starts from the hub
+    # spawn and lines the character up with the prop's middle.
+    SOLID_PROPS = (
+        ("lamp", ((-18.0, 12.5),), 32768, (-18.1, 9.9, -17.9, 10.1)),
+        ("cart", ((12.0, 12.5),), 32768, (10.9, 7.4, 13.1, 8.6)),
+        ("barrel", ((16.0, 12.5), (16.0, 6.0)), 16384, (22.7, 5.7, 23.3, 6.3)),
+        ("market-bench", ((17.0, 12.5), (17.0, 20.0), (24.5, 20.0)), 0, (23.7, 24.38, 25.3, 24.82)),
+        ("signpost", ((0.0, 12.5), (0.0, -13.0)), 16384, (2.92, -13.08, 3.08, -12.92)),
+        # Up the Hollow Road to a 0.4 m loose rock at the Redbrand Hollow's mouth, short of its camp.
+        ("small-rock", HOLLOW_ROAD + ((0.0, -70.46),), 16384, (2.62, -70.80, 3.22, -70.12)),
+    )
+
+    def walk_and_push(self, route, centre, push_ticks=90):
+        """Walks the real zone along `route`, then runs at the prop's `centre` for `push_ticks`
+        ticks, turning toward it every tick so the character cannot slide past a thin post.
+        Returns the player's `[x, z, feet y]` after each push tick, in metres."""
+        return self.page.evaluate("""([route, centre, pushTicks]) => {
+          const source = window.__valeDebug.worldSource();
+          const selfAt = () => {
+            const projection = source.latestProjection();
+            const me = projection.entities.find(e => e.kind === 'player' && e.entityId === projection.viewerId);
+            return [me.position[0] / 100, me.position[2] / 100, me.position[1] / 100];
+          };
+          const step = () => window.__clickQueue.push(...window.__clickAdvance.call(source, 1 / 30));
+          const stop = heading => { source.sendCommand({kind: 'move', forward: 0, strafe: 0, facing: heading}); step(); };
+          for (const waypoint of route) {
+            for (let tick = 0; tick < 900; tick++) {
+              const [x, z] = selfAt();
+              const left = Math.hypot(waypoint[0] - x, waypoint[1] - z);
+              if (left < 0.08) break;
+              const heading = Math.round(Math.atan2(waypoint[0] - x, waypoint[1] - z) / (2 * Math.PI) * 65536) & 0xffff;
+              source.sendCommand({kind: 'move', forward: 1, strafe: 0, facing: heading});
+              step();
+              // Within the last half metre, single steps line the character up on the waypoint.
+              if (left < 0.5) stop(heading);
+            }
+          }
+          const toward = () => {
+            const [x, z] = selfAt();
+            return Math.round(Math.atan2(centre[0] - x, centre[1] - z) / (2 * Math.PI) * 65536) & 0xffff;
+          };
+          stop(toward());
+          const path = [];
+          for (let tick = 0; tick < pushTicks; tick++) {
+            source.sendCommand({kind: 'move', forward: 1, strafe: 0, facing: toward()});
+            step();
+            path.push(selfAt());
+          }
+          stop(toward());
+          return path;
+        }""", [[list(point) for point in route], list(centre), push_ticks])
+
+    def test_solid_props_block_the_character(self):
+        """The character runs into a lamp, a cart, a barrel, a market bench, a signpost and a
+        loose rock and stops at each instead of walking through (#577)."""
+        evidence = []
+        for name, route, facing, (min_x, min_z, max_x, max_z) in self.SOLID_PROPS:
+            self.click_world_setup()
+            self.page.add_style_tag(content="[data-world-ui] { visibility: hidden !important; }")
+            centre = [(min_x + max_x) / 2, (min_z + max_z) / 2]
+            path = self.walk_and_push(route, centre)
+            x, z, y = path[-1]
+            # The distance from the character's centre to the prop's footprint.
+            gap = math.hypot(max(min_x - x, 0, x - max_x), max(min_z - z, 0, z - max_z))
+            moved = math.hypot(x - path[-30][0], z - path[-30][1])
+            evidence.append({"prop": name, "footprint": [min_x, min_z, max_x, max_z],
+                             "final": [round(x, 3), round(z, 3)], "gap": round(gap, 3), "lastSecondMoved": round(moved, 4)})
+            self.assertGreater(gap, 0.2, f"{name}: the character reached the prop's footprint at ({x:.2f}, {z:.2f})")
+            self.assertLess(gap, 0.8, f"{name}: the character stopped short at ({x:.2f}, {z:.2f})")
+            self.assertLess(moved, 0.05, f"{name}: the character kept moving at ({x:.2f}, {z:.2f})")
+            # Look back past the prop at the character standing against it.
+            turn = facing / 65536 * 2 * math.pi
+            dx, dz = math.sin(turn), math.cos(turn)
+            relief = self.page.evaluate("([x, z]) => window.__valeDebug.reliefAt(x, z)", [x, z])
+            ground = y + (relief if isinstance(relief, (int, float)) else 0)
+            self.page.evaluate("([eye, target]) => window.__valeDebug.flyToPose(eye, target)",
+                               [[centre[0] + dx * 2.6 + dz * 1.2, ground + 2.0, centre[1] + dz * 2.6 - dx * 1.2],
+                                [(centre[0] + x) / 2, ground + 0.5, (centre[1] + z) / 2]])
+            self.frames(10)
+            self.page.screenshot(path=str(ARTIFACTS / f"solid-prop-{name}.png"))
+            # Each prop starts from a fresh character on the hub spawn.
+            self.assertEqual(self.errors, [], "Browser application raised an uncaught error")
+            self.context.close()
+            self.setUp()
+        (ARTIFACTS / "solid-props.json").write_text(json.dumps(evidence, indent=2))
+
     def test_saved_grass_clearing_and_bounded_batches(self):
         self.open("?debug")
         self.enter_world()

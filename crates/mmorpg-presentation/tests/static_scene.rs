@@ -451,7 +451,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
             assert!(parts.iter().any(|part| part.entry == entry), "{entry}");
         }
     }
-    // The square stays off the roads, the spawn plaza and every collider's footprint.
+    // The square stays off the roads, the spawn plaza and every other collider's footprint; its
+    // own props collide through their proxies (#577).
     let [cx, cz] = settlement_props::centre(&scenery).unwrap();
     let [hx, hz] = settlement_props::HALF_EXTENTS;
     let square = mmorpg_core::StaticCollider {
@@ -466,7 +467,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
         let [px, _, pz] = collider.position;
         let [phx, _, phz] = collider.half_extents;
         let apart = (px - cx).abs() >= phx + hx || (pz - cz).abs() >= phz + hz;
-        assert!(apart || collider.id == 1, "collider {}", collider.id);
+        let own = mmorpg_core::greyhaven_vale::ids::MARKET.contains(&collider.id);
+        assert!(apart || own || collider.id == 1, "collider {}", collider.id);
     }
 }
 
