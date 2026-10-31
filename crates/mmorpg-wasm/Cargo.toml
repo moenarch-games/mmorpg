@@ -21,6 +21,8 @@ mmorpg-protocol.workspace = true
 mmorpg-scenery.workspace = true
 # Presentation only: the shared static world the browser draws (#184).
 mmorpg-presentation.workspace = true
+# The client rules the native client shares (#543): HUD, chat, movement outbox, quest views.
+mmorpg-client-model.workspace = true
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 # The wire boundary (#541): decoded projections and commands cross as plain JS

@@ -9,7 +9,6 @@ use mmorpg_client::{
     },
     graphics::WindowRenderer,
     graphics::project_to_viewport,
-    hud::{CombatHud, class_kit},
     interaction::NpcContext,
     presentation::Presentation,
     roster::{Roster, config_dir},
@@ -17,6 +16,7 @@ use mmorpg_client::{
     world::WorldScene,
     world_controls::{WorldAction, WorldControls},
 };
+use mmorpg_client_model::hud::{CombatHud, class_kit};
 use mmorpg_core::{EntityKind, EntityRef, PlayerClass, Sex, ZoneContent};
 use mmorpg_scenery::Scenery;
 use std::{
@@ -192,16 +192,9 @@ struct HeldMovement {
 }
 
 /// W/S run and backpedal, A/D strafe, combined with the pad's left
-/// stick. Dead units cannot move, so the dead hold no movement whatever keys
-/// are down.
-fn held_movement(keyboard: PadMovement, pad: PadMovement, dead: bool) -> HeldMovement {
-    if dead {
-        return HeldMovement {
-            forward: 0,
-            strafe: 0,
-            steering: false,
-        };
-    }
+/// stick. The session's movement outbox sends nothing held while the player
+/// is dead (#543).
+fn held_movement(keyboard: PadMovement, pad: PadMovement) -> HeldMovement {
     HeldMovement {
         forward: (keyboard.forward + pad.forward).clamp(-1, 1),
         strafe: (keyboard.strafe + pad.strafe).clamp(-1, 1),
@@ -398,22 +391,16 @@ impl App {
     }
 
     /// While any movement key is held, the character faces the camera's yaw.
-    /// The dead send no held movement; it resumes with the next projection
-    /// that shows them alive.
     fn update_movement(&self) {
         let HeldMovement {
             forward,
             strafe,
             steering,
-        } = held_movement(self.controls.movement(), self.pad.movement(), self.dead());
+        } = held_movement(self.controls.movement(), self.pad.movement());
         let facing = steering.then(|| self.camera.facing());
         // Held Jump ascends and held Descend descends while swimming (#274); the zone ignores
         // the rise out of the water.
-        let rise = if self.dead() {
-            0
-        } else {
-            (self.controls.rise() + self.pad.rise()).clamp(-1, 1)
-        };
+        let rise = (self.controls.rise() + self.pad.rise()).clamp(-1, 1);
         self.input.send_if_modified(|input| {
             let next = PlayerInput {
                 forward,
@@ -428,20 +415,16 @@ impl App {
         });
     }
 
-    /// Dead units cannot jump, so a press while dead sends nothing.
+    /// One jump; the session drops presses made while dead.
     fn jump(&self) {
-        if !self.dead() {
-            self.input
-                .send_modify(|input| input.jumps = input.jumps.wrapping_add(1));
-        }
+        self.input
+            .send_modify(|input| input.jumps = input.jumps.wrapping_add(1));
     }
 
-    /// Likewise a dodge roll (#516); the zone decides whether it starts.
+    /// A dodge roll (#516), dropped like a jump while dead; the zone decides whether it starts.
     fn roll(&self) {
-        if !self.dead() {
-            self.input
-                .send_modify(|input| input.rolls = input.rolls.wrapping_add(1));
-        }
+        self.input
+            .send_modify(|input| input.rolls = input.rolls.wrapping_add(1));
     }
 
     /// One weapon swing where the character faces (#517); the zone resolves what it hits, and
@@ -1308,7 +1291,7 @@ mod tests {
         };
         let back = keyboard(&[KeyCode::KeyS]);
         assert_eq!(
-            held_movement(back, stick, false),
+            held_movement(back, stick),
             HeldMovement {
                 forward: 0,
                 strafe: -1,
@@ -1316,38 +1299,29 @@ mod tests {
             }
         );
         assert_eq!(
-            held_movement(PadMovement::default(), stick, false),
+            held_movement(PadMovement::default(), stick),
             HeldMovement {
                 forward: 1,
                 strafe: -1,
                 steering: true
             }
         );
-        assert!(!held_movement(PadMovement::default(), stick, true).steering);
     }
 
     #[test]
-    fn the_dead_hold_no_movement() {
+    fn held_keys_combine_and_opposed_keys_cancel() {
         let keys = keyboard(&[KeyCode::KeyW, KeyCode::KeyA]);
         assert_eq!(
-            held_movement(keys, PadMovement::default(), false),
+            held_movement(keys, PadMovement::default()),
             HeldMovement {
                 forward: 1,
                 strafe: -1,
                 steering: true
-            }
-        );
-        assert_eq!(
-            held_movement(keys, PadMovement::default(), true),
-            HeldMovement {
-                forward: 0,
-                strafe: 0,
-                steering: false
             }
         );
         let opposed = keyboard(&[KeyCode::KeyS, KeyCode::ArrowUp, KeyCode::KeyD]);
         assert_eq!(
-            held_movement(opposed, PadMovement::default(), false),
+            held_movement(opposed, PadMovement::default()),
             HeldMovement {
                 forward: 0,
                 strafe: 1,

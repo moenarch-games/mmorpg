@@ -7,7 +7,7 @@ use mmorpg_client::{
     ClientError,
     camera::OrbitCamera,
     graphics::render_offscreen,
-    hud::CombatHud,
+    hud,
     network::ClientSession,
     presentation::Presentation,
     session::{CharacterSelection, NetworkUpdate, PlayerInput, run_session_with_characters},
@@ -192,7 +192,7 @@ fn main() -> Result<(), ClientError> {
             let snapshot = session.reconnect().await?;
             let connection_epoch = session.connection_epoch();
             let tick = snapshot.tick;
-            let hud = CombatHud::from_projection(&snapshot).rects();
+            let hud = hud::rects(&mmorpg_client_model::hud::CombatHud::from_projection(&snapshot));
             let mut presentation = Presentation::new(player_id, scenery, content, Instant::now())?;
             presentation.push(snapshot, Instant::now())?;
             let now = Instant::now();

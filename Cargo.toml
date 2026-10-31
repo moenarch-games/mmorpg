@@ -9,6 +9,7 @@ members = [
   "crates/mmorpg-scenarios",
   "crates/mmorpg-scenery",
   "crates/mmorpg-presentation",
+  "crates/mmorpg-client-model",
   "crates/mmorpg-wasm",
 ]
 resolver = "3"
@@ -31,6 +32,7 @@ mmorpg-protocol = { path = "crates/mmorpg-protocol" }
 mmorpg-game-server = { path = "crates/mmorpg-game-server" }
 mmorpg-scenery = { path = "crates/mmorpg-scenery" }
 mmorpg-presentation = { path = "crates/mmorpg-presentation" }
+mmorpg-client-model = { path = "crates/mmorpg-client-model" }
 postgres = "=0.19.14"
 tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 # Test-only harness: one trial per workload or scenario file, run in parallel by nextest (#540).

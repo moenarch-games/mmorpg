@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { TICK_HZ, type AuraState, type CastState, type ViewerState, type ZoneEvent } from "../src/replication";
 import type { AbilityRecord, type ContentCatalog } from "../src/world/catalog";
 import { auraPolarity, undescribedAbilities } from "../src/world/units/ability-presentation";
-import { cooldownSeconds, formatRemaining, slotState, sweepDegrees, targetDistanceUnits, tooltipText } from "../src/world/units/ability-state";
+import { actionBar, cooldownSeconds, formatRemaining, sweepDegrees, tooltipText } from "../src/world/units/ability-state";
 import { auraLabel, auraTimer, sortAuras } from "../src/world/units/aura-display";
 import { errorText } from "../src/world/units/combat-hud";
 import { castBarView } from "../src/world/units/cast-bar";
@@ -42,53 +42,17 @@ function snapshot(fields: Partial<Parameters<typeof testSnapshot>[0]> = {}, self
   });
 }
 
-describe("slot state", () => {
-  test("a ready, learned slot in range has no flags", () => {
-    const state = slotState(firebolt, snapshot(), 1_000);
-    expect(state).toMatchObject({ learned: true, resourceShort: false, outOfRange: false, casting: false, cooldown: null });
-  });
-
-  test("not enough resource tints the slot; a free ability never does", () => {
-    expect(slotState(firebolt, snapshot({}, { resource: { kind: "mana", value: 24, max: 176 } }), 1_000).resourceShort).toBe(true);
-    expect(slotState(firebolt, snapshot({}, { resource: { kind: "mana", value: 25, max: 176 } }), 1_000).resourceShort).toBe(false);
-  });
-
-  test("range follows the ability: ranged 30 m, melee 2.5 m, self-centred never", () => {
-    expect(slotState(firebolt, snapshot(), 3_000).outOfRange).toBe(false);
-    expect(slotState(firebolt, snapshot(), 3_001).outOfRange).toBe(true);
-    expect(slotState(strike, snapshot(), 250).outOfRange).toBe(false);
-    expect(slotState(strike, snapshot(), 251).outOfRange).toBe(true);
-    expect(slotState(nova, snapshot(), 9_000).outOfRange).toBe(false);
-    expect(slotState(firebolt, snapshot(), null).outOfRange).toBe(false);
-  });
-
-  test("an unlearned ability shows its unlock level", () => {
-    const state = slotState(blizzard, snapshot(), 100);
-    expect(state).toMatchObject({ learned: false, unlockLevel: 6 });
-    expect(slotState(barrier, snapshot(), 100).learned).toBe(true);
-  });
-
-  test("the casting slot is flagged", () => {
+describe("action bar", () => {
+  test("the shared model fills the bar with the class kit and each slot's state", () => {
     const cast: CastState = { ability: 9, elapsed: t(10), total: t(60), channel: false };
-    expect(slotState(firebolt, snapshot({}, { cast }), 1_000).casting).toBe(true);
-    expect(slotState(nova, snapshot({}, { cast }), 1_000).casting).toBe(false);
-  });
-
-  test("the longer of cooldown and global cooldown is shown", () => {
-    const cooling = snapshot({ cooldowns: [{ ability: 10, remaining: t(300) }] }, { globalCooldown: t(40) });
-    expect(slotState(nova, cooling, 0).cooldown).toEqual({ kind: "cooldown", remaining: t(300), total: t(600) });
-    expect(slotState(firebolt, cooling, 0).cooldown).toEqual({ kind: "gcd", remaining: t(40), total: t(45) });
-    const shortCooldown = snapshot({ cooldowns: [{ ability: 10, remaining: t(20) }] }, { globalCooldown: t(40) });
-    expect(slotState(nova, shortCooldown, 0).cooldown).toEqual({ kind: "gcd", remaining: t(40), total: t(45) });
-  });
-
-  test("target distance is the XZ centre distance, null without a visible target", () => {
-    expect(targetDistanceUnits(snapshot())).toBe(1_000);
-    expect(targetDistanceUnits(snapshot({}, { target: null }))).toBeNull();
-    // A selected target outside the interest radius is omitted from the projection: out of reach.
-    expect(targetDistanceUnits(snapshot({}, { target: { kind: "creature", id: 999 } }))).toBe(Number.POSITIVE_INFINITY);
-    expect(slotState(firebolt, snapshot({}, { target: { kind: "creature", id: 999 } }), Number.POSITIVE_INFINITY).outOfRange).toBe(true);
-    expect(targetDistanceUnits(snapshot({}, { target: me }))).toBeNull();
+    const cooling = snapshot({ cooldowns: [{ ability: 10, remaining: t(300) }] }, { globalCooldown: t(40), cast });
+    const bar = actionBar(cooling);
+    expect(bar.slice(0, 4).map((slot) => slot.ability)).toEqual([firebolt.id, nova.id, barrier.id, blizzard.id]);
+    expect(bar[0]).toMatchObject({ learned: true, casting: true, outOfRange: false, cooldown: { kind: "gcd", remaining: t(40), total: t(45) } });
+    expect(bar[1]?.cooldown).toEqual({ kind: "cooldown", remaining: t(300), total: t(600) });
+    expect(bar[3]).toMatchObject({ learned: false, unlockLevel: 6, cooldown: { kind: "gcd" } });
+    expect(actionBar(snapshot({}, {}, 3_001))[0]?.outOfRange).toBe(true);
+    expect(actionBar(snapshot({}, { classChoice: null }))).toEqual([]);
   });
 });
 

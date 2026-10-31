@@ -1,8 +1,7 @@
 import { findEntity, TICK_HZ, type AuraState, type ResourceKind, type StrikeAim, type StrikeHeight, type StrikeSide, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
-import { abilitySlots } from "./abilities";
 import { artworkOf, auraPolarity, glyphOf } from "./ability-presentation";
-import { cooldownSeconds, resourceName, slotState, sweepDegrees, targetDistanceUnits, tooltipText, type SlotState } from "./ability-state";
+import { actionBar, cooldownSeconds, resourceName, sweepDegrees, tooltipText, type SlotState } from "./ability-state";
 import { auraLabel, auraTimer, sortAuras } from "./aura-display";
 import { castBarView } from "./cast-bar";
 import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
@@ -278,20 +277,17 @@ export class ClassHud {
   }
 
   #updateBar(snapshot: ZoneSnapshot, catalog: ContentCatalog): void {
-    const abilities = abilitySlots(snapshot, catalog);
-    const key = abilities.map((ability) => ability.id).join(",");
+    const states = actionBar(snapshot);
+    const key = states.map((state) => state.ability).join(",");
     if (key !== this.#slotKey) {
       this.#slotKey = key;
-      this.#buildSlots(abilities.map((ability) => ability.id), catalog);
+      this.#buildSlots(states.map((state) => state.ability), catalog);
     }
-    const distance = targetDistanceUnits(snapshot);
-    abilities.forEach((ability, index) => {
+    states.forEach((state, index) => {
       const slot = this.#slots[index];
-      if (!slot) {
-        return;
+      if (slot) {
+        this.#paintSlot(slot, state);
       }
-      const state = slotState(ability, snapshot, distance);
-      this.#paintSlot(slot, state);
     });
   }
 

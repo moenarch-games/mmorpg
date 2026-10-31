@@ -38,12 +38,16 @@ flowchart TD
     Client --> NativeRenderer[Native: wgpu/winit, external tobj asset import]
     Client --> BrowserRenderer[Browser: Three.js through pinned renderer adapter]
     Client --> Presentation[mmorpg-presentation: shared static world]
+    Client --> ClientModel[mmorpg-client-model: shared HUD, chat, outbox and quest rules]
+    ClientModel --> Core
     Presentation --> Scenery[mmorpg-scenery: presentation scenery]
     Client --> Scenery
     Scenery --> Core
 ```
 
 `mmorpg-scenery` is presentation-only: it derives props, road surfaces, water and relief from core content for the native client and, through `mmorpg-wasm`'s scenery export, the browser. It depends on `mmorpg-core`; network hosts never depend on it, and `mmorpg-wasm`'s local zone host never reads it (a test in `mmorpg-wasm/src/scenery.rs` checks the host source). `mmorpg-game-server/tests/dependency_boundary.rs` walks the committed lockfile graph to prove that no host-side crate reaches it, and `cargo tree --locked -p mmorpg-game-server -e normal -i mmorpg-scenery` reports that the package is not in the host's graph.
+
+`mmorpg-client-model` (#543) holds the non-rendering client rules both clients share: action-bar slot state and the cast bar, chat input parsing and the chat/combat logs, the movement outbox (jump/roll counters, resend interval, facing throttle, dead-player rules) and quest views (objective text, tracker rows, NPC dialogue offers, the Talk addressee). It is pure functions and structs over `mmorpg-core` types, without I/O or rendering. The native client calls it directly; the browser calls it through `mmorpg-wasm`'s thin wrappers (`crates/mmorpg-wasm/src/client_model.rs`) and only renders the result, so each rule has one implementation and one Rust test suite. The dependency boundary test keeps hosts away from it and it away from presentation and transport.
 
 The control plane imports core domain identifiers, but never holds or mutates a `ZoneSimulation`. `game-server` continues to own session sequencing, ticks, reconnect, replay, recovery and transport. MMO composition must not fork these implementations. Foundations remain pinned to exact revisions.
 

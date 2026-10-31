@@ -1,21 +1,19 @@
 import type { WorldCommand } from "../../command-wire";
 import type { ZoneSnapshot } from "../../replication";
+import { wasm } from "../../wasm";
 import type { AbilityRecord, ContentCatalog } from "../catalog";
 
 /**
- * Ability input for the minimal presentation: slots 1–8 hold the viewer's class abilities in
- * catalog ID order (up to eight). The zone validates class, level, cooldowns, resource,
- * target and range; this module only names the ability. The action bar arrives with step 8b.
+ * Ability input: slots 1–8 hold the viewer's class kit, the shared client model's
+ * (`mmorpg-client-model`, #543). The zone validates class, level, cooldowns, resource, target and
+ * range; this module only names the ability.
  */
 export function abilitySlots(snapshot: ZoneSnapshot, catalog: ContentCatalog): readonly AbilityRecord[] {
   const classId = snapshot.viewer.classChoice?.classId;
   if (classId === undefined) {
     return [];
   }
-  return [...catalog.abilities.values()]
-    .filter((ability) => ability.user === classId)
-    .sort((left, right) => left.id - right.id)
-    .slice(0, 8);
+  return [...wasm.classKit(classId)].flatMap((id) => catalog.abilities.get(id) ?? []);
 }
 
 /** The command for ability slot `slot` (1–8) at the current selection, or null without one. */

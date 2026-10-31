@@ -32,6 +32,7 @@ Lookup is read-only and does not replace the full completion gate or required na
 | `mmorpg-characters` | Durable character records under exclusive fenced character leases; storage-backend neutral, WASM-compatible |
 | `mmorpg-scenery` | Presentation-only scenery derived from core content (props, roads, water, relief, terrain grid); clients only (native client, `mmorpg-wasm`'s scenery export), never network hosts |
 | `mmorpg-presentation` | Shared procedural presentation drawn by both clients: static world (terrain, roads, water, props) and units (models, poses, effects, imported-model clip choice); renderer-neutral, WASM-compatible, clients only |
+| `mmorpg-client-model` | Client rules both clients share (#543): action bar and cast bar, chat parsing and logs, movement outbox, quest views; pure, no I/O or rendering, clients only (the browser through `mmorpg-wasm`) |
 | `mmorpg-client` | Native wgpu/winit client |
 | `mmorpg-scenarios` | Headless deterministic bot and control-plane scenario runners (tooling; owns no rules) |
 | `mmorpg-wasm` | wasm-bindgen adapter: the shared zone simulation as a local single-player host for `web/` (owns no rules) |

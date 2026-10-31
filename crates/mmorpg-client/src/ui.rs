@@ -8,7 +8,6 @@
 use strum::VariantArray;
 mod ability_art;
 pub mod bindings;
-pub mod chat;
 pub mod minimap;
 pub mod overlay;
 mod panels;
@@ -16,13 +15,15 @@ pub mod settings;
 pub mod world_labels;
 
 use crate::{
-    hud::{CombatHud, CooldownKind},
     interaction::NpcContext,
     roster::{Headwear, MAX_CHARACTERS, Roster},
 };
-use chat::{LineKind, Logs};
 use egui::{Align2, Color32, RichText, Vec2};
 use minimap::MinimapLayers;
+use mmorpg_client_model::{
+    chat::{self, LineKind, Logs},
+    hud::{self, CombatHud, CooldownKind},
+};
 use mmorpg_core::{
     EntityKind, EntityRef, Equipment, Inventory, LootClaim, PlayerClass, QuestSheet, ResourceKind,
     Sex, ZoneCommand, ZoneContent, ZoneSnapshot, ability_by_id,
@@ -788,14 +789,9 @@ impl GameUi {
                             let definition =
                                 ability_by_id(mmorpg_core::AbilityId::new(slot.ability));
                             let name = definition.map_or("?", |ability| ability.name);
-                            let locked = definition
-                                .is_some_and(|ability| snapshot.viewer.level < ability.level);
+                            let locked = !slot.learned;
                             let label = if locked {
-                                format!(
-                                    "{}\n{name}\nLv {}",
-                                    index + 1,
-                                    definition.map_or(1, |ability| ability.level)
-                                )
+                                format!("{}\n{name}\nLv {}", index + 1, slot.unlock_level)
                             } else {
                                 format!("{}\n{name}", index + 1)
                             };
@@ -808,26 +804,14 @@ impl GameUi {
                             }
                             .min_size(Vec2::new(86.0, 46.0))
                             .selected(slot.casting);
-                            let short = !locked
-                                && definition.is_some_and(|ability| {
-                                    snapshot
-                                        .viewer
-                                        .resource
-                                        .is_some_and(|resource| resource.value < ability.cost)
-                                });
-                            let button = if short {
+                            let button = if !locked && slot.resource_short {
                                 button.fill(Color32::from_rgb(30, 50, 95))
                             } else {
                                 button
                             };
                             let response = ui.add_enabled(!snapshot.viewer.dead, button);
                             if let Some(cooldown) = slot.cooldown {
-                                let share = if cooldown.total == 0 {
-                                    1.0
-                                } else {
-                                    (f32::from(cooldown.remaining) / f32::from(cooldown.total))
-                                        .clamp(0.0, 1.0)
-                                };
+                                let share = cooldown.share();
                                 let rect = response.rect;
                                 let covered = egui::Rect::from_min_max(
                                     egui::pos2(rect.min.x, rect.max.y - rect.height() * share),
@@ -860,10 +844,7 @@ impl GameUi {
                                 intents.push(UiIntent::AbilitySlot(index as u8 + 1));
                             }
                             response.on_hover_text(if locked {
-                                format!(
-                                    "{name} · unlocks at level {}",
-                                    definition.map_or(1, |ability| ability.level)
-                                )
+                                format!("{name} · unlocks at level {}", slot.unlock_level)
                             } else {
                                 name.to_owned()
                             });
@@ -1018,14 +999,14 @@ fn bar(ui: &mut egui::Ui, fill: f32, text: String, color: Color32) {
 }
 
 fn cast_bar(ui: &mut egui::Ui, cast: mmorpg_core::CastView) {
-    let progress = fraction(u32::from(cast.elapsed), u32::from(cast.total));
+    let view = hud::cast_bar(cast);
     let name = ability_by_id(cast.ability).map_or("Casting", |a| a.name);
-    let (fill, color) = if cast.channel {
-        (1.0 - progress, Color32::from_rgb(70, 180, 240))
+    let color = if view.channel {
+        Color32::from_rgb(70, 180, 240)
     } else {
-        (progress, Color32::from_rgb(240, 165, 40))
+        Color32::from_rgb(240, 165, 40)
     };
-    bar(ui, fill, name.to_owned(), color);
+    bar(ui, view.fill, name.to_owned(), color);
 }
 
 fn auras(ui: &mut egui::Ui, auras: &[mmorpg_core::AuraView]) {

@@ -590,10 +590,10 @@ mod tests {
     #[ignore = "requires a GPU; scripts/smoke-native.py runs this explicitly"]
     fn the_egui_interface_paints_over_the_native_world() {
         use crate::{
-            hud::CombatHud,
             interaction::NpcContext,
             ui::{GameUi, UiFrame, overlay::EguiPaint},
         };
+        use mmorpg_client_model::hud::CombatHud;
         use mmorpg_core::{EntityRef, NpcId, ZoneCommand};
         let high_dpi = std::env::var("MMORPG_NATIVE_ABILITY_ART_DPI").as_deref() == Ok("2");
         let size = if high_dpi { [2560, 1440] } else { [1280, 720] };
@@ -746,7 +746,7 @@ mod tests {
     #[test]
     #[ignore = "requires a GPU; scripts/smoke-native.py runs this explicitly"]
     fn the_projected_combat_hud_changes_gpu_pixels() {
-        use crate::hud::CombatHud;
+        use mmorpg_client_model::hud::CombatHud;
         use mmorpg_core::ZoneCommand;
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
@@ -779,7 +779,11 @@ mod tests {
                 target: [-14.0, 3.0, 4.0],
             };
             let mut frames = Vec::new();
-            for rects in [Vec::new(), hud.rects(), drained.rects()] {
+            for rects in [
+                Vec::new(),
+                crate::hud::rects(&hud),
+                crate::hud::rects(&drained),
+            ] {
                 frames.push(offscreen_pixels(&world, &[], &rects, view).await.unwrap());
             }
             save_smoke_frame("combat-hud.ppm", &frames[1]);

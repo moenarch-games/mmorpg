@@ -1,0 +1,22 @@
+[package]
+name = "mmorpg-client-model"
+description = "Client rules both clients share: action-bar and cast-bar state, chat parsing and logs, the movement outbox and quest views"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Pure client rules over the received projection and immutable content (#543):
+# no I/O and no rendering. The native client calls it directly, the browser
+# through `mmorpg-wasm`. See mmorpg-game-server/tests/dependency_boundary.rs.
+[dependencies]
+strum.workspace = true
+mmorpg-core.workspace = true
+
+[dev-dependencies]
+# The HUD acceptance test reads fixtures through the real wire codec.
+mmorpg-protocol.workspace = true
+
+[lints]
+workspace = true

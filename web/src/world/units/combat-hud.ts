@@ -1,7 +1,7 @@
 import type { EntityRef } from "../../entity-ref";
 import { findEntity, TICK_HZ, wireCatalog, type ErrorCode, type MeleeStance, type ZoneEvent, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
-import { objectiveLabel } from "./quest-state";
+import { objectiveAt } from "./quest-state";
 
 /** The Druid's Call Companion (#296): a minion of this appearance is the wolf companion. */
 const CALL_COMPANION = 46;
@@ -193,8 +193,9 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
     case "quest-progress": {
       const quest = catalog.quests.get(event.quest);
       const objective = quest?.objectives[event.objective];
-      return objective
-        ? `${quest!.name}: ${objectiveLabel(objective, catalog)} ${objective.kind === "kill" || objective.kind === "collect" || objective.kind === "retrieve" ? `${event.count}/${objective.count}` : "done"}.`
+      const label = objectiveAt(event.quest, event.objective, event.count)?.label;
+      return objective && label !== undefined
+        ? `${quest!.name}: ${label} ${objective.kind === "kill" || objective.kind === "collect" || objective.kind === "retrieve" ? `${event.count}/${objective.count}` : "done"}.`
         : "Quest progress.";
     }
     case "quest-completed":

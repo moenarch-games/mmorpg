@@ -77,6 +77,36 @@ fn hosts_never_link_presentation_scenery() {
             !reachable(&graph, host_side).contains(PRESENTATION),
             "{host_side} must not depend on {PRESENTATION}"
         );
+        assert!(
+            !reachable(&graph, host_side).contains(CLIENT_MODEL),
+            "{host_side} must not depend on {CLIENT_MODEL}"
+        );
+    }
+}
+
+const CLIENT_MODEL: &str = "mmorpg-client-model";
+
+/// The shared client rules (#543) are pure: core gameplay types in, views and
+/// commands out, with no I/O, rendering or presentation data. `mmorpg-protocol`
+/// is its test-only wire codec (the lockfile lists dev-dependencies too).
+#[test]
+fn the_client_model_holds_only_client_rules_over_core() {
+    let graph = dependency_graph(LOCKFILE);
+    assert_eq!(
+        graph.get(CLIENT_MODEL),
+        Some(&vec!["mmorpg-core", "mmorpg-protocol", "strum"])
+    );
+    const MANIFEST: &str = include_str!("../../mmorpg-client-model/Cargo.toml");
+    let (normal, dev) = MANIFEST
+        .split_once("[dev-dependencies]")
+        .expect("the client model declares its test-only codec");
+    assert!(!normal.contains("mmorpg-protocol") && dev.contains("mmorpg-protocol"));
+    let reached = reachable(&graph, CLIENT_MODEL);
+    for forbidden in [PRESENTATION, "mmorpg-presentation", "game-server", "tokio"] {
+        assert!(
+            !reached.contains(forbidden),
+            "{CLIENT_MODEL} must not depend on {forbidden}"
+        );
     }
 }
 
@@ -119,6 +149,10 @@ fn production_builds_never_enable_the_physics_ab_backend() {
         (
             "mmorpg-presentation",
             include_str!("../../mmorpg-presentation/Cargo.toml"),
+        ),
+        (
+            "mmorpg-client-model",
+            include_str!("../../mmorpg-client-model/Cargo.toml"),
         ),
         (
             "mmorpg-control-plane",

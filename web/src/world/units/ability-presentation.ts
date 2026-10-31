@@ -24,8 +24,6 @@ export type AbilityPresentation = {
   pose: CasterPose | null;
 };
 
-/** Melee reach in core units (`PLAYER_REACH_UNITS`). */
-export const MELEE_REACH_UNITS = 250;
 const RANGED: AbilityRange = { units: 3_000 };
 
 const SWORD = "M12 2 14 4 14 14 17 14 17 16 14 16 14 19 16 21 16 22 8 22 8 21 10 19 10 16 7 16 7 14 10 14 10 4Z";
@@ -102,14 +100,6 @@ export const ABILITY_PRESENTATION: ReadonlyMap<number, AbilityPresentation> = ne
 
 export function presentationOf(ability: number): AbilityPresentation | undefined {
   return ABILITY_PRESENTATION.get(ability);
-}
-
-/** The maximum XZ centre distance in units, or null for a self-centred ability. */
-export function reachUnits(range: AbilityRange): number | null {
-  if (range === "self") {
-    return null;
-  }
-  return range === "melee" ? MELEE_REACH_UNITS : range.units;
 }
 
 export type AuraPolarity = "buff" | "debuff";

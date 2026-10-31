@@ -3,16 +3,17 @@ use crate::{
     ClientError,
     network::{ClientSession, SessionError},
 };
-use mmorpg_core::{EntityRef, TICK_HZ, ZoneCommand, ZoneSnapshot};
+use mmorpg_client_model::outbox::{
+    MovementCommands, MovementInput, MovementOutbox, RESEND_INTERVAL_MS,
+};
+use mmorpg_core::{EntityRef, ZoneCommand, ZoneSnapshot};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::sync::{oneshot, watch};
 
-const RESEND_INTERVAL: Duration = Duration::from_millis(50);
-/// Minimum spacing of facing-only moves: one server tick.
-const FACING_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / TICK_HZ as u64);
+const RESEND_INTERVAL: Duration = Duration::from_millis(RESEND_INTERVAL_MS as u64);
 
 /// Latest local input published by the window: held movement plus counted
 /// discrete presses. Each counter (`jumps`, `rolls`, `selections`, `swings`,
@@ -81,9 +82,9 @@ pub enum NetworkUpdate {
 }
 
 /// Commands to send for one input observation, in order: a selection, a
-/// weapon swing, a spirit release, a cast cancellation, an ability,
-/// its release, a jump, then a move, then a roll (after the move, so the zone rolls along the
-/// latest intent).
+/// weapon swing, a spirit release, a cast cancellation, an ability, its
+/// release, an NPC interaction, then the movement commands (a jump, the swim
+/// rise, a move, then a roll).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Outgoing {
     choose: Option<(u8, u8)>,
@@ -94,11 +95,8 @@ struct Outgoing {
     ability: Option<u8>,
     ability_release: Option<(u8, bool)>,
     interaction: Option<ZoneCommand>,
-    jump: bool,
-    roll: bool,
     guard: Option<Option<mmorpg_core::StrikeHeight>>,
-    rise: Option<i8>,
-    movement: Option<(i8, i8, u16)>,
+    movement: MovementCommands,
 }
 
 impl Outgoing {
@@ -130,28 +128,18 @@ impl Outgoing {
         if let Some(command) = self.interaction {
             session.send_command(command)?;
         }
-        if self.jump {
-            session.send_jump()?;
-        }
-        if let Some(rise) = self.rise {
-            session.send_command(ZoneCommand::Rise(rise))?;
-        }
-        if let Some((forward, strafe, facing)) = self.movement {
-            session.send_move(forward, strafe, facing)?;
-        }
-        if self.roll {
-            session.send_command(ZoneCommand::Roll)?;
+        for command in self.movement.commands() {
+            session.send_command(command)?;
         }
         Ok(())
     }
 }
 
 /// Press counters already handled; a counter that moves on means one more
-/// command, however many presses it merged.
+/// command, however many presses it merged. Jumps and rolls are the movement
+/// outbox's.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Presses {
-    jumps: u32,
-    rolls: u32,
     selections: u32,
     swings: u32,
     releases: u32,
@@ -164,8 +152,6 @@ struct Presses {
 impl Presses {
     const fn of(input: PlayerInput) -> Self {
         Self {
-            jumps: input.jumps,
-            rolls: input.rolls,
             selections: input.selections,
             swings: input.swings,
             releases: input.releases,
@@ -177,47 +163,55 @@ impl Presses {
     }
 }
 
-/// Decides what to send and tracks what was last sent: intent and jump changes
-/// go out immediately, facing-only changes (camera drags) at most once per
-/// server tick, and the heartbeat resends the current intent. It performs no
-/// I/O; a failed delivery ends in [`Outbox::resume`] or ends the session.
+const fn movement_input(input: PlayerInput) -> MovementInput {
+    MovementInput {
+        forward: input.forward,
+        strafe: input.strafe,
+        facing: input.facing,
+        jumps: input.jumps,
+        rolls: input.rolls,
+        rise: input.rise,
+    }
+}
+
+/// Decides what to send and tracks what was last sent. Movement follows the
+/// shared [`MovementOutbox`] (#543), driven by a heartbeat timer as well as
+/// input changes; the other presses go out once each. It performs no I/O; a
+/// failed delivery ends in [`Outbox::resume`] or ends the session.
 struct Outbox {
-    sent: Option<(i8, i8, u16)>,
-    sent_at: Instant,
+    movement: MovementOutbox,
+    /// The clock the movement outbox counts milliseconds on.
+    origin: Instant,
     presses: Presses,
     /// A projection showed the character with a class.
     class_confirmed: bool,
+    /// The latest projection showed the character dead.
+    dead: bool,
     /// The guard lane last sent; `None` before any or after a resume.
     sent_guard: Option<Option<mmorpg_core::StrikeHeight>>,
-    /// The swim rise last sent; `None` after a resume.
-    sent_rise: Option<i8>,
 }
 
 impl Outbox {
     fn new(input: PlayerInput, now: Instant) -> Self {
         Self {
-            sent: None,
-            sent_at: now,
+            movement: MovementOutbox::new(movement_input(input)),
+            origin: now,
             presses: Presses::of(input),
             class_confirmed: false,
+            dead: false,
             sent_guard: Some(None),
-            sent_rise: Some(0),
         }
     }
 
-    /// The swim rise to send when it differs from the last one sent. After a resume only a
-    /// held rise is resent, as with the guard.
-    fn rise(&mut self, input: PlayerInput) -> Option<i8> {
-        let sent = self.sent_rise.unwrap_or(0);
-        let resumed = self.sent_rise.is_none();
-        self.sent_rise = Some(input.rise);
-        (sent != input.rise || (resumed && input.rise != 0)).then_some(input.rise)
+    fn ms(&self, now: Instant) -> f64 {
+        now.saturating_duration_since(self.origin).as_secs_f64() * 1_000.0
     }
 
     /// Reads a received projection: once it shows a class, the choice is
     /// never sent again, also after a reconnect (the zone keeps it).
     fn observe(&mut self, snapshot: &ZoneSnapshot) {
         self.class_confirmed |= snapshot.viewer.class.is_some();
+        self.dead = snapshot.viewer.dead;
     }
 
     /// The guard lane to send when it differs from the last one sent.
@@ -233,31 +227,18 @@ impl Outbox {
         })
     }
 
-    fn movement(&mut self, input: PlayerInput, now: Instant) -> (i8, i8, u16) {
-        let movement = (input.forward, input.strafe, input.facing);
-        self.sent = Some(movement);
-        self.sent_at = now;
-        movement
-    }
-
     /// Commands for a newly observed input: one command per advanced press
-    /// counter, however many presses it merged, then a `Move` when needed.
+    /// counter, however many presses it merged, then the movement commands.
     fn changes(&mut self, input: PlayerInput, now: Instant) -> Outgoing {
         let handled = self.presses;
         let pressed = Presses::of(input);
         self.presses = pressed;
-        let intent_changed = self
-            .sent
-            .is_none_or(|(forward, strafe, _)| (forward, strafe) != (input.forward, input.strafe));
-        let facing_changed = self
-            .sent
-            .is_none_or(|(_, _, facing)| facing != input.facing);
         // A swing or ability fires where the character faces (#517): it sends the facing now.
         let aimed =
             pressed.swings != handled.swings || pressed.ability_uses != handled.ability_uses;
-        let facing_due = facing_changed
-            && (aimed || now.saturating_duration_since(self.sent_at) >= FACING_INTERVAL);
-        let movement = (intent_changed || facing_due).then(|| self.movement(input, now));
+        let movement = self
+            .movement
+            .update(movement_input(input), self.ms(now), self.dead, aimed);
         Outgoing {
             // The heartbeat alone retries the class choice.
             choose: None,
@@ -271,10 +252,7 @@ impl Outbox {
             interaction: (pressed.interactions != handled.interactions)
                 .then_some(input.interaction)
                 .flatten(),
-            jump: pressed.jumps != handled.jumps,
-            roll: pressed.rolls != handled.rolls,
             guard: self.guard(input),
-            rise: self.rise(input),
             movement,
         }
     }
@@ -286,8 +264,9 @@ impl Outbox {
         Outgoing {
             choose: input.class_choice.filter(|_| !self.class_confirmed),
             guard: self.guard(input),
-            rise: self.rise(input),
-            movement: Some(self.movement(input, now)),
+            movement: self
+                .movement
+                .heartbeat(movement_input(input), self.ms(now), self.dead),
             ..Outgoing::default()
         }
     }
@@ -295,11 +274,9 @@ impl Outbox {
     /// After resume only current input counts; presses during the outage are dropped.
     fn resume(&mut self, input: PlayerInput) {
         self.presses = Presses::of(input);
-        self.sent = None;
+        self.movement.resume(movement_input(input));
         // The next heartbeat re-raises a held guard on the resumed connection.
         self.sent_guard = None;
-        // … and resends the swim rise.
-        self.sent_rise = None;
     }
 }
 
@@ -478,23 +455,16 @@ fn publish(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mmorpg_client_model::outbox::FACING_INTERVAL_MS;
 
-    const TICK: Duration = FACING_INTERVAL;
-    const EAST: u16 = 16_384;
-
-    fn held(forward: i8, strafe: i8, facing: u16, jumps: u32) -> PlayerInput {
-        PlayerInput {
-            forward,
-            strafe,
-            facing,
-            jumps,
-            ..PlayerInput::default()
-        }
-    }
+    const TICK: Duration = Duration::from_nanos((FACING_INTERVAL_MS * 1e6) as u64);
 
     fn only_move(forward: i8, strafe: i8, facing: u16) -> Outgoing {
         Outgoing {
-            movement: Some((forward, strafe, facing)),
+            movement: MovementCommands {
+                movement: Some((forward, strafe, facing)),
+                ..MovementCommands::default()
+            },
             ..Outgoing::default()
         }
     }
@@ -510,155 +480,81 @@ mod tests {
         outbox
     }
 
+    fn snapshot() -> ZoneSnapshot {
+        ZoneSnapshot {
+            doors: Vec::new(),
+            projectiles: Vec::new(),
+            debris: Vec::new(),
+            pieces: Vec::new(),
+            raid: None,
+            content_revision: 6,
+            acknowledged_sequence: 1,
+            viewer_id: 1,
+            zone_id: mmorpg_core::ZoneId::new(1),
+            tick: 1,
+            viewer: mmorpg_core::ViewerState::default(),
+            cooldowns: Vec::new(),
+            auras: Vec::new(),
+            target_of_target: None,
+            target_detail: mmorpg_core::TargetDetail::default(),
+            inventory_revision: 1,
+            inventory: None,
+            equipment: None,
+            loot: None,
+            events: Vec::new(),
+            chat: Vec::new(),
+            entities: Vec::new(),
+            quests: None,
+        }
+    }
+
     #[test]
-    fn each_advance_of_the_press_counter_sends_exactly_one_jump() {
+    fn a_swing_or_ability_sends_a_changed_facing_at_once() {
         let now = Instant::now();
         let mut outbox = sent(PlayerInput::default(), now);
-        let pressed = held(0, 0, 0, 1);
+        let turned = PlayerInput {
+            facing: 900,
+            ..PlayerInput::default()
+        };
+        assert_eq!(outbox.changes(turned, now), Outgoing::default());
+        let swung = PlayerInput {
+            swings: 1,
+            ..turned
+        };
         assert_eq!(
-            outbox.changes(pressed, now),
+            outbox.changes(swung, now),
             Outgoing {
-                jump: true,
-                ..Outgoing::default()
+                swing: Some(900),
+                ..only_move(0, 0, 900)
             }
         );
-        assert_eq!(
-            outbox.changes(pressed, now),
-            Outgoing::default(),
-            "observing the same counter again never repeats the jump"
-        );
-        let merged = held(0, 0, 0, 4);
-        assert_eq!(
-            outbox.changes(merged, now),
-            Outgoing {
-                jump: true,
-                ..Outgoing::default()
-            },
-            "coalesced presses merge into one jump"
-        );
-        let running = held(1, 0, 0, 5);
-        assert_eq!(
-            outbox.changes(running, now),
-            Outgoing {
-                jump: true,
-                movement: Some((1, 0, 0)),
-                ..Outgoing::default()
-            },
-            "a press with an intent change sends the jump, then the move"
-        );
     }
 
     #[test]
-    fn the_heartbeat_resends_intent_but_never_a_pending_jump() {
+    fn the_dead_hold_still_and_their_jumps_are_dropped() {
         let now = Instant::now();
-        let mut outbox = sent(held(1, 0, 0, 0), now);
-        // The heartbeat peeks at input the change branch has not handled yet.
-        let pressed = held(1, 0, 0, 1);
-        assert_eq!(outbox.heartbeat(pressed, now + TICK), only_move(1, 0, 0));
-        assert_eq!(
-            outbox.heartbeat(pressed, now + 2 * TICK),
-            only_move(1, 0, 0)
-        );
-        assert_eq!(
-            outbox.changes(pressed, now + 2 * TICK),
-            Outgoing {
-                jump: true,
-                ..Outgoing::default()
-            },
-            "the change branch still sends the pending jump exactly once"
-        );
-        assert_eq!(
-            outbox.heartbeat(pressed, now + 3 * TICK),
-            only_move(1, 0, 0)
-        );
-    }
-
-    #[test]
-    fn presses_made_during_an_outage_are_dropped_on_resume() {
-        let now = Instant::now();
-        let mut outbox = sent(held(1, 0, 0, 2), now);
-        // The connection drops; the player presses Space three times and
-        // turns before the session resumes.
-        outbox.resume(held(1, 0, EAST, 5));
-        assert_eq!(
-            outbox.changes(held(1, 0, EAST, 5), now),
-            only_move(1, 0, EAST),
-            "resume resends only the current intent"
-        );
-        assert_eq!(
-            outbox.changes(held(1, 0, EAST, 6), now),
-            Outgoing {
-                jump: true,
-                ..Outgoing::default()
-            },
-            "a press after resume is sent"
-        );
-    }
-
-    #[test]
-    fn intent_changes_are_sent_immediately() {
-        let now = Instant::now();
-        let mut outbox = sent(PlayerInput::default(), now);
-        assert_eq!(outbox.changes(held(1, 0, 0, 0), now), only_move(1, 0, 0));
-        assert_eq!(outbox.changes(held(1, -1, 0, 0), now), only_move(1, -1, 0));
-        assert_eq!(
-            outbox.changes(held(0, -1, EAST, 0), now),
-            only_move(0, -1, EAST),
-            "an intent change carries the latest facing without waiting"
-        );
-        assert_eq!(
-            outbox.changes(held(0, 0, EAST, 0), now),
-            only_move(0, 0, EAST),
-            "a key release is never throttled"
-        );
-    }
-
-    #[test]
-    fn facing_only_changes_are_sent_at_most_once_per_tick() {
-        let start = Instant::now();
-        let mut outbox = sent(held(1, 0, 0, 0), start);
-        let half_tick = TICK / 2;
-        assert_eq!(
-            outbox.changes(held(1, 0, 100, 0), start + half_tick),
-            Outgoing::default()
-        );
-        assert_eq!(
-            outbox.changes(held(1, 0, 200, 0), start + TICK - Duration::from_nanos(1)),
-            Outgoing::default()
-        );
-        assert_eq!(
-            outbox.changes(held(1, 0, 300, 0), start + TICK),
-            only_move(1, 0, 300),
-            "a facing change is sent once a tick has passed since the last move"
-        );
-        assert_eq!(
-            outbox.changes(held(1, 0, 400, 0), start + TICK + half_tick),
-            Outgoing::default(),
-            "the window restarts at the last sent move"
-        );
-        assert_eq!(
-            outbox.changes(held(1, 0, 300, 0), start + 3 * TICK),
-            Outgoing::default(),
-            "facing back at the last sent value is not a change"
-        );
-        // A heartbeat move also restarts the window.
-        assert_eq!(
-            outbox.heartbeat(held(1, 0, 500, 0), start + 4 * TICK),
-            only_move(1, 0, 500)
-        );
-        assert_eq!(
-            outbox.changes(held(1, 0, 600, 0), start + 4 * TICK + half_tick),
-            Outgoing::default()
-        );
-        assert_eq!(
-            outbox.changes(held(1, 0, 600, 0), start + 5 * TICK),
-            only_move(1, 0, 600)
-        );
+        let running = PlayerInput {
+            forward: 1,
+            ..PlayerInput::default()
+        };
+        let mut outbox = sent(running, now);
+        let mut dead = snapshot();
+        dead.viewer.dead = true;
+        outbox.observe(&dead);
+        let pressed = PlayerInput {
+            jumps: 1,
+            rolls: 1,
+            ..running
+        };
+        assert_eq!(outbox.changes(pressed, now), only_move(0, 0, 0));
+        assert_eq!(outbox.heartbeat(pressed, now + TICK), only_move(0, 0, 0));
+        outbox.observe(&snapshot());
+        assert_eq!(outbox.changes(pressed, now + TICK), only_move(1, 0, 0));
     }
 
     #[test]
     fn the_class_choice_repeats_with_every_heartbeat_until_a_projection_confirms_it() {
-        use mmorpg_core::{ClassChoice, PlayerClass, Sex, ZoneId};
+        use mmorpg_core::{ClassChoice, PlayerClass, Sex};
         let now = Instant::now();
         let input = PlayerInput {
             class_choice: Some((2, 0)),
@@ -679,31 +575,7 @@ mod tests {
                 .choose,
             None
         );
-        let mut snapshot = mmorpg_core::ZoneSnapshot {
-            doors: Vec::new(),
-            projectiles: Vec::new(),
-            debris: Vec::new(),
-            pieces: Vec::new(),
-            raid: None,
-            content_revision: 6,
-            acknowledged_sequence: 1,
-            viewer_id: 1,
-            zone_id: ZoneId::new(1),
-            tick: 1,
-            viewer: mmorpg_core::ViewerState::default(),
-            cooldowns: Vec::new(),
-            auras: Vec::new(),
-            target_of_target: None,
-            target_detail: mmorpg_core::TargetDetail::default(),
-            inventory_revision: 1,
-            inventory: None,
-            equipment: None,
-            loot: None,
-            events: Vec::new(),
-            chat: Vec::new(),
-            entities: Vec::new(),
-            quests: None,
-        };
+        let mut snapshot = snapshot();
         outbox.observe(&snapshot);
         assert_eq!(
             outbox.heartbeat(input, now + 2 * TICK),
@@ -845,22 +717,16 @@ mod tests {
                 ..Outgoing::default()
             }
         );
-        outbox.resume(PlayerInput {
+        let outage = PlayerInput {
             selections: 9,
             swings: 9,
             releases: 9,
+            jumps: 9,
             ..released
-        });
+        };
+        outbox.resume(outage);
         assert_eq!(
-            outbox.changes(
-                PlayerInput {
-                    selections: 9,
-                    swings: 9,
-                    releases: 9,
-                    ..released
-                },
-                now
-            ),
+            outbox.changes(outage, now),
             only_move(0, 0, 0),
             "presses during an outage are dropped on resume"
         );

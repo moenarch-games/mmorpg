@@ -9,7 +9,7 @@ import { undescribedAbilities } from "../src/world/units/ability-presentation";
 import { combatStatus } from "../src/world/units/combat-hud";
 import { BagState } from "../src/world/units/bag-state";
 import { LootState } from "../src/world/units/loot-state";
-import { dialogNpc, dialogView, QuestState, trackerLines } from "../src/world/units/quest-state";
+import { dialogNpc, dialogView, QuestState, trackerRows } from "../src/world/units/quest-state";
 import { createLocalWorld } from "../src/world/local-world";
 import { LocalZoneSource, type LocalZoneHandle } from "../src/world/local-zone-source";
 import { buildSceneryScene } from "../src/world/scenery-nodes";
@@ -613,7 +613,7 @@ describe("WASM local zone combat intents", () => {
     expect(quests.sheet?.entries).toEqual([{ quest: 1, progress: [0, 0, 0] }]);
     expect(quests.marker(1)).toBe("in-progress");
     expect(quests.feedback).toBe("Accepted: Trouble in the Woods.");
-    expect(trackerLines(quests.sheet!, catalog)).toEqual(["Trouble in the Woods", "  · Timber Wolf slain: 0/6"]);
+    expect(trackerRows(quests.sheet!).map((row) => row.text)).toEqual(["Trouble in the Woods", "  · Timber Wolf slain: 0/6"]);
     source.sendCommand({ kind: "complete-quest", npc: 1, quest: 1, choice: 0 });
     run(source, 1);
     expect(source.latestProjection()?.events).toEqual([{ kind: "error", code: "quest-incomplete", target: { kind: "npc", id: 1 } }]);

@@ -1,11 +1,13 @@
 import type { WorldCommand } from "../../command-wire";
+import type { ObjectiveView, QuestView as ModelQuestView, TrackerRow } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { questCompleted, ticksFromMs, type ErrorCode, type QuestMarkerKind, type QuestSheet, type ZoneSnapshot } from "../../replication";
-import type { ContentCatalog, QuestObjectiveRecord, QuestRecord } from "../catalog";
+import { wasm } from "../../wasm";
+import type { ContentCatalog, QuestRecord } from "../catalog";
 
-/** The zone's inclusive XZ reach to a quest NPC's feet (5 m); a presentation hint, the zone decides. */
-export const QUEST_REACH_UNITS = 500;
+// Quest views are the shared client model's (`mmorpg-client-model`, #543), the same the native
+// client shows; this module names their quests from the catalog and keeps the request state.
 
-export type ObjectiveView = { text: string; current: number; required: number; done: boolean };
+export type { ObjectiveView, TrackerRow } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 /** An active quest with each objective's received progress. */
 export type QuestView = { quest: QuestRecord; objectives: readonly ObjectiveView[]; complete: boolean };
 /** A projected quest giver or ender and whether it looks within reach. */
@@ -20,100 +22,43 @@ export type DialogView = {
   inProgress: readonly QuestView[];
 };
 
-/** "Timber Wolf slain", "Wolf Pelt", "Speak with Farmer Osric Mill" or "Explore Stillwater Lake". */
-export function objectiveLabel(objective: QuestObjectiveRecord, catalog: ContentCatalog): string {
-  switch (objective.kind) {
-    case "kill":
-      return `${catalog.creatureTemplates.get(objective.target)?.name ?? "Creature"} slain`;
-    case "collect":
-      return catalog.items.get(objective.target)?.name ?? "Item";
-    case "talk":
-      return `Speak with ${catalog.npcs.get(objective.target)?.name ?? "someone"}`;
-    case "explore":
-      return `Explore ${catalog.areas.get(objective.target) ?? "the area"}`;
-    case "retrieve":
-      return catalog.items.get(objective.target)?.name ?? "Item";
-    default: {
-      const unknown: never = objective;
-      throw new Error(`Unknown objective ${String(unknown)}`);
-    }
+/** The catalog record of a projected quest; a quest the catalog does not know fails closed. */
+function record(catalog: ContentCatalog, quest: number): QuestRecord {
+  const found = catalog.quests.get(quest);
+  if (!found) {
+    throw new Error("Projected quest is missing from the content catalog.");
   }
+  return found;
 }
 
-function objectiveView(objective: QuestObjectiveRecord, current: number, catalog: ContentCatalog): ObjectiveView {
-  const required = objective.count;
-  const label = objectiveLabel(objective, catalog);
-  const done = current >= required;
-  const text = objective.kind === "kill" || objective.kind === "collect" || objective.kind === "retrieve"
-    ? `${label}: ${Math.min(current, required)}/${required}`
-    : `${label}${done ? " (done)" : ""}`;
-  return { text, current, required, done };
+function named(view: ModelQuestView, catalog: ContentCatalog): QuestView {
+  return { quest: record(catalog, view.quest), objectives: view.objectives, complete: view.complete };
 }
 
-/** The sheet's active quests in quest-ID order; quests the catalog does not know fail closed. */
+/** The sheet's active quests in quest-ID order. */
 export function questViews(sheet: QuestSheet, catalog: ContentCatalog): QuestView[] {
-  return sheet.entries.map((entry) => {
-    const quest = catalog.quests.get(entry.quest);
-    if (!quest) {
-      throw new Error("Projected quest is missing from the content catalog.");
-    }
-    const objectives = quest.objectives.map((objective, index) => objectiveView(objective, entry.progress[index] ?? 0, catalog));
-    return { quest, objectives, complete: objectives.every((objective) => objective.done) };
-  });
+  return wasm.questViews(sheet).map((view) => named(view, catalog));
 }
 
-/** Whether the viewer may accept `quest`: not active, not turned in, and its prerequisite turned in. */
-function offered(sheet: QuestSheet, quest: QuestRecord): boolean {
-  return !sheet.entries.some((entry) => entry.quest === quest.id)
-    && !questCompleted(sheet.completed, quest.id)
-    && (quest.prerequisite === null || questCompleted(sheet.completed, quest.prerequisite));
+/** `quest`'s objectives at `progress`, one count per objective (missing counts are 0). */
+export function objectiveViews(quest: number, progress: readonly number[]): readonly ObjectiveView[] {
+  return wasm.questView(quest, Uint8Array.from(progress))?.objectives ?? [];
 }
 
-function isQuestNpc(catalog: ContentCatalog, npc: number): boolean {
-  for (const quest of catalog.quests.values()) {
-    if (quest.giver === npc || quest.ender === npc) {
-      return true;
-    }
-  }
-  return false;
+/** One objective of `quest` at `count`, as a quest-progress event reports it. */
+export function objectiveAt(quest: number, objective: number, count: number): ObjectiveView | undefined {
+  const progress = [0, 0, 0];
+  progress[objective] = count;
+  return objectiveViews(quest, progress)[objective];
 }
 
 /**
- * An explicitly selected NPC is the only possible addressee, even if it has no quests.
- * Without an NPC selection, Talk retains nearest-quest-giver access. The zone checks reach.
+ * The quest NPC Talk addresses: an explicitly selected NPC only, even without quests; otherwise
+ * the nearest projected quest NPC. The zone checks reach.
  */
 export function dialogNpc(snapshot: ZoneSnapshot, catalog: ContentCatalog): QuestNpc | null {
-  const viewer = snapshot.entities[0];
-  if (!viewer) {
-    return null;
-  }
-  let chosen: { npc: number; distance: number } | null = null;
-  const selected = snapshot.viewer.target;
-  for (const entity of snapshot.entities) {
-    if (entity.kind !== "npc" || !isQuestNpc(catalog, entity.entityId)) {
-      continue;
-    }
-    if (selected?.kind === "npc" && selected.id !== entity.entityId) {
-      continue;
-    }
-    const distance = Math.hypot(entity.position[0] - viewer.position[0], entity.position[2] - viewer.position[2]);
-    const target = snapshot.viewer.target;
-    if (target?.kind === "npc" && target.id === entity.entityId) {
-      chosen = { npc: entity.entityId, distance };
-      break;
-    }
-    if (chosen === null || distance < chosen.distance || (distance === chosen.distance && entity.entityId < chosen.npc)) {
-      chosen = { npc: entity.entityId, distance };
-    }
-  }
-  if (chosen === null) {
-    return null;
-  }
-  return {
-    npc: chosen.npc,
-    name: catalog.npcs.get(chosen.npc)?.name ?? "Quest giver",
-    inReach: chosen.distance <= QUEST_REACH_UNITS,
-  };
+  const npc = wasm.dialogNpc(snapshot);
+  return npc && { npc: npc.npc, name: catalog.npcs.get(npc.npc)?.name ?? "Quest giver", inReach: npc.inReach };
 }
 
 /**
@@ -121,39 +66,19 @@ export function dialogNpc(snapshot: ZoneSnapshot, catalog: ContentCatalog): Ques
  * offers no new quests, only turn-ins; the zone enforces both.
  */
 export function dialogView(sheet: QuestSheet, catalog: ContentCatalog, npc: QuestNpc, night = false): DialogView {
-  const active = questViews(sheet, catalog).filter((view) => view.quest.ender === npc.npc);
-  const woken = night ? catalog.npcs.get(npc.npc)?.wokenLine ?? null : null;
+  const view = wasm.dialogView(sheet, npc.npc, night);
   return {
     npc,
-    greeting: woken,
-    offered: woken !== null ? [] : [...catalog.quests.values()].filter((quest) => quest.giver === npc.npc && offered(sheet, quest)),
-    ready: active.filter((view) => view.complete),
-    inProgress: active.filter((view) => !view.complete),
+    greeting: view.greeting,
+    offered: view.offered.map((quest) => record(catalog, quest)),
+    ready: view.ready.map((quest) => named(quest, catalog)),
+    inProgress: view.inProgress.map((quest) => named(quest, catalog)),
   };
 }
 
-/** One tracker row: a quest heading (`objective` null) or one of its objectives. */
-export type TrackerRow = { text: string; quest: number; objective: number | null };
-
 /** The HUD tracker's rows: each active quest followed by its objectives. */
-export function trackerRows(sheet: QuestSheet, catalog: ContentCatalog): TrackerRow[] {
-  return questViews(sheet, catalog).flatMap((view) => [
-    {
-      text: view.complete ? `${view.quest.name} — return to ${catalog.npcs.get(view.quest.ender)?.name ?? "the quest giver"}` : view.quest.name,
-      quest: view.quest.id,
-      objective: null,
-    },
-    ...view.objectives.map((objective, index) => ({
-      text: `  ${objective.done ? "✓" : "·"} ${objective.text}`,
-      quest: view.quest.id,
-      objective: index,
-    })),
-  ]);
-}
-
-/** One line per active quest objective for the HUD tracker. */
-export function trackerLines(sheet: QuestSheet, catalog: ContentCatalog): string[] {
-  return trackerRows(sheet, catalog).map((row) => row.text);
+export function trackerRows(sheet: QuestSheet): TrackerRow[] {
+  return wasm.trackerRows(sheet);
 }
 
 /** Ticks (3 s) a confirmed objective change stays highlighted in the tracker. */
@@ -307,10 +232,9 @@ export class QuestState {
         this.#feedback = `${catalog.quests.get(event.quest)?.name ?? "Quest"} completed.`;
         this.#pending = null;
       } else if (event.kind === "quest-progress") {
-        const quest = catalog.quests.get(event.quest);
-        const objective = quest?.objectives[event.objective];
+        const objective = objectiveAt(event.quest, event.objective, event.count);
         if (objective) {
-          this.#feedback = objectiveView(objective, event.count, catalog).text;
+          this.#feedback = objective.text;
         }
       } else if (event.kind === "error" && this.#pending !== null) {
         const answers = event.target === null

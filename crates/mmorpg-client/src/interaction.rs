@@ -1,5 +1,6 @@
 //! Selected-person context projected from immutable content and received self sheets.
 //! This is navigation and intent composition; the zone validates every request.
+use mmorpg_client_model::quest::{QuestStanding, standing};
 use mmorpg_core::{
     Inventory, NpcId, NpcRole, QuestSheet, ZoneCommand, ZoneContent, ZoneSnapshot, item_template,
     sell_price,
@@ -55,30 +56,28 @@ impl NpcContext {
         content: &'a ZoneContent,
         npc: NpcId,
     ) -> Vec<&'a mmorpg_core::Quest> {
-        let sheet = self.quests.as_ref();
+        let empty = QuestSheet::default();
+        let sheet = self.quests.as_ref().unwrap_or(&empty);
         let mut rows: Vec<_> = content
             .quests()
             .iter()
             .filter(|q| q.giver == npc || q.ender == npc)
             .collect();
         rows.sort_by_key(|q| {
-            let active = sheet.is_some_and(|s| s.entries.iter().any(|e| e.quest == q.id));
-            let done = sheet.is_some_and(|s| s.completed & (1u32 << (q.id.get() - 1)) != 0);
-            let unlocked = q
-                .prerequisite
-                .is_none_or(|p| sheet.is_some_and(|s| s.completed & (1u32 << (p.get() - 1)) != 0));
-            (
-                if active && q.ender == npc {
-                    0
-                } else if !done && unlocked && q.giver == npc {
-                    1
-                } else {
-                    2
-                },
-                q.id,
-            )
+            let rank = match standing(sheet, q, npc) {
+                QuestStanding::TurnIn => 0,
+                QuestStanding::Offered => 1,
+                _ => 2,
+            };
+            (rank, q.id)
         });
         rows
+    }
+
+    /// The viewer's standing with `quest` at the open NPC, once a sheet arrived.
+    #[must_use]
+    pub fn standing(&self, quest: &mmorpg_core::Quest) -> Option<QuestStanding> {
+        Some(standing(self.quests.as_ref()?, quest, self.npc?))
     }
     pub fn navigate(&mut self, content: &ZoneContent, delta: isize, reward: bool) {
         let Some(npc) = self.npc else { return };
@@ -113,28 +112,17 @@ impl NpcContext {
         match content.npc(npc)?.role {
             NpcRole::QuestGiver if !sell => {
                 let q = *self.quest_rows(content, npc).get(self.row)?;
-                let active = self
-                    .quests
-                    .as_ref()
-                    .is_some_and(|s| s.entries.iter().any(|e| e.quest == q.id));
-                let sheet = self.quests.as_ref()?;
-                let done = sheet.completed & (1u32 << (q.id.get() - 1)) != 0;
-                let unlocked = q
-                    .prerequisite
-                    .is_none_or(|p| sheet.completed & (1u32 << (p.get() - 1)) != 0);
-                if active && q.ender == npc {
-                    Some(ZoneCommand::CompleteQuest {
+                match self.standing(q)? {
+                    QuestStanding::TurnIn => Some(ZoneCommand::CompleteQuest {
                         npc,
                         quest: q.id.get(),
                         choice: (self.choice % q.rewards.choices.len().max(1)) as u8,
-                    })
-                } else if !active && !done && unlocked && q.giver == npc {
-                    Some(ZoneCommand::AcceptQuest {
+                    }),
+                    QuestStanding::Offered => Some(ZoneCommand::AcceptQuest {
                         npc,
                         quest: q.id.get(),
-                    })
-                } else {
-                    None
+                    }),
+                    _ => None,
                 }
             }
             NpcRole::Vendor if sell => {
@@ -249,11 +237,14 @@ impl NpcContext {
                     );
                 }
                 rows.get(self.row).map_or_else(||"no quests available".into(),|q| {
-                    let sheet=self.quests.as_ref();
-                    let entry=sheet.and_then(|s|s.entries.iter().find(|e|e.quest==q.id));
-                    let completed=sheet.is_some_and(|s|s.completed & (1u32 << (q.id.get()-1))!=0);
-                    let unlocked=q.prerequisite.is_none_or(|p|sheet.is_some_and(|s|s.completed & (1u32 << (p.get()-1))!=0));
-                    let state=if completed {"completed"} else if entry.is_some() && q.ender==npc.id {"1 Turn in (zone checks objectives)"} else if entry.is_some() {"in progress; return to its named ender"} else if unlocked && q.giver==npc.id {"available · 1 Accept"} else if unlocked {"available from its giver (H)"} else {"locked by prerequisite"};
+                    let state = match self.standing(q) {
+                        Some(QuestStanding::Completed) => "completed",
+                        Some(QuestStanding::TurnIn) => "1 Turn in (zone checks objectives)",
+                        Some(QuestStanding::InProgress) => "in progress; return to its named ender",
+                        Some(QuestStanding::Offered) => "available · 1 Accept",
+                        Some(QuestStanding::OfferedElsewhere) => "available from its giver (H)",
+                        Some(QuestStanding::Locked) | None => "locked by prerequisite",
+                    };
                     let choices=q.rewards.choices.iter().enumerate().map(|(i,item)|format!("{}{}",if i==self.choice % q.rewards.choices.len().max(1) {">"} else {""},item_name(*item))).collect::<Vec<_>>().join(" / ");
                     format!("{} — {state} · rewards {} copper {} · Up/Down quest {}/{} · Left/Right reward · H dialogue/objectives",q.name,q.rewards.copper,choices,self.row+1,rows.len())
                 })

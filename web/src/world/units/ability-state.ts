@@ -1,68 +1,18 @@
-import { sameEntity } from "../../entity-ref";
-import { TICK_HZ, UNITS_PER_METRE, findEntity, wireCatalog, type ResourceKind, type ZoneSnapshot } from "../../replication";
+import { TICK_HZ, UNITS_PER_METRE, type ResourceKind, type ZoneSnapshot } from "../../replication";
+import type { SlotState } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
+import { wasm } from "../../wasm";
 import type { AbilityRecord, ContentCatalog } from "../catalog";
-import { presentationOf, reachUnits, type AbilityRange } from "./ability-presentation";
+import { presentationOf, type AbilityRange } from "./ability-presentation";
+
+export type { SlotCooldown, SlotState } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 
 /**
- * What an action bar slot shows, derived only from the decoded projection, the exported catalog
- * and the distance to the target. None of it decides whether a use succeeds; the zone answers
- * every `UseAbility` itself.
+ * What each action bar slot shows for a projection, in slot order: the shared client model's
+ * slot rules (`mmorpg-client-model`, #543), the same the native client draws. None of it decides
+ * whether a use succeeds; the zone answers every `UseAbility` itself.
  */
-export type SlotCooldown = { kind: "cooldown" | "gcd"; remaining: number; total: number };
-
-export type SlotState = {
-  ability: AbilityRecord;
-  learned: boolean;
-  /** Level at which the class learns the ability. */
-  unlockLevel: number;
-  /** The class resource is below the cost. */
-  resourceShort: boolean;
-  /** The target is known and farther than the ability reaches. */
-  outOfRange: boolean;
-  /** The viewer is casting or channelling this ability. */
-  casting: boolean;
-  cooldown: SlotCooldown | null;
-};
-
-/**
- * XZ centre distance in core units from the viewer to its target, or null without a target (or
- * when targeting itself). A selected target the projection omits has left the interest radius,
- * beyond every targeted ability's reach, so it counts as infinitely far.
- */
-export function targetDistanceUnits(snapshot: ZoneSnapshot): number | null {
-  const selected = snapshot.viewer.target;
-  const viewer = findEntity(snapshot, { kind: "player", id: snapshot.viewerId });
-  if (selected === null || !viewer || sameEntity(selected, { kind: "player", id: snapshot.viewerId })) {
-    return null;
-  }
-  const target = findEntity(snapshot, selected);
-  if (!target) {
-    return Number.POSITIVE_INFINITY;
-  }
-  return Math.hypot(target.position[0] - viewer.position[0], target.position[2] - viewer.position[2]);
-}
-
-export function slotState(ability: AbilityRecord, snapshot: ZoneSnapshot, distanceUnits: number | null): SlotState {
-  const viewer = snapshot.viewer;
-  const range: AbilityRange = presentationOf(ability.id)?.range ?? "self";
-  const reach = reachUnits(range);
-  const running = snapshot.cooldowns.find((cooldown) => cooldown.ability === ability.id)?.remaining ?? 0;
-  const global = viewer.globalCooldown;
-  // The longer wait is the one the player is waiting on.
-  const cooldown: SlotCooldown | null = running > 0 && running >= global
-    ? { kind: "cooldown", remaining: running, total: ability.cooldown }
-    : global > 0
-      ? { kind: "gcd", remaining: global, total: wireCatalog().globalCooldownTicks }
-      : null;
-  return {
-    ability,
-    learned: viewer.level >= ability.level,
-    unlockLevel: ability.level,
-    resourceShort: viewer.resource !== null && viewer.resource.value < ability.cost,
-    outOfRange: reach !== null && distanceUnits !== null && distanceUnits > reach,
-    casting: viewer.cast?.ability === ability.id,
-    cooldown,
-  };
+export function actionBar(snapshot: ZoneSnapshot): SlotState[] {
+  return wasm.actionBar(snapshot);
 }
 
 /** Degrees of the cooldown sweep still covering the icon: a full turn at the start, none when ready. */

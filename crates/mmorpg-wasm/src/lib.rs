@@ -27,6 +27,7 @@
 pub mod action_lab;
 pub mod arena_presentation;
 pub mod catalog;
+pub mod client_model;
 pub mod host;
 pub mod lab_diagnostics;
 pub mod lab_experiment;
