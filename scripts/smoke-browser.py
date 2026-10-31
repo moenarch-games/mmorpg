@@ -2097,6 +2097,59 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "class-kit-arcanist-hit.png"))
         expect(cast).to_be_hidden()
 
+    def practice_fight(self, swing):
+        """#550: Battle Royale practice from the Pages URL, without a server: enter, walk into the
+        training targets, hit one through real zone combat, reset and return to setup."""
+        self.page.goto(self.url + "?activity=battle-royale")
+        start = self.page.get_by_role("button", name=re.compile("^Start practice"))
+        expect(start).to_be_enabled(timeout=30_000)
+        start.click()
+        expect(self.page.locator("#character-select")).to_be_hidden()
+        expect(self.page.locator("#unit-status")).to_contain_text("Level 10")
+        self.page.locator("#world").focus()
+        # Walk straight into the target ahead (its body stops the character in reach) and select it.
+        self.page.keyboard.down("KeyW")
+        self.page.wait_for_timeout(5_000)
+        self.page.keyboard.up("KeyW")
+        self.page.keyboard.press("Tab")
+        expect(self.page.locator("#unit-status")).to_contain_text("Target: Training Target")
+        for _ in range(30):
+            swing()
+            # Let the swing land before the next one.
+            self.page.wait_for_timeout(500)
+            if "100%)" not in (self.page.locator("#unit-status").text_content() or ""):
+                break
+        expect(self.page.locator("#unit-status")).to_contain_text(re.compile(r"Training Target \(level 10, \d{1,2}%\)"))
+        self.page.screenshot(path=str(ARTIFACTS / f"{self._testMethodName}-fight.png"))
+        self.page.locator("#scenario-reset").evaluate("button => button.click()")
+        expect(self.page.locator("#unit-status")).not_to_contain_text("In combat")
+        self.page.locator("#return-to-characters").evaluate("button => button.click()")
+        expect(start).to_be_visible()
+
+    def test_battle_royale_practice_desktop(self):
+        # A left click on open ground swings where the character faces (a click on a unit selects it).
+        self.practice_fight(lambda: self.page.mouse.click(720, 200))
+
+    def test_battle_royale_practice_touch(self):
+        self.context.close()
+        self.context = self.browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
+        self.page = self.context.new_page()
+        self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+
+        def swing():
+            attack = self.page.get_by_role("button", name="Attack", exact=True)
+            bash = self.page.get_by_role("button", name="Shield Bash (ability 2)")
+            if attack.is_visible():
+                attack.tap()
+            elif bash.is_visible():
+                # Out of combat the touch overlay offers abilities; one starts the fight.
+                bash.tap()
+            else:
+                # The touch overlay appears with the first touch.
+                self.page.touchscreen.tap(195, 700)
+
+        self.practice_fight(swing)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

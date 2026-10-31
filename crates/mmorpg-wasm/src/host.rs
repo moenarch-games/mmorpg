@@ -15,8 +15,8 @@ use crate::action_lab::LabSetup;
 use crate::scenario::Scenario;
 use mmorpg_characters::{CharacterLease, CharacterStore, EntryBackend, LeaseHolder, StoreError};
 use mmorpg_core::{
-    CharacterId, ClassChoice, PlayerId, ZoneContent, ZoneDefinition, ZoneError, ZoneId,
-    ZoneSimulation, greyhaven_vale,
+    CharacterId, ClassChoice, EphemeralCharacterBuild, PlayerId, ZoneContent, ZoneDefinition,
+    ZoneError, ZoneId, ZoneSimulation, greyhaven_vale,
 };
 use mmorpg_protocol::{
     ProtocolError, decode_canonical_snapshot, decode_observed_command, encode_canonical_snapshot,
@@ -26,6 +26,9 @@ use mmorpg_protocol::{
 /// The zone the local host simulates. It matches `mmorpg-zone-host`'s default
 /// `MMORPG_ZONE_IDS=1`, so local and network projections carry the same zone ID.
 pub const LOCAL_ZONE_ID: ZoneId = ZoneId::new(1);
+
+/// The zone a Battle Royale arena projection carries, hosted or practised locally.
+pub const ARENA_ZONE_ID: ZoneId = ZoneId::new(100);
 
 /// The content every host loads for [`LOCAL_ZONE_ID`]; `mmorpg-game-server`'s
 /// `build_zone_matches` installs the same content (checked by tests).
@@ -170,6 +173,31 @@ impl LocalZoneHost {
         Self::with_ephemeral(content, &record)
     }
 
+    /// A fresh Battle Royale practice arena (#550): the flat arena with its training targets
+    /// and `build` admitted at the maximum level as player 1 at spawn slot 0, whose commands
+    /// start at sequence 1. Nothing is stored; a reset is a fresh host.
+    pub fn practice_arena(
+        build: &EphemeralCharacterBuild,
+    ) -> Result<(Self, PlayerId), LocalZoneError> {
+        let mut host = Self::empty(ARENA_ZONE_ID, crate::arena_presentation::content())?;
+        let player_id = host.next_player_id;
+        host.zone
+            .admit_ephemeral(player_id, build)
+            .map_err(LocalZoneError::Zone)?;
+        host.next_player_id += 1;
+        host.last_sequences.insert(player_id, 0);
+        Ok((host, player_id))
+    }
+
+    fn empty(zone_id: ZoneId, content: Arc<ZoneContent>) -> Result<Self, LocalZoneError> {
+        Ok(Self {
+            zone: ZoneSimulation::with_content(zone_id, content).map_err(LocalZoneError::Zone)?,
+            next_player_id: 1,
+            last_sequences: BTreeMap::new(),
+            characters: BTreeMap::new(),
+        })
+    }
+
     /// Runs another validated action graph (#382): the lab's experimental
     /// rules, only ever in a fresh, unsaved lab world.
     pub fn set_action_graph(
@@ -189,14 +217,7 @@ impl LocalZoneHost {
         content: Arc<ZoneContent>,
         record: &mmorpg_core::CharacterRecord,
     ) -> Result<(Self, PlayerId), LocalZoneError> {
-        let zone =
-            ZoneSimulation::with_content(LOCAL_ZONE_ID, content).map_err(LocalZoneError::Zone)?;
-        let mut host = Self {
-            zone,
-            next_player_id: 1,
-            last_sequences: BTreeMap::new(),
-            characters: BTreeMap::new(),
-        };
+        let mut host = Self::empty(LOCAL_ZONE_ID, content)?;
         let player_id = host.next_player_id;
         host.zone
             .admit_character(player_id, record)
@@ -427,6 +448,65 @@ mod tests {
             .find(|entity| entity.kind == EntityKind::Player && entity.id == player_id)
             .unwrap()
             .position
+    }
+
+    #[test]
+    fn the_practice_arena_admits_a_max_level_build_that_walks_and_hits_a_target() {
+        let build = EphemeralCharacterBuild::standard(ClassChoice {
+            class: mmorpg_core::PlayerClass::Warden,
+            sex: mmorpg_core::Sex::Male,
+        })
+        .unwrap();
+        let (mut host, player) = LocalZoneHost::practice_arena(&build).unwrap();
+        let snapshot = decode_snapshot(&host.projection(player).unwrap()).unwrap();
+        assert_eq!(snapshot.viewer.level, mmorpg_core::MAX_PLAYER_LEVEL);
+        let targets: Vec<_> = snapshot
+            .entities
+            .iter()
+            .filter(|entity| entity.kind == EntityKind::Creature)
+            .collect();
+        assert_eq!(targets.len(), 5, "every training target is in view");
+        let target = mmorpg_core::EntityRef::Creature(mmorpg_core::CreatureId::new(2));
+        // Walk about 7 m toward the middle target (9 m ahead, +Z), select it and swing.
+        host.submit(player, 1, &run(0)).unwrap();
+        for _ in 0..70 {
+            host.tick().unwrap();
+        }
+        let walked = own_position(&host, player);
+        assert!(walked[2] > 300, "the player walks forward: {walked:?}");
+        let stop = encode_command(ZoneCommand::Move {
+            forward: 0,
+            strafe: 0,
+            facing: 0,
+        });
+        host.submit(player, 2, &stop).unwrap();
+        host.submit(
+            player,
+            3,
+            &encode_command(ZoneCommand::SelectTarget(Some(target))),
+        )
+        .unwrap();
+        for sequence in 4..16 {
+            host.submit(
+                player,
+                sequence,
+                &encode_command(ZoneCommand::Swing { facing: 0 }),
+            )
+            .unwrap();
+            for _ in 0..10 {
+                host.tick().unwrap();
+            }
+        }
+        let snapshot = decode_snapshot(&host.projection(player).unwrap()).unwrap();
+        let health = snapshot
+            .entities
+            .iter()
+            .find(|entity| entity.kind == EntityKind::Creature && entity.id == 2)
+            .map(|entity| entity.health_percent);
+        assert!(
+            health.is_some_and(|percent| percent < 100),
+            "the target takes real damage: {health:?}"
+        );
     }
 
     #[test]

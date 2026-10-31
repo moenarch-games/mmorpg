@@ -1,6 +1,22 @@
 # Battle Royale in the MMORPG browser client
 
-Choose **Battle Royale PvP** from Activity. Select a class, appearance and equipped
+## Practice arena (Pages, no server)
+
+`?activity=battle-royale` (or **Battle Royale PvP** from Activity) opens with **Arena:
+Practice arena (this browser)** selected unless the URL names an `arenaServer`. Choose a
+class, appearance and equipment, then **Start practice**: the page's `mmorpg-wasm` host
+(`LocalZone.forPracticeArena`) admits that `EphemeralCharacterBuild` at the maximum level on
+the flat arena, facing five stationary **Training Targets** (three about 8–9 m ahead, two at
+20 m). Targets are breakable props: they take real `mmorpg-core` damage, never move, fight or
+hold threat, break, and stand again after 30 s. There is no storm, matchmaking, team, reward
+or other player. **Reset practice (F9)** starts a fresh life with the build chosen at entry;
+**Characters** returns to setup to change it. Nothing is saved, and the Greyhaven roster,
+saves and the hosted path below are untouched. The flat arena is temporary until the shared
+fortress (battle-royale #31) is presented (#552).
+
+## Hosted match
+
+Choose **Arena: Hosted match**. Select a class, appearance and equipped
 items, then join the same **Match server** as a friend. Characters enter at the
 shared supported maximum level, with actual class resources and abilities. Equipment
 choices are filtered by the shared item catalog's slots; the host validates them.
