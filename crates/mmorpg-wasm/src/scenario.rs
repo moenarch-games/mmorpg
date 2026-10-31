@@ -78,6 +78,10 @@ pub enum Scenario {
     /// A level 8 Warden a few steps south of the Greyfang cavern's west Redbrand Brute, facing it:
     /// its overhead smash raises, holds and slams (#582).
     RedbrandSmash,
+    /// A level 1 Warden 3 m north of a Greyhaven guard, facing him: both
+    /// hands close round the sword and the shield, and the guard's round his sword (#503). The
+    /// other classes' grips show in `?scenario=action-lab&class=<class>`.
+    Grips,
 }
 
 impl Scenario {
@@ -113,6 +117,7 @@ impl Scenario {
             Self::WardenRespawn => "warden-respawn",
             Self::RedbrandWhirl => "redbrand-whirl",
             Self::RedbrandSmash => "redbrand-smash",
+            Self::Grips => "grips",
         }
     }
 
@@ -130,7 +135,8 @@ impl Scenario {
             | Self::WardenStun
             | Self::WardenRespawn
             | Self::RedbrandWhirl
-            | Self::RedbrandSmash => ClassChoice {
+            | Self::RedbrandSmash
+            | Self::Grips => ClassChoice {
                 class: PlayerClass::Warden,
                 sex: Sex::Male,
             },
@@ -185,7 +191,7 @@ impl Scenario {
             | Self::WardenRespawn => 6,
             // Lightning Beam unlocks at level 8; a Warden that high outlasts a Redbrand special.
             Self::ArcanistPack | Self::RedbrandWhirl | Self::RedbrandSmash => 8,
-            Self::MantleLow | Self::MantleMid | Self::MantleHigh | Self::Climb => 1,
+            Self::MantleLow | Self::MantleMid | Self::MantleHigh | Self::Climb | Self::Grips => 1,
         }
     }
 
@@ -218,6 +224,8 @@ impl Scenario {
             Self::RedbrandWhirl => ([0, -10_000], 32_768),
             // 4 m south of the west Brute (650); facing north toward it.
             Self::RedbrandSmash => ([6_100, -13_300], 32_768),
+            // 3 m north of Greyhaven Guard 6 at (-500, -800), who faces north; facing south.
+            Self::Grips => ([-500, -1_100], 0),
             // On the west shore, on the lake's long axis; facing east over the water.
             Self::SunkenShrine => ([3_000, -5_400], 16_384),
             // On the rim before Greyfang Ridge (#423), 8 m south of the cave mouth; facing north.

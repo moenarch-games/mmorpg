@@ -100,8 +100,8 @@ export type ImportedRequest = {
 /** The bow cycle clip a unit's upper body shows and its time (`imported::BowShot`, #556). */
 export type BowShot = { clip: string; time: number };
 
-/** Which joints a layer drives: every joint, the `spine_01` subtree, or the rest (pelvis, legs). */
-export type LayerMask = "all" | "upper" | "lower";
+/** Which joints a layer drives: every joint, the `spine_01` subtree, the rest (pelvis, legs), or one hand's fingers (a grip, asset-tooling #285). */
+export type LayerMask = "all" | "upper" | "lower" | "fingers_l" | "fingers_r";
 /** One weighted clip sample; a joint averages the layers that drive it, the rest of a total below 1 stays at rest. */
 export type ClipLayer = { clip: string; time: number; weight: number; mask: LayerMask };
 

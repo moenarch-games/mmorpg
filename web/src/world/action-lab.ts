@@ -206,7 +206,7 @@ export function timelineSegments(frames: readonly { tick: number; inspection: In
   return rows;
 }
 
-const REGION_NAMES: Readonly<Record<string, string>> = { all: "body", upper: "upper body", lower: "legs" };
+const REGION_NAMES: Readonly<Record<string, string>> = { all: "body", upper: "upper body", lower: "legs", fingers_l: "left fingers", fingers_r: "right fingers" };
 
 /**
  * The posed layers by body region with their weights (#384), e.g.

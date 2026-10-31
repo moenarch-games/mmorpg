@@ -47,6 +47,17 @@ The Warden's sword-and-shield clips and the Redbrand specials (#582, asset-tooli
 
 A bundle without these clips falls back to what played before: `Sword_Attack`, `Idle_Shield_Loop`, the idle and the shared casts. Review with `?scenario=warden-slashes`, `warden-guards`, `warden-charge`, `warden-cleave`, `warden-stun`, `warden-respawn`, `redbrand-whirl` or `redbrand-smash`.
 
+Held items close the hand round them (#503, asset-tooling #285). The bundle's `Grip_*` clips are static finger poses. `imported::Playback` layers the one for each held item over whatever body clip plays, as a `fingers_l` or `fingers_r` layer (`Mask::Fingers`). While a pose has such a layer, only that layer drives that hand's 15 finger and thumb joints, in both clients. This holds even over the clips that key the fingers, such as the strafes, the swims and the sword clips. `Loadout::hands` names what each hand holds:
+
+| Item | Socket | Grip |
+| --- | --- | --- |
+| Arming sword, blackened dagger, flanged mace | `hand_r.weapon` | `Grip_Weapon_R` |
+| Heater shield | `hand_l.shield` | `Grip_Shield_L` |
+| Tome | `hand_l.shield` | `Grip_Book_L` |
+| Bone, crystal and gnarled staffs | `hand_r.staff` | `Grip_Staff_R` |
+
+Players, the guards, the Redbrands and the marauders all grip this way. Empty hands grip nothing. The Ranger's bow is the one exception: it comes to hand only through the bow clips, which curl their own fingers, so `Grip_Bow_L` never plays. The Redbrand Crossbowmen carry that bow too, so `Grip_Crossbow_*` is unused as well. The grips let go over the upper body's blend while the zone projects a climb or a mantle, and stay off until a mantle or let-go clip plays out. A bundle without a grip clip leaves that hand open. Review with `?scenario=grips`: a Warden stands 3 m from a Greyhaven guard, facing him. For the other classes, use `?scenario=action-lab&class=<class>`.
+
 ## Native
 
 After acquisition, explicitly prepare the compatible native input:

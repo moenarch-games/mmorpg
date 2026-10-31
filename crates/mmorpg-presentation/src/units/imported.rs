@@ -69,6 +69,103 @@ impl Loadout {
             Self::GnarledStaff => "staff.gnarled",
         }
     }
+
+    /// What each hand holds, by grip role (asset-tooling #285). The Ranger's bow rests on its
+    /// back and comes to hand only through the bow clips, which curl their own fingers (#556),
+    /// so its hands hold nothing here.
+    #[must_use]
+    pub const fn hands(self) -> Hands {
+        let (left, right) = match self {
+            Self::SwordAndShield => (Some(Held::Shield), Some(Held::Weapon)),
+            Self::BowAndQuiver => (None, None),
+            Self::Sword | Self::Dagger | Self::FlangedMace => (None, Some(Held::Weapon)),
+            Self::BoneStaff | Self::GnarledStaff => (None, Some(Held::Staff)),
+            Self::CrystalStaffAndTome => (Some(Held::Book), Some(Held::Staff)),
+        };
+        Hands { left, right }
+    }
+}
+
+/// A hand, for its finger joints and grip pose (asset-tooling #285).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Hand {
+    Left,
+    Right,
+}
+
+impl Hand {
+    pub const BOTH: [Self; 2] = [Self::Left, Self::Right];
+
+    const fn index(self) -> usize {
+        match self {
+            Self::Left => 0,
+            Self::Right => 1,
+        }
+    }
+
+    /// The hand whose finger or thumb `joint` is (`thumb_01_l` … `pinky_04_leaf_r`).
+    #[must_use]
+    pub fn of_finger(joint: &str) -> Option<Self> {
+        const FINGERS: [&str; 5] = ["thumb_", "index_", "middle_", "ring_", "pinky_"];
+        if !FINGERS.iter().any(|finger| joint.starts_with(finger)) {
+            return None;
+        }
+        if joint.ends_with("_l") {
+            Some(Self::Left)
+        } else if joint.ends_with("_r") {
+            Some(Self::Right)
+        } else {
+            None
+        }
+    }
+}
+
+/// The grip role of an item in hand: which `Grip_*` pose closes the fingers round it
+/// (asset-tooling #285, `grip.role`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Held {
+    /// A one-hand weapon's grip: sword, dagger or mace.
+    Weapon,
+    /// The heater shield's hand handle.
+    Shield,
+    /// The tome, resting on the back of a relaxed hand.
+    Book,
+    /// A staff's shaft.
+    Staff,
+}
+
+impl Held {
+    /// The bundle's grip pose for this item in `hand`.
+    #[must_use]
+    pub const fn grip(self, hand: Hand) -> &'static str {
+        match (self, hand) {
+            (Self::Weapon, Hand::Left) => "Grip_Weapon_L",
+            (Self::Weapon, Hand::Right) => "Grip_Weapon_R",
+            (Self::Shield, Hand::Left) => "Grip_Shield_L",
+            (Self::Shield, Hand::Right) => "Grip_Shield_R",
+            (Self::Book, Hand::Left) => "Grip_Book_L",
+            (Self::Book, Hand::Right) => "Grip_Book_R",
+            (Self::Staff, Hand::Left) => "Grip_Staff_L",
+            (Self::Staff, Hand::Right) => "Grip_Staff_R",
+        }
+    }
+}
+
+/// What a unit holds in each hand.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Hands {
+    pub left: Option<Held>,
+    pub right: Option<Held>,
+}
+
+impl Hands {
+    #[must_use]
+    pub const fn get(self, hand: Hand) -> Option<Held> {
+        match hand {
+            Hand::Left => self.left,
+            Hand::Right => self.right,
+        }
+    }
 }
 
 /// The armour slots an equipped drop covers, and the `humanoid-sockets` armour sockets whose
@@ -1051,6 +1148,39 @@ pub enum Mask {
     Upper,
     /// Every other joint: root, pelvis and legs.
     Lower,
+    /// One hand's finger and thumb joints: a grip pose (asset-tooling #285). While a pose has
+    /// such a layer, it alone drives that hand's fingers.
+    Fingers(Hand),
+}
+
+/// Where a joint sits for the masks: in the upper body or not, and on which hand's fingers.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Joint {
+    pub upper: bool,
+    pub fingers: Option<Hand>,
+}
+
+impl Joint {
+    /// The joint named `name`, in the upper body or not.
+    #[must_use]
+    pub fn new(name: &str, upper: bool) -> Self {
+        Self {
+            upper,
+            fingers: Hand::of_finger(name),
+        }
+    }
+}
+
+/// The hands a pose grips: each has a [`Mask::Fingers`] layer that owns its fingers.
+#[must_use]
+pub fn gripped(pose: &[Layer]) -> [bool; 2] {
+    let mut gripped = [false; 2];
+    for layer in pose {
+        if let Mask::Fingers(hand) = layer.mask {
+            gripped[hand.index()] = true;
+        }
+    }
+    gripped
 }
 
 impl Mask {
@@ -1061,16 +1191,21 @@ impl Mask {
             Self::All => "all",
             Self::Upper => "upper",
             Self::Lower => "lower",
+            Self::Fingers(Hand::Left) => "fingers_l",
+            Self::Fingers(Hand::Right) => "fingers_r",
         }
     }
 
-    /// Whether a layer with this mask drives a joint that is (or is not) in the upper body.
+    /// Whether a layer with this mask drives `joint` in a pose gripping the [`gripped`] hands:
+    /// a gripped hand's fingers follow only its grip.
     #[must_use]
-    pub const fn drives(self, upper: bool) -> bool {
-        match self {
-            Self::All => true,
-            Self::Upper => upper,
-            Self::Lower => !upper,
+    pub fn drives(self, joint: Joint, gripped: [bool; 2]) -> bool {
+        match (self, joint.fingers) {
+            (Self::Fingers(hand), fingers) => fingers == Some(hand),
+            (_, Some(hand)) if gripped[hand.index()] => false,
+            (Self::All, _) => true,
+            (Self::Upper, _) => joint.upper,
+            (Self::Lower, _) => !joint.upper,
         }
     }
 }
@@ -1182,6 +1317,9 @@ pub struct Cues<'a> {
     pub stunned: bool,
     /// The zone projects a dodge roll (#516).
     pub rolling: bool,
+    /// What the unit holds in each hand: a held item's grip pose closes the fingers round it
+    /// (asset-tooling #285).
+    pub hands: Hands,
     /// Presentation clock and the step since the previous frame, in seconds.
     pub now: f64,
     pub dt: f64,
@@ -1486,6 +1624,8 @@ pub struct Playback {
     lower: Track,
     /// Spine, arms and head over the legs' clip: a strike or the guard.
     upper: Track,
+    /// Each hand's grip pose over its fingers, left then right (asset-tooling #285).
+    grips: [Track; 2],
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -2267,6 +2407,23 @@ impl Playback {
                 .collect();
             legs.into_iter().chain(follow).chain(arms).collect()
         };
+        let mut layers: Vec<Layer> = layers;
+        // A held item's grip closes that hand's fingers over every body clip (asset-tooling
+        // #285), but not while the hands hold a face, a ladder, a rope or a ledge (#500).
+        let climbing = self.held.holds() || self.mantle.is_some() || self.letting_go.is_some();
+        for hand in Hand::BOTH {
+            let grip = cues
+                .hands
+                .get(hand)
+                .map(|held| held.grip(hand))
+                .filter(|&clip| !climbing && available(clip))
+                .map(|clip| Want::looped(clip, 0.));
+            let track = &mut self.grips[hand.index()];
+            // A unit's first frame grips at once, like its first clip.
+            let seconds = if first { 0. } else { blend.upper_seconds };
+            track.advance(grip, dt, seconds, reduced);
+            track.layers(&duration, 1., Mask::Fingers(hand), &mut layers);
+        }
         let lower = self
             .lower
             .target(&duration)
@@ -2466,7 +2623,15 @@ mod tests {
             animation
                 .layers
                 .iter()
-                .filter(|layer| layer.mask.drives(upper))
+                .filter(|layer| {
+                    layer.mask.drives(
+                        Joint {
+                            upper,
+                            fingers: None,
+                        },
+                        [false; 2],
+                    )
+                })
                 .map(|layer| layer.weight)
                 .sum()
         };
@@ -2574,6 +2739,83 @@ mod tests {
         assert!((draw_meters(&table, 10., 9.) - 0.5).abs() < 1e-6);
         assert!((draw_meters(&table, 10., -1.) - 0.2).abs() < 1e-6);
         assert!(draw_meters(&[], 30., 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn held_items_grip_their_hands_fingers_except_while_climbing() {
+        let clips = Kind::Ranger.clips();
+        let frame = |playback: &mut Playback, loadout: Loadout, traversal, now: f64| {
+            playback.advance(
+                clips,
+                |_| 1.,
+                Cues {
+                    traversal,
+                    hands: loadout.hands(),
+                    now,
+                    dt: 0.05,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let grips = |animation: &Animation| -> Vec<_> {
+            animation
+                .layers
+                .iter()
+                .filter(|layer| matches!(layer.mask, Mask::Fingers(_)))
+                .map(|layer| (layer.clip, layer.mask, layer.weight))
+                .collect()
+        };
+        let mut playback = Playback::default();
+        let free = TraversalView::Free;
+        let warden = frame(&mut playback, Loadout::SwordAndShield, free, 0.05);
+        assert_eq!(
+            grips(&warden),
+            [
+                ("Grip_Shield_L", Mask::Fingers(Hand::Left), 1.),
+                ("Grip_Weapon_R", Mask::Fingers(Hand::Right), 1.),
+            ]
+        );
+        // Climbing lets go of the grips; they come back once the climb ends.
+        let climbing = TraversalView::Climbing;
+        let mut run = |traversal, from: u32, to: u32| {
+            (from..=to)
+                .map(|step| {
+                    let now = f64::from(step) * 0.05;
+                    frame(&mut playback, Loadout::SwordAndShield, traversal, now)
+                })
+                .last()
+                .expect("frames")
+        };
+        assert!(grips(&run(climbing, 2, 6)).is_empty());
+        // The let-go plays out (1 s here) before the hands close again.
+        assert!(grips(&run(free, 7, 20)).is_empty());
+        assert_eq!(grips(&run(free, 21, 30)).len(), 2);
+        // The Arcanist holds the tome and the staff; the Ranger's hands are empty.
+        let arcanist = frame(
+            &mut Playback::default(),
+            Loadout::CrystalStaffAndTome,
+            free,
+            0.,
+        );
+        let held: Vec<_> = grips(&arcanist)
+            .into_iter()
+            .map(|(clip, ..)| clip)
+            .collect();
+        assert_eq!(held, ["Grip_Book_L", "Grip_Staff_R"]);
+        let ranger = frame(&mut Playback::default(), Loadout::BowAndQuiver, free, 0.);
+        assert!(grips(&ranger).is_empty());
+        // A grip owns its hand's fingers over the body clips, which still drive the other hand.
+        let joint = |name: &str| Joint::new(name, true);
+        let gripped = gripped(&warden.layers);
+        assert_eq!(gripped, [true, true]);
+        let only_right = [false, true];
+        assert!(!Mask::All.drives(joint("index_01_r"), only_right));
+        assert!(Mask::Upper.drives(joint("index_01_l"), only_right));
+        assert!(Mask::Upper.drives(joint("hand_r"), only_right));
+        assert!(Mask::Fingers(Hand::Right).drives(joint("thumb_03_r"), only_right));
+        assert!(!Mask::Fingers(Hand::Right).drives(joint("thumb_03_l"), only_right));
+        assert!(!Mask::Fingers(Hand::Right).drives(joint("hand_r"), only_right));
     }
 
     #[test]
