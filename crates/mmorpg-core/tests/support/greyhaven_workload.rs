@@ -46,10 +46,39 @@ pub const FIXTURES: [Fixture; 4] = [
     },
 ];
 
+/// Fight slots step this far (units) from a blocked one: a player's width and a little.
+const SLOT_STEP_UNITS: i32 = 65;
+
+/// The first fight slot at or around `at` (feet XZ) where a player stands clear of every content
+/// box, prop, door leaf, creature and already `placed` player, its capsule resting on the
+/// ground (`ZoneSimulation::stand_y` and `stands_clear`, #534): the player's body centre there.
+/// Slots lie on square rings [`SLOT_STEP_UNITS`] apart around `at`, nearest ring first.
+fn clear_stand(zone: &ZoneSimulation, placed: &[[i32; 3]], at: [i32; 2]) -> Option<[i32; 3]> {
+    let radius = PLAYER_HALF_EXTENTS_UNITS[0];
+    let offsets = (0..24).flat_map(|ring: i32| {
+        (-ring..=ring)
+            .flat_map(move |i| (-ring..=ring).map(move |j| (i, j)))
+            .filter(move |&(i, j)| i.abs().max(j.abs()) == ring)
+    });
+    for (i, j) in offsets {
+        let [x, z] = [at[0] + i * SLOT_STEP_UNITS, at[1] + j * SLOT_STEP_UNITS];
+        let centre = [x, zone.stand_y(x, z, PLAYER_HALF_EXTENTS_UNITS), z];
+        let apart = placed.iter().all(|other| {
+            (i64::from(other[0] - x).pow(2) + i64::from(other[2] - z).pow(2))
+                > i64::from(2 * radius + 2).pow(2)
+        });
+        if apart && zone.stands_clear(centre, PLAYER_HALF_EXTENTS_UNITS) {
+            return Some(centre);
+        }
+    }
+    None
+}
+
 pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> {
     let content = greyhaven_vale::content();
     let empty = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content))?;
     let mut state = empty.snapshot()?;
+    let mut placed = Vec::new();
     for index in 0..fixture.players {
         let position = if !fixture.fighting {
             let feet = greyhaven_vale::SPAWN_GRID
@@ -73,11 +102,13 @@ pub fn initial_zone(fixture: Fixture) -> Result<ZoneSimulation, Box<dyn Error>> 
                     [index * content.creature_spawns().len() / fixture.players]
             };
             let row = i32::try_from(index / 6)?;
-            let [x, z] = [spawn.position[0] + 150 + row * 65, spawn.position[1]];
-            // Feet on the basin's terraces, such as Millbrook Farm's (#423); elsewhere on the
-            // valley floor as before, so the outer hills' fights keep their geometry.
-            let ground = greyhaven_vale::basin::height_at(x, z).unwrap_or(0);
-            [x, ground + PLAYER_HALF_EXTENTS_UNITS[1], z]
+            // Off the spawn's row by a few units: content is authored on round coordinates,
+            // and a sight line run exactly along a box face is a tie each backend breaks its
+            // own way (f32 metres on Rapier).
+            let [x, z] = [spawn.position[0] + 150 + row * 65, spawn.position[1] + 7];
+            let position = clear_stand(&empty, &placed, [x, z]).ok_or("no clear fight slot")?;
+            placed.push(position);
+            position
         };
         state.players.push(CanonicalPlayerSnapshot {
             copper: 0,

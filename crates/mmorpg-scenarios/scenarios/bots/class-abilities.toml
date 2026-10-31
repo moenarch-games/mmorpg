@@ -325,6 +325,15 @@ bot = "arcanist"
 action = "use_ability"
 ability = 9
 
+# The Warden walks on toward the den alone until Wolf 108 engages it.
+[[steps]]
+tick = 1456
+bot = "warden"
+action = "move"
+forward = 1
+strafe = 0
+facing = 32768
+
 [[steps]]
 tick = 1464
 bot = "arcanist"
@@ -336,6 +345,14 @@ facing = 32768
 [[steps]]
 tick = 1466
 bot = "arcanist"
+action = "move"
+forward = 0
+strafe = 0
+facing = 32768
+
+[[steps]]
+tick = 1486
+bot = "warden"
 action = "move"
 forward = 0
 strafe = 0
@@ -637,13 +654,13 @@ tick = 2143
 kind = "resource"
 bot = "warden"
 resource = 3
-tick = 2493
+tick = 2495
 
 [[expect]]
 kind = "resource"
 bot = "warden"
 resource = 1
-tick = 2494
+tick = 2496
 
 # #27: a visible recipient observes other actors without receiving their damage credit.
 [[expect]]

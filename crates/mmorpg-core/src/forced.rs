@@ -429,10 +429,13 @@ impl ZoneSimulation {
         }
     }
 
-    /// The forced-movement states, for canonical snapshots.
+    /// The forced-movement states, for canonical snapshots. A unit that died this tick keeps
+    /// its state until the next tick's [`Self::apply_forced_moves`] drops it, with no effect
+    /// meanwhile, so it is left out.
     pub(crate) fn forced_states(&self) -> Vec<(EntityRef, ForcedState)> {
         self.forced
             .iter()
+            .filter(|&(&unit, _)| self.unit_alive_now(unit))
             .map(|(&unit, &state)| (unit, state))
             .collect()
     }

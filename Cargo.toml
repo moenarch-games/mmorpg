@@ -23,7 +23,7 @@ publish = false
 [workspace.dependencies]
 game-server = { git = "https://github.com/moritzbrantner/game-server.git", rev = "0d6fbfc7246736f9ff45ab6146e5aa26f671330b" }
 rapier3d = "=0.36.1"
-physics-engine = { git = "https://github.com/moritzbrantner/physics-engine", rev = "3476f16b1c6a0d348d730e5099124786af1d43e4" }
+physics-engine = { git = "https://github.com/moritzbrantner/physics-engine", rev = "7af1ac43cf63437ba61e543aa4188b36673d5b9f" }
 mmorpg-core = { path = "crates/mmorpg-core" }
 mmorpg-control-plane = { path = "crates/mmorpg-control-plane" }
 mmorpg-characters = { path = "crates/mmorpg-characters" }

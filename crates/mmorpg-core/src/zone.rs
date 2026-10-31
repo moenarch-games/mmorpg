@@ -1113,6 +1113,71 @@ impl ZoneSimulation {
             .map_or(0, |height| height.round() as i32)
     }
 
+    /// The body centre height (units) at which a unit with `half_extents` stands at `(x, z)`
+    /// on the authored ground, not in it (#534): its capsule's round bottom rests on the
+    /// highest ground under its footprint, so a creature on a hillside is never spawned into
+    /// the slope. On flat ground it is `ground_y + half_extents[1]`.
+    #[must_use]
+    pub fn stand_y(&self, x: i32, z: i32, half_extents: [i32; 3]) -> i32 {
+        let [hx, hy, hz] = half_extents;
+        let radius = f64::from(crate::physics::capsule_dimensions(Vec3i::new(hx, hy, hz)).1);
+        // As `ground_y`: no terrain (a flat cell) is the floor at 0.
+        let ground = |x: i32, z: i32| f64::from(self.world.terrain_height(x, z).unwrap_or(0.0));
+        let mut feet = ground(x, z);
+        // Rings at a quarter, half, three quarters and the whole radius, eight directions each:
+        // the bottom hemisphere is `radius - sqrt(radius² - d²)` above its lowest point there.
+        for ring in 1..=4_i32 {
+            let d = radius * f64::from(ring) / 4.0;
+            let lift = radius - (radius * radius - d * d).max(0.0).sqrt();
+            #[allow(clippy::cast_possible_truncation)]
+            let (straight, diagonal) = (
+                d.round() as i32,
+                (d * std::f64::consts::FRAC_1_SQRT_2).round() as i32,
+            );
+            for (dx, dz) in [
+                (straight, 0),
+                (-straight, 0),
+                (0, straight),
+                (0, -straight),
+                (diagonal, diagonal),
+                (diagonal, -diagonal),
+                (-diagonal, diagonal),
+                (-diagonal, -diagonal),
+            ] {
+                feet = feet.max(ground(x + dx, z + dz) - lift);
+            }
+        }
+        // Heights stay within ±100 m, far inside `i32`; a flat sample reads within 0.01 of its
+        // whole unit.
+        #[allow(clippy::cast_possible_truncation)]
+        let feet = (feet - 0.01).ceil() as i32;
+        feet + hy
+    }
+
+    /// Whether a unit with `half_extents` standing with its body centre at `centre` (units) is a
+    /// unit clear of every body with an extent all round: content boxes, props, door leaves and
+    /// other units. The ground (floors and the terrain) is not in the way (#534).
+    #[must_use]
+    pub fn stands_clear(&self, centre: [i32; 3], half_extents: [i32; 3]) -> bool {
+        let [hx, hy, hz] = half_extents;
+        let solid = |hit| {
+            self.world
+                .body(hit)
+                .is_some_and(|body| body.half_extents() != Vec3i::ZERO)
+        };
+        // A capsule a unit wider and taller all round, its feet a unit up, swept a hair.
+        #[allow(clippy::cast_precision_loss)]
+        let origin = [centre[0] as f32, (centre[1] + 2) as f32, centre[2] as f32];
+        self.world
+            .cast_shape(
+                origin,
+                Vec3i::new(hx + 1, hy + 1, hz + 1),
+                [0.0, 0.01, 0.0],
+                solid,
+            )
+            .is_none()
+    }
+
     /// A player's exact body centre (units) and the velocity (units per tick)
     /// contact let it realize in the last step, as canonical snapshots carry
     /// them; read-only, for the Action Lab's movement inspector (#413).

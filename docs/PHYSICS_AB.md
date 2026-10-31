@@ -69,7 +69,17 @@ mill's loading dock; the zone decides both on rays and capsule sweeps, so the tw
 same climb and mantle queries) and `vale-roll` (#516: one player in Greyhaven Outpost rolls
 back, forward with its keys released mid-roll and diagonally; another rolls into a highland crag
 and back out; a third rolls back off the mill's loading dock and falls to the yard mid-roll)
-through the real zone simulation, from the same initial state with the same inputs and tick count.
+and `vale-swim` (#537: one player runs and jumps off Stillwater Lake's west bank, swims out,
+dives to the basin's floor and rises; another presses down onto the floor in the deep water and
+rises; both arms open the floor half-space over the basin, the engine's through
+`CharacterMove::exclude`) through the real zone simulation, from the same initial state with the
+same inputs and tick count.
+
+No workload places a unit inside geometry (#534, physics-engine #404): squat creatures' capsules
+fit their boxes (`physics::capsule_dimensions`), creatures spawn with their capsule's round
+bottom on the hillside (`ZoneSimulation::stand_y`), the fighting fixtures put each player on the
+first free slot around its spawn (a capsule probe clear of every box, prop, door leaf, creature
+and earlier player) and spirits released together stand apart around the graveyard.
 
 Both arms carry the mill hoist's riders in the adapter the same way: a downward support cast
 filtered to the platform finds them, its displacement is added to their move, and a sinking
@@ -81,8 +91,7 @@ On **each** backend, every run must:
 - keep every player and creature state finite;
 - keep unit capsules out of content boxes, door leaves and standing props, and above the floor
   and terrain, beyond 0.01 units (both backends keep a 0.25-unit gap; `f32` resolves ~10⁻³ units
-  at the zone's 10⁴-unit magnitudes). Allowed: squat creatures' authored floor overlap (capsule
-  radius minus half height) and units a fixture places inside geometry at tick 1;
+  at the zone's 10⁴-unit magnitudes), from the first tick: nothing is authored inside geometry;
 - report every unit that has rested (zero velocity, unmoved) for three ticks as grounded;
 - replay bit-identically (canonical snapshots, unit bodies and command outcomes);
 - in `vale-ogre-brawl`, keep every player's capsule out of the ogre's (beyond 0.01 units), shove
@@ -107,22 +116,24 @@ On **each** backend, every run must:
 
 Across backends:
 
-- Scripted workloads (`two-bots-move`, `vale-hub-walk`, `vale-idle-16`, `vale-mill-hoist`,
+- Scripted workloads (`two-bots-move`, `vale-hub-walk`, `vale-idle-16`, the fighting fixtures
+  `vale-fights-8`, `vale-fights-32` and `vale-crowded-fights-64`, `vale-swim`, `vale-mill-hoist`,
   `vale-crate-shove`, `vale-crate-smash`, `vale-missiles`, `vale-traversal`, `vale-climb` and
-  `vale-roll`): players within **1 unit** (the
-  rounding step gameplay sees; measured ≤ 0.15; in `vale-crate-shove` plus the crates' gap,
-  since a player walks into its resting crate), identical command outcomes and door states,
-  and the players' grounded state identical on every tick.
+  `vale-roll`): players within **1 unit** (the rounding step gameplay sees; in
+  `vale-crate-shove` plus the crates' gap, since a player walks into its resting crate),
+  identical command outcomes and door states, and the players' grounded state identical on
+  every tick.
 - Every query decision on **identical states** (Rapier's state every 2 s, recovered onto
   both backends): line of sight, shots, charge paths (a capsule `cast_shape`, #57) and creature routes
   (#307: shape casts and overlap queries on the navigation grid) for player–creature pairs
   within 40 m, NPC sight,
   open and closed door-leaf occupancy, ground height and grounded must agree exactly; shot
-  fractions within 10⁻⁴. Grounded is not compared for units a fixture embedded in geometry.
+  fractions within 10⁻⁴. Grounded is compared for every unit, over the lake basin's open floor
+  too.
 - Restored from its canonical snapshot halfway, each arm continues exactly (Atlas 2.1.5).
 
-Fighting fixtures and creatures are compared but not bounded; the test prints their
-divergences with `--nocapture`.
+Creatures (AI and a shared RNG react to every position) and `vale-ogre-brawl`'s players are
+compared but not bounded; the test prints their divergences with `--nocapture`.
 
 ## Divergences
 
@@ -130,56 +141,65 @@ Measured at the commit the timing table names:
 
 | Workload | Players (max Δxz / Δy) | Creatures at the end | Engine restored halfway |
 |---|---|---|---|
-| two-bots-move | 0 / 0 | 0 of 75 apart (max 0.34) | continues |
-| vale-hub-walk | 0.01 / 0 | 0 apart (max 0.55) | continues |
-| vale-wolf-hunt | 0 / 0 | 73 apart (max 1,098) | continues |
-| vale-idle-16 | 0 / 0 | 0 apart (max 0.55) | continues |
-| vale-fights-8 | 56.5 / 0.01 (from tick 181) | 1 apart | continues |
-| vale-fights-32 | 14,084 / 82.4 (from tick 1) | 34 apart | continues |
-| vale-crowded-fights-64 | 241 / 120 (from tick 1) | 51 apart | continues |
-| vale-ogre-brawl | 31.3 / 1.9 (from tick 27) | 3 apart (max 21.5) | continues |
-| vale-mill-hoist | 0.01 / 0.15 | 3 apart (max 3.4) | continues |
-| vale-mill-ramps | 1.8 / 2.7 (from tick 19) | 0 apart | continues |
-| vale-charge-path | 0 / 0 | 0 apart (max 0.34) | continues |
-| vale-watch-post | 0 / 0 | 14 apart (max 671) | continues |
-| vale-crate-shove | 5.0 / 0 (player 2 stops at its crate) | 3 apart (max 5.0); crates 5.0 short of Rapier's 265-unit slide | continues |
-| vale-crate-smash | 0 / 0 | 22 apart (max 576); settled debris within 58.3 | continues |
-| vale-missiles | 0 / 0 | 1 apart (max 6.4); same missiles strike, world hits within 0.001 | continues |
-| vale-traversal | 0.02 / 0.01 | 0 apart (max 0.875) | continues |
-| vale-climb | 0.41 / 0.85 | 26 apart (max 942) | continues |
+| two-bots-move | 0 / 0 | 0 of 75 apart (max 0.03) | continues |
+| vale-hub-walk | 0.01 / 0 | 1 apart (max 3.2) | continues |
+| vale-wolf-hunt | 9.2 / 1.5 (climb allowance, 8.97 of 13.93 to tick 1,434) | 80 apart (max 798) | continues |
+| vale-idle-16 | 0 / 0 | 0 apart (max 0.15) | continues |
+| vale-fights-8 | 0 / 0.03 | 2 apart (max 3.6) | continues |
+| vale-fights-32 | 0.60 / 0.89 | 10 apart (max 10.9) | continues |
+| vale-crowded-fights-64 | 0.01 / 0.05 | 0 apart (max 0.09) | continues |
+| vale-ogre-brawl | 73.9 / 1.2 (from tick 53) | 3 apart (max 31.7) | continues |
+| vale-mill-hoist | 0.001 / 0.07 | 59 apart (max 810) | continues |
+| vale-mill-ramps | 0.67 / 1.1 | 0 apart (max 0.72) | continues |
+| vale-charge-path | 0 / 0.03 | 0 apart (max 0.72) | continues |
+| vale-watch-post | 0 / 0.01 | 44 apart (max 907) | continues |
+| vale-crate-shove | 3.0 / 0.22 (player 2 stops at its crate) | 2 apart (max 2.5); crates 2.5 short of Rapier's slide | continues |
+| vale-crate-smash | 0 / 0 | 4 apart (max 4.0); settled debris within 37.1 | continues |
+| vale-missiles | 0 / 0.03 | 4 apart (max 6.1); same missiles strike, world hits within 0.001 | continues |
+| vale-traversal | 0.02 / 0.01 | 0 apart (max 0.72) | continues |
+| vale-climb | 0.41 / 0.85 | 37 apart (max 810) | continues |
+| vale-roll | 0.14 / 0.63 | 0 apart (max 0.57) | continues |
+| vale-swim | 0.12 / 0.27 | 2 apart (max 3.9) | continues |
 
-Every query decision on identical states agreed (up to 20,468 probes per workload).
+Every query decision on identical states agreed (up to 14,306 probes per workload).
 
 Intentional or explained differences:
 
-1. **Head-on characters.** The engine arm uses physics-engine's native sidestep (within ~5° of
-   head-on, step to the right) instead of the Rapier arm's `slide_around` workaround (within 60°,
-   both step aside plus a 1-unit outward nudge). The physics unit tests for head-on and off-axis
-   pairs pass on both. Characters do not push each other on either: a large creature's shove
-   (#297) is a gameplay forced move decided before the step, the same on both. In
-   `vale-ogre-brawl` the player walking into the ogre's side slides around it differently, so
-   players and the ogre part by up to 31 units; every shove and stomp still happens on both.
-2. **Embedded units.** Rapier's controller leaves a capsule that starts inside geometry where it
-   is; physics-engine depenetrates it on its next move. This moves squat creatures (rats:
-   radius 25, half height 20, authored 5 units into the floor) up 5 units, lifts creatures
-   spawned on hillsides by 0.5–4.6 units, and pushes the 1/7/18 players the fighting fixtures
-   place inside props, boxes or hills (feet at y = 0) out of them. From there, who reaches which
-   creature, and so the fights, deaths and respawns, legitimately differ.
-3. **Grounded.** Both report static ground within the contact offset plus 5 cm (Rapier's ground
-   prediction; physics-engine #348; the engine also requires it walkable). On identical states
-   they agree for every unit not embedded in geometry; inside geometry the depenetration
-   differs (2.).
-4. **Creature drift.** Creatures wander and chase on a zone RNG they share. Over 2,200 ticks
+1. **Touching characters.** Both arms turn a move that presses into a touching moving capsule
+   with the Rapier arm's `slide_around` (within 60° of head-on both step aside at full speed,
+   plus a 1-unit outward nudge), the engine arm before its batch (#534). Rapier moves bodies one
+   by one, so a later mover sees an earlier one already moved; the engine arm turns every move
+   from the positions before the step. Characters do not push each other on either: a large
+   creature's shove (#297) is a gameplay forced move decided before the step, the same on both.
+   In `vale-ogre-brawl` the ogre and the players around it move in the same ticks, so the player
+   walking into its side slides around it differently and players part by up to 74 units;
+   every shove and stomp still happens on both.
+2. **Grounded.** Both report static ground within the contact offset plus 5 cm (Rapier's ground
+   prediction; physics-engine #348; the engine also requires it walkable). A body placed since
+   its last move (a recovered state, a spawn) is answered on the engine arm by the Rapier arm's
+   own support cast: walkable ground within offset + 5 cm beyond the contact offset (#534; it
+   had stopped the offset short, so a fight fixture's player placed 5.3 units over a hillside
+   was grounded on Rapier only). On identical states they agree for every unit.
+3. **Creature drift.** Creatures wander and chase on a zone RNG they share. Over 5,124 ticks
    (`vale-wolf-hunt`) the small differences above move AI decisions and the RNG stream, so most
    creatures end elsewhere; the scripted hunter's path, fights and command outcomes stay
    identical.
-5. **Terrain.** Both arms remove flat heightfield cells and leave them to the floor
+4. **Terrain.** Both arms remove flat heightfield cells and leave them to the floor
    half-space (parry heightfield contacts let resting bodies sink; the engine arm passes the
-   same cells as `HeightfieldDesc::removed_cells`). Engine overlap queries also see the
-   terrain (Rapier skips box–heightfield pairs); door probes only look for units, so
+   same cells as `HeightfieldDesc::removed_cells`); flat cells next to Stillwater Lake's basin
+   stay, since the floor opens under a body straddling its edge. Engine overlap queries also
+   see the terrain (Rapier skips box–heightfield pairs); door probes only look for units, so
    occupancy agrees.
-6. **Contact gap.** Rapier units never came closer than 0.2498 units to a box; engine units came
-   as close as 0.04 (`vale-wolf-hunt`) and 0.00 (`vale-crowded-fights-64`), never inside.
+5. **Contact gap.** Rapier units came as close as 0.22 units to a box (`vale-climb`), engine
+   units 0.2496, never inside.
+6. **Rapier on the heightfield.** Rapier's controller catches on heightfield cell seams: a
+   charging player in `vale-fights-32` rises 0.9 units for a tick on flat terrain, and a diver
+   gliding along the lake's floor stalls for a tick now and then. Its ground snap also snaps a
+   walker stepping off a too-steep bank 2 units down onto the bank's face. `vale-swim`'s wader
+   therefore leaves the bank in a jump and nobody glides along the floor.
+7. **Exact ties.** Content is authored on round coordinates; a sight line run exactly along a
+   box face is a tie each arm breaks its own way (Rapier in `f32` metres). The fighting fixtures
+   stand their players 7 units off their spawns' rows.
 
 ## 60 Hz (#379)
 
@@ -225,6 +245,14 @@ again.
    the climb). Flat walking adds nothing, so every comparison before the first slope stays
    exact. The Stillwater lurkers wander only 2 m to keep to the level rim (gap 2), and wolves
    and bandits stand clear of the new climbs.
+6. **Embedded starts** (closed by content, physics-engine #404 / #407). Rapier's controller
+   leaves a capsule that starts inside geometry where it is; physics-engine pushes it out by
+   default (`Embedded::PushOut`). The owner chose to stop authoring units inside geometry
+   rather than use `Embedded::Stay` (#534), and the A/B now bounds the fighting fixtures.
+7. **Open floor over the lake basin** (fixed, physics-engine #405 / mmorpg#537). The engine arm
+   kept the floor half-space under Stillwater Lake, so its swimmers floated on y = 0 while
+   Rapier's dove. `CharacterMove::exclude` now opens it for a body over the basin, in its move
+   and its support cast, with the Rapier arm's footprint test, and `vale-swim` covers it.
 
 Dynamic bodies themselves (debris #288, movable crates #58) need no engine feature: the engine
 arm runs them since mmorpg#442 (physics-engine C18).
@@ -258,54 +286,64 @@ asserts the engine arm's exact continuation:
 
 ## Timing
 
-See the table below, produced by the example in release on the commit it names. A sample is
-one tick's whole physics path (the step, every gameplay query and body update the tick makes,
-as `World::spent_nanos` counts them; since mmorpg#442 debris and props too, which the table below predates); setup is building the zone. Timing is
-evidence for physics-engine #330, not a gate.
+See the table below, produced by the example in release on the commit it names (this branch,
+#534/#537, before its last commit). A sample is one tick's whole physics path (the step, every
+gameplay query and body update the tick makes, as `World::spent_nanos` counts them, debris and
+props included); setup is building the zone. Timing is evidence for physics-engine #330, not a
+gate.
 
-- mmorpg: aacd5638e9ed0b2abc0d81b60073d918f3ff5d5b plus the #289 change (magic missiles)
-- physics-engine: version = "0.1.0" source = "git+https://github.com/moritzbrantner/physics-engine?rev=ae64adbdb2d1af74f89f5befe287a8029eeaa072#ae64adbdb2d1af74f89f5befe287a8029eeaa072"
+- mmorpg: 2c4604f1903a3b3ba986a779937e4194dbad231e plus the #534/#537 changes
+- physics-engine: version = "0.1.0" source = "git+https://github.com/moritzbrantner/physics-engine?rev=7af1ac43cf63437ba61e543aa4188b36673d5b9f#7af1ac43cf63437ba61e543aa4188b36673d5b9f"
 - rapier3d: version = "0.36.1" source = "registry+https://github.com/rust-lang/crates.io-index"
-- rustc: rustc 1.98.1 (48a229cea 2026-09-01)
+- rustc: rustc 1.99.0 (b940084d7 2026-09-28)
 - profile: release; 2 warmup + 7 measured rounds per backend, alternating the first backend each round
-- sample: one tick's whole physics path (step, gameplay queries, body updates), debris excluded; microseconds; setup is building the zone, its physics share in parentheses
+- sample: one tick's whole physics path (step, gameplay queries, body updates, debris and props); microseconds; setup is building the zone, its physics share in parentheses
 
 | workload | ticks | moving / bodies | backend | median | p95 | p99 | mean | setup (physics) | engine / rapier, median of paired rounds |
 |---|---:|---:|---|---:|---:|---:|---:|---:|---:|
-| two-bots-move | 10 | 77 / 1216 | rapier | 882.8 | 1299.0 | 1639.9 | 935.3 | 2590.7 (2502.5) |  |
-| two-bots-move | 10 | 77 / 1216 | physics-engine | 114.5 | 397.5 | 475.5 | 145.0 | 6091.7 (6003.7) | 0.155 |
-| vale-hub-walk | 280 | 77 / 1216 | rapier | 966.2 | 1330.5 | 1757.3 | 984.3 | 2742.4 (2631.7) |  |
-| vale-hub-walk | 280 | 77 / 1216 | physics-engine | 142.4 | 290.1 | 475.9 | 174.7 | 6116.0 (6032.6) | 0.173 |
-| vale-wolf-hunt | 2200 | 76 / 1215 | rapier | 1133.9 | 1765.8 | 2369.7 | 1216.3 | 3008.8 (2890.7) |  |
-| vale-wolf-hunt | 2200 | 76 / 1215 | physics-engine | 196.2 | 283.9 | 425.3 | 190.3 | 6037.9 (5952.2) | 0.161 |
-| vale-idle-16 | 360 | 91 / 1230 | rapier | 918.7 | 1180.3 | 1431.4 | 913.2 | 5620.3 (2580.8) |  |
-| vale-idle-16 | 360 | 91 / 1230 | physics-engine | 152.9 | 276.2 | 385.2 | 182.9 | 12308.7 (6057.0) | 0.199 |
-| vale-fights-8 | 360 | 83 / 1222 | rapier | 928.6 | 1247.3 | 1470.9 | 966.3 | 5436.4 (2457.8) |  |
-| vale-fights-8 | 360 | 83 / 1222 | physics-engine | 174.3 | 280.1 | 378.3 | 190.8 | 11745.0 (5990.2) | 0.196 |
-| vale-fights-32 | 360 | 107 / 1246 | rapier | 1016.4 | 1326.0 | 1574.6 | 1023.4 | 5383.4 (2566.7) |  |
-| vale-fights-32 | 360 | 107 / 1246 | physics-engine | 275.9 | 400.0 | 536.1 | 271.1 | 11751.9 (5967.6) | 0.263 |
-| vale-crowded-fights-64 | 360 | 139 / 1278 | rapier | 1050.5 | 1402.2 | 1648.2 | 1053.8 | 5227.3 (2590.1) |  |
-| vale-crowded-fights-64 | 360 | 139 / 1278 | physics-engine | 336.9 | 448.6 | 552.7 | 317.8 | 11972.3 (5917.8) | 0.303 |
-| vale-ogre-brawl | 360 | 78 / 1217 | rapier | 954.6 | 1276.6 | 1481.3 | 978.2 | 5362.8 (2433.1) |  |
-| vale-ogre-brawl | 360 | 78 / 1217 | physics-engine | 146.7 | 275.3 | 404.6 | 177.4 | 11638.9 (5951.4) | 0.184 |
-| vale-mill-hoist | 640 | 76 / 1215 | rapier | 992.7 | 1328.6 | 1711.9 | 999.0 | 5227.2 (2434.5) |  |
-| vale-mill-hoist | 640 | 76 / 1215 | physics-engine | 190.6 | 265.8 | 394.1 | 177.9 | 12299.2 (5942.4) | 0.181 |
-| vale-mill-ramps | 240 | 77 / 1216 | rapier | 839.5 | 1152.0 | 1585.3 | 887.6 | 5018.1 (2414.6) |  |
-| vale-mill-ramps | 240 | 77 / 1216 | physics-engine | 115.7 | 236.3 | 402.0 | 151.9 | 11244.0 (5758.9) | 0.172 |
-| vale-charge-path | 240 | 79 / 1218 | rapier | 775.4 | 1173.3 | 1601.7 | 834.2 | 7412.4 (2223.8) |  |
-| vale-charge-path | 240 | 79 / 1218 | physics-engine | 112.3 | 237.3 | 372.1 | 149.1 | 16874.2 (5285.9) | 0.179 |
-| vale-watch-post | 420 | 77 / 1216 | rapier | 939.2 | 1258.6 | 1727.5 | 947.9 | 7703.2 (2237.0) |  |
-| vale-watch-post | 420 | 77 / 1216 | physics-engine | 136.3 | 235.4 | 359.2 | 157.5 | 16832.6 (5259.2) | 0.168 |
-| vale-crate-shove | 180 | 77 / 1216 | rapier | 843.4 | 1128.6 | 1405.4 | 891.6 | 10428.0 (2443.2) |  |
-| vale-crate-shove | 180 | 77 / 1216 | physics-engine | 112.5 | 238.2 | 407.4 | 152.6 | 24195.1 (5710.3) | 0.159 |
-| vale-missiles | 300 | 79 / 1218 | rapier | 882.7 | 1233.8 | 1793.5 | 899.9 | 7266.3 (2160.4) |  |
-| vale-missiles | 300 | 79 / 1218 | physics-engine | 190.2 | 257.1 | 408.1 | 170.3 | 17107.1 (5375.4) | 0.189 |
+| two-bots-move | 20 | 83 / 2119 | rapier | 2052.9 | 2865.4 | 3274.0 | 2171.3 | 8505.4 (8211.0) |  |
+| two-bots-move | 20 | 83 / 2119 | physics-engine | 306.4 | 943.9 | 1289.7 | 369.1 | 23903.1 (23609.5) | 0.167 |
+| vale-hub-walk | 560 | 83 / 2119 | rapier | 3684.2 | 8943.3 | 11986.5 | 4141.1 | 12580.3 (12202.9) |  |
+| vale-hub-walk | 560 | 83 / 2119 | physics-engine | 588.6 | 1222.8 | 3811.4 | 784.2 | 34339.0 (33872.8) | 0.209 |
+| vale-wolf-hunt | 5124 | 82 / 2118 | rapier | 2945.8 | 5293.4 | 9996.4 | 3413.9 | 7555.4 (7280.5) |  |
+| vale-wolf-hunt | 5124 | 82 / 2118 | physics-engine | 545.6 | 959.1 | 1101.3 | 526.6 | 22289.0 (22006.9) | 0.164 |
+| vale-idle-16 | 360 | 97 / 2133 | rapier | 3633.4 | 12160.0 | 20875.4 | 4789.8 | 24464.0 (10151.8) |  |
+| vale-idle-16 | 360 | 97 / 2133 | physics-engine | 528.4 | 1130.7 | 1497.6 | 624.4 | 68144.2 (30979.5) | 0.172 |
+| vale-fights-8 | 360 | 89 / 2125 | rapier | 3189.2 | 5039.6 | 7322.8 | 3448.4 | 18460.2 (7652.5) |  |
+| vale-fights-8 | 360 | 89 / 2125 | physics-engine | 524.8 | 998.8 | 1091.0 | 559.2 | 55405.2 (24981.5) | 0.158 |
+| vale-fights-32 | 360 | 113 / 2149 | rapier | 3312.2 | 5202.2 | 6255.9 | 3582.5 | 17583.3 (6221.1) |  |
+| vale-fights-32 | 360 | 113 / 2149 | physics-engine | 640.6 | 1131.8 | 1405.2 | 679.8 | 52236.0 (23901.9) | 0.190 |
+| vale-crowded-fights-64 | 360 | 145 / 2181 | rapier | 3205.7 | 4504.5 | 5501.8 | 3364.0 | 57205.9 (5430.2) |  |
+| vale-crowded-fights-64 | 360 | 145 / 2181 | physics-engine | 516.1 | 1153.9 | 1781.2 | 674.3 | 96806.5 (21587.4) | 0.211 |
+| vale-ogre-brawl | 720 | 84 / 2120 | rapier | 2312.0 | 2777.3 | 3473.9 | 2324.3 | 12427.8 (4766.2) |  |
+| vale-ogre-brawl | 720 | 84 / 2120 | physics-engine | 344.2 | 627.5 | 881.6 | 440.2 | 44001.1 (21017.7) | 0.189 |
+| vale-mill-hoist | 1280 | 82 / 2118 | rapier | 2472.3 | 2978.5 | 3691.6 | 2452.7 | 12393.5 (4716.1) |  |
+| vale-mill-hoist | 1280 | 82 / 2118 | physics-engine | 477.2 | 657.6 | 920.1 | 457.0 | 45354.9 (21026.9) | 0.186 |
+| vale-mill-ramps | 480 | 83 / 2119 | rapier | 2043.0 | 2624.1 | 2818.2 | 2189.9 | 12071.0 (4593.3) |  |
+| vale-mill-ramps | 480 | 83 / 2119 | physics-engine | 292.9 | 599.9 | 616.5 | 399.2 | 42600.8 (20524.2) | 0.184 |
+| vale-charge-path | 480 | 85 / 2121 | rapier | 1918.3 | 2621.6 | 2687.8 | 2122.3 | 16572.2 (4493.5) |  |
+| vale-charge-path | 480 | 85 / 2121 | physics-engine | 282.0 | 615.1 | 632.4 | 397.6 | 61477.7 (19068.3) | 0.187 |
+| vale-watch-post | 840 | 83 / 2119 | rapier | 2367.6 | 2722.5 | 3145.6 | 2316.1 | 17964.1 (4733.2) |  |
+| vale-watch-post | 840 | 83 / 2119 | physics-engine | 349.4 | 595.1 | 621.6 | 415.3 | 62745.9 (19314.3) | 0.180 |
+| vale-crate-shove | 360 | 83 / 2119 | rapier | 1959.0 | 2640.1 | 3017.4 | 2094.2 | 22154.3 (4545.6) |  |
+| vale-crate-shove | 360 | 83 / 2119 | physics-engine | 283.1 | 10984.0 | 11410.6 | 1931.4 | 83696.7 (19111.6) | 0.922 |
+| vale-crate-smash | 720 | 83 / 2119 | rapier | 2306.0 | 2628.8 | 2990.1 | 2278.3 | 17479.0 (4678.9) |  |
+| vale-crate-smash | 720 | 83 / 2119 | physics-engine | 558.9 | 10779.1 | 11299.5 | 2626.9 | 63309.8 (19528.4) | 1.152 |
+| vale-missiles | 600 | 85 / 2121 | rapier | 2320.3 | 2870.9 | 3618.4 | 2321.0 | 17780.4 (4659.4) |  |
+| vale-missiles | 600 | 85 / 2121 | physics-engine | 564.6 | 669.4 | 890.8 | 463.4 | 63681.3 (19325.3) | 0.200 |
+| vale-traversal | 480 | 83 / 2119 | rapier | 2017.1 | 2742.8 | 3434.2 | 2193.1 | 13786.1 (5138.9) |  |
+| vale-traversal | 480 | 83 / 2119 | physics-engine | 300.8 | 616.6 | 893.4 | 408.3 | 44436.3 (20993.7) | 0.182 |
+| vale-climb | 1040 | 83 / 2119 | rapier | 2426.8 | 2899.3 | 3570.2 | 2387.9 | 12409.5 (4680.8) |  |
+| vale-climb | 1040 | 83 / 2119 | physics-engine | 387.7 | 622.0 | 795.0 | 446.3 | 43779.7 (20914.0) | 0.188 |
+| vale-roll | 400 | 84 / 2120 | rapier | 1928.6 | 2574.3 | 2632.3 | 2043.5 | 11924.5 (4544.2) |  |
+| vale-roll | 400 | 84 / 2120 | physics-engine | 280.6 | 599.8 | 617.1 | 355.6 | 43045.2 (20658.3) | 0.174 |
+| vale-swim | 720 | 83 / 2119 | rapier | 2341.0 | 2727.9 | 2957.2 | 2326.2 | 12018.6 (4561.0) |  |
+| vale-swim | 720 | 83 / 2119 | physics-engine | 366.8 | 650.6 | 909.5 | 464.1 | 43454.9 (20758.8) | 0.197 |
 
-On this machine the engine arm's per-tick physics path costs 0.16–0.30× Rapier's
-(paired-round medians; absolute times vary with machine load; the crowded fixture, where
-characters overlap most, is the most expensive). Moving the mill hoist's box in place
-(physics-engine #355) brought it back down from 0.15–0.37×; creature navigation (#307) adds a
-shape cast per chasing creature and tick, plus A* overlap queries while one is blocked. The heavy crates' slides (#58) run on Rapier in both
-arms and are excluded like debris; a resting crate is one more fixed box. Building the zone costs about 2.2× more
-(heightfield preparation and per-body inserts). Note that the
-Rapier arm rebuilds its world every step by design (determinism), which is part of its cost.
+On this machine the engine arm's per-tick physics path costs 0.16–0.21× Rapier's (paired-round
+medians; absolute times vary with machine load, and another build shared the machine during the
+first rows). `vale-crate-shove` and `vale-crate-smash` are the exceptions at 0.92× and 1.15×:
+their p95 of about 11 ms is the engine's dynamic-body world for the sliding crates and flying
+panels, rebuilt each tick, which the Rapier arm does in about a tenth of the time. Building the
+zone costs about 3× more (heightfield preparation and per-body inserts). Note that the Rapier
+arm rebuilds its world every step by design (determinism), which is part of its cost.
