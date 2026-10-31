@@ -358,6 +358,7 @@ export class WorldView {
   #scene: SceneryScene | null = null;
   #catalog: ContentCatalog | null = null;
   #zoneName = ZONE_NAME;
+  #arena = false;
   /** The unit nodes of the last frame, for debug readouts. */
   #lastUnitNodes: readonly RendererSceneNode[] = [];
   #lastEffectNodes: readonly RendererSceneNode[] = [];
@@ -486,6 +487,7 @@ export class WorldView {
     const started = performance.now();
     this.#catalog = world.catalog;
     this.#zoneName = world.name ?? ZONE_NAME;
+    this.#arena = world.arena ?? false;
     this.#bags.load(world.catalog);
     this.#character.load(world.catalog);
     this.#loot.load(world.catalog);
@@ -809,6 +811,7 @@ export class WorldView {
       isVendor: (npc) => this.#catalog?.vendors.has(npc) ?? false,
       doorInReach: at ? this.#reachableDoor(at[0], at[2]) !== 0 : false,
       repairInReach: at ? this.#reachablePieces(at[0], at[2]).some((id) => damaged.has(id)) : false,
+      arena: this.#arena,
     });
   }
 

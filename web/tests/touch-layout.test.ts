@@ -31,7 +31,7 @@ test("the thumbstick quantizes into the wire's eight movement sectors", () => {
 
 test("context buttons follow nearby loot, NPCs, doors and opponents", () => {
   const base = { zoneId: 1, contentRevision: 5n, tick: 1n, acknowledgedSequence: 0, viewerId: 1 };
-  const inputs = { isVendor: (id: number) => id === 7, doorInReach: false, repairInReach: false };
+  const inputs = { isVendor: (id: number) => id === 7, doorInReach: false, repairInReach: false, arena: false };
   const npc = (id: number, x: number) => ({ ...playerEntity(id, [x, 90, 0]), kind: "npc" as const });
   const wolf = { ...playerEntity(9, [1_000, 90, 0]), kind: "creature" as const, flags: { ...NO_FLAGS, attackable: true, hostile: true } };
   const corpse = { ...playerEntity(10, [200, 90, 0]), kind: "creature" as const, healthPercent: 0,
@@ -39,6 +39,9 @@ test("context buttons follow nearby loot, NPCs, doors and opponents", () => {
 
   const idle = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }), { ...inputs, doorInReach: true });
   expect(idle).toEqual({ combat: false, dead: false, interact: "open", npc: null });
+  // In an arena (#551) target and attack show from the first moment, before any fight.
+  const arena = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }), { ...inputs, arena: true });
+  expect(arena).toMatchObject({ combat: true, dead: false });
   const vendor = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0]), npc(8, 450), npc(7, 300)] }), inputs);
   expect(vendor).toMatchObject({ interact: "vendor", npc: { kind: "npc", id: 7 } });
   const fight = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0]), wolf, corpse, npc(8, 100)] }), inputs);

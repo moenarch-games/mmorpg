@@ -2097,21 +2097,25 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "class-kit-arcanist-hit.png"))
         expect(cast).to_be_hidden()
 
-    def practice_fight(self, swing):
-        """#550: Battle Royale practice from the Pages URL, without a server: enter, walk into the
-        training targets, hit one through real zone combat, reset and return to setup."""
+    def practice_fight(self, entered, walk, select, swing, reset, change_build, touch=False):
+        """#550/#551: Battle Royale practice from the Pages URL, without a server: enter, walk into the
+        training targets, hit one through real zone combat with floating damage, reset and change build."""
         self.page.goto(self.url + "?activity=battle-royale")
         start = self.page.get_by_role("button", name=re.compile("^Start practice"))
         expect(start).to_be_enabled(timeout=30_000)
-        start.click()
+        # A phone taps Start, which keeps the page in touch input mode.
+        start.tap() if touch else start.click()
         expect(self.page.locator("#character-select")).to_be_hidden()
         expect(self.page.locator("#unit-status")).to_contain_text("Level 10")
-        self.page.locator("#world").focus()
+        # Floating combat text is short-lived; record every entry the class HUD adds.
+        self.page.evaluate("""() => { window.__combatTexts = [];
+          new MutationObserver(records => { for (const record of records) for (const node of record.addedNodes)
+            if (node.classList?.contains('combat-text-entry')) window.__combatTexts.push(node.className + ' ' + node.textContent);
+          }).observe(document.body, {subtree: true, childList: true}); }""")
+        entered()
         # Walk straight into the target ahead (its body stops the character in reach) and select it.
-        self.page.keyboard.down("KeyW")
-        self.page.wait_for_timeout(5_000)
-        self.page.keyboard.up("KeyW")
-        self.page.keyboard.press("Tab")
+        walk()
+        select()
         expect(self.page.locator("#unit-status")).to_contain_text("Target: Training Target")
         for _ in range(30):
             swing()
@@ -2120,35 +2124,88 @@ class BrowserAcceptance(unittest.TestCase):
             if "100%)" not in (self.page.locator("#unit-status").text_content() or ""):
                 break
         expect(self.page.locator("#unit-status")).to_contain_text(re.compile(r"Training Target \(level 10, \d{1,2}%\)"))
+        self.assertTrue(any("ct-damage" in text or "ct-critical" in text for text in self.page.evaluate("window.__combatTexts")),
+                        "A landed hit floats its authoritative damage")
         self.page.screenshot(path=str(ARTIFACTS / f"{self._testMethodName}-fight.png"))
-        self.page.locator("#scenario-reset").evaluate("button => button.click()")
+        reset()
         expect(self.page.locator("#unit-status")).not_to_contain_text("In combat")
-        self.page.locator("#return-to-characters").evaluate("button => button.click()")
+        expect(self.page.locator("#unit-status")).not_to_contain_text("Target:")
+        change_build()
         expect(start).to_be_visible()
 
     def test_battle_royale_practice_desktop(self):
-        # A left click on open ground swings where the character faces (a click on a unit selects it).
-        self.practice_fight(lambda: self.page.mouse.click(720, 200))
+        def entered():
+            expect(self.page.get_by_role("button", name="Change build")).to_be_visible()
+            self.page.locator("#world").focus()
+
+        def walk():
+            self.page.keyboard.down("KeyW")
+            self.page.wait_for_timeout(5_000)
+            self.page.keyboard.up("KeyW")
+
+        self.practice_fight(
+            entered, walk, lambda: self.page.keyboard.press("Tab"),
+            # A left click on open ground swings where the character faces (a click on a unit selects it).
+            lambda: self.page.mouse.click(720, 200),
+            lambda: self.page.keyboard.press("F9"),
+            lambda: self.page.get_by_role("button", name="Change build").click())
 
     def test_battle_royale_practice_touch(self):
         self.context.close()
         self.context = self.browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
         self.page = self.context.new_page()
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+        session = self.context.new_cdp_session(self.page)
 
-        def swing():
-            attack = self.page.get_by_role("button", name="Attack", exact=True)
-            bash = self.page.get_by_role("button", name="Shield Bash (ability 2)")
-            if attack.is_visible():
-                attack.tap()
-            elif bash.is_visible():
-                # Out of combat the touch overlay offers abilities; one starts the fight.
-                bash.tap()
-            else:
-                # The touch overlay appears with the first touch.
-                self.page.touchscreen.tap(195, 700)
+        def drag(start, end, hold_ms):
+            touch = lambda x, y: [{"x": x, "y": y, "id": 1}]
+            session.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": touch(*start)})
+            for step in range(1, 6):
+                session.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": touch(
+                    start[0] + (end[0] - start[0]) * step / 5, start[1] + (end[1] - start[1]) * step / 5)})
+            self.page.wait_for_timeout(hold_ms)
+            session.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
 
-        self.practice_fight(swing)
+        def entered():
+            # #551: the arena offers target and attack from the first moment, and no essential
+            # control, frame, status line or the hotbar overlaps another at phone size.
+            expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_visible()
+            expect(self.page.get_by_role("button", name="Target", exact=True)).to_be_visible()
+            overlaps = self.page.evaluate("""() => {
+              const selectors = ['.unit-frames', '.hud', '.minimap', '.touch-top', '.action-dock', '.touch-context',
+                '.touch-jump', '.touch-faces'];
+              const boxes = selectors.map(selector => [selector, document.querySelector(selector).getBoundingClientRect()]);
+              const unitFrames = [...document.querySelectorAll('.unit-frame')].filter(frame => frame.offsetParent)
+                .map(frame => frame.getBoundingClientRect());
+              const frames = ['.unit-frames', {left: Math.min(...unitFrames.map(b => b.left)), right: Math.max(...unitFrames.map(b => b.right)),
+                top: Math.min(...unitFrames.map(b => b.top)), bottom: Math.max(...unitFrames.map(b => b.bottom))}];
+              const shown = [frames, ...boxes.slice(1)].filter(([, box]) => box.right > box.left && box.bottom > box.top);
+              const found = [];
+              for (const [i, [a, first]] of shown.entries()) for (const [b, second] of shown.slice(i + 1))
+                if (first.left < second.right && second.left < first.right && first.top < second.bottom && second.top < first.bottom) found.push(a + ' / ' + b);
+              const wide = document.documentElement.scrollWidth > window.innerWidth;
+              return wide ? [...found, 'horizontal scroll'] : found; }""")
+            self.assertEqual(overlaps, [], "Phone-size practice controls must not overlap")
+            self.page.screenshot(path=str(ARTIFACTS / f"{self._testMethodName}-entered.png"))
+
+        def change_build():
+            self.page.get_by_role("button", name="Menu", exact=True).tap()
+            self.page.get_by_role("menuitem", name="Change build").tap()
+
+        def reset():
+            # The thumb on open ground (right of the stick) turns the camera, then the menu resets.
+            drag((300, 380), (220, 380), 200)
+            self.page.get_by_role("button", name="Menu", exact=True).tap()
+            self.page.get_by_role("menuitem", name="Reset practice").tap()
+
+        self.practice_fight(
+            entered,
+            # The thumbstick pushed up walks forward.
+            lambda: drag((60, 720), (60, 650), 5_000),
+            lambda: self.page.get_by_role("button", name="Target", exact=True).tap(),
+            lambda: self.page.get_by_role("button", name="Attack", exact=True).tap(),
+            reset, change_build, touch=True)
+        session.detach()
 
 
 if __name__ == "__main__":

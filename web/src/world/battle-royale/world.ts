@@ -72,7 +72,7 @@ export function createArenaWorld(
     equipment: (character) => selectedEquipment(character) ?? standardEquipment(character),
   });
   return {
-    world: { source, scenery: arenaScenery(local, presentation), catalog: decodeCatalog(presentation.catalog()), name: "Battle Royale" },
+    world: { source, scenery: arenaScenery(local, presentation), catalog: decodeCatalog(presentation.catalog()), name: "Battle Royale", arena: true },
     source,
     maximumLevel: presentation.maximumLevel(),
     standardEquipment,
@@ -95,7 +95,7 @@ export function createPracticeWorld(
     return LocalZone.forPracticeArena(codes.classId, codes.sex, Uint16Array.from(equipment, (id) => id ?? 0));
   });
   return {
-    world: { source, scenery: arenaScenery(local, presentation), catalog: decodeCatalog(presentation.catalog()), name: "Battle Royale practice" },
+    world: { source, scenery: arenaScenery(local, presentation), catalog: decodeCatalog(presentation.catalog()), name: "Battle Royale practice", arena: true },
     source,
   };
 }

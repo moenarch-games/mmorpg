@@ -10,7 +10,10 @@ the flat arena, facing five stationary **Training Targets** (three about 8–9 m
 20 m). Targets are breakable props: they take real `mmorpg-core` damage, never move, fight or
 hold threat, break, and stand again after 30 s. There is no storm, matchmaking, team, reward
 or other player. **Reset practice (F9)** starts a fresh life with the build chosen at entry;
-**Characters** returns to setup to change it. Nothing is saved, and the Greyhaven roster,
+**Change build** returns to setup to change it. On a phone the touch overlay shows **Target** and
+**Attack** from the first moment, and **Menu** offers **Reset practice** and **Change build**;
+in portrait the status line sits under the frames and the hotbar above the thumb controls
+(#551). Nothing is saved, and the Greyhaven roster,
 saves and the hosted path below are untouched. The flat arena is temporary until the shared
 fortress (battle-royale #31) is presented (#552).
 

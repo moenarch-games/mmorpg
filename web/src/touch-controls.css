@@ -226,3 +226,14 @@
 :root[data-input="touch"] .chat-frame:not([data-touch-open]) { display: none; }
 :root[data-input="touch"] .chat-frame { top: 3.2rem; bottom: auto; left: 50%; right: auto; width: min(22rem, 60vw); transform: translateX(-50%); }
 :root[data-input="touch"] .chat-frame .chat-log { display: block; max-height: 30vh; }
+
+/* Phones in portrait (#551): the landscape strip between the frames and the minimap is too narrow
+   for the status text, so it spans below the frames beside the minimap; chat and the menu stack
+   under the minimap, and the hotbar rises above the thumb controls instead of sitting under them. */
+@media (max-width: 640px) and (min-height: 480px) {
+  :root[data-input="touch"] .touch-top { top: 8.6rem; right: .4rem; flex-direction: column; align-items: flex-end; }
+  :root[data-input="touch"] .touch-menu { top: 0; right: calc(100% + .35rem); }
+  :root[data-input="touch"] .unit-frames { transform: scale(.6); }
+  :root[data-input="touch"] .hud { top: 5.5rem; left: .4rem; right: 7.4rem; max-height: 24vh; }
+  :root[data-input="touch"] .action-dock { top: auto; bottom: 12.2rem; }
+}
