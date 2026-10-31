@@ -15,6 +15,7 @@ export type UnitPresenterHandle = {
   residentsReady(): void;
   setBlend(lowerSeconds: number, upperSeconds: number, lowerWeight: number, upperWeight: number): void;
   setBodyOverlay(shown: boolean): void;
+  setKitPlatforms(platforms: Uint8Array): void;
   push(projection: Uint8Array, seconds: number): void;
   reset(): void;
   prepare(ability: number, seconds: number): void;
@@ -111,7 +112,10 @@ export const DEFAULT_BLEND: AnimationBlend = { lowerSeconds: 0.15, upperSeconds:
 /** The viewer's layered animation (#384): each region's target clip and time, and the posed layers. */
 export type ViewerAnimation = { upper: readonly [string, number]; lower: readonly [string, number]; layers: readonly ClipLayer[] };
 
-export type UnitFrameNodes = { nodes: RendererSceneNode[]; units: PresentedUnit[]; imported: ImportedRequest[] };
+/** A platform a kit piece draws (#591): its box's bottom centre this frame, metres. */
+export type PlatformBase = { platform: number; base: [number, number, number] };
+
+export type UnitFrameNodes = { nodes: RendererSceneNode[]; units: PresentedUnit[]; imported: ImportedRequest[]; platforms: PlatformBase[] };
 
 /** The viewer's own look: class and sex as an appearance code, and headwear. */
 export type ViewerLook = {
@@ -128,7 +132,7 @@ type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [numb
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number; pitch: number;
   height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
   swing: readonly [number, number, number, number] | null; bow: BowShot | null };
-type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[] };
+type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
 const CLASS_CODE = { warden: 0, ranger: 1, arcanist: 2, necromancer: 3, rogue: 4, cleric: 5, druid: 6 } as const;
@@ -178,6 +182,11 @@ export class SharedUnits {
   /** Shows or hides the development body overlay (#39): each unit's authoritative body over its model. */
   setBodyOverlay(shown: boolean): void {
     this.#handle.setBodyOverlay(shown);
+  }
+
+  /** The platforms a kit draws (the fortress lifts, #591): no procedural pillar; each frame's `platforms` places them. */
+  setKitPlatforms(platforms: readonly number[]): void {
+    this.#handle.setKitPlatforms(Uint8Array.from(platforms));
   }
 
   push(projection: Uint8Array, seconds: number): void {
@@ -243,6 +252,7 @@ export class SharedUnits {
         heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, figure: unit.figure, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
         swing: unit.swing, bow: unit.bow,
       })),
+      platforms: layout.platforms,
     };
   }
 

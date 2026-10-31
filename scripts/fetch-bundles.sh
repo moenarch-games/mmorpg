@@ -8,7 +8,8 @@
 # web/public/scenery/settlement.props and Elden's house (#158) into
 # web/public/buildings/greyhaven.marshal-house and the CC0 combat sounds (#447) into
 # web/public/sounds/combat-sounds and Greyhaven's trees and rocks (#49) into
-# web/public/scenery/greyhaven.nature, where the browser serves them and the native client build embeds them.
+# web/public/scenery/greyhaven.nature, where the browser serves them and the native client build embeds them,
+# and the Battle Royale fortress kit (#591) into web/public/scenery/fortress.kit for the browser's arena.
 # The directories are ignored build input, never committed.
 set -euo pipefail
 
@@ -106,3 +107,7 @@ fetch_rolling combat-sounds combat-sounds sounds/combat-sounds
 # (asset-tooling's consumers.json re-pins this line after a re-upload).
 NATURE_TAR_SHA256=c0d578faec0b1286ab243241fb69f764141f4c9e72c88ccd86326fa0b415f44e
 fetch_pinned greyhaven-nature greyhaven.nature scenery/greyhaven.nature "${NATURE_TAR_SHA256}"
+# The Battle Royale fortress's authored art (#591, asset-tooling#458/#461, pass 2), fitted to its
+# collision, pinned like the nature bundle.
+FORTRESS_TAR_SHA256=58185d2310b713642cf881212457dcf5c1be11976a5af8e5363cf868792cc241
+fetch_pinned fortress-kit fortress.kit scenery/fortress.kit "${FORTRESS_TAR_SHA256}"

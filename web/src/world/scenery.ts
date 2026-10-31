@@ -1,3 +1,4 @@
+import type { CompositionKitSource } from "./composition-kit";
 import type { NatureLodsHandle, NatureSource } from "./nature";
 import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
@@ -166,6 +167,8 @@ export type SceneryProvider = {
   readonly outpost: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** The market square's settlement-prop entries and placed props (#421), column-major matrices in metres. */
   readonly settlement: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
+  /** A composition kit drawn over the zone's graybox (the Battle Royale fortress kit, #591), if the zone has one. */
+  readonly fortress: CompositionKitSource | null;
   /** Greyhaven's trees and rocks from the `greyhaven-nature` bundle (#49). */
   readonly nature: NatureSource;
   /** Greyhaven's cosmetic ambient animals (#419). */
@@ -472,6 +475,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
         placements: content.settlementPropKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
       };
     })(),
+    fortress: null,
     nature: (() => {
       const models = content.natureModels();
       return {

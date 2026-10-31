@@ -213,6 +213,16 @@ pub struct UnitFrame {
     pub draws: Vec<Draw>,
     pub units: Vec<UnitView>,
     pub imported: Vec<ImportedUnit>,
+    /// Where each platform a client's kit draws ([`UnitPresenter::set_kit_platforms`]) stands.
+    pub platforms: Vec<PlatformView>,
+}
+
+/// A moving platform (#56) a kit piece draws (the fortress lifts, #591).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlatformView {
+    pub platform: mmorpg_core::PlatformId,
+    /// Bottom centre of the platform's box at the projection's tick, metres.
+    pub base: [f32; 3],
 }
 
 /// Per-session unit presentation state: geometry cache, locomotion, clip clocks and spell visuals.
@@ -252,6 +262,8 @@ pub struct UnitPresenter {
     stuns: BTreeMap<EntityRef, f64>,
     /// Swings that covered nobody, for alternating their forehand and backhand slashes (#582).
     whiffs: u32,
+    /// Platforms a client's kit draws instead of their procedural pillar (#591).
+    kit_platforms: BTreeSet<mmorpg_core::PlatformId>,
 }
 
 impl UnitPresenter {
@@ -281,7 +293,14 @@ impl UnitPresenter {
             bodies: false,
             stuns: BTreeMap::new(),
             whiffs: 0,
+            kit_platforms: BTreeSet::new(),
         }
+    }
+
+    /// The platforms a client's kit draws (the fortress kit's lifts, #591): their procedural
+    /// pillar is not drawn, and [`UnitFrame::platforms`] says where each stands instead.
+    pub fn set_kit_platforms(&mut self, platforms: BTreeSet<mmorpg_core::PlatformId>) {
+        self.kit_platforms = platforms;
     }
 
     /// Shows or hides the development body overlay (#39): every unit's authoritative collision
@@ -1074,7 +1093,7 @@ impl UnitPresenter {
                 .extend(self.effects.nodes(&mut self.resources, seconds, &anchors));
         }
         self.projectiles(&mut out.draws, snapshot);
-        self.platforms(&mut out.draws, snapshot);
+        self.platforms(&mut out, snapshot);
         let viewer = input
             .units
             .iter()
@@ -1143,14 +1162,22 @@ impl UnitPresenter {
     }
 
     /// Moving platforms (#56) where their schedule puts them at the projection's tick: a
-    /// stone pillar with a plank top. Content and tick decide; nothing is simulated here.
-    fn platforms(&mut self, draws: &mut Vec<Draw>, snapshot: &ZoneSnapshot) {
+    /// stone pillar with a plank top, or where a client's kit piece stands instead. Content
+    /// and tick decide; nothing is simulated here.
+    fn platforms(&mut self, out: &mut UnitFrame, snapshot: &ZoneSnapshot) {
         for platform in self.content.platforms() {
-            let centre = self
-                .rendered(platform.centre_at(snapshot.tick))
-                .map(f64::from);
+            let rendered = self.rendered(platform.centre_at(snapshot.tick));
             let [x, y, z] = metres(platform.half_extents).map(f64::from);
+            if self.kit_platforms.contains(&platform.id) {
+                out.platforms.push(PlatformView {
+                    platform: platform.id,
+                    base: [rendered[0], rendered[1] - y as f32, rendered[2]],
+                });
+                continue;
+            }
+            let centre = rendered.map(f64::from);
             let id = format!("platform-{}", platform.id.get());
+            let draws = &mut out.draws;
             draws.push(self.resources.primitive(
                 format!("{id}-pillar"),
                 Primitive::Box([2. * x, 2. * y - 0.06, 2. * z]),

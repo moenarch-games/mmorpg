@@ -230,6 +230,8 @@ fn fallback_name(kit: Option<Kit>) -> &'static str {
         Some(Kit::Outpost) => ":fallback-outpost",
         Some(Kit::SettlementProps) => ":fallback-settlement",
         Some(Kit::Nature) => ":fallback-nature",
+        // Graybox fallbacks are animated parts (`Motion::Fallback`), never batched.
+        Some(Kit::Graybox(_)) => ":fallback-graybox",
     }
 }
 fn bounds(points: impl Iterator<Item = V>) -> ([f64; 2], [f64; 2]) {

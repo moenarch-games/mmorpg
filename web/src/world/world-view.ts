@@ -34,6 +34,7 @@ import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
 import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
+import { CompositionKit } from "./composition-kit";
 import { Nature } from "./nature";
 import { AmbientAnimals } from "./ambient-animals";
 import { ArtPrefetch } from "./art-prefetch";
@@ -313,6 +314,8 @@ export class WorldView {
   #outpost: KitModules | null = null;
   /** The market square's settlement props (#421), drawn from asset-tooling's bundle once loaded; their boxes until then. */
   #settlement: KitModules | null = null;
+  /** The Battle Royale fortress (#591), drawn from asset-tooling's fortress kit once loaded; its graybox until then. */
+  #fortress: CompositionKit | null = null;
   /** Greyhaven's cosmetic cat, dog and rodent (#419), drawn once their bundle loads. */
   #ambient: AmbientAnimals | null = null;
   /** Greyhaven's trees and rocks (#49), drawn from asset-tooling's bundle once loaded; the procedural ones until then. */
@@ -338,7 +341,7 @@ export class WorldView {
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][], string | null][] = [];
   /** The shared unit presenter (#184) of the current viewer. */
-  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean } | null = null;
+  #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean; kitPlatforms: boolean } | null = null;
   /** Combat sounds (#447), once the bundle loaded; silent until then. */
   #sound: WorldSound | null = null;
   #audioPreferences: AudioPreferences | null = null;
@@ -516,6 +519,9 @@ export class WorldView {
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
     this.#outpost = new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries, world.scenery.outpost.placements);
     this.#settlement = new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements);
+    // The arena's fortress kit (#591) loads at once: the whole fortress is in view from the courtyard.
+    this.#fortress = world.scenery.fortress ? new CompositionKit(world.scenery.fortress) : null;
+    void this.#fortress?.load(THREE.MathUtils.degToRad(this.#camera.fov));
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
     // starting area's pieces, and play fetches each area the player approaches.
     this.#ambient = new AmbientAnimals(world.scenery.ambient);
@@ -725,7 +731,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1053,9 +1059,14 @@ export class WorldView {
       for (const [kind, clips, descriptor] of this.#loadedModels) { units.modelReady(kind, clips, descriptor); }
       if (this.#blend) { units.setBlend(this.#blend); }
       if (this.#bodyOverlay) { units.setBodyOverlay(true); }
-      this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false };
+      this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false, kitPlatforms: false };
     }
     const units = this.#units.units;
+    if (!this.#units.kitPlatforms && this.#fortress?.drawn) {
+      // The fortress kit's lifts (#591) replace the presenter's pillars once drawn.
+      this.#units.kitPlatforms = true;
+      units.setKitPlatforms(this.#fortress.platforms);
+    }
     this.#regions?.approach(entitiesSelf(projection), scenery.scenery.areas);
     for (const [kind, clips, descriptor] of this.#models.drainLoaded()) {
       this.#loadedModels.push([kind, clips, descriptor]);
@@ -1079,6 +1090,7 @@ export class WorldView {
     const { unitsPerMetre } = scenery.scenery;
     const sampled = source.sample();
     const presented = units.frame(sampled, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
+    this.#fortress?.place(presented.platforms);
     const viewerModel = presented.imported.find((unit) => unit.entity.kind === "player" && unit.entity.id === projection.viewerId);
     this.#viewerClip = viewerModel?.clip ?? null;
     this.#viewerAnimation = viewerModel ? { upper: [viewerModel.clip, viewerModel.time], lower: viewerModel.lower, layers: viewerModel.layers } : null;
@@ -1143,7 +1155,8 @@ export class WorldView {
       this.#sound.listen(view.eye, [right.x, right.y, right.z]);
       this.#sound.pump();
     }
-    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: this.#outpost?.drawn ?? false, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false } });
+    this.#fortress?.update(view.eye);
+    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: this.#outpost?.drawn ?? false, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
     this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
@@ -1171,16 +1184,17 @@ export class WorldView {
     const shrine = this.#shrine?.roots() ?? { roots: [], changed: false };
     const outpost = this.#outpost?.roots() ?? { roots: [], changed: false };
     const settlement = this.#settlement?.roots() ?? { roots: [], changed: false };
+    const fortress = this.#fortress?.roots() ?? { roots: [], changed: false };
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#nature?.roots() ?? { roots: [], changed: false };
-    const roots = [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
+    const roots = [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
     const rendererFrame = { camera, nodes, instanceBatches: frame.instanceBatches, environment };
     if (this.#preparing) {
       // `prepare` (#547): the first world frame's programs and textures, without drawing it.
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
       return;
     }
-    if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || ambient.changed || nature.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
+    if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots });
     }
     const work = this.#renderer.render(rendererFrame);
@@ -1527,6 +1541,8 @@ export class WorldView {
       shrine: () => this.#shrine?.observe() ?? null,
       /** The Outpost kit buildings (#420): whether their modules loaded and which are placed. */
       outpost: () => this.#outpost?.observe() ?? null,
+      /** The Battle Royale fortress kit (#591): whether it is drawn, its entries, pieces and drawn levels. */
+      fortress: () => this.#fortress?.observe() ?? null,
       /** The market square's settlement props (#421): whether they loaded and which are placed. */
       settlement: () => this.#settlement?.observe() ?? null,
       /** Greyhaven's trees and rocks (#49): whether the bundle loaded, and how many instances each entry level draws. */

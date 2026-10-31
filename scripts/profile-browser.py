@@ -41,11 +41,12 @@ import json
 import os
 import re
 import statistics
+import sys
 import threading
 import time
 from pathlib import Path
 
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeout, expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 GPU_ARGS = ["--enable-gpu", "--use-angle=gl", "--ignore-gpu-blocklist"]
@@ -192,6 +193,13 @@ class Session:
         self.page.keyboard.press("Enter")
         expect(self.page.locator("#character-select")).to_be_hidden(timeout=60_000)
         expect(self.page.locator(".hud")).to_be_visible()
+        if self.activity == "battle-royale":
+            # The fortress kit (#591) is the arena's art; profile it, not the graybox it replaces.
+            # A bundle that cannot load leaves the graybox, which is profiled instead.
+            try:
+                self.page.wait_for_function("() => window.__valeDebug.fortress()?.loaded", timeout=60_000)
+            except PlaywrightTimeout:
+                print("The fortress kit did not load; profiling the graybox", file=sys.stderr)
         self.page.locator("#world").focus()
 
     def warm(self, seconds=3.0):

@@ -114,9 +114,72 @@ fn tone(b: Biome, x: f64, z: f64) -> u32 {
         mix(base, 0xc2cf6e, 0.2)
     }
 }
+/// Whether the open rectangles `a` and `b` (`[min x, min z, max x, max z]`) overlap.
+fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
+    a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
+}
+
+/// Grid cell `cell` (metres; its first sample `s`) cut along the edges of the `holes` in it,
+/// every piece outside them drawn on the cell's bilinear surface.
+fn around_holes(
+    out: &mut Geometry,
+    g: &TerrainGrid,
+    biomes: &[Biome],
+    s: usize,
+    cell: [f64; 4],
+    holes: &[[f64; 4]],
+) {
+    let cuts = |lo: f64, hi: f64, axis: usize| {
+        let mut cuts = vec![lo, hi];
+        for hole in holes {
+            cuts.extend(
+                [hole[axis], hole[axis + 2]]
+                    .into_iter()
+                    .filter(|&v| lo < v && v < hi),
+            );
+        }
+        cuts.sort_by(f64::total_cmp);
+        cuts.dedup();
+        cuts
+    };
+    let (xs, zs) = (cuts(cell[0], cell[2], 0), cuts(cell[1], cell[3], 1));
+    let h = |sample: usize| metres(g.heights[sample]);
+    let corners = [h(s), h(s + 1), h(s + g.columns), h(s + g.columns + 1)];
+    let (width, depth) = (cell[2] - cell[0], cell[3] - cell[1]);
+    let dx = (corners[1] - corners[0] + corners[3] - corners[2]) / (2. * width);
+    let dz = (corners[2] - corners[0] + corners[3] - corners[1]) / (2. * depth);
+    let normal = norm([-dx, 1., -dz]);
+    let mut vertex = |x: f64, z: f64| {
+        let (u, v) = ((x - cell[0]) / width, (z - cell[1]) / depth);
+        let y = (corners[0] * (1. - u) + corners[1] * u) * (1. - v)
+            + (corners[2] * (1. - u) + corners[3] * u) * v;
+        let index = out.p.len() as u32;
+        out.p.push([x, y, z]);
+        out.n.push(normal);
+        out.colors.push(rgb(tone(biomes[s], x, z)).map(f64::from));
+        index
+    };
+    for z in zs.windows(2) {
+        for x in xs.windows(2) {
+            let piece = [x[0], z[0], x[1], z[1]];
+            if holes.iter().any(|hole| overlaps(*hole, piece)) {
+                continue;
+            }
+            let (a, b, c, d) = (
+                vertex(x[0], z[0]),
+                vertex(x[0], z[1]),
+                vertex(x[1], z[0]),
+                vertex(x[1], z[1]),
+            );
+            out.indices.extend([a, b, c, c, b, d]);
+        }
+    }
+}
+
 /// Triangulates a grid. A far ring leaves out the cells inside `inner`, the near grid's
-/// rectangle `[min x, min z, max x, max z]` in metres, and sinks its vertices inside it.
-fn grid(out: &mut Geometry, g: &TerrainGrid, far: bool, inner: [f64; 4]) {
+/// rectangle `[min x, min z, max x, max z]` in metres, and sinks its vertices inside it. A cell
+/// overlapping one of `holes` (`[min x, min z, max x, max z]`, metres) is drawn around it.
+fn grid(out: &mut Geometry, g: &TerrainGrid, far: bool, inner: [f64; 4], holes: &[[f64; 4]]) {
     let biomes = if far { g.biomes.clone() } else { ground(g) };
     let mut map = BTreeMap::new();
     let within = |x: f64, z: f64| inner[0] < x && x < inner[2] && inner[1] < z && z < inner[3];
@@ -132,6 +195,16 @@ fn grid(out: &mut Geometry, g: &TerrainGrid, far: bool, inner: [f64; 4]) {
                 continue;
             }
             let s = r * g.columns + c;
+            let cell = [
+                metres(g.origin[0] + c as i32 * g.step),
+                metres(g.origin[1] + r as i32 * g.step),
+                metres(g.origin[0] + (c as i32 + 1) * g.step),
+                metres(g.origin[1] + (r as i32 + 1) * g.step),
+            ];
+            if holes.iter().any(|hole| overlaps(*hole, cell)) {
+                around_holes(out, g, &biomes, s, cell, holes);
+                continue;
+            }
             for sample in [
                 s,
                 s + g.columns,
@@ -266,12 +339,18 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
         g.origin[1] + (g.rows as i32 - 1) * g.step,
     ]
     .map(metres);
-    grid(b.global("terrain", 0xffffff), g, false, inner);
+    let holes: Vec<_> = s
+        .terrain_holes
+        .iter()
+        .map(|hole| [hole.min[0], hole.min[1], hole.max[0], hole.max[1]].map(metres))
+        .collect();
+    grid(b.global("terrain", 0xffffff), g, false, inner, &holes);
     grid(
         b.global("far", 0xffffff),
         &s.far_terrain_grid(2000),
         true,
         inner,
+        &[],
     );
     // Worn handholds up the climbable rock faces of the terrain (#512).
     crate::handholds::terrain(g, s.climbing(), &mut |c, shape, a| {
