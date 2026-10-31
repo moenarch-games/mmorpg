@@ -21,10 +21,13 @@ physics-ab = ["dep:physics-engine"]
 [dev-dependencies]
 # Reads the bot scenario files the physics A/B test replays.
 toml = { version = "=1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+libtest-mimic.workspace = true
 
+# One trial per workload, so nextest runs them in parallel (#540).
 [[test]]
 name = "physics_ab"
 required-features = ["physics-ab"]
+harness = false
 
 [[example]]
 name = "physics_ab"

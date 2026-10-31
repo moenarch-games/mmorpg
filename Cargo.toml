@@ -33,6 +33,8 @@ mmorpg-scenery = { path = "crates/mmorpg-scenery" }
 mmorpg-presentation = { path = "crates/mmorpg-presentation" }
 postgres = "=0.19.14"
 tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+# Test-only harness: one trial per workload or scenario file, run in parallel by nextest (#540).
+libtest-mimic = "=0.8.2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

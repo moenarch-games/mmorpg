@@ -14,6 +14,10 @@
 //! (#534). Creatures' positions (AI and a shared RNG react to every position) are compared but
 //! not bounded; their divergences are printed (`--nocapture`) and listed in
 //! `docs/PHYSICS_AB.md`.
+//!
+//! Each workload is its own trial named after it (`harness = false`, libtest-mimic, #540), so
+//! nextest runs them in parallel: `cargo nextest run -p mmorpg-core --features physics-ab
+//! --test physics_ab -E 'test(=vale-roll)'` reruns one.
 
 #[path = "support/physics_ab.rs"]
 mod drivers;
@@ -795,326 +799,335 @@ fn query_parity(workload: &Workload, rapier: &Trace) -> Result<usize> {
     Ok(probes)
 }
 
-#[test]
-fn backends_keep_shared_invariants_and_agree_on_the_zone_workloads() -> Result<()> {
-    for workload in drivers::workloads()? {
-        let started = std::time::Instant::now();
-        let name = workload.name().to_owned();
-        let (rapier, rapier_check) = run(&workload, Backend::Rapier)?;
-        let (engine, engine_check) = run(&workload, Backend::Engine)?;
-        // Restored halfway, both backends continue exactly (Atlas 2.1.5).
-        assert_eq!(
-            rapier_check.departed, None,
-            "{name}: Rapier recovery departs"
-        );
-        assert_eq!(
-            engine_check.departed, None,
-            "{name}: engine recovery departs"
-        );
-        // Same-backend replay is bit-identical.
-        assert!(
-            run(&workload, Backend::Rapier)?.0 == rapier,
-            "{name}: Rapier replay differs"
-        );
-        assert!(
-            run(&workload, Backend::Engine)?.0 == engine,
-            "{name}: engine replay differs"
-        );
+/// Every check of one workload on both backends: one trial per workload (#540).
+fn check_workload(workload: Workload) -> Result<()> {
+    let started = std::time::Instant::now();
+    let name = workload.name().to_owned();
+    let (rapier, rapier_check) = run(&workload, Backend::Rapier)?;
+    let (engine, engine_check) = run(&workload, Backend::Engine)?;
+    // Restored halfway, both backends continue exactly (Atlas 2.1.5).
+    assert_eq!(
+        rapier_check.departed, None,
+        "{name}: Rapier recovery departs"
+    );
+    assert_eq!(
+        engine_check.departed, None,
+        "{name}: engine recovery departs"
+    );
+    // Same-backend replay is bit-identical.
+    assert!(
+        run(&workload, Backend::Rapier)?.0 == rapier,
+        "{name}: Rapier replay differs"
+    );
+    assert!(
+        run(&workload, Backend::Engine)?.0 == engine,
+        "{name}: engine replay differs"
+    );
 
-        let (horizontal, vertical, first) = player_divergence(&rapier, &engine);
-        let (creatures, creatures_differing, creatures_first) =
-            creature_divergence(&rapier, &engine);
-        let doors_differ = rapier
-            .snapshots
-            .iter()
-            .zip(&engine.snapshots)
-            .any(|(a, b)| a.doors != b.doors);
-        let outcomes_differ = rapier.outcomes != engine.outcomes;
-        // Units that walk into a settled crate stop where it rests (`vale-crate-shove`).
-        let mut crate_gap = 0.0_f32;
-        let probes = query_parity(&workload, &rapier)?;
-        println!(
-            "{name}: ticks={} players max Δxz={horizontal:.4} Δy={vertical:.4} first rounded \
-             difference at {first:?}; creatures max final Δxz={creatures:.3} ({creatures_differing} \
-             differ, first rounded difference at {creatures_first:?}); doors differ={doors_differ}; command outcomes differ={outcomes_differ}; \
-             closest box gap rapier={:.4} engine={:.4}; {probes} query probes agree [{:?}]",
-            rapier.snapshots.len(),
-            rapier_check.closest,
-            engine_check.closest,
-            started.elapsed(),
-        );
-        if matches!(workload, Workload::Traversal) {
-            // On each backend the Warden, keys released at 30 Hz tick 22, still flies south on
-            // its momentum two ticks later (#413).
-            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
-                let warden = trace.units[2 * 24]
-                    .iter()
-                    .find(|unit| unit.unit == EntityRef::Player(1))
-                    .ok_or("missing traversal Warden")?;
-                let velocity = warden.body.velocity();
-                println!("  {name} on {backend}: Warden velocity {velocity:?}");
-                assert!(
-                    !warden.grounded && velocity.z < 0,
-                    "{name} on {backend}: no momentum {warden:?}"
-                );
-            }
-        }
-        if matches!(workload, Workload::Climb) {
-            // On each backend the climber ends on the crag's top and the mantler on the dock's
-            // deck (#490).
-            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
-                check_wall_climb(trace)
-                    .map_err(|failure| format!("{name} on {backend}: {failure}"))?;
-            }
-        }
-        if matches!(workload, Workload::Roll) {
-            // On each backend every player rolls, the crag stops one without a climb and the
-            // dock roller lands on the ground beyond the deck (#516).
-            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
-                check_rolls(trace).map_err(|failure| format!("{name} on {backend}: {failure}"))?;
-            }
-        }
-        if matches!(workload, Workload::MillHoist) {
-            // On each backend the hoist carries its rider to the gallery (#56).
-            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
-                check_mill_hoist(trace)
-                    .map_err(|failure| format!("{name} on {backend}: {failure}"))?;
-            }
-        }
-        if matches!(workload, Workload::WatchPost) {
-            // On each backend the fight breaks pieces of the post (#305).
-            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
-                let last = trace.snapshots.last().ok_or("empty watch post trace")?;
-                let content = mmorpg_core::greyhaven_vale::content();
-                let damaged: Vec<_> = last
-                    .pieces
-                    .iter()
-                    .zip(content.pieces())
-                    .filter(|(state, piece)| state.health < piece.health)
-                    .map(|(state, _)| (state.piece.get(), state.health))
-                    .collect();
-                println!("  {name} on {backend}: pieces {damaged:?}");
-                assert!(!damaged.is_empty(), "{name} on {backend}: no piece damaged");
-            }
-        }
-        if matches!(workload, Workload::WatchPost) {
-            // The same blasts and arrows break the same pieces on both backends.
-            let pieces = |trace: &Trace| trace.snapshots.last().map(|last| last.pieces.clone());
-            assert_eq!(
-                pieces(&rapier),
-                pieces(&engine),
-                "{name}: piece states differ"
-            );
-        }
-        if matches!(workload, Workload::ChargePath) {
-            // On each backend some Warden charges (#57).
-            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
-                let charging: std::collections::BTreeSet<_> = trace
-                    .snapshots
-                    .iter()
-                    .flat_map(|snapshot| &snapshot.forced)
-                    .filter(|(unit, state)| {
-                        matches!(unit, EntityRef::Player(_))
-                            && state.moving.is_some_and(|moving| moving.charge.is_some())
-                    })
-                    .map(|(unit, _)| *unit)
-                    .collect();
-                println!("  {name} on {backend}: charged {charging:?}");
-                assert!(!charging.is_empty(), "{name} on {backend}: nobody charged");
-            }
-        }
-        if matches!(workload, Workload::Missiles) {
-            // On each backend the homing Firebolts fly and strike wolves or trunks in the way, and
-            // the free ones fly straight (#289); both arms spend the same missiles the same way.
-            let outcomes = |trace: &Trace| -> std::collections::BTreeMap<u32, (bool, [f32; 3])> {
-                trace
-                    .snapshots
-                    .iter()
-                    .flat_map(|snapshot| &snapshot.projectiles)
-                    .filter_map(|projectile| match projectile.flight {
-                        mmorpg_core::Flight::Stuck { unit, .. }
-                            if projectile.kind == mmorpg_core::ProjectileKind::Missile =>
-                        {
-                            Some((projectile.id, (unit.is_some(), projectile.position)))
-                        }
-                        _ => None,
-                    })
-                    .collect()
-            };
-            let (a, b) = (outcomes(&rapier), outcomes(&engine));
-            let struck = |outcome: &std::collections::BTreeMap<u32, (bool, [f32; 3])>| {
-                outcome
-                    .iter()
-                    .filter(|(_, (unit, _))| *unit)
-                    .map(|(id, _)| *id)
-                    .collect::<Vec<_>>()
-            };
-            println!(
-                "  {name}: missiles struck units {:?} / {:?}, spent {} / {}",
-                struck(&a),
-                struck(&b),
-                a.len(),
-                b.len()
-            );
-            assert!(
-                !struck(&a).is_empty(),
-                "{name} on rapier: no missile struck"
-            );
-            assert!(
-                !struck(&b).is_empty(),
-                "{name} on engine: no missile struck"
-            );
-            let same_ends =
-                a.keys().eq(b.keys()) && a.values().zip(b.values()).all(|(x, y)| x.0 == y.0);
-            assert!(same_ends, "{name}: missiles end differently: {a:?} / {b:?}");
-            // Missiles spent in the world end within the creatures' drift of each other.
-            let gap = a
-                .values()
-                .zip(b.values())
-                .filter(|(x, _)| !x.0)
-                .map(|(x, y)| (x.1[0] - y.1[0]).hypot(x.1[2] - y.1[2]))
-                .fold(0.0_f32, f32::max);
-            println!("  {name}: missiles spent in the world part by at most {gap:.3}");
-        }
-        if matches!(workload, Workload::CrateShove) {
-            // On each backend both bashes slide their crates over a metre and they come to rest
-            // (#58), where they agree (both average the pair's materials, physics-engine #391).
-            let crates = |trace: &Trace| -> Vec<([f32; 3], [f32; 3])> {
-                let last = trace.snapshots.last().expect("crate trace");
-                [917, 918]
-                    .map(|id| {
-                        let record = last
-                            .creatures
-                            .iter()
-                            .find(|record| record.creature_id.get() == id)
-                            .expect("heavy crate");
-                        (record.position, record.velocity)
-                    })
-                    .to_vec()
-            };
-            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
-                let ends = crates(trace);
-                println!("  {name} on {backend}: crates end at {ends:?}");
-                for ((position, velocity), start) in ends.iter().zip([7_400.0, 7_550.0]) {
-                    assert_eq!(
-                        *velocity, [0.0; 3],
-                        "{name} on {backend}: a crate still slides"
-                    );
-                    assert!(
-                        position[2] > 3_300.0 && (position[0] - start).abs() < 20.0,
-                        "{name} on {backend}: a crate did not slide north: {position:?}"
-                    );
-                }
-            }
-            let gap = crates(&rapier)
+    let (horizontal, vertical, first) = player_divergence(&rapier, &engine);
+    let (creatures, creatures_differing, creatures_first) = creature_divergence(&rapier, &engine);
+    let doors_differ = rapier
+        .snapshots
+        .iter()
+        .zip(&engine.snapshots)
+        .any(|(a, b)| a.doors != b.doors);
+    let outcomes_differ = rapier.outcomes != engine.outcomes;
+    // Units that walk into a settled crate stop where it rests (`vale-crate-shove`).
+    let mut crate_gap = 0.0_f32;
+    let probes = query_parity(&workload, &rapier)?;
+    println!(
+        "{name}: ticks={} players max Δxz={horizontal:.4} Δy={vertical:.4} first rounded \
+         difference at {first:?}; creatures max final Δxz={creatures:.3} ({creatures_differing} \
+         differ, first rounded difference at {creatures_first:?}); doors differ={doors_differ}; command outcomes differ={outcomes_differ}; \
+         closest box gap rapier={:.4} engine={:.4}; {probes} query probes agree [{:?}]",
+        rapier.snapshots.len(),
+        rapier_check.closest,
+        engine_check.closest,
+        started.elapsed(),
+    );
+    if matches!(workload, Workload::Traversal) {
+        // On each backend the Warden, keys released at 30 Hz tick 22, still flies south on
+        // its momentum two ticks later (#413).
+        for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+            let warden = trace.units[2 * 24]
                 .iter()
-                .zip(crates(&engine))
-                .map(|((a, _), (b, _))| (a[0] - b[0]).hypot(a[2] - b[2]))
-                .fold(0.0_f32, f32::max);
-            // physics-engine's `props` oracle bound: within 5% of each slide (about 265 units).
-            assert!(gap <= 13.0, "{name}: crates part by {gap}");
-            crate_gap = gap;
-        }
-        if matches!(workload, Workload::CrateSmash) {
-            check_crate_smash(&name, &rapier, &engine);
-        }
-        if matches!(workload, Workload::MillRamps) {
-            // Both hold the chute's walker at its foot (physics-engine #351: too-steep slopes are
-            // walls); they part only where Rapier's controller tops the dock's edge 2.5 units
-            // high for a tick before settling.
+                .find(|unit| unit.unit == EntityRef::Player(1))
+                .ok_or("missing traversal Warden")?;
+            let velocity = warden.body.velocity();
+            println!("  {name} on {backend}: Warden velocity {velocity:?}");
             assert!(
-                horizontal <= 2.0 && vertical <= 3.0,
-                "{name}: players diverge by Δxz={horizontal} Δy={vertical}"
+                !warden.grounded && velocity.z < 0,
+                "{name} on {backend}: no momentum {warden:?}"
             );
-        }
-        if matches!(workload, Workload::MillRamps) {
-            for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
-                check_mill_ramps(trace)
-                    .map_err(|failure| format!("{name} on {backend}: {failure}"))?;
-            }
-        }
-        if matches!(workload, Workload::OgreBrawl) {
-            // On each backend the ogre's body blocks every player, it shoves the ones in its
-            // way and its stomps land (#297).
-            for (check, backend) in [(&rapier_check, "rapier"), (&engine_check, "engine")] {
-                println!(
-                    "  {name} on {backend}: ogre–player gap ≥ {:.4}, {} shoved player-ticks, stomped={}",
-                    check.ogre_gap, check.shoved_ticks, check.stomped
-                );
-                assert!(
-                    check.ogre_gap >= -PENETRATION_TOLERANCE_UNITS,
-                    "{name} on {backend}: a player inside the ogre by {}",
-                    -check.ogre_gap
-                );
-                assert!(check.shoved_ticks > 0, "{name} on {backend}: no shove");
-                assert!(check.stomped, "{name} on {backend}: no stomp landed");
-            }
-        }
-        if let Workload::Bots(scenario) = &workload {
-            // The replay drives the zone as the bot runner does: Rapier reproduces the
-            // scenario's expected positions exactly.
-            for expectation in &scenario.positions {
-                let tick = usize::try_from(expectation.tick)? - 1;
-                let at = |trace: &Trace| {
-                    let player = u32::try_from(expectation.bot)? + 1;
-                    trace.snapshots[tick]
-                        .players
-                        .iter()
-                        .find(|state| state.player_id == player)
-                        .map(|state| mmorpg_core::physics::to_units(state.position))
-                        .ok_or_else(|| Box::<dyn Error>::from("missing player"))
-                };
-                assert_eq!(
-                    at(&rapier)?,
-                    expectation.position,
-                    "{name} Rapier expectation"
-                );
-                let engine_at = at(&engine)?;
-                if engine_at != expectation.position {
-                    println!(
-                        "  {name} tick {}: engine at {engine_at:?}, scenario expects {:?}",
-                        expectation.tick, expectation.position
-                    );
-                }
-            }
-        }
-        // Scripted walks over slopes agree within the owner's climb allowance until their fight.
-        if let Some(&(_, until)) = CLIMBS.iter().find(|(climb, _)| *climb == name) {
-            let [worst, allowance] = check_climb(&rapier, &engine, until)
-                .map_err(|error| format!("{name}: players diverge on the climb: {error}"))?;
-            println!(
-                "  {name}: players part by at most {worst:.2} units (allowed {allowance:.2}) to \
-                 tick {until}"
-            );
-        }
-        // Workloads whose players are only scripted (no fixture placement inside geometry)
-        // must agree: positions within the tolerance, the same command outcomes and doors.
-        if SCRIPTED.contains(&name.as_str()) {
-            assert!(
-                horizontal <= SCRIPTED_POSITION_TOLERANCE_UNITS + crate_gap
-                    && vertical <= SCRIPTED_POSITION_TOLERANCE_UNITS,
-                "{name}: players diverge by Δxz={horizontal} Δy={vertical}"
-            );
-            assert!(!outcomes_differ, "{name}: command outcomes differ");
-            // Both report ground within the contact offset plus 5 cm: the scripted players'
-            // grounded state agrees on every tick.
-            for (tick, (a, b)) in rapier.units.iter().zip(&engine.units).enumerate() {
-                let players = |units: &[UnitBody]| -> Vec<_> {
-                    units
-                        .iter()
-                        .filter(|unit| matches!(unit.unit, EntityRef::Player(_)))
-                        .map(|unit| (unit.unit, unit.grounded))
-                        .collect()
-                };
-                assert_eq!(
-                    players(a),
-                    players(b),
-                    "{name}: grounded differs at tick {}",
-                    tick + 1
-                );
-            }
-            assert!(!doors_differ, "{name}: door states differ");
         }
     }
+    if matches!(workload, Workload::Climb) {
+        // On each backend the climber ends on the crag's top and the mantler on the dock's
+        // deck (#490).
+        for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+            check_wall_climb(trace).map_err(|failure| format!("{name} on {backend}: {failure}"))?;
+        }
+    }
+    if matches!(workload, Workload::Roll) {
+        // On each backend every player rolls, the crag stops one without a climb and the
+        // dock roller lands on the ground beyond the deck (#516).
+        for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+            check_rolls(trace).map_err(|failure| format!("{name} on {backend}: {failure}"))?;
+        }
+    }
+    if matches!(workload, Workload::MillHoist) {
+        // On each backend the hoist carries its rider to the gallery (#56).
+        for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+            check_mill_hoist(trace).map_err(|failure| format!("{name} on {backend}: {failure}"))?;
+        }
+    }
+    if matches!(workload, Workload::WatchPost) {
+        // On each backend the fight breaks pieces of the post (#305).
+        for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+            let last = trace.snapshots.last().ok_or("empty watch post trace")?;
+            let content = mmorpg_core::greyhaven_vale::content();
+            let damaged: Vec<_> = last
+                .pieces
+                .iter()
+                .zip(content.pieces())
+                .filter(|(state, piece)| state.health < piece.health)
+                .map(|(state, _)| (state.piece.get(), state.health))
+                .collect();
+            println!("  {name} on {backend}: pieces {damaged:?}");
+            assert!(!damaged.is_empty(), "{name} on {backend}: no piece damaged");
+        }
+    }
+    if matches!(workload, Workload::WatchPost) {
+        // The same blasts and arrows break the same pieces on both backends.
+        let pieces = |trace: &Trace| trace.snapshots.last().map(|last| last.pieces.clone());
+        assert_eq!(
+            pieces(&rapier),
+            pieces(&engine),
+            "{name}: piece states differ"
+        );
+    }
+    if matches!(workload, Workload::ChargePath) {
+        // On each backend some Warden charges (#57).
+        for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+            let charging: std::collections::BTreeSet<_> = trace
+                .snapshots
+                .iter()
+                .flat_map(|snapshot| &snapshot.forced)
+                .filter(|(unit, state)| {
+                    matches!(unit, EntityRef::Player(_))
+                        && state.moving.is_some_and(|moving| moving.charge.is_some())
+                })
+                .map(|(unit, _)| *unit)
+                .collect();
+            println!("  {name} on {backend}: charged {charging:?}");
+            assert!(!charging.is_empty(), "{name} on {backend}: nobody charged");
+        }
+    }
+    if matches!(workload, Workload::Missiles) {
+        // On each backend the homing Firebolts fly and strike wolves or trunks in the way, and
+        // the free ones fly straight (#289); both arms spend the same missiles the same way.
+        let outcomes = |trace: &Trace| -> std::collections::BTreeMap<u32, (bool, [f32; 3])> {
+            trace
+                .snapshots
+                .iter()
+                .flat_map(|snapshot| &snapshot.projectiles)
+                .filter_map(|projectile| match projectile.flight {
+                    mmorpg_core::Flight::Stuck { unit, .. }
+                        if projectile.kind == mmorpg_core::ProjectileKind::Missile =>
+                    {
+                        Some((projectile.id, (unit.is_some(), projectile.position)))
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let (a, b) = (outcomes(&rapier), outcomes(&engine));
+        let struck = |outcome: &std::collections::BTreeMap<u32, (bool, [f32; 3])>| {
+            outcome
+                .iter()
+                .filter(|(_, (unit, _))| *unit)
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>()
+        };
+        println!(
+            "  {name}: missiles struck units {:?} / {:?}, spent {} / {}",
+            struck(&a),
+            struck(&b),
+            a.len(),
+            b.len()
+        );
+        assert!(
+            !struck(&a).is_empty(),
+            "{name} on rapier: no missile struck"
+        );
+        assert!(
+            !struck(&b).is_empty(),
+            "{name} on engine: no missile struck"
+        );
+        let same_ends =
+            a.keys().eq(b.keys()) && a.values().zip(b.values()).all(|(x, y)| x.0 == y.0);
+        assert!(same_ends, "{name}: missiles end differently: {a:?} / {b:?}");
+        // Missiles spent in the world end within the creatures' drift of each other.
+        let gap = a
+            .values()
+            .zip(b.values())
+            .filter(|(x, _)| !x.0)
+            .map(|(x, y)| (x.1[0] - y.1[0]).hypot(x.1[2] - y.1[2]))
+            .fold(0.0_f32, f32::max);
+        println!("  {name}: missiles spent in the world part by at most {gap:.3}");
+    }
+    if matches!(workload, Workload::CrateShove) {
+        // On each backend both bashes slide their crates over a metre and they come to rest
+        // (#58), where they agree (both average the pair's materials, physics-engine #391).
+        let crates = |trace: &Trace| -> Vec<([f32; 3], [f32; 3])> {
+            let last = trace.snapshots.last().expect("crate trace");
+            [917, 918]
+                .map(|id| {
+                    let record = last
+                        .creatures
+                        .iter()
+                        .find(|record| record.creature_id.get() == id)
+                        .expect("heavy crate");
+                    (record.position, record.velocity)
+                })
+                .to_vec()
+        };
+        for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+            let ends = crates(trace);
+            println!("  {name} on {backend}: crates end at {ends:?}");
+            for ((position, velocity), start) in ends.iter().zip([7_400.0, 7_550.0]) {
+                assert_eq!(
+                    *velocity, [0.0; 3],
+                    "{name} on {backend}: a crate still slides"
+                );
+                assert!(
+                    position[2] > 3_300.0 && (position[0] - start).abs() < 20.0,
+                    "{name} on {backend}: a crate did not slide north: {position:?}"
+                );
+            }
+        }
+        let gap = crates(&rapier)
+            .iter()
+            .zip(crates(&engine))
+            .map(|((a, _), (b, _))| (a[0] - b[0]).hypot(a[2] - b[2]))
+            .fold(0.0_f32, f32::max);
+        // physics-engine's `props` oracle bound: within 5% of each slide (about 265 units).
+        assert!(gap <= 13.0, "{name}: crates part by {gap}");
+        crate_gap = gap;
+    }
+    if matches!(workload, Workload::CrateSmash) {
+        check_crate_smash(&name, &rapier, &engine);
+    }
+    if matches!(workload, Workload::MillRamps) {
+        // Both hold the chute's walker at its foot (physics-engine #351: too-steep slopes are
+        // walls); they part only where Rapier's controller tops the dock's edge 2.5 units
+        // high for a tick before settling.
+        assert!(
+            horizontal <= 2.0 && vertical <= 3.0,
+            "{name}: players diverge by Δxz={horizontal} Δy={vertical}"
+        );
+    }
+    if matches!(workload, Workload::MillRamps) {
+        for (trace, backend) in [(&rapier, "rapier"), (&engine, "engine")] {
+            check_mill_ramps(trace).map_err(|failure| format!("{name} on {backend}: {failure}"))?;
+        }
+    }
+    if matches!(workload, Workload::OgreBrawl) {
+        // On each backend the ogre's body blocks every player, it shoves the ones in its
+        // way and its stomps land (#297).
+        for (check, backend) in [(&rapier_check, "rapier"), (&engine_check, "engine")] {
+            println!(
+                "  {name} on {backend}: ogre–player gap ≥ {:.4}, {} shoved player-ticks, stomped={}",
+                check.ogre_gap, check.shoved_ticks, check.stomped
+            );
+            assert!(
+                check.ogre_gap >= -PENETRATION_TOLERANCE_UNITS,
+                "{name} on {backend}: a player inside the ogre by {}",
+                -check.ogre_gap
+            );
+            assert!(check.shoved_ticks > 0, "{name} on {backend}: no shove");
+            assert!(check.stomped, "{name} on {backend}: no stomp landed");
+        }
+    }
+    if let Workload::Bots(scenario) = &workload {
+        // The replay drives the zone as the bot runner does: Rapier reproduces the
+        // scenario's expected positions exactly.
+        for expectation in &scenario.positions {
+            let tick = usize::try_from(expectation.tick)? - 1;
+            let at = |trace: &Trace| {
+                let player = u32::try_from(expectation.bot)? + 1;
+                trace.snapshots[tick]
+                    .players
+                    .iter()
+                    .find(|state| state.player_id == player)
+                    .map(|state| mmorpg_core::physics::to_units(state.position))
+                    .ok_or_else(|| Box::<dyn Error>::from("missing player"))
+            };
+            assert_eq!(
+                at(&rapier)?,
+                expectation.position,
+                "{name} Rapier expectation"
+            );
+            let engine_at = at(&engine)?;
+            if engine_at != expectation.position {
+                println!(
+                    "  {name} tick {}: engine at {engine_at:?}, scenario expects {:?}",
+                    expectation.tick, expectation.position
+                );
+            }
+        }
+    }
+    // Scripted walks over slopes agree within the owner's climb allowance until their fight.
+    if let Some(&(_, until)) = CLIMBS.iter().find(|(climb, _)| *climb == name) {
+        let [worst, allowance] = check_climb(&rapier, &engine, until)
+            .map_err(|error| format!("{name}: players diverge on the climb: {error}"))?;
+        println!(
+            "  {name}: players part by at most {worst:.2} units (allowed {allowance:.2}) to \
+             tick {until}"
+        );
+    }
+    // Workloads whose players are only scripted (no fixture placement inside geometry)
+    // must agree: positions within the tolerance, the same command outcomes and doors.
+    if SCRIPTED.contains(&name.as_str()) {
+        assert!(
+            horizontal <= SCRIPTED_POSITION_TOLERANCE_UNITS + crate_gap
+                && vertical <= SCRIPTED_POSITION_TOLERANCE_UNITS,
+            "{name}: players diverge by Δxz={horizontal} Δy={vertical}"
+        );
+        assert!(!outcomes_differ, "{name}: command outcomes differ");
+        // Both report ground within the contact offset plus 5 cm: the scripted players'
+        // grounded state agrees on every tick.
+        for (tick, (a, b)) in rapier.units.iter().zip(&engine.units).enumerate() {
+            let players = |units: &[UnitBody]| -> Vec<_> {
+                units
+                    .iter()
+                    .filter(|unit| matches!(unit.unit, EntityRef::Player(_)))
+                    .map(|unit| (unit.unit, unit.grounded))
+                    .collect()
+            };
+            assert_eq!(
+                players(a),
+                players(b),
+                "{name}: grounded differs at tick {}",
+                tick + 1
+            );
+        }
+        assert!(!doors_differ, "{name}: door states differ");
+    }
     Ok(())
+}
+
+fn main() {
+    let arguments = libtest_mimic::Arguments::from_args();
+    let trials = drivers::workloads()
+        .expect("the A/B workloads load")
+        .into_iter()
+        .map(|workload| {
+            let name = workload.name().to_owned();
+            libtest_mimic::Trial::test(name, move || {
+                check_workload(workload).map_err(|error| error.to_string().into())
+            })
+        })
+        .collect();
+    libtest_mimic::run(&arguments, trials).exit();
 }

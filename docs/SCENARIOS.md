@@ -158,7 +158,7 @@ Step lines show owners as `zone<id>=<host>@<epoch><<deadline>`. Violations print
 Every `scenarios/<tool>/<name>.toml` has a `<name>.expected` text output. `cargo test --workspace --all-features --locked` requires each checked-in scenario to pass and reproduce its expected output byte for byte. After an intentional change, regenerate the files and review the diff:
 
 ```sh
-MMORPG_SCENARIOS_UPDATE=1 cargo test -p mmorpg-scenarios --test scenarios --locked
+MMORPG_SCENARIOS_UPDATE=1 cargo test -p mmorpg-scenarios --locked
 ```
 
 ## Limits
