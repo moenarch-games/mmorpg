@@ -33,6 +33,7 @@ use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU32, Ordering},
 };
+use strum::VariantArray;
 
 use mmorpg_core::{
     PLAYER_HALF_EXTENTS_UNITS, StaticCollider, UNITS_PER_METRE, ZoneAreas, ZoneContent, ZoneId,
@@ -246,7 +247,7 @@ pub(crate) fn export(
         player_half_extents: PLAYER_HALF_EXTENTS_UNITS,
         terrain: terrain(&scenery.terrain_grid(TERRAIN_STEP_UNITS)),
         far_terrain: terrain(&scenery.far_terrain_grid(FAR_TERRAIN_STEP_UNITS)),
-        biomes: mmorpg_scenery::Biome::ALL
+        biomes: mmorpg_scenery::Biome::VARIANTS
             .iter()
             .map(|biome| Biome {
                 id: biome.id(),
@@ -254,7 +255,7 @@ pub(crate) fn export(
                 color: hex(biome.base_color()),
             })
             .collect(),
-        prop_kinds: PropKind::ALL.iter().map(|kind| kind.name()).collect(),
+        prop_kinds: PropKind::all().iter().map(|kind| kind.name()).collect(),
         props: scenery
             .props
             .iter()
@@ -324,10 +325,10 @@ fn terrain(grid: &TerrainGrid) -> Terrain {
 
 /// The index of a kind in the exported kind table.
 fn kind_index(kind: PropKind) -> i32 {
-    let index = PropKind::ALL
+    let index = PropKind::all()
         .iter()
         .position(|candidate| *candidate == kind)
-        .expect("PropKind::ALL lists every kind");
+        .expect("PropKind::all() lists every kind");
     i32::try_from(index).expect("kind table fits i32")
 }
 
@@ -405,7 +406,7 @@ mod tests {
                 "collider {id}"
             );
             let prop = export.props[usize::try_from(structure.prop).unwrap()];
-            let kind = PropKind::ALL[usize::try_from(prop[0]).unwrap()];
+            let kind = PropKind::all()[usize::try_from(prop[0]).unwrap()];
             assert_eq!(Some(kind), visual_kind(collider), "collider {id}");
             // The prop's feet are the bottom centre of its collider on flat relief.
             assert_eq!(
@@ -427,7 +428,7 @@ mod tests {
         let scenery = hosted_scenery();
         let export = hosted_export();
         assert_eq!(export.props.len(), scenery.props.len());
-        assert_eq!(export.prop_kinds.len(), PropKind::ALL.len());
+        assert_eq!(export.prop_kinds.len(), PropKind::all().len());
         for (record, prop) in export.props.iter().zip(&scenery.props) {
             let [x, feet, z] = prop.position;
             let kind = usize::try_from(record[0]).unwrap();

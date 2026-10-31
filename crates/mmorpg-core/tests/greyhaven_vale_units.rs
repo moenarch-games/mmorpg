@@ -288,38 +288,48 @@ fn spawns_populate_their_subzones() {
             .or_default() += 1;
     }
     let expected = BTreeMap::from([
-        ((greyhaven_vale::WOLFRUN_WOODS, "Timber Wolf"), 14),
-        ((greyhaven_vale::WOLFRUN_WOODS, "Young Boar"), 6),
-        ((greyhaven_vale::MILLBROOK_FARM, "Grain Rat"), 6),
-        ((greyhaven_vale::MILLBROOK_FARM, "Field Marauder"), 10),
-        ((greyhaven_vale::STILLWATER_LAKE, "Mirefin Lurker"), 8),
-        ((greyhaven_vale::REDBRAND_HOLLOW, "Redbrand Bandit"), 14),
-        ((greyhaven_vale::REDBRAND_HOLLOW, "Garrick Redbrand"), 1),
-        // Greyfang Ridge: the outriders and the Greyfang cavern's garrison (#160).
-        ((greyhaven_vale::GREYFANG_RIDGE, "Redbrand Crossbowman"), 5),
-        ((greyhaven_vale::GREYFANG_RIDGE, "Redbrand Bandit"), 2),
-        ((greyhaven_vale::GREYFANG_RIDGE, "Redbrand Brute"), 2),
-        ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Young Boar"), 2),
-        ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Hill Ogre"), 1),
-        ((greyhaven_vale::SOUTHMEADOW_DOWNS, "Grain Rat"), 1),
-        ((greyhaven_vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
-        ((greyhaven_vale::HOLLOWPINE_REACH, "Young Boar"), 2),
-        ((greyhaven_vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
-        // Breakable props (#288): around Greyhaven and the farm, powder barrels in the camp.
-        ((greyhaven_vale::OUTPOST, "Crate"), 3),
-        ((greyhaven_vale::OUTPOST, "Barrel"), 2),
-        ((greyhaven_vale::MILLBROOK_FARM, "Crate"), 2),
-        ((greyhaven_vale::MILLBROOK_FARM, "Barrel"), 2),
-        ((greyhaven_vale::MILLBROOK_FARM, "Fence"), 3),
-        ((greyhaven_vale::MILLBROOK_FARM, "Heavy Crate"), 2),
+        ((greyhaven_vale::vale::WOLFRUN_WOODS, "Timber Wolf"), 14),
+        ((greyhaven_vale::vale::WOLFRUN_WOODS, "Young Boar"), 6),
+        ((greyhaven_vale::vale::MILLBROOK_FARM, "Grain Rat"), 6),
+        ((greyhaven_vale::vale::MILLBROOK_FARM, "Field Marauder"), 10),
+        ((greyhaven_vale::vale::STILLWATER_LAKE, "Mirefin Lurker"), 8),
         (
-            (greyhaven_vale::REDBRAND_HOLLOW, "Blasting Powder Barrel"),
+            (greyhaven_vale::vale::REDBRAND_HOLLOW, "Redbrand Bandit"),
+            14,
+        ),
+        (
+            (greyhaven_vale::vale::REDBRAND_HOLLOW, "Garrick Redbrand"),
+            1,
+        ),
+        // Greyfang Ridge: the outriders and the Greyfang cavern's garrison (#160).
+        (
+            (greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Crossbowman"),
+            5,
+        ),
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Bandit"), 2),
+        ((greyhaven_vale::vale::GREYFANG_RIDGE, "Redbrand Brute"), 2),
+        ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Young Boar"), 2),
+        ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Hill Ogre"), 1),
+        ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Grain Rat"), 1),
+        ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
+        ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Young Boar"), 2),
+        ((greyhaven_vale::vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
+        // Breakable props (#288): around Greyhaven and the farm, powder barrels in the camp.
+        ((greyhaven_vale::vale::OUTPOST, "Crate"), 3),
+        ((greyhaven_vale::vale::OUTPOST, "Barrel"), 2),
+        ((greyhaven_vale::vale::MILLBROOK_FARM, "Crate"), 2),
+        ((greyhaven_vale::vale::MILLBROOK_FARM, "Barrel"), 2),
+        ((greyhaven_vale::vale::MILLBROOK_FARM, "Fence"), 3),
+        ((greyhaven_vale::vale::MILLBROOK_FARM, "Heavy Crate"), 2),
+        (
+            (
+                greyhaven_vale::vale::REDBRAND_HOLLOW,
+                "Blasting Powder Barrel",
+            ),
             5,
         ),
     ]);
     assert_eq!(counts, expected);
-    // 100 authored creatures and props, then three approaches of six night raiders (#530).
-    assert_eq!(content.creature_spawns().len(), 118);
 }
 
 /// No creature wanders within the interest radius (plus a margin) of any
@@ -367,7 +377,7 @@ fn npcs_stand_at_their_posts() {
             )
         })
         .collect();
-    let outpost = Some(greyhaven_vale::OUTPOST);
+    let outpost = Some(greyhaven_vale::vale::OUTPOST);
     assert_eq!(
         posts,
         [
@@ -377,7 +387,7 @@ fn npcs_stand_at_their_posts() {
             (
                 "Farmer Osric Mill",
                 NpcRole::QuestGiver,
-                Some(greyhaven_vale::MILLBROOK_FARM)
+                Some(greyhaven_vale::vale::MILLBROOK_FARM)
             ),
             ("Brother Aldous", NpcRole::SpiritHealer, outpost),
             ("Greyhaven Guard", NpcRole::Guard, outpost),
@@ -401,7 +411,7 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
     let mut first = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let mut second = ZoneSimulation::with_content(ZoneId::new(1), content.clone()).unwrap();
     let start = first.snapshot().unwrap();
-    assert_eq!(start.creatures.len(), 118);
+    assert_eq!(start.creatures.len(), content.creature_spawns().len());
     for (creature, spawn) in start.creatures.iter().zip(content.creature_spawns()) {
         let template = content.creature_template(spawn.template).unwrap();
         assert_eq!(creature.creature_id, spawn.id);

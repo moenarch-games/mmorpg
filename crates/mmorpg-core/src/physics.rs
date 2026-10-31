@@ -390,7 +390,7 @@ pub struct StepStats {
 
 /// Which physics backend a [`World`] runs on (physics-engine #330, test/bench only).
 #[cfg(feature = "physics-ab")]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum Backend {
     /// Rapier, the production authority.
     Rapier,
@@ -400,8 +400,6 @@ pub enum Backend {
 
 #[cfg(feature = "physics-ab")]
 impl Backend {
-    pub const ALL: [Self; 2] = [Self::Rapier, Self::Engine];
-
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {

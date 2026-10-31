@@ -2,6 +2,7 @@
 //! intersecting physical content it does not visualise, and flat wherever
 //! units walk on structures, roads, the plaza or water.
 use std::collections::BTreeMap;
+use strum::VariantArray;
 
 use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_GRID, SPAWN_PLAZA, ids, shrine};
 use mmorpg_core::{Area, MAX_PLAYERS_PER_ZONE, StaticCollider, greyhaven_vale_definition};
@@ -206,13 +207,13 @@ fn walkable_water_has_no_colliders() {
     for water in wetlands {
         assert_eq!(
             greyhaven_vale::area_at(water.centre[0], water.centre[1]).map(Area::id),
-            Some(greyhaven_vale::MARSH_LAKE_WETLANDS)
+            Some(greyhaven_vale::marsh::MARSH_LAKE_WETLANDS)
         );
     }
     assert!(lake.contains(5_500, -5_500));
     assert_eq!(
         greyhaven_vale::area_at(lake.centre[0], lake.centre[1]).map(Area::id),
-        Some(greyhaven_vale::STILLWATER_LAKE)
+        Some(greyhaven_vale::vale::STILLWATER_LAKE)
     );
     // The Sunken Shrine (#274) lies on the deep lake's floor, not in its walkable shallows.
     let sunken = |id: u32| {
@@ -393,16 +394,16 @@ fn terrain_grid_samples_relief_and_biomes() {
 
 #[test]
 fn terrain_biomes_name_every_vertex_colour() {
-    let ids: Vec<u8> = Biome::ALL.iter().map(|biome| biome.id()).collect();
+    let ids: Vec<u8> = Biome::VARIANTS.iter().map(|biome| biome.id()).collect();
     assert_eq!(
         ids,
         (0..13).collect::<Vec<u8>>(),
         "ids follow declaration order"
     );
-    let mut names: Vec<_> = Biome::ALL.iter().map(|biome| biome.name()).collect();
+    let mut names: Vec<_> = Biome::VARIANTS.iter().map(|biome| biome.name()).collect();
     names.sort_unstable();
     names.dedup();
-    assert_eq!(names.len(), Biome::ALL.len(), "names are unique");
+    assert_eq!(names.len(), Biome::VARIANTS.len(), "names are unique");
 
     let scenery = greyhaven_vale_scenery();
     let grid = scenery.terrain_grid(200);
@@ -544,7 +545,7 @@ fn prop_counts_stay_within_their_budgets() {
 
 #[test]
 fn prop_kind_names_are_unique_and_cover_every_placed_kind() {
-    let mut names: Vec<_> = PropKind::ALL.iter().map(|kind| kind.name()).collect();
+    let mut names: Vec<_> = PropKind::all().iter().map(|kind| kind.name()).collect();
     assert!(names.iter().all(|name| {
         !name.is_empty()
             && name
@@ -553,10 +554,10 @@ fn prop_kind_names_are_unique_and_cover_every_placed_kind() {
     }));
     names.sort_unstable();
     names.dedup();
-    assert_eq!(names.len(), PropKind::ALL.len(), "names are unique");
+    assert_eq!(names.len(), PropKind::all().len(), "names are unique");
     let scenery = greyhaven_vale_scenery();
     for prop in &scenery.props {
-        assert!(PropKind::ALL.contains(&prop.kind), "{:?}", prop.kind);
+        assert!(PropKind::all().contains(&prop.kind), "{:?}", prop.kind);
     }
 }
 

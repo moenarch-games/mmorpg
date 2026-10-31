@@ -104,8 +104,8 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
     }
     // The inn and the Sunken Shrine are drawn from their asset-tooling bundles
     // (`mmorpg_presentation::buildings`, `mmorpg_presentation::shrine`).
-    for kind in PropKind::ALL
-        .into_iter()
+    for &kind in PropKind::all()
+        .iter()
         .filter(|kind| !matches!(kind, PropKind::Inn | PropKind::ShrineKit))
     {
         assert!(

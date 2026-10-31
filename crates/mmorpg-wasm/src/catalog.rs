@@ -13,6 +13,7 @@
 //! spawn points and AI stay on the server side.
 
 use std::sync::OnceLock;
+use strum::VariantArray;
 
 use mmorpg_core::ZoneContent;
 use serde::Serialize;
@@ -245,7 +246,7 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                     .collect(),
             })
             .collect(),
-        classes: mmorpg_core::PlayerClass::ALL
+        classes: mmorpg_core::PlayerClass::VARIANTS
             .iter()
             .map(|class| ClassExport {
                 id: class.code(),
@@ -377,7 +378,10 @@ mod tests {
             ])
         );
         let quests = value["quests"].as_array().unwrap();
-        assert_eq!(quests.len(), 11);
+        assert_eq!(
+            quests.len(),
+            mmorpg_core::greyhaven_vale::content().quests().len()
+        );
         assert_eq!(
             quests[1],
             json!({

@@ -5,6 +5,7 @@
 //! existing intent ([`UiIntent`]) that the window turns into the same shared
 //! commands as the keyboard. The zone decides what happens; this module owns
 //! no gameplay legality, quest progress or inventory transactions.
+use strum::VariantArray;
 mod ability_art;
 pub mod bindings;
 pub mod chat;
@@ -466,7 +467,7 @@ impl GameUi {
                         ));
                         ui.label("Headwear");
                         ui.horizontal(|ui| {
-                            for hat in Headwear::ALL {
+                            for &hat in Headwear::VARIANTS {
                                 if ui
                                     .selectable_label(character.headwear == hat, hat.title())
                                     .clicked()
@@ -519,7 +520,7 @@ impl GameUi {
                         window.name_focused = edit.has_focus();
                         ui.label("Class");
                         ui.horizontal(|ui| {
-                            for class in PlayerClass::ALL {
+                            for &class in PlayerClass::VARIANTS {
                                 if ui
                                     .selectable_value(&mut window.class, class, class_title(class))
                                     .clicked()
@@ -552,7 +553,7 @@ impl GameUi {
                         });
                         ui.label("Headwear");
                         ui.horizontal(|ui| {
-                            for hat in Headwear::ALL {
+                            for &hat in Headwear::VARIANTS {
                                 ui.selectable_value(&mut window.headwear, hat, hat.title());
                             }
                         });

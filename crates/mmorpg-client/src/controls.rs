@@ -13,10 +13,11 @@ use input_bindings_core::{
     RuntimeActionPhase, RuntimeDecision, RuntimeDispatchReason, SemanticControlState, WhenExpr,
 };
 use std::collections::BTreeMap;
+use strum::{IntoEnumIterator, VariantArray};
 use winit::keyboard::KeyCode;
 
 /// A semantic action the native client resolves from input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, strum::EnumIter)]
 pub enum ControlAction {
     MoveForward,
     MoveBackward,
@@ -47,9 +48,10 @@ pub enum ControlAction {
 }
 
 /// The four minion orders, as in the browser's `minions.*` actions.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, strum::VariantArray)]
 pub enum MinionCommand {
     /// Attack the selected creature.
+    #[default]
     Attack,
     /// Defend the spot the summoner stands on.
     Defend,
@@ -58,45 +60,38 @@ pub enum MinionCommand {
 }
 
 /// A toggled interface window, as in the browser's `ui.toggle*` actions.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, strum::VariantArray)]
 pub enum Panel {
+    #[default]
     Bags,
     Character,
     QuestLog,
 }
 
+/// The action-bar slots with a key, numbered from 1.
+pub const ABILITY_SLOTS: u8 = 8;
+
 impl ControlAction {
-    /// Every control action in catalog order.
-    pub const ALL: [Self; 28] = [
-        Self::MoveForward,
-        Self::MoveBackward,
-        Self::MoveLeft,
-        Self::MoveRight,
-        Self::Jump,
-        Self::Roll,
-        Self::Descend,
-        Self::TargetNext,
-        Self::Swing,
-        Self::ReleaseSpirit,
-        Self::AbilitySlot(1),
-        Self::AbilitySlot(2),
-        Self::AbilitySlot(3),
-        Self::AbilitySlot(4),
-        Self::AbilitySlot(5),
-        Self::AbilitySlot(6),
-        Self::AbilitySlot(7),
-        Self::AbilitySlot(8),
-        Self::CancelCast,
-        Self::TogglePanel(Panel::Bags),
-        Self::TogglePanel(Panel::Character),
-        Self::TogglePanel(Panel::QuestLog),
-        Self::OpenChat,
-        Self::Guard,
-        Self::Minions(MinionCommand::Attack),
-        Self::Minions(MinionCommand::Defend),
-        Self::Minions(MinionCommand::Follow),
-        Self::Minions(MinionCommand::Retreat),
-    ];
+    /// Every control action in catalog order: declaration order, with its slots, panels and
+    /// minion commands flattened.
+    pub fn all() -> impl Iterator<Item = Self> {
+        Self::iter().flat_map(|action| -> Vec<Self> {
+            match action {
+                Self::AbilitySlot(_) => (1..=ABILITY_SLOTS).map(Self::AbilitySlot).collect(),
+                Self::TogglePanel(_) => Panel::VARIANTS
+                    .iter()
+                    .copied()
+                    .map(Self::TogglePanel)
+                    .collect(),
+                Self::Minions(_) => MinionCommand::VARIANTS
+                    .iter()
+                    .copied()
+                    .map(Self::Minions)
+                    .collect(),
+                action => vec![action],
+            }
+        })
+    }
 
     /// The shared semantic id. A slot outside 1–8 is no control action and has
     /// the empty id, which no binding uses.
@@ -136,7 +131,7 @@ impl ControlAction {
     }
 
     fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|action| action.id() == id)
+        Self::all().find(|action| action.id() == id)
     }
 
     /// Title, context and default physical keys, as in the browser catalog.
@@ -217,8 +212,7 @@ const NO_CLOCK_MS: u64 = 0;
 #[must_use]
 pub fn native_action_registry() -> ActionRegistry {
     ActionRegistry {
-        actions: ControlAction::ALL
-            .into_iter()
+        actions: ControlAction::all()
             .map(|action| {
                 let id = action.id();
                 let (title, context, keys) = action.default_binding();

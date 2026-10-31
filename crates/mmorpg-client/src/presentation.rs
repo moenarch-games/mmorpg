@@ -8,6 +8,7 @@
 //! by disposition (hostile red-ish, neutral yellow-ish) and shaded by family,
 //! NPCs green-ish; corpses lie flat, and the viewer's target stands on a
 //! marker. Names come from the zone content.
+use strum::VariantArray;
 mod skinned;
 
 use crate::{
@@ -170,7 +171,7 @@ impl Presentation {
             .collect();
         let mut units_presenter =
             UnitPresenter::new(player_id, Arc::clone(&content), Arc::new(scenery.clone()));
-        for kind in Kind::ALL {
+        for &kind in Kind::VARIANTS {
             units_presenter.model_ready(kind, skinned::asset(kind).model.clip_durations());
         }
         // The residents and humanoid enemies wear their presets on the Ranger (#418, #39).

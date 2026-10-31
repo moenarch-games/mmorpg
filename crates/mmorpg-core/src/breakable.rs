@@ -405,6 +405,7 @@ impl ZoneSimulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::VariantArray;
 
     #[test]
     fn pieces_turn_with_the_prop() {
@@ -412,7 +413,7 @@ mod tests {
         assert!(x.abs() < 1.0e-3 && (z + 100.0).abs() < 1.0e-3, "{x} {z}");
         let [x, z] = turned(16_384, [0.0, 100.0]);
         assert!((x - 100.0).abs() < 1.0e-3 && z.abs() < 1.0e-3, "{x} {z}");
-        for kind in PropKind::ALL {
+        for &kind in PropKind::VARIANTS {
             assert!(!debris_pieces(kind).is_empty());
         }
     }

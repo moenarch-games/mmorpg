@@ -32,6 +32,7 @@ pub mod quests;
 pub mod raid;
 pub mod shrine;
 pub mod units;
+pub mod vale;
 
 /// The fixed simulation seed, independent of the content revision, so content and economy
 /// changes do not reroll Greyhaven's existing creature/combat scripts.
@@ -192,147 +193,30 @@ pub mod ids {
     pub const MARSH_BUILDINGS: RangeInclusive<u32> = 6_400..=6_499;
 }
 
-/// The marsh structure a collider ID belongs to (#426).
-#[must_use]
-pub fn marsh_building(id: u32) -> Option<marsh::Building> {
-    let index = id.checked_sub(*ids::MARSH_BUILDINGS.start())?;
-    marsh::BUILDINGS
-        .get(usize::try_from(index).ok()?)
-        .map(|building| building.0)
+/// One region's tables (#542): its named areas, its roads and its own colliders. Each region
+/// module defines its `REGION`; [`REGIONS`] lists them once, and the zone concatenates their
+/// tables in that order. A new region adds its module and one line there.
+struct Region {
+    /// `(id, name, half-open bounds)`, like every other rectangle in this module.
+    areas: &'static [(AreaId, &'static str, XzBounds)],
+    roads: &'static [Road],
+    /// The region's colliders, beside the frame's ground, walls, trees and ladders.
+    colliders: fn() -> Vec<StaticCollider>,
 }
 
-/// The highland structure a collider ID belongs to (#425).
-#[must_use]
-pub fn highland_building(id: u32) -> Option<highlands::Building> {
-    let index = id.checked_sub(*ids::HIGHLAND_BUILDINGS.start())?;
-    highlands::BUILDINGS
-        .get(usize::try_from(index).ok()?)
-        .map(|building| building.0)
-}
-
-/// The farmland building a collider ID belongs to (#424).
-#[must_use]
-pub fn farmland_building(id: u32) -> Option<farmland::Building> {
-    let index = id.checked_sub(*ids::FARMLAND_BUILDINGS.start())?;
-    farmland::BUILDINGS
-        .get(usize::try_from(index).ok()?)
-        .map(|building| building.0)
-}
-
-pub const OUTPOST: AreaId = AreaId::new(1);
-pub const WOLFRUN_WOODS: AreaId = AreaId::new(2);
-pub const MILLBROOK_FARM: AreaId = AreaId::new(3);
-pub const STILLWATER_LAKE: AreaId = AreaId::new(4);
-pub const REDBRAND_HOLLOW: AreaId = AreaId::new(5);
-pub const GREYFANG_RIDGE: AreaId = AreaId::new(6);
-pub const SOUTHMEADOW_DOWNS: AreaId = AreaId::new(7);
-pub const HOLLOWPINE_REACH: AreaId = AreaId::new(8);
-pub const EASTWATER_FEN: AreaId = AreaId::new(9);
-/// The Sunken Shrine's altar chamber (#274), the relic's retrieve area.
-pub const SUNKEN_SHRINE: AreaId = AreaId::new(10);
-/// The first major region beyond the Vale (#424): its ridge and plateau.
-pub const FARMLAND_AND_HAMLETS: AreaId = AreaId::new(11);
-/// The second major region beyond the Vale (#425): its escarpment and high ground.
-pub const BANDIT_HIGHLANDS: AreaId = AreaId::new(12);
-/// The third major region beyond the Vale (#426): its ridge and wetlands.
-pub const MARSH_LAKE_WETLANDS: AreaId = AreaId::new(13);
-
-/// The subzones as `(id, name, half-open bounds)`, like every other
-/// rectangle in this module. Bounds are disjoint.
-const AREA_TABLE: [(AreaId, &str, XzBounds); 13] = [
-    (
-        OUTPOST,
-        "Greyhaven Outpost",
-        XzBounds {
-            min: [-3_500, -1_300],
-            max: [3_500, 5_300],
-        },
-    ),
-    (
-        WOLFRUN_WOODS,
-        "Wolfrun Woods",
-        XzBounds {
-            min: [-11_900, -5_000],
-            max: [-4_000, 5_000],
-        },
-    ),
-    (
-        MILLBROOK_FARM,
-        "Millbrook Farm",
-        XzBounds {
-            min: [4_000, 1_300],
-            max: [10_500, 9_000],
-        },
-    ),
-    (
-        STILLWATER_LAKE,
-        "Stillwater Lake",
-        XzBounds {
-            min: [3_600, -7_800],
-            max: [8_600, -3_200],
-        },
-    ),
-    (
-        REDBRAND_HOLLOW,
-        "Redbrand Hollow",
-        XzBounds {
-            min: [-3_500, -11_900],
-            max: [3_500, -7_000],
-        },
-    ),
-    // The outer valley (#159): a ring of four regions around the original five.
-    (
-        GREYFANG_RIDGE,
-        "Greyfang Ridge",
-        XzBounds {
-            min: [-20_800, -20_800],
-            max: [20_800, -12_000],
-        },
-    ),
-    (
-        SOUTHMEADOW_DOWNS,
-        "Southmeadow Downs",
-        XzBounds {
-            min: [-20_800, 12_000],
-            max: [20_800, 20_800],
-        },
-    ),
-    (
-        HOLLOWPINE_REACH,
-        "Hollowpine Reach",
-        XzBounds {
-            min: [-20_800, -12_000],
-            max: [-12_000, 12_000],
-        },
-    ),
-    (
-        EASTWATER_FEN,
-        "Eastwater Fen",
-        XzBounds {
-            min: [12_000, -12_000],
-            max: [20_800, 12_000],
-        },
-    ),
-    (
-        SUNKEN_SHRINE,
-        "Sunken Shrine",
-        XzBounds {
-            min: shrine::ALTAR_CHAMBER.0,
-            max: shrine::ALTAR_CHAMBER.1,
-        },
-    ),
-    (
-        FARMLAND_AND_HAMLETS,
-        "Farmland and Hamlets",
-        farmland::BOUNDS,
-    ),
-    (BANDIT_HIGHLANDS, "Bandit Highlands", highlands::BOUNDS),
-    (MARSH_LAKE_WETLANDS, "Marsh-Lake Wetlands", marsh::BOUNDS),
+/// The regions in table order: area, road and collider order follow this list.
+const REGIONS: &[Region] = &[
+    vale::REGION,
+    shrine::REGION,
+    farmland::REGION,
+    highlands::REGION,
+    marsh::REGION,
 ];
 
 static AREAS: LazyLock<ZoneAreas> = LazyLock::new(|| {
-    let areas = AREA_TABLE
+    let areas = REGIONS
         .iter()
+        .flat_map(|region| region.areas)
         .map(|(id, name, bounds)| {
             // `ZoneAreas` bounds are inclusive: a half-open `[min, max)`
             // rectangle covers `[min, max - 1]` in integer units.
@@ -364,210 +248,15 @@ pub struct Road {
     pub points: &'static [[i32; 2]],
 }
 
-static ROADS: [Road; 23] = [
-    Road {
-        name: "Hollow Road",
-        // Up the Hollow Climb (#423): the ledge under the Hollow's cliff, the landing, the
-        // cutting.
-        points: &[
-            [0, 1_200],
-            [0, -1_000],
-            [0, -4_000],
-            [0, -6_200],
-            [-3_600, -6_200],
-            [-3_600, -7_000],
-            [0, -7_000],
-            [0, -8_600],
-        ],
-    },
-    Road {
-        name: "Lakeshore Path",
-        // Up the Lakeshore Climb (#423): the west cliff's ledge, the landing, the cutting.
-        points: &[
-            [0, -2_800],
-            [1_400, -2_800],
-            [1_400, -6_200],
-            [2_600, -6_200],
-            [2_600, -3_200],
-            [3_400, -3_200],
-            [3_400, -4_900],
-        ],
-    },
-    Road {
-        // Along the terrace's rim from the farmyard to the lake's south shore (#423).
-        name: "Stillwater Rim Trail",
-        points: &[[6_400, 3_300], [6_400, -2_400], [5_600, -3_600]],
-    },
-    Road {
-        name: "Millbrook Road",
-        // Up the Millbrook Climb (#423): the cliff ledge, the hairpin landing, the cutting.
-        points: &[
-            [1_600, 2_000],
-            [3_200, 2_000],
-            [4_200, 2_000],
-            [4_200, -1_800],
-            [5_400, -1_800],
-            [5_400, 1_200],
-            [5_400, 2_800],
-            [6_400, 3_300],
-        ],
-    },
-    Road {
-        // The farm's footpath down the cliff to the valley floor and the South Road (#423).
-        name: "Millbrook Steps",
-        points: &[
-            [5_400, 2_800],
-            [4_800, 3_400],
-            [4_200, 3_400],
-            [4_200, 8_000],
-            [0, 8_000],
-        ],
-    },
-    Road {
-        name: "Wolfrun Trail",
-        // Up the Wolfrun Climb (#423): the cliff ledge, the hairpin landing, the cutting.
-        points: &[
-            [-1_600, 2_000],
-            [-3_200, 2_000],
-            [-4_200, 2_000],
-            [-4_200, -1_800],
-            [-5_400, -1_800],
-            [-5_400, 1_200],
-            [-6_600, 300],
-            [-7_600, 0],
-        ],
-    },
-    Road {
-        // Along the rim from Wolfrun Woods to Redbrand Hollow's camp (#423).
-        name: "Wolfrun Ridge Path",
-        points: &[[-6_600, 300], [-6_600, -7_700], [0, -7_700]],
-    },
-    Road {
-        name: "South Road",
-        // Up the South Climb (#423) onto the rim, across the Vale Ring Road and up the ridge's
-        // notch onto the farmland's plateau (#424).
-        points: &[
-            [0, 2_800],
-            [0, 5_000],
-            [0, 9_400],
-            [-3_600, 9_400],
-            [-3_600, 10_200],
-            [0, 10_200],
-            [0, 15_000],
-            [0, 23_200],
-            [2_800, 23_200],
-            [2_800, 25_200],
-        ],
-    },
-    // The outer valley (#159): a ring road through the four outer regions and
-    // two trails that join the farm and the woods to it without the outpost.
-    Road {
-        name: "Vale Ring Road",
-        points: &[
-            [-15_000, -15_000],
-            [15_000, -15_000],
-            [15_000, 15_000],
-            [-15_000, 15_000],
-            [-15_000, -15_000],
-        ],
-    },
-    Road {
-        name: "Fen Track",
-        // From the top of the Millbrook Climb down the terrace's eastern slope (#423).
-        points: &[[5_400, 1_200], [11_000, -1_000], [15_000, -3_000]],
-    },
-    Road {
-        // From the top of the Wolfrun Climb along the rim (#423).
-        name: "Downs Trail",
-        points: &[[-5_400, 1_200], [-5_400, 6_000], [-15_000, 6_000]],
-    },
-    // Farmland and Hamlets (#424): the farm road south from the notch and the hamlets' lanes.
-    Road {
-        name: "Farmland Road",
-        points: &[[2_800, 25_200], [2_800, 58_000]],
-    },
-    Road {
-        name: "West Hamlet Lane",
-        points: &[[2_800, 31_000], [-9_000, 31_000], [-9_000, 36_400]],
-    },
-    Road {
-        name: "East Hamlet Lane",
-        points: &[[2_800, 42_000], [13_000, 42_000], [13_000, 47_000]],
-    },
-    Road {
-        name: "South Hamlet Lane",
-        points: &[[2_800, 54_000], [-8_000, 54_000]],
-    },
-    // Bandit Highlands (#425): the pass up the escarpment from the Vale Ring Road, the trail to
-    // the stronghold and the path to the lookout.
-    Road {
-        name: "Highland Pass",
-        points: &[
-            [5_200, -15_000],
-            [5_200, -23_200],
-            [10_400, -23_200],
-            [10_400, -25_600],
-            [3_600, -25_600],
-            [3_600, -27_600],
-        ],
-    },
-    Road {
-        name: "Highland Trail",
-        points: &[
-            [3_600, -27_600],
-            [3_600, -33_000],
-            [-8_000, -38_000],
-            [-8_000, -44_000],
-            [0, -47_000],
-            [0, -53_000],
-        ],
-    },
-    Road {
-        name: "Lookout Path",
-        points: &[[3_600, -33_000], [9_000, -35_000], [12_400, -37_600]],
-    },
-    // Marsh-Lake Wetlands (#426): the pass through the ridge from the Vale Ring Road, the trail
-    // to the lake, the causeway to the island and the paths to the pools.
-    Road {
-        name: "Marsh Pass",
-        points: &[
-            [15_000, 4_000],
-            [22_400, 4_000],
-            [22_400, -800],
-            [24_000, -800],
-            [24_000, 2_400],
-            [25_200, 2_400],
-        ],
-    },
-    Road {
-        name: "Marsh Trail",
-        points: &[
-            [25_200, 2_400],
-            [29_000, 2_400],
-            [32_000, 5_600],
-            [34_400, 3_200],
-            [34_400, -2_000],
-        ],
-    },
-    Road {
-        name: "Causeway",
-        points: &[[34_400, -2_000], [44_000, -2_000]],
-    },
-    Road {
-        name: "Reed Path",
-        points: &[
-            [29_000, 2_400],
-            [29_000, -6_000],
-            [34_000, -12_000],
-            [54_000, -12_000],
-        ],
-    },
-    Road {
-        name: "Heron Path",
-        points: &[[32_000, 5_600], [40_000, 9_600], [50_000, 9_600]],
-    },
-];
+static ROADS: LazyLock<Vec<Road>> = LazyLock::new(|| {
+    REGIONS
+        .iter()
+        .flat_map(|region| region.roads)
+        .copied()
+        .collect()
+});
 
+/// Every region's roads, in region order.
 #[must_use]
 pub fn roads() -> &'static [Road] {
     &ROADS
@@ -577,108 +266,6 @@ pub fn roads() -> &'static [Road] {
 /// standing on y = 0. Every coordinate is a multiple of ten units, and boxes
 /// may touch but never overlap, so each collider has one unambiguous visual.
 type Footprint = (u32, [i32; 2], [i32; 2], i32);
-
-#[rustfmt::skip]
-static STRUCTURES: [Footprint; 84] = [
-    // Greyhaven Outpost: keep, inn, smithy, houses, well and waystone.
-    (ids::KEEP, [-2_600, -500], [-800, 700], 1_000),
-    (ids::SMITHY, [2_400, 100], [3_000, 800], 450),
-    (103, [-2_800, 3_300], [-2_000, 3_900], 500),
-    (104, [-1_500, 3_500], [-700, 4_100], 500),
-    (105, [800, 3_500], [1_600, 4_100], 500),
-    (106, [2_000, 3_300], [2_800, 3_900], 500),
-    (ids::WELL, [400, 3_000], [600, 3_200], 100),
-    (ids::WAYSTONE, [-600, 3_000], [-500, 3_100], 250),
-    // Palisade: north, south, west and east sides with a 6 m gap on each road.
-    (110, [-3_230, -1_030], [-300, -970], 300),
-    (111, [300, -1_030], [3_230, -970], 300),
-    (112, [-3_230, 4_970], [-300, 5_030], 300),
-    (113, [300, 4_970], [3_230, 5_030], 300),
-    (114, [-3_230, -970], [-3_170, 1_700], 300),
-    (115, [-3_230, 2_300], [-3_170, 4_970], 300),
-    (116, [3_170, -970], [3_230, 1_700], 300),
-    (117, [3_170, 2_300], [3_230, 4_970], 300),
-    // 0.8 m gate posts stand inside each gap, leaving a 4.4 m clear opening.
-    (120, [-300, -1_040], [-220, -960], 400),
-    (121, [220, -1_040], [300, -960], 400),
-    (122, [-300, 4_960], [-220, 5_040], 400),
-    (123, [220, 4_960], [300, 5_040], 400),
-    (124, [-3_240, 1_700], [-3_160, 1_780], 400),
-    (125, [-3_240, 2_220], [-3_160, 2_300], 400),
-    (126, [3_160, 1_700], [3_240, 1_780], 400),
-    (127, [3_160, 2_220], [3_240, 2_300], 400),
-    // Graveyard plot: two rows of gravestones.
-    (130, [-2_830, 4_390], [-2_770, 4_410], 100),
-    (131, [-2_530, 4_390], [-2_470, 4_410], 100),
-    (132, [-2_230, 4_390], [-2_170, 4_410], 100),
-    (133, [-1_930, 4_390], [-1_870, 4_410], 100),
-    (134, [-2_830, 4_690], [-2_770, 4_710], 100),
-    (135, [-2_530, 4_690], [-2_470, 4_710], 100),
-    (136, [-2_230, 4_690], [-2_170, 4_710], 100),
-    (137, [-1_930, 4_690], [-1_870, 4_710], 100),
-    // Millbrook Farm: barn, farmhouse, windmill base and field fences.
-    (ids::BARN, [7_400, 3_600], [8_600, 5_200], 700),
-    (ids::FARMHOUSE, [5_800, 4_300], [6_600, 5_000], 500),
-    (ids::WINDMILL, [8_550, 1_850], [9_050, 2_350], 800),
-    // The mill's loading dock (#59), 1.5 m high, west of the windmill.
-    (ids::MILL_DOCK, [8_100, 1_800], [8_400, 2_100], 150),
-    (210, [5_000, 5_590], [7_000, 5_610], 110),
-    (211, [7_400, 5_590], [9_600, 5_610], 110),
-    (212, [5_000, 8_390], [9_600, 8_410], 110),
-    (213, [4_990, 5_610], [5_010, 8_390], 110),
-    (214, [9_590, 5_610], [9_610, 8_390], 110),
-    // Stillwater Lake: rocks outside the walkable shallow water.
-    // North of the Sunken Shrine's cave (#274).
-    (300, [7_700, -4_680], [7_900, -4_520], 150),
-    (301, [7_080, -7_390], [7_320, -7_210], 180),
-    (302, [4_920, -7_470], [5_080, -7_330], 100),
-    (303, [3_500, -6_800], [3_700, -6_600], 160),
-    (304, [6_710, -3_780], [6_890, -3_620], 120),
-    (305, [4_330, -3_760], [4_470, -3_640], 90),
-    // Redbrand Hollow: cliffs under the north wall, the mine entrance, the camp.
-    // Their southern faces stand back for the Wolfrun Ridge Path (#423).
-    (400, [-3_200, -12_000], [-2_200, -8_000], 1_200),
-    (401, [-2_200, -8_400], [-1_600, -8_000], 800),
-    (402, [2_200, -12_000], [3_200, -7_400], 1_200),
-    (403, [1_600, -9_600], [2_200, -8_600], 900),
-    (404, [-2_200, -12_000], [2_200, -11_000], 1_400),
-    (405, [-2_200, -11_000], [-800, -10_400], 1_000),
-    (406, [800, -11_000], [2_200, -10_500], 1_000),
-    (ids::MINE_ENTRANCE, [-300, -11_000], [300, -10_900], 420),
-    (420, [-1_700, -9_600], [-1_400, -9_300], 220),
-    (421, [1_100, -9_900], [1_400, -9_600], 220),
-    (422, [-1_500, -8_600], [-1_200, -8_300], 220),
-    (430, [500, -10_500], [600, -10_400], 100),
-    (431, [620, -10_500], [720, -10_400], 100),
-    (432, [560, -10_380], [660, -10_280], 100),
-    (433, [-700, -10_300], [-600, -10_200], 100),
-    (ids::CAMPFIRE, [-60, -9_260], [60, -9_140], 30),
-    // Greyfang Ridge: seven standing stones in an 8 m ring (#159).
-    (500, [-40, -15_730], [40, -15_670], 250),
-    (501, [590, -16_030], [670, -15_970], 230),
-    (502, [740, -16_710], [820, -16_650], 260),
-    (503, [310, -17_250], [390, -17_190], 240),
-    (504, [-390, -17_250], [-310, -17_190], 250),
-    (505, [-820, -16_710], [-740, -16_650], 220),
-    (506, [-670, -16_030], [-590, -15_970], 260),
-    // Southmeadow Downs: a ruined farmstead inside its old fence (#159).
-    (510, [5_000, 16_000], [5_800, 16_600], 300),
-    (511, [6_200, 16_200], [6_800, 16_700], 250),
-    (512, [4_700, 15_800], [7_000, 15_820], 110),
-    (513, [4_700, 15_820], [4_720, 17_000], 110),
-    (514, [6_980, 15_820], [7_000, 17_000], 110),
-    // Eastwater Fen: the old watchtower (#159).
-    (ids::WATCHTOWER, [16_500, -6_200], [16_900, -5_800], 1_400),
-    // Hollowpine Reach: boulders beside the ring road (#159).
-    (530, [-15_700, -9_200], [-15_480, -9_000], 160),
-    (531, [-14_600, -4_300], [-14_420, -4_140], 120),
-    (532, [-15_620, 1_800], [-15_420, 1_960], 140),
-    (533, [-14_640, 9_400], [-14_460, 9_580], 110),
-    (534, [-15_800, 12_600], [-15_560, 12_820], 180),
-    (535, [-14_560, -12_800], [-14_400, -12_660], 100),
-    (536, [-15_660, 4_400], [-15_500, 4_540], 90),
-    (537, [-14_620, -1_200], [-14_440, -1_040], 130),
-];
 
 /// The outer valley's ground (#159): a 4 m grid of heights over the playable rectangle and a
 /// little beyond. The original valley stays flat; hills rise across the ring of outer
@@ -864,6 +451,13 @@ const fn standing(id: u32, min: [i32; 2], max: [i32; 2], height: i32) -> StaticC
     }
 }
 
+/// A box over an authored footprint, resting on the terrain there (#159).
+fn on_terrain(id: u32, min: [i32; 2], max: [i32; 2], height: i32) -> StaticCollider {
+    let mut collider = standing(id, min, max, height);
+    collider.position[1] += footing(min, max);
+    collider
+}
+
 /// Wolfrun Woods trunk generator: a jittered grid of 4.5 m cells west of the
 /// outpost. Seeded integer hashing keeps it deterministic; a trunk centre stays
 /// at least 1.2 m from its cell edge, so neighbouring trunks (at most 0.9 m
@@ -996,7 +590,7 @@ fn near_structure(collider: &StaticCollider) -> bool {
     let [x, _, z] = collider.position;
     let [hx, _, hz] = collider.half_extents;
     // The cave's roof covers its walls.
-    let mut footprints = STRUCTURES
+    let mut footprints = vale::STRUCTURES
         .iter()
         .map(|&(_, min, max, _)| (min, max))
         .chain([cave::GREYFANG.roof]);
@@ -1138,65 +732,8 @@ fn colliders() -> Vec<StaticCollider> {
         wall(8, [east, wet_north - thick], [wet_east + thick, wet_north]),
         wall(9, [east, wet_south], [wet_east + thick, wet_south + thick]),
     ];
-    colliders.extend(
-        STRUCTURES
-            .iter()
-            // Elden's house collides through its walls and furniture (#158).
-            .filter(|&&(id, ..)| id != ids::MARSHAL_HOUSE)
-            .map(|&(id, min, max, height)| {
-                // Structures out on the hills stand on the terrain (#159).
-                let mut collider = standing(id, min, max, height);
-                collider.position[1] += footing(min, max);
-                collider
-            }),
-    );
-    colliders.extend(inn::colliders(*ids::INN_PARTS.start()));
-    colliders.extend(marshal_house::colliders(*ids::MARSHAL_HOUSE_PARTS.start()));
-    colliders.extend(cave::GREYFANG.colliders(*ids::CAVE_WALLS.start()));
-    colliders.push(cave::threshold(ids::CAVE_THRESHOLD));
-    colliders.extend(shrine::ruins(*ids::SHRINE_RUINS.start()));
-    colliders.extend(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()));
-    colliders.extend(shrine::roof(*ids::SHRINE_CAVE_ROOF.start(), open_ground));
+    colliders.extend(REGIONS.iter().flat_map(|region| (region.colliders)()));
     colliders.extend(trees());
-    // Farmland and Hamlets (#424): the hamlets' buildings, the tower and the field fences.
-    let buildings = farmland::BUILDINGS
-        .iter()
-        .map(|&(_, min, max, height)| (min, max, height));
-    let fences = farmland::fences()
-        .into_iter()
-        .map(|(min, max)| (min, max, 110));
-    colliders.extend(
-        (*ids::FARMLAND_BUILDINGS.start()..)
-            .zip(buildings)
-            .chain((*ids::FARMLAND_FENCES.start()..).zip(fences))
-            .map(|(id, (min, max, height))| {
-                let mut collider = standing(id, min, max, height);
-                collider.position[1] += footing(min, max);
-                collider
-            }),
-    );
-    // Bandit Highlands (#425): the stronghold, the lookout and the rock crags.
-    let buildings = highlands::BUILDINGS
-        .iter()
-        .map(|&(_, min, max, height)| (min, max, height));
-    colliders.extend(
-        (*ids::HIGHLAND_BUILDINGS.start()..)
-            .zip(buildings)
-            .chain((*ids::HIGHLAND_CRAGS.start()..).zip(highlands::CRAGS))
-            .map(|(id, (min, max, height))| {
-                let mut collider = standing(id, min, max, height);
-                collider.position[1] += footing(min, max);
-                collider
-            }),
-    );
-    // Marsh-Lake Wetlands (#426): the drowned watchtower, its standing stones and the cottage.
-    colliders.extend((*ids::MARSH_BUILDINGS.start()..).zip(marsh::BUILDINGS).map(
-        |(id, (_, min, max, height))| {
-            let mut collider = standing(id, min, max, height);
-            collider.position[1] += footing(min, max);
-            collider
-        },
-    ));
     colliders.extend((*ids::LADDERS.start()..).zip(LADDER_TOWERS).map(ladder));
     colliders
 }

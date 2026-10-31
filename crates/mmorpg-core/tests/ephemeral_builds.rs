@@ -4,6 +4,7 @@ use mmorpg_core::{
     MAX_PLAYER_LEVEL, PlayerClass, Sex, ZoneId, ZoneSimulation, greyhaven_vale,
 };
 use std::sync::Arc;
+use strum::VariantArray;
 
 fn content() -> Arc<mmorpg_core::ZoneContent> {
     Arc::new(
@@ -20,7 +21,7 @@ fn choice(class: PlayerClass) -> ClassChoice {
 
 #[test]
 fn all_supported_classes_seed_legal_max_level_state_and_restore_exactly() {
-    for class in PlayerClass::ALL {
+    for &class in PlayerClass::VARIANTS {
         let build = EphemeralCharacterBuild::standard(choice(class)).unwrap();
         let content = content();
         let mut zone =

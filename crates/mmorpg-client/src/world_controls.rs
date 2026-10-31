@@ -4,9 +4,10 @@ use input_bindings_core::{
     InputRuntime, InputRuntimeOptions, InputStroke, KeyMatch, KeyStroke, Modifiers, RepeatPolicy,
     SemanticControlState, WhenExpr,
 };
+use strum::VariantArray;
 use winit::keyboard::KeyCode;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::VariantArray)]
 pub enum WorldAction {
     /// A right click that never became a camera drag selects (#517: the left button swings).
     Select,
@@ -49,20 +50,6 @@ impl WorldAction {
             }),
         )
     }
-    const ALL: [Self; 12] = [
-        Self::Select,
-        Self::Swing,
-        Self::Interact,
-        Self::NextNpc,
-        Self::Cancel,
-        Self::Primary,
-        Self::Sell,
-        Self::Previous,
-        Self::Next,
-        Self::RewardPrevious,
-        Self::RewardNext,
-        Self::Details,
-    ];
 }
 fn mouse(button: u16) -> InputStroke {
     InputStroke::Device(DeviceStroke::MouseButton {
@@ -72,8 +59,9 @@ fn mouse(button: u16) -> InputStroke {
 }
 pub fn world_action_registry() -> ActionRegistry {
     ActionRegistry {
-        actions: WorldAction::ALL
-            .into_iter()
+        actions: WorldAction::VARIANTS
+            .iter()
+            .copied()
             .map(|action| {
                 let (id, context, stroke) = action.definition();
                 ActionDefinition {
@@ -192,8 +180,9 @@ impl WorldControls {
             .drain_presses()
             .iter()
             .filter_map(|id| {
-                WorldAction::ALL
-                    .into_iter()
+                WorldAction::VARIANTS
+                    .iter()
+                    .copied()
                     .find(|action| action.definition().0 == id)
             })
             .collect()

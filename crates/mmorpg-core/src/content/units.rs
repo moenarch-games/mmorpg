@@ -18,7 +18,7 @@ pub const MAX_CREATURE_HALF_EXTENT_UNITS: i32 = 500;
 pub const LARGE_CREATURE_HALF_WIDTH_UNITS: i32 = 70;
 
 /// Creatures of one family assist each other.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum CreatureFamily {
     Wolf,
     Boar,
@@ -33,18 +33,6 @@ pub enum CreatureFamily {
 }
 
 impl CreatureFamily {
-    /// Every family, in order.
-    pub const ALL: [Self; 8] = [
-        Self::Wolf,
-        Self::Boar,
-        Self::Vermin,
-        Self::Marauder,
-        Self::Mirefin,
-        Self::Redbrand,
-        Self::Prop,
-        Self::Ogre,
-    ];
-
     /// Stable lower-case name for exports.
     #[must_use]
     pub const fn name(self) -> &'static str {
@@ -68,7 +56,7 @@ impl CreatureFamily {
 }
 
 /// What a breakable prop is (#288).
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum PropKind {
     Crate,
     Barrel,
@@ -80,14 +68,6 @@ pub enum PropKind {
 }
 
 impl PropKind {
-    pub const ALL: [Self; 5] = [
-        Self::Crate,
-        Self::Barrel,
-        Self::ExplosiveBarrel,
-        Self::Fence,
-        Self::HeavyCrate,
-    ];
-
     /// Whether gameplay impulses move it (#58).
     #[must_use]
     pub const fn movable(self) -> bool {

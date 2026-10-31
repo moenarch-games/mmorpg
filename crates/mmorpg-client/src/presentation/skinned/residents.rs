@@ -22,6 +22,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     sync::{Mutex, OnceLock},
 };
+use strum::VariantArray;
 
 /// One dressed preset: the figure, the plates and beards on their sockets, the headwear and
 /// hair, the height factor and the figure's hood nodes, hidden on residents.
@@ -333,7 +334,7 @@ fn files(resident: Resident) -> Option<Vec<(String, String)>> {
 /// Whether every resident's and humanoid enemy's preset can be drawn from the embedded
 /// preparation; otherwise they keep their procedural models.
 pub(in crate::presentation) fn residents_drawable() -> bool {
-    let missing: Vec<String> = Resident::ALL
+    let missing: Vec<String> = Resident::VARIANTS
         .iter()
         .flat_map(|&resident| {
             files(resident).map_or_else(

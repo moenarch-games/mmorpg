@@ -10,6 +10,7 @@
 use mmorpg_core::{PlayerClass, Sex};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+use strum::VariantArray;
 
 /// Character slots on one machine, as the browser's `MAX_CHARACTER_SLOTS`.
 pub const MAX_CHARACTERS: usize = 8;
@@ -18,7 +19,7 @@ const MAX_ROSTER_BYTES: u64 = 8192;
 const FILE_NAME: &str = "roster.json";
 
 /// Local headwear, as the browser's `HAT_OPTIONS`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, strum::VariantArray)]
 pub enum Headwear {
     WayfarerHood,
     RangerCap,
@@ -26,8 +27,6 @@ pub enum Headwear {
 }
 
 impl Headwear {
-    pub const ALL: [Self; 3] = [Self::WayfarerHood, Self::RangerCap, Self::IroncrestHelm];
-
     /// The shared style id, also accepted by `Presentation::set_headwear`.
     #[must_use]
     pub const fn id(self) -> &'static str {
@@ -48,7 +47,7 @@ impl Headwear {
     }
 
     fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|hat| hat.id() == id)
+        Self::VARIANTS.iter().copied().find(|hat| hat.id() == id)
     }
 
     /// The browser's `defaultAppearanceForClass`.
@@ -307,7 +306,12 @@ fn decode(raw: &str) -> Result<Vec<LocalCharacter>, String> {
         let name = normalize_name(name).map_err(|_| invalid())?;
         let class = fields["classId"]
             .as_str()
-            .and_then(|id| PlayerClass::ALL.into_iter().find(|c| c.name() == id))
+            .and_then(|id| {
+                PlayerClass::VARIANTS
+                    .iter()
+                    .copied()
+                    .find(|c| c.name() == id)
+            })
             .ok_or_else(invalid)?;
         let sex = match fields["sex"].as_str() {
             Some("male") => Sex::Male,

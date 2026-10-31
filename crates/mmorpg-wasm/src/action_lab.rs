@@ -8,6 +8,7 @@
 //! [`ZoneSimulation::arbitrate_input`]. Nothing is stored.
 
 use std::sync::Arc;
+use strum::VariantArray;
 
 use mmorpg_core::action::{
     self, ActionId, ActionInput, Anchor, AuthoredReport, BlockReason, Candidate, Condition,
@@ -80,8 +81,9 @@ impl LabSetup {
         main_hand: u16,
         resource: Option<u16>,
     ) -> Result<Self, String> {
-        let class = PlayerClass::ALL
-            .into_iter()
+        let class = PlayerClass::VARIANTS
+            .iter()
+            .copied()
             .find(|candidate| candidate.name() == class)
             .ok_or_else(|| format!("unknown class {class:?}"))?;
         if !(1..=MAX_PLAYER_LEVEL).contains(&level) {

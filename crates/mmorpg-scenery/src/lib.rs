@@ -40,6 +40,9 @@ pub mod settlement_props;
 pub mod shrine;
 
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
+
+use strum::{IntoEnumIterator, VariantArray};
 
 pub use geometry::Rect;
 use geometry::{Ellipse, Rng, polyline_distance, splitmix64, value_noise};
@@ -89,22 +92,28 @@ const SEED_MARSH_PROPS: u64 = 0x4d41_5253_5052_4f50;
 /// Visual half width of every road (3 m wide); core keeps 2 m clear.
 pub const ROAD_HALF_WIDTH_UNITS: i32 = 150;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray,
+)]
 pub enum TreeVariant {
+    #[default]
     Oak,
     Pine,
     Birch,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray,
+)]
 pub enum RockSize {
+    #[default]
     Small,
     Medium,
     Large,
 }
 
 /// What a prop looks like. Clients choose a model (or a blockout) per kind.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::EnumIter)]
 pub enum PropKind {
     Keep,
     Inn,
@@ -151,47 +160,25 @@ pub enum PropKind {
 
 impl PropKind {
     /// Every kind with its variants flattened, in declaration order.
-    pub const ALL: [Self; 39] = [
-        Self::Keep,
-        Self::Inn,
-        Self::House,
-        Self::Smithy,
-        Self::Barn,
-        Self::Farmhouse,
-        Self::Windmill,
-        Self::Well,
-        Self::PalisadeSegment,
-        Self::GatePost,
-        Self::Waystone,
-        Self::Gravestone,
-        Self::Tree(TreeVariant::Oak),
-        Self::Tree(TreeVariant::Pine),
-        Self::Tree(TreeVariant::Birch),
-        Self::Bush,
-        Self::Rock(RockSize::Small),
-        Self::Rock(RockSize::Medium),
-        Self::Rock(RockSize::Large),
-        Self::Cliff,
-        Self::GrassTuft,
-        Self::Flowers,
-        Self::Reeds,
-        Self::Fence,
-        Self::Tent,
-        Self::Campfire,
-        Self::Crate,
-        Self::Barrel,
-        Self::Cart,
-        Self::Signpost,
-        Self::Lamp,
-        Self::MineEntrance,
-        Self::CropRow,
-        Self::Dock,
-        Self::CaveRoof,
-        Self::Ramp,
-        Self::LoadingDock,
-        Self::ShrineKit,
-        Self::Ladder,
-    ];
+    #[must_use]
+    pub fn all() -> &'static [Self] {
+        static ALL: LazyLock<Vec<PropKind>> = LazyLock::new(|| {
+            PropKind::iter()
+                .flat_map(|kind| match kind {
+                    PropKind::Tree(_) => TreeVariant::VARIANTS
+                        .iter()
+                        .map(|&v| PropKind::Tree(v))
+                        .collect(),
+                    PropKind::Rock(_) => RockSize::VARIANTS
+                        .iter()
+                        .map(|&s| PropKind::Rock(s))
+                        .collect(),
+                    kind => vec![kind],
+                })
+                .collect()
+        });
+        &ALL
+    }
 
     /// Stable kebab-case name with the variant, independent of `Debug`
     /// output; clients key their models by it.
@@ -276,7 +263,7 @@ impl Prop {
 
 /// What the ground at a terrain vertex is. Clients without per-vertex
 /// colours draw one surface per biome in its [`Biome::base_color`].
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum Biome {
     Meadow,
     Hub,
@@ -294,23 +281,6 @@ pub enum Biome {
 }
 
 impl Biome {
-    /// Every biome in declaration order, which is also [`Biome::id`] order.
-    pub const ALL: [Self; 13] = [
-        Self::Meadow,
-        Self::Hub,
-        Self::Woods,
-        Self::Hollow,
-        Self::Farmland,
-        Self::Road,
-        Self::Plaza,
-        Self::Shore,
-        Self::LakeBed,
-        Self::Foothills,
-        Self::Highland,
-        Self::Rock,
-        Self::Snow,
-    ];
-
     /// Stable numeric identity, independent of `Debug` output.
     #[must_use]
     pub const fn id(self) -> u8 {
@@ -489,7 +459,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         // a keep, like the Eastwater watchtower.
         _ if ids::FARMLAND_BUILDINGS.contains(&id) => {
             use greyhaven_vale::farmland::Building;
-            match greyhaven_vale::farmland_building(id)? {
+            match greyhaven_vale::farmland::building(id)? {
                 Building::House => PropKind::House,
                 Building::Farmhouse => PropKind::Farmhouse,
                 Building::Barn => PropKind::Barn,
@@ -502,7 +472,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         // are cliff rock.
         _ if ids::HIGHLAND_BUILDINGS.contains(&id) => {
             use greyhaven_vale::highlands::Building;
-            match greyhaven_vale::highland_building(id)? {
+            match greyhaven_vale::highlands::building(id)? {
                 Building::Tower => PropKind::Keep,
                 Building::Palisade => PropKind::PalisadeSegment,
                 Building::GatePost => PropKind::GatePost,
@@ -516,7 +486,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         // the Greyfang stones' waystones and the cottage is a ruined house, like Southmeadow's.
         _ if ids::MARSH_BUILDINGS.contains(&id) => {
             use greyhaven_vale::marsh::Building;
-            match greyhaven_vale::marsh_building(id)? {
+            match greyhaven_vale::marsh::building(id)? {
                 Building::Tower => PropKind::Keep,
                 Building::Stone => PropKind::Waystone,
                 Building::Ruin => PropKind::House,
@@ -1039,10 +1009,10 @@ impl Scenery {
             return Biome::Rock;
         }
         match greyhaven_vale::area_at(x, z).map(Area::id) {
-            Some(greyhaven_vale::WOLFRUN_WOODS) => Biome::Woods,
-            Some(greyhaven_vale::REDBRAND_HOLLOW) => Biome::Hollow,
-            Some(greyhaven_vale::OUTPOST) => Biome::Hub,
-            Some(greyhaven_vale::MARSH_LAKE_WETLANDS) => Biome::Woods,
+            Some(greyhaven_vale::vale::WOLFRUN_WOODS) => Biome::Woods,
+            Some(greyhaven_vale::vale::REDBRAND_HOLLOW) => Biome::Hollow,
+            Some(greyhaven_vale::vale::OUTPOST) => Biome::Hub,
+            Some(greyhaven_vale::marsh::MARSH_LAKE_WETLANDS) => Biome::Woods,
             _ => Biome::Meadow,
         }
     }
@@ -1425,15 +1395,15 @@ impl Placer<'_> {
             let at = within(rng, playable);
             let meadow = !matches!(
                 greyhaven_vale::area_at(at[0], at[1]).map(Area::id),
-                Some(greyhaven_vale::WOLFRUN_WOODS | greyhaven_vale::REDBRAND_HOLLOW)
+                Some(greyhaven_vale::vale::WOLFRUN_WOODS | greyhaven_vale::vale::REDBRAND_HOLLOW)
             );
             (meadow && FARMLAND.distance(at) > 0).then_some((PropKind::Flowers, at))
         });
-        let woods = area_bounds(greyhaven_vale::WOLFRUN_WOODS);
+        let woods = area_bounds(greyhaven_vale::vale::WOLFRUN_WOODS);
         self.scatter(&mut rng, 160, 2_000, |rng| {
             Some((PropKind::Bush, within(rng, woods)))
         });
-        let hollow = area_bounds(greyhaven_vale::REDBRAND_HOLLOW);
+        let hollow = area_bounds(greyhaven_vale::vale::REDBRAND_HOLLOW);
         self.scatter(&mut rng, 24, 1_000, |rng| {
             let at = within(rng, hollow);
             let size = if rng.next_u64().is_multiple_of(3) {
@@ -1632,11 +1602,11 @@ impl Placer<'_> {
             ring(rng)
                 .filter(|at| {
                     greyhaven_vale::area_at(at[0], at[1]).map(Area::id)
-                        != Some(greyhaven_vale::HOLLOWPINE_REACH)
+                        != Some(greyhaven_vale::vale::HOLLOWPINE_REACH)
                 })
                 .map(|at| (PropKind::Flowers, at))
         });
-        let reach = area_bounds(greyhaven_vale::HOLLOWPINE_REACH);
+        let reach = area_bounds(greyhaven_vale::vale::HOLLOWPINE_REACH);
         self.scatter(&mut rng, 140, 2_000, |rng| {
             Some((
                 PropKind::Bush,

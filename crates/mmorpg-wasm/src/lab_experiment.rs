@@ -15,6 +15,7 @@
 //! the first tick whose canonical state differs.
 
 use std::fmt::Debug;
+use strum::VariantArray;
 
 use mmorpg_core::ability::ids;
 use mmorpg_core::action::{
@@ -504,8 +505,9 @@ pub struct FollowUpDto {
 }
 
 fn class_named(class: &str) -> Result<PlayerClass, String> {
-    PlayerClass::ALL
-        .into_iter()
+    PlayerClass::VARIANTS
+        .iter()
+        .copied()
         .find(|candidate| candidate.name() == class)
         .ok_or_else(|| format!("unknown class {class:?}"))
 }
@@ -741,8 +743,9 @@ impl Config {
             .map(|entry| {
                 let scope = match &entry.scope {
                     ScopeDto::Class { class } => Scope::Class(
-                        PlayerClass::ALL
-                            .into_iter()
+                        PlayerClass::VARIANTS
+                            .iter()
+                            .copied()
                             .find(|candidate| candidate.name() == class)
                             .ok_or_else(|| format!("unknown class {class:?}"))?,
                     ),

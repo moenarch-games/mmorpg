@@ -94,7 +94,7 @@ impl AbilityRange {
 }
 
 /// What an aura does; the wire value is 1 + its discriminant.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum AuraKind {
     DamageOverTime,
     HealOverTime,
@@ -106,16 +106,6 @@ pub enum AuraKind {
 }
 
 impl AuraKind {
-    pub const ALL: [Self; 7] = [
-        Self::DamageOverTime,
-        Self::HealOverTime,
-        Self::Absorb,
-        Self::Root,
-        Self::Snare,
-        Self::Stun,
-        Self::Haste,
-    ];
-
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -1609,6 +1599,7 @@ pub(crate) fn catalog_bytes() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::VariantArray;
 
     #[test]
     fn the_catalog_is_ordered_bounded_and_consistent() {
@@ -1632,7 +1623,7 @@ mod tests {
         assert_eq!(ability_by_id(AbilityId::new(0)), None);
         assert_eq!(ability_by_id(AbilityId::new(47)), None);
         // Each class has at most MAX_COOLDOWNS abilities with a cooldown.
-        for class in PlayerClass::ALL {
+        for &class in PlayerClass::VARIANTS {
             let cooldowns = ABILITY_CATALOG
                 .iter()
                 .filter(|ability| ability.user == AbilityUser::Class(class) && ability.cooldown > 0)

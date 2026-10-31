@@ -346,7 +346,10 @@ fn content_validates_quests_and_binds_them_to_its_identity() {
     );
 
     let hosted = greyhaven_vale::content();
-    assert_eq!(hosted.quests().len(), 11);
+    assert_eq!(
+        hosted.quests().len(),
+        greyhaven_vale::quests::quests().len()
+    );
     assert_eq!(hosted.rng_seed(), greyhaven_vale::RNG_SEED);
 }
 

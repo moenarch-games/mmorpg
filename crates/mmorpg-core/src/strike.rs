@@ -31,7 +31,7 @@ use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError, ZoneSimul
 pub const STRIKE_ARC_HALF_WIDTH: u16 = YAW_QUARTER_TURN / 3;
 
 /// Which way the sword sweeps relative to the strike facing.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum StrikeSide {
     Left,
     Centre,
@@ -39,8 +39,6 @@ pub enum StrikeSide {
 }
 
 impl StrikeSide {
-    pub const ALL: [Self; 3] = [Self::Left, Self::Centre, Self::Right];
-
     /// Wire and canonical code: 0 left, 1 centre, 2 right.
     #[must_use]
     pub const fn code(self) -> u8 {
@@ -74,7 +72,7 @@ impl StrikeSide {
 }
 
 /// How high the sword sweeps.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum StrikeHeight {
     Low,
     Middle,
@@ -82,8 +80,6 @@ pub enum StrikeHeight {
 }
 
 impl StrikeHeight {
-    pub const ALL: [Self; 3] = [Self::Low, Self::Middle, Self::High];
-
     /// Wire and canonical code: 0 low, 1 middle, 2 high.
     #[must_use]
     pub const fn code(self) -> u8 {

@@ -10,6 +10,7 @@ use mmorpg_core::{
     AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, Equipment,
     EquipmentSlot, PlayerClass, WaterMode, ZoneContent,
 };
+use strum::VariantArray;
 
 use std::f64::consts::FRAC_PI_2;
 
@@ -168,15 +169,13 @@ impl Outfit {
 /// skeleton, clips, sockets and `humanoid-appearance`: the male carries the players, the class
 /// outfits and the male residents and enemies; the female (asset-tooling #378) carries only her
 /// own presets, with no headwear, beards, head skins or variety options.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum Figure {
     Male,
     Female,
 }
 
 impl Figure {
-    pub const ALL: [Self; 2] = [Self::Male, Self::Female];
-
     /// The bundle's character key, also its acquisition directory under `characters/`.
     #[must_use]
     pub const fn character(self) -> &'static str {
@@ -189,8 +188,9 @@ impl Figure {
     /// The figure whose character key is `character`.
     #[must_use]
     pub fn of_character(character: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
+        Self::VARIANTS
+            .iter()
+            .copied()
             .find(|figure| figure.character() == character)
     }
 }
@@ -198,7 +198,7 @@ impl Figure {
 /// A character drawn on a Ranger figure in a `humanoid-appearance` preset: a named Greyhaven
 /// resident in the bundle's own preset (#418, #493), or a humanoid enemy in a game-authored
 /// preset over the male bundle's outfits (#39; [`super::presets::enemy_presets`]).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::VariantArray)]
 pub enum Resident {
     Marshal,
     Guard,
@@ -220,21 +220,6 @@ pub enum Resident {
 }
 
 impl Resident {
-    /// Every character with a preset, so a client can check it can draw them all.
-    pub const ALL: [Self; 11] = [
-        Self::Marshal,
-        Self::Guard,
-        Self::Innkeeper,
-        Self::Farmer,
-        Self::Healer,
-        Self::Tanner,
-        Self::Marauder,
-        Self::RedbrandBandit,
-        Self::RedbrandCrossbowman,
-        Self::RedbrandBrute,
-        Self::Garrick,
-    ];
-
     /// The resident an NPC of this canonical name is, if it has a preset.
     #[must_use]
     pub fn of_name(name: &str) -> Option<Self> {
@@ -329,7 +314,7 @@ impl Resident {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum Kind {
     Ranger,
     Wolf,
@@ -548,8 +533,6 @@ const TURN_CLIP_RADIANS: f64 = FRAC_PI_2;
 pub const REACTION_SECONDS: f32 = 1.5;
 
 impl Kind {
-    pub const ALL: [Self; 4] = [Self::Ranger, Self::Wolf, Self::Rat, Self::Pig];
-
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -562,7 +545,10 @@ impl Kind {
 
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.name() == name)
+        Self::VARIANTS
+            .iter()
+            .copied()
+            .find(|kind| kind.name() == name)
     }
 
     #[must_use]
@@ -1727,6 +1713,7 @@ impl Playback {
 mod tests {
     use super::*;
     use mmorpg_core::{CreatureId, NpcId, greyhaven_vale};
+    use strum::VariantArray;
 
     #[test]
     fn named_greyhaven_residents_have_presets_and_classes_their_weapons() {
@@ -1750,8 +1737,9 @@ mod tests {
                 Some("resident.guard"),
             ]
         );
-        let names: Vec<_> = PlayerClass::ALL
-            .into_iter()
+        let names: Vec<_> = PlayerClass::VARIANTS
+            .iter()
+            .copied()
             .map(|class| Loadout::of_class(class).name())
             .collect();
         assert_eq!(
@@ -1796,8 +1784,9 @@ mod tests {
 
     #[test]
     fn classes_wear_their_starter_outfit_and_drops_replace_its_slot_pieces() {
-        let presets: Vec<_> = PlayerClass::ALL
-            .into_iter()
+        let presets: Vec<_> = PlayerClass::VARIANTS
+            .iter()
+            .copied()
             .map(|class| Outfit::new(class, None).preset())
             .collect();
         assert_eq!(

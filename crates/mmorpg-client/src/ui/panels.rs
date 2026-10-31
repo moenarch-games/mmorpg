@@ -7,6 +7,7 @@ use mmorpg_core::{
     EquipmentSlot, ItemId, NpcRole, Quest, QuestObjective, ZoneCommand, ZoneContent, ZoneSnapshot,
     item_template, sell_price,
 };
+use strum::VariantArray;
 
 fn item_name(id: ItemId) -> &'static str {
     item_template(id).map_or("unknown item", |item| item.name)
@@ -508,7 +509,7 @@ impl GameUi {
                     return;
                 };
                 egui::Grid::new("equipment").striped(true).show(ui, |ui| {
-                    for slot in EquipmentSlot::ALL {
+                    for &slot in EquipmentSlot::VARIANTS {
                         ui.label(slot_title(slot));
                         match equipment.item(slot) {
                             Some(item) => {

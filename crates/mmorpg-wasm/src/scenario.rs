@@ -7,6 +7,7 @@
 //! record reaches the page's character storage. Network hosts never see it.
 
 use std::sync::Arc;
+use strum::VariantArray;
 
 use mmorpg_core::{
     CharacterId, CharacterLocation, CharacterRecord, ClassChoice, PLAYER_HALF_EXTENTS_UNITS,
@@ -16,7 +17,7 @@ use mmorpg_core::{
 use crate::host::{LOCAL_ZONE_ID, LocalZoneError, hosted_content};
 
 /// A named starting situation; its name is the page's `?scenario=` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::VariantArray)]
 pub enum Scenario {
     /// A level 5 Warden 15 m north of the Southmeadow Hill Ogre (#297), facing it.
     OgreCombat,
@@ -49,22 +50,11 @@ pub enum Scenario {
 }
 
 impl Scenario {
-    pub const ALL: [Self; 9] = [
-        Self::OgreCombat,
-        Self::RangerRange,
-        Self::ArcanistPack,
-        Self::SunkenShrine,
-        Self::RedbrandCavern,
-        Self::NecromancerDrain,
-        Self::RogueMelee,
-        Self::ClericHoly,
-        Self::DruidNature,
-    ];
-
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
+        Self::VARIANTS
+            .iter()
+            .copied()
             .find(|scenario| scenario.name() == name)
     }
 

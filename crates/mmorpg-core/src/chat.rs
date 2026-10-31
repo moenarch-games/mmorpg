@@ -31,7 +31,7 @@ pub const SAY_RANGE_UNITS: i32 = 2_000;
 pub const YELL_RANGE_UNITS: i32 = 6_000;
 
 /// The emote vocabulary. Wire IDs are stable; unknown IDs are malformed.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum Emote {
     Wave,
     Bow,
@@ -41,8 +41,6 @@ pub enum Emote {
 }
 
 impl Emote {
-    pub const ALL: [Self; 5] = [Self::Wave, Self::Bow, Self::Cheer, Self::Laugh, Self::Point];
-
     /// Wire value: 1 wave, 2 bow, 3 cheer, 4 laugh, 5 point.
     #[must_use]
     pub const fn code(self) -> u8 {
@@ -251,6 +249,7 @@ impl ZoneSimulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::VariantArray;
 
     #[test]
     fn chat_text_is_bounded_printable_utf8() {
@@ -278,7 +277,7 @@ mod tests {
 
     #[test]
     fn emote_codes_round_trip_and_reject_unknown_ids() {
-        for emote in Emote::ALL {
+        for &emote in Emote::VARIANTS {
             assert_eq!(Emote::from_code(emote.code()), Some(emote));
         }
         for unknown in [0, 6, 255] {

@@ -165,7 +165,10 @@ fn every_spawn_slot_stands_clear_inside_the_hub_plaza() {
         assert!(SPAWN_PLAZA.contains(x - body[0], z - body[2]));
         assert!(SPAWN_PLAZA.contains(x + body[0] - 1, z + body[2] - 1));
         assert!(positions.insert((x, z)));
-        assert_eq!(area_at(x, z).map(Area::id), Some(greyhaven_vale::OUTPOST));
+        assert_eq!(
+            area_at(x, z).map(Area::id),
+            Some(greyhaven_vale::vale::OUTPOST)
+        );
     }
     zone.advance_tick().unwrap();
     assert_eq!(
@@ -276,7 +279,7 @@ fn wolfrun_woods_trunks_always_leave_a_walkable_gap() {
         // Wolfrun Woods first, then the outer valley's woods (#159).
         let area = area_at(tree.position[0], tree.position[2]).map(Area::id);
         assert!(
-            area.is_some_and(|area| area == greyhaven_vale::WOLFRUN_WOODS || area.get() >= 6),
+            area.is_some_and(|area| area == greyhaven_vale::vale::WOLFRUN_WOODS || area.get() >= 6),
             "tree {} in {area:?}",
             tree.id
         );
@@ -343,31 +346,34 @@ fn named_areas_are_ordered_disjoint_and_contain_their_landmarks() {
     // The authored half-open outpost rectangle [-3 500, 3 500) × [-1 300, 5 300).
     assert_eq!(
         area_at(3_499, 5_299).map(Area::id),
-        Some(greyhaven_vale::OUTPOST)
+        Some(greyhaven_vale::vale::OUTPOST)
     );
     assert_eq!(
         area_at(-3_500, -1_300).map(Area::id),
-        Some(greyhaven_vale::OUTPOST)
+        Some(greyhaven_vale::vale::OUTPOST)
     );
     assert_eq!(area_at(3_500, 0), None);
     assert_eq!(area_at(0, 5_300), None);
     // Approximate subzone centres from docs/STARTER_ZONE.md, in metres × 100.
     for (point, area) in [
-        ([0, 2_000], greyhaven_vale::OUTPOST),
-        ([-7_500, 0], greyhaven_vale::WOLFRUN_WOODS),
-        ([7_000, 3_500], greyhaven_vale::MILLBROOK_FARM),
-        ([5_500, -5_500], greyhaven_vale::STILLWATER_LAKE),
-        ([0, -9_000], greyhaven_vale::REDBRAND_HOLLOW),
+        ([0, 2_000], greyhaven_vale::vale::OUTPOST),
+        ([-7_500, 0], greyhaven_vale::vale::WOLFRUN_WOODS),
+        ([7_000, 3_500], greyhaven_vale::vale::MILLBROOK_FARM),
+        ([5_500, -5_500], greyhaven_vale::vale::STILLWATER_LAKE),
+        ([0, -9_000], greyhaven_vale::vale::REDBRAND_HOLLOW),
     ] {
         assert_eq!(area_at(point[0], point[1]).map(Area::id), Some(area));
     }
     assert_eq!(area_at(0, 11_000), None, "the south road is open country");
     let definition = greyhaven_vale_definition();
     for (id, area) in [
-        (ids::KEEP, greyhaven_vale::OUTPOST),
-        (ids::BARN, greyhaven_vale::MILLBROOK_FARM),
-        (ids::MINE_ENTRANCE, greyhaven_vale::REDBRAND_HOLLOW),
-        (*ids::SHORE_ROCKS.start(), greyhaven_vale::STILLWATER_LAKE),
+        (ids::KEEP, greyhaven_vale::vale::OUTPOST),
+        (ids::BARN, greyhaven_vale::vale::MILLBROOK_FARM),
+        (ids::MINE_ENTRANCE, greyhaven_vale::vale::REDBRAND_HOLLOW),
+        (
+            *ids::SHORE_ROCKS.start(),
+            greyhaven_vale::vale::STILLWATER_LAKE,
+        ),
     ] {
         let collider = definition
             .colliders()

@@ -6,6 +6,7 @@
 //! snapshot bytes. It owns no gameplay, session or visibility rules; it only
 //! records what those authorities decide and compares it with expectations.
 
+use strum::VariantArray;
 mod units;
 
 use std::collections::BTreeMap;
@@ -1876,8 +1877,9 @@ fn chat_channel(name: &str) -> Option<mmorpg_core::ChatChannel> {
 }
 
 fn emote_named(name: &str) -> Option<mmorpg_core::Emote> {
-    mmorpg_core::Emote::ALL
-        .into_iter()
+    mmorpg_core::Emote::VARIANTS
+        .iter()
+        .copied()
         .find(|&emote| emote_name(emote) == name)
 }
 

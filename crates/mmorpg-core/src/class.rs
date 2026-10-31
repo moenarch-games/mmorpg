@@ -30,7 +30,7 @@ pub const MANA_REGEN_COMBAT_PERCENT: u32 = 1;
 pub const RESOURCE_INTERVAL_TICKS: u16 = crate::ticks_from_ms(1_000);
 
 /// A playable class; the wire value is its discriminant.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum PlayerClass {
     Warden,
     Ranger,
@@ -49,16 +49,6 @@ pub enum PlayerClass {
 }
 
 impl PlayerClass {
-    pub const ALL: [Self; 7] = [
-        Self::Warden,
-        Self::Ranger,
-        Self::Arcanist,
-        Self::Necromancer,
-        Self::Rogue,
-        Self::Cleric,
-        Self::Druid,
-    ];
-
     #[must_use]
     pub const fn from_code(code: u8) -> Option<Self> {
         match code {
@@ -294,11 +284,12 @@ impl ResourceClock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::VariantArray;
 
     #[test]
     fn appearance_codes_round_trip_and_reserve_zero() {
         let mut codes = Vec::new();
-        for class in PlayerClass::ALL {
+        for &class in PlayerClass::VARIANTS {
             for sex in [Sex::Female, Sex::Male] {
                 let choice = ClassChoice { class, sex };
                 assert_eq!(
