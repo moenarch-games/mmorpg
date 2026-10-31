@@ -1,7 +1,7 @@
 //! Entity identity over the exact geometry of the successfully presented native frame.
 use crate::{
     ClientError,
-    world::{SceneDraw, WorldFrame},
+    world::{DrawBatch, SceneDraw, WorldFrame},
 };
 use mmorpg_core::{DoorId, EntityRef};
 use three_d_animation::Mat4;
@@ -31,19 +31,25 @@ pub struct PickScreen {
 
 #[derive(Default)]
 pub struct WorldPicking {
+    /// The frame's shared batches, filtered when picking.
+    batches: Vec<DrawBatch>,
     world: Vec<SceneDraw>,
     bodies: Vec<(EntityRef, SceneDraw)>,
 }
+
+/// Unit bodies are handled with their identities. Health bars, target markers and spell
+/// effects never become selectable bodies or occluders.
+fn pickable(draw: &SceneDraw) -> bool {
+    !draw.id.starts_with("unit-") && !draw.id.starts_with("fx-") && draw.material.opacity > 0.
+}
+
 impl WorldPicking {
     pub fn present(&mut self, frame: &WorldFrame, bodies: &[(EntityRef, SceneDraw)]) {
-        // Unit bodies are handled with their identities below. Health bars, target
-        // markers and spell effects never become selectable bodies or occluders.
+        self.batches.clone_from(&frame.batches);
         self.world = frame
             .draws
             .iter()
-            .filter(|d| {
-                !d.id.starts_with("unit-") && !d.id.starts_with("fx-") && d.material.opacity > 0.
-            })
+            .filter(|d| pickable(d))
             .cloned()
             .collect();
         self.bodies = bodies
@@ -51,6 +57,13 @@ impl WorldPicking {
             .filter(|(_, d)| d.material.opacity > 0.)
             .cloned()
             .collect();
+    }
+
+    fn world_draws(&self) -> impl Iterator<Item = &SceneDraw> {
+        self.batches
+            .iter()
+            .flat_map(|batch| batch.iter().filter(|d| pickable(d)))
+            .chain(&self.world)
     }
 
     /// The exact nearest hit wins. Only when the ray hits nothing selectable may a
@@ -63,7 +76,7 @@ impl WorldPicking {
     ) -> Result<Option<Picked>, ClientError> {
         let mut nearest = f64::INFINITY;
         let mut selected = None;
-        for draw in &self.world {
+        for draw in self.world_draws() {
             if let Some(hit) = ray.intersect_mesh(&draw.mesh, draw.model, cull(draw))?
                 && hit.distance < nearest
             {
@@ -99,7 +112,7 @@ impl WorldPicking {
                 None => proxies.push((target, bounds)),
             }
         };
-        for (door, draw) in self.world.iter().filter_map(|d| Some((door_of(d)?, d))) {
+        for (door, draw) in self.world_draws().filter_map(|d| Some((door_of(d)?, d))) {
             add(Picked::Door(door), draw);
         }
         for (entity, draw) in &self.bodies {
@@ -288,7 +301,11 @@ mod tests {
     }
 
     fn picking(world: Vec<SceneDraw>, bodies: Vec<(EntityRef, SceneDraw)>) -> WorldPicking {
-        WorldPicking { world, bodies }
+        WorldPicking {
+            batches: Vec::new(),
+            world,
+            bodies,
+        }
     }
 
     fn pixel_of(point: [f32; 3]) -> [f64; 2] {

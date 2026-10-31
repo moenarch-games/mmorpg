@@ -42,7 +42,10 @@ fn submitted_frame_mesh_material_transform_and_environment_change_actual_pixels(
             eye: [0.0, 12.0, 28.0],
             target: [0.0, 2.0, 0.0],
         };
-        let frame = world.frame(0.0, true, view.eye, None);
+        let mut frame = world.frame(0.0, true, view.eye, None);
+        // Every draw as a per-frame draw, so each edit below reaches the static scenery too.
+        frame.draws = frame.all_draws().cloned().collect();
+        frame.batches.clear();
         let before = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
         save("consumed-before", &before);
         let mut material = frame.clone();
@@ -327,6 +330,7 @@ fn an_empty_frame_shows_the_sky_of_the_submitted_hour() {
             target: [0.0, 6.0, 0.0],
         };
         let mut frame = world.frame(0.0, false, view.eye, None);
+        frame.batches.clear();
         frame.draws.clear();
         let noon = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
         let [r, _, b] = std::array::from_fn(|channel| {

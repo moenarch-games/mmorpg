@@ -33,7 +33,8 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
             eye,
             None,
         );
-        compare_draws(&frame.draws, &expected["draws"], &output["resources"]);
+        let draws: Vec<_> = frame.all_draws().cloned().collect();
+        compare_draws(&draws, &expected["draws"], &output["resources"]);
         // The native sun, moon and sky are render-engine's physical day cycle (#529); the
         // browser keeps its palette until its three.js port (render-engine#11). Both fog alike.
         let fog = &frame.lighting.fog;
@@ -50,7 +51,7 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
             None,
         );
         let mut resources = BTreeMap::new();
-        for draw in frame.draws.iter().chain(&next.draws) {
+        for draw in frame.all_draws().chain(next.all_draws()) {
             if let Some(previous) = resources.insert(&draw.resource_key, &draw.mesh) {
                 assert!(
                     Arc::ptr_eq(previous, &draw.mesh),
