@@ -60,9 +60,19 @@ mirror!(
     }
 );
 mirror!(
-    /// A player climbing, mantling (#490) or rolling (#516).
-    #[serde(rename_all = "lowercase")]
-    Traversal = core::TraversalView { Free, Climbing, Mantling, Rolling }
+    /// A player climbing a face, a ladder or a rope, mantling a low, mid or high ledge (#490,
+    /// #500) or rolling (#516).
+    #[serde(rename_all = "kebab-case")]
+    Traversal = core::TraversalView {
+        Free,
+        Climbing,
+        ClimbingLadder,
+        ClimbingRope,
+        MantlingLow,
+        MantlingMid,
+        MantlingHigh,
+        Rolling
+    }
 );
 mirror!(
     #[serde(rename_all = "lowercase")]

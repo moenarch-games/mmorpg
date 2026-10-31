@@ -313,20 +313,22 @@ fn encode_player(
     Ok(())
 }
 
-/// 18 bytes (#490): kind (0 free, 1 released, 2 climbing, 3 mantling), ticks, wall yaw, the
-/// mantle's goal (`3 × i32`) and whether it moves across; unused fields are zero.
+/// 19 bytes (#490, #500): kind (0 free, 1 released, 2 climbing, 3 mantling), ticks, wall yaw,
+/// the mantle's goal (`3 × i32`), whether it moves across, and the climb's grip or the mantle's
+/// ledge code; unused fields are zero.
 fn encode_traversal(payload: &mut Vec<u8>, traversal: mmorpg_core::Traversal) {
     use mmorpg_core::Traversal;
-    let (kind, ticks, wall, goal, across) = match traversal {
-        Traversal::Free => (0, 0, 0, [0; 3], false),
-        Traversal::Released { ticks } => (1, ticks, 0, [0; 3], false),
-        Traversal::Climbing { wall } => (2, 0, wall, [0; 3], false),
+    let (kind, ticks, wall, goal, across, detail) = match traversal {
+        Traversal::Free => (0, 0, 0, [0; 3], false, 0),
+        Traversal::Released { ticks } => (1, ticks, 0, [0; 3], false, 0),
+        Traversal::Climbing { wall, grip } => (2, 0, wall, [0; 3], false, grip.code()),
         Traversal::Mantling {
             goal,
             wall,
             ticks,
             across,
-        } => (3, ticks, wall, goal, across),
+            ledge,
+        } => (3, ticks, wall, goal, across, ledge.code()),
     };
     payload.push(kind);
     payload.extend_from_slice(&ticks.to_be_bytes());
@@ -335,6 +337,7 @@ fn encode_traversal(payload: &mut Vec<u8>, traversal: mmorpg_core::Traversal) {
         payload.extend_from_slice(&axis.to_be_bytes());
     }
     payload.push(u8::from(across));
+    payload.push(detail);
 }
 
 fn decode_traversal(
@@ -351,20 +354,26 @@ fn decode_traversal(
         i32::from_be_bytes(take(payload, offset)?),
     ];
     let across = read_bool(payload, offset)?;
+    let detail = read_u8(payload, offset)?;
     let unused = |ticks: u16, wall: u16, goal: [i32; 3], across: bool| {
         ticks == 0 && wall == 0 && goal == [0; 3] && !across
     };
+    let malformed = || ProtocolError::new("player climb or mantle is malformed");
     let traversal = match kind {
-        0 if unused(ticks, wall, goal, across) => Traversal::Free,
-        1 if unused(0, wall, goal, across) => Traversal::Released { ticks },
-        2 if unused(ticks, 0, goal, across) => Traversal::Climbing { wall },
+        0 if unused(ticks, wall, goal, across) && detail == 0 => Traversal::Free,
+        1 if unused(0, wall, goal, across) && detail == 0 => Traversal::Released { ticks },
+        2 if unused(ticks, 0, goal, across) => Traversal::Climbing {
+            wall,
+            grip: mmorpg_core::Grip::from_code(detail).ok_or_else(malformed)?,
+        },
         3 => Traversal::Mantling {
             goal,
             wall,
             ticks,
             across,
+            ledge: mmorpg_core::Ledge::from_code(detail).ok_or_else(malformed)?,
         },
-        _ => return Err(ProtocolError::new("player climb or mantle is malformed")),
+        _ => return Err(malformed()),
     };
     if !traversal.is_valid() {
         return Err(ProtocolError::new("player climb or mantle is out of range"));
@@ -1730,6 +1739,7 @@ mod tests {
                             wall: 16_384,
                             ticks: 5,
                             across: true,
+                            ledge: mmorpg_core::Ledge::Mid,
                         },
                         roll: mmorpg_core::Roll::Recovering { ticks: 9 },
                         combo: Some(mmorpg_core::ComboOpening {

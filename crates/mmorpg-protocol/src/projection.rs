@@ -70,9 +70,9 @@ pub const DOOR_RECORD_BYTES: usize = 2;
 /// Kind, flags, source and target references, `u16` amount.
 pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// Kind, ID, appearance, `3 × i32` position, `3 × i8` velocity, `u16`
-/// facing, level, health percent and flags. Only creatures are tapped or evade, so on a player
-/// record those two flag bits carry its traversal instead (#490): tapped means climbing,
-/// evading means mantling, and both mean a dodge roll (#516).
+/// facing, level, health percent and flags. Only creatures are tapped, evade or are lootable,
+/// so on a player record those three flag bits carry its [`mmorpg_core::TraversalView`] code
+/// instead (#490, #516, #500): tapped is bit 0, evading bit 1 and lootable bit 2.
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 12 + 3 + 2 + 1 + 1 + 1;
 /// Records that fit the budget without events or sheets: (1,077 − 106) / 27 = 35.
 pub const MAX_WIRE_ENTITIES: usize =
@@ -511,21 +511,19 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
     }
     payload.push(entity.health_percent);
     let flags = entity.flags;
-    let (tapped, evading) = if entity.kind == EntityKind::Player {
-        if flags.tapped_by_other || flags.evading {
-            return Err(ProtocolError::new("a player is never tapped or evading"));
+    let (tapped, evading, lootable) = if entity.kind == EntityKind::Player {
+        if flags.tapped_by_other || flags.evading || flags.lootable {
+            return Err(ProtocolError::new(
+                "a player is never tapped, evading or lootable",
+            ));
         }
-        match flags.traversal {
-            mmorpg_core::TraversalView::Free => (false, false),
-            mmorpg_core::TraversalView::Climbing => (true, false),
-            mmorpg_core::TraversalView::Mantling => (false, true),
-            mmorpg_core::TraversalView::Rolling => (true, true),
-        }
+        let code = flags.traversal.code();
+        (code & 1 != 0, code & 2 != 0, code & 4 != 0)
     } else {
         if flags.traversal != mmorpg_core::TraversalView::Free {
             return Err(ProtocolError::new("only a player climbs, mantles or rolls"));
         }
-        (flags.tapped_by_other, flags.evading)
+        (flags.tapped_by_other, flags.evading, flags.lootable)
     };
     payload.push(flag_byte(&[
         flags.dead,
@@ -535,7 +533,7 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
         tapped,
         evading,
         flags.targets_viewer,
-        flags.lootable,
+        lootable,
     ]));
     Ok(())
 }
@@ -964,31 +962,34 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
         targets_viewer,
         lootable,
     ] = read_flags(read_u8(payload, offset)?)?;
-    if lootable
-        && (kind != EntityKind::Creature
-            || !dead
-            || health_percent != 0
-            || attackable
-            || tapped_by_other)
-    {
-        return Err(ProtocolError::new("lootable entity flags are inconsistent"));
-    }
-    // On a player record the tapped and evading bits carry its traversal (#490, #516).
-    let (tapped_by_other, evading, traversal) = if kind == EntityKind::Player {
-        let traversal = match (tapped_by_other, evading) {
-            (false, false) => mmorpg_core::TraversalView::Free,
-            (true, false) => mmorpg_core::TraversalView::Climbing,
-            (false, true) => mmorpg_core::TraversalView::Mantling,
-            (true, true) => mmorpg_core::TraversalView::Rolling,
-        };
+    // On a player record the tapped, evading and lootable bits carry its traversal code
+    // (#490, #516, #500).
+    let (tapped_by_other, evading, lootable, traversal) = if kind == EntityKind::Player {
+        let code = u8::from(tapped_by_other) | u8::from(evading) << 1 | u8::from(lootable) << 2;
+        let traversal = mmorpg_core::TraversalView::from_code(code)
+            .ok_or_else(|| ProtocolError::new("player traversal code is out of range"))?;
         if dead && traversal != mmorpg_core::TraversalView::Free {
             return Err(ProtocolError::new(
                 "a dead player cannot climb, mantle or roll",
             ));
         }
-        (false, false, traversal)
+        (false, false, false, traversal)
     } else {
-        (tapped_by_other, evading, mmorpg_core::TraversalView::Free)
+        if lootable
+            && (kind != EntityKind::Creature
+                || !dead
+                || health_percent != 0
+                || attackable
+                || tapped_by_other)
+        {
+            return Err(ProtocolError::new("lootable entity flags are inconsistent"));
+        }
+        (
+            tapped_by_other,
+            evading,
+            lootable,
+            mmorpg_core::TraversalView::Free,
+        )
     };
     Ok(EntitySnapshot {
         kind,
