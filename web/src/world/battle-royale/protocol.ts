@@ -1,9 +1,11 @@
 /**
- * Battle Royale protocol/schema/ruleset 2, from battle-royale #18 at 5390ed8. The arena's content
+ * Battle Royale protocol 2, schema 2, ruleset 3 (battle-royale #33). The arena's content
  * revision is the shared fortress's (#552), read from `ArenaPresentation.contentRevision()`.
+ * The host sends zone sheets until a character command acknowledges them, as a zone host does
+ * (#544), so projections decode through the session's `ProjectionDecoder`.
  */
 import { encodeCommand, type WorldCommand } from "../../command-wire";
-import { decodeSnapshot, type ZoneSnapshot } from "../../replication";
+import type { ProjectionDecoder, ZoneSnapshot } from "../../replication";
 import { classChoiceCodes, type JoinCharacter } from "../world-source";
 
 export const ARENA_ZONE_ID = 100;
@@ -69,10 +71,13 @@ class Reader {
   }
 }
 
-/** `contentRevision` is the fortress content both host and client must run. */
-export function decodeMatchProjection(bytes: Uint8Array, contentRevision: bigint): MatchProjection {
+/**
+ * `contentRevision` is the fortress content both host and client must run; `sheets` is the
+ * session's decoder, holding the sheets the host sent earlier.
+ */
+export function decodeMatchProjection(bytes: Uint8Array, contentRevision: bigint, sheets: ProjectionDecoder): MatchProjection {
   const reader = new Reader(bytes);
-  if (new TextDecoder().decode(reader.bytes(4)) !== "BRPL" || reader.u16() !== 2 || reader.u16() !== 2 || reader.u64() !== 2n) {
+  if (new TextDecoder().decode(reader.bytes(4)) !== "BRPL" || reader.u16() !== 2 || reader.u16() !== 2 || reader.u64() !== 3n) {
     throw new Error("Unsupported Battle Royale projection version.");
   }
   const matchId = reader.u64();
@@ -101,7 +106,7 @@ export function decodeMatchProjection(bytes: Uint8Array, contentRevision: bigint
   }
   const zoneBytes = reader.u32();
   if (zoneBytes > 1024 * 1024) { throw new Error("Battle Royale zone projection is too large."); }
-  const zone = decodeSnapshot(reader.bytes(zoneBytes));
+  const zone = sheets.decode(reader.bytes(zoneBytes));
   reader.finish();
   const viewer = players.find((player) => player.id === zone.viewerId);
   if (zone.zoneId !== ARENA_ZONE_ID || zone.contentRevision !== contentRevision || !viewer ||
@@ -112,8 +117,9 @@ export function decodeMatchProjection(bytes: Uint8Array, contentRevision: bigint
     acknowledgedSequence, players, zone };
 }
 
-export function encodeCharacterCommand(command: WorldCommand): Uint8Array {
-  const inner = encodeCommand(command);
+/** A character command echoing the sheet revisions `sheets` holds, so the host stops resending them. */
+export function encodeCharacterCommand(command: WorldCommand, sheets: ProjectionDecoder): Uint8Array {
+  const inner = sheets.acknowledge(encodeCommand(command));
   const bytes = new Uint8Array(3 + inner.byteLength);
   bytes.set([2, 0, 3]);
   bytes.set(inner, 3);

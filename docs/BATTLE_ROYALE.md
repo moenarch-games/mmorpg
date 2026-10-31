@@ -84,12 +84,14 @@ authoritative Battle Royale server.
 
 ## Local hosted path
 
-Use a `battle-royale` revision with the fortress (#31), at or after
-**db76eaa48f4df3c5084a51ca9d0857b01bff4832**, whose core/protocol pin is this checkout's MMORPG
-revision or at least its snapshot/command versions (that revision pins MMORPG `6d744b7`, before
-the #566 sheet acknowledgement, so until Renovate re-pins it, `[patch]` its `mmorpg-core` and
-`mmorpg-protocol` to this checkout). Mode protocol/schema/ruleset 2 wrap the MMORPG snapshot
-and command. Different versions or another arena content revision fail closed.
+Use the `battle-royale` revision this workspace pins,
+**d633da2c90cb230b78e19c9975609002bc616400** (battle-royale #33), or a later one whose
+core/protocol pin carries this checkout's `PROTOCOL_ID` (it pins MMORPG `fc65842`, after the
+#566 sheet acknowledgement). Mode protocol 2, schema 2 and ruleset 3 wrap the MMORPG snapshot
+and command. Character commands echo the sheet revisions the session's decoder holds, and the
+host sends a sheet only until a command acknowledges it, as a zone host does. Ruleset 3's storm
+waits 60 s and closes over 120 s, so it reaches no spawn slot in the first two minutes of
+combat. Different versions or another arena content revision fail closed.
 
 With that checkout beside this one:
 
@@ -119,13 +121,14 @@ python3 scripts/smoke-browser-battle-royale.py --host /path/to/battle-royale-hos
 ```
 
 This explicit smoke reuses the ordinary online smoke's TLS, ports and static-file
-handler. Two actual Chromium clients select builds, fight using normal input, observe
+handler. Two actual Chromium clients select builds, fight using normal input (Tab to target, a
+right drag to face the target since offensive abilities fire where the character faces, #517), observe
 a real hit, elimination and the same winner, change class/equipment between lives,
 and enter match 2. A client screenshot and the result are written to ignored
 `artifacts/browser-battle-royale/`. It does not use a mocked transport, private health
 edits, a local PvP simulation or a separate renderer.
 
-The implementation run passed the two-browser journey, including Arcanist → Ranger and an empty off hand in match 2. The captured real-client hit below shows both players, the actual target health and spent mana.
+The battle-royale #33 run passed the two-browser journey on the fortress against host `d633da2`: the Arcanist won match 1, then Arcanist → Ranger and an empty off hand in match 2. The captured real-client hit below shows both players by the south-west corner tower, the actual target health and spent mana.
 
 ![Two real browser players fighting through the hosted MMORPG combat](reviews/battle-royale/pvp-hit.png)
 

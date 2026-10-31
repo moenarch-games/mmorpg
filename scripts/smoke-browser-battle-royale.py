@@ -29,6 +29,41 @@ ROOT = Path(__file__).resolve().parents[1]
 HELPERS = runpy.run_path(str(ROOT / "scripts" / "smoke-browser-online.py"))
 ARTIFACTS = ROOT / "artifacts" / "browser-battle-royale"
 SOURCE = "window.__valeDebug.worldSource()"
+# Signed yaw units (65536 per turn) from the viewer's facing to its selected target.
+AIM_ERROR = f"""(() => {{
+  const p = {SOURCE}.latestProjection();
+  const self = p.entities.find((e) => e.entityId === p.viewerId);
+  const target = p.entities.find((e) => e.entityId === p.viewer.target.id);
+  const bearing = Math.atan2(target.position[0] - self.position[0], target.position[2] - self.position[2]) / (2 * Math.PI) * 65536;
+  return ((Math.round(bearing - self.facing) % 65536) + 98304) % 65536 - 32768;
+}})()"""
+
+
+def face_target(page):
+    """Turns the character toward its target with a right drag, as a player does (#517 free aim)."""
+    page.mouse.move(800, 500)
+    page.mouse.down(button="right")
+    try:
+        x = 800.0
+        units_per_pixel = None
+        for _ in range(30):
+            error = page.evaluate(AIM_ERROR)
+            if abs(error) < 1200:
+                return
+            if units_per_pixel is None:
+                step = 40.0
+            else:
+                step = max(-300.0, min(300.0, error / units_per_pixel))
+            before = error
+            x += step
+            page.mouse.move(x, 500, steps=4)
+            page.wait_for_timeout(150)
+            turned = before - page.evaluate(AIM_ERROR)
+            if abs(turned) > 50:
+                units_per_pixel = turned / step
+        raise AssertionError(f"could not face the target: {page.evaluate(AIM_ERROR)} yaw units off")
+    finally:
+        page.mouse.up(button="right")
 
 
 def run(host_binary: Path):
@@ -102,6 +137,8 @@ def run(host_binary: Path):
         initial = second.evaluate(f"{SOURCE}.latestProjection().viewer.health")
         first.mouse.move(1000, 600)
         first.mouse.wheel(0, 600)
+        face_target(first)
+        first.wait_for_function(f"{SOURCE}.latestProjection()?.viewer.target?.kind === 'player'")
         first.keyboard.press("1")
         second.wait_for_function(f"{SOURCE}.latestProjection()?.viewer.health < {initial}", timeout=10_000)
         first.screenshot(path=str(ARTIFACTS / "pvp-hit.png"))

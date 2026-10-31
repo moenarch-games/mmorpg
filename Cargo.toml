@@ -35,7 +35,7 @@ mmorpg-presentation = { path = "crates/mmorpg-presentation" }
 mmorpg-client-model = { path = "crates/mmorpg-client-model" }
 # The Battle Royale fortress (#552): its one shared arena content, read by the browser's practice
 # zone and arena presentation. It pins mmorpg-core by git; the patch below points it here.
-battle-royale-core = { git = "https://github.com/moenarch-games/battle-royale.git", rev = "db76eaa48f4df3c5084a51ca9d0857b01bff4832" }
+battle-royale-core = { git = "https://github.com/moenarch-games/battle-royale.git", rev = "d633da2c90cb230b78e19c9975609002bc616400" }
 postgres = "=0.19.14"
 tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 # Test-only harness: one trial per workload or scenario file, run in parallel by nextest (#540).
