@@ -1,69 +1,69 @@
 # Command golden fixture, verified by mmorpg-protocol.
-170101000000 move 1 0 0
-170101014000 move 1 1 16384
-1701ffff8000 move -1 -1 32768
-17010001abcd move 0 1 43981
-17010000ffff move 0 0 65535
-1702 jump
-171d roll
-171901 rise 1
-171900 rise 0
-1719ff rise -1
-1703020000006c select_target 2 108
-170301ee6b2800 select_target 1 4000000000
-17030300000005 select_target 3 5
-17030000000000 select_target 0 0
-1704ffff swing 65535
-1706 release_spirit
-1707000f0002 move_item 0 15 2
-17070f00ffff move_item 15 0 65535
-1707ff000000 move_item 255 0 0
-1708000000010000000000000063 loot 1 99
-1708ffffffffffffffffffffffff loot 4294967295 18446744073709551615
-1709010000000000 use_ability 1 0 0
-170909020000006c use_ability 9 2 108
-1709ff01ee6b2800 use_ability 255 1 4000000000
-170a cancel_cast
-17150100000101 directed_strike 1 0 1 1
-171501abcd0002 directed_strike 1 43981 0 2
-1715ffffff0200 directed_strike 255 65535 2 0
-171601 guard 1
-171602 guard 2
-171603 guard 3
-171600 guard 0
-170b0001 choose_class 0 1
-170b0200 choose_class 2 0
-170bff07 choose_class 255 7
-170c00 equip_item 0
-170c0f equip_item 15
-170cff equip_item 255
-170d00 unequip_item 0
-170d05 unequip_item 5
-170dff unequip_item 255
-170e00000003000001 buy_item 3 0 1
-170effffffffffffff buy_item 4294967295 255 65535
-170f00000003000003 sell_item 3 0 3
-170f00000000ff0000 sell_item 0 255 0
-171000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
-171001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
-171101 emote 1
-171105 emote 5
-17120000000101 accept_quest 1 1
-1712ffffffffff accept_quest 4294967295 255
-1713000000020201 complete_quest 2 2 1
-17130000000000ff complete_quest 0 0 255
-171403 abandon_quest 3
-171e02 use_waystone 2
-17170101 use_door 1 1
-1717ff00 use_door 255 0
-17180004 repair 4
-17180000 repair 0
-171a010000000000000000 command_minions follow
-171a02020000006c000000 command_minions attack 2 108
-171a03fffffb2e0000ddd5 command_minions defend -1234 56789
-171a040000000000000000 command_minions retreat
-171c0400 release_ability 4 0
-171cff01 release_ability 255 1
-171b00000000000004d20903020000006c observed 1234 use_ability 3 2 108
-171bffffffffffffffff150140000002 observed 18446744073709551615 directed_strike 1 16384 0 2
-171b000000000000000002 observed 0 jump
+c50101000000 move 1 0 0
+c50101014000 move 1 1 16384
+c501ffff8000 move -1 -1 32768
+c5010001abcd move 0 1 43981
+c5010000ffff move 0 0 65535
+c502 jump
+c51d roll
+c51901 rise 1
+c51900 rise 0
+c519ff rise -1
+c503020000006c select_target 2 108
+c50301ee6b2800 select_target 1 4000000000
+c5030300000005 select_target 3 5
+c5030000000000 select_target 0 0
+c504ffff swing 65535
+c506 release_spirit
+c507000f0002 move_item 0 15 2
+c5070f00ffff move_item 15 0 65535
+c507ff000000 move_item 255 0 0
+c508000000010000000000000063 loot 1 99
+c508ffffffffffffffffffffffff loot 4294967295 18446744073709551615
+c509010000000000 use_ability 1 0 0
+c50909020000006c use_ability 9 2 108
+c509ff01ee6b2800 use_ability 255 1 4000000000
+c50a cancel_cast
+c5150100000101 directed_strike 1 0 1 1
+c51501abcd0002 directed_strike 1 43981 0 2
+c515ffffff0200 directed_strike 255 65535 2 0
+c51601 guard 1
+c51602 guard 2
+c51603 guard 3
+c51600 guard 0
+c50b0001 choose_class 0 1
+c50b0200 choose_class 2 0
+c50bff07 choose_class 255 7
+c50c00 equip_item 0
+c50c0f equip_item 15
+c50cff equip_item 255
+c50d00 unequip_item 0
+c50d05 unequip_item 5
+c50dff unequip_item 255
+c50e00000003000001 buy_item 3 0 1
+c50effffffffffffff buy_item 4294967295 255 65535
+c50f00000003000003 sell_item 3 0 3
+c50f00000000ff0000 sell_item 0 255 0
+c51000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
+c51001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
+c51101 emote 1
+c51105 emote 5
+c5120000000101 accept_quest 1 1
+c512ffffffffff accept_quest 4294967295 255
+c513000000020201 complete_quest 2 2 1
+c5130000000000ff complete_quest 0 0 255
+c51403 abandon_quest 3
+c51e02 use_waystone 2
+c5170101 use_door 1 1
+c517ff00 use_door 255 0
+c5180004 repair 4
+c5180000 repair 0
+c51a010000000000000000 command_minions follow
+c51a02020000006c000000 command_minions attack 2 108
+c51a03fffffb2e0000ddd5 command_minions defend -1234 56789
+c51a040000000000000000 command_minions retreat
+c51c0400 release_ability 4 0
+c51cff01 release_ability 255 1
+c51b00000000000004d20903020000006c observed 1234 use_ability 3 2 108
+c51bffffffffffffffff150140000002 observed 18446744073709551615 directed_strike 1 16384 0 2
+c51b000000000000000002 observed 0 jump
