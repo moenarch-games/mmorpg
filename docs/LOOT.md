@@ -89,8 +89,8 @@ Settlement stages the fixed bag and u32 copper balance, preflights any bag revis
 increment, then commits both credits and consumes remaining loot together. Full
 bags, copper overflow or revision exhaustion leave player and corpse unchanged.
 Money-only rewards work with a full bag and do not bump its revision. Item credit
-updates the existing bag revision/change tick; periodic complete sheets recover
-a lost update. Duplicate claims cannot credit again, and a respawn's new death
+updates the existing bag revision; the bag sheet is sent until the client
+acknowledges it (#544), which recovers a lost update. Duplicate claims cannot credit again, and a respawn's new death
 tick fences claims for an earlier life. Looting preserves the existing corpse
 despawn and respawn schedule. Removing a player clears its tap and rewards, so
 a reused session-local ID cannot inherit them.
