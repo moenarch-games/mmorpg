@@ -1224,6 +1224,17 @@ impl ZoneContent {
         hash.len(site.retreat.len());
         hash.i32s(site.retreat.as_flattened());
         hash.i32s(&site.camp_spread);
+        hash.len(site.aid.len());
+        for task in &site.aid {
+            match task.kind {
+                crate::AidKind::TendGuard(npc) => {
+                    hash.u8(1);
+                    hash.u32(npc.get());
+                }
+                crate::AidKind::MendBreach => hash.u8(2),
+            }
+            hash.i32s(&task.at);
+        }
         hash.finish()
     }
 

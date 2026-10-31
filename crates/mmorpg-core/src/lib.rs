@@ -167,8 +167,8 @@ pub use quest::{
     QuestObjective, QuestRewards, QuestSheet,
 };
 pub use raid::{
-    RaidApproach, RaidIncident, RaidLeg, RaidMember, RaidOutcome, RaidResolution, RaidSite,
-    RaidState, RaidView,
+    AidKind, AidTask, RaidApproach, RaidIncident, RaidLeg, RaidMember, RaidOutcome, RaidResolution,
+    RaidSite, RaidState, RaidView,
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use rewards::{RewardGrant, RewardHistory, RewardKey};
@@ -429,6 +429,10 @@ pub enum ZoneCommand {
     /// Travels from the waystone within reach to the unlocked `waystone` (#145, Atlas
     /// 5.1.9); the zone checks reach, unlocks and combat in the tick.
     UseWaystone { waystone: WaystoneId },
+    /// Tends or mends aid task `task` of the night raid's aftermath (#531, Atlas 5.1.51): an
+    /// index into the raid site's authored tasks. The zone checks that it is open and within
+    /// reach in the tick.
+    RaidAid { task: u8 },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

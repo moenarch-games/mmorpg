@@ -34,6 +34,7 @@ pub(crate) fn encode_key(payload: &mut Vec<u8>, key: RewardKey) -> Result<(), Pr
         RewardKey::LootItem { .. } => 4,
         RewardKey::LootQuestItem { .. } => 5,
         RewardKey::QuestCompletion { .. } => 6,
+        RewardKey::RaidParticipation { .. } => 7,
     };
     payload.push(code);
     if let Some((creature, life)) = key.creature_life() {
@@ -48,6 +49,9 @@ pub(crate) fn encode_key(payload: &mut Vec<u8>, key: RewardKey) -> Result<(), Pr
             payload.extend_from_slice(&item.get().to_be_bytes())
         }
         RewardKey::QuestCompletion { quest } => payload.push(quest.get()),
+        RewardKey::RaidParticipation { incident } => {
+            payload.extend_from_slice(&incident.to_be_bytes());
+        }
         _ => {}
     }
     Ok(())
@@ -57,6 +61,10 @@ pub(crate) fn decode_key(payload: &[u8], offset: &mut usize) -> Result<RewardKey
     let key = if code == 6 {
         RewardKey::QuestCompletion {
             quest: QuestId::new(read_u8(payload, offset)?),
+        }
+    } else if code == 7 {
+        RewardKey::RaidParticipation {
+            incident: u32::from_be_bytes(take(payload, offset)?),
         }
     } else {
         if !(1..=5).contains(&code) {
@@ -223,6 +231,7 @@ mod tests {
                 item: ItemId::new(1),
             },
             RewardKey::QuestCompletion { quest },
+            RewardKey::RaidParticipation { incident: 3 },
         ] {
             history.record(1, key).unwrap();
         }

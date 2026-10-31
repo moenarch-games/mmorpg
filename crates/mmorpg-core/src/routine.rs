@@ -147,6 +147,18 @@ impl ZoneSimulation {
     #[must_use]
     pub fn npc_placement(&self, npc: NpcId) -> Option<NpcPlacement> {
         let definition = self.content.npc(npc)?;
+        // A guard injured in a lost raid lies at the farm's shelter (#531).
+        if let Some(position) = self
+            .content
+            .raid()
+            .and_then(|site| site.injured_at(npc, self.raid.aftermath))
+        {
+            return Some(NpcPlacement {
+                position,
+                facing: definition.facing,
+                velocity: [0, 0],
+            });
+        }
         Some(match self.content.routine(npc) {
             // A knock woke it (#158): it walks to its door and back to bed.
             Some(routine)
@@ -180,15 +192,23 @@ impl ZoneSimulation {
         !(self.content.closed_at_night(npc) && is_night(time_of_day(self.tick)))
     }
 
-    /// Moves every routine NPC's body to its placement at the current tick and, with
-    /// `open_doors`, opens a closed door it has come within reach of.
-    pub(crate) fn place_routine_npcs(&mut self, open_doors: bool) -> Result<(), ZoneError> {
-        let routines = self.content.routines().to_vec();
-        for routine in routines {
-            let Some(placement) = self.npc_placement(routine.npc) else {
+    /// Moves every routine NPC's and raid aid guard's body to its placement at the current tick
+    /// and, with `open_doors`, opens a closed door a routine NPC has come within reach of.
+    pub(crate) fn place_npcs(&mut self, open_doors: bool) -> Result<(), ZoneError> {
+        let mut movers: Vec<(NpcId, Option<DoorId>)> = self
+            .content
+            .routines()
+            .iter()
+            .map(|routine| (routine.npc, routine.door))
+            .collect();
+        if let Some(site) = self.content.raid() {
+            movers.extend(site.aid_guards().map(|npc| (npc, None)));
+        }
+        for (npc, routine_door) in movers {
+            let Some(placement) = self.npc_placement(npc) else {
                 continue;
             };
-            let entity = EntityRef::Npc(routine.npc);
+            let entity = EntityRef::Npc(npc);
             let [x, z] = placement.position;
             let unmoved = self
                 .world
@@ -214,11 +234,10 @@ impl ZoneSimulation {
                 .map_err(|error| ZoneError::new(format!("npc body update failed: {error}")))?;
             self.interest.move_if_needed(entity, x, z);
             // A woken resident's door follows its wake (`advance_private_homes`).
-            if !open_doors || placement.velocity == [0, 0] || self.wakes.contains_key(&routine.npc)
-            {
+            if !open_doors || placement.velocity == [0, 0] || self.wakes.contains_key(&npc) {
                 continue;
             }
-            if let Some(door) = routine.door.and_then(|id| self.content.door(id).copied())
+            if let Some(door) = routine_door.and_then(|id| self.content.door(id).copied())
                 && !self.doors.get(&door.id).is_some_and(|state| state.open)
                 && door.within_reach([x, 0, z])
             {

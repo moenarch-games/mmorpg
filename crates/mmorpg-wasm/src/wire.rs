@@ -585,10 +585,12 @@ pub struct PieceState {
 
 /// The night raid as seen near its target (#530): the assault phase (1–3, or 0 once it resolved
 /// while the barn still recovers) and the barn's integrity in percent.
+/// `aid` holds the aid tasks a lost raid left open, one bit per task in `raidAid()` order (#531).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct RaidSignal {
     pub phase: u8,
     pub integrity: u8,
+    pub aid: u8,
 }
 
 /// One projectile: position in units, heading/pitch in 1/65 536 turns (heading 0 is +Z).
@@ -1346,6 +1348,7 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
             raid: snapshot.raid.map(|raid| RaidSignal {
                 phase: raid.phase,
                 integrity: raid.integrity,
+                aid: raid.aid,
             }),
             events: snapshot.events.iter().copied().map(Into::into).collect(),
             chat: snapshot.chat.iter().map(Into::into).collect(),
@@ -1560,6 +1563,7 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
             raid: snapshot.raid.map(|raid| core::RaidView {
                 phase: raid.phase,
                 integrity: raid.integrity,
+                aid: raid.aid,
             }),
         })
     }
@@ -1695,6 +1699,10 @@ pub enum WorldCommand {
     UseWaystone {
         waystone: u8,
     },
+    /// Tends or mends open aid task `task` of a lost night raid's aftermath (#531).
+    RaidAid {
+        task: u8,
+    },
     /// Starts repairing a destructible piece (#305), or stops with `null`.
     Repair {
         piece: Option<u16>,
@@ -1815,6 +1823,7 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
                 waystone: core::WaystoneId::new(waystone)
                     .ok_or_else(|| format!("unknown waystone {waystone}"))?,
             },
+            C::RaidAid { task } => Self::RaidAid { task },
             C::Repair { piece } => Self::Repair {
                 // The wire carries the piece plus one, so the largest ID has no reference.
                 piece: piece

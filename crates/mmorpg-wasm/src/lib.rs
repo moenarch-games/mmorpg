@@ -535,6 +535,30 @@ pub fn raid_area() -> Vec<i32> {
         .unwrap_or_default()
 }
 
+/// The night raid target's aftermath aid tasks (#531) as `[x, z, npc]` triples in units, in
+/// task order: `npc` is the injured guard to tend, or 0 for a breach to mend.
+#[wasm_bindgen(js_name = raidAid)]
+#[must_use]
+pub fn raid_aid() -> Vec<i32> {
+    host::hosted_content()
+        .raid()
+        .map(|site| {
+            site.aid
+                .iter()
+                .flat_map(|task| {
+                    let npc = match task.kind {
+                        mmorpg_core::AidKind::TendGuard(npc) => {
+                            i32::try_from(npc.get()).unwrap_or(0)
+                        }
+                        mmorpg_core::AidKind::MendBreach => 0,
+                    };
+                    [task.at[0], task.at[1], npc]
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The authored action graph as JSON (#380, #381): actions by region, edges
 /// with windows in ms and ticks, recovery modifiers and compatibility rules.
 #[wasm_bindgen(js_name = actionGraph)]

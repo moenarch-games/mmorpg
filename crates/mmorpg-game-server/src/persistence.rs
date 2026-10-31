@@ -106,6 +106,7 @@ impl GrantId {
                     quest.get()
                 ));
             }
+            RewardKey::RaidParticipation { incident } => format!("raid/{incident}/participation"),
         };
         if key.world_owned() {
             Self::new(format!("world/{world}/zone/{}/{suffix}", zone.get()))

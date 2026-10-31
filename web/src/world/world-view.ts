@@ -29,6 +29,7 @@ import {
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
 import { ImpactEffects, impactCues } from "./impact-effects";
 import { RaidSmoke } from "./raid-smoke";
+import { type AidTask, reachableAidTask } from "./raid-aid";
 import { WalkInBuildings } from "./walk-in-buildings";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
 import { AmbientAnimals } from "./ambient-animals";
@@ -325,6 +326,8 @@ export class WorldView {
   #reachablePieces: (x: number, z: number) => readonly number[] = () => [];
   /** The night raid target's disturbance circle in units (#530), from the scenery. */
   #raidArea: { x: number; z: number; radius: number } | null = null;
+  /** The night raid target's aftermath aid task spots (#531), from the scenery. */
+  #raidAid: readonly AidTask[] = [];
   #restClip: (kind: ImportedModelKind) => string = () => { throw new Error("No world is loaded."); };
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][], string | null][] = [];
@@ -513,6 +516,7 @@ export class WorldView {
     this.#reachableDoor = world.scenery.buildings.reachableDoor;
     this.#reachablePieces = world.scenery.reachablePieces;
     this.#raidArea = world.scenery.raidArea;
+    this.#raidAid = world.scenery.raidAid;
     this.#raidRoof = null;
     this.#waystone.load(world.scenery.waystoneAt, world.scenery.waystones);
     this.#units = null;
@@ -808,7 +812,8 @@ export class WorldView {
 
   /**
    * Interact (T / gamepad Start): talk to a selected NPC; without one, swing the door in reach
-   * (#158), or repair a damaged structure piece in reach (#305, free; moving stops it);
+   * (#158), repair a damaged structure piece in reach (#305, free; moving stops it), or help a
+   * lost night raid's aftermath in reach (#531);
    * otherwise open the quest dialog, which says whom to approach.
    */
   interact(): void {
@@ -827,6 +832,12 @@ export class WorldView {
       this.queueIntent(() => ({ kind: "repair", piece }));
       return;
     }
+    // Or tend a guard or mend a breach a lost night raid left in reach (#531).
+    const task = at && !talking ? reachableAidTask(projection?.raid, this.#raidAid, at[0], at[2]) : null;
+    if (task !== null) {
+      this.queueIntent(() => ({ kind: "raid-aid", task }));
+      return;
+    }
     this.toggleQuestDialog();
   }
 
@@ -842,7 +853,7 @@ export class WorldView {
     return touchContext(projection, {
       isVendor: (npc) => this.#catalog?.vendors.has(npc) ?? false,
       doorInReach: at ? this.#reachableDoor(at[0], at[2]) !== 0 : false,
-      repairInReach: at ? this.#reachablePieces(at[0], at[2]).some((id) => damaged.has(id)) : false,
+      repairInReach: at ? this.#reachablePieces(at[0], at[2]).some((id) => damaged.has(id)) || reachableAidTask(projection?.raid, this.#raidAid, at[0], at[2]) !== null : false,
       arena: this.#arena,
     });
   }

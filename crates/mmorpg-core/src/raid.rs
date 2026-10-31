@@ -33,6 +33,21 @@
 //!   circle around the farm for the minimap. Clients show smoke over a burning or damaged barn.
 //!   No region-wide announcement is sent.
 //!
+//! - **Aftermath** (#531, 5.1.50): a lost raid opens the site's authored aid tasks: breaches in
+//!   the barn's walls, and gate guards who answered the alarm and now lie injured by the farmhouse
+//!   instead of standing at their gates (projected at [`INJURED_HEALTH_PERCENT`]). The tasks close
+//!   on their own, in authored order, as the barn's integrity grows back; the last one closes when
+//!   the barn is whole again, so the farm returns to normal in finite time without any help.
+//! - **Recovery aid** (#531, 5.1.51): a player within [`AID_REACH_UNITS`] of an open task's spot
+//!   can tend that guard or mend that breach ([`crate::ZoneCommand::RaidAid`]). The task closes
+//!   once, for whoever got there first, and the shared barn regains [`AID_RESTORE_POINTS`]. Aid
+//!   speeds the restoration only; the cooldown (5.1.68) still runs from the resolution tick.
+//! - **Participation rewards** (#531, 5.1.52): a character earns [`REWARD_EXPERIENCE`] and
+//!   [`REWARD_COPPER`] once per incident, the first time it either fights the incident's raiders
+//!   (it has threat on one of them: damage, or healing a defender) or has an aid action
+//!   accepted. Standing nearby earns nothing, and there is no ranking. The once-only grant is the
+//!   zone's `rewarded` list plus the durable [`crate::RewardKey::RaidParticipation`] receipt.
+//!
 //! The raid state, the participants and every raider's march are canonical. A suspended zone's
 //! tick freezes, and its raid, recovery and cooldown freeze with it.
 
@@ -42,7 +57,9 @@ use crate::creature::Life;
 use crate::entity::body_id;
 use crate::routine::{HOUR_TICKS, time_of_day};
 use crate::snapshot::CreatureAi;
-use crate::{CreatureId, EntityRef, PlayerId, ZoneError, ZoneEvent, ZoneSimulation};
+use crate::{
+    CreatureId, EntityRef, ErrorCode, NpcId, PlayerId, ZoneError, ZoneEvent, ZoneSimulation,
+};
 
 /// The nightly check, at 22:00.
 pub const TRIGGER_TIME: u32 = 22 * HOUR_TICKS;
@@ -90,6 +107,34 @@ pub const RETREAT_TIMEOUT_TICKS: u32 = crate::long_ticks_from_ms(5 * 60 * 1_000)
 pub const MAX_RAIDERS: usize = 24;
 /// Most waypoints of one authored route.
 pub const MAX_RAID_WAYPOINTS: usize = 24;
+/// Most aid tasks a site may author: projections carry the open ones as five bits.
+pub const MAX_AID_TASKS: usize = 5;
+/// A player aids a task within 3 m of its spot.
+pub const AID_REACH_UNITS: i32 = 300;
+/// One accepted aid action gives the barn back 360 integrity points, 3 of its 20 min of
+/// restoration.
+pub const AID_RESTORE_POINTS: u32 = 360;
+/// What a defender or helper earns once per incident: a little more than one level-4 kill.
+pub const REWARD_EXPERIENCE: u32 = 120;
+pub const REWARD_COPPER: u32 = 15;
+/// An injured guard's projected health.
+pub const INJURED_HEALTH_PERCENT: u8 = 30;
+
+/// What one aid task asks of a helper (5.1.51).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AidKind {
+    /// Tend the injured guard, who lies at the task's spot until tended or recovered.
+    TendGuard(NpcId),
+    /// Mend the breach in the objective at the task's spot.
+    MendBreach,
+}
+
+/// One authored post-raid aid task: its kind and where a helper does it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AidTask {
+    pub kind: AidKind,
+    pub at: [i32; 2],
+}
 
 /// One way into the target: the reserved raider spawns standing at its outskirts staging slots,
 /// and the route from there to the objective. The route's last point is where its raiders hit
@@ -115,9 +160,44 @@ pub struct RaidSite {
     pub retreat: Vec<[i32; 2]>,
     /// Survivors spread out from the camp point by this much each.
     pub camp_spread: [i32; 2],
+    /// What a lost raid leaves to aid, in the order the tasks close on their own (#531).
+    pub aid: Vec<AidTask>,
 }
 
 impl RaidSite {
+    /// Every aid task's bit.
+    #[must_use]
+    pub fn aid_mask(&self) -> u8 {
+        u8::try_from((1_u16 << self.aid.len()) - 1).unwrap_or(u8::MAX)
+    }
+
+    /// Whether aid task `index` has closed on its own at `damage`: the tasks close one by one
+    /// as the objective regains equal shares of its integrity, the last one once it is whole.
+    #[must_use]
+    pub fn aid_settled(&self, index: usize, damage: u32) -> bool {
+        let count = u64::try_from(self.aid.len()).unwrap_or(u64::MAX);
+        let index = u64::try_from(index).unwrap_or(u64::MAX);
+        u64::from(damage) * count
+            <= u64::from(OBJECTIVE_INTEGRITY) * count.saturating_sub(index + 1)
+    }
+
+    /// The injured guard `npc`'s shelter spot while its task is open in `aftermath`.
+    #[must_use]
+    pub fn injured_at(&self, npc: NpcId, aftermath: u8) -> Option<[i32; 2]> {
+        self.aid.iter().enumerate().find_map(|(index, task)| {
+            (task.kind == AidKind::TendGuard(npc) && aftermath & (1 << index) != 0)
+                .then_some(task.at)
+        })
+    }
+
+    /// The guards whose posts the aftermath can empty.
+    pub fn aid_guards(&self) -> impl Iterator<Item = NpcId> + '_ {
+        self.aid.iter().filter_map(|task| match task.kind {
+            AidKind::TendGuard(npc) => Some(npc),
+            AidKind::MendBreach => None,
+        })
+    }
+
     #[must_use]
     pub fn centre(&self) -> [i32; 2] {
         let [min, max] = self.footprint;
@@ -263,6 +343,16 @@ impl RaidSite {
                 .colliders()
                 .iter()
                 .all(|collider| collider.id != self.objective)
+            || self.aid.len() > MAX_AID_TASKS
+            || !self.aid.iter().all(|task| in_range(&task.at))
+            || self.aid_guards().any(|npc| content.npc(npc).is_none())
+            || {
+                let mut guards: Vec<NpcId> = self.aid_guards().collect();
+                let count = guards.len();
+                guards.sort_unstable();
+                guards.dedup();
+                guards.len() != count || guards.iter().any(|&npc| content.routine(npc).is_some())
+            }
         {
             return Err(ZoneError::new("invalid raid site"));
         }
@@ -340,10 +430,38 @@ pub struct RaidState {
     /// Integrity the objective has lost, `0..=OBJECTIVE_INTEGRITY`.
     pub damage: u32,
     pub last: Option<RaidResolution>,
+    /// The last lost incident's aid tasks still open, one bit per task in authored order
+    /// (#531).
+    pub aftermath: u8,
+    /// Players already rewarded for the current incident (the running one, otherwise the last),
+    /// by ID (#531).
+    pub rewarded: Vec<PlayerId>,
 }
 
 impl RaidState {
-    pub(crate) fn validate(&self, now: u64) -> Result<(), ZoneError> {
+    /// The incident rewards and aid currently count toward: the running one, otherwise the last.
+    #[must_use]
+    pub fn current_incident(&self) -> Option<u32> {
+        self.active
+            .as_ref()
+            .map(|incident| incident.id)
+            .or(self.last.map(|last| last.incident))
+    }
+
+    pub(crate) fn validate(&self, now: u64, aid_mask: u8) -> Result<(), ZoneError> {
+        let aftermath_ok = self.aftermath & !aid_mask == 0
+            && (self.aftermath == 0
+                || (self.active.is_none()
+                    && self.damage > 0
+                    && self
+                        .last
+                        .is_some_and(|last| last.outcome == RaidOutcome::Lost)));
+        let rewarded_ok = self.rewarded.len() <= crate::MAX_PLAYERS_PER_ZONE
+            && self.rewarded.windows(2).all(|pair| pair[0] < pair[1])
+            && (self.rewarded.is_empty() || self.current_incident().is_some());
+        if !aftermath_ok || !rewarded_ok {
+            return Err(ZoneError::new("raid aftermath is out of range"));
+        }
         let active_ok = self.active.as_ref().is_none_or(|incident| {
             incident.id == self.incidents
                 && (1..=RAID_PHASES).contains(&incident.phase)
@@ -374,6 +492,8 @@ pub struct RaidView {
     pub phase: u8,
     /// The objective's integrity in percent, rounded up while any is left.
     pub integrity: u8,
+    /// The aid tasks still open after a lost raid, one bit per authored task (#531).
+    pub aid: u8,
 }
 
 /// `splitmix64`: a well-mixed hash of the night's number and the content seed.
@@ -419,6 +539,7 @@ impl ZoneSimulation {
         self.content.raid().is_some()
             && self.raid.active.is_none()
             && self.raid.damage == 0
+            && self.raid.aftermath == 0
             && self
                 .raid
                 .last
@@ -505,6 +626,7 @@ impl ZoneSimulation {
             .checked_add(1)
             .ok_or_else(|| ZoneError::new("raid incident identities exhausted"))?;
         self.raid.incidents = id;
+        self.raid.rewarded.clear();
         self.raid.active = Some(RaidIncident {
             id,
             phase: 1,
@@ -629,15 +751,16 @@ impl ZoneSimulation {
             .filter_map(|(&id, state)| state.raid.map(|member| (id, member)))
             .collect();
         if self.raid.active.is_some() {
-            self.record_participants(&members);
+            self.record_participants(&members)?;
             self.hit_objective(site, &members)?;
-            self.advance_phase(now)?;
+            self.advance_phase(site, now)?;
         } else if self.raid.damage > 0
             && let Some(last) = self.raid.last
             && now > last.at
             && (now - last.at).is_multiple_of(u64::from(RECOVERY_TICKS_PER_POINT))
         {
             self.raid.damage -= 1;
+            self.settle_aftermath(site)?;
         }
         self.advance_marches(site, now)?;
         if time_of_day(now) == TRIGGER_TIME
@@ -649,11 +772,16 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    /// Players on the threat tables of this incident's living raiders take part in it.
-    fn record_participants(&mut self, members: &[(CreatureId, RaidMember)]) {
+    /// Players on the threat tables of this incident's living raiders take part in it; those
+    /// who caused threat (damage, or healing a defender) earn the participation reward.
+    fn record_participants(
+        &mut self,
+        members: &[(CreatureId, RaidMember)],
+    ) -> Result<(), ZoneError> {
         let Some(incident) = self.raid.active.as_mut() else {
-            return;
+            return Ok(());
         };
+        let mut defenders = Vec::new();
         for (id, member) in members {
             if member.incident != incident.id {
                 continue;
@@ -662,14 +790,92 @@ impl ZoneSimulation {
                 continue;
             };
             for entry in &state.threat {
-                if let EntityRef::Player(player) = entry.entity
-                    && let Err(at) = incident.participants.binary_search(&player)
+                let EntityRef::Player(player) = entry.entity else {
+                    continue;
+                };
+                if let Err(at) = incident.participants.binary_search(&player)
                     && incident.participants.len() < crate::MAX_PLAYERS_PER_ZONE
                 {
                     incident.participants.insert(at, player);
                 }
+                if entry.threat > 0 {
+                    defenders.push(player);
+                }
             }
         }
+        let incident = incident.id;
+        defenders.sort_unstable();
+        defenders.dedup();
+        for player in defenders {
+            self.reward_participant(player, incident)?;
+        }
+        Ok(())
+    }
+
+    /// Grants the participation reward for `incident` to `player_id` unless it already has it
+    /// (5.1.52): once per incident and character, in the zone and in the durable receipts.
+    fn reward_participant(&mut self, player_id: PlayerId, incident: u32) -> Result<(), ZoneError> {
+        let key = crate::RewardKey::RaidParticipation { incident };
+        let Err(at) = self.raid.rewarded.binary_search(&player_id) else {
+            return Ok(());
+        };
+        if self.raid.rewarded.len() >= crate::MAX_PLAYERS_PER_ZONE
+            || !crate::rewards::allowed(&self.rewards, player_id, key)
+            || !self.players.contains_key(&player_id)
+        {
+            return Ok(());
+        }
+        self.raid.rewarded.insert(at, player_id);
+        crate::rewards::record(&mut self.rewards, player_id, key)?;
+        if let Some(player) = self.players.get_mut(&player_id) {
+            player.copper = player.copper.saturating_add(REWARD_COPPER);
+        }
+        self.grant_experience(player_id, REWARD_EXPERIENCE)
+    }
+
+    /// Closes the aid tasks the objective's restoration has reached; a guard whose task
+    /// closes returns to its post.
+    fn settle_aftermath(&mut self, site: &RaidSite) -> Result<(), ZoneError> {
+        let before = self.raid.aftermath;
+        for index in 0..site.aid.len() {
+            if site.aid_settled(index, self.raid.damage) {
+                self.raid.aftermath &= !(1 << index);
+            }
+        }
+        if self.raid.aftermath != before {
+            self.place_npcs(false)?;
+        }
+        Ok(())
+    }
+
+    /// The `RaidAid` intent (5.1.51): tends or mends open aid task `task` within reach. The task
+    /// closes, the barn regains [`AID_RESTORE_POINTS`], and the helper earns the incident's
+    /// participation reward once.
+    pub(crate) fn aid_raid(
+        &mut self,
+        player_id: PlayerId,
+        task: u8,
+    ) -> Result<Option<(ErrorCode, Option<EntityRef>)>, ZoneError> {
+        let content = Arc::clone(&self.content);
+        let (Some(site), Some(incident)) = (content.raid(), self.raid.current_incident()) else {
+            return Ok(Some((ErrorCode::InvalidTarget, None)));
+        };
+        let Some(spot) = site.aid.get(usize::from(task)).map(|task| task.at) else {
+            return Ok(Some((ErrorCode::InvalidTarget, None)));
+        };
+        if self.raid.aftermath & (1 << task) == 0 {
+            return Ok(Some((ErrorCode::InvalidTarget, None)));
+        }
+        let at = self.player_position(player_id)?;
+        if crate::ai::distance_squared([at.x, at.z], spot) > i64::from(AID_REACH_UNITS).pow(2) {
+            return Ok(Some((ErrorCode::OutOfRange, None)));
+        }
+        self.raid.aftermath &= !(1 << task);
+        self.raid.damage = self.raid.damage.saturating_sub(AID_RESTORE_POINTS);
+        self.settle_aftermath(site)?;
+        self.place_npcs(false)?;
+        self.reward_participant(player_id, incident)?;
+        Ok(None)
     }
 
     /// Idle raiders at the objective hit it on their swing timer, for their damage range's
@@ -719,12 +925,15 @@ impl ZoneSimulation {
     }
 
     /// Loss when the integrity ran out; otherwise the next phase, or a defence after the last.
-    fn advance_phase(&mut self, now: u64) -> Result<(), ZoneError> {
+    fn advance_phase(&mut self, site: &RaidSite, now: u64) -> Result<(), ZoneError> {
         let Some(incident) = &self.raid.active else {
             return Ok(());
         };
         if self.raid.damage >= OBJECTIVE_INTEGRITY {
-            return self.resolve(now, RaidOutcome::Lost);
+            self.resolve(now, RaidOutcome::Lost)?;
+            // The farm's aftermath (5.1.50): breaches open and the guards lie injured.
+            self.raid.aftermath = site.aid_mask();
+            return self.place_npcs(false);
         }
         if now
             < incident
@@ -942,6 +1151,10 @@ impl ZoneSimulation {
         }
         let left = OBJECTIVE_INTEGRITY - self.raid.damage;
         let integrity = u8::try_from((left * 100).div_ceil(OBJECTIVE_INTEGRITY)).unwrap_or(100);
-        Some(RaidView { phase, integrity })
+        Some(RaidView {
+            phase,
+            integrity,
+            aid: self.raid.aftermath,
+        })
     }
 }

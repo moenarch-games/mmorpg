@@ -483,7 +483,17 @@ impl ZoneSimulation {
                     velocity: [placement.velocity[0], 0, placement.velocity[1]],
                     facing: placement.facing,
                     level: npc.level,
-                    health_percent: 100,
+                    // A guard injured in a lost raid (#531) shows its wounds.
+                    health_percent: if self
+                        .content
+                        .raid()
+                        .and_then(|site| site.injured_at(npc_id, self.raid.aftermath))
+                        .is_some()
+                    {
+                        crate::raid::INJURED_HEALTH_PERCENT
+                    } else {
+                        100
+                    },
                     flags: EntityFlags::default(),
                 }
             }
