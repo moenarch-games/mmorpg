@@ -12,7 +12,7 @@ import {
 } from "../src/world/online-zone-source";
 import { FakeZoneHost, ManualClock, TICK_MS, type FakeZoneHostOptions } from "./support/fake-zone-host";
 import { worldSourceContract } from "./support/world-source-contract";
-import { PROTOCOL_BYTE } from "../src/protocol-id";
+import { PROTOCOL_BYTE } from "./support/wire";
 
 /** The protocol byte every command leads with, as hex. */
 const P = PROTOCOL_BYTE.toString(16).padStart(2, "0");

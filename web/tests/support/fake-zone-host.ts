@@ -1,9 +1,8 @@
 import type { SessionClock, SessionConnection, SessionConnector, SessionEnd } from "../../src/session/connection";
 import { TICK_HZ, type EntityState } from "../../src/replication";
 import { decodeCommandFrame, encodeSnapshotFragments, encodeSnapshotFrame, encodeWelcomeFrame } from "./session-host-frames";
-import { encodeTestSnapshot } from "./snapshot-encoder";
+import { encodeSnapshot, PROTOCOL_BYTE } from "./wire";
 import { playerEntity, testSnapshot } from "./snapshots";
-import { PROTOCOL_BYTE } from "../../src/protocol-id";
 
 /** Lets every pending promise callback run, like returning to the event loop. */
 export const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -358,7 +357,7 @@ export class FakeZoneHost {
     const entity = (session: Session): EntityState =>
       playerEntity(session.playerId, [session.unit.x, 90, session.unit.z], [0, 0, 0], session.unit.facing);
     const others = [...this.#sessions.values()].filter((session) => session !== viewer);
-    const payload = encodeTestSnapshot(testSnapshot({
+    const payload = encodeSnapshot(testSnapshot({
       zoneId: this.zoneId,
       tick: this.tick,
       contentRevision: this.contentRevision,

@@ -5,7 +5,8 @@
 //! same `ZoneSimulation` and content revision as `mmorpg-zone-host`, accepts
 //! `mmorpg-protocol` command bytes with increasing sequences, advances fixed
 //! `TICK_HZ` ticks, and returns only encoded player-scoped projections, which the
-//! browser decodes with the same TypeScript decoder a network source uses.
+//! browser decodes like a network source's, through [`wire`]: the
+//! `mmorpg-protocol` decoder and command encoder exported to JavaScript.
 //! There is no handoff or shared world here. Characters persist through the
 //! same `mmorpg-characters` record and lease contract as zone hosts, over
 //! the page's [`CharacterEntries`] (the browser keeps them in `localStorage`).
@@ -34,6 +35,7 @@ pub mod scenario;
 pub mod scenery;
 pub mod static_scene;
 pub mod units;
+pub mod wire;
 
 use mmorpg_characters::{CharacterStore, EntryBackend, EntryChange, LeaseHolder, StoreError};
 use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex};

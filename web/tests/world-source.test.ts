@@ -16,10 +16,9 @@ import {
 } from "../src/world/orbit-camera";
 import { FakeWorldSource } from "./support/fake-world-source";
 import { testCharacters } from "./support/local-characters";
-import { encodeTestSnapshot } from "./support/snapshot-encoder";
+import { encodeSnapshot, PROTOCOL_BYTE } from "./support/wire";
 import { playerEntity, testSnapshot } from "./support/snapshots";
 import { immediate, worldSourceContract } from "./support/world-source-contract";
-import { PROTOCOL_BYTE } from "../src/protocol-id";
 
 /** The protocol byte every command leads with, as hex. */
 const P = PROTOCOL_BYTE.toString(16).padStart(2, "0");
@@ -75,7 +74,7 @@ class RecordingZone implements LocalZoneHandle {
     if (!this.#players.has(player)) throw new Error("unknown player");
     if (this.corruptProjections) return new Uint8Array([3]);
     const viewer = this.viewerOverride ?? player;
-    return encodeTestSnapshot(testSnapshot({
+    return encodeSnapshot(testSnapshot({
       zoneId: 1, tick: BigInt(this.ticks), contentRevision: 1n, acknowledgedSequence: 0, viewerId: viewer,
       entities: [playerEntity(viewer, [this.ticks * 21, 90, 0], [21, 0, 0])],
     }));
@@ -146,7 +145,7 @@ describe("LocalZoneSource", () => {
   });
 
   test("a rejected first projection removes the unit it just added from the zone", async () => {
-    for (const [fault, message] of [["corrupt", "Truncated snapshot"], ["misaddressed", "another player"]] as const) {
+    for (const [fault, message] of [["corrupt", "truncated"], ["misaddressed", "another player"]] as const) {
       const zone = new RecordingZone();
       if (fault === "corrupt") zone.corruptProjections = true;
       else zone.viewerOverride = 99;

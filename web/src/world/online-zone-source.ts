@@ -5,6 +5,7 @@ import { decodeWelcome, type SnapshotFrame, type Welcome } from "../session/fram
 import { parseSessionRoute, reconnectUrl, type SessionRoute } from "../session/route";
 import { SequencedOutbox, type Delivery } from "../session/sequenced-outbox";
 import { SnapshotReassembler } from "../session/snapshot-reassembler";
+import { loadWasm } from "../wasm";
 import { classChoiceCodes, DEFAULT_JOIN_CHARACTER, type JoinCharacter, type LinkState, type WorldSource } from "./world-source";
 
 /** A join (welcome and first projection) must finish within this bound, like the native client's connect. */
@@ -184,12 +185,19 @@ export class OnlineZoneSource implements WorldSource {
     return new Promise<number>((resolve, reject) => {
       const cancelTimeout = this.#clock.after(CONNECT_TIMEOUT_MS, () =>
         this.#abortJoin(new Error("The zone host did not admit this player within ten seconds.")));
-      this.#phase = { kind: "joining", resolve, reject, cancelTimeout };
-      try {
-        this.#open(this.#route.url);
-      } catch (error) {
-        this.#abortJoin(new Error(`Could not connect to the zone host: ${describe(error)}`));
-      }
+      const phase: Phase = { kind: "joining", resolve, reject, cancelTimeout };
+      this.#phase = phase;
+      // Projections decode and commands encode in `mmorpg-wasm` (#541), the same module the local world loads.
+      void loadWasm().then(() => {
+        if (this.#phase !== phase) {
+          return;
+        }
+        try {
+          this.#open(this.#route.url);
+        } catch (error) {
+          this.#abortJoin(new Error(`Could not connect to the zone host: ${describe(error)}`));
+        }
+      }, (error: unknown) => this.#abortJoin(new Error(`Could not load the wire module: ${describe(error)}`)));
     });
   }
 

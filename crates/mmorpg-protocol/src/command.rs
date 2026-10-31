@@ -934,8 +934,7 @@ mod tests {
             ),
             (ZoneCommand::Jump, 0),
         ];
-        let mut fixture =
-            String::from("# Command golden fixture, verified by mmorpg-protocol and web tests.\n");
+        let mut fixture = String::from("# Command golden fixture, verified by mmorpg-protocol.\n");
         for (command, observed) in commands
             .into_iter()
             .map(|command| (command, None))

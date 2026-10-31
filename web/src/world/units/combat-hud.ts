@@ -1,5 +1,5 @@
 import type { EntityRef } from "../../entity-ref";
-import { BREATH_MAX_TICKS, findEntity, TICK_HZ, type ErrorCode, type MeleeStance, type ZoneEvent, type ZoneSnapshot } from "../../replication";
+import { findEntity, TICK_HZ, wireCatalog, type ErrorCode, type MeleeStance, type ZoneEvent, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { objectiveLabel } from "./quest-state";
 
@@ -98,7 +98,7 @@ export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): s
   }
   parts.push(`Level ${viewer.level}`);
   // Breath (#274) shows only while spent; at zero the submerged viewer drowns.
-  if (viewer.breath < BREATH_MAX_TICKS) {
+  if (viewer.breath < wireCatalog().breathMaxTicks) {
     parts.push(viewer.breath === 0 ? "Drowning!" : `Breath ${Math.ceil(viewer.breath / TICK_HZ)} s`);
   }
   if (viewer.stance) {

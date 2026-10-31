@@ -1,0 +1,3 @@
+[test]
+# Every test runs over the real `mmorpg-wasm` wire code (#541).
+preload = ["./tests/support/wasm.ts"]

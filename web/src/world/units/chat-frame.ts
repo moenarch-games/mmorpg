@@ -1,5 +1,5 @@
 import type { WorldCommand } from "../../command-wire";
-import { chatTextError, EMOTES, type EmoteName, type ZoneSnapshot } from "../../replication";
+import { chatTextError, wireCatalog, type EmoteName, type ZoneSnapshot } from "../../replication";
 
 /** The chat log keeps the newest lines only. */
 export const MAX_CHAT_LOG_LINES = 50;
@@ -13,14 +13,15 @@ export type ChatEntry = { key: number; text: string; kind: "say" | "yell" | "emo
  */
 export function parseChatInput(raw: string): { command: WorldCommand } | { error: string } {
   const emote = /^\/([a-z]+)\s*$/iu.exec(raw)?.[1]?.toLowerCase();
-  if (emote !== undefined && (EMOTES as readonly string[]).includes(emote)) {
+  const emotes: readonly string[] = wireCatalog().emotes;
+  if (emote !== undefined && emotes.includes(emote)) {
     return { command: { kind: "emote", emote: emote as EmoteName } };
   }
   const match = /^\/(y|yell|s|say)(?:\s+|$)/iu.exec(raw);
   const channel = match && /^y/iu.test(match[1] ?? "") ? "yell" : "say";
   const text = match ? raw.slice(match[0].length) : raw;
   if (raw.startsWith("/") && !match) {
-    return { error: `Use /s to say, /y to yell, or /${EMOTES.join(", /")}.` };
+    return { error: `Use /s to say, /y to yell, or /${emotes.join(", /")}.` };
   }
   const problem = chatTextError(text);
   return problem === null ? { command: { kind: "chat", channel, text } } : { error: problem };

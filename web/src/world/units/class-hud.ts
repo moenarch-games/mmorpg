@@ -1,4 +1,4 @@
-import { findEntity, STRIKE_HEIGHTS, STRIKE_SIDES, TICK_HZ, type AuraState, type ResourceKind, type StrikeAim, type ZoneSnapshot } from "../../replication";
+import { findEntity, TICK_HZ, type AuraState, type ResourceKind, type StrikeAim, type StrikeHeight, type StrikeSide, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { abilitySlots } from "./abilities";
 import { artworkOf, auraPolarity, glyphOf } from "./ability-presentation";
@@ -9,6 +9,10 @@ import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
 import { guardDisplay } from "./shield-guard";
 import { COMBAT_TEXT_MS, INTERRUPT_FLASH_MS, combatTexts, viewerInterrupted } from "./combat-text";
 import { unitName } from "./combat-hud";
+
+/** The aim and guard grids' layout, built before the WASM module loads: high row first, left column first. */
+const AIM_ROWS: readonly StrikeHeight[] = ["high", "middle", "low"];
+const AIM_COLUMNS: readonly StrikeSide[] = ["left", "centre", "right"];
 
 /**
  * The class kit's DOM: action bar, player and target frames with auras, both cast bars and the
@@ -125,7 +129,7 @@ export class ClassHud {
     aimRoot.dataset.part = "strike-aim";
     aimRoot.setAttribute("aria-hidden", "true");
     aimRoot.hidden = true;
-    const cells = [...STRIKE_HEIGHTS].reverse().flatMap((height) => STRIKE_SIDES.map((side) => {
+    const cells = AIM_ROWS.flatMap((height) => AIM_COLUMNS.map((side) => {
       const cell = document.createElement("span");
       cell.dataset.aim = `${height}-${side}`;
       return cell;
@@ -139,7 +143,7 @@ export class ClassHud {
     guardRoot.dataset.part = "shield-guard";
     guardRoot.setAttribute("role", "status");
     guardRoot.hidden = true;
-    const guardCells = [...STRIKE_HEIGHTS].reverse().map((height) => {
+    const guardCells = AIM_ROWS.map((height) => {
       const cell = document.createElement("span");
       cell.dataset.lane = height;
       return cell;

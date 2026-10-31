@@ -25,7 +25,7 @@ Compile `mmorpg-core` and `mmorpg-protocol` to WebAssembly through a thin `mmorp
 
 - it constructs the same `ZoneSimulation` with the same content revision as `mmorpg-zone-host`;
 - the browser sends encoded commands with increasing sequences and advances fixed 30 Hz ticks from a bounded accumulator;
-- the browser reads only encoded **player-scoped** projections and decodes them with the same TypeScript decoder an online WebTransport source would use. Canonical snapshots never cross into rendering;
+- the browser reads only encoded **player-scoped** projections and decodes them with the same decoder an online WebTransport source uses: `mmorpg_protocol`'s, exported by `mmorpg-wasm` (#541). Canonical snapshots never cross into rendering;
 - presentation-only scenery (`mmorpg-scenery`) is exported through the same module so both clients draw identical worlds.
 
 This is not MMO authority in the browser. It has no zone fencing, no handoff, no multiplayer persistence authority and no shared world; its character leases only keep one tab per character and fence superseded pages. It is the same single-writer simulation running in-process for one local player, like a listen server. The presentation layer cannot tell a local source from a network source, which keeps a future browser online mode a transport swap.
