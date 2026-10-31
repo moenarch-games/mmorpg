@@ -2,6 +2,7 @@ import type { EntityRef } from "../../entity-ref";
 import { findEntity, TICK_HZ, wireCatalog, type ErrorCode, type MeleeStance, type ZoneEvent, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { objectiveAt } from "./quest-state";
+import { raidNoticeText } from "../raid-prep";
 
 /** The Druid's Call Companion (#296): a minion of this appearance is the wolf companion. */
 const CALL_COMPANION = 46;
@@ -200,6 +201,8 @@ export function eventText(event: ZoneEvent, snapshot: ZoneSnapshot, catalog: Con
     }
     case "quest-completed":
       return `${catalog.quests.get(event.quest)?.name ?? "Quest"} completed.`;
+    case "raid":
+      return raidNoticeText(event.notice);
     case "lost-interest":
       return "The lurker loses interest.";
   }

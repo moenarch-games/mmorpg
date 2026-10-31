@@ -168,8 +168,8 @@ pub use quest::{
     QuestObjective, QuestRewards, QuestSheet,
 };
 pub use raid::{
-    AidKind, AidTask, RaidApproach, RaidIncident, RaidLeg, RaidMember, RaidOutcome, RaidResolution,
-    RaidSite, RaidState, RaidView,
+    AidKind, AidTask, RaidApproach, RaidIncident, RaidLeg, RaidMember, RaidNotice, RaidOutcome,
+    RaidPrep, RaidResolution, RaidSite, RaidState, RaidView,
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use rewards::{RewardGrant, RewardHistory, RewardKey};
@@ -435,6 +435,9 @@ pub enum ZoneCommand {
     /// index into the raid site's authored tasks. The zone checks that it is open and within
     /// reach in the tick.
     RaidAid { task: u8 },
+    /// One preparation step before a forewarned night raid (#532, Atlas 5.1.59–5.1.62); the zone
+    /// checks the evening, reach and order in the tick.
+    RaidPrepare { prep: RaidPrep },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -1293,6 +1293,10 @@ impl ZoneContent {
             }
             hash.i32s(&task.at);
         }
+        hash.i32s(&site.tracks);
+        hash.u32(site.lookout.get());
+        hash.len(site.braces.len());
+        hash.i32s(site.braces.as_flattened());
         hash.finish()
     }
 

@@ -236,6 +236,8 @@ pub enum ZoneEvent {
     /// The aquatic creature `source` that trailed the submerged player lost interest and
     /// swims home (#274).
     LostInterest { source: EntityRef },
+    /// A night raid acknowledgment for this player (#532, Atlas 5.1.60).
+    Raid { notice: crate::RaidNotice },
 }
 
 impl ZoneEvent {
@@ -272,7 +274,7 @@ impl ZoneEvent {
         match self {
             Self::Died { .. } => 5,
             Self::DamageTaken { .. } | Self::GuardBroken { .. } => 4,
-            Self::Error { .. } | Self::QuestCompleted { .. } => 3,
+            Self::Error { .. } | Self::QuestCompleted { .. } | Self::Raid { .. } => 3,
             Self::DamageDealt { .. } | Self::QuestProgress { .. } => 2,
             Self::CastStarted { .. }
             | Self::AbilityUsed { .. }

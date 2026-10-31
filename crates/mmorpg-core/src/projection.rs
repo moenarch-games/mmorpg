@@ -328,7 +328,7 @@ impl ZoneSimulation {
                 projectiles: self.projectile_views([center.x, center.y, center.z]),
                 debris: self.debris_views([center.x, center.y, center.z]),
                 pieces: self.piece_views(),
-                raid: self.raid_view([center.x, center.z]),
+                raid: self.raid_view(player_id, [center.x, center.z]),
             },
             stats,
         })

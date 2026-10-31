@@ -101,6 +101,8 @@ pub enum PlayerIntent {
     UseWaystone(crate::WaystoneId),
     /// Night raid aftermath aid (#531): the task's index.
     RaidAid(u8),
+    /// Night raid preparation (#532).
+    RaidPrepare(crate::RaidPrep),
 }
 
 /// A pending intent and the ticks of lateness its command's observation
@@ -505,6 +507,9 @@ impl ZoneSimulation {
         snapshot.raid.validate(
             snapshot.tick,
             zone.content.raid().map_or(0, crate::RaidSite::aid_mask),
+            zone.content
+                .raid()
+                .map_or(0, crate::RaidSite::readiness_mask),
         )?;
         if zone.content.raid().is_none() && snapshot.raid != crate::RaidState::default() {
             return Err(ZoneError::new("snapshot raid state needs a raid site"));
