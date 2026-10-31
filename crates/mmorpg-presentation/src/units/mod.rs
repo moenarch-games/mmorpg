@@ -27,8 +27,8 @@ use std::{
 
 use mmorpg_core::{
     AbilityId, ClassChoice, CreatureFamily, CreatureTemplateId, EntityKind, EntityRef,
-    EntitySnapshot, PLAYER_HALF_EXTENTS_UNITS, ProjectileKind, UNITS_PER_METRE, ZoneContent,
-    ZoneEvent, ZoneSnapshot,
+    EntitySnapshot, PLAYER_HALF_EXTENTS_UNITS, ProjectileKind, StrikeAim, StrikeHeight, StrikeSide,
+    UNITS_PER_METRE, ZoneContent, ZoneEvent, ZoneSnapshot,
 };
 use mmorpg_scenery::Scenery;
 
@@ -70,16 +70,29 @@ fn knockback(ability: AbilityId) -> Option<Reaction> {
     }
 }
 
+/// Whether the aura of `ability` stuns (#582): Shield Bash and Gouge.
+fn stuns(ability: AbilityId) -> bool {
+    mmorpg_core::ability_by_id(ability)
+        .and_then(mmorpg_core::Ability::aura)
+        .is_some_and(|aura| aura.kind == mmorpg_core::AuraKind::Stun)
+}
+
 /// The local player's reversible attack preparation (Atlas 6.6.10, #415): an instant ability
 /// pressed or aimed but not yet answered by the zone. It only poses the viewer's upper body;
 /// commands, eligibility, windows and hits stay the zone's.
 #[derive(Clone, Copy, Debug)]
 struct LocalPreparation {
     ability: AbilityId,
+    /// The directed strike's aim (#154), whose slash winds up (#582).
+    aim: Option<StrikeAim>,
     pressed: f64,
     /// Set once the input is sent; a held aim (the directed strike) has none.
     answer_by: Option<f64>,
 }
+
+/// A swing's slash leans to a side when its target stands more than this many radians off the
+/// swinger's facing (#582).
+const SLASH_SIDE_RADIANS: f64 = 0.26;
 
 /// The linear colour factor of an imported model: a companion is tinted green, a corpse
 /// darkened, anything else drawn as authored.
@@ -235,6 +248,10 @@ pub struct UnitPresenter {
     preparation: Option<LocalPreparation>,
     /// The development body overlay (#39): each unit's authoritative body drawn over its model.
     bodies: bool,
+    /// Each unit under a stun the client saw the zone apply, until when (#582).
+    stuns: BTreeMap<EntityRef, f64>,
+    /// Swings that covered nobody, for alternating their forehand and backhand slashes (#582).
+    whiffs: u32,
 }
 
 impl UnitPresenter {
@@ -262,6 +279,8 @@ impl UnitPresenter {
             blend: imported::Blend::default(),
             preparation: None,
             bodies: false,
+            stuns: BTreeMap::new(),
+            whiffs: 0,
         }
     }
 
@@ -286,9 +305,18 @@ impl UnitPresenter {
             .is_some_and(|definition| definition.cast.ticks() == 0);
         self.preparation = instant.then_some(LocalPreparation {
             ability,
+            aim: None,
             pressed: now,
             answer_by: None,
         });
+    }
+
+    /// The directed strike being prepared aims at `aim` (#154): its wind-up shows that slash
+    /// (#582). Presentation only; the zone resolves the aim it is sent.
+    pub fn aim_preparation(&mut self, aim: StrikeAim) {
+        if let Some(preparation) = &mut self.preparation {
+            preparation.aim = Some(aim);
+        }
     }
 
     /// The prepared input went to the zone at `now`; without an answer by
@@ -351,6 +379,7 @@ impl UnitPresenter {
         self.sways.clear();
         self.aligns.clear();
         self.deaths.clear();
+        self.stuns.clear();
         self.bursts.clear();
         self.effects.clear();
         self.equipment = None;
@@ -442,8 +471,28 @@ impl UnitPresenter {
                 ZoneEvent::GuardBroken { target, .. } => {
                     self.react(snapshot, target, Reaction::GuardBreak, seconds);
                 }
-                ZoneEvent::CastStarted { source, ticks, .. } => {
-                    self.cast(snapshot, source, ticks, seconds);
+                ZoneEvent::CastStarted {
+                    source,
+                    ability,
+                    ticks,
+                    ..
+                } => {
+                    self.cast(snapshot, source, ability, ticks, seconds);
+                }
+                // A stun the zone applied reels its target until it ends (#582).
+                ZoneEvent::AuraApplied {
+                    target,
+                    ability,
+                    ticks,
+                    ..
+                } if stuns(ability) => {
+                    let until = seconds + f64::from(ticks) / f64::from(mmorpg_core::TICK_HZ);
+                    self.stuns.insert(target, until);
+                }
+                ZoneEvent::AuraRemoved {
+                    target, ability, ..
+                } if stuns(ability) => {
+                    self.stuns.remove(&target);
                 }
                 ZoneEvent::Interrupted { target, .. } => {
                     if let Some((kind, class)) = self.class_of(snapshot, target)
@@ -468,15 +517,25 @@ impl UnitPresenter {
             {
                 self.preparation = None;
             }
-            // The strike's clip ability, and the ability an accepted action resolved.
-            let (source, ability, resolved) = match *event {
-                ZoneEvent::AttackPerformed { source, .. } => (source, None, None),
+            // The strike's clip ability and aim, and the ability an accepted action resolved. A
+            // directed strike slashes toward its aim; an ordinary swing toward where its target
+            // stands from the swinger (#582), derived here from the projection.
+            let (source, ability, aim, resolved) = match *event {
+                ZoneEvent::AttackPerformed { source, target } => (
+                    source,
+                    None,
+                    Some(self.swing_aim(snapshot, source, target)),
+                    None,
+                ),
                 ZoneEvent::StrikeSwept {
-                    source, ability, ..
-                } => (source, None, Some(ability)),
+                    source,
+                    ability,
+                    aim,
+                    ..
+                } => (source, Some(ability), Some(aim), Some(ability)),
                 ZoneEvent::AbilityUsed {
                     source, ability, ..
-                } => (source, Some(ability), Some(ability)),
+                } => (source, Some(ability), None, Some(ability)),
                 _ => continue,
             };
             // Only the zone's accepted action commits the prepared swing.
@@ -489,11 +548,22 @@ impl UnitPresenter {
             let Some((kind, class)) = self.class_of(snapshot, source) else {
                 continue;
             };
-            let mut clip = kind.strike(class, ability);
+            // A charge rushes rather than swings (#582).
+            if ability == Some(mmorpg_core::ability::ids::CHARGE)
+                && kind
+                    .clips()
+                    .sword
+                    .is_some_and(|sword| self.duration(kind, sword.charge_run) > 0.)
+            {
+                self.playbacks.entry(source).or_default().charge(seconds);
+                continue;
+            }
+            let mut clip = kind.strike(class, ability, aim);
             if self.duration(kind, clip) <= 0. {
                 clip = kind.clips().attack;
             }
             let duration = self.duration(kind, clip);
+            let region = kind.strike_region(clip);
             // A bow shot recovers after its release (#538).
             let recovery = kind
                 .cycle_of(clip)
@@ -502,9 +572,9 @@ impl UnitPresenter {
             let playback = self.playbacks.entry(source).or_default();
             if commits {
                 // The committed swing continues the wind-up.
-                playback.commit(clip, duration, seconds);
+                playback.commit(clip, duration, region, seconds);
             } else {
-                playback.strike(clip, duration, seconds);
+                playback.strike(clip, duration, region, seconds);
             }
             if let Some((recovery, length)) = recovery {
                 playback.recover(recovery, length);
@@ -539,6 +609,60 @@ impl UnitPresenter {
         (length > 0.).then_some((clip, length))
     }
 
+    /// Where a wind-up of `clip` holds (#582): from its `humanoid-clips` contact once the client
+    /// has read it.
+    fn windup(&self, kind: Kind, clip: &str) -> f32 {
+        #[allow(clippy::cast_possible_truncation)]
+        let contact = self
+            .motions
+            .get(&kind)
+            .and_then(|motions| motions.get(clip))
+            .and_then(|motion| motion.contact)
+            .map(|contact| contact as f32);
+        let slash = kind.clips().sword.is_some_and(|sword| sword.is_slash(clip));
+        imported::windup_seconds(self.duration(kind, clip), contact, slash)
+    }
+
+    /// The slash an ordinary swing of `source` at `target` shows (#582), from the projection
+    /// alone: toward the side the target stands on from the swinger's facing, at the height
+    /// band ([`mmorpg_core::lane_of`]) of the target's middle above the swinger's feet. A swing
+    /// that covered nobody slashes level, forehand and backhand in turn.
+    fn swing_aim(
+        &mut self,
+        snapshot: &ZoneSnapshot,
+        source: EntityRef,
+        target: Option<EntityRef>,
+    ) -> StrikeAim {
+        let record = |entity: EntityRef| snapshot.entities.iter().find(|e| e.entity() == entity);
+        let (Some(from), Some(to)) = (record(source), target.and_then(record)) else {
+            self.whiffs = self.whiffs.wrapping_add(1);
+            let side = if self.whiffs % 2 == 1 {
+                StrikeSide::Left
+            } else {
+                StrikeSide::Right
+            };
+            return StrikeAim::new(side, StrikeHeight::Middle);
+        };
+        let dx = f64::from(to.position[0] - from.position[0]);
+        let dz = f64::from(to.position[2] - from.position[2]);
+        // Yaw 0 faces +Z and grows toward +X (`mmorpg_core::trig::direction`); the figure's
+        // left is the larger yaw.
+        let facing = f64::from(from.facing) / 65536. * std::f64::consts::TAU;
+        let off = (dx.atan2(dz) - facing + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+            - std::f64::consts::PI;
+        let side = if dx.hypot(dz) < 1. || off.abs() <= SLASH_SIDE_RADIANS {
+            StrikeSide::Centre
+        } else if off > 0. {
+            StrikeSide::Left
+        } else {
+            StrikeSide::Right
+        };
+        #[allow(clippy::cast_possible_truncation)]
+        let feet =
+            from.position[1] - (self.half(source, from)[1] * UNITS_PER_METRE as f32).round() as i32;
+        StrikeAim::new(side, mmorpg_core::lane_of(to.position[1] - feet))
+    }
+
     /// `entity` reacts to a blow the zone resolved (#538), when its model has the reaction.
     fn react(
         &mut self,
@@ -564,10 +688,37 @@ impl UnitPresenter {
 
     /// `entity` began a cast or channel of `ticks` (#538): it draws and holds its bow, or
     /// raises and holds a spell, when its model has the hold.
-    fn cast(&mut self, snapshot: &ZoneSnapshot, entity: EntityRef, ticks: u16, seconds: f64) {
+    fn cast(
+        &mut self,
+        snapshot: &ZoneSnapshot,
+        entity: EntityRef,
+        ability: AbilityId,
+        ticks: u16,
+        seconds: f64,
+    ) {
         let Some((kind, class)) = self.class_of(snapshot, entity) else {
             return;
         };
+        #[allow(clippy::cast_possible_truncation)]
+        let length = (f64::from(ticks) / f64::from(mmorpg_core::TICK_HZ)) as f32;
+        // A cast that resolves into an authored sword strike (the Redbrand whirl and smash,
+        // #582) winds that strike up and holds it until the zone resolves it.
+        let strike = kind.strike(class, Some(ability), None);
+        if let Some(sword) = kind.clips().sword
+            && sword.region(strike).is_some()
+            && let Some((clip, duration)) = self.clip(kind, strike)
+        {
+            let hold = self.windup(kind, clip);
+            self.playbacks.entry(entity).or_default().wind_up(
+                clip,
+                duration,
+                hold,
+                kind.strike_region(clip),
+                length,
+                seconds,
+            );
+            return;
+        }
         let Some(cycle) = kind.cast(class) else {
             return;
         };
@@ -575,8 +726,6 @@ impl UnitPresenter {
             return;
         };
         let enter = self.clip(kind, cycle.enter);
-        #[allow(clippy::cast_possible_truncation)]
-        let length = (f64::from(ticks) / f64::from(mmorpg_core::TICK_HZ)) as f32;
         self.playbacks.entry(entity).or_default().cast(
             enter,
             hold,
@@ -631,6 +780,8 @@ impl UnitPresenter {
         self.sways.retain(|e, _| present.contains(e));
         self.aligns.retain(|e, _| present.contains(e));
         self.deaths.retain(|e, _| present.contains(e));
+        self.stuns
+            .retain(|e, &mut until| present.contains(e) && input.seconds < until);
         let eye = input
             .units
             .iter()
@@ -699,7 +850,30 @@ impl UnitPresenter {
                 let resident = self.resident(entity, &unit.record);
                 // Only the viewer's guard is projected; the shield rises once the zone's guard
                 // protects (#156, #384), not while slash or landing recovery holds it back.
-                let guarding = viewer && snapshot.viewer.guard.protecting;
+                // The raised shield shows the guard's lane (#582).
+                let guard = snapshot
+                    .viewer
+                    .guard
+                    .raised
+                    .filter(|_| viewer && snapshot.viewer.guard.protecting);
+                // A stun reels the unit (#582): the viewer's and its target's from their
+                // projected auras, anyone else's from the stuns the client saw applied.
+                let stunned = {
+                    let reeling = |auras: &[mmorpg_core::AuraView]| {
+                        auras
+                            .iter()
+                            .any(|aura| aura.kind == mmorpg_core::AuraKind::Stun)
+                    };
+                    if viewer {
+                        reeling(&snapshot.auras)
+                    } else if snapshot.viewer.target == Some(entity) {
+                        reeling(&snapshot.target_detail.auras)
+                    } else {
+                        self.stuns
+                            .get(&entity)
+                            .is_some_and(|&until| seconds < until)
+                    }
+                };
                 // Swimmers (#274) wade, tread, stroke, dive and surface with the authored swim
                 // clips and lean into the stroke (Atlas 6.6.41). The mode is the zone's, from the
                 // projected position and the content's water volumes.
@@ -718,7 +892,8 @@ impl UnitPresenter {
                 if viewer {
                     let wind_up = self.preparation.map(|preparation| {
                         let class = snapshot.viewer.class.map(|choice| choice.class);
-                        let mut clip = kind.strike(class, Some(preparation.ability));
+                        let mut clip =
+                            kind.strike(class, Some(preparation.ability), preparation.aim);
                         if self.duration(kind, clip) <= 0. {
                             clip = kind.clips().attack;
                         }
@@ -727,11 +902,12 @@ impl UnitPresenter {
                             .cycle_of(clip)
                             .and_then(|cycle| cycle.aim)
                             .filter(|&aim| self.duration(kind, aim) > 0.);
-                        (aim.unwrap_or(clip), preparation.pressed)
+                        let clip = aim.unwrap_or(clip);
+                        (clip, self.windup(kind, clip), preparation.pressed)
                     });
                     let playback = self.playbacks.entry(entity).or_default();
                     match wind_up {
-                        Some((clip, pressed)) => playback.prepare(clip, pressed),
+                        Some((clip, hold, pressed)) => playback.prepare(clip, hold, pressed),
                         None => playback.abandon(),
                     }
                 }
@@ -753,7 +929,8 @@ impl UnitPresenter {
                         vertical_speed: vertical,
                         water,
                         dead,
-                        guarding,
+                        guard,
+                        stunned,
                         rolling,
                         now: seconds,
                         dt: input.dt,

@@ -23,6 +23,9 @@ pub struct Motion {
     pub ledge_height: Option<f64>,
     /// The root path the in-place clip was authored against (`travelSamples`).
     pub travel: Option<Travel>,
+    /// When a strike's weapon hand meets its target, in seconds into the clip
+    /// (`contact.seconds`, asset-tooling #447); a strike's wind-up holds before it (#582).
+    pub contact: Option<f64>,
 }
 
 /// An authored root path: one glTF translation (+Y up, +Z the facing) per frame.
@@ -67,14 +70,15 @@ impl Travel {
     }
 }
 
-/// Every clip's traversal motion data, by clip name.
+/// Every clip's traversal and strike-contact motion data, by clip name.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Motions {
     clips: BTreeMap<String, Motion>,
 }
 
 impl Motions {
-    /// Reads a `humanoid-clips-v1` descriptor. Clips without traversal data are left out.
+    /// Reads a `humanoid-clips-v1` descriptor. Clips without traversal or contact data are left
+    /// out.
     ///
     /// # Errors
     ///
@@ -110,6 +114,7 @@ impl Motions {
                             translations,
                         })
                     }),
+                    contact: clip["contact"]["seconds"].as_f64(),
                 };
                 (motion != Motion::default()).then(|| (name.to_owned(), motion))
             })

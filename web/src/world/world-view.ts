@@ -537,8 +537,18 @@ export class WorldView {
     this.endGuard();
     this.#strikeAim.begin();
     this.#classHud.showStrikeAim(this.#strikeAim.aim());
-    // The sword winds up while the player aims (Atlas 6.6.10); only the zone's strike swings it.
+    // The sword winds up while the player aims (Atlas 6.6.10), toward the aimed slash (#582);
+    // only the zone's strike swings it.
     this.#units?.units.prepare(HEROIC_STRIKE_ABILITY, this.#seconds);
+    this.#aimWindUp();
+  }
+
+  /** The held directed strike's wind-up shows the slash toward its current aim (#582). */
+  #aimWindUp(): void {
+    const aim = this.#strikeAim.aim();
+    if (aim) {
+      this.#units?.units.aimPreparation(aim);
+    }
   }
 
   /** A deliberate release sends one directed strike toward the view's heading; the zone resolves it. */
@@ -589,6 +599,9 @@ export class WorldView {
       const units = this.#units?.units;
       if (command?.kind === "use-ability" || command?.kind === "directed-strike") {
         units?.prepare(command.ability, this.#seconds);
+        if (command.kind === "directed-strike") {
+          units?.aimPreparation(command.aim);
+        }
       } else {
         units?.abandonPreparation();
       }
@@ -1289,6 +1302,7 @@ export class WorldView {
     this.#strikeAim.track(event.clientX, event.clientY);
     if (this.#strikeAim.active) {
       this.#classHud.showStrikeAim(this.#strikeAim.aim());
+      this.#aimWindUp();
     }
     // A camera drag owns the pointer: it turns the Warden without moving the guard's lane.
     this.#guardHold.track(event.clientY, this.#drag !== null);
