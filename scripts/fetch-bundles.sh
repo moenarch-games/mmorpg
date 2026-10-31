@@ -105,7 +105,7 @@ fetch_rolling greyhaven-marshal-house greyhaven.marshal-house buildings/greyhave
 fetch_rolling combat-sounds combat-sounds sounds/combat-sounds
 # Greyhaven's trees and rocks with their LOD chains and rock collision proxies (#49), pinned
 # (asset-tooling's consumers.json re-pins this line after a re-upload).
-NATURE_TAR_SHA256=256c2d1ede7b44c48077eac0574fbb5d885c0b756e96e96c19f44b35270355c2
+NATURE_TAR_SHA256=c0d578faec0b1286ab243241fb69f764141f4c9e72c88ccd86326fa0b415f44e
 fetch_pinned greyhaven-nature greyhaven.nature scenery/greyhaven.nature "${NATURE_TAR_SHA256}"
 # The Battle Royale fortress's authored art (#591, asset-tooling#458/#461, pass 2), fitted to its
 # collision, pinned like the nature bundle.
