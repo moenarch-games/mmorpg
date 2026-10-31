@@ -33,6 +33,7 @@ fn imported_mesh_buffer_observation() {
                     let cpu_meshes = if mode == "retained" { 0 } else { draws.len() };
                     let cpu_us = skin_start.elapsed().as_micros();
                     let mut frame = world.frame(0.0, false, view.eye, None);
+                    frame.batches.clear();
                     frame.draws = draws;
                     let render_start = Instant::now();
                     renderer.render(&target, &frame, &[], view, None).unwrap();

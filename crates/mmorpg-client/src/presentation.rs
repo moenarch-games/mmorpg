@@ -109,11 +109,11 @@ pub struct Presentation {
     buildings: Vec<mmorpg_presentation::buildings::WalkIn>,
     last_buildings: Instant,
     /// The Sunken Shrine's kit modules (#431), placed once.
-    shrine: Vec<crate::world::SceneDraw>,
+    shrine: crate::world::DrawBatch,
     /// The Outpost kit buildings' modules (#420), placed once.
-    outpost: Vec<crate::world::SceneDraw>,
+    outpost: crate::world::DrawBatch,
     /// The market square's settlement props (#421), placed once.
-    settlement: Vec<crate::world::SceneDraw>,
+    settlement: crate::world::DrawBatch,
 }
 
 impl Presentation {
@@ -682,9 +682,9 @@ impl Presentation {
         }
         frame.draws.extend(self.unit_draws(now, view));
         self.append_buildings(&mut frame.draws, now);
-        frame.draws.extend(self.shrine.iter().cloned());
-        frame.draws.extend(self.outpost.iter().cloned());
-        frame.draws.extend(self.settlement.iter().cloned());
+        for batch in [&self.shrine, &self.outpost, &self.settlement] {
+            frame.batches.push(Arc::clone(batch));
+        }
         self.append_ambient(&mut frame.draws, now);
         frame
     }
