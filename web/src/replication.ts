@@ -60,11 +60,37 @@ export function decodeRedirectNotice(payload: Uint8Array): RedirectNotice {
   return wasm.decodeRedirectNotice(payload);
 }
 
-/** Decodes a player projection with the Rust decoder; throws on any malformed payload. */
+/**
+ * Decodes a player projection with the Rust decoder, without sheets received earlier; throws on
+ * any malformed payload. A local host sends every sheet each tick; an online session decodes with
+ * a `ProjectionDecoder`.
+ */
 export function decodeSnapshot(payload: Uint8Array): ZoneSnapshot {
   const snapshot = wasm.decodeSnapshot(payload);
   PROJECTION_BYTES.set(snapshot, payload.slice());
   return snapshot;
+}
+
+/**
+ * One online session's projection decoder (#544). A zone host sends the bag, quest, loot and
+ * ability sheets only until the client acknowledges them, so this keeps the newest copy of each
+ * (in Rust) and every projection it decodes is complete. Every command the session sends goes
+ * through `acknowledge`, which echoes the sheet revisions it holds.
+ */
+export class ProjectionDecoder {
+  readonly #decoder = new wasm.SnapshotDecoder();
+
+  /** Decodes a projection strictly; a malformed one leaves the held sheets as they were. */
+  decode(payload: Uint8Array): ZoneSnapshot {
+    const snapshot = this.#decoder.decode(payload);
+    PROJECTION_BYTES.set(snapshot, payload.slice());
+    return snapshot;
+  }
+
+  /** Encoded command bytes wrapped with the sheet revisions held. */
+  acknowledge(command: Uint8Array): Uint8Array {
+    return this.#decoder.acknowledge(command);
+  }
 }
 
 /** The wire bytes each decoded projection came from, for the shared unit presenter (#184). */

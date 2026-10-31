@@ -1180,7 +1180,7 @@ pub struct ZoneSnapshot {
     pub target_detail: TargetDetail,
     #[tsify(type = "bigint")]
     pub inventory_revision: u64,
-    /// Complete self bag when present; null means retain prior state, never empty.
+    /// Complete self bag; null only until an online session receives its first bag sheet (#544).
     pub inventory: Option<Vec<Option<ItemStack>>>,
     /// Item IDs by equipment slot (0 main hand … 5 feet), null when empty; present exactly with the bag.
     pub equipment: Option<Vec<Option<u16>>>,
@@ -1898,15 +1898,13 @@ pub fn encode_observed_command(command: &WorldCommand, observed: u64) -> Convert
     ))
 }
 
-/// Whether encoded (plain or observed) command bytes are movement intent (Move or Rise).
+/// Whether encoded (plain, observed or acknowledged) command bytes are movement intent (Move
+/// or Rise).
 #[must_use]
 pub fn is_movement_command(payload: &[u8]) -> bool {
     matches!(
-        mmorpg_protocol::decode_observed_command(payload),
-        Ok((
-            core::ZoneCommand::Move { .. } | core::ZoneCommand::Rise(_),
-            _
-        ))
+        mmorpg_protocol::decode_command_envelope(payload).map(|envelope| envelope.command),
+        Ok(core::ZoneCommand::Move { .. } | core::ZoneCommand::Rise(_))
     )
 }
 
@@ -1935,10 +1933,45 @@ export type Vector3 = [number, number, number];
 export type Axis = -1 | 0 | 1;
 "#;
 
-/// Decodes a player projection with the Rust decoder; throws on any malformed payload.
+/// Decodes a player projection with the Rust decoder, without sheets received earlier;
+/// throws on any malformed payload.
 #[wasm_bindgen(js_name = decodeSnapshot)]
 pub fn decode_snapshot_js(payload: &[u8]) -> Result<Ts<ZoneSnapshot>, JsError> {
     Ok(decode_snapshot(payload).map_err(js_error)?.into_ts()?)
+}
+
+/// One online session's projection decoder (#544): hosts send the bag, quest, loot and
+/// ability sheets only until the client acknowledges them, so it keeps the newest copy of each
+/// and every decoded projection is complete. Every command the session sends goes through
+/// [`SnapshotDecoder::acknowledge`], which echoes the revisions it holds.
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct SnapshotDecoder {
+    decoder: mmorpg_protocol::SnapshotDecoder,
+}
+
+#[wasm_bindgen]
+impl SnapshotDecoder {
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Decodes a projection strictly; a malformed one leaves the held sheets as they were.
+    pub fn decode(&mut self, payload: &[u8]) -> Result<Ts<ZoneSnapshot>, JsError> {
+        let snapshot = self
+            .decoder
+            .decode(payload)
+            .map_err(|error| js_error(error.to_string()))?;
+        Ok(ZoneSnapshot::from(&snapshot).into_ts()?)
+    }
+
+    /// Encoded command bytes wrapped with the sheet revisions held.
+    #[must_use]
+    pub fn acknowledge(&self, command: &[u8]) -> Vec<u8> {
+        mmorpg_protocol::encode_acknowledged_command(self.decoder.revisions(), command)
+    }
 }
 
 /// Encodes a projection with the Rust encoder (tests feed the browser real bytes with it).

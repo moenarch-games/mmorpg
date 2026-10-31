@@ -320,7 +320,7 @@ async fn bag_intents_cross_real_transport_and_resume_without_losing_items() {
         }
         assert!(
             recovered,
-            "resume recovers the durable bag from a periodic sheet"
+            "resume recovers the durable bag from its held sheet"
         );
         session.send_move_item(15, 0, 2)?;
         let mut merged = false;
@@ -724,11 +724,14 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
         let mut previous_tick = None;
         for _ in 0..mmorpg_core::golden::t30(10) {
             let snapshot = session.receive_snapshot().await?;
-            // The self sheet: bag, equipment and stat totals, then the quest
-            // part (mask, entry count, entries, marker count, markers).
+            // This session sends no command, so it acknowledges no sheet and every projection
+            // carries them all (#544): the bag sheet (revision, bag, equipment and stat totals),
+            // the quest sheet (mask, entry count, entries, marker count, markers), no corpse
+            // sheet and an empty ability sheet.
             let sheet_bytes = snapshot.quests.as_ref().map_or(0, |quests| {
-                84 + 4 + 1 + 4 * quests.entries.len() + 1 + 3 * quests.markers.len()
-            });
+                92 + 4 + 1 + 4 * quests.entries.len() + 1 + 3 * quests.markers.len()
+            }) + 1
+                + 8;
             // Every projection also carries the content doors (#158).
             let door_bytes = 2 * snapshot.doors.len();
             let expected_entities = (MAX_PLAYER_PROJECTION_BYTES
@@ -786,7 +789,7 @@ async fn fragmented_projection_reaches_the_native_client() {
         content_revision: revision,
         acknowledged_sequence: 0,
         viewer_id: player_id,
-        inventory_revision: 1,
+        inventory_revision: 0,
         inventory: None,
         equipment: None,
         quests: None,
