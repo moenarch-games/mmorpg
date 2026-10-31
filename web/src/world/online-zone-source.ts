@@ -32,9 +32,11 @@ export const MAX_RECEIVED_PROJECTIONS = TICK_HZ;
 
 /** An ephemeral activity reuses session/reconnect delivery while supplying its game envelope. */
 export type ActivityProtocol = {
-  encodeCommand(command: WorldCommand): Uint8Array;
+  /** `sheets` is the session's decoder, for the sheet revisions a command echoes (#544). */
+  encodeCommand(command: WorldCommand, sheets: ProjectionDecoder): Uint8Array;
   initialCommand(character: JoinCharacter): Uint8Array;
-  decodeProjection(payload: Uint8Array): { snapshot: ZoneSnapshot; finished: boolean };
+  /** `sheets` is the session's decoder, which keeps the sheets the host sent earlier. */
+  decodeProjection(payload: Uint8Array, sheets: ProjectionDecoder): { snapshot: ZoneSnapshot; finished: boolean };
 };
 
 export type OnlineZoneOptions = {
@@ -459,7 +461,7 @@ export class OnlineZoneSource implements WorldSource {
 
   /** Validates and presents one verified snapshot frame of the current session. */
   #project(welcome: Welcome, frame: SnapshotFrame): void {
-    const activity = this.#activityProtocol?.decodeProjection(frame.payload);
+    const activity = this.#activityProtocol?.decodeProjection(frame.payload, this.#sheets);
     const snapshot = activity ? activity.snapshot : this.#sheets.decode(frame.payload);
     if (snapshot.contentRevision !== this.#contentRevision) {
       throw new Error(
@@ -702,7 +704,7 @@ export class OnlineZoneSource implements WorldSource {
 
   #encodeCommand(command: WorldCommand): Uint8Array {
     if (this.#activityProtocol) {
-      return this.#activityProtocol.encodeCommand(command);
+      return this.#activityProtocol.encodeCommand(command, this.#sheets);
     }
     // Combo inputs report the newest projection they were made against, so the zone can make up
     // for their travel time within its bounded grace (#415); it still judges them on arrival.

@@ -29,8 +29,8 @@ export class BattleRoyaleSource implements WorldSource {
       activityProtocol: {
         encodeCommand: encodeCharacterCommand,
         initialCommand: (character) => encodeBuild(character, options.equipment(character)),
-        decodeProjection: (payload) => {
-          const match = decodeMatchProjection(payload, contentRevision);
+        decodeProjection: (payload, sheets) => {
+          const match = decodeMatchProjection(payload, contentRevision, sheets);
           if (match.matchId !== expectedMatch) {
             throw new Error("The host sent another Battle Royale match.");
           }
