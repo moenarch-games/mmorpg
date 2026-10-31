@@ -2,8 +2,8 @@
 //! Ranger default models and the shared clip library are standard GLBs prepared by
 //! asset-tooling (`scripts/prepare-ranger-native.sh`), with original socket metadata.
 //! The Greyhaven inn, the Sunken Shrine kit (#431), the ambient animals (#419), the
-//! Outpost building kit (#420) and the settlement props (#421) keep the manifest/resource
-//! embedding path.
+//! Outpost building kit (#420), the settlement props (#421) and Greyhaven's trees and rocks
+//! (#49) keep the manifest/resource embedding path.
 #[path = "build/warden_icons.rs"]
 mod warden_icons;
 
@@ -176,6 +176,42 @@ fn main() {
         false,
     );
     sound_bundle(&manifest_dir.join("../../web/public/sounds/combat-sounds"));
+    // Greyhaven's trees and rocks with every level of detail (#49), and their descriptor.
+    let nature = manifest_dir.join("../../web/public/scenery/greyhaven.nature");
+    static_bundle("nature_bundle.rs", &nature, None, true);
+    nature_descriptor(&nature);
+}
+
+/// The nature bundle's `nature-descriptor` attachment (#49) as `DESCRIPTOR`: its levels of
+/// detail and the rocks' collision proxies.
+fn nature_descriptor(bundle: &Path) {
+    let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
+        panic!(
+            "the bundle {} is missing ({error}); run scripts/fetch-bundles.sh",
+            bundle.display()
+        )
+    });
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest).expect("the bundle manifest is JSON");
+    let path = manifest["assets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|asset| asset["attachments"].as_array().into_iter().flatten())
+        .find(|attachment| attachment["name"] == "nature-descriptor")
+        .and_then(|attachment| attachment["path"].as_str())
+        .expect("the nature bundle attaches its descriptor");
+    let absolute = bundle
+        .join(path)
+        .canonicalize()
+        .expect("the nature descriptor is in the bundle");
+    let code = format!(
+        "pub const DESCRIPTOR: &str = include_str!({:?});\n",
+        absolute.display().to_string()
+    );
+    let out =
+        PathBuf::from(env::var("OUT_DIR").expect("cargo sets it")).join("nature_descriptor.rs");
+    fs::write(out, code).expect("OUT_DIR is writable");
 }
 
 /// The CC0 combat sounds (#447, asset-tooling#297): `MANIFEST`, the bundle path of its

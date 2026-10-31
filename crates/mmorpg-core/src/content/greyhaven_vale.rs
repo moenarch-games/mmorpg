@@ -1026,6 +1026,7 @@ pub fn content_with_definition(
             ])?
             .with_platforms(vec![MILL_HOIST])?
             .with_ramps(ramps())?
+            .with_rocks(dressing::rock_shapes())?
             .with_structures(structure_sites(), watch_post())?
             .with_routines(units::routines(), units::closed_at_night())?
             .with_private_homes(vec![marshal_house::home()])?

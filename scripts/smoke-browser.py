@@ -670,42 +670,6 @@ class BrowserAcceptance(unittest.TestCase):
     def debug_stats(self):
         return self.page.evaluate("window.__valeDebug.stats()")
 
-    def test_nature_candidate_at_the_same_woods_camera(self):
-        """One real opt-in broadleaf; current/candidate use identical authority and camera."""
-        self.open("?debug")
-        self.page.evaluate("window.__valeDebug.worldSource().advance = () => []")
-        self.enter_world(ticking=False)
-        self.page.evaluate("""() => {
-          window.__valeDebug.flyTo('woods');
-          window.__valeDebug.setPresentationTime(120);
-        }""")
-        self.frames(6)
-        self.page.add_style_tag(content="[data-world-ui] { visibility: hidden !important; }")
-        before = self.debug_stats()["self"]
-        projection = self.page.evaluate("window.__valeDebug.projection()")
-        current = self.page.evaluate("window.__valeDebug.natureCandidate()")
-        self.assertFalse(current["enabled"])
-        self.assertFalse(current["loaded"])
-        current_pixels = self.page.screenshot(path=str(ARTIFACTS / "nature-current.png"))
-        candidate = self.page.evaluate("window.__valeDebug.setNatureCandidate(true)")
-        self.assertTrue(candidate["loaded"])
-        self.assertEqual(candidate["key"], "greyhaven.nature.tree.broadleaf/default")
-        self.frames(6)
-        candidate_pixels = self.page.screenshot(path=str(ARTIFACTS / "nature-candidate.png"))
-        self.assertNotEqual(candidate_pixels, current_pixels, "The candidate must change the actual rendered image")
-        self.assertEqual(self.page.evaluate("window.__valeDebug.projection()"), projection)
-        self.assertEqual(self.debug_stats()["self"], before)
-        self.assertGreater(self.canvas_colours()["distinct"], 400)
-        self.page.evaluate("window.__valeDebug.setNatureCandidate(false)")
-        self.frames(4)
-        self.assertEqual(self.debug_stats()["self"], before)
-        self.assertFalse(self.page.evaluate("window.__valeDebug.natureCandidate().enabled"))
-        (ARTIFACTS / "nature-review.json").write_text(json.dumps({
-            "camera": "woods", "presentationSeconds": 120,
-            "viewport": {"width": 1440, "height": 900},
-            "candidate": candidate, "self": before,
-        }, indent=2))
-
     def test_vale_viewpoints_overlay_minimap_and_mouse_look(self):
         """Debug-only camera viewpoints (never the simulation) show the subzones; F3 reports scene work."""
         self.open("?debug")

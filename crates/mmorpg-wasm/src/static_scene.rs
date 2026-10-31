@@ -57,6 +57,8 @@ struct GeometryEntry {
 struct GroupEntry {
     cull: &'static str,
     instanced: bool,
+    /// `"nature"` for the procedural trees and rocks the nature bundle replaces (#49).
+    fallback: Option<&'static str>,
     min: [f64; 2],
     max: [f64; 2],
     draws: Vec<DrawEntry>,
@@ -155,6 +157,11 @@ pub(crate) fn encode(scene: &StaticScene) -> SceneBuffers {
         .map(|group| GroupEntry {
             cull: group.cull.name(),
             instanced: group.instanced,
+            fallback: group.fallback.map(|kit| match kit {
+                mmorpg_presentation::Kit::Outpost => "outpost",
+                mmorpg_presentation::Kit::SettlementProps => "settlementProps",
+                mmorpg_presentation::Kit::Nature => "nature",
+            }),
             min: group.min,
             max: group.max,
             draws: group.draws.iter().map(|draw| buffers.draw(draw)).collect(),

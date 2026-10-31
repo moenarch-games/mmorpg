@@ -54,6 +54,7 @@ pub mod raid;
 mod ramp;
 mod rewards;
 pub mod rng;
+mod rock;
 pub mod roll;
 mod routine;
 mod shapes;
@@ -172,6 +173,7 @@ pub use raid::{
 };
 pub use ramp::{MAX_RAMPS, Ramp, RampRise};
 pub use rewards::{RewardGrant, RewardHistory, RewardKey};
+pub use rock::{PROXIES as ROCK_PROXIES, RockProxy, RockShape};
 pub use roll::Roll;
 pub use routine::{
     DAWN, DAY_TICKS, DUSK, HOUR_TICKS, MAX_ROUTINE_WAYPOINTS, NPC_WALK_UNITS_PER_TICK,
