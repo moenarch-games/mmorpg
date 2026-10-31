@@ -280,7 +280,12 @@ impl App {
                 return false;
             }
             WorldAction::Interact if self.connected() => {
-                if let Some(EntityRef::Npc(npc)) =
+                if let Some(command) = self.presentation.reachable_raid_prep() {
+                    // On a forewarned evening, reads the tracks, reports them to the lookout
+                    // or braces the barn in reach (#532), even with the lookout selected.
+                    self.send_interaction(command);
+                    return true;
+                } else if let Some(EntityRef::Npc(npc)) =
                     self.presentation.latest().and_then(|s| s.viewer.target)
                 {
                     self.npc_context.open(npc);

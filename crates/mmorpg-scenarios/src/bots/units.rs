@@ -211,7 +211,9 @@ pub fn concerned_unit(event: &ZoneEvent, viewer: EntityRef) -> Option<EntityRef>
         | ZoneEvent::AuraRemoved { target, .. }
         | ZoneEvent::Interrupted { target, .. } => Some(target),
         ZoneEvent::LostInterest { source } => Some(source),
-        ZoneEvent::QuestProgress { .. } | ZoneEvent::QuestCompleted { .. } => None,
+        ZoneEvent::QuestProgress { .. }
+        | ZoneEvent::QuestCompleted { .. }
+        | ZoneEvent::Raid { .. } => None,
     }
 }
 
@@ -394,6 +396,7 @@ pub fn event_token(event: &ZoneEvent, name: impl Fn(EntityRef) -> String) -> Str
         ZoneEvent::Died { entity, .. } => format!("died:{}", name(entity)),
         ZoneEvent::Evade { target, .. } => format!("evade:{}", name(target)),
         ZoneEvent::LostInterest { source } => format!("lost-interest:{}", name(source)),
+        ZoneEvent::Raid { notice } => format!("raid:{notice:?}"),
         ZoneEvent::Error { code, .. } => format!("error:{}", error_code_name(code)),
         ZoneEvent::CastStarted {
             source, ability, ..

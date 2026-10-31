@@ -30,6 +30,8 @@ import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-no
 import { ImpactEffects, impactCues } from "./impact-effects";
 import { RaidSmoke } from "./raid-smoke";
 import { type AidTask, reachableAidTask } from "./raid-aid";
+import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
+import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
 import { AmbientAnimals } from "./ambient-animals";
@@ -320,6 +322,7 @@ export class WorldView {
   readonly #impacts = new ImpactEffects();
   /** Smoke over a raided barn (#530); one permanent imported root. */
   readonly #raidSmoke = new RaidSmoke();
+  readonly #raidSigns = new RaidSigns();
   /** The raided barn's roof centre and smoke span in metres, by objective (#530). */
   #raidRoof: { key: string; top: [number, number, number]; span: [number, number] } | null = null;
   #reachableDoor: (x: number, z: number) => number = () => 0;
@@ -328,6 +331,8 @@ export class WorldView {
   #raidArea: { x: number; z: number; radius: number } | null = null;
   /** The night raid target's aftermath aid task spots (#531), from the scenery. */
   #raidAid: readonly AidTask[] = [];
+  /** The night raid target's forewarning spots (#532), from the scenery. */
+  #raidPrep: RaidPrepSpots | null = null;
   #restClip: (kind: ImportedModelKind) => string = () => { throw new Error("No world is loaded."); };
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][], string | null][] = [];
@@ -498,7 +503,7 @@ export class WorldView {
     this.#character.load(world.catalog);
     this.#loot.load(world.catalog);
     this.#vendor.load(world.catalog);
-    this.#quests.load(world.catalog);
+    this.#quests.load(world.catalog, world.scenery.raidPrep?.lookout ?? null);
     const scenery = world.scenery.scenery;
     this.#presentationFingerprint = scenery.presentationFingerprint;
     this.#reliefAt = world.scenery.reliefAt;
@@ -517,6 +522,7 @@ export class WorldView {
     this.#reachablePieces = world.scenery.reachablePieces;
     this.#raidArea = world.scenery.raidArea;
     this.#raidAid = world.scenery.raidAid;
+    this.#raidPrep = world.scenery.raidPrep;
     this.#raidRoof = null;
     this.#waystone.load(world.scenery.waystoneAt, world.scenery.waystones);
     this.#units = null;
@@ -717,7 +723,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -726,6 +732,7 @@ export class WorldView {
     this.#impacts.clear();
     this.#guardHold.end();
     this.#raidSmoke.clear();
+    this.#raidSigns.clear();
     this.#pendingNpc = null;
     this.#clearModels();
     this.#lastSceneryNodes = [];
@@ -821,6 +828,13 @@ export class WorldView {
     // The viewer leads every projection; positions are in units.
     const at = projection?.entities[0]?.position;
     const talking = projection?.viewer.target?.kind === "npc";
+    // On a forewarned evening: read the tracks, report them to the lookout (even while talking
+    // to him) or brace the barn in reach (#532).
+    const step = at ? this.#prepStep(projection, at) : null;
+    if (step !== null) {
+      this.queueIntent(() => ({ kind: "raid-prepare", step }));
+      return;
+    }
     const door = at && !talking ? this.#reachableDoor(at[0], at[2]) : 0;
     if (door !== 0) {
       this.queueIntent((latest) => doorToggle(latest, door));
@@ -841,6 +855,12 @@ export class WorldView {
     this.toggleQuestDialog();
   }
 
+  /** The night raid preparation step (#532) feet at `at` units can take now, or null. */
+  #prepStep(projection: ZoneSnapshot | null, at: readonly number[]): number | null {
+    const lookout = this.#raidPrep && projection?.entities.find((entity) => entity.kind === "npc" && entity.entityId === this.#raidPrep!.lookout);
+    return reachablePrepStep(projection?.raid, this.#raidPrep, at[0]!, at[2]!, lookout ? { x: lookout.position[0], z: lookout.position[2] } : null);
+  }
+
   toggleQuestLog(): void {
     this.#quests.toggleLog();
   }
@@ -853,7 +873,7 @@ export class WorldView {
     return touchContext(projection, {
       isVendor: (npc) => this.#catalog?.vendors.has(npc) ?? false,
       doorInReach: at ? this.#reachableDoor(at[0], at[2]) !== 0 : false,
-      repairInReach: at ? this.#reachablePieces(at[0], at[2]).some((id) => damaged.has(id)) || reachableAidTask(projection?.raid, this.#raidAid, at[0], at[2]) !== null : false,
+      repairInReach: at ? this.#reachablePieces(at[0], at[2]).some((id) => damaged.has(id)) || reachableAidTask(projection?.raid, this.#raidAid, at[0], at[2]) !== null || this.#prepStep(projection, at) !== null : false,
       arena: this.#arena,
     });
   }
@@ -1105,6 +1125,7 @@ export class WorldView {
     this.#lastSelf = { x: self.x, z: self.z, facing: self.facing };
     this.#inn?.update(projection.doors, [self.x, self.feetY, self.z], deltaSeconds, !animate);
     this.#ambient?.update(this.#seconds, animate);
+    this.#raidSigns.update(projection.raid, this.#raidPrep, scene.surfaceY, scenery.scenery.unitsPerMetre);
     if (this.#framePending) {
       this.#framePending = false;
       this.#frameFirstView(self.focus, self.facing, scene.surfaceY);
@@ -1149,14 +1170,14 @@ export class WorldView {
     const settlement = this.#settlement?.roots() ?? { roots: [], changed: false };
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#natureReview?.roots() ?? { roots: [], changed: false };
-    const roots = [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root];
+    const roots = [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
     const rendererFrame = { camera, nodes, instanceBatches: frame.instanceBatches, environment };
     if (this.#preparing) {
       // `prepare` (#547): the first world frame's programs and textures, without drawing it.
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
       return;
     }
-    if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || ambient.changed || nature.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent) {
+    if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || ambient.changed || nature.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots });
     }
     const work = this.#renderer.render(rendererFrame);

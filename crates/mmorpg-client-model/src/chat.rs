@@ -1,8 +1,8 @@
 //! Chat input parsing and the received chat and combat logs. The zone decides
 //! who hears a line; the logs only read what it delivered.
 use mmorpg_core::{
-    ChatChannel, ChatMessage, ChatText, Emote, EntityRef, ErrorCode, QuestId, ZoneCommand,
-    ZoneEvent, ZoneId, ZoneSnapshot, ability_by_id,
+    ChatChannel, ChatMessage, ChatText, Emote, EntityRef, ErrorCode, QuestId, RaidNotice,
+    ZoneCommand, ZoneEvent, ZoneId, ZoneSnapshot, ability_by_id,
 };
 use std::collections::VecDeque;
 use strum::VariantArray;
@@ -97,6 +97,27 @@ pub fn humanize(debug: &str) -> String {
         }
     }
     out
+}
+
+/// What a night raid acknowledgment says (#532, Atlas 5.1.60): the lookout guard's own short line
+/// for a report and for a prepared raid's end, which never claims more than the outcome.
+#[must_use]
+pub const fn raid_notice_text(notice: RaidNotice) -> &'static str {
+    match notice {
+        RaidNotice::Tracks => {
+            "Fresh boot prints and a dropped Redbrand rag: someone has been watching Millbrook Farm. The east gate guard should hear of this."
+        }
+        RaidNotice::Warned => {
+            "Greyhaven Guard: \"Redbrand scouts on the Rim Trail? I'll post the watch. Brace the barn's walls if you can; it may come to nothing.\""
+        }
+        RaidNotice::Braced => "You wedge a timber against the barn wall.",
+        RaidNotice::Held => {
+            "Greyhaven Guard: \"The barn stands. Being ready for them bought us the time.\""
+        }
+        RaidNotice::Fell => {
+            "Greyhaven Guard: \"We were ready and it slowed them, but they broke into the barn all the same.\""
+        }
+    }
 }
 
 /// What a refusal tells the player.
@@ -305,6 +326,7 @@ impl Logs {
                 ZoneEvent::QuestCompleted { quest } => {
                     (LineKind::Quest, format!("{} completed.", quest_name(quest)))
                 }
+                ZoneEvent::Raid { notice } => (LineKind::System, raid_notice_text(notice).into()),
                 ZoneEvent::Error { code, .. } => {
                     let text = refusal_text(code);
                     refusals.push(text.clone());

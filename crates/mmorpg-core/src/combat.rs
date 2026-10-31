@@ -190,6 +190,7 @@ impl ZoneSimulation {
             | PlayerIntent::CompleteQuest { .. }
             | PlayerIntent::UseDoor { .. }
             | PlayerIntent::RaidAid(_)
+            | PlayerIntent::RaidPrepare(_)
                 if !alive =>
             {
                 Some((ErrorCode::YouAreDead, None))
@@ -202,6 +203,7 @@ impl ZoneSimulation {
             | PlayerIntent::CompleteQuest { .. }
             | PlayerIntent::AbandonQuest { .. }
             | PlayerIntent::RaidAid(_)
+            | PlayerIntent::RaidPrepare(_)
                 if self.in_handoff_corridor(player_id) =>
             {
                 Some((ErrorCode::HandoffCorridor, None))
@@ -278,6 +280,7 @@ impl ZoneSimulation {
             }
             PlayerIntent::UseWaystone(waystone) => self.use_waystone(player_id, waystone)?,
             PlayerIntent::RaidAid(task) => self.aid_raid(player_id, task)?,
+            PlayerIntent::RaidPrepare(prep) => self.prepare_raid(player_id, prep)?,
             PlayerIntent::SelectTarget(None) => {
                 self.update_player(player_id, |player| player.target = None);
                 None

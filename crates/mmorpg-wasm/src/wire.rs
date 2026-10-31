@@ -214,6 +214,11 @@ mirror!(
     #[serde(rename_all = "lowercase")]
     ChatChannel = core::ChatChannel { Say, Yell }
 );
+mirror!(
+    /// A night raid acknowledgment for the viewer (#532).
+    #[serde(rename_all = "lowercase")]
+    RaidNotice = core::RaidNotice { Tracks, Warned, Braced, Held, Fell }
+);
 
 /// Unit identity shared by commands and projections.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
@@ -586,11 +591,18 @@ pub struct PieceState {
 /// The night raid as seen near its target (#530): the assault phase (1–3, or 0 once it resolved
 /// while the barn still recovers) and the barn's integrity in percent.
 /// `aid` holds the aid tasks a lost raid left open, one bit per task in `raidAid()` order (#531).
+/// `signs` is set on a forewarned evening, when the scouts' tracks lie on the approach, and
+/// `scouted` once the viewer read them; `readiness` holds the coming or running raid's accepted
+/// preparations: bit 0 the warned guards, then one bit per brace in `raidPrep()` order (#532).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "camelCase")]
 pub struct RaidSignal {
     pub phase: u8,
     pub integrity: u8,
     pub aid: u8,
+    pub signs: bool,
+    pub readiness: u8,
+    pub scouted: bool,
 }
 
 /// One projectile: position in units, heading/pitch in 1/65 536 turns (heading 0 is +Z).
@@ -756,6 +768,8 @@ pub enum ZoneEvent {
     QuestCompleted { quest: u8 },
     /// The trailing lurker `source` lost interest in the diving viewer and swims home (#274).
     LostInterest { source: EntityRef },
+    /// A night raid acknowledgment for the viewer (#532).
+    Raid { notice: RaidNotice },
 }
 
 impl From<core::ZoneEvent> for ZoneEvent {
@@ -932,6 +946,9 @@ impl From<core::ZoneEvent> for ZoneEvent {
             E::QuestCompleted { quest } => Self::QuestCompleted { quest: quest.get() },
             E::LostInterest { source } => Self::LostInterest {
                 source: source.into(),
+            },
+            E::Raid { notice } => Self::Raid {
+                notice: notice.into(),
             },
         }
     }
@@ -1114,6 +1131,9 @@ impl From<ZoneEvent> for core::ZoneEvent {
             },
             E::LostInterest { source } => Self::LostInterest {
                 source: source.into(),
+            },
+            E::Raid { notice } => Self::Raid {
+                notice: notice.into(),
             },
         }
     }
@@ -1349,6 +1369,9 @@ impl From<&core::ZoneSnapshot> for ZoneSnapshot {
                 phase: raid.phase,
                 integrity: raid.integrity,
                 aid: raid.aid,
+                signs: raid.signs,
+                readiness: raid.readiness,
+                scouted: raid.scouted,
             }),
             events: snapshot.events.iter().copied().map(Into::into).collect(),
             chat: snapshot.chat.iter().map(Into::into).collect(),
@@ -1564,6 +1587,9 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                 phase: raid.phase,
                 integrity: raid.integrity,
                 aid: raid.aid,
+                signs: raid.signs,
+                readiness: raid.readiness,
+                scouted: raid.scouted,
             }),
         })
     }
@@ -1703,6 +1729,11 @@ pub enum WorldCommand {
     RaidAid {
         task: u8,
     },
+    /// One preparation step before a forewarned night raid (#532): 0 reads the tracks, 1 reports
+    /// them to the lookout, `2 + k` braces the barn at brace spot `k`.
+    RaidPrepare {
+        step: u8,
+    },
     /// Starts repairing a destructible piece (#305), or stops with `null`.
     Repair {
         piece: Option<u16>,
@@ -1824,6 +1855,13 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
                     .ok_or_else(|| format!("unknown waystone {waystone}"))?,
             },
             C::RaidAid { task } => Self::RaidAid { task },
+            C::RaidPrepare { step } => Self::RaidPrepare {
+                prep: match step {
+                    0 => core::RaidPrep::Investigate,
+                    1 => core::RaidPrep::Report,
+                    _ => core::RaidPrep::Brace(step - 2),
+                },
+            },
             C::Repair { piece } => Self::Repair {
                 // The wire carries the piece plus one, so the largest ID has no reference.
                 piece: piece

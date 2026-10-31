@@ -44,6 +44,7 @@ const STRIKE_SWEPT: u8 = 18;
 const BLOCKED: u8 = 19;
 const GUARD_BROKEN: u8 = 20;
 const LOST_INTEREST: u8 = 21;
+const RAID_NOTICE: u8 = 22;
 const CRITICAL_FLAG: u8 = 1;
 
 pub(crate) const fn entity_kind_code(kind: EntityKind) -> u8 {
@@ -375,6 +376,9 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
         ),
         ZoneEvent::QuestCompleted { quest } => (QUEST_COMPLETED, quest.get(), None, None, 0),
         ZoneEvent::LostInterest { source } => (LOST_INTEREST, 0, Some(source), None, 0),
+        ZoneEvent::Raid { notice } => {
+            (RAID_NOTICE, crate::raid::notice_code(notice), None, None, 0)
+        }
     };
     payload.push(kind);
     payload.push(flags);
@@ -590,6 +594,14 @@ pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEve
                 return Err(invalid());
             }
             ZoneEvent::LostInterest { source }
+        }
+        RAID_NOTICE => {
+            if source.is_some() || target.is_some() || amount != 0 {
+                return Err(invalid());
+            }
+            ZoneEvent::Raid {
+                notice: crate::raid::decode_notice(flags)?,
+            }
         }
         _ => return Err(ProtocolError::new("unknown event kind")),
     })

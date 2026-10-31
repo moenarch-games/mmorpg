@@ -731,6 +731,7 @@ impl ZoneSimulation {
             ZoneCommand::AbandonQuest { quest } => Some(PlayerIntent::AbandonQuest { quest }),
             ZoneCommand::UseWaystone { waystone } => Some(PlayerIntent::UseWaystone(waystone)),
             ZoneCommand::RaidAid { task } => Some(PlayerIntent::RaidAid(task)),
+            ZoneCommand::RaidPrepare { prep } => Some(PlayerIntent::RaidPrepare(prep)),
         };
         if let Some(intent) = intent {
             if player.intents.len() < MAX_PENDING_INTENTS {
