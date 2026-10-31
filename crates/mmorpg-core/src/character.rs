@@ -198,7 +198,7 @@ impl ZoneSimulation {
             .map_err(crate::zone::physics_error)?;
         self.interest.insert(entity, position.x, position.z);
         self.interest_work.bucket_inserts += 1;
-        let mut state = PlayerState::new(spawn_slot, self.tick);
+        let mut state = PlayerState::new(spawn_slot);
         state.facing = if record.location.zone_id == self.zone_id {
             record.location.facing
         } else {

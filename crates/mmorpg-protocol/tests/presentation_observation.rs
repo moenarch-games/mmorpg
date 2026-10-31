@@ -10,6 +10,8 @@ fn observation_records_round_trip_through_the_shared_fixture() {
     zone.add_player(1).unwrap();
     let mut view = zone.snapshot_for_player(1).unwrap();
     view.content_revision = 1;
+    // No bag or quest sheet to send, as to a client that holds them (#544).
+    view.inventory_revision = 0;
     view.inventory = None;
     view.equipment = None;
     view.quests = None;

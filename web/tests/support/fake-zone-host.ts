@@ -67,6 +67,23 @@ const COMMAND_LENGTHS = new Map([
   [1, 6], [2, 2], [3, 7], [4, 4], [6, 2], [7, 6], [8, 14], [9, 8], [10, 2], [11, 4], [12, 3], [13, 3],
   [14, 9], [15, 9], [17, 3], [18, 7], [19, 8], [20, 3], [21, 7], [22, 3], [23, 4], [24, 4], [25, 3],
 ]);
+/** Wraps a command with the four `u32` sheet revisions the client holds (#544). */
+const ACKNOWLEDGED_TAG = 31;
+
+/** The command inside an acknowledgement, which every online command arrives in. */
+function unwrapAcknowledged(payload: Uint8Array): Uint8Array {
+  if (payload[1] !== ACKNOWLEDGED_TAG) {
+    return payload;
+  }
+  if (payload.length < 2 + 16 + 1) {
+    throw new Error("malformed acknowledged command");
+  }
+  const inner = new Uint8Array(payload.length - 16 - 1);
+  inner[0] = payload[0]!;
+  inner.set(payload.subarray(2 + 16), 1);
+  return inner;
+}
+
 /** `RUN_SPEED_UNITS_PER_SECOND` (6.3 m/s) per tick. */
 const RUN_UNITS_PER_TICK = 630 / TICK_HZ;
 
@@ -331,10 +348,11 @@ export class FakeZoneHost {
   #command(link: HostLink, datagram: Uint8Array): void {
     const { session } = link;
     try {
-      const frame = decodeCommandFrame(datagram);
-      if (frame.sequence <= session.lastSequence) {
+      const received = decodeCommandFrame(datagram);
+      if (received.sequence <= session.lastSequence) {
         return;
       }
+      const frame = { ...received, payload: unwrapAcknowledged(received.payload) };
       const [version, tag] = frame.payload;
       if (version !== PROTOCOL_BYTE || tag === undefined || (tag === 16 ? frame.payload.length !== 4 + (frame.payload[3] ?? 0) : COMMAND_LENGTHS.get(tag) !== frame.payload.length)) {
         throw new Error("malformed command payload");

@@ -67,7 +67,7 @@ fn viewer_of(class: PlayerClass) -> ZoneSnapshot {
         auras: Vec::new(),
         target_of_target: None,
         target_detail: TargetDetail::default(),
-        inventory_revision: 1,
+        inventory_revision: 0,
         inventory: None,
         equipment: None,
         quests: None,

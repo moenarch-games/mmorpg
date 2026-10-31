@@ -224,14 +224,12 @@ impl Run {
     }
 
     fn markers(&mut self) -> Vec<NpcMarker> {
-        // An unchanged sheet is re-sent every ten ticks.
-        for _ in 0..mmorpg_core::golden::t30(10) {
-            if let Some(sheet) = self.zone.snapshot_for_player(1).unwrap().quests {
-                return sheet.markers;
-            }
-            self.zone.advance_tick().unwrap();
-        }
-        panic!("no quest sheet within ten ticks");
+        self.zone
+            .snapshot_for_player(1)
+            .unwrap()
+            .quests
+            .expect("every projection carries the quest sheet")
+            .markers
     }
 }
 
@@ -400,10 +398,7 @@ fn accepting_needs_the_giver_in_reach_and_an_available_quest() {
         assert_eq!(run.act(command), [refusal], "{command:?}");
     }
     let after = run.player();
-    assert_eq!(
-        (after.quests, after.quests_changed_at),
-        (before.quests, before.quests_changed_at)
-    );
+    assert_eq!(after.quests, before.quests);
 
     run.teleport([0, 0]);
     assert!(run.accept(BOARS).is_empty());
@@ -415,7 +410,6 @@ fn accepting_needs_the_giver_in_reach_and_an_available_quest() {
             progress: [0; 3],
         }]
     );
-    assert_eq!(player.quests_changed_at, run.zone.current_tick());
     assert!(
         run.zone.snapshot_for_player(1).unwrap().quests.is_some(),
         "the change tick sends the sheet"
@@ -714,7 +708,6 @@ fn recovery_continues_quests_exactly_and_refuses_inconsistent_logs() {
     assert!(refuse(&|player| player.quests.completed = 0b1));
     assert!(refuse(&|player| player.quests.completed = 1 << 9));
     assert!(refuse(&|player| player.quests.entries[0].quest = HIDES));
-    assert!(refuse(&|player| player.quests_changed_at = u64::MAX));
     assert!(refuse(&|player| {
         player.quests.entries = (1..=11)
             .map(|id| QuestEntry {

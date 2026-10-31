@@ -7,7 +7,7 @@ use crate::ProtocolError;
 use crate::wire::{decode_entity_ref, encode_entity_ref};
 
 /// Every command leads with the low byte of [`crate::PROTOCOL_ID`].
-const PROTOCOL_BYTE: u8 = crate::PROTOCOL_ID.to_be_bytes()[3];
+pub(crate) const PROTOCOL_BYTE: u8 = crate::PROTOCOL_ID.to_be_bytes()[3];
 
 const MOVE_TAG: u8 = 1;
 const JUMP_TAG: u8 = 2;
@@ -43,6 +43,8 @@ const RELEASE_ABILITY_TAG: u8 = 28;
 const ROLL_TAG: u8 = 29;
 /// Waystone travel (#145): version, tag, waystone (u8).
 const USE_WAYSTONE_TAG: u8 = 30;
+/// Wraps a plain or observed command with the sheet revisions its client holds (#544).
+pub(crate) const ACKNOWLEDGED_TAG: u8 = 31;
 /// Version, tag, ability (u8), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -254,6 +256,42 @@ pub fn decode_observed_command(
     plain.push(*version);
     plain.extend_from_slice(inner);
     Ok((decode_command(&plain)?, Some(u64::from_be_bytes(*tick))))
+}
+
+/// A command datagram as a zone host reads it (#544).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CommandEnvelope {
+    pub command: ZoneCommand,
+    /// The zone tick the client had observed, for an observed command (#415).
+    pub observed: Option<u64>,
+    /// The sheet revisions the client holds, when it sent them.
+    pub sheets: Option<crate::SheetRevisions>,
+}
+
+/// Decodes a plain, observed or acknowledged command
+/// ([`crate::encode_acknowledged_command`]). An acknowledgement wraps one plain or observed
+/// command, never another acknowledgement.
+pub fn decode_command_envelope(payload: &[u8]) -> Result<CommandEnvelope, ProtocolError> {
+    let [version, ACKNOWLEDGED_TAG, rest @ ..] = payload else {
+        let (command, observed) = decode_observed_command(payload)?;
+        return Ok(CommandEnvelope {
+            command,
+            observed,
+            sheets: None,
+        });
+    };
+    let mut offset = 0;
+    let sheets = crate::SheetRevisions::decode(rest, &mut offset)
+        .map_err(|_| ProtocolError::new("acknowledged command payload is truncated"))?;
+    let mut inner = Vec::with_capacity(1 + rest.len() - offset);
+    inner.push(*version);
+    inner.extend_from_slice(&rest[offset..]);
+    let (command, observed) = decode_observed_command(&inner)?;
+    Ok(CommandEnvelope {
+        command,
+        observed,
+        sheets: Some(sheets),
+    })
 }
 
 pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {

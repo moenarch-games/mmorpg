@@ -110,12 +110,11 @@ describe("WASM local zone host", () => {
     source.sendCommand(command);
     expect(loot.copper).toBe(0);
     expect(loot.sheet).toEqual(sheet);
-    // Lose the claim tick's bag sheet. Later projections retain money and absence;
-    // the existing periodic bag resend recovers the missed inventory change.
+    // Lose the claim tick's frame. Every local projection carries the whole bag (#544), so
+    // the last frame alone shows the money, the looted stack and no corpse sheet.
     const frames = source.advance(4 / TICK_HZ);
     const later = frames.at(-1)!;
-    expect(frames[0]?.inventory).not.toBeNull();
-    expect(later.inventory).toBeNull();
+    expect(frames.every((frame) => frame.inventory !== null)).toBe(true);
     expect(later.viewer.copper).toBe(2);
     expect(later.loot).toBeNull();
     bag.update(later);
@@ -123,11 +122,6 @@ describe("WASM local zone host", () => {
     expect(loot.copper).toBe(2);
     expect(loot.sheet).toBeNull();
     expect(loot.claimIntent()).toBeNull();
-    expect(bag.ready).toBe(false);
-    // The bag resends every 333 ms.
-    for (let tick = 0; tick < 2 * ticksFromMs(333) && !bag.ready; tick += 1) {
-      run(source, 1); bag.update(source.latestProjection()!);
-    }
     expect(bag.ready).toBe(true);
     expect(bag.slots?.[0]).toEqual({ itemId: 1, quantity: 5 });
     source.sendCommand({ kind: "loot", creatureId: sheet.creatureId, diedAt: sheet.diedAt });
@@ -181,8 +175,7 @@ describe("WASM local zone host", () => {
     source.sendCommand({ kind: "move-item", source: 0, destination: 15, quantity: 2 });
     const moved = source.advance(4 / TICK_HZ);
     expect(moved.map((view) => view.tick)).toEqual([1n, 2n, 3n, 4n]);
-    expect(moved[0]?.inventory).not.toBeNull();
-    expect(moved[3]?.inventory).toBeNull();
+    expect(moved.every((view) => view.inventory !== null)).toBe(true);
     for (const view of moved) {
       bag.update(view);
     }
@@ -199,7 +192,7 @@ describe("WASM local zone host", () => {
     expect(bag.feedback).toContain("refused");
     expect(source.advance(0)).toEqual([]);
   });
-  test("bag moves use queued core authority and missed sheets recover periodically", async () => {
+  test("bag moves use queued core authority and every projection carries the bag", async () => {
     const { source } = createLocalWorld(wasm, testCharacters());
     await source.join();
     const initial = source.latestProjection();
@@ -215,11 +208,8 @@ describe("WASM local zone host", () => {
     source.sendCommand({ kind: "move-item", source: 15, destination: 1, quantity: 1 });
     run(source, 1);
     expect(source.latestProjection()?.events).toContainEqual({ kind: "error", code: "invalid-inventory-move", target: null });
-    // The bag resends every 333 ms: tick 2 was the refusal, the next sheet is periodic.
-    run(source, ticksFromMs(333) - 3);
-    expect(source.latestProjection()?.inventory).toBeNull();
+    // The refusal leaves the bag and its revision; the local host sends the bag every tick (#544).
     expect(source.latestProjection()?.inventoryRevision).toBe(2n);
-    run(source, 1);
     expect(source.latestProjection()?.inventory).toEqual(changed?.inventory);
     source.leave();
     // Re-entering resumes the stored bag under a fresh zone-local revision.

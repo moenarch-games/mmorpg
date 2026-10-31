@@ -1,4 +1,5 @@
-# Bag moves pass through real sessions; loss recovery is periodic self state.
+# Bag moves pass through real sessions; the bag sheet travels until acknowledged (#544)
+# and the bot keeps its copy across a connection resume.
 name = "inventory-resume"
 zone = 1
 ticks = 44
@@ -120,14 +121,14 @@ kind = "inventory"
 bot = "alice"
 tick = 3
 inventory_revision = 2
-sheet = false
+sheet = true
 
 [[expect]]
 kind = "inventory"
 bot = "alice"
 tick = 5
 inventory_revision = 2
-sheet = false
+sheet = true
 
 [[expect]]
 kind = "identity"
@@ -139,7 +140,7 @@ kind = "inventory"
 bot = "alice"
 tick = 11
 inventory_revision = 2
-sheet = false
+sheet = true
 
 [[expect]]
 kind = "inventory"

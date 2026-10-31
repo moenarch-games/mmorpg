@@ -6,8 +6,6 @@ use std::{error::Error, fmt};
 use crate::equipment::{EquipmentSlot, ItemStats};
 
 pub const INVENTORY_SLOTS: usize = 16;
-/// Re-send unchanged bags every ten ticks so a lost change self-heals.
-pub const INVENTORY_RESEND_TICKS: u64 = crate::ticks_from_ms(333) as u64;
 
 /// Stable catalog identity. Zero and unknown values fail closed on lookup.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

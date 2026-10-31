@@ -162,17 +162,18 @@ pub struct ZoneSnapshot {
     pub target_of_target: Option<EntityRef>,
     /// The viewer's target's cast and auras.
     pub target_detail: TargetDetail,
-    /// Always repeated; an absent sheet must not be mistaken for an empty bag.
+    /// The bag's revision, travelling with the bag sheet; 0 before a client received one.
     pub inventory_revision: u64,
-    /// Complete self bag on admission/change ticks and every [`crate::INVENTORY_RESEND_TICKS`].
+    /// The complete self bag. A zone always projects it; a client lacks it only until its
+    /// first bag sheet arrives (the protocol sends sheets on change, #544).
     pub inventory: Option<crate::Inventory>,
-    /// Equipment, sent exactly with the bag under the same revision; its
+    /// Equipment, present exactly with the bag under the same revision; its
     /// stat totals are [`crate::Equipment::totals`].
     pub equipment: Option<crate::Equipment>,
-    /// Quest log, turned-in quests and NPC markers, sent exactly with the
-    /// bag sheet.
+    /// Quest log, turned-in quests and NPC markers; like the bag, absent only on a client
+    /// that has not received its sheet yet.
     pub quests: Option<crate::QuestSheet>,
-    /// Complete eligible selected corpse sheet, repeated every projection.
+    /// Complete eligible selected corpse sheet.
     pub loot: Option<crate::LootView>,
     /// Feedback the viewer received this tick.
     pub events: Vec<ZoneEvent>,
@@ -258,9 +259,6 @@ impl ZoneSimulation {
             })
             .collect();
         let max_health = viewer.max_health();
-        let sheet = self.tick == viewer.inventory_changed_at
-            || self.tick == viewer.quests_changed_at
-            || self.tick.is_multiple_of(crate::INVENTORY_RESEND_TICKS);
         Ok(PlayerProjection {
             snapshot: ZoneSnapshot {
                 content_revision: self.content.revision(),
@@ -311,16 +309,14 @@ impl ZoneSimulation {
                     _ => TargetDetail::default(),
                 },
                 inventory_revision: viewer.inventory_revision,
-                inventory: sheet.then(|| viewer.inventory.clone()),
-                equipment: sheet.then_some(viewer.equipment),
-                quests: sheet.then(|| {
-                    crate::quest::quest_sheet(
-                        &self.content,
-                        &viewer.quests,
-                        &viewer.inventory,
-                        crate::is_night(crate::time_of_day(self.tick)),
-                    )
-                }),
+                inventory: Some(viewer.inventory.clone()),
+                equipment: Some(viewer.equipment),
+                quests: Some(crate::quest::quest_sheet(
+                    &self.content,
+                    &viewer.quests,
+                    &viewer.inventory,
+                    crate::is_night(crate::time_of_day(self.tick)),
+                )),
                 loot: match viewer.target {
                     Some(EntityRef::Creature(id)) => self.loot_view_for(player_id, id)?,
                     _ => None,

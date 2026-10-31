@@ -32,7 +32,7 @@ export function testSnapshot(
     Partial<Pick<ZoneSnapshot, "viewer" | "targetOfTarget" | "events" | "chat" | "inventoryRevision" | "inventory" | "equipment" | "stats" | "loot" | "cooldowns" | "auras" | "targetDetail" | "quests" | "doors" | "pieces" | "raid" | "projectiles" | "debris">>,
 ): ZoneSnapshot {
   return {
-    loot: null, inventoryRevision: 1n, inventory: null, equipment: null, stats: null, viewer: HEALTHY_VIEWER, targetOfTarget: null, events: [], chat: [],
+    loot: null, inventoryRevision: 0n, inventory: null, equipment: null, stats: null, viewer: HEALTHY_VIEWER, targetOfTarget: null, events: [], chat: [],
     cooldowns: [], auras: [], targetDetail: { cast: null, auras: [] }, doors: [], pieces: [], raid: null, projectiles: [], debris: [],
     // The quest sheet travels exactly with the bag sheet.
     quests: fields.inventory ? NO_QUESTS : null, ...fields,

@@ -76,7 +76,7 @@ kind = "inventory"
 bot = "alice"
 tick = 3
 inventory_revision = 2
-sheet = false
+sheet = true
 
 [[expect]]
 kind = "identity"

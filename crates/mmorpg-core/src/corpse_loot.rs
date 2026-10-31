@@ -169,7 +169,6 @@ impl ZoneSimulation {
         player.copper = copper;
         if let Some(revision) = revision {
             player.inventory_revision = revision;
-            player.inventory_changed_at = self.tick + 1;
         }
         creature.loot = None;
         let life = creature.generation;

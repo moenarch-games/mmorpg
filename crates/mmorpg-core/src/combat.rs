@@ -225,7 +225,6 @@ impl ZoneSimulation {
                         if let Some(revision) = player.inventory_revision.checked_add(1) {
                             player.inventory = candidate;
                             player.inventory_revision = revision;
-                            player.inventory_changed_at = self.tick + 1;
                             None
                         } else {
                             Some((ErrorCode::InvalidInventoryMove, None))
@@ -265,21 +264,16 @@ impl ZoneSimulation {
                 npc,
                 crate::vendor::Trade::Sell { bag_slot, quantity },
             )?,
-            PlayerIntent::AcceptQuest { npc, quest } => self.quest_request(
-                player_id,
-                crate::quest::QuestRequest::Accept { npc, quest },
-                now,
-            )?,
+            PlayerIntent::AcceptQuest { npc, quest } => {
+                self.quest_request(player_id, crate::quest::QuestRequest::Accept { npc, quest })?
+            }
             PlayerIntent::CompleteQuest { npc, quest, choice } => self.quest_request(
                 player_id,
                 crate::quest::QuestRequest::Complete { npc, quest, choice },
-                now,
             )?,
-            PlayerIntent::AbandonQuest { quest } => self.quest_request(
-                player_id,
-                crate::quest::QuestRequest::Abandon { quest },
-                now,
-            )?,
+            PlayerIntent::AbandonQuest { quest } => {
+                self.quest_request(player_id, crate::quest::QuestRequest::Abandon { quest })?
+            }
             PlayerIntent::UseWaystone(waystone) => self.use_waystone(player_id, waystone)?,
             PlayerIntent::SelectTarget(None) => {
                 self.update_player(player_id, |player| player.target = None);
@@ -1176,7 +1170,7 @@ impl ZoneSimulation {
                 self.reward_kill_experience(player_id, level)?;
                 crate::rewards::record(&mut self.rewards, player_id, key)?;
             }
-            self.credit_kill(player_id, template, creature_id, generation, now)?;
+            self.credit_kill(player_id, template, creature_id, generation)?;
         }
         // Every meaningful boss contributor earns the kill objective, across parties
         // (#276, 5.1.74); `credit_kill` records each life once per quest log.
@@ -1184,7 +1178,7 @@ impl ZoneSimulation {
             if Some(player_id) != tapper
                 && self.kill_credit_eligible(player_id, [position.x, position.y, position.z])?
             {
-                self.credit_kill(player_id, template, creature_id, generation, now)?;
+                self.credit_kill(player_id, template, creature_id, generation)?;
             }
         }
         if let Some(rules) = self.content.boss(template).copied() {
