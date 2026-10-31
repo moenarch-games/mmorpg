@@ -1,6 +1,7 @@
 import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
 import type { WaystoneSite } from "./units/waystone-panel";
+import { prepSpots, type RaidPrepSpots } from "./raid-prep";
 /**
  * Presentation scenery from the WASM `scenery()` export (format
  * `mmorpg.scenery`), which maps the Rust `mmorpg-scenery` value the native
@@ -113,6 +114,8 @@ export type SceneryContent = StaticSceneContent & {
   raidArea(): Int32Array;
   /** The night raid target's aftermath aid tasks (#531): `[x, z, npc]` units per task, npc 0 for a breach. */
   raidAid(): Int32Array;
+  /** The night raid target's forewarning spots (#532): tracks `[x, z]`, lookout NPC, then `[x, z]` per brace; empty without one. */
+  raidPrep(): Int32Array;
   /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
   waystoneAt(x: number, z: number): number;
   /** Names of the waystone network in ID order (ID = index + 1). */
@@ -170,6 +173,8 @@ export type SceneryProvider = {
   readonly raidArea: { x: number; z: number; radius: number } | null;
   /** The night raid target's aftermath aid task spots in units (#531), in task order; `npc` is the injured guard to tend, 0 for a breach to mend. */
   readonly raidAid: readonly { x: number; z: number; npc: number }[];
+  /** The night raid target's forewarning spots in units (#532): the tracks, the lookout guard and the brace spots. */
+  readonly raidPrep: RaidPrepSpots | null;
   /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
   waystoneAt(x: number, z: number): number;
   /** The waystone network in ID order. */
@@ -504,6 +509,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       const tasks = content.raidAid();
       return Array.from({ length: Math.floor(tasks.length / 3) }, (_, index) => ({ x: tasks[index * 3]!, z: tasks[index * 3 + 1]!, npc: tasks[index * 3 + 2]! }));
     })(),
+    raidPrep: prepSpots(content.raidPrep()),
     waystoneAt(x, z) {
       return content.waystoneAt(Math.round(x), Math.round(z));
     },

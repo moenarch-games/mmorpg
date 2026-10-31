@@ -48,6 +48,23 @@
 //!   accepted. Standing nearby earns nothing, and there is no ranking. The once-only grant is the
 //!   zone's `rewarded` list plus the durable [`crate::RewardKey::RaidParticipation`] receipt.
 //!
+//! - **Forewarning** (#532, 5.1.61, 5.1.62): from [`FOREWARNING_TIME`] until the nightly check,
+//!   on every raid night and on [`FALSE_ALARM_NIGHTS`] of the other nights, a scouting party's
+//!   tracks lie on the site's approach while the target is eligible. Guards and residents speak of
+//!   them, so the signs are uncertain: about one evening in five with tracks passes without a raid.
+//!   A player within [`TRACKS_REACH_UNITS`] of the tracks investigates them, and may then report
+//!   them to the site's lookout guard. Neither cancels nor postpones anything: the nightly check
+//!   decides exactly as it would without them.
+//! - **Preparation** (#532, 5.1.59, 5.1.60, 5.1.69): a report the lookout accepts posts the
+//!   guards' watch, and once warned the guards ask for help bracing the objective at its authored
+//!   brace spots. Each accepted preparation takes [`PREPARED_HIT_PERCENT`] off every raider's hit
+//!   on the objective; all of them together still let an unopposed raid bring it down. The
+//!   readiness belongs to the coming incident only: it retires when that incident resolves,
+//!   whatever the outcome, and expires at the nightly check when no incident commits. Each step
+//!   is accepted once per readiness, so repeats change nothing. The actor gets a short
+//!   [`RaidNotice`], and players near the target get one when a prepared incident resolves, told
+//!   truthfully whether the barn held.
+//!
 //! The raid state, the participants and every raider's march are canonical. A suspended zone's
 //! tick freezes, and its raid, recovery and cooldown freeze with it.
 
@@ -119,6 +136,45 @@ pub const REWARD_EXPERIENCE: u32 = 120;
 pub const REWARD_COPPER: u32 = 15;
 /// An injured guard's projected health.
 pub const INJURED_HEALTH_PERCENT: u8 = 30;
+/// Forewarning signs lie on the approach from 19:00 until the nightly check (#532).
+pub const FOREWARNING_TIME: u32 = 19 * HOUR_TICKS;
+/// One of two nights without a raid still shows signs: a false alarm.
+pub const FALSE_ALARM_NIGHTS: [u64; 2] = [1, 2];
+/// A player investigates the tracks within 3 m of them.
+pub const TRACKS_REACH_UNITS: i32 = 300;
+/// A player braces the objective within 3 m of a brace spot.
+pub const BRACE_REACH_UNITS: i32 = 300;
+/// Most brace spots a site may author: readiness carries the warning and the braces in four bits.
+pub const MAX_BRACES: usize = 3;
+/// Each accepted preparation takes this share off every raider's hit on the objective.
+pub const PREPARED_HIT_PERCENT: u32 = 10;
+/// The readiness bit of an accepted report; brace `k` is bit `k + 1`.
+pub const READINESS_WARNED: u8 = 1;
+
+/// One preparation step (#532, 5.1.59): investigate the tracks, report them to the lookout, or
+/// brace the objective at brace spot `k`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RaidPrep {
+    Investigate,
+    Report,
+    Brace(u8),
+}
+
+/// A short raid acknowledgment for a player (#532, 5.1.60): one of its own preparation steps was
+/// accepted, or a prepared incident resolved near it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RaidNotice {
+    /// The player read the scouts' tracks.
+    Tracks,
+    /// The lookout accepted the player's report and posts the watch.
+    Warned,
+    /// The player braced the objective.
+    Braced,
+    /// A prepared incident ended with the objective standing.
+    Held,
+    /// A prepared incident still brought the objective down.
+    Fell,
+}
 
 /// What one aid task asks of a helper (5.1.51).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -162,6 +218,12 @@ pub struct RaidSite {
     pub camp_spread: [i32; 2],
     /// What a lost raid leaves to aid, in the order the tasks close on their own (#531).
     pub aid: Vec<AidTask>,
+    /// Where the scouting party's tracks lie on a forewarned evening (#532).
+    pub tracks: [i32; 2],
+    /// The guard who takes reports of the tracks (#532).
+    pub lookout: NpcId,
+    /// Where helpers brace the objective once the guards are warned (#532).
+    pub braces: Vec<[i32; 2]>,
 }
 
 impl RaidSite {
@@ -188,6 +250,12 @@ impl RaidSite {
             (task.kind == AidKind::TendGuard(npc) && aftermath & (1 << index) != 0)
                 .then_some(task.at)
         })
+    }
+
+    /// Every readiness bit the site can set: the warning and one per brace spot.
+    #[must_use]
+    pub fn readiness_mask(&self) -> u8 {
+        u8::try_from((1_u16 << (self.braces.len() + 1)) - 1).unwrap_or(u8::MAX)
     }
 
     /// The guards whose posts the aftermath can empty.
@@ -346,6 +414,11 @@ impl RaidSite {
             || self.aid.len() > MAX_AID_TASKS
             || !self.aid.iter().all(|task| in_range(&task.at))
             || self.aid_guards().any(|npc| content.npc(npc).is_none())
+            || !in_range(&self.tracks)
+            || content.npc(self.lookout).is_none()
+            || content.routine(self.lookout).is_some()
+            || self.braces.len() > MAX_BRACES
+            || !self.braces.iter().all(in_range)
             || {
                 let mut guards: Vec<NpcId> = self.aid_guards().collect();
                 let count = guards.len();
@@ -436,6 +509,11 @@ pub struct RaidState {
     /// Players already rewarded for the current incident (the running one, otherwise the last),
     /// by ID (#531).
     pub rewarded: Vec<PlayerId>,
+    /// Players who read this evening's tracks, by ID (#532).
+    pub scouted: Vec<PlayerId>,
+    /// The coming or running incident's accepted preparations: [`READINESS_WARNED`], then one
+    /// bit per brace spot (#532).
+    pub readiness: u8,
 }
 
 impl RaidState {
@@ -448,7 +526,20 @@ impl RaidState {
             .or(self.last.map(|last| last.incident))
     }
 
-    pub(crate) fn validate(&self, now: u64, aid_mask: u8) -> Result<(), ZoneError> {
+    pub(crate) fn validate(
+        &self,
+        now: u64,
+        aid_mask: u8,
+        readiness_mask: u8,
+    ) -> Result<(), ZoneError> {
+        let forewarning_ok = self.scouted.len() <= crate::MAX_PLAYERS_PER_ZONE
+            && self.scouted.windows(2).all(|pair| pair[0] < pair[1])
+            && self.readiness & !readiness_mask == 0
+            // Bracing follows the warning.
+            && (self.readiness == 0 || self.readiness & READINESS_WARNED != 0);
+        if !forewarning_ok {
+            return Err(ZoneError::new("raid readiness is out of range"));
+        }
         let aftermath_ok = self.aftermath & !aid_mask == 0
             && (self.aftermath == 0
                 || (self.active.is_none()
@@ -494,6 +585,13 @@ pub struct RaidView {
     pub integrity: u8,
     /// The aid tasks still open after a lost raid, one bit per authored task (#531).
     pub aid: u8,
+    /// Whether the scouts' tracks lie on the approach this evening (#532); only with phase 0.
+    pub signs: bool,
+    /// The coming or running incident's accepted preparations (#532): [`READINESS_WARNED`], then
+    /// one bit per brace spot. Never with aid.
+    pub readiness: u8,
+    /// Whether the viewer read this evening's tracks (#532); only with signs.
+    pub scouted: bool,
 }
 
 /// `splitmix64`: a well-mixed hash of the night's number and the content seed.
@@ -512,6 +610,25 @@ pub(crate) type Steering = ([i32; 2], Option<u16>);
 pub const fn raid_night(seed: u64, tick: u64) -> bool {
     let night = (tick + crate::ZONE_START_TIME as u64) / crate::DAY_TICKS as u64;
     mix(seed ^ night) % TRIGGER_NIGHTS[1] < TRIGGER_NIGHTS[0]
+}
+
+/// Whether the evening containing `tick` shows forewarning signs: every raid night, and a false
+/// alarm on [`FALSE_ALARM_NIGHTS`] of the others.
+#[must_use]
+pub const fn signs_night(seed: u64, tick: u64) -> bool {
+    let night = (tick + crate::ZONE_START_TIME as u64) / crate::DAY_TICKS as u64;
+    raid_night(seed, tick)
+        || mix(seed ^ night ^ FALSE_ALARM_SALT) % FALSE_ALARM_NIGHTS[1] < FALSE_ALARM_NIGHTS[0]
+}
+
+/// Keeps the false-alarm roll independent of the raid roll.
+const FALSE_ALARM_SALT: u64 = 0x5ca7_7e2d_7aac_5000;
+
+/// A raider's hit on the objective under `readiness`: [`PREPARED_HIT_PERCENT`] less per accepted
+/// preparation, rounded up.
+#[must_use]
+pub const fn prepared_hit(amount: u32, readiness: u8) -> u32 {
+    (amount * (100 - PREPARED_HIT_PERCENT * readiness.count_ones())).div_ceil(100)
 }
 
 /// The raiders a phase commits for `participants`.
@@ -544,6 +661,15 @@ impl ZoneSimulation {
                 .raid
                 .last
                 .is_none_or(|last| now >= last.at.saturating_add(u64::from(COOLDOWN_TICKS)))
+    }
+
+    /// Whether the scouts' tracks lie on the approach at `now` (#532): a forewarned evening
+    /// before the nightly check, while the target is eligible.
+    #[must_use]
+    pub fn forewarned(&self, now: u64) -> bool {
+        (FOREWARNING_TIME..TRIGGER_TIME).contains(&time_of_day(now))
+            && self.raid_eligible(now)
+            && signs_night(self.content.rng_seed(), now)
     }
 
     /// Commits a new incident at the current tick when the target is eligible, whatever the
@@ -627,6 +753,8 @@ impl ZoneSimulation {
             .ok_or_else(|| ZoneError::new("raid incident identities exhausted"))?;
         self.raid.incidents = id;
         self.raid.rewarded.clear();
+        // The evening's tracks are moot once the raid is on; its readiness stays for it.
+        self.raid.scouted.clear();
         self.raid.active = Some(RaidIncident {
             id,
             phase: 1,
@@ -763,11 +891,15 @@ impl ZoneSimulation {
             self.settle_aftermath(site)?;
         }
         self.advance_marches(site, now)?;
-        if time_of_day(now) == TRIGGER_TIME
-            && self.raid_eligible(now)
-            && raid_night(self.content.rng_seed(), now)
-        {
-            self.commit_incident(now)?;
+        if time_of_day(now) == TRIGGER_TIME {
+            if self.raid_eligible(now) && raid_night(self.content.rng_seed(), now) {
+                self.commit_incident(now)?;
+            }
+            // Without a raid, the evening's tracks and preparations expire (5.1.69).
+            self.raid.scouted.clear();
+            if self.raid.active.is_none() {
+                self.raid.readiness = 0;
+            }
         }
         Ok(())
     }
@@ -878,6 +1010,74 @@ impl ZoneSimulation {
         Ok(None)
     }
 
+    /// The `RaidPrepare` intent (5.1.59–5.1.62): one preparation step on a forewarned evening.
+    /// Investigating needs the tracks in reach; a report needs the lookout in reach and this
+    /// evening's tracks read; a brace needs the guards warned and its spot in reach. Each step
+    /// counts once: a repeat is refused. No step earns XP or money.
+    pub(crate) fn prepare_raid(
+        &mut self,
+        player_id: PlayerId,
+        prep: RaidPrep,
+    ) -> Result<Option<(ErrorCode, Option<EntityRef>)>, ZoneError> {
+        let content = Arc::clone(&self.content);
+        let Some(site) = content.raid() else {
+            return Ok(Some((ErrorCode::InvalidTarget, None)));
+        };
+        if !self.forewarned(self.tick) {
+            return Ok(Some((ErrorCode::InvalidTarget, None)));
+        }
+        let at = self.player_position(player_id)?;
+        let here = [at.x, at.z];
+        let within = |spot: [i32; 2], reach: i32| {
+            crate::ai::distance_squared(here, spot) <= i64::from(reach).pow(2)
+        };
+        let notice = match prep {
+            RaidPrep::Investigate => {
+                let Err(index) = self.raid.scouted.binary_search(&player_id) else {
+                    return Ok(Some((ErrorCode::InvalidTarget, None)));
+                };
+                if !within(site.tracks, TRACKS_REACH_UNITS) {
+                    return Ok(Some((ErrorCode::OutOfRange, None)));
+                }
+                if self.raid.scouted.len() >= crate::MAX_PLAYERS_PER_ZONE {
+                    return Ok(Some((ErrorCode::InvalidTarget, None)));
+                }
+                self.raid.scouted.insert(index, player_id);
+                RaidNotice::Tracks
+            }
+            RaidPrep::Report => {
+                let lookout = EntityRef::Npc(site.lookout);
+                if self.raid.readiness & READINESS_WARNED != 0
+                    || self.raid.scouted.binary_search(&player_id).is_err()
+                {
+                    return Ok(Some((ErrorCode::InvalidTarget, Some(lookout))));
+                }
+                let post = self.npc_placement(site.lookout).map(|place| place.position);
+                if !post.is_some_and(|post| within(post, crate::quest::QUEST_REACH_UNITS)) {
+                    return Ok(Some((ErrorCode::OutOfRange, Some(lookout))));
+                }
+                self.raid.readiness |= READINESS_WARNED;
+                RaidNotice::Warned
+            }
+            RaidPrep::Brace(index) => {
+                let Some(&spot) = site.braces.get(usize::from(index)) else {
+                    return Ok(Some((ErrorCode::InvalidTarget, None)));
+                };
+                let bit = 1 << (index + 1);
+                if self.raid.readiness & READINESS_WARNED == 0 || self.raid.readiness & bit != 0 {
+                    return Ok(Some((ErrorCode::InvalidTarget, None)));
+                }
+                if !within(spot, BRACE_REACH_UNITS) {
+                    return Ok(Some((ErrorCode::OutOfRange, None)));
+                }
+                self.raid.readiness |= bit;
+                RaidNotice::Braced
+            }
+        };
+        self.notify(player_id, ZoneEvent::Raid { notice });
+        Ok(None)
+    }
+
     /// Idle raiders at the objective hit it on their swing timer, for their damage range's
     /// midpoint.
     fn hit_objective(
@@ -906,7 +1106,10 @@ impl ZoneSimulation {
                 continue;
             }
             let [low, high] = template.damage_at(state.level);
-            let amount = (u32::from(low) + u32::from(high)).div_ceil(2);
+            let amount = prepared_hit(
+                (u32::from(low) + u32::from(high)).div_ceil(2),
+                self.raid.readiness,
+            );
             if let Some(state) = self.creatures.get_mut(&id) {
                 state.swing_timer = template.swing_ticks;
             }
@@ -962,6 +1165,29 @@ impl ZoneSimulation {
             at: now,
             outcome,
         });
+        // The preparations served this incident and retire with it (5.1.69); nearby players hear
+        // truthfully what came of them (5.1.60).
+        if self.raid.readiness != 0 {
+            self.raid.readiness = 0;
+            let notice = match outcome {
+                RaidOutcome::Defended => RaidNotice::Held,
+                RaidOutcome::Lost => RaidNotice::Fell,
+            };
+            if let Some([x, z]) = self.content.raid().map(RaidSite::centre) {
+                let near: Vec<PlayerId> = self
+                    .interest
+                    .near(x, z, SIGNAL_RADIUS_UNITS)
+                    .into_iter()
+                    .filter_map(|entity| match entity {
+                        EntityRef::Player(id) => Some(id),
+                        _ => None,
+                    })
+                    .collect();
+                for player in near {
+                    self.notify(player, ZoneEvent::Raid { notice });
+                }
+            }
+        }
         for state in self.creatures.values_mut() {
             if let Some(member) = state.raid.as_mut()
                 && member.incident == incident.id
@@ -1136,15 +1362,16 @@ impl ZoneSimulation {
         )))
     }
 
-    /// The raid's signals for a viewer at `at` (5.1.53).
-    pub(crate) fn raid_view(&self, at: [i32; 2]) -> Option<RaidView> {
+    /// The raid's signals for `viewer` at `at` (5.1.53, 5.1.61).
+    pub(crate) fn raid_view(&self, viewer: PlayerId, at: [i32; 2]) -> Option<RaidView> {
         let site = self.content.raid()?;
         let phase = self
             .raid
             .active
             .as_ref()
             .map_or(0, |incident| incident.phase);
-        if (phase == 0 && self.raid.damage == 0)
+        let signs = phase == 0 && self.forewarned(self.tick);
+        if (phase == 0 && self.raid.damage == 0 && !signs)
             || site.distance_squared(at) > i64::from(SIGNAL_RADIUS_UNITS).pow(2)
         {
             return None;
@@ -1155,6 +1382,9 @@ impl ZoneSimulation {
             phase,
             integrity,
             aid: self.raid.aftermath,
+            signs,
+            readiness: self.raid.readiness,
+            scouted: signs && self.raid.scouted.binary_search(&viewer).is_ok(),
         })
     }
 }

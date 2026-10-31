@@ -199,7 +199,7 @@ pub fn pack_snapshot_acknowledged(
     let mut world_payload = Vec::new();
     crate::wire::encode_doors(&mut world_payload, &snapshot.doors)?;
     crate::wire::encode_piece_views(&mut world_payload, &snapshot.pieces)?;
-    crate::raid::encode_view(&mut world_payload, snapshot.raid);
+    crate::raid::encode_view(&mut world_payload, snapshot.raid)?;
     let mut chat_payload = Vec::new();
     chat_payload.push(encode_u8_count(
         snapshot.chat.len(),
@@ -1060,7 +1060,10 @@ mod tests {
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,
-                aid: 0b10110,
+                aid: 0,
+                signs: false,
+                readiness: 0b101,
+                scouted: false,
             }),
             pieces: vec![
                 mmorpg_core::PieceView {
@@ -2121,7 +2124,10 @@ mod tests {
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,
-                aid: 0b11111,
+                aid: 0,
+                signs: false,
+                readiness: 0b1_1111,
+                scouted: false,
             }),
             projectiles: Vec::new(),
             debris: Vec::new(),

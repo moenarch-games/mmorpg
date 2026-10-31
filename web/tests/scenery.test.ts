@@ -95,6 +95,7 @@ describe("scenery provider and local world", () => {
     ambientAnimalFrame: () => new Float32Array(18),
     raidArea: () => new Int32Array(),
     raidAid: () => new Int32Array(),
+    raidPrep: () => new Int32Array(),
     waystoneAt: () => 0,
     waystoneNames: () => [],
   });

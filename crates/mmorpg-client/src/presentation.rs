@@ -826,6 +826,46 @@ impl Presentation {
         })
     }
 
+    /// The `RaidPrepare` step (#532) the viewer can take on a forewarned evening, if any:
+    /// reporting read tracks to the lookout beside him, reading the tracks in reach, or bracing a
+    /// barn wall in reach once the guards are warned.
+    #[must_use]
+    pub fn reachable_raid_prep(&self) -> Option<mmorpg_core::ZoneCommand> {
+        use mmorpg_core::raid::{BRACE_REACH_UNITS, READINESS_WARNED, TRACKS_REACH_UNITS};
+        let snapshot = self.latest()?;
+        let signal = snapshot.raid.filter(|signal| signal.signs)?;
+        let site = self.content.raid()?;
+        let feet = snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Player(self.player_id))?
+            .position;
+        let near = |at: [i32; 2], reach: i32| {
+            let (dx, dz) = (i64::from(at[0] - feet[0]), i64::from(at[1] - feet[2]));
+            dx * dx + dz * dz <= i64::from(reach).pow(2)
+        };
+        let warned = signal.readiness & READINESS_WARNED != 0;
+        let lookout = snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Npc(site.lookout))
+            .map(|e| [e.position[0], e.position[2]]);
+        let prep = if signal.scouted
+            && !warned
+            && lookout.is_some_and(|at| near(at, mmorpg_core::QUEST_REACH_UNITS))
+        {
+            mmorpg_core::RaidPrep::Report
+        } else if !signal.scouted && near(site.tracks, TRACKS_REACH_UNITS) {
+            mmorpg_core::RaidPrep::Investigate
+        } else {
+            let brace = site.braces.iter().enumerate().position(|(index, &at)| {
+                warned && signal.readiness & (1 << (index + 1)) == 0 && near(at, BRACE_REACH_UNITS)
+            })?;
+            mmorpg_core::RaidPrep::Brace(u8::try_from(brace).ok()?)
+        };
+        Some(mmorpg_core::ZoneCommand::RaidPrepare { prep })
+    }
+
     /// The `UseDoor` that flips `door` from its latest presented state.
     #[must_use]
     pub fn toggle_door(&self, door: mmorpg_core::DoorId) -> mmorpg_core::ZoneCommand {

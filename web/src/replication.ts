@@ -12,7 +12,7 @@ import { wasm } from "./wasm";
 export type {
   AuraKind, AuraState, CastState, ChatLine, ClassChoice, ClassId, ComboPhase, CooldownState, DebrisState, DoorState, EmoteName,
   EntityFlags, EntityKind, EntityRef, EntityState, ErrorCode, GuardState, ItemStack, LootView, MeleeStance, PieceStage, PieceState,
-  ProjectileState, QuestEntry, QuestMarker, QuestMarkerKind, QuestSheet, RaidSignal, RedirectNotice, ResourceKind, ResourceState,
+  ProjectileState, QuestEntry, QuestMarker, QuestMarkerKind, QuestSheet, RaidNotice, RaidSignal, RedirectNotice, ResourceKind, ResourceState,
   StatTotals, StrikeAim, StrikeHeight, StrikeSide, Traversal, Vector3, ViewerState, WireCatalog, ZoneEvent, ZoneSnapshot,
 } from "./generated/mmorpg-wasm/mmorpg_wasm.js";
 import type { EntityState } from "./generated/mmorpg-wasm/mmorpg_wasm.js";

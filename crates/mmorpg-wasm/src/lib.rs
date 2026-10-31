@@ -559,6 +559,25 @@ pub fn raid_aid() -> Vec<i32> {
         .unwrap_or_default()
 }
 
+/// The night raid target's forewarning spots (#532) in units: the tracks' `[x, z]`, the lookout
+/// guard's NPC ID, then each brace spot's `[x, z]`; empty without a raid target.
+#[wasm_bindgen(js_name = raidPrep)]
+#[must_use]
+pub fn raid_prep() -> Vec<i32> {
+    host::hosted_content()
+        .raid()
+        .map(|site| {
+            let mut spots = vec![
+                site.tracks[0],
+                site.tracks[1],
+                i32::try_from(site.lookout.get()).unwrap_or(0),
+            ];
+            spots.extend(site.braces.iter().flatten());
+            spots
+        })
+        .unwrap_or_default()
+}
+
 /// The authored action graph as JSON (#380, #381): actions by region, edges
 /// with windows in ms and ticks, recovery modifiers and compatibility rules.
 #[wasm_bindgen(js_name = actionGraph)]

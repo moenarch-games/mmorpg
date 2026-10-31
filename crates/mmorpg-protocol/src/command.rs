@@ -47,6 +47,8 @@ const USE_WAYSTONE_TAG: u8 = 30;
 pub(crate) const ACKNOWLEDGED_TAG: u8 = 31;
 /// Night raid aftermath aid (#531): version, tag, task (u8).
 const RAID_AID_TAG: u8 = 32;
+/// Night raid preparation (#532): version, tag, step (u8: 0 investigate, 1 report, 2 + k brace k).
+const RAID_PREPARE_TAG: u8 = 33;
 /// Version, tag, ability (u8), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -185,6 +187,13 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
             vec![PROTOCOL_BYTE, USE_WAYSTONE_TAG, waystone.get()]
         }
         ZoneCommand::RaidAid { task } => vec![PROTOCOL_BYTE, RAID_AID_TAG, task],
+        ZoneCommand::RaidPrepare { prep } => {
+            vec![
+                PROTOCOL_BYTE,
+                RAID_PREPARE_TAG,
+                crate::raid::prep_code(prep),
+            ]
+        }
         ZoneCommand::Chat { channel, text } => {
             let mut payload = vec![PROTOCOL_BYTE, CHAT_TAG];
             crate::chat::encode_text(&mut payload, channel, &text);
@@ -603,6 +612,16 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
             };
             Ok(ZoneCommand::RaidAid { task: *task })
         }
+        RAID_PREPARE_TAG => {
+            let [_, _, prep] = payload else {
+                return Err(ProtocolError::new(
+                    "raid prepare command payload must be exactly 3 bytes",
+                ));
+            };
+            Ok(ZoneCommand::RaidPrepare {
+                prep: crate::raid::decode_prep(*prep)?,
+            })
+        }
         CANCEL_CAST_TAG => bare(ZoneCommand::CancelCast),
         JUMP_TAG => bare(ZoneCommand::Jump),
         ROLL_TAG => bare(ZoneCommand::Roll),
@@ -935,6 +954,9 @@ mod tests {
             },
             ZoneCommand::AbandonQuest { quest: 3 },
             ZoneCommand::RaidAid { task: 4 },
+            ZoneCommand::RaidPrepare {
+                prep: mmorpg_core::RaidPrep::Brace(1),
+            },
             ZoneCommand::UseWaystone {
                 waystone: mmorpg_core::SEAM_TEST_WEST,
             },
@@ -1090,6 +1112,7 @@ mod tests {
                     format!("use_waystone {}", waystone.get())
                 }
                 ZoneCommand::RaidAid { task } => format!("raid_aid {task}"),
+                ZoneCommand::RaidPrepare { prep } => format!("raid_prepare {prep:?}"),
                 ZoneCommand::Swing { facing } => format!("swing {facing}"),
                 ZoneCommand::ReleaseSpirit => "release_spirit".to_owned(),
                 ZoneCommand::MoveItem {

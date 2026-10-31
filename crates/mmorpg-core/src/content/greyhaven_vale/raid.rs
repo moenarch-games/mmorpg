@@ -104,8 +104,19 @@ pub fn millbrook_barn() -> RaidSite {
         retreat: RETREAT.to_vec(),
         camp_spread: [100, 0],
         aid: aid_tasks(),
+        tracks: TRACKS,
+        lookout: NpcId::new(ALARM_GUARDS[0]),
+        braces: BRACES.to_vec(),
     }
 }
+
+/// On a forewarned evening (#532, Atlas 5.1.61) the scouting party's tracks lie on the Rim Trail,
+/// on the north approach between its staging line and the farmyard.
+const TRACKS: [i32; 2] = [6_250, 1_750];
+
+/// Once the east gate guard, the lookout, is warned, helpers can brace the barn's west and east
+/// walls, where the raiders strike (#532, Atlas 5.1.59).
+const BRACES: [[i32; 2]; 2] = [[7_250, 4_300], [8_750, 4_700]];
 
 /// The gate guards who answer the farm's alarm (#531): the east gate's, on the Millbrook Road, and
 /// the south gate's.

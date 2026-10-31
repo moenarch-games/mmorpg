@@ -1,8 +1,9 @@
 import type { WorldCommand } from "../../command-wire";
-import type { QuestMarkerKind, ZoneSnapshot } from "../../replication";
+import type { QuestMarkerKind, RaidSignal, ZoneSnapshot } from "../../replication";
 import type { ContentCatalog, QuestRecord } from "../catalog";
 import { isZoneNight } from "../environment";
 import { aftermathOpen } from "../raid-aid";
+import { forewarningLine } from "../raid-prep";
 import { dialogNpc, dialogView, objectiveViews, questViews, QuestState, trackerRows, type QuestNpc, type QuestView } from "./quest-state";
 
 export type QuestElements = {
@@ -117,7 +118,11 @@ export class QuestPanel {
   get dialogOpen(): boolean { return !this.#elements.dialog.hidden; }
   get logOpen(): boolean { return !this.#elements.log.hidden; }
 
-  load(catalog: ContentCatalog): void { this.#catalog = catalog; }
+  /** `raidLookout` is the guard who takes reports of a night raid's tracks (#532), if any. */
+  load(catalog: ContentCatalog, raidLookout: number | null = null): void {
+    this.#catalog = catalog;
+    this.#raidLookout = raidLookout;
+  }
 
   reset(snapshot: ZoneSnapshot | null = null): void {
     this.#state.reset();
@@ -207,8 +212,13 @@ export class QuestPanel {
   /** Takes a newer projection: sheet, feedback and the NPC the dialog addresses. */
   /** Whether a night raid's assault runs near the viewer (#530), for residents' warnings. */
   #raidUnderway = false;
+  /** Whether the running raid's target was prepared for it (#532). */
+  #raidReady = false;
   /** Whether a lost night raid left aid tasks open nearby (#531), for residents' pleas. */
   #aftermath = false;
+  /** The forewarning signal on an evening with raid signs nearby (#532), for rumours and the lookout's ask. */
+  #forewarning: RaidSignal | null = null;
+  #raidLookout: number | null = null;
   /** Whether the zone clock reads night, when private-home residents only take turn-ins (#158). */
   #night = false;
 
@@ -220,7 +230,9 @@ export class QuestPanel {
     this.#state.update(snapshot, catalog);
     this.#npc = dialogNpc(snapshot, catalog);
     this.#raidUnderway = (snapshot.raid?.phase ?? 0) > 0;
+    this.#raidReady = (snapshot.raid?.readiness ?? 0) !== 0;
     this.#aftermath = aftermathOpen(snapshot.raid);
+    this.#forewarning = snapshot.raid?.signs ? snapshot.raid : null;
     this.#night = isZoneNight(snapshot.tick);
     this.#render();
   }
@@ -319,8 +331,9 @@ export class QuestPanel {
     // During a night raid's assault nearby, whoever you talk to warns you of it first (#530).
     setText(this.#elements.dialogStatus, !npc.inReach
       ? `Move within 5 m of ${npc.name} to talk.`
-      : this.#raidUnderway ? raidWarning(npc.name)
+      : this.#raidUnderway ? raidWarning(npc.name, this.#raidReady)
         : this.#aftermath ? aftermathPlea(npc.name)
+        : this.#forewarning ? forewarningLine(npc.name, this.#forewarning, npc.npc === this.#raidLookout)
         : view.greeting ?? (empty ? `${npc.name} has nothing for you right now.` : ""));
     const key = JSON.stringify([npc, this.#state.busy, view.offered.map((quest) => quest.id),
       view.ready.map((entry) => entry.quest.id), view.inProgress.map((entry) => [entry.quest.id, entry.objectives.map((o) => o.current)])]);
@@ -414,8 +427,14 @@ export class QuestPanel {
   }
 }
 
-/** A resident's short warning while a night raid's assault runs nearby (#530, Atlas 5.1.53). */
-export function raidWarning(name: string): string {
+/**
+ * A resident's short warning while a night raid's assault runs nearby (#530, Atlas 5.1.53); with
+ * `ready`, the guards were warned before it began (#532).
+ */
+export function raidWarning(name: string, ready = false): string {
+  if (ready) {
+    return `${name}: "Raiders are at the Millbrook barn! We were warned and the watch is ready; help us drive them off."`;
+  }
   return `${name}: "Raiders are at the Millbrook barn! Drive them off before they bring it down."`;
 }
 
