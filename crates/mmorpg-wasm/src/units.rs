@@ -121,7 +121,7 @@ struct LayerEntry {
     clip: &'static str,
     time: f32,
     weight: f32,
-    /// `all`, `upper` or `lower`.
+    /// `all`, `upper`, `lower`, `fingers_l` or `fingers_r`.
     mask: &'static str,
 }
 

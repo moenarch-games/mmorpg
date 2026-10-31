@@ -5,8 +5,8 @@ use crate::world::{DrawMaterial, SceneDraw};
 use mmorpg_presentation::units::{
     imported::{
         BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT, BOW_STOWED_SOCKET, BowShot,
-        DROP_ARMOR_OUTFIT, Figure, Kind, Layer, Loadout, Mask, Outfit, UPPER_BODY_ROOT,
-        draw_meters,
+        DROP_ARMOR_OUTFIT, Figure, Joint, Kind, Layer, Loadout, Mask, Outfit, UPPER_BODY_ROOT,
+        draw_meters, gripped,
     },
     kit::{Frame, model},
     player::Hat,
@@ -199,8 +199,9 @@ pub(super) struct Model {
     clips: Arc<BTreeMap<String, Clip>>,
     /// Node names, for attaching items to joints.
     names: Vec<Option<String>>,
-    /// Whether each node is in the upper body ([`UPPER_BODY_ROOT`]'s subtree), for masked layers.
-    upper: Vec<bool>,
+    /// Where each node sits for masked layers: in the upper body ([`UPPER_BODY_ROOT`]'s
+    /// subtree) or not, and on which hand's fingers.
+    joints: Vec<Joint>,
     /// Rest-clip bounds: lowest point and height along +Y, horizontal centre.
     pub floor: f32,
     pub height: f32,
@@ -403,10 +404,12 @@ impl Model {
             .map(|node| node.name().map(str::to_owned))
             .collect();
         // Parents come first in `order`, so a child inherits its parent's region.
-        let mut upper = vec![false; count];
+        let mut joints = vec![Joint::default(); count];
         for &node in &order {
-            upper[node] = names[node].as_deref() == Some(UPPER_BODY_ROOT)
-                || parents[node].is_some_and(|parent| upper[parent]);
+            let name = names[node].as_deref().unwrap_or_default();
+            let upper =
+                name == UPPER_BODY_ROOT || parents[node].is_some_and(|parent| joints[parent].upper);
+            joints[node] = Joint::new(name, upper);
         }
         let mut model = Self {
             rest,
@@ -415,7 +418,7 @@ impl Model {
             primitives,
             clips: Arc::new(clips),
             names,
-            upper,
+            joints,
             floor: 0.,
             height: 1.,
             centre: [0.; 2],
@@ -583,12 +586,13 @@ impl Model {
         } else if !pose.is_empty() {
             // Per node and path: the weighted sum and the total weight.
             let mut sums = vec![[([0f32; 4], 0f32); 3]; self.rest.len()];
+            let gripped = gripped(pose);
             for layer in pose {
                 let Some(clip) = self.clips.get(layer.clip) else {
                     continue;
                 };
                 for channel in &clip.channels {
-                    if !layer.mask.drives(self.upper[channel.node]) {
+                    if !layer.mask.drives(self.joints[channel.node], gripped) {
                         continue;
                     }
                     let mut v = channel.sample(layer.time);
@@ -798,7 +802,7 @@ impl Model {
                 .collect(),
             clips: Arc::default(),
             names: self.names.clone(),
-            upper: self.upper.clone(),
+            joints: self.joints.clone(),
             floor: self.floor,
             height: self.height,
             centre: self.centre,
@@ -1818,7 +1822,8 @@ mod rolling_ranger_tests {
                 .expect(name)
         };
         let (hand, calf, pelvis) = (node("hand_r"), node("calf_l"), node("pelvis"));
-        assert!(model.upper[hand] && !model.upper[calf] && !model.upper[pelvis]);
+        let upper = |node: usize| model.joints[node].upper;
+        assert!(upper(hand) && !upper(calf) && !upper(pelvis));
         let swing = Layer::single("Sword_Attack", 0.4);
         let land = Layer::single("Jump_Land", 0.3);
         let layered = model.locals(&[
@@ -1840,6 +1845,19 @@ mod rolling_ranger_tests {
         assert!(close(layered[calf], land[calf]));
         assert!(close(layered[pelvis], land[pelvis]));
         assert_ne!(swing[calf], land[calf]);
+        // A grip (asset-tooling #285) owns its hand's fingers over a clip that keys them; the
+        // other hand keeps the clip's.
+        let (index_r, index_l) = (node("index_02_r"), node("index_02_l"));
+        let strafe = Layer::single("Walk_Strafe_Left_Loop", 0.3);
+        let grip = Layer {
+            mask: Mask::Fingers(mmorpg_presentation::units::imported::Hand::Right),
+            ..Layer::single("Grip_Weapon_R", 0.)
+        };
+        let gripping = model.locals(&[strafe, grip]);
+        let (strafe, grip) = (model.locals(&[strafe]), model.locals(&[grip]));
+        assert!(close(gripping[index_r], grip[index_r]));
+        assert!(!close(gripping[index_r], strafe[index_r]));
+        assert!(close(gripping[index_l], strafe[index_l]));
     }
 
     #[test]

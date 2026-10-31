@@ -911,6 +911,20 @@ impl UnitPresenter {
                         None => playback.abandon(),
                     }
                 }
+                // The viewer's class is the zone's, so a review scenario's character carries its
+                // own class weapons and outfit whatever the page has selected (#503).
+                let class = if viewer {
+                    snapshot.viewer.class.or(input.viewer.choice)
+                } else {
+                    ClassChoice::from_appearance(unit.record.appearance)
+                };
+                let loadout = match resident {
+                    Some(resident) => resident.loadout(),
+                    None if matches!(entity, EntityRef::Player(_)) => {
+                        class.map(|c| Loadout::of_class(c.class))
+                    }
+                    None => None,
+                };
                 let durations = &self.durations;
                 let animation = self.playbacks.entry(entity).or_default().advance(
                     kind.clips(),
@@ -932,6 +946,7 @@ impl UnitPresenter {
                         guard,
                         stunned,
                         rolling,
+                        hands: loadout.map(Loadout::hands).unwrap_or_default(),
                         now: seconds,
                         dt: input.dt,
                         reduced,
@@ -952,11 +967,6 @@ impl UnitPresenter {
                     p: std::array::from_fn(|axis| feet[axis] + lift[axis]),
                     ..root
                 };
-                let class = if viewer {
-                    input.viewer.choice
-                } else {
-                    ClassChoice::from_appearance(unit.record.appearance)
-                };
                 let mut imported = ImportedUnit {
                     entity,
                     id: id.clone(),
@@ -966,13 +976,7 @@ impl UnitPresenter {
                     animation,
                     // Only a companion minion has an imported model (`Kind::of`).
                     tint: imported_tint(dead, entity.kind() == EntityKind::Minion),
-                    loadout: match resident {
-                        Some(resident) => resident.loadout(),
-                        None if matches!(entity, EntityRef::Player(_)) => {
-                            class.map(|c| Loadout::of_class(c.class))
-                        }
-                        None => None,
-                    },
+                    loadout,
                     variety: resident.filter(|r| r.varied()).map(|_| entity.id()),
                     resident,
                     outfit: match entity {

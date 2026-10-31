@@ -175,6 +175,23 @@ function upperBody(model: THREE.Object3D): Set<string> {
   return names;
 }
 
+/** The hand whose finger or thumb `joint` is (`imported::Hand::of_finger`), or null. */
+function fingerHand(joint: string): "l" | "r" | null {
+  if (!/^(thumb|index|middle|ring|pinky)_/.test(joint)) { return null; }
+  return joint.endsWith("_l") ? "l" : joint.endsWith("_r") ? "r" : null;
+}
+
+/**
+ * Whether a layer with `mask` drives `node` (`imported::Mask::drives`): a `fingers_*` grip layer only
+ * its hand's fingers, and no other layer the fingers of a hand a grip owns (`gripped`, asset-tooling #285).
+ */
+function drives(mask: LayerMask, node: string, upper: ReadonlySet<string>, gripped: string): boolean {
+  const hand = fingerHand(node);
+  if (mask === "fingers_l" || mask === "fingers_r") { return hand !== null && mask.endsWith(hand); }
+  if (hand !== null && gripped.includes(hand)) { return false; }
+  return mask === "all" || upper.has(node) === (mask === "upper");
+}
+
 /** Per source clip, its masked copies by mask and slot, so each layer drives its own action. */
 const variants = new WeakMap<THREE.AnimationClip, Map<string, THREE.AnimationClip>>();
 
@@ -213,17 +230,17 @@ function withSecondaryPoses(sources: ReadonlyMap<string, THREE.AnimationClip>, d
  * its previous swing) takes a copy per `slot`, since a mixer plays one action per clip.
  */
 function variant(clip: THREE.AnimationClip, mask: LayerMask, slot: number, upper: ReadonlySet<string>,
-  cloth: ReadonlySet<string>): THREE.AnimationClip {
+  cloth: ReadonlySet<string>, gripped: string): THREE.AnimationClip {
   const chained = clip.tracks.some((track) => secondaryTracks.has(track));
-  if (mask === "all" && slot === 0 && !chained) { return clip; }
+  if (mask === "all" && slot === 0 && !chained && gripped === "") { return clip; }
   let byKey = variants.get(clip);
   if (!byKey) { variants.set(clip, byKey = new Map()); }
-  const key = `${mask}:${slot}:${upper.size}:${[...cloth].join(",")}`;
+  const key = `${mask}:${slot}:${upper.size}:${[...cloth].join(",")}:${gripped}`;
   let masked = byKey.get(key);
   if (!masked) {
     const tracks = clip.tracks.filter((track) => {
       const node = THREE.PropertyBinding.parseTrackName(track.name).nodeName ?? "";
-      return (mask === "all" || upper.has(node) === (mask === "upper")) && (!secondaryTracks.has(track) || cloth.has(node));
+      return drives(mask, node, upper, gripped) && (!secondaryTracks.has(track) || cloth.has(node));
     });
     masked = new THREE.AnimationClip(`${clip.name}|${key}`, clip.duration, tracks);
     byKey.set(key, masked);
@@ -245,16 +262,18 @@ function mixerPosable(model: THREE.Object3D, sources: ReadonlyMap<string, THREE.
     model,
     pose(layers) {
       const used = new Set<string>();
+      // The hands whose fingers a grip layer owns (`imported::gripped`).
+      const gripped = ["l", "r"].filter((hand) => layers.some((layer) => layer.mask === `fingers_${hand}`)).join("");
       for (const layer of layers) {
         const source = sources.get(layer.clip);
         if (!source) { continue; }
         let slot = 0;
-        while (used.has(`${layer.clip}|${layer.mask}|${slot}`)) { slot += 1; }
-        const key = `${layer.clip}|${layer.mask}|${slot}`;
+        while (used.has(`${layer.clip}|${layer.mask}|${gripped}|${slot}`)) { slot += 1; }
+        const key = `${layer.clip}|${layer.mask}|${gripped}|${slot}`;
         used.add(key);
         let action = playing.get(key);
         if (!action) {
-          action = mixer.clipAction(variant(source, layer.mask, slot, upper, cloth)).play();
+          action = mixer.clipAction(variant(source, layer.mask, slot, upper, cloth, gripped)).play();
           playing.set(key, action);
         }
         action.setEffectiveWeight(layer.weight);
@@ -1299,10 +1318,11 @@ export class QuaterniusUnits {
 
   /**
    * Debug read of a drawn unit's actual pose: its (upper-body) clip and clip time, its posed layers, colour tint, root transform, the
-   * world-space extent of its posed skeleton and its head joint (metres, rounded to 0.1 mm); null
-   * when no model is drawn.
+   * world-space extent of its posed skeleton, its head joint and its `hand_l`/`hand_r` joints (metres, rounded to 0.1 mm; the
+   * hands frame grip close-ups, #503); null when no model is drawn.
    */
-  pose(id: string): { clip: string; role: string | null; time: number; layers: readonly ClipLayer[]; tint: readonly number[] | null; root: number[]; skeleton: number[]; head: number[] | null } | null {
+  pose(id: string): { clip: string; role: string | null; time: number; layers: readonly ClipLayer[]; tint: readonly number[] | null; root: number[]; skeleton: number[]; head: number[] | null;
+    hands: { l: number[] | null; r: number[] | null } } | null {
     const instance = this.#instances.get(id);
     if (!instance) { return null; }
     const round = (value: number) => Math.round(value * 1e4) / 1e4;
@@ -1312,12 +1332,14 @@ export class QuaterniusUnits {
       if (object instanceof THREE.Bone) { extent.expandByPoint(object.getWorldPosition(point)); }
     });
     const head = instance.head ? instance.head.getWorldPosition(point).toArray().map(round) : null;
+    const joint = (name: string) => instance.root.getObjectByName(name)?.getWorldPosition(point).toArray().map(round) ?? null;
+    const hands = { l: joint("hand_l"), r: joint("hand_r") };
     const { position, rotation, scale } = instance.root;
     return {
       clip: instance.clip, role: this.#motion(instance)?.role ?? null, time: round(instance.time), layers: instance.layers.map((layer) => ({ ...layer, time: round(layer.time), weight: round(layer.weight) })),
       tint: instance.tint ?? null,
       root: [position.x, position.y, position.z, rotation.y, scale.x].map(round),
-      skeleton: extent.isEmpty() ? [] : [...extent.min.toArray(), ...extent.max.toArray()].map(round), head,
+      skeleton: extent.isEmpty() ? [] : [...extent.min.toArray(), ...extent.max.toArray()].map(round), head, hands,
     };
   }
 
