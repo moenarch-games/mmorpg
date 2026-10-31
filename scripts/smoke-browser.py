@@ -156,9 +156,9 @@ class BrowserAcceptance(unittest.TestCase):
           requestAnimationFrame(next);
         })""", count)
 
-    def click_world_setup(self):
+    def click_world_setup(self, query="?debug"):
         """Keep the real zone deterministic while physical pointer events drive the page."""
-        self.open("?debug")
+        self.open(query)
         self.page.evaluate("""() => {
           const source = window.__valeDebug.worldSource();
           window.__clickAdvance = source.advance;
@@ -282,6 +282,33 @@ class BrowserAcceptance(unittest.TestCase):
           return [player.velocity[0], player.velocity[2]];
         }""")
         self.assertEqual(velocity, [0, 0], "Movement held before Settings does not resurrect after close")
+
+    def test_frame_profile_only_reads_clocks(self):
+        """#546: `?profile` times frame phases; the same stepped route ends in the same zone state, and keys still move."""
+        ends = []
+        for query in ("?debug", "?debug&profile"):
+            if ends:
+                # A fresh character again: leaving the world saved the first run's character.
+                self.page.goto(self.url)
+                self.page.evaluate("localStorage.clear()")
+            self.click_world_setup(query)
+            self.click_world_walk_to_woods()
+            ends.append(self.page.evaluate("""() => {
+              const snapshot = window.__valeDebug.worldSource().latestProjection();
+              const viewer = snapshot.entities.find(entity => entity.kind === 'player' && entity.entityId === snapshot.viewerId);
+              return {tick: String(snapshot.tick), position: viewer.position, facing: viewer.facing};
+            }"""))
+        self.assertEqual(ends[0], ends[1], "Profiling must not change the zone")
+        # Real time again, so held W moves the character through the ordinary frame loop.
+        self.page.evaluate("() => { window.__valeDebug.worldSource().advance = window.__clickAdvance; }")
+        self.page.evaluate("window.__valeProfile.take()")
+        self.page.keyboard.down("KeyW")
+        self.frames(20)
+        self.page.keyboard.up("KeyW")
+        frames = self.page.evaluate("window.__valeProfile.take()")
+        self.assertGreater(len(frames), 10)
+        self.assertNotEqual(frames[0]["viewer"], frames[-1]["viewer"], "W still moves the character while profiling")
+        self.assertTrue(all(frame["phases"]["render"] > 0 for frame in frames))
 
     def test_world_click_specific_creature_drag_empty_ground_and_alternatives(self):
         self.click_world_setup()

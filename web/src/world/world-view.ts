@@ -57,6 +57,7 @@ import type { ContentCatalog } from "./catalog";
 import type { ZoneWorld } from "./world-source";
 import type { AudioPreferences, WorldSound } from "./world-sound";
 import { touchContext, type TouchContext } from "../input/touch-layout";
+import { profileFacts, profilePhase, profiling } from "./frame-profile";
 
 /**
  * The in-world presentation: static scenery, animated units, the orbit
@@ -936,7 +937,9 @@ export class WorldView {
     for (const command of this.#outbox.update(this.#input(input), now, latest?.viewer.dead ?? false)) {
       source.sendCommand(command);
     }
+    profilePhase("input");
     const receivedProjections = source.advance(deltaSeconds);
+    profilePhase("simulation");
     const connected = source.linkState() === "connected";
     if (connected !== this.#lastLinkConnected) {
       this.#resetUnits();
@@ -1004,6 +1007,7 @@ export class WorldView {
     const sounds = units.takeAudio();
     this.#sound?.apply(sounds);
     this.#orbit.update(deltaSeconds, !animate);
+    profilePhase("projection");
     const { unitsPerMetre } = scenery.scenery;
     const sampled = source.sample();
     const presented = units.frame(sampled, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
@@ -1042,6 +1046,7 @@ export class WorldView {
     const roof = this.#roofOf(projection.raid ? this.#raidArea : null, scenery.scenery);
     this.#raidSmoke.update(projection.raid, roof?.top ?? null, roof?.span ?? [0, 0], now);
     const unitNodes = presented.nodes.filter((node) => !node.id.startsWith("fx-"));
+    profilePhase("units");
     if (!self) {
       throw new Error("The projection is missing the viewer's own unit.");
     }
@@ -1088,6 +1093,7 @@ export class WorldView {
     this.#lastEnvironment = environment;
     this.#lastInstanceBatches = frame.instanceBatches;
     this.#lastCamera = camera;
+    profilePhase("scene");
     const models = this.#models.roots();
     const inn = this.#inn?.roots() ?? { roots: [], changed: false };
     const shrine = this.#shrine?.roots() ?? { roots: [], changed: false };
@@ -1098,7 +1104,15 @@ export class WorldView {
     if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || ambient.changed || nature.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots: [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root] });
     }
-    this.#lastWork = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
+    const work = this.#renderer.render({ camera, nodes, instanceBatches: frame.instanceBatches, environment });
+    this.#lastWork = work;
+    profilePhase("render");
+    if (profiling()) {
+      profileFacts({
+        ticks: receivedProjections.length, viewer: [self.x, self.z], heading: this.#orbit.heading, nodes: nodes.length, instanceBatches: frame.instanceBatches.length,
+        created: { objects: work.objectCreateCount, geometries: work.geometryCreateCount, materials: work.materialCreateCount, instanceUploads: work.instanceUploadCount },
+      });
+    }
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
     this.#sky.update(this.#horizon(view.eye, view.target), seconds, true);
     // A night raid's approximate disturbance area while its assault runs (#530).

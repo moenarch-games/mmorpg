@@ -58,6 +58,7 @@ python3 scripts/smoke-handoff.py     # two handoff hosts on PostgreSQL 17 (Docke
 ./scripts/dev-native.sh              # full local native dev environment
 python3 scripts/smoke-browser.py     # real Chromium against the built web/dist (needs Playwright)
 python3 scripts/smoke-browser-online.py  # two Chromium pages join one real zone host over WebTransport
+python3 scripts/profile-browser.py --out artifacts/profile/report.json --trace artifacts/profile  # opt-in Greyhaven frame phases, input latency, GPU time (#546)
 ./scripts/dev-browser-online.sh      # zone host + browser client in online mode
 ```
 
