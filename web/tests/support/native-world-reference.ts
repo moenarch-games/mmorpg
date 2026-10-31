@@ -1,12 +1,14 @@
 /** #182 reference: the Pages presentation path of the shared static world (#184), through the real WASM export. */
 import * as THREE from "three";
 import type { RendererInstance, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
-import { ENVIRONMENT, DAY_SECONDS, environmentAt, skyAt } from "../../src/world/environment";
-import { decodeScenery } from "../../src/world/scenery";
-import { SceneryFrame, buildSceneryScene } from "../../src/world/scenery-nodes";
-import { localZoneModule } from "./local-zone-module";
-// Run by the native parity tests outside `bun test`, so the module is instantiated here (#541).
+// Run by the native parity tests outside `bun test`, so the module is built and instantiated here
+// (#541). The app modules load only afterwards: they import the generated bindings, which a fresh
+// clone does not have until this build ran.
 import "./wasm";
+const { ENVIRONMENT, DAY_SECONDS, environmentAt, skyAt } = await import("../../src/world/environment");
+const { decodeScenery } = await import("../../src/world/scenery");
+const { SceneryFrame, buildSceneryScene } = await import("../../src/world/scenery-nodes");
+const { localZoneModule } = await import("./local-zone-module");
 
 const input = JSON.parse(await Bun.stdin.text());
 const scenery = decodeScenery(JSON.stringify(input.scenery));
