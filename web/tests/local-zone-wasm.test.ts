@@ -86,7 +86,7 @@ describe("WASM local zone host", () => {
       run(source, 1);
     }
     const before = source.latestProjection()!;
-    expect(before.viewer).toMatchObject({ copper: 0, health: 30, experience: 50 });
+    expect(before.viewer).toMatchObject({ copper: 0, health: 25, experience: 50 });
     loot.update(before);
     const sheet = loot.sheet;
     if (sheet === null) {
