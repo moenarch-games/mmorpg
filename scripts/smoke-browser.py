@@ -2207,6 +2207,87 @@ class BrowserAcceptance(unittest.TestCase):
             reset, change_build, touch=True)
         session.detach()
 
+    def fortress_walkthrough(self, touch=False):
+        """#552: the shared Battle Royale fortress in practice, walked through the real WASM zone
+        (mmorpg-core and Rapier): courtyard -> keep door -> corridor -> interior ramp -> keep roof
+        -> central tower lift -> tower top. Returns each stop's feet position in metres."""
+        self.page.goto(self.url + "?activity=battle-royale&debug")
+        start = self.page.get_by_role("button", name=re.compile("^Start practice"))
+        expect(start).to_be_enabled(timeout=30_000)
+        start.tap() if touch else start.click()
+        expect(self.page.locator("#character-select")).to_be_hidden()
+        self.frames(6)
+        # Drive the zone tick by tick from here, as the click smokes do; the page still renders.
+        self.page.evaluate("""() => {
+          const source = window.__valeDebug.worldSource();
+          const advance = source.advance;
+          window.__fortressQueue = [];
+          source.advance = () => window.__fortressQueue.splice(0);
+          const feet = () => {
+            const projection = source.latestProjection();
+            const self = projection.entities.find(e => e.kind === 'player' && e.entityId === projection.viewerId);
+            return [self.position[0] / 100, (self.position[1] - 90) / 100, self.position[2] / 100];
+          };
+          const tick = command => {
+            if (command) source.sendCommand(command);
+            window.__fortressQueue.push(...advance.call(source, 1 / 30));
+          };
+          // Walks toward (x, z) metres, or until `until(feet)`; throws when it gets stuck.
+          window.__fortressWalk = (x, z, ticks = 900, until = null) => {
+            for (let i = 0; i < ticks; i++) {
+              const [fx, fy, fz] = feet();
+              if (until ? until([fx, fy, fz]) : Math.hypot(x - fx, z - fz) < 0.25) {
+                for (let j = 0; j < 15; j++) tick(j === 0 ? {kind: 'move', forward: 0, strafe: 0, facing: 0} : null);
+                return feet();
+              }
+              const facing = Math.round(Math.atan2(x - fx, z - fz) / (2 * Math.PI) * 65536);
+              tick({kind: 'move', forward: 1, strafe: 0, facing: ((facing % 65536) + 65536) % 65536});
+            }
+            throw Error(`stuck at ${feet()} on the way to ${x}, ${z}`);
+          };
+        }""")
+        stops = {}
+
+        def walk(name, x, z, until=None, ticks=900):
+            stops[name] = self.page.evaluate(f"([x, z, t]) => window.__fortressWalk(x, z, t{', ' + until if until else ''})", [x, z, ticks])
+            self.frames(6)
+
+        def shot(name):
+            self.page.screenshot(path=str(ARTIFACTS / f"{self._testMethodName}-{name}.png"))
+
+        shot("courtyard")
+        walk("door", 4.5, -14)
+        walk("corridor", 4.5, -9.9)
+        shot("interior")
+        walk("ramp-foot", 2, -9.9)
+        walk("roof", -12, -9.9)
+        shot("roof")
+        # The central tower lift: push onto its pillar (a wall while it is up) until it carries
+        # the character up to the tower top.
+        walk("lift", -4, -7.05, until="([x, y, z]) => y > 15.5", ticks=1_500)
+        walk("tower", -4, -4)
+        shot("tower")
+        return stops
+
+    def assert_fortress_route(self, stops):
+        for name, height in [("door", 0), ("corridor", 0), ("roof", 8), ("lift", 16), ("tower", 16)]:
+            self.assertAlmostEqual(stops[name][1], height, delta=0.15, msg=f"{name} stands at {height} m: {stops[name]}")
+
+    def test_battle_royale_fortress_walkthrough_desktop(self):
+        stops = self.fortress_walkthrough()
+        self.assert_fortress_route(stops)
+        self.evidence.append({"test": self._testMethodName, "stops": stops})
+
+    def test_battle_royale_fortress_walkthrough_phone(self):
+        self.context.close()
+        self.context = self.browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, device_scale_factor=1)
+        self.page = self.context.new_page()
+        self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+        stops = self.fortress_walkthrough(touch=True)
+        self.assert_fortress_route(stops)
+        # The touch controls stay usable over the fortress.
+        expect(self.page.get_by_role("button", name="Attack", exact=True)).to_be_visible()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

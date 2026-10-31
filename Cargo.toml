@@ -33,12 +33,19 @@ mmorpg-game-server = { path = "crates/mmorpg-game-server" }
 mmorpg-scenery = { path = "crates/mmorpg-scenery" }
 mmorpg-presentation = { path = "crates/mmorpg-presentation" }
 mmorpg-client-model = { path = "crates/mmorpg-client-model" }
+# The Battle Royale fortress (#552): its one shared arena content, read by the browser's practice
+# zone and arena presentation. It pins mmorpg-core by git; the patch below points it here.
+battle-royale-core = { git = "https://github.com/moenarch-games/battle-royale.git", rev = "db76eaa48f4df3c5084a51ca9d0857b01bff4832" }
 postgres = "=0.19.14"
 tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 # Test-only harness: one trial per workload or scenario file, run in parallel by nextest (#540).
 libtest-mimic = "=0.8.2"
 # Enum variant lists derived from the enum (#542).
 strum = { version = "=0.28.0", features = ["derive"] }
+
+# battle-royale-core builds against this workspace's mmorpg-core, not its own pinned copy.
+[patch."https://github.com/moritzbrantner/mmorpg.git"]
+mmorpg-core = { path = "crates/mmorpg-core" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

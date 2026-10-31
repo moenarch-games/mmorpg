@@ -473,7 +473,10 @@ mod tests {
             host.tick().unwrap();
         }
         let walked = own_position(&host, player);
-        assert!(walked[2] > 300, "the player walks forward: {walked:?}");
+        assert!(
+            walked[2] > -7_600 + 300,
+            "the player walks forward from the south gate: {walked:?}"
+        );
         let stop = encode_command(ZoneCommand::Move {
             forward: 0,
             strafe: 0,

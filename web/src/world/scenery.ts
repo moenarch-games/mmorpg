@@ -34,7 +34,7 @@ export const PROP_KINDS = [
   "waystone", "gravestone", "tree-oak", "tree-pine", "tree-birch", "bush", "rock-small", "rock-medium",
   "rock-large", "cliff", "grass-tuft", "flowers", "reeds", "fence", "tent", "campfire", "crate", "barrel",
   "cart", "signpost", "lamp", "mine-entrance", "crop-row", "dock", "cave-roof", "ramp", "loading-dock",
-  "shrine-kit", "ladder",
+  "shrine-kit", "ladder", "graybox-wall", "graybox-tower", "graybox-walkway", "graybox-ramp",
 ] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
 

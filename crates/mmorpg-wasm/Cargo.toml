@@ -15,6 +15,8 @@ crate-type = ["cdylib", "rlib"]
 strum.workspace = true
 mmorpg-characters.workspace = true
 mmorpg-core.workspace = true
+# The shared Battle Royale fortress content (#552), the one definition of its collision.
+battle-royale-core.workspace = true
 mmorpg-protocol.workspace = true
 # Presentation only: the scenery export and relief queries. The local zone
 # host never reads it (checked by a test in src/scenery.rs).

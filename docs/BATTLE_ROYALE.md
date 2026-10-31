@@ -5,17 +5,49 @@
 `?activity=battle-royale` (or **Battle Royale PvP** from Activity) opens with **Arena:
 Practice arena (this browser)** selected unless the URL names an `arenaServer`. Choose a
 class, appearance and equipment, then **Start practice**: the page's `mmorpg-wasm` host
-(`LocalZone.forPracticeArena`) admits that `EphemeralCharacterBuild` at the maximum level on
-the flat arena, facing five stationary **Training Targets** (three about 8–9 m ahead, two at
-20 m). Targets are breakable props: they take real `mmorpg-core` damage, never move, fight or
+(`LocalZone.forPracticeArena`) admits that `EphemeralCharacterBuild` at the maximum level just
+inside the fortress's south gate, facing the keep across the courtyard and five stationary
+**Training Targets** (three about 8–9 m ahead, two at 21 m). Targets are breakable props: they take real `mmorpg-core` damage, never move, fight or
 hold threat, break, and stand again after 30 s. There is no storm, matchmaking, team, reward
 or other player. **Reset practice (F9)** starts a fresh life with the build chosen at entry;
 **Change build** returns to setup to change it. On a phone the touch overlay shows **Target** and
 **Attack** from the first moment, and **Menu** offers **Reset practice** and **Change build**;
 in portrait the status line sits under the frames and the hotbar above the thumb controls
 (#551). Nothing is saved, and the Greyhaven roster,
-saves and the hosted path below are untouched. The flat arena is temporary until the shared
-fortress (battle-royale #31) is presented (#552).
+saves and the hosted path below are untouched.
+
+## The fortress (#552)
+
+Practice and hosted matches show the **same symmetric multilevel fortress** that Battle Royale
+hosts ([battle-royale #31](https://github.com/moenarch-games/battle-royale/issues/31),
+`docs/ARENA.md` there). `battle-royale-core` (pinned in the root `Cargo.toml`, with a `[patch]`
+pointing its `mmorpg-core` at this workspace) is its one definition; nothing here copies the
+geometry.
+
+- **Physics**: the practice zone is the fortress's own colliders, ramps and eight lifts, unchanged,
+  in `mmorpg-core` and Rapier, with its own spawn lattice in the south courtyard (slot 0 at
+  (0, −76) m, 16 × 32 slots 2 m apart) and the training targets. A hosted match runs
+  `arena::content()` itself; the client refuses projections whose content revision is not
+  `ArenaPresentation.contentRevision()`, i.e. that fortress's.
+- **Rendering**: `Scenery::graybox` turns every collider box into a graybox prop (walls, parapets
+  and columns; towers; floors and bridges, each with a lighter walkable top) and every ramp into a
+  wedge, drawn by the shared static scene. Lifts are the unit presenter's moving platforms at the
+  projection's tick. The ground is the ordinary flat terrain.
+- **Camera**: in the arena only, the orbit camera's eye is pulled in front of the first structure
+  box between it and the character (`clearSightLine`), so it stays under the keep's roof and in
+  front of walls; Greyhaven's camera is unchanged.
+
+Everything is graybox and untextured: curtain wall, gates, corner towers, courtyard ramps, keep
+corridors and hall, roof, bridges, central tower and lifts. Authored art comes later through
+Blender → asset-tooling → this renderer and must keep the same collision.
+
+`scripts/smoke-browser.py` walks courtyard → keep door → corridor → interior ramp → roof → central
+tower lift → tower top through the page's real zone at desktop and phone size
+(`test_battle_royale_fortress_walkthrough_*`), and `mmorpg-wasm`'s tests walk the same zone onto
+the wall walk, a corner tower and a courtyard lift. `scripts/profile-browser.py --activity
+battle-royale` profiles the arena.
+
+![Practice character on the keep roof, with lifts, bridges and the curtain wall](reviews/battle-royale/fortress-roof.png)
 
 ## Hosted match
 
@@ -29,7 +61,7 @@ armor is the same for all three classes. Defaults come from `EphemeralCharacterB
 The client reuses its ordinary Three.js renderer, Rust unit presenter, class HUD,
 weapons/spells, targeting, shield guard, movement, input bindings and Settings.
 Tab and pointer selection include admitted attackable arena players; ordinary safe
-players remain excluded. The flat arena uses the same Rust static-scene machinery,
+players remain excluded. The fortress (above) uses the same Rust static-scene machinery,
 with no Greyhaven props or relief and no second animation/rendering system.
 
 Setup is frozen on joining, and the host freezes the life at Drop. During the match,
@@ -52,10 +84,12 @@ authoritative Battle Royale server.
 
 ## Local hosted path
 
-Use `battle-royale` revision **f089a978c086b237098deb5a02ffd9c2cd00e600**
-(the merged #13 runtime). Its core/protocol pin is MMORPG
-`81306faec8a6a7ea3b4279d75f763c1135ca4a19`. Mode protocol/schema/ruleset 2 wrap the
-existing MMORPG snapshot v30/schema 29 and command v13. Different versions fail closed.
+Use a `battle-royale` revision with the fortress (#31), at or after
+**db76eaa48f4df3c5084a51ca9d0857b01bff4832**, whose core/protocol pin is this checkout's MMORPG
+revision or at least its snapshot/command versions (that revision pins MMORPG `6d744b7`, before
+the #566 sheet acknowledgement, so until Renovate re-pins it, `[patch]` its `mmorpg-core` and
+`mmorpg-protocol` to this checkout). Mode protocol/schema/ruleset 2 wrap the MMORPG snapshot
+and command. Different versions or another arena content revision fail closed.
 
 With that checkout beside this one:
 

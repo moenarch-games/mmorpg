@@ -1,9 +1,11 @@
-/** Battle Royale protocol/schema/ruleset 2, from battle-royale #18 at 5390ed8. */
+/**
+ * Battle Royale protocol/schema/ruleset 2, from battle-royale #18 at 5390ed8. The arena's content
+ * revision is the shared fortress's (#552), read from `ArenaPresentation.contentRevision()`.
+ */
 import { encodeCommand, type WorldCommand } from "../../command-wire";
 import { decodeSnapshot, type ZoneSnapshot } from "../../replication";
 import { classChoiceCodes, type JoinCharacter } from "../world-source";
 
-export const ARENA_CONTENT_REVISION = 2n;
 export const ARENA_ZONE_ID = 100;
 const PHASES = ["waiting", "drop", "combat", "finished"] as const;
 const CAUSES = [null, "storm", "session-expired", "combat"] as const;
@@ -67,7 +69,8 @@ class Reader {
   }
 }
 
-export function decodeMatchProjection(bytes: Uint8Array): MatchProjection {
+/** `contentRevision` is the fortress content both host and client must run. */
+export function decodeMatchProjection(bytes: Uint8Array, contentRevision: bigint): MatchProjection {
   const reader = new Reader(bytes);
   if (new TextDecoder().decode(reader.bytes(4)) !== "BRPL" || reader.u16() !== 2 || reader.u16() !== 2 || reader.u64() !== 2n) {
     throw new Error("Unsupported Battle Royale projection version.");
@@ -101,7 +104,7 @@ export function decodeMatchProjection(bytes: Uint8Array): MatchProjection {
   const zone = decodeSnapshot(reader.bytes(zoneBytes));
   reader.finish();
   const viewer = players.find((player) => player.id === zone.viewerId);
-  if (zone.zoneId !== ARENA_ZONE_ID || zone.contentRevision !== ARENA_CONTENT_REVISION || !viewer ||
+  if (zone.zoneId !== ARENA_ZONE_ID || zone.contentRevision !== contentRevision || !viewer ||
     viewer.alive === zone.viewer.dead || zone.tick > tick || (phase !== "finished" && zone.tick !== tick)) {
     throw new Error("Battle Royale roster, content or clock disagrees with its character projection.");
   }

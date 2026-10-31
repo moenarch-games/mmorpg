@@ -156,6 +156,27 @@ pub enum PropKind {
     ShrineKit,
     /// A ladder (#490): two rails and rungs up its collider, against a tower.
     Ladder,
+    /// Graybox level geometry (#552), each fitted exactly to its collider box with a lighter
+    /// walkable top: a wall, parapet or solid column;
+    GrayboxWall,
+    /// a tower;
+    GrayboxTower,
+    /// a floor slab or bridge one walks on;
+    GrayboxWalkway,
+    /// a ramp's wedge, its box at yaw 0 rising toward +Z.
+    GrayboxRamp,
+}
+
+impl PropKind {
+    /// Whether this is graybox level geometry, drawn at its exact collider box (feet at the
+    /// box's bottom, no terrain relief).
+    #[must_use]
+    pub const fn graybox(self) -> bool {
+        matches!(
+            self,
+            Self::GrayboxWall | Self::GrayboxTower | Self::GrayboxWalkway | Self::GrayboxRamp
+        )
+    }
 }
 
 impl PropKind {
@@ -224,6 +245,10 @@ impl PropKind {
             Self::LoadingDock => "loading-dock",
             Self::ShrineKit => "shrine-kit",
             Self::Ladder => "ladder",
+            Self::GrayboxWall => "graybox-wall",
+            Self::GrayboxTower => "graybox-tower",
+            Self::GrayboxWalkway => "graybox-walkway",
+            Self::GrayboxRamp => "graybox-ramp",
         }
     }
 }
@@ -582,6 +607,10 @@ const fn kind_code(kind: PropKind) -> [u8; 2] {
         PropKind::LoadingDock => [33, 0],
         PropKind::ShrineKit => [34, 0],
         PropKind::Ladder => [35, 0],
+        PropKind::GrayboxWall => [36, 0],
+        PropKind::GrayboxTower => [36, 1],
+        PropKind::GrayboxWalkway => [36, 2],
+        PropKind::GrayboxRamp => [36, 3],
     }
 }
 
@@ -806,6 +835,49 @@ impl Scenery {
             climbing: mmorpg_core::ClimbSurfaces::default(),
             authored_outpost_relief: false,
             greyhaven: false,
+        }
+    }
+
+    /// Flat ground with graybox level geometry (#552): one prop per box `(collider, kind)`
+    /// exactly at its collider, and one [`PropKind::GrayboxRamp`] per ramp wedge. Boxes keep
+    /// their collider IDs, so clients treat them as structures (e.g. camera occluders).
+    #[must_use]
+    pub fn graybox(
+        content_revision: u64,
+        boxes: &[(StaticCollider, PropKind)],
+        ramps: &[mmorpg_core::Ramp],
+    ) -> Self {
+        let feet =
+            |position: [i32; 3], half: [i32; 3]| [position[0], position[1] - half[1], position[2]];
+        let solids = boxes.iter().map(|(collider, kind)| Prop {
+            kind: *kind,
+            position: feet(collider.position, collider.half_extents),
+            yaw: 0,
+            scale_permille: 1_000,
+            collider: Some(collider.id),
+            half_extents: collider.half_extents,
+        });
+        let wedges = ramps.iter().map(|ramp| {
+            let [x, y, z] = ramp.half_extents;
+            // The wedge rises toward local +Z; across X the box turns a quarter.
+            let (yaw, half_extents) = match ramp.rises {
+                mmorpg_core::RampRise::PosZ => (0, [x, y, z]),
+                mmorpg_core::RampRise::PosX => (16_384, [z, y, x]),
+                mmorpg_core::RampRise::NegZ => (32_768, [x, y, z]),
+                mmorpg_core::RampRise::NegX => (49_152, [z, y, x]),
+            };
+            Prop {
+                kind: PropKind::GrayboxRamp,
+                position: feet(ramp.position, ramp.half_extents),
+                yaw,
+                scale_permille: 1_000,
+                collider: None,
+                half_extents,
+            }
+        });
+        Self {
+            props: solids.chain(wedges).collect(),
+            ..Self::flat(content_revision)
         }
     }
 

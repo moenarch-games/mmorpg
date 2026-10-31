@@ -5,7 +5,8 @@ import { yawFromRadians } from "../replication";
 /**
  * Third-person orbit camera around the local character, mirroring the native
  * client's `OrbitCamera`, with classic-MMO handling: the wheel zooms smoothly,
- * the eye never sinks below the ground under it (no other collision), a
+ * the eye never sinks below the ground under it (in the Battle Royale arena it
+ * also stays clear of structures, see `clearSightLine`), a
  * left drag orbits freely and a right drag turns the character with the
  * view. Presentation only: its heading becomes movement intent, never an
  * authoritative position.
@@ -27,6 +28,45 @@ export const PIXELS_PER_WHEEL_LINE = 40;
 
 export type Vec3 = [number, number, number];
 export type CameraView = { eye: Vec3; target: Vec3 };
+/** An axis-aligned box in metres. */
+export type CameraBox = { min: Vec3; max: Vec3 };
+
+/** How far in front of the first blocking surface a pulled-in eye stays, in metres. */
+const SIGHT_CLEARANCE_METRES = 0.3;
+
+/**
+ * The view with its eye pulled in toward the target until the sight line clears every box (a
+ * camera boom, #552): inside the Battle Royale fortress the eye stays under roofs and in front
+ * of walls instead of looking at their backs. Boxes that contain the target are ignored.
+ */
+export function clearSightLine(view: CameraView, boxes: readonly CameraBox[]): CameraView {
+  const { eye, target } = view;
+  const ray = [0, 1, 2].map((axis) => eye[axis]! - target[axis]!) as Vec3;
+  const length = Math.hypot(...ray);
+  if (length < 1e-6) { return view; }
+  let nearest = 1;
+  for (const box of boxes) {
+    let enter = 0;
+    let exit = 1;
+    for (let axis = 0; axis < 3 && enter <= exit; axis += 1) {
+      const origin = target[axis]!;
+      const step = ray[axis]!;
+      const [low, high] = [box.min[axis]!, box.max[axis]!];
+      if (Math.abs(step) < 1e-9) {
+        if (origin < low || origin > high) { exit = -1; }
+        continue;
+      }
+      const [a, b] = [(low - origin) / step, (high - origin) / step];
+      enter = Math.max(enter, Math.min(a, b));
+      exit = Math.min(exit, Math.max(a, b));
+    }
+    const containsTarget = target.every((value, axis) => value >= box.min[axis]! && value <= box.max[axis]!);
+    if (enter <= exit && !containsTarget && enter < nearest) { nearest = enter; }
+  }
+  if (nearest >= 1) { return view; }
+  const t = Math.max(0, nearest - SIGHT_CLEARANCE_METRES / length);
+  return { eye: [0, 1, 2].map((axis) => target[axis]! + ray[axis]! * t) as Vec3, target };
+}
 
 export class OrbitCamera {
   /** World yaw the camera looks along: 0 toward +Z, increasing toward +X. */

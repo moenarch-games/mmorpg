@@ -26,7 +26,7 @@ export function equipmentSlots(ids: ArrayLike<number>): ArenaEquipment {
   return [slot(0), slot(1), slot(2), slot(3), slot(4), slot(5)];
 }
 
-/** The flat arena's scenery: the same Rust meshes and unit presenters as the ordinary world. */
+/** The shared fortress drawn as graybox (#552): the same Rust meshes and unit presenters as the ordinary world. */
 function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): SceneryProvider {
   const emptyMotion = new Float32Array();
   return {
@@ -69,6 +69,7 @@ export function createArenaWorld(
   const source = new BattleRoyaleSource({
     route: server.route,
     connector: webTransportConnector(server.certificateHash),
+    contentRevision: presentation.contentRevision(),
     equipment: (character) => selectedEquipment(character) ?? standardEquipment(character),
   });
   return {

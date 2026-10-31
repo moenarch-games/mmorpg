@@ -1,22 +1,25 @@
-//! Client-only Battle Royale arena: its flat presentation, and the practice arena (#550) the
-//! page hosts locally. A hosted match supplies every physical/combat projection itself; the
-//! practice arena is the same flat ground with stationary training targets, simulated by the
-//! shared `mmorpg-core` rules in [`crate::host::LocalZoneHost::practice_arena`]. Both share this
-//! content's character, ability, item and target descriptions; no Greyhaven props or NPCs.
+//! Client-only Battle Royale arena (#552): the shared symmetric multilevel fortress that
+//! battle-royale hosts, drawn as graybox, and the practice arena (#550) the page hosts locally.
+//!
+//! `battle_royale_core::arena` is the one definition of the fortress. A hosted match supplies
+//! every physical/combat projection itself and must carry [`fortress`]'s content revision. The
+//! practice arena is the same fortress bodies (colliders, ramps and lifts, unchanged) with its
+//! own spawn lattice in the south courtyard and stationary training targets, simulated by the
+//! shared `mmorpg-core` rules and Rapier in [`crate::host::LocalZoneHost::practice_arena`]. Both
+//! share this content's character, ability, item and target descriptions; no Greyhaven props or
+//! NPCs. The renderer's geometry is a projection of the same boxes, never gameplay truth.
 use std::sync::{Arc, OnceLock};
 
+use battle_royale_core::arena::{self, ArenaPart};
 use mmorpg_core::{
     CharacterPersistence, ClassChoice, CreatureBehaviour, CreatureFamily, CreatureId,
     CreatureSpawn, CreatureTemplate, CreatureTemplateId, EphemeralCharacterBuild, MAX_PLAYER_LEVEL,
-    PlayerClass, PropKind, Sex, SpawnGrid, StaticCollider, ZoneAreas, ZoneContent, ZoneDefinition,
+    PlayerClass, PropKind, Sex, SpawnGrid, ZoneAreas, ZoneContent, ZoneDefinition,
 };
 use mmorpg_presentation::StaticScene;
 use mmorpg_scenery::Scenery;
 use wasm_bindgen::prelude::{JsError, wasm_bindgen};
 
-/// The content revision the pinned battle-royale host stamps on its projections
-/// (`web/src/world/battle-royale/protocol.ts`); a cross-repository pin, updated on re-pin.
-const ARENA_CONTENT_REVISION: u64 = 2;
 use crate::static_scene::SceneBuffers;
 
 /// The practice arena's training target (#550): a breakable prop at the maximum player level,
@@ -24,36 +27,41 @@ use crate::static_scene::SceneBuffers;
 const TRAINING_TARGET: CreatureTemplateId = CreatureTemplateId::new(1);
 /// Health of a training target: about twenty max-level weapon hits, a few ability rotations.
 const TRAINING_TARGET_HEALTH: u32 = 300;
-/// Feet XZ of the training targets: three 8–9 m ahead of spawn slot 0 (which faces +Z) for melee,
-/// two 20 m ahead for ranged abilities.
+/// Practice spawn slot 0: just inside the south gate, facing +Z across the courtyard to the keep.
+const PRACTICE_SPAWN: [i32; 2] = [0, -7_600];
+/// Feet XZ of the training targets relative to [`PRACTICE_SPAWN`]: three 8–9 m ahead for melee,
+/// two 21 m ahead for ranged abilities, all between spawn slots.
 const TRAINING_TARGETS: [[i32; 2]; 5] = [
     [-300, 800],
     [0, 900],
     [300, 800],
-    [-600, 2_000],
-    [600, 2_000],
+    [-600, 2_100],
+    [600, 2_100],
 ];
-/// Spawn slots run along +X in two rows, so nothing stands in front of slot 0 but the targets.
+/// Practice slots: 16 columns along +X and 32 rows toward the keep, 2 m apart, inside the south
+/// courtyard and clear of its ramps, lifts and walls.
 const PRACTICE_SPAWN_GRID: SpawnGrid = SpawnGrid {
-    origin: [0, 0],
-    columns: 256,
+    origin: PRACTICE_SPAWN,
+    columns: 16,
     spacing: 200,
 };
 
+/// The shared fortress content a hosted match runs.
+pub(crate) fn fortress() -> Arc<ZoneContent> {
+    arena::content().expect("the pinned battle-royale fortress content is valid")
+}
+
+/// The practice arena: the fortress's own bodies, a courtyard spawn lattice and training targets.
 pub(crate) fn content() -> Arc<ZoneContent> {
     static CONTENT: OnceLock<Arc<ZoneContent>> = OnceLock::new();
     Arc::clone(CONTENT.get_or_init(|| {
+        let fortress = fortress();
         let definition = ZoneDefinition::with_spawn_grid(
-            mmorpg_core::STANDARD_GRAVITY,
+            fortress.definition().gravity(),
             PRACTICE_SPAWN_GRID,
-            // The flat ground under the spawn grid: the zone makes it a floor half-space.
-            vec![StaticCollider {
-                id: 1,
-                position: [0, -50, 0],
-                half_extents: [10_000, 50, 10_000],
-            }],
+            fortress.definition().colliders().to_vec(),
         )
-        .expect("flat arena definition is valid");
+        .expect("practice spawn lattice is clear of the fortress");
         let target = CreatureTemplate {
             id: TRAINING_TARGET,
             name: "Training Target".to_owned(),
@@ -72,10 +80,10 @@ pub(crate) fn content() -> Arc<ZoneContent> {
         };
         let spawns = (1..)
             .zip(TRAINING_TARGETS)
-            .map(|(id, position)| CreatureSpawn {
+            .map(|(id, [x, z])| CreatureSpawn {
                 id: CreatureId::new(id),
                 template: TRAINING_TARGET,
-                position,
+                position: [PRACTICE_SPAWN[0] + x, PRACTICE_SPAWN[1] + z],
                 facing: 32_768,
                 wander_radius: 0,
                 levels: None,
@@ -87,20 +95,53 @@ pub(crate) fn content() -> Arc<ZoneContent> {
             vec![target],
             spawns,
             Vec::new(),
-            [0, 0],
+            PRACTICE_SPAWN,
         )
         .expect("practice arena content is valid");
         Arc::new(
             content
                 .with_character_persistence(CharacterPersistence::Ephemeral)
                 .with_creature_abilities(Vec::new())
-                .expect("shared ability catalog is valid"),
+                .and_then(|content| content.with_platforms(fortress.platforms().to_vec()))
+                .and_then(|content| content.with_ramps(fortress.ramps().to_vec()))
+                .expect("the fortress's lifts and ramps bind to the practice arena"),
         )
     }))
 }
+
+/// The graybox look of a fortress body, or `None` for the ground (the flat terrain) and the
+/// lifts (drawn by the unit presenter where their schedule puts them) and ramps (wedges).
+const fn graybox_kind(part: ArenaPart) -> Option<mmorpg_scenery::PropKind> {
+    use mmorpg_scenery::PropKind as Kind;
+    match part {
+        ArenaPart::Wall | ArenaPart::Parapet | ArenaPart::Column => Some(Kind::GrayboxWall),
+        ArenaPart::Tower => Some(Kind::GrayboxTower),
+        ArenaPart::Floor | ArenaPart::Bridge => Some(Kind::GrayboxWalkway),
+        ArenaPart::Ground | ArenaPart::Ramp | ArenaPart::Lift => None,
+    }
+}
+
+/// The fortress drawn from its own collider boxes and ramp wedges, keyed by its revision.
 pub(crate) fn shared_scenery() -> Arc<Scenery> {
     static SCENERY: OnceLock<Arc<Scenery>> = OnceLock::new();
-    Arc::clone(SCENERY.get_or_init(|| Arc::new(Scenery::flat(ARENA_CONTENT_REVISION))))
+    Arc::clone(SCENERY.get_or_init(|| {
+        let fortress = fortress();
+        let parts = arena::parts();
+        let boxes: Vec<_> = fortress
+            .definition()
+            .colliders()
+            .iter()
+            .filter_map(|collider| {
+                let (_, part) = parts.iter().find(|(body, _)| *body == collider.id)?;
+                graybox_kind(*part).map(|kind| (collider.clone(), kind))
+            })
+            .collect();
+        Arc::new(Scenery::graybox(
+            fortress.revision(),
+            &boxes,
+            fortress.ramps(),
+        ))
+    }))
 }
 fn buffers() -> &'static SceneBuffers {
     static BUFFERS: OnceLock<SceneBuffers> = OnceLock::new();
@@ -118,9 +159,18 @@ impl ArenaPresentation {
     pub fn new() -> Self {
         Self
     }
+    /// The fortress content revision a hosted match's projections must carry.
+    #[wasm_bindgen(js_name = contentRevision)]
+    pub fn content_revision(&self) -> u64 {
+        fortress().revision()
+    }
     pub fn scenery(&self) -> String {
-        let export =
-            crate::scenery::export(&shared_scenery(), &[], &mmorpg_core::ZoneAreas::default());
+        // Fortress boxes export their exact colliders, so the camera treats them as structures.
+        let export = crate::scenery::export(
+            &shared_scenery(),
+            fortress().definition().colliders(),
+            &mmorpg_core::ZoneAreas::default(),
+        );
         serde_json::to_string(&export).expect("scenery export is serializable data")
     }
     pub fn catalog(&self) -> String {
@@ -162,5 +212,157 @@ impl ArenaPresentation {
     #[wasm_bindgen(js_name = staticSceneModels)]
     pub fn static_scene_models(&self) -> Vec<f32> {
         buffers().3.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::host::LocalZoneHost;
+    use mmorpg_core::{EntityKind, PlatformPhase, PlayerId, ZoneCommand};
+    use mmorpg_protocol::{decode_snapshot, encode_command};
+
+    #[test]
+    fn practice_runs_the_fortress_bodies_and_draws_each_one() {
+        let (fortress, practice) = (fortress(), content());
+        assert_eq!(
+            practice.definition().colliders(),
+            fortress.definition().colliders()
+        );
+        assert_eq!(practice.ramps(), fortress.ramps());
+        assert_eq!(practice.platforms(), fortress.platforms());
+        let scenery = shared_scenery();
+        assert_eq!(scenery.content_revision, fortress.revision());
+        let drawn = |id| scenery.props.iter().any(|prop| prop.collider == Some(id));
+        for collider in fortress.definition().colliders() {
+            let ground = arena::parts().contains(&(collider.id, ArenaPart::Ground));
+            assert_eq!(drawn(collider.id), !ground, "collider {}", collider.id);
+        }
+        let wedges = scenery
+            .props
+            .iter()
+            .filter(|prop| prop.kind == mmorpg_scenery::PropKind::GrayboxRamp)
+            .count();
+        assert_eq!(wedges, fortress.ramps().len());
+    }
+
+    /// One practice character steered through the shared zone, commands at every tick.
+    struct Walker {
+        host: LocalZoneHost,
+        player: PlayerId,
+        sequence: u32,
+    }
+
+    impl Walker {
+        fn new() -> Self {
+            let build = EphemeralCharacterBuild::standard(ClassChoice {
+                class: PlayerClass::Warden,
+                sex: Sex::Female,
+            })
+            .unwrap();
+            let (host, player) = LocalZoneHost::practice_arena(&build).unwrap();
+            Self {
+                host,
+                player,
+                sequence: 0,
+            }
+        }
+
+        fn position(&self) -> [i32; 3] {
+            let snapshot = decode_snapshot(&self.host.projection(self.player).unwrap()).unwrap();
+            snapshot
+                .entities
+                .iter()
+                .find(|entity| entity.kind == EntityKind::Player && entity.id == self.player)
+                .unwrap()
+                .position
+        }
+
+        fn command(&mut self, forward: i8, facing: u16) {
+            self.sequence += 1;
+            let command = encode_command(ZoneCommand::Move {
+                forward,
+                strafe: 0,
+                facing,
+            });
+            self.host
+                .submit(self.player, self.sequence, &command)
+                .unwrap();
+        }
+
+        fn idle(&mut self, ticks: u32) {
+            self.command(0, 0);
+            for _ in 0..ticks {
+                self.host.tick().unwrap();
+            }
+        }
+
+        fn walk_to(&mut self, x: i32, z: i32) -> [i32; 3] {
+            for _ in 0..2_000 {
+                let at = self.position();
+                let (dx, dz) = (f64::from(x - at[0]), f64::from(z - at[2]));
+                if dx.hypot(dz) < 25. {
+                    self.idle(20);
+                    return self.position();
+                }
+                let yaw = (dx.atan2(dz) / std::f64::consts::TAU * 65_536.).round() as i32;
+                self.command(1, yaw.rem_euclid(65_536) as u16);
+                self.host.tick().unwrap();
+            }
+            panic!("stuck at {:?} on the way to ({x}, {z})", self.position());
+        }
+    }
+
+    /// Whether a body centre `at` stands on a surface at `y`.
+    fn standing_at(at: [i32; 3], y: i32) -> bool {
+        (at[1] - mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[1] - y).abs() <= 10
+    }
+
+    #[test]
+    fn a_practice_walk_reaches_the_wall_walk_a_corner_tower_and_the_keep_roof() {
+        let mut walker = Walker::new();
+        assert_eq!(walker.position(), [0, 90, -7_600]);
+        // Courtyard ramp up to the wall walk, then the wall-walk ramp onto the corner tower.
+        walker.walk_to(-4_400, -6_800);
+        let wall_walk = walker.walk_to(-4_400, -8_370);
+        assert!(standing_at(wall_walk, arena::WALL_WALK_Y), "{wall_walk:?}");
+        walker.walk_to(-6_600, -8_370);
+        let tower = walker.walk_to(-8_400, -8_400);
+        assert!(standing_at(tower, arena::TOWER_TOP_Y), "{tower:?}");
+        // Back down, through the keep's south door and up its interior ramp onto the roof.
+        walker.walk_to(-6_600, -8_370);
+        walker.walk_to(-4_400, -8_370);
+        walker.walk_to(-4_400, -6_800);
+        walker.walk_to(450, -1_400);
+        let corridor = walker.walk_to(450, -990);
+        assert!(standing_at(corridor, 0), "{corridor:?}");
+        walker.walk_to(200, -990);
+        let roof = walker.walk_to(-1_200, -990);
+        assert!(standing_at(roof, arena::WALL_WALK_Y), "{roof:?}");
+    }
+
+    #[test]
+    fn a_practice_character_rides_a_courtyard_lift_onto_the_keep_roof() {
+        let mut walker = Walker::new();
+        let lift = *fortress()
+            .platforms()
+            .iter()
+            .find(|lift| lift.low[0] == -800 && lift.low[2] == -1_410)
+            .expect("the south courtyard lift");
+        walker.walk_to(-800, -1_900);
+        // Board just as the lift comes to rest at the courtyard, flush with the ground.
+        loop {
+            let tick = walker.host.zone().current_tick();
+            if lift.phase_at(tick) == (PlatformPhase::AtLow, 0) {
+                break;
+            }
+            walker.idle(1);
+        }
+        walker.walk_to(-800, -1_410);
+        walker.idle(lift.dwell + lift.travel_ticks() + 10);
+        let ridden = walker.position();
+        assert!(standing_at(ridden, arena::WALL_WALK_Y), "{ridden:?}");
+        let roof = walker.walk_to(-800, -1_200);
+        assert!(standing_at(roof, arena::WALL_WALK_Y), "{roof:?}");
     }
 }

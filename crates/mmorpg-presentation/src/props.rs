@@ -34,6 +34,14 @@ const CORE: u32 = 0xffe27a;
 const EMBER: u32 = 0x3b2a22;
 const ROCK: u32 = 0x9a948a;
 const ROCK_DARK: u32 = 0x77726a;
+// Graybox level geometry (#552): sides darker than the walkable tops; towers darkest.
+const GRAYBOX_WALL: u32 = 0x8e897f;
+const GRAYBOX_WALL_TOP: u32 = 0xc4bdad;
+const GRAYBOX_TOWER: u32 = 0x6f6a62;
+const GRAYBOX_TOWER_TOP: u32 = 0xb3ab9a;
+const GRAYBOX_WALKWAY: u32 = 0xa0978a;
+const GRAYBOX_WALKWAY_TOP: u32 = 0xd6ccb6;
+const GRAYBOX_RAMP: u32 = 0xb9ad94;
 const MOSS: u32 = 0x62804a;
 const CROP: u32 = 0xd8bd5a;
 const STEM: u32 = 0x93a74b;
@@ -754,6 +762,17 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             .is_some_and(|grip| grip == Grip::Rock);
         let mut m = Model::new(Cull::Always);
         let mut f = frame(p, g, 0.);
+        if p.kind.graybox() {
+            // Graybox geometry stands exactly at its collider box, whatever the terrain.
+            f = compose(&[
+                translate(
+                    metres(p.position[0]),
+                    metres(p.position[1]),
+                    metres(p.position[2]),
+                ),
+                ry(yaw(p)),
+            ]);
+        }
         let (mut w, mut d, mut h, mut door_yaw) = (hx, hz, hy * 2., yaw(p));
         if matches!(
             p.kind,
@@ -1156,6 +1175,23 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             PropKind::Ramp => {
                 m.put(STONE, wedge(), at(0., 0., 0., hx, hy * 2., hz));
                 m.put(WOOD, wedge(), at(0., 0.03, 0., hx * 0.9, hy * 2., hz));
+            }
+            // Graybox level geometry (#552): the collider box with a lighter walkable top, and
+            // plain wedges for ramps. Seen across a whole arena: never culled, in the largest batches.
+            PropKind::GrayboxWall | PropKind::GrayboxTower | PropKind::GrayboxWalkway => {
+                m.cull = Cull::Always;
+                let (side, top) = match p.kind {
+                    PropKind::GrayboxWall => (GRAYBOX_WALL, GRAYBOX_WALL_TOP),
+                    PropKind::GrayboxTower => (GRAYBOX_TOWER, GRAYBOX_TOWER_TOP),
+                    _ => (GRAYBOX_WALKWAY, GRAYBOX_WALKWAY_TOP),
+                };
+                let cap = (hy * 0.5).min(0.04);
+                m.box_at(side, [0., hy - cap, 0.], [hx, hy - cap, hz]);
+                m.box_at(top, [0., hy * 2. - cap, 0.], [hx, cap, hz]);
+            }
+            PropKind::GrayboxRamp => {
+                m.cull = Cull::Always;
+                m.put(GRAYBOX_RAMP, wedge(), at(0., 0., 0., hx, hy * 2., hz));
             }
             PropKind::Dock => {
                 m.cull = Cull::Mid;
