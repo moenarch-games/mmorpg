@@ -1,20 +1,19 @@
-//! Checked-in scenarios and their expected outputs.
+//! Checked-in control-plane scenarios and their expected outputs, and the bot runner's own
+//! behaviour. The checked-in bot scenarios run one trial each in `bot_scenarios.rs`.
 //!
-//! Every `scenarios/<tool>/<name>.toml` must pass and reproduce
-//! `<name>.expected` byte for byte. After an intentional behavior change,
-//! regenerate with:
+//! Every `scenarios/control-plane/<name>.toml` must pass and reproduce `<name>.expected` byte
+//! for byte. After an intentional behavior change, regenerate with:
 //!
 //! ```sh
-//! MMORPG_SCENARIOS_UPDATE=1 cargo test -p mmorpg-scenarios --test scenarios --locked
+//! MMORPG_SCENARIOS_UPDATE=1 cargo test -p mmorpg-scenarios --locked
 //! ```
 
-use std::path::{Path, PathBuf};
+mod support;
+
+use std::path::Path;
 use std::process::Command;
 
 use mmorpg_scenarios::{Report, bots, control_plane};
-use serde_json::Value;
-
-type Runner = fn(&str) -> Result<Report, String>;
 
 fn run_bots(text: &str) -> Result<Report, String> {
     bots::run(&bots::load(text)?)
@@ -24,33 +23,16 @@ fn run_control_plane(text: &str) -> Result<Report, String> {
     control_plane::run(&control_plane::load(text)?)
 }
 
-fn scenario_files(tool: &str) -> Vec<PathBuf> {
-    let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("scenarios")
-        .join(tool);
-    let mut files = std::fs::read_dir(&directory)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension == "toml")
-        })
-        .collect::<Vec<_>>();
-    files.sort();
-    assert!(!files.is_empty(), "no scenarios in {}", directory.display());
-    files
-}
-
-fn check_goldens(tool: &str, run: Runner) {
-    let update =
-        std::env::var_os("MMORPG_SCENARIOS_UPDATE").is_some() || mmorpg_core::golden::updating();
+#[test]
+fn control_plane_scenarios_match_expected_output() {
     let mut mismatches = Vec::new();
-    for path in scenario_files(tool) {
+    for path in support::scenario_files("control-plane") {
         let text = std::fs::read_to_string(&path).unwrap();
-        let report = run(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        let report =
+            run_control_plane(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
         let actual = report.to_text();
         let expected_path = path.with_extension("expected");
-        if update {
+        if support::updating() {
             std::fs::write(&expected_path, &actual).unwrap();
         } else {
             let expected = std::fs::read_to_string(&expected_path).unwrap_or_default();
@@ -66,45 +48,13 @@ fn check_goldens(tool: &str, run: Runner) {
             "checked-in scenario {} must pass:\n{actual}",
             path.display()
         );
-        check_json_matches_text(&report);
+        support::check_json_matches_text(&report);
     }
     assert!(
         mismatches.is_empty(),
         "scenario output changed; rerun with MMORPG_SCENARIOS_UPDATE=1 if intentional:\n{}",
         mismatches.join("\n")
     );
-}
-
-fn check_json_matches_text(report: &Report) {
-    let json = report.to_json_lines();
-    let lines = json
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
-    assert_eq!(lines.len(), report.to_text().lines().count());
-    let result = lines.last().unwrap();
-    assert_eq!(result["type"], "result");
-    assert_eq!(result["passed"], report.passed());
-}
-
-#[test]
-fn bot_scenarios_match_expected_output() {
-    check_goldens("bots", run_bots);
-}
-
-#[test]
-fn control_plane_scenarios_match_expected_output() {
-    check_goldens("control-plane", run_control_plane);
-}
-
-#[test]
-fn bot_runs_are_deterministic() {
-    for path in scenario_files("bots") {
-        let text = std::fs::read_to_string(&path).unwrap();
-        let first = run_bots(&text).unwrap().to_json_lines();
-        let second = run_bots(&text).unwrap().to_json_lines();
-        assert_eq!(first, second, "{}", path.display());
-    }
 }
 
 #[test]
@@ -409,7 +359,7 @@ fn cli(arguments: &[&str]) -> std::process::Output {
 
 #[test]
 fn cli_reports_pass_fail_and_usage_through_exit_codes() {
-    let passing = scenario_files("control-plane")[0].clone();
+    let passing = support::scenario_files("control-plane")[0].clone();
     let passing = passing.to_str().unwrap();
     let output = cli(&["control-plane", "--json", passing]);
     assert_eq!(output.status.code(), Some(0));

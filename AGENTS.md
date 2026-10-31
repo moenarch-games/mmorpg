@@ -50,7 +50,7 @@ cargo test -p mmorpg-core --features physics-ab --test physics_ab --locked      
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab --locked                           # manual A/B physics timing
 cargo run -p mmorpg-scenarios --locked -- bots crates/mmorpg-scenarios/scenarios/bots/*.toml                    # headless multiplayer bots, no GPU
 cargo run -p mmorpg-scenarios --locked -- control-plane crates/mmorpg-scenarios/scenarios/control-plane/*.toml  # lease/handoff invariants
-MMORPG_SCENARIOS_UPDATE=1 cargo test -p mmorpg-scenarios --test scenarios --locked                              # regenerate expected scenario outputs
+MMORPG_SCENARIOS_UPDATE=1 cargo test -p mmorpg-scenarios --locked                                              # regenerate expected scenario outputs
 MMORPG_UPDATE_FIXTURES=1 cargo nextest run --workspace --locked                                                 # regenerate every golden fixture (protocol hex, traces, scenarios); review the diff
 python3 scripts/smoke-native.py      # offscreen end-to-end: host + client + GPU frame
 python3 scripts/smoke-handoff.py     # two handoff hosts on PostgreSQL 17 (Docker): the native autopilot walks and teleports between them (#145)

@@ -1,0 +1,18 @@
+# cargo-nextest configuration (#540).
+#
+# The test phase's critical path is its longest single tests. They start first, so they run
+# beside the many short tests instead of after them. Higher priority starts earlier (default 0).
+
+[[profile.default.overrides]]
+# Whole-journey runs of minutes each.
+filter = """
+binary(quest_chain) | binary(night_raid) | binary(highlands) | binary(starter_acceptance)
+| binary(marsh) | binary(farmland) | binary(combat_workload)
+"""
+priority = 50
+
+[[profile.default.overrides]]
+# The physics A/B and bot scenarios run one trial per workload or scenario file; the long ones
+# (thousands of ticks, the A/B's four runs of each) start with the journeys.
+filter = "test(=vale-wolf-hunt) | test(=vale-mill-hoist) | test(=vale-climb) | test(=vale-crate-smash)"
+priority = 60

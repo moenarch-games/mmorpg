@@ -173,10 +173,10 @@ jobs:
       # Ordinary Rust PRs run the workspace tests too. GPU tests are #[ignore]d, and the native/Pages
       # reference tests (they build the WASM page with Bun and wasm-bindgen) stay in full validation.
       # The merge-blocking physics backend A/B test (physics-engine #330) needs the test-only
-      # `physics-ab` feature; full validation's --all-features run includes it. That single ~3 min
-      # test starts first and runs on one core while the workspace suite builds and runs on the
-      # others; either failure fails the step.
-      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run -p mmorpg-core --features physics-ab --test physics_ab --locked & physics_ab=$!; cargo nextest run --workspace --locked -E "not (test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content) | test(~pages_reference_inventory_covers_current_world_scope))"; wait "$physics_ab"' || '') }}
+      # `physics-ab` feature; full validation's --all-features run includes it, ordinary runs
+      # enable it in the same invocation. Its workloads and the bot scenarios are one trial each
+      # and the long journeys start first (.config/nextest.toml, #540).
+      test_command: ${{ needs.scope.outputs.full_validation == 'true' && 'python3 scripts/test-dev-native.py && cargo nextest run --workspace --all-features --locked' || (needs.scope.outputs.rust_changed == 'true' && 'cargo nextest run --workspace --features mmorpg-core/physics-ab --locked -E "not (test(~every_world_prop_region_and_day_phase_matches_pages_submitted_content) | test(~pages_reference_inventory_covers_current_world_scope))"' || '') }}
       build_command: ${{ (needs.scope.outputs.rust_changed == 'true' || needs.scope.outputs.full_validation == 'true') && (needs.scope.outputs.full_validation == 'true' && 'cargo build --workspace --all-features --locked && cargo build -p mmorpg-core -p mmorpg-protocol -p mmorpg-wasm --target wasm32-unknown-unknown --locked' || 'cargo check --workspace --locked') || '' }}
 
   clippy:
