@@ -265,7 +265,6 @@ impl ZoneSimulation {
                     player.inventory = bag;
                     player.copper = copper;
                     player.inventory_revision = revision;
-                    player.inventory_changed_at = self.tick + 1;
                     None
                 }
             },

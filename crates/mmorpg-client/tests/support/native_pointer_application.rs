@@ -487,7 +487,6 @@ impl NativeApplication {
         player.combat.intents.clear();
         player.copper = 20;
         player.quests = mmorpg_core::QuestLog::default();
-        player.quests_changed_at = snapshot.tick;
         for &(id, position) in creatures {
             let creature = snapshot
                 .creatures
@@ -866,7 +865,6 @@ fn native_pointer_application_contract() {
     // must still request completion and the real core settles the reward.
     let mut ready = app.snapshot();
     ready.players[0].quests.entries[0].progress[0] = 6;
-    ready.players[0].quests_changed_at = ready.tick;
     app.restore(ready);
     let before = app.snapshot().players[0].clone();
     app.key("1");
@@ -899,8 +897,6 @@ fn native_pointer_application_contract() {
         .insert(mmorpg_core::ItemId::new(10), 5)
         .unwrap();
     player.inventory_revision += 1;
-    player.inventory_changed_at = ready.tick;
-    player.quests_changed_at = ready.tick;
     app.restore(ready);
     app.until(
         "Tanner restored self sheets reach actual application context",

@@ -259,7 +259,6 @@ impl crate::ZoneSimulation {
                     player.equipment = equipment;
                     player.inventory = bag;
                     player.inventory_revision = revision;
-                    player.inventory_changed_at = self.tick + 1;
                     player.health = follow_max_health(player.health, old_max, player.max_health());
                     None
                 }

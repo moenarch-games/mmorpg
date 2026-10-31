@@ -89,7 +89,6 @@ fn equipping_unequipping_and_swapping_share_the_bag_revision_and_sheet() {
     assert_eq!(player.inventory.slots()[1], None);
     assert_eq!(player.inventory.slots()[0], stack(FUR, 3));
     assert_eq!(player.inventory_revision, before + 1);
-    assert_eq!(player.inventory_changed_at, state.tick);
     // The change tick sends the whole sheet under the shared revision.
     let view = zone.snapshot_for_player(1).unwrap();
     assert_eq!(view.inventory_revision, before + 1);
@@ -202,7 +201,6 @@ fn every_refusal_leaves_bag_equipment_health_and_revision_unchanged() {
         assert_eq!(after.equipment, before.equipment, "{command:?}");
         assert_eq!(after.combat.health, before.combat.health, "{command:?}");
         assert_eq!(after.inventory_revision, revision, "{command:?}");
-        assert_eq!(after.inventory_changed_at, before.inventory_changed_at);
     }
     // The dead are refused unequipping too.
     let mut zone = restored(starter_bag(), &[TUNIC], Some(0));

@@ -181,7 +181,6 @@ fn sequenced_pending_claim_recovers_and_commits_items_and_copper_once() {
         after.players[0].inventory_revision,
         before.players[0].inventory_revision + 1
     );
-    assert_eq!(after.players[0].inventory_changed_at, after.tick);
     assert!(after.creatures[0].loot.is_none());
     assert!(zone.snapshot_for_player(1).unwrap().loot.is_none());
     assert!(
