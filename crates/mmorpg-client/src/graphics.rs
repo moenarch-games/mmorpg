@@ -10,7 +10,6 @@ use std::{sync::Arc, time::Duration};
 use three_d_camera::PerspectiveCamera;
 use three_d_core::Vec3;
 use winit::window::Window;
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const FAR_PLANE_METRES: f32 = 1400.;
 
 /// Screen-space interface painted into the finished, resolved frame after the
@@ -32,9 +31,6 @@ pub struct SceneRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     frame: frame::FrameRenderer,
-    depth: wgpu::TextureView,
-    multisampled: Option<wgpu::TextureView>,
-    samples: u32,
     format: wgpu::TextureFormat,
     width: u32,
     height: u32,
@@ -46,40 +42,38 @@ impl SceneRenderer {
         width: u32,
         height: u32,
     ) -> Result<Self, ClientError> {
+        // render-engine's sky needs filterable float LUTs; unclipped shadow depth and the
+        // sky's dual-source blend are used where the adapter has them.
+        if !adapter
+            .features()
+            .contains(wgpu::Features::FLOAT32_FILTERABLE)
+        {
+            return Err("the GPU adapter lacks FLOAT32_FILTERABLE, which the sky needs".into());
+        }
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("MMORPG client"),
+                required_features: adapter.features()
+                    & (wgpu::Features::DEPTH_CLIP_CONTROL
+                        | wgpu::Features::DUAL_SOURCE_BLENDING
+                        | wgpu::Features::FLOAT32_FILTERABLE),
                 ..Default::default()
             })
             .await?;
-        let x4 = wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X4;
-        let samples = if adapter
-            .get_texture_format_features(format)
-            .flags
-            .contains(x4)
-            && adapter
-                .get_texture_format_features(DEPTH_FORMAT)
-                .flags
-                .contains(x4)
-        {
-            4
-        } else {
-            1
-        };
-        let frame = frame::FrameRenderer::new(&device, format, samples);
-        let depth = depth_texture(&device, width, height, samples);
-        let multisampled = color_texture(&device, width, height, format, samples);
+        let frame = frame::FrameRenderer::new(&device, &queue, format, [width, height]);
         Ok(Self {
             device,
             queue,
             frame,
-            depth,
-            multisampled,
-            samples,
             format,
             width,
             height,
         })
+    }
+    fn resize(&mut self, width: u32, height: u32) {
+        self.width = width;
+        self.height = height;
+        self.frame.resize([width, height]);
     }
     fn render(
         &mut self,
@@ -89,19 +83,8 @@ impl SceneRenderer {
         view: CameraView,
         overlay: Option<&mut dyn Overlay>,
     ) -> Result<(), ClientError> {
-        self.frame.render(
-            &self.device,
-            &self.queue,
-            frame::Target {
-                view: self.multisampled.as_ref().unwrap_or(target),
-                resolve: self.multisampled.as_ref().map(|_| target),
-                depth: &self.depth,
-                viewport: [self.width, self.height],
-            },
-            frame,
-            hud,
-            view,
-        )?;
+        self.frame
+            .render(&self.device, &self.queue, target, frame, hud, view)?;
         match overlay {
             Some(overlay) => overlay.paint(OverlayTarget {
                 device: &self.device,
@@ -114,57 +97,8 @@ impl SceneRenderer {
         }
     }
 }
-fn depth_texture(
-    device: &wgpu::Device,
-    width: u32,
-    height: u32,
-    samples: u32,
-) -> wgpu::TextureView {
-    device
-        .create_texture(&wgpu::TextureDescriptor {
-            label: Some("depth"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: samples,
-            dimension: wgpu::TextureDimension::D2,
-            format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        })
-        .create_view(&Default::default())
-}
-
-fn color_texture(
-    device: &wgpu::Device,
-    width: u32,
-    height: u32,
-    format: wgpu::TextureFormat,
-    samples: u32,
-) -> Option<wgpu::TextureView> {
-    (samples > 1).then(|| {
-        device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("antialiased world"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: samples,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            })
-            .create_view(&Default::default())
-    })
-}
-
+/// The CPU camera picking and nameplates project through; render-engine draws the same eye,
+/// target and field of view (its projection is infinite reverse-Z).
 pub(crate) fn scene_camera(
     view: CameraView,
     viewport: [u32; 2],
@@ -297,21 +231,7 @@ impl WindowRenderer {
         let limit = self.renderer.device.limits().max_texture_dimension_2d;
         self.config.width = width.min(limit);
         self.config.height = height.min(limit);
-        self.renderer.width = self.config.width;
-        self.renderer.height = self.config.height;
-        self.renderer.depth = depth_texture(
-            &self.renderer.device,
-            self.config.width,
-            self.config.height,
-            self.renderer.samples,
-        );
-        self.renderer.multisampled = color_texture(
-            &self.renderer.device,
-            self.config.width,
-            self.config.height,
-            self.renderer.format,
-            self.renderer.samples,
-        );
+        self.renderer.resize(self.config.width, self.config.height);
         self.surface.configure(&self.renderer.device, &self.config);
     }
     pub fn render(
@@ -566,6 +486,156 @@ mod tests {
                 assert!(colours.len() > 100, "{name} must show the rendered Outpost");
                 save_smoke_frame(&format!("outpost-relief-{name}.ppm"), &pixels);
                 println!("authored Outpost {name} frame: {} colours", colours.len());
+            }
+        });
+    }
+
+    /// Advisory frame time (PRINCIPLE-015): the Outpost hub with its units, 1280×720, each
+    /// frame skinned, submitted and waited for. Prints the median and p95 wall time.
+    #[test]
+    #[ignore = "requires a GPU; manual frame-time measurement"]
+    fn outpost_frame_time() {
+        use mmorpg_core::ZoneCommand;
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let content = greyhaven_vale::content();
+            let mut zone =
+                ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+            zone.add_player(1).unwrap();
+            zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 1, sex: 0 })
+                .unwrap();
+            zone.advance_tick().unwrap();
+            let projection = zone.snapshot_for_player(1).unwrap();
+            let scenery = greyhaven_vale_scenery();
+            let world = WorldScene::new(&scenery);
+            let start = Instant::now();
+            let mut presentation =
+                Presentation::new(1, scenery.clone(), Arc::clone(&content), start).unwrap();
+            presentation.push(projection, start).unwrap();
+            let view = CameraView {
+                field_of_view_degrees: 50.0,
+                eye: [5.0, 8.5, 31.0],
+                target: [-14.0, 3.0, 4.0],
+            };
+            let size = [1280, 720];
+            let instance = wgpu::Instance::default();
+            let adapter = instance.request_adapter(&Default::default()).await.unwrap();
+            let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+            let mut renderer = SceneRenderer::new(&adapter, format, size[0], size[1])
+                .await
+                .unwrap();
+            let target = renderer.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("frame time"),
+                size: wgpu::Extent3d {
+                    width: size[0],
+                    height: size[1],
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let target = target.create_view(&Default::default());
+            let mut times = Vec::new();
+            let mut render_times = Vec::new();
+            for index in 0..240 {
+                let now = start + Duration::from_millis(16 * index);
+                let begin = Instant::now();
+                let frame = presentation.frame(&world, now, view);
+                let rendering = Instant::now();
+                renderer.render(&target, &frame, &[], view, None).unwrap();
+                renderer
+                    .device
+                    .poll(wgpu::PollType::Wait {
+                        submission_index: None,
+                        timeout: Some(Duration::from_secs(10)),
+                    })
+                    .unwrap();
+                if index >= 40 {
+                    times.push(begin.elapsed().as_secs_f64() * 1e3);
+                    render_times.push(rendering.elapsed().as_secs_f64() * 1e3);
+                }
+            }
+            times.sort_by(f64::total_cmp);
+            render_times.sort_by(f64::total_cmp);
+            println!(
+                "adapter={} frame_ms median={:.2} p95={:.2} render_ms median={:.2} p95={:.2}",
+                adapter.get_info().name,
+                times[times.len() / 2],
+                times[times.len() * 95 / 100],
+                render_times[render_times.len() / 2],
+                render_times[render_times.len() * 95 / 100]
+            );
+        });
+    }
+
+    /// Reviewable lighting evidence (#529): the Outpost at noon, dusk and night, and a
+    /// campfire and the lantern post by night, as PNGs in `MMORPG_LIGHTING_SHOTS`.
+    #[test]
+    #[ignore = "requires a GPU; manual lighting evidence"]
+    fn greyhaven_lighting_shots() {
+        use mmorpg_core::ZoneCommand;
+        let Some(directory) = std::env::var_os("MMORPG_LIGHTING_SHOTS") else {
+            return;
+        };
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let content = greyhaven_vale::content();
+            let mut zone =
+                ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+            zone.add_player(1).unwrap();
+            zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 1, sex: 0 })
+                .unwrap();
+            zone.advance_tick().unwrap();
+            let projection = zone.snapshot_for_player(1).unwrap();
+            let scenery = greyhaven_vale_scenery();
+            let world = WorldScene::new(&scenery);
+            let now = Instant::now();
+            let mut presentation =
+                Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
+            presentation.push(projection, now).unwrap();
+            let hub = presentation.camera_view(&mut OrbitCamera::default(), &world, now);
+            let lights = world.frame(0.0, false, hub.eye, None).lighting.point_lights;
+            let near = |light: &crate::environment::PointLight| CameraView {
+                field_of_view_degrees: 50.0,
+                eye: [
+                    light.position[0] + 5.0,
+                    light.position[1] + 2.5,
+                    light.position[2] + 6.0,
+                ],
+                target: [
+                    light.position[0],
+                    light.position[1] - 1.2,
+                    light.position[2],
+                ],
+            };
+            let campfire = near(lights.first().unwrap());
+            let lantern = near(lights.last().unwrap());
+            let size = [1280, 720];
+            for (name, hour, view) in [
+                ("noon", 12.0, hub),
+                ("dusk", 17.8, hub),
+                ("night", 23.5, hub),
+                ("torch-campfire", 22.0, campfire),
+                ("torch-lantern", 22.0, lantern),
+            ] {
+                let mut frame = presentation.frame(&world, now, view);
+                frame.lighting.hour = hour;
+                let pixels = readback(&frame, &[], view, size, None).await.unwrap();
+                image::save_buffer(
+                    directory.join(format!("re9-{name}.png")),
+                    &pixels,
+                    size[0],
+                    size[1],
+                    image::ExtendedColorType::Rgba8,
+                )
+                .unwrap();
+                println!("saved re9-{name}.png");
             }
         });
     }

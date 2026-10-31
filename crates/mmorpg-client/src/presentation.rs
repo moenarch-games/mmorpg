@@ -668,19 +668,17 @@ impl Presentation {
             view.eye,
             viewer,
         );
-        // The sky shows the zone's time of day; clouds keep drifting on the client clock.
+        // The sun, moon and sky follow the zone's time of day; flames flicker on the client
+        // clock.
         if let Some(mut tick) = self.latest().map(|snapshot| snapshot.tick) {
             // Reduced motion steps the sky once per zone hour instead of drifting.
             if self.reduced_motion {
                 let hour = u64::from(mmorpg_core::HOUR_TICKS);
                 tick -= (tick + u64::from(mmorpg_core::ZONE_START_TIME)) % hour;
             }
-            let clouds = frame.environment.cloud_offset;
-            frame.environment = crate::environment::Environment::at(
-                crate::environment::zone_sky_seconds(tick),
-                true,
-            );
-            frame.environment.cloud_offset = clouds;
+            let lights = std::mem::take(&mut frame.lighting.point_lights);
+            frame.lighting = crate::world::Lighting::at(crate::environment::zone_hour(tick));
+            frame.lighting.point_lights = lights;
         }
         frame.draws.extend(self.unit_draws(now, view));
         self.append_buildings(&mut frame.draws, now);

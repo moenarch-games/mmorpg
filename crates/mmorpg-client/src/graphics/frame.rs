@@ -1,48 +1,68 @@
-//! Retained wgpu resources for the application's renderer-neutral draw frames.
-use super::{ClientError, DEPTH_FORMAT, scene_camera};
+//! The application's renderer-neutral draw frames on render-engine (#529): meshes and
+//! materials live in its `World` behind stable handles, the lighting is its physical `Scene`
+//! (sun, moon, sky, cascaded shadows, sky ambient light, fog, point lights), and the combat HUD
+//! is drawn over its tone-mapped output.
+use super::ClientError;
 use crate::{
     camera::CameraView,
+    environment::Lighting,
     hud::{HudRect, MAX_HUD_RECTS},
-    world::{SceneDraw, WorldFrame},
+    world::{DrawMaterial, SceneDraw, WorldFrame},
 };
 use bytemuck::{Pod, Zeroable};
+use render_engine::{
+    glam::{Mat4, Vec3, Vec4},
+    material::{AlphaMode, StandardMaterial},
+    mesh::MeshData,
+    renderer::{Renderer, Viewport},
+    scene::{
+        Ambient, Camera, DayCycle, Fog, FogFalloff, Moon, PointLight, RAW_SUNLIGHT, Scene,
+        ShadowFilter, ShadowMapSizes, Sky, Sun, SunShadows, Tonemapping,
+    },
+    world::{Instance, MaterialId, MeshId, World},
+};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::HashMap,
     mem,
     sync::{Arc, Weak},
 };
 use three_d_core::Mesh;
-use wgpu::util::DeviceExt;
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    normal: [f32; 3],
-    color: [f32; 3],
-}
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Instance {
-    model: [f32; 16],
-    normal: [[f32; 4]; 3],
-    color: [f32; 4],
-    emissive: [f32; 4],
-}
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Uniforms {
-    camera: [f32; 16],
-    eye: [f32; 4],
-    direction: [f32; 4],
-    sky: [f32; 4],
-    ground: [f32; 4],
-    sun_direction: [f32; 4],
-    sun: [f32; 4],
-    fog: [f32; 4],
-    settings: [f32; 4],
-    background: [f32; 4],
-}
+/// Greyhaven's sun path: 60° above the southern horizon at noon, the moon opposite.
+pub const DAY_CYCLE: DayCycle = DayCycle {
+    noon_elevation: 60f32.to_radians(),
+    moon_lag_hours: 12.0,
+};
+/// Moonlight in lux: brighter than a real full moon (0.25 lx) so night stays playable.
+pub const MOON_LUX: f32 = 2.0;
+/// Cool, slightly blue moonlight.
+pub const MOON_COLOR: Vec3 = Vec3::new(0.75, 0.85, 1.0);
+/// EV100 by sun elevation in degrees, interpolated linearly: render-engine's `sky_day_cycle`
+/// oracle views at noon, 15° and 2°, and a brighter-than-physical night for play.
+pub const EXPOSURE: [(f32, f32); 5] = [
+    (-12.0, 2.0),
+    (-4.0, 6.0),
+    (2.0, 11.0),
+    (15.0, 13.5),
+    (60.0, 14.5),
+];
+/// Emissive presentation colours are scaled to this luminance in cd/m²: flames, lamp glass and
+/// lit windows glow in their own colour at night; by day the sun outshines them.
+pub const EMISSIVE_NITS: f32 = 80.0;
+/// Sun cascades sized for the gameplay camera, 4 to 30 m from the player.
+pub const SUN_SHADOWS: SunShadows = SunShadows {
+    num_cascades: 4,
+    min_distance: 0.2,
+    first_cascade_far_bound: 12.0,
+    max_distance: 160.0,
+    overlap_proportion: 0.2,
+    depth_bias: 0.02,
+    normal_bias: 1.8,
+};
+/// Below this sun elevation (degrees) the sun casts no shadows; its light has faded out.
+const SHADOWLESS_BELOW: f32 = -3.0;
+const NEAR_PLANE_METRES: f32 = 0.2;
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct HudInstance {
@@ -50,20 +70,16 @@ struct HudInstance {
     max: [f32; 2],
     color: [f32; 3],
 }
-struct GpuMesh {
-    vertices: wgpu::Buffer,
-    indices: wgpu::Buffer,
-    count: u32,
+
+struct CachedMesh {
+    id: MeshId,
     source: Weak<Mesh>,
-    #[cfg(test)]
-    uploaded_bytes: u64,
+    used: bool,
 }
-struct Draw {
-    key: String,
-    pipeline: usize,
-    instance: Instance,
-    depth: f32,
-}
+
+/// A material's exact field bits.
+type MaterialKey = [u32; 9];
+
 fn linear(c: f32) -> f32 {
     if c <= 0.04045 {
         c / 12.92
@@ -71,251 +87,181 @@ fn linear(c: f32) -> f32 {
         ((c + 0.055) / 1.055).powf(2.4)
     }
 }
-fn color(c: [f32; 3], w: f32) -> [f32; 4] {
-    [linear(c[0]), linear(c[1]), linear(c[2]), w]
+fn linear3(c: [f32; 3]) -> Vec3 {
+    Vec3::from(c.map(linear))
 }
-impl GpuMesh {
-    fn upload(device: &wgpu::Device, draw: &SceneDraw) -> Result<Self, ClientError> {
-        let mesh = &draw.mesh;
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-        if let Some(normals) = &mesh.attributes().normals {
-            for (i, p) in mesh.vertices().iter().enumerate() {
-                let n = normals[i];
-                let c = mesh
-                    .attributes()
-                    .colors
-                    .as_ref()
-                    .map_or([1.; 3], |c| [c[i].r, c[i].g, c[i].b]);
-                vertices.push(Vertex {
-                    position: [p.x, p.y, p.z],
-                    normal: [n.x, n.y, n.z],
-                    color: c.map(linear),
-                });
-            }
-            indices.extend_from_slice(mesh.indices());
-        } else {
-            for (triangle, tri) in mesh.indices().as_chunks::<3>().0.iter().enumerate() {
-                let Some(n) = mesh.triangle_normal(triangle) else {
-                    continue;
-                };
-                for index in tri {
-                    let i = *index as usize;
-                    let p = mesh.vertices()[i];
-                    let c = mesh
-                        .attributes()
-                        .colors
-                        .as_ref()
-                        .map_or([1.; 3], |c| [c[i].r, c[i].g, c[i].b]);
-                    indices.push(u32::try_from(vertices.len())?);
-                    vertices.push(Vertex {
-                        position: [p.x, p.y, p.z],
-                        normal: [n.x, n.y, n.z],
-                        color: c.map(linear),
-                    });
+
+/// render-engine's mesh for a presentation mesh; meshes without normals are flat shaded.
+fn mesh_data(mesh: &Mesh) -> MeshData {
+    let colors = mesh.attributes().colors.as_ref();
+    let color =
+        |i: usize| colors.map_or(Vec4::ONE, |c| linear3([c[i].r, c[i].g, c[i].b]).extend(1.));
+    let position = |i: usize| {
+        let p = mesh.vertices()[i];
+        Vec3::new(p.x, p.y, p.z)
+    };
+    let mut data = MeshData::default();
+    if let Some(normals) = &mesh.attributes().normals {
+        let count = mesh.vertices().len();
+        data.positions = (0..count).map(position).collect();
+        data.normals = normals.iter().map(|n| Vec3::new(n.x, n.y, n.z)).collect();
+        if colors.is_some() {
+            data.colors = (0..count).map(color).collect();
+        }
+        data.indices = mesh.indices().to_vec();
+    } else {
+        for (triangle, corners) in mesh.indices().as_chunks::<3>().0.iter().enumerate() {
+            let Some(n) = mesh.triangle_normal(triangle) else {
+                continue;
+            };
+            for &index in corners {
+                let i = index as usize;
+                data.indices.push(data.positions.len() as u32);
+                data.positions.push(position(i));
+                data.normals.push(Vec3::new(n.x, n.y, n.z));
+                if colors.is_some() {
+                    data.colors.push(color(i));
                 }
             }
         }
-        Ok(Self {
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&draw.resource_key),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("scene indices"),
-                contents: bytemuck::cast_slice(&indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
-            count: u32::try_from(indices.len())?,
-            source: Arc::downgrade(mesh),
-            #[cfg(test)]
-            uploaded_bytes: (vertices.len() * mem::size_of::<Vertex>()
-                + indices.len() * mem::size_of::<u32>()) as u64,
-        })
     }
+    data
 }
-impl Instance {
-    fn new(draw: &SceneDraw) -> Result<Self, ClientError> {
-        let inverse = three_d_projective::inverse(draw.model)?;
-        let m = inverse.elements;
-        Ok(Self {
-            model: draw.model.elements,
-            normal: [
-                [m[0], m[4], m[8], 0.],
-                [m[1], m[5], m[9], 0.],
-                [m[2], m[6], m[10], 0.],
-            ],
-            color: color(draw.material.color, draw.material.opacity),
-            emissive: color(
-                draw.material.emissive,
-                if draw.material.unlit { 1. } else { 0. },
-            ),
-        })
+
+fn material_key(m: &DrawMaterial) -> MaterialKey {
+    let [r, g, b] = m.color.map(f32::to_bits);
+    let [er, eg, eb] = m.emissive.map(f32::to_bits);
+    [
+        r,
+        g,
+        b,
+        er,
+        eg,
+        eb,
+        m.opacity.to_bits(),
+        u32::from(m.unlit),
+        u32::from(m.double_sided),
+    ]
+}
+
+fn standard_material(m: &DrawMaterial) -> StandardMaterial {
+    StandardMaterial {
+        base_color: linear3(m.color).extend(m.opacity),
+        emissive: linear3(m.emissive) * EMISSIVE_NITS,
+        // The browser's MeshStandardMaterial: roughness 0.86, metalness 0.02.
+        perceptual_roughness: 0.86,
+        metallic: 0.02,
+        alpha_mode: if m.opacity < 1. {
+            AlphaMode::Blend
+        } else {
+            AlphaMode::Opaque
+        },
+        double_sided: m.double_sided,
+        unlit: m.unlit,
+        ..StandardMaterial::default()
     }
 }
 
-pub(super) struct Target<'a> {
-    pub view: &'a wgpu::TextureView,
-    pub resolve: Option<&'a wgpu::TextureView>,
-    pub depth: &'a wgpu::TextureView,
-    pub viewport: [u32; 2],
+/// EV100 for a sun `elevation` in degrees, from [`EXPOSURE`].
+#[must_use]
+pub fn ev100(elevation: f32) -> f32 {
+    let first = EXPOSURE[0];
+    let last = EXPOSURE[EXPOSURE.len() - 1];
+    if elevation <= first.0 {
+        return first.1;
+    }
+    for pair in EXPOSURE.windows(2) {
+        let [(e0, v0), (e1, v1)] = [pair[0], pair[1]];
+        if elevation <= e1 {
+            return v0 + (v1 - v0) * (elevation - e0) / (e1 - e0);
+        }
+    }
+    last.1
+}
+
+/// render-engine's scene for one frame's lighting seen from `view`.
+#[must_use]
+pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
+    let to_sun = DAY_CYCLE.to_sun(lighting.hour);
+    let elevation = to_sun.y.clamp(-1., 1.).asin().to_degrees();
+    let fog = &lighting.fog;
+    Scene {
+        camera: Camera {
+            eye: Vec3::from(view.eye),
+            target: Vec3::from(view.target),
+            fov_y: view.field_of_view_degrees.to_radians(),
+            near: NEAR_PLANE_METRES,
+            ev100: ev100(elevation),
+            shadow_filter: ShadowFilter::Gaussian,
+            tonemapping: Tonemapping::TonyMcMapface,
+        },
+        clear_color: Vec3::ZERO,
+        sun: Some(Sun {
+            direction: -to_sun,
+            color: Vec3::ONE,
+            illuminance: RAW_SUNLIGHT,
+            shadows: (elevation > SHADOWLESS_BELOW).then_some(SUN_SHADOWS),
+        }),
+        moon: Some(Moon {
+            direction: -DAY_CYCLE.to_moon(lighting.hour),
+            color: MOON_COLOR,
+            illuminance: MOON_LUX,
+        }),
+        // The sky's environment light is the ambient light.
+        sky: Some(Sky::default()),
+        point_lights: lighting
+            .point_lights
+            .iter()
+            .map(|light| PointLight {
+                position: Vec3::from(light.position),
+                color: linear3(light.color),
+                intensity: light.lumens,
+                range: light.range,
+                radius: 0.1,
+                shadows: None,
+            })
+            .collect(),
+        spot_lights: Vec::new(),
+        shadow_maps: ShadowMapSizes::default(),
+        ambient: Ambient {
+            color: Vec3::ONE,
+            brightness: 0.,
+        },
+        environment: None,
+        fog: Some(Fog {
+            color: linear3(fog.color).extend(1.),
+            falloff: FogFalloff::Linear {
+                start: fog.near,
+                end: fog.far,
+            },
+            ..Fog::default()
+        }),
+    }
 }
 
 pub(super) struct FrameRenderer {
-    pipelines: Vec<wgpu::RenderPipeline>,
-    sky_pipeline: wgpu::RenderPipeline,
+    renderer: Renderer,
+    world: World,
+    viewport: Viewport,
+    meshes: HashMap<String, CachedMesh>,
+    materials: HashMap<MaterialKey, (MaterialId, bool)>,
     hud_pipeline: wgpu::RenderPipeline,
     hud_buffer: wgpu::Buffer,
-    uniforms: wgpu::Buffer,
-    binding: wgpu::BindGroup,
-    instances: wgpu::Buffer,
-    capacity: usize,
-    meshes: BTreeMap<String, GpuMesh>,
+    /// Mesh uploads (new or rewritten), reuses and uploaded vertex bytes.
     #[cfg(test)]
     observation: [u64; 3],
 }
+
 impl FrameRenderer {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, samples: u32) -> Self {
-        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("world environment"),
-            size: mem::size_of::<Uniforms>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let binding_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("world environment"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let binding = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("world environment"),
-            layout: &binding_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniforms.as_entire_binding(),
-            }],
-        });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("world frame"),
-            bind_group_layouts: &[Some(&binding_layout)],
-            immediate_size: 0,
-        });
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("world frame"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../world.wgsl").into()),
-        });
-        const VA: [wgpu::VertexAttribute; 3] =
-            wgpu::vertex_attr_array![0=>Float32x3,1=>Float32x3,2=>Float32x3];
-        const IA: [wgpu::VertexAttribute; 9] = wgpu::vertex_attr_array![3=>Float32x4,4=>Float32x4,5=>Float32x4,6=>Float32x4,7=>Float32x4,8=>Float32x4,9=>Float32x4,10=>Float32x4,11=>Float32x4];
-        let buffers = [
-            Some(wgpu::VertexBufferLayout {
-                array_stride: mem::size_of::<Vertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &VA,
-            }),
-            Some(wgpu::VertexBufferLayout {
-                array_stride: mem::size_of::<Instance>() as u64,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &IA,
-            }),
-        ];
-        let pipelines = (0..8)
-            .map(|flags| {
-                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("world materials"),
-                    layout: Some(&layout),
-                    vertex: wgpu::VertexState {
-                        module: &shader,
-                        entry_point: Some("vs_main"),
-                        compilation_options: Default::default(),
-                        buffers: &buffers,
-                    },
-                    primitive: wgpu::PrimitiveState {
-                        cull_mode: if flags & 1 == 0 {
-                            Some(wgpu::Face::Back)
-                        } else {
-                            None
-                        },
-                        front_face: if flags & 2 == 0 {
-                            wgpu::FrontFace::Ccw
-                        } else {
-                            wgpu::FrontFace::Cw
-                        },
-                        ..Default::default()
-                    },
-                    depth_stencil: Some(wgpu::DepthStencilState {
-                        format: DEPTH_FORMAT,
-                        depth_write_enabled: Some(true),
-                        depth_compare: Some(wgpu::CompareFunction::Less),
-                        stencil: Default::default(),
-                        bias: Default::default(),
-                    }),
-                    multisample: wgpu::MultisampleState {
-                        count: samples,
-                        ..Default::default()
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &shader,
-                        entry_point: Some("fs_main"),
-                        compilation_options: Default::default(),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format,
-                            blend: if flags & 4 != 0 {
-                                Some(wgpu::BlendState::ALPHA_BLENDING)
-                            } else {
-                                None
-                            },
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                    }),
-                    multiview_mask: None,
-                    cache: None,
-                })
-            })
-            .collect();
-        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("sky gradient and clouds"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("sky_vertex"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            primitive: Default::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: samples,
-                ..Default::default()
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("sky_fragment"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        [width, height]: [u32; 2],
+    ) -> Self {
+        let renderer = Renderer::new(device, queue, format);
+        let world = World::new(&renderer);
+        let viewport = Viewport::new(&renderer, width, height);
         let hud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("combat HUD"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../hud.wgsl").into()),
@@ -341,17 +287,8 @@ impl FrameRenderer {
                 })],
             },
             primitive: Default::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: samples,
-                ..Default::default()
-            },
+            depth_stencil: None,
+            multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &hud_shader,
                 entry_point: Some("fs_main"),
@@ -366,8 +303,11 @@ impl FrameRenderer {
             cache: None,
         });
         Self {
-            pipelines,
-            sky_pipeline,
+            renderer,
+            world,
+            viewport,
+            meshes: HashMap::new(),
+            materials: HashMap::new(),
             hud_pipeline,
             hud_buffer: device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("combat HUD"),
@@ -375,25 +315,99 @@ impl FrameRenderer {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }),
-            uniforms,
-            binding,
-            instances: instance_buffer(device, 1),
-            capacity: 1,
-            meshes: BTreeMap::new(),
             #[cfg(test)]
             observation: [0; 3],
         }
     }
+
     #[cfg(test)]
     pub(super) fn observation(&self) -> ([u64; 3], usize) {
         (self.observation, self.meshes.len())
+    }
+
+    pub fn resize(&mut self, [width, height]: [u32; 2]) {
+        self.viewport.resize(&self.renderer, width, height);
+    }
+
+    /// The mesh handle for `draw`: uploaded once per resource and rewritten in place when the
+    /// resource's geometry changed (CPU-skinned units, every frame).
+    fn mesh(&mut self, draw: &SceneDraw) -> MeshId {
+        let source = Arc::downgrade(&draw.mesh);
+        if let Some(cached) = self.meshes.get_mut(&draw.resource_key) {
+            cached.used = true;
+            if cached.source.ptr_eq(&source) {
+                #[cfg(test)]
+                {
+                    self.observation[1] += 1;
+                }
+                return cached.id;
+            }
+            let data = mesh_data(&draw.mesh);
+            #[cfg(test)]
+            {
+                self.observation[0] += 1;
+                self.observation[2] += (data.positions.len() * 64 + data.indices.len() * 4) as u64;
+            }
+            self.world.set_mesh(cached.id, &data);
+            cached.source = source;
+            return cached.id;
+        }
+        let data = mesh_data(&draw.mesh);
+        #[cfg(test)]
+        {
+            self.observation[0] += 1;
+            self.observation[2] += (data.positions.len() * 64 + data.indices.len() * 4) as u64;
+        }
+        let id = self.world.add_mesh(&data);
+        self.meshes.insert(
+            draw.resource_key.clone(),
+            CachedMesh {
+                id,
+                source,
+                used: true,
+            },
+        );
+        id
+    }
+
+    fn material(&mut self, material: &DrawMaterial) -> MaterialId {
+        let key = material_key(material);
+        let world = &mut self.world;
+        let entry = self
+            .materials
+            .entry(key)
+            .or_insert_with(|| (world.add_material(&standard_material(material)), true));
+        entry.1 = true;
+        entry.0
+    }
+
+    /// Frees meshes whose resource was not drawn and whose geometry is gone (static scenery
+    /// stays uploaded while culled), and materials not drawn this frame.
+    fn evict(&mut self) {
+        let world = &mut self.world;
+        self.meshes.retain(|_, cached| {
+            let keep = cached.used || cached.source.strong_count() > 0;
+            cached.used = false;
+            if !keep {
+                world.remove_mesh(cached.id);
+            }
+            keep
+        });
+        self.materials.retain(|_, (id, used)| {
+            let keep = *used;
+            *used = false;
+            if !keep {
+                world.remove_material(*id);
+            }
+            keep
+        });
     }
 
     pub fn render(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        target: Target<'_>,
+        target: &wgpu::TextureView,
         frame: &WorldFrame,
         hud: &[HudRect],
         view: CameraView,
@@ -401,103 +415,21 @@ impl FrameRenderer {
         if hud.len() > MAX_HUD_RECTS {
             return Err("too many combat HUD rectangles".into());
         }
-        let Target {
-            view: target,
-            resolve,
-            depth,
-            viewport,
-        } = target;
-        let camera = scene_camera(view, viewport)?;
-        let e = &frame.environment;
-        let d = std::array::from_fn::<_, 3, _>(|i| view.target[i] - view.eye[i]);
-        let distance = d.iter().map(|v| v * v).sum::<f32>().sqrt();
-        let u = Uniforms {
-            camera: camera.view_projection_matrix().elements,
-            eye: [view.eye[0], view.eye[1], view.eye[2], 0.],
-            direction: [d[0] / distance, d[1] / distance, d[2] / distance, 0.],
-            sky: color(e.sky.sky_color, e.sky.intensity),
-            ground: color(e.sky.ground_color, 0.),
-            sun_direction: [
-                e.sun.direction[0],
-                e.sun.direction[1],
-                e.sun.direction[2],
-                e.sun.intensity,
-            ],
-            sun: color(e.sun.color, 0.),
-            fog: color(e.fog.color, e.fog.near),
-            settings: [e.fog.far, 0., 0., 0.],
-            background: color(e.background, 1.),
-        };
-        queue.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
-        let mut draws = Vec::new();
+        let mut instances = Vec::with_capacity(frame.draws.len());
         for draw in &frame.draws {
             if draw.material.opacity <= 0. || draw.mesh.indices().is_empty() {
                 continue;
             }
-            let instance = Instance::new(draw)?;
-            if self
-                .meshes
-                .get(&draw.resource_key)
-                .is_none_or(|g| !g.source.ptr_eq(&Arc::downgrade(&draw.mesh)))
-            {
-                let uploaded = GpuMesh::upload(device, draw)?;
-                #[cfg(test)]
-                {
-                    self.observation[0] += 2;
-                    self.observation[2] += uploaded.uploaded_bytes;
-                }
-                self.meshes.insert(draw.resource_key.clone(), uploaded);
-            } else {
-                #[cfg(test)]
-                {
-                    self.observation[1] += 1;
-                }
-            }
-            let m = draw.model.elements;
-            let det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2])
-                + m[8] * (m[1] * m[6] - m[5] * m[2]);
-            let flags = usize::from(draw.material.double_sided)
-                | if det < 0. { 2 } else { 0 }
-                | if draw.material.opacity < 1. { 4 } else { 0 };
-            let centre = draw
-                .mesh
-                .bounds()
-                .map(|b| {
-                    [
-                        (b.min.x + b.max.x) * 0.5,
-                        (b.min.y + b.max.y) * 0.5,
-                        (b.min.z + b.max.z) * 0.5,
-                    ]
-                })
-                .unwrap_or([0.; 3]);
-            let p = std::array::from_fn::<_, 3, _>(|r| {
-                m[r] * centre[0] + m[r + 4] * centre[1] + m[r + 8] * centre[2] + m[r + 12]
-                    - view.eye[r]
-            });
-            let z = p.iter().zip(d).map(|(a, b)| a * b).sum();
-            draws.push(Draw {
-                key: draw.resource_key.clone(),
-                pipeline: flags,
-                instance,
-                depth: z,
+            instances.push(Instance {
+                mesh: self.mesh(draw),
+                material: self.material(&draw.material),
+                world_from_local: Mat4::from_cols_array(&draw.model.elements),
             });
         }
-        draws.sort_by(|a, b| match (a.pipeline & 4 != 0, b.pipeline & 4 != 0) {
-            (false, false) => (&a.key, a.pipeline).cmp(&(&b.key, b.pipeline)),
-            (true, true) => b.depth.total_cmp(&a.depth),
-            (false, true) => std::cmp::Ordering::Less,
-            (true, false) => std::cmp::Ordering::Greater,
-        });
-        let used: BTreeSet<_> = draws.iter().map(|d| d.key.as_str()).collect();
-        self.meshes.retain(|k, _| used.contains(k.as_str()));
-        if draws.len() > self.capacity {
-            self.capacity = draws.len().next_power_of_two();
-            self.instances = instance_buffer(device, self.capacity);
-        }
-        let instances: Vec<_> = draws.iter().map(|d| d.instance).collect();
-        if !instances.is_empty() {
-            queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&instances));
-        }
+        self.evict();
+        let scene = scene(&frame.lighting, view);
+        self.renderer
+            .prepare(&mut self.viewport, &self.world, &scene, &instances);
         let hud_instances: Vec<_> = hud
             .iter()
             .map(|r| HudInstance {
@@ -512,72 +444,76 @@ impl FrameRenderer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("presented world"),
         });
-        {
+        self.renderer
+            .encode(&mut encoder, &self.viewport, &self.world, target, None);
+        if !hud_instances.is_empty() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("presented world"),
+                label: Some("combat HUD"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: target,
                     depth_slice: None,
-                    resolve_target: resolve,
+                    resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: f64::from(linear(e.background[0])),
-                            g: f64::from(linear(e.background[1])),
-                            b: f64::from(linear(e.background[2])),
-                            a: 1.,
-                        }),
+                        load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.),
-                        store: wgpu::StoreOp::Discard,
-                    }),
-                    stencil_ops: None,
-                }),
+                depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_bind_group(0, &self.binding, &[]);
-            pass.set_pipeline(&self.sky_pipeline);
-            pass.draw(0..3, 0..1);
-            pass.set_vertex_buffer(1, self.instances.slice(..));
-            let mut start = 0;
-            while start < draws.len() {
-                let draw = &draws[start];
-                let mut end = start + 1;
-                // Transparent objects retain sorted order; only adjacent compatible draws coalesce.
-                while end < draws.len()
-                    && draws[end].key == draw.key
-                    && draws[end].pipeline == draw.pipeline
-                {
-                    end += 1;
-                }
-                let mesh = &self.meshes[&draw.key];
-                pass.set_pipeline(&self.pipelines[draw.pipeline]);
-                pass.set_vertex_buffer(0, mesh.vertices.slice(..));
-                pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.count, 0, u32::try_from(start)?..u32::try_from(end)?);
-                start = end;
-            }
-            if !hud_instances.is_empty() {
-                pass.set_pipeline(&self.hud_pipeline);
-                pass.set_vertex_buffer(0, self.hud_buffer.slice(..));
-                pass.draw(0..6, 0..u32::try_from(hud_instances.len())?);
-            }
+            pass.set_pipeline(&self.hud_pipeline);
+            pass.set_vertex_buffer(0, self.hud_buffer.slice(..));
+            pass.draw(0..6, 0..u32::try_from(hud_instances.len())?);
         }
         queue.submit([encoder.finish()]);
         Ok(())
     }
 }
-fn instance_buffer(device: &wgpu::Device, count: usize) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("world instances"),
-        size: (count * mem::size_of::<Instance>()) as u64,
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    })
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exposure_follows_the_oracle_views_and_brightens_night() {
+        assert_eq!(ev100(60.0), 14.5);
+        assert_eq!(ev100(90.0), 14.5);
+        assert_eq!(ev100(15.0), 13.5);
+        assert_eq!(ev100(2.0), 11.0);
+        assert_eq!(ev100(-40.0), 2.0);
+        assert!(ev100(-8.0) > 2.0 && ev100(-8.0) < 6.0);
+    }
+
+    #[test]
+    fn the_zone_clock_moves_the_sun_and_moon() {
+        const VIEW: CameraView = CameraView {
+            field_of_view_degrees: 50.0,
+            eye: [0.0, 5.0, 10.0],
+            target: [0.0, 0.0, 0.0],
+        };
+        let noon = scene(&Lighting::at(12.0), VIEW);
+        let night = scene(&Lighting::at(0.0), VIEW);
+        assert!(noon.sun.unwrap().direction.y < -0.8, "noon sun shines down");
+        assert!(noon.sun.unwrap().shadows.is_some());
+        assert!(
+            night.sun.unwrap().shadows.is_none(),
+            "no sun shadows at night"
+        );
+        assert!(
+            night.moon.unwrap().direction.y < -0.8,
+            "midnight moon shines down"
+        );
+        assert!(noon.camera.ev100 > night.camera.ev100);
+    }
+
+    #[test]
+    fn unnormalled_meshes_are_flat_shaded_with_linear_vertex_colors() {
+        let mesh = Mesh::unit_cube();
+        let data = mesh_data(&mesh);
+        assert_eq!(data.positions.len(), data.indices.len());
+        assert_eq!(data.normals.len(), data.positions.len());
+        assert!(data.colors.is_empty() || data.colors.len() == data.positions.len());
+    }
 }

@@ -663,7 +663,8 @@ fn campfire(m: &mut Model, p: &Prop, index: usize, f: Affine) -> Animated {
         id,
         geometry: Arc::new(g),
         model: matrix(ID),
-        material: material(c, false),
+        // Flames glow: they are their own light source (#529).
+        material: material(c, true),
     })
     .collect();
     Animated {
@@ -739,6 +740,34 @@ fn sails(index: usize, hub: V, yaw: f64) -> Animated {
         Motion::Sail { hub, yaw },
     )
 }
+/// A lamp's glowing glass in its own frame, for a lamp `h` metres tall.
+fn lamp_glass(h: f64) -> V {
+    [0.48, h - 0.42, 0.]
+}
+
+/// Where each lamp prop's glass hangs in the world (metres): its light (#529).
+pub(crate) fn lamp_lights(s: &Scenery, g: &TerrainGrid) -> Vec<V> {
+    s.props
+        .iter()
+        .filter(|p| p.kind == PropKind::Lamp)
+        .map(|p| {
+            let f = if p.kind.graybox() {
+                compose(&[
+                    translate(
+                        metres(p.position[0]),
+                        metres(p.position[1]),
+                        metres(p.position[2]),
+                    ),
+                    ry(yaw(p)),
+                ])
+            } else {
+                frame(p, g, 0.)
+            };
+            point(f, lamp_glass(half(p)[1] * 2.))
+        })
+        .collect()
+}
+
 pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut animations = Vec::new();
     let mut reeds = BTreeMap::<usize, Model>::new();
@@ -1117,7 +1146,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                 m.box_at(STONE_DARK, [0., 0.15, 0.], [0.18, 0.15, 0.18]);
                 m.cylinder(IRON, 6, 0.7, at(0., 0., 0., 0.08, h, 0.08));
                 m.box_at(IRON, [0.25, h - 0.05, 0.], [0.3, 0.035, 0.035]);
-                m.box_at(GLOW, [0.48, h - 0.42, 0.], [0.13, 0.18, 0.13]);
+                m.box_at(GLOW, lamp_glass(h), [0.13, 0.18, 0.13]);
                 m.put(IRON, pyramid(), at(0.48, h - 0.24, 0., 0.18, 0.18, 0.18));
             }
             PropKind::MineEntrance => {

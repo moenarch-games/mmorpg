@@ -18,6 +18,7 @@ pub mod batching;
 pub mod buildings;
 pub mod geometry;
 mod handholds;
+pub mod lights;
 pub mod outpost_kit;
 mod props;
 pub mod settlement_props;
