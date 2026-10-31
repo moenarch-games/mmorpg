@@ -3,7 +3,11 @@
 //! Presentation only; the authoritative body box still comes from content.
 use crate::world::{DrawMaterial, SceneDraw};
 use mmorpg_presentation::units::{
-    imported::{DROP_ARMOR_OUTFIT, Figure, Kind, Layer, Loadout, Mask, Outfit, UPPER_BODY_ROOT},
+    imported::{
+        BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT, BOW_STOWED_SOCKET, BowShot,
+        DROP_ARMOR_OUTFIT, Figure, Kind, Layer, Loadout, Mask, Outfit, UPPER_BODY_ROOT,
+        draw_meters,
+    },
     kit::{Frame, model},
     player::Hat,
     sway,
@@ -504,7 +508,11 @@ impl Model {
     /// mixer: each joint property takes the weighted average of the layers that drive and
     /// animate it, and a total weight below 1 leaves the remainder at rest. An empty pose rests.
     fn globals(&self, pose: &[Layer]) -> Vec<M4> {
-        let local = self.locals(pose);
+        self.globals_of(&self.locals(pose))
+    }
+
+    /// Joint transforms for each node's local transform.
+    fn globals_of(&self, local: &[Rest]) -> Vec<M4> {
         let mut globals = vec![IDENTITY; self.rest.len()];
         for &n in &self.order {
             let l = trs(local[n].t, local[n].r, local[n].s);
@@ -589,7 +597,11 @@ impl Model {
 
     /// Skinned positions and normals per primitive in model space.
     fn skin(&self, pose: &[Layer]) -> Vec<SkinnedPrimitive> {
-        let globals = self.globals(pose);
+        self.skin_globals(&self.globals(pose))
+    }
+
+    /// Skinned positions and normals per primitive in model space, for joint transforms `globals`.
+    fn skin_globals(&self, globals: &[M4]) -> Vec<SkinnedPrimitive> {
         self.primitives
             .iter()
             .map(|p| {
@@ -776,7 +788,13 @@ impl Model {
         tint: Option<[f32; 3]>,
         hidden: &[String],
     ) -> Vec<SceneDraw> {
-        self.draws_filtered(id, self.placement(root, height), pose, tint, hidden)
+        self.draws_filtered(
+            id,
+            self.placement(root, height),
+            self.skin(pose),
+            tint,
+            hidden,
+        )
     }
 
     /// Draws for one posed instance under an explicit model-to-world `placement`.
@@ -787,18 +805,42 @@ impl Model {
         pose: &[Layer],
         tint: Option<[f32; 3]>,
     ) -> Vec<SceneDraw> {
-        self.draws_filtered(id, placement, pose, tint, &[])
+        self.draws_filtered(id, placement, self.skin(pose), tint, &[])
+    }
+
+    /// The node index of glTF node `name`.
+    fn node(&self, name: &str) -> Option<usize> {
+        self.names.iter().position(|n| n.as_deref() == Some(name))
+    }
+
+    /// Draws for one instance at rest under `placement`, with node `moved.0` translated by
+    /// `moved.1` from its rest in its parent's frame: a bow's drawn nock (#556).
+    fn draws_moved(
+        &self,
+        id: &str,
+        placement: three_d_animation::Mat4,
+        moved: Option<(usize, [f32; 3])>,
+        tint: Option<[f32; 3]>,
+    ) -> Vec<SceneDraw> {
+        let mut local = self.rest.clone();
+        if let Some((node, by)) = moved {
+            for (t, by) in local[node].t.iter_mut().zip(by) {
+                *t += by;
+            }
+        }
+        let skinned = self.skin_globals(&self.globals_of(&local));
+        self.draws_filtered(id, placement, skinned, tint, &[])
     }
 
     fn draws_filtered(
         &self,
         id: &str,
         placement: three_d_animation::Mat4,
-        pose: &[Layer],
+        skinned: Vec<SkinnedPrimitive>,
         tint: Option<[f32; 3]>,
         hidden: &[String],
     ) -> Vec<SceneDraw> {
-        self.skin(pose)
+        skinned
             .into_iter()
             .zip(&self.primitives)
             .enumerate()
@@ -864,6 +906,10 @@ mod ranger_bundle {
 }
 
 /// The female figure's bundle (#493): her sockets, clips, appearance and prepared entries.
+#[allow(
+    dead_code,
+    reason = "only the male figure carries the bow whose draw MOTIONS holds"
+)]
 mod ranger_female_bundle {
     include!(concat!(env!("OUT_DIR"), "/ranger_female_bundle.rs"));
 }
@@ -1142,6 +1188,41 @@ pub(super) struct Equipment {
     pub items: Vec<(Model, &'static str, three_d_animation::Mat4)>,
     /// Per item, whether it hangs loose on its socket and swings (Atlas 6.6.39, `sway::hangs`).
     pub hanging: Vec<bool>,
+    /// The item stowed on [`BOW_STOWED_SOCKET`] that a bow shot takes in hand (#556).
+    pub bow: Option<Bow>,
+}
+
+/// A carried bow (#556): its item, the [`BOW_HAND_SOCKET`] it is held at through the bow cycle,
+/// and its [`BOW_NOCK_JOINT`] node.
+pub(super) struct Bow {
+    index: usize,
+    hand: (&'static str, three_d_animation::Mat4),
+    nock: Option<usize>,
+}
+
+/// Each clip's `humanoid-clips` `bow` draw (#556): its sample rate and `drawMeters`.
+fn bow_draws() -> &'static BTreeMap<String, (f32, Vec<f32>)> {
+    static DRAWS: OnceLock<BTreeMap<String, (f32, Vec<f32>)>> = OnceLock::new();
+    DRAWS.get_or_init(|| {
+        let motions: serde_json::Value =
+            serde_json::from_slice(ranger_file(ranger_bundle::MOTIONS))
+                .expect("the humanoid-clips descriptor is JSON");
+        motions["clips"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|clip| {
+                let bow = &clip["bow"];
+                let rate = bow["sampleRate"].as_f64()? as f32;
+                let meters = bow["drawMeters"]
+                    .as_array()?
+                    .iter()
+                    .map(|v| v.as_f64().map(|v| v as f32))
+                    .collect::<Option<Vec<_>>>()?;
+                Some((clip["name"].as_str()?.to_owned(), (rate, meters)))
+            })
+            .collect()
+    })
 }
 
 /// The `humanoid-sockets` socket `id` as its joint and column-major transform.
@@ -1181,20 +1262,32 @@ impl Equipment {
         let descriptor: serde_json::Value =
             serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
                 .expect("the sockets descriptor is JSON");
+        let items_of: Vec<_> = items
+            .iter()
+            .map(|&(entry, socket_id)| {
+                let model =
+                    Model::parse(ranger_file(entry), "").expect("a bundle item is valid glTF");
+                let (joint, matrix) = socket(&descriptor, socket_id);
+                (model, joint, matrix)
+            })
+            .collect();
+        let bow = items
+            .iter()
+            .position(|&(entry, socket_id)| {
+                entry == ranger_bundle::BOW && socket_id == BOW_STOWED_SOCKET
+            })
+            .map(|index| Bow {
+                index,
+                hand: socket(&descriptor, BOW_HAND_SOCKET),
+                nock: items_of[index].0.node(BOW_NOCK_JOINT),
+            });
         Self {
-            items: items
-                .iter()
-                .map(|&(entry, socket_id)| {
-                    let model =
-                        Model::parse(ranger_file(entry), "").expect("a bundle item is valid glTF");
-                    let (joint, matrix) = socket(&descriptor, socket_id);
-                    (model, joint, matrix)
-                })
-                .collect(),
+            items: items_of,
             hanging: items
                 .iter()
                 .map(|&(_, socket_id)| sway::hangs(socket_id))
                 .collect(),
+            bow,
         }
     }
 
@@ -1502,11 +1595,21 @@ impl Equipment {
         pose: &[Layer],
         tint: Option<[f32; 3]>,
     ) -> Vec<SceneDraw> {
-        self.draws_swung(id, character, placement, pose, tint, sway::Swing::default())
+        self.draws_swung(
+            id,
+            character,
+            placement,
+            pose,
+            tint,
+            sway::Swing::default(),
+            None,
+        )
     }
 
     /// [`Self::draws`] with the hanging items turned by `swing` about their grip, in the
-    /// model's frame (Atlas 6.6.39).
+    /// model's frame (Atlas 6.6.39), and the bow in hand with its nock drawn through a bow
+    /// `shot` (#556).
+    #[allow(clippy::too_many_arguments)]
     pub fn draws_swung(
         &self,
         id: &str,
@@ -1515,15 +1618,31 @@ impl Equipment {
         pose: &[Layer],
         tint: Option<[f32; 3]>,
         swing: sway::Swing,
+        shot: Option<BowShot>,
     ) -> Vec<SceneDraw> {
         let turn = (!swing.is_rest()).then(|| trs([0.; 3], swing.quaternion(), [1.; 3]));
         let mut draws = Vec::new();
         for (index, (model, joint, matrix)) in self.items.iter().enumerate() {
+            let bow = self.bow.as_ref().filter(|bow| bow.index == index);
+            let in_hand = bow.zip(shot);
+            let (joint, matrix) =
+                in_hand.map_or((*joint, matrix), |(bow, _)| (bow.hand.0, &bow.hand.1));
             let Some(at) = character.joint(joint, pose) else {
                 continue;
             };
             // The item's grip frame is its origin: holder = placement × joint × socket.
             let mut socket = mul(&at.elements, &matrix.elements);
+            if let Some((bow, shot)) = in_hand {
+                // The nock follows the clip's draw along the bow's draw axis.
+                let draw = bow_draws()
+                    .get(shot.clip)
+                    .map_or(0., |(rate, table)| draw_meters(table, *rate, shot.time));
+                let mut held = three_d_animation::Mat4::IDENTITY;
+                held.elements = mul(&placement.elements, &socket);
+                let moved = bow.nock.map(|nock| (nock, BOW_DRAW_AXIS.map(|a| a * draw)));
+                draws.extend(model.draws_moved(&format!("{id}-item-{index}"), held, moved, tint));
+                continue;
+            }
             if let Some(turn) = turn.filter(|_| self.hanging.get(index) == Some(&true)) {
                 // Turn the item about its grip in the model's axes: the grip stays put.
                 let grip = [socket[12], socket[13], socket[14]];
@@ -1654,6 +1773,75 @@ mod rolling_ranger_tests {
         assert!(close(layered[calf], land[calf]));
         assert!(close(layered[pelvis], land[pelvis]));
         assert_ne!(swing[calf], land[calf]);
+    }
+
+    #[test]
+    fn a_bow_shot_holds_the_bow_in_hand_and_draws_its_nock() {
+        let character = &asset(Kind::Ranger).model;
+        let equipment = Equipment::loadout(Loadout::BowAndQuiver);
+        let bow = equipment
+            .bow
+            .as_ref()
+            .expect("the bow-and-quiver loadout carries a bow");
+        let pose = [Layer::single("Bow_Hold_Loop", 0.5)];
+        let shot = BowShot {
+            clip: "Bow_Hold_Loop",
+            time: 0.5,
+        };
+        let origin = |shot: Option<BowShot>| {
+            let draws = equipment.draws_swung(
+                "archer",
+                character,
+                three_d_animation::Mat4::IDENTITY,
+                &pose,
+                None,
+                sway::Swing::default(),
+                shot,
+            );
+            let draw = draws
+                .iter()
+                .find(|draw| draw.id.starts_with(&format!("archer-item-{}-", bow.index)))
+                .expect("the bow draws");
+            [12, 13, 14].map(|i| draw.model.elements[i])
+        };
+        let joint = |name: &str| {
+            let at = character.joint(name, &pose).expect(name);
+            [12, 13, 14].map(|i| at.elements[i])
+        };
+        let distance = |a: [f32; 3], b: [f32; 3]| {
+            a.iter()
+                .zip(b)
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f32>()
+                .sqrt()
+        };
+        let (hand, back) = (joint(bow.hand.0), joint("spine_03"));
+        let (held, stowed) = (origin(Some(shot)), origin(None));
+        assert!(
+            distance(held, hand) < distance(held, back),
+            "held at the hand"
+        );
+        assert!(
+            distance(stowed, back) < distance(stowed, hand),
+            "stowed on the back"
+        );
+        // The nock follows the hold's draw (about 0.48 m) along the bow's -Z.
+        let (rate, table) = &bow_draws()["Bow_Hold_Loop"];
+        let draw = draw_meters(table, *rate, 0.5);
+        assert!((0.4..0.55).contains(&draw), "{draw}");
+        let model = &equipment.items[bow.index].0;
+        let nock = bow.nock.expect("the bow has a nock joint");
+        let mut local = model.rest.clone();
+        let braced = model.skin_globals(&model.globals_of(&local));
+        local[nock].t[2] -= draw;
+        let drawn = model.skin_globals(&model.globals_of(&local));
+        let moved = braced
+            .iter()
+            .zip(&drawn)
+            .flat_map(|(a, b)| a.0.iter().zip(&b.0))
+            .map(|(a, b)| distance(*a, *b))
+            .fold(0., f32::max);
+        assert!((moved - draw).abs() < 0.01, "the string moves {moved} m");
     }
 
     #[test]

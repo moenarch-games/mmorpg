@@ -8,7 +8,7 @@ import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
 import { figureAppearance, varyPreset } from "../wasm-runtime";
-import type { ClassOutfit, ClipLayer, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout } from "../unit-presenter";
+import type { BowShot, ClassOutfit, ClipLayer, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
 /**
@@ -268,8 +268,11 @@ function socketsOf(descriptor: unknown): Map<string, Socket> {
   return sockets;
 }
 
-/** A clip's `humanoid-clips` motion data: its semantic role and the contact time of a strike. */
-export type ClipMotion = { role: string | null; contactSeconds: number | null };
+/**
+ * A clip's `humanoid-clips` motion data: its semantic role, the contact time of a strike and a bow
+ * clip's draw (#556), one `meters` value per frame at `sampleRate`.
+ */
+export type ClipMotion = { role: string | null; contactSeconds: number | null; draw: { sampleRate: number; meters: readonly number[] } | null };
 
 /** Reads the `humanoid-clips-v1` attachment by clip name. */
 export function clipMotionsOf(descriptor: unknown): Map<string, ClipMotion> {
@@ -277,10 +280,26 @@ export function clipMotionsOf(descriptor: unknown): Map<string, ClipMotion> {
   if (value?.schema !== "humanoid-clips-v1" || !Array.isArray(value.clips)) {
     throw new Error("The Ranger bundle's humanoid-clips attachment is not humanoid-clips-v1.");
   }
-  return new Map((value.clips as { name: string; role?: string; contact?: { seconds?: number } }[]).map((clip) => [
-    clip.name,
-    { role: clip.role ?? null, contactSeconds: typeof clip.contact?.seconds === "number" ? clip.contact.seconds : null },
-  ]));
+  type Entry = { name: string; role?: string; contact?: { seconds?: number }; bow?: { sampleRate?: unknown; drawMeters?: unknown } };
+  return new Map((value.clips as Entry[]).map((clip) => {
+    const { sampleRate, drawMeters } = clip.bow ?? {};
+    const draw = typeof sampleRate === "number" && Array.isArray(drawMeters) && drawMeters.every((value) => typeof value === "number")
+      ? { sampleRate, meters: drawMeters as number[] } : null;
+    return [clip.name, { role: clip.role ?? null, contactSeconds: typeof clip.contact?.seconds === "number" ? clip.contact.seconds : null, draw }];
+  }));
+}
+
+/**
+ * The draw in metres at `time` seconds of a clip's `bow.drawMeters` (`imported::draw_meters`):
+ * linear between frames and held at either end; 0 for an empty table.
+ */
+export function drawMeters(draw: { sampleRate: number; meters: readonly number[] }, time: number): number {
+  const last = draw.meters.length - 1;
+  if (last < 0) { return 0; }
+  const frame = Math.min(Math.max(time * draw.sampleRate, 0), last);
+  const below = Math.floor(frame);
+  const above = Math.min(below + 1, last);
+  return draw.meters[below]! + (draw.meters[above]! - draw.meters[below]!) * (frame - below);
 }
 
 /** Which bundle item goes to which socket, per loadout. */
@@ -323,7 +342,7 @@ function entryFile(entry: DownloadEntry, suffix: string): string {
 }
 
 /** An item placed by its `grip` frame, as 3d-lab's attach did: holder = socket × grip⁻¹. */
-function attachItem(model: THREE.Object3D, item: THREE.Object3D, gripInverse: THREE.Matrix4, socket: Socket): void {
+function attachItem(model: THREE.Object3D, item: THREE.Object3D, gripInverse: THREE.Matrix4, socket: Socket): THREE.Group {
   const joint = model.getObjectByName(socket.joint);
   if (!joint) {
     throw new Error(`The Ranger has no joint ${socket.joint}.`);
@@ -338,6 +357,40 @@ function attachItem(model: THREE.Object3D, item: THREE.Object3D, gripInverse: TH
     if (!held) { hanging.set(model, held = []); }
     held.push({ holder, joint, base: holder.matrix.clone() });
   }
+  return holder;
+}
+
+/** The longbow and its sockets (`imported::BOW_STOWED_SOCKET`, `BOW_HAND_SOCKET`, #556). */
+const BOW_ITEM = "equipment.bow.long";
+const BOW_STOWED_SOCKET = "back.bow.stowed";
+const BOW_HAND_SOCKET = "hand_l.bow";
+/** The bow's draw contract (`imported::BOW_NOCK_JOINT`, `BOW_DRAW_AXIS`): the nock moves along -Z. */
+const BOW_NOCK_JOINT = "nock";
+const BOW_DRAW_AXIS = new THREE.Vector3(0, 0, -1);
+
+/** A carried bow (#556): its holder, where it rides stowed and in hand, and its nock with the braced rest. */
+type CarriedBow = {
+  holder: THREE.Group;
+  stowed: { joint: THREE.Object3D; matrix: THREE.Matrix4 };
+  hand: { joint: THREE.Object3D; matrix: THREE.Matrix4 };
+  nock: THREE.Object3D | null;
+  rest: THREE.Vector3;
+};
+const bows = new WeakMap<THREE.Object3D, CarriedBow>();
+
+/**
+ * Puts `model`'s bow in the left hand with its nock drawn by the clip's `bow.drawMeters` through
+ * the presenter's bow `shot`, or back on the back with the string braced for null. Call after
+ * posing and before {@link swingHanging}.
+ */
+function poseBow(model: THREE.Object3D, shot: BowShot | null, motions: ReadonlyMap<string, ClipMotion> | undefined): void {
+  const bow = bows.get(model);
+  if (!bow) { return; }
+  const place = shot ? bow.hand : bow.stowed;
+  if (bow.holder.parent !== place.joint) { place.joint.add(bow.holder); }
+  if (!bow.holder.matrix.equals(place.matrix)) { bow.holder.matrix.copy(place.matrix); }
+  const draw = shot ? motions?.get(shot.clip)?.draw : null;
+  bow.nock?.position.copy(bow.rest).addScaledVector(BOW_DRAW_AXIS, shot && draw ? drawMeters(draw, shot.time) : 0);
 }
 
 /**
@@ -362,8 +415,8 @@ function swingHanging(model: THREE.Object3D, swing: readonly [number, number, nu
   const held = hanging.get(model);
   if (!held) { return; }
   if (!swing) {
-    for (const { holder, base } of held) {
-      if (!holder.matrix.equals(base)) { holder.matrix.copy(base); }
+    for (const { holder, joint, base } of held) {
+      if (holder.parent === joint && !holder.matrix.equals(base)) { holder.matrix.copy(base); }
     }
     return;
   }
@@ -371,6 +424,8 @@ function swingHanging(model: THREE.Object3D, swing: readonly [number, number, nu
   model.updateWorldMatrix(true, false);
   modelInverse.copy(model.matrixWorld).invert();
   for (const { holder, joint, base } of held) {
+    // A bow taken in hand (#556) follows the hand, not the swing.
+    if (holder.parent !== joint) { continue; }
     joint.updateWorldMatrix(true, false);
     // The socket in model space, turned about its own origin in the model's axes.
     jointInModel.multiplyMatrices(modelInverse, joint.matrixWorld);
@@ -578,7 +633,18 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
       // The bow is skinned to its own grip/nock joints; SkeletonUtils clones those too.
       const clone = cloneSkinned(item.scene);
       if (key === hairKey && tint) { tintMaterials(clone, look.hairMaterials.get(key) ?? [], tint); }
-      attachItem(model, clone, item.gripInverse, place);
+      const holder = attachItem(model, clone, item.gripInverse, place);
+      const hand = sockets.get(BOW_HAND_SOCKET);
+      const handJoint = hand && model.getObjectByName(hand.joint);
+      if (key === BOW_ITEM && socket === BOW_STOWED_SOCKET && hand && handJoint) {
+        // Through the bow cycle the bow moves to the left hand and its nock draws (#556).
+        const nock = clone.getObjectByName(BOW_NOCK_JOINT) ?? null;
+        bows.set(model, {
+          holder, stowed: { joint: holder.parent!, matrix: holder.matrix.clone() },
+          hand: { joint: handJoint, matrix: new THREE.Matrix4().multiplyMatrices(hand.matrix, item.gripInverse) },
+          nock, rest: nock ? nock.position.clone() : new THREE.Vector3(),
+        });
+      }
     }
     if (tint) {
       for (const name of look.eyebrows.nodes) {
@@ -1165,6 +1231,7 @@ export class QuaterniusUnits {
     root.position.set(unit.feet[0], unit.feet[1], unit.feet[2]);
     root.rotation.set(unit.pitch, unit.yaw, 0, "YXZ");
     root.scale.setScalar((unit.heightMetres / (instance.posable.bounds ?? asset).height) * (instance.posable.scale ?? 1));
+    poseBow(instance.posable.model, unit.bow, asset.motions);
     swingHanging(instance.posable.model, unit.swing);
   }
 

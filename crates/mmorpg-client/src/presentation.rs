@@ -597,6 +597,7 @@ impl Presentation {
                     &imported.animation.layers,
                     imported.tint,
                     imported.swing,
+                    imported.bow,
                 ));
             }
             let head = asset

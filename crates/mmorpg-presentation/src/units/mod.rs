@@ -164,6 +164,10 @@ pub struct ImportedUnit {
     /// How far the loose gear on [`sway::hangs`] sockets swings this frame (Atlas 6.6.39); at
     /// rest it hangs as authored.
     pub swing: sway::Swing,
+    /// A bow carrier's shot (#556): through the bow cycle its bow leaves
+    /// [`imported::BOW_STOWED_SOCKET`] for [`imported::BOW_HAND_SOCKET`] and its nock follows
+    /// the clip's draw; `None` keeps the bow stowed.
+    pub bow: Option<imported::BowShot>,
 }
 
 /// What a unit wears, as far as its loose gear goes: a change starts the spring from rest.
@@ -783,7 +787,11 @@ impl UnitPresenter {
                         )
                     }),
                     swing: sway::Swing::default(),
+                    bow: None,
                 };
+                if imported.loadout == Some(Loadout::BowAndQuiver) {
+                    imported.bow = kind.bow_shot(&imported.animation);
+                }
                 let dress = (
                     kind,
                     imported.loadout,

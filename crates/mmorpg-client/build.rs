@@ -219,8 +219,8 @@ fn sound_bundle(bundle: &Path) {
     );
 }
 
-/// A Ranger figure's acquired bundle (`imported::Figure`): its `SOCKETS`, prepared `CLIPS` and
-/// `APPEARANCE` as code, those files, and the appearance path.
+/// A Ranger figure's acquired bundle (`imported::Figure`): its `SOCKETS`, prepared `CLIPS`,
+/// `APPEARANCE` and clip metadata `MOTIONS` as code, those files, and the appearance path.
 fn figure(bundle: &Path, character: &str) -> (String, Vec<String>, String) {
     println!(
         "cargo:rerun-if-changed={}",
@@ -259,10 +259,16 @@ fn figure(bundle: &Path, character: &str) -> (String, Vec<String>, String) {
             .expect("shared clips")
             .replace(".glb", ".native.glb")
     );
+    // The clips' `humanoid-clips` metadata: the bow clips' draw (#556).
+    let motions = file(".humanoid-clips.json");
     let code = format!(
-        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\npub const APPEARANCE: &str = {appearance:?};\n"
+        "pub const SOCKETS: &str = {sockets:?};\npub const CLIPS: &str = {clips:?};\npub const APPEARANCE: &str = {appearance:?};\npub const MOTIONS: &str = {motions:?};\n"
     );
-    (code, vec![sockets, clips, appearance.clone()], appearance)
+    (
+        code,
+        vec![sockets, clips, appearance.clone(), motions],
+        appearance,
+    )
 }
 
 /// Every prepared GLB of a figure's bundle (`scripts/prepare-ranger-native.sh`).
