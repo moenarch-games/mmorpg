@@ -22,10 +22,12 @@ use crate::{Area, AreaId, Terrain, ZoneAreas};
 
 pub mod basin;
 pub mod cave;
+pub mod dressing;
 pub mod farmland;
 pub mod highlands;
 pub mod inn;
 pub mod layout;
+pub mod market;
 pub mod marsh;
 pub mod marshal_house;
 pub mod quests;
@@ -191,6 +193,19 @@ pub mod ids {
 
     /// Marsh-Lake Wetlands (#426): the structures in [`super::marsh::BUILDINGS`] order.
     pub const MARSH_BUILDINGS: RangeInclusive<u32> = 6_400..=6_499;
+
+    /// Solid dressing (#577): the fixed signposts, barrels, carts and dock in
+    /// [`super::dressing`] order …
+    pub const DRESSING: RangeInclusive<u32> = 7_000..=7_089;
+    /// The plank step up onto the Lakeshore dock (#577), a ramp body.
+    pub const DOCK_RAMP: u32 = 7_090;
+    /// … the Outpost layout's lamps and signposts, each in layout order …
+    pub const LAYOUT_LAMPS: RangeInclusive<u32> = 7_100..=7_299;
+    pub const LAYOUT_SIGNPOSTS: RangeInclusive<u32> = 7_300..=7_499;
+    /// … the market square's collision proxies ([`super::market`]) …
+    pub const MARKET: RangeInclusive<u32> = 7_500..=7_599;
+    /// … and the loose rocks.
+    pub const LOOSE_ROCKS: RangeInclusive<u32> = 8_000..=8_999;
 }
 
 /// One region's tables (#542): its named areas, its roads and its own colliders. Each region
@@ -688,6 +703,21 @@ fn segments_intersect(a: [i32; 2], b: [i32; 2], c: [i32; 2], d: [i32; 2]) -> boo
 
 /// Ground, boundary walls, authored structures and generated trees.
 fn colliders() -> Vec<StaticCollider> {
+    let mut colliders = undressed_colliders();
+    colliders.extend(dressing::pieces().iter().map(dressing::Piece::collider));
+    if let Some(house) = colliders
+        .iter()
+        .find(|collider| collider.id == market::HOUSE)
+        .cloned()
+    {
+        colliders.extend(market::colliders(&house, *ids::MARKET.start()));
+    }
+    colliders
+}
+
+/// Every collider but the solid dressing and the market square (#577), which keep clear of
+/// these.
+fn undressed_colliders() -> Vec<StaticCollider> {
     // The ground spans the rectangle round the walls' outer faces.
     let min = PLAYABLE_BOUNDS.min.map(|value| value - WALL_THICKNESS);
     let max = PLAYABLE_BOUNDS.max.map(|value| value + WALL_THICKNESS);
@@ -870,6 +900,25 @@ pub const MILL_RAMPS: [crate::Ramp; 2] = [
     },
 ];
 
+/// Every ramp: the mill's, then the plank step (22°) from the Lakeshore Path's end up onto the
+/// dock's deck (#577), against the deck's south side.
+#[must_use]
+pub fn ramps() -> Vec<crate::Ramp> {
+    let dock = dressing::dock();
+    let deck = dock.collider();
+    let top = deck.position[1] + deck.half_extents[1];
+    let bottom = dock.feet();
+    let edge = deck.position[2] + deck.half_extents[2];
+    let mut ramps = MILL_RAMPS.to_vec();
+    ramps.push(crate::Ramp {
+        body: ids::DOCK_RAMP,
+        position: [3_400, (top + bottom) / 2, edge + 50],
+        half_extents: [100, (top - bottom) / 2, 50],
+        rises: crate::RampRise::NegZ,
+    });
+    ramps
+}
+
 /// Greyhaven's destructible sites (#305): the Redbrand camp, whose pieces rebuild after 5 min.
 #[must_use]
 pub fn structure_sites() -> Vec<crate::StructureSite> {
@@ -976,7 +1025,7 @@ pub fn content_with_definition(
                 marshal_house::door(ids::MARSHAL_HOUSE_DOOR),
             ])?
             .with_platforms(vec![MILL_HOIST])?
-            .with_ramps(MILL_RAMPS.to_vec())?
+            .with_ramps(ramps())?
             .with_structures(structure_sites(), watch_post())?
             .with_routines(units::routines(), units::closed_at_night())?
             .with_private_homes(vec![marshal_house::home()])?

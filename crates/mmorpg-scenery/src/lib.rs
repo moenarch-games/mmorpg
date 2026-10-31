@@ -46,7 +46,7 @@ use strum::{IntoEnumIterator, VariantArray};
 
 pub use geometry::Rect;
 use geometry::{Ellipse, Rng, polyline_distance, splitmix64, value_noise};
-use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_PLAZA, ids};
+use mmorpg_core::greyhaven_vale::{self, PLAYABLE_BOUNDS, SPAWN_PLAZA, dressing, ids};
 use mmorpg_core::{Area, AreaId, StaticCollider, XzBounds, trig};
 pub use outpost_grass::outpost_grass_placements;
 pub use seam_test::seam_test_scenery;
@@ -546,14 +546,59 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
             })
         }
         _ if ids::TREES.contains(&id) => PropKind::Tree(tree_variant(splitmix64(u64::from(id)))),
+        // Solid dressing (#577): the Outpost layout's lamps and signposts, then the fixed
+        // dressing and loose rocks. The market square's proxies are drawn by its kit at
+        // [`settlement_props::placements`].
+        _ if ids::LAYOUT_LAMPS.contains(&id) => PropKind::Lamp,
+        _ if ids::LAYOUT_SIGNPOSTS.contains(&id) => PropKind::Signpost,
+        _ if ids::DRESSING.contains(&id) || ids::LOOSE_ROCKS.contains(&id) => {
+            dressing_kind(greyhaven_vale::dressing::piece(id)?.kind)
+        }
         _ => return None,
     };
     Some(kind)
 }
 
+/// The visual of a solid dressing kind (#577).
+#[must_use]
+pub const fn dressing_kind(kind: dressing::Kind) -> PropKind {
+    match kind {
+        dressing::Kind::Lamp => PropKind::Lamp,
+        dressing::Kind::Signpost => PropKind::Signpost,
+        dressing::Kind::Barrel => PropKind::Barrel,
+        dressing::Kind::Cart => PropKind::Cart,
+        dressing::Kind::Dock => PropKind::Dock,
+        dressing::Kind::SmallRock => PropKind::Rock(RockSize::Small),
+        dressing::Kind::MediumRock => PropKind::Rock(RockSize::Medium),
+    }
+}
+
+/// A piece of solid dressing (#577) drawn exactly at its collider: feet on the collider's
+/// bottom, turned by its quarter turns.
+#[must_use]
+pub fn dressing_prop(piece: &dressing::Piece) -> Prop {
+    Prop {
+        kind: dressing_kind(piece.kind),
+        position: [piece.at[0], piece.feet(), piece.at[1]],
+        yaw: piece.yaw(),
+        scale_permille: piece.scale_permille,
+        collider: Some(piece.id),
+        half_extents: piece.half_extents(),
+    }
+}
+
+/// Whether collider `id` is solid dressing (#577).
+#[must_use]
+pub fn is_dressing(id: u32) -> bool {
+    ids::DRESSING.contains(&id)
+        || ids::LAYOUT_LAMPS.contains(&id)
+        || ids::LAYOUT_SIGNPOSTS.contains(&id)
+        || ids::LOOSE_ROCKS.contains(&id)
+}
+
 /// The yaw that turns a ramp's +Z rise toward its content rise (#59).
 fn ramp_yaw(body: u32) -> u16 {
-    let rises = greyhaven_vale::MILL_RAMPS
+    let rises = greyhaven_vale::ramps()
         .iter()
         .find(|ramp| ramp.body == body)
         .map_or(mmorpg_core::RampRise::PosZ, |ramp| ramp.rises);
@@ -724,7 +769,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         half_extents: greyhaven_vale::inn::FOOTPRINT_HALF_EXTENTS,
     };
     // Ramps (#59) are wedges in their boxes; their boxes anchor them like structures.
-    let ramps: Vec<_> = greyhaven_vale::MILL_RAMPS
+    let ramps: Vec<_> = greyhaven_vale::ramps()
         .iter()
         .map(|ramp| StaticCollider {
             id: ramp.body,
@@ -770,27 +815,30 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
     );
     let mut props: Vec<Prop> = structures
         .iter()
-        .map(|(collider, kind)| Prop {
-            kind: *kind,
-            position: [
-                collider.position[0],
-                collider.position[1] - collider.half_extents[1],
-                collider.position[2],
-            ],
-            yaw: if *kind == PropKind::Ramp {
-                ramp_yaw(collider.id)
-            } else {
-                0
-            },
-            scale_permille: 1_000,
-            // A ramp is no box collider; its box is given before its yaw.
-            collider: (*kind != PropKind::Ramp).then_some(collider.id),
-            half_extents: match (*kind, ramp_yaw(collider.id)) {
-                (PropKind::Ramp, 16_384 | 49_152) => {
-                    let [x, y, z] = collider.half_extents;
-                    [z, y, x]
-                }
-                _ => collider.half_extents,
+        .map(|(collider, kind)| match dressing::piece(collider.id) {
+            Some(piece) => dressing_prop(piece),
+            None => Prop {
+                kind: *kind,
+                position: [
+                    collider.position[0],
+                    collider.position[1] - collider.half_extents[1],
+                    collider.position[2],
+                ],
+                yaw: if *kind == PropKind::Ramp {
+                    ramp_yaw(collider.id)
+                } else {
+                    0
+                },
+                scale_permille: 1_000,
+                // A ramp is no box collider; its box is given before its yaw.
+                collider: (*kind != PropKind::Ramp).then_some(collider.id),
+                half_extents: match (*kind, ramp_yaw(collider.id)) {
+                    (PropKind::Ramp, 16_384 | 49_152) => {
+                        let [x, y, z] = collider.half_extents;
+                        [z, y, x]
+                    }
+                    _ => collider.half_extents,
+                },
             },
         })
         .collect();
@@ -808,7 +856,17 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         authored_outpost_relief: false,
         greyhaven: true,
     };
-    let blockers = Blockers::new(structures.iter().map(|(collider, _)| *collider));
+    // The market square's proxies (#577) keep the scatter off it like the structures.
+    let market = definition
+        .colliders()
+        .iter()
+        .filter(|collider| ids::MARKET.contains(&collider.id));
+    let blockers = Blockers::new(
+        structures
+            .iter()
+            .map(|(collider, _)| *collider)
+            .chain(market),
+    );
     let mut placer = Placer {
         scenery: &scenery,
         blockers: &blockers,
@@ -1207,7 +1265,11 @@ impl Relief {
                 [collider.position[0], collider.position[2]],
                 [collider.half_extents[0], collider.half_extents[2]],
             );
-            // Trunks get small flat patches; buildings a wider apron.
+            // Trunks get small flat patches; buildings a wider apron. Solid dressing (#577)
+            // stands on the drawn surface like the scatter it replaced.
+            if is_dressing(collider.id) {
+                continue;
+            }
             let (flat, ramp) = match kind {
                 PropKind::Tree(_) => (30, 150),
                 _ => (100, 300),
@@ -1331,14 +1393,6 @@ const fn base_half_extents(kind: PropKind) -> [i32; 3] {
         PropKind::Bush => [60, 45, 60],
         PropKind::Reeds => [12, 55, 12],
         PropKind::Tree(_) => [35, 250, 35],
-        PropKind::Rock(RockSize::Small) => [40, 25, 35],
-        PropKind::Rock(RockSize::Medium) => [80, 50, 70],
-        PropKind::Rock(RockSize::Large) => [130, 80, 110],
-        PropKind::Lamp => [10, 160, 10],
-        PropKind::Signpost => [8, 110, 8],
-        PropKind::Barrel => [30, 45, 30],
-        PropKind::Cart => [110, 60, 60],
-        PropKind::Dock => [500, 15, 90],
         PropKind::CropRow => [2_090, 25, 30],
         _ => [50, 50, 50],
     }
@@ -1405,28 +1459,8 @@ impl Placer<'_> {
         true
     }
 
-    /// Hand-placed hub, farm and lake dressing.
+    /// Crop rows. The solid hub, farm and lake dressing collides, so core places it (#577).
     fn fixed_props(&mut self) {
-        let fixed: [(PropKind, [i32; 2], u16); 13] = [
-            (PropKind::Lamp, [-1_800, 1_000], 0),
-            (PropKind::Lamp, [1_800, 1_000], 0),
-            (PropKind::Lamp, [-1_800, 3_000], 0),
-            (PropKind::Lamp, [1_800, 3_000], 0),
-            (PropKind::Signpost, [300, 5_300], 0),
-            (PropKind::Signpost, [-4_600, 2_300], 16_384),
-            (PropKind::Signpost, [300, -1_300], 32_768),
-            (PropKind::Barrel, [3_080, 300], 0),
-            (PropKind::Barrel, [3_080, 400], 9_000),
-            (PropKind::Barrel, [2_300, 600], 20_000),
-            (PropKind::Cart, [1_200, 800], 3_000),
-            (PropKind::Cart, [6_900, 3_000], 40_000),
-            (PropKind::Barrel, [7_300, 3_300], 0),
-        ];
-        for (kind, at, yaw) in fixed {
-            self.place(kind, at, yaw, 1_000, Ground::Open);
-        }
-        // The dock runs east from the Lakeshore Path into the shallow water.
-        self.place(PropKind::Dock, [3_800, -4_900], 0, 1_000, Ground::Shore);
         // Crop rows every two metres across each fenced field: Millbrook's, then the
         // farmland's (#424).
         for field in fields() {
@@ -1475,16 +1509,7 @@ impl Placer<'_> {
         self.scatter(&mut rng, 160, 2_000, |rng| {
             Some((PropKind::Bush, within(rng, woods)))
         });
-        let hollow = area_bounds(greyhaven_vale::vale::REDBRAND_HOLLOW);
-        self.scatter(&mut rng, 24, 1_000, |rng| {
-            let at = within(rng, hollow);
-            let size = if rng.next_u64().is_multiple_of(3) {
-                RockSize::Medium
-            } else {
-                RockSize::Small
-            };
-            Some((PropKind::Rock(size), at))
-        });
+        // The Redbrand Hollow's loose rocks collide, so core scatters them (#577).
         // Reeds ring the lake shore, partly standing in the shallow water.
         let mut placed = 0;
         for _ in 0..1_000 {
@@ -1590,9 +1615,6 @@ impl Placer<'_> {
         self.scatter(&mut rng, 220, 2_000, |rng| {
             Some((PropKind::Bush, lowland(rng)))
         });
-        self.scatter(&mut rng, 80, 1_000, |rng| {
-            Some((PropKind::Rock(RockSize::Small), lowland(rng)))
-        });
     }
 
     /// Sparse grass, scrub and loose rocks across the highlands' broken high ground (#425).
@@ -1613,14 +1635,6 @@ impl Placer<'_> {
         });
         self.scatter(&mut rng, 160, 1_500, |rng| {
             Some((PropKind::Bush, high_ground(rng)))
-        });
-        self.scatter(&mut rng, 220, 2_000, |rng| {
-            let size = if rng.next_u64().is_multiple_of(3) {
-                RockSize::Medium
-            } else {
-                RockSize::Small
-            };
-            Some((PropKind::Rock(size), high_ground(rng)))
         });
     }
 

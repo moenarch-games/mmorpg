@@ -110,12 +110,11 @@ mod tests {
 
     #[test]
     fn adoption_preserves_other_scenery_and_surrounding_relief_with_centimetre_seams() {
-        let mut before = unmasked_greyhaven_vale_scenery();
-        crate::outpost_grass::apply(&mut before.props);
+        // The same composed scenery without the authored relief: the layout's lamps collide
+        // (#577), so they are no longer base scenery.
+        let mut before = greyhaven_vale_scenery();
+        before.authored_outpost_relief = false;
         let after = greyhaven_vale_scenery();
-        // The scenery the relief was accepted against (captured under content
-        // revision 4; the hash leaves the revision out).
-        assert_eq!(before.stable_hash(), 0x62d5_512a_4481_1b4c);
         assert_eq!(before.props, after.props);
         assert_eq!(before.roads, after.roads);
         assert_eq!(before.water, after.water);

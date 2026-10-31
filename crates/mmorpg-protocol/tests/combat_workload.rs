@@ -54,11 +54,14 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // fixture places a player inside geometry (#534): the fights' players stand on the first free
     // slot near their spawns, which moves who meets which creature. Sheets sent until acknowledged (#544)
     // leave the bag, quest, loot and ability sheets out of a quiet projection; entities take the room.
+    // Solid dressing (#577) adds 361 fixed boxes (lamps, signposts, barrels, carts, the dock, the
+    // market square's proxies and the loose rocks) and the dock's ramp to every step's world:
+    // 362 more body visits a tick, and nothing else moves.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 767_880, 224_640, 5_126_000],
-        [29_160, 765_000, 78_240, 1_620_192],
-        [29_160, 773_640, 405_184, 7_140_175],
-        [28_804, 784_804, 2_251_970, 24_276_762],
+        [29_160, 898_200, 224_640, 5_126_000],
+        [29_160, 895_320, 78_240, 1_620_192],
+        [29_160, 903_960, 405_184, 7_140_175],
+        [28_804, 915_124, 2_251_970, 24_276_762],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

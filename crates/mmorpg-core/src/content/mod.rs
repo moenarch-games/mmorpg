@@ -20,7 +20,7 @@ pub use zone_content::{CharacterPersistence, PlayerCombatPolicy, ZoneContent};
 use crate::entity::PLAYER_BODY_BASE;
 use crate::{MAX_PLAYERS_PER_ZONE, PLAYER_HALF_EXTENTS_UNITS, ZoneError};
 
-pub const MAX_STATIC_COLLIDERS: usize = 2_048;
+pub const MAX_STATIC_COLLIDERS: usize = 4_096;
 /// One render metre corresponds to 100 integer simulation units; Y points up.
 pub const UNITS_PER_METRE: i32 = 100;
 /// Every collider bound and every spawned body lies within `±` this many units

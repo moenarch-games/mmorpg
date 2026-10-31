@@ -52,17 +52,68 @@ fn saved_overrides_reopen_with_matching_authoritative_and_visual_placements() {
         );
         assert_eq!(prop.half_extents, collider.half_extents);
     }
-    // A decorative move cannot change gameplay content identity.
+    // The market square follows house 106 (#577).
+    let market = |definition: &mmorpg_core::ZoneDefinition| -> Vec<[i32; 3]> {
+        definition
+            .colliders()
+            .iter()
+            .filter(|collider| greyhaven_vale::ids::MARKET.contains(&collider.id))
+            .map(|collider| collider.position)
+            .collect()
+    };
+    let base = market(&greyhaven_vale::base_definition());
+    let moved = market(&definition);
+    assert_eq!(base.len(), moved.len());
+    for (before, after) in base.iter().zip(&moved) {
+        assert_eq!([after[0] - before[0], after[2] - before[2]], [-50, 0]);
+    }
+    // A lamp collides where the layout stands it (#577), so moving one changes gameplay
+    // content identity; moving flowers would not.
     let collision_identity = content.revision();
     document["decoration"][0]["position"] = json!([-1900, 1000]);
-    let decorative_edit = document.to_string();
-    assert_eq!(
+    let lamp_edit = document.to_string();
+    let edited = layout::compile(&lamp_edit).unwrap();
+    assert_ne!(
         collision_identity,
-        greyhaven_vale::content_with_definition(layout::compile(&decorative_edit).unwrap())
+        greyhaven_vale::content_with_definition(edited.clone())
             .unwrap()
             .revision()
     );
-    assert_ne!(scenery, compose(&decorative_edit, &definition).unwrap());
+    let lamp = edited
+        .colliders()
+        .iter()
+        .find(|collider| collider.id == *greyhaven_vale::ids::LAYOUT_LAMPS.start())
+        .unwrap();
+    assert_eq!([lamp.position[0], lamp.position[2]], [-1900, 1000]);
+    let scenery = compose(&lamp_edit, &edited).unwrap();
+    let drawn = scenery
+        .props
+        .iter()
+        .find(|prop| prop.collider == Some(lamp.id))
+        .unwrap();
+    assert_eq!(drawn.kind, mmorpg_scenery::PropKind::Lamp);
+    assert_eq!([drawn.position[0], drawn.position[2]], [-1900, 1000]);
+    let mut flowers = source();
+    flowers["decoration"].as_array_mut().unwrap().push(
+        json!({"id": "outpost-flowers-1", "kind": "flowers", "position": [-2600, 1200], "yaw": 0}),
+    );
+    let flowers = flowers.to_string();
+    let base_identity = greyhaven_vale::content().revision();
+    let definition = layout::compile(&flowers).unwrap();
+    assert_eq!(
+        base_identity,
+        greyhaven_vale::content_with_definition(definition.clone())
+            .unwrap()
+            .revision()
+    );
+    assert!(
+        compose(&flowers, &definition)
+            .unwrap()
+            .props
+            .iter()
+            .any(|prop| prop.kind == mmorpg_scenery::PropKind::Flowers
+                && [prop.position[0], prop.position[2]] == [-2600, 1200])
+    );
 }
 
 #[test]
@@ -82,8 +133,11 @@ fn invalid_overrides_fail_closed_before_publication() {
     let mut document = source();
     document["generator"] = json!("greyhaven-unknown");
     assert!(layout::compile(&document.to_string()).is_err());
+    // A decoration on the spawn plaza, or one of an unknown prefab, fails to compile.
     let mut document = source();
     document["decoration"][0]["position"] = json!([0, 2000]);
-    let definition = layout::compile(&document.to_string()).unwrap();
-    assert!(compose(&document.to_string(), &definition).is_err());
+    assert!(layout::compile(&document.to_string()).is_err());
+    let mut document = source();
+    document["decoration"][0]["kind"] = json!("statue");
+    assert!(layout::compile(&document.to_string()).is_err());
 }

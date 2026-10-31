@@ -408,6 +408,10 @@ mod tests {
             let prop = export.props[usize::try_from(structure.prop).unwrap()];
             let kind = PropKind::all()[usize::try_from(prop[0]).unwrap()];
             assert_eq!(Some(kind), visual_kind(collider), "collider {id}");
+            // Solid dressing (#577) stands on the drawn relief, turned inside its box.
+            if mmorpg_scenery::is_dressing(id) {
+                continue;
+            }
             // The prop's feet are the bottom centre of its collider on flat relief.
             assert_eq!(
                 [prop[1], prop[2], prop[3]],

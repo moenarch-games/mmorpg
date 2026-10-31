@@ -108,7 +108,7 @@ export const DEBUG_VIEWPOINTS: Readonly<Record<string, { eye: Vec3; target: Vec3
   hub: { eye: [5, 8.5, 31], target: [-14, 3, 4] },
   grass: { eye: [-23, 16, 29], target: [-23, 0, 11] },
   relief: { eye: [20, 8, 39], target: [0, 0, 18] },
-  woods: { eye: [-50, 18, 14], target: [-78, 14, -2] },
+  woods: { eye: [-41, 18, 16], target: [-69, 14, 0] },
   hollow: { eye: [6, 24, -64], target: [0, 14, -98] },
   farm: { eye: [46, 12, 16], target: [72, 3, 40] },
   lake: { eye: [30, 20, -30], target: [56, 11, -56] },

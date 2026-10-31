@@ -67,12 +67,13 @@ fn every_structure_renders_its_exact_collision_box() {
     let scenery = greyhaven_vale_scenery();
     let world = WorldScene::new(&scenery);
     assert!(world.props.len() >= scenery.props.len());
-    // The Sunken Shrine is drawn from its asset-tooling kit (#431), not as boxes.
-    for prop in scenery
-        .props
-        .iter()
-        .filter(|prop| prop.collider.is_some() && prop.kind != PropKind::ShrineKit)
-    {
+    // The Sunken Shrine is drawn from its asset-tooling kit (#431), not as boxes, and solid
+    // dressing (#577) as its own lamps, barrels and rocks inside its collider.
+    for prop in scenery.props.iter().filter(|prop| {
+        prop.collider
+            .is_some_and(|id| !mmorpg_scenery::is_dressing(id))
+            && prop.kind != PropKind::ShrineKit
+    }) {
         // The inn's footprint is a presentation anchor without a collider (#158).
         let Some(collider) = definition
             .colliders()

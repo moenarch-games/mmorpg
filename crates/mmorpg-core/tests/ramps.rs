@@ -111,7 +111,7 @@ fn nobody_climbs_the_steep_chute() {
 #[test]
 fn the_ramps_stand_flush_against_the_dock_and_clear_of_everything_else() {
     let content = greyhaven_vale::content();
-    assert_eq!(content.ramps(), MILL_RAMPS);
+    assert_eq!(content.ramps(), greyhaven_vale::ramps());
     let dock = content
         .definition()
         .colliders()

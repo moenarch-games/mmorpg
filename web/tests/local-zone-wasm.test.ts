@@ -468,8 +468,11 @@ describe("WASM local zone host", () => {
         scale: Number(transform.scalePermille) / 1000, halfExtents: transform.halfExtents, collider: null };
     });
     const actual = provider.scenery.props.filter((prop) => prop.kind === "grass-tuft" && prop.position[0] >= -3500 && prop.position[0] <= 3500 && prop.position[2] >= -1300 && prop.position[2] <= 5300);
-    expect(actual).toEqual(expected);
-    expect(actual.length).toBe(55);
+    // One saved tuft stood under a market stall, which now collides and keeps the grass off (#577).
+    const underStall = expected.filter((tuft) => tuft.position[0] === 2144 && tuft.position[2] === 3082);
+    expect(underStall).toHaveLength(1);
+    expect(actual).toEqual(expected.filter((tuft) => !underStall.includes(tuft)));
+    expect(actual.length).toBe(54);
     // The golden fingerprint `crates/mmorpg-wasm/src/scenery.rs` records (MMORPG_UPDATE_FIXTURES=1).
     expect(provider.scenery.presentationFingerprint).toBe(PRESENTATION_FINGERPRINT);
     expect(provider.scenery.contentRevision).toBe(HOSTED_REVISION);

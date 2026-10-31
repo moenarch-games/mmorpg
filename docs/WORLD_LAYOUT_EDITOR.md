@@ -76,9 +76,12 @@ changes outside the supported house layout, and model import remain separate.
 - The existing `version: 1`, `generator: "greyhaven-15"`
   JSON representation, stable collider IDs (103–106, authored 60000–64999),
   tombstones and persistent decoration IDs are unchanged.
-- `mmorpg-core` validates physical colliders; `mmorpg-scenery`
-  owns decoration and suppresses intersecting procedural scatter. Both
-  browser and native clients consume the same accepted definition.
+- `mmorpg-core` parses and validates the whole layout. Houses and the solid
+  decorations (lamps and signposts) compile into colliders (#577), so moving
+  one changes the content revision; flowers stay walk-through.
+  `mmorpg-scenery` draws every decoration where core put it and suppresses
+  intersecting procedural scatter. Both browser and native clients consume
+  the same accepted definition.
 - A generated Blender .blend is local, disposable authoring state under
   `artifacts/`, not the canonical source. A clean checkout rebuilds
   it from the checked-in JSON and deterministic game content. Never overwrite

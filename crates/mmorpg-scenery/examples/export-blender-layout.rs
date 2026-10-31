@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && !matches!(prop.kind, PropKind::GrassTuft | PropKind::Flowers)
                 && !prop.collider.is_some_and(editable)
                 && !decorations.iter().any(|entry| {
-                    entry.kind == prop.kind.name()
+                    mmorpg_scenery::layout::kind(entry.kind) == prop.kind
                         && entry.position == [prop.position[0], prop.position[2]]
                 })
         })

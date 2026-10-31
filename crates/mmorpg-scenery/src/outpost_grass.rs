@@ -49,7 +49,8 @@ mod tests {
         let before = unmasked_greyhaven_vale_scenery();
         // The scenery the family was accepted against (captured under content
         // revisions 3 and 4; the hash leaves the revision out).
-        assert_eq!(before.stable_hash(), 0x003b_a211_e1b9_893e);
+        // Re-recorded when the solid dressing moved into core (#577).
+        assert_eq!(before.stable_hash(), 0x3126_2303_a39a_5dd0);
         let original: Vec<_> = before
             .props
             .iter()
@@ -60,10 +61,28 @@ mod tests {
         // generator now places one later tuft here too, the Sunken Shrine (#274) two more, the
         // re-routed Millbrook Road (#423) three more, the re-routed Lakeshore Path three more and
         // the rerouted Hollow Road, Wolfrun Trail and South Road five more;
-        // the 118 accepted ones remain.
+        // the 118 accepted ones remain, but for the one under the market square's stall, which
+        // now collides (#577) and keeps the scatter off.
+        let market = |tuft: &Prop| {
+            mmorpg_core::greyhaven_vale::base_definition()
+                .colliders()
+                .iter()
+                .filter(|collider| mmorpg_core::greyhaven_vale::ids::MARKET.contains(&collider.id))
+                .any(|collider| {
+                    tuft.footprint().intersects(crate::Rect::around(
+                        [collider.position[0], collider.position[2]],
+                        [collider.half_extents[0], collider.half_extents[2]],
+                    ))
+                })
+        };
         let accepted: Vec<_> = ACCEPTED.iter().copied().map(prop).collect();
-        assert!(accepted.iter().all(|tuft| original.contains(tuft)));
-        assert_eq!(original.len(), 132);
+        assert_eq!(accepted.iter().filter(|tuft| market(tuft)).count(), 1);
+        assert!(
+            accepted
+                .iter()
+                .all(|tuft| market(tuft) || original.contains(tuft))
+        );
+        assert_eq!(original.len(), 131);
         let unrelated = |scenery: &Scenery| {
             scenery
                 .props
@@ -93,8 +112,10 @@ mod tests {
             SELECTED.iter().copied().map(prop).collect::<Vec<_>>()
         );
         assert_eq!(placed.len(), 55);
+        // The tuft under the market's stall is placed here and cut away by the layout's
+        // composition (`crate::layout::compose`).
         for selected in placed {
-            assert!(original.contains(&selected));
+            assert!(market(&selected) || original.contains(&selected));
         }
     }
 }
