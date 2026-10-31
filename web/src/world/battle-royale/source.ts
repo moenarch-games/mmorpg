@@ -4,7 +4,7 @@ import type { SessionRoute } from "../../session/route";
 import { OnlineZoneSource } from "../online-zone-source";
 import { DEFAULT_JOIN_CHARACTER, type JoinCharacter, type WorldSource } from "../world-source";
 import {
-  ARENA_CONTENT_REVISION, canSendCharacterCommand, decodeMatchProjection, encodeBuild,
+  canSendCharacterCommand, decodeMatchProjection, encodeBuild,
   encodeCharacterCommand, type ArenaEquipment, type MatchProjection,
 } from "./protocol";
 
@@ -16,18 +16,21 @@ export class BattleRoyaleSource implements WorldSource {
   constructor(options: {
     route: SessionRoute;
     connector: SessionConnector;
+    /** The shared fortress content revision (#552) the host must project. */
+    contentRevision: bigint;
     equipment(character: JoinCharacter): ArenaEquipment;
   }) {
     const expectedMatch = BigInt(`0x${options.route.matchId.slice(3)}`);
+    const contentRevision = options.contentRevision;
     this.#session = new OnlineZoneSource({
       route: options.route,
-      contentRevision: ARENA_CONTENT_REVISION,
+      contentRevision,
       connector: options.connector,
       activityProtocol: {
         encodeCommand: encodeCharacterCommand,
         initialCommand: (character) => encodeBuild(character, options.equipment(character)),
         decodeProjection: (payload) => {
-          const match = decodeMatchProjection(payload);
+          const match = decodeMatchProjection(payload, contentRevision);
           if (match.matchId !== expectedMatch) {
             throw new Error("The host sent another Battle Royale match.");
           }

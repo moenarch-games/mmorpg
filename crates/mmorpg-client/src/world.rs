@@ -540,7 +540,12 @@ fn blockout(prop: &Prop, base: f32, boxes: &mut Vec<SceneBox>) {
         PropKind::LoadingDock => body(&mut part, STONE),
         PropKind::Ladder => body(&mut part, WOOD),
         // A ramp's wedge (#59) is no box; the shared static scene draws it. The shrine kit
-        // (#431) is drawn from its bundle.
-        PropKind::Ramp | PropKind::ShrineKit => {}
+        // (#431) is drawn from its bundle. Graybox geometry (#552) is the shared static scene's.
+        PropKind::Ramp
+        | PropKind::ShrineKit
+        | PropKind::GrayboxWall
+        | PropKind::GrayboxTower
+        | PropKind::GrayboxWalkway
+        | PropKind::GrayboxRamp => {}
     }
 }

@@ -108,8 +108,21 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
         .iter()
         .filter(|kind| !matches!(kind, PropKind::Inn | PropKind::ShrineKit))
     {
+        // Greyhaven has no graybox geometry (#552); place one box of each such kind.
+        let prop = if kind.graybox() {
+            Prop {
+                kind,
+                position: [0, 200, 0],
+                yaw: 0,
+                scale_permille: 1_000,
+                collider: None,
+                half_extents: [200, 100, 300],
+            }
+        } else {
+            first(&scenery, kind)
+        };
         assert!(
-            !prop_triangles(&only(vec![first(&scenery, kind)])).is_empty(),
+            !prop_triangles(&only(vec![prop])).is_empty(),
             "{kind:?} draws nothing"
         );
     }

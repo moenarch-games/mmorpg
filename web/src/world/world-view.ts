@@ -20,6 +20,7 @@ import {
   IDLE_INTENT,
   OrbitCamera,
   PIXELS_PER_WHEEL_LINE,
+  clearSightLine,
   movementInput,
   type DragMode,
   type HeldIntent,
@@ -1084,7 +1085,9 @@ export class WorldView {
       this.#framePending = false;
       this.#frameFirstView(self.focus, self.facing, scene.surfaceY);
     }
-    const view = this.#flyTo ?? this.#orbit.view(self.focus, scene.surfaceY);
+    const orbit = this.#orbit.view(self.focus, scene.surfaceY);
+    // The fortress's walls and roofs (#552) pull the eye in; Greyhaven's camera never collides.
+    const view = this.#flyTo ?? (this.#arena ? clearSightLine(orbit, this.#occluders) : orbit);
     this.#camera.position.set(...view.eye);
     this.#camera.lookAt(...view.target);
     this.#camera.updateMatrixWorld(true);

@@ -158,7 +158,11 @@ fn current_greyhaven_regions_and_six_player_looks_render_on_the_real_native_gpu(
             }
         }
         let scenery = mmorpg_scenery::greyhaven_vale_scenery();
-        for &kind in mmorpg_scenery::PropKind::all() {
+        // Graybox geometry (#552) belongs to the Battle Royale fortress, not Greyhaven.
+        for &kind in mmorpg_scenery::PropKind::all()
+            .iter()
+            .filter(|kind| !kind.graybox())
+        {
             let prop = scenery.props.iter().find(|prop| prop.kind == kind).unwrap();
             let x = prop.position[0] as f32 / 100.0;
             let z = prop.position[2] as f32 / 100.0;

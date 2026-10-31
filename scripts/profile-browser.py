@@ -11,6 +11,9 @@ one JSON report:
 - `dense-woods` / `dense-hub` / `overview`: the woods (vegetation), the outpost hub (NPCs) and the
   whole-vale overview, through the existing debug viewpoints.
 
+`--activity battle-royale` profiles the Battle Royale practice arena (#552) instead: `idle`,
+`move-rotate` and `key-to-motion` in the fortress courtyard, and `overview` over the whole fortress.
+
 Sources, all opt-in and read-only:
 - the page's `?profile` frame phases (`web/src/world/frame-profile.ts`): main-thread CPU per phase;
 - Event Timing (`event` entries: input delay, handler time, duration to next paint, i.e. INP) and
@@ -149,20 +152,23 @@ def dist(values):
 
 
 class Session:
-    def __init__(self, browser, url, width, height, scale):
+    def __init__(self, browser, url, width, height, scale, activity=None):
         self.width, self.height, self.scale = width, height, scale
+        self.activity = activity
         self.context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=scale)
         self.context.add_init_script(INIT_SCRIPT)
         self.page = self.context.new_page()
         self.errors = []
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         started = time.monotonic()
-        self.page.goto(url + "?debug&profile")
+        self.page.goto(url + "?debug&profile" + (f"&activity={activity}" if activity else ""))
         expect(self.enter_button()).to_be_enabled(timeout=60_000)
         self.cold_selection_s = round(time.monotonic() - started, 2)
 
     def enter_button(self):
-        return self.page.get_by_role("button", name=re.compile("^Enter World"))
+        # The Battle Royale practice arena (#550, #552) enters through its own button.
+        name = "^Start practice" if self.activity == "battle-royale" else "^Enter World"
+        return self.page.get_by_role("button", name=re.compile(name))
 
     def frames(self, count):
         self.page.evaluate("""count => new Promise(resolve => {
@@ -346,7 +352,10 @@ def move_rotate(session, seconds, trace=None, browser=None):
 
 
 def view(session, name, seconds):
-    session.page.evaluate("name => window.__valeDebug.flyTo(name)", name)
+    if isinstance(name, tuple):
+        session.page.evaluate("([eye, target]) => window.__valeDebug.flyToPose(eye, target)", list(name))
+    else:
+        session.page.evaluate("name => window.__valeDebug.flyTo(name)", name)
     session.frames(30)
     session.page.wait_for_timeout(1500)
     result = summarize(session.record(seconds), seconds)
@@ -460,7 +469,11 @@ def main():
     parser.add_argument("--channel", help="Playwright browser channel, e.g. chrome")
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--no-sweep", action="store_true", help="skip the viewport/pixel-ratio sweep")
+    parser.add_argument("--activity", choices=["battle-royale"],
+                        help="profile the Battle Royale practice arena (#552) instead of Greyhaven")
     args = parser.parse_args()
+    # The arena's overview: the whole fortress from above its south side.
+    overview = ((0, 70, -150), (0, 0, 0)) if args.activity else "vale"
 
     dist_dir = ROOT / "web" / "dist"
     if not (dist_dir / "index.html").is_file():
@@ -475,10 +488,15 @@ def main():
         browser = playwright.chromium.launch(headless=not args.headed, channel=args.channel, args=GPU_ARGS)
         report["browser"] = {"version": browser.version, "channel": args.channel or "playwright-chromium",
                              "headless": not args.headed, "args": GPU_ARGS}
-        session = Session(browser, url, 1440, 900, 1)
+        report["activity"] = args.activity or "greyhaven"
+        session = Session(browser, url, 1440, 900, 1, args.activity)
         report["coldSelectionSeconds"] = session.cold_selection_s
         session.frames(60)
-        report["scenarios"]["selection-keys"] = selection_keys(session)
+        if args.activity:
+            session.enter_world()
+            session.frames(10)
+        else:
+            report["scenarios"]["selection-keys"] = selection_keys(session)
         report["display"] = {"viewport": [1440, 900], "deviceScaleFactor": 1, **session.renderer()}
         session.warm()
         report["scenarios"]["idle"] = summarize(session.record(args.seconds), args.seconds)
@@ -491,20 +509,21 @@ def main():
         if trace:
             report["scenarios"]["move-rotate"]["trace"] = {"path": str(trace), **analyze_trace(trace)}
         report["scenarios"]["key-to-motion"] = key_to_motion(session)
-        for name, viewpoint in [("dense-woods", "woods"), ("dense-hub", "hub"), ("overview", "vale")]:
+        views = [("overview", overview)] if args.activity else [("dense-woods", "woods"), ("dense-hub", "hub"), ("overview", overview)]
+        for name, viewpoint in views:
             report["scenarios"][name] = view(session, viewpoint, args.seconds)
         report["pageErrors"] = session.errors
         session.close()
         if not args.no_sweep:
             for width, height, scale in SWEEP:
-                sweep = Session(browser, url, width, height, scale)
+                sweep = Session(browser, url, width, height, scale, args.activity)
                 sweep.enter_world()
                 sweep.warm()
                 idle = summarize(sweep.record(args.seconds / 2), args.seconds / 2)
-                overview = view(sweep, "vale", args.seconds / 2)
+                seen = view(sweep, overview, args.seconds / 2)
                 report["sweep"].append({"viewport": [width, height], "deviceScaleFactor": scale, **sweep.renderer(),
                                         "idle": {k: idle[k] for k in ("fps", "rafIntervalMs", "cpuFrameMs", "gpuMs")},
-                                        "overview": {k: overview[k] for k in ("fps", "rafIntervalMs", "cpuFrameMs", "gpuMs", "drawCallsPerFrame")},
+                                        "overview": {k: seen[k] for k in ("fps", "rafIntervalMs", "cpuFrameMs", "gpuMs", "drawCallsPerFrame")},
                                         "pageErrors": sweep.errors})
                 sweep.close()
         browser.close()
