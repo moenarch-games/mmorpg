@@ -161,6 +161,8 @@ pub(crate) fn encode(scene: &StaticScene) -> SceneBuffers {
                 mmorpg_presentation::Kit::Outpost => "outpost",
                 mmorpg_presentation::Kit::SettlementProps => "settlementProps",
                 mmorpg_presentation::Kit::Nature => "nature",
+                // Graybox fallbacks are animated parts per body, never batched groups.
+                mmorpg_presentation::Kit::Graybox(_) => "fortress",
             }),
             min: group.min,
             max: group.max,

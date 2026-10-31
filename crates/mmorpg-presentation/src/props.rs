@@ -774,7 +774,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut windmills = 0;
     let mut fires = 0;
     let mut roofs = 0;
-    for p in &s.props {
+    for (index, p) in s.props.iter().enumerate() {
         // Trees and rocks are the nature bundle's (#49); these are their fallback.
         b.fallback = crate::nature::draws(s, p).then_some(Kit::Nature);
         // The inn is asset-tooling's walk-in bundle (`crate::buildings`), not a procedural block.
@@ -1369,6 +1369,19 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                 Motion::Fallback {
                     frame: f,
                     kit: Kit::Outpost,
+                },
+            ));
+            continue;
+        }
+        // Graybox level geometry is the fallback for a composition kit's piece over its body
+        // (the fortress kit, #591), hidden once the client draws that piece.
+        if p.kind.graybox() {
+            animations.push(animated(
+                m,
+                |part| format!("graybox-{index}-{part}"),
+                Motion::Fallback {
+                    frame: f,
+                    kit: Kit::Graybox(index),
                 },
             ));
             continue;

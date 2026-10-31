@@ -18,6 +18,7 @@ use mmorpg_core::{
 };
 use mmorpg_presentation::StaticScene;
 use mmorpg_scenery::Scenery;
+use serde::Serialize;
 use wasm_bindgen::prelude::{JsError, wasm_bindgen};
 
 use crate::static_scene::SceneBuffers;
@@ -121,10 +122,11 @@ const fn graybox_kind(part: ArenaPart) -> Option<mmorpg_scenery::PropKind> {
     }
 }
 
-/// The fortress drawn from its own collider boxes and ramp wedges, keyed by its revision.
-pub(crate) fn shared_scenery() -> Arc<Scenery> {
-    static SCENERY: OnceLock<Arc<Scenery>> = OnceLock::new();
-    Arc::clone(SCENERY.get_or_init(|| {
+/// The fortress drawn from its own collider boxes and ramp wedges, keyed by its revision, and
+/// the fortress body of each of its props (boxes, then ramps).
+fn graybox() -> &'static (Arc<Scenery>, Vec<Option<u32>>) {
+    static SCENERY: OnceLock<(Arc<Scenery>, Vec<Option<u32>>)> = OnceLock::new();
+    SCENERY.get_or_init(|| {
         let fortress = fortress();
         let parts = arena::parts();
         let boxes: Vec<_> = fortress
@@ -136,28 +138,166 @@ pub(crate) fn shared_scenery() -> Arc<Scenery> {
                 graybox_kind(*part).map(|kind| (collider.clone(), kind))
             })
             .collect();
-        Arc::new(Scenery::graybox(
+        let bodies = boxes
+            .iter()
+            .map(|(collider, _)| Some(collider.id))
+            .chain(fortress.ramps().iter().map(|ramp| Some(ramp.body)))
+            .collect();
+        let scenery = Scenery::graybox(
             fortress.revision(),
             &boxes,
             fortress.ramps(),
-        ))
-    }))
+            fortress.platforms(),
+        );
+        (Arc::new(scenery), bodies)
+    })
 }
+
+pub(crate) fn shared_scenery() -> Arc<Scenery> {
+    Arc::clone(&graybox().0)
+}
+
+fn scene() -> &'static StaticScene {
+    static SCENE: OnceLock<StaticScene> = OnceLock::new();
+    SCENE.get_or_init(|| StaticScene::new(&shared_scenery()))
+}
+
 fn buffers() -> &'static SceneBuffers {
     static BUFFERS: OnceLock<SceneBuffers> = OnceLock::new();
-    BUFFERS.get_or_init(|| crate::static_scene::encode(&StaticScene::new(&shared_scenery())))
+    BUFFERS.get_or_init(|| crate::static_scene::encode(scene()))
+}
+
+/// The fortress kit's pieces over [`fortress`] (#591), as the page draws them.
+#[derive(Serialize)]
+struct DressingEntry {
+    /// Every bundle entry key drawn, sorted.
+    entries: Vec<String>,
+    statics: Vec<StaticEntry>,
+    lifts: Vec<LiftEntry>,
+    lods: Vec<LodEntry>,
+}
+
+#[derive(Serialize)]
+struct StaticEntry {
+    key: String,
+    /// Column-major entry-to-world matrix, metres.
+    matrix: [f32; 16],
+}
+
+#[derive(Serialize)]
+struct LiftEntry {
+    key: String,
+    /// The platform whose `UnitPresenter` frame `platforms` entry places it.
+    platform: u8,
+    /// Radians about +Y.
+    yaw: f64,
+}
+
+#[derive(Serialize)]
+struct LodEntry {
+    key: String,
+    /// Bounding-sphere centre in the entry's frame, metres.
+    centre: [f64; 3],
+    /// `[variant, camera distance (metres, to the centre) it is drawn from]`, finest first.
+    levels: Vec<(String, f64)>,
 }
 
 /// Reuses the same Rust scenery meshes and character catalog as the ordinary client.
 #[derive(Default)]
 #[wasm_bindgen]
-pub struct ArenaPresentation;
+pub struct ArenaPresentation {
+    /// The graybox props the fortress kit dresses (sorted), once [`Self::dress`] read it.
+    dressed: Vec<usize>,
+}
+
+impl ArenaPresentation {
+    fn dressing(&mut self, descriptor: &str, fov_y: f64) -> Result<DressingEntry, String> {
+        let dressing =
+            mmorpg_presentation::composition::Descriptor::parse(descriptor)?.dress(&fortress());
+        self.dressed = dressing.props(&graybox().1);
+        Ok(DressingEntry {
+            entries: dressing.entries().into_iter().map(str::to_owned).collect(),
+            statics: dressing
+                .statics
+                .iter()
+                .map(|piece| StaticEntry {
+                    key: piece.entry.clone(),
+                    matrix: piece.model,
+                })
+                .collect(),
+            lifts: dressing
+                .lifts
+                .iter()
+                .map(|piece| LiftEntry {
+                    key: piece.entry.clone(),
+                    platform: piece.platform.get(),
+                    yaw: piece.yaw,
+                })
+                .collect(),
+            lods: dressing
+                .lods
+                .iter()
+                .map(|entry| LodEntry {
+                    key: entry.entry.clone(),
+                    centre: entry.centre,
+                    levels: entry
+                        .levels
+                        .iter()
+                        .map(|(variant, _)| variant.clone())
+                        .zip(entry.distances(fov_y))
+                        .collect(),
+                })
+                .collect(),
+        })
+    }
+}
 
 #[wasm_bindgen]
 impl ArenaPresentation {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// The fortress kit (#591) over the fortress, from its descriptor JSON: the pieces whose
+    /// every body is exactly one of [`fortress`]'s, and each entry's level switch distances for
+    /// a camera of vertical field of view `fov_y` (radians). The graybox of the bodies they
+    /// dress is hidden while the page draws the kit ([`Self::static_scene_shown`]).
+    ///
+    /// # Errors
+    ///
+    /// For a malformed descriptor.
+    pub fn dress(&mut self, descriptor: &str, fov_y: f64) -> Result<String, JsError> {
+        let entry = self
+            .dressing(descriptor, fov_y)
+            .map_err(|error| JsError::new(&error))?;
+        Ok(serde_json::to_string(&entry).expect("the dressing is serializable data"))
+    }
+
+    /// One model matrix (16 floats) per animated part of the static scene: each body's graybox.
+    #[wasm_bindgen(js_name = staticSceneMotion)]
+    pub fn static_scene_motion(&self, seconds: f64, animate: bool) -> Vec<f32> {
+        scene()
+            .motion(seconds, animate)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    /// Per animated part 1 (drawn) or 0: a body's graybox is hidden while the page draws the
+    /// fortress kit (`fortress_kit`) and a piece of it dresses that body.
+    #[wasm_bindgen(js_name = staticSceneShown)]
+    pub fn static_scene_shown(&self, viewer: &[f64], fortress_kit: bool) -> Vec<u8> {
+        let viewer = (viewer.len() == 3).then(|| [viewer[0], viewer[1], viewer[2]]);
+        let kits = mmorpg_presentation::Kits {
+            dressed: if fortress_kit { &self.dressed } else { &[] },
+            ..mmorpg_presentation::Kits::default()
+        };
+        scene()
+            .shown(viewer, kits)
+            .into_iter()
+            .map(u8::from)
+            .collect()
     }
     /// The fortress content revision a hosted match's projections must carry.
     #[wasm_bindgen(js_name = contentRevision)]
@@ -221,6 +361,86 @@ mod tests {
     use crate::host::LocalZoneHost;
     use mmorpg_core::{EntityKind, PlatformPhase, PlayerId, ZoneCommand};
     use mmorpg_protocol::{decode_snapshot, encode_command};
+
+    /// The fetched `fortress-kit` bundle's descriptor (`scripts/fetch-bundles.sh`).
+    fn kit_descriptor() -> String {
+        let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../web/public/scenery/fortress.kit");
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(bundle.join("manifest.json")).expect("run scripts/fetch-bundles.sh"),
+        )
+        .unwrap();
+        let path = manifest["assets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|asset| asset["attachments"].as_array().unwrap())
+            .find(|attachment| attachment["name"] == "fortress-descriptor")
+            .and_then(|attachment| attachment["path"].as_str())
+            .expect("the kit carries its descriptor");
+        std::fs::read_to_string(bundle.join(path)).unwrap()
+    }
+
+    #[test]
+    fn the_fortress_kit_dresses_every_body_but_the_ground_and_hides_its_graybox() {
+        let mut presentation = ArenaPresentation::new();
+        let dressing = presentation
+            .dressing(&kit_descriptor(), 50_f64.to_radians())
+            .unwrap();
+        let fortress = fortress();
+        assert_eq!(dressing.lifts.len(), fortress.platforms().len());
+        // Every graybox prop is dressed: the whole fortress is drawn from the kit.
+        let props = shared_scenery().props.len();
+        assert_eq!(presentation.dressed, (0..props).collect::<Vec<_>>());
+        let shown = |kit| presentation.static_scene_shown(&[], kit);
+        assert!(shown(false).iter().all(|&shown| shown == 1));
+        assert!(shown(true).iter().all(|&shown| shown == 0));
+        // Each drawn entry has levels from the finest at distance 0.
+        assert_eq!(dressing.entries.len(), dressing.lods.len());
+        for entry in &dressing.lods {
+            assert_eq!(entry.levels[0], ("default".to_owned(), 0.), "{}", entry.key);
+        }
+        // The courtyard lifts rest flush with the ground: the terrain leaves their footprints.
+        assert_eq!(shared_scenery().terrain_holes.len(), 4);
+    }
+
+    #[test]
+    fn a_body_the_kit_does_not_fit_exactly_keeps_its_graybox() {
+        let mut descriptor: serde_json::Value = serde_json::from_str(&kit_descriptor()).unwrap();
+        // The first curtain wall's body one unit taller than the fortress's.
+        let wall = &mut descriptor["composition"]["items"][0]["bodies"][0];
+        let id = wall["body"].as_u64().unwrap() as u32;
+        wall["halfExtents"][1] = (wall["halfExtents"][1].as_i64().unwrap() + 1).into();
+        let mut presentation = ArenaPresentation::new();
+        let dressing = presentation.dressing(&descriptor.to_string(), 1.).unwrap();
+        let scenery = shared_scenery();
+        let prop = scenery
+            .props
+            .iter()
+            .position(|prop| prop.collider == Some(id))
+            .unwrap();
+        assert!(!presentation.dressed.contains(&prop));
+        assert_eq!(presentation.dressed.len(), scenery.props.len() - 1);
+        assert_eq!(
+            presentation
+                .static_scene_shown(&[], true)
+                .iter()
+                .filter(|&&shown| shown == 1)
+                .count(),
+            scene()
+                .animated
+                .iter()
+                .filter(|part| matches!(
+                    part.motion,
+                    mmorpg_presentation::Motion::Fallback {
+                        kit: mmorpg_presentation::Kit::Graybox(index),
+                        ..
+                    } if index == prop
+                ))
+                .count()
+        );
+        assert!(dressing.statics.len() < 82 - 8);
+    }
 
     #[test]
     fn practice_runs_the_fortress_bodies_and_draws_each_one() {

@@ -668,6 +668,7 @@ pub fn static_scene_shown(viewer: &[f64], outpost_kit: bool, settlement_props: b
             settlement_props,
             // Nature fallbacks are whole static groups (#49), which the browser hides itself.
             nature: false,
+            dressed: &[],
         },
     )
 }
@@ -747,6 +748,13 @@ impl UnitPresenter {
                 lower_weight,
                 upper_weight,
             });
+    }
+
+    /// The platforms (ids) the page's kit draws instead of their procedural pillar, the
+    /// fortress kit's lifts (#591): each frame's `platforms` says where each stands.
+    #[wasm_bindgen(js_name = setKitPlatforms)]
+    pub fn set_kit_platforms(&mut self, platforms: &[u8]) {
+        self.0.set_kit_platforms(platforms);
     }
 
     /// Shows or hides the development body overlay (#39): each unit's authoritative collision

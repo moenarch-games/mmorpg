@@ -160,63 +160,17 @@ pub fn placements(s: &Scenery) -> Vec<Placement> {
     s.props.iter().filter_map(|p| placement(s, &g, p)).collect()
 }
 
-/// One entry's levels of detail, from the bundle descriptor's `lods`.
-#[derive(Clone, Debug, PartialEq)]
-pub struct EntryLods {
-    pub entry: String,
-    /// Bounding-sphere centre in the entry's frame and its radius, metres.
-    pub centre: [f64; 3],
-    pub radius: f64,
-    /// `(variant, minScreenSize)` from the finest level to the coarsest.
-    pub levels: Vec<(String, f64)>,
-}
+pub use crate::lod::EntryLods;
 
-/// Every entry's levels from the bundle's `nature-descriptor` attachment JSON.
+/// Every entry's levels from the bundle's `nature-descriptor` attachment JSON ([`crate::lod`]).
+///
+/// # Errors
+///
+/// For malformed JSON or levels of detail.
 pub fn descriptor_lods(json: &str) -> Result<Vec<EntryLods>, String> {
-    let value: serde_json::Value =
+    let value =
         serde_json::from_str(json).map_err(|error| format!("nature descriptor: {error}"))?;
-    let metric = value["lodSelection"]["metric"].as_str();
-    if metric != Some("projected-bounding-sphere-height-fraction") {
-        return Err(format!("unknown nature LOD metric {metric:?}"));
-    }
-    let assets = value["assets"]
-        .as_array()
-        .ok_or("the nature descriptor lists no assets")?;
-    assets
-        .iter()
-        .map(|asset| {
-            let entry = asset["key"].as_str().ok_or("a nature asset without key")?;
-            let lods = &asset["lods"];
-            let sphere = &lods["boundingSphere"];
-            let centre = sphere["center"]
-                .as_array()
-                .filter(|c| c.len() == 3)
-                .ok_or_else(|| format!("{entry} has no bounding sphere"))?;
-            let centre = std::array::from_fn(|axis| centre[axis].as_f64().unwrap_or(0.));
-            let radius = sphere["radius"]
-                .as_f64()
-                .ok_or_else(|| format!("{entry} has no bounding radius"))?;
-            let levels = lods["levels"]
-                .as_array()
-                .ok_or_else(|| format!("{entry} has no levels"))?
-                .iter()
-                .map(|level| {
-                    Some((
-                        level["variant"].as_str()?.to_owned(),
-                        level["minScreenSize"].as_f64()?,
-                    ))
-                })
-                .collect::<Option<Vec<_>>>()
-                .filter(|levels| !levels.is_empty())
-                .ok_or_else(|| format!("{entry} has malformed levels"))?;
-            Ok(EntryLods {
-                entry: entry.to_owned(),
-                centre,
-                radius,
-                levels,
-            })
-        })
-        .collect()
+    crate::lod::descriptor_lods(&value)
 }
 
 /// One drawn level of a placement this frame.

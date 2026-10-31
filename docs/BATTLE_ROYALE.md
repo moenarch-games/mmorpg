@@ -29,17 +29,27 @@ geometry.
   (0, −76) m, 16 × 32 slots 2 m apart) and the training targets. A hosted match runs
   `arena::content()` itself; the client refuses projections whose content revision is not
   `ArenaPresentation.contentRevision()`, i.e. that fortress's.
-- **Rendering**: `Scenery::graybox` turns every collider box into a graybox prop (walls, parapets
-  and columns; towers; floors and bridges, each with a lighter walkable top) and every ramp into a
-  wedge, drawn by the shared static scene. Lifts are the unit presenter's moving platforms at the
-  projection's tick. The ground is the ordinary flat terrain.
+- **Rendering** (#591): asset-tooling's rolling `fortress-kit` bundle
+  (`scripts/fetch-bundles.sh` → `web/public/scenery/fortress.kit`) draws the fortress in textured
+  CC0 stone and timber. Its descriptor (`fortress-descriptor` on `fortress.kit.curtain-wall`) lists
+  each piece's `origin`, `yawDegrees` and the arena bodies it dresses;
+  `mmorpg_presentation::composition` keeps a piece only when every one of its bodies equals a body
+  of `arena::content()` exactly (collider id, centre and half extents; ramp body, box and rise;
+  lift platform body, low stop and half extents). Statics are placed once; the lift cribs follow
+  `Platform::centre_at(tick)` minus their half height through the unit presenter, which then
+  draws no pillar for them. Each piece is a three.js `LOD` of `default`/`lod1`/`lod2`, switched at
+  the descriptor's `lodSelection` screen sizes (`mmorpg_presentation::lod`, the greyhaven-nature
+  format). The terrain leaves out the four courtyard lift footprints, whose platforms rest flush
+  with the ground. `Scenery::graybox` (every collider box a graybox prop, every ramp a wedge) stays
+  the fallback per body: drawn while the bundle loads, if it fails, and for any body no piece fits.
+  The ground is the ordinary flat terrain. The native client has no arena, so it draws neither.
 - **Camera**: in the arena only, the orbit camera's eye is pulled in front of the first structure
   box between it and the character (`clearSightLine`), so it stays under the keep's roof and in
   front of walls; Greyhaven's camera is unchanged.
 
-Everything is graybox and untextured: curtain wall, gates, corner towers, courtyard ramps, keep
-corridors and hall, roof, bridges, central tower and lifts. Authored art comes later through
-Blender → asset-tooling → this renderer and must keep the same collision.
+The art is presentation only: each piece is fitted to its bodies (pass 2's decoration may stand
+slightly proud of them), and collision is still `battle_royale_core::arena`'s alone. A later pass
+of the kit with the same descriptor format is adopted by refetching the rolling release.
 
 `scripts/smoke-browser.py` walks courtyard → keep door → corridor → interior ramp → roof → central
 tower lift → tower top through the page's real zone at desktop and phone size

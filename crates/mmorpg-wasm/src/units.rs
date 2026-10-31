@@ -131,6 +131,14 @@ struct FrameLayout {
     geometries: Vec<GeometryEntry>,
     units: Vec<UnitEntry>,
     imported: Vec<ImportedEntry>,
+    platforms: Vec<PlatformEntry>,
+}
+
+/// A platform the page's kit draws (#591): where its box's bottom centre stands, metres.
+#[derive(Serialize)]
+struct PlatformEntry {
+    platform: u8,
+    base: [f32; 3],
 }
 
 /// Bulk numbers of the last call, read by the page right after it.
@@ -254,6 +262,16 @@ impl Units {
     /// Shows or hides the development body overlay (#39).
     pub fn set_body_overlay(&mut self, shown: bool) {
         self.presenter.set_body_overlay(shown);
+    }
+
+    /// The platforms the page's kit draws instead of their procedural pillar (#591).
+    pub fn set_kit_platforms(&mut self, platforms: &[u8]) {
+        self.presenter.set_kit_platforms(
+            platforms
+                .iter()
+                .map(|&id| mmorpg_core::PlatformId::new(id))
+                .collect(),
+        );
     }
 
     /// Decodes and observes one received projection.
@@ -449,6 +467,14 @@ impl Units {
             geometries,
             units,
             imported,
+            platforms: frame
+                .platforms
+                .iter()
+                .map(|view| PlatformEntry {
+                    platform: view.platform.get(),
+                    base: view.base,
+                })
+                .collect(),
         })
         .map_err(|error| error.to_string())
     }

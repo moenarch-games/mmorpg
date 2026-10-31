@@ -1,5 +1,6 @@
 import { ArenaPresentation, LocalZone, UnitPresenter } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { decodeCatalog } from "../catalog";
+import { FORTRESS_BUNDLE, type CompositionDressing } from "../composition-kit";
 import type { LocalWorld } from "../local-world";
 import { decodeScenery, type SceneryProvider } from "../scenery";
 import type { ZoneServer } from "../online-config";
@@ -26,7 +27,11 @@ export function equipmentSlots(ids: ArrayLike<number>): ArenaEquipment {
   return [slot(0), slot(1), slot(2), slot(3), slot(4), slot(5)];
 }
 
-/** The shared fortress drawn as graybox (#552): the same Rust meshes and unit presenters as the ordinary world. */
+/**
+ * The shared fortress (#552) drawn from asset-tooling's fortress kit (#591) over its graybox, which stays the fallback
+ * for any body the kit does not fit exactly and while the kit loads: the same Rust meshes and unit presenters as the
+ * ordinary world.
+ */
 function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): SceneryProvider {
   const emptyMotion = new Float32Array();
   return {
@@ -36,9 +41,15 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
       staticSceneVertices: () => presentation.staticSceneVertices(),
       staticSceneIndices: () => presentation.staticSceneIndices(),
       staticSceneModels: () => presentation.staticSceneModels(),
-      staticSceneMotion: () => emptyMotion,
-      staticSceneShown: () => new Uint8Array(),
+      staticSceneMotion: (seconds, animate) => presentation.staticSceneMotion(seconds, animate),
+      staticSceneShown: (viewer, _outpost, _settlement, fortress) => presentation.staticSceneShown(viewer, fortress),
       surfaceY: () => 0,
+    },
+    fortress: {
+      bundle: FORTRESS_BUNDLE,
+      name: "fortress kit",
+      descriptor: { key: "fortress.kit.curtain-wall", variant: "default", attachment: "fortress-descriptor" },
+      dress: (descriptor, fovY) => JSON.parse(presentation.dress(descriptor, fovY)) as CompositionDressing,
     },
     unitPresenter: (player) => UnitPresenter.forArena(player),
     buildings: { presenters: () => [], reachableDoor: () => 0 },
