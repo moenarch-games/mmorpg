@@ -281,7 +281,7 @@ impl NatureGpu {
                                     metallic_roughness_texture: texture(
                                         part.textures.metallic_roughness,
                                     ),
-                                    ..part.material.clone()
+                                    ..part.material
                                 };
                                 NaturePart {
                                     mesh: world.add_mesh(&part.mesh),

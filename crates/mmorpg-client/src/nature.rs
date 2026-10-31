@@ -107,7 +107,7 @@ pub fn fade_material(material: &StandardMaterial, threshold: f32) -> StandardMat
         AlphaMode::Mask(cutoff) => cutoff,
         AlphaMode::Opaque | AlphaMode::Blend => 1.0,
     };
-    let mut faded = material.clone();
+    let mut faded = *material;
     faded.base_color.w = material.base_color.w / threshold.max(1e-3);
     faded.alpha_mode = AlphaMode::Mask(cutoff);
     faded
