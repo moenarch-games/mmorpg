@@ -662,10 +662,11 @@ impl Presentation {
             .players(now)
             .get(&self.player_id)
             .map(|pose| pose.position.map(f64::from));
-        let mut frame = world.frame(
+        let mut frame = world.frame_viewed(
             now.saturating_duration_since(self.origin).as_secs_f64(),
             !self.reduced_motion,
             view.eye,
+            view.field_of_view_degrees,
             viewer,
         );
         // The sun, moon and sky follow the zone's time of day; flames flicker on the client

@@ -490,8 +490,9 @@ mod tests {
         });
     }
 
-    /// Advisory frame time (PRINCIPLE-015): the Outpost hub with its units, 1280×720, each
-    /// frame skinned, submitted and waited for. Prints the median and p95 wall time.
+    /// Advisory frame time (PRINCIPLE-015): the Outpost hub with its units and the woods
+    /// (#49), 1280×720, each frame skinned, submitted and waited for. Prints the median and
+    /// p95 wall time per view.
     #[test]
     #[ignore = "requires a GPU; manual frame-time measurement"]
     fn outpost_frame_time() {
@@ -512,11 +513,24 @@ mod tests {
             let mut presentation =
                 Presentation::new(1, scenery.clone(), Arc::clone(&content), start).unwrap();
             presentation.push(projection, start).unwrap();
-            let view = CameraView {
-                field_of_view_degrees: 50.0,
-                eye: [5.0, 8.5, 31.0],
-                target: [-14.0, 3.0, 4.0],
-            };
+            let views = [
+                (
+                    "hub",
+                    CameraView {
+                        field_of_view_degrees: 50.0,
+                        eye: [5.0, 8.5, 31.0],
+                        target: [-14.0, 3.0, 4.0],
+                    },
+                ),
+                (
+                    "woods",
+                    CameraView {
+                        field_of_view_degrees: 50.0,
+                        eye: [-41.0, 18.0, 16.0],
+                        target: [-69.0, 14.0, 0.0],
+                    },
+                ),
+            ];
             let size = [1280, 720];
             let instance = wgpu::Instance::default();
             let adapter = instance.request_adapter(&Default::default()).await.unwrap();
@@ -539,36 +553,42 @@ mod tests {
                 view_formats: &[],
             });
             let target = target.create_view(&Default::default());
-            let mut times = Vec::new();
-            let mut render_times = Vec::new();
-            for index in 0..240 {
-                let now = start + Duration::from_millis(16 * index);
-                let begin = Instant::now();
-                let frame = presentation.frame(&world, now, view);
-                let rendering = Instant::now();
-                renderer.render(&target, &frame, &[], view, None).unwrap();
-                renderer
-                    .device
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: None,
-                        timeout: Some(Duration::from_secs(10)),
-                    })
-                    .unwrap();
-                if index >= 40 {
-                    times.push(begin.elapsed().as_secs_f64() * 1e3);
-                    render_times.push(rendering.elapsed().as_secs_f64() * 1e3);
+            for (name, view) in views {
+                let mut times = Vec::new();
+                let mut render_times = Vec::new();
+                for index in 0..240 {
+                    let now = start + Duration::from_millis(16 * index);
+                    let begin = Instant::now();
+                    let frame = presentation.frame(&world, now, view);
+                    let rendering = Instant::now();
+                    renderer.render(&target, &frame, &[], view, None).unwrap();
+                    renderer
+                        .device
+                        .poll(wgpu::PollType::Wait {
+                            submission_index: None,
+                            timeout: Some(Duration::from_secs(10)),
+                        })
+                        .unwrap();
+                    if index >= 40 {
+                        times.push(begin.elapsed().as_secs_f64() * 1e3);
+                        render_times.push(rendering.elapsed().as_secs_f64() * 1e3);
+                    }
                 }
+                times.sort_by(f64::total_cmp);
+                render_times.sort_by(f64::total_cmp);
+                println!(
+                    concat!(
+                        "view={} adapter={} frame_ms median={:.2} p95={:.2} ",
+                        "render_ms median={:.2} p95={:.2}"
+                    ),
+                    name,
+                    adapter.get_info().name,
+                    times[times.len() / 2],
+                    times[times.len() * 95 / 100],
+                    render_times[render_times.len() / 2],
+                    render_times[render_times.len() * 95 / 100]
+                );
             }
-            times.sort_by(f64::total_cmp);
-            render_times.sort_by(f64::total_cmp);
-            println!(
-                "adapter={} frame_ms median={:.2} p95={:.2} render_ms median={:.2} p95={:.2}",
-                adapter.get_info().name,
-                times[times.len() / 2],
-                times[times.len() * 95 / 100],
-                render_times[render_times.len() / 2],
-                render_times[render_times.len() * 95 / 100]
-            );
         });
     }
 
@@ -617,13 +637,40 @@ mod tests {
             let campfire = near(lights.first().unwrap());
             let lantern = near(lights.last().unwrap());
             let size = [1280, 720];
-            for (name, hour, view) in [
+            // The woods (#49) near, at the debug `woods` viewpoint and far, so the trees show
+            // each level of detail.
+            let woods = |along: f32, rise: f32| {
+                let (eye, target) = ([-41.0f32, 18.0, 16.0], [-69.0f32, 14.0, 0.0]);
+                CameraView {
+                    field_of_view_degrees: 50.0,
+                    eye: std::array::from_fn(|axis| {
+                        eye[axis] + (target[axis] - eye[axis]) * along + [0.0, rise, 0.0][axis]
+                    }),
+                    target,
+                }
+            };
+            for (index, (name, hour, view)) in [
                 ("noon", 12.0, hub),
                 ("dusk", 17.8, hub),
                 ("night", 23.5, hub),
                 ("torch-campfire", 22.0, campfire),
                 ("torch-lantern", 22.0, lantern),
-            ] {
+                ("woods-near", 15.0, woods(0.62, 0.0)),
+                ("woods-mid", 15.0, woods(0.0, 0.0)),
+                ("woods-far", 15.0, woods(-2.5, 22.0)),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                // Settle the trees' cross-fades at this view before the shot.
+                let now = now + Duration::from_secs(2 * index as u64);
+                for step in 0..4 {
+                    let _ = presentation.frame(
+                        &world,
+                        now - Duration::from_millis(250 * (4 - step)),
+                        view,
+                    );
+                }
                 let mut frame = presentation.frame(&world, now, view);
                 frame.lighting.hour = hour;
                 let pixels = readback(&frame, &[], view, size, None).await.unwrap();

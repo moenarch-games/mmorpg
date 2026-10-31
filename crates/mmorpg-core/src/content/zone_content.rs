@@ -67,6 +67,8 @@ pub struct ZoneContent {
     doors: Vec<crate::Door>,
     platforms: Vec<crate::Platform>,
     ramps: Vec<crate::Ramp>,
+    /// Rock colliders' convex proxies (#49), ordered by collider.
+    rocks: Vec<(u32, crate::RockShape)>,
     sites: Vec<crate::StructureSite>,
     pieces: Vec<crate::StructurePiece>,
     routines: Vec<crate::NpcRoutine>,
@@ -192,6 +194,7 @@ impl ZoneContent {
             doors: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
+            rocks: Vec::new(),
             sites: Vec::new(),
             pieces: Vec::new(),
             routines: Vec::new(),
@@ -238,6 +241,7 @@ impl ZoneContent {
             doors: Vec::new(),
             platforms: Vec::new(),
             ramps: Vec::new(),
+            rocks: Vec::new(),
             sites: Vec::new(),
             pieces: Vec::new(),
             routines: Vec::new(),
@@ -717,6 +721,42 @@ impl ZoneContent {
         Ok(self)
     }
 
+    /// Binds rock colliders' convex proxies (#49): each names a static collider at most once
+    /// and an authored proxy. Ordered by collider.
+    pub fn with_rocks(
+        mut self,
+        mut rocks: Vec<(u32, crate::RockShape)>,
+    ) -> Result<Self, ZoneError> {
+        rocks.sort_by_key(|(id, _)| *id);
+        if rocks.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            return Err(ZoneError::new("duplicate rock collider"));
+        }
+        for (id, shape) in &rocks {
+            shape.validate()?;
+            if !self.definition.colliders().iter().any(|c| c.id == *id) {
+                return Err(ZoneError::new("rock collider is not in the content"));
+            }
+        }
+        self.rocks = rocks;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Rock colliders' convex proxies (#49), ordered by collider.
+    #[must_use]
+    pub fn rocks(&self) -> &[(u32, crate::RockShape)] {
+        &self.rocks
+    }
+
+    /// The convex proxy collider `id` collides as (#49), if it is a rock.
+    #[must_use]
+    pub fn rock(&self, id: u32) -> Option<crate::RockShape> {
+        self.rocks
+            .binary_search_by_key(&id, |(rock, _)| *rock)
+            .ok()
+            .map(|index| self.rocks[index].1)
+    }
+
     /// Binds destructible structures (#305): sites and pieces in ID order, piece bodies in the
     /// static collider namespace that nothing else uses, supports among earlier pieces.
     pub fn with_structures(
@@ -1112,13 +1152,31 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_carried_quest_fingerprint();
+        let fingerprint = self.compute_rock_fingerprint();
         if self.character_persistence == CharacterPersistence::Durable {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/ephemeral-characters-v1");
         hash.u64(fingerprint);
+        hash.finish()
+    }
+
+    /// Which colliders collide as which rock proxy (#49).
+    fn compute_rock_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_carried_quest_fingerprint();
+        if self.rocks.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/rocks-v1");
+        hash.u64(fingerprint);
+        hash.len(self.rocks.len());
+        for (id, shape) in &self.rocks {
+            hash.u32(*id);
+            hash.u8(shape.proxy);
+            hash.u8(shape.quarters);
+        }
         hash.finish()
     }
 

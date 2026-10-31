@@ -239,9 +239,108 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
     }
 }
 
+/// One uploaded primitive of a tree or rock level (#49).
+struct NaturePart {
+    mesh: MeshId,
+    fade_in: MeshId,
+    fade_out: MeshId,
+    material: MaterialId,
+    /// One dissolve material per fade step (`crate::nature::FADE_STEPS`).
+    fades: Vec<MaterialId>,
+}
+
+/// The `greyhaven-nature` library uploaded once: per entry, per level, its primitives.
+struct NatureGpu(Vec<Vec<Vec<NaturePart>>>);
+
+impl NatureGpu {
+    fn upload(world: &mut World) -> Self {
+        let library = crate::nature::library();
+        let textures: Vec<_> = library
+            .textures
+            .iter()
+            .map(|texture| world.add_texture(texture))
+            .collect();
+        let levels = library
+            .levels
+            .iter()
+            .map(|levels| {
+                levels
+                    .iter()
+                    .map(|parts| {
+                        parts
+                            .iter()
+                            .map(|part| {
+                                let texture = |slot: Option<usize>| slot.map(|i| textures[i]);
+                                let material = StandardMaterial {
+                                    base_color_texture: texture(part.textures.base_color),
+                                    normal_map_texture: part
+                                        .textures
+                                        .normal
+                                        .filter(|_| !part.mesh.tangents.is_empty())
+                                        .map(|i| textures[i]),
+                                    metallic_roughness_texture: texture(
+                                        part.textures.metallic_roughness,
+                                    ),
+                                    ..part.material.clone()
+                                };
+                                NaturePart {
+                                    mesh: world.add_mesh(&part.mesh),
+                                    fade_in: world.add_mesh(&part.fade_in),
+                                    fade_out: world.add_mesh(&part.fade_out),
+                                    fades: (0..crate::nature::FADE_STEPS)
+                                        .map(|step| {
+                                            world.add_material(&crate::nature::fade_material(
+                                                &material,
+                                                crate::nature::fade_threshold(step),
+                                            ))
+                                        })
+                                        .collect(),
+                                    material: world.add_material(&material),
+                                }
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+        Self(levels)
+    }
+
+    /// The instances of one drawn tree or rock level: settled, or its dissolve copy.
+    fn instances(&self, draw: &crate::world::NatureDraw, out: &mut Vec<Instance>) {
+        let Some(parts) = self
+            .0
+            .get(draw.entry)
+            .and_then(|levels| levels.get(draw.level))
+        else {
+            return;
+        };
+        let world_from_local = Mat4::from_cols_array(&draw.model);
+        let steps = crate::nature::FADE_STEPS;
+        let step = |threshold: f32| ((threshold * steps as f32) as usize).min(steps - 1);
+        for part in parts {
+            let (mesh, material) = if draw.fade >= 1. {
+                (part.mesh, part.material)
+            } else if draw.fade > 0. {
+                // Incoming: kept where its noise reaches 1 - t.
+                (part.fade_in, part.fades[step(1. - draw.fade)])
+            } else {
+                // Outgoing: kept where the complementary noise reaches t.
+                (part.fade_out, part.fades[step(-draw.fade)])
+            };
+            out.push(Instance {
+                mesh,
+                material,
+                world_from_local,
+            });
+        }
+    }
+}
+
 pub(super) struct FrameRenderer {
     renderer: Renderer,
     world: World,
+    nature: Option<NatureGpu>,
     viewport: Viewport,
     meshes: HashMap<String, CachedMesh>,
     materials: HashMap<MaterialKey, (MaterialId, bool)>,
@@ -305,6 +404,7 @@ impl FrameRenderer {
         Self {
             renderer,
             world,
+            nature: None,
             viewport,
             meshes: HashMap::new(),
             materials: HashMap::new(),
@@ -425,6 +525,14 @@ impl FrameRenderer {
                 material: self.material(&draw.material),
                 world_from_local: Mat4::from_cols_array(&draw.model.elements),
             });
+        }
+        if !frame.nature.is_empty() {
+            let nature = self
+                .nature
+                .get_or_insert_with(|| NatureGpu::upload(&mut self.world));
+            for draw in &frame.nature {
+                nature.instances(draw, &mut instances);
+            }
         }
         self.evict();
         let scene = scene(&frame.lighting, view);

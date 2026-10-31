@@ -347,13 +347,14 @@ impl ZoneSimulation {
                 }
                 continue;
             }
-            world
-                .add_body(RigidBody::fixed(
-                    crate::physics::BodyId(u64::from(collider.id)),
-                    vector(collider.position),
-                    vector(collider.half_extents),
-                ))
-                .map_err(physics_error)?;
+            let id = crate::physics::BodyId(u64::from(collider.id));
+            let (position, half) = (vector(collider.position), vector(collider.half_extents));
+            // A rock (#49) collides as its authored convex proxy inside its box.
+            let body = match content.rock(collider.id) {
+                Some(shape) => RigidBody::rock(id, position, half, shape),
+                None => RigidBody::fixed(id, position, half),
+            };
+            world.add_body(body).map_err(physics_error)?;
         }
         for body in world_limit_bodies() {
             world.add_body(body).map_err(physics_error)?;

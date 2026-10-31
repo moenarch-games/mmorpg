@@ -201,8 +201,9 @@ fn engine_body(body: &RigidBody) -> Body {
             wedge
         }
         // A moving platform (#56) is a static box the adapter moves in place where the zone
-        // moves it; the adapter carries its riders.
-        Kind::Fixed | Kind::Platform => Body::keyed(
+        // moves it; the adapter carries its riders. The engine has no convex hulls: a rock
+        // (#49) is its box.
+        Kind::Fixed | Kind::Platform | Kind::Rock(_) => Body::keyed(
             key,
             Shape::Box(vector(exact(body.half_extents))),
             vector(body.position),
