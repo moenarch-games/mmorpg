@@ -572,7 +572,6 @@ impl ZoneSimulation {
         &mut self,
         player_id: PlayerId,
         request: QuestRequest,
-        now: u64,
     ) -> Result<Refusal, ZoneError> {
         match request {
             QuestRequest::Abandon { quest } => {
@@ -588,12 +587,11 @@ impl ZoneSimulation {
                 if player.quests.entries.len() == before {
                     return Ok(Some((ErrorCode::InvalidQuest, None)));
                 }
-                player.quests_changed_at = now;
                 Ok(None)
             }
-            QuestRequest::Accept { npc, quest } => self.accept_quest(player_id, npc, quest, now),
+            QuestRequest::Accept { npc, quest } => self.accept_quest(player_id, npc, quest),
             QuestRequest::Complete { npc, quest, choice } => {
-                self.complete_quest(player_id, npc, quest, choice, now)
+                self.complete_quest(player_id, npc, quest, choice)
             }
         }
     }
@@ -618,7 +616,6 @@ impl ZoneSimulation {
         player_id: PlayerId,
         npc: NpcId,
         quest: u8,
-        now: u64,
     ) -> Result<Refusal, ZoneError> {
         let target = Some(EntityRef::Npc(npc));
         self.keep_awake(npc);
@@ -662,7 +659,6 @@ impl ZoneSimulation {
                 progress: [0; MAX_QUEST_OBJECTIVES],
             },
         );
-        player.quests_changed_at = now;
         Ok(None)
     }
 
@@ -672,7 +668,6 @@ impl ZoneSimulation {
         npc: NpcId,
         quest: u8,
         choice: u8,
-        now: u64,
     ) -> Result<Refusal, ZoneError> {
         let target = Some(EntityRef::Npc(npc));
         let content = std::sync::Arc::clone(&self.content);
@@ -750,14 +745,12 @@ impl ZoneSimulation {
         player.copper = copper;
         if let Some(revision) = revision {
             player.inventory_revision = revision;
-            player.inventory_changed_at = now;
         }
         player
             .quests
             .entries
             .retain(|candidate| candidate.quest != definition.id);
         player.quests.completed |= bit;
-        player.quests_changed_at = now;
         push_event(
             &mut player.events,
             ZoneEvent::QuestCompleted {
@@ -777,13 +770,11 @@ impl ZoneSimulation {
         template: CreatureTemplateId,
         creature: crate::CreatureId,
         life: u64,
-        now: u64,
     ) -> Result<(), ZoneError> {
         let content = std::sync::Arc::clone(&self.content);
         let Some(player) = self.players.get_mut(&player_id) else {
             return Ok(());
         };
-        let mut changed = false;
         for entry in &mut player.quests.entries {
             let Some(quest) = content.quest(entry.quest) else {
                 continue;
@@ -808,7 +799,6 @@ impl ZoneSimulation {
                     }
                     crate::rewards::record(&mut self.rewards, player_id, key)?;
                     entry.progress[index] += 1;
-                    changed = true;
                     push_event(
                         &mut player.events,
                         ZoneEvent::QuestProgress {
@@ -819,9 +809,6 @@ impl ZoneSimulation {
                     );
                 }
             }
-        }
-        if changed {
-            player.quests_changed_at = now;
         }
         Ok(())
     }
@@ -861,7 +848,7 @@ impl ZoneSimulation {
 
     /// Tick step 8: talk and explore objectives of living players, in
     /// player-ID order, against the positions after this tick's movement.
-    pub(crate) fn advance_quest_objectives(&mut self, now: u64) -> Result<(), ZoneError> {
+    pub(crate) fn advance_quest_objectives(&mut self) -> Result<(), ZoneError> {
         let content = std::sync::Arc::clone(&self.content);
         if content.quests().is_empty() {
             return Ok(());
@@ -935,7 +922,6 @@ impl ZoneSimulation {
                     continue;
                 }
                 player.inventory_revision = revision;
-                player.inventory_changed_at = now;
                 push_event(
                     &mut player.events,
                     ZoneEvent::QuestProgress {
@@ -956,7 +942,6 @@ impl ZoneSimulation {
                     },
                 );
             }
-            player.quests_changed_at = now;
         }
         Ok(())
     }

@@ -118,7 +118,6 @@ fn encode_player(
     payload.extend_from_slice(&player.last_sequence.to_be_bytes());
     payload.extend_from_slice(&player.spawn_slot.to_be_bytes());
     payload.extend_from_slice(&player.inventory_revision.to_be_bytes());
-    payload.extend_from_slice(&player.inventory_changed_at.to_be_bytes());
     encode_inventory(payload, &player.inventory);
     encode_equipment(payload, &player.equipment);
     payload.extend_from_slice(&player.copper.to_be_bytes());
@@ -309,7 +308,7 @@ fn encode_player(
     for line in &player.chat {
         crate::chat::encode_line(payload, line);
     }
-    crate::quest::encode_log(payload, &player.quests, player.quests_changed_at)?;
+    crate::quest::encode_log(payload, &player.quests)?;
     payload.extend_from_slice(&player.waystones.bits().to_be_bytes());
     Ok(())
 }
@@ -796,7 +795,6 @@ fn decode_player(
     let last_sequence = u32::from_be_bytes(take(payload, offset)?);
     let spawn_slot = u16::from_be_bytes(take(payload, offset)?);
     let inventory_revision = u64::from_be_bytes(take(payload, offset)?);
-    let inventory_changed_at = u64::from_be_bytes(take(payload, offset)?);
     let inventory = decode_inventory(payload, offset)?;
     let equipment = decode_equipment(payload, offset)?;
     let copper = u32::from_be_bytes(take(payload, offset)?);
@@ -1049,11 +1047,10 @@ fn decode_player(
     for _ in 0..chat_count {
         chat.push(crate::chat::decode_line(payload, offset)?);
     }
-    let (quests, quests_changed_at) = crate::quest::decode_log(payload, offset)?;
+    let quests = crate::quest::decode_log(payload, offset)?;
     let waystones = crate::wire::decode_waystones(u32::from_be_bytes(take(payload, offset)?))?;
     Ok(CanonicalPlayerSnapshot {
         quests,
-        quests_changed_at,
         waystones,
         chat_ready_at,
         chat,
@@ -1071,7 +1068,6 @@ fn decode_player(
         inventory,
         copper,
         inventory_revision,
-        inventory_changed_at,
         equipment,
         combat: CanonicalPlayerCombat {
             level,
@@ -1678,7 +1674,6 @@ mod tests {
                         bag
                     },
                     inventory_revision: 4,
-                    inventory_changed_at: 88,
                     equipment: mmorpg_core::Equipment::from_slots([
                         Some(mmorpg_core::ItemId::new(3)),
                         None,
@@ -1745,7 +1740,6 @@ mod tests {
                         repairing: Some(mmorpg_core::PieceId::new(3)),
                     },
                     quests: mmorpg_core::QuestLog::default(),
-                    quests_changed_at: 0,
                     waystones: mmorpg_core::WaystoneSet::EMPTY,
                 },
                 CanonicalPlayerSnapshot {
@@ -1765,11 +1759,9 @@ mod tests {
                     spawn_slot: 0,
                     inventory: mmorpg_core::Inventory::default(),
                     inventory_revision: 1,
-                    inventory_changed_at: 0,
                     equipment: mmorpg_core::Equipment::default(),
                     combat: CanonicalPlayerCombat::default(),
                     quests: mmorpg_core::QuestLog::default(),
-                    quests_changed_at: 0,
                     waystones: mmorpg_core::WaystoneSet::EMPTY,
                 },
             ],
@@ -2056,7 +2048,7 @@ mod tests {
         // The intent count follows the player's timers; the seven intents
         // occupy 7 + 7 + 6 + 6 + 3 + 2 + 2 bytes after their lateness byte each, then
         // the dropped flag, the last observation (u64) and two events.
-        let intents = 16 + 24 + 2 + 161;
+        let intents = 16 + 24 + 2 + 153;
         let player_abilities =
             intents + 1 + (8 + 8 + 7 + 7 + 4 + 3 + 3) + 1 + 8 + 1 + 2 * EVENT_BYTES;
         assert_eq!(encoded[player_abilities], 6, "Arcanist, male");
@@ -2189,7 +2181,6 @@ mod tests {
             ],
             completed: 0b11,
         };
-        snapshot.players[0].quests_changed_at = 0x0a0b;
         let encoded = encode_canonical_snapshot(&snapshot).unwrap();
         assert_eq!(decode_canonical_snapshot(&encoded).unwrap(), snapshot);
         let intents = [
@@ -2198,11 +2189,7 @@ mod tests {
             &[0, ABANDON_QUEST_INTENT, 0],
         ]
         .concat();
-        let log = [
-            &0x0a0b_u64.to_be_bytes()[..],
-            &[0, 0, 0, 0b11, 2, 3, 1, 0, 0, 32, 0xff, 2, 7],
-        ]
-        .concat();
+        let log = [0, 0, 0, 0b11, 2, 3, 1, 0, 0, 32, 0xff, 2, 7].to_vec();
         for records in [intents, log] {
             assert!(
                 encoded
@@ -2239,7 +2226,7 @@ mod tests {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
         // Player 7's queued-swing flag follows its target reference.
         let player = 16 + 24 + 2;
-        let swing_queued = player + 44 + 96 + 1 + 4 + 4 + 5;
+        let swing_queued = player + 44 + 88 + 1 + 4 + 4 + 5;
         let intents = swing_queued + 1 + 6;
         let mut cases = vec![
             (swing_queued, 2, "boolean field must be 0 or 1"),
@@ -2298,8 +2285,8 @@ mod tests {
     #[test]
     fn canonical_equipment_rejects_unknown_and_misplaced_items() {
         let encoded = encode_canonical_snapshot(&snapshot()).unwrap();
-        // Player 7's equipment follows its 80-byte inventory block.
-        let equipment = 16 + 24 + 2 + 44 + 80;
+        // Player 7's equipment follows its 72-byte inventory block (revision and slots).
+        let equipment = 16 + 24 + 2 + 44 + 72;
         assert_eq!(encoded[equipment..equipment + 2], [0, 3]);
         for (slot, item, message) in [
             (0, 15, "unknown item"),

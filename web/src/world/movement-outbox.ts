@@ -21,19 +21,26 @@ export type MovementInput = {
  * (`mmorpg-client-model`, #543), the same one the native client runs. It performs no I/O.
  */
 export class MovementOutbox {
-  readonly #outbox: InstanceType<typeof wasm.MovementOutbox>;
+  // Created on first use: the page builds its world view before `mmorpg-wasm` has loaded.
+  #outbox: InstanceType<typeof wasm.MovementOutbox> | null = null;
+  #start: MovementInput;
 
   constructor(input: MovementInput) {
-    this.#outbox = new wasm.MovementOutbox(input.jumps, input.rolls ?? 0);
+    this.#start = input;
   }
 
   /** Starts a new session: only current input counts, earlier presses are dropped. */
   reset(input: MovementInput): void {
-    this.#outbox.reset(input.jumps, input.rolls ?? 0);
+    if (this.#outbox) {
+      this.#outbox.reset(input.jumps, input.rolls ?? 0);
+    } else {
+      this.#start = input;
+    }
   }
 
   /** Commands for the current input; `dead` comes from the latest projection. */
   update(held: MovementInput, nowMs: number, dead = false): WorldCommand[] {
+    this.#outbox ??= new wasm.MovementOutbox(this.#start.jumps, this.#start.rolls ?? 0);
     return this.#outbox.update(
       held.forward, held.strafe, held.facing, held.jumps, held.rolls ?? 0, held.rise ?? 0, nowMs, dead,
     );

@@ -227,8 +227,8 @@ own emote and the rate limit an emote shares with chat, across a reconnect.
 `accept_quest` steps require `npc` (the giver) and `quest`; `complete_quest`
 steps require `npc` (the ender), `quest` and `choice` (the reward index);
 `abandon_quest` steps require `quest`. All pass their values through unchanged.
-Quest sheets arrive on change ticks and every ten ticks, so quest expectations
-read the latest sheet the bot received: `quest` with `quest` and `quest_state`
+Bots acknowledge their sheets like real clients (#544), so a quest sheet arrives
+only on change and quest expectations read the latest sheet the bot received: `quest` with `quest` and `quest_state`
 (`active`, `completed` or `absent`) and, for an active quest, optional
 `progress` (three objective slots); `marker` with `npc` and `marker`
 (`available`, `in_progress`, `complete` or `none`). The `quest_progress` and

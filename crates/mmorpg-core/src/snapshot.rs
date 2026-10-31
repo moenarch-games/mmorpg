@@ -267,7 +267,6 @@ pub struct CanonicalPlayerSnapshot {
     pub copper: u32,
     pub inventory: crate::Inventory,
     pub inventory_revision: u64,
-    pub inventory_changed_at: u64,
     /// Equipped items; validated against the catalog by construction.
     pub equipment: crate::Equipment,
     pub combat: CanonicalPlayerCombat,
@@ -277,8 +276,6 @@ pub struct CanonicalPlayerSnapshot {
     pub chat: Vec<crate::ChatLine>,
     /// Active and turned-in quests; validated against the content.
     pub quests: crate::QuestLog,
-    /// The tick the quest log last changed.
-    pub quests_changed_at: u64,
     /// Waystones unlocked by exploration (#145).
     pub waystones: crate::WaystoneSet,
 }
@@ -370,7 +367,6 @@ impl ZoneSimulation {
                     copper: state.copper,
                     inventory: state.inventory.clone(),
                     inventory_revision: state.inventory_revision,
-                    inventory_changed_at: state.inventory_changed_at,
                     equipment: state.equipment,
                     combat: CanonicalPlayerCombat {
                         level: state.level,
@@ -406,7 +402,6 @@ impl ZoneSimulation {
                     chat_ready_at: state.chat_ready_at,
                     chat: state.chat.clone(),
                     quests: state.quests.clone(),
-                    quests_changed_at: state.quests_changed_at,
                     waystones: state.waystones,
                 })
             })
@@ -631,10 +626,8 @@ impl ZoneSimulation {
             return Err(ZoneError::new("snapshot contains duplicate spawn slot"));
         }
         let combat = player.combat;
-        if player.inventory_revision == 0 || player.inventory_changed_at > self.tick {
-            return Err(ZoneError::new(
-                "player inventory revision or change tick is invalid",
-            ));
+        if player.inventory_revision == 0 {
+            return Err(ZoneError::new("player inventory revision is invalid"));
         }
         let max_health = player_max_health(combat.level) + player.equipment.totals().bonus_health();
         if !crate::progression::valid_progression(combat.level, combat.experience)
@@ -650,9 +643,6 @@ impl ZoneSimulation {
             || player.chat_ready_at > self.tick.saturating_add(crate::CHAT_INTERVAL_TICKS)
         {
             return Err(ZoneError::new("player chat state is out of range"));
-        }
-        if player.quests_changed_at > self.tick {
-            return Err(ZoneError::new("player quest change tick is invalid"));
         }
         crate::quest::validate_log(&self.content, &player.quests)?;
         if combat.intents_dropped && combat.intents.len() != MAX_PENDING_INTENTS {
@@ -750,7 +740,6 @@ impl ZoneSimulation {
                 copper: player.copper,
                 inventory: player.inventory,
                 inventory_revision: player.inventory_revision,
-                inventory_changed_at: player.inventory_changed_at,
                 equipment: player.equipment,
                 level: combat.level,
                 experience: combat.experience,
@@ -777,7 +766,6 @@ impl ZoneSimulation {
                 chat_ready_at: player.chat_ready_at,
                 chat: player.chat,
                 quests: player.quests,
-                quests_changed_at: player.quests_changed_at,
                 waystones: player.waystones,
             },
         );

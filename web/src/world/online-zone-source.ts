@@ -1,5 +1,5 @@
 import { encodeCommand, encodeObservedCommand, isTimingSensitive, type WorldCommand } from "../command-wire";
-import { SnapshotBuffer, TICK_HZ, decodeRedirectNotice, decodeSnapshot, isRedirectNotice, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
+import { ProjectionDecoder, SnapshotBuffer, TICK_HZ, decodeRedirectNotice, isRedirectNotice, ticksFromMs, type EntityState, type ZoneSnapshot } from "../replication";
 import { browserClock, type SessionClock, type SessionConnection, type SessionConnector, type SessionEnd } from "../session/connection";
 import { decodeWelcome, type SnapshotFrame, type Welcome } from "../session/frames";
 import { parseSessionRoute, reconnectUrl, type SessionRoute } from "../session/route";
@@ -26,7 +26,7 @@ export const CLAIM_RETRY_MS = 100;
 export const INTERPOLATION_DELAY_TICKS = ticksFromMs(67);
 /**
  * At most this many projections (one second) wait for the next `advance`; a backgrounded page that
- * stops rendering keeps only the newest, like lost datagrams, and the periodic sheets restore state.
+ * stops rendering keeps only the newest, like lost datagrams; every projection is complete, its sheets held (#544).
  */
 export const MAX_RECEIVED_PROJECTIONS = TICK_HZ;
 
@@ -142,6 +142,8 @@ export class OnlineZoneSource implements WorldSource {
   #finished = false;
   #resolveCharacterId: (localId: string) => Promise<string>;
   #outbox = new SequencedOutbox();
+  /** The zone's sheets as last received (#544); every command echoes their revisions. */
+  #sheets = new ProjectionDecoder();
   readonly #history = new SnapshotBuffer();
   #latest: ZoneSnapshot | null = null;
   #latestAt = 0;
@@ -444,6 +446,8 @@ export class OnlineZoneSource implements WorldSource {
     this.#route = route;
     this.#contentRevision = this.#enterZone(notice.destination);
     this.#history.reset();
+    // Another zone sends its own sheets.
+    this.#sheets = new ProjectionDecoder();
     this.#latest = null;
     this.#received = [];
     this.#resumeAvailable = true;
@@ -456,7 +460,7 @@ export class OnlineZoneSource implements WorldSource {
   /** Validates and presents one verified snapshot frame of the current session. */
   #project(welcome: Welcome, frame: SnapshotFrame): void {
     const activity = this.#activityProtocol?.decodeProjection(frame.payload);
-    const snapshot = activity ? activity.snapshot : decodeSnapshot(frame.payload);
+    const snapshot = activity ? activity.snapshot : this.#sheets.decode(frame.payload);
     if (snapshot.contentRevision !== this.#contentRevision) {
       throw new Error(
         `The zone host runs content revision ${snapshot.contentRevision}, but this page loaded revision ${this.#contentRevision}. ` +
@@ -632,6 +636,7 @@ export class OnlineZoneSource implements WorldSource {
     this.#closeLink(release);
     this.#welcome = null;
     this.#outbox = new SequencedOutbox();
+    this.#sheets = new ProjectionDecoder();
     this.#history.reset();
     this.#latest = null;
     this.#latestAt = 0;
@@ -702,9 +707,11 @@ export class OnlineZoneSource implements WorldSource {
     // Combo inputs report the newest projection they were made against, so the zone can make up
     // for their travel time within its bounded grace (#415); it still judges them on arrival.
     const observed = this.#latest?.tick;
-    return observed !== undefined && isTimingSensitive(command)
+    const payload = observed !== undefined && isTimingSensitive(command)
       ? encodeObservedCommand(command, observed)
       : encodeCommand(command);
+    // Every command echoes the sheet revisions held, so the zone stops resending them (#544).
+    return this.#sheets.acknowledge(payload);
   }
 
   #classChoice(): Uint8Array {

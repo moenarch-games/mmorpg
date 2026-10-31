@@ -52,12 +52,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Elden's walk-in house (#158) trades house 103's box for its 16 wall and furniture boxes and
     // its door leaf in every step's world, and its door record joins every projection. No
     // fixture places a player inside geometry (#534): the fights' players stand on the first free
-    // slot near their spawns, which moves who meets which creature.
+    // slot near their spawns, which moves who meets which creature. Sheets sent until acknowledged (#544)
+    // leave the bag, quest, loot and ability sheets out of a quiet projection; entities take the room.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 767_880, 224_640, 5_220_144],
-        [29_160, 765_000, 78_240, 1_667_264],
-        [29_160, 773_640, 405_184, 7_322_027],
-        [28_804, 784_804, 2_251_970, 24_530_864],
+        [29_160, 767_880, 224_640, 5_126_000],
+        [29_160, 765_000, 78_240, 1_620_192],
+        [29_160, 773_640, 405_184, 7_140_175],
+        [28_804, 784_804, 2_251_970, 24_276_762],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

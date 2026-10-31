@@ -416,7 +416,7 @@ an old reward. Shared rules and cap behavior are in PROGRESSION.md.
 
 The browser Bags panel reads only the self sheet. It caches the last received
 slots across omitted sheets, disables intent while a higher revision is missing,
-and recovers on the periodic full sheet. Its session identity and tick/revision
+and an online session's decoder keeps every sheet until its successor arrives (#544). Its session identity and tick/revision
 checks reject stale updates; enter/leave clears selection, slots and feedback.
 The panel sends `MoveItem` through `WorldView` and the existing sequenced source,
 without simulating moves or grants. A bounded source advance returns each decoded

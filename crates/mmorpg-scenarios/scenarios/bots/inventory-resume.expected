@@ -7,16 +7,16 @@ t=1 expect alice inventory ok revision=2 sheet=true slot=0 item=1 quantity=1
 t=1 alice p1 e1 ack1 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
 t=2 alice move_item -> applied seq=2 epoch=1 source_slot=15 destination_slot=1 quantity=1
 t=3 expect alice event error:invalid_inventory_move ok events[error:invalid_inventory_move]
-t=3 expect alice inventory ok revision=2 sheet=false
+t=3 expect alice inventory ok revision=2 sheet=true
 t=3 alice p1 e1 ack2 (-1550,90,1250) sees[bob] events[error:invalid_inventory_move] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
 t=4 alice move_item -> ignored_stale seq=1 epoch=1 source_slot=15 destination_slot=0 quantity=2
-t=5 expect alice inventory ok revision=2 sheet=false
+t=5 expect alice inventory ok revision=2 sheet=true
 t=5 alice p1 e1 ack2 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
 t=6 alice disconnect -> disconnected player=1
 t=7 alice p1 offline | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
 t=10 alice reconnect -> resumed player=1 epoch=2 identity=kept
 t=11 expect alice identity ok player=1 epoch=2
-t=11 expect alice inventory ok revision=2 sheet=false
+t=11 expect alice inventory ok revision=2 sheet=true
 t=11 alice p1 e2 ack2 (-1550,90,1250) sees[bob] | bob p2 e1 ack0 (-1450,90,1250) sees[alice]
 t=20 expect alice inventory ok revision=2 sheet=true slot=15 item=1 quantity=2
 t=20 expect bob inventory ok revision=1 sheet=true slot=0 item=1 quantity=3

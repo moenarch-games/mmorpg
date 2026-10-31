@@ -16,7 +16,8 @@ export type ChatElements = {
  * this frame only renders them.
  */
 export class ChatFrame {
-  readonly #log = new wasm.ChatLog();
+  // Created on first use: the page builds its world view before `mmorpg-wasm` has loaded.
+  #chatLog: InstanceType<typeof wasm.ChatLog> | null = null;
   readonly #elements: ChatElements;
   readonly #send: (command: WorldCommand) => void;
   readonly #onLeave: () => void;
@@ -49,6 +50,11 @@ export class ChatFrame {
         this.close();
       }
     });
+  }
+
+  get #log(): InstanceType<typeof wasm.ChatLog> {
+    this.#chatLog ??= new wasm.ChatLog();
+    return this.#chatLog;
   }
 
   /** Moves keyboard focus to the chat field. */

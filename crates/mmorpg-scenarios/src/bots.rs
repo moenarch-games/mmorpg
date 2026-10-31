@@ -20,7 +20,7 @@ use mmorpg_core::{
     ZoneId, ZoneSnapshot, greyhaven_vale,
 };
 use mmorpg_game_server::{ZoneGameServerAdapter, build_zone_host, zone_match_id};
-use mmorpg_protocol::{decode_snapshot, encode_command};
+use mmorpg_protocol::{SnapshotDecoder, encode_acknowledged_command, encode_command};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -710,8 +710,10 @@ struct Bot {
     previous_sees: Vec<String>,
     /// Digest of the bot's own combat state, empty while unhurt and idle.
     previous_status: String,
-    /// The latest quest sheet the bot received; sheets are periodic.
+    /// The latest quest sheet the bot received.
     quests: Option<mmorpg_core::QuestSheet>,
+    /// The sheets the bot holds (#544); every command acknowledges them, like a real client's.
+    sheets: SnapshotDecoder,
 }
 
 impl Bot {
@@ -751,6 +753,7 @@ pub fn run(scenario: &BotScenario) -> Result<Report, String> {
             first_player: None,
             connected: false,
             next_sequence: 1,
+            sheets: SnapshotDecoder::new(),
             view: None,
             previous_sees: Vec::new(),
             previous_status: String::new(),
@@ -1168,7 +1171,7 @@ impl Runner<'_> {
         let sequence = step.seq.unwrap_or(bot.next_sequence);
         let epoch = step.connection_epoch.unwrap_or(lease.connection_epoch);
         bot.next_sequence = bot.next_sequence.max(sequence.saturating_add(1));
-        let payload = encode_command(command);
+        let payload = encode_acknowledged_command(bot.sheets.revisions(), &encode_command(command));
         let detail = format!("seq={sequence} epoch={epoch}{intent}");
         let outcome = self.runtime(|runtime| {
             runtime.submit_command(lease.player_id, epoch, sequence, &payload)
@@ -1238,10 +1241,13 @@ impl Runner<'_> {
                 continue;
             };
             let bytes = self.runtime(|runtime| runtime.snapshot_for(lease.player_id))?;
+            let sheets = &mut self.bots[index].sheets;
             let decoded = bytes
                 .map_err(|error| error.to_string())
                 .and_then(|snapshot| {
-                    decode_snapshot(&snapshot.payload).map_err(|error| error.to_string())
+                    sheets
+                        .decode(&snapshot.payload)
+                        .map_err(|error| error.to_string())
                 })
                 .and_then(|snapshot| {
                     if snapshot.zone_id != zone

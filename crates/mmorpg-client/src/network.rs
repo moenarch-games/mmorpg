@@ -11,7 +11,7 @@ use mmorpg_core::{
     CharacterId, ClassChoice, EntityKind, EntityRef, TICK_HZ, TransferId, ZoneCommand, ZoneId,
     ZoneSnapshot,
 };
-use mmorpg_protocol::RedirectNotice;
+use mmorpg_protocol::{RedirectNotice, SnapshotDecoder};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::BTreeSet, error::Error, fmt, path::Path, time::Duration};
 use tokio::sync::Mutex;
@@ -130,6 +130,8 @@ pub struct ClientSession {
     /// One more than the newest projection tick received, 0 before the first
     /// (#415); combo inputs report it as their observation.
     observed: AtomicU64,
+    /// The newest copy of every sheet (#544); every command echoes the revisions it holds.
+    sheets: std::sync::Mutex<SnapshotDecoder>,
     resume_available: bool,
     zone_id: ZoneId,
     content_revision: u64,
@@ -173,6 +175,7 @@ impl ClientSession {
                 sequence: 0,
                 facing: 0,
                 observed: AtomicU64::new(0),
+                sheets: std::sync::Mutex::new(SnapshotDecoder::new()),
                 resume_available: true,
                 zone_id,
                 content_revision,
@@ -297,6 +300,8 @@ impl ClientSession {
             self.connection = connection;
             self.reassembler = Mutex::new(SnapshotReassembler::new());
             self.observed.store(0, Ordering::Relaxed);
+            // Another zone sends its own sheets.
+            *self.sheets_mut() = SnapshotDecoder::new();
             self.zone_id = notice.destination;
             self.content_revision = mmorpg_core::content_for_zone(notice.destination).revision();
             self.route = route;
@@ -527,6 +532,8 @@ impl ClientSession {
             }
             _ => mmorpg_protocol::encode_command(command),
         };
+        let payload =
+            mmorpg_protocol::encode_acknowledged_command(self.sheets_mut().revisions(), &payload);
         let frame = game_server::encode_command(sequence, &payload)
             .map_err(|error| SessionError::InvalidData(error.into()))?;
         self.connection
@@ -583,8 +590,14 @@ impl ClientSession {
         Ok(notice)
     }
 
+    fn sheets_mut(&self) -> std::sync::MutexGuard<'_, SnapshotDecoder> {
+        self.sheets
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     fn decode_snapshot(&self, frame: SnapshotFrame) -> Result<ZoneSnapshot, ClientError> {
-        let snapshot = mmorpg_protocol::decode_snapshot(&frame.payload)?;
+        let snapshot = self.sheets_mut().decode(&frame.payload)?;
         if snapshot.zone_id != self.zone_id || snapshot.content_revision != self.content_revision {
             return Err("server zone or world content does not match this client".into());
         }

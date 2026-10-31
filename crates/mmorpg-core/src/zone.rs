@@ -115,7 +115,6 @@ pub(crate) struct PlayerState {
     pub(crate) copper: u32,
     pub(crate) inventory: crate::Inventory,
     pub(crate) inventory_revision: u64,
-    pub(crate) inventory_changed_at: u64,
     /// Equipped items; they share the bag's revision and sheet.
     pub(crate) equipment: crate::Equipment,
     /// Zero means dead.
@@ -153,14 +152,12 @@ pub(crate) struct PlayerState {
     pub(crate) chat: Vec<crate::ChatLine>,
     /// Active and turned-in quests.
     pub(crate) quests: crate::QuestLog,
-    /// The tick the quest log last changed; its sheet is sent then.
-    pub(crate) quests_changed_at: u64,
     /// Waystones the character unlocked by exploration (#145).
     pub(crate) waystones: crate::WaystoneSet,
 }
 
 impl PlayerState {
-    pub(crate) fn new(spawn_slot: u16, tick: u64) -> Self {
+    pub(crate) fn new(spawn_slot: u16) -> Self {
         Self {
             facing: 0,
             forward: Axis::Zero,
@@ -186,7 +183,6 @@ impl PlayerState {
             copper: 0,
             inventory: crate::Inventory::starter(),
             inventory_revision: 1,
-            inventory_changed_at: tick,
             equipment: crate::Equipment::default(),
             health: player_max_health(PLAYER_START_LEVEL),
             target: None,
@@ -207,7 +203,6 @@ impl PlayerState {
             chat_ready_at: 0,
             chat: Vec::new(),
             quests: crate::QuestLog::default(),
-            quests_changed_at: tick,
             waystones: crate::WaystoneSet::EMPTY,
         }
     }
@@ -507,8 +502,7 @@ impl ZoneSimulation {
 
         self.interest.insert(entity, position.x, position.z);
         self.interest_work.bucket_inserts += 1;
-        self.players
-            .insert(player_id, PlayerState::new(spawn_slot, self.tick));
+        self.players.insert(player_id, PlayerState::new(spawn_slot));
         Ok(())
     }
 
@@ -826,7 +820,7 @@ impl ZoneSimulation {
         self.advance_raid(now)?;
         self.advance_combos();
         self.advance_authored();
-        self.advance_quest_objectives(now)?;
+        self.advance_quest_objectives()?;
         self.tick = now;
         // Routine NPCs stand where the new tick's time of day puts them (#158).
         self.place_routine_npcs(true)?;

@@ -73,38 +73,28 @@ fn moves_are_queued_owned_sequenced_and_recover_before_consumption() {
 }
 
 #[test]
-fn losing_a_change_sheet_self_heals_on_the_next_periodic_projection() {
+fn every_projection_carries_the_complete_bag() {
+    // Delivery on change is the protocol's (#544); the zone always projects the whole bag.
     let mut zone = zone();
     assert!(zone.snapshot_for_player(1).unwrap().inventory.is_some());
     zone.apply_command(1, 1, move_item(0, 15, 2)).unwrap();
     zone.advance_tick().unwrap();
-    let lost = zone.snapshot_for_player(1).unwrap();
-    assert!(lost.inventory.is_some());
-    assert_eq!(lost.inventory_revision, 2);
-    let resend = mmorpg_core::INVENTORY_RESEND_TICKS;
-    for tick in 2..=resend {
+    let changed = zone.snapshot_for_player(1).unwrap();
+    assert_eq!(changed.inventory_revision, 2);
+    for tick in 2..5 {
         zone.advance_tick().unwrap();
         let before_query = zone.snapshot().unwrap();
         let received = zone.snapshot_for_player(1).unwrap();
         assert_eq!(received.tick, tick);
         assert_eq!(received.inventory_revision, 2);
-        if tick == resend {
-            assert_eq!(received.inventory, lost.inventory);
-        } else {
-            assert_eq!(received.inventory, None);
-        }
+        assert_eq!(received.inventory, changed.inventory);
+        assert!(received.equipment.is_some() && received.quests.is_some());
         assert_eq!(
             zone.snapshot().unwrap(),
             before_query,
             "projection never mutates authority"
         );
     }
-    zone.advance_tick().unwrap();
-    zone.add_player(3).unwrap();
-    assert!(
-        zone.snapshot_for_player(3).unwrap().inventory.is_some(),
-        "nonperiodic admission sends the bag"
-    );
 }
 
 #[test]
@@ -192,12 +182,9 @@ fn full_destination_death_and_revision_exhaustion_fail_without_partial_mutation(
 }
 
 #[test]
-fn recovery_rejects_zero_revision_and_future_change_ticks() {
+fn recovery_rejects_a_zero_revision() {
     let zone = zone();
-    for (revision, changed_at) in [(0, 0), (1, 1)] {
-        let mut state = zone.snapshot().unwrap();
-        state.players[0].inventory_revision = revision;
-        state.players[0].inventory_changed_at = changed_at;
-        assert!(ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).is_err());
-    }
+    let mut state = zone.snapshot().unwrap();
+    state.players[0].inventory_revision = 0;
+    assert!(ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).is_err());
 }

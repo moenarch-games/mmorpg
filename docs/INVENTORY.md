@@ -53,27 +53,24 @@ preserves its bag; durable character saves remain #30/#40.
 the sender's own bag at tick step 1. Dead players cannot move items. Invalid
 moves and exhausted revisions report `InvalidInventoryMove`; an overfull target
 reports `InventoryFull`. Refusals and validated same-slot no-ops leave bag revision
-unchanged. A changed bag increments its nonzero `u64` revision and records the
-resulting tick. Overflow refuses the entire move. Death, release and reconnect
-never grant or remove items.
+unchanged. A changed bag increments its nonzero `u64` revision. Overflow refuses the entire
+move. Death, release and reconnect never grant or remove items.
 
-Canonical snapshots preserve ordered slots, revision, last-change tick and
-pending moves. Recovery rejects invalid catalog stacks, zero revision or future
-change ticks. Catalog revision, item names/limits, starter grant and declared RNG
+Canonical snapshots preserve ordered slots, revision and pending moves.
+Recovery rejects invalid catalog stacks or a zero revision. Catalog revision, item names/limits, starter grant and declared RNG
 seed enter content identity. Greyhaven content revision 4 deliberately preserves
 the revision-3 RNG seed, preventing an economy-only change from rerolling combat.
 Older snapshots/recovery bundles require explicit migration or fresh state.
 
-Every projection repeats bag revision. It includes the complete 64-byte sheet
-on admission/change ticks and every ten ticks; missing sheets mean retain prior
-state. Dropped changes recover on the next periodic sheet (about 330 ms).
-Projection queries never mutate authority. Snapshot v7 retains the 1,077-byte
-budget and packs fewer low-priority entities when a sheet is present; see
+Core projects the complete bag every tick; the protocol sends the bag sheet
+(revision, bag, equipment and stat totals) only until the client acknowledges it
+(#544), and a client keeps its copy meanwhile. A dropped change is sent again
+until acknowledged. Projection queries never mutate authority; see
 [PROTOCOL.md](PROTOCOL.md).
 
 Core recovery/loss fixtures, the `inventory-resume` real-session scenario, a real
 native WebTransport move/resume/merge test, and the browser WASM adapter prove
-ownership, sequenced moves and periodic recovery. Browser bags presentation (#84) reads these sheets; loot and money are in [LOOT.md](LOOT.md), equipment and vendors below.
+ownership, sequenced moves and sheets sent until acknowledged (#544). Browser bags presentation (#84) reads these sheets; loot and money are in [LOOT.md](LOOT.md), equipment and vendors below.
 
 ## Equipment
 
@@ -109,8 +106,8 @@ intents resolved in tick step 1 like `MoveItem`:
 - Dead players are refused with `YouAreDead`; equipping in combat or while
   casting is allowed.
 - Every refusal and revision exhaustion leaves bag, equipment, health and
-  revision unchanged. A success increments the bag's revision and sets its
-  change tick: bag and equipment share one revision and one sheet.
+  revision unchanged. A success increments the bag's revision: bag and equipment share one revision
+  and one sheet.
 - Current health follows the maximum: a gain raises it by the same amount, a
   loss lowers it by the same amount but never below 1.
 
@@ -191,8 +188,8 @@ shared command path; the core decides whether each move is allowed. The slots
 stay unchanged while an intent is pending, and server refusals appear in the
 panel. Escape or **Close** closes it without leaving the world.
 
-Missing sheets retain the prior bag. If a projection announces a newer revision
-without its sheet, moves pause until periodic recovery supplies that revision.
+Missing sheets retain the prior bag. A projection always carries the held bag sheet's revision, so a newer revision
+never arrives without its bag (#544).
 Stale ticks/revisions and another viewer/zone/content identity cannot replace the
 cache. Entry binds the current source identity and leave/reset removes prior
 slots, selection and feedback. A fresh entry still gets a fresh starter bag;

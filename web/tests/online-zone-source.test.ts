@@ -99,7 +99,8 @@ describe("OnlineZoneSource", () => {
     await clock.until(source.join());
     let lose = true;
     host.toHost = (datagram) => {
-      const jump = datagram.byteLength === 10 && datagram[9] === 2;
+      // The frame header, then the jump inside its sheet acknowledgement (#544).
+      const jump = datagram.byteLength === 8 + 2 + 16 + 1 && datagram[26] === 2;
       if (jump && lose) {
         lose = false;
         return [];

@@ -119,7 +119,6 @@ fn buying_and_selling_move_items_and_copper_together_under_the_bag_revision() {
     assert_eq!(player.copper, 18);
     assert_eq!(player.inventory.slots()[2], stack(BOOTS, 1));
     assert_eq!(player.inventory_revision, before.inventory_revision + 1);
-    assert_eq!(player.inventory_changed_at, state.tick);
     let view = zone.snapshot_for_player(1).unwrap();
     assert_eq!(view.viewer.copper, 18);
     assert_eq!(view.inventory.as_ref(), Some(&player.inventory));
@@ -345,7 +344,6 @@ fn every_refusal_leaves_bag_copper_and_revision_unchanged() {
             after.inventory_revision, before.inventory_revision,
             "{command:?}"
         );
-        assert_eq!(after.inventory_changed_at, before.inventory_changed_at);
     }
     // An exhausted bag revision refuses a trade that would otherwise succeed.
     let zone = near(starter_bag(), 30);

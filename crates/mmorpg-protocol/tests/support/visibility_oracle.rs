@@ -53,11 +53,6 @@ pub fn exhaustive_projection(
             .and_then(|player| player.combat.target),
         _ => None,
     };
-    let sheet = canonical.tick == observer.inventory_changed_at
-        || canonical.tick == observer.quests_changed_at
-        || canonical
-            .tick
-            .is_multiple_of(mmorpg_core::INVENTORY_RESEND_TICKS);
     ZoneSnapshot {
         doors: canonical
             .doors
@@ -76,10 +71,10 @@ pub fn exhaustive_projection(
         acknowledged_sequence: observer.last_sequence,
         viewer_id: observer.player_id,
         inventory_revision: observer.inventory_revision,
-        inventory: sheet.then(|| observer.inventory.clone()),
-        equipment: sheet.then_some(observer.equipment),
+        inventory: Some(observer.inventory.clone()),
+        equipment: Some(observer.equipment),
         // The oracle's content has no quests.
-        quests: sheet.then(mmorpg_core::QuestSheet::default),
+        quests: Some(mmorpg_core::QuestSheet::default()),
         zone_id: canonical.zone_id,
         tick: canonical.tick,
         viewer: ViewerState {

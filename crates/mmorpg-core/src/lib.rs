@@ -134,8 +134,8 @@ pub use home::{
 };
 pub use interest::{InterestMaintenanceStats, InterestQueryStats, PlayerProjection};
 pub use inventory::{
-    INVENTORY_RESEND_TICKS, INVENTORY_SLOTS, ITEM_CATALOG, Inventory, InventoryError, ItemId,
-    ItemStack, ItemTemplate, item_template,
+    INVENTORY_SLOTS, ITEM_CATALOG, Inventory, InventoryError, ItemId, ItemStack, ItemTemplate,
+    item_template,
 };
 pub use loot::{
     LootOutcome, LootRewards, LootRolls, LootSettlementError, LootTable, LootTableError,
