@@ -454,6 +454,7 @@ const touchControls = new TouchControls(requireElement<HTMLElement>("#touch-cont
   onRelease: (action, phase) => runRelease(action, settingsOpen ? "cancel" : phase),
   onInteract: () => worldView.touchInteract(),
   onSettings: () => requireElement<HTMLButtonElement>("#world-settings").click(),
+  onReset: () => void resetScenario(),
   // On phones chat is collapsed to this button; it shows while its field has focus.
   onChat: () => {
     chatFrame.dataset.touchOpen = "true";
@@ -1507,6 +1508,13 @@ async function enterWorld(): Promise<void> {
   }
   scenarioReset.hidden = !scenario && !practiceWorld;
   scenarioReset.textContent = practiceWorld ? "Reset practice (F9)" : "Reset scenario (F9)";
+  // The practice build changes on the setup screen between lives (#551).
+  returnButton.textContent = practiceWorld ? "Change build" : "Characters";
+  touchControls.setMenu({
+    reset: scenario ? "Reset scenario" : practiceWorld ? "Reset practice" : null,
+    leave: practiceWorld ? "Change build" : "Characters",
+    inventory: !arenaEntry.selected,
+  });
   actionLabRoot.hidden = actionLab === null;
   document.body.classList.toggle("action-lab-open", actionLab !== null);
   lastTime = performance.now();
@@ -1589,7 +1597,7 @@ function resettableWorld(): { world: ZoneWorld; source: ScenarioSource } | null 
 /** A dead scenario character is offered the reset instead of the long run back. */
 function showScenarioStatus(): void {
   if (activeWorld && resettableWorld() && activeWorld.source.latestProjection()?.viewer.dead) {
-    requireElement<HTMLElement>("#unit-status").textContent = "You died. Press F9 or Reset scenario to fight again.";
+    requireElement<HTMLElement>("#unit-status").textContent = `You died. Press F9 or ${scenarioReset.textContent?.replace(" (F9)", "")} to fight again.`;
   }
 }
 

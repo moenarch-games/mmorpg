@@ -74,4 +74,11 @@ export type WorldSource = {
 };
 
 /** A world the page can enter: a source and the scenery and catalog of the content revision it serves. */
-export type ZoneWorld = { source: WorldSource; scenery: SceneryProvider; catalog: ContentCatalog; name?: string };
+export type ZoneWorld = {
+  source: WorldSource;
+  scenery: SceneryProvider;
+  catalog: ContentCatalog;
+  name?: string;
+  /** A Battle Royale arena, hosted or practice (#551): the touch combat buttons always show. */
+  arena?: boolean;
+};

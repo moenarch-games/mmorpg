@@ -141,11 +141,14 @@ export type TouchContextInputs = {
   isVendor: (npc: number) => boolean;
   doorInReach: boolean;
   repairInReach: boolean;
+  /** A Battle Royale arena (#551): every moment is a fight, so target and attack always show. */
+  arena: boolean;
 };
 
 /**
  * Which context buttons to show from the received projection: loot before an NPC before a door
- * before a repair, and combat whenever an opponent is selected, near, or the viewer is fighting.
+ * before a repair, and combat whenever an opponent is selected, near, or the viewer is fighting,
+ * and always in an arena.
  */
 export function touchContext(snapshot: ZoneSnapshot | null, inputs: TouchContextInputs): TouchContext {
   const viewer = snapshot?.entities[0];
@@ -156,7 +159,7 @@ export function touchContext(snapshot: ZoneSnapshot | null, inputs: TouchContext
     Math.hypot((position[0] ?? 0) - viewer.position[0], (position[2] ?? 0) - viewer.position[2]);
   const others = snapshot.entities.slice(1);
   const opponents = others.filter((entity) => entity.flags.attackable && !entity.flags.dead);
-  const combat = snapshot.viewer.inCombat
+  const combat = inputs.arena || snapshot.viewer.inCombat
     || opponents.some((entity) => sameEntity(snapshot.viewer.target, { kind: entity.kind, id: entity.entityId }))
     || opponents.some((entity) => (entity.flags.hostile || entity.flags.targetsViewer) && distance(entity.position) <= COMBAT_NEAR_UNITS);
   if (snapshot.viewer.dead) {

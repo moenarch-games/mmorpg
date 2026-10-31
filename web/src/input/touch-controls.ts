@@ -17,6 +17,8 @@ export type TouchControlsOptions = {
   onInteract: () => void;
   onSettings: () => void;
   onChat: () => void;
+  /** The menu's reset entry: restarts a review scenario or the practice arena, like F9. */
+  onReset: () => void;
   context: () => TouchContext;
   /** A key that changes whenever the hotbar does. */
   facesKey: () => string;
@@ -27,7 +29,10 @@ export type TouchControlsOptions = {
 /** Stick travel in CSS pixels at full deflection. */
 const STICK_RADIUS_PX = 48;
 
-const MENU_ITEMS: readonly { label: string; action: GameAction | "settings" | "chat" }[] = [
+type MenuAction = GameAction | "settings" | "chat" | "reset";
+
+const MENU_ITEMS: readonly { label: string; action: MenuAction }[] = [
+  { label: "Reset", action: "reset" },
   { label: "Bags", action: "ui.toggleBags" },
   { label: "Character", action: "ui.toggleCharacter" },
   { label: "Quests", action: "ui.toggleQuestLog" },
@@ -35,6 +40,9 @@ const MENU_ITEMS: readonly { label: string; action: GameAction | "settings" | "c
   { label: "Settings", action: "settings" },
   { label: "Characters", action: "ui.leaveWorld" },
 ];
+
+/** How the entered world labels its menu: the reset entry (hidden when `null`), leaving, and whether bags and quests apply. */
+export type TouchMenu = { reset: string | null; leave: string; inventory: boolean };
 
 /**
  * The touch overlay (#434): a left virtual thumbstick, a jump button, four face buttons with a
@@ -54,6 +62,7 @@ export class TouchControls {
   readonly #ring: HTMLElement;
   readonly #modifier: HTMLButtonElement;
   readonly #menu: HTMLElement;
+  readonly #menuItems = new Map<MenuAction, HTMLButtonElement>();
   readonly #context: { target: HTMLButtonElement; attack: HTMLButtonElement; interact: HTMLButtonElement; release: HTMLButtonElement };
   #drag: { pointerId: number; x: number; y: number } | null = null;
   #vector = { x: 0, y: 0 };
@@ -93,13 +102,17 @@ export class TouchControls {
           this.#options.onSettings();
         } else if (item.action === "chat") {
           this.#options.onChat();
+        } else if (item.action === "reset") {
+          this.#options.onReset();
         } else {
           this.#options.onAction(item.action);
         }
       });
       entry.setAttribute("role", "menuitem");
+      this.#menuItems.set(item.action, entry);
       this.#menu.append(entry);
     }
+    this.setMenu({ reset: null, leave: "Characters", inventory: true });
     top.append(chat, menuToggle, this.#menu);
 
     const context = element("div", "touch-context");
@@ -189,6 +202,16 @@ export class TouchControls {
     this.#chord.reset();
     this.#menu.hidden = true;
     this.#shownKey = "";
+  }
+
+  /** Labels the menu for the entered world (a scenario or the practice arena offers its reset). */
+  setMenu(menu: TouchMenu): void {
+    const item = (action: MenuAction) => this.#menuItems.get(action)!;
+    item("reset").hidden = menu.reset === null;
+    item("reset").textContent = menu.reset ?? "Reset";
+    item("ui.leaveWorld").textContent = menu.leave;
+    item("ui.toggleBags").hidden = !menu.inventory;
+    item("ui.toggleQuestLog").hidden = !menu.inventory;
   }
 
   /** Per frame: context buttons and the faces of the page the next tap fires. */
