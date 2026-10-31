@@ -18,6 +18,7 @@ mod quest;
 mod raid;
 mod redirect;
 mod rewards;
+mod sheet;
 mod transfer;
 mod wire;
 
@@ -26,17 +27,20 @@ pub use character::{
     CHARACTER_RECORD_WIRE_VERSION, decode_character_record, encode_character_record,
 };
 pub use command::{
-    decode_command, decode_observed_command, encode_command, encode_observed_command,
+    CommandEnvelope, decode_command, decode_command_envelope, decode_observed_command,
+    encode_command, encode_observed_command,
 };
 pub use projection::{
     DEBRIS_RECORD_BYTES, ENTITY_RECORD_BYTES, EVENT_RECORD_BYTES, MAX_WIRE_ENTITIES,
-    PLAYER_SNAPSHOT_FIXED_BYTES, PackedSnapshot, decode_snapshot, encode_snapshot, pack_snapshot,
+    PLAYER_SNAPSHOT_FIXED_BYTES, PackedSnapshot, SnapshotDecoder, decode_snapshot, encode_snapshot,
+    pack_snapshot, pack_snapshot_acknowledged,
 };
 pub use redirect::{
     MAX_REDIRECT_ROUTE_BYTES, RedirectNotice, decode_redirect_notice, encode_redirect_notice,
     is_redirect_notice,
 };
 pub use rewards::{MAX_REWARD_RECEIPT_BYTES, decode_reward_receipt, encode_reward_receipt};
+pub use sheet::{SHEET_REVISIONS_BYTES, SheetRevisions, encode_acknowledged_command};
 pub use transfer::{
     CHARACTER_TRANSFER_WIRE_VERSION, decode_character_transfer, encode_character_transfer,
 };
@@ -53,7 +57,7 @@ use std::fmt;
 /// differently and git refuses to merge them silently; decoders accept only this exact value
 /// (docs/adr/0006-merge-safe-format-identities.md). Snapshots lead with its three bytes and
 /// commands with its low byte.
-pub const PROTOCOL_ID: u32 = 0x0049_dc87;
+pub const PROTOCOL_ID: u32 = 0x00eb_3a17;
 
 /// Smallest WebTransport datagram payload measured over the pinned stack:
 /// QUIC's 1,200-byte initial MTU before path MTU discovery, observed as 1,161

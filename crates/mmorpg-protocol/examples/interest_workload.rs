@@ -65,13 +65,11 @@ fn measure(name: &str) -> Result<(), Box<dyn Error>> {
             spawn_slot: u16::try_from(index)?,
             inventory: mmorpg_core::Inventory::default(),
             inventory_revision: 1,
-            inventory_changed_at: 0,
             equipment: mmorpg_core::Equipment::default(),
             combat: CanonicalPlayerCombat::default(),
             chat_ready_at: 0,
             chat: Vec::new(),
             quests: mmorpg_core::QuestLog::default(),
-            quests_changed_at: 0,
             waystones: mmorpg_core::WaystoneSet::EMPTY,
         });
     }

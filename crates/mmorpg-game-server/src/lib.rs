@@ -23,7 +23,9 @@ use game_server::{
 use std::sync::Arc;
 
 use mmorpg_core::{MAX_PLAYERS_PER_ZONE, TICK_HZ, ZoneContent, ZoneId, ZoneSimulation};
-use mmorpg_protocol::{decode_observed_command, encode_canonical_snapshot, pack_snapshot};
+use mmorpg_protocol::{
+    SheetRevisions, decode_command_envelope, encode_canonical_snapshot, pack_snapshot_acknowledged,
+};
 
 pub const PINNED_GAME_SERVER_REVISION: &str = "f9da1f462f0b0c7f87bbd17588a979df4745c00b";
 pub const PINNED_PHYSICS_ENGINE_REVISION: &str = "1b98f84d409796b2a15b84f3fa4ed7f03a11f8bd";
@@ -79,6 +81,9 @@ pub struct ZoneGameServerAdapter {
     /// Players whose transfer was taken back: not offered again until they
     /// leave the crossing strip.
     held_back: std::collections::BTreeSet<game_server::PlayerId>,
+    /// The sheet revisions each session last acknowledged (#544): a projection carries a
+    /// sheet only while it differs. Transport state, rebuilt from replayed commands.
+    sheet_acks: std::collections::BTreeMap<game_server::PlayerId, SheetRevisions>,
     handoffs: Option<departures::HandoffChannel>,
 }
 
@@ -110,6 +115,7 @@ impl ZoneGameServerAdapter {
     fn remove_bound_player(&mut self, player_id: game_server::PlayerId) -> bool {
         self.characters.remove(&player_id);
         self.held_back.remove(&player_id);
+        self.sheet_acks.remove(&player_id);
         self.departing.remove(&player_id).is_some()
             || self.parked_characters.remove(&player_id).is_some()
             || self.zone.remove_player(player_id)
@@ -126,6 +132,7 @@ impl ZoneGameServerAdapter {
             authority: None,
             departing: Default::default(),
             held_back: Default::default(),
+            sheet_acks: Default::default(),
             handoffs: None,
         }
     }
@@ -145,6 +152,7 @@ impl ZoneGameServerAdapter {
             authority: None,
             departing: Default::default(),
             held_back: Default::default(),
+            sheet_acks: Default::default(),
             handoffs: None,
         })
     }
@@ -265,20 +273,28 @@ impl GameSimulation for ZoneGameServerAdapter {
                 "claim a durable character before gameplay",
             ));
         }
-        let (command, observed) = decode_observed_command(payload).map_err(map_protocol_error)?;
+        let envelope = decode_command_envelope(payload).map_err(map_protocol_error)?;
         if self.parked_characters.contains_key(&player_id)
             || self.departing.contains_key(&player_id)
         {
             // Ignore in-flight gameplay after logout without interrupting its reply.
             return Ok(());
         }
-        match observed {
-            Some(observed) => self
+        match envelope.observed {
+            Some(observed) => {
+                self.zone
+                    .apply_observed_command(player_id, sequence, envelope.command, observed)
+            }
+            None => self
                 .zone
-                .apply_observed_command(player_id, sequence, command, observed),
-            None => self.zone.apply_command(player_id, sequence, command),
+                .apply_command(player_id, sequence, envelope.command),
         }
-        .map_err(map_zone_error)
+        .map_err(map_zone_error)?;
+        // Only an applied command counts, so replay rebuilds the same acknowledgements.
+        if let Some(sheets) = envelope.sheets {
+            self.sheet_acks.insert(player_id, sheets);
+        }
+        Ok(())
     }
 
     fn apply_host_input(
@@ -337,7 +353,8 @@ impl GameSimulation for ZoneGameServerAdapter {
             .map_err(map_zone_error)?;
         // Budget-driven packing: entities beyond one datagram are omitted by
         // relevance priority, never truncated by transport.
-        let payload = pack_snapshot(&snapshot)
+        let acknowledged = self.sheet_acks.get(&player_id).copied().unwrap_or_default();
+        let payload = pack_snapshot_acknowledged(&snapshot, acknowledged)
             .map_err(map_protocol_error)?
             .payload;
         Ok(SimulationSnapshot::new(snapshot.tick, payload))

@@ -1,22 +1,19 @@
 //! Player-visible scope: one player's projection, packed into a single
 //! datagram by fixed section priority (header, self with its class,
-//! resource, cast, cooldowns and auras, target details with the target's
-//! cast and auras, sheets, events, then entities by relevance until the
-//! budget is used).
+//! resource and cast, the target's target and cast, the sheets the client
+//! lacks (#544), world state, events, chat, then entities by relevance until
+//! the budget is used).
 
 use std::collections::BTreeSet;
 
 use mmorpg_core::{
-    AbilityId, AuraKind, AuraView, CastView, ClassChoice, Cooldown, EntityFlags, EntityKind,
-    EntitySnapshot, GLOBAL_COOLDOWN_TICKS, GuardView, MAX_AURAS, MAX_CHAT_PER_TICK, MAX_COOLDOWNS,
-    MAX_EVENTS_PER_PLAYER, MAX_VISIBLE_ENTITIES, ResourceKind, ResourceView, TargetDetail,
-    ViewerState, ZoneSnapshot, ability_by_id,
+    AbilityId, CastView, ClassChoice, EntityFlags, EntityKind, EntitySnapshot,
+    GLOBAL_COOLDOWN_TICKS, GuardView, MAX_CHAT_PER_TICK, MAX_EVENTS_PER_PLAYER,
+    MAX_VISIBLE_ENTITIES, ResourceKind, ResourceView, TargetDetail, ViewerState, ZoneSnapshot,
+    ability_by_id,
 };
 
-use crate::inventory::{
-    EQUIPMENT_RECORD_BYTES, INVENTORY_RECORD_BYTES, decode_equipment, decode_inventory,
-    encode_equipment, encode_inventory,
-};
+use crate::sheet::{Abilities, SHEET_COUNT, Sheet, SheetRevisions, encode_sheets, revision};
 use crate::wire::{
     COMMON_HEADER_BYTES, ENTITY_REF_BYTES, PLAYER_SNAPSHOT_SCOPE, decode_common_header,
     decode_entity_kind, decode_entity_ref, decode_event, decode_u8_count, decode_u16_count,
@@ -34,27 +31,18 @@ const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
 pub const CAST_RECORD_BYTES: usize = 1 + 1 + 2 + 2;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
 /// range, the guard (lane code, protecting flag, break ticks), the melee
-/// stance and combo phase codes, breath ticks (#274), then the cooldown and aura counts.
+/// stance and combo phase codes and breath ticks (#274).
 const SELF_ABILITY_BYTES: usize =
-    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2 + 1 + 1;
-/// Four `u16` stat totals: stamina, strength, agility and intellect.
-const STAT_TOTALS_BYTES: usize = 4 * 2;
-/// The self sheet's fixed part: bag, equipment and stat totals; the quest
-/// part follows (at most [`crate::quest::MAX_QUEST_SHEET_BYTES`]).
-pub const SELF_SHEET_BYTES: usize =
-    INVENTORY_RECORD_BYTES + EQUIPMENT_RECORD_BYTES + STAT_TOTALS_BYTES;
-const MAX_SELF_SHEET_BYTES: usize = SELF_SHEET_BYTES + crate::quest::MAX_QUEST_SHEET_BYTES;
-/// The target's own target, the target's cast and its aura count.
-const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES + 1;
-/// Every section's fixed part: header, self, target, inventory revision
-/// and presence, loot presence, door count (`u8`), piece count (`u8`), raid code (`u8`, #530),
-/// event count (`u8`),
-/// chat count (`u8`), entity count (`u16`), projectile count (`u8`) and debris count (`u8`).
+    1 + 1 + 2 + 2 + 2 + CAST_RECORD_BYTES + 2 + 2 + 1 + 1 + 2 + 1 + 1 + 2;
+/// The target's own target and the target's cast.
+const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES;
+/// Every section's fixed part: header, self, target, sheet mask (`u8`, #544), door count
+/// (`u8`), piece count (`u8`), raid code (`u8`, #530), event count (`u8`), chat count (`u8`),
+/// entity count (`u16`), projectile count (`u8`) and debris count (`u8`).
 pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
     + SELF_BYTES
     + SELF_ABILITY_BYTES
     + TARGET_BYTES
-    + 8
     + 1
     + 1
     + 1
@@ -62,7 +50,6 @@ pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize = HEADER_BYTES
     + 1
     + 1
     + 2
-    + 1
     + 1
     + 1;
 /// Destructible piece ID (`u16`) and stage (#305).
@@ -80,13 +67,6 @@ pub const PROJECTILE_RECORD_BYTES: usize = 2 + 1 + 12 + 2 + 2 + 1;
 pub const MAX_WIRE_PROJECTILES: usize = 8;
 /// Door ID and open flag (#158).
 pub const DOOR_RECORD_BYTES: usize = 2;
-/// Ability ID and remaining ticks.
-pub const COOLDOWN_RECORD_BYTES: usize = 1 + 2;
-/// Ability ID, aura kind, remaining ticks and amount.
-pub const AURA_RECORD_BYTES: usize = 1 + 1 + 2 + 2;
-/// The largest cooldown and aura lists of the viewer and its target.
-const MAX_ABILITY_LIST_BYTES: usize =
-    MAX_COOLDOWNS * COOLDOWN_RECORD_BYTES + 2 * MAX_AURAS * AURA_RECORD_BYTES;
 /// Kind, flags, source and target references, `u16` amount.
 pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// Kind, ID, appearance, `3 × i32` position, `3 × i8` velocity, `u16`
@@ -94,28 +74,28 @@ pub const EVENT_RECORD_BYTES: usize = 2 + 2 * ENTITY_REF_BYTES + 2;
 /// record those two flag bits carry its traversal instead (#490): tapped means climbing,
 /// evading means mantling, and both mean a dodge roll (#516).
 pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 2 + 12 + 3 + 2 + 1 + 1 + 1;
-/// Records that fit the budget without events, sheets, cooldowns or auras:
-/// (1,077 − 118) / 27 = 35.
+/// Records that fit the budget without events or sheets: (1,077 − 106) / 27 = 35.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
 const MAX_CHAT_SECTION_BYTES: usize = MAX_CHAT_PER_TICK * crate::chat::MAX_CHAT_RECORD_BYTES;
+/// Every per-tick section at its largest, with the viewer and its target.
+const MAX_PER_TICK_BYTES: usize = PLAYER_SNAPSHOT_FIXED_BYTES
+    + MAX_EVENT_SECTION_BYTES
+    + MAX_CHAT_SECTION_BYTES
+    + mmorpg_core::MAX_DOORS * DOOR_RECORD_BYTES
+    + mmorpg_core::MAX_PIECES * PIECE_RECORD_BYTES
+    + RAID_VIEW_BYTES
+    + 2 * ENTITY_RECORD_BYTES;
 
-// With every list full, both sheets (a full quest log and eight markers),
-// a full event section and four 80-byte chat lines, the viewer and its
-// target always fit:
-// 118 + 108 + 26 + 154 + 16 × 14 + 4 × 86 + doors + pieces + raid + 2 × 27 ≤ 1,077 bytes.
+// With every list full, a full event section and four 80-byte chat lines, the viewer and its
+// target always fit: 106 + 16 × 14 + 4 × 86 + doors + pieces + raid + 2 × 27 ≤ 1,077 bytes.
+// Sheets (#544) take what that leaves and wait for a later tick when they do not fit.
+const _: () = assert!(MAX_PER_TICK_BYTES <= MAX_PLAYER_PROJECTION_BYTES);
+// A tick without events or chat carries every sheet at its largest at once.
 const _: () = assert!(
-    PLAYER_SNAPSHOT_FIXED_BYTES
-        + MAX_ABILITY_LIST_BYTES
-        + crate::loot::MAX_LOOT_SHEET_BYTES
-        + MAX_SELF_SHEET_BYTES
-        + MAX_EVENT_SECTION_BYTES
-        + MAX_CHAT_SECTION_BYTES
-        + mmorpg_core::MAX_DOORS * DOOR_RECORD_BYTES
-        + mmorpg_core::MAX_PIECES * PIECE_RECORD_BYTES
-        + RAID_VIEW_BYTES
-        + 2 * ENTITY_RECORD_BYTES
+    MAX_PER_TICK_BYTES - MAX_EVENT_SECTION_BYTES - MAX_CHAT_SECTION_BYTES
+        + crate::sheet::MAX_SHEETS_BYTES
         <= MAX_PLAYER_PROJECTION_BYTES
 );
 // Budget packing, not the relevance cap, bounds the entity count.
@@ -131,14 +111,27 @@ pub struct PackedSnapshot {
     pub packed_projectiles: usize,
     /// Leading pieces of debris that fit; the rest were omitted (#288).
     pub packed_debris: usize,
+    /// Whether a sheet the client lacks waits for a later tick because it did not fit (#544).
+    pub deferred_sheets: bool,
+}
+
+/// [`pack_snapshot_acknowledged`] for a client that holds no sheet: every sheet goes along
+/// that fits.
+pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, ProtocolError> {
+    pack_snapshot_acknowledged(snapshot, SheetRevisions::default())
 }
 
 /// Budget-driven packing: writes the header, the viewer's own state, its
-/// target's target and this tick's events, then entities in the projection's
-/// priority order until the next record would exceed
-/// [`MAX_PLAYER_PROJECTION_BYTES`]. The viewer and its target lead the
-/// entities and always fit. Hosts publish this; positions travel as full `i32` units.
-pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, ProtocolError> {
+/// target's target, the sheets whose revision differs from the client's
+/// `acknowledged` one (#544) as far as they fit beside this tick's sections,
+/// this tick's events, then entities in the projection's priority order until
+/// the next record would exceed [`MAX_PLAYER_PROJECTION_BYTES`]. The viewer
+/// and its target lead the entities and always fit. Hosts publish this;
+/// positions travel as full `i32` units.
+pub fn pack_snapshot_acknowledged(
+    snapshot: &ZoneSnapshot,
+    acknowledged: SheetRevisions,
+) -> Result<PackedSnapshot, ProtocolError> {
     if snapshot
         .entities
         .first()
@@ -200,52 +193,13 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     payload.push(viewer.stance.map_or(0, mmorpg_core::MeleeStance::code));
     payload.push(viewer.combo.map_or(0, mmorpg_core::ComboPhase::code));
     payload.extend_from_slice(&viewer.breath.to_be_bytes());
-    payload.push(encode_u8_count(
-        snapshot.cooldowns.len(),
-        MAX_COOLDOWNS,
-        "player projection has too many cooldowns",
-    )?);
-    for cooldown in &snapshot.cooldowns {
-        payload.push(cooldown.ability.get());
-        payload.extend_from_slice(&cooldown.remaining.to_be_bytes());
-    }
-    encode_auras(&mut payload, &snapshot.auras)?;
     encode_entity_ref(&mut payload, snapshot.target_of_target);
     encode_cast(&mut payload, snapshot.target_detail.cast);
-    encode_auras(&mut payload, &snapshot.target_detail.auras)?;
 
-    payload.extend_from_slice(&snapshot.inventory_revision.to_be_bytes());
-    match (&snapshot.inventory, &snapshot.equipment, &snapshot.quests) {
-        (Some(inventory), Some(equipment), Some(quests)) => {
-            payload.push(1);
-            encode_inventory(&mut payload, inventory);
-            encode_equipment(&mut payload, equipment);
-            let totals = equipment.totals();
-            for total in [
-                totals.stamina,
-                totals.strength,
-                totals.agility,
-                totals.intellect,
-            ] {
-                payload.extend_from_slice(&total.to_be_bytes());
-            }
-            crate::quest::encode_sheet(&mut payload, quests)?;
-        }
-        (None, None, None) => payload.push(0),
-        _ => {
-            return Err(ProtocolError::new(
-                "the self sheet needs the bag, the equipment and the quests",
-            ));
-        }
-    }
-    payload.push(u8::from(snapshot.loot.is_some()));
-    if let Some(view) = snapshot.loot {
-        crate::loot::encode_claim(&mut payload, view.claim);
-        crate::loot::encode_rewards(&mut payload, view.rewards);
-    }
-    crate::wire::encode_doors(&mut payload, &snapshot.doors)?;
-    crate::wire::encode_piece_views(&mut payload, &snapshot.pieces)?;
-    crate::raid::encode_view(&mut payload, snapshot.raid);
+    let mut world_payload = Vec::new();
+    crate::wire::encode_doors(&mut world_payload, &snapshot.doors)?;
+    crate::wire::encode_piece_views(&mut world_payload, &snapshot.pieces)?;
+    crate::raid::encode_view(&mut world_payload, snapshot.raid);
     let mut chat_payload = Vec::new();
     chat_payload.push(encode_u8_count(
         snapshot.chat.len(),
@@ -255,6 +209,41 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
     for line in &snapshot.chat {
         crate::chat::encode_line(&mut chat_payload, line);
     }
+    // Sheets the client lacks take what this tick's sections, the viewer and its target leave;
+    // the rest wait for a later tick (#544).
+    let mut room = MAX_PLAYER_PROJECTION_BYTES.saturating_sub(
+        payload.len()
+            + 1
+            + world_payload.len()
+            + 1
+            + usize::from(event_count) * EVENT_RECORD_BYTES
+            + chat_payload.len()
+            + 2
+            + 2 * ENTITY_RECORD_BYTES
+            + 1
+            + 1,
+    );
+    let mask_offset = payload.len();
+    payload.push(0);
+    let mut mask = 0_u8;
+    let mut deferred_sheets = false;
+    for (sheet, bytes) in Sheet::ALL.into_iter().zip(encode_sheets(snapshot)?) {
+        let Some(bytes) = bytes else {
+            continue;
+        };
+        if acknowledged.get(sheet) == revision(&bytes) {
+            continue;
+        }
+        if bytes.len() > room {
+            deferred_sheets = true;
+            continue;
+        }
+        room -= bytes.len();
+        mask |= 1 << sheet.index();
+        payload.extend_from_slice(&bytes);
+    }
+    payload[mask_offset] = mask;
+    payload.extend_from_slice(&world_payload);
     // Plan a conservative entity prefix once, before removing cosmetic records.
     // Freed event bytes do not grow that prefix and cannot cause a packing cycle.
     let reserved =
@@ -328,6 +317,7 @@ pub fn pack_snapshot(snapshot: &ZoneSnapshot) -> Result<PackedSnapshot, Protocol
         packed_entities: usize::from(packed_entities),
         packed_projectiles: projectiles,
         packed_debris: debris,
+        deferred_sheets,
     })
 }
 
@@ -339,6 +329,7 @@ pub fn encode_snapshot(snapshot: &ZoneSnapshot) -> Result<Vec<u8>, ProtocolError
     if packed.packed_entities < snapshot.entities.len()
         || packed.packed_projectiles < snapshot.projectiles.len()
         || packed.packed_debris < snapshot.debris.len()
+        || packed.deferred_sheets
     {
         return Err(ProtocolError::new(
             "player projection exceeds the byte budget",
@@ -403,47 +394,6 @@ fn decode_cast(payload: &[u8], offset: &mut usize) -> Result<Option<CastView>, P
         total,
         channel,
     }))
-}
-
-fn encode_auras(payload: &mut Vec<u8>, auras: &[AuraView]) -> Result<(), ProtocolError> {
-    payload.push(encode_u8_count(
-        auras.len(),
-        MAX_AURAS,
-        "player projection has too many auras",
-    )?);
-    for aura in auras {
-        payload.extend_from_slice(&[aura.ability.get(), aura.kind.code()]);
-        payload.extend_from_slice(&aura.remaining.to_be_bytes());
-        payload.extend_from_slice(&aura.amount.to_be_bytes());
-    }
-    Ok(())
-}
-
-/// Auras name catalog abilities with their aura kind and time left.
-fn decode_auras(payload: &[u8], offset: &mut usize) -> Result<Vec<AuraView>, ProtocolError> {
-    let count = decode_u8_count(payload, offset, MAX_AURAS, "snapshot has too many auras")?;
-    let mut auras = Vec::with_capacity(count);
-    for _ in 0..count {
-        let ability = AbilityId::new(read_u8(payload, offset)?);
-        let kind = AuraKind::from_code(read_u8(payload, offset)?);
-        let remaining = u16::from_be_bytes(take(payload, offset)?);
-        let amount = u16::from_be_bytes(take(payload, offset)?);
-        let spec = ability_by_id(ability).and_then(|catalog| catalog.aura());
-        match (spec, kind) {
-            (Some(spec), Some(kind))
-                if spec.kind == kind && remaining > 0 && remaining <= spec.duration =>
-            {
-                auras.push(AuraView {
-                    ability,
-                    kind,
-                    remaining,
-                    amount,
-                });
-            }
-            _ => return Err(ProtocolError::new("aura record is inconsistent")),
-        }
-    }
-    Ok(auras)
 }
 
 fn encode_projectile(
@@ -590,7 +540,61 @@ fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), P
     Ok(())
 }
 
+/// Decodes one projection without any sheet received before: sheets it does not carry are
+/// absent (no bag, quests or loot, no cooldowns or auras).
 pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
+    SnapshotDecoder::new().decode(payload)
+}
+
+/// A sheet as a client received it (#544).
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ReceivedSheet {
+    revision: u32,
+    /// The projection tick it arrived with; its timers run from there.
+    tick: u64,
+    bytes: Vec<u8>,
+}
+
+/// A client's projection decoder (#544): it keeps the newest copy of every sheet, so each
+/// decoded projection is complete, and reports the revisions it holds for the client to
+/// echo with [`crate::encode_acknowledged_command`]. One per session; a sheet a projection
+/// does not carry keeps its last copy, timers running down.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SnapshotDecoder {
+    sheets: [Option<ReceivedSheet>; SHEET_COUNT],
+}
+
+impl SnapshotDecoder {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The revisions of the sheets held, `0` for none.
+    #[must_use]
+    pub fn revisions(&self) -> SheetRevisions {
+        let mut revisions = SheetRevisions::default();
+        for (sheet, received) in Sheet::ALL.into_iter().zip(&self.sheets) {
+            revisions.set(
+                sheet,
+                received.as_ref().map_or(0, |received| received.revision),
+            );
+        }
+        revisions
+    }
+
+    /// Decodes a projection strictly; a malformed one leaves the held sheets as they were.
+    pub fn decode(&mut self, payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
+        let (snapshot, sheets) = decode_projection(payload, &self.sheets)?;
+        self.sheets = sheets;
+        Ok(snapshot)
+    }
+}
+
+fn decode_projection(
+    payload: &[u8],
+    held: &[Option<ReceivedSheet>; SHEET_COUNT],
+) -> Result<(ZoneSnapshot, [Option<ReceivedSheet>; SHEET_COUNT]), ProtocolError> {
     if payload.len() > MAX_PLAYER_PROJECTION_BYTES {
         return Err(ProtocolError::new(
             "snapshot exceeds the player projection byte budget",
@@ -669,27 +673,6 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
     if breath > mmorpg_core::water::BREATH_MAX_TICKS {
         return Err(ProtocolError::new("viewer breath is out of range"));
     }
-    let cooldown_count = decode_u8_count(
-        payload,
-        &mut offset,
-        MAX_COOLDOWNS,
-        "snapshot has too many cooldowns",
-    )?;
-    let mut cooldowns = Vec::with_capacity(cooldown_count);
-    for _ in 0..cooldown_count {
-        let ability = AbilityId::new(read_u8(payload, &mut offset)?);
-        let remaining = u16::from_be_bytes(take(payload, &mut offset)?);
-        let ordered = cooldowns
-            .last()
-            .is_none_or(|last: &Cooldown| last.ability < ability);
-        let valid = ability_by_id(ability)
-            .is_some_and(|catalog| remaining > 0 && remaining <= catalog.cooldown);
-        if !ordered || !valid {
-            return Err(ProtocolError::new("cooldown record is inconsistent"));
-        }
-        cooldowns.push(Cooldown { ability, remaining });
-    }
-    let auras = decode_auras(payload, &mut offset)?;
     let resource = match (class, resource_kind) {
         (None, 0) if resource_value == 0 && resource_max == 0 => None,
         (Some(choice), code) if code == resource_code(choice.class.resource()) => {
@@ -706,59 +689,32 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         _ => return Err(ProtocolError::new("viewer resource is inconsistent")),
     };
     if global_cooldown > GLOBAL_COOLDOWN_TICKS
-        || (class.is_none()
-            && (global_cooldown != 0
-                || cast.is_some()
-                || !cooldowns.is_empty()
-                || !auras.is_empty()))
-        || (dead && (cast.is_some() || !auras.is_empty()))
+        || (class.is_none() && (global_cooldown != 0 || cast.is_some()))
+        || (dead && cast.is_some())
     {
         return Err(ProtocolError::new("viewer ability state is inconsistent"));
     }
     let target_of_target = decode_entity_ref(payload, &mut offset)?;
-    let target_detail = TargetDetail {
-        cast: decode_cast(payload, &mut offset)?,
-        auras: decode_auras(payload, &mut offset)?,
-    };
-    if target.is_none() && target_detail != TargetDetail::default() {
+    let target_cast = decode_cast(payload, &mut offset)?;
+    if target.is_none() && target_cast.is_some() {
         return Err(ProtocolError::new("target detail needs a target"));
     }
 
-    let inventory_revision = u64::from_be_bytes(take(payload, &mut offset)?);
-    if inventory_revision == 0 {
-        return Err(ProtocolError::new("inventory revision must be nonzero"));
+    let mask = read_u8(payload, &mut offset)?;
+    if mask >> SHEET_COUNT != 0 {
+        return Err(ProtocolError::new("unknown sheet in the sheet mask"));
     }
-    let (inventory, equipment, quests) = if read_bool(payload, &mut offset)? {
-        let inventory = decode_inventory(payload, &mut offset)?;
-        let equipment = decode_equipment(payload, &mut offset)?;
-        let totals = equipment.totals();
-        let mut wire = [0_u16; 4];
-        for total in &mut wire {
-            *total = u16::from_be_bytes(take(payload, &mut offset)?);
+    let mut fresh: [Option<ReceivedSheet>; SHEET_COUNT] = Default::default();
+    for sheet in Sheet::ALL {
+        if mask & (1 << sheet.index()) != 0 {
+            let bytes = crate::sheet::read_sheet(sheet, payload, &mut offset, tick)?;
+            fresh[sheet.index()] = Some(ReceivedSheet {
+                revision: revision(bytes),
+                tick,
+                bytes: bytes.to_vec(),
+            });
         }
-        if wire
-            != [
-                totals.stamina,
-                totals.strength,
-                totals.agility,
-                totals.intellect,
-            ]
-        {
-            return Err(ProtocolError::new("stat totals do not match the equipment"));
-        }
-        let quests = crate::quest::decode_sheet(payload, &mut offset)?;
-        (Some(inventory), Some(equipment), Some(quests))
-    } else {
-        (None, None, None)
-    };
-    let loot = if read_bool(payload, &mut offset)? {
-        Some(mmorpg_core::LootView {
-            claim: crate::loot::decode_claim(payload, &mut offset)?,
-            rewards: crate::loot::decode_rewards(payload, &mut offset)?,
-        })
-    } else {
-        None
-    };
+    }
     let doors = crate::wire::decode_doors(payload, &mut offset)?;
     let pieces = crate::wire::decode_piece_views(payload, &mut offset)?;
     let raid = crate::raid::decode_view(payload, &mut offset)?;
@@ -823,32 +779,81 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         ));
     }
 
-    if let Some(view) = loot {
-        let corpse = entities.iter().find(|entity| {
-            entity.entity() == mmorpg_core::EntityRef::Creature(view.claim.creature)
-        });
-        if dead
-            || target != Some(mmorpg_core::EntityRef::Creature(view.claim.creature))
-            || view.claim.died_at > tick
-            || (view.rewards.money == 0
-                && view.rewards.item.is_none()
-                && view.rewards.quest_item.is_none())
-            // A quest drop is always one unit.
-            || view
-                .rewards
-                .quest_item
-                .is_some_and(|stack| stack.quantity() != 1)
-            || corpse.is_none_or(|entity| {
-                !entity.flags.dead
-                    || !entity.flags.lootable
-                    || entity.flags.tapped_by_other
-                    || entity.health_percent != 0
-            })
+    // The newest copy of each sheet: this projection's, unless a later one arrived first.
+    let mut sheets = held.clone();
+    let mut current = [false; SHEET_COUNT];
+    for (index, received) in fresh.into_iter().enumerate() {
+        if let Some(received) = received
+            && sheets[index].as_ref().is_none_or(|kept| kept.tick <= tick)
         {
-            return Err(ProtocolError::new("corpse loot sheet is inconsistent"));
+            sheets[index] = Some(received);
+            current[index] = true;
         }
     }
-    Ok(ZoneSnapshot {
+    let sheet_bytes = |sheet: Sheet| sheets[sheet.index()].as_ref();
+    let (inventory_revision, inventory, equipment) = match sheet_bytes(Sheet::Inventory) {
+        Some(received) => {
+            let (revision, inventory, equipment) =
+                crate::sheet::decode_inventory_sheet(&received.bytes)?;
+            (revision, Some(inventory), Some(equipment))
+        }
+        None => (0, None, None),
+    };
+    let quests = sheet_bytes(Sheet::Quests)
+        .map(|received| crate::sheet::decode_quest_sheet(&received.bytes))
+        .transpose()?;
+    let loot = match sheet_bytes(Sheet::Loot) {
+        Some(received) => crate::sheet::decode_loot_sheet(&received.bytes)?,
+        None => None,
+    };
+    let loot = match loot {
+        Some(view) if !loot_matches(view, dead, target, tick, &entities) => {
+            if current[Sheet::Loot.index()] {
+                return Err(ProtocolError::new("corpse loot sheet is inconsistent"));
+            }
+            // A held sheet the projection outgrew: the client has no current corpse sheet.
+            None
+        }
+        loot => loot,
+    };
+    let abilities = match sheet_bytes(Sheet::Abilities) {
+        Some(received) => crate::sheet::decode_ability_sheet(&received.bytes, received.tick, tick)?,
+        None => Abilities {
+            target,
+            ..Abilities::default()
+        },
+    };
+    let inconsistent = (class.is_none()
+        && (!abilities.cooldowns.is_empty() || !abilities.auras.is_empty()))
+        || (dead && !abilities.auras.is_empty())
+        || abilities.target != target;
+    let abilities = if !inconsistent {
+        abilities
+    } else if current[Sheet::Abilities.index()] {
+        return Err(ProtocolError::new("viewer ability state is inconsistent"));
+    } else {
+        // A held sheet from before a death, class choice or target change shows only what
+        // still applies until its successor arrives.
+        Abilities {
+            target,
+            cooldowns: if class.is_none() {
+                Vec::new()
+            } else {
+                abilities.cooldowns
+            },
+            auras: if class.is_none() || dead {
+                Vec::new()
+            } else {
+                abilities.auras
+            },
+            target_auras: if abilities.target == target {
+                abilities.target_auras
+            } else {
+                Vec::new()
+            },
+        }
+    };
+    let snapshot = ZoneSnapshot {
         content_revision,
         acknowledged_sequence,
         viewer_id,
@@ -875,10 +880,13 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
             breath,
             waystones,
         },
-        cooldowns,
-        auras,
+        cooldowns: abilities.cooldowns,
+        auras: abilities.auras,
         target_of_target,
-        target_detail,
+        target_detail: TargetDetail {
+            cast: target_cast,
+            auras: abilities.target_auras,
+        },
         inventory_revision,
         inventory,
         equipment,
@@ -892,7 +900,38 @@ pub fn decode_snapshot(payload: &[u8]) -> Result<ZoneSnapshot, ProtocolError> {
         pieces,
         raid,
         quests,
-    })
+    };
+    Ok((snapshot, sheets))
+}
+
+/// Whether a corpse sheet belongs to the viewer's living selection of a lootable corpse.
+fn loot_matches(
+    view: mmorpg_core::LootView,
+    dead: bool,
+    target: Option<mmorpg_core::EntityRef>,
+    tick: u64,
+    entities: &[EntitySnapshot],
+) -> bool {
+    let corpse = entities
+        .iter()
+        .find(|entity| entity.entity() == mmorpg_core::EntityRef::Creature(view.claim.creature));
+    !(dead
+        || target != Some(mmorpg_core::EntityRef::Creature(view.claim.creature))
+        || view.claim.died_at > tick
+        || (view.rewards.money == 0
+            && view.rewards.item.is_none()
+            && view.rewards.quest_item.is_none())
+        // A quest drop is always one unit.
+        || view
+            .rewards
+            .quest_item
+            .is_some_and(|stack| stack.quantity() != 1)
+        || corpse.is_none_or(|entity| {
+            !entity.flags.dead
+                || !entity.flags.lootable
+                || entity.flags.tapped_by_other
+                || entity.health_percent != 0
+        }))
 }
 
 fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, ProtocolError> {
@@ -977,9 +1016,11 @@ fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inventory::{EQUIPMENT_RECORD_BYTES, INVENTORY_RECORD_BYTES};
     use crate::{
         DATAGRAM_SAFETY_MARGIN_BYTES, MEASURED_MIN_DATAGRAM_BYTES, SESSION_SNAPSHOT_HEADER_BYTES,
     };
+    use mmorpg_core::{AuraKind, AuraView, Cooldown, MAX_COOLDOWNS};
     use mmorpg_core::{CreatureId, EntityRef, ErrorCode, NpcId, ZoneEvent, ZoneId};
 
     const VIEWER: EntityRef = EntityRef::Player(7);
@@ -1389,33 +1430,49 @@ mod tests {
     const STANCE: usize = GUARD + 4;
     const COMBO: usize = STANCE + 1;
     const BREATH: usize = COMBO + 1;
-    const COOLDOWNS: usize = BREATH + 2;
-    const AURAS: usize = COOLDOWNS + 1 + 2 * COOLDOWN_RECORD_BYTES;
-    const TARGET_OF_TARGET: usize = AURAS + 1 + AURA_RECORD_BYTES;
+    const TARGET_OF_TARGET: usize = BREATH + 2;
     const TARGET_CAST: usize = TARGET_OF_TARGET + ENTITY_REF_BYTES;
-    const TARGET_AURAS: usize = TARGET_CAST + CAST_RECORD_BYTES;
-    const INVENTORY: usize = TARGET_AURAS + 1 + AURA_RECORD_BYTES;
+    const SHEET_MASK: usize = TARGET_CAST + CAST_RECORD_BYTES;
+    /// The bag sheet (#544): inventory revision, bag, equipment and stat totals.
+    const INVENTORY: usize = SHEET_MASK + 1;
     const EVENT_COUNT: usize = 16;
-    const EQUIPMENT: usize = INVENTORY + 9 + INVENTORY_RECORD_BYTES;
+    const EQUIPMENT: usize = INVENTORY + 8 + INVENTORY_RECORD_BYTES;
     const STATS: usize = EQUIPMENT + EQUIPMENT_RECORD_BYTES;
     const QUESTS: usize = STATS + 8;
     /// The fixture's quest sheet.
     const QUEST_BYTES: usize = 4 + 1 + 4 + 1 + 2 * 3;
+    /// The loot sheet: no corpse sheet.
+    const LOOT: usize = QUESTS + QUEST_BYTES;
+    /// The ability sheet: its target, then the cooldown, aura and target aura lists.
+    const ABILITIES: usize = LOOT + 1;
+    const COOLDOWNS: usize = ABILITIES + ENTITY_REF_BYTES;
+    const AURAS: usize = COOLDOWNS + 1 + 2 * 3;
+    const TARGET_AURAS: usize = AURAS + 1 + 6;
+    const SHEETS_END: usize = TARGET_AURAS + 1 + 6;
     /// The fixture's door section: count and two door records.
     const DOORS: usize = 1 + 2 * DOOR_RECORD_BYTES;
     /// The fixture's piece section (#305): count and two piece records.
     const PIECES: usize = 1 + 2 * PIECE_RECORD_BYTES;
     /// The fixture's raid section (#530): code and integrity.
     const RAID: usize = 1 + RAID_VIEW_BYTES;
-    const EVENTS: usize =
-        INVENTORY + 8 + 1 + SELF_SHEET_BYTES + QUEST_BYTES + 1 + DOORS + PIECES + RAID;
+    const EVENTS: usize = SHEETS_END + DOORS + PIECES + RAID;
     /// The fixture's chat records: 6 + 16 and 6 + 8 bytes, then a 6-byte emote.
     const CHAT_BYTES: usize = 22 + 14 + 6;
     const CHAT: usize = EVENTS + 1 + EVENT_COUNT * EVENT_RECORD_BYTES;
     const ENTITY_COUNT: usize = CHAT + 1 + CHAT_BYTES;
     const FIRST_ENTITY: usize = ENTITY_COUNT + 2;
-    /// Cooldown and aura records of the fixture.
-    const LIST_BYTES: usize = 2 * COOLDOWN_RECORD_BYTES + 2 * AURA_RECORD_BYTES;
+    /// The fixture's sheets: bag, quests, no corpse sheet, then the ability sheet with two
+    /// cooldowns, an aura and a target aura.
+    const SHEET_BYTES: usize = 8
+        + INVENTORY_RECORD_BYTES
+        + EQUIPMENT_RECORD_BYTES
+        + 8
+        + QUEST_BYTES
+        + 1
+        + ENTITY_REF_BYTES
+        + 1
+        + 2 * 3
+        + 2 * (1 + 6);
 
     #[test]
     fn player_snapshot_matches_the_shared_golden_fixture() {
@@ -1424,9 +1481,7 @@ mod tests {
         assert_eq!(
             encoded.len(),
             PLAYER_SNAPSHOT_FIXED_BYTES
-                + LIST_BYTES
-                + SELF_SHEET_BYTES
-                + QUEST_BYTES
+                + SHEET_BYTES
                 + EVENT_COUNT * EVENT_RECORD_BYTES
                 + CHAT_BYTES
                 + 2 * DOOR_RECORD_BYTES
@@ -1444,9 +1499,9 @@ mod tests {
         assert_eq!(encoded[CLASS], 5, "Arcanist, female");
         assert_eq!(encoded[EVENTS], 16);
         assert_eq!(
-            encoded[QUESTS..EVENTS - 1 - DOORS - PIECES - RAID],
+            encoded[QUESTS..LOOT],
             [0, 0, 0, 1, 1, 2, 3, 0, 0, 2, 0, 1, 1, 0, 2, 2],
-            "the quest sheet ends the self sheet"
+            "the quest sheet follows the bag sheet"
         );
         assert_eq!(encoded[FIRST_ENTITY], 1, "the viewer's record leads");
         // Any other protocol ID is rejected, never reinterpreted.
@@ -1540,8 +1595,7 @@ mod tests {
         );
         assert_eq!(bytes, expected);
         assert_eq!(decode_snapshot(&bytes).unwrap(), snapshot);
-        // Without target detail auras the sheet sits one aura record earlier.
-        let presence = EVENTS - 1 - DOORS - PIECES - RAID - AURA_RECORD_BYTES;
+        let presence = LOOT;
         for length in 0..bytes.len() {
             assert!(decode_snapshot(&bytes[..length]).is_err());
         }
@@ -1783,9 +1837,6 @@ mod tests {
         let mut zero_revision = encoded.clone();
         zero_revision[INVENTORY..INVENTORY + 8].fill(0);
         assert!(decode_snapshot(&zero_revision).is_err());
-        let mut invalid_flag = encoded.clone();
-        invalid_flag[INVENTORY + 8] = 2;
-        assert!(decode_snapshot(&invalid_flag).is_err());
         for (slot, item, quantity) in [
             (0, 0_u16, 3_u16),
             (0, 15, 1),
@@ -1794,7 +1845,7 @@ mod tests {
             (1, 2, 2),
         ] {
             let mut invalid = encoded.clone();
-            let offset = INVENTORY + 9 + slot * 4;
+            let offset = INVENTORY + 8 + slot * 4;
             invalid[offset..offset + 2].copy_from_slice(&item.to_be_bytes());
             invalid[offset + 2..offset + 4].copy_from_slice(&quantity.to_be_bytes());
             assert!(decode_snapshot(&invalid).is_err());
@@ -1803,13 +1854,144 @@ mod tests {
         omitted.inventory = None;
         assert_eq!(
             encode_snapshot(&omitted).unwrap_err().to_string(),
-            "the self sheet needs the bag, the equipment and the quests"
+            "the bag sheet needs both the bag and the equipment"
         );
+        // A projection without a bag or quests to send carries neither sheet.
         omitted.equipment = None;
         omitted.quests = None;
+        omitted.inventory_revision = 0;
         assert_eq!(
             decode_snapshot(&encode_snapshot(&omitted).unwrap()).unwrap(),
             omitted
+        );
+    }
+
+    /// A client that acknowledged a sheet stops receiving it; its decoder keeps the copy, with
+    /// timers running down, until the sheet changes (#544).
+    #[test]
+    fn acknowledged_sheets_stay_home_and_the_decoder_keeps_them() {
+        let snapshot = fixture_snapshot();
+        let mut decoder = SnapshotDecoder::new();
+        assert_eq!(decoder.revisions(), SheetRevisions::default());
+        let full = pack_snapshot(&snapshot).unwrap();
+        assert_eq!(full.payload[SHEET_MASK], 0b1111);
+        assert_eq!(decoder.decode(&full.payload).unwrap(), snapshot);
+        let held = decoder.revisions();
+        assert!(Sheet::ALL.into_iter().all(|sheet| held.get(sheet) != 0));
+
+        // Ten ticks on, nothing changed: no sheet travels, and the timers ran down.
+        let mut later = snapshot.clone();
+        later.tick += 10;
+        for cooldown in &mut later.cooldowns {
+            cooldown.remaining -= 10;
+        }
+        for aura in later.auras.iter_mut().chain(&mut later.target_detail.auras) {
+            aura.remaining -= 10;
+        }
+        let quiet = pack_snapshot_acknowledged(&later, held).unwrap();
+        assert_eq!(quiet.payload[SHEET_MASK], 0);
+        assert_eq!(full.payload.len() - quiet.payload.len(), SHEET_BYTES);
+        assert_eq!(decoder.decode(&quiet.payload).unwrap(), later);
+        assert_eq!(decoder.revisions(), held);
+        // A decoder that never saw the sheets has none.
+        let bare = decode_snapshot(&quiet.payload).unwrap();
+        assert_eq!(
+            (bare.inventory, bare.quests, bare.inventory_revision),
+            (None, None, 0)
+        );
+        assert!(bare.cooldowns.is_empty() && bare.auras.is_empty());
+
+        // A changed bag travels alone; the others stay acknowledged.
+        let mut changed = later.clone();
+        changed.inventory_revision += 1;
+        changed.inventory.as_mut().unwrap().remove(0, 1).unwrap();
+        let update = pack_snapshot_acknowledged(&changed, held).unwrap();
+        assert_eq!(update.payload[SHEET_MASK], 0b0001);
+        assert_eq!(decoder.decode(&update.payload).unwrap(), changed);
+        assert_ne!(decoder.revisions().inventory, held.inventory);
+        assert_eq!(decoder.revisions().quests, held.quests);
+
+        // `snapshot` without any sheet, as to a client that holds all of its sheets.
+        let sheetless = |snapshot: &ZoneSnapshot| {
+            let mut own = SnapshotDecoder::new();
+            own.decode(&pack_snapshot(snapshot).unwrap().payload)
+                .unwrap();
+            let packed = pack_snapshot_acknowledged(snapshot, own.revisions()).unwrap();
+            assert_eq!(packed.payload[SHEET_MASK], 0);
+            packed.payload
+        };
+
+        // A held timer that ran out is gone; the others keep running down.
+        let shortest = changed
+            .cooldowns
+            .iter()
+            .map(|cooldown| cooldown.remaining)
+            .min()
+            .unwrap();
+        let mut expired = changed.clone();
+        expired.tick += u64::from(shortest);
+        expired.cooldowns.retain_mut(|cooldown| {
+            cooldown.remaining -= shortest;
+            cooldown.remaining > 0
+        });
+        for auras in [&mut expired.auras, &mut expired.target_detail.auras] {
+            auras.retain_mut(|aura| {
+                aura.remaining = aura.remaining.saturating_sub(shortest);
+                aura.remaining > 0
+            });
+        }
+        assert_eq!(expired.cooldowns.len(), changed.cooldowns.len() - 1);
+        assert_eq!(
+            decoder.clone().decode(&sheetless(&expired)).unwrap(),
+            expired
+        );
+
+        // A held ability sheet of another target keeps only the viewer's own lists until the
+        // new one arrives; a corpse sheet of a creature no longer selected is dropped.
+        let mut retargeted = changed.clone();
+        retargeted.viewer.target = None;
+        retargeted.target_of_target = None;
+        retargeted.target_detail = TargetDetail::default();
+        let stale = decoder.clone().decode(&sheetless(&retargeted)).unwrap();
+        assert!(stale.target_detail.auras.is_empty());
+        assert_eq!(stale, retargeted);
+    }
+
+    #[test]
+    fn acknowledged_commands_carry_the_held_revisions() {
+        let revisions = SheetRevisions {
+            inventory: 1,
+            quests: 2,
+            loot: 3,
+            abilities: 0xdead_beef,
+        };
+        let command = mmorpg_core::ZoneCommand::Jump;
+        for inner in [
+            crate::encode_command(command),
+            crate::encode_observed_command(command, 41),
+        ] {
+            let wrapped = crate::encode_acknowledged_command(revisions, &inner);
+            assert_eq!(
+                wrapped.len(),
+                inner.len() + 1 + crate::SHEET_REVISIONS_BYTES
+            );
+            let envelope = crate::decode_command_envelope(&wrapped).unwrap();
+            assert_eq!(envelope.command, command);
+            assert_eq!(envelope.sheets, Some(revisions));
+            assert_eq!(
+                (envelope.command, envelope.observed),
+                crate::decode_observed_command(&inner).unwrap()
+            );
+            assert!(crate::decode_observed_command(&wrapped).is_err());
+            let twice = crate::encode_acknowledged_command(revisions, &wrapped);
+            assert!(crate::decode_command_envelope(&twice).is_err());
+            assert!(crate::decode_command_envelope(&wrapped[..wrapped.len() - 1]).is_err());
+        }
+        assert_eq!(
+            crate::decode_command_envelope(&crate::encode_command(command))
+                .unwrap()
+                .sheets,
+            None
         );
     }
 
@@ -1883,7 +2065,7 @@ mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (118, 14, 27)
+            (106, 14, 27)
         );
         assert_eq!(MAX_WIRE_ENTITIES, 35);
         let viewer_id = u32::MAX;
@@ -1995,8 +2177,8 @@ mod tests {
             pieces: Vec::new(),
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 118 − 1 − 16 × 14 − 9 × 2) / 27 = 26 records fit beside a full event section,
-        // every door and a raid signal.
+        // (1,077 − 106 − 9 − 1 − 16 × 14 − 9 × 2) / 27 = 26 records fit beside the empty loot and
+        // ability sheets, a full event section, every door and a raid signal.
         assert_eq!(packed.packed_entities, 26);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
@@ -2015,7 +2197,8 @@ mod tests {
             encode_snapshot(&snapshot).unwrap_err().to_string(),
             "player projection exceeds the byte budget"
         );
-        // Without events, doors, a raid signal or a bag sheet the budget holds 35 records.
+        // Without events, doors, a raid signal or a bag sheet the budget holds 35 records beside
+        // the empty loot sheet (1 byte) and ability sheet (8 bytes).
         let quiet = ZoneSnapshot {
             events: Vec::new(),
             doors: Vec::new(),
@@ -2026,7 +2209,7 @@ mod tests {
         assert_eq!(packed.packed_entities, MAX_WIRE_ENTITIES);
         assert_eq!(
             packed.payload.len(),
-            PLAYER_SNAPSHOT_FIXED_BYTES + MAX_WIRE_ENTITIES * ENTITY_RECORD_BYTES
+            PLAYER_SNAPSHOT_FIXED_BYTES + 9 + MAX_WIRE_ENTITIES * ENTITY_RECORD_BYTES
         );
         let full_bag = mmorpg_core::Inventory::from_slots(
             [Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 20).unwrap()); 16],
@@ -2050,8 +2233,8 @@ mod tests {
             assert_eq!(decoded.events, with_sheet.events);
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
-            // With a full quest part the sheet is 84 + 70 = 154 bytes:
-            // (1,077 − 117 − 154) / 27 = 29 and (1,077 − 117 − 154 − 224) / 27 = 21.
+            // The full bag and quest sheets are 92 + 70 bytes beside the other 9:
+            // (1,077 − 106 − 171) / 27 = 29 and (1,077 − 106 − 171 − 224) / 27 = 21.
             if events == 0 {
                 assert_eq!(packed.packed_entities, 29);
             }
@@ -2074,7 +2257,7 @@ mod tests {
             MAX_CHAT_PER_TICK
         ];
         let packed = pack_snapshot(&chatty).unwrap();
-        // (1,077 − 117 − 224 − 4 × 84) / 27 = 14 records.
+        // (1,077 − 106 − 9 − 224 − 4 × 84) / 27 = 14 records.
         assert_eq!(packed.packed_entities, 14);
         assert_eq!(decode_snapshot(&packed.payload).unwrap().chat, chatty.chat);
         for item in [

@@ -7,7 +7,8 @@ pub use crate::greyhaven_workload::{FIXTURES, Fixture, TICKS};
 use crate::greyhaven_workload::{commands, initial_zone};
 use mmorpg_core::{CreatureLife, ZoneEvent, ZoneSimulation};
 use mmorpg_protocol::{
-    MAX_PLAYER_PROJECTION_BYTES, decode_snapshot, encode_canonical_snapshot, pack_snapshot,
+    MAX_PLAYER_PROJECTION_BYTES, SnapshotDecoder, encode_canonical_snapshot,
+    pack_snapshot_acknowledged,
 };
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -51,6 +52,8 @@ pub fn measure(fixture: Fixture) -> Result<Report, Box<dyn Error>> {
         trace_hash: 0xcbf2_9ce4_8422_2325,
         ..Report::default()
     };
+    // Each player's client acknowledges its sheets with its next command, a tick later (#544).
+    let mut clients = std::collections::BTreeMap::<u32, SnapshotDecoder>::new();
     for tick in 0..TICKS {
         commands(&mut zone, fixture, tick)?;
         commands(&mut reference, fixture, tick)?;
@@ -93,8 +96,26 @@ pub fn measure(fixture: Fixture) -> Result<Report, Box<dyn Error>> {
         hash_record(&mut report.trace_hash, &canonical_bytes);
         for player in &canonical.players {
             let projection = zone.project_for_player(player.player_id)?;
-            let packed = pack_snapshot(&projection.snapshot)?;
-            let decoded = decode_snapshot(&packed.payload)?;
+            let client = clients.entry(player.player_id).or_default();
+            let acknowledged = client.revisions();
+            let packed = pack_snapshot_acknowledged(&projection.snapshot, acknowledged)?;
+            let decoded = client.decode(&packed.payload)?;
+            if !packed.deferred_sheets {
+                // The held sheets are the zone's, timers included.
+                let expected = &projection.snapshot;
+                assert_eq!(
+                    (&decoded.inventory, &decoded.quests, &decoded.loot),
+                    (&expected.inventory, &expected.quests, &expected.loot)
+                );
+                assert_eq!(
+                    (&decoded.cooldowns, &decoded.auras, &decoded.target_detail),
+                    (
+                        &expected.cooldowns,
+                        &expected.auras,
+                        &expected.target_detail
+                    )
+                );
+            }
             assert_eq!(decoded.tick, u64::try_from(tick)? + 1);
             assert_eq!(decoded.viewer_id, player.player_id);
             // v15 packing drops cosmetic observations that name an entity
@@ -125,7 +146,11 @@ pub fn measure(fixture: Fixture) -> Result<Report, Box<dyn Error>> {
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
             assert_eq!(
                 packed.payload,
-                pack_snapshot(&reference.snapshot_for_player(player.player_id)?)?.payload
+                pack_snapshot_acknowledged(
+                    &reference.snapshot_for_player(player.player_id)?,
+                    acknowledged
+                )?
+                .payload
             );
             report.projections += 1;
             report.candidates_tested += projection.stats.candidates_tested;

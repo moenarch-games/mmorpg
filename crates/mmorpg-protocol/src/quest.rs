@@ -61,23 +61,14 @@ pub(crate) fn decode_entries(
     Ok((completed, entries))
 }
 
-/// Canonical: change tick, completed mask and entries.
-pub(crate) fn encode_log(
-    payload: &mut Vec<u8>,
-    log: &QuestLog,
-    changed_at: u64,
-) -> Result<(), ProtocolError> {
-    payload.extend_from_slice(&changed_at.to_be_bytes());
+/// Canonical: completed mask and entries.
+pub(crate) fn encode_log(payload: &mut Vec<u8>, log: &QuestLog) -> Result<(), ProtocolError> {
     encode_entries(payload, log.completed, &log.entries)
 }
 
-pub(crate) fn decode_log(
-    payload: &[u8],
-    offset: &mut usize,
-) -> Result<(QuestLog, u64), ProtocolError> {
-    let changed_at = u64::from_be_bytes(take(payload, offset)?);
+pub(crate) fn decode_log(payload: &[u8], offset: &mut usize) -> Result<QuestLog, ProtocolError> {
     let (completed, entries) = decode_entries(payload, offset)?;
-    Ok((QuestLog { entries, completed }, changed_at))
+    Ok(QuestLog { entries, completed })
 }
 
 pub(crate) fn encode_sheet(payload: &mut Vec<u8>, sheet: &QuestSheet) -> Result<(), ProtocolError> {
