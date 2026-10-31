@@ -2,7 +2,7 @@
 # Explicit opt-in input for #346, never required by ordinary gameplay builds.
 set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-EXPECTED=bd7799b47478d1bef1d864f96f51f3cb34b03a7497ba5d5429b2099834f6311b
+EXPECTED=256c2d1ede7b44c48077eac0574fbb5d885c0b756e96e96c19f44b35270355c2
 DEST="${ROOT_DIR}/web/public/review/greyhaven.nature"
 if [[ -f "${DEST}/SHA256" && "$(cat "${DEST}/SHA256")" == "${EXPECTED}" ]]; then
   exit 0
