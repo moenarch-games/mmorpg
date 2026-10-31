@@ -20,6 +20,8 @@ export class BattleRoyaleEntry {
   readonly #root: HTMLElement;
   readonly #class: HTMLSelectElement;
   readonly #sex: HTMLSelectElement;
+  readonly #mode: HTMLSelectElement;
+  readonly #hosted: HTMLElement;
   readonly #server: HTMLInputElement;
   readonly #hash: HTMLInputElement;
   readonly #equipment: HTMLSelectElement[] = [];
@@ -30,12 +32,15 @@ export class BattleRoyaleEntry {
 
   constructor(activity: HTMLSelectElement, root: HTMLElement, changed: () => void) {
     this.#activity = activity; this.#root = root; this.#changed = changed;
-    root.innerHTML = `<div class="arena-character-fields"><label>Class<select id="arena-class"></select></label>
+    root.innerHTML = `<label>Arena<select id="arena-mode"><option value="practice">Practice arena (this browser)</option>
+      <option value="hosted">Hosted match</option></select></label>
+      <div class="arena-character-fields"><label>Class<select id="arena-class"></select></label>
       <label>Appearance<select id="arena-sex"><option value="male">Male</option><option value="female">Female</option></select></label></div>
       <fieldset id="arena-equipment"><legend>Equipment</legend></fieldset>
-      <label>Match server<input id="arena-server" type="url" placeholder="https://host:4433/game/matches/br-0000000000000001" autocomplete="off"></label>
-      <details><summary>Development certificate</summary><label>Certificate hash<input id="arena-cert-hash" type="text" autocomplete="off" spellcheck="false"></label></details>
+      <div id="arena-hosted"><label>Match server<input id="arena-server" type="url" placeholder="https://host:4433/game/matches/br-0000000000000001" autocomplete="off"></label>
+      <details><summary>Development certificate</summary><label>Certificate hash<input id="arena-cert-hash" type="text" autocomplete="off" spellcheck="false"></label></details></div>
       <p id="arena-setup-note"></p>`;
+    this.#mode = element(root, "#arena-mode"); this.#hosted = element(root, "#arena-hosted");
     this.#class = element(root, "#arena-class"); this.#sex = element(root, "#arena-sex");
     this.#server = element(root, "#arena-server"); this.#hash = element(root, "#arena-cert-hash"); this.#note = element(root, "#arena-setup-note");
     for (const choice of CHARACTER_CLASSES) { this.#class.add(new Option(choice.name, choice.id)); }
@@ -49,6 +54,10 @@ export class BattleRoyaleEntry {
     const server = query.get("arenaServer") ?? "";
     this.#server.value = server;
     this.#hash.value = query.get("certHash") ?? "";
+    // A match server in the URL asks for the hosted match; otherwise the arena is practice.
+    this.#mode.value = server ? "hosted" : "practice";
+    this.#hosted.hidden = this.practice;
+    this.#mode.addEventListener("change", () => { this.#hosted.hidden = this.practice; this.#describe(); });
     if (query.get("activity") === "battle-royale") { activity.value = "battle-royale"; }
     this.#class.addEventListener("change", () => { this.#defaults(); changed(); });
     root.addEventListener("change", (event) => { if (event.target !== this.#class) { changed(); } });
@@ -56,6 +65,8 @@ export class BattleRoyaleEntry {
     root.hidden = !this.selected;
   }
   get selected(): boolean { return this.#activity.value === "battle-royale"; }
+  /** Whether the arena is the local practice arena (#550) rather than a hosted match. */
+  get practice(): boolean { return this.#mode.value === "practice"; }
   ready(catalog: ContentCatalog): void {
     this.#catalog = catalog; this.#presentation = new ArenaPresentation();
     this.#equipment.forEach((select, index) => {
@@ -65,7 +76,14 @@ export class BattleRoyaleEntry {
       }
     });
     this.#defaults();
-    this.#note.textContent = `Level ${this.#presentation.maximumLevel()} sandbox. Your world character progress stays separate. A real match host is required.`;
+    this.#describe();
+  }
+  #describe(): void {
+    if (!this.#presentation) { return; }
+    const level = this.#presentation.maximumLevel();
+    this.#note.textContent = this.practice
+      ? `Level ${level} practice against training targets, in this browser. Nothing is saved.`
+      : `Level ${level} sandbox. Your world character progress stays separate. A real match host is required.`;
   }
   #defaults(): void {
     if (!this.#presentation) { return; }
@@ -90,7 +108,7 @@ export class BattleRoyaleEntry {
       }) };
   }
   server(): ZoneServer | null {
-    if (!this.#server.value.trim()) { return null; }
+    if (this.practice || !this.#server.value.trim()) { return null; }
     const route = parseSessionRoute(this.#server.value.trim(), "battle-royale");
     const hash = this.#hash.value.trim();
     return { route, label: new URL(route.url).host, certificateHash: hash ? parseCertificateHash(hash) : null };

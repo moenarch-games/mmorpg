@@ -244,6 +244,31 @@ impl LocalZone {
         })
     }
 
+    /// A fresh Battle Royale practice arena (#550) with a maximum-level ephemeral character of
+    /// `class` and `sex` (as in [`LocalZone::enter`]) wearing `equipment` (six catalog item IDs,
+    /// 0 for an empty slot). Throws for an illegal build. The character is
+    /// [`LocalZone::scenario_player`]; nothing is stored.
+    #[wasm_bindgen(js_name = forPracticeArena)]
+    pub fn for_practice_arena(class: u8, sex: u8, equipment: &[u16]) -> Result<LocalZone, JsError> {
+        let class = PlayerClass::from_code(class)
+            .zip(Sex::from_code(sex))
+            .map(|(class, sex)| ClassChoice { class, sex })
+            .ok_or_else(|| JsError::new("the class choice is invalid"))?;
+        let slots: [u16; mmorpg_core::EQUIPMENT_SLOTS] = equipment
+            .try_into()
+            .map_err(|_| JsError::new("an arena build has one item per equipment slot"))?;
+        let build = mmorpg_core::EphemeralCharacterBuild::new(
+            class,
+            slots.map(|id| (id != 0).then(|| mmorpg_core::ItemId::new(id))),
+        )
+        .map_err(|error| JsError::new(&error.to_string()))?;
+        let (host, player) = LocalZoneHost::practice_arena(&build).map_err(js_error)?;
+        Ok(Self {
+            host,
+            scenario_player: Some(player),
+        })
+    }
+
     /// A fresh Action Lab world (#381) with a configured ephemeral character
     /// of `class` at `level` wearing `gear` (`starter`, `standard` or
     /// `none`), `main_hand` replacing its weapon unless 0, and `resource`

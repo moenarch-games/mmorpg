@@ -58,7 +58,7 @@ import { webTransportConnector } from "./session/webtransport";
 import { onlineChoice, type ZoneServer } from "./world/online-config";
 import { OnlineZoneSource } from "./world/online-zone-source";
 import { BattleRoyaleEntry, matchStatus } from "./world/battle-royale/entry";
-import { createArenaWorld, type ArenaWorld } from "./world/battle-royale/world";
+import { createArenaWorld, createPracticeWorld, type ArenaWorld, type PracticeWorld } from "./world/battle-royale/world";
 import "./world/battle-royale/style.css";
 import type { LinkState, ZoneWorld } from "./world/world-source";
 import { WorldView, webGpuProjection } from "./world/world-view";
@@ -202,6 +202,8 @@ let joining: ZoneWorld | null = null;
 let jumps = 0;
 let rolls = 0;
 let arenaWorld: ArenaWorld | null = null;
+// The Battle Royale practice arena (#550): local, unsaved, reset with F9 or Reset like a scenario.
+let practiceWorld: PracticeWorld | null = null;
 // A review scenario (#371, `?scenario=<name>&seed=<n>`) skips selection and enters a fresh,
 // unsaved local world in that situation; F9 or Reset scenario restarts it from the same seed.
 let scenario: ScenarioChoice | null = null;
@@ -233,17 +235,21 @@ const arenaEntry = new BattleRoyaleEntry(
 function refreshArenaWorld(): void {
   if (!world || joining || entryState.phase === "world") { return; }
   arenaWorld = null;
+  practiceWorld = null;
   arenaServer = null;
   arenaError = null;
   worldFailure = null;
   document.body.dataset.activity = arenaEntry.selected ? "battle-royale" : "world";
   try {
-    if (arenaEntry.selected) {
+    if (arenaEntry.selected && arenaEntry.practice) {
+      const base = selectedCharacter();
+      practiceWorld = createPracticeWorld(world, () => ({ character: arenaEntry.character(base), equipment: arenaEntry.equipment() }));
+    } else if (arenaEntry.selected) {
       arenaServer = arenaEntry.server();
       if (arenaServer) { arenaWorld = createArenaWorld(world, arenaServer, () => arenaEntry.equipment()); }
     }
   } catch (error) { arenaError = errorMessage(error); }
-  worldView.load(arenaWorld?.world ?? world);
+  worldView.load(practiceWorld?.world ?? arenaWorld?.world ?? world);
   onlineToggle.hidden = arenaEntry.selected || online.kind !== "online";
   refreshSelectionPresentation();
   updateEntryButton();
@@ -963,7 +969,7 @@ function chosenServer(): ZoneServer | null {
 /** The world "Enter World" joins; null while loading or when online play is misconfigured. */
 function chosenWorld(): ZoneWorld | null {
   if (scenario) { return scenarioWorld?.world ?? null; }
-  if (arenaEntry.selected) { return arenaWorld?.world ?? null; }
+  if (arenaEntry.selected) { return practiceWorld?.world ?? arenaWorld?.world ?? null; }
   if (online.kind === "invalid") {
     return null;
   }
@@ -974,6 +980,7 @@ function entryNote(character: CharacterPreview): string {
   if (arenaEntry.selected) {
     if (!world) { return worldLoadError ?? "Loading characters…"; }
     if (arenaError) { return arenaError; }
+    if (practiceWorld) { return worldFailure ?? (joining ? "Entering the practice arena…" : "Practice against training targets in this browser"); }
     if (!arenaWorld) { return "Enter a match server to play with friends."; }
     if (joining) { return "Joining Battle Royale…"; }
     return worldFailure ?? `Join Battle Royale at ${arenaServer?.label}`;
@@ -1010,12 +1017,16 @@ function updateEntryButton(): void {
   enterWorldButton.disabled = chosenWorld() === null || joining !== null || !entryArtReady();
   if (!enterWorldButton.disabled) { markStartup("enter-enabled"); }
   let entryLabel = "Enter World";
-  if (arenaEntry.selected) { entryLabel = "Join Battle Royale"; }
+  if (arenaEntry.selected) { entryLabel = practiceWorld ? "Start practice" : "Join Battle Royale"; }
   if (joining) { entryLabel = "Entering…"; }
   enterWorldLabel.textContent = entryLabel;
   enterWorldNote.textContent = entryNote(selectedCharacter());
   playOnlineInput.disabled = joining !== null;
   arenaEntry.setLocked(joining !== null || entryState.phase === "world");
+  if (practiceWorld) {
+    selectionNote.textContent = "Local practice: the shared Rust zone simulation runs in this browser. Change your build here between lives; nothing is saved.";
+    return;
+  }
   if (arenaEntry.selected) {
     selectionNote.textContent = "Hosted PvP. Choose a build before joining; change it after elimination or between matches.";
     return;
@@ -1359,6 +1370,7 @@ const OUTPOST_AREA = 1;
  */
 function continuationLabel(): { area: string; copy: string } {
   const neutral = { area: "Your last location", copy: "Continue where you left off" };
+  if (practiceWorld) { return { area: "Battle Royale practice", copy: "Training targets, nothing saved" }; }
   if (arenaEntry.selected) { return { area: "Battle Royale", copy: "Join a hosted match" }; }
   if (scenario) { return { area: `Review scenario ${scenario.name}`, copy: "A fresh, unsaved world" }; }
   if (chosenServer() || !world || !localCharacters) { return neutral; }
@@ -1466,6 +1478,8 @@ async function enterWorld(): Promise<void> {
   const worldNotice = world && target === world ? world.source.worldNotice : null;
   if (scenario) {
     worldMode.textContent = `Review scenario ${scenario.name} · seed ${scenario.seed} · content rev ${world?.scenery.scenery.contentRevision} · nothing is saved`;
+  } else if (practiceWorld) {
+    worldMode.textContent = "Battle Royale practice · this browser · nothing is saved";
   } else if (arenaEntry.selected) {
     worldMode.textContent = `Battle Royale · ${server?.label}`;
   } else if (server) {
@@ -1483,7 +1497,8 @@ async function enterWorld(): Promise<void> {
   for (const element of worldUi) {
     element.hidden = false;
   }
-  scenarioReset.hidden = !scenario;
+  scenarioReset.hidden = !scenario && !practiceWorld;
+  scenarioReset.textContent = practiceWorld ? "Reset practice (F9)" : "Reset scenario (F9)";
   actionLabRoot.hidden = actionLab === null;
   document.body.classList.toggle("action-lab-open", actionLab !== null);
   lastTime = performance.now();
@@ -1497,12 +1512,13 @@ async function resetScenario(): Promise<void> {
 
 /** Restarts the scenario world through `restart` (a reset, or an Action Lab replay) and re-enters the view. */
 async function restartScenario(restart: (source: ScenarioSource) => Promise<number>): Promise<void> {
-  if (!scenarioWorld || activeWorld !== scenarioWorld.world || entryState.phase !== "world") {
+  const restartable = resettableWorld();
+  if (!restartable || entryState.phase !== "world") {
     return;
   }
   worldView.leave();
-  await restart(scenarioWorld.source);
-  worldView.enter(worldInput(), scenarioWorld.source.latestProjection());
+  await restart(restartable.source);
+  worldView.enter(worldInput(), restartable.source.latestProjection());
   lastTime = performance.now();
   canvas.focus();
 }
@@ -1556,9 +1572,15 @@ function mountActionLab(loaded: LocalWorld, choice: ScenarioChoice, source: Scen
   }).observe(actionLabRoot);
 }
 
+/** The entered world a reset restarts fresh: a review scenario or the practice arena. */
+function resettableWorld(): { world: ZoneWorld; source: ScenarioSource } | null {
+  const candidate = scenarioWorld ?? practiceWorld;
+  return candidate && activeWorld === candidate.world ? candidate : null;
+}
+
 /** A dead scenario character is offered the reset instead of the long run back. */
 function showScenarioStatus(): void {
-  if (activeWorld && activeWorld === scenarioWorld?.world && activeWorld.source.latestProjection()?.viewer.dead) {
+  if (activeWorld && resettableWorld() && activeWorld.source.latestProjection()?.viewer.dead) {
     requireElement<HTMLElement>("#unit-status").textContent = "You died. Press F9 or Reset scenario to fight again.";
   }
 }
@@ -1642,7 +1664,7 @@ enterWorldButton.addEventListener("click", () => void enterWorld());
 returnButton.addEventListener("click", () => returnToCharacters());
 scenarioReset.addEventListener("click", () => void resetScenario());
 window.addEventListener("keydown", (event) => {
-  if (scenario && event.key === "F9" && !event.repeat) {
+  if (resettableWorld() && event.key === "F9" && !event.repeat) {
     event.preventDefault();
     void resetScenario();
   }
