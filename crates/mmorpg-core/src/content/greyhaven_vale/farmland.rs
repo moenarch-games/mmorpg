@@ -18,8 +18,8 @@
 //! sampled on the terrain grid's 4 m lattice.
 
 use super::basin::{Along, Lane};
-use super::{smooth_q10, value_noise_q10};
-use crate::XzBounds;
+use super::{Road, ids, on_terrain, smooth_q10, value_noise_q10};
+use crate::{AreaId, StaticCollider, XzBounds};
 
 /// The region: the ridge and the plateau, out to the boundary walls.
 pub const BOUNDS: XzBounds = XzBounds {
@@ -108,7 +108,7 @@ pub enum Building {
 }
 
 /// The hamlets' buildings and the landmark: `(kind, footprint min, footprint max, height)`.
-pub const BUILDINGS: [(Building, [i32; 2], [i32; 2], i32); 21] = [
+pub const BUILDINGS: &[(Building, [i32; 2], [i32; 2], i32)] = &[
     // The western hamlet, along its lane's end.
     (Building::House, [-10_600, 31_800], [-9_800, 32_400], 500),
     (Building::House, [-10_600, 33_200], [-9_800, 33_800], 500),
@@ -223,3 +223,59 @@ fn plateau_relief(x: i64, z: i64) -> i64 {
     let roll = ROLL_UNITS * value_noise_q10(x, z, 6_000, SEED) / 1_024;
     roll * level_weight / 1_024 * entry / 1_024 * settle / 1_024
 }
+
+/// The first major region beyond the Vale (#424): its ridge and plateau.
+pub const FARMLAND_AND_HAMLETS: AreaId = AreaId::new(11);
+
+pub(super) const REGION: super::Region = super::Region {
+    areas: AREAS,
+    roads: ROADS,
+    colliders,
+};
+
+/// The hamlets' buildings, the tower and the field fences.
+fn colliders() -> Vec<StaticCollider> {
+    let buildings = BUILDINGS
+        .iter()
+        .map(|&(_, min, max, height)| (min, max, height));
+    let fences = fences().into_iter().map(|(min, max)| (min, max, 110));
+    (*ids::FARMLAND_BUILDINGS.start()..)
+        .zip(buildings)
+        .chain((*ids::FARMLAND_FENCES.start()..).zip(fences))
+        .map(|(id, (min, max, height))| on_terrain(id, min, max, height))
+        .collect()
+}
+
+/// The farmland building a collider ID belongs to (#424).
+#[must_use]
+pub fn building(id: u32) -> Option<Building> {
+    let index = id.checked_sub(*ids::FARMLAND_BUILDINGS.start())?;
+    BUILDINGS
+        .get(usize::try_from(index).ok()?)
+        .map(|building| building.0)
+}
+
+/// The region's named area as `(id, name, half-open bounds)`.
+pub const AREAS: &[(AreaId, &str, XzBounds)] =
+    &[(FARMLAND_AND_HAMLETS, "Farmland and Hamlets", BOUNDS)];
+
+/// The region's roads, in table order.
+pub const ROADS: &[Road] = &[
+    // Farmland and Hamlets (#424): the farm road south from the notch and the hamlets' lanes.
+    Road {
+        name: "Farmland Road",
+        points: &[[2_800, 25_200], [2_800, 58_000]],
+    },
+    Road {
+        name: "West Hamlet Lane",
+        points: &[[2_800, 31_000], [-9_000, 31_000], [-9_000, 36_400]],
+    },
+    Road {
+        name: "East Hamlet Lane",
+        points: &[[2_800, 42_000], [13_000, 42_000], [13_000, 47_000]],
+    },
+    Road {
+        name: "South Hamlet Lane",
+        points: &[[2_800, 54_000], [-8_000, 54_000]],
+    },
+];

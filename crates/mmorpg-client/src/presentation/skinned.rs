@@ -12,6 +12,7 @@ use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock},
 };
+use strum::VariantArray;
 use three_d_core::{Color3, Mesh, Vec3, VertexAttributes};
 
 mod residents;
@@ -1560,8 +1561,8 @@ fn source(kind: Kind) -> std::borrow::Cow<'static, [u8]> {
 /// The parsed model of `kind`, imported once per process on first use.
 pub(super) fn asset(kind: Kind) -> &'static Asset {
     static ASSETS: OnceLock<Vec<OnceLock<Asset>>> = OnceLock::new();
-    let slots = ASSETS.get_or_init(|| Kind::ALL.iter().map(|_| OnceLock::new()).collect());
-    let index = Kind::ALL
+    let slots = ASSETS.get_or_init(|| Kind::VARIANTS.iter().map(|_| OnceLock::new()).collect());
+    let index = Kind::VARIANTS
         .iter()
         .position(|candidate| *candidate == kind)
         .expect("every kind is listed");
@@ -1582,7 +1583,7 @@ mod rolling_ranger_tests {
     #[test]
     fn class_outfits_wear_their_plates_trim_and_drops_cover_every_armour_socket() {
         use mmorpg_presentation::units::imported::ARMOR_SOCKETS;
-        for class in mmorpg_core::PlayerClass::ALL {
+        for &class in mmorpg_core::PlayerClass::VARIANTS {
             let outfit = Outfit::new(class, None);
             let worn = class_outfit(outfit);
             assert!(!worn.plates.items.is_empty(), "{class:?} wears its armour");
@@ -1596,8 +1597,9 @@ mod rolling_ranger_tests {
             );
         }
         // The Ranger, Rogue and Necromancer outfits carry their own hood.
-        let hooded: Vec<_> = mmorpg_core::PlayerClass::ALL
-            .into_iter()
+        let hooded: Vec<_> = mmorpg_core::PlayerClass::VARIANTS
+            .iter()
+            .copied()
             .filter(|&class| !class_outfit(Outfit::new(class, None)).hood.is_empty())
             .collect();
         assert_eq!(

@@ -12,6 +12,7 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+strum.workspace = true
 mmorpg-characters.workspace = true
 mmorpg-core.workspace = true
 mmorpg-protocol.workspace = true

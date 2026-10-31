@@ -5,6 +5,7 @@ use mmorpg_core::{
     ability_by_id,
 };
 use std::collections::VecDeque;
+use strum::VariantArray;
 
 /// Each log keeps the newest lines only.
 pub const MAX_LOG_LINES: usize = 50;
@@ -47,7 +48,10 @@ pub fn parse_chat_input(raw: &str) -> Result<ZoneCommand, String> {
             .map_or((word, ""), |(verb, rest)| (verb, rest.trim_start()));
         let verb = verb.to_ascii_lowercase();
         if rest.is_empty()
-            && let Some(emote) = Emote::ALL.into_iter().find(|e| emote_name(*e) == verb)
+            && let Some(emote) = Emote::VARIANTS
+                .iter()
+                .copied()
+                .find(|e| emote_name(*e) == verb)
         {
             return Ok(ZoneCommand::Emote(emote));
         }

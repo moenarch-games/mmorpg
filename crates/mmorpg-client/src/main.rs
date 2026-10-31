@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use strum::VariantArray;
 mod desktop;
 
 use mmorpg_client::{
@@ -67,8 +68,9 @@ impl Options {
                         "--class needs warden, ranger, arcanist, necromancer, rogue, cleric or druid",
                     )?;
                     options.class = Some(
-                        PlayerClass::ALL
-                            .into_iter()
+                        PlayerClass::VARIANTS
+                            .iter()
+                            .copied()
                             .find(|class| class.name() == name)
                             .ok_or(
                                 "--class must be warden, ranger, arcanist, necromancer, rogue, cleric or druid",

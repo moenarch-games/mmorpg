@@ -18,8 +18,8 @@
 //! region's walls. Every height is sampled on the terrain grid's 4 m lattice.
 
 use super::basin::{Along, Lane};
-use super::{smooth_q10, value_noise_q10};
-use crate::XzBounds;
+use super::{Road, ids, on_terrain, smooth_q10, value_noise_q10};
+use crate::{AreaId, StaticCollider, XzBounds};
 
 /// The region: the escarpment and the high ground, out to the boundary walls.
 pub const BOUNDS: XzBounds = XzBounds {
@@ -95,7 +95,7 @@ pub enum Building {
 }
 
 /// The stronghold and the lookout: `(kind, footprint min, footprint max, height)`.
-pub const BUILDINGS: [(Building, [i32; 2], [i32; 2], i32); 22] = [
+pub const BUILDINGS: &[(Building, [i32; 2], [i32; 2], i32)] = &[
     // The landmark: a keep-style tower 8 m square and 20 m tall at the yard's north end.
     (Building::Tower, [-400, -55_200], [400, -54_400], 2_000),
     // The palisade, 3 m high, round the yard, with a 4.4 m gate in its southern side.
@@ -131,7 +131,7 @@ pub const BUILDINGS: [(Building, [i32; 2], [i32; 2], i32); 22] = [
 
 /// Rock crags across the high ground: `(footprint min, footprint max, height)`, 8–16 m tall,
 /// clear of the trails.
-pub const CRAGS: [([i32; 2], [i32; 2], i32); 18] = [
+pub const CRAGS: &[([i32; 2], [i32; 2], i32)] = &[
     // Flanking the gorge's top.
     ([1_200, -30_000], [1_800, -29_200], 1_200),
     ([6_400, -30_400], [7_200, -29_600], 1_000),
@@ -242,3 +242,68 @@ fn rough_ground(x: i64, z: i64) -> i64 {
         + KNOLL_UNITS * value_noise_q10(x, z, 1_600, SEED.rotate_left(13)) / 1_024;
     rough * level_weight / 1_024 * entry / 1_024 * settle / 1_024
 }
+
+/// The second major region beyond the Vale (#425): its escarpment and high ground.
+pub const BANDIT_HIGHLANDS: AreaId = AreaId::new(12);
+
+pub(super) const REGION: super::Region = super::Region {
+    areas: AREAS,
+    roads: ROADS,
+    colliders,
+};
+
+/// The stronghold, the lookout and the rock crags.
+fn colliders() -> Vec<StaticCollider> {
+    let buildings = BUILDINGS
+        .iter()
+        .map(|&(_, min, max, height)| (min, max, height));
+    (*ids::HIGHLAND_BUILDINGS.start()..)
+        .zip(buildings)
+        .chain((*ids::HIGHLAND_CRAGS.start()..).zip(CRAGS.iter().copied()))
+        .map(|(id, (min, max, height))| on_terrain(id, min, max, height))
+        .collect()
+}
+
+/// The highland structure a collider ID belongs to (#425).
+#[must_use]
+pub fn building(id: u32) -> Option<Building> {
+    let index = id.checked_sub(*ids::HIGHLAND_BUILDINGS.start())?;
+    BUILDINGS
+        .get(usize::try_from(index).ok()?)
+        .map(|building| building.0)
+}
+
+/// The region's named area as `(id, name, half-open bounds)`.
+pub const AREAS: &[(AreaId, &str, XzBounds)] = &[(BANDIT_HIGHLANDS, "Bandit Highlands", BOUNDS)];
+
+/// The region's roads.
+pub const ROADS: &[Road] = &[
+    // Bandit Highlands (#425): the pass up the escarpment from the Vale Ring Road, the trail to
+    // the stronghold and the path to the lookout.
+    Road {
+        name: "Highland Pass",
+        points: &[
+            [5_200, -15_000],
+            [5_200, -23_200],
+            [10_400, -23_200],
+            [10_400, -25_600],
+            [3_600, -25_600],
+            [3_600, -27_600],
+        ],
+    },
+    Road {
+        name: "Highland Trail",
+        points: &[
+            [3_600, -27_600],
+            [3_600, -33_000],
+            [-8_000, -38_000],
+            [-8_000, -44_000],
+            [0, -47_000],
+            [0, -53_000],
+        ],
+    },
+    Road {
+        name: "Lookout Path",
+        points: &[[3_600, -33_000], [9_000, -35_000], [12_400, -37_600]],
+    },
+];

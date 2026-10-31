@@ -12,6 +12,7 @@ name = "mmorpg-scenario"
 path = "src/main.rs"
 
 [dependencies]
+strum.workspace = true
 game-server.workspace = true
 mmorpg-core.workspace = true
 mmorpg-protocol.workspace = true

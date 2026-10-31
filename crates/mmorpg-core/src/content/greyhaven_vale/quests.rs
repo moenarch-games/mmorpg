@@ -6,7 +6,8 @@
 //! pelts and worries about her missing farmhand; Farmer Osric Mill (NPC 4)
 //! asks for help against the marauders. Each quest unlocks the next.
 
-use super::{REDBRAND_HOLLOW, STILLWATER_LAKE, SUNKEN_SHRINE};
+use super::shrine::SUNKEN_SHRINE;
+use super::vale::{REDBRAND_HOLLOW, STILLWATER_LAKE};
 use crate::{ItemId, NpcId, Quest, QuestId, QuestObjective, QuestRewards};
 
 use super::units::templates::{

@@ -19,8 +19,8 @@
 //! height is sampled on the terrain grid's 4 m lattice.
 
 use super::basin::{Along, Lane};
-use super::{smooth_q10, value_noise_q10};
-use crate::{WaterVolume, XzBounds};
+use super::{Road, ids, on_terrain, smooth_q10, value_noise_q10};
+use crate::{AreaId, StaticCollider, WaterVolume, XzBounds};
 
 /// The region: the ridge and the wetlands, out to the boundary walls.
 pub const BOUNDS: XzBounds = XzBounds {
@@ -220,7 +220,7 @@ pub enum Building {
 }
 
 /// The island and the cottage: `(kind, footprint min, footprint max, height)`.
-pub const BUILDINGS: [(Building, [i32; 2], [i32; 2], i32); 7] = [
+pub const BUILDINGS: &[(Building, [i32; 2], [i32; 2], i32)] = &[
     // The landmark: a watchtower 8 m square and 18 m tall in the island's middle.
     (Building::Tower, [45_600, -2_400], [46_400, -1_600], 1_800),
     // Five standing stones round it, open towards the causeway in the west.
@@ -308,3 +308,77 @@ fn wetlands(x: i32, z: i32) -> i64 {
     let island = i64::from(ISLAND_Y) - (radius - ISLAND_RADIUS).max(0) / 2;
     ground.max(island)
 }
+
+/// The third major region beyond the Vale (#426): its ridge and wetlands.
+pub const MARSH_LAKE_WETLANDS: AreaId = AreaId::new(13);
+
+pub(super) const REGION: super::Region = super::Region {
+    areas: AREAS,
+    roads: ROADS,
+    colliders,
+};
+
+/// The drowned watchtower, its standing stones and the cottage.
+fn colliders() -> Vec<StaticCollider> {
+    (*ids::MARSH_BUILDINGS.start()..)
+        .zip(BUILDINGS)
+        .map(|(id, &(_, min, max, height))| on_terrain(id, min, max, height))
+        .collect()
+}
+
+/// The marsh structure a collider ID belongs to (#426).
+#[must_use]
+pub fn building(id: u32) -> Option<Building> {
+    let index = id.checked_sub(*ids::MARSH_BUILDINGS.start())?;
+    BUILDINGS
+        .get(usize::try_from(index).ok()?)
+        .map(|building| building.0)
+}
+
+/// The region's named area as `(id, name, half-open bounds)`.
+pub const AREAS: &[(AreaId, &str, XzBounds)] =
+    &[(MARSH_LAKE_WETLANDS, "Marsh-Lake Wetlands", BOUNDS)];
+
+/// The region's roads.
+pub const ROADS: &[Road] = &[
+    // Marsh-Lake Wetlands (#426): the pass through the ridge from the Vale Ring Road, the trail
+    // to the lake, the causeway to the island and the paths to the pools.
+    Road {
+        name: "Marsh Pass",
+        points: &[
+            [15_000, 4_000],
+            [22_400, 4_000],
+            [22_400, -800],
+            [24_000, -800],
+            [24_000, 2_400],
+            [25_200, 2_400],
+        ],
+    },
+    Road {
+        name: "Marsh Trail",
+        points: &[
+            [25_200, 2_400],
+            [29_000, 2_400],
+            [32_000, 5_600],
+            [34_400, 3_200],
+            [34_400, -2_000],
+        ],
+    },
+    Road {
+        name: "Causeway",
+        points: &[[34_400, -2_000], [44_000, -2_000]],
+    },
+    Road {
+        name: "Reed Path",
+        points: &[
+            [29_000, 2_400],
+            [29_000, -6_000],
+            [34_000, -12_000],
+            [54_000, -12_000],
+        ],
+    },
+    Road {
+        name: "Heron Path",
+        points: &[[32_000, 5_600], [40_000, 9_600], [50_000, 9_600]],
+    },
+];

@@ -566,7 +566,9 @@ mod tests {
         let canonical = decode_canonical_snapshot(&expected).unwrap();
         assert_eq!(
             canonical.creatures.len(),
-            118,
+            mmorpg_core::greyhaven_vale::content()
+                .creature_spawns()
+                .len(),
             "the vale's creatures are hosted"
         );
         assert_eq!(

@@ -16,7 +16,8 @@
 //! jambs, 0.6 m broken walls, fluted pillars, the carved altar and an 8 × 8 m air-pocket room
 //! halfway along the 4 m wide cave.
 
-use crate::{AirPocket, StaticCollider, WaterVolume};
+use super::ids;
+use crate::{AirPocket, AreaId, StaticCollider, WaterVolume, XzBounds};
 
 /// The shore over the cave: the lake terrace's ground (#423).
 pub const SHORE_Y: i32 = super::basin::TERRACE_Y;
@@ -215,3 +216,30 @@ pub fn roof(first_id: u32, ground: impl Fn(i32, i32) -> i32) -> Vec<StaticCollid
         })
         .collect()
 }
+
+/// The Sunken Shrine's altar chamber (#274), the relic's retrieve area.
+pub const SUNKEN_SHRINE: AreaId = AreaId::new(10);
+
+pub(super) const REGION: super::Region = super::Region {
+    areas: AREAS,
+    roads: &[],
+    colliders,
+};
+
+/// The shrine's ruins and altar, its cave's rock walls and its roof slabs.
+fn colliders() -> Vec<StaticCollider> {
+    let mut colliders = ruins(*ids::SHRINE_RUINS.start());
+    colliders.extend(walls(*ids::SHRINE_CAVE_WALLS.start()));
+    colliders.extend(roof(*ids::SHRINE_CAVE_ROOF.start(), super::open_ground));
+    colliders
+}
+
+/// The shrine's named area as `(id, name, half-open bounds)`.
+pub const AREAS: &[(AreaId, &str, XzBounds)] = &[(
+    SUNKEN_SHRINE,
+    "Sunken Shrine",
+    XzBounds {
+        min: ALTAR_CHAMBER.0,
+        max: ALTAR_CHAMBER.1,
+    },
+)];

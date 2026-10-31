@@ -4,15 +4,16 @@
 
 use crate::inventory::{INVENTORY_SLOTS, ITEM_CATALOG, Inventory, InventoryError, ItemId};
 use crate::{ItemStack, PlayerClass, item_template};
+use strum::VariantArray;
 
-pub const EQUIPMENT_SLOTS: usize = 6;
+pub const EQUIPMENT_SLOTS: usize = <EquipmentSlot as strum::VariantArray>::VARIANTS.len();
 /// Maximum health each point of equipped stamina adds.
 pub const HEALTH_PER_STAMINA: u32 = 5;
 /// Points of the class's primary stat per point of damage bonus.
 pub const PRIMARY_STAT_PER_DAMAGE: u16 = 2;
 
 /// An equipment slot; the wire and canonical index is its discriminant.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
 pub enum EquipmentSlot {
     MainHand,
     OffHand,
@@ -23,15 +24,6 @@ pub enum EquipmentSlot {
 }
 
 impl EquipmentSlot {
-    pub const ALL: [Self; EQUIPMENT_SLOTS] = [
-        Self::MainHand,
-        Self::OffHand,
-        Self::Head,
-        Self::Chest,
-        Self::Legs,
-        Self::Feet,
-    ];
-
     #[must_use]
     pub const fn from_index(index: u8) -> Option<Self> {
         match index {
@@ -159,7 +151,7 @@ pub struct Equipment {
 impl Equipment {
     /// Validates imported slots: every item exists and fits its slot.
     pub fn from_slots(slots: [Option<ItemId>; EQUIPMENT_SLOTS]) -> Result<Self, InventoryError> {
-        for (slot, item) in EquipmentSlot::ALL.into_iter().zip(slots) {
+        for (slot, item) in EquipmentSlot::VARIANTS.iter().copied().zip(slots) {
             if let Some(item) = item {
                 let template = item_template(item).ok_or(InventoryError::UnknownItem)?;
                 if template.slot != Some(slot) {
@@ -292,10 +284,11 @@ pub(crate) const fn follow_max_health(health: u32, old_max: u32, new_max: u32) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::VariantArray;
 
     #[test]
     fn slot_indices_round_trip() {
-        for slot in EquipmentSlot::ALL {
+        for &slot in EquipmentSlot::VARIANTS {
             assert_eq!(EquipmentSlot::from_index(slot.index()), Some(slot));
         }
         assert_eq!(EquipmentSlot::from_index(6), None);

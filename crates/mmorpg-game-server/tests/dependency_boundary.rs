@@ -49,11 +49,12 @@ fn reachable(
 #[test]
 fn hosts_never_link_presentation_scenery() {
     let graph = dependency_graph(LOCKFILE);
-    // Parsing sanity: scenery reads its authored JSON through Serde; gameplay still
-    // points downward to core/physics, and hosts must never reach scenery.
+    // Parsing sanity: scenery reads its authored JSON through Serde and lists its kinds
+    // with strum (#542); gameplay still points downward to core/physics, and hosts must
+    // never reach scenery.
     assert_eq!(
         graph.get(PRESENTATION),
-        Some(&vec!["mmorpg-core", "serde", "serde_json"])
+        Some(&vec!["mmorpg-core", "serde", "serde_json", "strum"])
     );
     assert!(reachable(&graph, PRESENTATION).contains("rapier3d"));
     let host = reachable(&graph, "mmorpg-game-server");
