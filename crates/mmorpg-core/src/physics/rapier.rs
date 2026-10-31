@@ -199,7 +199,7 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
             body: None,
             collider,
         }
-    } else if let Kind::Rock(shape) = body.kind {
+    } else if let (Kind::Rock(shape), true) = (body.kind, super::rock_hulls()) {
         let points: Vec<_> = shape
             .hull(body.half_extents)
             .into_iter()

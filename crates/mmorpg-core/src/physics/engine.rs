@@ -202,7 +202,7 @@ fn engine_body(body: &RigidBody) -> Body {
         }
         // A moving platform (#56) is a static box the adapter moves in place where the zone
         // moves it; the adapter carries its riders. The engine has no convex hulls: a rock
-        // (#49) is its box.
+        // (#49) is its box, as on Rapier in the A/B comparison (`super::rock_hulls`).
         Kind::Fixed | Kind::Platform | Kind::Rock(_) => Body::keyed(
             key,
             Shape::Box(vector(exact(body.half_extents))),

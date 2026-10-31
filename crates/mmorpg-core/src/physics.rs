@@ -444,8 +444,35 @@ pub fn using_backend<R>(backend: Backend, run: impl FnOnce() -> R) -> R {
             DEFAULT_BACKEND.with(|cell| cell.set(self.0));
         }
     }
+    struct Comparing(bool);
+    impl Drop for Comparing {
+        fn drop(&mut self) {
+            COMPARING.with(|cell| cell.set(self.0));
+        }
+    }
     let _restore = Restore(DEFAULT_BACKEND.with(|cell| cell.replace(backend)));
+    let _comparing = Comparing(COMPARING.with(|cell| cell.replace(true)));
     run()
+}
+
+#[cfg(feature = "physics-ab")]
+thread_local! {
+    /// Whether worlds are built for the A/B comparison ([`using_backend`]).
+    static COMPARING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether Rapier collides a rock (#49) as its convex proxy. physics-engine has no convex
+/// hulls, so in the A/B comparison both backends collide with the rock's box.
+#[must_use]
+pub(crate) fn rock_hulls() -> bool {
+    #[cfg(feature = "physics-ab")]
+    {
+        !COMPARING.with(std::cell::Cell::get)
+    }
+    #[cfg(not(feature = "physics-ab"))]
+    {
+        true
+    }
 }
 
 // Rapier stays inline: it is the only variant in production builds. The engine variant exists
