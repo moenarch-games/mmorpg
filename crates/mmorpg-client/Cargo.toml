@@ -37,7 +37,7 @@ bytemuck = { version = "=1.25.2", features = ["derive"] }
 tobj = { version = "=4.0.5", default-features = false, features = ["use_f64"] }
 # Lighting and rendering (#529): sun/moon, sky, cascaded shadows, sky ambient light, fog and
 # point lights, measured against Bevy in its own repository.
-render-engine = { git = "https://github.com/moritzbrantner/render-engine.git", rev = "d5afb5deefa9b22e7f187ae6e6e2e8460aaa4b28" }
+render-engine = { git = "https://github.com/moritzbrantner/render-engine.git", rev = "b5cd050d8a5e78aa0bfe0382b58c4dddb74cc7bc" }
 three-d-core = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "77122d13dbd06789dcce05473b0528e61ad69a44" }
 three-d-camera = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "77122d13dbd06789dcce05473b0528e61ad69a44" }
 three-d-animation = { git = "https://github.com/moritzbrantner/3d-lab.git", rev = "77122d13dbd06789dcce05473b0528e61ad69a44" }
