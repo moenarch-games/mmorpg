@@ -208,6 +208,22 @@ pub struct Lods {
     instances: Vec<Instance>,
     states: Vec<State>,
     shown: Vec<Shown>,
+    /// The previous update's result, kept to tell whether this one changed anything.
+    before: Vec<Shown>,
+    /// The camera of the last update, and whether a cross-fade was still running then: an
+    /// update for the same camera while nothing fades changes nothing and is skipped.
+    view: Option<View>,
+    fading: bool,
+    changed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct View {
+    eye: [f64; 3],
+    fov_y: f64,
+    bias: f64,
+    fade: bool,
+    clip_from_world: Option<[f32; 16]>,
 }
 
 impl Lods {
@@ -255,6 +271,10 @@ impl Lods {
             instances,
             states,
             shown: Vec::new(),
+            before: Vec::new(),
+            view: None,
+            fading: false,
+            changed: false,
         }
     }
 
@@ -268,7 +288,9 @@ impl Lods {
     /// field of view `fov_y` (radians). `bias` multiplies every `minScreenSize` (a model-detail
     /// setting: larger switches to coarser levels sooner); without `fade` (reduced motion)
     /// switches are immediate. With the camera's column-major `clip_from_world` matrix,
-    /// placements wholly outside its side planes are not drawn. Returns what to draw.
+    /// placements wholly outside its side planes are not drawn. Returns what to draw. For the
+    /// same camera while nothing fades it returns the last result without evaluating any
+    /// placement; [`Self::changed`] tells whether the result changed.
     pub fn update(
         &mut self,
         eye: [f64; 3],
@@ -278,6 +300,18 @@ impl Lods {
         fade: bool,
         clip_from_world: Option<[f32; 16]>,
     ) -> &[Shown] {
+        let view = View {
+            eye,
+            fov_y,
+            bias,
+            fade,
+            clip_from_world,
+        };
+        if !self.fading && self.view == Some(view) {
+            self.changed = false;
+            return &self.shown;
+        }
+        self.view = Some(view);
         let planes = clip_from_world.map(side_planes);
         let tan = (fov_y / 2.).tan().max(1e-6);
         let step = if fade {
@@ -285,6 +319,7 @@ impl Lods {
         } else {
             1.
         };
+        std::mem::swap(&mut self.shown, &mut self.before);
         self.shown.clear();
         for (index, (instance, state)) in self.instances.iter().zip(&mut self.states).enumerate() {
             let Some(entry) = self.entries.get(instance.lods) else {
@@ -361,7 +396,21 @@ impl Lods {
                 }),
             }
         }
+        self.fading = self.shown.iter().any(|shown| shown.fade < 1.);
+        self.changed = self.shown != self.before;
         &self.shown
+    }
+
+    /// What the last [`Self::update`] returned.
+    #[must_use]
+    pub fn shown(&self) -> &[Shown] {
+        &self.shown
+    }
+
+    /// Whether the last [`Self::update`] changed what is drawn.
+    #[must_use]
+    pub fn changed(&self) -> bool {
+        self.changed
     }
 }
 
@@ -449,6 +498,30 @@ mod tests {
         lods.update([10. - boundary * 1.02, 4., 0.], fov, 1., 1., true, None);
         let held = lods.update([10. - boundary * 1.02, 4., 0.], fov, 1., 1., true, None);
         assert_eq!(held[0].level, 1);
+    }
+
+    #[test]
+    fn an_unchanged_camera_changes_nothing_once_the_fades_settle() {
+        let fov = 60f64.to_radians();
+        let mut lods = Lods::new(vec![tree()], &[at(10.), at(50.)]);
+        lods.update([0., 4., 0.], fov, 0.016, 1., true, None);
+        assert!(lods.changed());
+        lods.update([0., 4., 0.], fov, 0.016, 1., true, None);
+        assert!(!lods.changed(), "same camera, nothing fading");
+        // Moving switches the near tree; its fade runs on while the camera rests.
+        lods.update([-20., 4., 0.], fov, 0.016, 1., true, None);
+        assert!(lods.changed());
+        let fading = lods
+            .update([-20., 4., 0.], fov, 0.1, 1., true, None)
+            .to_vec();
+        assert!(lods.changed() && fading.iter().any(|s| s.fade < 1.));
+        lods.update([-20., 4., 0.], fov, 1., 1., true, None);
+        assert!(lods.changed(), "the fade settles");
+        let settled = lods
+            .update([-20., 4., 0.], fov, 1., 1., true, None)
+            .to_vec();
+        assert!(!lods.changed());
+        assert!(settled.iter().all(|s| s.fade == 1.));
     }
 
     #[test]

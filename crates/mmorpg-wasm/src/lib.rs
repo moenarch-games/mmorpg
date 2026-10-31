@@ -1105,7 +1105,8 @@ impl NatureLods {
     /// Advances the selection for a camera at `(x, y, z)` metres with vertical field of view
     /// `fov_y` radians and column-major `clip_from_world` (16 floats, or empty), `seconds` after
     /// the previous update: per drawn level its placement, level and fade, three floats each
-    /// (see `mmorpg_presentation::nature::Shown`).
+    /// (see `mmorpg_presentation::nature::Shown`), or `undefined` when that is unchanged since
+    /// the previous update (the camera rests and nothing fades).
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
@@ -1117,16 +1118,20 @@ impl NatureLods {
         seconds: f64,
         bias: f64,
         fade: bool,
-    ) -> Vec<f32> {
+    ) -> Option<Vec<f32>> {
         let frustum = <[f32; 16]>::try_from(clip_from_world).ok();
         self.0
-            .update([x, y, z], fov_y, seconds, bias, fade, frustum)
-            .iter()
-            .flat_map(|shown| {
-                #[allow(clippy::cast_precision_loss)]
-                [shown.placement as f32, shown.level as f32, shown.fade]
-            })
-            .collect()
+            .update([x, y, z], fov_y, seconds, bias, fade, frustum);
+        self.0.changed().then(|| {
+            self.0
+                .shown()
+                .iter()
+                .flat_map(|shown| {
+                    #[allow(clippy::cast_precision_loss)]
+                    [shown.placement as f32, shown.level as f32, shown.fade]
+                })
+                .collect()
+        })
     }
 }
 

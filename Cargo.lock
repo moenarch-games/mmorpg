@@ -3808,13 +3808,14 @@ checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
 [[package]]
 name = "render-engine"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/render-engine.git?rev=d5afb5deefa9b22e7f187ae6e6e2e8460aaa4b28#d5afb5deefa9b22e7f187ae6e6e2e8460aaa4b28"
+source = "git+https://github.com/moritzbrantner/render-engine.git?rev=b5cd050d8a5e78aa0bfe0382b58c4dddb74cc7bc#b5cd050d8a5e78aa0bfe0382b58c4dddb74cc7bc"
 dependencies = [
  "bevy_mikktspace",
  "bytemuck",
  "glam 0.34.1",
  "ktx2",
  "pollster",
+ "rand",
  "ruzstd",
  "wgpu",
 ]
