@@ -224,6 +224,18 @@ impl Units {
         Ok(())
     }
 
+    /// An imported model's `humanoid-clips` descriptor JSON (#500).
+    ///
+    /// # Errors
+    ///
+    /// For an unknown kind or a malformed descriptor.
+    pub fn model_motions(&mut self, kind: &str, descriptor: &str) -> Result<(), String> {
+        let kind = Kind::from_name(kind).ok_or_else(|| format!("unknown model {kind}"))?;
+        let motions = mmorpg_presentation::units::traversal::Motions::parse(descriptor)?;
+        self.presenter.model_motions(kind, motions);
+        Ok(())
+    }
+
     /// The shared presenter, for the local wind-up (Atlas 6.6.10).
     pub fn presenter_mut(&mut self) -> &mut UnitPresenter {
         &mut self.presenter

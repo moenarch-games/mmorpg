@@ -11,6 +11,7 @@ use mmorpg_presentation::units::{
     kit::{Frame, model},
     player::Hat,
     sway,
+    traversal::{self, Motions, SecondaryPose},
 };
 use std::{
     collections::BTreeMap,
@@ -112,6 +113,7 @@ enum Path {
     Scale,
 }
 
+#[derive(Clone)]
 struct Channel {
     node: usize,
     path: Path,
@@ -120,6 +122,7 @@ struct Channel {
     values: Vec<[f32; 4]>,
 }
 
+#[derive(Clone)]
 struct Clip {
     duration: f32,
     channels: Vec<Channel>,
@@ -436,6 +439,44 @@ impl Model {
         }
         model.head = model.rest_head(&document, rest_clip);
         Ok(model)
+    }
+
+    /// The model with each clip's cloth chain pose (`secondaryPose`, #500) played as rotation
+    /// channels of the chain joints it has, like the browser's mixer tracks. No cloth spring
+    /// exists yet (#498 sways only hanging gear), so the authored pose plays as it is.
+    fn with_secondary(mut self, poses: &BTreeMap<String, SecondaryPose>) -> Self {
+        let added: Vec<_> = poses
+            .iter()
+            .filter(|(clip, pose)| self.clips.contains_key(*clip) && pose.sample_rate > 0.)
+            .flat_map(|(clip, pose)| {
+                pose.joints.iter().filter_map(|(joint, rotations)| {
+                    let node = self.node(joint)?;
+                    #[allow(clippy::cast_precision_loss)]
+                    let times = (0..rotations.len())
+                        .map(|frame| frame as f32 / pose.sample_rate)
+                        .collect();
+                    Some((
+                        clip.clone(),
+                        Channel {
+                            node,
+                            path: Path::Rotation,
+                            step: false,
+                            times,
+                            values: rotations.clone(),
+                        },
+                    ))
+                })
+            })
+            .collect();
+        if !added.is_empty() {
+            let clips = Arc::make_mut(&mut self.clips);
+            for (clip, channel) in added {
+                if let Some(clip) = clips.get_mut(&clip) {
+                    clip.channels.push(channel);
+                }
+            }
+        }
+        self
     }
 
     /// Vertices mostly bound to the `Head` joint, measured in the rest pose.
@@ -1200,6 +1241,26 @@ pub(super) struct Bow {
     nock: Option<usize>,
 }
 
+/// The male Ranger's `humanoid-clips` traversal data for the shared presenter (#500).
+pub(super) fn ranger_motions() -> Motions {
+    let descriptor = std::str::from_utf8(ranger_file(ranger_bundle::MOTIONS))
+        .expect("the humanoid-clips descriptor is UTF-8");
+    Motions::parse(descriptor).expect("the humanoid-clips descriptor is humanoid-clips-v1")
+}
+
+/// Each clip's cloth chain pose (#500) in a figure's `humanoid-clips` descriptor `bytes`.
+fn secondary_of(bytes: &[u8]) -> BTreeMap<String, SecondaryPose> {
+    let descriptor: serde_json::Value =
+        serde_json::from_slice(bytes).expect("the humanoid-clips descriptor is JSON");
+    traversal::secondary_poses(&descriptor)
+}
+
+/// The male Ranger's cloth chain poses (#500).
+fn ranger_secondary() -> &'static BTreeMap<String, SecondaryPose> {
+    static POSES: OnceLock<BTreeMap<String, SecondaryPose>> = OnceLock::new();
+    POSES.get_or_init(|| secondary_of(ranger_file(ranger_bundle::MOTIONS)))
+}
+
 /// Each clip's `humanoid-clips` `bow` draw (#556): its sample rate and `drawMeters`.
 fn bow_draws() -> &'static BTreeMap<String, (f32, Vec<f32>)> {
     static DRAWS: OnceLock<BTreeMap<String, (f32, Vec<f32>)>> = OnceLock::new();
@@ -1533,7 +1594,8 @@ pub(super) fn class_outfit(outfit: Outfit) -> &'static ClassOutfit {
             Kind::Ranger.clips().idle,
             Some(ranger_file(ranger_bundle::CLIPS)),
         )
-        .expect("a class outfit is valid glTF");
+        .expect("a class outfit is valid glTF")
+        .with_secondary(ranger_secondary());
         let trim = &entry["classTrim"];
         let from = trim["defaultBaseColorFactor"]
             .as_array()
@@ -1691,7 +1753,12 @@ pub(super) fn asset(kind: Kind) -> &'static Asset {
             kind.clips().idle,
             matches!(kind, Kind::Ranger).then(|| ranger_file(ranger_bundle::CLIPS)),
         )
-        .expect("an imported unit model is valid glTF"),
+        .expect("an imported unit model is valid glTF")
+        .with_secondary(if matches!(kind, Kind::Ranger) {
+            ranger_secondary()
+        } else {
+            const { &BTreeMap::new() }
+        }),
     })
 }
 
@@ -1773,6 +1840,34 @@ mod rolling_ranger_tests {
         assert!(close(layered[calf], land[calf]));
         assert!(close(layered[pelvis], land[pelvis]));
         assert_ne!(swing[calf], land[calf]);
+    }
+
+    #[test]
+    fn traversal_clips_turn_the_cloth_chains_by_their_secondary_pose() {
+        // The Cleric's robe has the skirt and cape chains (asset-tooling #391).
+        let outfit = class_outfit(Outfit::new(mmorpg_core::PlayerClass::Cleric, None));
+        let model = &outfit.model;
+        let Some(skirt) = model.node("skirt_f_01") else {
+            panic!("the class outfit has no skirt chain");
+        };
+        let pose = &ranger_secondary()["Mantle_Mid"];
+        let (_, rotations) = pose
+            .joints
+            .iter()
+            .find(|(joint, _)| joint == "skirt_f_01")
+            .expect("the mantle turns the front skirt panel");
+        let locals = model.locals(&[Layer::single("Mantle_Mid", 0.)]);
+        let turned = locals[skirt].r;
+        assert!(
+            turned
+                .iter()
+                .zip(&rotations[0])
+                .all(|(a, b)| (a - b).abs() < 1e-5),
+            "{turned:?}"
+        );
+        // Other clips leave the chain as authored.
+        let idle = model.locals(&[Layer::single("Idle_Loop", 0.)]);
+        assert_eq!(idle[skirt], model.rest[skirt]);
     }
 
     #[test]

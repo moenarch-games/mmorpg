@@ -174,6 +174,8 @@ impl Presentation {
         for &kind in Kind::VARIANTS {
             units_presenter.model_ready(kind, skinned::asset(kind).model.clip_durations());
         }
+        // The Ranger's traversal clips' speeds and authored root paths (#500).
+        units_presenter.model_motions(Kind::Ranger, skinned::ranger_motions());
         // The residents and humanoid enemies wear their presets on the Ranger (#418, #39).
         if skinned::residents_drawable() {
             units_presenter.residents_ready();
