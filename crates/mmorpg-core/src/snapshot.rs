@@ -99,6 +99,8 @@ pub enum PlayerIntent {
     },
     /// Waystone travel (#145).
     UseWaystone(crate::WaystoneId),
+    /// Night raid aftermath aid (#531): the task's index.
+    RaidAid(u8),
 }
 
 /// A pending intent and the ticks of lateness its command's observation
@@ -500,7 +502,10 @@ impl ZoneSimulation {
         zone.tick = snapshot.tick;
         zone.rng = ZoneRng::from_state(snapshot.rng_state);
         zone.loot_rng = ZoneRng::from_state(snapshot.loot_rng_state);
-        snapshot.raid.validate(snapshot.tick)?;
+        snapshot.raid.validate(
+            snapshot.tick,
+            zone.content.raid().map_or(0, crate::RaidSite::aid_mask),
+        )?;
         if zone.content.raid().is_none() && snapshot.raid != crate::RaidState::default() {
             return Err(ZoneError::new("snapshot raid state needs a raid site"));
         }
@@ -568,7 +573,7 @@ impl ZoneSimulation {
         // The snapshot tick's routine placements and platforms (#56); doors are already as that
         // tick left them.
         zone.restore_wakes(&snapshot.wakes, snapshot.tick)?;
-        zone.place_routine_npcs(false)?;
+        zone.place_npcs(false)?;
         zone.schedule_platforms(zone.tick, true)?;
         if let Some(rewards) = &snapshot.rewards {
             rewards.validate()?;

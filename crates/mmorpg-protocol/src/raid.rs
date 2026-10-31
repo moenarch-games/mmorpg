@@ -63,7 +63,8 @@ pub(crate) fn decode_member(
 /// Incidents (`u32`) and damage (`u32`); the running incident: presence, ID (`u32`), phase (`u8`),
 /// phase start (`u64`), the phases' participation snapshots (count `u8`, each `u8`) and the
 /// participants (count `u8`, each `u32`); the last resolution: presence, incident (`u32`), tick
-/// (`u64`) and outcome (`u8`, 0 defended, 1 lost).
+/// (`u64`) and outcome (`u8`, 0 defended, 1 lost); the open aid tasks (`u8`, #531); the rewarded
+/// players (count `u16`, each `u32`, #531).
 pub(crate) fn encode_state(payload: &mut Vec<u8>, state: &RaidState) -> Result<(), ProtocolError> {
     payload.extend_from_slice(&state.incidents.to_be_bytes());
     payload.extend_from_slice(&state.damage.to_be_bytes());
@@ -95,6 +96,15 @@ pub(crate) fn encode_state(payload: &mut Vec<u8>, state: &RaidState) -> Result<(
             RaidOutcome::Defended => 0,
             RaidOutcome::Lost => 1,
         });
+    }
+    payload.push(state.aftermath);
+    let rewarded = u16::try_from(state.rewarded.len())
+        .ok()
+        .filter(|&count| usize::from(count) <= MAX_PLAYERS_PER_ZONE)
+        .ok_or_else(|| ProtocolError::new("raid rewards exceed the zone capacity"))?;
+    payload.extend_from_slice(&rewarded.to_be_bytes());
+    for player in &state.rewarded {
+        payload.extend_from_slice(&player.to_be_bytes());
     }
     Ok(())
 }
@@ -150,20 +160,32 @@ pub(crate) fn decode_state(payload: &[u8], offset: &mut usize) -> Result<RaidSta
     } else {
         None
     };
+    let aftermath = read_u8(payload, offset)?;
+    let count = usize::from(u16::from_be_bytes(take(payload, offset)?));
+    if count > MAX_PLAYERS_PER_ZONE {
+        return Err(ProtocolError::new("raid rewards exceed the zone capacity"));
+    }
+    let rewarded = (0..count)
+        .map(|_| take(payload, offset).map(u32::from_be_bytes))
+        .collect::<Result<_, _>>()?;
     Ok(RaidState {
         incidents,
         active,
         damage,
         last,
+        aftermath,
+        rewarded,
     })
 }
 
-/// One code byte: 0 without a signal, otherwise one more than the phase, then the integrity
-/// percent (`u8`).
+/// One code byte: 0 without a signal, otherwise one more than the phase in its low three bits
+/// and the open aid tasks (#531) in its high five; then the integrity percent (`u8`).
 pub(crate) fn encode_view(payload: &mut Vec<u8>, view: Option<RaidView>) {
     match view {
         None => payload.push(0),
-        Some(view) => payload.extend_from_slice(&[view.phase + 1, view.integrity]),
+        Some(view) => {
+            payload.extend_from_slice(&[(view.phase + 1) | (view.aid << 3), view.integrity])
+        }
     }
 }
 
@@ -171,12 +193,21 @@ pub(crate) fn decode_view(
     payload: &[u8],
     offset: &mut usize,
 ) -> Result<Option<RaidView>, ProtocolError> {
-    let Some(phase) = read_u8(payload, offset)?.checked_sub(1) else {
-        return Ok(None);
+    let code = read_u8(payload, offset)?;
+    let Some(phase) = (code & 0b111).checked_sub(1) else {
+        return if code == 0 {
+            Ok(None)
+        } else {
+            Err(ProtocolError::new("invalid raid view"))
+        };
     };
     let integrity = read_u8(payload, offset)?;
     if phase > mmorpg_core::raid::RAID_PHASES || integrity > 100 {
         return Err(ProtocolError::new("invalid raid view"));
     }
-    Ok(Some(RaidView { phase, integrity }))
+    Ok(Some(RaidView {
+        phase,
+        integrity,
+        aid: code >> 3,
+    }))
 }

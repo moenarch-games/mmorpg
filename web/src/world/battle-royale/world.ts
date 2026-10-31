@@ -50,6 +50,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
     areaAt: () => null,
     reachablePieces: () => [],
     raidArea: null,
+    raidAid: [],
     waystoneAt: () => 0,
     waystones: [],
     reliefAt: () => 0,

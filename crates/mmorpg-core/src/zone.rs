@@ -730,6 +730,7 @@ impl ZoneSimulation {
             }
             ZoneCommand::AbandonQuest { quest } => Some(PlayerIntent::AbandonQuest { quest }),
             ZoneCommand::UseWaystone { waystone } => Some(PlayerIntent::UseWaystone(waystone)),
+            ZoneCommand::RaidAid { task } => Some(PlayerIntent::RaidAid(task)),
         };
         if let Some(intent) = intent {
             if player.intents.len() < MAX_PENDING_INTENTS {
@@ -823,7 +824,7 @@ impl ZoneSimulation {
         self.advance_quest_objectives()?;
         self.tick = now;
         // Routine NPCs stand where the new tick's time of day puts them (#158).
-        self.place_routine_npcs(true)?;
+        self.place_npcs(true)?;
         self.advance_private_homes()?;
         Ok(())
     }

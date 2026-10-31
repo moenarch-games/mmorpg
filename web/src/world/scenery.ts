@@ -111,6 +111,8 @@ export type SceneryContent = StaticSceneContent & {
   reachablePieces(x: number, z: number): Uint16Array;
   /** The night raid target's disturbance circle (#530): `[x, z, radius]` units, or empty. */
   raidArea(): Int32Array;
+  /** The night raid target's aftermath aid tasks (#531): `[x, z, npc]` units per task, npc 0 for a breach. */
+  raidAid(): Int32Array;
   /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
   waystoneAt(x: number, z: number): number;
   /** Names of the waystone network in ID order (ID = index + 1). */
@@ -166,6 +168,8 @@ export type SceneryProvider = {
   reachablePieces(x: number, z: number): readonly number[];
   /** The night raid target's approximate disturbance circle in units (#530), if the zone has one. */
   readonly raidArea: { x: number; z: number; radius: number } | null;
+  /** The night raid target's aftermath aid task spots in units (#531), in task order; `npc` is the injured guard to tend, 0 for a breach to mend. */
+  readonly raidAid: readonly { x: number; z: number; npc: number }[];
   /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
   waystoneAt(x: number, z: number): number;
   /** The waystone network in ID order. */
@@ -495,6 +499,10 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     raidArea: (() => {
       const area = content.raidArea();
       return area.length === 3 ? { x: area[0]!, z: area[1]!, radius: area[2]! } : null;
+    })(),
+    raidAid: (() => {
+      const tasks = content.raidAid();
+      return Array.from({ length: Math.floor(tasks.length / 3) }, (_, index) => ({ x: tasks[index * 3]!, z: tasks[index * 3 + 1]!, npc: tasks[index * 3 + 2]! }));
     })(),
     waystoneAt(x, z) {
       return content.waystoneAt(Math.round(x), Math.round(z));

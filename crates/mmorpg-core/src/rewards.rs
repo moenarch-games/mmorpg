@@ -32,6 +32,10 @@ pub enum RewardKey {
     QuestCompletion {
         quest: QuestId,
     },
+    /// A night raid's participation reward (#531): once per incident and character.
+    RaidParticipation {
+        incident: u32,
+    },
 }
 impl RewardKey {
     #[must_use]
@@ -49,7 +53,7 @@ impl RewardKey {
             | Self::LootMoney { creature, life }
             | Self::LootItem { creature, life }
             | Self::LootQuestItem { creature, life, .. } => Some((creature, life)),
-            Self::QuestCompletion { .. } => None,
+            Self::QuestCompletion { .. } | Self::RaidParticipation { .. } => None,
         }
     }
     pub fn validate(self) -> Result<(), ZoneError> {
@@ -64,6 +68,9 @@ impl RewardKey {
             }
             Self::QuestCompletion { quest } if quest.bit().is_none() => {
                 Err(ZoneError::new("invalid reward quest"))
+            }
+            Self::RaidParticipation { incident: 0 } => {
+                Err(ZoneError::new("invalid reward raid incident"))
             }
             _ => Ok(()),
         }

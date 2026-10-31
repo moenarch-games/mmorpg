@@ -797,6 +797,35 @@ impl Presentation {
         })
     }
 
+    /// The `RaidAid` of the first open aftermath task (#531) the viewer can reach, if any.
+    #[must_use]
+    pub fn reachable_raid_aid(&self) -> Option<mmorpg_core::ZoneCommand> {
+        let snapshot = self.latest()?;
+        let open = snapshot.raid?.aid;
+        let feet = snapshot
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Player(self.player_id))?
+            .position;
+        let reach = i64::from(mmorpg_core::raid::AID_REACH_UNITS).pow(2);
+        let task = self
+            .content
+            .raid()?
+            .aid
+            .iter()
+            .enumerate()
+            .position(|(index, task)| {
+                let (dx, dz) = (
+                    i64::from(task.at[0] - feet[0]),
+                    i64::from(task.at[1] - feet[2]),
+                );
+                open & (1 << index) != 0 && dx * dx + dz * dz <= reach
+            })?;
+        Some(mmorpg_core::ZoneCommand::RaidAid {
+            task: u8::try_from(task).ok()?,
+        })
+    }
+
     /// The `UseDoor` that flips `door` from its latest presented state.
     #[must_use]
     pub fn toggle_door(&self, door: mmorpg_core::DoorId) -> mmorpg_core::ZoneCommand {

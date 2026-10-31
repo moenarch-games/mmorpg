@@ -44,6 +44,7 @@ const USE_DOOR_INTENT: u8 = 20;
 const REPAIR_INTENT: u8 = 21;
 const COMMAND_MINIONS_INTENT: u8 = 22;
 const USE_WAYSTONE_INTENT: u8 = 23;
+const RAID_AID_INTENT: u8 = 24;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -246,6 +247,10 @@ fn encode_player(
             }
             PlayerIntent::UseWaystone(waystone) => {
                 payload.extend_from_slice(&[USE_WAYSTONE_INTENT, waystone.get()]);
+                continue;
+            }
+            PlayerIntent::RaidAid(task) => {
+                payload.extend_from_slice(&[RAID_AID_INTENT, task]);
                 continue;
             }
         };
@@ -913,6 +918,10 @@ fn decode_player(
             intents.push(PlayerIntent::UseWaystone(crate::wire::decode_waystone(
                 read_u8(payload, offset)?,
             )?));
+            continue;
+        }
+        if code == RAID_AID_INTENT {
+            intents.push(PlayerIntent::RaidAid(read_u8(payload, offset)?));
             continue;
         }
         if code == CHAT_INTENT {
@@ -1909,6 +1918,8 @@ mod tests {
                     at: 1,
                     outcome: mmorpg_core::RaidOutcome::Lost,
                 }),
+                aftermath: 0,
+                rewarded: vec![1, 2],
             },
             wakes: vec![mmorpg_core::NpcWake {
                 npc: mmorpg_core::NpcId::new(1),
@@ -2242,7 +2253,7 @@ mod tests {
             (swing_queued, 2, "boolean field must be 0 or 1"),
             (intents, 17, "player has too many pending intents"),
             // Each intent is its lateness, then its code and fields.
-            (intents + 2, 24, "malformed pending intent"),
+            (intents + 2, 25, "malformed pending intent"),
         ];
         // The third intent (CancelCast) carries no target.
         cases.push((intents + 1 + 2 * 7 + 2, 2, "malformed pending intent"));

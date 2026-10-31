@@ -2,6 +2,7 @@ import type { WorldCommand } from "../../command-wire";
 import type { QuestMarkerKind, ZoneSnapshot } from "../../replication";
 import type { ContentCatalog, QuestRecord } from "../catalog";
 import { isZoneNight } from "../environment";
+import { aftermathOpen } from "../raid-aid";
 import { dialogNpc, dialogView, objectiveViews, questViews, QuestState, trackerRows, type QuestNpc, type QuestView } from "./quest-state";
 
 export type QuestElements = {
@@ -206,6 +207,8 @@ export class QuestPanel {
   /** Takes a newer projection: sheet, feedback and the NPC the dialog addresses. */
   /** Whether a night raid's assault runs near the viewer (#530), for residents' warnings. */
   #raidUnderway = false;
+  /** Whether a lost night raid left aid tasks open nearby (#531), for residents' pleas. */
+  #aftermath = false;
   /** Whether the zone clock reads night, when private-home residents only take turn-ins (#158). */
   #night = false;
 
@@ -217,6 +220,7 @@ export class QuestPanel {
     this.#state.update(snapshot, catalog);
     this.#npc = dialogNpc(snapshot, catalog);
     this.#raidUnderway = (snapshot.raid?.phase ?? 0) > 0;
+    this.#aftermath = aftermathOpen(snapshot.raid);
     this.#night = isZoneNight(snapshot.tick);
     this.#render();
   }
@@ -316,6 +320,7 @@ export class QuestPanel {
     setText(this.#elements.dialogStatus, !npc.inReach
       ? `Move within 5 m of ${npc.name} to talk.`
       : this.#raidUnderway ? raidWarning(npc.name)
+        : this.#aftermath ? aftermathPlea(npc.name)
         : view.greeting ?? (empty ? `${npc.name} has nothing for you right now.` : ""));
     const key = JSON.stringify([npc, this.#state.busy, view.offered.map((quest) => quest.id),
       view.ready.map((entry) => entry.quest.id), view.inProgress.map((entry) => [entry.quest.id, entry.objectives.map((o) => o.current)])]);
@@ -412,4 +417,9 @@ export class QuestPanel {
 /** A resident's short warning while a night raid's assault runs nearby (#530, Atlas 5.1.53). */
 export function raidWarning(name: string): string {
   return `${name}: "Raiders are at the Millbrook barn! Drive them off before they bring it down."`;
+}
+
+/** A resident's plea while a lost night raid's aftermath lasts nearby (#531, Atlas 5.1.51). */
+export function aftermathPlea(name: string): string {
+  return `${name}: "The raiders broke into the barn and hurt the gate guards. Help mend the barn's walls, or tend the wounded by the farmhouse."`;
 }

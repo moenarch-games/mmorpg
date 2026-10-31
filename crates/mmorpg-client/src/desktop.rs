@@ -296,6 +296,10 @@ impl App {
                     // Or repairs a damaged structure piece in reach (#305).
                     self.send_interaction(command);
                     return true;
+                } else if let Some(command) = self.presentation.reachable_raid_aid() {
+                    // Or helps the night raid's aftermath in reach (#531).
+                    self.send_interaction(command);
+                    return true;
                 }
             }
             WorldAction::NextNpc if self.connected() => {

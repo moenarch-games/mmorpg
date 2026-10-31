@@ -8,7 +8,7 @@
 //! northern notch, up the Hollow Climb, and on to Redbrand Hollow's camp.
 
 use crate::content::CreatureSpawn;
-use crate::{CreatureId, RaidApproach, RaidSite};
+use crate::{AidKind, AidTask, CreatureId, NpcId, RaidApproach, RaidSite};
 
 use super::ids;
 use super::units::templates::REDBRAND_BANDIT;
@@ -103,5 +103,40 @@ pub fn millbrook_barn() -> RaidSite {
             .collect(),
         retreat: RETREAT.to_vec(),
         camp_spread: [100, 0],
+        aid: aid_tasks(),
     }
+}
+
+/// The gate guards who answer the farm's alarm (#531): the east gate's, on the Millbrook Road, and
+/// the south gate's.
+const ALARM_GUARDS: [u32; 2] = [9, 7];
+
+/// What a lost raid leaves (#531, Atlas 5.1.50–5.1.51), in the order it settles on its own: a
+/// breach in the barn's north wall, one in its west wall, the east gate guard, a breach in the east
+/// wall, and the south gate guard last. Until they recover, both guards lie injured west of
+/// Millbrook's farmhouse instead of standing at their gates.
+fn aid_tasks() -> Vec<AidTask> {
+    let [east, south] = ALARM_GUARDS.map(NpcId::new);
+    vec![
+        AidTask {
+            kind: AidKind::MendBreach,
+            at: [8_000, 3_450],
+        },
+        AidTask {
+            kind: AidKind::MendBreach,
+            at: [7_250, 4_800],
+        },
+        AidTask {
+            kind: AidKind::TendGuard(east),
+            at: [5_700, 4_500],
+        },
+        AidTask {
+            kind: AidKind::MendBreach,
+            at: [8_750, 4_000],
+        },
+        AidTask {
+            kind: AidKind::TendGuard(south),
+            at: [5_700, 4_800],
+        },
+    ]
 }

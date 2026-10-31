@@ -175,6 +175,7 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
     case "use-door":
     case "use-waystone":
     case "repair":
+    case "raid-aid":
       return false;
   }
 }

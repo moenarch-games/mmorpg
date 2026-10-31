@@ -45,6 +45,8 @@ const ROLL_TAG: u8 = 29;
 const USE_WAYSTONE_TAG: u8 = 30;
 /// Wraps a plain or observed command with the sheet revisions its client holds (#544).
 pub(crate) const ACKNOWLEDGED_TAG: u8 = 31;
+/// Night raid aftermath aid (#531): version, tag, task (u8).
+const RAID_AID_TAG: u8 = 32;
 /// Version, tag, ability (u8), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 4;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -182,6 +184,7 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         ZoneCommand::UseWaystone { waystone } => {
             vec![PROTOCOL_BYTE, USE_WAYSTONE_TAG, waystone.get()]
         }
+        ZoneCommand::RaidAid { task } => vec![PROTOCOL_BYTE, RAID_AID_TAG, task],
         ZoneCommand::Chat { channel, text } => {
             let mut payload = vec![PROTOCOL_BYTE, CHAT_TAG];
             crate::chat::encode_text(&mut payload, channel, &text);
@@ -592,6 +595,14 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
                 waystone: crate::wire::decode_waystone(*waystone)?,
             })
         }
+        RAID_AID_TAG => {
+            let [_, _, task] = payload else {
+                return Err(ProtocolError::new(
+                    "raid aid command payload must be exactly 3 bytes",
+                ));
+            };
+            Ok(ZoneCommand::RaidAid { task: *task })
+        }
         CANCEL_CAST_TAG => bare(ZoneCommand::CancelCast),
         JUMP_TAG => bare(ZoneCommand::Jump),
         ROLL_TAG => bare(ZoneCommand::Roll),
@@ -923,6 +934,7 @@ mod tests {
                 choice: u8::MAX,
             },
             ZoneCommand::AbandonQuest { quest: 3 },
+            ZoneCommand::RaidAid { task: 4 },
             ZoneCommand::UseWaystone {
                 waystone: mmorpg_core::SEAM_TEST_WEST,
             },
@@ -1077,6 +1089,7 @@ mod tests {
                 ZoneCommand::UseWaystone { waystone } => {
                     format!("use_waystone {}", waystone.get())
                 }
+                ZoneCommand::RaidAid { task } => format!("raid_aid {task}"),
                 ZoneCommand::Swing { facing } => format!("swing {facing}"),
                 ZoneCommand::ReleaseSpirit => "release_spirit".to_owned(),
                 ZoneCommand::MoveItem {

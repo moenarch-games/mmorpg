@@ -1060,6 +1060,7 @@ mod tests {
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,
+                aid: 0b10110,
             }),
             pieces: vec![
                 mmorpg_core::PieceView {
@@ -2120,6 +2121,7 @@ mod tests {
             raid: Some(mmorpg_core::RaidView {
                 phase: 2,
                 integrity: 63,
+                aid: 0b11111,
             }),
             projectiles: Vec::new(),
             debris: Vec::new(),
