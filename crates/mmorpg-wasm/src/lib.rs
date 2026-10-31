@@ -690,6 +690,15 @@ impl UnitPresenter {
             .map_err(|error| JsError::new(&error))
     }
 
+    /// An imported model's `humanoid-clips` descriptor JSON (#500): its traversal clips' speeds,
+    /// ledge heights and authored root paths.
+    #[wasm_bindgen(js_name = modelMotions)]
+    pub fn model_motions(&mut self, kind: &str, descriptor: &str) -> Result<(), JsError> {
+        self.0
+            .model_motions(kind, descriptor)
+            .map_err(|error| JsError::new(&error))
+    }
+
     /// The residents' appearance presets loaded (#418): named residents become Rangers.
     #[wasm_bindgen(js_name = residentsReady)]
     pub fn residents_ready(&mut self) {

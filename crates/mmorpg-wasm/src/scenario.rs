@@ -47,6 +47,15 @@ pub enum Scenario {
     /// A level 6 Druid at the eastern edge of Wolfrun Woods, facing the wolf pack, to try
     /// Wrath, Entangling Roots, Rejuvenation and Barkskin (#304).
     DruidNature,
+    /// A level 1 Cleric (in the robe whose skirt chains the traversal clips swing) a step south
+    /// of a low (0.7 m) Hollowpine boulder, the mill's mid (1.5 m) loading dock or a high (2.1 m)
+    /// cottage wall in the Marsh-Lake Wetlands, facing it: walk into it and jump to mantle (#500).
+    MantleLow,
+    MantleMid,
+    MantleHigh,
+    /// The same Cleric below the 10 m highland crag on the gorge's eastern rim, facing its southern
+    /// face: walk into it, jump to grab it, then climb, traverse and top out (#500).
+    Climb,
 }
 
 impl Scenario {
@@ -70,6 +79,10 @@ impl Scenario {
             Self::RogueMelee => "rogue-melee",
             Self::ClericHoly => "cleric-holy",
             Self::DruidNature => "druid-nature",
+            Self::MantleLow => "mantle-low",
+            Self::MantleMid => "mantle-mid",
+            Self::MantleHigh => "mantle-high",
+            Self::Climb => "climb",
         }
     }
 
@@ -95,7 +108,11 @@ impl Scenario {
                 class: PlayerClass::Rogue,
                 sex: Sex::Female,
             },
-            Self::ClericHoly => ClassChoice {
+            Self::ClericHoly
+            | Self::MantleLow
+            | Self::MantleMid
+            | Self::MantleHigh
+            | Self::Climb => ClassChoice {
                 class: PlayerClass::Cleric,
                 sex: Sex::Male,
             },
@@ -119,6 +136,7 @@ impl Scenario {
             | Self::DruidNature => 6,
             // Lightning Beam unlocks at level 8.
             Self::ArcanistPack => 8,
+            Self::MantleLow | Self::MantleMid | Self::MantleHigh | Self::Climb => 1,
         }
     }
 
@@ -141,6 +159,12 @@ impl Scenario {
             Self::SunkenShrine => ([3_000, -5_400], 16_384),
             // On the rim before Greyfang Ridge (#423), 8 m south of the cave mouth; facing north.
             Self::RedbrandCavern => ([5_800, -12_000], 32_768),
+            // 1.5 m south of the ledge, facing north.
+            Self::MantleLow => ([-14_530, -890], 32_768),
+            Self::MantleMid => ([8_250, 2_250], 32_768),
+            Self::MantleHigh => ([36_800, 13_150], 32_768),
+            // 3 m south of the crag's southern face; facing north.
+            Self::Climb => ([6_800, -29_300], 32_768),
         }
     }
 

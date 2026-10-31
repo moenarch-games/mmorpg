@@ -1,10 +1,10 @@
 //! Native lowering of the shared static world (`mmorpg-presentation`, #184):
 //! both clients draw the same procedural terrain, roads, water and props; this
-//! module turns those draws into immutable wgpu meshes once and only selects
-//! visible groups and animated transforms per frame. Legacy blockout fields
-//! remain available during renderer migration.
+//! module lowers those draws into immutable meshes once (render-engine uploads each
+//! resource once) and only selects visible groups and animated transforms per frame.
+//! Legacy blockout fields remain available for picking and tests.
 pub(crate) mod geometry;
-pub use crate::environment::Environment;
+pub use crate::environment::Lighting;
 use std::{collections::BTreeMap, sync::Arc};
 use three_d_animation::Mat4;
 
@@ -29,7 +29,7 @@ pub struct SceneDraw {
 #[derive(Clone, Debug)]
 pub struct WorldFrame {
     pub draws: Vec<SceneDraw>,
-    pub environment: Environment,
+    pub lighting: Lighting,
 }
 use crate::presentation::SceneBox;
 use mmorpg_core::UNITS_PER_METRE;
@@ -67,6 +67,8 @@ pub struct WorldScene {
     groups: Vec<Vec<SceneDraw>>,
     water_draws: Vec<SceneDraw>,
     animated: Vec<Vec<SceneDraw>>,
+    /// The scenery's campfires and lantern posts (#529).
+    point_lights: Vec<mmorpg_presentation::lights::PointLight>,
 }
 
 /// Lowers shared draws, uploading each distinct resource's mesh once.
@@ -142,6 +144,7 @@ impl WorldScene {
             .collect();
         Self {
             additional_draws: Vec::new(),
+            point_lights: mmorpg_presentation::lights::point_lights(&scene, scenery),
             groups,
             water_draws,
             animated,
@@ -192,10 +195,18 @@ impl WorldScene {
             }
         }
         draws.extend(self.additional_draws.iter().cloned());
-        WorldFrame {
-            draws,
-            environment: Environment::at(seconds, animate),
-        }
+        let mut lighting = Lighting::at(crate::environment::pages_hour(seconds, animate));
+        lighting.point_lights = self
+            .point_lights
+            .iter()
+            .map(|light| crate::environment::PointLight {
+                position: light.position.map(|v| v as f32),
+                color: crate::environment::rgb(light.color),
+                lumens: light.lumens_at(seconds, animate) as f32,
+                range: light.range as f32,
+            })
+            .collect();
+        WorldFrame { draws, lighting }
     }
 }
 

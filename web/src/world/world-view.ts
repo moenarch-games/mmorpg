@@ -327,7 +327,7 @@ export class WorldView {
   #raidArea: { x: number; z: number; radius: number } | null = null;
   #restClip: (kind: ImportedModelKind) => string = () => { throw new Error("No world is loaded."); };
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
-  readonly #loadedModels: [ImportedModelKind, [string, number][]][] = [];
+  readonly #loadedModels: [ImportedModelKind, [string, number][], string | null][] = [];
   /** The shared unit presenter (#184) of the current viewer. */
   #units: { viewerId: number; units: SharedUnits; pushed: ZoneSnapshot | null; residents: boolean } | null = null;
   /** Combat sounds (#447), once the bundle loaded; silent until then. */
@@ -1004,16 +1004,16 @@ export class WorldView {
     this.#seconds += deltaSeconds;
     if (this.#units?.viewerId !== projection.viewerId) {
       const units = new SharedUnits(world.scenery.unitPresenter(projection.viewerId));
-      for (const [kind, clips] of this.#loadedModels) { units.modelReady(kind, clips); }
+      for (const [kind, clips, descriptor] of this.#loadedModels) { units.modelReady(kind, clips, descriptor); }
       if (this.#blend) { units.setBlend(this.#blend); }
       if (this.#bodyOverlay) { units.setBodyOverlay(true); }
       this.#units = { viewerId: projection.viewerId, units, pushed: null, residents: false };
     }
     const units = this.#units.units;
     this.#regions?.approach(entitiesSelf(projection), scenery.scenery.areas);
-    for (const [kind, clips] of this.#models.drainLoaded()) {
-      this.#loadedModels.push([kind, clips]);
-      units.modelReady(kind, clips);
+    for (const [kind, clips, descriptor] of this.#models.drainLoaded()) {
+      this.#loadedModels.push([kind, clips, descriptor]);
+      units.modelReady(kind, clips, descriptor);
     }
     if (!this.#units.residents && this.#models.residentsLoaded()) {
       this.#units.residents = true;

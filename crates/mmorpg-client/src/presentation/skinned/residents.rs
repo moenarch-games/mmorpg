@@ -8,8 +8,8 @@
 //! own clips, sockets and appearance; options a figure's bundle lacks (the female's beards, head
 //! skins and headwear) are simply absent. Presentation only.
 use super::{
-    Equipment, Model, Plates, appearance, ranger_bundle, ranger_female_bundle, ranger_file, socket,
-    strings,
+    Equipment, Model, Plates, SecondaryPose, appearance, ranger_bundle, ranger_female_bundle,
+    ranger_file, secondary_of, socket, strings,
 };
 use crate::world::SceneDraw;
 use mmorpg_presentation::units::{
@@ -129,6 +129,30 @@ fn clips(figure: Figure) -> &'static [u8] {
         Figure::Male => file(figure, ranger_bundle::CLIPS),
         Figure::Female => file(figure, ranger_female_bundle::CLIPS),
     }
+}
+
+/// `figure`'s cloth chain poses by clip (#500).
+fn secondary(figure: Figure) -> &'static BTreeMap<String, SecondaryPose> {
+    static POSES: OnceLock<Vec<BTreeMap<String, SecondaryPose>>> = OnceLock::new();
+    let poses = POSES.get_or_init(|| {
+        Figure::VARIANTS
+            .iter()
+            .map(|&figure| {
+                secondary_of(file(
+                    figure,
+                    match figure {
+                        Figure::Male => ranger_bundle::MOTIONS,
+                        Figure::Female => ranger_female_bundle::MOTIONS,
+                    },
+                ))
+            })
+            .collect()
+    });
+    let index = Figure::VARIANTS
+        .iter()
+        .position(|&candidate| candidate == figure)
+        .expect("every figure is listed");
+    &poses[index]
 }
 
 fn list(value: &Value) -> &[Value] {
@@ -271,6 +295,7 @@ fn entry(figure: Figure, key: &str, variant: &str) -> &'static Model {
         let bytes = file(figure, &path);
         let model = if key == figure.character() {
             Model::parse_with_clips(bytes, Kind::Ranger.clips().idle, Some(clips(figure)))
+                .map(|model| model.with_secondary(secondary(figure)))
         } else {
             Model::parse(bytes, "")
         };

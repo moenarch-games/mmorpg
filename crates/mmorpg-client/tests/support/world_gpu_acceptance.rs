@@ -74,13 +74,11 @@ fn submitted_frame_mesh_material_transform_and_environment_change_actual_pixels(
         changed(&before, &after, "day/night environment");
         save("consumed-night", &after);
         let mut lighting = frame.clone();
-        lighting.environment.sun.intensity = 0.0;
-        lighting.environment.sky.intensity = 0.0;
+        lighting.lighting.hour = 17.5;
         let after = offscreen_frame_pixels(&lighting, &[], view).await.unwrap();
         changed(&before, &after, "sun/sky lighting");
         let mut emissive = frame.clone();
-        emissive.environment.sun.intensity = 0.0;
-        emissive.environment.sky.intensity = 0.0;
+        emissive.lighting.hour = 0.0;
         for draw in &mut emissive.draws {
             draw.material.emissive = [0.0; 3];
         }
@@ -115,9 +113,9 @@ fn submitted_frame_mesh_material_transform_and_environment_change_actual_pixels(
             .unwrap();
         changed(&before, &colored, "mesh vertex colors");
         let mut fog = frame.clone();
-        fog.environment.fog.near = 0.0;
-        fog.environment.fog.far = 1.0;
-        fog.environment.fog.color = [1.0, 0.0, 1.0];
+        fog.lighting.fog.near = 0.0;
+        fog.lighting.fog.far = 1.0;
+        fog.lighting.fog.color = [1.0, 0.0, 1.0];
         let after = offscreen_frame_pixels(&fog, &[], view).await.unwrap();
         changed(&before, &after, "fog");
         let mut opacity = frame.clone();
@@ -319,37 +317,28 @@ fn current_creature_and_npc_model_images_reach_native_gpu() {
 }
 
 #[test]
-#[ignore = "requires actual GPU; submitted background contract for #182"]
-fn empty_frame_renders_submitted_background_without_hidden_css_sky() {
+#[ignore = "requires actual GPU; render-engine sky contract for #529"]
+fn an_empty_frame_shows_the_sky_of_the_submitted_hour() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let world = WorldScene::new(&mmorpg_scenery::greyhaven_vale_scenery());
         let view = CameraView {
             field_of_view_degrees: 50.0,
             eye: [0.0, 4.0, 9.0],
-            target: [0.0, 1.0, 0.0],
+            target: [0.0, 6.0, 0.0],
         };
         let mut frame = world.frame(0.0, false, view.eye, None);
         frame.draws.clear();
-        frame.environment.background = [0.2, 0.4, 0.6];
-        let before = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
-        for pixel in before.as_chunks::<4>().0 {
-            for (actual, expected) in pixel.iter().take(3).zip([51_u8, 102, 153]) {
-                assert!(
-                    actual.abs_diff(expected) <= 1,
-                    "submitted sRGB background pixel {pixel:?}"
-                );
-            }
-        }
-        frame.environment.background = [0.6, 0.2, 0.4];
-        let after = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
-        changed(&before, &after, "submitted background");
-        frame.environment.sky_stops.zenith = [1.0, 0.0, 0.0];
-        frame.environment.sky_stops.upper = [0.0, 1.0, 0.0];
-        frame.environment.cloud_offset += 100.0;
-        let inactive = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
-        assert!(
-            after == inactive,
-            "inactive CSS sky changed actual submitted background"
-        );
+        let noon = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
+        let [r, _, b] = std::array::from_fn(|channel| {
+            noon.as_chunks::<4>()
+                .0
+                .iter()
+                .map(|pixel| u64::from(pixel[channel]))
+                .sum::<u64>()
+        });
+        assert!(b > r, "the noon sky is blue");
+        frame.lighting.hour = 18.2;
+        let dusk = offscreen_frame_pixels(&frame, &[], view).await.unwrap();
+        changed(&noon, &dusk, "hour of the sky");
     });
 }

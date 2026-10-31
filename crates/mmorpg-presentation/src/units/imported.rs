@@ -8,13 +8,14 @@
 //! provider; this module only decides what to pose. Presentation only, never read by gameplay.
 use mmorpg_core::{
     AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, Equipment,
-    EquipmentSlot, PlayerClass, WaterMode, ZoneContent,
+    EquipmentSlot, Ledge, PlayerClass, TraversalView, WaterMode, ZoneContent,
 };
 use strum::VariantArray;
 
 use std::f64::consts::FRAC_PI_2;
 
 use super::swim::Attitude;
+use super::traversal::Motions;
 
 /// What an imported humanoid carries in its sockets: the class weapons and props (#156, #244,
 /// #302, asset-tooling #375 and #379) and the guards' sword.
@@ -337,6 +338,8 @@ pub struct Clips {
     pub swim: Option<SwimClips>,
     /// The in-place dodge roll, for a model that rolls (#516).
     pub roll: Option<&'static str>,
+    /// Authored climbing, ladder, rope and mantle clips, for a model that climbs (#500).
+    pub climb: Option<ClimbClips>,
     /// Class- and ability-specific strikes, for a model that has them (#384).
     pub strikes: Option<StrikeClips>,
     /// The joint whose subtree is the upper body, for a model that layers its upper body over
@@ -547,6 +550,62 @@ pub struct SwimClips {
     pub exit: &'static str,
 }
 
+/// In-place authored traversal on climbable surfaces (#500, Atlas 6.6.43, asset-tooling #416),
+/// shown in the zone's projected climb or mantle. A clip the bundle lacks falls back in place to
+/// the land clips, as before the clips existed: the idle holding on and the walk climbing.
+#[derive(Clone, Copy, Debug)]
+pub struct ClimbClips {
+    /// Holding a rock or timber face still, and climbing it up, down, left and right.
+    pub idle: &'static str,
+    pub up: &'static str,
+    pub down: &'static str,
+    pub left: &'static str,
+    pub right: &'static str,
+    /// Pulling up over the top of a face being climbed.
+    pub top_out: &'static str,
+    /// Letting go of a face, or dropping off it.
+    pub let_go: &'static str,
+    pub ladder_idle: &'static str,
+    pub ladder_up: &'static str,
+    pub ladder_down: &'static str,
+    pub rope_idle: &'static str,
+    pub rope_up: &'static str,
+    pub rope_down: &'static str,
+    /// Mantling a low (0.2–1 m), mid (1–1.6 m) and high (1.6–2.2 m) ledge from the ground.
+    pub mantle_low: &'static str,
+    pub mantle_mid: &'static str,
+    pub mantle_high: &'static str,
+}
+
+impl ClimbClips {
+    /// The mantle of a `ledge` from the ground.
+    #[must_use]
+    pub const fn mantle(self, ledge: Ledge) -> &'static str {
+        match ledge {
+            Ledge::Low => self.mantle_low,
+            Ledge::Mid => self.mantle_mid,
+            Ledge::High => self.mantle_high,
+        }
+    }
+}
+
+/// Climbing travel along the face below this speed in metres per second holds on still.
+pub const CLIMB_MOVING_SPEED: f64 = 0.15;
+/// The speeds in metres per second at which a climb loop plays at its authored rate when the
+/// bundle does not say (`climbSpeedMetersPerSecond`): the zone's climb up or down and sideways,
+/// and the clips' ladder and rope step.
+pub const CLIMB_CLIP_SPEED: f64 = 0.9;
+pub const CLIMB_SIDE_CLIP_SPEED: f64 = 0.75;
+pub const LADDER_CLIP_SPEED: f64 = 0.6;
+/// The zone's mantle rise and move across onto the ledge, in metres per second, and how far it
+/// moves across (`mmorpg_core::climb`): a mantle clip plays fast enough to end about when the
+/// zone's mantle does.
+const MANTLE_RISE_SPEED: f64 = mmorpg_core::climb::MANTLE_RISE_UNITS_PER_SECOND as f64 / 100.;
+const MANTLE_ACROSS_SPEED: f64 = mmorpg_core::climb::MANTLE_FORWARD_UNITS_PER_SECOND as f64 / 100.;
+const MANTLE_ACROSS_METERS: f64 = 0.7;
+/// The fastest a mantle clip plays.
+pub const MANTLE_MAX_RATE: f32 = 1.6;
+
 /// The stroke speed in metres per second at which a swim clip plays at its authored rate.
 pub const STROKE_SPEED: f64 = 1.8;
 /// Ground speed in metres per second above which forward or sideways travel plays the run clip:
@@ -625,6 +684,24 @@ impl Kind {
                     exit: "Swim_Exit",
                 }),
                 roll: Some("Roll"),
+                climb: Some(ClimbClips {
+                    idle: "Climb_Idle_Loop",
+                    up: "Climb_Up_Loop",
+                    down: "Climb_Down_Loop",
+                    left: "Climb_Left_Loop",
+                    right: "Climb_Right_Loop",
+                    top_out: "Climb_TopOut",
+                    let_go: "Climb_LetGo",
+                    ladder_idle: "Ladder_Idle_Loop",
+                    ladder_up: "Ladder_Up_Loop",
+                    ladder_down: "Ladder_Down_Loop",
+                    rope_idle: "Rope_Idle_Loop",
+                    rope_up: "Rope_Up_Loop",
+                    rope_down: "Rope_Down_Loop",
+                    mantle_low: "Mantle_Low",
+                    mantle_mid: "Mantle_Mid",
+                    mantle_high: "Mantle_High",
+                }),
                 strikes: Some(StrikeClips {
                     shield_bash: "Shield_OneShot",
                     bow: "Bow_Release",
@@ -677,6 +754,7 @@ impl Kind {
                 jump: None,
                 swim: None,
                 roll: None,
+                climb: None,
                 strikes: None,
                 upper_body: None,
                 gaits: None,
@@ -692,6 +770,7 @@ impl Kind {
                 jump: None,
                 swim: None,
                 roll: None,
+                climb: None,
                 strikes: None,
                 upper_body: None,
                 gaits: None,
@@ -708,6 +787,7 @@ impl Kind {
                 jump: None,
                 swim: None,
                 roll: None,
+                climb: None,
                 strikes: None,
                 upper_body: None,
                 gaits: None,
@@ -936,7 +1016,11 @@ pub struct Animation {
 /// What the projection shows of one unit this frame. Every cue is zone-accepted state or the
 /// projected motion; the clip clocks never feed back into it.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Cues {
+pub struct Cues<'a> {
+    /// The zone's projected climb, mantle or roll (#490, #500, #516).
+    pub traversal: TraversalView,
+    /// The model's `humanoid-clips` traversal data, once loaded (#500).
+    pub motions: Option<&'a Motions>,
     /// Horizontal speed in metres per second.
     pub speed: f64,
     /// The horizontal travel's direction from the unit's facing, as a yaw offset in radians.
@@ -1214,6 +1298,13 @@ pub struct Playback {
     /// Rolling last frame (#516), and how many rolls have begun.
     rolling: bool,
     rolls: u32,
+    /// The zone's climb or mantle last frame (#500).
+    held: TraversalView,
+    /// The mantle or top-out being shown and its rate, until it plays out (#500) …
+    mantle: Option<(&'static str, f32)>,
+    /// … the let-go being shown, and how many of either have begun.
+    letting_go: Option<(&'static str, f64)>,
+    pulls: u32,
     attitude: Attitude,
     /// Pelvis and legs: locomotion, flight and death.
     base: Track,
@@ -1363,6 +1454,102 @@ impl Playback {
         self.preparation.is_some()
     }
 
+    /// The legs' clip while holding a face, ladder or rope (#500): the loop in the direction of
+    /// travel along it (up or down first, sideways on a face only), its pace the projected speed
+    /// over the clip's `climbSpeedMetersPerSecond`, or the hold when still. A clip the model
+    /// lacks keeps the earlier in-place fallback: the walk climbing and the idle holding on.
+    fn climb(clips: Clips, available: &impl Fn(&str) -> bool, cues: Cues<'_>) -> Want {
+        // `direction` is the travel's yaw from the facing, positive to the left.
+        let lateral = -cues.speed * cues.direction.sin();
+        let vertical = cues.vertical_speed;
+        let climb = clips.climb.filter(|_| cues.traversal.climbing());
+        let (idle, up, down, sides) = match (climb, cues.traversal) {
+            (Some(c), TraversalView::ClimbingLadder) => {
+                (c.ladder_idle, c.ladder_up, c.ladder_down, None)
+            }
+            (Some(c), TraversalView::ClimbingRope) => (c.rope_idle, c.rope_up, c.rope_down, None),
+            (Some(c), _) => (c.idle, c.up, c.down, Some((c.left, c.right))),
+            (None, _) => (
+                clips.idle,
+                clips.walk,
+                clips.walk,
+                Some((clips.walk, clips.walk)),
+            ),
+        };
+        let ladder = matches!(
+            cues.traversal,
+            TraversalView::ClimbingLadder | TraversalView::ClimbingRope
+        );
+        let (clip, along, authored) = if vertical.abs() >= CLIMB_MOVING_SPEED
+            && (sides.is_none() || vertical.abs() >= lateral.abs())
+        {
+            let clip = if vertical > 0. { up } else { down };
+            let authored = if ladder {
+                LADDER_CLIP_SPEED
+            } else {
+                CLIMB_CLIP_SPEED
+            };
+            (clip, vertical.abs(), authored)
+        } else if let Some((left, right)) = sides
+            && lateral.abs() >= CLIMB_MOVING_SPEED
+        {
+            let clip = if lateral > 0. { right } else { left };
+            (clip, lateral.abs(), CLIMB_SIDE_CLIP_SPEED)
+        } else {
+            return Want::looped(
+                Some(idle).filter(|c| available(c)).unwrap_or(clips.idle),
+                1.,
+            );
+        };
+        if !available(clip) {
+            return Want::looped(clips.walk, walk_rate(along));
+        }
+        let authored = cues
+            .motions
+            .and_then(|motions| motions.get(clip))
+            .and_then(|motion| motion.climb_speed)
+            .filter(|&speed| speed > 0.)
+            .unwrap_or(authored);
+        #[allow(clippy::cast_possible_truncation)]
+        let rate = (along / authored).clamp(0.5, 1.6) as f32;
+        Want::looped(clip, rate)
+    }
+
+    /// The mantle a projected mantle of `ledge` begins (#500): a top-out after climbing,
+    /// otherwise the ledge's mantle, paced to end about when the zone's does. `None` when the
+    /// model lacks it: the earlier in-place fallback (the walk at the mantle's speed) plays.
+    fn begin_mantle(
+        &self,
+        clips: Clips,
+        duration: &impl Fn(&str) -> f32,
+        cues: Cues<'_>,
+        ledge: Ledge,
+    ) -> Option<(&'static str, f32)> {
+        let climb = clips.climb?;
+        let clip = if self.held.climbing() {
+            climb.top_out
+        } else {
+            climb.mantle(ledge)
+        };
+        let length = f64::from(duration(clip));
+        if length <= 0. {
+            return None;
+        }
+        let height = cues
+            .motions
+            .and_then(|motions| motions.get(clip))
+            .and_then(|motion| motion.ledge_height)
+            .unwrap_or(match ledge {
+                Ledge::Low => 0.7,
+                Ledge::Mid => 1.3,
+                Ledge::High => 1.9,
+            });
+        let zone = height / MANTLE_RISE_SPEED + MANTLE_ACROSS_METERS / MANTLE_ACROSS_SPEED;
+        #[allow(clippy::cast_possible_truncation)]
+        let rate = (length / zone).clamp(1., f64::from(MANTLE_MAX_RATE)) as f32;
+        Some((clip, rate))
+    }
+
     /// The legs' gait at `speed` in `direction` from the facing (#538): forward, strafing or
     /// backpedalling at walk or run speed, sprinting beyond [`SPRINT_CLIP_SPEED`]. A gait the
     /// model lacks keeps the earlier choice: the forward run for strafes at run speed, the walk
@@ -1425,7 +1612,7 @@ impl Playback {
         &mut self,
         clips: Clips,
         duration: &impl Fn(&str) -> f32,
-        cues: Cues,
+        cues: Cues<'_>,
         guarding: bool,
     ) -> Option<Want> {
         let gaits = clips
@@ -1457,7 +1644,7 @@ impl Playback {
         &mut self,
         clips: Clips,
         duration: impl Fn(&str) -> f32,
-        cues: Cues,
+        cues: Cues<'_>,
         blend: Blend,
     ) -> Animation {
         let Cues {
@@ -1503,11 +1690,50 @@ impl Playback {
             };
         }
         self.swimming = swims;
+        // The zone's climb or mantle (#500) picks the traversal clips. A mantle begun from a
+        // climb tops out; letting go of a face plays the let-go over the fall.
+        let held = if dead {
+            TraversalView::Free
+        } else {
+            cues.traversal
+        };
+        if let Some(ledge) = held.mantling()
+            && self.held.mantling().is_none()
+        {
+            self.pulls = self.pulls.wrapping_add(1);
+            self.mantle = self.begin_mantle(clips, &duration, cues, ledge);
+        }
+        if self.held.climbing() && !held.holds() {
+            self.pulls = self.pulls.wrapping_add(1);
+            self.letting_go = clips
+                .climb
+                .map(|climb| (climb.let_go, now))
+                .filter(|&(clip, _)| !reduced && available(clip));
+        }
+        self.held = held;
+        // A mantle plays out after the zone's ends, until the unit moves on.
+        if let Some((clip, _)) = self.mantle
+            && held.mantling().is_none()
+            && (dead
+                || speed > 0.25
+                || self
+                    .base
+                    .playing(clip)
+                    .is_none_or(|play| play.time >= duration(clip)))
+        {
+            self.mantle = None;
+        }
+        if let Some((clip, started)) = self.letting_go
+            && (dead || held.holds() || now - started >= f64::from(duration(clip)))
+        {
+            self.letting_go = None;
+        }
+        let traversing = held.holds() || self.mantle.is_some();
         // The projection already supplies cosmetic vertical velocity. Retain the flight phase
         // through the apex instead of treating its zero velocity as a landing. This is a
         // visual cue, not a grounded/physics decision. The water carries a swimmer: it neither
-        // jumps, falls nor lands.
-        self.flight = if dead || swims {
+        // jumps, falls nor lands; nor does a climber or a mantler, whom the zone carries.
+        self.flight = if dead || swims || traversing {
             Flight::Ground
         } else if vertical_speed > 0.3 {
             match self.flight {
@@ -1546,8 +1772,9 @@ impl Playback {
         self.guarding = guarding;
         self.strike = self.strike.filter(|strike| now < strike.until);
         self.cast = self.cast.filter(|cast| now < cast.until);
-        // A swimmer has no footing for a strike's footwork.
-        let standing = matches!(self.flight, Flight::Ground) && speed <= 0.25 && !swims;
+        // A swimmer, a climber or a mantler has no footing for a strike's footwork.
+        let standing =
+            matches!(self.flight, Flight::Ground) && speed <= 0.25 && !swims && !traversing;
         let layered = clips.upper_body.is_some();
         let mut splits = [false; 2];
         for (strike, split) in [&mut self.strike, &mut self.cast]
@@ -1586,7 +1813,23 @@ impl Playback {
                 at: Some(preparation.at(now, duration(preparation.clip))),
                 ..Want::hold(preparation.clip, preparation.serial)
             });
-        let ground = if swims {
+        let ground = if let Some((clip, rate)) = self.mantle {
+            Want {
+                rate,
+                ..Want::hold(clip, self.pulls)
+            }
+        } else if held.climbing() {
+            self.turning = None;
+            Self::climb(clips, &available, cues)
+        } else if held.mantling().is_some() {
+            // No mantle clip: the earlier in-place fallback, the walk at the mantle's pace.
+            let travel = speed.hypot(vertical_speed);
+            if travel > 0.25 {
+                Want::looped(clips.walk, walk_rate(travel))
+            } else {
+                Want::looped(clips.idle, 1.)
+            }
+        } else if swims {
             // Strokes keep pace with the projected travel; a missing clip falls back to the
             // leaned walk for travel and the idle for treading, in place either way.
             let travel = speed.hypot(vertical_speed);
@@ -1662,6 +1905,8 @@ impl Playback {
             && available(jump.land)
         {
             Some(Want::hold(jump.land, self.landing))
+        } else if let Some((clip, _)) = self.letting_go {
+            Some(Want::hold(clip, self.pulls))
         } else {
             self.crossing.map(|clip| Want::hold(clip, self.crossings))
         };
@@ -2799,5 +3044,120 @@ mod tests {
         // A second roll starts its clip again.
         let again = roll_frame(&mut playback, true, 0., 0.8);
         assert_eq!(again.lower, ("Roll", 0.));
+    }
+
+    fn climb_frame(
+        playback: &mut Playback,
+        duration: impl Fn(&str) -> f32,
+        traversal: TraversalView,
+        (speed, direction, vertical): (f64, f64, f64),
+        now: f64,
+    ) -> Animation {
+        playback.advance(
+            Kind::Ranger.clips(),
+            duration,
+            Cues {
+                traversal,
+                speed,
+                direction,
+                vertical_speed: vertical,
+                now,
+                dt: 0.05,
+                ..Cues::default()
+            },
+            Blend::default(),
+        )
+    }
+
+    #[test]
+    fn the_zones_climb_and_mantle_pick_the_traversal_clips() {
+        let one = |_: &str| 1.;
+        let mut playback = Playback::default();
+        let mut now = 0.;
+        let mut frame = |traversal, motion| {
+            now += 0.05;
+            climb_frame(&mut playback, one, traversal, motion, now)
+        };
+        use TraversalView::{Climbing, ClimbingLadder, ClimbingRope, Free, MantlingHigh};
+        let still = (0., 0., 0.);
+        assert_eq!(frame(Climbing, still).lower.0, "Climb_Idle_Loop");
+        // Up and down along the face at the zone's 0.9 m/s play at the authored rate; a climber
+        // rising never jumps.
+        let up = frame(Climbing, (0., 0., 0.9));
+        assert_eq!(up.lower.0, "Climb_Up_Loop");
+        assert_eq!(frame(Climbing, (0., 0., -0.9)).lower.0, "Climb_Down_Loop");
+        // Strafing along the face: travel to the right is a negative yaw from the facing.
+        let right = (0.75, -FRAC_PI_2, 0.);
+        assert_eq!(frame(Climbing, right).lower.0, "Climb_Right_Loop");
+        assert_eq!(
+            frame(Climbing, (0.75, FRAC_PI_2, 0.)).lower.0,
+            "Climb_Left_Loop"
+        );
+        assert_eq!(
+            frame(ClimbingLadder, (0., 0., 0.6)).lower.0,
+            "Ladder_Up_Loop"
+        );
+        assert_eq!(frame(ClimbingLadder, right).lower.0, "Ladder_Idle_Loop");
+        assert_eq!(
+            frame(ClimbingRope, (0., 0., -0.6)).lower.0,
+            "Rope_Down_Loop"
+        );
+        // Climbing over the top tops out, whatever the ledge.
+        assert_eq!(frame(MantlingHigh, (0., 0., 3.)).lower.0, "Climb_TopOut");
+        // Back on the ground, a mantle from it plays by the ledge's height.
+        for _ in 0..40 {
+            frame(Free, still);
+        }
+        assert_eq!(
+            frame(TraversalView::MantlingLow, (0., 0., 3.)).lower.0,
+            "Mantle_Low"
+        );
+        for _ in 0..40 {
+            frame(Free, still);
+        }
+        assert_eq!(
+            frame(TraversalView::MantlingMid, (0., 0., 3.)).lower.0,
+            "Mantle_Mid"
+        );
+        for _ in 0..40 {
+            frame(Free, still);
+        }
+        assert_eq!(frame(MantlingHigh, (0., 0., 3.)).lower.0, "Mantle_High");
+        // Letting go of a face plays the let-go over the fall.
+        frame(Climbing, still);
+        let falling = frame(Free, (0., 0., -2.));
+        assert_eq!(falling.lower.0, "Climb_LetGo");
+    }
+
+    #[test]
+    fn climb_loops_keep_pace_with_the_zone_over_their_authored_speed() {
+        let motions = super::super::traversal::Motions::parse(
+            r#"{"schema": "humanoid-clips-v1", "clips": [
+                {"name": "Climb_Up_Loop", "climbSpeedMetersPerSecond": 0.45}
+            ]}"#,
+        )
+        .expect("valid descriptor");
+        let one = |_: &str| 1.;
+        let clips = Kind::Ranger.clips();
+        let available = |clip: &str| one(clip) > 0.;
+        let cues = |motions| Cues {
+            traversal: TraversalView::Climbing,
+            motions,
+            vertical_speed: 0.9,
+            ..Cues::default()
+        };
+        let authored = Playback::climb(clips, &available, cues(Some(&motions)));
+        assert_eq!(
+            (authored.clip, authored.rate),
+            ("Climb_Up_Loop", 1.6_f32.min(2.))
+        );
+        let fallback = Playback::climb(clips, &available, cues(None));
+        assert!((fallback.rate - 1.).abs() < 1e-6);
+        // A bundle without the climb clips keeps the earlier in-place walk.
+        let missing = |clip: &str| !clip.starts_with("Climb_");
+        assert_eq!(
+            Playback::climb(clips, &missing, cues(None)).clip,
+            "Walk_Loop"
+        );
     }
 }

@@ -67,25 +67,91 @@ const WALKABLE_NORMAL_Y: f32 = std::f32::consts::FRAC_1_SQRT_2;
 /// The contact offset the backends keep (see `physics.rs`).
 const CONTACT_OFFSET: f32 = 0.25;
 
-/// What a climbable surface is made of; each climbs the same for now.
+/// What a climbable surface is made of. Each climbs the same; the clients show a ladder or a
+/// rope with their own clips (#500).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Grip {
     /// Rough rock: crags and climbable cliff faces.
     Rock,
     /// Timber: palisades and fences.
     Timber,
-    /// The rungs of a ladder, rope or vine.
-    Rungs,
+    /// The rungs of a ladder.
+    Ladder,
+    /// A hanging rope or vine.
+    Rope,
 }
 
 impl Grip {
-    /// A stable code for the content revision.
+    /// A stable code for the content revision and the canonical snapshot.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
             Self::Rock => 1,
             Self::Timber => 2,
-            Self::Rungs => 3,
+            Self::Ladder => 3,
+            Self::Rope => 4,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            1 => Some(Self::Rock),
+            2 => Some(Self::Timber),
+            3 => Some(Self::Ladder),
+            4 => Some(Self::Rope),
+            _ => None,
+        }
+    }
+}
+
+/// How high a mantled ledge stood above the feet when the mantle began (#500): the clients
+/// pull up with the matching authored mantle.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Ledge {
+    /// [`MANTLE_MIN_UNITS`] up to 1 m.
+    Low,
+    /// 1 m up to 1.6 m.
+    Mid,
+    /// 1.6 m up to [`MANTLE_REACH_UNITS`].
+    High,
+}
+
+/// A ledge below this height above the feet is [`Ledge::Low`] …
+pub const LEDGE_MID_UNITS: i32 = 100;
+/// … and one from this height [`Ledge::High`].
+pub const LEDGE_HIGH_UNITS: i32 = 160;
+
+impl Ledge {
+    /// The class of a ledge `rise` game units above the feet.
+    #[must_use]
+    pub const fn of(rise: i32) -> Self {
+        if rise < LEDGE_MID_UNITS {
+            Self::Low
+        } else if rise < LEDGE_HIGH_UNITS {
+            Self::Mid
+        } else {
+            Self::High
+        }
+    }
+
+    /// A stable code for the canonical snapshot.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Low => 0,
+            Self::Mid => 1,
+            Self::High => 2,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::Low),
+            1 => Some(Self::Mid),
+            2 => Some(Self::High),
+            _ => None,
         }
     }
 }
@@ -165,15 +231,17 @@ pub enum Traversal {
     Free,
     /// Let go of a face: moving freely, but no grab for `ticks` more ticks unless grounded.
     Released { ticks: u16 },
-    /// Holding a climbable face; `wall` is the yaw facing it.
-    Climbing { wall: u16 },
+    /// Holding a climbable face; `wall` is the yaw facing it and `grip` what it is.
+    Climbing { wall: u16, grip: Grip },
     /// Pulling up onto a ledge: the feet's goal on it, the yaw facing the ledge, the ticks the
-    /// mantle has run and whether it has risen and moves across onto the ledge.
+    /// mantle has run, whether it has risen and moves across onto the ledge, and how high the
+    /// ledge stood when it began.
     Mantling {
         goal: [i32; 3],
         wall: u16,
         ticks: u16,
         across: bool,
+        ledge: Ledge,
     },
 }
 
@@ -188,7 +256,7 @@ impl Traversal {
     #[must_use]
     pub const fn wall(self) -> Option<u16> {
         match self {
-            Self::Climbing { wall } | Self::Mantling { wall, .. } => Some(wall),
+            Self::Climbing { wall, .. } | Self::Mantling { wall, .. } => Some(wall),
             Self::Free | Self::Released { .. } => None,
         }
     }
@@ -210,13 +278,20 @@ impl Traversal {
 }
 
 /// What a player shows other players: the projection's traversal code, including a dodge roll
-/// (#516).
+/// (#516), what a climber holds and how high a mantled ledge stands (#500).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum TraversalView {
     #[default]
     Free,
+    /// Holding a rock or timber face.
     Climbing,
-    Mantling,
+    /// On a ladder.
+    ClimbingLadder,
+    /// On a rope or vine.
+    ClimbingRope,
+    MantlingLow,
+    MantlingMid,
+    MantlingHigh,
     Rolling,
 }
 
@@ -228,18 +303,57 @@ impl TraversalView {
         }
         match traversal {
             Traversal::Free | Traversal::Released { .. } => Self::Free,
-            Traversal::Climbing { .. } => Self::Climbing,
-            Traversal::Mantling { .. } => Self::Mantling,
+            Traversal::Climbing { grip, .. } => match grip {
+                Grip::Rock | Grip::Timber => Self::Climbing,
+                Grip::Ladder => Self::ClimbingLadder,
+                Grip::Rope => Self::ClimbingRope,
+            },
+            Traversal::Mantling { ledge, .. } => match ledge {
+                Ledge::Low => Self::MantlingLow,
+                Ledge::Mid => Self::MantlingMid,
+                Ledge::High => Self::MantlingHigh,
+            },
         }
     }
 
+    /// Holding a face, a ladder or a rope.
+    #[must_use]
+    pub const fn climbing(self) -> bool {
+        matches!(
+            self,
+            Self::Climbing | Self::ClimbingLadder | Self::ClimbingRope
+        )
+    }
+
+    /// The ledge being mantled, if mantling.
+    #[must_use]
+    pub const fn mantling(self) -> Option<Ledge> {
+        match self {
+            Self::MantlingLow => Some(Ledge::Low),
+            Self::MantlingMid => Some(Ledge::Mid),
+            Self::MantlingHigh => Some(Ledge::High),
+            _ => None,
+        }
+    }
+
+    /// Climbing or mantling: held on a face and weightless.
+    #[must_use]
+    pub const fn holds(self) -> bool {
+        self.climbing() || self.mantling().is_some()
+    }
+
+    /// The three-bit wire code; the first four keep their #516 values.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
             Self::Free => 0,
             Self::Climbing => 1,
-            Self::Mantling => 2,
+            Self::MantlingLow => 2,
             Self::Rolling => 3,
+            Self::ClimbingLadder => 4,
+            Self::ClimbingRope => 5,
+            Self::MantlingMid => 6,
+            Self::MantlingHigh => 7,
         }
     }
 
@@ -248,8 +362,12 @@ impl TraversalView {
         match code {
             0 => Some(Self::Free),
             1 => Some(Self::Climbing),
-            2 => Some(Self::Mantling),
+            2 => Some(Self::MantlingLow),
             3 => Some(Self::Rolling),
+            4 => Some(Self::ClimbingLadder),
+            5 => Some(Self::ClimbingRope),
+            6 => Some(Self::MantlingMid),
+            7 => Some(Self::MantlingHigh),
             _ => None,
         }
     }
@@ -547,8 +665,9 @@ pub(crate) fn decide(
             wall,
             ticks,
             across,
-        } => mantle(centre, goal, wall, ticks, across, intent),
-        Traversal::Climbing { wall } => climb(probe, centre, wall, intent),
+            ledge,
+        } => mantle(centre, goal, wall, ticks, across, ledge, intent),
+        Traversal::Climbing { wall, .. } => climb(probe, centre, wall, intent),
         Traversal::Released { ticks } if ticks > 0 && !intent.grounded => {
             Step::free(Traversal::Released { ticks: ticks - 1 })
         }
@@ -569,9 +688,10 @@ fn grab(probe: &Probe<'_>, centre: [f32; 3], intent: Intent) -> Step {
     }
     if let Some(face) = probe.grabbable(centre, ahead)
         && let Some(wall) = yaw_into(face.outward)
+        && let Some(grip) = probe.grip(face.body, face.point)
     {
         return Step {
-            traversal: Traversal::Climbing { wall },
+            traversal: Traversal::Climbing { wall, grip },
             velocity: Some(climb_velocity(&face, wall, 0, 0)),
         };
     }
@@ -579,11 +699,14 @@ fn grab(probe: &Probe<'_>, centre: [f32; 3], intent: Intent) -> Step {
 }
 
 fn start_mantle(centre: [f32; 3], goal: [i32; 3], wall: u16) -> Step {
+    #[allow(clippy::cast_possible_truncation)]
+    let feet = (centre[1] - half_height()).round() as i32;
     let traversal = Traversal::Mantling {
         goal,
         wall,
         ticks: 0,
         across: false,
+        ledge: Ledge::of(goal[1] - feet),
     };
     Step {
         traversal,
@@ -599,9 +722,9 @@ fn climb(probe: &Probe<'_>, centre: [f32; 3], wall: u16, intent: Intent) -> Step
         });
     }
     let ahead = heading(wall);
-    let Some(face) = probe
+    let Some((face, grip)) = probe
         .face_ahead(centre, ahead, BODY_HEIGHT)
-        .filter(|face| probe.grip(face.body, face.point).is_some())
+        .and_then(|face| Some((face, probe.grip(face.body, face.point)?)))
     else {
         // The face ended or turned sheer: top out onto it if possible, otherwise drop.
         if intent.forward > 0
@@ -617,7 +740,7 @@ fn climb(probe: &Probe<'_>, centre: [f32; 3], wall: u16, intent: Intent) -> Step
     let wall = yaw_into(face.outward).unwrap_or(wall);
     if intent.stunned {
         return Step {
-            traversal: Traversal::Climbing { wall },
+            traversal: Traversal::Climbing { wall, grip },
             velocity: Some(climb_velocity(&face, wall, 0, 0)),
         };
     }
@@ -639,7 +762,7 @@ fn climb(probe: &Probe<'_>, centre: [f32; 3], wall: u16, intent: Intent) -> Step
         }
     }
     Step {
-        traversal: Traversal::Climbing { wall },
+        traversal: Traversal::Climbing { wall, grip },
         velocity: Some(climb_velocity(&face, wall, forward, intent.strafe)),
     }
 }
@@ -674,6 +797,7 @@ fn mantle(
     wall: u16,
     ticks: u16,
     across: bool,
+    ledge: Ledge,
     intent: Intent,
 ) -> Step {
     if ticks >= MANTLE_MAX_TICKS {
@@ -696,6 +820,7 @@ fn mantle(
         wall,
         ticks: ticks + 1,
         across,
+        ledge,
     };
     if intent.stunned {
         return Step {

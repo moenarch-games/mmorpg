@@ -16,7 +16,7 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-INPUTS = ["crates/mmorpg-client/src/main.rs", "crates/mmorpg-client/src/scene.wgsl",
+INPUTS = ["crates/mmorpg-client/src/main.rs", "crates/mmorpg-client/src/hud.wgsl",
           "crates/mmorpg-scenery/assets/outpost-grass/selected.props.rs",
           "content/greyhaven/outpost-layout.json", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo/config.toml"]
 FAKE = r'''#!/usr/bin/env python3

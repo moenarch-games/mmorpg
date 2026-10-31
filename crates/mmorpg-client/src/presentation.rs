@@ -174,6 +174,8 @@ impl Presentation {
         for &kind in Kind::VARIANTS {
             units_presenter.model_ready(kind, skinned::asset(kind).model.clip_durations());
         }
+        // The Ranger's traversal clips' speeds and authored root paths (#500).
+        units_presenter.model_motions(Kind::Ranger, skinned::ranger_motions());
         // The residents and humanoid enemies wear their presets on the Ranger (#418, #39).
         if skinned::residents_drawable() {
             units_presenter.residents_ready();
@@ -666,19 +668,17 @@ impl Presentation {
             view.eye,
             viewer,
         );
-        // The sky shows the zone's time of day; clouds keep drifting on the client clock.
+        // The sun, moon and sky follow the zone's time of day; flames flicker on the client
+        // clock.
         if let Some(mut tick) = self.latest().map(|snapshot| snapshot.tick) {
             // Reduced motion steps the sky once per zone hour instead of drifting.
             if self.reduced_motion {
                 let hour = u64::from(mmorpg_core::HOUR_TICKS);
                 tick -= (tick + u64::from(mmorpg_core::ZONE_START_TIME)) % hour;
             }
-            let clouds = frame.environment.cloud_offset;
-            frame.environment = crate::environment::Environment::at(
-                crate::environment::zone_sky_seconds(tick),
-                true,
-            );
-            frame.environment.cloud_offset = clouds;
+            let lights = std::mem::take(&mut frame.lighting.point_lights);
+            frame.lighting = crate::world::Lighting::at(crate::environment::zone_hour(tick));
+            frame.lighting.point_lights = lights;
         }
         frame.draws.extend(self.unit_draws(now, view));
         self.append_buildings(&mut frame.draws, now);

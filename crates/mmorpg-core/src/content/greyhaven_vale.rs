@@ -797,7 +797,7 @@ fn ladder((id, (min, max, height)): (u32, ([i32; 2], [i32; 2], i32))) -> StaticC
 /// route beside its pass while the rest of it is sheer.
 #[must_use]
 pub fn climbing() -> crate::ClimbSurfaces {
-    use crate::Grip::{Rock, Rungs, Timber};
+    use crate::Grip::{Ladder, Rock, Timber};
     let range = |ids: std::ops::RangeInclusive<u32>, grip| ids.map(move |id| (id, grip));
     // The stronghold's northern palisade (its second structure) is smooth-planked.
     let palisades = highlands::BUILDINGS
@@ -823,7 +823,7 @@ pub fn climbing() -> crate::ClimbSurfaces {
         // The Redbrand Hollow's cliffs, but not its sheer back wall.
         .chain(range(ids::CLIFFS, Rock).filter(|&(id, _)| id != SHEER_HOLLOW_WALL))
         .chain(crags)
-        .chain(range(ids::LADDERS, Rungs))
+        .chain(range(ids::LADDERS, Ladder))
         .collect();
     let terrain = vec![
         // The sheer cliff under Stillwater Lake, then the rest of the Vale basin's cliffs.

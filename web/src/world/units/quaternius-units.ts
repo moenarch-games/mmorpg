@@ -63,6 +63,9 @@ const dressKey = (dress: Dress) => JSON.stringify(dress);
 /** The rest (idle) clip a model is measured in, from the shared presenter's clip table. */
 export type RestClip = (kind: QuaterniusKind) => string;
 
+/** A model that finished loading: its kind, clip lengths and `humanoid-clips` descriptor JSON (Ranger only, #500). */
+export type LoadedModel = [QuaterniusKind, [string, number][], string | null];
+
 /**
  * Animated imported units as real three.js skinned meshes drawn through the renderer's
  * imported-roots path, all loaded with plain three.js (asset-tooling Atlas 7.1.1, #244): `GLTFLoader`
@@ -100,6 +103,8 @@ type Asset = {
   clips: Map<string, number>;
   /** Clip roles and strike contact times by name, from the bundle's `humanoid-clips` (Ranger only). */
   motions?: ReadonlyMap<string, ClipMotion>;
+  /** The bundle's `humanoid-clips` descriptor JSON (Ranger only), for the shared presenter (#500). */
+  descriptor?: string;
   instantiate(dress: Dress): Posable;
   /** Loads the residents' appearance presets (#418), Ranger only; resolves once they can be drawn. */
   loadResidents?: () => Promise<void>;
@@ -173,19 +178,53 @@ function upperBody(model: THREE.Object3D): Set<string> {
 /** Per source clip, its masked copies by mask and slot, so each layer drives its own action. */
 const variants = new WeakMap<THREE.AnimationClip, Map<string, THREE.AnimationClip>>();
 
+/** The cloth chain tracks `withSecondaryPoses` added, and the joints they turn. */
+const secondaryTracks = new WeakSet<THREE.KeyframeTrack>();
+const secondaryJoints = new Set<string>();
+
 /**
- * `clip` keeping only the tracks `mask` drives. A clip in the same mask twice (a restarted strike
- * crossfading from its previous swing) takes a copy per `slot`, since a mixer plays one action per clip.
+ * Adds each clip's `secondaryPose` (#500, asset-tooling #416) to it as quaternion tracks of the cloth
+ * chain joints (`skirt_*_01`, `cape_01`), so the mixer plays and blends them like the clip's own
+ * channels on every outfit that has the chains. No cloth spring exists yet (#498 sways only the
+ * hanging gear), so the authored pose plays as it is.
  */
-function variant(clip: THREE.AnimationClip, mask: LayerMask, slot: number, upper: ReadonlySet<string>): THREE.AnimationClip {
-  if (mask === "all" && slot === 0) { return clip; }
+function withSecondaryPoses(sources: ReadonlyMap<string, THREE.AnimationClip>, descriptor: unknown): void {
+  type Entry = { name?: unknown; secondaryPose?: { sampleRate?: unknown; joints?: unknown } };
+  const clips = (descriptor as { clips?: unknown } | null)?.clips;
+  for (const clip of Array.isArray(clips) ? clips as Entry[] : []) {
+    const source = typeof clip.name === "string" ? sources.get(clip.name) : undefined;
+    const { sampleRate, joints } = clip.secondaryPose ?? {};
+    if (!source || typeof sampleRate !== "number" || sampleRate <= 0 || typeof joints !== "object" || joints === null) { continue; }
+    for (const [joint, rotations] of Object.entries(joints as Record<string, unknown>)) {
+      if (!Array.isArray(rotations) || rotations.length === 0) { continue; }
+      const name = THREE.PropertyBinding.sanitizeNodeName(joint);
+      const times = rotations.map((_, frame) => frame / sampleRate);
+      const track = new THREE.QuaternionKeyframeTrack(`${name}.quaternion`, times, (rotations as number[][]).flat());
+      secondaryTracks.add(track);
+      secondaryJoints.add(name);
+      source.tracks.push(track);
+    }
+  }
+}
+
+/**
+ * `clip` keeping only the tracks `mask` drives, and of the cloth chain tracks only those of the
+ * `cloth` joints the model has. A clip in the same mask twice (a restarted strike crossfading from
+ * its previous swing) takes a copy per `slot`, since a mixer plays one action per clip.
+ */
+function variant(clip: THREE.AnimationClip, mask: LayerMask, slot: number, upper: ReadonlySet<string>,
+  cloth: ReadonlySet<string>): THREE.AnimationClip {
+  const chained = clip.tracks.some((track) => secondaryTracks.has(track));
+  if (mask === "all" && slot === 0 && !chained) { return clip; }
   let byKey = variants.get(clip);
   if (!byKey) { variants.set(clip, byKey = new Map()); }
-  const key = `${mask}:${slot}:${upper.size}`;
+  const key = `${mask}:${slot}:${upper.size}:${[...cloth].join(",")}`;
   let masked = byKey.get(key);
   if (!masked) {
-    const tracks = mask === "all" ? clip.tracks : clip.tracks.filter((track) =>
-      upper.has(THREE.PropertyBinding.parseTrackName(track.name).nodeName ?? "") === (mask === "upper"));
+    const tracks = clip.tracks.filter((track) => {
+      const node = THREE.PropertyBinding.parseTrackName(track.name).nodeName ?? "";
+      return (mask === "all" || upper.has(node) === (mask === "upper")) && (!secondaryTracks.has(track) || cloth.has(node));
+    });
     masked = new THREE.AnimationClip(`${clip.name}|${key}`, clip.duration, tracks);
     byKey.set(key, masked);
   }
@@ -200,6 +239,7 @@ function variant(clip: THREE.AnimationClip, mask: LayerMask, slot: number, upper
 function mixerPosable(model: THREE.Object3D, sources: ReadonlyMap<string, THREE.AnimationClip>, dispose?: () => void): Posable {
   const mixer = new THREE.AnimationMixer(model);
   const upper = upperBody(model);
+  const cloth = new Set([...secondaryJoints].filter((joint) => model.getObjectByName(joint)).sort());
   const playing = new Map<string, THREE.AnimationAction>();
   return {
     model,
@@ -214,7 +254,7 @@ function mixerPosable(model: THREE.Object3D, sources: ReadonlyMap<string, THREE.
         used.add(key);
         let action = playing.get(key);
         if (!action) {
-          action = mixer.clipAction(variant(source, layer.mask, slot, upper)).play();
+          action = mixer.clipAction(variant(source, layer.mask, slot, upper, cloth)).play();
           playing.set(key, action);
         }
         action.setEffectiveWeight(layer.weight);
@@ -546,6 +586,8 @@ type FigureBundle = {
   sources: ReadonlyMap<string, THREE.AnimationClip>;
   sockets: ReadonlyMap<string, Socket>;
   motions: ReadonlyMap<string, ClipMotion>;
+  /** The `humanoid-clips` descriptor JSON, for the shared presenter's traversal data (#500). */
+  descriptor: string;
   appearance: unknown;
   look: HeadLook;
   /** The face features of the default entry (#411); null when it carries no face morphs. */
@@ -578,12 +620,13 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const manifest = await json(`${character.replaceAll(".", "-")}.index.json`);
   const entry = bundleEntry(manifest, character);
   if (!entry.clips) { throw new Error(`The ${character} download index has no shared clips.`); }
-  const [gltf, animationLibrary, sockets, motions] = await Promise.all([
+  const [gltf, animationLibrary, sockets, descriptor] = await Promise.all([
     loader.loadAsync(url(entryFile(entry, ".gltf"))),
     loader.loadAsync(url(entry.clips)),
     json(entryFile(entry, ".humanoid-sockets.json")).then(socketsOf),
-    json(entryFile(entry, ".humanoid-clips.json")).then(clipMotionsOf),
+    json(entryFile(entry, ".humanoid-clips.json")),
   ]);
+  const motions = clipMotionsOf(descriptor);
   const appearance = figureAppearance(character, await json(entryFile(entry, ".humanoid-appearance.json")));
   const look = headLook(appearance);
   const face = faceLookOf(appearance, entry.variant, gltf.scene);
@@ -623,6 +666,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
     ...hairKeys.map((key) => load(key, HAIR_VARIANT)),
   ]));
   const sources = new Map(animationLibrary.animations.map((clip) => [clip.name, clip]));
+  withSecondaryPoses(sources, descriptor);
   const wear: FigureBundle["wear"] = (model, worn, hairKey, tint) => {
     for (const { key, socket } of [...worn, ...(hairKey ? [{ key: hairKey, socket: "head.hair" }] : [])]) {
       const item = items.get(key);
@@ -656,7 +700,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
   const probe = mixerPosable(cloneSkinned(gltf.scene), sources);
   const bounds = measure(probe, rest);
   probe.dispose();
-  return { character, gltf, sources, sockets, motions, appearance, look, face, scene, wear, bounds };
+  return { character, gltf, sources, sockets, motions, descriptor: JSON.stringify(descriptor), appearance, look, face, scene, wear, bounds };
 }
 
 async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
@@ -832,7 +876,7 @@ async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
     return false;
   };
   const clips = new Map([...sources].map(([name, clip]) => [name, clip.duration]));
-  return { clips, motions, instantiate, loadResidents, outfitReady, variedReady, face, ...male.bounds };
+  return { clips, motions, descriptor: male.descriptor, instantiate, loadResidents, outfitReady, variedReady, face, ...male.bounds };
 }
 
 /** The drop armour outfit's plates by socket (#379), from the bundle's `DROP_ARMOR_OUTFIT`. */
@@ -1074,7 +1118,7 @@ export class QuaterniusUnits {
   readonly #assets = new Map<QuaterniusKind, Asset | "loading" | "failed">();
   readonly #settled = new Map<QuaterniusKind, Promise<boolean>>();
   readonly #instances = new Map<string, Instance>();
-  readonly #loaded: [QuaterniusKind, [string, number][]][] = [];
+  readonly #loaded: LoadedModel[] = [];
   #rootsChanged = false;
   #residents: Promise<boolean> | null = null;
   #residentsLoaded = false;
@@ -1096,7 +1140,7 @@ export class QuaterniusUnits {
       this.#settled.set(kind, (kind === "Ranger" ? loadRanger(this.#loader, this.#rest(kind)) : loadAnimal(this.#loader, kind, this.#rest(kind))).then(
         (asset) => {
           this.#assets.set(kind, asset);
-          this.#loaded.push([kind, [...asset.clips]]);
+          this.#loaded.push([kind, [...asset.clips], asset.descriptor ?? null]);
           return true;
         },
         (error: unknown) => {
@@ -1140,7 +1184,7 @@ export class QuaterniusUnits {
   }
 
   /** Models that finished loading since the last call, with their clip lengths. */
-  drainLoaded(): [QuaterniusKind, [string, number][]][] {
+  drainLoaded(): LoadedModel[] {
     return this.#loaded.splice(0);
   }
 

@@ -3,7 +3,7 @@
 mod comparison;
 #[path = "support/world_reference.rs"]
 mod reference;
-use comparison::{close, compare_draws, vector};
+use comparison::{close, compare_draws};
 use mmorpg_client::world::WorldScene;
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
@@ -34,51 +34,15 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
             None,
         );
         compare_draws(&frame.draws, &expected["draws"], &output["resources"]);
-        let env = &frame.environment;
-        let want = &expected["environment"];
-        for (a, b) in env.background.iter().zip(rgb(&want["background"])) {
+        // The native sun, moon and sky are render-engine's physical day cycle (#529); the
+        // browser keeps its palette until its three.js port (render-engine#11). Both fog alike.
+        let fog = &frame.lighting.fog;
+        let want = &expected["environment"]["fog"];
+        for (a, b) in fog.color.iter().zip(rgb(&want["color"])) {
             close(*a, f64::from(b), name);
         }
-        for (a, b) in env.fog.color.iter().zip(rgb(&want["fog"]["color"])) {
-            close(*a, f64::from(b), name);
-        }
-        close(env.fog.near, want["fog"]["near"].as_f64().unwrap(), name);
-        close(env.fog.far, want["fog"]["far"].as_f64().unwrap(), name);
-        vector(&env.sun.direction, &want["sun"]["direction"], name);
-        for (a, b) in env.sun.color.iter().zip(rgb(&want["sun"]["color"])) {
-            close(*a, f64::from(b), name);
-        }
-        close(
-            env.sun.intensity,
-            want["sun"]["intensity"].as_f64().unwrap(),
-            name,
-        );
-        for (a, b) in env.sky.sky_color.iter().zip(rgb(&want["sky"]["skyColor"])) {
-            close(*a, f64::from(b), name);
-        }
-        for (a, b) in env
-            .sky
-            .ground_color
-            .iter()
-            .zip(rgb(&want["sky"]["groundColor"]))
-        {
-            close(*a, f64::from(b), name);
-        }
-        close(
-            env.sky.intensity,
-            want["sky"]["intensity"].as_f64().unwrap(),
-            name,
-        );
-        for (color, key) in [
-            (&env.sky_stops.zenith, "zenith"),
-            (&env.sky_stops.upper, "upper"),
-            (&env.sky_stops.horizon, "horizon"),
-            (&env.sky_stops.ground, "ground"),
-        ] {
-            for (a, b) in color.iter().zip(rgb(&expected["sky_stops"][key])) {
-                close(*a, f64::from(b), name);
-            }
-        }
+        close(fog.near, want["near"].as_f64().unwrap(), name);
+        close(fog.far, want["far"].as_f64().unwrap(), name);
         let next = world.frame(
             request["seconds"].as_f64().unwrap() + 0.25,
             request["animate"].as_bool().unwrap(),

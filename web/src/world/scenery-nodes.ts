@@ -171,7 +171,10 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   const water = layout.water.map((draw): RendererSceneNode => ({
     id: draw.id, geometry: geometry(draw), color: draw.color, opacity: draw.opacity, modelMatrix: model(draw),
   }));
-  const animated = layout.animated.map((part) => part.map((draw): AnimatedNode => ({ id: draw.id, geometry: geometry(draw), color: draw.color })));
+  // Campfire flames glow (#529).
+  const animated = layout.animated.map((part) => part.map((draw): AnimatedNode => ({
+    id: draw.id, geometry: geometry(draw), color: draw.color, ...(draw.emissive ? { unlit: false as const, emissive: draw.emissive } : {}),
+  })));
   const byKind: Partial<Record<PropKind, number>> = {};
   for (const prop of scenery.props) {
     byKind[prop.kind] = (byKind[prop.kind] ?? 0) + 1;
