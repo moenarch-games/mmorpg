@@ -1,5 +1,5 @@
 import type { IndexedMeshGeometry, Matrix4Values, RendererSceneNode } from "@moritzbrantner/three-d-renderer";
-import type { EntityKind, EntityRef, EntityState } from "../replication";
+import type { EntityKind, EntityRef, EntityState, StrikeAim } from "../replication";
 import type { Color } from "./scenery";
 
 /**
@@ -18,6 +18,7 @@ export type UnitPresenterHandle = {
   push(projection: Uint8Array, seconds: number): void;
   reset(): void;
   prepare(ability: number, seconds: number): void;
+  aimPreparation(aim: StrikeAim): void;
   preparedSent(seconds: number): void;
   abandonPreparation(): void;
   /** Sound cues and fades of the projections pushed since the last call (#447), as JSON. */
@@ -195,6 +196,11 @@ export class SharedUnits {
    */
   prepare(ability: number, seconds: number): void {
     this.#handle.prepare(ability, seconds);
+  }
+
+  /** The directed strike being prepared aims at `aim` (#154): its wind-up shows that slash (#582). */
+  aimPreparation(aim: StrikeAim): void {
+    this.#handle.aimPreparation(aim);
   }
 
   /** The prepared input went to the zone; an unanswered wind-up lets go shortly after. */

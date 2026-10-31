@@ -8,7 +8,8 @@
 //! provider; this module only decides what to pose. Presentation only, never read by gameplay.
 use mmorpg_core::{
     AbilityId, CreatureFamily, CreatureTemplateId, EntityRef, EntitySnapshot, Equipment,
-    EquipmentSlot, Ledge, PlayerClass, TraversalView, WaterMode, ZoneContent,
+    EquipmentSlot, Ledge, PlayerClass, StrikeAim, StrikeHeight, TraversalView, WaterMode,
+    ZoneContent,
 };
 use strum::VariantArray;
 
@@ -349,6 +350,71 @@ pub struct Clips {
     pub gaits: Option<GaitClips>,
     /// Hit, block and guard-break reactions, for a model that has them (#538).
     pub reactions: Option<ReactionClips>,
+    /// The Warden's sword-and-shield clips and the Redbrand specials, for a model that has them
+    /// (#582, asset-tooling #447).
+    pub sword: Option<SwordClips>,
+}
+
+/// The authored sword-and-shield clips (#582, asset-tooling #447). Each one the bundle lacks
+/// falls back to what played before: the sword attack, the shield idle, the idle or nothing.
+#[derive(Clone, Copy, Debug)]
+pub struct SwordClips {
+    /// `Sword_Slash_{Low,Mid,High}_{L,C,R}` by [`StrikeHeight::code`] and [`mmorpg_core::StrikeSide::code`]:
+    /// the upper body's slash toward an aim, to the figure's own left, centre or right.
+    pub slashes: [[&'static str; 3]; 3],
+    /// The undirected Heroic Strike, on the upper body.
+    pub heroic: &'static str,
+    /// Cleave's turning sweep, with footwork.
+    pub cleave: &'static str,
+    /// Charge's rush, looped while the zone carries the charger, and its shield impact on arrival.
+    pub charge_run: &'static str,
+    pub charge_impact: &'static str,
+    /// The raised shield in the low, middle and high guard lane by [`StrikeHeight::code`], on
+    /// the upper body.
+    pub guards: [&'static str; 3],
+    /// Reeling, looped while stunned.
+    pub stun: &'static str,
+    /// Rising from a kneel, once, back from death.
+    pub respawn: &'static str,
+    /// Garrick Redbrand's whirl and the Redbrand Brute's overhead smash, whole body and in place.
+    pub whirl: &'static str,
+    pub smash: &'static str,
+}
+
+impl SwordClips {
+    /// The slash toward `aim`.
+    #[must_use]
+    pub const fn slash(self, aim: StrikeAim) -> &'static str {
+        self.slashes[aim.height.code() as usize][aim.side.code() as usize]
+    }
+
+    /// The raised shield in `lane`.
+    #[must_use]
+    pub const fn guard(self, lane: StrikeHeight) -> &'static str {
+        self.guards[lane.code() as usize]
+    }
+
+    /// Whether `clip` is one of the slashes.
+    #[must_use]
+    pub fn is_slash(self, clip: &str) -> bool {
+        self.slashes.iter().flatten().any(|&slash| slash == clip)
+    }
+
+    /// Which body `clip` drives as a strike: the slashes and the heroic strike only the upper
+    /// body, the whirl, the smash and the charge impact always the whole body, the cleave and
+    /// the rise with footwork; `None` for a clip not among these.
+    #[must_use]
+    pub fn region(self, clip: &str) -> Option<Region> {
+        if self.is_slash(clip) || clip == self.heroic {
+            Some(Region::Upper)
+        } else if clip == self.whirl || clip == self.smash || clip == self.charge_impact {
+            Some(Region::Whole)
+        } else if clip == self.cleave || clip == self.respawn {
+            Some(Region::Footwork)
+        } else {
+            None
+        }
+    }
 }
 
 /// The authored strikes a humanoid plays instead of its sword attack.
@@ -508,7 +574,7 @@ impl Reaction {
 
 /// Which body regions a one-shot drives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Region {
+pub enum Region {
     /// The whole body while standing on the ground, the upper body once it moves (Atlas 6.6.2).
     Footwork,
     /// Always the whole body.
@@ -639,6 +705,16 @@ pub const TURN_HOLD_SECONDS: f64 = 0.2;
 const TURN_CLIP_RADIANS: f64 = FRAC_PI_2;
 /// The longest a reaction plays, in seconds: a long shove spin stops here and blends out.
 pub const REACTION_SECONDS: f32 = 1.5;
+/// A cast's held strike wind-up (#582) waits this long past the cast for the zone's strike.
+pub const WIND_UP_SLACK_SECONDS: f32 = 0.5;
+/// A charge (#582) rushes at most this long: the zone's longest charge and a little slack.
+pub const CHARGE_SECONDS: f64 =
+    mmorpg_core::CHARGE_MAX_TICKS as f64 / mmorpg_core::TICK_HZ as f64 + 0.1;
+/// After this long, a charger slowed below [`CHARGE_ARRIVAL_SPEED`] metres per second arrived.
+pub const CHARGE_ARRIVAL_SECONDS: f64 = 0.2;
+pub const CHARGE_ARRIVAL_SPEED: f64 = 4.;
+/// The speed in metres per second at which the charge loop plays at its authored rate.
+pub const CHARGE_CLIP_SPEED: f64 = 9.;
 
 impl Kind {
     #[must_use]
@@ -743,6 +819,38 @@ impl Kind {
                     block: "Sword_Block",
                     guard_break: "Idle_Shield_Break",
                 }),
+                sword: Some(SwordClips {
+                    slashes: [
+                        [
+                            "Sword_Slash_Low_L",
+                            "Sword_Slash_Low_C",
+                            "Sword_Slash_Low_R",
+                        ],
+                        [
+                            "Sword_Slash_Mid_L",
+                            "Sword_Slash_Mid_C",
+                            "Sword_Slash_Mid_R",
+                        ],
+                        [
+                            "Sword_Slash_High_L",
+                            "Sword_Slash_High_C",
+                            "Sword_Slash_High_R",
+                        ],
+                    ],
+                    heroic: "Sword_Heroic",
+                    cleave: "Sword_Cleave",
+                    charge_run: "Charge_Run_Loop",
+                    charge_impact: "Charge_Impact",
+                    guards: [
+                        "Shield_Guard_Low_Loop",
+                        "Shield_Guard_Mid_Loop",
+                        "Shield_Guard_High_Loop",
+                    ],
+                    stun: "Stun_Loop",
+                    respawn: "Respawn_Rise",
+                    whirl: "Sword_Whirl",
+                    smash: "Sword_Overhead_Smash",
+                }),
             },
             Self::Wolf => Clips {
                 idle: "Idle",
@@ -759,6 +867,7 @@ impl Kind {
                 upper_body: None,
                 gaits: None,
                 reactions: None,
+                sword: None,
             },
             Self::Rat => Clips {
                 idle: "Rat_Idle",
@@ -775,6 +884,7 @@ impl Kind {
                 upper_body: None,
                 gaits: None,
                 reactions: None,
+                sword: None,
             },
             // The farm pig has no attack clip; its jump reads as a charge.
             Self::Pig => Clips {
@@ -792,21 +902,42 @@ impl Kind {
                 upper_body: None,
                 gaits: None,
                 reactions: None,
+                sword: None,
             },
         }
     }
 
     /// The authored strike an accepted attack or ability of a `class` user plays: the Warden's
-    /// Shield Bash its shield-arm clip, a bow class its bow release, a staff or spell class its
-    /// spell release, everyone else (and a model without them) its attack.
+    /// Shield Bash its shield-arm clip, Heroic Strike the slash toward its `aim` or, undirected,
+    /// the heroic strike, Cleave its sweep, the Redbrand whirl and smash their own (#582); a bow
+    /// class its bow release, a staff or spell class its spell release; everyone else the slash
+    /// toward the swing's `aim`, or its attack. A model without them plays its attack.
     #[must_use]
-    pub fn strike(self, class: Option<PlayerClass>, ability: Option<AbilityId>) -> &'static str {
+    pub fn strike(
+        self,
+        class: Option<PlayerClass>,
+        ability: Option<AbilityId>,
+        aim: Option<StrikeAim>,
+    ) -> &'static str {
+        use mmorpg_core::ability::ids;
         let clips = self.clips();
         let Some(strikes) = clips.strikes else {
             return clips.attack;
         };
-        if ability == Some(mmorpg_core::ability::ids::SHIELD_BASH) {
+        if ability == Some(ids::SHIELD_BASH) {
             return strikes.shield_bash;
+        }
+        if let Some(sword) = clips.sword
+            && let Some(ability) = ability
+        {
+            match (ability, aim) {
+                (ids::HEROIC_STRIKE, Some(aim)) => return sword.slash(aim),
+                (ids::HEROIC_STRIKE, None) => return sword.heroic,
+                (ids::CLEAVE, _) => return sword.cleave,
+                (ids::REDBRAND_WHIRL, _) => return sword.whirl,
+                (ids::OVERHEAD_SMASH, _) => return sword.smash,
+                _ => {}
+            }
         }
         match class {
             Some(PlayerClass::Ranger) => strikes.bow,
@@ -816,8 +947,21 @@ impl Kind {
                 | PlayerClass::Cleric
                 | PlayerClass::Druid,
             ) => strikes.spell,
-            Some(PlayerClass::Warden | PlayerClass::Rogue) | None => clips.attack,
+            Some(PlayerClass::Warden | PlayerClass::Rogue) | None => clips
+                .sword
+                .zip(aim)
+                .map_or(clips.attack, |(sword, aim)| sword.slash(aim)),
         }
+    }
+
+    /// Which body a strike of `clip` drives (#582): an authored sword clip its own region, every
+    /// other strike the whole body standing and the upper body on the move.
+    #[must_use]
+    pub fn strike_region(self, clip: &str) -> Region {
+        self.clips()
+            .sword
+            .and_then(|sword| sword.region(clip))
+            .unwrap_or(Region::Footwork)
     }
 
     /// The cast cycle a `class` user shows while casting or channelling (#538): a bow class
@@ -1032,8 +1176,10 @@ pub struct Cues<'a> {
     /// The zone's water mode at the unit's projected position (Atlas 6.6.41).
     pub water: WaterMode,
     pub dead: bool,
-    /// The zone's guard protects now: a ready, grounded raised shield (viewer only).
-    pub guarding: bool,
+    /// The lane the zone's guard protects now: a ready, grounded raised shield (viewer only).
+    pub guard: Option<StrikeHeight>,
+    /// Under a stun the zone applied (#582).
+    pub stunned: bool,
     /// The zone projects a dodge roll (#516).
     pub rolling: bool,
     /// Presentation clock and the step since the previous frame, in seconds.
@@ -1212,6 +1358,8 @@ struct Strike {
     /// Begun standing on the ground: the authored footwork plays on the legs too (Atlas 6.6.2),
     /// until the unit moves or leaves the ground; then only the upper body carries it.
     full_body: bool,
+    /// A cast's strike wound up and held at this clip time until it resolves (#582).
+    hold: Option<f32>,
 }
 
 impl Strike {
@@ -1226,6 +1374,7 @@ impl Strike {
             region,
             reaction: None,
             full_body: region != Region::Upper,
+            hold: None,
         }
     }
 
@@ -1233,6 +1382,7 @@ impl Strike {
     #[allow(clippy::cast_possible_truncation)]
     fn want(self, now: f64) -> Want {
         let at = (now - self.started).max(0.) as f32;
+        let at = self.hold.map_or(at, |hold| at.min(hold));
         match self.then {
             Some((next, looped)) if at >= self.length => Want {
                 once: !looped,
@@ -1252,6 +1402,25 @@ impl Strike {
 pub const WINDUP_FRACTION: f32 = 0.3;
 /// The longest a wind-up plays before holding, in seconds.
 pub const WINDUP_HOLD_SECONDS: f32 = 0.3;
+/// Where a directed slash's wind-up peaks and holds, in seconds (asset-tooling #447).
+pub const SLASH_WINDUP_SECONDS: f32 = 0.18;
+/// How far toward its `humanoid-clips` contact a strike with one winds up before holding.
+pub const WINDUP_CONTACT_SHARE: f32 = 0.6;
+
+/// Where a wind-up of a strike clip `length` seconds long holds (#582): a directed slash at
+/// [`SLASH_WINDUP_SECONDS`], a clip with a `contact` time at [`WINDUP_CONTACT_SHARE`] of it,
+/// any other at [`WINDUP_FRACTION`] of the clip, at most [`WINDUP_HOLD_SECONDS`].
+#[must_use]
+pub fn windup_seconds(length: f32, contact: Option<f32>, slash: bool) -> f32 {
+    let hold = if slash {
+        SLASH_WINDUP_SECONDS
+    } else if let Some(contact) = contact.filter(|&contact| contact > 0.) {
+        contact * WINDUP_CONTACT_SHARE
+    } else {
+        (length * WINDUP_FRACTION).min(WINDUP_HOLD_SECONDS)
+    };
+    hold.min(length.max(0.))
+}
 
 /// The local player's reversible wind-up (Atlas 6.6.10): the opening of the strike clip the
 /// prepared input would play, on the upper body only and held before impact. The zone's
@@ -1261,14 +1430,15 @@ struct Preparation {
     clip: &'static str,
     serial: u32,
     started: f64,
+    /// The clip time it holds at ([`windup_seconds`]).
+    hold: f32,
 }
 
 impl Preparation {
-    /// The wind-up's clip time at `now` for a clip `length` seconds long.
+    /// The wind-up's clip time at `now`.
     #[allow(clippy::cast_possible_truncation)]
-    fn at(self, now: f64, length: f32) -> f32 {
-        let hold = (length * WINDUP_FRACTION).min(WINDUP_HOLD_SECONDS);
-        ((now - self.started).max(0.) as f32).min(hold)
+    fn at(self, now: f64) -> f32 {
+        ((now - self.started).max(0.) as f32).min(self.hold)
     }
 }
 
@@ -1305,6 +1475,10 @@ pub struct Playback {
     /// … the let-go being shown, and how many of either have begun.
     letting_go: Option<(&'static str, f64)>,
     pulls: u32,
+    /// The charge being shown since this time (#582).
+    charging: Option<f64>,
+    /// Dead last frame: rising again plays the respawn (#582).
+    dead: bool,
     attitude: Attitude,
     /// Pelvis and legs: locomotion, flight and death.
     base: Track,
@@ -1325,38 +1499,73 @@ enum Flight {
 }
 
 impl Playback {
-    /// Starts presenting an accepted strike's `clip`, `duration` seconds long, at `now`.
-    /// A strike resolves any cast shown before it.
-    pub fn strike(&mut self, clip: &'static str, duration: f32, now: f64) {
+    /// Starts presenting an accepted strike's `clip`, `duration` seconds long, at `now`, on the
+    /// body `region` drives. A strike resolves any cast shown before it; one that resolves a
+    /// cast's held wind-up of the same clip (#582) swings on from the hold.
+    pub fn strike(&mut self, clip: &'static str, duration: f32, region: Region, now: f64) {
         self.serial = self.serial.wrapping_add(1);
-        self.strike = Some(Strike::new(
-            clip,
-            duration,
-            self.serial,
-            now,
-            Region::Footwork,
-        ));
+        let started = match self.cast {
+            Some(Strike {
+                clip: wound,
+                hold: Some(hold),
+                ..
+            }) if wound == clip => now - f64::from(hold),
+            _ => now,
+        };
+        self.strike = Some(Strike::new(clip, duration, self.serial, started, region));
         self.cast = None;
     }
 
     /// The zone accepted the prepared strike: it continues from the wind-up's phase when the
     /// wind-up shows the same clip, so the swing commits without restarting. Otherwise it is an
     /// ordinary [`Self::strike`] and the wind-up ends.
-    pub fn commit(&mut self, clip: &'static str, duration: f32, now: f64) {
+    pub fn commit(&mut self, clip: &'static str, duration: f32, region: Region, now: f64) {
         match self.preparation.take() {
             Some(preparation) if preparation.clip == clip => {
-                let started = now - f64::from(preparation.at(now, duration));
+                let started = now - f64::from(preparation.at(now));
                 self.strike = Some(Strike::new(
                     clip,
                     duration,
                     preparation.serial,
                     started,
-                    Region::Footwork,
+                    region,
                 ));
                 self.cast = None;
             }
-            _ => self.strike(clip, duration, now),
+            _ => self.strike(clip, duration, region, now),
         }
+    }
+
+    /// Shows a cast of `seconds` begun at `now` that resolves into a strike of `clip` (#582):
+    /// the Redbrand whirl and smash wind up, then hold at `hold` seconds into the clip until the
+    /// zone resolves the strike ([`Self::strike`] swings on from there) or the cast stops.
+    pub fn wind_up(
+        &mut self,
+        clip: &'static str,
+        duration: f32,
+        hold: f32,
+        region: Region,
+        seconds: f32,
+        now: f64,
+    ) {
+        self.serial = self.serial.wrapping_add(1);
+        let mut cast = Strike::new(clip, duration, self.serial, now, region);
+        cast.hold = Some(hold);
+        // Held a little past the cast, so a resolution arriving late still swings on.
+        cast.until = now + f64::from(seconds.max(0.3) + WIND_UP_SLACK_SECONDS);
+        self.cast = Some(cast);
+    }
+
+    /// The zone carries the unit on a charge from `now` (#582): it rushes with the charge loop
+    /// until it arrives, then plays the shield impact.
+    pub fn charge(&mut self, now: f64) {
+        self.charging = Some(now);
+    }
+
+    /// Whether the unit shows a charge's rush.
+    #[must_use]
+    pub const fn charging(&self) -> bool {
+        self.charging.is_some()
     }
 
     /// The strike just begun recovers with `clip`, `duration` seconds long, after it (#538): a
@@ -1420,15 +1629,17 @@ impl Playback {
         let Some(cast) = self.cast.take().filter(|cast| now < cast.until) else {
             return;
         };
-        if let Some((clip, duration)) = cancel {
+        // A held strike wind-up (#582) only fades.
+        if let Some((clip, duration)) = cancel.filter(|_| cast.hold.is_none()) {
             self.serial = self.serial.wrapping_add(1);
             self.strike = Some(Strike::new(clip, duration, self.serial, now, cast.region));
         }
     }
 
-    /// Starts a local wind-up of `clip` begun at `started`, or keeps the one showing it; a
-    /// different clip supersedes the wind-up shown.
-    pub fn prepare(&mut self, clip: &'static str, started: f64) {
+    /// Starts a local wind-up of `clip` begun at `started` that holds `hold` seconds into the
+    /// clip ([`windup_seconds`]), or keeps the one showing it; a different clip supersedes the
+    /// wind-up shown.
+    pub fn prepare(&mut self, clip: &'static str, hold: f32, started: f64) {
         if self
             .preparation
             .is_some_and(|preparation| preparation.clip == clip)
@@ -1440,6 +1651,7 @@ impl Playback {
             clip,
             serial: self.serial,
             started,
+            hold,
         });
     }
 
@@ -1651,15 +1863,58 @@ impl Playback {
             speed,
             vertical_speed,
             dead,
-            guarding,
             now,
             reduced,
             ..
         } = cues;
+        let guarding = cues.guard.is_some();
         let blend = blend.clamped();
         #[allow(clippy::cast_possible_truncation)]
         let dt = cues.dt as f32;
         let available = |clip: &str| duration(clip) > 0.;
+        let sword = |pick: fn(SwordClips) -> &'static str| {
+            clips.sword.map(pick).filter(|clip| available(clip))
+        };
+        // Back from death (#582): the unit rises from a kneel.
+        if self.dead
+            && !dead
+            && !reduced
+            && let Some(rise) = sword(|sword| sword.respawn)
+        {
+            self.serial = self.serial.wrapping_add(1);
+            self.strike = Some(Strike::new(
+                rise,
+                duration(rise),
+                self.serial,
+                now,
+                Region::Footwork,
+            ));
+        }
+        self.dead = dead;
+        // A charge (#582) rushes until the zone stops carrying the unit, then strikes with the
+        // shield; the zone alone decides where it ends.
+        if let Some(started) = self.charging {
+            let elapsed = now - started;
+            if dead {
+                self.charging = None;
+            } else if elapsed >= CHARGE_SECONDS
+                || elapsed >= CHARGE_ARRIVAL_SECONDS && speed < CHARGE_ARRIVAL_SPEED
+            {
+                self.charging = None;
+                if let Some(impact) = sword(|sword| sword.charge_impact).filter(|_| !reduced) {
+                    self.serial = self.serial.wrapping_add(1);
+                    self.strike = Some(Strike::new(
+                        impact,
+                        duration(impact),
+                        self.serial,
+                        now,
+                        Region::Whole,
+                    ));
+                }
+            }
+        }
+        let charge_run = sword(|sword| sword.charge_run).filter(|_| self.charging.is_some());
+        let stun = sword(|sword| sword.stun).filter(|_| cues.stunned && !dead);
         let landed = clips.jump.is_none_or(|jump| {
             self.lower
                 .playing(jump.land)
@@ -1810,7 +2065,7 @@ impl Playback {
                 // The pinned time is the wind-up's clock; a still rate keeps an abandoned wind-up
                 // from playing on toward the impact while it fades out.
                 rate: 0.,
-                at: Some(preparation.at(now, duration(preparation.clip))),
+                at: Some(preparation.at(now)),
                 ..Want::hold(preparation.clip, preparation.serial)
             });
         let ground = if let Some((clip, rate)) = self.mantle {
@@ -1829,6 +2084,14 @@ impl Playback {
             } else {
                 Want::looped(clips.idle, 1.)
             }
+        } else if let Some(run) = charge_run {
+            self.turning = None;
+            #[allow(clippy::cast_possible_truncation)]
+            let rate = (speed / CHARGE_CLIP_SPEED).clamp(0.8, 1.6) as f32;
+            Want::looped(run, rate)
+        } else if let Some(stun) = stun {
+            self.turning = None;
+            Want::looped(stun, 1.)
         } else if swims {
             // Strokes keep pace with the projected travel; a missing clip falls back to the
             // leaned walk for travel and the idle for treading, in place either way.
@@ -1916,6 +2179,13 @@ impl Playback {
             Some(want)
         } else if prepared.is_some() {
             prepared
+        } else if let Some(lane) = cues
+            .guard
+            .and_then(|lane| clips.sword.map(|sword| sword.guard(lane)))
+            .filter(|clip| available(clip))
+        {
+            // The raised shield in the zone's guard lane (#582).
+            Some(Want::looped(lane, 1.))
         } else if let Some(guard) = clips.guard
             && guarding
             && base.clip != guard
@@ -2180,7 +2450,7 @@ mod tests {
                 speed,
                 vertical_speed,
                 dead,
-                guarding,
+                guard: guarding.then_some(StrikeHeight::Middle),
                 now,
                 dt,
                 reduced,
@@ -2338,7 +2608,7 @@ mod tests {
         let blocked = frame(&mut playback, 0., 0.05);
         assert_eq!(blocked.upper.0, "Sword_Block");
         assert_eq!(blocked.lower.0, "Idle_Loop");
-        playback.strike("Sword_Attack", 1.5, 0.1);
+        playback.strike("Sword_Attack", 1.5, Region::Footwork, 0.1);
         playback.react(Reaction::Chest, "Hit_Chest", 0.33, 0.2);
         assert_eq!(frame(&mut playback, 0., 0.25).upper.0, "Sword_Attack");
         // A spell cast raises, then holds on the upper body until it resolves.
@@ -2364,7 +2634,7 @@ mod tests {
         playback.cast(Some(("Bow_Draw", 0.7)), "Bow_Hold_Loop", true, 2., 0.);
         assert_eq!(frame(&mut playback, 0., 0.1).lower.0, "Bow_Draw");
         assert_eq!(frame(&mut playback, 0., 1.).lower.0, "Bow_Hold_Loop");
-        playback.strike("Bow_Release", 0.47, 2.);
+        playback.strike("Bow_Release", 0.47, Region::Footwork, 2.);
         playback.recover("Bow_Recovery", 1.1);
         assert_eq!(frame(&mut playback, 0., 2.1).lower.0, "Bow_Release");
         assert_eq!(frame(&mut playback, 0., 2.8).lower.0, "Bow_Recovery");
@@ -2398,7 +2668,7 @@ mod tests {
             )
             .upper
             .0,
-            "Idle_Shield_Loop"
+            "Shield_Guard_Mid_Loop"
         );
         // Walking keeps the walk on the legs while the protecting guard holds the shield up.
         let walking = advance(
@@ -2414,7 +2684,7 @@ mod tests {
             true,
         );
         assert_eq!(walking.lower.0, "Walk_Loop");
-        assert_eq!(walking.upper.0, "Idle_Shield_Loop");
+        assert_eq!(walking.upper.0, "Shield_Guard_Mid_Loop");
         assert_eq!(
             advance(
                 &mut Playback::default(),
@@ -2467,7 +2737,7 @@ mod tests {
             .0,
             "Jog_Fwd_Loop"
         );
-        playback.strike("Sword_Attack", 1., 0.);
+        playback.strike("Sword_Attack", 1., Region::Footwork, 0.);
         let running = advance(
             &mut playback,
             clips,
@@ -2622,7 +2892,7 @@ mod tests {
         let mut playback = Playback::default();
         let mut now = 0.;
         frame(&mut playback, &mut now);
-        playback.prepare("Sword_Attack", now);
+        playback.prepare("Sword_Attack", WINDUP_HOLD_SECONDS, now);
         for _ in 0..20 {
             frame(&mut playback, &mut now);
         }
@@ -2631,7 +2901,7 @@ mod tests {
         assert_eq!(held.upper, ("Sword_Attack", WINDUP_HOLD_SECONDS));
         assert_eq!(held.lower.0, "Idle_Loop");
         // The accepted strike continues from the hold instead of restarting.
-        playback.commit("Sword_Attack", 1.5, now);
+        playback.commit("Sword_Attack", 1.5, Region::Footwork, now);
         assert!(!playback.preparing());
         let swing = frame(&mut playback, &mut now);
         assert_eq!(swing.lower.0, "Sword_Attack");
@@ -2644,7 +2914,7 @@ mod tests {
         let mut refused = Playback::default();
         let mut now = 0.;
         frame(&mut refused, &mut now);
-        refused.prepare("Sword_Attack", now);
+        refused.prepare("Sword_Attack", WINDUP_HOLD_SECONDS, now);
         for _ in 0..10 {
             frame(&mut refused, &mut now);
         }
@@ -2689,7 +2959,7 @@ mod tests {
             )
         };
         frame(&mut playback, &mut now, 4.8, false);
-        playback.strike("Sword_Attack", 1.5, now);
+        playback.strike("Sword_Attack", 1.5, Region::Footwork, now);
         let swing = frame(&mut playback, &mut now, 2., false);
         assert_eq!(swing.upper.0, "Sword_Attack");
         assert_eq!(swing.lower.0, "Jump_Start");
@@ -2719,7 +2989,7 @@ mod tests {
         // The zone's guard starting to protect ends the shown swing and blends the shield in.
         let guard = frame(&mut playback, &mut now, 0., true);
         assert_eq!(guard.lower.0, "Idle_Shield_Loop");
-        assert_eq!(guard.upper.0, "Idle_Shield_Loop");
+        assert_eq!(guard.upper.0, "Shield_Guard_Mid_Loop");
         assert!(
             guard
                 .layers
@@ -2730,12 +3000,13 @@ mod tests {
         for _ in 0..4 {
             frame(&mut playback, &mut now, 0., true);
         }
-        assert!(
-            frame(&mut playback, &mut now, 0., true)
-                .layers
-                .iter()
-                .all(|layer| layer.clip == "Idle_Shield_Loop" && layer.mask == Mask::All)
-        );
+        // The legs keep the shield stance; the arms hold the middle lane's shield (#582).
+        assert!(frame(&mut playback, &mut now, 0., true).layers.iter().all(
+            |layer| match layer.mask {
+                Mask::Upper => layer.clip == "Shield_Guard_Mid_Loop",
+                _ => layer.clip == "Idle_Shield_Loop",
+            }
+        ));
     }
 
     #[test]
@@ -2755,7 +3026,7 @@ mod tests {
             false,
             false,
         );
-        playback.strike("Sword_Attack", 1., 0.);
+        playback.strike("Sword_Attack", 1., Region::Footwork, 0.);
         for step in 1..5 {
             advance(
                 &mut playback,
@@ -2833,7 +3104,7 @@ mod tests {
             .map(|l| l.weight)
             .sum();
         assert!((walk - 0.25).abs() < 1e-4, "{half:?}");
-        playback.strike("Sword_Attack", 1., 0.1);
+        playback.strike("Sword_Attack", 1., Region::Footwork, 0.1);
         for step in 0..4 {
             playback.advance(clips, one, cues(1., 0.15 + f64::from(step) * 0.05), blend);
         }
@@ -2863,26 +3134,197 @@ mod tests {
     }
 
     #[test]
+    fn the_sword_clips_play_guard_lanes_stuns_rises_charges_and_held_wind_ups() {
+        let clips = Kind::Ranger.clips();
+        let with = |clip: &str| if clip == "Sword_Whirl" { 1.2 } else { 0.6 };
+        // A bundle from before asset-tooling #447: none of the sword clips.
+        let without = |clip: &str| {
+            if clip.starts_with("Sword_Slash")
+                || clip.starts_with("Shield_Guard")
+                || clip.starts_with("Charge_")
+                || ["Stun_Loop", "Respawn_Rise", "Sword_Whirl"].contains(&clip)
+            {
+                0.
+            } else {
+                0.6
+            }
+        };
+        let frame = |playback: &mut Playback,
+                     duration: &dyn Fn(&str) -> f32,
+                     now: f64,
+                     cues: Cues<'static>| {
+            playback.advance(
+                clips,
+                duration,
+                Cues {
+                    now,
+                    dt: 0.05,
+                    ..cues
+                },
+                Blend::default(),
+            )
+        };
+        let guard = |lane| Cues {
+            guard: Some(lane),
+            ..Cues::default()
+        };
+        // Guard lanes raise the shield on the upper body; without them the shield idle.
+        let high = frame(
+            &mut Playback::default(),
+            &with,
+            0.,
+            guard(StrikeHeight::High),
+        );
+        assert_eq!(high.upper.0, "Shield_Guard_High_Loop");
+        let old = frame(
+            &mut Playback::default(),
+            &without,
+            0.,
+            guard(StrikeHeight::Low),
+        );
+        assert_eq!(old.upper.0, "Idle_Shield_Loop");
+        // A stun reels the whole body; without the clip the idle stays.
+        let stunned = Cues {
+            stunned: true,
+            ..Cues::default()
+        };
+        let reel = frame(&mut Playback::default(), &with, 0., stunned);
+        assert_eq!((reel.lower.0, reel.upper.0), ("Stun_Loop", "Stun_Loop"));
+        assert_eq!(
+            frame(&mut Playback::default(), &without, 0., stunned)
+                .lower
+                .0,
+            "Idle_Loop"
+        );
+        // Back from death the unit rises once.
+        let mut playback = Playback::default();
+        let dead = Cues {
+            dead: true,
+            ..Cues::default()
+        };
+        frame(&mut playback, &with, 0., dead);
+        assert_eq!(
+            frame(&mut playback, &with, 0.1, Cues::default()).lower.0,
+            "Respawn_Rise"
+        );
+        assert_eq!(
+            frame(&mut playback, &with, 1., Cues::default()).lower.0,
+            "Idle_Loop"
+        );
+        // A charge rushes while carried and strikes with the shield once it slows.
+        let mut playback = Playback::default();
+        playback.charge(0.);
+        let rushing = Cues {
+            speed: 13.5,
+            ..Cues::default()
+        };
+        assert_eq!(
+            frame(&mut playback, &with, 0.1, rushing).lower.0,
+            "Charge_Run_Loop"
+        );
+        assert_eq!(
+            frame(&mut playback, &with, 0.5, rushing).lower.0,
+            "Charge_Run_Loop"
+        );
+        assert!(playback.charging());
+        let arrived = frame(&mut playback, &with, 0.6, Cues::default());
+        assert_eq!(arrived.lower.0, "Charge_Impact");
+        assert!(!playback.charging());
+        // The whirl winds up through its cast, holds, and swings on from the hold.
+        let mut playback = Playback::default();
+        playback.wind_up("Sword_Whirl", 1.2, 0.39, Region::Whole, 1.5, 0.);
+        assert_eq!(
+            frame(&mut playback, &with, 1., Cues::default()).lower,
+            ("Sword_Whirl", 0.39)
+        );
+        playback.strike("Sword_Whirl", 1.2, Region::Whole, 1.5);
+        let swing = frame(&mut playback, &with, 1.6, Cues::default());
+        assert_eq!(swing.lower.0, "Sword_Whirl");
+        assert!((swing.lower.1 - 0.49).abs() < 1e-4, "{swing:?}");
+        // A slash drives only the upper body, even standing.
+        let mut playback = Playback::default();
+        playback.strike("Sword_Slash_Mid_L", 0.6, Region::Upper, 0.);
+        let slash = frame(&mut playback, &with, 0.1, Cues::default());
+        assert_eq!(
+            (slash.lower.0, slash.upper.0),
+            ("Idle_Loop", "Sword_Slash_Mid_L")
+        );
+        // A directed slash winds up to its peak; a contact time sets any other strike's hold.
+        assert!((windup_seconds(0.6, Some(0.35), true) - SLASH_WINDUP_SECONDS).abs() < 1e-6);
+        assert!((windup_seconds(1.2, Some(0.65), false) - 0.39).abs() < 1e-6);
+        assert!((windup_seconds(1.5, None, false) - WINDUP_HOLD_SECONDS).abs() < 1e-6);
+    }
+
+    #[test]
     fn strikes_use_the_class_and_ability_clips_the_bundle_has() {
         use mmorpg_core::ability::ids;
+        let warden = Some(PlayerClass::Warden);
+        let aim = |side, height| Some(StrikeAim::new(side, height));
         assert_eq!(
-            Kind::Ranger.strike(Some(PlayerClass::Warden), Some(ids::HEROIC_STRIKE)),
-            "Sword_Attack"
+            Kind::Ranger.strike(warden, Some(ids::HEROIC_STRIKE), None),
+            "Sword_Heroic"
+        );
+        // A directed Heroic Strike and an ordinary swing slash toward their aim (#582).
+        assert_eq!(
+            Kind::Ranger.strike(
+                warden,
+                Some(ids::HEROIC_STRIKE),
+                aim(mmorpg_core::StrikeSide::Left, StrikeHeight::High)
+            ),
+            "Sword_Slash_High_L"
         );
         assert_eq!(
-            Kind::Ranger.strike(Some(PlayerClass::Warden), Some(ids::SHIELD_BASH)),
-            "Shield_OneShot"
+            Kind::Ranger.strike(
+                warden,
+                None,
+                aim(mmorpg_core::StrikeSide::Right, StrikeHeight::Low)
+            ),
+            "Sword_Slash_Low_R"
         );
         assert_eq!(
-            Kind::Ranger.strike(Some(PlayerClass::Ranger), None),
+            Kind::Ranger.strike(warden, Some(ids::CLEAVE), None),
+            "Sword_Cleave"
+        );
+        assert_eq!(
+            Kind::Ranger.strike(None, Some(ids::REDBRAND_WHIRL), None),
+            "Sword_Whirl"
+        );
+        assert_eq!(
+            Kind::Ranger.strike(None, Some(ids::OVERHEAD_SMASH), None),
+            "Sword_Overhead_Smash"
+        );
+        // A bow class keeps its release whatever the swing's aim.
+        assert_eq!(
+            Kind::Ranger.strike(
+                Some(PlayerClass::Ranger),
+                None,
+                aim(mmorpg_core::StrikeSide::Centre, StrikeHeight::Middle)
+            ),
             "Bow_Release"
         );
         assert_eq!(
-            Kind::Ranger.strike(Some(PlayerClass::Arcanist), Some(ids::FIREBOLT)),
+            Kind::Ranger.strike_region("Sword_Slash_Mid_C"),
+            Region::Upper
+        );
+        assert_eq!(Kind::Ranger.strike_region("Sword_Whirl"), Region::Whole);
+        assert_eq!(Kind::Ranger.strike_region("Sword_Attack"), Region::Footwork);
+        assert_eq!(
+            Kind::Ranger.strike(Some(PlayerClass::Warden), Some(ids::SHIELD_BASH), None),
+            "Shield_OneShot"
+        );
+        assert_eq!(
+            Kind::Ranger.strike(Some(PlayerClass::Ranger), None, None),
+            "Bow_Release"
+        );
+        assert_eq!(
+            Kind::Ranger.strike(Some(PlayerClass::Arcanist), Some(ids::FIREBOLT), None),
             "Spell_Simple_Shoot"
         );
-        assert_eq!(Kind::Ranger.strike(None, None), "Sword_Attack");
-        assert_eq!(Kind::Wolf.strike(None, Some(ids::SHIELD_BASH)), "Attack");
+        assert_eq!(Kind::Ranger.strike(None, None, None), "Sword_Attack");
+        assert_eq!(
+            Kind::Wolf.strike(None, Some(ids::SHIELD_BASH), None),
+            "Attack"
+        );
     }
 
     /// One frame of a unit in `water`, travelling at `speed` m/s straight ahead and `vertical`.
@@ -2994,7 +3436,7 @@ mod tests {
         let out = swim_frame(&mut playback, one, WaterMode::Dry, 2., 0., now);
         assert!(out.attitude.pitch > 0. && out.attitude.pitch < pitch);
         // A strike while treading stays on the upper body: no footwork without footing.
-        playback.strike("Sword_Attack", 1., now);
+        playback.strike("Sword_Attack", 1., Region::Footwork, now);
         now += 0.1;
         swim_frame(&mut playback, one, WaterMode::Swimming, 0., 0., now);
         now += 0.1;

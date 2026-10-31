@@ -56,6 +56,28 @@ pub enum Scenario {
     /// The same Cleric below the 10 m highland crag on the gorge's eastern rim, facing its southern
     /// face: walk into it, jump to grab it, then climb, traverse and top out (#500).
     Climb,
+    /// A level 6 Warden with full rage at the eastern edge of Wolfrun Woods, facing a wolf, to review the
+    /// sword-and-shield clips (#582): the directed Heroic Strike's nine slashes and the swing's
+    /// slash toward a wolf (low) …
+    WardenSlashes,
+    /// … the guard lanes' raised shields …
+    WardenGuards,
+    /// … Charge's rush and shield impact at a wolf …
+    WardenCharge,
+    /// … and Cleave's sweep.
+    WardenCleave,
+    /// A level 6 Warden south of the Redbrand Hollow camp, facing the bandits: Shield Bash one to
+    /// see it reel (#582).
+    WardenStun,
+    /// A level 6 Warden on his last hit point beside a Wolfrun wolf: once it kills him, release
+    /// the spirit to rise at the graveyard (#582).
+    WardenRespawn,
+    /// A level 8 Warden a few steps south of Garrick Redbrand at the mine entrance, facing him:
+    /// his whirl winds up through its cast and spins (#582).
+    RedbrandWhirl,
+    /// A level 8 Warden a few steps south of the Greyfang cavern's west Redbrand Brute, facing it:
+    /// its overhead smash raises, holds and slams (#582).
+    RedbrandSmash,
 }
 
 impl Scenario {
@@ -83,6 +105,14 @@ impl Scenario {
             Self::MantleMid => "mantle-mid",
             Self::MantleHigh => "mantle-high",
             Self::Climb => "climb",
+            Self::WardenSlashes => "warden-slashes",
+            Self::WardenGuards => "warden-guards",
+            Self::WardenCharge => "warden-charge",
+            Self::WardenCleave => "warden-cleave",
+            Self::WardenStun => "warden-stun",
+            Self::WardenRespawn => "warden-respawn",
+            Self::RedbrandWhirl => "redbrand-whirl",
+            Self::RedbrandSmash => "redbrand-smash",
         }
     }
 
@@ -91,6 +121,18 @@ impl Scenario {
             Self::OgreCombat | Self::SunkenShrine | Self::RedbrandCavern => ClassChoice {
                 class: PlayerClass::Warden,
                 sex: Sex::Female,
+            },
+            // The sword clips were reviewed on the male figure (asset-tooling #447).
+            Self::WardenSlashes
+            | Self::WardenGuards
+            | Self::WardenCharge
+            | Self::WardenCleave
+            | Self::WardenStun
+            | Self::WardenRespawn
+            | Self::RedbrandWhirl
+            | Self::RedbrandSmash => ClassChoice {
+                class: PlayerClass::Warden,
+                sex: Sex::Male,
             },
             Self::RangerRange => ClassChoice {
                 class: PlayerClass::Ranger,
@@ -134,8 +176,15 @@ impl Scenario {
             | Self::RogueMelee
             | Self::ClericHoly
             | Self::DruidNature => 6,
-            // Lightning Beam unlocks at level 8.
-            Self::ArcanistPack => 8,
+            // Cleave unlocks at level 6.
+            Self::WardenSlashes
+            | Self::WardenGuards
+            | Self::WardenCharge
+            | Self::WardenCleave
+            | Self::WardenStun
+            | Self::WardenRespawn => 6,
+            // Lightning Beam unlocks at level 8; a Warden that high outlasts a Redbrand special.
+            Self::ArcanistPack | Self::RedbrandWhirl | Self::RedbrandSmash => 8,
             Self::MantleLow | Self::MantleMid | Self::MantleHigh | Self::Climb => 1,
         }
     }
@@ -154,7 +203,21 @@ impl Scenario {
             | Self::NecromancerDrain
             | Self::RogueMelee
             | Self::ClericHoly
-            | Self::DruidNature => ([-5_000, -2_800], 49_152),
+            | Self::DruidNature
+            | Self::WardenGuards => ([-5_000, -2_800], 49_152),
+            // 4 m east of Timber Wolf 104's spawn, in swing and Cleave reach once it closes;
+            // facing west at it.
+            Self::WardenSlashes | Self::WardenCleave | Self::WardenRespawn => {
+                ([-5_800, -3_600], 49_152)
+            }
+            // 13 m east of the same wolf, within Charge's 15 m; facing west at it.
+            Self::WardenCharge => ([-4_900, -3_600], 49_152),
+            // 12 m south of the camp's nearest bandits; facing north.
+            Self::WardenStun => ([0, -6_600], 32_768),
+            // 5 m south of Garrick; facing north.
+            Self::RedbrandWhirl => ([0, -10_000], 32_768),
+            // 4 m south of the west Brute (650); facing north toward it.
+            Self::RedbrandSmash => ([6_100, -13_300], 32_768),
             // On the west shore, on the lake's long axis; facing east over the water.
             Self::SunkenShrine => ([3_000, -5_400], 16_384),
             // On the rim before Greyfang Ridge (#423), 8 m south of the cave mouth; facing north.
@@ -216,6 +279,14 @@ impl Scenario {
                     .filter_map(|id| mmorpg_core::QuestId::new(id).bit())
                     .fold(0, |mask, bit| mask | bit),
             };
+        }
+        if self.class().class == PlayerClass::Warden && self.level() >= 6 {
+            // Full rage, so every Warden ability can be tried at once (#582).
+            record.resource = PlayerClass::Warden.resource().max(self.level());
+        }
+        if self == Self::WardenRespawn {
+            // One hit from the wolf kills; releasing the spirit rises at the graveyard.
+            record.health = 1;
         }
         Ok(record)
     }

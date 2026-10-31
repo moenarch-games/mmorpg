@@ -750,6 +750,15 @@ impl UnitPresenter {
             .prepare(mmorpg_core::AbilityId::new(ability), seconds);
     }
 
+    /// The directed strike being prepared aims at `aim` (#154): its wind-up shows that slash
+    /// (#582). Presentation only.
+    #[wasm_bindgen(js_name = aimPreparation)]
+    pub fn aim_preparation(&mut self, aim: tsify::Ts<wire::StrikeAim>) -> Result<(), JsError> {
+        let aim: mmorpg_core::StrikeAim = aim.to_rust()?.into();
+        self.0.presenter_mut().aim_preparation(aim);
+        Ok(())
+    }
+
     /// The prepared input went to the zone at `seconds`; an unanswered wind-up lets go later.
     #[wasm_bindgen(js_name = preparedSent)]
     pub fn prepared_sent(&mut self, seconds: f64) {
