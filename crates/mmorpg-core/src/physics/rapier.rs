@@ -4,8 +4,8 @@
 //! moved by Rapier's `KinematicCharacterController`, which resolves contact, sliding and
 //! support. Rapier simulates in metres, the scale its tolerances and parry's epsilons assume.
 //! Nothing of Rapier's own state is saved: recovery rebuilds this world from the bodies the
-//! game restores, and every step rebuilds it in body-ID order first, so a restored zone
-//! continues exactly.
+//! game restores, and every step rebuilds it from the bodies first (from a cached copy of the
+//! fixed part, #547), so a restored zone continues exactly.
 //!
 //! The controller's contact queries go through [`super::queries`], exact closed forms for the
 //! upright capsules and boxes the zone uses, ahead of parry's general GJK/EPA path.
@@ -69,10 +69,21 @@ struct Ground {
     colliders: Vec<ColliderHandle>,
 }
 
+/// The fixed part of a step's world (#547): the fixed bodies in ID order and then the ground,
+/// built from scratch whenever any of them changes. Each step starts from a copy of it.
+struct Fixed {
+    /// Refreshed: its broad phase holds every collider.
+    world: PhysicsWorld,
+    handles: BTreeMap<BodyId, Handles>,
+    ground: Vec<ColliderHandle>,
+}
+
 pub(super) struct World {
     gravity: [f32; 3],
     ground: Option<Ground>,
     world: PhysicsWorld,
+    /// The fixed part of the next step's world, while no fixed body and no ground changed.
+    fixed: Option<Fixed>,
     queries: QueryDispatcherChain<UprightShapes, DefaultQueryDispatcher>,
     controller: KinematicCharacterController,
     bodies: BTreeMap<BodyId, RigidBody>,
@@ -97,6 +108,11 @@ impl Clone for World {
         world.rebuild();
         world
     }
+}
+
+/// Whether `body` belongs to [`Fixed`]: neither a moving unit nor a platform (#56).
+const fn in_fixed_world(body: &RigidBody) -> bool {
+    !body.is_moving() && !body.is_platform()
 }
 
 fn metres(value: [f32; 3]) -> Vector {
@@ -328,6 +344,7 @@ impl World {
             gravity: from_subunits(gravity),
             ground: None,
             world: empty_world(),
+            fixed: None,
             queries: UprightShapes.chain(DefaultQueryDispatcher),
             controller: KinematicCharacterController {
                 up: Vector::Y,
@@ -357,6 +374,9 @@ impl World {
         {
             return Err(error("physics body state must be finite"));
         }
+        if in_fixed_world(&body) {
+            self.fixed = None;
+        }
         let handles = insert(&mut self.world, &body);
         self.handles.insert(body.id, handles);
         self.bodies.insert(body.id, body);
@@ -374,6 +394,9 @@ impl World {
 
     pub fn remove_body(&mut self, id: BodyId) -> Option<RigidBody> {
         let body = self.bodies.remove(&id)?;
+        if in_fixed_world(&body) {
+            self.fixed = None;
+        }
         if let Some(handles) = self.handles.remove(&id) {
             match handles.body {
                 Some(handle) => {
@@ -521,20 +544,49 @@ impl World {
         }
     }
 
-    /// Rebuilds the Rapier world from the bodies in ID order. Rapier's broad phase depends on
-    /// the history of insertions, removals and moves, and the controller breaks exact ties
-    /// between equally near contacts by its traversal order; rebuilding first makes each
-    /// step a function of zone state alone.
+    /// Rebuilds the Rapier world from the bodies. Rapier's broad phase depends on the history
+    /// of insertions, removals and moves, and the controller breaks exact ties between equally
+    /// near contacts by its traversal order; rebuilding first makes each step a function of
+    /// zone state alone.
+    ///
+    /// The fixed bodies (in ID order) and then the ground are built from scratch only when one
+    /// of them changed; otherwise the step starts from a copy of that fixed world (#547). The
+    /// moving bodies and the platforms, which move every tick they run, then go into the copy
+    /// in ID order. The world stays the same function of the bodies without re-inserting
+    /// thousands of fixed colliders and the heightfield tiles every tick.
     fn rebuild(&mut self) {
+        let fixed = self.fixed.get_or_insert_with(|| {
+            let mut world = empty_world();
+            let handles = self
+                .bodies
+                .values()
+                .filter(|body| in_fixed_world(body))
+                .map(|body| (body.id, insert(&mut world, body)))
+                .collect();
+            let ground = self.ground.as_ref().map_or_else(Vec::new, |ground| {
+                insert_ground(&mut world, ground.id, &ground.terrain)
+            });
+            world.detect_collisions(&(), &());
+            Fixed {
+                world,
+                handles,
+                ground,
+            }
+        });
         let mut world = empty_world();
-        self.handles = self
-            .bodies
-            .values()
-            .map(|body| (body.id, insert(&mut world, body)))
-            .collect();
-        if let Some(ground) = self.ground.as_mut() {
-            ground.colliders = insert_ground(&mut world, ground.id, &ground.terrain);
+        world.bodies = fixed.world.bodies.clone();
+        world.colliders = fixed.world.colliders.clone();
+        world.broad_phase = fixed.world.broad_phase.clone();
+        world.narrow_phase = fixed.world.narrow_phase.clone();
+        world.islands = fixed.world.islands.clone();
+        let mut handles = fixed.handles.clone();
+        for body in self.bodies.values().filter(|body| !in_fixed_world(body)) {
+            handles.insert(body.id, insert(&mut world, body));
         }
+        if let Some(ground) = self.ground.as_mut() {
+            ground.colliders.clone_from(&fixed.ground);
+        }
+        self.handles = handles;
         self.world = world;
         self.refresh();
     }
@@ -549,6 +601,7 @@ impl World {
         {
             self.world.remove_collider(handle);
         }
+        self.fixed = None;
         let colliders = insert_ground(&mut self.world, id, &terrain);
         self.ground = Some(Ground {
             id,

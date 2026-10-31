@@ -346,4 +346,6 @@ first rows). `vale-crate-shove` and `vale-crate-smash` are the exceptions at 0.9
 their p95 of about 11 ms is the engine's dynamic-body world for the sliding crates and flying
 panels, rebuilt each tick, which the Rapier arm does in about a tenth of the time. Building the
 zone costs about 3× more (heightfield preparation and per-body inserts). Note that the Rapier
-arm rebuilds its world every step by design (determinism), which is part of its cost.
+arm rebuilds its world every step by design (determinism), which is part of its cost. Since
+mmorpg#547 (after this table) a step copies a cached world of the fixed bodies and the ground and
+inserts only the units and platforms, which roughly halves the Rapier per-tick medians above.
