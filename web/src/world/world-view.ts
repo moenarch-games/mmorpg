@@ -35,9 +35,9 @@ import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
 import { CompositionKit } from "./composition-kit";
+import { Nature } from "./nature";
 import { AmbientAnimals } from "./ambient-animals";
 import { ArtPrefetch } from "./art-prefetch";
-import { NatureReview } from "./nature-review";
 import { SkyLayer } from "./sky";
 import { SharedUnits, type AnimationBlend, type ImportedModelKind, type Loadout, type ViewerAnimation, type ViewerLook } from "./unit-presenter";
 
@@ -318,7 +318,8 @@ export class WorldView {
   #fortress: CompositionKit | null = null;
   /** Greyhaven's cosmetic cat, dog and rodent (#419), drawn once their bundle loads. */
   #ambient: AmbientAnimals | null = null;
-  #natureReview: NatureReview | null = null;
+  /** Greyhaven's trees and rocks (#49), drawn from asset-tooling's bundle once loaded; the procedural ones until then. */
+  #nature: Nature | null = null;
   #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
   /** Authored hit/block bursts (#52) on zone-confirmed events; one permanent imported root. */
@@ -511,7 +512,8 @@ export class WorldView {
     this.#presentationFingerprint = scenery.presentationFingerprint;
     this.#reliefAt = world.scenery.reliefAt;
     this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
-    this.#natureReview = new NatureReview(world.scenery, this.#scene);
+    this.#nature = new Nature(world.scenery.nature);
+    void this.#nature.load();
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);
@@ -729,7 +731,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#natureReview?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1154,7 +1156,8 @@ export class WorldView {
       this.#sound.pump();
     }
     this.#fortress?.update(view.eye);
-    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: this.#outpost?.drawn ?? false, settlementProps: this.#settlement?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
+    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: this.#outpost?.drawn ?? false, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
+    this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
     nodes.push(...frame.nodes, ...unitNodes);
@@ -1183,7 +1186,7 @@ export class WorldView {
     const settlement = this.#settlement?.roots() ?? { roots: [], changed: false };
     const fortress = this.#fortress?.roots() ?? { roots: [], changed: false };
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
-    const nature = this.#natureReview?.roots() ?? { roots: [], changed: false };
+    const nature = this.#nature?.roots() ?? { roots: [], changed: false };
     const roots = [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
     const rendererFrame = { camera, nodes, instanceBatches: frame.instanceBatches, environment };
     if (this.#preparing) {
@@ -1498,14 +1501,6 @@ export class WorldView {
         vertexColoredNodes: this.#lastSceneryNodes.filter((node) => node.geometry.kind === "mesh" && node.geometry.colors?.length).length,
         emissiveNodes: this.#lastSceneryNodes.filter((node) => node.emissive !== undefined).length,
       }),
-      /** Explicit review only: no setting is persisted, and ordinary entry keeps current art. */
-      setNatureCandidate: async (enabled: boolean) => {
-        if (!this.#natureReview) { throw new Error("Enter the world before reviewing scenery."); }
-        this.#scene = await this.#natureReview.setEnabled(enabled);
-        this.#sceneryFrame = new SceneryFrame(this.#scene);
-        return this.#natureReview.observe();
-      },
-      natureCandidate: () => this.#natureReview?.observe() ?? null,
       viewpoints: Object.keys(DEBUG_VIEWPOINTS),
       flyTo: (name: string) => {
         const viewpoint = DEBUG_VIEWPOINTS[name];
@@ -1550,6 +1545,8 @@ export class WorldView {
       fortress: () => this.#fortress?.observe() ?? null,
       /** The market square's settlement props (#421): whether they loaded and which are placed. */
       settlement: () => this.#settlement?.observe() ?? null,
+      /** Greyhaven's trees and rocks (#49): whether the bundle loaded, and how many instances each entry level draws. */
+      nature: () => this.#nature?.observe() ?? null,
       /** The ambient animals (#419): whether they loaded, and each one's entry, clip and feet. */
       ambient: () => this.#ambient?.observe() ?? null,
       /** The units of the last projection (kind, id, creature family, position in metres). */

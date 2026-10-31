@@ -10,6 +10,7 @@ pub mod gamepad;
 pub mod graphics;
 pub mod hud;
 pub mod interaction;
+pub mod nature;
 pub mod network;
 pub mod online_identity;
 pub mod picking;

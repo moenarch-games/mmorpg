@@ -199,6 +199,24 @@ fn insert(world: &mut PhysicsWorld, body: &RigidBody) -> Handles {
             body: None,
             collider,
         }
+    } else if let (Kind::Rock(shape), true) = (body.kind, super::rock_hulls()) {
+        let points: Vec<_> = shape
+            .hull(body.half_extents)
+            .into_iter()
+            .map(|[x, y, z]| Vector::new(x, y, z) / UNITS_PER_METRE)
+            .collect();
+        let hull = SharedShape::convex_hull(&points)
+            .unwrap_or_else(|| SharedShape::new(cuboid(body.half_extents)));
+        let collider = world.colliders.insert(
+            ColliderBuilder::new(hull)
+                .translation(metres(body.position))
+                .user_data(user_data)
+                .build(),
+        );
+        Handles {
+            body: None,
+            collider,
+        }
     } else if matches!(body.kind, Kind::Floor) {
         let collider = world.colliders.insert(
             ColliderBuilder::new(SharedShape::halfspace(Vector::Y))

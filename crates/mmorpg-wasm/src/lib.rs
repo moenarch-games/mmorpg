@@ -633,27 +633,6 @@ pub fn static_scene() -> String {
     static_scene::layout().to_owned()
 }
 
-/// Review-only static presentation with one oak omitted before spatial batching.
-/// The hosted scenery and simulation remain untouched. No animation belongs to an oak.
-#[wasm_bindgen(js_name = reviewStaticSceneWithoutOak)]
-pub fn review_static_scene_without_oak(index: usize) -> Result<String, JsValue> {
-    let mut scenery = scenery::hosted_scenery().clone();
-    if !scenery.props.get(index).is_some_and(|prop| {
-        prop.kind == mmorpg_scenery::PropKind::Tree(mmorpg_scenery::TreeVariant::Oak)
-    }) {
-        return Err(JsValue::from_str(
-            "The review placement must be an existing oak",
-        ));
-    }
-    scenery.props.remove(index);
-    let scene = mmorpg_presentation::StaticScene::new(&scenery);
-    let (layout, vertices, indices, models) = static_scene::encode(&scene);
-    serde_json::to_string(&serde_json::json!({
-        "layout": layout, "vertices": vertices, "indices": indices, "models": models,
-    }))
-    .map_err(|error| JsValue::from_str(&error.to_string()))
-}
-
 /// Positions, normals and optional colours of every static-scene geometry.
 #[wasm_bindgen(js_name = staticSceneVertices)]
 pub fn static_scene_vertices() -> Vec<f32> {
@@ -687,6 +666,8 @@ pub fn static_scene_shown(viewer: &[f64], outpost_kit: bool, settlement_props: b
         mmorpg_presentation::Kits {
             outpost: outpost_kit,
             settlement_props,
+            // Nature fallbacks are whole static groups (#49), which the browser hides itself.
+            nature: false,
             dressed: &[],
         },
     )
@@ -1051,6 +1032,102 @@ pub fn settlement_prop_models() -> Vec<f32> {
         .iter()
         .flat_map(|part| part.model)
         .collect()
+}
+
+/// The `greyhaven-nature` bundle entries the trees and rocks are drawn from (#49).
+#[wasm_bindgen(js_name = natureEntries)]
+#[must_use]
+pub fn nature_entries() -> Vec<String> {
+    mmorpg_presentation::nature::ENTRIES
+        .iter()
+        .map(|entry| (*entry).to_owned())
+        .collect()
+}
+
+/// The entry of each placed tree and rock (#49), in [`nature_models`] order.
+#[wasm_bindgen(js_name = natureKeys)]
+#[must_use]
+pub fn nature_keys() -> Vec<String> {
+    hosted_nature()
+        .iter()
+        .map(|placement| placement.entry.to_owned())
+        .collect()
+}
+
+/// 16 column-major model floats per placed tree and rock (#49).
+#[wasm_bindgen(js_name = natureModels)]
+#[must_use]
+pub fn nature_models() -> Vec<f32> {
+    hosted_nature()
+        .iter()
+        .flat_map(|placement| placement.model)
+        .collect()
+}
+
+fn hosted_nature() -> &'static [mmorpg_presentation::nature::Placement] {
+    static PLACEMENTS: scenery::PerZone<Vec<mmorpg_presentation::nature::Placement>> =
+        scenery::PerZone::new();
+    PLACEMENTS.get(|_| mmorpg_presentation::nature::placements(scenery::hosted_scenery()))
+}
+
+/// The trees' and rocks' levels of detail (#49), from the bundle's `nature-descriptor`, for the
+/// placements [`nature_keys`] lists: the same selection and cross-fade the native client runs.
+#[wasm_bindgen]
+pub struct NatureLods(mmorpg_presentation::nature::Lods);
+
+#[wasm_bindgen]
+impl NatureLods {
+    #[wasm_bindgen(constructor)]
+    pub fn new(descriptor: &str) -> Result<Self, JsError> {
+        let entries = mmorpg_presentation::nature::descriptor_lods(descriptor)
+            .map_err(|error| JsError::new(&error))?;
+        Ok(Self(mmorpg_presentation::nature::Lods::new(
+            entries,
+            hosted_nature(),
+        )))
+    }
+
+    /// Each entry's variants from the finest level to the coarsest, as `entry/variant`.
+    pub fn variants(&self, entry: &str) -> Vec<String> {
+        self.0
+            .entries()
+            .iter()
+            .find(|lods| lods.entry == entry)
+            .map(|lods| {
+                lods.levels
+                    .iter()
+                    .map(|(variant, _)| format!("{entry}/{variant}"))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Advances the selection for a camera at `(x, y, z)` metres with vertical field of view
+    /// `fov_y` radians and column-major `clip_from_world` (16 floats, or empty), `seconds` after
+    /// the previous update: per drawn level its placement, level and fade, three floats each
+    /// (see `mmorpg_presentation::nature::Shown`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn update(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: f64,
+        fov_y: f64,
+        clip_from_world: &[f32],
+        seconds: f64,
+        bias: f64,
+        fade: bool,
+    ) -> Vec<f32> {
+        let frustum = <[f32; 16]>::try_from(clip_from_world).ok();
+        self.0
+            .update([x, y, z], fov_y, seconds, bias, fade, frustum)
+            .iter()
+            .flat_map(|shown| {
+                #[allow(clippy::cast_precision_loss)]
+                [shown.placement as f32, shown.level as f32, shown.fade]
+            })
+            .collect()
+    }
 }
 
 /// Greyhaven's ambient animal entries (#419), in [`ambient_animal_frame`] order.

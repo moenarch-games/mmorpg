@@ -37,12 +37,14 @@ export type StaticSceneContent = {
 
 /**
  * Which asset-tooling kits the client draws: the Outpost kit buildings (#420), the market square's settlement props
- * (#421) and the Battle Royale fortress kit (#591).
+ * (#421), the `greyhaven-nature` trees and rocks (#49) and the Battle Royale fortress kit (#591).
  */
-export type DrawnKits = { outpost: boolean; settlementProps: boolean; fortress: boolean };
-const NO_KITS: DrawnKits = { outpost: false, settlementProps: false, fortress: false };
+export type DrawnKits = { outpost: boolean; settlementProps: boolean; nature: boolean; fortress: boolean };
+const NO_KITS: DrawnKits = { outpost: false, settlementProps: false, nature: false, fortress: false };
+type FallbackKit = keyof DrawnKits;
 
-type Bounds ={ cull: CullClass; center: readonly [number, number]; radius: number };
+/** `fallback`: the kit whose procedural stand-in the group is, hidden while the client draws that kit. */
+type Bounds = { cull: CullClass; center: readonly [number, number]; radius: number; fallback?: FallbackKit };
 export type StaticBatch = Bounds & { node: RendererSceneNode & { geometry: IndexedMeshGeometry } };
 export type InstanceBatch = Bounds & { batch: RendererInstanceBatch };
 
@@ -82,7 +84,7 @@ const CULLS: readonly CullClass[] = ["always", "far", "mid", "near"];
 
 type GeometryEntry = { resourceKey: string; vertexOffset: number; vertexCount: number; colored: boolean; indexOffset: number; indexCount: number };
 type DrawEntry = { id: string; geometry: number; model: number; color: Color; emissive: Color | null; opacity: number };
-type GroupEntry = { cull: CullClass; instanced: boolean; min: [number, number]; max: [number, number]; draws: DrawEntry[] };
+type GroupEntry = { cull: CullClass; instanced: boolean; fallback?: FallbackKit | null; min: [number, number]; max: [number, number]; draws: DrawEntry[] };
 type Layout = { format: string; prefix: string; geometries: GeometryEntry[]; groups: GroupEntry[]; water: DrawEntry[]; animated: DrawEntry[][] };
 
 function fail(reason: string): never {
@@ -101,7 +103,10 @@ function triples(values: Float32Array, start: number, count: number): [number, n
 function bounds(group: GroupEntry): Bounds {
   const [minX, minZ] = group.min;
   const [maxX, maxZ] = group.max;
-  return { cull: group.cull, center: [(minX + maxX) / 2, (minZ + maxZ) / 2], radius: Math.hypot(maxX - minX, maxZ - minZ) / 2 };
+  return {
+    cull: group.cull, center: [(minX + maxX) / 2, (minZ + maxZ) / 2], radius: Math.hypot(maxX - minX, maxZ - minZ) / 2,
+    ...(group.fallback ? { fallback: group.fallback } : {}),
+  };
 }
 
 /** Decodes the shared static world once; unknown shapes fail closed. */
@@ -148,6 +153,9 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   for (const group of layout.groups) {
     if (!CULLS.includes(group.cull) || group.draws.length === 0) {
       fail("group has an unknown cull class or no draws");
+    }
+    if (group.fallback && !(group.fallback in NO_KITS)) {
+      fail(`group is the fallback of an unknown kit ${group.fallback}`);
     }
     if (!group.instanced) {
       const [draw] = group.draws;
@@ -199,6 +207,11 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   };
 }
 
+/** Whether a group is drawn: not the fallback of a kit the client draws, and within its class's distance of the eye. */
+function batchShown(batch: Bounds, eyeX: number, eyeZ: number, kits: DrawnKits): boolean {
+  return !(batch.fallback && kits[batch.fallback]) && batchVisible(batch, eyeX, eyeZ);
+}
+
 /** Whether a group is within its class's distance of the camera eye (XZ, metres). */
 export function batchVisible(batch: Bounds, eyeX: number, eyeZ: number): boolean {
   const distance = Math.hypot(batch.center[0] - eyeX, batch.center[1] - eyeZ) - batch.radius;
@@ -227,14 +240,15 @@ export class SceneryFrame {
   nodes(eye: readonly [number, number, number], motion: SceneryMotion): { nodes: RendererSceneNode[]; instanceBatches: RendererInstanceBatch[]; visibleBatches: number } {
     const nodes: RendererSceneNode[] = [];
     let visibleBatches = 0;
+    const kits = motion.kits ?? NO_KITS;
     this.#scene.batches.forEach((batch, index) => {
-      const visible = batchVisible(batch, eye[0], eye[2]);
+      const visible = batchShown(batch, eye[0], eye[2], kits);
       visibleBatches += visible ? 1 : 0;
       nodes.push(visible ? this.#visible[index]! : this.#hidden[index]!);
     });
     nodes.push(...this.#scene.water);
     const matrices = this.#scene.motion(motion.seconds, motion.animate);
-    const shown = this.#scene.shown(motion.viewer ?? null, motion.kits ?? NO_KITS);
+    const shown = this.#scene.shown(motion.viewer ?? null, kits);
     this.#scene.animated.forEach((part, index) => {
       const modelMatrix = Array.from(matrices.subarray(index * 16, index * 16 + 16)) as Matrix4Values;
       const visible = shown[index] !== 0;
@@ -243,7 +257,7 @@ export class SceneryFrame {
       }
     });
     const instanceBatches = this.#scene.instanceBatches.map((batch) => {
-      const visible = batchVisible(batch, eye[0], eye[2]);
+      const visible = batchShown(batch, eye[0], eye[2], kits);
       visibleBatches += visible ? 1 : 0;
       return { ...batch.batch, visible };
     });

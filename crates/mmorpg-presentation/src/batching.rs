@@ -1,6 +1,6 @@
 //! Spatial batching and immutable resources for Greyhaven's procedural world.
 use super::geometry::*;
-use super::{Draw, Group, Material};
+use super::{Draw, Group, Kit, Material};
 use std::{collections::BTreeMap, sync::Arc};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 /// Distance class of a static group.
@@ -38,11 +38,13 @@ impl Cull {
         }
     }
 }
-/// `(key, cull, geometry index, per-instance transform and color)`.
-type InstanceBatch = (String, Cull, usize, Vec<(Affine, u32)>);
+/// `(key, cull, fallback kit, geometry index, per-instance transform and color)`.
+type InstanceBatch = (String, Cull, Option<Kit>, usize, Vec<(Affine, u32)>);
 #[derive(Default)]
 pub struct Batcher {
-    buckets: BTreeMap<String, (u32, Cull, Geometry)>,
+    /// The kit whose fallback the following pieces are (#49): they batch apart from the rest.
+    pub fallback: Option<Kit>,
+    buckets: BTreeMap<String, (u32, Cull, Option<Kit>, Geometry)>,
     geometries: Vec<Arc<Geometry>>,
     instances: Vec<InstanceBatch>,
     /// Each instance batch's index in `instances`, by key.
@@ -103,11 +105,16 @@ impl Batcher {
         self.bucket(format!("all-{name}"), c, Cull::Always)
     }
     fn bucket(&mut self, chunk: String, c: u32, cull: Cull) -> &mut Geometry {
+        let kit = self.fallback;
         &mut self
             .buckets
-            .entry(format!("{chunk}:{}:{c:06x}", cull.name()))
-            .or_insert_with(|| (c, cull, Geometry::default()))
-            .2
+            .entry(format!(
+                "{chunk}:{}{}:{c:06x}",
+                cull.name(),
+                fallback_name(kit)
+            ))
+            .or_insert_with(|| (c, cull, kit, Geometry::default()))
+            .3
     }
     pub fn put(
         &mut self,
@@ -147,22 +154,24 @@ impl Batcher {
             i
         };
         let size = cull.size() * 2.;
+        let kit = self.fallback;
         let key = format!(
-            "{size}m{}_{}:{}:{name}:instance-geometry:{index}",
+            "{size}m{}_{}:{}{}:{name}:instance-geometry:{index}",
             (at[0] / size).floor(),
             (at[1] / size).floor(),
-            cull.name()
+            cull.name(),
+            fallback_name(kit)
         );
         let instances = &mut self.instances;
         let i = *self.instance_keys.entry(key).or_insert_with_key(|key| {
-            instances.push((key.clone(), cull, index, Vec::new()));
+            instances.push((key.clone(), cull, kit, index, Vec::new()));
             instances.len() - 1
         });
-        self.instances[i].3.push((a, c));
+        self.instances[i].4.push((a, c));
     }
     pub fn finish(self) -> Vec<Group> {
         let mut groups = Vec::new();
-        for (name, (c, cull, g)) in self.buckets {
+        for (name, (c, cull, fallback, g)) in self.buckets {
             if g.indices.is_empty() {
                 continue;
             }
@@ -179,11 +188,12 @@ impl Batcher {
                 draws: vec![draw],
                 cull,
                 instanced: false,
+                fallback,
                 min,
                 max,
             });
         }
-        for (key, cull, index, instances) in self.instances {
+        for (key, cull, fallback, index, instances) in self.instances {
             let g = &self.geometries[index];
             let (min, max) = bounds(
                 instances
@@ -205,11 +215,23 @@ impl Batcher {
                 draws,
                 cull,
                 instanced: true,
+                fallback,
                 min,
                 max,
             });
         }
         groups
+    }
+}
+/// A fallback kit's suffix in batch keys.
+fn fallback_name(kit: Option<Kit>) -> &'static str {
+    match kit {
+        None => "",
+        Some(Kit::Outpost) => ":fallback-outpost",
+        Some(Kit::SettlementProps) => ":fallback-settlement",
+        Some(Kit::Nature) => ":fallback-nature",
+        // Graybox fallbacks are animated parts (`Motion::Fallback`), never batched.
+        Some(Kit::Graybox(_)) => ":fallback-graybox",
     }
 }
 fn bounds(points: impl Iterator<Item = V>) -> ([f64; 2], [f64; 2]) {

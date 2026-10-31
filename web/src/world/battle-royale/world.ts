@@ -56,6 +56,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
     shrine: { entries: [], placements: [] },
     outpost: { entries: [], placements: [] },
     settlement: { entries: [], placements: [] },
+    nature: { entries: [], placements: [], lods: () => { throw new Error("The arena has no trees or rocks."); } },
     ambient: { entries: [], clips: [], anchors: [], frame: () => emptyMotion },
     importedRestClip: (kind) => local.scenery.importedRestClip(kind),
     areaAt: () => null,

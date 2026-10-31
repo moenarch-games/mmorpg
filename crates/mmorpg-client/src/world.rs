@@ -38,6 +38,29 @@ pub struct WorldFrame {
     /// Draws sampled this frame: units, effects, animated props and door swings.
     pub draws: Vec<SceneDraw>,
     pub lighting: Lighting,
+    /// The `greyhaven-nature` trees and rocks drawn this frame (#49).
+    pub nature: Vec<NatureDraw>,
+}
+
+/// One drawn level of a placed tree or rock (#49): `crate::nature::library` entry `entry`
+/// (an index into `mmorpg_presentation::nature::ENTRIES`) at level `level`, placed by
+/// `model`; `fade` as `mmorpg_presentation::nature::Shown::fade`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NatureDraw {
+    pub entry: usize,
+    pub level: usize,
+    pub fade: f32,
+    pub model: [f32; 16],
+}
+
+/// The trees' and rocks' placements and their level-of-detail state (#49).
+#[derive(Clone, Debug)]
+struct Nature {
+    lods: mmorpg_presentation::nature::Lods,
+    entries: Vec<usize>,
+    models: Vec<[f32; 16]>,
+    /// The presentation clock of the last frame.
+    seconds: Option<f64>,
 }
 
 impl WorldFrame {
@@ -87,6 +110,25 @@ pub struct WorldScene {
     animated: Vec<Vec<SceneDraw>>,
     /// The scenery's campfires and lantern posts (#529).
     point_lights: Vec<mmorpg_presentation::lights::PointLight>,
+    nature: NatureState,
+}
+
+/// [`Nature`] behind a lock, so frames advance it through `&WorldScene`.
+#[derive(Debug)]
+struct NatureState(std::sync::Mutex<Nature>);
+
+impl NatureState {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Nature> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+impl Clone for NatureState {
+    fn clone(&self) -> Self {
+        Self(std::sync::Mutex::new(self.lock().clone()))
+    }
 }
 
 /// Lowers shared draws, uploading each distinct resource's mesh once.
@@ -160,7 +202,23 @@ impl WorldScene {
             .iter()
             .map(|part| part.draws.iter().map(|draw| lowering.draw(draw)).collect())
             .collect();
+        let placements = mmorpg_presentation::nature::placements(scenery);
+        let nature = Nature {
+            lods: mmorpg_presentation::nature::Lods::new(crate::nature::lods(), &placements),
+            entries: placements
+                .iter()
+                .map(|placement| {
+                    mmorpg_presentation::nature::ENTRIES
+                        .iter()
+                        .position(|entry| *entry == placement.entry)
+                        .expect("placements name bundle entries")
+                })
+                .collect(),
+            models: placements.iter().map(|placement| placement.model).collect(),
+            seconds: None,
+        };
         Self {
+            nature: NatureState(std::sync::Mutex::new(nature)),
             additional_draws: Vec::new(),
             point_lights: mmorpg_presentation::lights::point_lights(&scene, scenery),
             groups,
@@ -179,7 +237,7 @@ impl WorldScene {
     }
 
     /// Presented world at a cosmetic clock and camera position, cave roofs cut away over the
-    /// `viewer`'s feet (metres). Geometry is never copied.
+    /// `viewer`'s feet (metres), for the default 50° field of view. Geometry is never copied.
     #[must_use]
     pub fn frame(
         &self,
@@ -188,12 +246,28 @@ impl WorldScene {
         eye: [f32; 3],
         viewer: Option<[f64; 3]>,
     ) -> WorldFrame {
+        self.frame_viewed(seconds, animate, eye, 50.0, viewer)
+    }
+
+    /// [`Self::frame`] for a camera with a vertical field of view of `fov_y_degrees`, which
+    /// picks the trees' and rocks' levels of detail (#49).
+    #[must_use]
+    pub fn frame_viewed(
+        &self,
+        seconds: f64,
+        animate: bool,
+        eye: [f32; 3],
+        fov_y_degrees: f32,
+        viewer: Option<[f64; 3]>,
+    ) -> WorldFrame {
+        // The native build embeds every kit (#420, #421, #49): no fallback is drawn.
+        let kits = mmorpg_presentation::Kits::ALL;
         let mut batches: Vec<_> = self
             .scene
             .groups
             .iter()
             .zip(&self.groups)
-            .filter(|(group, _)| group.visible(eye))
+            .filter(|(group, _)| group.shown(eye, kits))
             .map(|(_, draws)| Arc::clone(draws))
             .collect();
         batches.push(Arc::clone(&self.water_draws));
@@ -204,7 +278,7 @@ impl WorldScene {
             .zip(self.scene.motion(seconds, animate))
             // The native build embeds the Outpost kit (#420) and the settlement props (#421),
             // which the presentation draws, so the static scene never shows their fallbacks.
-            .zip(self.scene.shown(viewer, mmorpg_presentation::Kits::ALL))
+            .zip(self.scene.shown(viewer, kits))
             .filter_map(|(placed, shown)| shown.then_some(placed))
         {
             for draw in part {
@@ -229,7 +303,45 @@ impl WorldScene {
             batches,
             draws,
             lighting,
+            nature: self.nature_draws(seconds, animate, eye, fov_y_degrees),
         }
+    }
+
+    /// The trees and rocks at each one's level of detail for this camera (#49).
+    fn nature_draws(
+        &self,
+        seconds: f64,
+        animate: bool,
+        eye: [f32; 3],
+        fov_y_degrees: f32,
+    ) -> Vec<NatureDraw> {
+        let mut nature = self.nature.lock();
+        let elapsed = nature
+            .seconds
+            .map_or(0., |last| (seconds - last).clamp(0., 0.25));
+        nature.seconds = Some(seconds);
+        let Nature {
+            lods,
+            entries,
+            models,
+            ..
+        } = &mut *nature;
+        lods.update(
+            eye.map(f64::from),
+            f64::from(fov_y_degrees).to_radians(),
+            elapsed,
+            1.,
+            animate,
+            None,
+        )
+        .iter()
+        .map(|shown| NatureDraw {
+            entry: entries[shown.placement],
+            level: shown.level,
+            fade: shown.fade,
+            model: models[shown.placement],
+        })
+        .collect()
     }
 }
 

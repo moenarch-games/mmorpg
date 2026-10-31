@@ -454,6 +454,8 @@ pub struct Scenery {
     ground: Option<mmorpg_core::Terrain>,
     /// The content's climbable surfaces (#490), which clients mark on the rock (#512).
     climbing: mmorpg_core::ClimbSurfaces,
+    /// The content's rock colliders' convex proxies (#49), which clients draw as those rocks.
+    rocks: Vec<(u32, mmorpg_core::RockShape)>,
     authored_outpost_relief: bool,
     /// Whether this is Greyhaven Vale's scenery (#145): only it has the authored kits'
     /// buildings (the Outpost kit, the Sunken Shrine, the walk-in buildings).
@@ -857,6 +859,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         relief: Some(relief),
         ground: definition.terrain().cloned(),
         climbing: content.climbing().clone(),
+        rocks: content.rocks().to_vec(),
         authored_outpost_relief: false,
         greyhaven: true,
     };
@@ -896,6 +899,7 @@ impl Scenery {
             relief: None,
             ground: None,
             climbing: mmorpg_core::ClimbSurfaces::default(),
+            rocks: Vec::new(),
             authored_outpost_relief: false,
             greyhaven: false,
         }
@@ -1001,6 +1005,15 @@ impl Scenery {
     #[must_use]
     pub const fn climbing(&self) -> &mmorpg_core::ClimbSurfaces {
         &self.climbing
+    }
+
+    /// The rock proxy collider `id` collides as (#49), if it is a rock with one.
+    #[must_use]
+    pub fn rock(&self, id: u32) -> Option<mmorpg_core::RockShape> {
+        self.rocks
+            .binary_search_by_key(&id, |(rock, _)| *rock)
+            .ok()
+            .map(|index| self.rocks[index].1)
     }
 
     /// Ploughed fields (#424: one rectangle per field), whose farmland clients draw as patches.

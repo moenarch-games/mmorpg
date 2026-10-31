@@ -100,7 +100,7 @@ impl Model {
 fn half(p: &Prop) -> V {
     p.half_extents.map(metres)
 }
-fn seed(p: &Prop) -> f64 {
+pub(crate) fn seed(p: &Prop) -> f64 {
     hash(&[
         f64::from(p.position[0]),
         f64::from(p.position[2]),
@@ -775,6 +775,8 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut fires = 0;
     let mut roofs = 0;
     for (index, p) in s.props.iter().enumerate() {
+        // Trees and rocks are the nature bundle's (#49); these are their fallback.
+        b.fallback = crate::nature::draws(s, p).then_some(Kit::Nature);
         // The inn is asset-tooling's walk-in bundle (`crate::buildings`), not a procedural block.
         // The shrine (#431) is asset-tooling's kit (`crate::shrine`).
         // Elden's house (#158) is its walk-in bundle too.
@@ -1403,6 +1405,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             );
         }
     }
+    b.fallback = None;
     for (group, m) in reeds {
         animations.push(animated(
             m,

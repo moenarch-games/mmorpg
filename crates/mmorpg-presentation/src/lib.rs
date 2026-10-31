@@ -21,6 +21,7 @@ pub mod geometry;
 mod handholds;
 pub mod lights;
 pub mod lod;
+pub mod nature;
 pub mod outpost_kit;
 mod props;
 pub mod settlement_props;
@@ -67,12 +68,21 @@ pub struct Group {
     pub cull: Cull,
     /// Whether the group shares one geometry across many instance transforms.
     pub instanced: bool,
+    /// The kit whose procedural stand-in the group is: hidden while the client draws it.
+    pub fallback: Option<Kit>,
     /// XZ bounds of the group's vertices, in metres.
     pub min: [f64; 2],
     pub max: [f64; 2],
 }
 
 impl Group {
+    /// Whether the group is drawn for the camera eye (XZ, metres): within its class's
+    /// distance, and not the fallback of a kit the client draws (`kits`).
+    #[must_use]
+    pub fn shown(&self, eye: [f32; 3], kits: Kits) -> bool {
+        !self.fallback.is_some_and(|kit| kits.draws(kit)) && self.visible(eye)
+    }
+
     /// Whether the group is within its class's distance of the camera eye (XZ, metres).
     #[must_use]
     pub fn visible(&self, eye: [f32; 3]) -> bool {
@@ -118,6 +128,9 @@ pub enum Kit {
     /// Graybox level geometry (#552), by its index in the scenery's props: the fallback for a
     /// composition kit's piece over that body (the Battle Royale fortress kit, #591).
     Graybox(usize),
+    /// The `greyhaven-nature` trees and rocks (#49, [`nature`]); the procedural trees and
+    /// rocks are the fallback.
+    Nature,
 }
 
 /// Which kits a client draws; the static scene hides a drawn kit's fallback.
@@ -128,6 +141,7 @@ pub struct Kits<'a> {
     /// The graybox props ([`Kit::Graybox`], sorted) a drawn composition kit dresses
     /// ([`composition::Dressing::props`]); empty while no such kit is drawn.
     pub dressed: &'a [usize],
+    pub nature: bool,
 }
 
 impl Kits<'_> {
@@ -136,6 +150,7 @@ impl Kits<'_> {
         outpost: true,
         settlement_props: true,
         dressed: &[],
+        nature: true,
     };
 
     #[must_use]
@@ -144,6 +159,7 @@ impl Kits<'_> {
             Kit::Outpost => self.outpost,
             Kit::SettlementProps => self.settlement_props,
             Kit::Graybox(prop) => self.dressed.binary_search(&prop).is_ok(),
+            Kit::Nature => self.nature,
         }
     }
 }
@@ -253,7 +269,7 @@ impl StaticScene {
         let mut draws: Vec<_> = self
             .groups
             .iter()
-            .filter(|group| group.visible(eye))
+            .filter(|group| group.shown(eye, kits))
             .flat_map(|group| group.draws.iter().cloned())
             .collect();
         draws.extend(self.water.iter().cloned());

@@ -7,8 +7,9 @@
 # web/public/buildings/outpost.kit and the settlement props (#421) into
 # web/public/scenery/settlement.props and Elden's house (#158) into
 # web/public/buildings/greyhaven.marshal-house and the CC0 combat sounds (#447) into
-# web/public/sounds/combat-sounds and the Battle Royale fortress kit (#591) into
-# web/public/scenery/fortress.kit, where the browser serves them and the native client build embeds them.
+# web/public/sounds/combat-sounds and Greyhaven's trees and rocks (#49) into
+# web/public/scenery/greyhaven.nature, where the browser serves them and the native client build embeds them,
+# and the Battle Royale fortress kit (#591) into web/public/scenery/fortress.kit for the browser's arena.
 # The directories are ignored build input, never committed.
 set -euo pipefail
 
@@ -43,6 +44,22 @@ fetch() {
   local work
   work="$(mktemp -d)"
   unpack "${tag}" "${name}" "${work}"
+  place "${tag}" "${dest}" "${work}"
+}
+
+# A rolling release pinned by the SHA-256 of its tar: a re-upload is adopted by updating the pin.
+fetch_pinned() {
+  local tag="$1" name="$2" dest="${ROOT_DIR}/web/public/$3" sha="$4"
+  if [[ -f "${dest}/RELEASE" && "$(cat "${dest}/RELEASE")" == "${tag}@${sha}" ]]; then
+    return 0
+  fi
+  local work
+  work="$(mktemp -d)"
+  curl -fsSL --retry 3 --max-time 300 -o "${work}/bundle.tar" "${RELEASES}/${tag}/${name}.tar"
+  printf '%s  %s\n' "${sha}" "${work}/bundle.tar" | sha256sum --check --status
+  mkdir "${work}/bundle"
+  tar -xf "${work}/bundle.tar" -C "${work}/bundle"
+  printf '%s\n' "${tag}@${sha}" > "${work}/bundle/RELEASE"
   place "${tag}" "${dest}" "${work}"
 }
 
@@ -86,5 +103,11 @@ fetch_rolling settlement-props settlement.props scenery/settlement.props
 fetch_rolling greyhaven-marshal-house greyhaven.marshal-house buildings/greyhaven.marshal-house
 # The CC0 combat sounds both clients play (#447, asset-tooling#297).
 fetch_rolling combat-sounds combat-sounds sounds/combat-sounds
-# The Battle Royale fortress's authored art (#591, asset-tooling#458), fitted to its collision.
-fetch_rolling fortress-kit fortress.kit scenery/fortress.kit
+# Greyhaven's trees and rocks with their LOD chains and rock collision proxies (#49), pinned
+# (asset-tooling's consumers.json re-pins this line after a re-upload).
+NATURE_TAR_SHA256=256c2d1ede7b44c48077eac0574fbb5d885c0b756e96e96c19f44b35270355c2
+fetch_pinned greyhaven-nature greyhaven.nature scenery/greyhaven.nature "${NATURE_TAR_SHA256}"
+# The Battle Royale fortress's authored art (#591, asset-tooling#458/#461, pass 2), fitted to its
+# collision, pinned like the nature bundle.
+FORTRESS_TAR_SHA256=58185d2310b713642cf881212457dcf5c1be11976a5af8e5363cf868792cc241
+fetch_pinned fortress-kit fortress.kit scenery/fortress.kit "${FORTRESS_TAR_SHA256}"

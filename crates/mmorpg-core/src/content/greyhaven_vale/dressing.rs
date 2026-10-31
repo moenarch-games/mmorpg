@@ -310,6 +310,24 @@ pub fn pieces() -> &'static [Piece] {
     &PIECES
 }
 
+/// The loose rocks' convex proxies (#49): each collides as one of the nature bundle's three
+/// rocks, picked by its ID, fitted into its box and turned like the piece.
+#[must_use]
+pub fn rock_shapes() -> Vec<(u32, crate::RockShape)> {
+    PIECES
+        .iter()
+        .filter(|piece| matches!(piece.kind, Kind::SmallRock | Kind::MediumRock))
+        .map(|piece| {
+            let pick = (u64::from(piece.id).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 32) % 3;
+            let shape = crate::RockShape {
+                proxy: u8::try_from(pick).unwrap_or(0),
+                quarters: piece.quarters % 4,
+            };
+            (piece.id, shape)
+        })
+        .collect()
+}
+
 /// The Lakeshore dock.
 #[must_use]
 pub fn dock() -> &'static Piece {

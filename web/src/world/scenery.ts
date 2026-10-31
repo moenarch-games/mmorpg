@@ -1,4 +1,5 @@
 import type { CompositionKitSource } from "./composition-kit";
+import type { NatureLodsHandle, NatureSource } from "./nature";
 import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
 import type { WaystoneSite } from "./units/waystone-panel";
@@ -81,7 +82,6 @@ export type Scenery = {
 export type SceneryContent = StaticSceneContent & {
   scenery(): string;
   /** Review-only presentation; the host never calls this. */
-  reviewStaticSceneWithoutOak?(index: number): string;
   /** The shared unit presenter (#184) of one joined player. */
   UnitPresenter: new (player: number) => UnitPresenterHandle;
   /** The shared walk-in building presenters (#158): door swing and interior look, one per building. */
@@ -101,6 +101,11 @@ export type SceneryContent = StaticSceneContent & {
   settlementPropEntries(): string[];
   settlementPropKeys(): string[];
   settlementPropModels(): Float32Array;
+  /** Greyhaven's trees and rocks (#49): the nature bundle's entries, per placement its entry and 16 model floats, and the shared level selection. */
+  natureEntries(): string[];
+  natureKeys(): string[];
+  natureModels(): Float32Array;
+  NatureLods: new (descriptor: string) => NatureLodsHandle;
   /** Greyhaven's ambient animals (#419): entries, clip names, first-waypoint anchors (x, z units) and per animal 16 model floats, clip index and clip time. */
   ambientAnimalEntries(): string[];
   ambientAnimalClips(): string[];
@@ -152,7 +157,6 @@ export type SceneryProvider = {
   readonly scenery: Scenery;
   /** The shared static world both clients draw (#184), straight from the WASM owner. */
   readonly staticScene: StaticSceneContent;
-  readonly reviewWithoutOak?: (index: number) => StaticSceneContent;
   /** A fresh shared unit presenter for `player`. */
   unitPresenter(player: number): UnitPresenterHandle;
   /** The walk-in buildings' presenters, and the door feet at `(x, z)` units reach (0 none). */
@@ -165,6 +169,8 @@ export type SceneryProvider = {
   readonly settlement: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** A composition kit drawn over the zone's graybox (the Battle Royale fortress kit, #591), if the zone has one. */
   readonly fortress: CompositionKitSource | null;
+  /** Greyhaven's trees and rocks from the `greyhaven-nature` bundle (#49). */
+  readonly nature: NatureSource;
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
@@ -443,22 +449,6 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     regionModels: (id) => regionModels.get(id) ?? [],
     scenery,
     staticScene: content,
-    ...(content.reviewStaticSceneWithoutOak ? {
-      reviewWithoutOak: (index: number): StaticSceneContent => {
-        const review = JSON.parse(content.reviewStaticSceneWithoutOak!(index)) as {
-          layout: string; vertices: number[]; indices: number[]; models: number[];
-        };
-        return {
-          staticScene: () => review.layout,
-          staticSceneVertices: () => Float32Array.from(review.vertices),
-          staticSceneIndices: () => Uint32Array.from(review.indices),
-          staticSceneModels: () => Float32Array.from(review.models),
-          staticSceneMotion: (seconds, animate) => content.staticSceneMotion(seconds, animate),
-          staticSceneShown: (viewer, outpostKit, settlementProps, fortressKit) => content.staticSceneShown(viewer, outpostKit, settlementProps, fortressKit),
-          surfaceY: (x, z) => content.surfaceY(x, z),
-        };
-      },
-    } : {}),
     unitPresenter: (player) => new content.UnitPresenter(player),
     buildings: {
       presenters: () => Array.from({ length: content.BuildingPresenter.count() }, (_, index) => new content.BuildingPresenter(index)),
@@ -486,6 +476,14 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       };
     })(),
     fortress: null,
+    nature: (() => {
+      const models = content.natureModels();
+      return {
+        entries: content.natureEntries(),
+        placements: content.natureKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
+        lods: (descriptor: string) => new content.NatureLods(descriptor),
+      };
+    })(),
     ambient: (() => {
       const anchors = content.ambientAnimalAnchors();
       return {
