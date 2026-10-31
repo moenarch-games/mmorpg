@@ -129,6 +129,14 @@
         "owners": ["moenarch-games/mmorpg"]
       },
       {
+        "id": "native-client-model",
+        "paths": ["crates/mmorpg-client-model/**", "crates/mmorpg-wasm/src/client_model.rs"],
+        "instructions": ["docs/ARCHITECTURE.md", "docs/NATIVE_CLIENT.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moenarch-games/mmorpg"]
+      },
+      {
         "id": "native-wasm",
         "paths": ["crates/mmorpg-wasm/**"],
         "instructions": ["docs/PROTOCOL.md", "docs/adr/0002-browser-embeds-zone-simulation.md"],

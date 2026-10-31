@@ -3,7 +3,7 @@ import { encodeCommand } from "../src/command-wire";
 import { MAX_CATCH_UP_TICKS } from "../src/demo-clock";
 import { TICK_HZ } from "../src/replication";
 import { LocalZoneSource, type LocalZoneHandle } from "../src/world/local-zone-source";
-import { FACING_INTERVAL_MS, MovementOutbox, RESEND_INTERVAL_MS, type MovementInput } from "../src/world/movement-outbox";
+import { MovementOutbox } from "../src/world/movement-outbox";
 import {
   GROUND_CLEARANCE_METRES,
   MAX_DISTANCE_METRES,
@@ -22,6 +22,8 @@ import { immediate, worldSourceContract } from "./support/world-source-contract"
 
 /** The protocol byte every command leads with, as hex. */
 const P = PROTOCOL_BYTE.toString(16).padStart(2, "0");
+/** The shared movement outbox resends the held intent every 50 ms (`mmorpg-client-model`, #543). */
+const RESEND_INTERVAL_MS = 50;
 
 /** Records what `LocalZoneSource` asks of the WASM zone; returns well-formed projections. */
 class RecordingZone implements LocalZoneHandle {
@@ -158,87 +160,6 @@ describe("LocalZoneSource", () => {
       source.sendCommand({ kind: "jump" });
       expect(zone.submitted).toEqual([{ player: 2, sequence: 1, bytes: `${P}02` }]);
     }
-  });
-});
-
-describe("movement outbox", () => {
-  const input = (patch: Partial<MovementInput> = {}): MovementInput => ({ forward: 0, strafe: 0, facing: 0, jumps: 0, ...patch });
-
-  test("sends current intent first, then only changes, and resends on the heartbeat", () => {
-    const outbox = new MovementOutbox(input());
-    expect(outbox.update(input(), 0)).toEqual([{ kind: "move", forward: 0, strafe: 0, facing: 0 }]);
-    expect(outbox.update(input(), 10)).toEqual([]);
-    expect(outbox.update(input({ forward: 1 }), 11)).toEqual([{ kind: "move", forward: 1, strafe: 0, facing: 0 }]);
-    expect(outbox.update(input({ forward: 1 }), 11 + RESEND_INTERVAL_MS - 1)).toEqual([]);
-    expect(outbox.update(input({ forward: 1 }), 11 + RESEND_INTERVAL_MS)).toEqual([{ kind: "move", forward: 1, strafe: 0, facing: 0 }]);
-  });
-
-  test("throttles facing-only changes to one per server tick", () => {
-    const outbox = new MovementOutbox(input());
-    outbox.update(input({ forward: 1 }), 0);
-    expect(outbox.update(input({ forward: 1, facing: 100 }), 1)).toEqual([]);
-    expect(outbox.update(input({ forward: 1, facing: 200 }), FACING_INTERVAL_MS)).toEqual([
-      { kind: "move", forward: 1, strafe: 0, facing: 200 },
-    ]);
-  });
-
-  test("each advance of the press counter sends exactly one jump before the move", () => {
-    const outbox = new MovementOutbox(input());
-    outbox.update(input(), 0);
-    expect(outbox.update(input({ jumps: 3 }), 1)).toEqual([{ kind: "jump" }]);
-    expect(outbox.update(input({ jumps: 3 }), 2)).toEqual([]);
-    expect(outbox.update(input({ jumps: 4, strafe: 1 }), 3)).toEqual([
-      { kind: "jump" },
-      { kind: "move", forward: 0, strafe: 1, facing: 0 },
-    ]);
-  });
-
-  test("each roll press sends one roll after the move it rolls along (#516)", () => {
-    const outbox = new MovementOutbox(input());
-    outbox.update(input(), 0);
-    expect(outbox.update(input({ rolls: 1, strafe: 1 }), 1)).toEqual([
-      { kind: "move", forward: 0, strafe: 1, facing: 0 },
-      { kind: "roll" },
-    ]);
-    expect(outbox.update(input({ rolls: 1, strafe: 1 }), 2)).toEqual([]);
-    // The dead roll nowhere, and the press is not replayed later.
-    expect(outbox.update(input({ rolls: 2, strafe: 1 }), 3, true)).toEqual([
-      { kind: "move", forward: 0, strafe: 0, facing: 0 },
-    ]);
-    expect(outbox.update(input({ rolls: 2 }), 4)).toEqual([]);
-  });
-
-  test("the dead send no held movement or jumps; living again resumes the held keys", () => {
-    const outbox = new MovementOutbox(input());
-    outbox.update(input({ forward: 1, strafe: -1, facing: 300 }), 0);
-    // Death lets go at once, at the facing last sent, whatever is held or pressed.
-    expect(outbox.update(input({ forward: 1, strafe: -1, facing: 900, jumps: 1 }), 1, true)).toEqual([
-      { kind: "move", forward: 0, strafe: 0, facing: 300 },
-    ]);
-    expect(outbox.update(input({ forward: 1, facing: 900, jumps: 2 }), 2, true)).toEqual([]);
-    expect(outbox.update(input({ forward: 1, facing: 900, jumps: 2 }), 1 + RESEND_INTERVAL_MS, true)).toEqual([
-      { kind: "move", forward: 0, strafe: 0, facing: 300 },
-    ]);
-    // Presses made while dead are never replayed after release.
-    expect(outbox.update(input({ forward: 1, facing: 900, jumps: 2 }), 1 + RESEND_INTERVAL_MS + 1)).toEqual([
-      { kind: "move", forward: 1, strafe: 0, facing: 900 },
-    ]);
-  });
-
-  test("a new session drops earlier presses and resends intent", () => {
-    const outbox = new MovementOutbox(input());
-    outbox.update(input({ forward: 1 }), 0);
-    outbox.reset(input({ jumps: 5 }));
-    expect(outbox.update(input({ jumps: 5 }), 1)).toEqual([{ kind: "move", forward: 0, strafe: 0, facing: 0 }]);
-  });
-
-  test("the held swim rise goes out on each change (#274)", () => {
-    const outbox = new MovementOutbox(input());
-    outbox.update(input(), 0);
-    expect(outbox.update(input({ rise: 1 }), 1)).toEqual([{ kind: "rise", rise: 1 }]);
-    expect(outbox.update(input({ rise: 1 }), 2)).toEqual([]);
-    expect(outbox.update(input({ rise: -1 }), 3)).toEqual([{ kind: "rise", rise: -1 }]);
-    expect(outbox.update(input({ rise: -1 }), 4, true)).toEqual([{ kind: "rise", rise: 0 }]);
   });
 });
 

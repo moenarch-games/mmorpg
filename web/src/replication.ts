@@ -42,15 +42,6 @@ export function wireCatalog(): WireCatalog {
   return catalog;
 }
 
-/**
- * The core chat text rule: 1–80 UTF-8 bytes, at least one non-whitespace character and no control
- * characters. Returns null when `text` is a valid line, otherwise why not.
- */
-export function chatTextError(text: string): string | null {
-  const error = wasm.chatTextError(text);
-  return error === undefined ? null : `${error.charAt(0).toUpperCase()}${error.slice(1)}.`;
-}
-
 /** Whether `quest` is turned in according to a completed mask (bit `quest - 1`). */
 export function questCompleted(completed: number, quest: number): boolean {
   return quest >= 1 && quest <= 32 && ((completed >>> (quest - 1)) & 1) === 1;

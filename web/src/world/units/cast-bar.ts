@@ -1,4 +1,5 @@
 import { TICK_HZ, type CastState } from "../../replication";
+import { wasm } from "../../wasm";
 import type { ContentCatalog } from "../catalog";
 
 export type CastBarView = {
@@ -10,12 +11,13 @@ export type CastBarView = {
   channel: boolean;
 };
 
+/** The cast bar for `cast`: the shared client model's fill (`mmorpg-client-model`, #543), named and timed. */
 export function castBarView(cast: CastState, catalog: ContentCatalog): CastBarView {
-  const progress = cast.total > 0 ? Math.min(1, Math.max(0, cast.elapsed / cast.total)) : 1;
+  const bar = wasm.castBar(cast);
   return {
     name: catalog.abilities.get(cast.ability)?.name ?? `ability ${cast.ability}`,
-    fill: cast.channel ? 1 - progress : progress,
-    remaining: (Math.max(0, cast.total - cast.elapsed) / TICK_HZ).toFixed(1),
-    channel: cast.channel,
+    fill: bar.fill,
+    remaining: (bar.remaining / TICK_HZ).toFixed(1),
+    channel: bar.channel,
   };
 }

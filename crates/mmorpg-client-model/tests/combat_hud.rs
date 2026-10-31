@@ -1,19 +1,16 @@
-//! Acceptance for #72: the native combat HUD model.
+//! Acceptance for #72: the combat HUD model both clients draw (#543).
 //!
 //! The HUD shows the projected class resource, the viewer's cast or channel
 //! progress and each action-bar slot's cooldown or global cooldown. Every value
 //! comes from the received viewer projection and the immutable ability catalog;
-//! the HUD never computes an authoritative combat result. Slot and cooldown
-//! rules mirror the browser's derived ability state
-//! (`web/src/world/units/ability-state.ts` `slotState`, `cast-bar.ts`
-//! `castBarView`): the longer of a slot's own cooldown and the global cooldown
-//! is shown (the ability's own cooldown on a tie), a cast fills while a
-//! channel drains.
+//! the HUD never computes an authoritative combat result. The longer of a
+//! slot's own cooldown and the global cooldown is shown (the ability's own
+//! cooldown on a tie), a cast fills while a channel drains.
 //!
 //! Every fixture crosses the real wire codec (`mmorpg_protocol::encode_snapshot`
 //! then `decode_snapshot`), so the HUD reads only what a client can receive.
 
-use mmorpg_client::hud::{CombatHud, CooldownKind, SlotCooldown};
+use mmorpg_client_model::hud::{CastBar, CombatHud, CooldownKind, SlotCooldown, cast_bar};
 use mmorpg_core::{
     AbilityId, CastView, ClassChoice, Cooldown, EntityFlags, EntityKind, EntityRef, EntitySnapshot,
     GLOBAL_COOLDOWN_TICKS, PlayerClass, ResourceKind, ResourceView, Sex, TargetDetail, ViewerState,
@@ -134,7 +131,7 @@ fn slots_hold_the_projected_class_kit_in_catalog_order() {
             "{class:?}: nothing runs without projected cooldowns or a cast"
         );
         assert_eq!(hud.cast, None);
-        assert_eq!(hud.cast_fill(), None);
+        assert_eq!(hud.cast.map(|cast| cast.fill), None);
         assert!(!hud.dead);
     }
 }
@@ -186,7 +183,7 @@ fn a_classless_viewer_shows_no_resource_no_cast_and_no_slots() {
     assert_eq!(hud.resource, None);
     assert_eq!(hud.resource_fill(), None);
     assert_eq!(hud.cast, None);
-    assert_eq!(hud.cast_fill(), None);
+    assert_eq!(hud.cast.map(|cast| cast.fill), None);
     assert!(hud.slots.is_empty(), "no class, no action bar");
 }
 
@@ -306,14 +303,18 @@ fn a_channel_drains_and_marks_its_slot() {
     let hud = CombatHud::from_projection(&received(&arcanist));
     assert_eq!(
         hud.cast,
-        Some(CastView {
-            ability: AbilityId::new(12),
-            elapsed: mmorpg_core::golden::t30(45) as _,
-            total: mmorpg_core::golden::t30(180) as _,
+        Some(CastBar {
+            ability: 12,
+            fill: 0.75,
+            remaining: mmorpg_core::golden::t30(135) as _,
             channel: true,
         })
     );
-    assert_close(hud.cast_fill(), 0.75, "a quarter-run channel");
+    assert_close(
+        hud.cast.map(|cast| cast.fill),
+        0.75,
+        "a quarter-run channel",
+    );
     let casting: Vec<_> = hud.slots.iter().map(|slot| slot.casting).collect();
     assert_eq!(
         casting,
@@ -335,7 +336,7 @@ fn a_dead_viewer_shows_death_with_the_projected_resource_and_no_cast() {
     let hud = CombatHud::from_projection(&received(&warden));
     assert!(hud.dead);
     assert_eq!(hud.cast, None);
-    assert_eq!(hud.cast_fill(), None);
+    assert_eq!(hud.cast.map(|cast| cast.fill), None);
     assert_close(
         hud.resource_fill(),
         0.0,
@@ -387,8 +388,12 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
     );
 
     let hud = CombatHud::from_projection(&projection);
-    assert_eq!(hud.cast, projection.viewer.cast);
-    assert_close(hud.cast_fill(), 0.25, "Firebolt 0.5 s of 2 s");
+    assert_eq!(hud.cast, projection.viewer.cast.map(cast_bar));
+    assert_close(
+        hud.cast.map(|cast| cast.fill),
+        0.25,
+        "Firebolt 0.5 s of 2 s",
+    );
     assert_eq!(hud.resource, projection.viewer.resource);
     assert_close(hud.resource_fill(), 1.0, "a cast pays on completion");
     assert_eq!(slot_ids(&hud), [9, 10, 11, 12, 16, 21, 22, 23]);
@@ -417,8 +422,8 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
     let next = received(&zone.snapshot_for_player(1).unwrap());
     let later = CombatHud::from_projection(&next);
     assert_eq!(
-        later.cast.map(|cast| u64::from(cast.elapsed)),
-        Some(mmorpg_core::golden::t30(15) + 1)
+        later.cast.map(|cast| cast.remaining + 1),
+        hud.cast.map(|cast| cast.remaining)
     );
     assert_eq!(
         later.slots[0].cooldown.map(|cooldown| cooldown.remaining),
@@ -428,57 +433,5 @@ fn a_real_cast_projection_drives_the_cast_bar_and_global_cooldown() {
         CombatHud::from_projection(&projection),
         hud,
         "the same projection always yields the same HUD"
-    );
-}
-
-#[test]
-fn native_warden_slot_one_spends_rage_and_projects_global_cooldown() {
-    use mmorpg_client::controls::{ControlAction, NativeControls};
-    use winit::keyboard::KeyCode;
-    let content = greyhaven_vale::content();
-    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
-    zone.add_player(1).unwrap();
-    zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 0, sex: 0 })
-        .unwrap();
-    zone.advance_tick().unwrap();
-    // A nearby enemy and earned rage are the initial authoritative fixture.
-    let mut state = zone.snapshot().unwrap();
-    state.players[0].position = mmorpg_core::physics::from_units([0, 90, -2_000]);
-    state.players[0].combat.abilities.resource = 40;
-    state.creatures[0].position = mmorpg_core::physics::from_units([100, 45, -2_000]);
-    // Facing the creature to the east: Heroic Strike lands where the Warden faces (#517).
-    state.players[0].facing = 16_384;
-    let target = EntityRef::Creature(state.creatures[0].creature_id);
-    let mut zone = ZoneSimulation::from_snapshot(state, content).unwrap();
-    zone.apply_command(1, 2, ZoneCommand::SelectTarget(Some(target)))
-        .unwrap();
-    zone.advance_tick().unwrap();
-    let before = received(&zone.snapshot_for_player(1).unwrap());
-    let mut controls = NativeControls::new();
-    let actions = controls.key_down(KeyCode::Digit1, false);
-    assert_eq!(actions, [ControlAction::AbilitySlot(1)]);
-    let ControlAction::AbilitySlot(slot) = actions[0] else {
-        unreachable!()
-    };
-    let ability = CombatHud::from_projection(&before).slots[usize::from(slot - 1)].ability;
-    assert_eq!(ability, 1);
-    zone.apply_command(
-        1,
-        3,
-        ZoneCommand::UseAbility {
-            ability,
-            target: None,
-        },
-    )
-    .unwrap();
-    zone.advance_tick().unwrap();
-    let after = received(&zone.snapshot_for_player(1).unwrap());
-    assert!(after.viewer.resource.unwrap().value < before.viewer.resource.unwrap().value);
-    let hud = CombatHud::from_projection(&after);
-    assert_eq!(slot_ids(&hud), [1, 2, 3, 4, 17]);
-    assert!(
-        hud.slots[0]
-            .cooldown
-            .is_some_and(|cooldown| cooldown.kind == CooldownKind::Global)
     );
 }

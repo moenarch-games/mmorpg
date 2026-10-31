@@ -536,6 +536,30 @@ pub struct QuestSheet {
     pub markers: Vec<QuestMarker>,
 }
 
+impl From<&QuestSheet> for core::QuestSheet {
+    fn from(sheet: &QuestSheet) -> Self {
+        Self {
+            completed: sheet.completed,
+            entries: sheet
+                .entries
+                .iter()
+                .map(|entry| core::QuestEntry {
+                    quest: core::QuestId::new(entry.quest),
+                    progress: entry.progress,
+                })
+                .collect(),
+            markers: sheet
+                .markers
+                .iter()
+                .map(|marker| core::NpcMarker {
+                    npc: core::NpcId::new(marker.npc),
+                    marker: marker.marker.into(),
+                })
+                .collect(),
+        }
+    }
+}
+
 /// A door as every player sees it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 pub struct DoorState {
@@ -1473,25 +1497,7 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
             inventory_revision: snapshot.inventory_revision,
             inventory,
             equipment,
-            quests: snapshot.quests.as_ref().map(|sheet| core::QuestSheet {
-                completed: sheet.completed,
-                entries: sheet
-                    .entries
-                    .iter()
-                    .map(|entry| core::QuestEntry {
-                        quest: core::QuestId::new(entry.quest),
-                        progress: entry.progress,
-                    })
-                    .collect(),
-                markers: sheet
-                    .markers
-                    .iter()
-                    .map(|marker| core::NpcMarker {
-                        npc: core::NpcId::new(marker.npc),
-                        marker: marker.marker.into(),
-                    })
-                    .collect(),
-            }),
+            quests: snapshot.quests.as_ref().map(Into::into),
             loot,
             events: snapshot.events.iter().copied().map(Into::into).collect(),
             chat: snapshot
@@ -1975,13 +1981,6 @@ pub fn decode_redirect_notice_js(payload: &[u8]) -> Result<Ts<RedirectNotice>, J
     Ok(decode_redirect_notice(payload)
         .map_err(js_error)?
         .into_ts()?)
-}
-
-/// The core chat text rule; `undefined` when `text` is a valid line, otherwise why not.
-#[wasm_bindgen(js_name = chatTextError)]
-#[must_use]
-pub fn chat_text_error(text: &str) -> Option<String> {
-    chat_text(text).err()
 }
 
 #[wasm_bindgen(js_name = wireCatalog)]

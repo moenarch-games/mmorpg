@@ -5,6 +5,8 @@ import { ENVIRONMENT, DAY_SECONDS, environmentAt, skyAt } from "../../src/world/
 import { decodeScenery } from "../../src/world/scenery";
 import { SceneryFrame, buildSceneryScene } from "../../src/world/scenery-nodes";
 import { localZoneModule } from "./local-zone-module";
+// Run by the native parity tests outside `bun test`, so the module is instantiated here (#541).
+import "./wasm";
 
 const input = JSON.parse(await Bun.stdin.text());
 const scenery = decodeScenery(JSON.stringify(input.scenery));

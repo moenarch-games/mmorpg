@@ -2,7 +2,7 @@ import type { WorldCommand } from "../../command-wire";
 import type { QuestMarkerKind, ZoneSnapshot } from "../../replication";
 import type { ContentCatalog, QuestRecord } from "../catalog";
 import { isZoneNight } from "../environment";
-import { dialogNpc, dialogView, questViews, QuestState, trackerRows, type QuestNpc, type QuestView } from "./quest-state";
+import { dialogNpc, dialogView, objectiveViews, questViews, QuestState, trackerRows, type QuestNpc, type QuestView } from "./quest-state";
 
 export type QuestElements = {
   /** The NPC dialog: quests offered, ready to turn in and in progress at one quest NPC. */
@@ -62,9 +62,9 @@ function rewardsText(quest: QuestRecord): string {
   return `Rewards: ${parts.join(" · ")}`;
 }
 
-function objectiveList(view: QuestView | null, quest: QuestRecord, catalog: ContentCatalog): HTMLUListElement {
+function objectiveList(view: QuestView | null, quest: QuestRecord): HTMLUListElement {
   const list = element("ul", undefined, "quest-objectives");
-  const objectives = view?.objectives ?? questViews({ completed: 0, entries: [{ quest: quest.id, progress: [0, 0, 0] }], markers: [] }, catalog)[0]!.objectives;
+  const objectives = view?.objectives ?? objectiveViews(quest.id, [0, 0, 0]);
   for (const objective of objectives) {
     const item = element("li", objective.text);
     item.dataset.done = String(objective.done);
@@ -277,7 +277,7 @@ export class QuestPanel {
 
   /** One row per quest and objective; objectives the zone just advanced are marked changed. */
   #renderTracker(catalog: ContentCatalog | null, sheet: QuestState["sheet"]): void {
-    const rows = catalog && sheet ? trackerRows(sheet, catalog) : [];
+    const rows = catalog && sheet ? trackerRows(sheet) : [];
     const changed = rows.map((row) => row.objective !== null && this.#state.highlighted(row.quest, row.objective));
     const key = JSON.stringify([rows, changed]);
     if (key === this.#trackerKey) {
@@ -370,7 +370,7 @@ export class QuestPanel {
     const card = element("li", undefined, "quest-card");
     card.dataset.quest = String(quest.id);
     const heading = element("h3", view?.complete ? `${quest.name} (complete)` : quest.name);
-    card.append(heading, element("p", quest.text, "quest-text"), objectiveList(view, quest, catalog));
+    card.append(heading, element("p", quest.text, "quest-text"), objectiveList(view, quest));
     card.append(element("p", rewardsText(quest), "quest-rewards"));
     if (quest.choices.length > 0) {
       const group = element("fieldset", undefined, "quest-choices");

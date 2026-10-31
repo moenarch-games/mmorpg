@@ -1,205 +1,63 @@
-//! The native combat HUD: the projected class resource, the viewer's cast or
-//! channel and each action-bar slot's cooldown.
-//!
-//! Every value is read from the received viewer projection and the immutable
-//! ability catalog; the HUD never decides whether an ability can be used. Slot
-//! and cast rules mirror the browser's `slotState` and `castBarView`.
-use mmorpg_core::{
-    ABILITY_CATALOG, AbilityId, AbilityUser, CastView, GLOBAL_COOLDOWN_TICKS, PlayerClass,
-    ResourceKind, ResourceView, ZoneSnapshot, ability_by_id,
-};
+//! Flat rectangles for the native combat HUD: the cast bar, the resource bar
+//! and the action bar. What they show is `mmorpg_client_model::hud`, shared
+//! with the browser (#543); only the drawing lives here.
+use mmorpg_client_model::hud::{CombatHud, CooldownKind};
+use mmorpg_core::ResourceKind;
 
-/// Which wait a slot shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CooldownKind {
-    /// The ability's own cooldown.
-    Ability,
-    /// The global cooldown shared by every slot.
-    Global,
-}
-
-/// A running wait on a slot, in ticks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SlotCooldown {
-    pub kind: CooldownKind,
-    pub remaining: u16,
-    pub total: u16,
-}
-
-/// One action-bar slot.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SlotHud {
-    pub ability: u8,
-    /// The viewer is casting or channelling this slot's ability.
-    pub casting: bool,
-    pub cooldown: Option<SlotCooldown>,
-}
-
-/// What the combat HUD shows for one received projection.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CombatHud {
-    pub resource: Option<ResourceView>,
-    pub cast: Option<CastView>,
-    /// The projected class kit in catalog order; empty without a class.
-    pub slots: Vec<SlotHud>,
-    pub dead: bool,
-}
-
-/// The class abilities in catalog id order: action-bar slots 1–8.
+/// Screen rectangles for the renderer, back to front: the cast bar, the
+/// resource bar and the action bar, centred above the bottom edge.
 #[must_use]
-pub fn class_kit(class: PlayerClass) -> Vec<u8> {
-    ABILITY_CATALOG
-        .iter()
-        .filter(|ability| ability.user == AbilityUser::Class(class))
-        .map(|ability| ability.id.get())
-        .take(8)
-        .collect()
-}
-
-impl CombatHud {
-    #[must_use]
-    pub fn from_projection(snapshot: &ZoneSnapshot) -> Self {
-        let viewer = &snapshot.viewer;
-        let global = viewer.global_cooldown;
-        let slots = viewer
-            .class
-            .map(|choice| class_kit(choice.class))
-            .unwrap_or_default()
-            .into_iter()
-            .map(|ability| {
-                let running = snapshot
-                    .cooldowns
-                    .iter()
-                    .find(|cooldown| cooldown.ability.get() == ability)
-                    .map_or(0, |cooldown| cooldown.remaining);
-                // The longer wait is the one the player waits on; a tie shows
-                // the ability's own cooldown.
-                let cooldown = if running > 0 && running >= global {
-                    Some(SlotCooldown {
-                        kind: CooldownKind::Ability,
-                        remaining: running,
-                        total: ability_by_id(AbilityId::new(ability))
-                            .map_or(running, |definition| definition.cooldown),
-                    })
-                } else if global > 0 {
-                    Some(SlotCooldown {
-                        kind: CooldownKind::Global,
-                        remaining: global,
-                        total: GLOBAL_COOLDOWN_TICKS,
-                    })
-                } else {
-                    None
-                };
-                SlotHud {
-                    ability,
-                    casting: viewer
-                        .cast
-                        .is_some_and(|cast| cast.ability.get() == ability),
-                    cooldown,
-                }
-            })
-            .collect();
-        Self {
-            resource: viewer.resource,
-            cast: viewer.cast,
-            slots,
-            dead: viewer.dead,
-        }
+pub fn rects(hud: &CombatHud) -> Vec<HudRect> {
+    let mut rects = Vec::new();
+    let bar = |rects: &mut Vec<HudRect>, top: f32, height: f32, fill: f32, color| {
+        let (left, right) = (0.5 - BAR_HALF_WIDTH, 0.5 + BAR_HALF_WIDTH);
+        rects.push(HudRect::new([left, top], [right, top + height], FRAME));
+        let inset = [left + BORDER, top + BORDER];
+        let width = (right - left - 2.0 * BORDER) * fill;
+        rects.push(HudRect::new(
+            inset,
+            [inset[0] + width, top + height - BORDER],
+            color,
+        ));
+    };
+    if let Some(cast) = hud.cast {
+        let color = if cast.channel { CHANNEL } else { CAST };
+        bar(&mut rects, CAST_TOP, BAR_HEIGHT, cast.fill, color);
     }
-
-    /// The resource bar's fill, `value / max`.
-    #[must_use]
-    pub fn resource_fill(&self) -> Option<f32> {
-        self.resource.map(|resource| {
-            if resource.max == 0 {
-                0.0
-            } else {
-                (f32::from(resource.value) / f32::from(resource.max)).clamp(0.0, 1.0)
-            }
-        })
+    if let (Some(fill), Some(resource)) = (hud.resource_fill(), hud.resource) {
+        bar(
+            &mut rects,
+            RESOURCE_TOP,
+            BAR_HEIGHT,
+            fill,
+            resource_color(resource.kind),
+        );
     }
-
-    /// The cast bar's fill: a cast fills, a channel drains.
-    #[must_use]
-    pub fn cast_fill(&self) -> Option<f32> {
-        self.cast.map(|cast| {
-            let progress = if cast.total == 0 {
-                1.0
-            } else {
-                (f32::from(cast.elapsed) / f32::from(cast.total)).clamp(0.0, 1.0)
+    let count = hud.slots.len() as f32;
+    let row = count * SLOT_SIZE + (count - 1.0).max(0.0) * SLOT_GAP;
+    for (index, slot) in hud.slots.iter().enumerate() {
+        let left = 0.5 - row / 2.0 + index as f32 * (SLOT_SIZE + SLOT_GAP);
+        let (min, max) = ([left, SLOT_TOP], [left + SLOT_SIZE, SLOT_TOP + SLOT_SIZE]);
+        let frame = if slot.casting { CASTING_FRAME } else { FRAME };
+        rects.push(HudRect::new(min, max, frame));
+        let inner = (
+            [min[0] + BORDER, min[1] + BORDER],
+            [max[0] - BORDER, max[1] - BORDER],
+        );
+        let face = if hud.dead { DEAD_SLOT } else { READY_SLOT };
+        rects.push(HudRect::new(inner.0, inner.1, face));
+        if let Some(cooldown) = slot.cooldown {
+            // The covered share of the slot drains from the top as the wait runs out.
+            let color = match cooldown.kind {
+                CooldownKind::Ability => COOLDOWN,
+                CooldownKind::Global => GLOBAL,
             };
-            if cast.channel {
-                1.0 - progress
-            } else {
-                progress
-            }
-        })
+            let bottom = inner.1[1];
+            let top = bottom - (bottom - inner.0[1]) * cooldown.share();
+            rects.push(HudRect::new([inner.0[0], top], inner.1, color));
+        }
     }
-
-    /// Flat screen rectangles for the renderer, back to front: the cast bar,
-    /// the resource bar and the action bar, centred above the bottom edge.
-    #[must_use]
-    pub fn rects(&self) -> Vec<HudRect> {
-        let mut rects = Vec::new();
-        let bar = |rects: &mut Vec<HudRect>, top: f32, height: f32, fill: f32, color| {
-            let (left, right) = (0.5 - BAR_HALF_WIDTH, 0.5 + BAR_HALF_WIDTH);
-            rects.push(HudRect::new([left, top], [right, top + height], FRAME));
-            let inset = [left + BORDER, top + BORDER];
-            let width = (right - left - 2.0 * BORDER) * fill;
-            rects.push(HudRect::new(
-                inset,
-                [inset[0] + width, top + height - BORDER],
-                color,
-            ));
-        };
-        if let Some(fill) = self.cast_fill() {
-            let color = if self.cast.is_some_and(|cast| cast.channel) {
-                CHANNEL
-            } else {
-                CAST
-            };
-            bar(&mut rects, CAST_TOP, BAR_HEIGHT, fill, color);
-        }
-        if let (Some(fill), Some(resource)) = (self.resource_fill(), self.resource) {
-            bar(
-                &mut rects,
-                RESOURCE_TOP,
-                BAR_HEIGHT,
-                fill,
-                resource_color(resource.kind),
-            );
-        }
-        let count = self.slots.len() as f32;
-        let row = count * SLOT_SIZE + (count - 1.0).max(0.0) * SLOT_GAP;
-        for (index, slot) in self.slots.iter().enumerate() {
-            let left = 0.5 - row / 2.0 + index as f32 * (SLOT_SIZE + SLOT_GAP);
-            let (min, max) = ([left, SLOT_TOP], [left + SLOT_SIZE, SLOT_TOP + SLOT_SIZE]);
-            let frame = if slot.casting { CASTING_FRAME } else { FRAME };
-            rects.push(HudRect::new(min, max, frame));
-            let inner = (
-                [min[0] + BORDER, min[1] + BORDER],
-                [max[0] - BORDER, max[1] - BORDER],
-            );
-            let face = if self.dead { DEAD_SLOT } else { READY_SLOT };
-            rects.push(HudRect::new(inner.0, inner.1, face));
-            if let Some(cooldown) = slot.cooldown {
-                // The covered share of the slot drains from the top as the wait runs out.
-                let share = if cooldown.total == 0 {
-                    1.0
-                } else {
-                    (f32::from(cooldown.remaining) / f32::from(cooldown.total)).clamp(0.0, 1.0)
-                };
-                let color = match cooldown.kind {
-                    CooldownKind::Ability => COOLDOWN,
-                    CooldownKind::Global => GLOBAL,
-                };
-                let bottom = inner.1[1];
-                let top = bottom - (bottom - inner.0[1]) * share;
-                rects.push(HudRect::new([inner.0[0], top], inner.1, color));
-            }
-        }
-        rects
-    }
+    rects
 }
 
 /// An axis-aligned screen rectangle in normalised window coordinates
@@ -250,51 +108,40 @@ const fn resource_color(kind: ResourceKind) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn class_kits_hold_the_catalog_order() {
-        assert_eq!(class_kit(PlayerClass::Warden), [1, 2, 3, 4, 17]);
-        assert_eq!(class_kit(PlayerClass::Ranger), [5, 6, 7, 8, 19, 20]);
-        assert_eq!(
-            class_kit(PlayerClass::Arcanist),
-            [9, 10, 11, 12, 16, 21, 22, 23]
-        );
-        assert_eq!(class_kit(PlayerClass::Necromancer), [26, 27, 28, 29, 45]);
-        assert_eq!(class_kit(PlayerClass::Rogue), [30, 31, 32, 33, 42, 43, 44]);
-        assert_eq!(class_kit(PlayerClass::Cleric), [34, 35, 36, 37]);
-        assert_eq!(class_kit(PlayerClass::Druid), [38, 39, 40, 41, 46]);
-    }
+    use mmorpg_client_model::hud::{CastBar, SlotCooldown, SlotState};
+    use mmorpg_core::ResourceView;
 
     #[test]
     fn a_full_hud_fits_the_rect_budget_and_the_window() {
-        let cooldown = Some(SlotCooldown {
-            kind: CooldownKind::Ability,
-            remaining: 10,
-            total: 20,
-        });
+        let slot = SlotState {
+            ability: 9,
+            learned: true,
+            unlock_level: 1,
+            resource_short: false,
+            out_of_range: false,
+            casting: true,
+            cooldown: Some(SlotCooldown {
+                kind: CooldownKind::Ability,
+                remaining: 10,
+                total: 20,
+            }),
+        };
         let hud = CombatHud {
             resource: Some(ResourceView {
                 kind: ResourceKind::Mana,
                 value: 50,
                 max: 100,
             }),
-            cast: Some(CastView {
-                ability: AbilityId::new(9),
-                elapsed: 10,
-                total: 60,
+            cast: Some(CastBar {
+                ability: 9,
+                fill: 1.0 / 6.0,
+                remaining: 50,
                 channel: false,
             }),
-            slots: vec![
-                SlotHud {
-                    ability: 9,
-                    casting: true,
-                    cooldown,
-                };
-                4
-            ],
+            slots: vec![slot; 4],
             dead: false,
         };
-        let rects = hud.rects();
+        let rects = rects(&hud);
         assert_eq!(rects.len(), MAX_HUD_RECTS);
         for rect in rects {
             for axis in 0..2 {

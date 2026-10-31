@@ -1,20 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { TICK_HZ, type EntityState, type QuestSheet, type ZoneEvent, type ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
-import { dialogNpc, dialogView, QuestState, questViews, trackerLines } from "../src/world/units/quest-state";
+import { QuestState } from "../src/world/units/quest-state";
 import { catalogJson } from "./support/catalog";
-import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
+import { HEALTHY_VIEWER, playerEntity, testSnapshot } from "./support/snapshots";
 
 const catalog = decodeCatalog(JSON.stringify(catalogJson()));
 const MARSHAL = 1;
 const TANNER = 2;
-
-function npc(entityId: number, x: number, z: number): EntityState {
-  return {
-    kind: "npc", entityId, appearance: entityId, position: [x, 90, z], velocity: [0, 0, 0], facing: 0, level: 10,
-    healthPercent: 100, flags: NO_FLAGS,
-  };
-}
 
 function sheet(fields: Partial<QuestSheet> = {}): QuestSheet {
   return { completed: 0, entries: [], markers: [], ...fields };
@@ -26,69 +19,6 @@ function projection(tick: number, fields: Partial<ZoneSnapshot> = {}, entities: 
     entities: [playerEntity(7, [0, 90, 0]), ...entities], ...fields,
   });
 }
-
-describe("quest presentation", () => {
-  test("objectives read their received progress, collect counts included", () => {
-    const views = questViews(sheet({ entries: [{ quest: 1, progress: [4, 0, 0] }, { quest: 2, progress: [5, 0, 0] }] }), catalog);
-    expect(views.map((view) => [view.quest.name, view.objectives.map((objective) => objective.text), view.complete])).toEqual([
-      ["Trouble in the Woods", ["Timber Wolf slain: 4/6"], false],
-      ["Pelts for the Tanner", ["Wolf Pelt: 5/5"], true],
-    ]);
-    const errand = questViews(sheet({ completed: 0b11, entries: [{ quest: 3, progress: [1, 0, 0] }] }), catalog)[0]!;
-    expect(errand.objectives.map((objective) => objective.text)).toEqual([
-      "Speak with Marshal Elden Greywatch (done)", "Explore Greyhaven Outpost",
-    ]);
-    expect(() => questViews(sheet({ entries: [{ quest: 9, progress: [0, 0, 0] }] }), catalog)).toThrow("catalog");
-  });
-
-  test("an NPC offers available quests and takes back the ones that end with it", () => {
-    const tanner = { npc: TANNER, name: "Tanner Hilda Brook", inReach: true };
-    // Pelts need Trouble in the Woods turned in.
-    expect(dialogView(sheet(), catalog, tanner).offered).toEqual([]);
-    const unlocked = dialogView(sheet({ completed: 0b1 }), catalog, tanner);
-    expect(unlocked.offered.map((quest) => quest.id)).toEqual([2]);
-    const active = sheet({ completed: 0b1, entries: [{ quest: 2, progress: [3, 0, 0] }] });
-    expect(dialogView(active, catalog, tanner)).toMatchObject({ offered: [], ready: [] });
-    expect(dialogView(active, catalog, tanner).inProgress.map((view) => view.quest.id)).toEqual([2]);
-    const ready = sheet({ completed: 0b1, entries: [{ quest: 2, progress: [5, 0, 0] }] });
-    expect(dialogView(ready, catalog, tanner).ready.map((view) => view.quest.id)).toEqual([2]);
-    // Once Pelts is turned in, the errand to the Marshal is offered; the Marshal ends it.
-    const done = sheet({ completed: 0b11 });
-    expect(dialogView(done, catalog, tanner).offered.map((quest) => quest.id)).toEqual([3]);
-    const marshal = { npc: MARSHAL, name: "Marshal Elden Greywatch", inReach: true };
-    const errand = sheet({ completed: 0b11, entries: [{ quest: 3, progress: [1, 1, 0] }] });
-    expect(dialogView(errand, catalog, marshal).ready.map((view) => view.quest.id)).toEqual([3]);
-    // At night the woken Marshal (#158) greets you and takes only turn-ins.
-    expect(dialogView(sheet(), catalog, marshal).offered.map((quest) => quest.id)).toEqual([1]);
-    expect(dialogView(sheet(), catalog, marshal, true)).toMatchObject({ greeting: "Mm? At this hour?", offered: [] });
-    expect(dialogView(errand, catalog, marshal, true).ready.map((view) => view.quest.id)).toEqual([3]);
-    expect(dialogView(done, catalog, tanner, true).greeting).toBeNull();
-    expect(trackerLines(errand, catalog)).toEqual([
-      "The Missing Farmhand — return to Marshal Elden Greywatch",
-      "  ✓ Speak with Marshal Elden Greywatch (done)",
-      "  ✓ Explore Greyhaven Outpost (done)",
-    ]);
-  });
-
-  test("an explicitly selected non-quest or missing NPC never redirects Talk to a nearby quest giver", () => {
-    for (const id of [3, 6, 999]) {
-      const snapshot = projection(1, { viewer: { ...HEALTHY_VIEWER, target: { kind: "npc", id } } }, [
-        npc(MARSHAL, 100, 0), npc(3, 200, 0), npc(6, 300, 0),
-      ]);
-      expect(dialogNpc(snapshot, catalog)).toBeNull();
-    }
-  });
-
-  test("talking prefers the selected quest NPC, then the nearest, and hints reach", () => {
-    const entities = [npc(MARSHAL, 300, 0), npc(TANNER, 100, 400), npc(3, 50, 0)];
-    expect(dialogNpc(projection(1, {}, entities), catalog)).toEqual({ npc: MARSHAL, name: "Marshal Elden Greywatch", inReach: true });
-    const selected = projection(1, { viewer: { ...HEALTHY_VIEWER, target: { kind: "npc", id: TANNER } } }, entities);
-    expect(dialogNpc(selected, catalog)).toEqual({ npc: TANNER, name: "Tanner Hilda Brook", inReach: true });
-    expect(dialogNpc(projection(1, {}, [npc(MARSHAL, 600, 0)]), catalog)?.inReach).toBe(false);
-    // The vendor gives no quests.
-    expect(dialogNpc(projection(1, {}, [npc(3, 50, 0)]), catalog)).toBeNull();
-  });
-});
 
 describe("quest state", () => {
   test("keeps the latest sheet and markers and ignores older ticks", () => {

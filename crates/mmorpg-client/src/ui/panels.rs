@@ -3,9 +3,10 @@
 use super::{GameUi, LogTab, UiFrame, UiIntent, chat, line_color, panel_frame};
 use crate::interaction::{NpcContext, quest_brief};
 use egui::{Align2, Color32, RichText, Vec2};
+use mmorpg_client_model::quest::{self, QuestStanding};
 use mmorpg_core::{
-    EquipmentSlot, ItemId, NpcRole, Quest, QuestObjective, ZoneCommand, ZoneContent, ZoneSnapshot,
-    item_template, sell_price,
+    EquipmentSlot, ItemId, NpcRole, Quest, ZoneCommand, ZoneContent, ZoneSnapshot, item_template,
+    sell_price,
 };
 use strum::VariantArray;
 
@@ -41,57 +42,20 @@ fn slot_title(slot: EquipmentSlot) -> &'static str {
     }
 }
 
-/// One objective as the tracker names it.
-fn objective_text(objective: QuestObjective, content: &ZoneContent) -> String {
-    match objective {
-        QuestObjective::Kill { template, .. } => format!(
-            "{} slain",
-            content
-                .creature_template(template)
-                .map_or("Creatures", |t| t.name.as_str())
-        ),
-        QuestObjective::Collect { item, .. } | QuestObjective::Retrieve { item, .. } => {
-            item_name(item).to_owned()
-        }
-        QuestObjective::Talk { npc } => format!(
-            "Speak to {}",
-            content
-                .npc(npc)
-                .map_or("the named NPC", |n| n.name.as_str())
-        ),
-        QuestObjective::Explore { area } => format!(
-            "Explore {}",
-            content
-                .areas()
-                .areas()
-                .iter()
-                .find(|a| a.id() == area)
-                .map_or("the area", |a| a.name())
-        ),
+fn progress_color(done: bool) -> Color32 {
+    if done {
+        Color32::from_rgb(140, 220, 120)
+    } else {
+        Color32::from_gray(220)
     }
 }
 
 fn quest_progress(ui: &mut egui::Ui, quest: &Quest, progress: &[u8], content: &ZoneContent) {
-    for (index, objective) in quest.objectives.iter().enumerate() {
-        let current = progress.get(index).copied().unwrap_or(0);
-        let required = objective.required();
-        let done = current >= required;
+    for objective in quest::quest_view(quest, progress, content).objectives {
         ui.small(
-            RichText::new(format!(
-                "  {} {current}/{required}",
-                objective_text(*objective, content)
-            ))
-            .color(if done {
-                Color32::from_rgb(140, 220, 120)
-            } else {
-                Color32::from_gray(220)
-            }),
+            RichText::new(format!("  {}", objective.text)).color(progress_color(objective.done)),
         );
     }
-}
-
-fn completed(sheet: &mmorpg_core::QuestSheet, quest: mmorpg_core::QuestId) -> bool {
-    quest.bit().is_some_and(|bit| sheet.completed & bit != 0)
 }
 
 impl GameUi {
@@ -114,7 +78,7 @@ impl GameUi {
                         .stick_to_bottom(true)
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            for line in lines {
+                            for line in lines.lines() {
                                 ui.label(
                                     RichText::new(&line.text)
                                         .size(12.5)
@@ -156,24 +120,12 @@ impl GameUi {
         }
         ui.separator();
         ui.label(RichText::new("Quests").strong());
-        for entry in &sheet.entries {
-            let Some(quest) = frame.content.quest(entry.quest) else {
-                continue;
-            };
-            let ready = quest
-                .objectives
-                .iter()
-                .enumerate()
-                .all(|(i, o)| entry.progress.get(i).copied().unwrap_or(0) >= o.required());
-            ui.label(
-                RichText::new(if ready {
-                    format!("{} (ready to turn in)", quest.name)
-                } else {
-                    quest.name.clone()
-                })
-                .color(Color32::from_rgb(255, 210, 0)),
-            );
-            quest_progress(ui, quest, &entry.progress, frame.content);
+        for row in quest::tracker_rows(sheet, frame.content) {
+            if row.objective.is_some() {
+                ui.small(RichText::new(row.text).color(progress_color(row.done)));
+            } else {
+                ui.label(RichText::new(row.text).color(Color32::from_rgb(255, 210, 0)));
+            }
         }
     }
 
@@ -271,22 +223,18 @@ impl GameUi {
                         }
                         for (index, quest) in rows.iter().enumerate() {
                             let entry = sheet.entries.iter().find(|e| e.quest == quest.id);
-                            let done = completed(&sheet, quest.id);
-                            let unlocked = quest.prerequisite.is_none_or(|p| completed(&sheet, p));
-                            let (state, action) = if done {
-                                ("completed", None)
-                            } else if entry.is_some() && quest.ender == npc.id {
-                                ("ready to turn in?", Some("Complete quest"))
-                            } else if entry.is_some() {
-                                ("in progress", None)
-                            } else if unlocked && quest.giver == npc.id && woken.is_some() {
-                                ("not at this hour", None)
-                            } else if unlocked && quest.giver == npc.id {
-                                ("available", Some("Accept"))
-                            } else if unlocked {
-                                ("offered by another", None)
-                            } else {
-                                ("locked", None)
+                            let (state, action) = match quest::standing(&sheet, quest, npc.id) {
+                                QuestStanding::Completed => ("completed", None),
+                                QuestStanding::TurnIn => {
+                                    ("ready to turn in?", Some("Complete quest"))
+                                }
+                                QuestStanding::InProgress => ("in progress", None),
+                                QuestStanding::Offered if woken.is_some() => {
+                                    ("not at this hour", None)
+                                }
+                                QuestStanding::Offered => ("available", Some("Accept")),
+                                QuestStanding::OfferedElsewhere => ("offered by another", None),
+                                QuestStanding::Locked => ("locked", None),
                             };
                             let selected = context.row == index;
                             if ui
