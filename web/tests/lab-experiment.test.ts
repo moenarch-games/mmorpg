@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PROTOCOL_ID } from "../src/protocol-id";
+import { PROTOCOL_ID } from "./support/wire";
 import { encodeCommand } from "../src/command-wire";
 import { TICK_HZ } from "../src/replication";
 import {

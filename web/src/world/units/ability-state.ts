@@ -1,5 +1,5 @@
 import { sameEntity } from "../../entity-ref";
-import { GLOBAL_COOLDOWN_TICKS, TICK_HZ, UNITS_PER_METRE, findEntity, type ResourceKind, type ZoneSnapshot } from "../../replication";
+import { TICK_HZ, UNITS_PER_METRE, findEntity, wireCatalog, type ResourceKind, type ZoneSnapshot } from "../../replication";
 import type { AbilityRecord, ContentCatalog } from "../catalog";
 import { presentationOf, reachUnits, type AbilityRange } from "./ability-presentation";
 
@@ -52,7 +52,7 @@ export function slotState(ability: AbilityRecord, snapshot: ZoneSnapshot, distan
   const cooldown: SlotCooldown | null = running > 0 && running >= global
     ? { kind: "cooldown", remaining: running, total: ability.cooldown }
     : global > 0
-      ? { kind: "gcd", remaining: global, total: GLOBAL_COOLDOWN_TICKS }
+      ? { kind: "gcd", remaining: global, total: wireCatalog().globalCooldownTicks }
       : null;
   return {
     ability,

@@ -5,9 +5,8 @@ import { actionBindingLabels } from "../src/input/binding-labels";
 import { decodeSnapshot, type ZoneEvent } from "../src/replication";
 import { combatTexts } from "../src/world/units/combat-text";
 import { GUARD_LANE_THRESHOLD_PX, ShieldGuardHold, canGuard, guardDisplay, laneFromOffset, padGuardLane } from "../src/world/units/shield-guard";
-import { encodeTestSnapshot } from "./support/snapshot-encoder";
+import { encodeSnapshot, PROTOCOL_BYTE } from "./support/wire";
 import { playerEntity, testSnapshot } from "./support/snapshots";
-import { PROTOCOL_BYTE } from "../src/protocol-id";
 
 const VIEWER = { kind: "player", id: 1 } as const;
 const WOLF = { kind: "creature", id: 108 } as const;
@@ -61,7 +60,7 @@ describe("shield guard presentation", () => {
       { kind: "blocked", source: WOLF, target: VIEWER, lane: "middle", amount: 3 },
       { kind: "guard-broken", source: WOLF, target: VIEWER, lane: "middle", ticks: 45 },
     ], { raised: "middle", protecting: false, broken: 45 });
-    const decoded = decodeSnapshot(encodeTestSnapshot(guarded));
+    const decoded = decodeSnapshot(encodeSnapshot(guarded));
     expect(decoded.viewer.guard).toEqual({ raised: "middle", protecting: false, broken: 45 });
     expect(decoded.events).toEqual(guarded.events);
     expect(canGuard(decoded)).toBe(true);

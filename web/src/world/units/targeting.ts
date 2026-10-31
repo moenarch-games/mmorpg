@@ -1,5 +1,5 @@
-import { entityKindCode, sameEntity, type EntityRef } from "../../entity-ref";
-import type { ZoneSnapshot } from "../../replication";
+import { sameEntity, type EntityRef } from "../../entity-ref";
+import { wireCatalog, type ZoneSnapshot } from "../../replication";
 
 /**
  * Tab targeting: the nearest living attackable opponent in the projection.
@@ -11,6 +11,7 @@ export function nextTabTarget(snapshot: ZoneSnapshot): EntityRef | null {
   if (!viewer) {
     return null;
   }
+  const kinds = wireCatalog().entityKinds;
   const candidates = snapshot.entities
     .filter((entity) => (entity.kind === "creature" || entity.kind === "player") && entity.flags.attackable && !entity.flags.dead)
     .map((entity) => {
@@ -18,7 +19,7 @@ export function nextTabTarget(snapshot: ZoneSnapshot): EntityRef | null {
       const dz = entity.position[2] - viewer.position[2];
       return { target: { kind: entity.kind, id: entity.entityId }, distance: dx * dx + dz * dz };
     })
-    .sort((left, right) => left.distance - right.distance || entityKindCode(left.target.kind) - entityKindCode(right.target.kind) || left.target.id - right.target.id);
+    .sort((left, right) => left.distance - right.distance || kinds.indexOf(left.target.kind) - kinds.indexOf(right.target.kind) || left.target.id - right.target.id);
   if (candidates.length === 0) {
     return null;
   }

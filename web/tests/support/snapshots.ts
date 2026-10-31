@@ -1,4 +1,4 @@
-import { BREATH_MAX_TICKS, type EntityFlags, type EntityState, type QuestSheet, type ViewerState, type Vector3, type ZoneSnapshot } from "../../src/replication";
+import { wireCatalog, type EntityFlags, type EntityState, type QuestSheet, type ViewerState, type Vector3, type ZoneSnapshot } from "../../src/replication";
 
 export const NO_FLAGS: EntityFlags = {
   dead: false, inCombat: false, hostile: false, attackable: false, tappedByOther: false, evading: false, targetsViewer: false, lootable: false,
@@ -16,7 +16,7 @@ export const HEALTHY_VIEWER: ViewerState = {
   guard: { raised: null, protecting: false, broken: 0 },
   stance: null,
   combo: null,
-  breath: BREATH_MAX_TICKS,
+  breath: wireCatalog().breathMaxTicks,
   waystones: [],
 };
 
@@ -29,11 +29,11 @@ export const NO_QUESTS: QuestSheet = { completed: 0, entries: [], markers: [] };
 /** A projection with a healthy viewer, no target and no events. */
 export function testSnapshot(
   fields: Pick<ZoneSnapshot, "zoneId" | "tick" | "contentRevision" | "acknowledgedSequence" | "viewerId" | "entities"> &
-    Partial<Pick<ZoneSnapshot, "viewer" | "targetOfTarget" | "events" | "inventoryRevision" | "inventory" | "equipment" | "stats" | "loot" | "cooldowns" | "auras" | "targetDetail" | "quests">>,
+    Partial<Pick<ZoneSnapshot, "viewer" | "targetOfTarget" | "events" | "chat" | "inventoryRevision" | "inventory" | "equipment" | "stats" | "loot" | "cooldowns" | "auras" | "targetDetail" | "quests" | "doors" | "pieces" | "raid" | "projectiles" | "debris">>,
 ): ZoneSnapshot {
   return {
     loot: null, inventoryRevision: 1n, inventory: null, equipment: null, stats: null, viewer: HEALTHY_VIEWER, targetOfTarget: null, events: [], chat: [],
-    cooldowns: [], auras: [], targetDetail: { cast: null, auras: [] },
+    cooldowns: [], auras: [], targetDetail: { cast: null, auras: [] }, doors: [], pieces: [], raid: null, projectiles: [], debris: [],
     // The quest sheet travels exactly with the bag sheet.
     quests: fields.inventory ? NO_QUESTS : null, ...fields,
   };

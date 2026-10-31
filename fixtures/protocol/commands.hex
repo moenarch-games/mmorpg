@@ -1,4 +1,4 @@
-# Command golden fixture, verified by mmorpg-protocol and web tests.
+# Command golden fixture, verified by mmorpg-protocol.
 870101000000 move 1 0 0
 870101014000 move 1 1 16384
 8701ffff8000 move -1 -1 32768

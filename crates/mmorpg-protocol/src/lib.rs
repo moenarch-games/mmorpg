@@ -48,8 +48,8 @@ use std::fmt;
 /// observations and canonical snapshots (and so checkpoints and saved browser worlds).
 ///
 /// A random 24-bit token, not a counter. Any change to one of those layouts replaces it with
-/// fresh random bytes by running `scripts/new-protocol-id.sh`, which also rewrites the browser's
-/// copy in `web/src/protocol-id.ts`. Two parallel format changes therefore edit this line
+/// fresh random bytes by running `scripts/new-protocol-id.sh`; the browser reads it through
+/// `mmorpg-wasm` (#541). Two parallel format changes therefore edit this line
 /// differently and git refuses to merge them silently; decoders accept only this exact value
 /// (docs/adr/0006-merge-safe-format-identities.md). Snapshots lead with its three bytes and
 /// commands with its low byte.

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { decodeRedirectNotice, isRedirectNotice } from "../src/replication";
-import { PROTOCOL_ID_BYTES } from "../src/protocol-id";
+import { PROTOCOL_ID_BYTES } from "./support/wire";
 
 /** A notice laid out like `mmorpg_protocol::encode_redirect_notice` (#145). */
 function notice(route: string, transferId = 0xfeedn): Uint8Array {

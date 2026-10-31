@@ -3,7 +3,7 @@ import { encodeCommand } from "../src/command-wire";
 import { chatTextError, type ChatLine } from "../src/replication";
 import { ChatLog, MAX_CHAT_LOG_LINES, parseChatInput } from "../src/world/units/chat-frame";
 import { playerEntity, testSnapshot } from "./support/snapshots";
-import { PROTOCOL_BYTE } from "../src/protocol-id";
+import { PROTOCOL_BYTE } from "./support/wire";
 
 /** The protocol byte every command leads with, as hex. */
 const P = PROTOCOL_BYTE.toString(16).padStart(2, "0");
@@ -23,8 +23,8 @@ test("typed lines say by default, /y yells and invalid lines are explained", () 
   expect(parseChatInput("/dance")).toEqual({
     error: "Use /s to say, /y to yell, or /wave, /bow, /cheer, /laugh, /point.",
   });
-  expect(parseChatInput("/y   ")).toEqual({ error: "Chat lines are 1 to 80 bytes." });
-  expect(parseChatInput("  ")).toEqual({ error: "Chat lines cannot be blank." });
+  expect(parseChatInput("/y   ")).toEqual({ error: "Chat text must be 1 to 80 bytes." });
+  expect(parseChatInput("  ")).toEqual({ error: "Chat text must not be blank." });
   expect("error" in parseChatInput("x".repeat(81))).toBe(true);
 });
 

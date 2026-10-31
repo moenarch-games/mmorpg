@@ -1,4 +1,5 @@
-import init, * as generated from "../generated/mmorpg-wasm/mmorpg_wasm.js";
+import * as generated from "../generated/mmorpg-wasm/mmorpg_wasm.js";
+import { loadWasm } from "../wasm";
 import { LocalCharacters } from "./local-characters";
 import { createLocalWorld, type LocalWorld } from "./local-world";
 import { createSceneryProvider, type SceneryProvider } from "./scenery";
@@ -14,7 +15,7 @@ import type { ZoneWorld } from "./world-source";
  */
 export async function loadLocalWorld(characters: LocalCharacters): Promise<LocalWorld> {
   markStartup("wasm-fetch");
-  await init();
+  await loadWasm();
   markStartup("wasm-ready");
   const world = createLocalWorld(generated, characters);
   markStartup("world-created");

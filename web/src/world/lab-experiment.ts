@@ -315,7 +315,7 @@ export type LabCommand = { tick: number; bytes: string };
  * so the timeline hides them unless asked (#382); they are still replayed.
  */
 export function isMovement(command: LabCommand): boolean {
-  const bytes = (command.bytes.slice(0, 4).match(/../g) ?? []).map((pair) => parseInt(pair, 16));
+  const bytes = (command.bytes.match(/../g) ?? []).map((pair) => parseInt(pair, 16));
   return isMovementCommand(Uint8Array.from(bytes));
 }
 

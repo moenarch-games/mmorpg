@@ -15,7 +15,7 @@ on:
     paths:
       - "web/**"
       - "content/**"
-      - "fixtures/protocol/**"
+      - "fixtures/protocol/session-frames-v3.hex"
       - "fixtures/scenery/**"
       - "crates/mmorpg-core/**"
       - "crates/mmorpg-protocol/**"

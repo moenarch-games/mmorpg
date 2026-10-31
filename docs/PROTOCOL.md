@@ -82,7 +82,7 @@ The twenty discrete intents (every command but `Move`, `Jump`, `Roll` and `Guard
 
 Decoding is strict: exact lengths per tag, known tags only, `forward`/`strafe`, strike aim and guard lane codes in range, known entity kinds, ID 0 for the absent reference, and a leading protocol byte equal to the low byte of the current [protocol ID](#protocol-identity); any other byte is rejected.
 
-The shared command fixture is `fixtures/protocol/commands.hex`: one encoded command per line followed by its fields, covering every tag. `mmorpg-protocol` renders and verifies it, and the browser encoder (`web/src/command-wire.ts`) must produce the same bytes.
+The shared command fixture is `fixtures/protocol/commands.hex`: one encoded command per line followed by its fields, covering every tag. `mmorpg-protocol` renders and verifies it; the browser encodes commands with the same Rust encoder through `mmorpg-wasm` (#541).
 
 ## Entity references
 
@@ -329,7 +329,7 @@ Canonical data is for trusted replay/recovery and server-side verification. It m
 
 ## Protocol identity
 
-Every snapshot leads with the 24-bit protocol ID and every command with its low byte. The ID is `mmorpg_protocol::PROTOCOL_ID`, mirrored in `web/src/protocol-id.ts`: a random token, not a counter ([ADR 0006](adr/0006-merge-safe-format-identities.md)). Any change to the command, projection, observation or canonical layout replaces it once with `scripts/new-protocol-id.sh` and re-records the shared fixtures (`MMORPG_UPDATE_FIXTURES=1 cargo test --workspace --locked`). Decoders accept only the current ID; old bytes are never reinterpreted and there is no migration, so checkpoints, recovery bundles and saved browser worlds of another ID fail closed. Two parallel layout changes edit the same ID line differently, so git stops the second merge instead of combining two formats under one number.
+Every snapshot leads with the 24-bit protocol ID and every command with its low byte. The ID is `mmorpg_protocol::PROTOCOL_ID`, which the browser reads through `mmorpg-wasm`: a random token, not a counter ([ADR 0006](adr/0006-merge-safe-format-identities.md)). Any change to the command, projection, observation or canonical layout replaces it once with `scripts/new-protocol-id.sh` and re-records the shared fixtures (`MMORPG_UPDATE_FIXTURES=1 cargo test --workspace --locked`). Decoders accept only the current ID; old bytes are never reinterpreted and there is no migration, so checkpoints, recovery bundles and saved browser worlds of another ID fail closed. Two parallel layout changes edit the same ID line differently, so git stops the second merge instead of combining two formats under one number.
 
 The content revision is the content hash ([Canonical scope](#canonical-scope)); content changes never edit a number. Battle Royale projections carry the content revision of the pinned battle-royale host, which `web/src/world/battle-royale/protocol.ts` pins with the host.
 

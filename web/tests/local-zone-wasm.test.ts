@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { GRASS_PACKAGE_DIRECTORY, record } from "../scripts/grass-package";
 import { RELIEF_GRID, RELIEF_PACKAGE_DIRECTORY } from "../scripts/relief-package";
 import { encodeCommand } from "../src/command-wire";
-import { ABILITY_SHAPES, BREATH_MAX_TICKS, ITEM_SHAPES, TICK_HZ, decodeSnapshot, ticksFromMs, type EntityState, type ZoneSnapshot } from "../src/replication";
+import { TICK_HZ, decodeSnapshot, ticksFromMs, wireCatalog, type EntityState, type ZoneSnapshot } from "../src/replication";
 import { abilitySlots, useAbilitySlot } from "../src/world/units/abilities";
 import { undescribedAbilities } from "../src/world/units/ability-presentation";
 import { combatStatus } from "../src/world/units/combat-hud";
@@ -315,7 +315,7 @@ describe("WASM local zone host", () => {
     expect(projection.viewer).toEqual({
       copper: 0, health: 50, maxHealth: 50, experience: 0, experienceToNextLevel: 100, level: 1, dead: false, inCombat: false, target: null,
       classChoice: { classId: "arcanist", sex: "female" }, resource: { kind: "mana", value: 110, max: 110 }, cast: null, globalCooldown: 0, damage: { min: 3, max: 6 },
-      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: BREATH_MAX_TICKS, waystones: [],
+      guard: { raised: null, protecting: false, broken: 0 }, stance: null, combo: null, breath: wireCatalog().breathMaxTicks, waystones: [],
     });
     expect(() => zone.submit(player, 1, Uint8Array.of(1, 1, 0, 0, 0, 0))).toThrow();
     expect(zone.submit(player, 1, encodeCommand({ kind: "jump" }))).toBe(true);
@@ -511,16 +511,6 @@ describe("WASM local zone combat intents", () => {
       "Torn Fur", "Worn Dagger", "Militia Shortsword", "Apprentice Wand", "Pine Buckler", "Cloth Hood", "Padded Tunic",
       "Padded Trousers", "Worn Boots", "Wolf Pelt", "Sunken Relic", "Brute-Breaker Mace", "Greyfang Scout Jerkin", "Hollow-Delver's Cowl",
     ]);
-    // The decoder's item table matches the catalog the zone binds.
-    const slots = ["mainHand", "offHand", "head", "chest", "legs", "feet"];
-    expect(catalog.items.size).toBe(ITEM_SHAPES.size);
-    for (const item of catalog.items.values()) {
-      const shape = ITEM_SHAPES.get(item.id);
-      const { stamina, strength, agility, intellect } = item.stats;
-      expect([shape?.maxStack, shape?.slot, shape?.stats]).toEqual([
-        item.maxStack, item.slot === null ? null : slots.indexOf(item.slot), [stamina, strength, agility, intellect],
-      ]);
-    }
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
       "Redbrand Crossbowman", "Crate", "Barrel", "Blasting Powder Barrel", "Fence", "Hill Ogre", "Heavy Crate", "Redbrand Brute",
@@ -532,15 +522,6 @@ describe("WASM local zone combat intents", () => {
     expect([...catalog.classes.values()].map((record) => [record.name, record.resource])).toEqual([
       ["warden", "rage"], ["ranger", "focus"], ["arcanist", "mana"], ["necromancer", "mana"], ["rogue", "focus"], ["cleric", "faith"], ["druid", "mana"],
     ]);
-    // The decoder's ability table matches the catalog the zone binds.
-    const auraKinds = ["damage-over-time", "heal-over-time", "absorb", "root", "snare", "stun", "haste"];
-    expect(catalog.abilities.size).toBe(ABILITY_SHAPES.size);
-    for (const ability of catalog.abilities.values()) {
-      const shape = ABILITY_SHAPES.get(ability.id);
-      expect([shape?.castTicks, shape?.channel, shape?.cooldown, shape?.aura]).toEqual([
-        ability.castTicks, ability.channel, ability.cooldown, ability.aura === null ? null : auraKinds[ability.aura - 1],
-      ]);
-    }
     // Every ability has presentation facts, and the spell visuals key the abilities they name.
     expect(undescribedAbilities(catalog)).toEqual([]);
     expect([5, 9, 10, 11, 12].map((id) => catalog.abilities.get(id)?.name)).toEqual(["Aimed Shot", "Firebolt", "Frost Nova", "Arcane Barrier", "Blizzard"]);

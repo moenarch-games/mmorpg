@@ -5,7 +5,7 @@
  * canonical state diverges at. Every run is the shared simulation's (`LabExperiments`); nothing
  * here decides an outcome, and nothing reaches production rules or stored characters.
  */
-import { PROTOCOL_ID } from "../protocol-id";
+import { wireCatalog } from "../replication";
 import { ticksFromMs } from "../replication";
 import { element, type LabSetup } from "./action-lab";
 import {
@@ -119,7 +119,7 @@ export class ExperimentPanel {
       const identity = config?.identity ?? this.#runtime.check(this.#runtime.baseline()).identity;
       this.#setScenario({
         format: SCENARIO_FORMAT, name: name.value.trim() || "Scenario", setup: this.#setup, seed: String(this.#seed),
-        contentRevision: this.#runtime.contentRevision(), protocolId: PROTOCOL_ID, ticks: Math.max(recording.ticks, 1),
+        contentRevision: this.#runtime.contentRevision(), protocolId: wireCatalog().protocolId, ticks: Math.max(recording.ticks, 1),
         commands: [...recording.commands],
         recorded: recording.digest && identity ? { config: identity, digest: recording.digest } : null,
       });
