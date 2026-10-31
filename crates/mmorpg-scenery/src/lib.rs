@@ -445,6 +445,9 @@ pub struct Scenery {
     pub props: Vec<Prop>,
     pub roads: Vec<Road>,
     pub water: Vec<Water>,
+    /// XZ rectangles (units) the drawn terrain leaves open: the footprints of platforms that
+    /// rest flush with the ground, so their top does not z-fight it (#591).
+    pub terrain_holes: Vec<Rect>,
     farmland: Vec<Rect>,
     relief: Option<Relief>,
     /// The physical ground units walk on (#159); `None` is flat ground at y = 0.
@@ -849,6 +852,7 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         props: Vec::new(),
         roads,
         water,
+        terrain_holes: Vec::new(),
         farmland: fields(),
         relief: Some(relief),
         ground: definition.terrain().cloned(),
@@ -887,6 +891,7 @@ impl Scenery {
             props: Vec::new(),
             roads: Vec::new(),
             water: Vec::new(),
+            terrain_holes: Vec::new(),
             farmland: Vec::new(),
             relief: None,
             ground: None,
@@ -898,13 +903,28 @@ impl Scenery {
 
     /// Flat ground with graybox level geometry (#552): one prop per box `(collider, kind)`
     /// exactly at its collider, and one [`PropKind::GrayboxRamp`] per ramp wedge. Boxes keep
-    /// their collider IDs, so clients treat them as structures (e.g. camera occluders).
+    /// their collider IDs, so clients treat them as structures (e.g. camera occluders). The
+    /// terrain leaves out the footprint of every platform whose top rests flush with the
+    /// ground at its low stop (the courtyard lifts, #591).
     #[must_use]
     pub fn graybox(
         content_revision: u64,
         boxes: &[(StaticCollider, PropKind)],
         ramps: &[mmorpg_core::Ramp],
+        platforms: &[mmorpg_core::Platform],
     ) -> Self {
+        let terrain_holes = platforms
+            .iter()
+            .filter(|lift| lift.low[1] + lift.half_extents[1] == 0)
+            .map(|lift| {
+                let [x, _, z] = lift.low;
+                let [hx, _, hz] = lift.half_extents;
+                Rect {
+                    min: [x - hx, z - hz],
+                    max: [x + hx, z + hz],
+                }
+            })
+            .collect();
         let feet =
             |position: [i32; 3], half: [i32; 3]| [position[0], position[1] - half[1], position[2]];
         let solids = boxes.iter().map(|(collider, kind)| Prop {
@@ -935,6 +955,7 @@ impl Scenery {
         });
         Self {
             props: solids.chain(wedges).collect(),
+            terrain_holes,
             ..Self::flat(content_revision)
         }
     }

@@ -1,3 +1,4 @@
+import type { CompositionKitSource } from "./composition-kit";
 import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
 import type { WaystoneSite } from "./units/waystone-panel";
@@ -162,6 +163,8 @@ export type SceneryProvider = {
   readonly outpost: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** The market square's settlement-prop entries and placed props (#421), column-major matrices in metres. */
   readonly settlement: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
+  /** A composition kit drawn over the zone's graybox (the Battle Royale fortress kit, #591), if the zone has one. */
+  readonly fortress: CompositionKitSource | null;
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
@@ -451,7 +454,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
           staticSceneIndices: () => Uint32Array.from(review.indices),
           staticSceneModels: () => Float32Array.from(review.models),
           staticSceneMotion: (seconds, animate) => content.staticSceneMotion(seconds, animate),
-          staticSceneShown: (viewer, outpostKit, settlementProps) => content.staticSceneShown(viewer, outpostKit, settlementProps),
+          staticSceneShown: (viewer, outpostKit, settlementProps, fortressKit) => content.staticSceneShown(viewer, outpostKit, settlementProps, fortressKit),
           surfaceY: (x, z) => content.surfaceY(x, z),
         };
       },
@@ -482,6 +485,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
         placements: content.settlementPropKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
       };
     })(),
+    fortress: null,
     ambient: (() => {
       const anchors = content.ambientAnimalAnchors();
       return {

@@ -16,9 +16,11 @@ pub mod ambient;
 pub mod audio;
 pub mod batching;
 pub mod buildings;
+pub mod composition;
 pub mod geometry;
 mod handholds;
 pub mod lights;
+pub mod lod;
 pub mod outpost_kit;
 mod props;
 pub mod settlement_props;
@@ -113,27 +115,35 @@ pub enum Kit {
     /// The market square's settlement props (#421); boxes of their collision proxies are the
     /// fallback.
     SettlementProps,
+    /// Graybox level geometry (#552), by its index in the scenery's props: the fallback for a
+    /// composition kit's piece over that body (the Battle Royale fortress kit, #591).
+    Graybox(usize),
 }
 
 /// Which kits a client draws; the static scene hides a drawn kit's fallback.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Kits {
+pub struct Kits<'a> {
     pub outpost: bool,
     pub settlement_props: bool,
+    /// The graybox props ([`Kit::Graybox`], sorted) a drawn composition kit dresses
+    /// ([`composition::Dressing::props`]); empty while no such kit is drawn.
+    pub dressed: &'a [usize],
 }
 
-impl Kits {
+impl Kits<'_> {
     /// Every kit drawn: the native client embeds them all.
     pub const ALL: Self = Self {
         outpost: true,
         settlement_props: true,
+        dressed: &[],
     };
 
     #[must_use]
-    pub const fn draws(self, kit: Kit) -> bool {
+    pub fn draws(self, kit: Kit) -> bool {
         match kit {
             Kit::Outpost => self.outpost,
             Kit::SettlementProps => self.settlement_props,
+            Kit::Graybox(prop) => self.dressed.binary_search(&prop).is_ok(),
         }
     }
 }

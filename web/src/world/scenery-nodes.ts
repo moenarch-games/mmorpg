@@ -31,13 +31,16 @@ export type StaticSceneContent = {
   staticSceneIndices(): Uint32Array;
   staticSceneModels(): Float32Array;
   staticSceneMotion(seconds: number, animate: boolean): Float32Array;
-  staticSceneShown(viewer: Float64Array, outpostKit: boolean, settlementProps: boolean): Uint8Array;
+  staticSceneShown(viewer: Float64Array, outpostKit: boolean, settlementProps: boolean, fortressKit: boolean): Uint8Array;
   surfaceY(x: number, z: number): number;
 };
 
-/** Which asset-tooling kits the client draws: the Outpost kit buildings (#420) and the market square's settlement props (#421). */
-export type DrawnKits = { outpost: boolean; settlementProps: boolean };
-const NO_KITS: DrawnKits = { outpost: false, settlementProps: false };
+/**
+ * Which asset-tooling kits the client draws: the Outpost kit buildings (#420), the market square's settlement props
+ * (#421) and the Battle Royale fortress kit (#591).
+ */
+export type DrawnKits = { outpost: boolean; settlementProps: boolean; fortress: boolean };
+const NO_KITS: DrawnKits = { outpost: false, settlementProps: false, fortress: false };
 
 type Bounds ={ cull: CullClass; center: readonly [number, number]; radius: number };
 export type StaticBatch = Bounds & { node: RendererSceneNode & { geometry: IndexedMeshGeometry } };
@@ -185,7 +188,7 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     water,
     animated,
     motion: (seconds, animate) => content.staticSceneMotion(seconds, animate),
-    shown: (viewer, kits) => content.staticSceneShown(Float64Array.from(viewer ?? []), kits.outpost, kits.settlementProps),
+    shown: (viewer, kits) => content.staticSceneShown(Float64Array.from(viewer ?? []), kits.outpost, kits.settlementProps, kits.fortress),
     stats: {
       staticNodes: batches.length + instanceBatches.length,
       staticVertices: layout.geometries.reduce((sum, entry) => sum + entry.vertexCount, 0),

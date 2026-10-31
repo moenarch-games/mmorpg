@@ -774,7 +774,7 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut windmills = 0;
     let mut fires = 0;
     let mut roofs = 0;
-    for p in &s.props {
+    for (index, p) in s.props.iter().enumerate() {
         // The inn is asset-tooling's walk-in bundle (`crate::buildings`), not a procedural block.
         // The shrine (#431) is asset-tooling's kit (`crate::shrine`).
         // Elden's house (#158) is its walk-in bundle too.
@@ -1367,6 +1367,19 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                 Motion::Fallback {
                     frame: f,
                     kit: Kit::Outpost,
+                },
+            ));
+            continue;
+        }
+        // Graybox level geometry is the fallback for a composition kit's piece over its body
+        // (the fortress kit, #591), hidden once the client draws that piece.
+        if p.kind.graybox() {
+            animations.push(animated(
+                m,
+                |part| format!("graybox-{index}-{part}"),
+                Motion::Fallback {
+                    frame: f,
+                    kit: Kit::Graybox(index),
                 },
             ));
             continue;

@@ -2304,6 +2304,11 @@ class BrowserAcceptance(unittest.TestCase):
         expect(start).to_be_enabled(timeout=30_000)
         start.tap() if touch else start.click()
         expect(self.page.locator("#character-select")).to_be_hidden()
+        # #591: the fortress kit's pieces replace the graybox, the lifts follow their platforms.
+        self.page.wait_for_function("() => window.__valeDebug.fortress()?.loaded", timeout=60_000)
+        kit = self.page.evaluate("() => window.__valeDebug.fortress()")
+        self.assertEqual(kit["lifts"], 8, kit)
+        self.assertGreater(kit["statics"], 0, kit)
         self.frames(6)
         # Drive the zone tick by tick from here, as the click smokes do; the page still renders.
         self.page.evaluate("""() => {
