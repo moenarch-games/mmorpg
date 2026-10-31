@@ -26,8 +26,16 @@ pub struct SceneDraw {
     pub material: DrawMaterial,
 }
 
+/// Draws that never change while they live: the static scenery's visibility groups and water,
+/// placed kit modules. A frame shares them by reference; the renderer resolves each batch into
+/// GPU instances once and reuses them until the batch is dropped (#588).
+pub type DrawBatch = Arc<[SceneDraw]>;
+
 #[derive(Clone, Debug)]
 pub struct WorldFrame {
+    /// Unchanging draws shown this frame.
+    pub batches: Vec<DrawBatch>,
+    /// Draws sampled this frame: units, effects, animated props and door swings.
     pub draws: Vec<SceneDraw>,
     pub lighting: Lighting,
     /// The `greyhaven-nature` trees and rocks drawn this frame (#49).
@@ -53,6 +61,16 @@ struct Nature {
     models: Vec<[f32; 16]>,
     /// The presentation clock of the last frame.
     seconds: Option<f64>,
+}
+
+impl WorldFrame {
+    /// Every draw of the frame, batched ones first.
+    pub fn all_draws(&self) -> impl Iterator<Item = &SceneDraw> {
+        self.batches
+            .iter()
+            .flat_map(|batch| batch.iter())
+            .chain(&self.draws)
+    }
 }
 use crate::presentation::SceneBox;
 use mmorpg_core::UNITS_PER_METRE;
@@ -87,8 +105,8 @@ pub struct WorldScene {
     /// Additional caller-authored presentation geometry, rendered and picked with the world.
     pub additional_draws: Vec<SceneDraw>,
     scene: StaticScene,
-    groups: Vec<Vec<SceneDraw>>,
-    water_draws: Vec<SceneDraw>,
+    groups: Vec<DrawBatch>,
+    water_draws: DrawBatch,
     animated: Vec<Vec<SceneDraw>>,
     /// The scenery's campfires and lantern posts (#529).
     point_lights: Vec<mmorpg_presentation::lights::PointLight>,
@@ -244,15 +262,16 @@ impl WorldScene {
     ) -> WorldFrame {
         // The native build embeds every kit (#420, #421, #49): no fallback is drawn.
         let kits = mmorpg_presentation::Kits::ALL;
-        let mut draws: Vec<_> = self
+        let mut batches: Vec<_> = self
             .scene
             .groups
             .iter()
             .zip(&self.groups)
             .filter(|(group, _)| group.shown(eye, kits))
-            .flat_map(|(_, draws)| draws.iter().cloned())
+            .map(|(_, draws)| Arc::clone(draws))
             .collect();
-        draws.extend(self.water_draws.iter().cloned());
+        batches.push(Arc::clone(&self.water_draws));
+        let mut draws = Vec::new();
         for (part, model) in self
             .animated
             .iter()
@@ -281,6 +300,7 @@ impl WorldScene {
             })
             .collect();
         WorldFrame {
+            batches,
             draws,
             lighting,
             nature: self.nature_draws(seconds, animate, eye, fov_y_degrees),

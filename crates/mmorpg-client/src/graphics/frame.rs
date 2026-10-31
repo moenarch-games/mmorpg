@@ -7,7 +7,7 @@ use crate::{
     camera::CameraView,
     environment::Lighting,
     hud::{HudRect, MAX_HUD_RECTS},
-    world::{DrawMaterial, SceneDraw, WorldFrame},
+    world::{DrawBatch, DrawMaterial, SceneDraw, WorldFrame},
 };
 use bytemuck::{Pod, Zeroable};
 use render_engine::{
@@ -22,11 +22,11 @@ use render_engine::{
     world::{Instance, MaterialId, MeshId, World},
 };
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     mem,
     sync::{Arc, Weak},
 };
-use three_d_core::Mesh;
+use three_d_core::{Color3, Mesh};
 
 /// Greyhaven's sun path: 60° above the southern horizon at noon, the moon opposite.
 pub const DAY_CYCLE: DayCycle = DayCycle {
@@ -75,10 +75,98 @@ struct CachedMesh {
     id: MeshId,
     source: Weak<Mesh>,
     used: bool,
+    /// Live cached batches whose instances use this mesh.
+    batches: u32,
+    /// Kept once the resource is rewritten (CPU-skinned units).
+    rewrite: Option<Rewrite>,
+}
+
+/// A rewritten resource's last converted data and source colours (#588). A skinned unit's
+/// next pose only moves its vertices: its colours and triangles are reused, not converted again.
+struct Rewrite {
+    data: MeshData,
+    colors: Option<Vec<Color3>>,
+}
+
+impl Rewrite {
+    fn new(mesh: &Mesh) -> Self {
+        Self {
+            data: mesh_data(mesh),
+            colors: mesh.attributes().colors.clone(),
+        }
+    }
+
+    /// Takes `mesh`'s positions and normals in place when its colours and triangles are the
+    /// ones converted last.
+    fn update(&mut self, mesh: &Mesh) -> Update {
+        let attributes = mesh.attributes();
+        let Some(normals) = &attributes.normals else {
+            return Update::Convert;
+        };
+        if mesh.vertices().len() != self.data.positions.len()
+            || mesh.indices() != self.data.indices.as_slice()
+            || attributes.colors != self.colors
+        {
+            return Update::Convert;
+        }
+        let mut moved = false;
+        for (out, p) in self.data.positions.iter_mut().zip(mesh.vertices()) {
+            let p = Vec3::new(p.x, p.y, p.z);
+            moved |= *out != p;
+            *out = p;
+        }
+        for (out, n) in self.data.normals.iter_mut().zip(normals) {
+            let n = Vec3::new(n.x, n.y, n.z);
+            moved |= *out != n;
+            *out = n;
+        }
+        if moved {
+            Update::Moved
+        } else {
+            Update::Unchanged
+        }
+    }
+}
+
+/// How a rewritten resource's new geometry differs from its last upload.
+#[derive(PartialEq)]
+enum Update {
+    /// Same vertices: nothing to upload.
+    Unchanged,
+    /// Only positions or normals changed.
+    Moved,
+    /// Converted anew.
+    Convert,
+}
+
+struct CachedMaterial {
+    id: MaterialId,
+    used: bool,
+    /// Live cached batches whose instances use this material.
+    batches: u32,
 }
 
 /// A material's exact field bits.
 type MaterialKey = [u32; 9];
+
+/// A [`DrawBatch`] resolved into instances once (#588). It stays valid while the batch lives,
+/// drawn or culled, and is dropped with it; its meshes and materials stay resident until then.
+struct CachedBatch {
+    source: Weak<[SceneDraw]>,
+    instances: Vec<Instance>,
+    meshes: Vec<String>,
+    materials: Vec<MaterialKey>,
+}
+
+/// A live batch's identity: its allocation, which the cached `Weak` keeps from being reused.
+fn batch_key(batch: &DrawBatch) -> usize {
+    Arc::as_ptr(batch).cast::<SceneDraw>() as usize
+}
+
+/// Draws that render nothing are skipped.
+fn drawn(draw: &SceneDraw) -> bool {
+    draw.material.opacity > 0. && !draw.mesh.indices().is_empty()
+}
 
 fn linear(c: f32) -> f32 {
     if c <= 0.04045 {
@@ -343,7 +431,10 @@ pub(super) struct FrameRenderer {
     nature: Option<NatureGpu>,
     viewport: Viewport,
     meshes: HashMap<String, CachedMesh>,
-    materials: HashMap<MaterialKey, (MaterialId, bool)>,
+    materials: HashMap<MaterialKey, CachedMaterial>,
+    batches: HashMap<usize, CachedBatch>,
+    /// This frame's instances; the allocation is kept across frames.
+    instances: Vec<Instance>,
     hud_pipeline: wgpu::RenderPipeline,
     hud_buffer: wgpu::Buffer,
     /// Mesh uploads (new or rewritten), reuses and uploaded vertex bytes.
@@ -408,6 +499,8 @@ impl FrameRenderer {
             viewport,
             meshes: HashMap::new(),
             materials: HashMap::new(),
+            batches: HashMap::new(),
+            instances: Vec::new(),
             hud_pipeline,
             hud_buffer: device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("combat HUD"),
@@ -442,14 +535,28 @@ impl FrameRenderer {
                 }
                 return cached.id;
             }
-            let data = mesh_data(&draw.mesh);
+            cached.source = source;
+            let update = cached
+                .rewrite
+                .as_mut()
+                .map_or(Update::Convert, |rewrite| rewrite.update(&draw.mesh));
+            if update == Update::Unchanged {
+                #[cfg(test)]
+                {
+                    self.observation[1] += 1;
+                }
+                return cached.id;
+            }
+            if update == Update::Convert {
+                cached.rewrite = Some(Rewrite::new(&draw.mesh));
+            }
+            let data = &cached.rewrite.as_ref().expect("converted above").data;
             #[cfg(test)]
             {
                 self.observation[0] += 1;
                 self.observation[2] += (data.positions.len() * 64 + data.indices.len() * 4) as u64;
             }
-            self.world.set_mesh(cached.id, &data);
-            cached.source = source;
+            self.world.set_mesh(cached.id, data);
             return cached.id;
         }
         let data = mesh_data(&draw.mesh);
@@ -465,6 +572,8 @@ impl FrameRenderer {
                 id,
                 source,
                 used: true,
+                batches: 0,
+                rewrite: None,
             },
         );
         id
@@ -473,31 +582,98 @@ impl FrameRenderer {
     fn material(&mut self, material: &DrawMaterial) -> MaterialId {
         let key = material_key(material);
         let world = &mut self.world;
-        let entry = self
-            .materials
-            .entry(key)
-            .or_insert_with(|| (world.add_material(&standard_material(material)), true));
-        entry.1 = true;
-        entry.0
+        let entry = self.materials.entry(key).or_insert_with(|| CachedMaterial {
+            id: world.add_material(&standard_material(material)),
+            used: true,
+            batches: 0,
+        });
+        entry.used = true;
+        entry.id
     }
 
-    /// Frees meshes whose resource was not drawn and whose geometry is gone (static scenery
-    /// stays uploaded while culled), and materials not drawn this frame.
+    fn instance(&mut self, draw: &SceneDraw) -> Instance {
+        Instance {
+            mesh: self.mesh(draw),
+            material: self.material(&draw.material),
+            world_from_local: Mat4::from_cols_array(&draw.model.elements),
+        }
+    }
+
+    /// Appends `batch`'s instances, resolving them only the first time the batch is drawn.
+    fn push_batch(&mut self, batch: &DrawBatch) {
+        let key = batch_key(batch);
+        if !self.batches.contains_key(&key) {
+            let mut instances = Vec::with_capacity(batch.len());
+            let mut meshes = BTreeSet::new();
+            let mut materials = BTreeSet::new();
+            for draw in batch.iter().filter(|draw| drawn(draw)) {
+                instances.push(self.instance(draw));
+                meshes.insert(draw.resource_key.as_str());
+                materials.insert(material_key(&draw.material));
+            }
+            for mesh in &meshes {
+                self.meshes.get_mut(*mesh).expect("resolved above").batches += 1;
+            }
+            for material in &materials {
+                self.materials
+                    .get_mut(material)
+                    .expect("resolved above")
+                    .batches += 1;
+            }
+            self.batches.insert(
+                key,
+                CachedBatch {
+                    source: Arc::downgrade(batch),
+                    instances,
+                    meshes: meshes.into_iter().map(str::to_owned).collect(),
+                    materials: materials.into_iter().collect(),
+                },
+            );
+        }
+        self.instances
+            .extend_from_slice(&self.batches[&key].instances);
+    }
+
+    /// Drops the batches that are gone, then frees meshes whose resource was not drawn, whose
+    /// geometry is gone and that no live batch uses (static scenery stays uploaded while
+    /// culled), and materials neither drawn this frame nor used by a live batch.
     fn evict(&mut self) {
-        let world = &mut self.world;
-        self.meshes.retain(|_, cached| {
-            let keep = cached.used || cached.source.strong_count() > 0;
+        let Self {
+            world,
+            meshes,
+            materials,
+            batches,
+            ..
+        } = self;
+        batches.retain(|_, batch| {
+            let live = batch.source.strong_count() > 0;
+            if !live {
+                for key in &batch.meshes {
+                    if let Some(mesh) = meshes.get_mut(key) {
+                        mesh.batches -= 1;
+                    }
+                }
+                for key in &batch.materials {
+                    if let Some(material) = materials.get_mut(key) {
+                        material.batches -= 1;
+                    }
+                }
+            }
+            live
+        });
+        meshes.retain(|_, cached| {
+            let keep = cached.used || cached.source.strong_count() > 0 || cached.batches > 0;
             cached.used = false;
             if !keep {
                 world.remove_mesh(cached.id);
             }
             keep
         });
-        self.materials.retain(|_, (id, used)| {
-            let keep = *used;
-            *used = false;
+        materials.retain(|_, cached| {
+            let keep = cached.used || cached.batches > 0;
+            cached.used = false;
             if !keep {
-                world.remove_material(*id);
+                world.remove_material(cached.id);
             }
             keep
         });
@@ -515,29 +691,30 @@ impl FrameRenderer {
         if hud.len() > MAX_HUD_RECTS {
             return Err("too many combat HUD rectangles".into());
         }
-        let mut instances = Vec::with_capacity(frame.draws.len());
-        for draw in &frame.draws {
-            if draw.material.opacity <= 0. || draw.mesh.indices().is_empty() {
-                continue;
-            }
-            instances.push(Instance {
-                mesh: self.mesh(draw),
-                material: self.material(&draw.material),
-                world_from_local: Mat4::from_cols_array(&draw.model.elements),
-            });
+        self.instances.clear();
+        for batch in &frame.batches {
+            self.push_batch(batch);
+        }
+        for draw in frame.draws.iter().filter(|draw| drawn(draw)) {
+            let instance = self.instance(draw);
+            self.instances.push(instance);
         }
         if !frame.nature.is_empty() {
-            let nature = self
-                .nature
-                .get_or_insert_with(|| NatureGpu::upload(&mut self.world));
+            let Self {
+                nature,
+                world,
+                instances,
+                ..
+            } = self;
+            let nature = nature.get_or_insert_with(|| NatureGpu::upload(world));
             for draw in &frame.nature {
-                nature.instances(draw, &mut instances);
+                nature.instances(draw, instances);
             }
         }
         self.evict();
         let scene = scene(&frame.lighting, view);
         self.renderer
-            .prepare(&mut self.viewport, &self.world, &scene, &instances);
+            .prepare(&mut self.viewport, &self.world, &scene, &self.instances);
         let hud_instances: Vec<_> = hud
             .iter()
             .map(|r| HudInstance {
@@ -614,6 +791,43 @@ mod tests {
             "midnight moon shines down"
         );
         assert!(noon.camera.ev100 > night.camera.ev100);
+    }
+
+    #[test]
+    fn a_rewritten_mesh_reconverts_only_when_more_than_its_vertices_moved() {
+        let normals = |mesh: &Mesh| {
+            let mut attributes = mesh.attributes().clone();
+            attributes.normals = Some(vec![
+                three_d_core::Vec3::new(0., 1., 0.);
+                mesh.vertices().len()
+            ]);
+            attributes.colors = Some(vec![Color3::new(0.5, 0.5, 0.5); mesh.vertices().len()]);
+            Mesh::with_attributes(
+                mesh.vertices().to_vec(),
+                mesh.indices().to_vec(),
+                attributes,
+            )
+            .unwrap()
+        };
+        let cube = normals(&Mesh::unit_cube());
+        let mut rewrite = Rewrite::new(&cube);
+        assert!(rewrite.update(&cube) == Update::Unchanged);
+        let mut moved = cube.vertices().to_vec();
+        moved[0].x += 1.;
+        let moved =
+            Mesh::with_attributes(moved, cube.indices().to_vec(), cube.attributes().clone())
+                .unwrap();
+        assert!(rewrite.update(&moved) == Update::Moved);
+        assert_eq!(rewrite.data.positions[0].x, moved.vertices()[0].x);
+        let mut recoloured = moved.attributes().clone();
+        recoloured.colors = Some(vec![Color3::new(1., 0., 0.); moved.vertices().len()]);
+        let recoloured = Mesh::with_attributes(
+            moved.vertices().to_vec(),
+            moved.indices().to_vec(),
+            recoloured,
+        )
+        .unwrap();
+        assert!(rewrite.update(&recoloured) == Update::Convert);
     }
 
     #[test]
