@@ -2533,18 +2533,20 @@ impl Playback {
             && available(guard)
         {
             Some(Want::looped(guard, 1.))
-        } else if let Some(stance) = clips.dagger.map(|dagger| dagger.idle).filter(|&clip| {
-            // A dagger holder stands in the low dagger stance (#603) over the idle legs.
-            cues.loadout.is_some_and(Loadout::daggers)
-                && standing
-                && stun.is_none()
-                && charge_run.is_none()
-                && roll.is_none()
-                && available(clip)
-        }) {
-            Some(Want::looped(stance, 1.))
         } else {
-            None
+            // A dagger holder stands in the low dagger stance (#603) over the idle legs.
+            clips
+                .dagger
+                .map(|dagger| dagger.idle)
+                .filter(|&clip| {
+                    cues.loadout.is_some_and(Loadout::daggers)
+                        && standing
+                        && stun.is_none()
+                        && charge_run.is_none()
+                        && roll.is_none()
+                        && available(clip)
+                })
+                .map(|stance| Want::looped(stance, 1.))
         };
         // The first clip a unit shows has nothing to blend from. Going into or out of swimming
         // depth blends a little longer, so the body eases between land and water.
