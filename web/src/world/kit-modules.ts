@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BatchedRoots } from "./static-batches";
 import { loadStaticBundle } from "./static-bundle";
 
 /** The rolling `shrine-kit` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
@@ -22,7 +23,8 @@ export class KitModules {
   readonly #name: string;
   readonly #entries: readonly string[];
   readonly #placements: readonly KitPlacement[];
-  #roots: THREE.Object3D[] = [];
+  /** The placed modules, batched per material (#615); null until loaded. */
+  #batched: BatchedRoots | null = null;
   #loading: Promise<boolean> | null = null;
   #changed = false;
 
@@ -45,7 +47,7 @@ export class KitModules {
   async #load(): Promise<void> {
     if (this.#placements.length === 0) { return; }
     const modules = new Map((await loadStaticBundle(this.#bundle, this.#entries)).map((root) => [root.name, root]));
-    this.#roots = this.#placements.map(({ key, matrix }, index) => {
+    const roots = this.#placements.map(({ key, matrix }, index) => {
       const module = modules.get(key);
       if (!module) { throw new Error(`The ${this.#name} has no ${key}.`); }
       // Clones share the module's geometry and materials.
@@ -56,19 +58,21 @@ export class KitModules {
       root.matrixWorldNeedsUpdate = true;
       return root;
     });
+    // Static modules: a few draw calls per material instead of one per module and primitive.
+    this.#batched = new BatchedRoots(this.#name, roots);
     this.#changed = true;
   }
 
   /** Whether the modules are drawn (loaded); the static scene hides their fallback then. */
   get drawn(): boolean {
-    return this.#roots.length > 0;
+    return this.#batched !== null;
   }
 
   /** The drawn roots, and whether the set changed since the last call. */
   roots(): { roots: THREE.Object3D[]; changed: boolean } {
     const changed = this.#changed;
     this.#changed = false;
-    return { roots: this.#roots, changed };
+    return { roots: this.#batched ? [this.#batched.root] : [], changed };
   }
 
   /** Acceptance state: whether the modules are loaded, and which entries are placed. */

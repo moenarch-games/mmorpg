@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import type { Object3D } from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { litObject } from "./lighting";
@@ -56,13 +57,68 @@ export async function readBundleAttachment(base: string, key: string, variant: s
   return text.text();
 }
 
-/** Existing static glTF consumer shared by the inn and opt-in nature review. */
+/**
+ * The scenes of `keys` in the bundle at `base` for the walk-in buildings and the kit modules, lit like the rest of the
+ * world, their materials shared across entries so the batches (#615) draw one call per material, not per entry.
+ */
 export async function loadStaticBundle(base: string, keys: readonly string[]): Promise<Object3D[]> {
-  return (await loadBundleGltfs(base, keys)).map((gltf, index) => {
+  const gltfs = await loadBundleGltfs(base, keys);
+  shareMaterials(gltfs);
+  return gltfs.map((gltf, index) => {
     // Lit like the rest of the world (#600).
     const root = litObject(gltf.scene);
     root.name = keys[index]!;
     root.matrixAutoUpdate = false;
     return root;
   });
+}
+
+/**
+ * Every piece and level of a kit uses the same few images, but each glTF loads its own textures and materials: one
+ * texture per image and one material per name (with those textures) is kept, so the GPU holds each image once and
+ * the pieces draw with a handful of programs.
+ */
+export function shareMaterials(gltfs: readonly GLTF[]): void {
+  const textures = new Map<string, THREE.Texture>();
+  const materials = new Map<string, THREE.Material>();
+  for (const gltf of gltfs) {
+    const json = gltf.parser.json as { textures?: { source?: number; sampler?: number }[]; images?: { uri?: string }[] };
+    const texture = (value: THREE.Texture): THREE.Texture => {
+      // Bundle images are content-addressed: equal URIs are equal images.
+      const index = gltf.parser.associations.get(value)?.textures;
+      const definition = index === undefined ? undefined : json.textures?.[index];
+      const uri = definition?.source === undefined ? undefined : json.images?.[definition.source]?.uri;
+      if (uri === undefined) { return value; }
+      const key = `${uri}:${definition?.sampler ?? -1}:${value.channel}:${value.colorSpace}`;
+      const kept = textures.get(key);
+      if (kept) {
+        if (kept !== value) { value.dispose(); }
+        return kept;
+      }
+      textures.set(key, value);
+      return value;
+    };
+    gltf.scene.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) { return; }
+      const share = (material: THREE.Material): THREE.Material => {
+        const record = material as unknown as Record<string, unknown>;
+        for (const [name, value] of Object.entries(record)) {
+          if (value instanceof THREE.Texture) { record[name] = texture(value); }
+        }
+        const maps = Object.values(record).filter((value) => value instanceof THREE.Texture).map((value) => (value as THREE.Texture).uuid);
+        const standard = material as THREE.MeshStandardMaterial;
+        const factors = [standard.color?.getHexString(), standard.emissive?.getHexString(), standard.roughness, standard.metalness,
+          material.transparent, material.side, material.alphaTest, standard.vertexColors];
+        const key = `${material.type}:${material.name}:${maps.join(",")}:${factors.join(",")}`;
+        const kept = materials.get(key);
+        if (kept) {
+          if (kept !== material) { material.dispose(); }
+          return kept;
+        }
+        materials.set(key, material);
+        return material;
+      };
+      object.material = Array.isArray(object.material) ? object.material.map(share) : share(object.material);
+    });
+  }
 }
