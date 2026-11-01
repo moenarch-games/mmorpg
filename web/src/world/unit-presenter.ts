@@ -111,7 +111,16 @@ export type ImportedRequest = {
   throwable: Throwable | null;
   /** A crossbowman's crossbow (#607); null for anyone else. */
   crossbow: CrossbowCarry | null;
+  /**
+   * Where the spell of the caster clip shown starts (`imported::Channel`, #609): `point` metres in
+   * the `joint`'s glTF frame, the palm or the staff's head; null outside the caster clips. The
+   * origin for a bolt, beam or drain effect.
+   */
+  channel: SpellChannel | null;
 };
+
+/** A caster clip's `cast.channelJoint` and `cast.channelPoint` (asset-tooling #420). */
+export type SpellChannel = { joint: "hand_l" | "hand_r"; point: readonly [number, number, number] };
 
 /** The bow cycle clip a unit's upper body shows and its time (`imported::BowShot`, #556). */
 export type BowShot = { clip: string; time: number };
@@ -146,7 +155,7 @@ type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; c
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number; pitch: number;
   height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
-  swing: readonly [number, number, number, number] | null; bow: BowShot | null; sheathed: [boolean, boolean]; throwable: Throwable | null; crossbow: CrossbowCarry | null };
+  swing: readonly [number, number, number, number] | null; bow: BowShot | null; sheathed: [boolean, boolean]; throwable: Throwable | null; crossbow: CrossbowCarry | null; channel: SpellChannel | null };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
@@ -265,7 +274,7 @@ export class SharedUnits {
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw, pitch: unit.pitch,
         heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, figure: unit.figure, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
-        swing: unit.swing, bow: unit.bow, sheathed: unit.sheathed, throwable: unit.throwable, crossbow: unit.crossbow,
+        swing: unit.swing, bow: unit.bow, sheathed: unit.sheathed, throwable: unit.throwable, crossbow: unit.crossbow, channel: unit.channel,
       })),
       platforms: layout.platforms,
     };

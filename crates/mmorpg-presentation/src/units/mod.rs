@@ -33,7 +33,7 @@ use mmorpg_core::{
 use mmorpg_scenery::Scenery;
 
 use crate::{Draw, geometry::V};
-use imported::{Kind, Loadout, Outfit, Playback, Reaction, Resident};
+use imported::{Kind, Loadout, Outfit, Playback, Reaction, Region, Resident};
 use kit::{Frame, IQ, Primitive, Resources, offset, qa, qm, shade};
 use player::{Hat, Look};
 
@@ -568,14 +568,29 @@ impl UnitPresenter {
                 } => {
                     self.hastes.remove(&target);
                 }
-                ZoneEvent::Interrupted { target, .. } => {
-                    if let Some((kind, class, loadout)) = self.class_of(snapshot, target)
-                        && let Some(cycle) = kind.cast(class, loadout)
+                ZoneEvent::Interrupted {
+                    target, ability, ..
+                } => {
+                    let Some((kind, class, loadout)) = self.class_of(snapshot, target) else {
+                        continue;
+                    };
+                    // A caster's broken cast or channel flinches out of it (#609); any other
+                    // lets its hold down.
+                    let interrupted = kind
+                        .clips()
+                        .caster
+                        .filter(|_| kind.cast_style(ability).is_some())
+                        .and_then(|caster| self.clip(kind, caster.interrupted));
+                    let cancel = if interrupted.is_some() {
+                        Some((interrupted, true))
+                    } else {
+                        kind.cast(class, loadout)
+                            .map(|cycle| (self.clip(kind, cycle.cancel), false))
+                    };
+                    if let Some((cancel, upper)) = cancel
+                        && let Some(playback) = self.playbacks.get_mut(&target)
                     {
-                        let cancel = self.clip(kind, cycle.cancel);
-                        if let Some(playback) = self.playbacks.get_mut(&target) {
-                            playback.cancel(cancel, seconds);
-                        }
+                        playback.cancel(cancel, upper, seconds);
                     }
                 }
                 _ => {}
@@ -594,22 +609,34 @@ impl UnitPresenter {
             // The strike's clip ability and aim, and the ability an accepted action resolved. A
             // directed strike slashes toward its aim; an ordinary swing toward where its target
             // stands from the swinger (#582), derived here from the projection.
-            let (source, ability, aim, resolved) = match *event {
+            // A supportive ability on another player touches the ally (#609).
+            let (source, ability, aim, resolved, ally) = match *event {
                 ZoneEvent::AttackPerformed { source, target } => (
                     source,
                     None,
                     Some(self.swing_aim(snapshot, source, target)),
                     None,
+                    false,
                 ),
                 ZoneEvent::StrikeSwept {
                     source,
                     ability,
                     aim,
                     ..
-                } => (source, Some(ability), Some(aim), Some(ability)),
+                } => (source, Some(ability), Some(aim), Some(ability), false),
                 ZoneEvent::AbilityUsed {
-                    source, ability, ..
-                } => (source, Some(ability), None, Some(ability)),
+                    source,
+                    ability,
+                    target,
+                } => (
+                    source,
+                    Some(ability),
+                    None,
+                    Some(ability),
+                    target.is_some_and(|target| {
+                        target != source && matches!(target, EntityRef::Player(_))
+                    }),
+                ),
                 _ => continue,
             };
             // Only the zone's accepted action commits the prepared swing.
@@ -632,9 +659,19 @@ impl UnitPresenter {
                 self.playbacks.entry(source).or_default().charge(seconds);
                 continue;
             }
+            // Raise Skeleton's kneel and Call Companion's whistle play their release through the
+            // cast (#609): its completion adds nothing.
+            if let Some(released) = ability
+                .and_then(|ability| kind.cast_style(ability))
+                .and_then(imported::CastStyle::released)
+                && self.duration(kind, released) > 0.
+            {
+                continue;
+            }
             let swing = self.playbacks.get(&source).map_or(0, Playback::swings);
             let hasted = self.hasted(snapshot, source, seconds);
-            let (clip, item) = self.strike_clip(kind, class, loadout, ability, aim, swing, hasted);
+            let (clip, item) =
+                self.strike_clip(kind, class, loadout, ability, aim, ally, swing, hasted);
             let duration = self.duration(kind, clip);
             let region = kind.strike_region(clip);
             // A bow shot recovers after its release (#538), a crossbow shot reloads (#607).
@@ -704,9 +741,11 @@ impl UnitPresenter {
     }
 
     /// The clip an accepted attack or ability plays, and what a throw draws (#603): a dagger
-    /// clip the model has ([`Kind::dagger_strike`]), else the authored strike ([`Kind::strike`])
-    /// or, for a bow or crossbow shot, the authored ranged clip that replaces its release
-    /// ([`Kind::ranged_strike`], #607), else the model's attack.
+    /// clip the model has ([`Kind::dagger_strike`]), a caster, staff or mace clip it has
+    /// ([`Kind::caster_strike`], #609; `ally` when the ability lands on another player), else
+    /// the authored strike ([`Kind::strike`]) or, for a bow or crossbow shot, the authored
+    /// ranged clip that replaces its release ([`Kind::ranged_strike`], #607), else the model's
+    /// attack.
     #[allow(clippy::too_many_arguments)]
     fn strike_clip(
         &self,
@@ -715,6 +754,7 @@ impl UnitPresenter {
         loadout: Option<Loadout>,
         ability: Option<AbilityId>,
         aim: Option<StrikeAim>,
+        ally: bool,
         swing: u32,
         hasted: bool,
     ) -> (&'static str, Option<imported::Throwable>) {
@@ -723,6 +763,12 @@ impl UnitPresenter {
             .filter(|&(clip, _)| self.duration(kind, clip) > 0.)
         {
             return dagger;
+        }
+        if let Some(caster) = kind
+            .caster_strike(loadout, ability, ally, swing)
+            .filter(|&clip| self.duration(kind, clip) > 0.)
+        {
+            return (caster, None);
         }
         let clip = kind.strike(class, ability, aim);
         if kind
@@ -841,10 +887,40 @@ impl UnitPresenter {
                 .dagger
                 .and_then(|dagger| self.clip(kind, dagger.bandage))
         {
-            self.playbacks
-                .entry(entity)
-                .or_default()
-                .cast(None, bandage, false, length, seconds);
+            self.playbacks.entry(entity).or_default().cast(
+                None,
+                (bandage, true),
+                Region::Upper,
+                length,
+                seconds,
+            );
+            return;
+        }
+        // A caster holds the charge or loops the channel (#609); Raise Skeleton kneels from the
+        // cast's start, and Call Companion whistles after the charge, ending with the cast.
+        if let Some(style) = kind
+            .cast_style(ability)
+            .filter(|style| self.duration(kind, style.first()) > 0.)
+        {
+            let (enter, then) = match style {
+                imported::CastStyle::Charge(clip) | imported::CastStyle::Channel(clip) => {
+                    (None, (clip, true))
+                }
+                imported::CastStyle::Whole(clip) => (None, (clip, false)),
+                imported::CastStyle::Finish(charge, finish) => match self.clip(kind, finish) {
+                    Some((finish, call)) => {
+                        (Some((charge, (length - call).max(0.))), (finish, false))
+                    }
+                    None => (None, (charge, true)),
+                },
+            };
+            self.playbacks.entry(entity).or_default().cast(
+                enter,
+                then,
+                kind.strike_region(style.first()),
+                length,
+                seconds,
+            );
             return;
         }
         // A cast that resolves into an authored sword strike (the Redbrand whirl and smash,
@@ -875,10 +951,15 @@ impl UnitPresenter {
         let enter = self
             .clip(kind, cycle.enter)
             .filter(|&(enter, _)| enter != hold);
+        let region = if cycle.footwork {
+            Region::Footwork
+        } else {
+            Region::Upper
+        };
         self.playbacks.entry(entity).or_default().cast(
             enter,
-            hold,
-            cycle.footwork,
+            (hold, true),
+            region,
             length,
             seconds,
         );
@@ -1059,6 +1140,7 @@ impl UnitPresenter {
                             loadout,
                             Some(preparation.ability),
                             preparation.aim,
+                            false,
                             swing,
                             hasted,
                         );

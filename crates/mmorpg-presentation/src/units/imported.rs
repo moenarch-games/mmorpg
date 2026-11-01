@@ -586,6 +586,9 @@ pub struct Clips {
     pub bow: Option<BowClips>,
     /// The crossbow clips, for a model that has them (#607, asset-tooling #419).
     pub crossbow: Option<CrossbowClips>,
+    /// The casters' cast styles, staff and mace swings, war cry and interrupt, for a model that
+    /// has them (#609, asset-tooling #420).
+    pub caster: Option<CasterClips>,
 }
 
 /// The authored ranged clips beside the full-body bow cycle (#607, asset-tooling #419), every
@@ -667,6 +670,135 @@ impl CrossbowClips {
             footwork: false,
         }
     }
+}
+
+/// The casters' shared cast styles, staff and mace swings, war cry and interrupt (#609,
+/// asset-tooling #420). The school (fire, frost, shadow, holy, nature) shows through VFX, not
+/// the clip. All but [`Self::nova`] and [`Self::summon_raise`] play on the upper body only.
+/// Each one the bundle lacks falls back to what played before (the `Spell_Simple_*` hold and
+/// release).
+#[derive(Clone, Copy, Debug)]
+pub struct CasterClips {
+    /// Held through a cast bar, looped.
+    pub charge: &'static str,
+    /// A cast's release from the charge: the palm push of a bolt …
+    pub push: &'static str,
+    /// … or the overhand throw of a blast.
+    pub overhand: &'static str,
+    /// Channel loops: the staff's beam, the palm's drain, the staff raised to the sky.
+    pub beam: &'static str,
+    pub drain: &'static str,
+    pub sky: &'static str,
+    /// The staff's foot stamped for a burst round the caster, whole body.
+    pub nova: &'static str,
+    /// The instants: a cone swept ahead, a pointed curse, a sweep over the ground, a ward on
+    /// oneself, a touch for an ally, and the Warden's war cry.
+    pub cone: &'static str,
+    pub curse: &'static str,
+    pub ground: &'static str,
+    pub ward: &'static str,
+    pub ally: &'static str,
+    pub warcry: &'static str,
+    /// Raise Skeleton's kneel, whole body: the clip is the cast, from its start.
+    pub summon_raise: &'static str,
+    /// Call Companion's whistle: it ends with the cast, after the charge.
+    pub summon_call: &'static str,
+    /// The staff classes' alternating auto-attack: a jab and a sweep, two-handed.
+    pub staff: [&'static str; 2],
+    /// The Cleric's alternating auto-attack: an overhand and a backhand blow.
+    pub mace: [&'static str; 2],
+    /// Raising summoned terrain (#293); no ability raises any yet.
+    pub wall: &'static str,
+    /// A cast or channel broken off, from the charge.
+    pub interrupted: &'static str,
+}
+
+impl CasterClips {
+    /// Whether `clip` is one of them.
+    #[must_use]
+    pub fn contains(self, clip: &str) -> bool {
+        [
+            self.charge,
+            self.push,
+            self.overhand,
+            self.beam,
+            self.drain,
+            self.sky,
+            self.nova,
+            self.cone,
+            self.curse,
+            self.ground,
+            self.ward,
+            self.ally,
+            self.warcry,
+            self.summon_raise,
+            self.summon_call,
+            self.staff[0],
+            self.staff[1],
+            self.mace[0],
+            self.mace[1],
+            self.wall,
+            self.interrupted,
+        ]
+        .contains(&clip)
+    }
+
+    /// Which body `clip` drives: the nova and the summoning kneel the whole body standing,
+    /// every other one only the upper body; `None` for a clip not among these.
+    #[must_use]
+    pub fn region(self, clip: &str) -> Option<Region> {
+        if clip == self.nova || clip == self.summon_raise {
+            Some(Region::Footwork)
+        } else {
+            self.contains(clip).then_some(Region::Upper)
+        }
+    }
+}
+
+/// How a caster shows a cast or channel of an ability (#609).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CastStyle {
+    /// The charge, looped through the cast bar; the release plays when the cast completes.
+    Charge(&'static str),
+    /// A channel loop, looped while channelling.
+    Channel(&'static str),
+    /// A one-shot that is the whole cast, played from its start (Raise Skeleton).
+    Whole(&'static str),
+    /// The charge, then a one-shot timed to end with the cast (Call Companion): `(charge,
+    /// finish)`.
+    Finish(&'static str, &'static str),
+}
+
+impl CastStyle {
+    /// The clip the cast shows first.
+    #[must_use]
+    pub const fn first(self) -> &'static str {
+        match self {
+            Self::Charge(clip)
+            | Self::Channel(clip)
+            | Self::Whole(clip)
+            | Self::Finish(clip, _) => clip,
+        }
+    }
+
+    /// The clip a style that plays its own release shows it with: then the zone's resolution
+    /// plays nothing more.
+    #[must_use]
+    pub const fn released(self) -> Option<&'static str> {
+        match self {
+            Self::Whole(clip) | Self::Finish(_, clip) => Some(clip),
+            Self::Charge(_) | Self::Channel(_) => None,
+        }
+    }
+}
+
+/// Where a spell's effect starts in a caster clip (`cast.channelJoint`, `cast.channelPoint`,
+/// asset-tooling #420): `point` metres in `hand`'s glTF frame, the palm's middle or the staff's
+/// head (on the nova, its foot). Spawn a bolt or anchor a beam or drain here.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Channel {
+    pub hand: Hand,
+    pub point: [f64; 3],
 }
 
 /// The authored dagger, throw, flourish and bandage clips (#603, asset-tooling #418), every one
@@ -1239,6 +1371,27 @@ impl Kind {
                     fire: "Crossbow_Fire",
                     reload: "Crossbow_Reload",
                 }),
+                caster: Some(CasterClips {
+                    charge: "Cast_Charge_Loop",
+                    push: "Cast_Release_Push",
+                    overhand: "Cast_Release_Overhand",
+                    beam: "Cast_Channel_Beam_Loop",
+                    drain: "Cast_Channel_Drain_Loop",
+                    sky: "Cast_Channel_Sky_Loop",
+                    nova: "Cast_Nova",
+                    cone: "Cast_Cone",
+                    curse: "Cast_Curse_Point",
+                    ground: "Cast_Ground_Sweep",
+                    ward: "Cast_Self_Ward",
+                    ally: "Cast_Ally",
+                    warcry: "Warcry",
+                    summon_raise: "Cast_Summon_Raise",
+                    summon_call: "Cast_Summon_Call",
+                    staff: ["Staff_Strike_A", "Staff_Strike_B"],
+                    mace: ["Mace_Swing_A", "Mace_Swing_B"],
+                    wall: "Cast_Raise_Wall",
+                    interrupted: "Cast_Interrupted",
+                }),
             },
             Self::Wolf => Clips {
                 idle: "Idle",
@@ -1259,6 +1412,7 @@ impl Kind {
                 dagger: None,
                 bow: None,
                 crossbow: None,
+                caster: None,
             },
             Self::Rat => Clips {
                 idle: "Rat_Idle",
@@ -1279,6 +1433,7 @@ impl Kind {
                 dagger: None,
                 bow: None,
                 crossbow: None,
+                caster: None,
             },
             // The farm pig has no attack clip; its jump reads as a charge.
             Self::Pig => Clips {
@@ -1300,6 +1455,7 @@ impl Kind {
                 dagger: None,
                 bow: None,
                 crossbow: None,
+                caster: None,
             },
         }
     }
@@ -1420,12 +1576,83 @@ impl Kind {
             .map(|bow| bow.power_draw)
     }
 
+    /// How a caster shows its cast or channel of `ability` (#609): the bolts and blasts hold the
+    /// charge (Call Companion the charge and then its whistle), the beams, the drain and
+    /// Blizzard their channel loops, Raise Skeleton its kneel from the cast's start. `None` for
+    /// any other ability or a model without them.
+    #[must_use]
+    pub fn cast_style(self, ability: AbilityId) -> Option<CastStyle> {
+        use mmorpg_core::ability::ids;
+        let caster = self.clips().caster?;
+        Some(match ability {
+            ids::FIREBOLT
+            | ids::FIRE_BLAST
+            | ids::CHAIN_LIGHTNING
+            | ids::SHADOW_BOLT
+            | ids::SMITE
+            | ids::WRATH
+            | ids::MUCK_BOLT => CastStyle::Charge(caster.charge),
+            ids::LIGHTNING_BEAM | ids::HOLY_BEAM => CastStyle::Channel(caster.beam),
+            ids::DRAIN_LIFE => CastStyle::Channel(caster.drain),
+            ids::BLIZZARD => CastStyle::Channel(caster.sky),
+            ids::RAISE_SKELETON => CastStyle::Whole(caster.summon_raise),
+            ids::CALL_COMPANION => CastStyle::Finish(caster.charge, caster.summon_call),
+            _ => return None,
+        })
+    }
+
+    /// The caster clip an accepted attack or ability plays (#609): a staff holder's auto-attack
+    /// alternates the jab (even `swing`s, counting from 0) and the sweep, a mace holder's the
+    /// overhand and the backhand; a completed bolt pushes from the charge, a blast throws
+    /// overhand; the instants play their style, Divine Shield the ward on oneself and the touch
+    /// on an `ally`; Rallying Cry the war cry. `None` for anything else or a model without them;
+    /// [`Self::strike`] then decides.
+    #[must_use]
+    pub fn caster_strike(
+        self,
+        loadout: Option<Loadout>,
+        ability: Option<AbilityId>,
+        ally: bool,
+        swing: u32,
+    ) -> Option<&'static str> {
+        use mmorpg_core::ability::ids;
+        let caster = self.clips().caster?;
+        let alternate = |pair: [&'static str; 2]| pair[(swing % 2) as usize];
+        Some(match ability {
+            None => match loadout? {
+                Loadout::BoneStaff | Loadout::CrystalStaffAndTome | Loadout::GnarledStaff => {
+                    alternate(caster.staff)
+                }
+                Loadout::FlangedMace => alternate(caster.mace),
+                _ => return None,
+            },
+            Some(ids::FIREBOLT | ids::SHADOW_BOLT | ids::SMITE | ids::WRATH | ids::MUCK_BOLT) => {
+                caster.push
+            }
+            Some(ids::FIRE_BLAST | ids::CHAIN_LIGHTNING) => caster.overhand,
+            Some(ids::FROST_NOVA | ids::STOMP) => caster.nova,
+            Some(ids::FROST_BREATH) => caster.cone,
+            Some(ids::CORRUPTION) => caster.curse,
+            Some(ids::ENTANGLING_ROOTS) => caster.ground,
+            Some(ids::DIVINE_SHIELD) if ally => caster.ally,
+            Some(ids::ARCANE_BARRIER | ids::BONE_SHIELD | ids::BARKSKIN | ids::DIVINE_SHIELD) => {
+                caster.ward
+            }
+            Some(ids::RENEW | ids::REJUVENATION) => caster.ally,
+            Some(ids::RALLYING_CRY) => caster.warcry,
+            _ => return None,
+        })
+    }
+
     /// Which body a strike of `clip` drives (#582): an authored sword clip its own region, a
-    /// dagger, upper-body bow or crossbow clip (#603, #607) the upper body, every other strike
-    /// the whole body standing and the upper body on the move.
+    /// dagger, upper-body bow or crossbow clip (#603, #607) the upper body, a caster clip its
+    /// own (#609), every other strike the whole body standing and the upper body on the move.
     #[must_use]
     pub fn strike_region(self, clip: &str) -> Region {
         let clips = self.clips();
+        if let Some(region) = clips.caster.and_then(|caster| caster.region(clip)) {
+            return region;
+        }
         if clips.dagger.is_some_and(|dagger| dagger.contains(clip))
             || clips.bow.is_some_and(|bow| bow.contains(clip))
             || clips
@@ -1691,6 +1918,9 @@ pub struct Animation {
     pub attitude: Attitude,
     /// Where the daggers ride and what the right hand throws (#603).
     pub carry: Carry,
+    /// Where the spell of the caster clip shown starts (#609), once the client has read the
+    /// clip's `cast` marks: the origin for a bolt, a beam or a drain.
+    pub channel: Option<Channel>,
 }
 
 /// What the projection shows of one unit this frame. Every cue is zone-accepted state or the
@@ -2182,38 +2412,39 @@ impl Playback {
         self.strike = Some(strike);
     }
 
-    /// Shows a cast or channel of `seconds` begun at `now` (#538): `enter` once, when the model
-    /// has it, then `hold` looped until the cast resolves, stops or runs out.
+    /// Shows a cast or channel of `seconds` begun at `now` on the body `region` drives (#538):
+    /// `enter` once for its length, when the model has it, then `then`'s clip, looped or once,
+    /// until the cast resolves, stops or runs out. A caster's charge or channel loops (#609);
+    /// Raise Skeleton's kneel plays once from the start, Call Companion's whistle after the
+    /// charge.
     pub fn cast(
         &mut self,
         enter: Option<(&'static str, f32)>,
-        hold: &'static str,
-        footwork: bool,
+        then: (&'static str, bool),
+        region: Region,
         seconds: f32,
         now: f64,
     ) {
         self.serial = self.serial.wrapping_add(1);
-        let region = if footwork {
-            Region::Footwork
-        } else {
-            Region::Upper
-        };
-        let (clip, length) = enter.unwrap_or((hold, 0.));
+        let (clip, length) = enter.unwrap_or((then.0, 0.));
         let mut cast = Strike::new(clip, length, self.serial, now, region);
-        cast.then = Some((hold, true));
+        cast.then = Some(then);
         cast.until = now + f64::from(seconds.max(0.3));
         self.cast = Some(cast);
     }
 
-    /// The cast shown stopped early (#538): it lets down with `cancel` when the model has it.
-    pub fn cancel(&mut self, cancel: Option<(&'static str, f32)>, now: f64) {
+    /// The cast shown stopped early (#538): it lets down with `cancel` when the model has it,
+    /// on the upper body alone when `upper` (a caster's interrupt, #609), else on the body the
+    /// cast drove.
+    pub fn cancel(&mut self, cancel: Option<(&'static str, f32)>, upper: bool, now: f64) {
         let Some(cast) = self.cast.take().filter(|cast| now < cast.until) else {
             return;
         };
         // A held strike wind-up (#582) only fades.
         if let Some((clip, duration)) = cancel.filter(|_| cast.hold.is_none()) {
             self.serial = self.serial.wrapping_add(1);
-            self.strike = Some(Strike::new(clip, duration, self.serial, now, cast.region));
+            let region = if upper { Region::Upper } else { cast.region };
+            self.strike = Some(Strike::new(clip, duration, self.serial, now, region));
         }
     }
 
@@ -2901,17 +3132,33 @@ impl Playback {
         // A reload winds the crossbow's crank with the left hand, then hands the crossbow to the
         // left hand while the right draws a bolt (#607).
         let crossbow = carry.crossbow.unwrap_or_default();
+        let lower = self
+            .lower
+            .target(&duration)
+            .or_else(|| self.base.target(&duration))
+            .unwrap_or((clips.idle, 0.));
+        let upper = self.upper.target(&duration).unwrap_or(lower);
+        // The caster clips key the left hand's fingers (#609): no left-hand grip over them,
+        // except a shield's, which stays in hand, and the staff's second hand over a staff
+        // swing. The tome rides the back of the hand, so it needs none.
+        let casting = clips.caster.filter(|caster| caster.contains(upper.0));
+        let staff_swing = casting.is_some_and(|caster| caster.staff.contains(&upper.0));
+        let left_open = casting.is_some() && hands.left != Some(Held::Shield);
         for hand in Hand::BOTH {
             let throwable = carry.throwable.filter(|_| hand == Hand::Right);
             let grip = throwable
                 .map(Throwable::grip)
                 .or_else(|| (crossbow.crank && hand == Hand::Left).then_some(CRANK_GRIP))
                 .or_else(|| {
+                    (staff_swing && hand == Hand::Left).then_some(Held::Staff.grip(Hand::Left))
+                })
+                .or_else(|| {
                     hands
                         .get(hand)
                         .filter(|_| {
                             !carry.sheathed[hand.index()]
                                 && !(crossbow.left_hand && hand == Hand::Right)
+                                && !(left_open && hand == Hand::Left)
                         })
                         .map(|held| held.grip(hand))
                 })
@@ -2923,18 +3170,18 @@ impl Playback {
             track.advance(grip, dt, seconds, reduced);
             track.layers(&duration, 1., Mask::Fingers(hand), &mut layers);
         }
-        let lower = self
-            .lower
-            .target(&duration)
-            .or_else(|| self.base.target(&duration))
-            .unwrap_or((clips.idle, 0.));
-        let upper = self.upper.target(&duration).unwrap_or(lower);
+        let channel = cues
+            .motions
+            .and_then(|motions| motions.get(upper.0))
+            .and_then(|motion| motion.cast)
+            .and_then(|cast| cast.channel);
         Animation {
             layers,
             lower,
             upper,
             attitude: self.attitude,
             carry,
+            channel,
         }
     }
 
@@ -3323,6 +3570,7 @@ mod tests {
             upper: (clip, 0.2),
             attitude: Attitude::default(),
             carry: Carry::default(),
+            channel: None,
         };
         for clip in [
             "Bow_Aim_Loop",
@@ -3464,8 +3712,8 @@ mod tests {
         let mut playback = Playback::default();
         playback.cast(
             Some(("Spell_Simple_Enter", 0.5)),
-            "Spell_Simple_Idle_Loop",
-            false,
+            ("Spell_Simple_Idle_Loop", true),
+            Region::Upper,
             2.,
             0.,
         );
@@ -3476,11 +3724,17 @@ mod tests {
             frame(&mut playback, 0., 0.8).upper.0,
             "Spell_Simple_Idle_Loop"
         );
-        playback.cancel(Some(("Spell_Simple_Exit", 0.4)), 1.);
+        playback.cancel(Some(("Spell_Simple_Exit", 0.4)), false, 1.);
         assert_eq!(frame(&mut playback, 0., 1.1).upper.0, "Spell_Simple_Exit");
         // The bow draws and holds through a cast, then releases and recovers, whole body.
         let mut playback = Playback::default();
-        playback.cast(Some(("Bow_Draw", 0.7)), "Bow_Hold_Loop", true, 2., 0.);
+        playback.cast(
+            Some(("Bow_Draw", 0.7)),
+            ("Bow_Hold_Loop", true),
+            Region::Footwork,
+            2.,
+            0.,
+        );
         assert_eq!(frame(&mut playback, 0., 0.1).lower.0, "Bow_Draw");
         assert_eq!(frame(&mut playback, 0., 1.).lower.0, "Bow_Hold_Loop");
         playback.strike("Bow_Release", 0.47, Region::Footwork, 2.);
@@ -4574,7 +4828,7 @@ mod tests {
             (Loadout::Sword, [false; 2]),
         ] {
             let mut bandaging = Playback::default();
-            bandaging.cast(None, "Bandage_Self", false, 3., 0.);
+            bandaging.cast(None, ("Bandage_Self", true), Region::Upper, 3., 0.);
             let shown = frame(&mut bandaging, loadout, 0.5);
             assert_eq!(shown.upper.0, "Bandage_Self");
             assert_eq!(shown.carry.sheathed, sheathed);
@@ -4657,7 +4911,13 @@ mod tests {
         // A cast's draw and hold on the move, and the local aim even standing (it never moves
         // the legs).
         let mut casting = Playback::default();
-        casting.cast(Some(("Bow_Draw", 0.7)), "Bow_Hold_Loop", true, 2., 0.);
+        casting.cast(
+            Some(("Bow_Draw", 0.7)),
+            ("Bow_Hold_Loop", true),
+            Region::Footwork,
+            2.,
+            0.,
+        );
         assert_eq!(
             frame(&mut casting, every, 3., 0.1).upper.0,
             "Bow_Draw_Upper"

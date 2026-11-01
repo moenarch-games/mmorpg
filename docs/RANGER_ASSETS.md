@@ -67,6 +67,20 @@ The ranged clips (#607, asset-tooling #419) are picked in the shared presenter t
 
 A bundle without these clips falls back to what played before: the full-body cycle on the upper body, the bow release, the aim wind-up and the idle arms. Review with `?scenario=ranger-moving-shots` (walk or strafe and shoot), `ranger-rapid-fire`, `ranger-power-draw` or `redbrand-crossbowman`.
 
+The casters' kit (#609, asset-tooling #420) is picked in the shared presenter too (`Kind::cast_style`, `Kind::caster_strike`). The clips are cast styles shared by every school. The school should show through VFX instead. All of them play on the upper body only, except `Cast_Nova` and `Cast_Summon_Raise`, which play on the whole body standing:
+
+- **Casts.** Firebolt (9), Fire Blast (16), Chain Lightning (23), Shadow Bolt (26), Smite (34), Wrath (38) and Muck Bolt (13) loop `Cast_Charge_Loop` over the whole cast bar. When the zone resolves the cast, the bolts play `Cast_Release_Push` and the blasts `Cast_Release_Overhand`, crossfading from the charge.
+- **Channels.** Lightning Beam (22) and Holy Beam (36) loop `Cast_Channel_Beam_Loop`, Drain Life (28) `Cast_Channel_Drain_Loop` and Blizzard (12) `Cast_Channel_Sky_Loop` while they channel.
+- **Interrupts.** When the zone interrupts any of these casts or channels, the caster plays `Cast_Interrupted` (0.4 s) on the upper body instead of the spell hold's let-down.
+- **Instants.** Frost Nova (10) and Stomp (18) play `Cast_Nova`, Frost Breath (21) `Cast_Cone`, Corruption (27) `Cast_Curse_Point` and Entangling Roots (39) `Cast_Ground_Sweep`. Arcane Barrier (11), Bone Shield (29), Barkskin (41), and Divine Shield (37) cast on oneself play `Cast_Self_Ward`. Renew (35), Rejuvenation (40), and Divine Shield on another player play `Cast_Ally`. The Warden's Rallying Cry (3) plays `Warcry`.
+- **Summons.** Raise Skeleton (45) plays `Cast_Summon_Raise` from the start of its 1.5 s cast; its `secondaryPose` plays on the robe like the traversal clips. Call Companion (46) loops the charge and then plays `Cast_Summon_Call` timed to end with the 2 s cast. Neither plays anything more when the cast resolves.
+- **Auto-attacks.** A staff holder (Arcanist, Necromancer, Druid) alternates `Staff_Strike_A` and `Staff_Strike_B`, and the Cleric's mace alternates `Mace_Swing_A` and `Mace_Swing_B`. The count is kept per unit on the client.
+- **Hands.** The caster clips key the left hand's fingers, so the left hand gets no grip over them. The two exceptions are the staff swings, which play `Grip_Staff_L` for the second hand on the staff, and a held shield, which keeps `Grip_Shield_L` (the Warden's war cry). The tome rides the back of the left hand, so `Grip_Book_L` comes back only once the arms are idle or in locomotion. The right hand keeps `Grip_Staff_R` or `Grip_Weapon_R`.
+- **Spell origin.** Each clip's `cast.channelJoint` and `cast.channelPoint` are read with its other marks (`traversal::CastMarks`). They are exposed as `Animation::channel`, and to the browser as the imported unit's `channel` (`{ joint, point }`). That is where a bolt, beam or drain effect should start. No spell effect is anchored there yet.
+- `Cast_Raise_Wall` is listed (`CasterClips::wall`) but no ability plays it until summoned terrain exists (#293).
+
+A bundle without these clips falls back to what played before: `Spell_Simple_Idle_Loop` held through casts and channels, `Spell_Simple_Shoot` for releases, instants and auto-attacks, and `Spell_Simple_Exit` on an interrupt. Review with `?scenario=arcanist-casts`, `necromancer-casts`, `cleric-casts`, `druid-casts` or `warden-warcry`.
+
 Held items close the hand round them (#503, asset-tooling #285). The bundle's `Grip_*` clips are static finger poses. `imported::Playback` layers the one for each held item over whatever body clip plays, as a `fingers_l` or `fingers_r` layer (`Mask::Fingers`). While a pose has such a layer, only that layer drives that hand's 15 finger and thumb joints, in both clients. This holds even over the clips that key the fingers, such as the strafes, the swims and the sword clips. `Loadout::hands` names what each hand holds:
 
 | Item | Socket | Grip |

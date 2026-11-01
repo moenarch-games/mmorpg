@@ -480,3 +480,256 @@ fn a_ranger_power_draws_aimed_shot_and_looses_rapidly_under_rapid_fire() {
     assert_eq!(shoot(&mut scene, attack, 5.), "Bow_Rapid_Release");
     assert_eq!(shoot(&mut scene, attack, 5.4), "Bow_Rapid_Release");
 }
+
+/// The caster clips (#609, asset-tooling #420) by name and length.
+const CASTER_CLIPS: [(&str, f32); 23] = [
+    ("Idle_Loop", 2.),
+    ("Grip_Staff_R", 0.03),
+    ("Grip_Staff_L", 0.03),
+    ("Grip_Book_L", 0.03),
+    ("Cast_Charge_Loop", 1.),
+    ("Cast_Release_Push", 0.5),
+    ("Cast_Release_Overhand", 0.6),
+    ("Cast_Channel_Beam_Loop", 1.5),
+    ("Cast_Channel_Drain_Loop", 1.5),
+    ("Cast_Channel_Sky_Loop", 2.),
+    ("Cast_Nova", 0.8),
+    ("Cast_Cone", 0.9),
+    ("Cast_Curse_Point", 0.5),
+    ("Cast_Ground_Sweep", 0.7),
+    ("Cast_Self_Ward", 0.9),
+    ("Cast_Ally", 0.7),
+    ("Warcry", 1.),
+    ("Cast_Summon_Raise", 1.5),
+    ("Cast_Summon_Call", 1.2),
+    ("Staff_Strike_A", 0.7),
+    ("Staff_Strike_B", 0.7),
+    ("Cast_Interrupted", 0.4),
+    ("Spell_Simple_Shoot", 0.5),
+];
+
+fn caster_scene(class: mmorpg_core::PlayerClass) -> Scene {
+    let mut scene = scene();
+    scene.snapshot.viewer.class = Some(mmorpg_core::ClassChoice {
+        class,
+        sex: mmorpg_core::Sex::Male,
+    });
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        CASTER_CLIPS.map(|(clip, seconds)| (clip.to_owned(), seconds)),
+    );
+    scene
+}
+
+fn play(scene: &mut Scene, events: Vec<ZoneEvent>, now: f64) -> &'static str {
+    scene.snapshot.tick += 1;
+    scene.snapshot.events = events;
+    scene.presenter.push(&scene.snapshot, now);
+    viewer_upper(&frame(scene, now + 0.05)).0
+}
+
+fn viewer_grips(frame: &UnitFrame) -> Vec<&'static str> {
+    let viewer = frame
+        .imported
+        .iter()
+        .find(|unit| unit.entity == EntityRef::Player(1))
+        .unwrap();
+    viewer
+        .animation
+        .layers
+        .iter()
+        .filter(|layer| layer.clip.starts_with("Grip_") && layer.weight > 0.5)
+        .map(|layer| layer.clip)
+        .collect()
+}
+
+#[test]
+fn an_arcanist_charges_releases_channels_and_flinches_out_of_an_interrupt() {
+    use mmorpg_core::ability::ids;
+    let mut scene = caster_scene(mmorpg_core::PlayerClass::Arcanist);
+    let wolf = scene.wolf;
+    let me = EntityRef::Player(1);
+    let cast = |ability, ticks| ZoneEvent::CastStarted {
+        source: me,
+        target: None,
+        ability,
+        ticks,
+    };
+    let used = |ability, target| ZoneEvent::AbilityUsed {
+        source: me,
+        target,
+        ability,
+    };
+    frame(&mut scene, 0.);
+    // Firebolt holds the charge through its cast bar, then pushes the bolt out.
+    assert_eq!(
+        play(&mut scene, vec![cast(ids::FIREBOLT, 150)], 1.),
+        "Cast_Charge_Loop"
+    );
+    assert_eq!(viewer_upper(&frame(&mut scene, 2.)).0, "Cast_Charge_Loop");
+    assert_eq!(
+        play(&mut scene, vec![used(ids::FIREBOLT, Some(wolf))], 2.5),
+        "Cast_Release_Push"
+    );
+    // The tome rides the back of the hand: no left-hand grip over a caster clip.
+    assert_eq!(viewer_grips(&frame(&mut scene, 2.8)), ["Grip_Staff_R"]);
+    // Back at rest, the hand closes round the tome again.
+    for step in 0..10 {
+        frame(&mut scene, 4. + f64::from(step) * 0.05);
+    }
+    assert_eq!(
+        viewer_grips(&frame(&mut scene, 4.5)),
+        ["Grip_Book_L", "Grip_Staff_R"]
+    );
+    // Fire Blast throws overhand; the instants play their own styles.
+    assert_eq!(
+        play(&mut scene, vec![used(ids::FIRE_BLAST, Some(wolf))], 5.),
+        "Cast_Release_Overhand"
+    );
+    assert_eq!(
+        play(&mut scene, vec![used(ids::FROST_NOVA, None)], 7.),
+        "Cast_Nova"
+    );
+    assert_eq!(
+        play(&mut scene, vec![used(ids::FROST_BREATH, None)], 9.),
+        "Cast_Cone"
+    );
+    assert_eq!(
+        play(&mut scene, vec![used(ids::ARCANE_BARRIER, None)], 11.),
+        "Cast_Self_Ward"
+    );
+    // Lightning Beam loops while channelling; an interrupt flinches out of it.
+    assert_eq!(
+        play(&mut scene, vec![cast(ids::LIGHTNING_BEAM, 180)], 13.),
+        "Cast_Channel_Beam_Loop"
+    );
+    assert_eq!(
+        viewer_upper(&frame(&mut scene, 15.)).0,
+        "Cast_Channel_Beam_Loop"
+    );
+    let interrupted = ZoneEvent::Interrupted {
+        source: Some(scene.wolf),
+        target: me,
+        ability: ids::LIGHTNING_BEAM,
+    };
+    assert_eq!(
+        play(&mut scene, vec![interrupted], 15.5),
+        "Cast_Interrupted"
+    );
+    assert_eq!(
+        play(&mut scene, vec![cast(ids::BLIZZARD, 360)], 17.),
+        "Cast_Channel_Sky_Loop"
+    );
+    // The staff's auto-attack alternates the jab and the sweep, both hands on the staff.
+    let swing = ZoneEvent::AttackPerformed {
+        source: me,
+        target: Some(scene.wolf),
+    };
+    assert_eq!(play(&mut scene, vec![swing], 30.), "Staff_Strike_A");
+    for step in 0..5 {
+        frame(&mut scene, 30.05 + f64::from(step) * 0.05);
+    }
+    assert_eq!(
+        viewer_grips(&frame(&mut scene, 30.3)),
+        ["Grip_Staff_L", "Grip_Staff_R"]
+    );
+    assert_eq!(play(&mut scene, vec![swing], 32.), "Staff_Strike_B");
+}
+
+#[test]
+fn summons_kneel_and_whistle_through_their_casts_and_shields_touch_an_ally() {
+    use mmorpg_core::ability::ids;
+    let me = EntityRef::Player(1);
+    let mut scene = caster_scene(mmorpg_core::PlayerClass::Necromancer);
+    frame(&mut scene, 0.);
+    let raise = ZoneEvent::CastStarted {
+        source: me,
+        target: None,
+        ability: ids::RAISE_SKELETON,
+        ticks: 90,
+    };
+    assert_eq!(play(&mut scene, vec![raise], 1.), "Cast_Summon_Raise");
+    // Its completion adds nothing: the kneel plays on to its end.
+    let raised = ZoneEvent::AbilityUsed {
+        source: me,
+        target: None,
+        ability: ids::RAISE_SKELETON,
+    };
+    let (clip, time) = {
+        scene.snapshot.tick += 1;
+        scene.snapshot.events = vec![raised];
+        scene.presenter.push(&scene.snapshot, 2.45);
+        viewer_upper(&frame(&mut scene, 2.45))
+    };
+    assert_eq!(clip, "Cast_Summon_Raise");
+    assert!(time > 1.3, "{time}");
+
+    // Call Companion charges, then whistles to end with its 2 s cast.
+    let mut scene = caster_scene(mmorpg_core::PlayerClass::Druid);
+    frame(&mut scene, 0.);
+    let call = ZoneEvent::CastStarted {
+        source: me,
+        target: None,
+        ability: ids::CALL_COMPANION,
+        ticks: 120,
+    };
+    assert_eq!(play(&mut scene, vec![call], 1.), "Cast_Charge_Loop");
+    assert_eq!(viewer_upper(&frame(&mut scene, 2.)).0, "Cast_Summon_Call");
+
+    // Divine Shield wards oneself, or touches another player.
+    let mut scene = caster_scene(mmorpg_core::PlayerClass::Cleric);
+    frame(&mut scene, 0.);
+    let shield = |target| ZoneEvent::AbilityUsed {
+        source: me,
+        target: Some(target),
+        ability: ids::DIVINE_SHIELD,
+    };
+    assert_eq!(play(&mut scene, vec![shield(me)], 1.), "Cast_Self_Ward");
+    assert_eq!(
+        play(&mut scene, vec![shield(EntityRef::Player(2))], 3.),
+        "Cast_Ally"
+    );
+}
+
+#[test]
+fn a_bundle_without_the_caster_clips_keeps_the_simple_spell() {
+    use mmorpg_core::ability::ids;
+    let mut scene = scene();
+    scene.snapshot.viewer.class = Some(mmorpg_core::ClassChoice {
+        class: mmorpg_core::PlayerClass::Arcanist,
+        sex: mmorpg_core::Sex::Male,
+    });
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        [
+            ("Idle_Loop", 2.),
+            ("Spell_Simple_Idle_Loop", 1.),
+            ("Spell_Simple_Shoot", 0.5),
+            ("Spell_Simple_Exit", 0.4),
+        ]
+        .map(|(clip, seconds)| (clip.to_owned(), seconds)),
+    );
+    let me = EntityRef::Player(1);
+    frame(&mut scene, 0.);
+    let cast = ZoneEvent::CastStarted {
+        source: me,
+        target: None,
+        ability: ids::FIREBOLT,
+        ticks: 150,
+    };
+    assert_eq!(play(&mut scene, vec![cast], 1.), "Spell_Simple_Idle_Loop");
+    let interrupted = ZoneEvent::Interrupted {
+        source: None,
+        target: me,
+        ability: ids::FIREBOLT,
+    };
+    assert_eq!(
+        play(&mut scene, vec![interrupted], 1.5),
+        "Spell_Simple_Exit"
+    );
+    let swing = ZoneEvent::AttackPerformed {
+        source: me,
+        target: Some(scene.wolf),
+    };
+    assert_eq!(play(&mut scene, vec![swing], 3.), "Spell_Simple_Shoot");
+}
