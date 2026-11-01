@@ -38,7 +38,7 @@ pub struct WorldFrame {
     /// Draws sampled this frame: units, effects, animated props and door swings.
     pub draws: Vec<SceneDraw>,
     pub lighting: Lighting,
-    /// The `greyhaven-nature` trees and rocks drawn this frame (#49).
+    /// The `greyhaven-nature` trees, rocks and bushes drawn this frame (#49).
     pub nature: Vec<NatureDraw>,
 }
 
@@ -307,7 +307,7 @@ impl WorldScene {
         }
     }
 
-    /// The trees and rocks at each one's level of detail for this camera (#49).
+    /// The trees, rocks and bushes at each one's level of detail for this camera (#49).
     fn nature_draws(
         &self,
         seconds: f64,

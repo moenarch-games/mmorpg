@@ -17,7 +17,7 @@ export type NatureLodsHandle = {
 
 export type NatureSource = {
   entries: readonly string[];
-  /** Every placed tree and rock: its entry and 16 column-major model floats (metres). */
+  /** Every placed tree, rock and bush: its entry and 16 column-major model floats (metres). */
   placements: readonly { key: string; matrix: Float32Array }[];
   /** The shared selection for these placements from the bundle's `nature-descriptor` JSON. */
   lods(descriptor: string): NatureLodsHandle;
@@ -68,11 +68,11 @@ if (vInstanceFade < 0.999) {
 type Part = { settled: THREE.InstancedMesh; fading: THREE.InstancedMesh; fade: THREE.InstancedBufferAttribute };
 
 /**
- * Greyhaven's trees and rocks from asset-tooling's `greyhaven-nature` bundle (#49), placed where the shared Rust
+ * Greyhaven's trees, rocks and bushes from asset-tooling's `greyhaven-nature` bundle (#49), placed where the shared Rust
  * presentation places them, as the native client does. Each entry level is one instanced mesh per primitive whose
  * geometry and materials every placement shares; the shared selection picks each placement's level per frame and
  * cross-fades switches. Until the bundle loads (or when it fails) none is drawn and the static scene keeps the
- * procedural trees and rocks. Presentation only.
+ * procedural trees, rocks and bushes. Presentation only.
  */
 export class Nature {
   readonly #source: NatureSource;
@@ -165,7 +165,7 @@ export class Nature {
     this.#changed = true;
   }
 
-  /** Whether the trees and rocks are drawn (loaded); the static scene hides their fallback then. */
+  /** Whether the trees, rocks and bushes are drawn (loaded); the static scene hides their fallback then. */
   get drawn(): boolean {
     return this.#lods !== null;
   }

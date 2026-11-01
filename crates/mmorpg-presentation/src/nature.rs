@@ -1,11 +1,13 @@
-//! Greyhaven's trees and rocks from asset-tooling's `greyhaven-nature` bundle (#49).
+//! Greyhaven's trees, rocks and bushes from asset-tooling's `greyhaven-nature` bundle (#49,
+//! #596).
 //!
-//! Every scenery tree and every rock that is not climbing rock becomes one placed bundle
-//! entry: oaks and birches the broadleaf, pines the conifer, rocks one of the three rocks. A
-//! collider rock's entry is the one its zone collider collides as
-//! ([`mmorpg_core::RockShape`]), fitted into the collider's box exactly like the proxy, so the
-//! drawn rock and its collision agree. While a client does not draw the bundle, the static
-//! scene draws the procedural trees and rocks ([`crate::Kit::Nature`] fallback groups).
+//! Every scenery tree, every bush and every rock that is not climbing rock becomes one placed
+//! bundle entry: oaks and birches the broadleaf, pines the conifer, bushes a stable pick of the
+//! three bushes, rocks one of the three rocks. A collider rock's entry is the one its zone
+//! collider collides as ([`mmorpg_core::RockShape`]), fitted into the collider's box exactly
+//! like the proxy, so the drawn rock and its collision agree. Bushes stay walk-through foliage
+//! (#577). While a client does not draw the bundle, the static scene draws the procedural
+//! trees, rocks and bushes ([`crate::Kit::Nature`] fallback groups).
 //!
 //! [`Lods`] picks each placement's level of detail from the bundle's `lodSelection` metadata
 //! (projected bounding-sphere diameter over viewport height) and cross-fades over
@@ -21,8 +23,19 @@ use crate::{
 
 pub const BROADLEAF: &str = "greyhaven.nature.tree.broadleaf";
 pub const CONIFER: &str = "greyhaven.nature.tree.conifer";
+/// The round, spreading and upright bushes (#596).
+pub const BUSHES: [&str; 3] = [
+    "greyhaven.nature.bush.1",
+    "greyhaven.nature.bush.2",
+    "greyhaven.nature.bush.3",
+];
+/// Each bush's authored footprint (width, height, depth; metres), as the descriptor gives it.
+pub const BUSH_SIZES: [[f64; 3]; 3] = [[1.4, 1.0, 1.3], [1.7, 0.85, 1.4], [1.1, 1.3, 1.0]];
 /// The bundle's entries, sorted.
-pub const ENTRIES: [&str; 5] = [
+pub const ENTRIES: [&str; 8] = [
+    BUSHES[0],
+    BUSHES[1],
+    BUSHES[2],
     "greyhaven.nature.rock.1",
     "greyhaven.nature.rock.2",
     "greyhaven.nature.rock.3",
@@ -57,12 +70,13 @@ fn yaw(p: &Prop) -> f64 {
     f64::from(p.yaw) / 65_536. * std::f64::consts::TAU
 }
 
-/// Whether the bundle draws `p` (the procedural model is its fallback): every tree, and every
-/// rock that is not climbing rock, whose worn handholds (#512) stay on the procedural rock.
+/// Whether the bundle draws `p` (the procedural model is its fallback): every tree and bush,
+/// and every rock that is not climbing rock, whose worn handholds (#512) stay on the
+/// procedural rock.
 #[must_use]
 pub fn draws(s: &Scenery, p: &Prop) -> bool {
     match p.kind {
-        PropKind::Tree(_) => true,
+        PropKind::Tree(_) | PropKind::Bush => true,
         PropKind::Rock(_) => !p
             .collider
             .and_then(|id| s.climbing().collider(id))
@@ -84,6 +98,15 @@ fn rock_shape(s: &Scenery, p: &Prop) -> RockShape {
             .unwrap_or(0),
             quarters: 0,
         })
+}
+
+/// The bush `p` is drawn as, a stable pick from its position (an index into [`BUSHES`]).
+fn bush(p: &Prop) -> usize {
+    usize::try_from(
+        (u64::from(p.position[0].unsigned_abs()) * 17 + u64::from(p.position[2].unsigned_abs()))
+            % 3,
+    )
+    .unwrap_or(0)
 }
 
 /// `p`'s placement on `s` (drawn terrain `g`), when the bundle draws it.
@@ -114,6 +137,21 @@ pub(crate) fn placement(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Placem
             ]);
             let cull = if background { Cull::Always } else { Cull::Far };
             (entry, at, size, cull)
+        }
+        PropKind::Bush => {
+            // A stable pick of the three, scaled uniformly to the procedural bush's volume (its
+            // half extents: about 1.2 × 0.9 × 1.2 m at scale 1), so each keeps its own shape.
+            let pick = bush(p);
+            let [w, h, d] = BUSH_SIZES[pick];
+            let [hx, hy, hz] = p.half_extents.map(metres);
+            let size = ((2. * hx / w) * (2. * hy / h) * (2. * hz / d)).cbrt();
+            // Sunk a little, so a slope shows no gap under the rim.
+            let at = compose(&[
+                translate(x, crate::terrain::surface(g, x, z) - 0.06 * size, z),
+                ry(yaw(p)),
+                scale(size, size, size),
+            ]);
+            (BUSHES[pick], at, size, Cull::Mid)
         }
         PropKind::Rock(_) => {
             let shape = rock_shape(s, p);
@@ -153,7 +191,7 @@ pub(crate) fn placement(s: &Scenery, g: &TerrainGrid, p: &Prop) -> Option<Placem
     })
 }
 
-/// Every placed tree and rock the bundle draws on `s`, in prop order.
+/// Every placed tree, bush and rock the bundle draws on `s`, in prop order.
 #[must_use]
 pub fn placements(s: &Scenery) -> Vec<Placement> {
     let g = s.terrain_grid(crate::TERRAIN_STEP_UNITS);
@@ -525,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn every_tree_and_unclimbable_rock_is_placed_as_its_collider_rock() {
+    fn every_tree_bush_and_unclimbable_rock_is_placed() {
         let scenery = mmorpg_scenery::greyhaven_vale_scenery();
         let placements = placements(&scenery);
         let drawn: Vec<_> = scenery
@@ -546,6 +584,17 @@ mod tests {
             hulls > 300,
             "the loose rocks collide as their drawn rock: {hulls}"
         );
+        // Every bush is one of the three bushes, each picked often, all walk-through.
+        let bushes: Vec<_> = drawn
+            .iter()
+            .zip(&placements)
+            .filter(|(prop, _)| prop.kind == PropKind::Bush)
+            .collect();
+        assert!(bushes.iter().all(|(prop, _)| prop.collider.is_none()));
+        for entry in BUSHES {
+            let picked = bushes.iter().filter(|(_, p)| p.entry == entry).count();
+            assert!(picked * 5 > bushes.len(), "{entry}: {picked}");
+        }
     }
 
     #[test]

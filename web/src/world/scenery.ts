@@ -101,7 +101,7 @@ export type SceneryContent = StaticSceneContent & {
   settlementPropEntries(): string[];
   settlementPropKeys(): string[];
   settlementPropModels(): Float32Array;
-  /** Greyhaven's trees and rocks (#49): the nature bundle's entries, per placement its entry and 16 model floats, and the shared level selection. */
+  /** Greyhaven's trees, rocks and bushes (#49): the nature bundle's entries, per placement its entry and 16 model floats, and the shared level selection. */
   natureEntries(): string[];
   natureKeys(): string[];
   natureModels(): Float32Array;
@@ -169,7 +169,7 @@ export type SceneryProvider = {
   readonly settlement: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array }[] };
   /** A composition kit drawn over the zone's graybox (the Battle Royale fortress kit, #591), if the zone has one. */
   readonly fortress: CompositionKitSource | null;
-  /** Greyhaven's trees and rocks from the `greyhaven-nature` bundle (#49). */
+  /** Greyhaven's trees, rocks and bushes from the `greyhaven-nature` bundle (#49). */
   readonly nature: NatureSource;
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
