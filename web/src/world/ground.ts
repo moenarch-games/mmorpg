@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { LitMaterial } from "@moritzbrantner/three-lighting";
+import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { TerrainStreamSource } from "./scenery-nodes";
 import { loadBundleGltfs, readBundleAttachment } from "./static-bundle";
 
@@ -218,18 +219,21 @@ export class Ground {
     }
   }
 
-  /** Loads the near layers' materials once; settles true when every layer is textured, never fatal to the world. */
-  load(): Promise<boolean> {
-    this.#loading ??= this.#load().catch((error: unknown) => {
+  /**
+   * Loads the near layers' materials once, their KTX2 textures transcoded by `ktx2` (asset-tooling#475); settles true
+   * when every layer is textured, never fatal to the world.
+   */
+  load(ktx2: KTX2Loader): Promise<boolean> {
+    this.#loading ??= this.#load(ktx2).catch((error: unknown) => {
       console.error(`The Greyhaven terrain bundle did not load: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     });
     return this.#loading;
   }
 
-  async #load(): Promise<boolean> {
+  async #load(ktx2: KTX2Loader): Promise<boolean> {
     const descriptor = JSON.parse(await readBundleAttachment(TERRAIN_BUNDLE, "greyhaven.terrain.grass", "default", "terrain-descriptor")) as Descriptor;
-    const loaded = await Promise.allSettled(LAYERS.map((layer) => loadBundleGltfs(TERRAIN_BUNDLE, [`greyhaven.terrain.${layer}`])));
+    const loaded = await Promise.allSettled(LAYERS.map((layer) => loadBundleGltfs(TERRAIN_BUNDLE, [`greyhaven.terrain.${layer}`], Infinity, ktx2)));
     loaded.forEach((result, index) => {
       const layer = LAYERS[index]!;
       if (result.status === "rejected") {
