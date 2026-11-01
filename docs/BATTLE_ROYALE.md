@@ -37,9 +37,12 @@ geometry.
   of `arena::content()` exactly (collider id, centre and half extents; ramp body, box and rise;
   lift platform body, low stop and half extents). Statics are placed once; the lift cribs follow
   `Platform::centre_at(tick)` minus their half height through the unit presenter, which then
-  draws no pillar for them. Each piece is a three.js `LOD` of `default`/`lod1`/`lod2`, switched at
-  the descriptor's `lodSelection` screen sizes (`mmorpg_presentation::lod`, the greyhaven-nature
-  format). The terrain leaves out the four courtyard lift footprints, whose platforms rest flush
+  draws no pillar for them. Like Greyhaven's nature, each entry level is one `InstancedMesh` per
+  primitive (`web/src/world/instanced-levels.ts`, #599), and the shared `mmorpg_presentation::lod::Lods`
+  picks each piece's `default`/`lod1`/`lod2` at the descriptor's `lodSelection` screen sizes,
+  cross-fades switches (only fading instances draw dithered), re-evaluates only when the camera
+  or a lift moves, and culls pieces wholly outside the view by the descriptor's `bounds` box
+  (pass 2's decoration included), not their collider. The terrain leaves out the four courtyard lift footprints, whose platforms rest flush
   with the ground. `Scenery::graybox` (every collider box a graybox prop, every ramp a wedge) stays
   the fallback per body: drawn while the bundle loads, if it fails, and for any body no piece fits.
   The ground is the ordinary flat terrain. The native client has no arena, so it draws neither.

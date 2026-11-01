@@ -16,7 +16,7 @@ use serde_json::Value;
 use crate::{
     batching::matrix,
     geometry::{compose, ry, translate},
-    lod::{self, EntryLods},
+    lod::{self, EntryLods, Lods, Placed},
 };
 
 /// One zone body a composition item dresses, as the descriptor states it (units).
@@ -201,6 +201,11 @@ impl Descriptor {
                     entry: item.key.clone(),
                     platform: lift.id,
                     yaw,
+                    low: [
+                        metres(lift.low[0]),
+                        metres(lift.low[1] - lift.half_extents[1]),
+                        metres(lift.low[2]),
+                    ],
                 }),
                 None => {
                     let [x, y, z] = item.origin.map(metres);
@@ -243,6 +248,34 @@ pub struct Lift {
     pub platform: PlatformId,
     /// Radians about +Y.
     pub yaw: f64,
+    /// The base at the platform's low stop, metres.
+    pub low: [f64; 3],
+}
+
+impl Lift {
+    /// Column-major entry-to-world matrix for the platform's base at `base` (metres).
+    #[must_use]
+    pub fn model(&self, base: [f64; 3]) -> [f32; 16] {
+        let [x, y, z] = base;
+        matrix(compose(&[translate(x, y, z), ry(self.yaw)]))
+    }
+
+    /// The piece as [`Lods`] selects its levels, its base at `base` (metres).
+    #[must_use]
+    pub fn placed(&self, base: [f64; 3]) -> Placed<'_> {
+        placed(&self.entry, self.model(base))
+    }
+}
+
+/// A piece as [`Lods`] selects its levels. The whole fortress is in view from the courtyard,
+/// so no piece has a reach.
+fn placed(entry: &str, model: [f32; 16]) -> Placed<'_> {
+    Placed {
+        entry,
+        model,
+        scale: 1.,
+        reach: f64::INFINITY,
+    }
 }
 
 /// What a composition kit draws over one zone's content.
@@ -267,6 +300,19 @@ impl Dressing {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
+    }
+
+    /// The level selection for every piece: the statics in order, then the lifts at their low
+    /// stop ([`Lods::place`] moves them, [`Lift::placed`]).
+    #[must_use]
+    pub fn lods(&self) -> Lods {
+        Lods::new(
+            self.lods.clone(),
+            self.statics
+                .iter()
+                .map(|piece| placed(&piece.entry, piece.model))
+                .chain(self.lifts.iter().map(|lift| lift.placed(lift.low))),
+        )
     }
 
     /// The platforms a lift piece draws (their procedural pillars are its fallback).
