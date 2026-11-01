@@ -554,12 +554,12 @@ class OnlineAcceptance(unittest.TestCase):
         legs = [(x, spawn[2]) for x in range(spawn[0] + 1000, 1495, 1000)] + [(1495, spawn[2]), (1495, 560)]
         self.route = self.walk_online_waypoints([opener], legs)
         opener.locator("#world").focus()
-        opener.keyboard.press("t")
+        opener.keyboard.press("e")
         for page in (opener, watcher):
             self.wait_for(page, f"{door} === true")
         self.frames(watcher, 20)
         watcher.screenshot(path=str(ARTIFACTS / "door-watcher-open.png"))
-        opener.keyboard.press("t")
+        opener.keyboard.press("e")
         for page in (opener, watcher):
             self.wait_for(page, f"{door} === false")
         self.evidence["doorOpenerAt"] = self.projection(opener)["entities"][0]["position"]
