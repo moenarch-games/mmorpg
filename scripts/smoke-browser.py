@@ -28,10 +28,10 @@ ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "artifacts" / "browser"
 # Advisory tripwire (PRINCIPLE-015), not a draw-call bound: the static scene's groups, including
 # kit fallbacks hidden while their kit draws, all drawn through per-material BatchedMeshes (#615).
-# 3,593 after the three outer regions (#495, #497, #505) and the nature fallbacks (#592, #604).
+# 3,586 after the three outer regions (#495, #497, #505), nature fallbacks and terrain tiles (#620).
 STATIC_GROUPS_TRIPWIRE = 4_000
-# Advisory too: vertices stored across the static scene's unique geometries; 495,502 at the same point.
-STATIC_VERTICES_TRIPWIRE = 550_000
+# Advisory too: vertices stored across the static scene's unique geometries; 374,842 at the same point.
+STATIC_VERTICES_TRIPWIRE = 450_000
 ROSTER_KEY = "mmorpg.offline-roster.v1"
 # The retired offline checkpoint key; nothing may write it any more.
 CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
