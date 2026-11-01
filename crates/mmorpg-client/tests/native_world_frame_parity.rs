@@ -36,14 +36,14 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
         let draws: Vec<_> = frame.all_draws().cloned().collect();
         compare_draws(&draws, &expected["draws"], &output["resources"]);
         // Both clients light with render-engine (#529; the browser through its three.js port, #600)
-        // and fog alike: the same palette, 140–620 m.
+        // and fog alike: the same palette, the same aerial perspective (#526,
+        // `FOG_VISIBILITY_METRES` in web/src/world/lighting.ts).
         let fog = &frame.lighting.fog;
         let want = &expected["environment"]["fog"];
         for (a, b) in fog.color.iter().zip(rgb(&want["color"])) {
             close(*a, f64::from(b), name);
         }
-        close(fog.near, want["near"].as_f64().unwrap(), name);
-        close(fog.far, want["far"].as_f64().unwrap(), name);
+        close(fog.visibility, 3200.0, name);
         let next = world.frame(
             request["seconds"].as_f64().unwrap() + 0.25,
             request["animate"].as_bool().unwrap(),

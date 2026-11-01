@@ -1,6 +1,5 @@
 //! Spatial batching and immutable resources for Greyhaven's procedural world.
 use super::geometry::*;
-use super::ground::Ground;
 use super::{Draw, Group, Kit, Material};
 use std::{collections::BTreeMap, sync::Arc};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -50,8 +49,6 @@ pub struct Batcher {
     instances: Vec<InstanceBatch>,
     /// Each instance batch's index in `instances`, by key.
     instance_keys: BTreeMap<String, usize>,
-    /// One mesh per textured ground layer over the whole terrain (#525), in draw order.
-    grounds: BTreeMap<Ground, Geometry>,
 }
 pub fn rgb(c: u32) -> [f32; 3] {
     [16, 8, 0].map(|shift| ((c >> shift) & 255) as f32 / 255.)
@@ -105,10 +102,6 @@ pub fn emissive(c: u32) -> bool {
     [0x7fe6ff, 0xffd98a, 0xf2c46a, 0xff8a2a, 0xffe27a].contains(&c)
 }
 impl Batcher {
-    /// The terrain-wide mesh of one textured ground layer: a single draw however large.
-    pub fn ground(&mut self, ground: Ground) -> &mut Geometry {
-        self.grounds.entry(ground).or_default()
-    }
     pub fn global(&mut self, name: &str, c: u32) -> &mut Geometry {
         self.bucket(format!("all-{name}"), c, Cull::Always)
     }
@@ -179,30 +172,6 @@ impl Batcher {
     }
     pub fn finish(self) -> Vec<Group> {
         let mut groups = Vec::new();
-        for (ground, g) in self.grounds {
-            if g.indices.is_empty() {
-                continue;
-            }
-            let (min, max) = bounds(g.p.iter().copied());
-            let name = ground.name();
-            groups.push(Group {
-                draws: vec![Draw {
-                    id: format!("static-{name}"),
-                    resource_key: format!("scenery:{name}"),
-                    geometry: Arc::new(g),
-                    model: matrix(ID),
-                    material: Material {
-                        ground: Some(ground),
-                        ..material(0xffffff, false)
-                    },
-                }],
-                cull: Cull::Always,
-                instanced: false,
-                fallback: None,
-                min,
-                max,
-            });
-        }
         for (name, (c, cull, fallback, g)) in self.buckets {
             if g.indices.is_empty() {
                 continue;

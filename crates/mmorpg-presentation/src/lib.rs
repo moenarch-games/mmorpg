@@ -29,12 +29,13 @@ pub mod settlement_props;
 pub mod shrine;
 pub mod structures;
 mod terrain;
+pub mod tiles;
 pub mod units;
 
 use std::sync::Arc;
 
 use geometry::{Affine, Geometry, compose, ry, rz, scale, translate};
-use mmorpg_scenery::{Scenery, TerrainGrid};
+use mmorpg_scenery::Scenery;
 
 pub use batching::Cull;
 
@@ -89,13 +90,18 @@ impl Group {
     /// Whether the group is within its class's distance of the camera eye (XZ, metres).
     #[must_use]
     pub fn visible(&self, eye: [f32; 3]) -> bool {
+        self.distance(eye) <= self.cull.reach()
+    }
+
+    /// XZ distance (metres) from the camera eye to the group's bounding circle.
+    #[must_use]
+    pub fn distance(&self, eye: [f32; 3]) -> f64 {
         let centre = [
             (self.min[0] + self.max[0]) / 2.,
             (self.min[1] + self.max[1]) / 2.,
         ];
         let radius = (self.max[0] - self.min[0]).hypot(self.max[1] - self.min[1]) / 2.;
         (centre[0] - f64::from(eye[0])).hypot(centre[1] - f64::from(eye[2])) - radius
-            <= self.cull.reach()
     }
 }
 
@@ -182,7 +188,8 @@ pub struct StaticScene {
     pub groups: Vec<Group>,
     pub water: Vec<Draw>,
     pub animated: Vec<Animated>,
-    grid: TerrainGrid,
+    /// The terrain grid in visual tiles with two levels of detail (#526).
+    pub terrain: tiles::Tiles,
 }
 
 impl StaticScene {
@@ -193,12 +200,15 @@ impl StaticScene {
         let mut water = terrain::build(&mut batcher, scenery, &grid);
         let mut animated = props::build(&mut batcher, scenery, &grid);
         let mut groups = batcher.finish();
+        let mut terrain = tiles::Tiles::new(scenery, &grid);
         let hash = identity(
             groups
                 .iter()
                 .flat_map(|group| &group.draws)
                 .chain(&water)
-                .chain(animated.iter().flat_map(|part| &part.draws)),
+                .chain(animated.iter().flat_map(|part| &part.draws))
+                .chain(terrain.tiles.iter().flat_map(|tile| &tile.far)),
+            terrain.identity_values(),
         );
         let prefix = format!("scenery:{}:{hash:016x}", scenery.content_revision);
         for draw in groups
@@ -210,19 +220,20 @@ impl StaticScene {
             draw.resource_key = draw.resource_key.replacen("scenery", &prefix, 1);
             draw.id = draw.id.replacen("scenery", &prefix, 1);
         }
+        terrain.set_prefix(&prefix);
         Self {
             prefix,
             groups,
             water,
             animated,
-            grid,
+            terrain,
         }
     }
 
     /// Height of the rendered terrain triangles at `(x, z)` metres, in metres.
     #[must_use]
     pub fn surface_y(&self, x: f64, z: f64) -> f64 {
-        terrain::surface(&self.grid, x, z)
+        terrain::surface(self.terrain.grid(), x, z)
     }
 
     /// Model matrices of the animated parts at a cosmetic clock, one per
@@ -333,7 +344,7 @@ fn motion(motion: Motion, t: f64, animate: bool) -> Affine {
 }
 
 /// FNV-1a over every draw's identity, placement, material and unique geometry.
-fn identity<'a>(draws: impl Iterator<Item = &'a Draw>) -> u64 {
+fn identity<'a>(draws: impl Iterator<Item = &'a Draw>, extra: impl Iterator<Item = f64>) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     let mut seen = std::collections::BTreeSet::new();
     let mut bytes = |values: &[u8]| {
@@ -354,7 +365,7 @@ fn identity<'a>(draws: impl Iterator<Item = &'a Draw>) -> u64 {
         }
         if let Some(ground) = draw.material.ground {
             bytes(ground.layer.name().as_bytes());
-            bytes(&[u8::from(ground.overlay)]);
+            bytes(&[u8::from(ground.overlay), u8::from(ground.far)]);
         }
         if seen.insert(draw.resource_key.clone()) {
             let g = &draw.geometry;
@@ -373,6 +384,9 @@ fn identity<'a>(draws: impl Iterator<Item = &'a Draw>) -> u64 {
                 bytes(&index.to_le_bytes());
             }
         }
+    }
+    for value in extra {
+        bytes(&value.to_le_bytes());
     }
     hash
 }

@@ -42,6 +42,15 @@ const SUN_SHADOWS: SunShadows = {
 };
 /** Below this sun elevation (degrees) the sun casts no shadows (`SHADOWLESS_BELOW`). */
 const SHADOWLESS_BELOW = -3;
+/**
+ * Aerial perspective (#526), as `mmorpg_client::environment`: atmospheric fog whose contrast falls to 5 % at
+ * `FOG_VISIBILITY_METRES` (Bevy's Koschmieder threshold), red light fading and blue gathering first, so distant ranges
+ * turn blue but keep their shading.
+ */
+const FOG_VISIBILITY_METRES = 3200;
+const FOG_DENSITY = -Math.log(0.05) / FOG_VISIBILITY_METRES;
+const FOG_EXTINCTION: Vec3 = [1.2 * FOG_DENSITY, FOG_DENSITY, 0.8 * FOG_DENSITY];
+const FOG_INSCATTERING: Vec3 = [0.8 * FOG_DENSITY, FOG_DENSITY, 1.2 * FOG_DENSITY];
 /** The presentation materials' surface (`standard_material`). */
 const ROUGHNESS = 0.86;
 const METALLIC = 0.02;
@@ -216,7 +225,7 @@ export class GreyhavenLighting {
     }
     lighting.fog = fog === null ? null : {
       color: [...linearRgb(fog), 1],
-      falloff: FogFalloff.linear(140, 620),
+      falloff: FogFalloff.atmospheric(FOG_EXTINCTION, FOG_INSCATTERING),
     };
     const lights: PointLight[] = [];
     if (pointLights) {

@@ -157,7 +157,7 @@ pub(crate) fn shared_scenery() -> Arc<Scenery> {
     Arc::clone(&graybox().0)
 }
 
-fn scene() -> &'static StaticScene {
+pub(crate) fn scene() -> &'static StaticScene {
     static SCENE: OnceLock<StaticScene> = OnceLock::new();
     SCENE.get_or_init(|| StaticScene::new(&shared_scenery()))
 }
@@ -414,6 +414,12 @@ impl ArenaPresentation {
     #[wasm_bindgen(js_name = staticSceneModels)]
     pub fn static_scene_models(&self) -> Vec<f32> {
         buffers().3.clone()
+    }
+    /// A fresh stream of the arena's terrain tiles (#526) for one renderer.
+    #[wasm_bindgen(js_name = terrainStream)]
+    #[must_use]
+    pub fn terrain_stream(&self) -> crate::static_scene::TerrainStream {
+        crate::static_scene::TerrainStream::new(true)
     }
 }
 

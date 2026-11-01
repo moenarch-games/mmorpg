@@ -66,7 +66,7 @@ pub fn point_lights(scene: &StaticScene, scenery: &Scenery) -> Vec<PointLight> {
         }),
         _ => None,
     });
-    let lamps = props::lamp_lights(scenery, &scene.grid)
+    let lamps = props::lamp_lights(scenery, scene.terrain.grid())
         .into_iter()
         .map(|position| PointLight { position, ..LAMP });
     let lanterns = settlement_props::frames(scenery)

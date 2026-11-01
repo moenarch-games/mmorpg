@@ -116,8 +116,7 @@ fn submitted_frame_mesh_material_transform_and_environment_change_actual_pixels(
             .unwrap();
         changed(&before, &colored, "mesh vertex colors");
         let mut fog = frame.clone();
-        fog.lighting.fog.near = 0.0;
-        fog.lighting.fog.far = 1.0;
+        fog.lighting.fog.visibility = 1.0;
         fog.lighting.fog.color = [1.0, 0.0, 1.0];
         let after = offscreen_frame_pixels(&fog, &[], view).await.unwrap();
         changed(&before, &after, "fog");
