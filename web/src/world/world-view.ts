@@ -100,10 +100,13 @@ export type Intent = (projection: ZoneSnapshot) => WorldCommand | null;
 
 /** Outside every named area the HUD names the zone itself. */
 const ZONE_NAME = "Greyhaven Vale";
-/** The selection turntable's class weapons, as the shared presenter's `Loadout::of_class`. */
+/**
+ * The selection turntable's class weapons, as the shared presenter's `Loadout::of_class`; the
+ * Rogue's follows `imported::ROGUE_LOADOUT` (two daggers, #603).
+ */
 const CLASS_LOADOUTS: Readonly<Record<NonNullable<ViewerLook["classId"]>, Loadout>> = {
   warden: "sword-and-shield", ranger: "bow-and-quiver", arcanist: "staff.crystal-and-tome", necromancer: "staff.bone",
-  rogue: "dagger", cleric: "mace.flanged", druid: "staff.gnarled",
+  rogue: "dagger.twin", cleric: "mace.flanged", druid: "staff.gnarled",
 };
 /** Quest markers float this far above an NPC's feet (metres). */
 const MARKER_HEIGHT_METRES = 2.3;
@@ -782,6 +785,7 @@ export class WorldView {
       clip, time: seconds % length, lower: [clip, seconds % length], layers: [{ clip, time: seconds % length, weight: 1, mask: "all" }], tint: null,
       loadout: look.classId ? CLASS_LOADOUTS[look.classId] : null, resident: null, figure: null, variety: null,
       outfit: look.classId ? { preset: `class.${look.classId}`, replaced: [] } : null, headwear: true, swing: null, bow: null,
+      sheathed: [false, false], throwable: null,
     }], { headwear: viewerHeadwear(look), hair: viewerHair(look), face: look.face ?? {} });
     const { roots, changed } = this.#models.roots();
     if (changed) { this.#renderer.renderImportedRoots({ camera, roots }); }
