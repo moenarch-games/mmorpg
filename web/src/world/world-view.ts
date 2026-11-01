@@ -530,7 +530,7 @@ export class WorldView {
     this.#nature = new Nature(world.scenery.nature);
     void this.#nature.load();
     this.#ground = new Ground(world.scenery.staticScene.terrainStream());
-    void this.#ground.load();
+    void this.#ground.load(this.#models.ktx2Loader);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
     this.#shrine = new KitModules(SHRINE_BUNDLE, "shrine kit", world.scenery.shrine.entries, world.scenery.shrine.placements);

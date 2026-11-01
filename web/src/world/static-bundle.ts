@@ -1,14 +1,16 @@
 import * as THREE from "three";
 import type { Object3D } from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
+import type { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import { litObject } from "./lighting";
 
 /**
  * The glTF of each of `keys` in the gltf-resources bundle at `base`, loaded with plain three.js: a
  * key names its `default` variant, `<key>/<variant>` another one. At most `concurrency` glTFs load at once (all by
- * default), so a kit of many pieces does not exhaust the browser's connections.
+ * default), so a kit of many pieces does not exhaust the browser's connections. `ktx2` transcodes KTX2
+ * (`KHR_texture_basisu`) textures, such as the Greyhaven terrain's (asset-tooling#475).
  */
-export async function loadBundleGltfs(base: string, keys: readonly string[], concurrency = Infinity): Promise<GLTF[]> {
+export async function loadBundleGltfs(base: string, keys: readonly string[], concurrency = Infinity, ktx2?: KTX2Loader): Promise<GLTF[]> {
   const url = (path: string) => new URL(path, new URL(base, window.location.href)).href;
   const response = await fetch(url("manifest.json"));
   if (!response.ok) {
@@ -16,6 +18,7 @@ export async function loadBundleGltfs(base: string, keys: readonly string[], con
   }
   const assets = ((await response.json()) as { assets?: { key: string; variant: string; path: string }[] }).assets ?? [];
   const loader = new GLTFLoader();
+  if (ktx2) { loader.setKTX2Loader(ktx2); }
   const paths = keys.map((key) => {
     const [name, variant = "default"] = key.split("/");
     const entry = assets.find((asset) => asset.key === name && asset.variant === variant);

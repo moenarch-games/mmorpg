@@ -1302,6 +1302,11 @@ export class QuaterniusUnits {
     this.#loader.setKTX2Loader(this.#textures);
   }
 
+  /** The KTX2 transcoder `configureRenderer` set up, shared with the other KTX2 bundles (the terrain). */
+  get ktx2Loader(): KTX2Loader {
+    return this.#textures;
+  }
+
   /** Starts loading `kind`; true once it can be drawn. */
   ready(kind: QuaterniusKind): boolean {
     const state = this.#assets.get(kind);
