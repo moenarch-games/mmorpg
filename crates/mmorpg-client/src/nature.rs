@@ -1,5 +1,7 @@
-//! Greyhaven's trees, rocks and bushes from the embedded `greyhaven-nature` bundle (#49), imported
-//! once into render-engine's mesh, texture and material data.
+//! Greyhaven's trees, rocks and bushes from the embedded `greyhaven-nature` bundle (#49) and its
+//! ladders, ropes and ivy from the embedded `climbing-kit` (#621), imported once into
+//! render-engine's mesh, texture and material data. Both bundles' entries share one library and
+//! one level selection ([`entries`], [`lods`]).
 //!
 //! Every level of every entry keeps its textures (mipmapped here, since the engine never
 //! generates mipmaps), normal maps with MikkTSpace tangents, vertex colours and alpha masks.
@@ -10,14 +12,14 @@
 //! away where the incoming one dissolves in. Presentation only.
 use std::{collections::BTreeMap, sync::OnceLock};
 
-use mmorpg_presentation::nature::{ENTRIES, EntryLods, descriptor_lods};
+use mmorpg_presentation::lod::EntryLods;
 use render_engine::{
     glam::{Mat4, Vec2, Vec3, Vec4},
     material::{AlphaMode, Sampler, StandardMaterial, TextureData},
     mesh::MeshData,
 };
 
-/// The bundle's entries (`<key>` and `<key>/<variant>`) and resources, embedded by `build.rs`.
+/// The bundles' entries (`<key>` and `<key>/<variant>`) and resources, embedded by `build.rs`.
 mod bundle {
     include!(concat!(env!("OUT_DIR"), "/nature_bundle.rs"));
 }
@@ -26,13 +28,59 @@ mod descriptor {
     include!(concat!(env!("OUT_DIR"), "/nature_descriptor.rs"));
 }
 
+mod climbing_bundle {
+    include!(concat!(env!("OUT_DIR"), "/climbing_bundle.rs"));
+}
+
+mod climbing_descriptor {
+    include!(concat!(env!("OUT_DIR"), "/climbing_descriptor.rs"));
+}
+
+type Files = &'static [(&'static str, &'static [u8])];
+
+/// One embedded bundle: the entries the presentation places, its glTF entries and files.
+struct Source {
+    keys: &'static [&'static str],
+    entries: &'static [(&'static str, &'static str)],
+    files: Files,
+}
+
+const SOURCES: [Source; 2] = [
+    Source {
+        keys: &mmorpg_presentation::nature::ENTRIES,
+        entries: bundle::ENTRIES,
+        files: bundle::FILES,
+    },
+    Source {
+        keys: &mmorpg_presentation::climbing::ENTRIES,
+        entries: climbing_bundle::ENTRIES,
+        files: climbing_bundle::FILES,
+    },
+];
+
 /// Fade materials per primitive: a fade quantizes to one of these dissolve thresholds.
 pub const FADE_STEPS: usize = 8;
 
-/// Every entry's levels of detail from the embedded descriptor.
+/// The library's entries: the nature bundle's (`mmorpg_presentation::nature::ENTRIES`), then
+/// the climbing kit's (`mmorpg_presentation::climbing::ENTRIES`).
+#[must_use]
+pub fn entries() -> Vec<&'static str> {
+    SOURCES
+        .iter()
+        .flat_map(|source| source.keys.iter().copied())
+        .collect()
+}
+
+/// Every entry's levels of detail from the embedded descriptors.
 #[must_use]
 pub fn lods() -> Vec<EntryLods> {
-    descriptor_lods(descriptor::DESCRIPTOR).expect("the embedded nature descriptor is valid")
+    let mut lods = mmorpg_presentation::nature::descriptor_lods(descriptor::DESCRIPTOR)
+        .expect("the embedded nature descriptor is valid");
+    lods.extend(
+        mmorpg_presentation::climbing::descriptor_lods(climbing_descriptor::DESCRIPTOR)
+            .expect("the embedded climbing descriptor is valid"),
+    );
+    lods
 }
 
 /// Which textures a primitive's material samples, by index into [`Library::textures`].
@@ -57,7 +105,7 @@ pub struct Part {
 /// Every entry level's primitives and their shared textures.
 pub struct Library {
     pub textures: Vec<TextureData>,
-    /// Per [`ENTRIES`] index, per level (as [`lods`] orders them), the primitives.
+    /// Per [`entries`] index, per level (as [`lods`] orders them), the primitives.
     pub levels: Vec<Vec<Vec<Part>>>,
 }
 
@@ -67,9 +115,10 @@ pub fn library() -> &'static Library {
     LIBRARY.get_or_init(|| {
         let lods = lods();
         let mut textures = TextureSet::default();
-        let levels = ENTRIES
+        let levels = SOURCES
             .iter()
-            .map(|entry| {
+            .flat_map(|source| source.keys.iter().map(move |entry| (source, entry)))
+            .map(|(source, entry)| {
                 let Some(entry_lods) = lods.iter().find(|lods| lods.entry == *entry) else {
                     return Vec::new();
                 };
@@ -82,12 +131,13 @@ pub fn library() -> &'static Library {
                         } else {
                             format!("{entry}/{variant}")
                         };
-                        let path = bundle::ENTRIES
+                        let path = source
+                            .entries
                             .iter()
                             .find(|(name, _)| *name == key)
                             .map(|(_, path)| *path)
-                            .unwrap_or_else(|| panic!("the nature bundle embeds {key}"));
-                        import(path, &mut textures)
+                            .unwrap_or_else(|| panic!("a bundle embeds {key}"));
+                        import(path, source.files, &mut textures)
                     })
                     .collect()
             })
@@ -125,12 +175,12 @@ struct TextureSet {
     by_path: BTreeMap<(String, bool), usize>,
 }
 
-fn file(path: &str) -> &'static [u8] {
-    bundle::FILES
+fn file(files: Files, path: &str) -> &'static [u8] {
+    files
         .iter()
         .find(|(name, _)| *name == path)
         .map(|(_, bytes)| *bytes)
-        .unwrap_or_else(|| panic!("the nature bundle embeds {path}"))
+        .unwrap_or_else(|| panic!("a bundle embeds {path}"))
 }
 
 /// Normalizes `base`'s directory joined with a relative `uri`.
@@ -211,12 +261,12 @@ fn with_alpha(mesh: &MeshData, alpha: impl Fn(usize) -> f32) -> MeshData {
 }
 
 /// Every primitive of the bundle glTF at `path`, in its scene frame.
-fn import(path: &str, textures: &mut TextureSet) -> Vec<Part> {
-    let gltf = gltf::Gltf::from_slice(file(path)).expect("a nature entry is valid glTF");
+fn import(path: &str, files: Files, textures: &mut TextureSet) -> Vec<Part> {
+    let gltf = gltf::Gltf::from_slice(file(files, path)).expect("a bundle entry is valid glTF");
     let buffers: Vec<&[u8]> = gltf
         .buffers()
         .map(|buffer| match buffer.source() {
-            gltf::buffer::Source::Uri(uri) => file(&resolve(path, uri)),
+            gltf::buffer::Source::Uri(uri) => file(files, &resolve(path, uri)),
             gltf::buffer::Source::Bin => panic!("nature entries use external buffers"),
         })
         .collect();
@@ -231,7 +281,7 @@ fn import(path: &str, textures: &mut TextureSet) -> Vec<Part> {
                 .by_path
                 .entry((resolved.clone(), srgb))
                 .or_insert_with(|| {
-                    textures.data.push(texture(file(&resolved), srgb));
+                    textures.data.push(texture(file(files, &resolved), srgb));
                     textures.data.len() - 1
                 }),
         )
@@ -332,7 +382,7 @@ mod tests {
     fn every_entry_level_imports_with_its_textures() {
         let library = library();
         let lods = lods();
-        for (entry, levels) in ENTRIES.iter().zip(&library.levels) {
+        for (entry, levels) in entries().iter().zip(&library.levels) {
             let expected = lods.iter().find(|lods| lods.entry == *entry).unwrap();
             assert_eq!(levels.len(), expected.levels.len(), "{entry}");
             for parts in levels {

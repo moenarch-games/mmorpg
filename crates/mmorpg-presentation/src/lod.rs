@@ -105,6 +105,33 @@ pub struct Placed<'a> {
     pub reach: f64,
 }
 
+/// One placed entry of a bundle drawn at fixed placements: the nature bundle's trees, rocks and
+/// bushes (#49) and the climbing kit's parts (#621).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Placement {
+    /// The bundle entry.
+    pub entry: &'static str,
+    /// Column-major entry-to-world matrix, metres.
+    pub model: [f32; 16],
+    /// The largest axis scale of `model`, which scales the entry's bounding sphere.
+    pub scale: f64,
+    /// Beyond its class's reach the placement is hidden, like the procedural prop.
+    pub cull: crate::Cull,
+}
+
+impl Placement {
+    /// The placement as [`Lods`] selects its levels.
+    #[must_use]
+    pub fn placed(&self) -> Placed<'static> {
+        Placed {
+            entry: self.entry,
+            model: self.model,
+            scale: self.scale,
+            reach: self.cull.reach(),
+        }
+    }
+}
+
 /// One drawn level of a placement this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shown {

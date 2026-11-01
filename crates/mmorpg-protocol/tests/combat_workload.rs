@@ -56,12 +56,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // leave the bag, quest, loot and ability sheets out of a quiet projection; entities take the room.
     // Solid dressing (#577) adds 361 fixed boxes (lamps, signposts, barrels, carts, the dock, the
     // market square's proxies and the loose rocks) and the dock's ramp to every step's world:
-    // 362 more body visits a tick, and nothing else moves.
+    // 362 more body visits a tick, and nothing else moves. The climbing ropes (#621) add three
+    // columns: 3 more body visits a tick.
     let ceilings: [[usize; 4]; FIXTURES.len()] = [
-        [29_160, 898_200, 224_640, 5_126_000],
-        [29_160, 895_320, 78_240, 1_620_192],
-        [29_160, 903_960, 405_184, 7_140_175],
-        [28_804, 915_124, 2_251_970, 24_276_762],
+        [29_160, 899_280, 224_640, 5_126_000],
+        [29_160, 896_400, 78_240, 1_620_192],
+        [29_160, 905_040, 405_184, 7_140_175],
+        [28_804, 916_204, 2_251_970, 24_276_762],
     ];
     for (fixture, ceiling) in FIXTURES.into_iter().zip(ceilings) {
         let report = measure(fixture).unwrap();

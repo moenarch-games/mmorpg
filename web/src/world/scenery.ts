@@ -1,5 +1,5 @@
 import type { CompositionKitSource } from "./composition-kit";
-import type { NatureLodsHandle, NatureSource } from "./nature";
+import type { KitLodsHandle, PlacedKitName, PlacedKitSource } from "./placed-kit";
 import type { StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
 import type { WaystoneSite } from "./units/waystone-panel";
@@ -37,7 +37,7 @@ export const PROP_KINDS = [
   "waystone", "gravestone", "tree-oak", "tree-pine", "tree-birch", "bush", "rock-small", "rock-medium",
   "rock-large", "cliff", "grass-tuft", "flowers", "reeds", "fence", "tent", "campfire", "crate", "barrel",
   "cart", "signpost", "lamp", "mine-entrance", "crop-row", "dock", "cave-roof", "ramp", "loading-dock",
-  "shrine-kit", "ladder", "graybox-wall", "graybox-tower", "graybox-walkway", "graybox-ramp",
+  "shrine-kit", "ladder", "rope", "graybox-wall", "graybox-tower", "graybox-walkway", "graybox-ramp",
 ] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
 
@@ -101,11 +101,14 @@ export type SceneryContent = StaticSceneContent & {
   settlementPropEntries(): string[];
   settlementPropKeys(): string[];
   settlementPropModels(): Float32Array;
-  /** Greyhaven's trees, rocks and bushes (#49): the nature bundle's entries, per placement its entry and 16 model floats, and the shared level selection. */
-  natureEntries(): string[];
-  natureKeys(): string[];
-  natureModels(): Float32Array;
-  NatureLods: new (descriptor: string) => NatureLodsHandle;
+  /**
+   * Greyhaven's trees, rocks and bushes (#49) and its ladders, ropes and ivy (#621): a placed kit's bundle entries, per
+   * placement its entry and 16 model floats, and the shared level selection.
+   */
+  kitEntries(kit: PlacedKitName): string[];
+  kitKeys(kit: PlacedKitName): string[];
+  kitModels(kit: PlacedKitName): Float32Array;
+  KitLods: new (kit: PlacedKitName, descriptor: string) => KitLodsHandle;
   /** Greyhaven's ambient animals (#419): entries, clip names, first-waypoint anchors (x, z units) and per animal 16 model floats, clip index and clip time. */
   ambientAnimalEntries(): string[];
   ambientAnimalClips(): string[];
@@ -170,7 +173,9 @@ export type SceneryProvider = {
   /** A composition kit drawn over the zone's graybox (the Battle Royale fortress kit, #591), if the zone has one. */
   readonly fortress: CompositionKitSource | null;
   /** Greyhaven's trees, rocks and bushes from the `greyhaven-nature` bundle (#49). */
-  readonly nature: NatureSource;
+  readonly nature: PlacedKitSource;
+  /** Greyhaven's ladders, ropes and ivy from the `climbing-kit` bundle (#621). */
+  readonly climbing: PlacedKitSource;
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
   importedRestClip(kind: string): string;
@@ -439,6 +444,17 @@ export function decodeScenery(json: string): Scenery {
   };
 }
 
+/** A bundle the shared presentation places (#49, #621): its entries, placements and level selection. */
+function placedKit(content: SceneryContent, kit: PlacedKitName): PlacedKitSource {
+  const models = content.kitModels(kit);
+  return {
+    kit,
+    entries: content.kitEntries(kit),
+    placements: content.kitKeys(kit).map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
+    lods: (descriptor: string) => new content.KitLods(kit, descriptor),
+  };
+}
+
 /** Decodes the export once and routes relief/area queries to the Rust owners. */
 export function createSceneryProvider(content: SceneryContent): SceneryProvider {
   const scenery = decodeScenery(content.scenery());
@@ -476,14 +492,8 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
       };
     })(),
     fortress: null,
-    nature: (() => {
-      const models = content.natureModels();
-      return {
-        entries: content.natureEntries(),
-        placements: content.natureKeys().map((key, index) => ({ key, matrix: models.slice(index * 16, index * 16 + 16) })),
-        lods: (descriptor: string) => new content.NatureLods(descriptor),
-      };
-    })(),
+    nature: placedKit(content, "nature"),
+    climbing: placedKit(content, "climbing"),
     ambient: (() => {
       const anchors = content.ambientAnimalAnchors();
       return {

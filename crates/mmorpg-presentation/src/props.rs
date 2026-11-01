@@ -306,7 +306,9 @@ fn keep(m: &mut Model, w: f64, d: f64, h: f64) {
         }
         z += 1.6;
     }
-    let r = 2.3;
+    // A small tower's corner turrets stay inside its walls, so a ladder or rope on a face (#621)
+    // stands clear of them.
+    let r = 2.3_f64.min(w.min(d) / 2.);
     let top = h + 3.2;
     for sx in [-1., 1.] {
         for sz in [-1., 1.] {
@@ -775,8 +777,13 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
     let mut fires = 0;
     let mut roofs = 0;
     for (index, p) in s.props.iter().enumerate() {
-        // Trees and rocks are the nature bundle's (#49); these are their fallback.
-        b.fallback = crate::nature::draws(s, p).then_some(Kit::Nature);
+        // Trees and rocks are the nature bundle's (#49), ladders and ropes the climbing kit's
+        // (#621); these are their fallback.
+        b.fallback = if crate::nature::draws(s, p) {
+            Some(Kit::Nature)
+        } else {
+            crate::climbing::draws(p).then_some(Kit::Climbing)
+        };
         // The inn is asset-tooling's walk-in bundle (`crate::buildings`), not a procedural block.
         // The shrine (#431) is asset-tooling's kit (`crate::shrine`).
         // Elden's house (#158) is its walk-in bundle too.
@@ -792,7 +799,16 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             .and_then(|id| s.climbing().collider(id))
             .is_some_and(|grip| grip == Grip::Rock);
         let mut m = Model::new(Cull::Always);
-        let mut f = frame(p, g, 0.);
+        // A rope faces out of the face it hangs down (#621).
+        let mut f = frame(
+            p,
+            g,
+            if p.kind == PropKind::Rope {
+                crate::climbing::face_yaw(p)
+            } else {
+                0.
+            },
+        );
         if p.kind.graybox() {
             // Graybox geometry stands exactly at its collider box, whatever the terrain.
             f = compose(&[
@@ -1196,6 +1212,12 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                     let [hx, hz] = flip(w - 0.06, d * 0.6);
                     m.box_at(WOOD, [0., i as f64 * 0.3, 0.], [hx, 0.025, hz]);
                 }
+            }
+            // A rope (#621): a cord down the front of its column, 0.3 m off the face (local
+            // −Z), from a beam stub under the face's top.
+            PropKind::Rope => {
+                m.box_at(LIGHT, [0., hy, hz], [0.025, hy, 0.025]);
+                m.box_at(DARK, [0., hy * 2. - 0.2, 0.], [0.08, 0.08, hz + 0.05]);
             }
             // A loading dock (#59): a stone block with a plank deck.
             PropKind::LoadingDock => {

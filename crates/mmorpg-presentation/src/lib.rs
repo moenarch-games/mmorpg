@@ -16,6 +16,7 @@ pub mod ambient;
 pub mod audio;
 pub mod batching;
 pub mod buildings;
+pub mod climbing;
 pub mod composition;
 pub mod geometry;
 pub mod ground;
@@ -140,6 +141,9 @@ pub enum Kit {
     /// The `greyhaven-nature` trees, rocks and bushes (#49, [`nature`]); the procedural trees and
     /// rocks are the fallback.
     Nature,
+    /// The climbing kit's ladders and ropes (#621, [`climbing`]); the procedural ladders and
+    /// ropes are the fallback.
+    Climbing,
 }
 
 /// Which kits a client draws; the static scene hides a drawn kit's fallback.
@@ -151,6 +155,7 @@ pub struct Kits<'a> {
     /// ([`composition::Dressing::props`]); empty while no such kit is drawn.
     pub dressed: &'a [usize],
     pub nature: bool,
+    pub climbing: bool,
 }
 
 impl Kits<'_> {
@@ -160,6 +165,7 @@ impl Kits<'_> {
         settlement_props: true,
         dressed: &[],
         nature: true,
+        climbing: true,
     };
 
     #[must_use]
@@ -169,6 +175,7 @@ impl Kits<'_> {
             Kit::SettlementProps => self.settlement_props,
             Kit::Graybox(prop) => self.dressed.binary_search(&prop).is_ok(),
             Kit::Nature => self.nature,
+            Kit::Climbing => self.climbing,
         }
     }
 }

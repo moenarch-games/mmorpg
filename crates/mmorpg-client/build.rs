@@ -191,15 +191,20 @@ fn main() {
     // Greyhaven's trees, rocks and bushes with every level of detail (#49), and their descriptor.
     let nature = manifest_dir.join("../../web/public/scenery/greyhaven.nature");
     static_bundle("nature_bundle.rs", &nature, None, true);
-    nature_descriptor(&nature);
+    descriptor(&nature, "nature-descriptor", "nature_descriptor.rs");
+    // Greyhaven's ladders, ropes and ivy with every level of detail (#621), and their descriptor.
+    let climbing = manifest_dir.join("../../web/public/scenery/climbing.kit");
+    static_bundle("climbing_bundle.rs", &climbing, None, true);
+    descriptor(&climbing, "climbing-descriptor", "climbing_descriptor.rs");
     // Greyhaven's ground layer materials (#525).
     let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
     static_bundle("terrain_bundle.rs", &terrain, None, false);
 }
 
-/// The nature bundle's `nature-descriptor` attachment (#49) as `DESCRIPTOR`: its levels of
-/// detail and the rocks' collision proxies.
-fn nature_descriptor(bundle: &Path) {
+/// A bundle's descriptor attachment `name` as `DESCRIPTOR` in `out`: the nature bundle's
+/// `nature-descriptor` (#49, its levels of detail and the rocks' collision proxies) or the
+/// climbing kit's `climbing-descriptor` (#621).
+fn descriptor(bundle: &Path, name: &str, out: &str) {
     let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
         panic!(
             "the bundle {} is missing ({error}); run scripts/fetch-bundles.sh",
@@ -213,19 +218,18 @@ fn nature_descriptor(bundle: &Path) {
         .into_iter()
         .flatten()
         .flat_map(|asset| asset["attachments"].as_array().into_iter().flatten())
-        .find(|attachment| attachment["name"] == "nature-descriptor")
+        .find(|attachment| attachment["name"] == name)
         .and_then(|attachment| attachment["path"].as_str())
-        .expect("the nature bundle attaches its descriptor");
+        .unwrap_or_else(|| panic!("the bundle {} attaches its {name}", bundle.display()));
     let absolute = bundle
         .join(path)
         .canonicalize()
-        .expect("the nature descriptor is in the bundle");
+        .unwrap_or_else(|_| panic!("the {name} is in the bundle"));
     let code = format!(
         "pub const DESCRIPTOR: &str = include_str!({:?});\n",
         absolute.display().to_string()
     );
-    let out =
-        PathBuf::from(env::var("OUT_DIR").expect("cargo sets it")).join("nature_descriptor.rs");
+    let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets it")).join(out);
     fs::write(out, code).expect("OUT_DIR is writable");
 }
 

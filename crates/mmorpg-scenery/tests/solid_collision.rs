@@ -44,6 +44,7 @@ const fn solid(kind: PropKind) -> bool {
         | PropKind::LoadingDock
         | PropKind::ShrineKit
         | PropKind::Ladder
+        | PropKind::Rope
         | PropKind::GrayboxWall
         | PropKind::GrayboxTower
         | PropKind::GrayboxWalkway

@@ -1170,6 +1170,13 @@ pub const CLIMB_MOVING_SPEED: f64 = 0.15;
 pub const CLIMB_CLIP_SPEED: f64 = 0.9;
 pub const CLIMB_SIDE_CLIP_SPEED: f64 = 0.75;
 pub const LADDER_CLIP_SPEED: f64 = 0.6;
+/// Where the Ranger's ladder clips (clip root at the origin) hold the rungs (#621), as the
+/// feet's height above the rung grid (modulo the 0.3 m pitch): the hold grips rungs at
+/// root-relative 0.248 + 0.3k m, and the `contacts` of the up and down loops plant the first
+/// hand and the feet on rungs when their loop starts at these heights.
+pub const LADDER_IDLE_RUNG_OFFSET: f64 = 0.052;
+pub const LADDER_UP_RUNG_OFFSET: f64 = 0.27;
+pub const LADDER_DOWN_RUNG_OFFSET: f64 = 0.227;
 /// The zone's mantle rise and move across onto the ledge, in metres per second, and how far it
 /// moves across (`mmorpg_core::climb`): a mantle clip plays fast enough to end about when the
 /// zone's mantle does.
@@ -1949,6 +1956,9 @@ pub struct Cues<'a> {
     pub traversal: TraversalView,
     /// The model's `humanoid-clips` traversal data, once loaded (#500).
     pub motions: Option<&'a Motions>,
+    /// On a ladder, how far the drawn feet stand above its rung grid, in `[0, 0.3)` metres
+    /// (`crate::climbing::rung_offset`): the ladder loops' phase follows it (#621).
+    pub rungs: Option<f64>,
     /// Horizontal speed in metres per second.
     pub speed: f64,
     /// The horizontal travel's direction from the unit's facing, as a yaw offset in radians.
@@ -2507,7 +2517,8 @@ impl Playback {
     /// travel along it (up or down first, sideways on a face only), its pace the projected speed
     /// over the clip's `climbSpeedMetersPerSecond`, or the hold when still. A clip the model
     /// lacks keeps the earlier in-place fallback: the walk climbing and the idle holding on.
-    fn climb(clips: Clips, available: &impl Fn(&str) -> bool, cues: Cues<'_>) -> Want {
+    fn climb(clips: Clips, duration: &impl Fn(&str) -> f32, cues: Cues<'_>) -> Want {
+        let available = |clip: &str| duration(clip) > 0.;
         // `direction` is the travel's yaw from the facing, positive to the left.
         let lateral = -cues.speed * cues.direction.sin();
         let vertical = cues.vertical_speed;
@@ -2561,7 +2572,28 @@ impl Playback {
             .unwrap_or(authored);
         #[allow(clippy::cast_possible_truncation)]
         let rate = (along / authored).clamp(0.5, 1.6) as f32;
-        Want::looped(clip, rate)
+        let want = Want::looped(clip, rate);
+        // On a ladder the loop's phase follows the feet up the rung grid (#621): one loop climbs
+        // `climbSpeedMetersPerSecond` × its length (one rung), so every hand and foot plant
+        // lands on a rung whatever the zone's climbing speed.
+        let length = duration(clip);
+        match cues.rungs {
+            Some(offset) if cues.traversal == TraversalView::ClimbingLadder && length > 0. => {
+                let cycle = authored * f64::from(length);
+                let travelled = if vertical > 0. {
+                    offset - LADDER_UP_RUNG_OFFSET
+                } else {
+                    LADDER_DOWN_RUNG_OFFSET - offset
+                };
+                #[allow(clippy::cast_possible_truncation)]
+                let at = ((travelled / cycle).rem_euclid(1.) * f64::from(length)) as f32;
+                Want {
+                    at: Some(at),
+                    ..want
+                }
+            }
+            _ => want,
+        }
     }
 
     /// The mantle a projected mantle of `ledge` begins (#500): a top-out after climbing,
@@ -2912,7 +2944,7 @@ impl Playback {
             }
         } else if held.climbing() {
             self.turning = None;
-            Self::climb(clips, &available, cues)
+            Self::climb(clips, &duration, cues)
         } else if held.mantling().is_some() {
             // No mantle clip: the earlier in-place fallback, the walk at the mantle's pace.
             let travel = speed.hypot(vertical_speed);
@@ -4706,26 +4738,53 @@ mod tests {
         .expect("valid descriptor");
         let one = |_: &str| 1.;
         let clips = Kind::Ranger.clips();
-        let available = |clip: &str| one(clip) > 0.;
         let cues = |motions| Cues {
             traversal: TraversalView::Climbing,
             motions,
             vertical_speed: 0.9,
             ..Cues::default()
         };
-        let authored = Playback::climb(clips, &available, cues(Some(&motions)));
+        let authored = Playback::climb(clips, &one, cues(Some(&motions)));
         assert_eq!(
             (authored.clip, authored.rate),
             ("Climb_Up_Loop", 1.6_f32.min(2.))
         );
-        let fallback = Playback::climb(clips, &available, cues(None));
+        let fallback = Playback::climb(clips, &one, cues(None));
         assert!((fallback.rate - 1.).abs() < 1e-6);
         // A bundle without the climb clips keeps the earlier in-place walk.
-        let missing = |clip: &str| !clip.starts_with("Climb_");
+        let missing = |clip: &str| if clip.starts_with("Climb_") { 0. } else { 1. };
         assert_eq!(
             Playback::climb(clips, &missing, cues(None)).clip,
             "Walk_Loop"
         );
+    }
+
+    /// On a ladder (#621) the loops' phase follows the feet up the rung grid: one loop per rung,
+    /// starting where the clip's first plants meet rungs.
+    #[test]
+    fn ladder_loops_follow_the_rung_grid() {
+        let half = |_: &str| 0.5;
+        let clips = Kind::Ranger.clips();
+        let cues = |offset, vertical_speed| Cues {
+            traversal: TraversalView::ClimbingLadder,
+            rungs: Some(offset),
+            vertical_speed,
+            ..Cues::default()
+        };
+        let up = Playback::climb(clips, &half, cues(LADDER_UP_RUNG_OFFSET, 0.9));
+        assert_eq!((up.clip, up.at), ("Ladder_Up_Loop", Some(0.)));
+        let up = Playback::climb(clips, &half, cues(LADDER_UP_RUNG_OFFSET + 0.015, 0.9));
+        assert!((up.at.unwrap() - 0.025).abs() < 1e-4, "{:?}", up.at);
+        let down = Playback::climb(clips, &half, cues(LADDER_DOWN_RUNG_OFFSET - 0.06, -0.9));
+        assert_eq!(down.clip, "Ladder_Down_Loop");
+        assert!((down.at.unwrap() - 0.1).abs() < 1e-4, "{:?}", down.at);
+        // Holding still plays the hold; a face's loops keep their own clock.
+        assert_eq!(Playback::climb(clips, &half, cues(0.1, 0.)).at, None);
+        let face = Cues {
+            traversal: TraversalView::Climbing,
+            ..cues(0.1, 0.9)
+        };
+        assert_eq!(Playback::climb(clips, &half, face).at, None);
     }
 
     #[test]

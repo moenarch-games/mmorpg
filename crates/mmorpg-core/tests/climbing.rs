@@ -1,5 +1,5 @@
 //! Climbing and free ledge mantling (#490, Atlas 5.1.40) on Greyhaven's own physics: a player
-//! climbs a highland crag and a tower's ladder, mantles the mill's loading dock and jumps up to
+//! climbs a highland crag, a tower's ladder and the rope up a sheer crag (#621), mantles the mill's loading dock and jumps up to
 //! grab the stronghold's palisade, takes the climbing route up the highlands' escarpment, and is
 //! refused by a sheer crag, a too-high wall and an obstructed ledge.
 
@@ -277,6 +277,35 @@ fn a_player_climbs_a_ladder_onto_the_lookout_tower() {
     player.ticks(30);
     let feet = player.feet();
     assert!(over(&tower, feet), "on the tower: {feet:?}");
+}
+
+/// The rope up the sheer crag (#621) is the only way up it: held as a rope, climbed to the top.
+#[test]
+fn a_player_climbs_the_rope_up_the_sheer_crag() {
+    let rope = collider(*ids::ROPES.start() + 2);
+    let crag = collider(greyhaven_vale::ROPES[2].host);
+    let [x, _, z] = rope.position;
+    let mut player = Player::at([x, z + 200]);
+    player.walk_into(NORTH);
+    player.jump();
+    player.ticks(1);
+    assert!(matches!(
+        player.traversal(),
+        Traversal::Climbing {
+            grip: Grip::Rope,
+            ..
+        }
+    ));
+    assert!(
+        player.until(1, NORTH, 3_000, |p| p.traversal() == Traversal::Free
+            && p.feet()[1] > top(&crag) - 10.0),
+        "{:?}",
+        player.feet()
+    );
+    player.hold(0, NORTH);
+    player.ticks(30);
+    let feet = player.feet();
+    assert!(over(&crag, feet), "on the crag: {feet:?}");
 }
 
 #[test]

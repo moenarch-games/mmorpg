@@ -706,7 +706,8 @@ mod tests {
     }
 
     /// Reviewable ground evidence (#525): the woods, vale, lake and hub debug viewpoints and a
-    /// walking-height view of the Outpost road at noon, as PNGs in `MMORPG_GROUND_SHOTS`.
+    /// walking-height view of the Outpost road at noon, and the climbing kit (#621), as PNGs in
+    /// `MMORPG_GROUND_SHOTS`.
     #[test]
     #[ignore = "requires a GPU; manual ground evidence"]
     fn greyhaven_ground_shots() {
@@ -753,6 +754,11 @@ mod tests {
                     "mountains",
                     view([300.0, 60.0, -560.0], [420.0, 40.0, -900.0]),
                 ),
+                // The climbing kit (#621): the watchtower's ladder, the sheer crag's rope and
+                // the ivy up the highland escarpment's climbing route.
+                ("ladder", view([169.5, 7.8, -55.0], [167.0, 6.3, -58.0])),
+                ("rope", view([-137.5, 31.0, -348.5], [-134.0, 29.5, -354.0])),
+                ("ivy", view([118.0, 4.0, -205.0], [123.5, 6.0, -213.0])),
             ];
             let size = [1280, 800];
             for (index, (name, view)) in views.into_iter().enumerate() {
