@@ -379,3 +379,43 @@ fn the_local_wind_up_waits_for_the_zone_to_commit_or_refuse_it() {
     scene.presenter.prepare(AbilityId::new(9), 7.);
     assert_eq!(scene.presenter.preparing(), None);
 }
+
+#[test]
+fn a_twin_dagger_rogue_alternates_hands_once_per_swing() {
+    let mut scene = scene();
+    scene.snapshot.viewer.class = Some(mmorpg_core::ClassChoice {
+        class: mmorpg_core::PlayerClass::Rogue,
+        sex: mmorpg_core::Sex::Male,
+    });
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        [
+            "Idle_Loop",
+            "Dagger_Idle_Loop",
+            "Dagger_Stab_R",
+            "Dagger_Slash_L",
+        ]
+        .map(|clip| (clip.to_owned(), 0.4)),
+    );
+    let me = EntityRef::Player(1);
+    let swing = |scene: &mut Scene, now: f64| {
+        // One swing covering two units reports an attack on each (#517).
+        scene.snapshot.tick += 1;
+        scene.snapshot.events = vec![
+            ZoneEvent::AttackPerformed {
+                source: me,
+                target: Some(scene.wolf),
+            },
+            ZoneEvent::AttackPerformed {
+                source: me,
+                target: None,
+            },
+        ];
+        scene.presenter.push(&scene.snapshot, now);
+        viewer_upper(&frame(scene, now + 0.1)).0
+    };
+    assert_eq!(viewer_upper(&frame(&mut scene, 0.)).0, "Dagger_Idle_Loop");
+    assert_eq!(swing(&mut scene, 1.), "Dagger_Stab_R");
+    assert_eq!(swing(&mut scene, 2.), "Dagger_Slash_L");
+    assert_eq!(swing(&mut scene, 3.), "Dagger_Stab_R");
+}

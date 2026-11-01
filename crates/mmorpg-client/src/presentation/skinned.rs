@@ -5,9 +5,9 @@
 use crate::world::{DrawMaterial, DrawSkin, Influences, SceneDraw};
 use mmorpg_presentation::units::{
     imported::{
-        BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT, BOW_STOWED_SOCKET, BowShot,
-        DROP_ARMOR_OUTFIT, Figure, Joint, Kind, Layer, Loadout, Mask, Outfit, UPPER_BODY_ROOT,
-        draw_meters, gripped,
+        BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT, BOW_STOWED_SOCKET, BowShot, Carry,
+        DAGGER_SHEATH_SOCKETS, DROP_ARMOR_OUTFIT, Figure, Joint, Kind, Layer, Loadout, Mask,
+        Outfit, THROWABLE_SOCKET, UPPER_BODY_ROOT, draw_meters, gripped,
     },
     kit::{Frame, model},
     player::Hat,
@@ -1328,6 +1328,12 @@ pub(super) struct Equipment {
     pub hanging: Vec<bool>,
     /// The item stowed on [`BOW_STOWED_SOCKET`] that a bow shot takes in hand (#556).
     pub bow: Option<Bow>,
+    /// Per item, the hand (0 left, 1 right) whose dagger it is and the hip sheath a throw or
+    /// bandage puts it on (#603, [`DAGGER_SHEATH_SOCKETS`]); `None` for anything else or a
+    /// bundle without the sheath.
+    pub sheaths: Vec<Option<(usize, (&'static str, three_d_animation::Mat4))>>,
+    /// The [`THROWABLE_SOCKET`] a dagger holder's drawn throwable rides in (#603).
+    pub throwable: Option<(&'static str, three_d_animation::Mat4)>,
 }
 
 /// A carried bow (#556): its item, the [`BOW_HAND_SOCKET`] it is held at through the bow cycle,
@@ -1385,10 +1391,17 @@ fn bow_draws() -> &'static BTreeMap<String, (f32, Vec<f32>)> {
 
 /// The `humanoid-sockets` socket `id` as its joint and column-major transform.
 fn socket(descriptor: &serde_json::Value, id: &str) -> (&'static str, three_d_animation::Mat4) {
+    socket_of(descriptor, id).unwrap_or_else(|| panic!("the bundle declares socket {id}"))
+}
+
+/// [`socket`], or `None` when the bundle does not declare it.
+fn socket_of(
+    descriptor: &serde_json::Value,
+    id: &str,
+) -> Option<(&'static str, three_d_animation::Mat4)> {
     let entry = descriptor["sockets"]
         .as_array()
-        .and_then(|sockets| sockets.iter().find(|socket| socket["id"] == id))
-        .unwrap_or_else(|| panic!("the bundle declares socket {id}"));
+        .and_then(|sockets| sockets.iter().find(|socket| socket["id"] == id))?;
     let numbers = |key: &str| -> Vec<f32> {
         entry[key]
             .as_array()
@@ -1411,7 +1424,7 @@ fn socket(descriptor: &serde_json::Value, id: &str) -> (&'static str, three_d_an
             .to_owned()
             .into_boxed_str(),
     );
-    (joint, matrix)
+    Some((joint, matrix))
 }
 
 impl Equipment {
@@ -1439,6 +1452,21 @@ impl Equipment {
                 hand: socket(&descriptor, BOW_HAND_SOCKET),
                 nock: items_of[index].0.node(BOW_NOCK_JOINT),
             });
+        // A dagger in either hand sheathes at that hip for a throw or a bandage (#603).
+        let sheaths: Vec<_> = items
+            .iter()
+            .map(|&(entry, socket_id)| {
+                let hand = ["hand_l.weapon", "hand_r.weapon"]
+                    .iter()
+                    .position(|&hand| hand == socket_id)
+                    .filter(|_| entry == ranger_bundle::DAGGER)?;
+                Some((hand, socket_of(&descriptor, DAGGER_SHEATH_SOCKETS[hand])?))
+            })
+            .collect();
+        let throwable = sheaths
+            .iter()
+            .any(|sheath| matches!(sheath, Some((1, _))))
+            .then(|| socket(&descriptor, THROWABLE_SOCKET));
         Self {
             items: items_of,
             hanging: items
@@ -1446,7 +1474,26 @@ impl Equipment {
                 .map(|&(_, socket_id)| sway::hangs(socket_id))
                 .collect(),
             bow,
+            sheaths,
+            throwable,
         }
+    }
+
+    /// The column-major world matrix of the drawn throwable's grip frame (#603): the
+    /// [`THROWABLE_SOCKET`] posed by `pose` and placed by `placement`, for a right-hand dagger
+    /// holder.
+    pub fn throwable_grip(
+        &self,
+        character: &Model,
+        placement: three_d_animation::Mat4,
+        pose: &[Layer],
+    ) -> Option<M4> {
+        let (joint, matrix) = self.throwable.as_ref()?;
+        let at = character.joint(joint, pose)?;
+        Some(mul(
+            &placement.elements,
+            &mul(&at.elements, &matrix.elements),
+        ))
     }
 
     /// The socket items of a loadout (asset-tooling #375, #379): the sword and shield, the
@@ -1457,6 +1504,7 @@ impl Equipment {
         static BOW_AND_QUIVER: OnceLock<Equipment> = OnceLock::new();
         static SWORD: OnceLock<Equipment> = OnceLock::new();
         static DAGGER: OnceLock<Equipment> = OnceLock::new();
+        static TWIN_DAGGERS: OnceLock<Equipment> = OnceLock::new();
         static BONE: OnceLock<Equipment> = OnceLock::new();
         static CRYSTAL_AND_TOME: OnceLock<Equipment> = OnceLock::new();
         static MACE: OnceLock<Equipment> = OnceLock::new();
@@ -1478,6 +1526,13 @@ impl Equipment {
             ),
             Loadout::Sword => (&SWORD, &[(ranger_bundle::SWORD, "hand_r.weapon")]),
             Loadout::Dagger => (&DAGGER, &[(ranger_bundle::DAGGER, "hand_r.weapon")]),
+            Loadout::TwinDaggers => (
+                &TWIN_DAGGERS,
+                &[
+                    (ranger_bundle::DAGGER, "hand_r.weapon"),
+                    (ranger_bundle::DAGGER, "hand_l.weapon"),
+                ],
+            ),
             Loadout::BoneStaff => (&BONE, &[(ranger_bundle::BONE_STAFF, "hand_r.staff")]),
             // The tome is held like a shield: spine along the forearm.
             Loadout::CrystalStaffAndTome => (
@@ -1762,12 +1817,13 @@ impl Equipment {
             tint,
             sway::Swing::default(),
             None,
+            Carry::default(),
         )
     }
 
     /// [`Self::draws`] with the hanging items turned by `swing` about their grip, in the
-    /// model's frame (Atlas 6.6.39), and the bow in hand with its nock drawn through a bow
-    /// `shot` (#556).
+    /// model's frame (Atlas 6.6.39), the bow in hand with its nock drawn through a bow `shot`
+    /// (#556), and the daggers the `carry` sheathes at the hips (#603).
     #[allow(clippy::too_many_arguments)]
     pub fn draws_swung(
         &self,
@@ -1778,14 +1834,25 @@ impl Equipment {
         tint: Option<[f32; 3]>,
         swing: sway::Swing,
         shot: Option<BowShot>,
+        carry: Carry,
     ) -> Vec<SceneDraw> {
         let turn = (!swing.is_rest()).then(|| trs([0.; 3], swing.quaternion(), [1.; 3]));
         let mut draws = Vec::new();
         for (index, (model, joint, matrix)) in self.items.iter().enumerate() {
             let bow = self.bow.as_ref().filter(|bow| bow.index == index);
             let in_hand = bow.zip(shot);
-            let (joint, matrix) =
-                in_hand.map_or((*joint, matrix), |(bow, _)| (bow.hand.0, &bow.hand.1));
+            let sheath = self
+                .sheaths
+                .get(index)
+                .copied()
+                .flatten()
+                .filter(|&(hand, _)| carry.sheathed[hand])
+                .map(|(_, sheath)| sheath);
+            let (joint, matrix) = match (in_hand, &sheath) {
+                (Some((bow, _)), _) => (bow.hand.0, &bow.hand.1),
+                (None, Some((joint, matrix))) => (*joint, matrix),
+                (None, None) => (*joint, matrix),
+            };
             let Some(at) = character.joint(joint, pose) else {
                 continue;
             };
@@ -2003,6 +2070,7 @@ mod rolling_ranger_tests {
                 None,
                 sway::Swing::default(),
                 shot,
+                Carry::default(),
             );
             let draw = draws
                 .iter()
@@ -2049,6 +2117,57 @@ mod rolling_ranger_tests {
             .map(|(a, b)| distance([a.x, a.y, a.z], [b.x, b.y, b.z]))
             .fold(0., f32::max);
         assert!((moved - draw).abs() < 0.01, "the string moves {moved} m");
+    }
+
+    #[test]
+    fn a_throw_sheathes_the_right_dagger_at_the_hip() {
+        let character = &asset(Kind::Ranger).model;
+        let equipment = Equipment::loadout(Loadout::TwinDaggers);
+        assert_eq!(equipment.items.len(), 2);
+        let pose = [Layer::single("Idle_Loop", 0.)];
+        let right = |carry: Carry| {
+            let draws = equipment.draws_swung(
+                "rogue",
+                character,
+                three_d_animation::Mat4::IDENTITY,
+                &pose,
+                None,
+                sway::Swing::default(),
+                None,
+                carry,
+            );
+            let draw = draws
+                .iter()
+                .find(|draw| draw.id.starts_with("rogue-item-0-"))
+                .expect("the right dagger draws");
+            [12, 13, 14].map(|i| draw.model.elements[i])
+        };
+        let joint = |name: &str| {
+            let at = character.joint(name, &pose).expect(name);
+            [12, 13, 14].map(|i| at.elements[i])
+        };
+        let distance = |a: [f32; 3], b: [f32; 3]| {
+            a.iter()
+                .zip(b)
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f32>()
+                .sqrt()
+        };
+        let sheathed = Carry {
+            sheathed: [false, true],
+            throwable: None,
+        };
+        let (held, stowed) = (right(Carry::default()), right(sheathed));
+        assert!(distance(held, joint("hand_r")) < 0.15, "in hand: {held:?}");
+        assert!(
+            distance(stowed, joint("pelvis")) < 0.4,
+            "at the hip: {stowed:?}"
+        );
+        assert!(
+            equipment
+                .throwable_grip(character, three_d_animation::Mat4::IDENTITY, &pose)
+                .is_some()
+        );
     }
 
     #[test]

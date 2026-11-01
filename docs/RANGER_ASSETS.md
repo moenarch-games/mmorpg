@@ -47,11 +47,22 @@ The Warden's sword-and-shield clips and the Redbrand specials (#582, asset-tooli
 
 A bundle without these clips falls back to what played before: `Sword_Attack`, `Idle_Shield_Loop`, the idle and the shared casts. Review with `?scenario=warden-slashes`, `warden-guards`, `warden-charge`, `warden-cleave`, `warden-stun`, `warden-respawn`, `redbrand-whirl` or `redbrand-smash`.
 
+The Rogue's dagger, throw, flourish and bandage clips (#603, asset-tooling #418) are picked in the shared presenter too (`Kind::dagger_strike`), and all of them play on the upper body only:
+
+- **Two daggers.** The Rogue carries a blackened dagger in each hand (`Loadout::TwinDaggers`, `hand_r.weapon` and `hand_l.weapon`), as the clips are authored. Dual-wielding awaits the owner's confirmation on #603. `imported::ROGUE_LOADOUT` is the one switch: `Loadout::Dagger` gives back the single dagger. The field marauders keep one dagger.
+- **Stance and auto-attack.** A standing dagger holder (the Rogue and the marauders) plays `Dagger_Idle_Loop` over the idle legs. Its auto-attack plays `Dagger_Stab_R`. With two daggers it alternates `Dagger_Stab_R` and `Dagger_Slash_L`, counted per unit on the client.
+- **Abilities.** Sinister Strike (30) plays `Dagger_Sinister`, Poisoned Blade (31) `Dagger_Poison` and Gouge (32) `Dagger_Gouge`. Adrenaline Rush (33) and the Ranger's Rapid Fire (8) play `Flourish_Haste`. Throwing Knife (42) plays `Throw_Knife`, and Venom Flask (43) and Blasting Bomb (44) play `Throw_Lob`. The local wind-ups hold at 0.6 of each clip's `contact.seconds`, which for a throw is its release.
+- **Throws.** At the clip's `drawSeconds` the right dagger moves to `hip_r.stowed`, and the knife, flask or bomb appears in `hand_r.weapon` with `Grip_Knife_Pinch_R` or `Grip_Flask_R`. At `releaseSeconds` it leaves the hand, and the dagger comes back when the clip ends (`imported::Carry`). The bundle has no throwable items, so both clients draw placeholders in the projectile's colours (`UnitPresenter::throwable_draws`). The zone's projectile still appears when the zone accepts the throw: nothing on the wire ties a projectile to its thrower.
+- **Bandage.** A Redbrand's Crude Bandage (14) loops `Bandage_Self` through its 3 s cast. A dagger holder would sheathe both daggers at `hip_l.stowed` and `hip_r.stowed` for it; the bandits keep their swords.
+
+A bundle without these clips falls back to what played before: the slashes or `Sword_Attack`, the idle arms, the bow release for Rapid Fire and the spell hold for the bandage. Without `hip_r.stowed` the dagger stays in hand. Review with `?scenario=rogue-daggers`, `rogue-throws` or `redbrand-bandage`.
+
 Held items close the hand round them (#503, asset-tooling #285). The bundle's `Grip_*` clips are static finger poses. `imported::Playback` layers the one for each held item over whatever body clip plays, as a `fingers_l` or `fingers_r` layer (`Mask::Fingers`). While a pose has such a layer, only that layer drives that hand's 15 finger and thumb joints, in both clients. This holds even over the clips that key the fingers, such as the strafes, the swims and the sword clips. `Loadout::hands` names what each hand holds:
 
 | Item | Socket | Grip |
 | --- | --- | --- |
 | Arming sword, blackened dagger, flanged mace | `hand_r.weapon` | `Grip_Weapon_R` |
+| The Rogue's second dagger (#603) | `hand_l.weapon` | `Grip_Weapon_L` |
 | Heater shield | `hand_l.shield` | `Grip_Shield_L` |
 | Tome | `hand_l.shield` | `Grip_Book_L` |
 | Bone, crystal and gnarled staffs | `hand_r.staff` | `Grip_Staff_R` |
