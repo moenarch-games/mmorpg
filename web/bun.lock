@@ -12,7 +12,7 @@
         "@moritzbrantner/input-bindings-web": "github:moritzbrantner/input-bindings#bcb5834545bcf92cf74d4fb80496f410dea3bcaf",
         "@moritzbrantner/settings-browser": "github:moritzbrantner/settings#18289aafa116010fd8dfe485aecff2cc749ceb4a",
         "@moritzbrantner/three-d-renderer": "github:moritzbrantner/3d-lab#6bd382d81687a33633e927f69258726f0b85c296",
-        "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#da8f264259d9b3d9622e059e3d8c1a52d4d8a719",
+        "@moritzbrantner/three-lighting": "github:moritzbrantner/render-engine#521d011b988d19d64642b23950845612e78f13be",
         "react": "19.3.1",
         "react-dom": "19.3.1",
         "three": "0.186.1",
@@ -98,7 +98,7 @@
 
     "@moritzbrantner/three-d-renderer": ["@moritzbrantner/three-d-renderer@github:moritzbrantner/3d-lab#6bd382d", { "dependencies": { "three": "0.186.1" } }, "moritzbrantner-3d-lab-6bd382d", "sha512-4S4AzwF+QAC0sF5JvN4AGUp9xLXjBQpyRIUycI6MpJBh82nb9mXl7st0mNz72hQ/Wp3XoKFWWk/pw4UdSXCl7A=="],
 
-    "@moritzbrantner/three-lighting": ["@moritzbrantner/three-lighting@github:moritzbrantner/render-engine#da8f264", { "peerDependencies": { "three": ">=0.186.0 <0.187.0" } }, "moritzbrantner-render-engine-da8f264", "sha512-yuVpWnHbQ8OuptACSzV4k7nw+KCfbbaYvumrlFjC3ywiz9ewmFntoNPr/NIJXdnugqYzObvE7Uh8zpY7QODwIg=="],
+    "@moritzbrantner/three-lighting": ["@moritzbrantner/three-lighting@github:moritzbrantner/render-engine#521d011", { "peerDependencies": { "three": ">=0.186.0 <0.187.0" } }, "moritzbrantner-render-engine-521d011", "sha512-2NLEIePQBD2X9Wuo/T3PMxGdriSPaHlFXsLfOvkEIoHnFzANzFtaKeFDqqKTpHdUmOJaMl9OuPIuJGAsi/RWmA=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
