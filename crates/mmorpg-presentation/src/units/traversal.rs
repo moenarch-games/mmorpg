@@ -32,6 +32,57 @@ pub struct Motion {
     pub release: Option<f64>,
     /// A crossbow clip's marks (`crossbow`, asset-tooling #419).
     pub crossbow: Option<CrossbowMarks>,
+    /// A caster, staff or mace clip's marks (`cast`, asset-tooling #420).
+    pub cast: Option<CastMarks>,
+}
+
+/// A caster clip's `humanoid-clips` `cast` object (asset-tooling #420), in seconds into the
+/// clip.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CastMarks {
+    /// The spell leaves the hand, the staff stamps, the blow lands or the ally is touched
+    /// (`releaseSeconds`).
+    pub release: Option<f64>,
+    /// Starts in the first pose of the charge loop: crossfade into it from the charge
+    /// (`startsFrom: "Cast_Charge_Loop"`).
+    pub from_charge: bool,
+    /// Where the spell starts (`channelJoint`, `channelPoint`).
+    pub channel: Option<super::imported::Channel>,
+    /// The cone's sweep, from and to (`sweepSeconds`).
+    pub sweep: Option<[f64; 2]>,
+    /// The drain's pulls in one loop (`pulseSeconds`).
+    pub pulses: [Option<f64>; 2],
+    /// The summoning's kneel, from and to (`kneelSeconds`).
+    pub kneel: Option<[f64; 2]>,
+}
+
+impl CastMarks {
+    fn parse(marks: &Value) -> Self {
+        let span = |key: &str| {
+            let span = marks[key].as_array().filter(|span| span.len() == 2)?;
+            Some([span[0].as_f64()?, span[1].as_f64()?])
+        };
+        let hand = match marks["channelJoint"].as_str() {
+            Some("hand_l") => Some(super::imported::Hand::Left),
+            Some("hand_r") => Some(super::imported::Hand::Right),
+            _ => None,
+        };
+        let point = marks["channelPoint"]
+            .as_array()
+            .filter(|point| point.len() == 3)
+            .and_then(|point| Some([point[0].as_f64()?, point[1].as_f64()?, point[2].as_f64()?]));
+        let pulse = |index: usize| marks["pulseSeconds"][index].as_f64();
+        Self {
+            release: marks["releaseSeconds"].as_f64(),
+            from_charge: marks["startsFrom"].as_str() == Some("Cast_Charge_Loop"),
+            channel: hand
+                .zip(point)
+                .map(|(hand, point)| super::imported::Channel { hand, point }),
+            sweep: span("sweepSeconds"),
+            pulses: [pulse(0), pulse(1)],
+            kneel: span("kneelSeconds"),
+        }
+    }
 }
 
 /// A crossbow clip's `humanoid-clips` `crossbow` object (asset-tooling #419), in seconds into
@@ -153,6 +204,9 @@ impl Motions {
                             reloaded: marks["reloadedSeconds"].as_f64(),
                         }
                     }),
+                    cast: clip["cast"]
+                        .as_object()
+                        .map(|_| CastMarks::parse(&clip["cast"])),
                 };
                 (motion != Motion::default()).then(|| (name.to_owned(), motion))
             })
@@ -313,6 +367,42 @@ mod tests {
         let poses = secondary_poses(&serde_json::from_str(DESCRIPTOR).unwrap());
         assert_eq!(poses["Climb_Up_Loop"].joints[0].0, "skirt_f_01");
         assert_eq!(poses["Climb_Up_Loop"].joints[0].1.len(), 2);
+    }
+
+    #[test]
+    fn reads_the_caster_clips_cast_marks() {
+        let motions = Motions::parse(
+            r#"{"schema": "humanoid-clips-v1", "clips": [
+                {"name": "Cast_Channel_Drain_Loop", "cast": {"channelJoint": "hand_l",
+                 "channelPoint": [0.02, 0.045, 0], "pulseSeconds": [0.375, 1.125]}},
+                {"name": "Cast_Release_Push", "cast": {"releaseSeconds": 0.22,
+                 "startsFrom": "Cast_Charge_Loop", "channelJoint": "hand_r",
+                 "channelPoint": [0.1, -0.8, 0.5]}},
+                {"name": "Cast_Summon_Raise", "cast": {"releaseSeconds": 0.93,
+                 "kneelSeconds": [0.45, 1.05]}}
+            ]}"#,
+        )
+        .expect("valid descriptor");
+        let cast = |clip| motions.get(clip).unwrap().cast.unwrap();
+        let drain = cast("Cast_Channel_Drain_Loop");
+        assert_eq!(drain.pulses, [Some(0.375), Some(1.125)]);
+        assert_eq!(
+            drain.channel,
+            Some(super::super::imported::Channel {
+                hand: super::super::imported::Hand::Left,
+                point: [0.02, 0.045, 0.],
+            })
+        );
+        let push = cast("Cast_Release_Push");
+        assert_eq!(push.release, Some(0.22));
+        assert!(push.from_charge);
+        assert_eq!(
+            push.channel.map(|channel| channel.hand),
+            Some(super::super::imported::Hand::Right)
+        );
+        let raise = cast("Cast_Summon_Raise");
+        assert_eq!(raise.kneel, Some([0.45, 1.05]));
+        assert_eq!(raise.channel, None);
     }
 
     #[test]

@@ -102,6 +102,22 @@ pub enum Scenario {
     /// A level 8 Warden 12 m north of a Greyfang Ridge Redbrand Crossbowman, facing it: it
     /// carries its crossbow, aims, fires Crossbow Bolt and reloads (#607).
     RedbrandCrossbowman,
+    /// A level 8 Arcanist with full mana 13 m east of a Wolfrun wolf, facing it, to review the
+    /// caster clips (#609): Firebolt's charge and push, Fire Blast's and Chain Lightning's
+    /// overhand, Frost Nova, Frost Breath's cone, Arcane Barrier's ward, Blizzard's and
+    /// Lightning Beam's channels, and the staff's jab and sweep up close …
+    ArcanistCasts,
+    /// … a level 6 Necromancer's Shadow Bolt, Corruption's curse, Drain Life, Bone Shield and
+    /// Raise Skeleton's kneel …
+    NecromancerCasts,
+    /// … a level 6 Cleric's Smite, Renew's and Divine Shield's touch, Holy Beam and the mace's
+    /// overhand and backhand …
+    ClericCasts,
+    /// … a level 6 Druid's Wrath, Entangling Roots' sweep, Rejuvenation, Barkskin and Call
+    /// Companion's whistle …
+    DruidCasts,
+    /// … and a level 6 Warden's Rallying Cry.
+    WardenWarcry,
 }
 
 impl Scenario {
@@ -145,6 +161,11 @@ impl Scenario {
             Self::RangerRapidFire => "ranger-rapid-fire",
             Self::RangerPowerDraw => "ranger-power-draw",
             Self::RedbrandCrossbowman => "redbrand-crossbowman",
+            Self::ArcanistCasts => "arcanist-casts",
+            Self::NecromancerCasts => "necromancer-casts",
+            Self::ClericCasts => "cleric-casts",
+            Self::DruidCasts => "druid-casts",
+            Self::WardenWarcry => "warden-warcry",
         }
     }
 
@@ -165,8 +186,26 @@ impl Scenario {
             | Self::RedbrandSmash
             | Self::RedbrandBandage
             | Self::RedbrandCrossbowman
+            | Self::WardenWarcry
             | Self::Grips => ClassChoice {
                 class: PlayerClass::Warden,
+                sex: Sex::Male,
+            },
+            // The caster clips were reviewed on the male figure (asset-tooling #420).
+            Self::ArcanistCasts => ClassChoice {
+                class: PlayerClass::Arcanist,
+                sex: Sex::Male,
+            },
+            Self::NecromancerCasts => ClassChoice {
+                class: PlayerClass::Necromancer,
+                sex: Sex::Male,
+            },
+            Self::ClericCasts => ClassChoice {
+                class: PlayerClass::Cleric,
+                sex: Sex::Male,
+            },
+            Self::DruidCasts => ClassChoice {
+                class: PlayerClass::Druid,
                 sex: Sex::Male,
             },
             // The dagger clips were reviewed on the male figure (asset-tooling #418).
@@ -232,9 +271,14 @@ impl Scenario {
             | Self::RogueThrows
             | Self::RangerMovingShots
             | Self::RangerRapidFire
-            | Self::RangerPowerDraw => 6,
+            | Self::RangerPowerDraw
+            | Self::NecromancerCasts
+            | Self::ClericCasts
+            | Self::DruidCasts
+            | Self::WardenWarcry => 6,
             // Lightning Beam unlocks at level 8; a Warden that high outlasts a Redbrand special.
             Self::ArcanistPack
+            | Self::ArcanistCasts
             | Self::RedbrandWhirl
             | Self::RedbrandSmash
             | Self::RedbrandBandage
@@ -270,7 +314,12 @@ impl Scenario {
             | Self::RogueThrows
             | Self::RangerMovingShots
             | Self::RangerRapidFire
-            | Self::RangerPowerDraw => ([-4_900, -3_600], 49_152),
+            | Self::RangerPowerDraw
+            | Self::ArcanistCasts
+            | Self::NecromancerCasts
+            | Self::ClericCasts
+            | Self::DruidCasts
+            | Self::WardenWarcry => ([-4_900, -3_600], 49_152),
             // 12 m north of Redbrand Crossbowman 600 at (-1 350, -17 250); facing south at it.
             Self::RedbrandCrossbowman => ([-1_350, -16_050], 32_768),
             // 12 m south of the camp's nearest bandits; facing north.
@@ -359,6 +408,13 @@ impl Scenario {
         ) {
             // Full focus, so every Ranger shot can be tried at once (#607).
             record.resource = PlayerClass::Ranger.resource().max(self.level());
+        }
+        if matches!(
+            self,
+            Self::ArcanistCasts | Self::NecromancerCasts | Self::ClericCasts | Self::DruidCasts
+        ) {
+            // A full pool, so every caster ability can be tried at once (#609).
+            record.resource = self.class().class.resource().max(self.level());
         }
         if self == Self::WardenRespawn {
             // One hit from the wolf kills; releasing the spirit rises at the graveyard.

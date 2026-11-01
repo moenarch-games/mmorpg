@@ -15,7 +15,7 @@ use mmorpg_presentation::{
     audio::{AudioCues, AudioOp},
     units::{
         FrameInput, SampledUnit, UnitPresenter, Viewer,
-        imported::{Bolt, Kind, Loadout, Resident, Throwable},
+        imported::{Bolt, Hand, Kind, Loadout, Resident, Throwable},
         player::Hat,
     },
 };
@@ -108,6 +108,16 @@ struct ImportedEntry {
     /// left hand on the crank, and the bolt in `hand_r.arrow` (`hand`), the groove (`groove`) or
     /// gone (null); null for anyone else.
     crossbow: Option<CrossbowEntry>,
+    /// Where the spell of the caster clip shown starts (#609): `point` metres in the `joint`
+    /// (`hand_l` or `hand_r`) glTF frame; null outside the caster clips. No spell effect
+    /// starts there yet.
+    channel: Option<ChannelEntry>,
+}
+
+#[derive(Serialize)]
+struct ChannelEntry {
+    joint: &'static str,
+    point: [f64; 3],
 }
 
 #[derive(Serialize)]
@@ -467,6 +477,13 @@ impl Units {
                         left_hand: crossbow.left_hand,
                         crank: crossbow.crank,
                         bolt: crossbow.bolt.map(Bolt::name),
+                    }),
+                    channel: unit.animation.channel.map(|channel| ChannelEntry {
+                        joint: match channel.hand {
+                            Hand::Left => "hand_l",
+                            Hand::Right => "hand_r",
+                        },
+                        point: channel.point,
                     }),
                 }
             })
