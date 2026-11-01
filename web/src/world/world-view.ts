@@ -522,7 +522,7 @@ export class WorldView {
     this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
     this.#nature = new Nature(world.scenery.nature);
     void this.#nature.load();
-    this.#ground = new Ground(this.#scene.ground);
+    this.#ground = new Ground(world.scenery.staticScene.terrainStream());
     void this.#ground.load();
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
     this.#inn = new WalkInBuildings(world.scenery.buildings.presenters());
@@ -1168,6 +1168,7 @@ export class WorldView {
       this.#sound.pump();
     }
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: this.#outpost?.drawn ?? false, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
+    this.#ground?.update(view.eye);
     this.#nature?.update(this.#camera, deltaSeconds, animate);
     this.#fortress?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = frame.nodes;

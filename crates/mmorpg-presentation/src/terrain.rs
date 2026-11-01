@@ -1,6 +1,5 @@
 //! Terrain triangulation, overlays, roads, lake beds and water.
 use super::{Draw, batching::*, geometry::*};
-use crate::ground::{Ground, Layer};
 use mmorpg_scenery::{Biome, Scenery, TerrainGrid};
 use std::f64::consts::TAU;
 use std::{collections::BTreeMap, sync::Arc};
@@ -98,7 +97,7 @@ pub(crate) fn noise(x: f64, z: f64, cell: f64, seed: f64) -> f64 {
     let far = a(0., 1.) + (a(1., 1.) - a(0., 1.)) * fx;
     near + (far - near) * fz
 }
-fn tone(b: Biome, x: f64, z: f64) -> u32 {
+pub(crate) fn tone(b: Biome, x: f64, z: f64) -> u32 {
     let base = biome_color(b);
     if !matches!(
         b.name(),
@@ -115,8 +114,73 @@ fn tone(b: Biome, x: f64, z: f64) -> u32 {
         mix(base, 0xc2cf6e, 0.2)
     }
 }
+
+/// The far ring's colour at grid sample `(c, r)` of normal `n` (#526): the distant ranges
+/// shaded by their relief, so they read as rock faces, ridges, gullies and snowfields rather
+/// than one flat grey. Ridges are lighter and gullies darker; rock shows strata and grass holds
+/// on its gentler slopes; snow lies only where it is not too steep, and steep snow faces show
+/// rock through it; a baked hillshade keeps their form against the light.
+fn far_color(g: &TerrainGrid, biome: Biome, c: usize, r: usize, n: V) -> u32 {
+    let (ci, ri) = (c as isize, r as isize);
+    let h = height(g, ci, ri);
+    let (x, z) = (
+        metres(g.origin[0] + c as i32 * g.step),
+        metres(g.origin[1] + r as i32 * g.step),
+    );
+    let around = (height(g, ci - 2, ri)
+        + height(g, ci + 2, ri)
+        + height(g, ci, ri - 2)
+        + height(g, ci, ri + 2))
+        / 4.;
+    let ridge = ((h - around) / 10.).clamp(-1., 1.);
+    let steep = 1. - n[1];
+    let strata = noise(x * 0.4 + z * 0.3, h * 2.5, 7., 61.);
+    let rock = mix(
+        0x5e5347,
+        0xa8998a,
+        strata * 0.8 + 0.1 * noise(x, z, 30., 67.),
+    );
+    let grassy = |rock: u32, upto: f64| {
+        let hold =
+            (1. - steep / 0.32).clamp(0., 1.) * (1. - (h - 10.) / (upto - 10.)).clamp(0., 1.);
+        mix(
+            rock,
+            mix(0x5f7442, 0x7b7a52, noise(x, z, 18., 71.)),
+            hold * 0.85,
+        )
+    };
+    let color = match biome.name() {
+        "snow" | "rock" => {
+            // Snow gathers in gullies and on gentle ground above the snow line; ridges and steep
+            // faces stay bare.
+            let lying = (h - 85.) + 30. * (noise(x, z, 24., 79.) - 0.5) - 20. * ridge;
+            let snow =
+                ((lying + 5.) / 20.).clamp(0., 1.) * (1. - ((steep - 0.25) / 0.2).clamp(0., 1.));
+            let white = mix(0xf2f5f8, 0xb9c6d6, (-ridge).max(0.) * 0.9);
+            mix(grassy(rock, 28.), white, snow)
+        }
+        "highland" | "foothills" => grassy(mix(tone(biome, x, z), rock, steep.min(0.5)), 40.),
+        _ => tone(biome, x, z),
+    };
+    // A soft hillshade from a fixed high light over the macro relief (40 m), baked in: the
+    // ranges keep their form against the light at any hour, as distant terrain does in a
+    // painted backdrop.
+    let span = 4. * metres(g.step);
+    let macro_normal = norm([
+        -(height(g, ci + 2, ri) - height(g, ci - 2, ri)) / span,
+        1.,
+        -(height(g, ci, ri + 2) - height(g, ci, ri - 2)) / span,
+    ]);
+    let light = norm([-0.45, 0.7, 0.55]);
+    let lit = (0..3)
+        .map(|axis| macro_normal[axis] * light[axis])
+        .sum::<f64>()
+        .max(0.);
+    shade(color, (0.5 + 0.65 * lit) * (0.9 + 0.25 * ridge))
+}
+
 /// Whether the open rectangles `a` and `b` (`[min x, min z, max x, max z]`) overlap.
-fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
+pub(crate) fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
     a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
 
@@ -181,19 +245,18 @@ fn around_holes(
 /// rectangle `[min x, min z, max x, max z]` in metres, and sinks its vertices inside it. A cell
 /// overlapping one of `holes` (`[min x, min z, max x, max z]`, metres) is drawn around it, and
 /// a triangle (its grid samples) a ground overlay `covered` entirely is left out (#525).
-fn grid(
+/// Only the grid cells `cells` (`[first column, first row, end column, end row]`) are drawn.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn grid(
     out: &mut Geometry,
     g: &TerrainGrid,
+    biomes: &[Biome],
     far: bool,
     inner: [f64; 4],
     holes: &[[f64; 4]],
     covered: &dyn Fn([usize; 3]) -> bool,
+    cells: [usize; 4],
 ) {
-    let biomes = if far {
-        g.biomes.clone()
-    } else {
-        ground_biomes(g)
-    };
     let mut map = BTreeMap::new();
     let within = |x: f64, z: f64| inner[0] < x && x < inner[2] && inner[1] < z && z < inner[3];
     let at = |c: usize, r: usize| {
@@ -202,8 +265,8 @@ fn grid(
             metres(g.origin[1] + r as i32 * g.step),
         )
     };
-    for r in 0..g.rows - 1 {
-        for c in 0..g.columns - 1 {
+    for r in cells[1]..cells[3].min(g.rows - 1) {
+        for c in cells[0]..cells[2].min(g.columns - 1) {
             if far && at(c, r) && at(c + 1, r) && at(c, r + 1) && at(c + 1, r + 1) {
                 continue;
             }
@@ -215,7 +278,7 @@ fn grid(
                 metres(g.origin[1] + (r as i32 + 1) * g.step),
             ];
             if holes.iter().any(|hole| overlaps(*hole, cell)) {
-                around_holes(out, g, &biomes, s, cell, holes);
+                around_holes(out, g, biomes, s, cell, holes);
                 continue;
             }
             for sample in [
@@ -243,9 +306,10 @@ fn grid(
                         / (2. * step);
                     let index = out.p.len() as u32;
                     out.p.push([x, y, z]);
-                    out.n.push(norm([-dx, 1., -dz]));
+                    let n = norm([-dx, 1., -dz]);
+                    out.n.push(n);
                     let color = if far {
-                        biome_color(biomes[sample])
+                        far_color(g, biomes[sample], c, r, n)
                     } else {
                         tone(biomes[sample], x, z)
                     };
@@ -287,49 +351,66 @@ fn ellipse(m: &mut Geometry, c: [f64; 2], r: [f64; 2], y: f64, n: u32) {
             .extend([base, base + 1 + i, base + 1 + (i + 1) % n]);
     }
 }
-pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
-    let inner = [
+/// `g` with every triangle on its own vertices, lit by its face normal softened towards the
+/// smooth one (#526): the distant ranges' crags and gullies catch the light at any sun angle
+/// instead of shading as one smooth grey swell.
+fn faceted(g: &Geometry) -> Geometry {
+    let mut out = Geometry::default();
+    for tri in g.indices.as_chunks::<3>().0 {
+        let [a, b, c] = [0, 1, 2].map(|k| g.p[tri[k] as usize]);
+        let (u, v) = (
+            [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+            [c[0] - a[0], c[1] - a[1], c[2] - a[2]],
+        );
+        let face = norm([
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ]);
+        for &i in tri {
+            let smooth = g.n[i as usize];
+            out.indices.push(out.p.len() as u32);
+            out.p.push(g.p[i as usize]);
+            out.n.push(norm(std::array::from_fn(|axis| {
+                0.65 * face[axis] + 0.35 * smooth[axis]
+            })));
+            out.colors.push(g.colors[i as usize]);
+        }
+    }
+    out
+}
+
+/// The terrain rectangle `[min x, min z, max x, max z]` of grid `g`, in metres.
+pub(crate) fn extent(g: &TerrainGrid) -> [f64; 4] {
+    [
         g.origin[0],
         g.origin[1],
         g.origin[0] + (g.columns as i32 - 1) * g.step,
         g.origin[1] + (g.rows as i32 - 1) * g.step,
     ]
-    .map(metres);
-    let holes: Vec<_> = s
-        .terrain_holes
-        .iter()
-        .map(|hole| [hole.min[0], hole.min[1], hole.max[0], hole.max[1]].map(metres))
-        .collect();
-    // The opaque grass base, then the masked ground overlays over it (#525).
-    let base = b.ground(Ground {
-        layer: Layer::Grass,
-        overlay: false,
-    });
-    let weights = crate::ground::weights(s, g);
-    grid(base, g, false, inner, &holes, &|tri| weights.covers(tri));
-    crate::ground::project_top(base, Layer::Grass);
-    crate::ground::grid_overlays(b, &weights, g, &holes);
+    .map(metres)
+}
+
+/// The terrain's static draws: the far ring, handholds, lake beds and water. The terrain grid
+/// itself is drawn in visual tiles ([`crate::tiles::Tiles`], #526).
+pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
+    let ring = s.far_terrain_grid(2000);
+    let mut far = Geometry::default();
     grid(
-        b.global("far", 0xffffff),
-        &s.far_terrain_grid(2000),
+        &mut far,
+        &ring,
+        &ring.biomes,
         true,
-        inner,
+        extent(g),
         &[],
         &|_| false,
+        [0, 0, usize::MAX, usize::MAX],
     );
+    *b.global("far", 0xffffff) = faceted(&far);
     // Worn handholds up the climbable rock faces of the terrain (#512).
     crate::handholds::terrain(g, s.climbing(), &mut |c, shape, a| {
         crate::handholds::draw(b, c, shape, a);
     });
-    // The trampled plaza, then one tilled patch per ploughed field (#424).
-    if let Some(plaza) = bounds(g, "plaza") {
-        crate::ground::patch(b, g, Layer::Path, 0xa8987a, plaza, 1.2);
-    }
-    for field in s.farmland() {
-        let field = (field.min.map(metres), field.max.map(metres));
-        crate::ground::patch(b, g, Layer::Mud, 0x7a5836, field, 1.);
-    }
-    crate::ground::roads(b, s, g);
     let mut water = Vec::new();
     for (i, w) in s.water.iter().enumerate() {
         let c = w.centre.map(metres);

@@ -19,8 +19,10 @@
 //! Geometry is built once per page; nothing here is gameplay, and the local
 //! zone host never reads it.
 
+use mmorpg_presentation::tiles::{BUILDS_PER_FRAME, Level, Streamer};
 use mmorpg_presentation::{Draw, StaticScene};
 use serde::Serialize;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::scenery::{PerZone, hosted_scenery};
 
@@ -305,6 +307,116 @@ pub fn point_lights(seconds: f64, animate: bool) -> Vec<f32> {
         .collect()
 }
 
+/// The terrain's visual tiles (#526, `mmorpg_presentation::tiles`) for one page renderer: the
+/// renderer keeps every tile's far level and the near levels this stream says are resident.
+#[wasm_bindgen]
+pub struct TerrainStream {
+    arena: bool,
+    streamer: Streamer<()>,
+}
+
+#[wasm_bindgen]
+impl TerrainStream {
+    /// A stream over the hosted zone's terrain, or the Battle Royale arena's (#552).
+    #[must_use]
+    pub(crate) fn new(arena: bool) -> Self {
+        Self {
+            arena,
+            streamer: Streamer::default(),
+        }
+    }
+
+    fn scene(&self) -> &'static StaticScene {
+        if self.arena {
+            crate::arena_presentation::scene()
+        } else {
+            hosted_static_scene()
+        }
+    }
+
+    /// How many tiles the terrain has.
+    #[must_use]
+    pub fn count(&self) -> usize {
+        self.scene().terrain.tiles.len()
+    }
+
+    /// Tile `index`'s far level, packed by [`pack`].
+    #[must_use]
+    pub fn far(&self, index: usize) -> Vec<f32> {
+        pack(&self.scene().terrain.tiles[index].far)
+    }
+
+    /// Tile `index`'s near level, built now, packed by [`pack`].
+    #[must_use]
+    pub fn near(&self, index: usize) -> Vec<f32> {
+        pack(&self.scene().terrain.near(index))
+    }
+
+    /// Advances residency for the camera eye (metres): the tiles whose near level the renderer
+    /// builds now (it calls [`Self::near`] for each), those it drops, then one level per tile
+    /// (1 near, 0 far): `[built count, built…, evicted count, evicted…, levels…]`.
+    #[must_use]
+    pub fn update(&mut self, x: f64, y: f64, z: f64) -> Vec<u32> {
+        let tiles = &self.scene().terrain;
+        let mut built = Vec::new();
+        let evicted = self
+            .streamer
+            .update(tiles, [x, y, z], BUILDS_PER_FRAME, |index| {
+                built.push(index)
+            });
+        let mut out = Vec::with_capacity(2 + built.len() + evicted.len() + tiles.tiles.len());
+        out.push(built.len() as u32);
+        out.extend(built.iter().map(|&index| index as u32));
+        out.push(evicted.len() as u32);
+        out.extend(evicted.iter().map(|&(index, ())| index as u32));
+        out.extend(
+            (0..tiles.tiles.len())
+                .map(|index| u32::from(self.streamer.level(index) == Level::Near)),
+        );
+        out
+    }
+}
+
+/// Ground draws as one float array: the draw count, then per draw its layer
+/// (`mmorpg_presentation::ground::Layer` order), overlay and far flags (0 or 1), vertex and index
+/// counts, then positions and normals (three floats per vertex), sRGB colours (three), texture
+/// coordinates (two, zero when untextured), tangents (four, likewise), the vertex colour alpha
+/// (one, 1 for the opaque base) and the indices.
+fn pack(draws: &[Draw]) -> Vec<f32> {
+    let mut out = vec![draws.len() as f32];
+    for draw in draws {
+        let ground = draw
+            .material
+            .ground
+            .expect("terrain tile draws are ground layers");
+        let g = &draw.geometry;
+        let n = g.p.len();
+        out.extend([
+            f32::from(ground.layer as u8),
+            f32::from(u8::from(ground.overlay)),
+            f32::from(u8::from(ground.far)),
+            n as f32,
+            g.indices.len() as f32,
+        ]);
+        out.extend(g.p.iter().flatten().map(|&v| v as f32));
+        out.extend(g.n.iter().flatten().map(|&v| v as f32));
+        out.extend(g.colors.iter().flatten().map(|&v| v as f32));
+        if g.uv.len() == n {
+            out.extend(g.uv.iter().flatten().map(|&v| v as f32));
+            out.extend(g.tangents.iter().flatten().map(|&v| v as f32));
+        } else {
+            out.extend(std::iter::repeat_n(0., n * 6));
+        }
+        if g.alpha.len() == n {
+            out.extend(g.alpha.iter().map(|&v| v as f32));
+        } else {
+            out.extend(std::iter::repeat_n(1., n));
+        }
+        out.extend(g.indices.iter().map(|&i| i as f32));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,7 +472,7 @@ mod tests {
             .map(|entry| entry["vertexCount"].as_u64().unwrap())
             .sum();
         assert!(nodes <= 3_800, "{nodes} static nodes");
-        // The textured ground layers (#525) add overlay meshes over the terrain.
-        assert!(vertices <= 500_000, "{vertices} static vertices");
+        // The terrain is drawn in visual tiles (#526), outside the static scene.
+        assert!(vertices <= 400_000, "{vertices} static vertices");
     }
 }
