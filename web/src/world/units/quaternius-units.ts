@@ -8,7 +8,7 @@ import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
 import { figureAppearance, varyPreset } from "../wasm-runtime";
-import type { BowShot, ClassOutfit, ClipLayer, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout, Throwable } from "../unit-presenter";
+import type { BowShot, ClassOutfit, ClipLayer, CrossbowCarry, ImportedModelKind, ImportedRequest, LayerMask, Loadout as CarriedLoadout, Throwable } from "../unit-presenter";
 
 type QuaterniusKind = ImportedModelKind;
 /**
@@ -385,6 +385,11 @@ const LOADOUT_ITEMS: Readonly<Record<CarriedLoadout, readonly { key: string; soc
   ],
   "mace.flanged": [{ key: "equipment.mace.flanged", socket: "hand_r.weapon" }],
   "staff.gnarled": [{ key: "equipment.staff.gnarled", socket: "hand_r.staff" }],
+  // The crossbow and the arrow standing in for its bolt (#607); `poseCrossbow` moves both.
+  crossbow: [
+    { key: "equipment.crossbow", socket: "hand_r.crossbow" },
+    { key: "equipment.arrow", socket: "hand_r.arrow" },
+  ],
 };
 
 type DownloadEntry = { key: string; variant: string; files: string[]; clips?: string };
@@ -518,6 +523,51 @@ function poseDaggers(model: THREE.Object3D, sheathed: readonly [boolean, boolean
     carried.throwables.set(throwable, mesh);
   }
   for (const [kind, mesh] of carried.throwables) { mesh.visible = kind === throwable; }
+}
+
+/**
+ * The crossbow and the arrow standing in for its bolt (`imported::CROSSBOW_SOCKET`, `BOLT_HAND_SOCKET`,
+ * `BOLT_SCALE`, `BOLT_GROOVE`, #607).
+ */
+const CROSSBOW_ITEM = "equipment.crossbow";
+const CROSSBOW_LEFT_JOINT = "hand_l";
+const BOLT_ITEM = "equipment.arrow";
+const BOLT_HAND_SOCKET = "hand_r.arrow";
+const BOLT_SCALE = 0.46;
+const BOLT_GROOVE = { translation: [0.006, 0.028, 0.054] as const, rotation: [0, 0.0118, 0.0275, 0.9996] as const };
+/** A crossbowman's crossbow: in the right hand or, through the reload's hand-off, the left; and its bolt. */
+type CarriedCrossbow = {
+  holder: THREE.Group;
+  hand: Place;
+  left: THREE.Object3D;
+  /** The crossbow's grip frame in its item origin. */
+  grip: THREE.Matrix4;
+  bolt: { holder: THREE.Group; hand: Place; groove: Place } | null;
+};
+const crossbows = new WeakMap<THREE.Object3D, CarriedCrossbow>();
+
+/**
+ * Places `model`'s crossbow and bolt by the presenter's carry (#607). Through the reload's hand-off the
+ * crossbow rides the left hand where it was in the world when the hand-off began, then goes back to
+ * `hand_r.crossbow`; the bolt rides `hand_r.arrow` once drawn, lies in the groove once laid there, and is
+ * gone between the shot and the draw. Call after posing.
+ */
+function poseCrossbow(model: THREE.Object3D, crossbow: CrossbowCarry | null): void {
+  const carried = crossbows.get(model);
+  if (!carried || !crossbow) { return; }
+  if (crossbow.leftHand) {
+    // Reparent keeping the world transform; `attach` brings the joints' world matrices up to date first.
+    if (carried.holder.parent !== carried.left) { carried.left.attach(carried.holder); }
+  } else {
+    if (carried.holder.parent !== carried.hand.joint) { carried.hand.joint.add(carried.holder); }
+    if (!carried.holder.matrix.equals(carried.hand.matrix)) { carried.holder.matrix.copy(carried.hand.matrix); }
+  }
+  const bolt = carried.bolt;
+  if (!bolt) { return; }
+  bolt.holder.visible = crossbow.bolt !== null;
+  const place = crossbow.bolt === "hand" ? bolt.hand : bolt.groove;
+  if (bolt.holder.parent !== place.joint) { place.joint.add(bolt.holder); }
+  if (!bolt.holder.matrix.equals(place.matrix)) { bolt.holder.matrix.copy(place.matrix); }
 }
 
 /**
@@ -790,6 +840,26 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
         carried.daggers[socket === "hand_l.weapon" ? 0 : 1] = {
           holder, hand: { joint: holder.parent!, matrix: holder.matrix.clone() },
           sheath: { joint: sheathJoint, matrix: new THREE.Matrix4().multiplyMatrices(sheath.matrix, item.gripInverse) },
+        };
+      }
+      const left = key === CROSSBOW_ITEM ? model.getObjectByName(CROSSBOW_LEFT_JOINT) : undefined;
+      if (left) {
+        // The reload hands the crossbow to the left hand and back (#607).
+        crossbows.set(model, {
+          holder, hand: { joint: holder.parent!, matrix: holder.matrix.clone() }, left, grip: item.gripInverse.clone().invert(), bolt: null,
+        });
+      }
+      const crossbow = key === BOLT_ITEM && socket === BOLT_HAND_SOCKET ? crossbows.get(model) : undefined;
+      if (crossbow) {
+        // The arrow stands in for the bolt, scaled to its length (#607).
+        const scale = new THREE.Matrix4().makeScale(BOLT_SCALE, BOLT_SCALE, BOLT_SCALE);
+        holder.matrix.multiplyMatrices(place.matrix, scale).multiply(item.gripInverse);
+        const [x, y, z] = BOLT_GROOVE.translation;
+        const groove = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(...BOLT_GROOVE.rotation), new THREE.Vector3(1, 1, 1));
+        // The groove is in the crossbow's grip frame; the crossbow's holder is its item origin.
+        crossbow.bolt = {
+          holder, hand: { joint: holder.parent!, matrix: holder.matrix.clone() },
+          groove: { joint: crossbow.holder, matrix: crossbow.grip.clone().multiply(groove).multiply(scale).multiply(item.gripInverse) },
         };
       }
     }
@@ -1380,6 +1450,7 @@ export class QuaterniusUnits {
     root.scale.setScalar((unit.heightMetres / (instance.posable.bounds ?? asset).height) * (instance.posable.scale ?? 1));
     poseBow(instance.posable.model, unit.bow, asset.motions);
     poseDaggers(instance.posable.model, unit.sheathed, unit.throwable);
+    poseCrossbow(instance.posable.model, unit.crossbow);
     swingHanging(instance.posable.model, unit.swing);
   }
 

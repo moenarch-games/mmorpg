@@ -286,6 +286,8 @@ pub struct UnitPresenter {
     bodies: bool,
     /// Each unit under a stun the client saw the zone apply, until when (#582).
     stuns: BTreeMap<EntityRef, f64>,
+    /// Each unit under Rapid Fire's haste the client saw the zone apply, until when (#607).
+    hastes: BTreeMap<EntityRef, f64>,
     /// Swings that covered nobody, for alternating their forehand and backhand slashes (#582).
     whiffs: u32,
     /// Platforms a client's kit draws instead of their procedural pillar (#591).
@@ -318,6 +320,7 @@ impl UnitPresenter {
             preparation: None,
             bodies: false,
             stuns: BTreeMap::new(),
+            hastes: BTreeMap::new(),
             whiffs: 0,
             kit_platforms: BTreeSet::new(),
         }
@@ -425,6 +428,7 @@ impl UnitPresenter {
         self.aligns.clear();
         self.deaths.clear();
         self.stuns.clear();
+        self.hastes.clear();
         self.bursts.clear();
         self.effects.clear();
         self.equipment = None;
@@ -547,9 +551,26 @@ impl UnitPresenter {
                 } if stuns(ability) => {
                     self.stuns.remove(&target);
                 }
+                // Rapid Fire's haste (#607): its shots loose the rapid release until it ends.
+                ZoneEvent::AuraApplied {
+                    target,
+                    ability: mmorpg_core::ability::ids::RAPID_FIRE,
+                    ticks,
+                    ..
+                } => {
+                    let until = seconds + f64::from(ticks) / f64::from(mmorpg_core::TICK_HZ);
+                    self.hastes.insert(target, until);
+                }
+                ZoneEvent::AuraRemoved {
+                    target,
+                    ability: mmorpg_core::ability::ids::RAPID_FIRE,
+                    ..
+                } => {
+                    self.hastes.remove(&target);
+                }
                 ZoneEvent::Interrupted { target, .. } => {
-                    if let Some((kind, class, _)) = self.class_of(snapshot, target)
-                        && let Some(cycle) = kind.cast(class)
+                    if let Some((kind, class, loadout)) = self.class_of(snapshot, target)
+                        && let Some(cycle) = kind.cast(class, loadout)
                     {
                         let cancel = self.clip(kind, cycle.cancel);
                         if let Some(playback) = self.playbacks.get_mut(&target) {
@@ -612,10 +633,11 @@ impl UnitPresenter {
                 continue;
             }
             let swing = self.playbacks.get(&source).map_or(0, Playback::swings);
-            let (clip, item) = self.strike_clip(kind, class, loadout, ability, aim, swing);
+            let hasted = self.hasted(snapshot, source, seconds);
+            let (clip, item) = self.strike_clip(kind, class, loadout, ability, aim, swing, hasted);
             let duration = self.duration(kind, clip);
             let region = kind.strike_region(clip);
-            // A bow shot recovers after its release (#538).
+            // A bow shot recovers after its release (#538), a crossbow shot reloads (#607).
             let recovery = kind
                 .cycle_of(clip)
                 .and_then(|cycle| cycle.recovery)
@@ -666,9 +688,26 @@ impl UnitPresenter {
         (length > 0.).then_some((clip, length))
     }
 
+    /// Whether `entity` shows Rapid Fire's haste at `seconds` (#607): the viewer's from its
+    /// projected auras, anyone else's from the hastes the client saw applied.
+    fn hasted(&self, snapshot: &ZoneSnapshot, entity: EntityRef, seconds: f64) -> bool {
+        let rapid = |auras: &[mmorpg_core::AuraView]| {
+            auras
+                .iter()
+                .any(|aura| aura.ability == mmorpg_core::ability::ids::RAPID_FIRE)
+        };
+        (entity == EntityRef::Player(snapshot.viewer_id) && rapid(&snapshot.auras))
+            || self
+                .hastes
+                .get(&entity)
+                .is_some_and(|&until| seconds < until)
+    }
+
     /// The clip an accepted attack or ability plays, and what a throw draws (#603): a dagger
-    /// clip the model has ([`Kind::dagger_strike`]), else the authored strike ([`Kind::strike`]),
-    /// else the model's attack.
+    /// clip the model has ([`Kind::dagger_strike`]), else the authored strike ([`Kind::strike`])
+    /// or, for a bow or crossbow shot, the authored ranged clip that replaces its release
+    /// ([`Kind::ranged_strike`], #607), else the model's attack.
+    #[allow(clippy::too_many_arguments)]
     fn strike_clip(
         &self,
         kind: Kind,
@@ -677,6 +716,7 @@ impl UnitPresenter {
         ability: Option<AbilityId>,
         aim: Option<StrikeAim>,
         swing: u32,
+        hasted: bool,
     ) -> (&'static str, Option<imported::Throwable>) {
         if let Some(dagger) = kind
             .dagger_strike(loadout, ability, swing)
@@ -685,6 +725,16 @@ impl UnitPresenter {
             return dagger;
         }
         let clip = kind.strike(class, ability, aim);
+        if kind
+            .clips()
+            .strikes
+            .is_some_and(|strikes| strikes.bow == clip)
+            && let Some(ranged) = kind
+                .ranged_strike(loadout, ability, hasted)
+                .filter(|&ranged| self.duration(kind, ranged) > 0.)
+        {
+            return (ranged, None);
+        }
         if self.duration(kind, clip) > 0. {
             (clip, None)
         } else {
@@ -769,9 +819,9 @@ impl UnitPresenter {
             .react(reaction, clip, length, seconds);
     }
 
-    /// `entity` began a cast or channel of `ticks` (#538): it draws and holds its bow, or
-    /// raises and holds a spell, when its model has the hold. A Crude Bandage wraps the
-    /// forearm through the cast (#603).
+    /// `entity` began a cast or channel of `ticks` (#538): it draws and holds its bow, aims its
+    /// crossbow (#607) or raises and holds a spell, when its model has the hold. A Crude
+    /// Bandage wraps the forearm through the cast (#603).
     fn cast(
         &mut self,
         snapshot: &ZoneSnapshot,
@@ -780,7 +830,7 @@ impl UnitPresenter {
         ticks: u16,
         seconds: f64,
     ) {
-        let Some((kind, class, _)) = self.class_of(snapshot, entity) else {
+        let Some((kind, class, loadout)) = self.class_of(snapshot, entity) else {
             return;
         };
         #[allow(clippy::cast_possible_truncation)]
@@ -815,13 +865,16 @@ impl UnitPresenter {
             );
             return;
         }
-        let Some(cycle) = kind.cast(class) else {
+        let Some(cycle) = kind.cast(class, loadout) else {
             return;
         };
         let Some((hold, _)) = self.clip(kind, cycle.hold) else {
             return;
         };
-        let enter = self.clip(kind, cycle.enter);
+        // A crossbowman's cast only holds its aim (#607).
+        let enter = self
+            .clip(kind, cycle.enter)
+            .filter(|&(enter, _)| enter != hold);
         self.playbacks.entry(entity).or_default().cast(
             enter,
             hold,
@@ -877,6 +930,8 @@ impl UnitPresenter {
         self.aligns.retain(|e, _| present.contains(e));
         self.deaths.retain(|e, _| present.contains(e));
         self.stuns
+            .retain(|e, &mut until| present.contains(e) && input.seconds < until);
+        self.hastes
             .retain(|e, &mut until| present.contains(e) && input.seconds < until);
         let eye = input
             .units
@@ -997,6 +1052,7 @@ impl UnitPresenter {
                     let wind_up = self.preparation.map(|preparation| {
                         let class = snapshot.viewer.class.map(|choice| choice.class);
                         let swing = self.playbacks.get(&entity).map_or(0, Playback::swings);
+                        let hasted = self.hasted(snapshot, entity, seconds);
                         let (clip, item) = self.strike_clip(
                             kind,
                             class,
@@ -1004,8 +1060,18 @@ impl UnitPresenter {
                             Some(preparation.ability),
                             preparation.aim,
                             swing,
+                            hasted,
                         );
-                        // A bow shot winds up aiming (#538).
+                        // Aimed Shot and Piercing Shot wind up with the power draw and hold it
+                        // drawn (#607); every other bow shot winds up aiming (#538).
+                        let release = kind.clips().bow.map(|bow| bow.release);
+                        if let Some(draw) = kind
+                            .power_draw(preparation.ability)
+                            .filter(|_| release == Some(clip))
+                            .filter(|&draw| self.duration(kind, draw) > 0.)
+                        {
+                            return (draw, self.duration(kind, draw), item, preparation.pressed);
+                        }
                         let aim = kind
                             .cycle_of(clip)
                             .and_then(|cycle| cycle.aim)
@@ -1042,6 +1108,7 @@ impl UnitPresenter {
                         guard,
                         stunned,
                         rolling,
+                        engaged: unit.record.flags.in_combat,
                         loadout,
                         now: seconds,
                         dt: input.dt,

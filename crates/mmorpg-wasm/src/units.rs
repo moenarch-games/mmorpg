@@ -15,7 +15,7 @@ use mmorpg_presentation::{
     audio::{AudioCues, AudioOp},
     units::{
         FrameInput, SampledUnit, UnitPresenter, Viewer,
-        imported::{Kind, Loadout, Resident, Throwable},
+        imported::{Bolt, Kind, Loadout, Resident, Throwable},
         player::Hat,
     },
 };
@@ -104,6 +104,18 @@ struct ImportedEntry {
     /// and the throwable in `hand_r.weapon`, `knife`, `flask`, `bomb` or null (#603).
     sheathed: [bool; 2],
     throwable: Option<&'static str>,
+    /// A crossbowman's crossbow (#607): in the left hand through the reload's hand-off, the
+    /// left hand on the crank, and the bolt in `hand_r.arrow` (`hand`), the groove (`groove`) or
+    /// gone (null); null for anyone else.
+    crossbow: Option<CrossbowEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CrossbowEntry {
+    left_hand: bool,
+    crank: bool,
+    bolt: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -451,6 +463,11 @@ impl Units {
                     }),
                     sheathed: unit.animation.carry.sheathed,
                     throwable: unit.animation.carry.throwable.map(Throwable::name),
+                    crossbow: unit.animation.carry.crossbow.map(|crossbow| CrossbowEntry {
+                        left_hand: crossbow.left_hand,
+                        crank: crossbow.crank,
+                        bolt: crossbow.bolt.map(Bolt::name),
+                    }),
                 }
             })
             .collect();

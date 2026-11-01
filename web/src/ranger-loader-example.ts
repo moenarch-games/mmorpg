@@ -41,7 +41,7 @@ if (await models.preload("Ranger")) {
       feet: [0, 0, 0], yaw, pitch: 0, heightMetres: 1.8, clip, time, lower: [clip, time],
       layers: [{ clip, time, weight: 1, mask: "all" }],
       tint: null, loadout: "bow-and-quiver", resident: null, figure: null, variety: null, outfit: null, headwear: false, swing: null,
-      bow: clip.startsWith("Bow_") ? { clip, time } : null, sheathed: [false, false], throwable: null }], { headwear: "none", hair: { style: "parted", color: "brown" }, face: {} });
+      bow: clip.startsWith("Bow_") ? { clip, time } : null, sheathed: [false, false], throwable: null, crossbow: null }], { headwear: "none", hair: { style: "parted", color: "brown" }, face: {} });
     const view = { viewMatrix: matrix(camera.matrixWorldInverse), projectionMatrix: matrix(camera.projectionMatrix) };
     renderer.render({ camera: view, nodes: [] });
     renderer.renderImportedRoots({ camera: view, roots: models.roots().roots });
