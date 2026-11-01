@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { IndexedMeshGeometry } from "@moritzbrantner/three-d-renderer";
+import { unpackTile } from "../src/world/ground";
 import { createLocalWorld } from "../src/world/local-world";
 import { CULL_DISTANCE_METRES, SceneryFrame, batchVisible, buildSceneryScene, type StaticSceneContent } from "../src/world/scenery-nodes";
 import { expectValidMesh } from "./support/geometry";
@@ -28,19 +29,28 @@ describe("the shared static scene in the browser", () => {
       geometries.set(geometry.resourceKey, geometry);
     }
     expect(scene.instanceBatches.every(({ batch }) => batch.instances.length > 0)).toBe(true);
-    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.ground.length + scene.instanceBatches.length);
+    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.instanceBatches.length);
     const modelled = Object.values(scene.stats.props).reduce((sum, count) => sum + (count ?? 0), 0);
     expect(modelled).toBe(world.scenery.props.length);
   });
 
   test("terrain carries vertex colours with upward faces, lights glow and water stays translucent", () => {
-    // The textured ground layers (#525): the opaque grass base and weighted overlays, one draw each.
-    expect(scene.ground.find((draw) => draw.layer === "grass" && !draw.overlay)).toBeDefined();
-    expect(scene.ground.length).toBeLessThanOrEqual(7);
-    for (const draw of scene.ground) {
+    // The terrain's visual tiles (#526): a flat far level for every tile, and near levels (the textured grass base and
+    // weighted overlays of #525) streamed around the camera.
+    const stream = world.staticScene.terrainStream();
+    const tiles = stream.count();
+    expect(tiles).toBeGreaterThan(50);
+    const update = stream.update(0, 5, 0);
+    const built = Array.from(update.subarray(1, 1 + update[0]!));
+    expect(built.length).toBeGreaterThan(0);
+    expect(update.length).toBe(2 + built.length + update[1 + built.length]! + tiles);
+    const near = built.flatMap((tile) => unpackTile(stream.near(tile)));
+    expect(near.find((draw) => draw.layer === "grass" && !draw.overlay && !draw.far)).toBeDefined();
+    const far = unpackTile(stream.far(built[0]!));
+    expect(far.every((draw) => draw.far)).toBe(true);
+    for (const draw of [...near, ...far]) {
       const count = draw.positions.length / 3;
-      expect([draw.normals.length, draw.colors.length, draw.uvs.length, draw.tangents.length]).toEqual([count * 3, count * 3, count * 2, count * 4]);
-      expect(draw.alpha?.length ?? 0).toBe(draw.overlay ? count : 0);
+      expect([draw.normals.length, draw.colors.length, draw.uvs.length, draw.tangents.length, draw.alpha.length]).toEqual([count * 3, count * 3, count * 2, count * 4, count]);
       expect(draw.colors.every((channel) => channel >= 0 && channel <= 1)).toBe(true);
       expect(draw.indices.every((index) => index < count)).toBe(true);
     }

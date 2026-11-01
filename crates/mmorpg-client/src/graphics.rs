@@ -744,6 +744,15 @@ mod tests {
                 ("lake", view([30.0, 20.0, -30.0], [56.0, 11.0, -56.0])),
                 ("hub", view([5.0, 8.5, 31.0], [-14.0, 3.0, 4.0])),
                 ("road", view([2.0, 2.2, 30.0], [-6.0, 0.5, 12.0])),
+                // The terrain tiles' levels and the distant ranges (#526).
+                (
+                    "overview",
+                    view([-150.0, 160.0, 560.0], [260.0, 0.0, -300.0]),
+                ),
+                (
+                    "mountains",
+                    view([300.0, 60.0, -560.0], [420.0, 40.0, -900.0]),
+                ),
             ];
             let size = [1280, 800];
             for (index, (name, view)) in views.into_iter().enumerate() {

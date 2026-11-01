@@ -46,6 +46,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
       staticScenePointLights: () => emptyMotion,
       staticSceneShown: (viewer, _outpost, _settlement, fortress) => presentation.staticSceneShown(viewer, fortress),
       surfaceY: () => 0,
+      terrainStream: () => presentation.terrainStream(),
     },
     fortress: {
       bundle: FORTRESS_BUNDLE,

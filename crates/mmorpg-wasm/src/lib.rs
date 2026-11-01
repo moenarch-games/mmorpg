@@ -680,6 +680,13 @@ pub fn static_scene_point_lights(seconds: f64, animate: bool) -> Vec<f32> {
 }
 
 /// Rendered terrain height in metres at `(x, z)` metres.
+/// A fresh stream of the hosted zone's terrain tiles (#526) for one renderer.
+#[wasm_bindgen(js_name = terrainStream)]
+#[must_use]
+pub fn terrain_stream() -> static_scene::TerrainStream {
+    static_scene::TerrainStream::new(false)
+}
+
 #[wasm_bindgen(js_name = surfaceY)]
 pub fn surface_y(x: f64, z: f64) -> f64 {
     static_scene::surface_y(x, z)

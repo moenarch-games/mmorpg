@@ -35,6 +35,21 @@ export type StaticSceneContent = {
   staticScenePointLights(seconds: number, animate: boolean): Float32Array;
   staticSceneShown(viewer: Float64Array, outpostKit: boolean, settlementProps: boolean, fortressKit: boolean): Uint8Array;
   surfaceY(x: number, z: number): number;
+  /** A fresh stream of the terrain tiles (#526). */
+  terrainStream(): TerrainStreamSource;
+};
+
+/**
+ * The terrain's visual tiles (#526, `mmorpg_presentation::tiles`) streamed for one renderer, from the WASM owner
+ * (`TerrainStream`): every tile's far level, the near levels it says to build or drop, and each tile's level per frame.
+ * Tile draws are packed as `static_scene::pack` documents.
+ */
+export type TerrainStreamSource = {
+  count(): number;
+  far(index: number): Float32Array;
+  near(index: number): Float32Array;
+  /** `[built count, built…, evicted count, evicted…, one level per tile (1 near, 0 far)]` for the camera eye. */
+  update(x: number, y: number, z: number): Uint32Array;
 };
 
 /**
@@ -55,8 +70,6 @@ type AnimatedNode = Omit<Extract<RendererSceneNode, { unlit?: false }>, "transfo
 
 export type SceneryScene = {
   batches: readonly StaticBatch[];
-  /** The terrain's textured ground layers (#525), always drawn. */
-  ground: readonly GroundDraw[];
   instanceBatches: readonly InstanceBatch[];
   water: readonly RendererSceneNode[];
   /** Nodes of each animated part; `motion` places them. */
@@ -91,19 +104,8 @@ const CULLS: readonly CullClass[] = ["always", "far", "mid", "near"];
 type GeometryEntry = {
   resourceKey: string; vertexOffset: number; vertexCount: number; colored: boolean; textured: boolean; weighted: boolean; indexOffset: number; indexCount: number;
 };
-type GroundEntry = { layer: string; overlay: boolean };
-type DrawEntry = { id: string; geometry: number; model: number; color: Color; emissive: Color | null; opacity: number; ground?: GroundEntry };
+type DrawEntry = { id: string; geometry: number; model: number; color: Color; emissive: Color | null; opacity: number };
 
-/**
- * A terrain ground layer's draw (#525, `mmorpg_presentation::ground`): drawn by `Ground` with its layer's material from
- * the `greyhaven-terrain` bundle, not as a renderer node. Colours are sRGB 0–1; `alpha` (an overlay's vertex alpha, its
- * weight over `OVERLAY_ALPHA`) is null for the opaque base.
- */
-export type GroundDraw = {
-  id: string; layer: string; overlay: boolean;
-  positions: Float32Array; normals: Float32Array; colors: Float32Array; uvs: Float32Array; tangents: Float32Array;
-  alpha: Float32Array | null; indices: Uint32Array;
-};
 type GroupEntry = { cull: CullClass; instanced: boolean; fallback?: FallbackKit | null; min: [number, number]; max: [number, number]; draws: DrawEntry[] };
 type Layout = { format: string; prefix: string; geometries: GeometryEntry[]; groups: GroupEntry[]; water: DrawEntry[]; animated: DrawEntry[][] };
 
@@ -168,21 +170,7 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     }
     return Array.from(models.subarray(draw.model * 16, draw.model * 16 + 16)) as Matrix4Values;
   };
-  const groundDraw = (draw: DrawEntry, ground: GroundEntry): GroundDraw => {
-    const entry = layout.geometries[draw.geometry] ?? fail(`draw ${draw.id} names a missing geometry`);
-    if (!entry.colored || !entry.textured) {
-      fail(`ground draw ${draw.id} has no colours or texture coordinates`);
-    }
-    const count = entry.vertexCount;
-    const at = (offset: number, size: number) => vertices.subarray(entry.vertexOffset + count * offset, entry.vertexOffset + count * (offset + size));
-    return {
-      id: draw.id, layer: ground.layer, overlay: ground.overlay,
-      positions: at(0, 3), normals: at(3, 3), colors: at(6, 3), uvs: at(9, 2), tangents: at(11, 4), alpha: entry.weighted ? at(15, 1) : null,
-      indices: indices.subarray(entry.indexOffset, entry.indexOffset + entry.indexCount),
-    };
-  };
   const batches: StaticBatch[] = [];
-  const ground: GroundDraw[] = [];
   const instanceBatches: InstanceBatch[] = [];
   for (const group of layout.groups) {
     if (!CULLS.includes(group.cull) || group.draws.length === 0) {
@@ -190,11 +178,6 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     }
     if (group.fallback && !(group.fallback in NO_KITS)) {
       fail(`group is the fallback of an unknown kit ${group.fallback}`);
-    }
-    const groundEntry = group.draws[0]!.ground;
-    if (!group.instanced && groundEntry) {
-      ground.push(groundDraw(group.draws[0]!, groundEntry));
-      continue;
     }
     if (!group.instanced) {
       const [draw] = group.draws;
@@ -231,7 +214,6 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   }
   return {
     batches,
-    ground,
     instanceBatches,
     water,
     animated,
@@ -239,7 +221,7 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     pointLights: (seconds, animate) => content.staticScenePointLights(seconds, animate),
     shown: (viewer, kits) => content.staticSceneShown(Float64Array.from(viewer ?? []), kits.outpost, kits.settlementProps, kits.fortress),
     stats: {
-      staticNodes: batches.length + ground.length + instanceBatches.length,
+      staticNodes: batches.length + instanceBatches.length,
       staticVertices: layout.geometries.reduce((sum, entry) => sum + entry.vertexCount, 0),
       staticTriangles: layout.geometries.reduce((sum, entry) => sum + entry.indexCount / 3, 0),
       props: byKind,

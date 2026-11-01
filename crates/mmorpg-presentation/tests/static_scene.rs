@@ -134,17 +134,34 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
             .prefix
             .starts_with(&format!("scenery:{}:", scenery.content_revision))
     );
-    // Terrain is vertex coloured and textured ground layers (#525), one draw per layer, every
-    // overlay weighted per vertex; water stays translucent; lights glow.
-    let ground: Vec<_> = scene
-        .groups
-        .iter()
-        .flat_map(|group| &group.draws)
-        .filter(|draw| draw.material.ground.is_some())
+    // The terrain is drawn in visual tiles (#526): textured ground layers (#525) near, every
+    // overlay weighted per vertex, and flat baked colours far; water stays translucent; lights
+    // glow.
+    assert!(
+        scene
+            .groups
+            .iter()
+            .flat_map(|group| &group.draws)
+            .all(|draw| draw.material.ground.is_none())
+    );
+    let tiles = &scene.terrain;
+    let near: Vec<_> = (0..tiles.tiles.len())
+        .step_by(7)
+        .flat_map(|i| tiles.near(i))
         .collect();
-    assert!(ground.iter().any(|draw| draw.id == "static-ground-grass"));
-    assert!(ground.len() <= 2 * mmorpg_presentation::ground::Layer::ALL.len());
-    for draw in &ground {
+    assert!(near.iter().any(|draw| draw.id.ends_with(":ground-grass")));
+    for draw in tiles.tiles.iter().flat_map(|tile| &tile.far) {
+        assert_valid(draw);
+        assert!(
+            draw.material.ground.is_some_and(|ground| ground.far),
+            "{}",
+            draw.id
+        );
+        assert!(draw.resource_key.starts_with(&scene.prefix), "{}", draw.id);
+    }
+    for draw in &near {
+        assert_valid(draw);
+        assert!(draw.resource_key.starts_with(&scene.prefix), "{}", draw.id);
         let g = &draw.geometry;
         assert!(!g.colors.is_empty(), "{}", draw.id);
         assert_eq!(g.uv.len(), g.p.len(), "{}", draw.id);

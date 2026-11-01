@@ -176,7 +176,8 @@ pub struct WorldScene {
     /// Additional caller-authored presentation geometry, rendered and picked with the world.
     pub additional_draws: Vec<SceneDraw>,
     scene: StaticScene,
-    groups: Vec<DrawBatch>,
+    /// The static groups and terrain tiles resident around the camera (#526).
+    statics: Locked<Statics>,
     water_draws: DrawBatch,
     animated: Vec<Vec<SceneDraw>>,
     /// The scenery's campfires and lantern posts (#529).
@@ -184,23 +185,29 @@ pub struct WorldScene {
     nature: NatureState,
 }
 
-/// [`Nature`] behind a lock, so frames advance it through `&WorldScene`.
+/// State behind a lock, so frames advance it through `&WorldScene`.
 #[derive(Debug)]
-struct NatureState(std::sync::Mutex<Nature>);
+struct Locked<T>(std::sync::Mutex<T>);
 
-impl NatureState {
-    fn lock(&self) -> std::sync::MutexGuard<'_, Nature> {
+impl<T> Locked<T> {
+    fn new(value: T) -> Self {
+        Self(std::sync::Mutex::new(value))
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, T> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
-impl Clone for NatureState {
+impl<T: Clone> Clone for Locked<T> {
     fn clone(&self) -> Self {
-        Self(std::sync::Mutex::new(self.lock().clone()))
+        Self::new(self.lock().clone())
     }
 }
+
+type NatureState = Locked<Nature>;
 
 /// Lowers shared draws, uploading each distinct resource's mesh once.
 #[derive(Default)]
@@ -233,6 +240,147 @@ impl Lowering {
             .map(|draw| draw.resource_key.as_str())
             .collect();
         self.0.retain(|key, _| used.contains(key.as_str()));
+    }
+}
+
+/// Lowers streamed static draws (#526): a resource's mesh is shared while any resident batch
+/// holds it and lowered again once every holder was evicted, so the renderer frees it.
+#[derive(Clone, Debug, Default)]
+struct StreamedLowering(BTreeMap<String, std::sync::Weak<three_d_core::Mesh>>);
+
+impl StreamedLowering {
+    fn batch(&mut self, draws: &[mmorpg_presentation::Draw]) -> DrawBatch {
+        use geometry::ToMesh;
+        draws
+            .iter()
+            .map(|draw| {
+                let mesh = self
+                    .0
+                    .get(&draw.resource_key)
+                    .and_then(std::sync::Weak::upgrade)
+                    .unwrap_or_else(|| {
+                        let mesh = Arc::new(draw.geometry.mesh());
+                        self.0
+                            .insert(draw.resource_key.clone(), Arc::downgrade(&mesh));
+                        mesh
+                    });
+                SceneDraw {
+                    id: draw.id.clone(),
+                    resource_key: draw.resource_key.clone(),
+                    mesh,
+                    model: Mat4 {
+                        elements: draw.model,
+                    },
+                    material: material(&draw.material, &draw.geometry),
+                    skin: None,
+                }
+            })
+            .collect()
+    }
+
+    /// Forgets the meshes no batch holds any more.
+    fn prune(&mut self) {
+        self.0.retain(|_, mesh| mesh.strong_count() > 0);
+    }
+}
+
+/// Static groups stay lowered this far beyond their cull distance, so walking along a border
+/// does not lower them again and again.
+const GROUP_RETAIN_METRES: f64 = 64.;
+
+/// The static scenery and terrain tiles resident around the camera (#526): a group is lowered
+/// when it is first shown and dropped (so the renderer frees its meshes) once the camera is
+/// [`GROUP_RETAIN_METRES`] beyond its cull distance; terrain tiles keep their far levels and
+/// stream their near levels (`mmorpg_presentation::tiles::Streamer`).
+#[derive(Clone, Debug)]
+struct Statics {
+    lowering: StreamedLowering,
+    groups: Vec<Option<DrawBatch>>,
+    /// The far levels: per chunk level (`Tiles::chunks`), then per tile.
+    far: Vec<Vec<DrawBatch>>,
+    near: mmorpg_presentation::tiles::Streamer<DrawBatch>,
+}
+
+impl Statics {
+    fn new(scene: &StaticScene) -> Self {
+        let mut lowering = StreamedLowering::default();
+        let tiles = &scene.terrain;
+        let mut far: Vec<Vec<DrawBatch>> = tiles
+            .chunks
+            .iter()
+            .map(|level| {
+                level
+                    .iter()
+                    .map(|chunk| lowering.batch(&chunk.far))
+                    .collect()
+            })
+            .collect();
+        far.push(
+            tiles
+                .tiles
+                .iter()
+                .map(|tile| lowering.batch(&tile.far))
+                .collect(),
+        );
+        Self {
+            lowering,
+            groups: vec![None; scene.groups.len()],
+            far,
+            near: mmorpg_presentation::tiles::Streamer::default(),
+        }
+    }
+
+    /// The static batches drawn for the camera `eye`: shown groups and every terrain tile at
+    /// its level.
+    fn batches(
+        &mut self,
+        scene: &StaticScene,
+        eye: [f32; 3],
+        kits: mmorpg_presentation::Kits,
+    ) -> Vec<DrawBatch> {
+        let Self {
+            lowering,
+            groups,
+            far,
+            near,
+        } = self;
+        let mut batches = Vec::new();
+        let mut evicted = false;
+        for (group, resident) in scene.groups.iter().zip(groups.iter_mut()) {
+            if group.shown(eye, kits) {
+                batches.push(Arc::clone(
+                    resident.get_or_insert_with(|| lowering.batch(&group.draws)),
+                ));
+            } else if resident.is_some()
+                && group.distance(eye) > group.cull.reach() + GROUP_RETAIN_METRES
+            {
+                *resident = None;
+                evicted = true;
+            }
+        }
+        let tiles = &scene.terrain;
+        evicted |= !near
+            .update(
+                tiles,
+                eye.map(f64::from),
+                mmorpg_presentation::tiles::BUILDS_PER_FRAME,
+                |index| lowering.batch(&tiles.near(index)),
+            )
+            .is_empty();
+        let shows_near =
+            |index: usize| near.level(index) == mmorpg_presentation::tiles::Level::Near;
+        for index in 0..tiles.tiles.len() {
+            if shows_near(index) {
+                batches.extend(near.resident(index).map(Arc::clone));
+            }
+        }
+        for (level, index) in tiles.far_cover(&shows_near) {
+            batches.push(Arc::clone(&far[level][index]));
+        }
+        if evicted {
+            lowering.prune();
+        }
+        batches
     }
 }
 
@@ -270,11 +418,7 @@ impl WorldScene {
         }
         let scene = StaticScene::new(scenery);
         let mut lowering = Lowering::default();
-        let groups = scene
-            .groups
-            .iter()
-            .map(|group| group.draws.iter().map(|draw| lowering.draw(draw)).collect())
-            .collect();
+        let statics = Locked::new(Statics::new(&scene));
         let water_draws = scene.water.iter().map(|draw| lowering.draw(draw)).collect();
         let animated = scene
             .animated
@@ -302,10 +446,10 @@ impl WorldScene {
             seconds: None,
         };
         Self {
-            nature: NatureState(std::sync::Mutex::new(nature)),
+            nature: NatureState::new(nature),
             additional_draws: Vec::new(),
             point_lights: mmorpg_presentation::lights::point_lights(&scene, scenery),
-            groups,
+            statics,
             water_draws,
             animated,
             terrain: terrain_mesh(scenery),
@@ -346,14 +490,7 @@ impl WorldScene {
     ) -> WorldFrame {
         // The native build embeds every kit (#420, #421, #49): no fallback is drawn.
         let kits = mmorpg_presentation::Kits::ALL;
-        let mut batches: Vec<_> = self
-            .scene
-            .groups
-            .iter()
-            .zip(&self.groups)
-            .filter(|(group, _)| group.shown(eye, kits))
-            .map(|(_, draws)| Arc::clone(draws))
-            .collect();
+        let mut batches = self.statics.lock().batches(&self.scene, eye, kits);
         batches.push(Arc::clone(&self.water_draws));
         let mut draws = Vec::new();
         for (part, model) in self
