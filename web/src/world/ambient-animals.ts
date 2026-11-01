@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { loadBundleGltfs } from "./static-bundle";
+import { litObject } from "./lighting";
 import type { AmbientAnimalsSource } from "./scenery";
 
 /** The rolling `greyhaven-ambient-animals` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
@@ -38,7 +39,8 @@ export class AmbientAnimals {
     if (this.#source.entries.length === 0) { return; }
     const gltfs = await loadBundleGltfs(AMBIENT_BUNDLE, this.#source.entries);
     this.#animals = gltfs.map((gltf, index) => {
-      const root = gltf.scene;
+      // Lit like the rest of the world (#600).
+      const root = litObject(gltf.scene);
       root.name = this.#source.entries[index]!;
       root.matrixAutoUpdate = false;
       const mixer = new THREE.AnimationMixer(root);

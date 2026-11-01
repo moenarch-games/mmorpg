@@ -3,6 +3,7 @@ import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import type { ThreeSceneRenderer } from "@moritzbrantner/three-d-renderer";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { LitMaterial } from "@moritzbrantner/three-lighting";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
@@ -136,7 +137,8 @@ type Instance = {
   time: number;
   /** The layers posed this frame. */
   layers: readonly ClipLayer[];
-  materials: { material: THREE.MeshStandardMaterial; base: THREE.Color }[];
+  /** The unit's own LitMaterials (#600) and their untinted linear base colours. */
+  materials: { material: LitMaterial; base: THREE.Color }[];
   /** The colour factor applied to `materials`; undefined until the first pose. */
   tint: readonly [number, number, number] | null | undefined;
   head: THREE.Object3D | null;
@@ -1409,9 +1411,12 @@ export class QuaterniusUnits {
       object.castShadow = true;
       // Animated bounds are not tracked; a handful of units are cheaper than stale culling.
       object.frustumCulled = false;
+      // Each unit its own LitMaterials (#600), so its tint is its own.
       const own = (material: THREE.Material): THREE.Material => {
-        const copy = material.clone();
-        if (copy instanceof THREE.MeshStandardMaterial) { materials.push({ material: copy, base: copy.color.clone() }); }
+        const copy = LitMaterial.fromGltf(material);
+        copy.name = material.name;
+        const base = copy.uniforms.baseColor!.value as THREE.Vector4;
+        materials.push({ material: copy, base: new THREE.Color(base.x, base.y, base.z) });
         return copy;
       };
       object.material = Array.isArray(object.material) ? object.material.map(own) : own(object.material);
@@ -1440,8 +1445,8 @@ export class QuaterniusUnits {
     if (instance.tint === undefined || String(instance.tint) !== String(tint)) {
       instance.tint = tint;
       for (const { material, base } of instance.materials) {
-        material.color.copy(base);
-        if (tint) { material.color.multiply(new THREE.Color(tint[0], tint[1], tint[2])); }
+        const color = material.uniforms.baseColor!.value as THREE.Vector4;
+        color.set(base.r * (tint?.[0] ?? 1), base.g * (tint?.[1] ?? 1), base.b * (tint?.[2] ?? 1), color.w);
       }
     }
     const { root } = instance;
