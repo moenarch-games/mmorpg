@@ -12,13 +12,23 @@ pub struct Lighting {
     pub point_lights: Vec<PointLight>,
 }
 
-/// Linear distance fog in metres; its colour is sRGB and displayed as is (not exposed).
+/// Aerial perspective (#526): atmospheric fog whose contrast falls to 5 % at `visibility`
+/// metres, red light fading first so distant ranges turn blue but keep their shading. Its
+/// colour is sRGB and displayed as is (not exposed).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Fog {
     pub color: [f32; 3],
-    pub near: f32,
-    pub far: f32,
+    pub visibility: f32,
 }
+
+/// How far Greyhaven's air hides the scene (#526): about 9 % haze at 100 m, 43 % at 600 m,
+/// so the distant ranges stay shaded silhouettes. `FOG_VISIBILITY_METRES` in
+/// `web/src/world/lighting.ts`.
+pub const FOG_VISIBILITY_METRES: f32 = 3200.0;
+/// Per-channel weights of the fog's extinction and inscattering: red fades and blue gathers
+/// first. `FOG_EXTINCTION` and `FOG_INSCATTERING` in `web/src/world/lighting.ts`.
+pub const FOG_EXTINCTION: [f32; 3] = [1.2, 1.0, 0.8];
+pub const FOG_INSCATTERING: [f32; 3] = [0.8, 1.0, 1.2];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PointLight {
@@ -77,8 +87,7 @@ impl Lighting {
             hour,
             fog: Fog {
                 color: rgb(mix(horizon, 0xb9cddb, daylight)),
-                near: 140.0,
-                far: 620.0,
+                visibility: FOG_VISIBILITY_METRES,
             },
             point_lights: Vec::new(),
         }

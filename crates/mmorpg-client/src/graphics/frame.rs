@@ -221,7 +221,9 @@ fn material_key(m: &DrawMaterial) -> MaterialKey {
         u32::from(m.unlit),
         u32::from(m.double_sided),
         m.ground.as_ref().map_or(0, |g| {
-            1 + 2 * g.ground.layer as u32 + u32::from(g.ground.overlay)
+            1 + 4 * g.ground.layer as u32
+                + 2 * u32::from(g.ground.far)
+                + u32::from(g.ground.overlay)
         }),
     ]
 }
@@ -262,14 +264,15 @@ impl GroundGpu {
 
     /// A ground draw's material: its layer's textures divided by their mean colour, so the
     /// vertex colours keep the palette; an overlay masked by weight × height
-    /// (`mmorpg_presentation::ground`). Without the layer's textures, flat vertex colours.
+    /// (`mmorpg_presentation::ground`). Without the layer's textures, and on a terrain tile's
+    /// far level (#526), flat vertex colours.
     fn material(&self, m: &DrawMaterial, ground: Ground) -> StandardMaterial {
         let (alpha, alpha_mode) = if ground.overlay {
             (OVERLAY_ALPHA, AlphaMode::Mask(MASK_CUTOFF))
         } else {
             (1., AlphaMode::Opaque)
         };
-        let Some(layer) = self.0.get(&ground.layer) else {
+        let Some(layer) = self.0.get(&ground.layer).filter(|_| !ground.far) else {
             let flat = standard_material(m);
             return StandardMaterial {
                 base_color: flat.base_color.truncate().extend(alpha),
@@ -377,9 +380,15 @@ pub fn scene(lighting: &Lighting, view: CameraView) -> Scene {
         environment: None,
         fog: Some(Fog {
             color: linear3(fog.color).extend(1.),
-            falloff: FogFalloff::Linear {
-                start: fog.near,
-                end: fog.far,
+            falloff: {
+                let k = FogFalloff::koschmieder(
+                    fog.visibility,
+                    FogFalloff::REVISED_KOSCHMIEDER_CONTRAST_THRESHOLD,
+                );
+                FogFalloff::Atmospheric {
+                    extinction: Vec3::from(crate::environment::FOG_EXTINCTION) * k,
+                    inscattering: Vec3::from(crate::environment::FOG_INSCATTERING) * k,
+                }
             },
             ..Fog::default()
         }),

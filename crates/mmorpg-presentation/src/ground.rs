@@ -17,7 +17,7 @@
 //! vertex alpha, so an overlay would shadow the ground under its invisible parts. Its material
 //! alpha is [`OVERLAY_ALPHA`], below the cut-off, and its vertex alpha the weight divided by it,
 //! so the main pass still cuts at `weight × height alpha` while every shadow texel is cut away.
-use crate::batching::{Batcher, mix, rgb, shade};
+use crate::batching::{mix, rgb, shade};
 use crate::geometry::{Geometry, V, norm};
 use crate::terrain::{ground_biomes, height, metres, noise, surface};
 use mmorpg_scenery::{Biome, Scenery, TerrainGrid};
@@ -90,24 +90,41 @@ impl Layer {
     }
 }
 
-/// A ground draw's layer, and whether it is a masked overlay (else the opaque base).
+/// A ground draw's layer, whether it is a masked overlay (else the opaque base), and whether
+/// it is a terrain tile's far level ([`crate::tiles`], #526): drawn flat in its vertex colours,
+/// never textured, so a distant tile costs no texture sampling and shows no repeats.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ground {
     pub layer: Layer,
     pub overlay: bool,
+    pub far: bool,
 }
 
 impl Ground {
+    /// The near level's opaque base or masked overlay of `layer`.
+    #[must_use]
+    pub const fn near(layer: Layer, overlay: bool) -> Self {
+        Self {
+            layer,
+            overlay,
+            far: false,
+        }
+    }
+
     /// The draw's name in IDs and resource keys.
     #[must_use]
     pub fn name(self) -> String {
         format!(
-            "ground-{}{}",
+            "ground-{}{}{}",
             self.layer.name(),
-            if self.overlay { "-overlay" } else { "" }
+            if self.overlay { "-overlay" } else { "" },
+            if self.far { "-far" } else { "" }
         )
     }
 }
+
+/// Ground meshes by draw, in draw order.
+pub(crate) type Layers = BTreeMap<Ground, Geometry>;
 
 fn smoothstep(lo: f64, hi: f64, v: f64) -> f64 {
     let t = ((v - lo) / (hi - lo)).clamp(0., 1.);
@@ -160,6 +177,7 @@ fn tinted(color: u32, x: f64, z: f64, seed: f64) -> u32 {
 }
 
 /// Per-vertex weights of the grid overlays over the near terrain grid.
+#[derive(Clone, Debug)]
 pub(crate) struct Weights {
     layers: BTreeMap<Layer, Vec<f64>>,
     colors: BTreeMap<Layer, Vec<u32>>,
@@ -172,6 +190,26 @@ impl Weights {
         self.layers
             .values()
             .any(|weights| tri.iter().all(|&i| weights[i] >= 1.))
+    }
+
+    /// The colour grid sample `i` shows from afar (#526): the base colour `base` covered by each
+    /// overlay in draw order, by the share of its texels that pass the mask at its weight (`w ×
+    /// alpha ≥ 0.5` with height alpha spread over 0.5–1: `2 − 1 / w`).
+    pub(crate) fn baked(&self, i: usize, base: u32) -> u32 {
+        self.layers.iter().fold(base, |color, (layer, weights)| {
+            let w = weights[i];
+            let shown = if w <= 0.5 { 0. } else { (2. - 1. / w).min(1.) };
+            mix(color, self.colors[layer][i], shown)
+        })
+    }
+
+    /// Every weight, in a stable order: identity input for the tiles built from them.
+    pub(crate) fn values(&self) -> impl Iterator<Item = f64> + '_ {
+        self.layers
+            .values()
+            .flatten()
+            .copied()
+            .chain(self.colors.values().flatten().map(|&c| f64::from(c)))
     }
 }
 
@@ -323,9 +361,16 @@ impl Projection {
     }
 }
 
-/// The grid overlays: every triangle where some corner's weight could show, skipping the
-/// terrain's holes. Vertices are shared per grid sample and projection.
-pub(crate) fn grid_overlays(b: &mut Batcher, w: &Weights, g: &TerrainGrid, holes: &[[f64; 4]]) {
+/// The grid overlays over the grid cells `cells` (`[first column, first row, end column, end
+/// row]`): every triangle where some corner's weight could show, skipping the terrain's
+/// holes. Vertices are shared per grid sample and projection.
+pub(crate) fn grid_overlays(
+    layers: &mut Layers,
+    w: &Weights,
+    g: &TerrainGrid,
+    holes: &[[f64; 4]],
+    cells: [usize; 4],
+) {
     let step = metres(g.step);
     let at = |sample: usize| -> (V, V) {
         let (c, r) = (sample % g.columns, sample / g.columns);
@@ -341,13 +386,10 @@ pub(crate) fn grid_overlays(b: &mut Batcher, w: &Weights, g: &TerrainGrid, holes
     for (&layer, weights) in &w.layers {
         let colors = &w.colors[&layer];
         let (lift, tile) = (layer.lift(), layer.tile_metres());
-        let out = b.ground(Ground {
-            layer,
-            overlay: true,
-        });
+        let out = layers.entry(Ground::near(layer, true)).or_default();
         let mut shared = BTreeMap::new();
-        for r in 0..g.rows - 1 {
-            for c in 0..g.columns - 1 {
+        for r in cells[1]..cells[3] {
+            for c in cells[0]..cells[2] {
                 let s0 = r * g.columns + c;
                 let cell = [
                     metres(g.origin[0] + c as i32 * g.step),
@@ -392,12 +434,9 @@ pub(crate) fn grid_overlays(b: &mut Batcher, w: &Weights, g: &TerrainGrid, holes
 
 /// Worn dirt paths along every road: a ribbon full-weight across the road that fades out
 /// over `EDGE` metres either side, and a disc at every bend.
-pub(crate) fn roads(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
+pub(crate) fn roads(layers: &mut Layers, s: &Scenery, g: &TerrainGrid) {
     const EDGE: f64 = 1.6;
-    let out = b.ground(Ground {
-        layer: Layer::Path,
-        overlay: true,
-    });
+    let out = layers.entry(Ground::near(Layer::Path, true)).or_default();
     let lift = Layer::Path.lift();
     let up = [0., 1., 0.];
     let color = |x: f64, z: f64| tinted(0xa4865c, x, z, 5.);
@@ -474,17 +513,14 @@ pub(crate) fn roads(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
 
 /// A rectangle `lo`..`hi` (metres) of `layer` that fades out over `border` metres outside it.
 pub(crate) fn patch(
-    b: &mut Batcher,
+    layers: &mut Layers,
     g: &TerrainGrid,
     layer: Layer,
     color: u32,
     (lo, hi): ([f64; 2], [f64; 2]),
     border: f64,
 ) {
-    let out = b.ground(Ground {
-        layer,
-        overlay: true,
-    });
+    let out = layers.entry(Ground::near(layer, true)).or_default();
     let lift = layer.lift();
     let (lo, hi) = (lo.map(|v| v - border), hi.map(|v| v + border));
     let cols = ((hi[0] - lo[0]) / 2.).ceil().max(1.) as usize;
