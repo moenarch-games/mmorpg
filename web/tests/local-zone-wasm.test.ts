@@ -487,7 +487,8 @@ describe("WASM local zone host", () => {
     // across the expanded valley (#159), the farmland (#424), the highlands (#425) and the wetlands (#426); distance culling
     // keeps far batches out of a frame.
     expect(scene.stats.staticNodes).toBeLessThanOrEqual(3_800);
-    expect(scene.stats.staticVertices).toBeLessThanOrEqual(480_000);
+    // The textured ground layers (#525) add overlay meshes over the terrain.
+    expect(scene.stats.staticVertices).toBeLessThanOrEqual(500_000);
     expect(scenery.scenery.props.length).toBeGreaterThan(scene.stats.staticNodes * 3);
     expect(new Set(scene.batches.map((batch) => batch.node.geometry.resourceKey)).size).toBe(scene.batches.length);
     // Terrain and far-ring meshes span the whole vale, so none is ever culled: keep their palette small.

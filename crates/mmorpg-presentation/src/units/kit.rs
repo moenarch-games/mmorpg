@@ -161,6 +161,7 @@ impl Resources {
                 opacity: 1.,
                 unlit: false,
                 double_sided: false,
+                ground: None,
             },
         }
     }
@@ -196,6 +197,7 @@ impl Resources {
                 opacity: 1.,
                 unlit: false,
                 double_sided: false,
+                ground: None,
             },
         }
     }

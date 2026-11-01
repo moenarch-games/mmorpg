@@ -1,5 +1,6 @@
 //! Terrain triangulation, overlays, roads, lake beds and water.
 use super::{Draw, batching::*, geometry::*};
+use crate::ground::{Ground, Layer};
 use mmorpg_scenery::{Biome, Scenery, TerrainGrid};
 use std::f64::consts::TAU;
 use std::{collections::BTreeMap, sync::Arc};
@@ -54,7 +55,7 @@ fn overlay(b: Biome) -> bool {
         "road" | "lake bed" | "shore" | "plaza" | "farmland"
     )
 }
-fn ground(g: &TerrainGrid) -> Vec<Biome> {
+pub(crate) fn ground_biomes(g: &TerrainGrid) -> Vec<Biome> {
     g.biomes
         .iter()
         .enumerate()
@@ -87,7 +88,7 @@ fn ground(g: &TerrainGrid) -> Vec<Biome> {
         })
         .collect()
 }
-fn noise(x: f64, z: f64, cell: f64, seed: f64) -> f64 {
+pub(crate) fn noise(x: f64, z: f64, cell: f64, seed: f64) -> f64 {
     let (gx, gz) = (x / cell, z / cell);
     let (x0, z0) = (gx.floor(), gz.floor());
     let smooth = |t: f64| t * t * (3. - 2. * t);
@@ -178,9 +179,21 @@ fn around_holes(
 
 /// Triangulates a grid. A far ring leaves out the cells inside `inner`, the near grid's
 /// rectangle `[min x, min z, max x, max z]` in metres, and sinks its vertices inside it. A cell
-/// overlapping one of `holes` (`[min x, min z, max x, max z]`, metres) is drawn around it.
-fn grid(out: &mut Geometry, g: &TerrainGrid, far: bool, inner: [f64; 4], holes: &[[f64; 4]]) {
-    let biomes = if far { g.biomes.clone() } else { ground(g) };
+/// overlapping one of `holes` (`[min x, min z, max x, max z]`, metres) is drawn around it, and
+/// a triangle (its grid samples) a ground overlay `covered` entirely is left out (#525).
+fn grid(
+    out: &mut Geometry,
+    g: &TerrainGrid,
+    far: bool,
+    inner: [f64; 4],
+    holes: &[[f64; 4]],
+    covered: &dyn Fn([usize; 3]) -> bool,
+) {
+    let biomes = if far {
+        g.biomes.clone()
+    } else {
+        ground_biomes(g)
+    };
     let mut map = BTreeMap::new();
     let within = |x: f64, z: f64| inner[0] < x && x < inner[2] && inner[1] < z && z < inner[3];
     let at = |c: usize, r: usize| {
@@ -206,13 +219,13 @@ fn grid(out: &mut Geometry, g: &TerrainGrid, far: bool, inner: [f64; 4], holes: 
                 continue;
             }
             for sample in [
-                s,
-                s + g.columns,
-                s + 1,
-                s + 1,
-                s + g.columns,
-                s + g.columns + 1,
-            ] {
+                [s, s + g.columns, s + 1],
+                [s + 1, s + g.columns, s + g.columns + 1],
+            ]
+            .into_iter()
+            .filter(|tri| !covered(*tri))
+            .flatten()
+            {
                 let idx = *map.entry(sample).or_insert_with(|| {
                     let (c, r) = (sample % g.columns, sample / g.columns);
                     let (x, z) = (
@@ -262,63 +275,6 @@ pub fn bounds(g: &TerrainGrid, name: &str) -> Option<([f64; 2], [f64; 2])> {
     }
     lo[0].is_finite().then_some((lo, hi))
 }
-fn patch(m: &mut Geometry, lo: [f64; 2], hi: [f64; 2], lift: f64, g: &TerrainGrid) {
-    let cols = ((hi[0] - lo[0]) / 2.).ceil().max(1.) as usize;
-    let rows = ((hi[1] - lo[1]) / 2.).ceil().max(1.) as usize;
-    let base = m.p.len() as u32;
-    for r in 0..=rows {
-        for c in 0..=cols {
-            let x = lo[0] + (hi[0] - lo[0]) * c as f64 / cols as f64;
-            let z = lo[1] + (hi[1] - lo[1]) * r as f64 / rows as f64;
-            m.p.push([x, surface(g, x, z) + lift, z]);
-            m.n.push([0., 1., 0.]);
-        }
-    }
-    for r in 0..rows {
-        for c in 0..cols {
-            let a = base + (r * (cols + 1) + c) as u32;
-            let b = a + cols as u32 + 1;
-            m.indices.extend([a, b, a + 1, a + 1, b, b + 1]);
-        }
-    }
-}
-fn ribbon(m: &mut Geometry, points: &[[f64; 2]], width: f64, lift: f64, g: &TerrainGrid) {
-    for p in points.windows(2) {
-        let ([ax, az], [bx, bz]) = (p[0], p[1]);
-        let l = (bx - ax).hypot(bz - az);
-        if l == 0. {
-            continue;
-        }
-        let (nx, nz) = (-(bz - az) / l * width, (bx - ax) / l * width);
-        let pieces = (l / 2.).ceil().max(1.) as usize;
-        let base = m.p.len() as u32;
-        for i in 0..=pieces {
-            let t = i as f64 / pieces as f64;
-            let (x, z) = (ax + (bx - ax) * t, az + (bz - az) * t);
-            for (x, z) in [(x + nx, z + nz), (x - nx, z - nz)] {
-                m.p.push([x, surface(g, x, z) + lift, z]);
-                m.n.push([0., 1., 0.]);
-            }
-        }
-        for i in 0..pieces {
-            let a = base + i as u32 * 2;
-            m.indices.extend([a, a + 2, a + 1, a + 1, a + 2, a + 3]);
-        }
-    }
-    for [x, z] in points {
-        let base = m.p.len() as u32;
-        m.p.push([*x, surface(g, *x, *z) + lift, *z]);
-        m.n.push([0., 1., 0.]);
-        for i in 0..12 {
-            let a = i as f64 / 12. * TAU;
-            let (px, pz) = (x + a.sin() * width, z + a.cos() * width);
-            m.p.push([px, surface(g, px, pz) + lift, pz]);
-            m.n.push([0., 1., 0.]);
-            m.indices
-                .extend([base, base + 1 + i, base + 1 + (i + 1) % 12]);
-        }
-    }
-}
 fn ellipse(m: &mut Geometry, c: [f64; 2], r: [f64; 2], y: f64, n: u32) {
     let base = m.p.len() as u32;
     m.p.push([c[0], y, c[1]]);
@@ -344,69 +300,41 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Draw> {
         .iter()
         .map(|hole| [hole.min[0], hole.min[1], hole.max[0], hole.max[1]].map(metres))
         .collect();
-    grid(b.global("terrain", 0xffffff), g, false, inner, &holes);
+    // The opaque grass base, then the masked ground overlays over it (#525).
+    let base = b.ground(Ground {
+        layer: Layer::Grass,
+        overlay: false,
+    });
+    let weights = crate::ground::weights(s, g);
+    grid(base, g, false, inner, &holes, &|tri| weights.covers(tri));
+    crate::ground::project_top(base, Layer::Grass);
+    crate::ground::grid_overlays(b, &weights, g, &holes);
     grid(
         b.global("far", 0xffffff),
         &s.far_terrain_grid(2000),
         true,
         inner,
         &[],
+        &|_| false,
     );
     // Worn handholds up the climbable rock faces of the terrain (#512).
     crate::handholds::terrain(g, s.climbing(), &mut |c, shape, a| {
         crate::handholds::draw(b, c, shape, a);
     });
-    // The plaza, then one patch per ploughed field (#424).
-    let fields = s
-        .farmland()
-        .iter()
-        .map(|field| (field.min.map(metres), field.max.map(metres)));
-    let patches = bounds(g, "plaza")
-        .map(|plaza| (plaza, 0.6, 0xa8987a))
-        .into_iter()
-        .chain(fields.map(|field| (field, 0.8, 0x7a5836)));
-    for ((lo, hi), border, color) in patches {
-        patch(
-            b.global("patches", shade(color, 0.84)),
-            lo.map(|v| v - border),
-            hi.map(|v| v + border),
-            0.025,
-            g,
-        );
-        patch(b.global("patches", color), lo, hi, 0.04, g);
+    // The trampled plaza, then one tilled patch per ploughed field (#424).
+    if let Some(plaza) = bounds(g, "plaza") {
+        crate::ground::patch(b, g, Layer::Path, 0xa8987a, plaza, 1.2);
     }
-    for road in &s.roads {
-        let points = road
-            .points
-            .iter()
-            .map(|p| p.map(metres))
-            .collect::<Vec<_>>();
-        ribbon(
-            b.global("roads", mix(0xa4865c, 0x6a9a42, 0.45)),
-            &points,
-            metres(road.half_width) + 0.45,
-            0.03,
-            g,
-        );
-        ribbon(
-            b.global("roads", 0xa4865c),
-            &points,
-            metres(road.half_width),
-            0.05,
-            g,
-        );
+    for field in s.farmland() {
+        let field = (field.min.map(metres), field.max.map(metres));
+        crate::ground::patch(b, g, Layer::Mud, 0x7a5836, field, 1.);
     }
+    crate::ground::roads(b, s, g);
     let mut water = Vec::new();
     for (i, w) in s.water.iter().enumerate() {
         let c = w.centre.map(metres);
         let r = w.radii.map(metres);
-        ellipse(
-            b.global("lake-bed", 0xcdbb88),
-            c,
-            r.map(|v| v + 3.),
-            0.006,
-            64,
-        );
+        // The shore beyond the water's edge is the sand overlay; these rings are the bed.
         for (f, col, lift) in [
             (1.02, mix(0xcdbb88, 0x4f5a44, 0.35), 0.012),
             (0.9, mix(0xcdbb88, 0x4f5a44, 0.7), 0.02),

@@ -3,7 +3,7 @@
 //! asset-tooling (`scripts/prepare-ranger-native.sh`), with original socket metadata.
 //! The Greyhaven inn, the Sunken Shrine kit (#431), the ambient animals (#419), the
 //! Outpost building kit (#420), the settlement props (#421) and Greyhaven's trees, rocks and bushes
-//! (#49) keep the manifest/resource embedding path.
+//! (#49) and their ground layer materials (#525) keep the manifest/resource embedding path.
 #[path = "build/warden_icons.rs"]
 mod warden_icons;
 
@@ -192,6 +192,9 @@ fn main() {
     let nature = manifest_dir.join("../../web/public/scenery/greyhaven.nature");
     static_bundle("nature_bundle.rs", &nature, None, true);
     nature_descriptor(&nature);
+    // Greyhaven's ground layer materials (#525).
+    let terrain = manifest_dir.join("../../web/public/scenery/greyhaven.terrain");
+    static_bundle("terrain_bundle.rs", &terrain, None, false);
 }
 
 /// The nature bundle's `nature-descriptor` attachment (#49) as `DESCRIPTOR`: its levels of

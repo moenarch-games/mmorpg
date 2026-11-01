@@ -30,10 +30,12 @@ fn transform(model: &[f32; 16], p: V) -> V {
     ]
 }
 
-/// Scene-wide draws: terrain, patches, roads, lake beds and the worn handholds (#512) that
+/// Scene-wide draws: terrain, ground layers (#525), lake beds and the worn handholds (#512) that
 /// run over the terrain as well as the rock props.
 fn scene_wide(draw: &Draw) -> bool {
-    draw.id.starts_with("static-all-") || draw.id.contains(":handholds:")
+    draw.id.starts_with("static-all-")
+        || draw.id.starts_with("static-ground-")
+        || draw.id.contains(":handholds:")
 }
 
 /// Prop draws (everything but [`scene_wide`] ones) in world space.
@@ -132,15 +134,29 @@ fn every_prop_kind_draws_valid_geometry_and_the_same_scenery_builds_the_same_sce
             .prefix
             .starts_with(&format!("scenery:{}:", scenery.content_revision))
     );
-    // Terrain is vertex coloured with upward faces; water stays translucent; lights glow.
-    let terrain: Vec<_> = scene
+    // Terrain is vertex coloured and textured ground layers (#525), one draw per layer, every
+    // overlay weighted per vertex; water stays translucent; lights glow.
+    let ground: Vec<_> = scene
         .groups
         .iter()
         .flat_map(|group| &group.draws)
-        .filter(|draw| draw.id.starts_with("static-all-terrain"))
+        .filter(|draw| draw.material.ground.is_some())
         .collect();
-    assert!(!terrain.is_empty());
-    assert!(terrain.iter().all(|draw| !draw.geometry.colors.is_empty()));
+    assert!(ground.iter().any(|draw| draw.id == "static-ground-grass"));
+    assert!(ground.len() <= 2 * mmorpg_presentation::ground::Layer::ALL.len());
+    for draw in &ground {
+        let g = &draw.geometry;
+        assert!(!g.colors.is_empty(), "{}", draw.id);
+        assert_eq!(g.uv.len(), g.p.len(), "{}", draw.id);
+        assert_eq!(g.tangents.len(), g.p.len(), "{}", draw.id);
+        let overlay = draw.material.ground.is_some_and(|ground| ground.overlay);
+        assert_eq!(
+            g.alpha.len(),
+            if overlay { g.p.len() } else { 0 },
+            "{}",
+            draw.id
+        );
+    }
     assert!(scene.water.iter().all(|draw| draw.material.opacity < 1.));
     assert!(
         scene

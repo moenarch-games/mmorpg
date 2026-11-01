@@ -210,6 +210,7 @@ impl Structures {
                 opacity,
                 unlit: false,
                 double_sided: false,
+                ground: None,
             },
         }
     }

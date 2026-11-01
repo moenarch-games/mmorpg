@@ -15,6 +15,17 @@ pub struct DrawMaterial {
     pub opacity: f32,
     pub unlit: bool,
     pub double_sided: bool,
+    /// A terrain ground layer's draw (#525): textured from the `greyhaven-terrain` bundle.
+    pub ground: Option<GroundMaterial>,
+}
+
+/// A ground layer draw's material: the layer, and an overlay's vertex colour alpha, which the
+/// mask cuts by (`mmorpg_presentation::ground`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroundMaterial {
+    pub ground: mmorpg_presentation::ground::Ground,
+    /// One alpha per mesh vertex (`Geometry::alpha`); empty for the opaque base layer.
+    pub alpha: Arc<[f32]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -209,7 +220,7 @@ impl Lowering {
             model: Mat4 {
                 elements: draw.model,
             },
-            material: material(&draw.material),
+            material: material(&draw.material, &draw.geometry),
             skin: None,
         }
     }
@@ -225,13 +236,20 @@ impl Lowering {
     }
 }
 
-fn material(material: &mmorpg_presentation::Material) -> DrawMaterial {
+fn material(
+    material: &mmorpg_presentation::Material,
+    geometry: &mmorpg_presentation::geometry::Geometry,
+) -> DrawMaterial {
     DrawMaterial {
         color: material.color,
         emissive: material.emissive,
         opacity: material.opacity,
         unlit: material.unlit,
         double_sided: material.double_sided,
+        ground: material.ground.map(|ground| GroundMaterial {
+            ground,
+            alpha: geometry.alpha.iter().map(|&a| a as f32).collect(),
+        }),
     }
 }
 
