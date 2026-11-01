@@ -673,6 +673,12 @@ pub fn static_scene_shown(viewer: &[f64], outpost_kit: bool, settlement_props: b
     )
 }
 
+/// The scenery's campfire and lamp lights at a cosmetic clock, eight floats each (#600).
+#[wasm_bindgen(js_name = staticScenePointLights)]
+pub fn static_scene_point_lights(seconds: f64, animate: bool) -> Vec<f32> {
+    static_scene::point_lights(seconds, animate)
+}
+
 /// Rendered terrain height in metres at `(x, z)` metres.
 #[wasm_bindgen(js_name = surfaceY)]
 pub fn surface_y(x: f64, z: f64) -> f64 {

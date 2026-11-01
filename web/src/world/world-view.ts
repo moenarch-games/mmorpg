@@ -27,6 +27,7 @@ import {
   type Vec3,
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
+import type { GreyhavenLighting } from "./lighting";
 import { ImpactEffects, impactCues } from "./impact-effects";
 import { RaidSmoke } from "./raid-smoke";
 import { type AidTask, reachableAidTask } from "./raid-aid";
@@ -369,6 +370,7 @@ export class WorldView {
   #lastSceneryNodes: readonly RendererSceneNode[] = [];
   #pendingNpc: { target: EntityRef; sequence: number } | null = null;
   #scene: SceneryScene | null = null;
+  readonly #lighting: GreyhavenLighting;
   #catalog: ContentCatalog | null = null;
   #zoneName = ZONE_NAME;
   #arena = false;
@@ -413,8 +415,9 @@ export class WorldView {
   /** The first frame of a session picks a heading whose view is not inside a building. */
   #framePending = false;
 
-  constructor(renderer: ThreeSceneRenderer, camera: THREE.PerspectiveCamera, elements: WorldViewElements) {
+  constructor(renderer: ThreeSceneRenderer, camera: THREE.PerspectiveCamera, lighting: GreyhavenLighting, elements: WorldViewElements) {
     this.#renderer = renderer;
+    this.#lighting = lighting;
     this.#models.configureRenderer(renderer);
     this.#camera = camera;
     this.#elements = elements;
@@ -1176,6 +1179,12 @@ export class WorldView {
     const seconds = this.#presentationTime ?? zoneSkySeconds(skyTick);
     const environment = environmentAt(ENVIRONMENT, seconds / DAY_SECONDS);
     this.#lastEnvironment = environment;
+    // The native client's lights at the same hour (#600): sun or moon, sky light, fog and the scenery's lamps.
+    this.#lighting.apply({
+      hour: (12 + seconds / DAY_SECONDS * 24) % 24,
+      fog: environment.fog ? String(environment.fog.color) : null,
+      pointLights: this.#scene?.pointLights(this.#seconds, animate) ?? null,
+    });
     this.#lastInstanceBatches = frame.instanceBatches;
     this.#lastCamera = camera;
     profilePhase("scene");

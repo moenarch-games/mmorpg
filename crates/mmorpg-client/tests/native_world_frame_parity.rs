@@ -35,8 +35,8 @@ fn every_world_prop_region_and_day_phase_matches_pages_submitted_content() {
         );
         let draws: Vec<_> = frame.all_draws().cloned().collect();
         compare_draws(&draws, &expected["draws"], &output["resources"]);
-        // The native sun, moon and sky are render-engine's physical day cycle (#529); the
-        // browser keeps its palette until its three.js port (render-engine#11). Both fog alike.
+        // Both clients light with render-engine (#529; the browser through its three.js port, #600)
+        // and fog alike: the same palette, 140–620 m.
         let fog = &frame.lighting.fog;
         let want = &expected["environment"]["fog"];
         for (a, b) in fog.color.iter().zip(rgb(&want["color"])) {

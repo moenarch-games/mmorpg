@@ -31,6 +31,8 @@ export type StaticSceneContent = {
   staticSceneIndices(): Uint32Array;
   staticSceneModels(): Float32Array;
   staticSceneMotion(seconds: number, animate: boolean): Float32Array;
+  /** The scenery's point lights at a cosmetic clock, eight floats each (#600). */
+  staticScenePointLights(seconds: number, animate: boolean): Float32Array;
   staticSceneShown(viewer: Float64Array, outpostKit: boolean, settlementProps: boolean, fortressKit: boolean): Uint8Array;
   surfaceY(x: number, z: number): number;
 };
@@ -59,6 +61,8 @@ export type SceneryScene = {
   animated: readonly (readonly AnimatedNode[])[];
   /** One column-major matrix (16 floats) per animated part at a cosmetic clock. */
   motion(seconds: number, animate: boolean): Float32Array;
+  /** Campfire and lamp lights at a cosmetic clock: position, sRGB colour, lumens and range, eight floats each. */
+  pointLights(seconds: number, animate: boolean): Float32Array;
   /**
    * Per animated part 1 (drawn) or 0: a cave roof is cut away while `viewer` (feet, metres) stands under it, and an
    * asset-tooling kit's procedural fallback is hidden while `kits` says the kit is drawn.
@@ -196,6 +200,7 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
     water,
     animated,
     motion: (seconds, animate) => content.staticSceneMotion(seconds, animate),
+    pointLights: (seconds, animate) => content.staticScenePointLights(seconds, animate),
     shown: (viewer, kits) => content.staticSceneShown(Float64Array.from(viewer ?? []), kits.outpost, kits.settlementProps, kits.fortress),
     stats: {
       staticNodes: batches.length + instanceBatches.length,

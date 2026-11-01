@@ -1,6 +1,7 @@
 import { onlineCharacterId, hasOnlineCharacterId } from "./world/online-character-identity";
 import { enableFrameProfile, profileBegin, profileEnd } from "./world/frame-profile";
 import * as THREE from "three";
+import { GreyhavenLighting, presentationMaterial } from "./world/lighting";
 import {
   createThreeSceneRenderer,
   type Matrix4Values,
@@ -155,11 +156,15 @@ let faceSelects: { feature: FaceFeature; select: HTMLSelectElement }[] = [];
 let previewCloseUp = false;
 const worldUi = [...document.querySelectorAll<HTMLElement>("[data-world-ui]")];
 
-// A transparent canvas: the CSS sky shows through behind the world.
+// A transparent canvas: the CSS sky shows through behind the world. Everything is lit and drawn through
+// render-engine's three.js lighting (#600), which multisamples its own HDR pass.
+const lighting = new GreyhavenLighting(import.meta.env.BASE_URL);
 const renderer = createThreeSceneRenderer(canvas, {
   alpha: true,
-  antialias: true,
+  antialias: false,
   pixelRatioLimit: 2,
+  material: presentationMaterial,
+  draw: (target, scene, view) => lighting.draw(target, scene, view),
 });
 
 fallbackCharacter.hidden = true;
@@ -343,7 +348,7 @@ function savedAppearance(character: CharacterPreview): CharacterAppearance | nul
 
 const camera = new THREE.PerspectiveCamera(50, 1, 0.2, 1_400);
 const previewCamera = new THREE.PerspectiveCamera(48, 1, 0.1, 80);
-const worldView = new WorldView(renderer, camera, {
+const worldView = new WorldView(renderer, camera, lighting, {
   canvas,
   sky: requireElement<HTMLElement>("#sky"),
   minimap: {
@@ -1300,6 +1305,8 @@ function renderSelection() {
     (performance.now() - previewStart) / 1000, camera);
   const features = worldView.faceFeatures();
   if (faceFeatures === undefined && features !== undefined) { showFaceFeatures(features); }
+  // The selection stage stands in the mid-afternoon sun, without fog or lamps.
+  lighting.apply({ hour: 15, fog: null, pointLights: null });
   renderer.render({ camera, nodes: real ? selectionStageNodes : [...selectionStageNodes, ...selectionCharacterNodes()] });
 }
 

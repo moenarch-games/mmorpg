@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { createThreeSceneRenderer, type Matrix4Values } from "@moritzbrantner/three-d-renderer";
 import { QuaterniusUnits } from "./world/units/quaternius-units";
+import { GreyhavenLighting, presentationMaterial } from "./world/lighting";
 import { loadWasm } from "./wasm";
 
 // The Ranger's appearance presets come from the shared presenter in mmorpg-wasm.
@@ -9,7 +10,12 @@ await loadWasm();
 const canvas = document.querySelector("canvas");
 const status = document.querySelector("#status");
 if (!canvas || !status) throw new Error("Ranger example elements missing");
-const renderer = createThreeSceneRenderer(canvas, { antialias: true });
+// Lit like the game (#600): the mid-afternoon sun, without fog or lamps.
+const lighting = new GreyhavenLighting(import.meta.env.BASE_URL);
+lighting.apply({ hour: 15, fog: null, pointLights: null });
+const renderer = createThreeSceneRenderer(canvas, {
+  antialias: false, material: presentationMaterial, draw: (target, scene, view) => lighting.draw(target, scene, view),
+});
 const models = new QuaterniusUnits(() => "Idle_Loop");
 models.configureRenderer(renderer);
 const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);

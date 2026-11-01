@@ -242,6 +242,34 @@ pub fn surface_y(x: f64, z: f64) -> f64 {
     hosted_static_scene().surface_y(x, z)
 }
 
+/// The scenery's point lights (`mmorpg_presentation::lights`, #600) at a cosmetic clock, as the
+/// native client lights them: per light its position (metres), sRGB colour (0–1), lumens at
+/// this frame's flicker and range (metres), eight floats each.
+#[must_use]
+pub fn point_lights(seconds: f64, animate: bool) -> Vec<f32> {
+    static LIGHTS: PerZone<Vec<mmorpg_presentation::lights::PointLight>> = PerZone::new();
+    let lights = LIGHTS.get(|_| {
+        mmorpg_presentation::lights::point_lights(hosted_static_scene(), hosted_scenery())
+    });
+    lights
+        .iter()
+        .flat_map(|light| {
+            let [x, y, z] = light.position;
+            let channel = |shift: u32| ((light.color >> shift) & 255) as f32 / 255.0;
+            [
+                x as f32,
+                y as f32,
+                z as f32,
+                channel(16),
+                channel(8),
+                channel(0),
+                light.lumens_at(seconds, animate) as f32,
+                light.range as f32,
+            ]
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

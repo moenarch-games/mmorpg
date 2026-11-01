@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { litMaterial } from "./lighting";
 import type { RaidSignal } from "../replication";
 import type { RaidPrepSpots } from "./raid-prep";
 
@@ -51,7 +52,7 @@ export class RaidSigns {
   }
 
   #place(spots: RaidPrepSpots, groundAt: (x: number, z: number) => number, unitsPerMetre: number): void {
-    const print = new THREE.MeshBasicMaterial({ color: 0x2b2118, transparent: true, opacity: 0.75, depthWrite: false });
+    const print = litMaterial(new THREE.MeshBasicMaterial({ color: 0x2b2118, transparent: true, opacity: 0.75, depthWrite: false }));
     const shape = new THREE.CircleGeometry(0.5, 12);
     const [tx, tz] = [spots.tracks.x / unitsPerMetre, spots.tracks.z / unitsPerMetre];
     for (let index = 0; index < PRINTS; index += 1) {
@@ -65,7 +66,7 @@ export class RaidSigns {
       mesh.name = `raid-track-${index}`;
       this.#tracks.add(mesh);
     }
-    const wood = new THREE.MeshLambertMaterial({ color: 0x7a5a36 });
+    const wood = litMaterial(new THREE.MeshLambertMaterial({ color: 0x7a5a36 }));
     const beam = new THREE.BoxGeometry(TIMBER[1], TIMBER[0], TIMBER[1]);
     spots.braces.forEach((spot, index) => {
       const [x, z] = [spot.x / unitsPerMetre, spot.z / unitsPerMetre];
