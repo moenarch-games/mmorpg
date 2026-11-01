@@ -820,6 +820,7 @@ fn native_pointer_application_contract() {
                 opacity: 1.0,
                 unlit: false,
                 double_sided: false,
+                ground: None,
             },
             skin: None,
         });

@@ -186,6 +186,7 @@ pub fn nodes(_resources: &mut Resources, id: &str, root: Frame, l: Look, bob: f6
                     opacity: 1.,
                     unlit: false,
                     double_sided: false,
+                    ground: None,
                 },
             }
         })

@@ -134,7 +134,7 @@ fn file(path: &str) -> &'static [u8] {
 }
 
 /// Normalizes `base`'s directory joined with a relative `uri`.
-fn resolve(base: &str, uri: &str) -> String {
+pub(crate) fn resolve(base: &str, uri: &str) -> String {
     let mut parts: Vec<&str> = base.split('/').collect();
     parts.pop();
     for part in uri.split('/') {
@@ -149,10 +149,10 @@ fn resolve(base: &str, uri: &str) -> String {
     parts.join("/")
 }
 
-/// A decoded PNG with a box-filtered mip chain; colour textures are sRGB.
-fn texture(bytes: &[u8], srgb: bool) -> TextureData {
-    let image = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
-        .expect("nature textures are PNG")
+/// A decoded PNG or JPEG with a box-filtered mip chain; colour textures are sRGB.
+pub(crate) fn texture(bytes: &[u8], srgb: bool) -> TextureData {
+    let image = image::load_from_memory(bytes)
+        .expect("bundle textures are PNG or JPEG")
         .to_rgba8();
     let (width, height) = image.dimensions();
     let mut levels = vec![image.into_raw()];

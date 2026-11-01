@@ -6,6 +6,13 @@ pub struct Geometry {
     pub p: Vec<V>,
     pub n: Vec<V>,
     pub colors: Vec<V>,
+    /// `TEXCOORD_0` per vertex, or empty: textured ground layers ([`crate::ground`]).
+    pub uv: Vec<[f64; 2]>,
+    /// MikkTSpace-style tangents (xyz, w the bitangent sign) per vertex, or empty.
+    pub tangents: Vec<[f64; 4]>,
+    /// Vertex colour alpha per vertex, or empty for opaque: a ground overlay's weight over
+    /// [`crate::ground::OVERLAY_ALPHA`].
+    pub alpha: Vec<f64>,
     pub indices: Vec<u32>,
 }
 #[derive(Clone, Copy, Debug)]

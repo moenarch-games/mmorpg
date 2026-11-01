@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { IndexedMeshGeometry } from "@moritzbrantner/three-d-renderer";
 import { createLocalWorld } from "../src/world/local-world";
 import { CULL_DISTANCE_METRES, SceneryFrame, batchVisible, buildSceneryScene, type StaticSceneContent } from "../src/world/scenery-nodes";
-import { expectValidMesh, triangleNormals } from "./support/geometry";
+import { expectValidMesh } from "./support/geometry";
 import { testCharacters } from "./support/local-characters";
 import { localZoneModule } from "./support/local-zone-module";
 
@@ -28,18 +28,21 @@ describe("the shared static scene in the browser", () => {
       geometries.set(geometry.resourceKey, geometry);
     }
     expect(scene.instanceBatches.every(({ batch }) => batch.instances.length > 0)).toBe(true);
-    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.instanceBatches.length);
+    expect(scene.stats.staticNodes).toBe(scene.batches.length + scene.ground.length + scene.instanceBatches.length);
     const modelled = Object.values(scene.stats.props).reduce((sum, count) => sum + (count ?? 0), 0);
     expect(modelled).toBe(world.scenery.props.length);
   });
 
   test("terrain carries vertex colours with upward faces, lights glow and water stays translucent", () => {
-    const terrain = scene.batches.filter((batch) => batch.node.id.startsWith("static-all-terrain"));
-    expect(terrain.length).toBeGreaterThan(0);
-    for (const { node } of terrain) {
-      expect(node.geometry.colors!.length).toBe(node.geometry.positions.length);
-      expect(node.geometry.colors!.every((color) => color.every((channel) => channel >= 0 && channel <= 1))).toBe(true);
-      expect(triangleNormals(node.geometry).every((normal) => normal[1] > 0)).toBe(true);
+    // The textured ground layers (#525): the opaque grass base and weighted overlays, one draw each.
+    expect(scene.ground.find((draw) => draw.layer === "grass" && !draw.overlay)).toBeDefined();
+    expect(scene.ground.length).toBeLessThanOrEqual(7);
+    for (const draw of scene.ground) {
+      const count = draw.positions.length / 3;
+      expect([draw.normals.length, draw.colors.length, draw.uvs.length, draw.tangents.length]).toEqual([count * 3, count * 3, count * 2, count * 4]);
+      expect(draw.alpha?.length ?? 0).toBe(draw.overlay ? count : 0);
+      expect(draw.colors.every((channel) => channel >= 0 && channel <= 1)).toBe(true);
+      expect(draw.indices.every((index) => index < count)).toBe(true);
     }
     expect(scene.batches.some((batch) => batch.node.emissive !== undefined)).toBe(true);
     expect(scene.water.length).toBeGreaterThan(0);

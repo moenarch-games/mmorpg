@@ -8,6 +8,7 @@ pub mod controls;
 pub mod environment;
 pub mod gamepad;
 pub mod graphics;
+pub mod ground;
 pub mod hud;
 pub mod interaction;
 pub mod nature;
