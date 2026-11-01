@@ -265,7 +265,12 @@ impl WorldScene {
             .collect();
         let placements = mmorpg_presentation::nature::placements(scenery);
         let nature = Nature {
-            lods: mmorpg_presentation::nature::Lods::new(crate::nature::lods(), &placements),
+            lods: mmorpg_presentation::nature::Lods::new(
+                crate::nature::lods(),
+                placements
+                    .iter()
+                    .map(mmorpg_presentation::nature::Placement::placed),
+            ),
             entries: placements
                 .iter()
                 .map(|placement| {

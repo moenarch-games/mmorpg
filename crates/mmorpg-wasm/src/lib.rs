@@ -1083,7 +1083,9 @@ impl NatureLods {
             .map_err(|error| JsError::new(&error))?;
         Ok(Self(mmorpg_presentation::nature::Lods::new(
             entries,
-            hosted_nature(),
+            hosted_nature()
+                .iter()
+                .map(mmorpg_presentation::nature::Placement::placed),
         )))
     }
 
@@ -1122,17 +1124,19 @@ impl NatureLods {
         let frustum = <[f32; 16]>::try_from(clip_from_world).ok();
         self.0
             .update([x, y, z], fov_y, seconds, bias, fade, frustum);
-        self.0.changed().then(|| {
-            self.0
-                .shown()
-                .iter()
-                .flat_map(|shown| {
-                    #[allow(clippy::cast_precision_loss)]
-                    [shown.placement as f32, shown.level as f32, shown.fade]
-                })
-                .collect()
-        })
+        self.0.changed().then(|| shown_floats(self.0.shown()))
     }
+}
+
+/// Per drawn level its placement, level and fade, three floats each.
+pub(crate) fn shown_floats(shown: &[mmorpg_presentation::lod::Shown]) -> Vec<f32> {
+    shown
+        .iter()
+        .flat_map(|shown| {
+            #[allow(clippy::cast_precision_loss)]
+            [shown.placement as f32, shown.level as f32, shown.fade]
+        })
+        .collect()
 }
 
 /// Greyhaven's ambient animal entries (#419), in [`ambient_animal_frame`] order.

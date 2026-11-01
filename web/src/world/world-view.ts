@@ -521,7 +521,7 @@ export class WorldView {
     this.#settlement = new KitModules(SETTLEMENT_BUNDLE, "settlement props", world.scenery.settlement.entries, world.scenery.settlement.placements);
     // The arena's fortress kit (#591) loads at once: the whole fortress is in view from the courtyard.
     this.#fortress = world.scenery.fortress ? new CompositionKit(world.scenery.fortress) : null;
-    void this.#fortress?.load(THREE.MathUtils.degToRad(this.#camera.fov));
+    void this.#fortress?.load();
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
     // starting area's pieces, and play fetches each area the player approaches.
     this.#ambient = new AmbientAnimals(world.scenery.ambient);
@@ -1155,9 +1155,9 @@ export class WorldView {
       this.#sound.listen(view.eye, [right.x, right.y, right.z]);
       this.#sound.pump();
     }
-    this.#fortress?.update(view.eye);
     const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: this.#outpost?.drawn ?? false, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
     this.#nature?.update(this.#camera, deltaSeconds, animate);
+    this.#fortress?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
     nodes.push(...frame.nodes, ...unitNodes);

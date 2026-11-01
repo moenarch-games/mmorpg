@@ -172,13 +172,17 @@ fn buffers() -> &'static SceneBuffers {
 struct DressingEntry {
     /// Every bundle entry key drawn, sorted.
     entries: Vec<String>,
-    statics: Vec<StaticEntry>,
+    /// Every piece, as [`ArenaPresentation::kit_update`] indexes them: the static pieces, then
+    /// the lift pieces at their platform's low stop.
+    placements: Vec<PlacementEntry>,
+    /// The lift pieces, in placement order after the statics.
     lifts: Vec<LiftEntry>,
+    /// Per entry its variants, finest first.
     lods: Vec<LodEntry>,
 }
 
 #[derive(Serialize)]
-struct StaticEntry {
+struct PlacementEntry {
     key: String,
     /// Column-major entry-to-world matrix, metres.
     matrix: [f32; 16],
@@ -186,20 +190,24 @@ struct StaticEntry {
 
 #[derive(Serialize)]
 struct LiftEntry {
-    key: String,
     /// The platform whose `UnitPresenter` frame `platforms` entry places it.
     platform: u8,
-    /// Radians about +Y.
-    yaw: f64,
+    /// Its index into the placements.
+    placement: usize,
 }
 
 #[derive(Serialize)]
 struct LodEntry {
     key: String,
-    /// Bounding-sphere centre in the entry's frame, metres.
-    centre: [f64; 3],
-    /// `[variant, camera distance (metres, to the centre) it is drawn from]`, finest first.
-    levels: Vec<(String, f64)>,
+    variants: Vec<String>,
+}
+
+/// The dressed kit: its pieces and their level selection.
+struct Kit {
+    dressing: mmorpg_presentation::composition::Dressing,
+    lods: mmorpg_presentation::lod::Lods,
+    /// Each lift piece's base where it was last placed, metres.
+    bases: Vec<[f64; 3]>,
 }
 
 /// Reuses the same Rust scenery meshes and character catalog as the ordinary client.
@@ -208,30 +216,36 @@ struct LodEntry {
 pub struct ArenaPresentation {
     /// The graybox props the fortress kit dresses (sorted), once [`Self::dress`] read it.
     dressed: Vec<usize>,
+    kit: Option<Kit>,
 }
 
 impl ArenaPresentation {
-    fn dressing(&mut self, descriptor: &str, fov_y: f64) -> Result<DressingEntry, String> {
+    fn dressing(&mut self, descriptor: &str) -> Result<DressingEntry, String> {
         let dressing =
             mmorpg_presentation::composition::Descriptor::parse(descriptor)?.dress(&fortress());
         self.dressed = dressing.props(&graybox().1);
-        Ok(DressingEntry {
+        let statics = dressing.statics.len();
+        let entry = DressingEntry {
             entries: dressing.entries().into_iter().map(str::to_owned).collect(),
-            statics: dressing
+            placements: dressing
                 .statics
                 .iter()
-                .map(|piece| StaticEntry {
+                .map(|piece| PlacementEntry {
                     key: piece.entry.clone(),
                     matrix: piece.model,
                 })
+                .chain(dressing.lifts.iter().map(|piece| PlacementEntry {
+                    key: piece.entry.clone(),
+                    matrix: piece.model(piece.low),
+                }))
                 .collect(),
             lifts: dressing
                 .lifts
                 .iter()
-                .map(|piece| LiftEntry {
-                    key: piece.entry.clone(),
+                .enumerate()
+                .map(|(index, piece)| LiftEntry {
                     platform: piece.platform.get(),
-                    yaw: piece.yaw,
+                    placement: statics + index,
                 })
                 .collect(),
             lods: dressing
@@ -239,16 +253,20 @@ impl ArenaPresentation {
                 .iter()
                 .map(|entry| LodEntry {
                     key: entry.entry.clone(),
-                    centre: entry.centre,
-                    levels: entry
+                    variants: entry
                         .levels
                         .iter()
                         .map(|(variant, _)| variant.clone())
-                        .zip(entry.distances(fov_y))
                         .collect(),
                 })
                 .collect(),
-        })
+        };
+        self.kit = Some(Kit {
+            lods: dressing.lods(),
+            bases: dressing.lifts.iter().map(|lift| lift.low).collect(),
+            dressing,
+        });
+        Ok(entry)
     }
 }
 
@@ -260,18 +278,62 @@ impl ArenaPresentation {
     }
 
     /// The fortress kit (#591) over the fortress, from its descriptor JSON: the pieces whose
-    /// every body is exactly one of [`fortress`]'s, and each entry's level switch distances for
-    /// a camera of vertical field of view `fov_y` (radians). The graybox of the bodies they
-    /// dress is hidden while the page draws the kit ([`Self::static_scene_shown`]).
+    /// every body is exactly one of [`fortress`]'s and each entry's variants. The graybox of
+    /// the bodies they dress is hidden while the page draws the kit
+    /// ([`Self::static_scene_shown`]); [`Self::kit_update`] picks each piece's level.
     ///
     /// # Errors
     ///
     /// For a malformed descriptor.
-    pub fn dress(&mut self, descriptor: &str, fov_y: f64) -> Result<String, JsError> {
+    pub fn dress(&mut self, descriptor: &str) -> Result<String, JsError> {
         let entry = self
-            .dressing(descriptor, fov_y)
+            .dressing(descriptor)
             .map_err(|error| JsError::new(&error))?;
         Ok(serde_json::to_string(&entry).expect("the dressing is serializable data"))
+    }
+
+    /// Moves the lift piece of `platform` to the platform's base at `(x, y, z)` metres: its
+    /// 16 column-major model floats, or none when the kit draws no piece for that platform or
+    /// it has not moved.
+    #[wasm_bindgen(js_name = kitPlace)]
+    pub fn kit_place(&mut self, platform: u8, x: f64, y: f64, z: f64) -> Option<Vec<f32>> {
+        let kit = self.kit.as_mut()?;
+        let index = kit
+            .dressing
+            .lifts
+            .iter()
+            .position(|lift| lift.platform.get() == platform)?;
+        if kit.bases[index] == [x, y, z] {
+            return None;
+        }
+        kit.bases[index] = [x, y, z];
+        let placed = kit.dressing.lifts[index].placed([x, y, z]);
+        kit.lods.place(kit.dressing.statics.len() + index, placed);
+        Some(placed.model.to_vec())
+    }
+
+    /// Advances the kit's level selection (`mmorpg_presentation::lod::Lods::update`) for a
+    /// camera at `(x, y, z)` metres with vertical field of view `fov_y` radians and
+    /// column-major `clip_from_world` (16 floats), `seconds` after the previous update: per
+    /// drawn level its placement, level and fade, three floats each, or `undefined` when that
+    /// is unchanged (the camera rests, nothing fades and no lift moved).
+    #[allow(clippy::too_many_arguments)]
+    #[wasm_bindgen(js_name = kitUpdate)]
+    pub fn kit_update(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: f64,
+        fov_y: f64,
+        clip_from_world: &[f32],
+        seconds: f64,
+        bias: f64,
+        fade: bool,
+    ) -> Option<Vec<f32>> {
+        let lods = &mut self.kit.as_mut()?.lods;
+        let frustum = <[f32; 16]>::try_from(clip_from_world).ok();
+        lods.update([x, y, z], fov_y, seconds, bias, fade, frustum);
+        lods.changed().then(|| crate::shown_floats(lods.shown()))
     }
 
     /// One model matrix (16 floats) per animated part of the static scene: each body's graybox.
@@ -384,9 +446,7 @@ mod tests {
     #[test]
     fn the_fortress_kit_dresses_every_body_but_the_ground_and_hides_its_graybox() {
         let mut presentation = ArenaPresentation::new();
-        let dressing = presentation
-            .dressing(&kit_descriptor(), 50_f64.to_radians())
-            .unwrap();
+        let dressing = presentation.dressing(&kit_descriptor()).unwrap();
         let fortress = fortress();
         assert_eq!(dressing.lifts.len(), fortress.platforms().len());
         // Every graybox prop is dressed: the whole fortress is drawn from the kit.
@@ -395,11 +455,30 @@ mod tests {
         let shown = |kit| presentation.static_scene_shown(&[], kit);
         assert!(shown(false).iter().all(|&shown| shown == 1));
         assert!(shown(true).iter().all(|&shown| shown == 0));
-        // Each drawn entry has levels from the finest at distance 0.
+        // Each drawn entry has its levels, the finest first.
         assert_eq!(dressing.entries.len(), dressing.lods.len());
         for entry in &dressing.lods {
-            assert_eq!(entry.levels[0], ("default".to_owned(), 0.), "{}", entry.key);
+            assert_eq!(entry.variants[0], "default", "{}", entry.key);
         }
+        // From the courtyard every piece is drawn once, settled (no frustum: all in view);
+        // the same camera again changes nothing until a lift moves.
+        let fov = 50_f64.to_radians();
+        let update = |presentation: &mut ArenaPresentation| {
+            presentation.kit_update(0., 2., -60., fov, &[], 0.016, 1., true)
+        };
+        let drawn = update(&mut presentation).expect("the first update draws");
+        assert_eq!(drawn.len(), 3 * dressing.placements.len());
+        assert!(drawn.chunks(3).all(|shown| shown[2] == 1.));
+        assert_eq!(update(&mut presentation), None);
+        // A lift piece starts at its low stop and follows its platform.
+        let lift = &dressing.lifts[0];
+        let low = dressing.placements[lift.placement].matrix;
+        let [x, y, z] = [12, 13, 14].map(|i| f64::from(low[i]));
+        let raised = presentation
+            .kit_place(lift.platform, x, y + 3., z)
+            .expect("the lift moved");
+        assert!((f64::from(raised[13]) - (y + 3.)).abs() < 1e-4);
+        assert_eq!(presentation.kit_place(lift.platform, x, y + 3., z), None);
         // The courtyard lifts rest flush with the ground: the terrain leaves their footprints.
         assert_eq!(shared_scenery().terrain_holes.len(), 4);
     }
@@ -412,7 +491,7 @@ mod tests {
         let id = wall["body"].as_u64().unwrap() as u32;
         wall["halfExtents"][1] = (wall["halfExtents"][1].as_i64().unwrap() + 1).into();
         let mut presentation = ArenaPresentation::new();
-        let dressing = presentation.dressing(&descriptor.to_string(), 1.).unwrap();
+        let dressing = presentation.dressing(&descriptor.to_string()).unwrap();
         let scenery = shared_scenery();
         let prop = scenery
             .props
@@ -439,7 +518,7 @@ mod tests {
                 ))
                 .count()
         );
-        assert!(dressing.statics.len() < 82 - 8);
+        assert!(dressing.placements.len() - dressing.lifts.len() < 82 - 8);
     }
 
     #[test]
