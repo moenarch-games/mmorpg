@@ -8,8 +8,11 @@ export const NATURE_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.natur
 export type NatureLodsHandle = {
   /** An entry's variants, finest first, as `entry/variant`. */
   variants(entry: string): string[];
-  /** Per drawn level its placement, level and fade (1 settled; `t` incoming, `-t` outgoing), three floats each. */
-  update(x: number, y: number, z: number, fovY: number, clipFromWorld: Float32Array, seconds: number, bias: number, fade: boolean): Float32Array;
+  /**
+   * Per drawn level its placement, level and fade (1 settled; `t` incoming, `-t` outgoing), three floats each, or
+   * `undefined` when unchanged since the previous update (the camera rests and nothing fades).
+   */
+  update(x: number, y: number, z: number, fovY: number, clipFromWorld: Float32Array, seconds: number, bias: number, fade: boolean): Float32Array | undefined;
 };
 
 export type NatureSource = {
@@ -19,6 +22,21 @@ export type NatureSource = {
   /** The shared selection for these placements from the bundle's `nature-descriptor` JSON. */
   lods(descriptor: string): NatureLodsHandle;
 };
+
+/** Uploads only the first `count` items of `attribute` (the drawn instances), not its whole capacity. */
+function upload(attribute: THREE.BufferAttribute, count: number): void {
+  attribute.clearUpdateRanges();
+  attribute.addUpdateRange(0, count * attribute.itemSize);
+  attribute.needsUpdate = true;
+}
+
+/** Draws the first `count` instances of `mesh` (hidden at none); whether it draws any. */
+function place(mesh: THREE.InstancedMesh, count: number): boolean {
+  mesh.count = count;
+  mesh.visible = count > 0;
+  if (count > 0) { upload(mesh.instanceMatrix, count); }
+  return count > 0;
+}
 
 /**
  * Screen-door cross-fade: an instance with fade `t` in (0, 1) keeps the fraction `t` of its pixels, one with `-t` the
@@ -42,8 +60,12 @@ if (vInstanceFade < 0.999) {
   return faded;
 }
 
-/** One drawn primitive of one entry level: its instances this frame. */
-type Part = { mesh: THREE.InstancedMesh; fade: THREE.InstancedBufferAttribute };
+/**
+ * One drawn primitive of one entry level: its settled instances through the glTF material, and its cross-fading
+ * instances through the dithered copy (#593). The copy's `discard` would cost every settled pixel its early depth
+ * test, so only the few fading instances pay for it. Both meshes share the geometry's buffers.
+ */
+type Part = { settled: THREE.InstancedMesh; fading: THREE.InstancedMesh; fade: THREE.InstancedBufferAttribute };
 
 /**
  * Greyhaven's trees and rocks from asset-tooling's `greyhaven-nature` bundle (#49), placed where the shared Rust
@@ -61,9 +83,10 @@ export class Nature {
   #lods: NatureLodsHandle | null = null;
   #loading: Promise<boolean> | null = null;
   #changed = false;
-  #last: Float32Array | null = null;
+  /** Per entry, per level how many placements it draws (settled and fading). */
   #counts: number[][] = [];
   readonly #clip = new THREE.Matrix4();
+  readonly #clipFloats = new Float32Array(16);
 
   constructor(source: NatureSource) {
     this.#source = source;
@@ -112,17 +135,26 @@ export class Nature {
           material = crossFaded(source);
           materials.set(source, material);
         }
-        const mesh = new THREE.InstancedMesh(geometry, material, Math.max(capacity[entry]!, 1));
-        mesh.name = `${entries[entry]}#${parts.length}`;
-        // Placements are culled by the shared selection, not by one stale bounding sphere.
-        mesh.frustumCulled = false;
-        mesh.count = 0;
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        const fade = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(capacity[entry]!, 1)).fill(1), 1);
+        const size = Math.max(capacity[entry]!, 1);
+        // The fading copy shares the geometry's buffers and adds the per-instance fade.
+        const fadingGeometry = new THREE.BufferGeometry();
+        fadingGeometry.setIndex(geometry.index);
+        for (const [name, attribute] of Object.entries(geometry.attributes)) { fadingGeometry.setAttribute(name, attribute); }
+        const fade = new THREE.InstancedBufferAttribute(new Float32Array(size).fill(1), 1);
         fade.setUsage(THREE.DynamicDrawUsage);
-        geometry.setAttribute("instanceFade", fade);
-        parts.push({ mesh, fade });
-        this.#root.add(mesh);
+        fadingGeometry.setAttribute("instanceFade", fade);
+        const instanced = (meshGeometry: THREE.BufferGeometry, meshMaterial: THREE.Material, suffix: string) => {
+          const mesh = new THREE.InstancedMesh(meshGeometry, meshMaterial, size);
+          mesh.name = `${entries[entry]}#${parts.length}${suffix}`;
+          // Placements are culled by the shared selection, not by one stale bounding sphere.
+          mesh.frustumCulled = false;
+          mesh.count = 0;
+          mesh.visible = false;
+          mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+          this.#root.add(mesh);
+          return mesh;
+        };
+        parts.push({ settled: instanced(geometry, source, ""), fading: instanced(fadingGeometry, material, ".fading"), fade });
       });
       return parts;
     }));
@@ -143,34 +175,40 @@ export class Nature {
     const lods = this.#lods;
     if (!lods) { return; }
     this.#clip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    const clip = Float32Array.from(this.#clip.elements);
+    this.#clipFloats.set(this.#clip.elements);
     const p = camera.position;
-    const shown = lods.update(p.x, p.y, p.z, THREE.MathUtils.degToRad(camera.fov), clip, seconds, bias, fade);
-    const last = this.#last;
-    if (last && last.length === shown.length && last.every((value, index) => value === shown[index])) { return; }
-    this.#last = shown;
-    for (const counts of this.#counts) { counts.fill(0); }
+    // Unchanged (camera at rest, nothing fading): the instances stay uploaded as they are.
+    const shown = lods.update(p.x, p.y, p.z, THREE.MathUtils.degToRad(camera.fov), this.#clipFloats, seconds, bias, fade);
+    if (!shown) { return; }
+    const settled = this.#levels.map((levels) => levels.map(() => 0));
+    const fading = this.#levels.map((levels) => levels.map(() => 0));
     const placements = this.#source.placements;
     for (let index = 0; index < shown.length; index += 3) {
-      const placement = shown[index]!;
-      const level = shown[index + 1]!;
+      const placement: number = shown[index]!;
+      const level: number = shown[index + 1]!;
+      const t: number = shown[index + 2]!;
       const entry = this.#entryOf[placement]!;
       const parts = this.#levels[entry]?.[level];
       if (!parts) { continue; }
-      const slot = this.#counts[entry]![level]!++;
       const matrix = placements[placement]!.matrix;
-      for (const part of parts) {
-        (part.mesh.instanceMatrix.array as Float32Array).set(matrix, slot * 16);
-        (part.fade.array as Float32Array)[slot] = shown[index + 2]!;
+      if (t >= 1) {
+        const slot = settled[entry]![level]!++;
+        for (const part of parts) { (part.settled.instanceMatrix.array as Float32Array).set(matrix, slot * 16); }
+      } else {
+        const slot = fading[entry]![level]!++;
+        for (const part of parts) {
+          (part.fading.instanceMatrix.array as Float32Array).set(matrix, slot * 16);
+          (part.fade.array as Float32Array)[slot] = t;
+        }
       }
     }
     this.#levels.forEach((levels, entry) => levels.forEach((parts, level) => {
-      const count = this.#counts[entry]![level]!;
+      const settledCount = settled[entry]![level]!;
+      const fadingCount = fading[entry]![level]!;
+      this.#counts[entry]![level] = settledCount + fadingCount;
       for (const part of parts) {
-        part.mesh.count = count;
-        part.mesh.visible = count > 0;
-        part.mesh.instanceMatrix.needsUpdate = true;
-        part.fade.needsUpdate = true;
+        place(part.settled, settledCount);
+        if (place(part.fading, fadingCount)) { upload(part.fade, fadingCount); }
       }
     }));
   }
