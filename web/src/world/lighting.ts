@@ -33,8 +33,9 @@ export const EMISSIVE_NITS = 80;
 /**
  * Sun cascades for the gameplay camera, the native `SUN_SHADOWS` out to the same 160 m but in three cascades instead
  * of four: three.js redraws the scene once per cascade, one draw call per mesh, and a fourth cascade cost the browser
- * about a fifth of its frame rate in Greyhaven (#600). Since render-engine#51 each cascade skips the instanced meshes
- * it does not reach, but the frame stays bound by draw calls, so three cascades remain.
+ * about a fifth of its frame rate in Greyhaven (#600). Since #615 the static scenery draws in batches (about 1 100
+ * draw calls a frame instead of 2 700), but a fourth cascade still costs about a tenth of the frame rate (45 instead of
+ * 50 fps in Chrome on an RTX 3060 Ti), so three cascades remain.
  */
 const SUN_SHADOWS: SunShadows = {
   numCascades: 3, minDistance: 0.2, firstCascadeFarBound: 12, maxDistance: 160, overlapProportion: 0.2, depthBias: 0.02, normalBias: 1.8,
