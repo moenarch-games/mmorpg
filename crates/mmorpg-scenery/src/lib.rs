@@ -156,6 +156,9 @@ pub enum PropKind {
     ShrineKit,
     /// A ladder (#490): two rails and rungs up its collider, against a tower.
     Ladder,
+    /// A climbable rope (#621): a column from the face it hangs down out to the rope's axis
+    /// (`mmorpg_core::greyhaven_vale::Rope`).
+    Rope,
     /// Graybox level geometry (#552), each fitted exactly to its collider box with a lighter
     /// walkable top: a wall, parapet or solid column;
     GrayboxWall,
@@ -245,6 +248,7 @@ impl PropKind {
             Self::LoadingDock => "loading-dock",
             Self::ShrineKit => "shrine-kit",
             Self::Ladder => "ladder",
+            Self::Rope => "rope",
             Self::GrayboxWall => "graybox-wall",
             Self::GrayboxTower => "graybox-tower",
             Self::GrayboxWalkway => "graybox-walkway",
@@ -538,6 +542,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         _ if ids::CRATES.contains(&id) => PropKind::Crate,
         ids::WATCHTOWER => PropKind::Keep,
         _ if ids::LADDERS.contains(&id) => PropKind::Ladder,
+        _ if ids::ROPES.contains(&id) => PropKind::Rope,
         ids::MILL_DOCK => PropKind::LoadingDock,
         _ if ids::STANDING_STONES.contains(&id) => PropKind::Waystone,
         _ if ids::RUINS.contains(&id) => PropKind::House,
@@ -657,6 +662,7 @@ const fn kind_code(kind: PropKind) -> [u8; 2] {
         PropKind::LoadingDock => [33, 0],
         PropKind::ShrineKit => [34, 0],
         PropKind::Ladder => [35, 0],
+        PropKind::Rope => [37, 0],
         PropKind::GrayboxWall => [36, 0],
         PropKind::GrayboxTower => [36, 1],
         PropKind::GrayboxWalkway => [36, 2],

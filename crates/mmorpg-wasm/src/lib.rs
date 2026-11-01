@@ -666,8 +666,10 @@ pub fn static_scene_shown(viewer: &[f64], outpost_kit: bool, settlement_props: b
         mmorpg_presentation::Kits {
             outpost: outpost_kit,
             settlement_props,
-            // Nature fallbacks are whole static groups (#49), which the browser hides itself.
+            // Nature and climbing fallbacks are whole static groups (#49, #621), which the browser
+            // hides itself.
             nature: false,
+            climbing: false,
             dressed: &[],
         },
     )
@@ -1056,58 +1058,95 @@ pub fn settlement_prop_models() -> Vec<f32> {
         .collect()
 }
 
-/// The `greyhaven-nature` bundle entries the trees, rocks and bushes are drawn from (#49).
-#[wasm_bindgen(js_name = natureEntries)]
-#[must_use]
-pub fn nature_entries() -> Vec<String> {
-    mmorpg_presentation::nature::ENTRIES
+/// A bundle drawn at fixed placements through the shared level selection: `"nature"`, the
+/// `greyhaven-nature` trees, rocks and bushes (#49), or `"climbing"`, the climbing kit's
+/// ladders, ropes and ivy (#621).
+fn placed_kit(
+    kit: &str,
+) -> Result<
+    (
+        &'static [&'static str],
+        &'static [mmorpg_presentation::lod::Placement],
+    ),
+    JsError,
+> {
+    use mmorpg_presentation::{climbing, lod::Placement, nature};
+    static NATURE: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    static CLIMBING: scenery::PerZone<Vec<Placement>> = scenery::PerZone::new();
+    match kit {
+        "nature" => Ok((
+            &nature::ENTRIES,
+            NATURE.get(|_| nature::placements(scenery::hosted_scenery())),
+        )),
+        "climbing" => Ok((
+            &climbing::ENTRIES,
+            CLIMBING.get(|_| climbing::placements(scenery::hosted_scenery())),
+        )),
+        other => Err(JsError::new(&format!("no placed kit {other:?}"))),
+    }
+}
+
+/// The bundle entries `kit` (`"nature"` or `"climbing"`) is drawn from (#49, #621).
+///
+/// # Errors
+///
+/// For an unknown kit.
+#[wasm_bindgen(js_name = kitEntries)]
+pub fn kit_entries(kit: &str) -> Result<Vec<String>, JsError> {
+    Ok(placed_kit(kit)?
+        .0
         .iter()
         .map(|entry| (*entry).to_owned())
-        .collect()
+        .collect())
 }
 
-/// The entry of each placed tree, rock and bush (#49), in [`nature_models`] order.
-#[wasm_bindgen(js_name = natureKeys)]
-#[must_use]
-pub fn nature_keys() -> Vec<String> {
-    hosted_nature()
+/// The entry of each of `kit`'s placements, in [`kit_models`] order.
+///
+/// # Errors
+///
+/// For an unknown kit.
+#[wasm_bindgen(js_name = kitKeys)]
+pub fn kit_keys(kit: &str) -> Result<Vec<String>, JsError> {
+    Ok(placed_kit(kit)?
+        .1
         .iter()
         .map(|placement| placement.entry.to_owned())
-        .collect()
+        .collect())
 }
 
-/// 16 column-major model floats per placed tree, rock and bush (#49).
-#[wasm_bindgen(js_name = natureModels)]
-#[must_use]
-pub fn nature_models() -> Vec<f32> {
-    hosted_nature()
+/// 16 column-major model floats per placement of `kit`.
+///
+/// # Errors
+///
+/// For an unknown kit.
+#[wasm_bindgen(js_name = kitModels)]
+pub fn kit_models(kit: &str) -> Result<Vec<f32>, JsError> {
+    Ok(placed_kit(kit)?
+        .1
         .iter()
         .flat_map(|placement| placement.model)
-        .collect()
+        .collect())
 }
 
-fn hosted_nature() -> &'static [mmorpg_presentation::nature::Placement] {
-    static PLACEMENTS: scenery::PerZone<Vec<mmorpg_presentation::nature::Placement>> =
-        scenery::PerZone::new();
-    PLACEMENTS.get(|_| mmorpg_presentation::nature::placements(scenery::hosted_scenery()))
-}
-
-/// The trees' and rocks' levels of detail (#49), from the bundle's `nature-descriptor`, for the
-/// placements [`nature_keys`] lists: the same selection and cross-fade the native client runs.
+/// A placed kit's levels of detail (#49, #621), from its bundle's descriptor, for the
+/// placements [`kit_keys`] lists: the same selection and cross-fade the native client runs.
 #[wasm_bindgen]
-pub struct NatureLods(mmorpg_presentation::nature::Lods);
+pub struct KitLods(mmorpg_presentation::lod::Lods);
 
 #[wasm_bindgen]
-impl NatureLods {
+impl KitLods {
     #[wasm_bindgen(constructor)]
-    pub fn new(descriptor: &str) -> Result<Self, JsError> {
-        let entries = mmorpg_presentation::nature::descriptor_lods(descriptor)
+    pub fn new(kit: &str, descriptor: &str) -> Result<Self, JsError> {
+        let placements = placed_kit(kit)?.1;
+        let descriptor: serde_json::Value = serde_json::from_str(descriptor)
+            .map_err(|error| JsError::new(&format!("{kit} descriptor: {error}")))?;
+        let entries = mmorpg_presentation::lod::descriptor_lods(&descriptor)
             .map_err(|error| JsError::new(&error))?;
-        Ok(Self(mmorpg_presentation::nature::Lods::new(
+        Ok(Self(mmorpg_presentation::lod::Lods::new(
             entries,
-            hosted_nature()
+            placements
                 .iter()
-                .map(mmorpg_presentation::nature::Placement::placed),
+                .map(mmorpg_presentation::lod::Placement::placed),
         )))
     }
 

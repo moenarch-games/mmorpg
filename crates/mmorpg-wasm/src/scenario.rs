@@ -56,6 +56,11 @@ pub enum Scenario {
     /// The same Cleric below the 10 m highland crag on the gorge's eastern rim, facing its southern
     /// face: walk into it, jump to grab it, then climb, traverse and top out (#500).
     Climb,
+    /// The same Cleric 3 m south of the Eastwater watchtower's ladder, or of the rope up the
+    /// sheer highland crag west of the trail's bend, facing it: walk into it, jump to grab it and
+    /// climb to the top (#621).
+    ClimbLadder,
+    ClimbRope,
     /// A level 6 Warden with full rage at the eastern edge of Wolfrun Woods, facing a wolf, to review the
     /// sword-and-shield clips (#582): the directed Heroic Strike's nine slashes and the swing's
     /// slash toward a wolf (low) …
@@ -145,6 +150,8 @@ impl Scenario {
             Self::MantleMid => "mantle-mid",
             Self::MantleHigh => "mantle-high",
             Self::Climb => "climb",
+            Self::ClimbLadder => "climb-ladder",
+            Self::ClimbRope => "climb-rope",
             Self::WardenSlashes => "warden-slashes",
             Self::WardenGuards => "warden-guards",
             Self::WardenCharge => "warden-charge",
@@ -237,7 +244,9 @@ impl Scenario {
             | Self::MantleLow
             | Self::MantleMid
             | Self::MantleHigh
-            | Self::Climb => ClassChoice {
+            | Self::Climb
+            | Self::ClimbLadder
+            | Self::ClimbRope => ClassChoice {
                 class: PlayerClass::Cleric,
                 sex: Sex::Male,
             },
@@ -283,7 +292,13 @@ impl Scenario {
             | Self::RedbrandSmash
             | Self::RedbrandBandage
             | Self::RedbrandCrossbowman => 8,
-            Self::MantleLow | Self::MantleMid | Self::MantleHigh | Self::Climb | Self::Grips => 1,
+            Self::MantleLow
+            | Self::MantleMid
+            | Self::MantleHigh
+            | Self::Climb
+            | Self::ClimbLadder
+            | Self::ClimbRope
+            | Self::Grips => 1,
         }
     }
 
@@ -342,6 +357,9 @@ impl Scenario {
             Self::MantleHigh => ([36_800, 13_150], 32_768),
             // 3 m south of the crag's southern face; facing north.
             Self::Climb => ([6_800, -29_300], 32_768),
+            // 3 m south of the watchtower's ladder and of the crag's rope; facing north.
+            Self::ClimbLadder => ([16_700, -5_500], 32_768),
+            Self::ClimbRope => ([-13_400, -35_100], 32_768),
         }
     }
 

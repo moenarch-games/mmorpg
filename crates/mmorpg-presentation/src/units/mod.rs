@@ -260,6 +260,10 @@ pub struct UnitPresenter {
     motions: BTreeMap<Kind, traversal::Motions>,
     /// Each imported unit's drawn root through a mantle (#500).
     aligns: BTreeMap<EntityRef, traversal::Align>,
+    /// Every ladder's rung grid (#621), and how far each imported unit holding still on a
+    /// ladder is drawn lifted so its hands meet the rungs.
+    rungs: Vec<crate::climbing::Rungs>,
+    rung_lifts: BTreeMap<EntityRef, f64>,
     ready: BTreeSet<Kind>,
     /// The client draws the residents' appearance presets on the Ranger (#418).
     residents: bool,
@@ -289,6 +293,7 @@ impl UnitPresenter {
     #[must_use]
     pub fn new(player_id: u32, content: Arc<ZoneContent>, scenery: Arc<Scenery>) -> Self {
         let structures = crate::structures::Structures::on_scenery(content.pieces(), &scenery);
+        let rungs = crate::climbing::rungs(&scenery);
         Self {
             structures,
             player_id,
@@ -304,6 +309,8 @@ impl UnitPresenter {
             durations: BTreeMap::new(),
             motions: BTreeMap::new(),
             aligns: BTreeMap::new(),
+            rungs,
+            rung_lifts: BTreeMap::new(),
             ready: BTreeSet::new(),
             residents: false,
             equipment: None,
@@ -426,6 +433,7 @@ impl UnitPresenter {
         self.playbacks.clear();
         self.sways.clear();
         self.aligns.clear();
+        self.rung_lifts.clear();
         self.deaths.clear();
         self.stuns.clear();
         self.hastes.clear();
@@ -1010,6 +1018,7 @@ impl UnitPresenter {
         // A unit back from an interest gap swings again from rest.
         self.sways.retain(|e, _| present.contains(e));
         self.aligns.retain(|e, _| present.contains(e));
+        self.rung_lifts.retain(|e, _| present.contains(e));
         self.deaths.retain(|e, _| present.contains(e));
         self.stuns
             .retain(|e, &mut until| present.contains(e) && input.seconds < until);
@@ -1171,6 +1180,28 @@ impl UnitPresenter {
                         None => playback.abandon(),
                     }
                 }
+                // On a ladder (#621) the hands hold its rungs: holding still, the drawn body
+                // eases up or down (at most half a rung) until the hold's grip meets them;
+                // climbing, the loop's phase follows the rung grid instead.
+                let rung = crate::climbing::RUNG_SPACING;
+                let on_rungs = (traversal == mmorpg_core::TraversalView::ClimbingLadder)
+                    .then(|| crate::climbing::rung_offset(&self.rungs, feet))
+                    .flatten();
+                let target = match on_rungs {
+                    Some(offset) if vertical.abs() < imported::CLIMB_MOVING_SPEED => {
+                        (imported::LADDER_IDLE_RUNG_OFFSET - offset + rung / 2.).rem_euclid(rung)
+                            - rung / 2.
+                    }
+                    _ => 0.,
+                };
+                let rung_lift = self.rung_lifts.entry(entity).or_default();
+                *rung_lift += (target - *rung_lift)
+                    * if reduced {
+                        1.
+                    } else {
+                        1. - (-input.dt / 0.12).exp()
+                    };
+                let rung_lift = *rung_lift;
                 let durations = &self.durations;
                 let animation = self.playbacks.entry(entity).or_default().advance(
                     kind.clips(),
@@ -1183,6 +1214,7 @@ impl UnitPresenter {
                     imported::Cues {
                         traversal,
                         motions,
+                        rungs: on_rungs.map(|offset| (offset + rung_lift).rem_euclid(rung)),
                         speed,
                         direction: (-loc.right).atan2(loc.forward),
                         turn: loc.turn,
@@ -1211,7 +1243,9 @@ impl UnitPresenter {
                     reduced,
                 );
                 let root = Frame {
-                    p: std::array::from_fn(|axis| feet[axis] + lift[axis]),
+                    p: std::array::from_fn(|axis| {
+                        feet[axis] + lift[axis] + if axis == 1 { rung_lift } else { 0. }
+                    }),
                     ..root
                 };
                 let mut imported = ImportedUnit {

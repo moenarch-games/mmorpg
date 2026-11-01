@@ -109,12 +109,14 @@ pub struct WorldFrame {
     /// Draws sampled this frame: units, effects, animated props and door swings.
     pub draws: Vec<SceneDraw>,
     pub lighting: Lighting,
-    /// The `greyhaven-nature` trees, rocks and bushes drawn this frame (#49).
+    /// The `greyhaven-nature` trees, rocks and bushes and the climbing kit's parts drawn this
+    /// frame (#49, #621).
     pub nature: Vec<NatureDraw>,
 }
 
-/// One drawn level of a placed tree or rock (#49): `crate::nature::library` entry `entry`
-/// (an index into `mmorpg_presentation::nature::ENTRIES`) at level `level`, placed by
+/// One drawn level of a placed tree, rock or climbing kit part (#49, #621):
+/// `crate::nature::library` entry `entry`
+/// (an index into `crate::nature::entries`) at level `level`, placed by
 /// `model`; `fade` as `mmorpg_presentation::nature::Shown::fade`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NatureDraw {
@@ -425,18 +427,21 @@ impl WorldScene {
             .iter()
             .map(|part| part.draws.iter().map(|draw| lowering.draw(draw)).collect())
             .collect();
-        let placements = mmorpg_presentation::nature::placements(scenery);
+        // The trees, rocks and bushes (#49), then the climbing kit's parts (#621): one library.
+        let mut placements = mmorpg_presentation::nature::placements(scenery);
+        placements.extend(mmorpg_presentation::climbing::placements(scenery));
+        let library = crate::nature::entries();
         let nature = Nature {
-            lods: mmorpg_presentation::nature::Lods::new(
+            lods: mmorpg_presentation::lod::Lods::new(
                 crate::nature::lods(),
                 placements
                     .iter()
-                    .map(mmorpg_presentation::nature::Placement::placed),
+                    .map(mmorpg_presentation::lod::Placement::placed),
             ),
             entries: placements
                 .iter()
                 .map(|placement| {
-                    mmorpg_presentation::nature::ENTRIES
+                    library
                         .iter()
                         .position(|entry| *entry == placement.entry)
                         .expect("placements name bundle entries")
@@ -905,7 +910,7 @@ fn blockout(prop: &Prop, base: f32, boxes: &mut Vec<SceneBox>) {
         PropKind::CropRow => body(&mut part, [0.62, 0.52, 0.16]),
         PropKind::Dock => part([0.0, base + 0.2, 0.0], size, WOOD),
         PropKind::LoadingDock => body(&mut part, STONE),
-        PropKind::Ladder => body(&mut part, WOOD),
+        PropKind::Ladder | PropKind::Rope => body(&mut part, WOOD),
         // A ramp's wedge (#59) is no box; the shared static scene draws it. The shrine kit
         // (#431) is drawn from its bundle. Graybox geometry (#552) is the shared static scene's.
         PropKind::Ramp

@@ -54,10 +54,11 @@ export type TerrainStreamSource = {
 
 /**
  * Which asset-tooling kits the client draws: the Outpost kit buildings (#420), the market square's settlement props
- * (#421), the `greyhaven-nature` trees, rocks and bushes (#49) and the Battle Royale fortress kit (#591).
+ * (#421), the `greyhaven-nature` trees, rocks and bushes (#49), the climbing kit's ladders and ropes (#621) and the Battle
+ * Royale fortress kit (#591).
  */
-export type DrawnKits = { outpost: boolean; settlementProps: boolean; nature: boolean; fortress: boolean };
-const NO_KITS: DrawnKits = { outpost: false, settlementProps: false, nature: false, fortress: false };
+export type DrawnKits = { outpost: boolean; settlementProps: boolean; nature: boolean; climbing: boolean; fortress: boolean };
+const NO_KITS: DrawnKits = { outpost: false, settlementProps: false, nature: false, climbing: false, fortress: false };
 type FallbackKit = keyof DrawnKits;
 
 /** `fallback`: the kit whose procedural stand-in the group is, hidden while the client draws that kit. */

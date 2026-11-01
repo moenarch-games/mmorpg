@@ -165,6 +165,8 @@ pub mod ids {
     /// Ladders up the southern faces of the Eastwater watchtower, the highland lookout and the
     /// drowned watchtower (#490), in [`super::LADDER_TOWERS`] order.
     pub const LADDERS: RangeInclusive<u32> = 600..=602;
+    /// Climbable ropes (#621), in [`super::ROPES`] order.
+    pub const ROPES: RangeInclusive<u32> = 610..=612;
     /// The Greyfang cave's rock walls and roof slab (#159).
     pub const CAVE_WALLS: RangeInclusive<u32> = 540..=546;
     pub const CAVE_ROOF: u32 = 547;
@@ -765,8 +767,88 @@ fn undressed_colliders() -> Vec<StaticCollider> {
     colliders.extend(REGIONS.iter().flat_map(|region| (region.colliders)()));
     colliders.extend(trees());
     colliders.extend((*ids::LADDERS.start()..).zip(LADDER_TOWERS).map(ladder));
+    let ropes: Vec<_> = (*ids::ROPES.start()..)
+        .zip(ROPES)
+        .map(|(id, rope)| rope.collider(id, &colliders))
+        .collect();
+    colliders.extend(ropes);
     colliders
 }
+
+/// A climbable rope (#621) hung from the top of one face of a host collider. Its collider is a
+/// 0.3 m square column from the face out to the rope's axis, from the ground to the host's top,
+/// so a climber holds on 0.3 m in front of the axis (the Ranger's `Rope_*` stand-off).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Rope {
+    /// The collider whose face the rope hangs down.
+    pub host: u32,
+    /// The face's outward normal on XZ: one of `[±1, 0]` and `[0, ±1]`.
+    pub out: [i32; 2],
+    /// Where along the face the rope hangs: its X on a ±Z face, its Z on a ±X face (units).
+    pub along: i32,
+}
+
+/// A rope's axis stands this far in front of its face (0.3 m); its column is as wide.
+pub const ROPE_STAND_OFF_UNITS: i32 = 30;
+
+impl Rope {
+    /// The point on `host`'s face the rope hangs over (XZ, units).
+    #[must_use]
+    pub const fn face(&self, host: &StaticCollider) -> [i32; 2] {
+        if self.out[0] == 0 {
+            [
+                self.along,
+                host.position[2] + self.out[1] * host.half_extents[2],
+            ]
+        } else {
+            [
+                host.position[0] + self.out[0] * host.half_extents[0],
+                self.along,
+            ]
+        }
+    }
+
+    fn collider(&self, id: u32, colliders: &[StaticCollider]) -> StaticCollider {
+        let host = colliders
+            .iter()
+            .find(|collider| collider.id == self.host)
+            .expect("a rope hangs from an existing collider");
+        let [x, z] = self.face(host);
+        let half = ROPE_STAND_OFF_UNITS / 2;
+        let centre = [x + self.out[0] * half, z + self.out[1] * half];
+        let (low, high) = (
+            [centre[0] - half, centre[1] - half],
+            [centre[0] + half, centre[1] + half],
+        );
+        let base = footing(low, high);
+        let top = host.position[1] + host.half_extents[1];
+        let mut collider = standing(id, low, high, top - base);
+        collider.position[1] += base;
+        collider
+    }
+}
+
+/// The climbable ropes (#621): down the Redbrand Hollow's eastern cliff into the camp, between
+/// its lower cliffs; up the Eastwater watchtower's western face, a second way up beside its
+/// ladder; and up the southern face of the sheer highland crag west of the trail's bend, the
+/// only way up it.
+pub const ROPES: [Rope; 3] = [
+    Rope {
+        host: 402,
+        out: [-1, 0],
+        along: -10_050,
+    },
+    Rope {
+        host: ids::WATCHTOWER,
+        out: [-1, 0],
+        along: -6_000,
+    },
+    Rope {
+        host: *ids::HIGHLAND_CRAGS.start() + SHEER_CRAGS[0] as u32,
+        out: [0, 1],
+        along: -13_400,
+    },
+];
 
 /// The towers with a ladder (#490): `(footprint min, footprint max, height)` of the Eastwater
 /// watchtower, the highland lookout and the drowned watchtower.
@@ -789,7 +871,8 @@ fn ladder((id, (min, max, height)): (u32, ([i32; 2], [i32; 2], i32))) -> StaticC
 }
 
 /// Which collision is climbable (#490). Rough rock (crags, the Redbrand cliffs, boulders and
-/// shore rocks), timber (the palisades and fences) and the ladders climb; buildings, towers,
+/// shore rocks), timber (the palisades and fences), the ladders and the ropes (#621) climb;
+/// buildings, towers,
 /// standing stones and cave walls do not. Each kind keeps unclimbable variants: the Redbrand
 /// Hollow's sheer back wall, two sheer highland crags and the stronghold's smooth-planked
 /// northern palisade. On the terrain, the Vale basin's cliffs are rough rock except the sheer
@@ -797,7 +880,7 @@ fn ladder((id, (min, max, height)): (u32, ([i32; 2], [i32; 2], i32))) -> StaticC
 /// route beside its pass while the rest of it is sheer.
 #[must_use]
 pub fn climbing() -> crate::ClimbSurfaces {
-    use crate::Grip::{Ladder, Rock, Timber};
+    use crate::Grip::{Ladder, Rock, Rope, Timber};
     let range = |ids: std::ops::RangeInclusive<u32>, grip| ids.map(move |id| (id, grip));
     // The stronghold's northern palisade (its second structure) is smooth-planked.
     let palisades = highlands::BUILDINGS
@@ -824,6 +907,7 @@ pub fn climbing() -> crate::ClimbSurfaces {
         .chain(range(ids::CLIFFS, Rock).filter(|&(id, _)| id != SHEER_HOLLOW_WALL))
         .chain(crags)
         .chain(range(ids::LADDERS, Ladder))
+        .chain(range(ids::ROPES, Rope))
         .collect();
     let terrain = vec![
         // The sheer cliff under Stillwater Lake, then the rest of the Vale basin's cliffs.

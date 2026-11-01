@@ -42,33 +42,7 @@ pub const ENTRIES: [&str; 8] = [
     CONIFER,
 ];
 
-pub use crate::lod::{Lods, Shown};
-
-/// One placed bundle entry.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Placement {
-    /// The bundle entry, one of [`ENTRIES`].
-    pub entry: &'static str,
-    /// Column-major entry-to-world matrix, metres.
-    pub model: [f32; 16],
-    /// The largest axis scale of `model`, which scales the entry's bounding sphere.
-    pub scale: f64,
-    /// Beyond its class's reach the placement is hidden, like the procedural prop.
-    pub cull: Cull,
-}
-
-impl Placement {
-    /// The placement as [`Lods`] selects its levels.
-    #[must_use]
-    pub fn placed(&self) -> crate::lod::Placed<'static> {
-        crate::lod::Placed {
-            entry: self.entry,
-            model: self.model,
-            scale: self.scale,
-            reach: self.cull.reach(),
-        }
-    }
-}
+pub use crate::lod::{Lods, Placement, Shown};
 
 fn metres(units: i32) -> f64 {
     f64::from(units) / f64::from(UNITS_PER_METRE)

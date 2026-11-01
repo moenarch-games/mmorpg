@@ -38,7 +38,7 @@ import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitP
 import { BatchedScenery } from "./static-batches";
 import { CompositionKit } from "./composition-kit";
 import { Ground } from "./ground";
-import { Nature } from "./nature";
+import { PlacedKit } from "./placed-kit";
 import { AmbientAnimals } from "./ambient-animals";
 import { ArtPrefetch } from "./art-prefetch";
 import { SkyLayer } from "./sky";
@@ -325,7 +325,8 @@ export class WorldView {
   /** Greyhaven's cosmetic cat, dog and rodent (#419), drawn once their bundle loads. */
   #ambient: AmbientAnimals | null = null;
   /** Greyhaven's trees, rocks and bushes (#49), drawn from asset-tooling's bundle once loaded; the procedural ones until then. */
-  #nature: Nature | null = null;
+  #nature: PlacedKit | null = null;
+  #climbing: PlacedKit | null = null;
   #ground: Ground | null = null;
   #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
@@ -527,8 +528,10 @@ export class WorldView {
     this.#sceneryBatches?.dispose();
     this.#sceneryBatches = new BatchedScenery(this.#scene);
     this.#sceneryBatchesChanged = true;
-    this.#nature = new Nature(world.scenery.nature);
+    this.#nature = new PlacedKit(world.scenery.nature);
     void this.#nature.load();
+    this.#climbing = new PlacedKit(world.scenery.climbing);
+    void this.#climbing.load();
     this.#ground = new Ground(world.scenery.staticScene.terrainStream());
     void this.#ground.load(this.#models.ktx2Loader);
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
@@ -748,7 +751,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#ground?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#climbing?.roots().roots ?? []), ...(this.#ground?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1174,9 +1177,10 @@ export class WorldView {
       this.#sound.listen(view.eye, [right.x, right.y, right.z]);
       this.#sound.pump();
     }
-    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: this.#outpost?.drawn ?? false, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
+    const frame = sceneryFrame.nodes(view.eye, { seconds: this.#seconds, animate, viewer: [self.x, self.feetY, self.z], kits: { outpost: this.#outpost?.drawn ?? false, settlementProps: this.#settlement?.drawn ?? false, nature: this.#nature?.drawn ?? false, climbing: this.#climbing?.drawn ?? false, fortress: this.#fortress?.drawn ?? false } });
     this.#ground?.update(view.eye);
     this.#nature?.update(this.#camera, deltaSeconds, animate);
+    this.#climbing?.update(this.#camera, deltaSeconds, animate);
     this.#fortress?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
@@ -1218,11 +1222,12 @@ export class WorldView {
     const fortress = this.#fortress?.roots() ?? { roots: [], changed: false };
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#nature?.roots() ?? { roots: [], changed: false };
+    const climbing = this.#climbing?.roots() ?? { roots: [], changed: false };
     const sceneryBatches = this.#sceneryBatches ? [this.#sceneryBatches.root] : [];
     const sceneryChanged = this.#sceneryBatchesChanged;
     this.#sceneryBatchesChanged = false;
     const ground = this.#ground?.roots() ?? { roots: [], changed: false };
-    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...ground.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
+    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...climbing.roots, ...ground.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;
@@ -1232,7 +1237,7 @@ export class WorldView {
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
       return;
     }
-    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || ground.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
+    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || climbing.changed || ground.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots });
     }
     const work = this.#renderer.render(rendererFrame);
@@ -1588,6 +1593,8 @@ export class WorldView {
       settlement: () => this.#settlement?.observe() ?? null,
       /** Greyhaven's trees, rocks and bushes (#49): whether the bundle loaded, and how many instances each entry level draws. */
       nature: () => this.#nature?.observe() ?? null,
+      /** Greyhaven's ladders, ropes and ivy (#621): whether the climbing kit loaded, and how many instances each part level draws. */
+      climbing: () => this.#climbing?.observe() ?? null,
       ground: () => this.#ground?.observe() ?? null,
       /** The ambient animals (#419): whether they loaded, and each one's entry, clip and feet. */
       ambient: () => this.#ambient?.observe() ?? null,
