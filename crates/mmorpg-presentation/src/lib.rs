@@ -18,6 +18,7 @@ pub mod batching;
 pub mod buildings;
 pub mod composition;
 pub mod geometry;
+pub mod ground;
 mod handholds;
 pub mod lights;
 pub mod lod;
@@ -48,6 +49,8 @@ pub struct Material {
     pub opacity: f32,
     pub unlit: bool,
     pub double_sided: bool,
+    /// The textured ground layer this terrain draw shows, or `None` for a plain material.
+    pub ground: Option<ground::Ground>,
 }
 
 /// One draw: immutable shared geometry, a column-major model matrix and a material.
@@ -349,9 +352,21 @@ fn identity<'a>(draws: impl Iterator<Item = &'a Draw>) -> u64 {
         {
             bytes(&value.to_le_bytes());
         }
+        if let Some(ground) = draw.material.ground {
+            bytes(ground.layer.name().as_bytes());
+            bytes(&[u8::from(ground.overlay)]);
+        }
         if seen.insert(draw.resource_key.clone()) {
             let g = &draw.geometry;
-            for value in g.p.iter().chain(&g.n).chain(&g.colors).flatten() {
+            for value in
+                g.p.iter()
+                    .chain(&g.n)
+                    .chain(&g.colors)
+                    .flatten()
+                    .chain(g.uv.iter().flatten())
+                    .chain(g.tangents.iter().flatten())
+                    .chain(&g.alpha)
+            {
                 bytes(&(*value as f32).to_le_bytes());
             }
             for index in &g.indices {

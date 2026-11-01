@@ -305,6 +305,7 @@ mod tests {
                 opacity: 1.,
                 unlit: false,
                 double_sided: true,
+                ground: None,
             },
             skin: None,
         }

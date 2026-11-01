@@ -429,6 +429,7 @@ async fn offscreen_pixels(
                 unlit: false,
                 emissive: [0.; 3],
                 double_sided: false,
+                ground: None,
             },
             skin: None,
         });
@@ -529,6 +530,22 @@ mod tests {
                         field_of_view_degrees: 50.0,
                         eye: [-41.0, 18.0, 16.0],
                         target: [-69.0, 14.0, 0.0],
+                    },
+                ),
+                (
+                    "vale",
+                    CameraView {
+                        field_of_view_degrees: 50.0,
+                        eye: [0.0, 70.0, 95.0],
+                        target: [0.0, 0.0, -10.0],
+                    },
+                ),
+                (
+                    "lake",
+                    CameraView {
+                        field_of_view_degrees: 50.0,
+                        eye: [30.0, 20.0, -30.0],
+                        target: [56.0, 11.0, -56.0],
                     },
                 ),
             ];
@@ -684,6 +701,71 @@ mod tests {
                 )
                 .unwrap();
                 println!("saved re9-{name}.png");
+            }
+        });
+    }
+
+    /// Reviewable ground evidence (#525): the woods, vale, lake and hub debug viewpoints and a
+    /// walking-height view of the Outpost road at noon, as PNGs in `MMORPG_GROUND_SHOTS`.
+    #[test]
+    #[ignore = "requires a GPU; manual ground evidence"]
+    fn greyhaven_ground_shots() {
+        use mmorpg_core::ZoneCommand;
+        let Some(directory) = std::env::var_os("MMORPG_GROUND_SHOTS") else {
+            return;
+        };
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let content = greyhaven_vale::content();
+            let mut zone =
+                ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+            zone.add_player(1).unwrap();
+            zone.apply_command(1, 1, ZoneCommand::ChooseClass { class: 1, sex: 0 })
+                .unwrap();
+            zone.advance_tick().unwrap();
+            let projection = zone.snapshot_for_player(1).unwrap();
+            let scenery = greyhaven_vale_scenery();
+            let world = WorldScene::new(&scenery);
+            let now = Instant::now();
+            let mut presentation =
+                Presentation::new(1, scenery.clone(), Arc::clone(&content), now).unwrap();
+            presentation.push(projection, now).unwrap();
+            let view = |eye: [f32; 3], target: [f32; 3]| CameraView {
+                field_of_view_degrees: 50.0,
+                eye,
+                target,
+            };
+            // `DEBUG_VIEWPOINTS` in web/src/world/world-view.ts, and a walking-height view.
+            let views = [
+                ("woods", view([-41.0, 18.0, 16.0], [-69.0, 14.0, 0.0])),
+                ("vale", view([0.0, 70.0, 95.0], [0.0, 0.0, -10.0])),
+                ("lake", view([30.0, 20.0, -30.0], [56.0, 11.0, -56.0])),
+                ("hub", view([5.0, 8.5, 31.0], [-14.0, 3.0, 4.0])),
+                ("road", view([2.0, 2.2, 30.0], [-6.0, 0.5, 12.0])),
+            ];
+            let size = [1280, 800];
+            for (index, (name, view)) in views.into_iter().enumerate() {
+                let now = now + Duration::from_secs(2 * index as u64);
+                for step in 0..4 {
+                    let _ = presentation.frame(
+                        &world,
+                        now - Duration::from_millis(250 * (4 - step)),
+                        view,
+                    );
+                }
+                let mut frame = presentation.frame(&world, now, view);
+                frame.lighting.hour = 12.0;
+                let pixels = readback(&frame, &[], view, size, None).await.unwrap();
+                image::save_buffer(
+                    directory.join(format!("{name}.png")),
+                    &pixels,
+                    size[0],
+                    size[1],
+                    image::ExtendedColorType::Rgba8,
+                )
+                .unwrap();
             }
         });
     }

@@ -1112,7 +1112,9 @@ impl Scenery {
         hash.0
     }
 
-    fn road_distance(&self, point: [i32; 2]) -> i64 {
+    /// Units from `point` to the nearest road's edge; zero or less on a road.
+    #[must_use]
+    pub fn road_distance(&self, point: [i32; 2]) -> i64 {
         self.roads
             .iter()
             .map(|road| polyline_distance(point, &road.points) - i64::from(road.half_width))
@@ -1120,7 +1122,9 @@ impl Scenery {
             .unwrap_or(i64::MAX)
     }
 
-    fn water_distance(&self, point: [i32; 2]) -> i64 {
+    /// Units from `point` to the nearest water's shore; zero inside water.
+    #[must_use]
+    pub fn water_distance(&self, point: [i32; 2]) -> i64 {
         self.water
             .iter()
             .map(|water| water.ellipse().distance(point))

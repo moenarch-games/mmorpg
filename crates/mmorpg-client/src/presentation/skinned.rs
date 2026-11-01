@@ -978,6 +978,7 @@ impl Model {
             opacity: p.opacity,
             unlit: false,
             double_sided: p.double_sided,
+            ground: None,
         }
     }
 

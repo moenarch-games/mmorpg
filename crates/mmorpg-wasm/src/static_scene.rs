@@ -6,7 +6,9 @@
 //!
 //! - **geometries**: one entry per distinct resource, with offsets into
 //!   [`vertices`] (positions, then normals, then linear vertex colours when
-//!   `colored`, three floats per vertex each) and [`indices`];
+//!   `colored`, three floats per vertex each; then, for a textured ground layer (#525),
+//!   texture coordinates and tangents when `textured`, two and four floats per vertex, and
+//!   weights when `weighted`, one per vertex) and [`indices`];
 //! - **groups**: static colour batches (`instanced: false`, one draw) and
 //!   instance groups (one draw per placement), with their cull class and XZ
 //!   bounds; each draw names its geometry, a model matrix index into
@@ -48,6 +50,10 @@ struct GeometryEntry {
     vertex_offset: usize,
     vertex_count: usize,
     colored: bool,
+    /// Texture coordinates (two floats per vertex) then tangents (four) follow.
+    textured: bool,
+    /// One weight per vertex (the vertex colour alpha) follows.
+    weighted: bool,
     index_offset: usize,
     index_count: usize,
 }
@@ -74,6 +80,18 @@ struct DrawEntry {
     /// `None` for the default lit material.
     emissive: Option<String>,
     opacity: f32,
+    /// The textured ground layer a terrain draw shows (#525).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ground: Option<GroundEntry>,
+}
+
+#[derive(Serialize)]
+struct GroundEntry {
+    /// `mmorpg_presentation::ground::Layer::name`; its material is bundle entry
+    /// `greyhaven.terrain.<layer>`.
+    layer: &'static str,
+    /// A masked overlay (weights in the vertex alpha), else the opaque base.
+    overlay: bool,
 }
 
 struct Buffers {
@@ -109,6 +127,17 @@ impl Buffers {
                 let colored = !g.colors.is_empty();
                 self.vertices
                     .extend(g.colors.iter().flatten().map(|value| *value as f32));
+                // Ground layers (#525): texture coordinates, tangents and per-vertex weights.
+                let textured = !g.uv.is_empty();
+                if textured {
+                    self.vertices
+                        .extend(g.uv.iter().flatten().map(|value| *value as f32));
+                    self.vertices
+                        .extend(g.tangents.iter().flatten().map(|value| *value as f32));
+                }
+                let weighted = !g.alpha.is_empty();
+                self.vertices
+                    .extend(g.alpha.iter().map(|value| *value as f32));
                 let index_offset = self.indices.len();
                 self.indices.extend(&g.indices);
                 self.keys.push(draw.resource_key.clone());
@@ -117,6 +146,8 @@ impl Buffers {
                     vertex_offset,
                     vertex_count: g.p.len(),
                     colored,
+                    textured,
+                    weighted,
                     index_offset,
                     index_count: g.indices.len(),
                 });
@@ -132,6 +163,10 @@ impl Buffers {
             color: hex(material.color),
             emissive: (material.emissive != [0.; 3]).then(|| hex(material.emissive)),
             opacity: material.opacity,
+            ground: material.ground.map(|ground| GroundEntry {
+                layer: ground.layer.name(),
+                overlay: ground.overlay,
+            }),
         }
     }
 }
@@ -325,6 +360,7 @@ mod tests {
             .map(|entry| entry["vertexCount"].as_u64().unwrap())
             .sum();
         assert!(nodes <= 3_800, "{nodes} static nodes");
-        assert!(vertices <= 480_000, "{vertices} static vertices");
+        // The textured ground layers (#525) add overlay meshes over the terrain.
+        assert!(vertices <= 500_000, "{vertices} static vertices");
     }
 }

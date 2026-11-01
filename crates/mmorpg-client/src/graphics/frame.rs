@@ -10,8 +10,9 @@ use crate::{
     world::{DrawBatch, DrawMaterial, DrawSkin, SceneDraw, WorldFrame},
 };
 use bytemuck::{Pod, Zeroable};
+use mmorpg_presentation::ground::{Ground, Layer, MASK_CUTOFF, OVERLAY_ALPHA};
 use render_engine::{
-    glam::{Mat4, Vec3, Vec4},
+    glam::{Mat4, Vec2, Vec3, Vec4},
     material::{AlphaMode, StandardMaterial},
     mesh::MeshData,
     renderer::{Renderer, Viewport},
@@ -19,10 +20,10 @@ use render_engine::{
         Ambient, Camera, DayCycle, Fog, FogFalloff, Moon, PointLight, RAW_SUNLIGHT, Scene,
         ShadowFilter, ShadowMapSizes, Sky, Sun, SunShadows, Tonemapping,
     },
-    world::{Instance, MaterialId, MeshId, SkinId, World},
+    world::{Instance, MaterialId, MeshId, SkinId, TextureId, World},
 };
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     mem,
     sync::{Arc, Weak},
 };
@@ -96,7 +97,7 @@ struct CachedMaterial {
 }
 
 /// A material's exact field bits.
-type MaterialKey = [u32; 9];
+type MaterialKey = [u32; 10];
 
 /// A [`DrawBatch`] resolved into instances once (#588). It stays valid while the batch lives,
 /// drawn or culled, and is dropped with it; its meshes and materials stay resident until then.
@@ -146,6 +147,17 @@ fn draw_mesh_data(draw: &SceneDraw) -> MeshData {
             .map(|&w| Vec4::from(w))
             .collect();
     }
+    // A ground overlay's vertex colour alpha, which its mask cuts by (#525).
+    if let Some(ground) = &draw.material.ground
+        && ground.alpha.len() == data.positions.len()
+    {
+        if data.colors.len() != data.positions.len() {
+            data.colors = vec![Vec4::ONE; data.positions.len()];
+        }
+        for (color, &alpha) in data.colors.iter_mut().zip(ground.alpha.iter()) {
+            color.w = alpha;
+        }
+    }
     data
 }
 
@@ -165,6 +177,15 @@ fn mesh_data(mesh: &Mesh) -> MeshData {
         data.normals = normals.iter().map(|n| Vec3::new(n.x, n.y, n.z)).collect();
         if colors.is_some() {
             data.colors = (0..count).map(color).collect();
+        }
+        if let Some(uvs) = &mesh.attributes().uvs {
+            data.uvs = uvs.iter().map(|uv| Vec2::new(uv.x, uv.y)).collect();
+        }
+        if let Some(tangents) = &mesh.attributes().tangents {
+            data.tangents = tangents
+                .iter()
+                .map(|t| Vec4::new(t.x, t.y, t.z, t.w))
+                .collect();
         }
         data.indices = mesh.indices().to_vec();
     } else {
@@ -199,7 +220,75 @@ fn material_key(m: &DrawMaterial) -> MaterialKey {
         m.opacity.to_bits(),
         u32::from(m.unlit),
         u32::from(m.double_sided),
+        m.ground.as_ref().map_or(0, |g| {
+            1 + 2 * g.ground.layer as u32 + u32::from(g.ground.overlay)
+        }),
     ]
+}
+
+/// One ground layer's uploaded textures (#525).
+struct GroundLayerGpu {
+    base_color: TextureId,
+    normal: Option<TextureId>,
+    occlusion_roughness_metal: Option<TextureId>,
+    mean: Vec3,
+}
+
+/// The `greyhaven-terrain` layers uploaded once; a layer the bundle lacks is absent.
+struct GroundGpu(BTreeMap<Layer, GroundLayerGpu>);
+
+impl GroundGpu {
+    fn upload(world: &mut World) -> Self {
+        Self(
+            crate::ground::library()
+                .iter()
+                .map(|(&layer, textures)| {
+                    (
+                        layer,
+                        GroundLayerGpu {
+                            base_color: world.add_texture(&textures.base_color),
+                            normal: textures.normal.as_ref().map(|t| world.add_texture(t)),
+                            occlusion_roughness_metal: textures
+                                .occlusion_roughness_metal
+                                .as_ref()
+                                .map(|t| world.add_texture(t)),
+                            mean: textures.mean,
+                        },
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// A ground draw's material: its layer's textures divided by their mean colour, so the
+    /// vertex colours keep the palette; an overlay masked by weight × height
+    /// (`mmorpg_presentation::ground`). Without the layer's textures, flat vertex colours.
+    fn material(&self, m: &DrawMaterial, ground: Ground) -> StandardMaterial {
+        let (alpha, alpha_mode) = if ground.overlay {
+            (OVERLAY_ALPHA, AlphaMode::Mask(MASK_CUTOFF))
+        } else {
+            (1., AlphaMode::Opaque)
+        };
+        let Some(layer) = self.0.get(&ground.layer) else {
+            let flat = standard_material(m);
+            return StandardMaterial {
+                base_color: flat.base_color.truncate().extend(alpha),
+                alpha_mode,
+                ..flat
+            };
+        };
+        StandardMaterial {
+            base_color: (linear3(m.color) / layer.mean).extend(alpha),
+            base_color_texture: Some(layer.base_color),
+            normal_map_texture: layer.normal,
+            metallic_roughness_texture: layer.occlusion_roughness_metal,
+            occlusion_texture: layer.occlusion_roughness_metal,
+            metallic: 0.,
+            perceptual_roughness: 1.,
+            alpha_mode,
+            ..StandardMaterial::default()
+        }
+    }
 }
 
 fn standard_material(m: &DrawMaterial) -> StandardMaterial {
@@ -400,6 +489,8 @@ pub(super) struct FrameRenderer {
     renderer: Renderer,
     world: World,
     nature: Option<NatureGpu>,
+    /// The ground layer textures (#525), uploaded with the first ground material.
+    ground: Option<GroundGpu>,
     viewport: Viewport,
     meshes: HashMap<String, CachedMesh>,
     materials: HashMap<MaterialKey, CachedMaterial>,
@@ -471,6 +562,7 @@ impl FrameRenderer {
             renderer,
             world,
             nature: None,
+            ground: None,
             viewport,
             meshes: HashMap::new(),
             materials: HashMap::new(),
@@ -587,11 +679,24 @@ impl FrameRenderer {
 
     fn material(&mut self, material: &DrawMaterial) -> MaterialId {
         let key = material_key(material);
-        let world = &mut self.world;
-        let entry = self.materials.entry(key).or_insert_with(|| CachedMaterial {
-            id: world.add_material(&standard_material(material)),
-            used: true,
-            batches: 0,
+        let Self {
+            world,
+            ground,
+            materials,
+            ..
+        } = self;
+        let entry = materials.entry(key).or_insert_with(|| {
+            let standard = match &material.ground {
+                Some(draw) => ground
+                    .get_or_insert_with(|| GroundGpu::upload(world))
+                    .material(material, draw.ground),
+                None => standard_material(material),
+            };
+            CachedMaterial {
+                id: world.add_material(&standard),
+                used: true,
+                batches: 0,
+            }
         });
         entry.used = true;
         entry.id
@@ -833,6 +938,7 @@ mod tests {
                 opacity: 1.,
                 unlit: false,
                 double_sided: false,
+                ground: None,
             },
             skin: Some(crate::world::DrawSkin {
                 figure: "unit".into(),
