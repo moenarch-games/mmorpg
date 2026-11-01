@@ -1034,7 +1034,7 @@ pub fn settlement_prop_models() -> Vec<f32> {
         .collect()
 }
 
-/// The `greyhaven-nature` bundle entries the trees and rocks are drawn from (#49).
+/// The `greyhaven-nature` bundle entries the trees, rocks and bushes are drawn from (#49).
 #[wasm_bindgen(js_name = natureEntries)]
 #[must_use]
 pub fn nature_entries() -> Vec<String> {
@@ -1044,7 +1044,7 @@ pub fn nature_entries() -> Vec<String> {
         .collect()
 }
 
-/// The entry of each placed tree and rock (#49), in [`nature_models`] order.
+/// The entry of each placed tree, rock and bush (#49), in [`nature_models`] order.
 #[wasm_bindgen(js_name = natureKeys)]
 #[must_use]
 pub fn nature_keys() -> Vec<String> {
@@ -1054,7 +1054,7 @@ pub fn nature_keys() -> Vec<String> {
         .collect()
 }
 
-/// 16 column-major model floats per placed tree and rock (#49).
+/// 16 column-major model floats per placed tree, rock and bush (#49).
 #[wasm_bindgen(js_name = natureModels)]
 #[must_use]
 pub fn nature_models() -> Vec<f32> {

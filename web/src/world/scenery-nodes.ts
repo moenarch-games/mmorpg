@@ -37,7 +37,7 @@ export type StaticSceneContent = {
 
 /**
  * Which asset-tooling kits the client draws: the Outpost kit buildings (#420), the market square's settlement props
- * (#421), the `greyhaven-nature` trees and rocks (#49) and the Battle Royale fortress kit (#591).
+ * (#421), the `greyhaven-nature` trees, rocks and bushes (#49) and the Battle Royale fortress kit (#591).
  */
 export type DrawnKits = { outpost: boolean; settlementProps: boolean; nature: boolean; fortress: boolean };
 const NO_KITS: DrawnKits = { outpost: false, settlementProps: false, nature: false, fortress: false };

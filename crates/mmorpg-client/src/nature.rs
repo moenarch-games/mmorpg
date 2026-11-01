@@ -1,4 +1,4 @@
-//! Greyhaven's trees and rocks from the embedded `greyhaven-nature` bundle (#49), imported
+//! Greyhaven's trees, rocks and bushes from the embedded `greyhaven-nature` bundle (#49), imported
 //! once into render-engine's mesh, texture and material data.
 //!
 //! Every level of every entry keeps its textures (mipmapped here, since the engine never
@@ -379,6 +379,27 @@ mod tests {
                 std::array::from_fn(|axis| cm(&rock["bounds"][side][axis]))
             };
             assert_eq!((bound("min"), bound("max")), (proxy.min, proxy.max));
+        }
+    }
+
+    /// The bush footprints the presentation fits bushes by are the bundle's (#596).
+    #[test]
+    fn bush_sizes_match_the_bundle() {
+        use mmorpg_presentation::nature::{BUSH_SIZES, BUSHES};
+        let value: serde_json::Value = serde_json::from_str(descriptor::DESCRIPTOR).unwrap();
+        for (key, size) in BUSHES.iter().zip(BUSH_SIZES) {
+            let asset = value["assets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|asset| asset["key"] == *key)
+                .unwrap_or_else(|| panic!("the bundle declares {key}"));
+            let footprint = &asset["footprint"];
+            let bundle = ["width", "height", "depth"].map(|axis| footprint[axis].as_f64().unwrap());
+            assert!(
+                (0..3).all(|axis| (bundle[axis] - size[axis]).abs() < 0.01),
+                "{key}: {bundle:?} vs {size:?}"
+            );
         }
     }
 }

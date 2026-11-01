@@ -2,7 +2,7 @@
 //! Ranger default models and the shared clip library are standard GLBs prepared by
 //! asset-tooling (`scripts/prepare-ranger-native.sh`), with original socket metadata.
 //! The Greyhaven inn, the Sunken Shrine kit (#431), the ambient animals (#419), the
-//! Outpost building kit (#420), the settlement props (#421) and Greyhaven's trees and rocks
+//! Outpost building kit (#420), the settlement props (#421) and Greyhaven's trees, rocks and bushes
 //! (#49) keep the manifest/resource embedding path.
 #[path = "build/warden_icons.rs"]
 mod warden_icons;
@@ -176,7 +176,7 @@ fn main() {
         false,
     );
     sound_bundle(&manifest_dir.join("../../web/public/sounds/combat-sounds"));
-    // Greyhaven's trees and rocks with every level of detail (#49), and their descriptor.
+    // Greyhaven's trees, rocks and bushes with every level of detail (#49), and their descriptor.
     let nature = manifest_dir.join("../../web/public/scenery/greyhaven.nature");
     static_bundle("nature_bundle.rs", &nature, None, true);
     nature_descriptor(&nature);

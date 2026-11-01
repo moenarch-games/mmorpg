@@ -318,7 +318,7 @@ export class WorldView {
   #fortress: CompositionKit | null = null;
   /** Greyhaven's cosmetic cat, dog and rodent (#419), drawn once their bundle loads. */
   #ambient: AmbientAnimals | null = null;
-  /** Greyhaven's trees and rocks (#49), drawn from asset-tooling's bundle once loaded; the procedural ones until then. */
+  /** Greyhaven's trees, rocks and bushes (#49), drawn from asset-tooling's bundle once loaded; the procedural ones until then. */
   #nature: Nature | null = null;
   #regions: RegionArt | null = null;
   #onArtProgress: (() => void) | null = null;
@@ -1545,7 +1545,7 @@ export class WorldView {
       fortress: () => this.#fortress?.observe() ?? null,
       /** The market square's settlement props (#421): whether they loaded and which are placed. */
       settlement: () => this.#settlement?.observe() ?? null,
-      /** Greyhaven's trees and rocks (#49): whether the bundle loaded, and how many instances each entry level draws. */
+      /** Greyhaven's trees, rocks and bushes (#49): whether the bundle loaded, and how many instances each entry level draws. */
       nature: () => this.#nature?.observe() ?? null,
       /** The ambient animals (#419): whether they loaded, and each one's entry, clip and feet. */
       ambient: () => this.#ambient?.observe() ?? null,

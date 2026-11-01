@@ -57,7 +57,7 @@ struct GeometryEntry {
 struct GroupEntry {
     cull: &'static str,
     instanced: bool,
-    /// `"nature"` for the procedural trees and rocks the nature bundle replaces (#49).
+    /// `"nature"` for the procedural trees, rocks and bushes the nature bundle replaces (#49).
     fallback: Option<&'static str>,
     min: [f64; 2],
     max: [f64; 2],
