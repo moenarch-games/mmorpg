@@ -29,6 +29,7 @@ export type NatureSource = {
  * presentation places them, as the native client does. Each entry level is one instanced mesh per primitive whose
  * geometry and materials every placement shares ([`InstancedLevels`]); the shared selection picks each placement's
  * level per frame and cross-fades switches. Until the bundle loads (or when it fails) none is drawn and the static
+ * scene keeps the procedural trees, rocks and bushes. Presentation only.
  */
 export class Nature {
   readonly #source: NatureSource;
