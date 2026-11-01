@@ -27,6 +27,7 @@ import {
   type Vec3,
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type SceneryScene } from "./scenery-nodes";
+import type { GreyhavenLighting } from "./lighting";
 import { ImpactEffects, impactCues } from "./impact-effects";
 import { RaidSmoke } from "./raid-smoke";
 import { type AidTask, reachableAidTask } from "./raid-aid";
@@ -372,6 +373,7 @@ export class WorldView {
   #lastSceneryNodes: readonly RendererSceneNode[] = [];
   #pendingNpc: { target: EntityRef; sequence: number } | null = null;
   #scene: SceneryScene | null = null;
+  readonly #lighting: GreyhavenLighting;
   #catalog: ContentCatalog | null = null;
   #zoneName = ZONE_NAME;
   #arena = false;
@@ -416,8 +418,9 @@ export class WorldView {
   /** The first frame of a session picks a heading whose view is not inside a building. */
   #framePending = false;
 
-  constructor(renderer: ThreeSceneRenderer, camera: THREE.PerspectiveCamera, elements: WorldViewElements) {
+  constructor(renderer: ThreeSceneRenderer, camera: THREE.PerspectiveCamera, lighting: GreyhavenLighting, elements: WorldViewElements) {
     this.#renderer = renderer;
+    this.#lighting = lighting;
     this.#models.configureRenderer(renderer);
     this.#camera = camera;
     this.#elements = elements;
@@ -1180,6 +1183,13 @@ export class WorldView {
     const seconds = this.#presentationTime ?? zoneSkySeconds(skyTick);
     const environment = environmentAt(ENVIRONMENT, seconds / DAY_SECONDS);
     this.#lastEnvironment = environment;
+    // The native client's lights at the same hour (#600): sun or moon, sky light, fog and the scenery's lamps.
+    this.#lighting.apply({
+      hour: (12 + seconds / DAY_SECONDS * 24) % 24,
+      sky: true,
+      fog: environment.fog ? String(environment.fog.color) : null,
+      pointLights: this.#scene?.pointLights(this.#seconds, animate) ?? null,
+    });
     this.#lastInstanceBatches = frame.instanceBatches;
     this.#lastCamera = camera;
     profilePhase("scene");
@@ -1192,7 +1202,10 @@ export class WorldView {
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#nature?.roots() ?? { roots: [], changed: false };
     const roots = [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
-    const rendererFrame = { camera, nodes, instanceBatches: frame.instanceBatches, environment };
+    // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
+    // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
+    const { background: _background, ...withoutBackground } = environment;
+    const rendererFrame = { camera, nodes, instanceBatches: frame.instanceBatches, environment: withoutBackground };
     if (this.#preparing) {
       // `prepare` (#547): the first world frame's programs and textures, without drawing it.
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
@@ -1211,7 +1224,10 @@ export class WorldView {
       });
     }
     this.#quests.placeMarkers(this.#markerPoints(anchors, projection));
-    this.#sky.update(this.#horizon(view.eye, view.target), seconds, true);
+    // The atmosphere draws the sky (#600); the CSS sky remains only where the browser cannot draw it.
+    const cssSky = !this.#lighting.drawsSky;
+    if (this.#elements.sky.hidden === cssSky) { this.#sky.show(cssSky); }
+    if (cssSky) { this.#sky.update(this.#horizon(view.eye, view.target), seconds, true); }
     // A night raid's approximate disturbance area while its assault runs (#530).
     const area = this.#raidArea;
     const disturbance = area && (projection.raid?.phase ?? 0) > 0

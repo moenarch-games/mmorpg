@@ -1,5 +1,6 @@
 import type { Object3D } from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { litObject } from "./lighting";
 
 /**
  * The glTF of each of `keys` in the gltf-resources bundle at `base`, loaded with plain three.js: a
@@ -58,7 +59,8 @@ export async function readBundleAttachment(base: string, key: string, variant: s
 /** Existing static glTF consumer shared by the inn and opt-in nature review. */
 export async function loadStaticBundle(base: string, keys: readonly string[]): Promise<Object3D[]> {
   return (await loadBundleGltfs(base, keys)).map((gltf, index) => {
-    const root = gltf.scene;
+    // Lit like the rest of the world (#600).
+    const root = litObject(gltf.scene);
     root.name = keys[index]!;
     root.matrixAutoUpdate = false;
     return root;

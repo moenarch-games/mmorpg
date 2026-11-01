@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { litMaterial } from "./lighting";
 
 /** Uploads only the first `count` items of `attribute` (the drawn instances), not its whole capacity. */
 function upload(attribute: THREE.BufferAttribute, count: number): void {
@@ -19,19 +20,21 @@ function place(mesh: THREE.InstancedMesh, count: number): boolean {
  * Screen-door cross-fade: an instance with fade `t` in (0, 1) keeps the fraction `t` of its pixels, one with `-t` the
  * complementary pixels, so two levels of one placement blend without sorting. A per-instance attribute carries the fade.
  */
-function crossFaded(material: THREE.Material): THREE.Material {
+function crossFaded(material: THREE.ShaderMaterial): THREE.Material {
   const faded = material.clone();
+  // The same LitMaterial (#600): its uniforms, alpha mode and sides, so shadows and lighting treat both alike.
+  Object.assign(faded, { uniforms: material.uniforms, alphaMode: (material as { alphaMode?: string }).alphaMode,
+    doubleSided: (material as { doubleSided?: boolean }).doubleSided, unlit: (material as { unlit?: boolean }).unlit });
   faded.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nattribute float instanceFade;\nvarying float vInstanceFade;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvInstanceFade = instanceFade;");
+      .replace("void main() {", "in float instanceFade;\nout float vInstanceFade;\nvoid main() {\n    vInstanceFade = instanceFade;");
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vInstanceFade;")
-      .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
-if (vInstanceFade < 0.999) {
-  float screenDoor = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-  if (vInstanceFade >= 0.0 ? screenDoor >= vInstanceFade : screenDoor < -vInstanceFade) discard;
-}`);
+      .replace("void main() {", `in float vInstanceFade;
+void main() {
+    if (vInstanceFade < 0.999) {
+        float screenDoor = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        if (vInstanceFade >= 0.0 ? screenDoor >= vInstanceFade : screenDoor < -vInstanceFade) discard;
+    }`);
   };
   faded.customProgramCacheKey = () => "instanced-levels-cross-fade";
   return faded;
@@ -84,7 +87,8 @@ export class InstancedLevels {
         if (!(object instanceof THREE.Mesh)) { return; }
         // The entry frame is the bundle's: bake the node transforms into the shared geometry.
         const geometry = (object.geometry as THREE.BufferGeometry).clone().applyMatrix4(object.matrixWorld);
-        const source = object.material as THREE.Material;
+        // Lit like the rest of the world (#600); `litMaterial` keeps one per glTF material.
+        const source = litMaterial(object.material as THREE.Material) as THREE.ShaderMaterial;
         let material = materials.get(source);
         if (!material) {
           material = crossFaded(source);
