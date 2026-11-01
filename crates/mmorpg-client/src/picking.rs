@@ -85,7 +85,7 @@ impl WorldPicking {
             }
         }
         for (entity, draw) in &self.bodies {
-            if let Some(hit) = ray.intersect_mesh(&draw.mesh, draw.model, cull(draw))?
+            if let Some(hit) = ray.intersect_mesh(&posed(draw), draw.model, cull(draw))?
                 && hit.distance < nearest
             {
                 nearest = hit.distance;
@@ -223,9 +223,18 @@ impl Aabb {
     }
 }
 
-/// A draw's mesh bounds carried into the world by its model matrix.
+/// A draw's mesh as presented: a GPU-skinned body is posed here, only when a click tests it.
+fn posed(draw: &SceneDraw) -> std::borrow::Cow<'_, three_d_core::Mesh> {
+    draw.skin
+        .as_ref()
+        .map_or(std::borrow::Cow::Borrowed(draw.mesh.as_ref()), |skin| {
+            std::borrow::Cow::Owned(skin.pose(&draw.mesh))
+        })
+}
+
+/// A draw's posed mesh bounds carried into the world by its model matrix.
 fn world_bounds(draw: &SceneDraw) -> Option<Aabb> {
-    let local = draw.mesh.bounds()?;
+    let local = posed(draw).bounds()?;
     let local = Aabb {
         min: [local.min.x, local.min.y, local.min.z].map(f64::from),
         max: [local.max.x, local.max.y, local.max.z].map(f64::from),
@@ -297,6 +306,7 @@ mod tests {
                 unlit: false,
                 double_sided: true,
             },
+            skin: None,
         }
     }
 

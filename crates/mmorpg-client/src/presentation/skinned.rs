@@ -1,7 +1,8 @@
-//! Imported Quaternius glTF units: material colours baked into vertex colours, clips sampled and
-//! skinned on the CPU, then submitted as ordinary scene draws so rendering and picking agree.
+//! Imported Quaternius glTF units: material colours baked into vertex colours and clips sampled
+//! into joint palettes on the CPU. Each figure draws its model's shared bind-pose meshes with its
+//! palette, which the renderer skins on the GPU (#595); picking poses a clicked body itself.
 //! Presentation only; the authoritative body box still comes from content.
-use crate::world::{DrawMaterial, SceneDraw};
+use crate::world::{DrawMaterial, DrawSkin, Influences, SceneDraw};
 use mmorpg_presentation::units::{
     imported::{
         BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT, BOW_STOWED_SOCKET, BowShot,
@@ -55,14 +56,6 @@ fn trs(t: [f32; 3], q: [f32; 4], s: [f32; 3]) -> M4 {
         t[2],
         1.,
     ]
-}
-
-fn point(m: &M4, p: [f32; 3]) -> [f32; 3] {
-    std::array::from_fn(|r| m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r])
-}
-
-fn vector(m: &M4, v: [f32; 3]) -> [f32; 3] {
-    std::array::from_fn(|r| m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2])
 }
 
 /// The sRGB colour (0..=1) of `image`'s nearest texel at `uv`, wrapping like a repeat sampler.
@@ -171,10 +164,8 @@ struct Primitive {
     normals: Vec<[f32; 3]>,
     colors: Vec<Color3>,
     indices: Vec<u32>,
-    /// Up to four (slot, weight) influences per vertex.
+    /// Up to four (slot, weight) influences per vertex, slots into [`Model::slots`].
     influences: Vec<[(u16, f32); 4]>,
-    /// Influence slots: driving node and its inverse bind matrix.
-    slots: Vec<(usize, M4)>,
     /// Base-colour texture coordinates, so a head skin can be baked in place of the authored one.
     uvs: Arc<[[f32; 2]]>,
     /// Named morph targets (the face, age and build keys), shared between clones.
@@ -196,6 +187,13 @@ pub(super) struct Model {
     /// Nodes ordered parents first.
     order: Vec<usize>,
     primitives: Vec<Primitive>,
+    /// The joint palette's slots, shared by every primitive: driving node and its inverse
+    /// bind matrix. An unskinned primitive's node is a slot with the identity.
+    slots: Vec<(usize, M4)>,
+    /// Each primitive's bind-pose upload, built on first draw (#595).
+    binds: OnceLock<Arc<[Option<Bind>]>>,
+    /// Each primitive baked in the rest pose, for static draws, built on first draw.
+    rests: OnceLock<Arc<[Option<Baked>]>>,
     clips: Arc<BTreeMap<String, Clip>>,
     /// Node names, for attaching items to joints.
     names: Vec<Option<String>>,
@@ -210,8 +208,22 @@ pub(super) struct Model {
     head: Option<(usize, [f32; 3], f32)>,
 }
 
-/// Skinned `(positions, normals)` of one primitive in model space.
-type SkinnedPrimitive = (Vec<[f32; 3]>, Vec<[f32; 3]>);
+/// A primitive's bind pose as the renderer keeps it: its resource key, the mesh and its
+/// per-vertex palette influences. Every figure of the model shares it (#595).
+#[derive(Clone)]
+struct Bind {
+    key: String,
+    mesh: Arc<Mesh>,
+    influences: Arc<Influences>,
+}
+
+/// A primitive baked in a fixed pose: its resource key and mesh.
+type Baked = (String, Arc<Mesh>);
+
+/// A resource key unique to `mesh`'s allocation, which the renderer's `Weak` keeps from reuse.
+fn mesh_key(kind: &str, mesh: &Arc<Mesh>) -> String {
+    format!("{kind}:{:p}", Arc::as_ptr(mesh))
+}
 
 impl Model {
     pub fn parse(bytes: &[u8], rest_clip: &'static str) -> Result<Self, gltf::Error> {
@@ -243,9 +255,10 @@ impl Model {
             stack.extend(node.children().map(|c| c.index()));
         }
         let mut primitives = Vec::new();
+        let mut model_slots: Vec<(usize, M4)> = Vec::new();
         for node in document.nodes() {
             let Some(mesh) = node.mesh() else { continue };
-            let slots: Vec<(usize, M4)> = match node.skin() {
+            let node_slots: Vec<(usize, M4)> = match node.skin() {
                 Some(skin) => {
                     let reader = skin.reader(|b| Some(&buffers[b.index()]));
                     let inverse: Vec<M4> = reader.read_inverse_bind_matrices().map_or_else(
@@ -259,6 +272,20 @@ impl Model {
                 }
                 None => vec![(node.index(), IDENTITY)],
             };
+            // The node's slots in the model's one palette.
+            let remap: Vec<u16> = node_slots
+                .iter()
+                .map(|slot| {
+                    let index = model_slots
+                        .iter()
+                        .position(|s| s.0 == slot.0 && s.1 == slot.1)
+                        .unwrap_or_else(|| {
+                            model_slots.push(*slot);
+                            model_slots.len() - 1
+                        });
+                    u16::try_from(index).expect("a palette fits u16 joint indices")
+                })
+                .collect();
             let skinned = node.skin().is_some();
             // Blender's exporter names the targets in the mesh's `extras.targetNames`.
             let target_names: Vec<String> = mesh
@@ -313,13 +340,17 @@ impl Model {
                     || (0..u32::try_from(positions.len()).unwrap_or(0)).collect(),
                     |i| i.into_u32().collect(),
                 );
+                let slot = |j: u16| remap[usize::from(j).min(remap.len() - 1)];
                 let influences = match (skinned, reader.read_joints(0), reader.read_weights(0)) {
                     (true, Some(joints), Some(weights)) => joints
                         .into_u16()
                         .zip(weights.into_f32())
-                        .map(|(j, w)| std::array::from_fn(|i| (j[i], w[i])))
+                        .map(|(j, w)| std::array::from_fn(|i| (slot(j[i]), w[i])))
                         .collect(),
-                    _ => vec![[(0, 1.), (0, 0.), (0, 0.), (0, 0.)]; positions.len()],
+                    _ => vec![
+                        [(slot(0), 1.), (slot(0), 0.), (slot(0), 0.), (slot(0), 0.)];
+                        positions.len()
+                    ],
                 };
                 primitives.push(Primitive {
                     node: node.name().map(str::to_owned),
@@ -331,7 +362,6 @@ impl Model {
                     colors,
                     indices,
                     influences,
-                    slots: slots.clone(),
                     uvs,
                     targets,
                 });
@@ -416,6 +446,9 @@ impl Model {
             parents,
             order,
             primitives,
+            slots: model_slots,
+            binds: OnceLock::new(),
+            rests: OnceLock::new(),
             clips: Arc::new(clips),
             names,
             joints,
@@ -425,14 +458,16 @@ impl Model {
             head: None,
         };
         let (mut min, mut max) = ([f32::MAX; 3], [f32::MIN; 3]);
+        let rest_pose = model.globals(&[Layer::single(rest_clip, 0.)]);
         for p in model
-            .skin(&[Layer::single(rest_clip, 0.)])
+            .posed(&rest_pose)
             .iter()
-            .flat_map(|(p, _)| p)
+            .flatten()
+            .flat_map(Mesh::vertices)
         {
-            for i in 0..3 {
-                min[i] = min[i].min(p[i]);
-                max[i] = max[i].max(p[i]);
+            for (i, v) in [p.x, p.y, p.z].into_iter().enumerate() {
+                min[i] = min[i].min(v);
+                max[i] = max[i].max(v);
             }
         }
         if min[1] < max[1] {
@@ -490,26 +525,24 @@ impl Model {
     ) -> Option<(usize, [f32; 3], f32)> {
         let joint = document.nodes().find(|n| n.name() == Some("Head"))?.index();
         let (mut min, mut max) = ([f32::MAX; 3], [f32::MIN; 3]);
-        for ((positions, _), p) in self
-            .skin(&[Layer::single(clip, 0.)])
-            .iter()
-            .zip(&self.primitives)
-        {
-            for (q, weights) in positions.iter().zip(&p.influences) {
+        let globals = self.globals(&[Layer::single(clip, 0.)]);
+        for (posed, p) in self.posed(&globals).iter().zip(&self.primitives) {
+            let Some(posed) = posed else { continue };
+            for (q, weights) in posed.vertices().iter().zip(&p.influences) {
                 let main = weights.iter().max_by(|a, b| a.1.total_cmp(&b.1))?;
-                if p.slots.get(usize::from(main.0)).map(|s| s.0) != Some(joint) {
+                if self.slots.get(usize::from(main.0)).map(|s| s.0) != Some(joint) {
                     continue;
                 }
-                for i in 0..3 {
-                    min[i] = min[i].min(q[i]);
-                    max[i] = max[i].max(q[i]);
+                for (i, v) in [q.x, q.y, q.z].into_iter().enumerate() {
+                    min[i] = min[i].min(v);
+                    max[i] = max[i].max(v);
                 }
             }
         }
         if min[0] > max[0] {
             return None;
         }
-        let at = self.globals(&[Layer::single(clip, 0.)])[joint];
+        let at = globals[joint];
         let centre: [f32; 3] = std::array::from_fn(|i| (min[i] + max[i]) * 0.5);
         let radius = (0..3).map(|i| (max[i] - min[i]) * 0.5).fold(0., f32::max);
         Some((
@@ -640,44 +673,83 @@ impl Model {
         local
     }
 
-    /// Skinned positions and normals per primitive in model space.
-    fn skin(&self, pose: &[Layer]) -> Vec<SkinnedPrimitive> {
-        self.skin_globals(&self.globals(pose))
+    /// The joint palette for joint transforms `globals`: each slot's node transform times its
+    /// inverse bind matrix, which the renderer blends per vertex.
+    fn palette(&self, globals: &[M4]) -> Arc<[M4]> {
+        self.slots
+            .iter()
+            .map(|(node, inverse)| mul(&globals[*node], inverse))
+            .collect()
     }
 
-    /// Skinned positions and normals per primitive in model space, for joint transforms `globals`.
-    fn skin_globals(&self, globals: &[M4]) -> Vec<SkinnedPrimitive> {
-        self.primitives
-            .iter()
-            .map(|p| {
-                let slots: Vec<M4> = p
-                    .slots
-                    .iter()
-                    .map(|(node, inverse)| mul(&globals[*node], inverse))
-                    .collect();
-                p.positions
-                    .iter()
-                    .zip(&p.normals)
-                    .zip(&p.influences)
-                    .map(|((pos, normal), weights)| {
-                        let (mut q, mut n) = ([0.; 3], [0.; 3]);
-                        for &(slot, w) in weights {
-                            if w <= 0. {
-                                continue;
-                            }
-                            let m = &slots[usize::from(slot).min(slots.len() - 1)];
-                            let (a, b) = (point(m, *pos), vector(m, *normal));
-                            for i in 0..3 {
-                                q[i] += a[i] * w;
-                                n[i] += b[i] * w;
-                            }
-                        }
-                        let len = n.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-6);
-                        (q, n.map(|v| v / len))
+    /// Each primitive's bind-pose upload (None when its geometry is invalid), built once.
+    fn binds(&self) -> &[Option<Bind>] {
+        self.binds.get_or_init(|| {
+            self.primitives
+                .iter()
+                .map(|p| {
+                    let to_vec3 = |v: &[f32; 3]| Vec3::new(v[0], v[1], v[2]);
+                    let mesh = Mesh::with_attributes(
+                        p.positions.iter().map(to_vec3).collect(),
+                        p.indices.clone(),
+                        VertexAttributes {
+                            normals: Some(p.normals.iter().map(to_vec3).collect()),
+                            colors: Some(p.colors.clone()),
+                            ..Default::default()
+                        },
+                    )
+                    .ok()?;
+                    let mesh = Arc::new(mesh);
+                    Some(Bind {
+                        key: mesh_key("imported", &mesh),
+                        mesh,
+                        influences: Arc::new(Influences {
+                            joints: p.influences.iter().map(|i| i.map(|(j, _)| j)).collect(),
+                            weights: p.influences.iter().map(|i| i.map(|(_, w)| w)).collect(),
+                        }),
                     })
-                    .unzip()
+                })
+                .collect()
+        })
+    }
+
+    /// Each primitive posed on the CPU for joint transforms `globals`: load-time measurements
+    /// and static rest geometry only; drawn figures pose on the GPU.
+    fn posed(&self, globals: &[M4]) -> Vec<Option<Mesh>> {
+        let palette = self.palette(globals);
+        self.binds()
+            .iter()
+            .map(|bind| {
+                let bind = bind.as_ref()?;
+                Some(
+                    DrawSkin {
+                        figure: String::new(),
+                        influences: Arc::clone(&bind.influences),
+                        palette: Arc::clone(&palette),
+                    }
+                    .pose(&bind.mesh),
+                )
             })
             .collect()
+    }
+
+    /// Each primitive baked once in the rest pose, for draws that never animate.
+    fn rests(&self) -> &[Option<Baked>] {
+        self.rests.get_or_init(|| {
+            self.posed(&self.globals_of(&self.rest))
+                .into_iter()
+                .map(|mesh| {
+                    let mesh = Arc::new(mesh?);
+                    Some((mesh_key("imported-rest", &mesh), mesh))
+                })
+                .collect()
+        })
+    }
+
+    /// Drops the uploads built from the old geometry, colours or rest pose.
+    fn changed(&mut self) {
+        self.binds = OnceLock::new();
+        self.rests = OnceLock::new();
     }
 
     /// The model-space transform of the named joint in the posed clip.
@@ -691,6 +763,7 @@ impl Model {
     /// Gives the `names` materials the linear base colour `to` in place of their authored `from`,
     /// like the browser's tint of a material's colour.
     fn retint(&mut self, names: &[String], from: [f32; 3], to: [f32; 3]) {
+        self.changed();
         let factor: [f32; 3] = std::array::from_fn(|i| srgb(to[i]) / srgb(from[i]).max(1e-4));
         for p in &mut self.primitives {
             if p.material.as_ref().is_some_and(|name| names.contains(name)) {
@@ -705,6 +778,7 @@ impl Model {
     /// primitives of the `nodes` glTF nodes (all with None), like the browser's
     /// `tintMaterials`.
     fn recolor(&mut self, nodes: Option<&[String]>, materials: &[String], to: [f32; 3]) {
+        self.changed();
         for p in &mut self.primitives {
             let node = nodes.is_none_or(|nodes| p.node.as_ref().is_some_and(|n| nodes.contains(n)));
             if !node
@@ -728,6 +802,7 @@ impl Model {
     /// nodes (all with None), like the browser's `morphTargetInfluences`; each primitive takes the
     /// targets it has. Looks are built once, so the weights never change afterwards.
     fn morph(&mut self, nodes: Option<&[String]>, weights: &BTreeMap<String, f32>) {
+        self.changed();
         for p in &mut self.primitives {
             if !nodes.is_none_or(|nodes| p.node.as_ref().is_some_and(|n| nodes.contains(n))) {
                 continue;
@@ -761,6 +836,7 @@ impl Model {
     /// Bakes `image` as the base-colour texture of the `material` primitives in place of the
     /// authored one, under their own base colour factor: a painted head skin (asset-tooling #380).
     fn reskin(&mut self, material: &str, image: &gltf::image::Data) {
+        self.changed();
         for p in &mut self.primitives {
             if p.material.as_deref() != Some(material) || p.uvs.len() != p.positions.len() {
                 continue;
@@ -783,6 +859,7 @@ impl Model {
 
     /// Raises glTF node `node` by `dy` metres in its parent's frame.
     fn lift(&mut self, node: &str, dy: f32) {
+        self.changed();
         if let Some(index) = self.names.iter().position(|n| n.as_deref() == Some(node)) {
             self.rest[index].t[1] += dy;
         }
@@ -800,6 +877,9 @@ impl Model {
                 .filter(|p| p.node.as_deref() == Some(node))
                 .cloned()
                 .collect(),
+            slots: self.slots.clone(),
+            binds: OnceLock::new(),
+            rests: OnceLock::new(),
             clips: Arc::default(),
             names: self.names.clone(),
             joints: self.joints.clone(),
@@ -812,6 +892,7 @@ impl Model {
 
     /// Recolours the `names` materials by a linear base colour factor, like the browser's tint.
     fn tint(&mut self, names: &[String], factor: [f32; 3]) {
+        self.changed();
         let factor = factor.map(srgb);
         for p in &mut self.primitives {
             if p.material.as_ref().is_some_and(|name| names.contains(name)) {
@@ -833,16 +914,12 @@ impl Model {
         tint: Option<[f32; 3]>,
         hidden: &[String],
     ) -> Vec<SceneDraw> {
-        self.draws_filtered(
-            id,
-            self.placement(root, height),
-            self.skin(pose),
-            tint,
-            hidden,
-        )
+        let palette = self.palette(&self.globals(pose));
+        self.skinned_draws(id, self.placement(root, height), palette, tint, hidden)
     }
 
-    /// Draws for one posed instance under an explicit model-to-world `placement`.
+    /// Draws for one instance under an explicit model-to-world `placement`: posed on the GPU,
+    /// or with an empty pose the rest geometry, baked once.
     pub fn draws_placed(
         &self,
         id: &str,
@@ -850,7 +927,11 @@ impl Model {
         pose: &[Layer],
         tint: Option<[f32; 3]>,
     ) -> Vec<SceneDraw> {
-        self.draws_filtered(id, placement, self.skin(pose), tint, &[])
+        if pose.is_empty() {
+            return self.rest_draws(id, placement, tint);
+        }
+        let palette = self.palette(&self.globals(pose));
+        self.skinned_draws(id, placement, palette, tint, &[])
     }
 
     /// The node index of glTF node `name`.
@@ -873,62 +954,74 @@ impl Model {
                 *t += by;
             }
         }
-        let skinned = self.skin_globals(&self.globals_of(&local));
-        self.draws_filtered(id, placement, skinned, tint, &[])
+        let palette = self.palette(&self.globals_of(&local));
+        self.skinned_draws(id, placement, palette, tint, &[])
     }
 
-    fn draws_filtered(
+    /// A primitive's material: its colours are in its vertices, a tint multiplies them.
+    fn material(p: &Primitive, tint: Option<[f32; 3]>) -> DrawMaterial {
+        DrawMaterial {
+            color: tint.unwrap_or([1.; 3]),
+            emissive: [0.; 3],
+            opacity: 1.,
+            unlit: false,
+            double_sided: p.double_sided,
+        }
+    }
+
+    /// Draws of the figure `id` posed by `palette` on the GPU (#595): every primitive's shared
+    /// bind pose, without the primitives of the `hidden` glTF nodes.
+    fn skinned_draws(
         &self,
         id: &str,
         placement: three_d_animation::Mat4,
-        skinned: Vec<SkinnedPrimitive>,
+        palette: Arc<[M4]>,
         tint: Option<[f32; 3]>,
         hidden: &[String],
     ) -> Vec<SceneDraw> {
-        skinned
-            .into_iter()
+        self.binds()
+            .iter()
             .zip(&self.primitives)
             .enumerate()
             .filter(|(_, (_, p))| p.node.as_ref().is_none_or(|node| !hidden.contains(node)))
-            .filter_map(|(index, ((positions, normals), p))| {
-                let colors = match tint {
-                    Some([r, g, b]) => p
-                        .colors
-                        .iter()
-                        .map(|c| Color3::new(c.r * r, c.g * g, c.b * b))
-                        .collect(),
-                    None => p.colors.clone(),
-                };
-                let mesh = Mesh::with_attributes(
-                    positions
-                        .iter()
-                        .map(|v| Vec3::new(v[0], v[1], v[2]))
-                        .collect(),
-                    p.indices.clone(),
-                    VertexAttributes {
-                        normals: Some(
-                            normals
-                                .iter()
-                                .map(|v| Vec3::new(v[0], v[1], v[2]))
-                                .collect(),
-                        ),
-                        colors: Some(colors),
-                        ..Default::default()
-                    },
-                )
-                .ok()?;
+            .filter_map(|(index, (bind, p))| {
+                let bind = bind.as_ref()?;
                 Some(SceneDraw {
                     id: format!("{id}-mesh-{index}"),
-                    resource_key: format!("skinned:{id}:{index}"),
-                    mesh: Arc::new(mesh),
+                    resource_key: bind.key.clone(),
+                    mesh: Arc::clone(&bind.mesh),
                     model: placement,
-                    material: DrawMaterial {
-                        color: [1.; 3],
-                        emissive: [0.; 3],
-                        opacity: 1.,
-                        unlit: false,
-                        double_sided: p.double_sided,
-                    },
+                    material: Self::material(p, tint),
+                    skin: Some(DrawSkin {
+                        figure: id.to_owned(),
+                        influences: Arc::clone(&bind.influences),
+                        palette: Arc::clone(&palette),
+                    }),
+                })
+            })
+            .collect()
+    }
+
+    /// Draws of the rest geometry under `placement`: static meshes, baked once.
+    fn rest_draws(
+        &self,
+        id: &str,
+        placement: three_d_animation::Mat4,
+        tint: Option<[f32; 3]>,
+    ) -> Vec<SceneDraw> {
+        self.rests()
+            .iter()
+            .zip(&self.primitives)
+            .enumerate()
+            .filter_map(|(index, (rest, p))| {
+                let (key, mesh) = rest.as_ref()?;
+                Some(SceneDraw {
+                    id: format!("{id}-mesh-{index}"),
+                    resource_key: key.clone(),
+                    mesh: Arc::clone(mesh),
+                    model: placement,
+                    material: Self::material(p, tint),
+                    skin: None,
                 })
             })
             .collect()
@@ -1945,14 +2038,15 @@ mod rolling_ranger_tests {
         let model = &equipment.items[bow.index].0;
         let nock = bow.nock.expect("the bow has a nock joint");
         let mut local = model.rest.clone();
-        let braced = model.skin_globals(&model.globals_of(&local));
+        let braced = model.posed(&model.globals_of(&local));
         local[nock].t[2] -= draw;
-        let drawn = model.skin_globals(&model.globals_of(&local));
+        let drawn = model.posed(&model.globals_of(&local));
         let moved = braced
             .iter()
             .zip(&drawn)
-            .flat_map(|(a, b)| a.0.iter().zip(&b.0))
-            .map(|(a, b)| distance(*a, *b))
+            .filter_map(|(a, b)| Some((a.as_ref()?, b.as_ref()?)))
+            .flat_map(|(a, b)| a.vertices().iter().zip(b.vertices()))
+            .map(|(a, b)| distance([a.x, a.y, a.z], [b.x, b.y, b.z]))
             .fold(0., f32::max);
         assert!((moved - draw).abs() < 0.01, "the string moves {moved} m");
     }
@@ -1969,10 +2063,8 @@ mod rolling_ranger_tests {
                 .all(|channel| channel.node < model.rest.len())
         );
         assert!(model.height > 0.);
-        assert_ne!(
-            model.skin(&[Layer::single("Walk_Loop", 0.)]),
-            model.skin(&[Layer::single("Walk_Loop", clip.duration * 0.25)])
-        );
+        let palette = |time| model.palette(&model.globals(&[Layer::single("Walk_Loop", time)]));
+        assert_ne!(palette(0.), palette(clip.duration * 0.25));
     }
 
     #[test]
@@ -1992,10 +2084,8 @@ mod rolling_ranger_tests {
             assert!(model.floor.abs() < 0.03, "{key} {}", model.floor);
             let walk = clips["Walk"];
             assert!(clips["Idle"] > 0. && walk > 0.);
-            assert_ne!(
-                model.skin(&[Layer::single("Walk", 0.)]),
-                model.skin(&[Layer::single("Walk", walk * 0.5)])
-            );
+            let palette = |time| model.palette(&model.globals(&[Layer::single("Walk", time)]));
+            assert_ne!(palette(0.), palette(walk * 0.5));
         }
     }
 
@@ -2014,47 +2104,46 @@ mod rolling_ranger_tests {
             assert!(!settlement_draws(part.entry).is_empty(), "{}", part.entry);
         }
     }
-}
 
-#[cfg(test)]
-mod allocation_observation {
-    use super::*;
-
+    /// GPU skinning (#595): every figure of a model draws the same bind-pose meshes, frame
+    /// after frame; only its palette is its own and follows its pose.
     #[test]
-    #[ignore = "manual allocation observation for issue #338"]
-    fn unchanged_imported_pose_rebuilds_mesh_identity() {
+    fn figures_share_bind_meshes_and_pose_by_palette() {
         let model = &asset(Kind::Ranger).model;
-        for count in [1, 10, 50] {
-            let frame = || {
-                (0..count)
-                    .flat_map(|unit| {
-                        model.draws(
-                            &format!("observed-{unit}"),
-                            Frame {
-                                p: [0.0; 3],
-                                q: [0.0, 0.0, 0.0, 1.0],
-                            },
-                            1.8,
-                            &[Layer::single(Kind::Ranger.clips().idle, 0.25)],
-                            None,
-                            &[],
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            };
-            let first = frame();
-            let second = frame();
-            assert_eq!(first.len(), second.len());
-            let replaced = first
-                .iter()
-                .zip(&second)
-                .filter(|(a, b)| a.resource_key == b.resource_key && !Arc::ptr_eq(&a.mesh, &b.mesh))
-                .count();
-            println!(
-                "unchanged_pose units={count} mesh_creations={} replaced_identities={replaced}",
-                second.len()
-            );
-            assert_eq!(replaced, second.len());
+        let idle = Kind::Ranger.clips().idle;
+        let draws = |unit: usize, time: f32| {
+            model.draws(
+                &format!("observed-{unit}"),
+                Frame {
+                    p: [0.0; 3],
+                    q: [0.0, 0.0, 0.0, 1.0],
+                },
+                1.8,
+                &[Layer::single(idle, time)],
+                None,
+                &[],
+            )
+        };
+        let (first, other, later) = (draws(0, 0.25), draws(1, 0.25), draws(0, 0.75));
+        assert!(!first.is_empty());
+        for ((a, b), c) in first.iter().zip(&other).zip(&later) {
+            assert_eq!(a.resource_key, b.resource_key);
+            assert!(Arc::ptr_eq(&a.mesh, &b.mesh) && Arc::ptr_eq(&a.mesh, &c.mesh));
+            let skin = |draw: &SceneDraw| draw.skin.clone().expect("a posed figure is skinned");
+            let (a, b, c) = (skin(a), skin(b), skin(c));
+            assert_ne!(a.figure, b.figure);
+            assert_eq!(a.palette, b.palette, "the same pose");
+            assert_ne!(a.palette, c.palette, "a later pose");
+            assert_eq!(a.palette.len(), model.slots.len());
         }
+        // Items at rest are static meshes, baked once.
+        let rest = || model.draws_placed("rest", three_d_animation::Mat4::IDENTITY, &[], None);
+        let (once, again) = (rest(), rest());
+        assert!(once.iter().all(|draw| draw.skin.is_none()));
+        assert!(
+            once.iter()
+                .zip(&again)
+                .all(|(a, b)| Arc::ptr_eq(&a.mesh, &b.mesh))
+        );
     }
 }

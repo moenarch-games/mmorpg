@@ -7,7 +7,7 @@ use crate::{
     camera::CameraView,
     environment::Lighting,
     hud::{HudRect, MAX_HUD_RECTS},
-    world::{DrawBatch, DrawMaterial, SceneDraw, WorldFrame},
+    world::{DrawBatch, DrawMaterial, DrawSkin, SceneDraw, WorldFrame},
 };
 use bytemuck::{Pod, Zeroable};
 use render_engine::{
@@ -19,14 +19,14 @@ use render_engine::{
         Ambient, Camera, DayCycle, Fog, FogFalloff, Moon, PointLight, RAW_SUNLIGHT, Scene,
         ShadowFilter, ShadowMapSizes, Sky, Sun, SunShadows, Tonemapping,
     },
-    world::{Instance, MaterialId, MeshId, World},
+    world::{Instance, MaterialId, MeshId, SkinId, World},
 };
 use std::{
     collections::{BTreeSet, HashMap},
     mem,
     sync::{Arc, Weak},
 };
-use three_d_core::{Color3, Mesh};
+use three_d_core::Mesh;
 
 /// Greyhaven's sun path: 60° above the southern horizon at noon, the moon opposite.
 pub const DAY_CYCLE: DayCycle = DayCycle {
@@ -77,66 +77,15 @@ struct CachedMesh {
     used: bool,
     /// Live cached batches whose instances use this mesh.
     batches: u32,
-    /// Kept once the resource is rewritten (CPU-skinned units).
-    rewrite: Option<Rewrite>,
 }
 
-/// A rewritten resource's last converted data and source colours (#588). A skinned unit's
-/// next pose only moves its vertices: its colours and triangles are reused, not converted again.
-struct Rewrite {
-    data: MeshData,
-    colors: Option<Vec<Color3>>,
-}
-
-impl Rewrite {
-    fn new(mesh: &Mesh) -> Self {
-        Self {
-            data: mesh_data(mesh),
-            colors: mesh.attributes().colors.clone(),
-        }
-    }
-
-    /// Takes `mesh`'s positions and normals in place when its colours and triangles are the
-    /// ones converted last.
-    fn update(&mut self, mesh: &Mesh) -> Update {
-        let attributes = mesh.attributes();
-        let Some(normals) = &attributes.normals else {
-            return Update::Convert;
-        };
-        if mesh.vertices().len() != self.data.positions.len()
-            || mesh.indices() != self.data.indices.as_slice()
-            || attributes.colors != self.colors
-        {
-            return Update::Convert;
-        }
-        let mut moved = false;
-        for (out, p) in self.data.positions.iter_mut().zip(mesh.vertices()) {
-            let p = Vec3::new(p.x, p.y, p.z);
-            moved |= *out != p;
-            *out = p;
-        }
-        for (out, n) in self.data.normals.iter_mut().zip(normals) {
-            let n = Vec3::new(n.x, n.y, n.z);
-            moved |= *out != n;
-            *out = n;
-        }
-        if moved {
-            Update::Moved
-        } else {
-            Update::Unchanged
-        }
-    }
-}
-
-/// How a rewritten resource's new geometry differs from its last upload.
-#[derive(PartialEq)]
-enum Update {
-    /// Same vertices: nothing to upload.
-    Unchanged,
-    /// Only positions or normals changed.
-    Moved,
-    /// Converted anew.
-    Convert,
+/// A figure's joint palette on the GPU (#595): added when the figure is first drawn, its pose
+/// replaced when the figure's palette changes and removed once it is no longer drawn.
+struct CachedSkin {
+    id: SkinId,
+    /// The palette uploaded last.
+    palette: Weak<[[f32; 16]]>,
+    used: bool,
 }
 
 struct CachedMaterial {
@@ -177,6 +126,27 @@ fn linear(c: f32) -> f32 {
 }
 fn linear3(c: [f32; 3]) -> Vec3 {
     Vec3::from(c.map(linear))
+}
+
+/// render-engine's mesh for a draw's mesh: a skinned draw's bind pose with its joints and
+/// weights, every other mesh as it is; meshes without normals are flat shaded.
+fn draw_mesh_data(draw: &SceneDraw) -> MeshData {
+    let mut data = mesh_data(&draw.mesh);
+    if let Some(skin) = &draw.skin {
+        assert!(
+            draw.mesh.attributes().normals.is_some()
+                && skin.influences.joints.len() == data.positions.len(),
+            "a skinned mesh has normals and one influence per vertex"
+        );
+        data.joints.clone_from(&skin.influences.joints);
+        data.weights = skin
+            .influences
+            .weights
+            .iter()
+            .map(|&w| Vec4::from(w))
+            .collect();
+    }
+    data
 }
 
 /// render-engine's mesh for a presentation mesh; meshes without normals are flat shaded.
@@ -420,6 +390,7 @@ impl NatureGpu {
                 mesh,
                 material,
                 world_from_local,
+                skin: None,
             });
         }
     }
@@ -432,14 +403,18 @@ pub(super) struct FrameRenderer {
     viewport: Viewport,
     meshes: HashMap<String, CachedMesh>,
     materials: HashMap<MaterialKey, CachedMaterial>,
+    /// Joint palettes by figure.
+    skins: HashMap<String, CachedSkin>,
+    /// A palette converted for upload; the allocation is kept across frames.
+    palette: Vec<Mat4>,
     batches: HashMap<usize, CachedBatch>,
     /// This frame's instances; the allocation is kept across frames.
     instances: Vec<Instance>,
     hud_pipeline: wgpu::RenderPipeline,
     hud_buffer: wgpu::Buffer,
-    /// Mesh uploads (new or rewritten), reuses and uploaded vertex bytes.
+    /// Mesh uploads (new or rewritten), reuses, uploaded vertex bytes and palette uploads.
     #[cfg(test)]
-    observation: [u64; 3],
+    observation: [u64; 4],
 }
 
 impl FrameRenderer {
@@ -499,6 +474,8 @@ impl FrameRenderer {
             viewport,
             meshes: HashMap::new(),
             materials: HashMap::new(),
+            skins: HashMap::new(),
+            palette: Vec::new(),
             batches: HashMap::new(),
             instances: Vec::new(),
             hud_pipeline,
@@ -509,12 +486,12 @@ impl FrameRenderer {
                 mapped_at_creation: false,
             }),
             #[cfg(test)]
-            observation: [0; 3],
+            observation: [0; 4],
         }
     }
 
     #[cfg(test)]
-    pub(super) fn observation(&self) -> ([u64; 3], usize) {
+    pub(super) fn observation(&self) -> ([u64; 4], usize) {
         (self.observation, self.meshes.len())
     }
 
@@ -523,7 +500,7 @@ impl FrameRenderer {
     }
 
     /// The mesh handle for `draw`: uploaded once per resource and rewritten in place when the
-    /// resource's geometry changed (CPU-skinned units, every frame).
+    /// resource's geometry changed. Skinned units keep their bind pose; only their palettes move.
     fn mesh(&mut self, draw: &SceneDraw) -> MeshId {
         let source = Arc::downgrade(&draw.mesh);
         if let Some(cached) = self.meshes.get_mut(&draw.resource_key) {
@@ -536,30 +513,16 @@ impl FrameRenderer {
                 return cached.id;
             }
             cached.source = source;
-            let update = cached
-                .rewrite
-                .as_mut()
-                .map_or(Update::Convert, |rewrite| rewrite.update(&draw.mesh));
-            if update == Update::Unchanged {
-                #[cfg(test)]
-                {
-                    self.observation[1] += 1;
-                }
-                return cached.id;
-            }
-            if update == Update::Convert {
-                cached.rewrite = Some(Rewrite::new(&draw.mesh));
-            }
-            let data = &cached.rewrite.as_ref().expect("converted above").data;
+            let data = draw_mesh_data(draw);
             #[cfg(test)]
             {
                 self.observation[0] += 1;
                 self.observation[2] += (data.positions.len() * 64 + data.indices.len() * 4) as u64;
             }
-            self.world.set_mesh(cached.id, data);
+            self.world.set_mesh(cached.id, &data);
             return cached.id;
         }
-        let data = mesh_data(&draw.mesh);
+        let data = draw_mesh_data(draw);
         #[cfg(test)]
         {
             self.observation[0] += 1;
@@ -573,10 +536,53 @@ impl FrameRenderer {
                 source,
                 used: true,
                 batches: 0,
-                rewrite: None,
             },
         );
         id
+    }
+
+    /// The figure's skin for a skinned draw, its palette uploaded when it changed.
+    fn skin(&mut self, skin: &DrawSkin) -> SkinId {
+        let Self {
+            world,
+            skins,
+            palette,
+            ..
+        } = self;
+        let mut convert = || {
+            palette.clear();
+            palette.extend(skin.palette.iter().map(Mat4::from_cols_array));
+        };
+        let cached = match skins.get_mut(skin.figure.as_str()) {
+            Some(cached) => {
+                cached.used = true;
+                if std::ptr::addr_eq(cached.palette.as_ptr(), Arc::as_ptr(&skin.palette)) {
+                    return cached.id;
+                }
+                convert();
+                world.set_skin(cached.id, palette);
+                cached.palette = Arc::downgrade(&skin.palette);
+                cached.id
+            }
+            None => {
+                convert();
+                let id = world.add_skin(palette);
+                skins.insert(
+                    skin.figure.clone(),
+                    CachedSkin {
+                        id,
+                        palette: Arc::downgrade(&skin.palette),
+                        used: true,
+                    },
+                );
+                id
+            }
+        };
+        #[cfg(test)]
+        {
+            self.observation[3] += 1;
+        }
+        cached
     }
 
     fn material(&mut self, material: &DrawMaterial) -> MaterialId {
@@ -596,6 +602,7 @@ impl FrameRenderer {
             mesh: self.mesh(draw),
             material: self.material(&draw.material),
             world_from_local: Mat4::from_cols_array(&draw.model.elements),
+            skin: draw.skin.as_ref().map(|skin| self.skin(skin)),
         }
     }
 
@@ -607,6 +614,7 @@ impl FrameRenderer {
             let mut meshes = BTreeSet::new();
             let mut materials = BTreeSet::new();
             for draw in batch.iter().filter(|draw| drawn(draw)) {
+                debug_assert!(draw.skin.is_none(), "a batch never changes, so never poses");
                 instances.push(self.instance(draw));
                 meshes.insert(draw.resource_key.as_str());
                 materials.insert(material_key(&draw.material));
@@ -642,9 +650,18 @@ impl FrameRenderer {
             world,
             meshes,
             materials,
+            skins,
             batches,
             ..
         } = self;
+        skins.retain(|_, cached| {
+            let keep = cached.used;
+            cached.used = false;
+            if !keep {
+                world.remove_skin(cached.id);
+            }
+            keep
+        });
         batches.retain(|_, batch| {
             let live = batch.source.strong_count() > 0;
             if !live {
@@ -794,40 +811,42 @@ mod tests {
     }
 
     #[test]
-    fn a_rewritten_mesh_reconverts_only_when_more_than_its_vertices_moved() {
-        let normals = |mesh: &Mesh| {
-            let mut attributes = mesh.attributes().clone();
-            attributes.normals = Some(vec![
-                three_d_core::Vec3::new(0., 1., 0.);
-                mesh.vertices().len()
-            ]);
-            attributes.colors = Some(vec![Color3::new(0.5, 0.5, 0.5); mesh.vertices().len()]);
-            Mesh::with_attributes(
-                mesh.vertices().to_vec(),
-                mesh.indices().to_vec(),
-                attributes,
-            )
-            .unwrap()
-        };
-        let cube = normals(&Mesh::unit_cube());
-        let mut rewrite = Rewrite::new(&cube);
-        assert!(rewrite.update(&cube) == Update::Unchanged);
-        let mut moved = cube.vertices().to_vec();
-        moved[0].x += 1.;
-        let moved =
-            Mesh::with_attributes(moved, cube.indices().to_vec(), cube.attributes().clone())
-                .unwrap();
-        assert!(rewrite.update(&moved) == Update::Moved);
-        assert_eq!(rewrite.data.positions[0].x, moved.vertices()[0].x);
-        let mut recoloured = moved.attributes().clone();
-        recoloured.colors = Some(vec![Color3::new(1., 0., 0.); moved.vertices().len()]);
-        let recoloured = Mesh::with_attributes(
-            moved.vertices().to_vec(),
-            moved.indices().to_vec(),
-            recoloured,
+    fn a_skinned_draw_uploads_its_bind_pose_with_joints_and_weights() {
+        let cube = Mesh::unit_cube();
+        let mut attributes = cube.attributes().clone();
+        let count = cube.vertices().len();
+        attributes.normals = Some(vec![three_d_core::Vec3::new(0., 1., 0.); count]);
+        let cube = Mesh::with_attributes(
+            cube.vertices().to_vec(),
+            cube.indices().to_vec(),
+            attributes,
         )
         .unwrap();
-        assert!(rewrite.update(&recoloured) == Update::Convert);
+        let draw = SceneDraw {
+            id: "unit".into(),
+            resource_key: "unit".into(),
+            mesh: Arc::new(cube.clone()),
+            model: three_d_animation::Mat4::IDENTITY,
+            material: DrawMaterial {
+                color: [1.; 3],
+                emissive: [0.; 3],
+                opacity: 1.,
+                unlit: false,
+                double_sided: false,
+            },
+            skin: Some(crate::world::DrawSkin {
+                figure: "unit".into(),
+                influences: Arc::new(crate::world::Influences {
+                    joints: vec![[1, 0, 0, 0]; count],
+                    weights: vec![[1., 0., 0., 0.]; count],
+                }),
+                palette: Arc::from([Mat4::IDENTITY.to_cols_array(); 2]),
+            }),
+        };
+        let data = draw_mesh_data(&draw);
+        assert_eq!(data.positions[0].x, cube.vertices()[0].x, "the bind pose");
+        assert_eq!(data.joints, vec![[1, 0, 0, 0]; count]);
+        assert_eq!(data.weights, vec![Vec4::X; count]);
     }
 
     #[test]

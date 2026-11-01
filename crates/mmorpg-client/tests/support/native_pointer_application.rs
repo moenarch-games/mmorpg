@@ -821,6 +821,7 @@ fn native_pointer_application_contract() {
                 unlit: false,
                 double_sided: false,
             },
+            skin: None,
         });
         let window = Arc::clone(app.driver.app.window.as_ref().unwrap());
         // Retire the configured surface before creating another for this window.

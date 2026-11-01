@@ -430,6 +430,7 @@ async fn offscreen_pixels(
                 emissive: [0.; 3],
                 double_sided: false,
             },
+            skin: None,
         });
     }
     readback(&frame, hud, view, SMOKE_SIZE, None).await
@@ -491,7 +492,7 @@ mod tests {
     }
 
     /// Advisory frame time (PRINCIPLE-015): the Outpost hub with its units and the woods
-    /// (#49), 1280×720, each frame skinned, submitted and waited for. Prints the median and
+    /// (#49), 1280×720, each frame posed, submitted and waited for. Prints the median and
     /// p95 wall time per view.
     #[test]
     #[ignore = "requires a GPU; manual frame-time measurement"]

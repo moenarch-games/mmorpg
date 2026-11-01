@@ -24,6 +24,66 @@ pub struct SceneDraw {
     pub mesh: Arc<three_d_core::Mesh>,
     pub model: Mat4,
     pub material: DrawMaterial,
+    /// A GPU-skinned draw's pose (#595): `mesh` stays in its bind pose.
+    pub skin: Option<DrawSkin>,
+}
+
+/// The pose of a GPU-skinned draw: its bind-pose mesh's per-vertex influences and the figure's
+/// joint palette, which the renderer blends per vertex (render-engine's skinned meshes).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DrawSkin {
+    /// The posed figure; its draws share one palette, uploaded once per frame.
+    pub figure: String,
+    /// Per bind-pose vertex, four palette indices and their weights.
+    pub influences: Arc<Influences>,
+    /// Per joint, the column-major mesh-local matrix that moves a bind-pose vertex with it:
+    /// the joint's model-space transform times its inverse bind matrix.
+    pub palette: Arc<[[f32; 16]]>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Influences {
+    pub joints: Vec<[u16; 4]>,
+    pub weights: Vec<[f32; 4]>,
+}
+
+impl DrawSkin {
+    /// `mesh` posed on the CPU: for picking a clicked body and for baking static geometry
+    /// once, never per rendered frame.
+    #[must_use]
+    pub fn pose(&self, mesh: &three_d_core::Mesh) -> three_d_core::Mesh {
+        use three_d_core::Vec3;
+        let blend = |v: Vec3, joints: &[u16; 4], weights: &[f32; 4], w: f32| {
+            let mut out = [0.; 3];
+            for (&joint, &weight) in joints.iter().zip(weights) {
+                if weight <= 0. {
+                    continue;
+                }
+                let m = &self.palette[usize::from(joint).min(self.palette.len() - 1)];
+                for (r, out) in out.iter_mut().enumerate() {
+                    *out += (m[r] * v.x + m[4 + r] * v.y + m[8 + r] * v.z + m[12 + r] * w) * weight;
+                }
+            }
+            Vec3::new(out[0], out[1], out[2])
+        };
+        let influences = self.influences.joints.iter().zip(&self.influences.weights);
+        let positions = mesh
+            .vertices()
+            .iter()
+            .zip(influences.clone())
+            .map(|(p, (j, w))| blend(*p, j, w, 1.))
+            .collect();
+        let mut attributes = mesh.attributes().clone();
+        if let Some(normals) = &mut attributes.normals {
+            for (n, (j, w)) in normals.iter_mut().zip(influences) {
+                let b = blend(*n, j, w, 0.);
+                let len = (b.x * b.x + b.y * b.y + b.z * b.z).sqrt().max(1e-6);
+                *n = Vec3::new(b.x / len, b.y / len, b.z / len);
+            }
+        }
+        three_d_core::Mesh::with_attributes(positions, mesh.indices().to_vec(), attributes)
+            .expect("posing keeps the mesh's topology")
+    }
 }
 
 /// Draws that never change while they live: the static scenery's visibility groups and water,
@@ -150,6 +210,7 @@ impl Lowering {
                 elements: draw.model,
             },
             material: material(&draw.material),
+            skin: None,
         }
     }
 
