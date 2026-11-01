@@ -175,8 +175,8 @@ export class Ground {
         material = flatMaterial(draw.overlay);
         this.#materials.set(key, material);
       }
-      // Far levels are placed once (about 370 tiles of 150 vertices); near levels stream (about 40 resident).
-      batch = draw.far ? new Batch(`terrain:${key}`, material, 65_536, 327_680, 512) : new Batch(`terrain:${key}`, material, 16_384, 49_152, 64);
+      // Far levels are placed once (about 100 tiles of 430 vertices); near levels stream (about 15 resident).
+      batch = draw.far ? new Batch(`terrain:${key}`, material, 65_536, 327_680, 512) : new Batch(`terrain:${key}`, material, 65_536, 196_608, 64);
       this.#batches.set(key, batch);
       this.root.add(batch.mesh);
       this.#changed = true;

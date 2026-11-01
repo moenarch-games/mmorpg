@@ -39,7 +39,7 @@ describe("the shared static scene in the browser", () => {
     // weighted overlays of #525) streamed around the camera.
     const stream = world.staticScene.terrainStream();
     const tiles = stream.count();
-    expect(tiles).toBeGreaterThan(100);
+    expect(tiles).toBeGreaterThan(50);
     const update = stream.update(0, 5, 0);
     const built = Array.from(update.subarray(1, 1 + update[0]!));
     expect(built.length).toBeGreaterThan(0);

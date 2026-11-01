@@ -1,6 +1,6 @@
 //! Visual terrain tiles with two levels of detail (#526).
 //!
-//! The terrain grid is cut into square tiles of [`TILE_CELLS`] grid cells (64 m). Each tile has
+//! The terrain grid is cut into square tiles of [`TILE_CELLS`] grid cells (128 m). Each tile has
 //! a **near** level, the textured ground of #525 (the opaque grass base and its masked overlays
 //! over the tile's cells, built on demand by [`Tiles::near`]), and a **far** level built once
 //! for every tile: the relief at every second grid sample, its vertex colours the ground
@@ -29,8 +29,9 @@ use crate::ground::{self, Ground, Layer, Layers, Weights};
 use crate::terrain::{self, height, metres, overlaps};
 use crate::{Draw, Material};
 
-/// Grid cells along a tile's side: 64 m of four-metre cells.
-pub const TILE_CELLS: usize = 16;
+/// Grid cells along a tile's side: 128 m of four-metre cells (64 m tiles drew twice as many
+/// near and far draws for the same resident vertices).
+pub const TILE_CELLS: usize = 32;
 /// A tile draws its near level within this camera distance (metres, to its bounds).
 pub const NEAR_METRES: f64 = 160.;
 /// A near tile stays near until this much farther, so a tile on the edge does not flicker.
@@ -40,7 +41,7 @@ pub const PREFETCH_METRES: f64 = 208.;
 /// Near levels beyond this distance are evicted.
 pub const EVICT_METRES: f64 = 256.;
 /// Near levels a frame builds at most, once the first frame's are resident.
-pub const BUILDS_PER_FRAME: usize = 4;
+pub const BUILDS_PER_FRAME: usize = 2;
 /// The far level samples every second grid sample (eight metres).
 const FAR_STRIDE: usize = 2;
 /// Far levels merge into chunks of this many tiles a side, smallest first ([`Tiles::far_cover`]).
