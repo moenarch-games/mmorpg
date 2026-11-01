@@ -41,7 +41,7 @@ fn imported_mesh_buffer_observation() {
                     renderer.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(Duration::from_secs(30)) }).unwrap();
                     let completed_us = render_start.elapsed().as_micros();
                     let (after, live) = renderer.frame.observation();
-                    println!("mode={mode} units={count} frame={frame_index} cpu_meshes={cpu_meshes} gpu_buffers={} gpu_mesh_reuses={} uploaded_bytes={} live_meshes={live} cpu_materialize_us={cpu_us} render_submit_us={submit_us} render_complete_us={completed_us}", after[0]-before[0], after[1]-before[1], after[2]-before[2]);
+                    println!("mode={mode} units={count} frame={frame_index} cpu_meshes={cpu_meshes} gpu_buffers={} gpu_mesh_reuses={} uploaded_bytes={} palette_uploads={} live_meshes={live} cpu_materialize_us={cpu_us} render_submit_us={submit_us} render_complete_us={completed_us}", after[0]-before[0], after[1]-before[1], after[2]-before[2], after[3]-before[3]);
                 }
             }
         }
