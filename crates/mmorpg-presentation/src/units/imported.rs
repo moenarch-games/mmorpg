@@ -111,6 +111,9 @@ pub const ROGUE_LOADOUT: Loadout = Loadout::TwinDaggers;
 pub const DAGGER_SHEATH_SOCKETS: [&str; 2] = ["hip_l.stowed", "hip_r.stowed"];
 /// The socket a drawn throwable rides in (asset-tooling #418).
 pub const THROWABLE_SOCKET: &str = "hand_r.weapon";
+/// The socket a throw's item waits on until the clip's draw (asset-tooling #418): the right
+/// hand's grip frame at `drawSeconds`, so the hand takes it where it hangs.
+pub const THROWABLE_BELT_SOCKET: &str = "belt.throwable";
 
 /// A thrown weapon in the right hand (#603), drawn from the belt for a throw.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -142,18 +145,33 @@ impl Throwable {
             Self::Flask | Self::Bomb => "Grip_Flask_R",
         }
     }
+
+    /// Its bundle item (asset-tooling #467), whose origin is its grip frame.
+    #[must_use]
+    pub const fn item(self) -> &'static str {
+        match self {
+            Self::Knife => "equipment.throwing-knife",
+            Self::Flask => "equipment.venom-flask",
+            Self::Bomb => "equipment.blasting-bomb",
+        }
+    }
+
+    /// Every throwable.
+    pub const ALL: [Self; 3] = [Self::Knife, Self::Flask, Self::Bomb];
 }
 
 /// Where a dagger holder's daggers ride and what its right hand throws this frame (#603): a
-/// throw sheathes the right dagger from its draw to the clip's end and holds the throwable
-/// from the draw to the release; a bandage sheathes both. Everything else keeps the daggers
-/// in hand.
+/// throw shows its item on the belt until the draw, sheathes the right dagger from its draw to
+/// the clip's end and holds the item from the draw to the release; a bandage sheathes both.
+/// Everything else keeps the daggers in hand.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Carry {
     /// Each hand's dagger sheathed on [`DAGGER_SHEATH_SOCKETS`], left then right.
     pub sheathed: [bool; 2],
     /// The throwable in [`THROWABLE_SOCKET`].
     pub throwable: Option<Throwable>,
+    /// A throw's item on [`THROWABLE_BELT_SOCKET`] before the clip's draw (#611).
+    pub belted: Option<Throwable>,
     /// Where a crossbowman's crossbow and bolt ride (#607); `None` for anyone else.
     pub crossbow: Option<CrossbowCarry>,
 }
@@ -3186,9 +3204,9 @@ impl Playback {
     }
 
     /// Where a dagger holder's daggers ride and what it throws (#603), from the upper body's
-    /// clip: a throw of a drawn item sheathes the right dagger from the clip's `drawSeconds` and
-    /// holds the item until its `releaseSeconds`; a bandage sheathes both. Without the clip's
-    /// timing the daggers stay in hand.
+    /// clip: a throw of a drawn item shows it on the belt until the clip's `drawSeconds` (#611),
+    /// then sheathes the right dagger and holds the item until its `releaseSeconds`; a bandage
+    /// sheathes both. Without the clip's timing the daggers stay in hand.
     fn carry(&self, clips: Clips, cues: Cues<'_>, duration: &impl Fn(&str) -> f32) -> Carry {
         if cues.loadout == Some(Loadout::Crossbow) {
             return Carry {
@@ -3208,8 +3226,7 @@ impl Playback {
         if clip == dagger.bandage {
             return Carry {
                 sheathed: [true; 2],
-                throwable: None,
-                crossbow: None,
+                ..Carry::default()
             };
         }
         let item = self
@@ -3231,7 +3248,12 @@ impl Playback {
             (Some(item), Some((draw, release))) if f64::from(time) >= draw => Carry {
                 sheathed: [false, true],
                 throwable: (f64::from(time) < release).then_some(item),
-                crossbow: None,
+                ..Carry::default()
+            },
+            // Until the draw the item waits on the belt (#611).
+            (Some(item), Some(_)) => Carry {
+                belted: Some(item),
+                ..Carry::default()
             },
             _ => Carry::default(),
         }
@@ -4805,14 +4827,21 @@ mod tests {
         };
         let reaching = at(&mut playback.clone(), 0.04);
         assert_eq!(reaching.upper.0, "Throw_Knife");
-        assert_eq!(reaching.carry, Carry::default());
+        // Reaching for it, the knife still hangs on the belt (#611).
+        assert_eq!(
+            reaching.carry,
+            Carry {
+                belted: Some(Throwable::Knife),
+                ..Carry::default()
+            }
+        );
         let drawn = at(&mut playback.clone(), 0.2);
         assert_eq!(
             drawn.carry,
             Carry {
                 sheathed: [false, true],
                 throwable: Some(Throwable::Knife),
-                crossbow: None,
+                ..Carry::default()
             }
         );
         assert_eq!(grip(&drawn, Hand::Right), Some("Grip_Knife_Pinch_R"));

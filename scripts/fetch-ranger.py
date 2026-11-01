@@ -10,13 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 URL = "https://github.com/moritzbrantner/asset-tooling/releases/download/{release}/"
 # The male figure's selected entries by key and variants: the default character and equipment, the class weapons
 # (asset-tooling #375) and props (#379), the Greyhaven residents' outfit variants, armour, straw hat and beards (#418), the class
-# starter outfits' armour (#379), and the Redbrand Crossbowmen's crossbow with an arrow standing in for its bolt (#607).
+# starter outfits' armour (#379), the Redbrand Crossbowmen's crossbow with an arrow standing in for its bolt (#607), and
+# the Rogue's throwing knife, venom flask and blasting bomb (asset-tooling #467, #611).
 CLASSES = ("warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid")
 MALE = {key: {"default"} for key in (
     "humanoid.ranger.male", "equipment.sword.arming", "equipment.shield.heater", "equipment.bow.long",
     "equipment.quiver.back", "equipment.cap.ranger", "equipment.helm.ironcrest", "equipment.dagger.blackened",
     "equipment.staff.bone", "equipment.staff.crystal", "equipment.staff.gnarled", "equipment.book.tome",
-    "equipment.mace.flanged", "equipment.hat.straw", "equipment.crossbow", "equipment.arrow", "facial-hair.beards", "armor.knight", "armor.soldier",
+    "equipment.mace.flanged", "equipment.hat.straw", "equipment.crossbow", "equipment.arrow",
+    "equipment.throwing-knife", "equipment.venom-flask", "equipment.blasting-bomb", "facial-hair.beards", "armor.knight", "armor.soldier",
     "armor.farmer", "armor.innkeeper", "armor.monk", *(f"armor.class.{name}" for name in CLASSES))}
 # The full-detail outfit variant of each resident and class preset's outfit and skin, and the
 # guards' and the varied enemies' outfits in both skins (each draws his own look,

@@ -8,7 +8,8 @@ use mmorpg_presentation::units::{
         BOLT_GROOVE, BOLT_HAND_SOCKET, BOLT_SCALE, BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT,
         BOW_STOWED_SOCKET, Bolt, BowShot, CROSSBOW_LEFT_JOINT, CROSSBOW_SOCKET, Carry,
         CrossbowCarry, DAGGER_SHEATH_SOCKETS, DROP_ARMOR_OUTFIT, Figure, Joint, Kind, Layer,
-        Loadout, Mask, Outfit, THROWABLE_SOCKET, UPPER_BODY_ROOT, draw_meters, gripped,
+        Loadout, Mask, Outfit, THROWABLE_BELT_SOCKET, THROWABLE_SOCKET, Throwable, UPPER_BODY_ROOT,
+        draw_meters, gripped,
     },
     kit::{Frame, model},
     player::Hat,
@@ -161,6 +162,10 @@ struct Primitive {
     /// Its material's authored linear base colour factor, which a recolour replaces.
     factor: [f32; 3],
     double_sided: bool,
+    /// Its material's base alpha when blended (the venom flask's glass, #611), else 1.
+    opacity: f32,
+    /// Its material's emissive colour in sRGB (a staff's orb, the bomb's ember).
+    emissive: [f32; 3],
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
     colors: Vec<Color3>,
@@ -358,6 +363,11 @@ impl Model {
                     material: primitive.material().name().map(str::to_owned),
                     factor: [base[0], base[1], base[2]],
                     double_sided: primitive.material().double_sided(),
+                    opacity: match primitive.material().alpha_mode() {
+                        gltf::material::AlphaMode::Blend => base[3],
+                        _ => 1.,
+                    },
+                    emissive: primitive.material().emissive_factor().map(srgb),
                     positions,
                     normals,
                     colors,
@@ -959,12 +969,13 @@ impl Model {
         self.skinned_draws(id, placement, palette, tint, &[])
     }
 
-    /// A primitive's material: its colours are in its vertices, a tint multiplies them.
+    /// A primitive's material: its colours are in its vertices, a tint multiplies them; its
+    /// glTF material's emissive colour and blended alpha carry over.
     fn material(p: &Primitive, tint: Option<[f32; 3]>) -> DrawMaterial {
         DrawMaterial {
             color: tint.unwrap_or([1.; 3]),
-            emissive: [0.; 3],
-            opacity: 1.,
+            emissive: p.emissive,
+            opacity: p.opacity,
             unlit: false,
             double_sided: p.double_sided,
         }
@@ -1333,10 +1344,29 @@ pub(super) struct Equipment {
     /// bandage puts it on (#603, [`DAGGER_SHEATH_SOCKETS`]); `None` for anything else or a
     /// bundle without the sheath.
     pub sheaths: Vec<Option<(usize, (&'static str, three_d_animation::Mat4))>>,
-    /// The [`THROWABLE_SOCKET`] a dagger holder's drawn throwable rides in (#603).
-    pub throwable: Option<(&'static str, three_d_animation::Mat4)>,
+    /// A right-hand dagger holder's throwables (#603, #611).
+    pub throwables: Option<Throwables>,
     /// A crossbowman's crossbow and bolt (#607).
     pub crossbow: Option<CarriedCrossbow>,
+}
+
+/// The throwing knife, venom flask and blasting bomb (asset-tooling #467) in
+/// [`Throwable::ALL`]'s order, each with its origin at its grip frame, and the sockets a throw
+/// moves its item between: [`THROWABLE_BELT_SOCKET`] until the draw, [`THROWABLE_SOCKET`] from
+/// the draw to the release.
+pub(super) struct Throwables {
+    models: [Model; 3],
+    hand: (&'static str, three_d_animation::Mat4),
+    belt: Option<(&'static str, three_d_animation::Mat4)>,
+}
+
+/// The prepared bundle file of a throwable's item.
+fn throwable_file(throwable: Throwable) -> &'static str {
+    match throwable {
+        Throwable::Knife => ranger_bundle::THROWING_KNIFE,
+        Throwable::Flask => ranger_bundle::VENOM_FLASK,
+        Throwable::Bomb => ranger_bundle::BLASTING_BOMB,
+    }
 }
 
 /// A carried crossbow (#607): its item, the arrow standing in for its bolt, and where the
@@ -1498,10 +1528,17 @@ impl Equipment {
                 Some((hand, socket_of(&descriptor, DAGGER_SHEATH_SOCKETS[hand])?))
             })
             .collect();
-        let throwable = sheaths
+        let throwables = sheaths
             .iter()
             .any(|sheath| matches!(sheath, Some((1, _))))
-            .then(|| socket(&descriptor, THROWABLE_SOCKET));
+            .then(|| Throwables {
+                models: Throwable::ALL.map(|throwable| {
+                    Model::parse(ranger_file(throwable_file(throwable)), "")
+                        .expect("a bundle item is valid glTF")
+                }),
+                hand: socket(&descriptor, THROWABLE_SOCKET),
+                belt: socket_of(&descriptor, THROWABLE_BELT_SOCKET),
+            });
         Self {
             items: items_of,
             hanging: items
@@ -1510,7 +1547,7 @@ impl Equipment {
                 .collect(),
             bow,
             sheaths,
-            throwable,
+            throwables,
             crossbow,
         }
     }
@@ -1532,21 +1569,39 @@ impl Equipment {
         })
     }
 
-    /// The column-major world matrix of the drawn throwable's grip frame (#603): the
-    /// [`THROWABLE_SOCKET`] posed by `pose` and placed by `placement`, for a right-hand dagger
-    /// holder.
-    pub fn throwable_grip(
+    /// A right-hand dagger holder's throwable this frame (#603, #611): its item on the belt
+    /// before the draw or in the right hand until the release, by `carry`, posed by `pose` and
+    /// placed by `placement`.
+    pub fn throwable_draws(
         &self,
+        id: &str,
         character: &Model,
         placement: three_d_animation::Mat4,
         pose: &[Layer],
-    ) -> Option<M4> {
-        let (joint, matrix) = self.throwable.as_ref()?;
-        let at = character.joint(joint, pose)?;
-        Some(mul(
-            &placement.elements,
-            &mul(&at.elements, &matrix.elements),
-        ))
+        carry: Carry,
+        tint: Option<[f32; 3]>,
+    ) -> Vec<SceneDraw> {
+        let Some(throwables) = &self.throwables else {
+            return Vec::new();
+        };
+        let shown = match (carry.throwable, carry.belted) {
+            (Some(item), _) => Some((item, &throwables.hand)),
+            (None, Some(item)) => throwables.belt.as_ref().map(|belt| (item, belt)),
+            (None, None) => None,
+        };
+        let Some((item, (joint, socket))) = shown else {
+            return Vec::new();
+        };
+        let Some(at) = character.joint(joint, pose) else {
+            return Vec::new();
+        };
+        let mut held = three_d_animation::Mat4::IDENTITY;
+        held.elements = mul(&placement.elements, &mul(&at.elements, &socket.elements));
+        let index = Throwable::ALL
+            .iter()
+            .position(|&t| t == item)
+            .expect("every throwable is listed");
+        throwables.models[index].draws_placed(&format!("{id}-{}", item.name()), held, &[], tint)
     }
 
     /// The socket items of a loadout (asset-tooling #375, #379): the sword and shield, the
@@ -2272,8 +2327,7 @@ mod rolling_ranger_tests {
         };
         let sheathed = Carry {
             sheathed: [false, true],
-            throwable: None,
-            crossbow: None,
+            ..Carry::default()
         };
         let (held, stowed) = (right(Carry::default()), right(sheathed));
         assert!(distance(held, joint("hand_r")) < 0.15, "in hand: {held:?}");
@@ -2281,10 +2335,47 @@ mod rolling_ranger_tests {
             distance(stowed, joint("pelvis")) < 0.4,
             "at the hip: {stowed:?}"
         );
+        // The bundle's flask hangs on the belt, then rides in the hand (#611).
+        let flask = |carry: Carry| {
+            let draws = equipment.throwable_draws(
+                "rogue",
+                character,
+                three_d_animation::Mat4::IDENTITY,
+                &pose,
+                carry,
+                None,
+            );
+            assert!(!draws.is_empty(), "the flask draws for {carry:?}");
+            [12, 13, 14].map(|i| draws[0].model.elements[i])
+        };
+        let belted = flask(Carry {
+            belted: Some(Throwable::Flask),
+            ..Carry::default()
+        });
+        let drawn = flask(Carry {
+            sheathed: [false, true],
+            throwable: Some(Throwable::Flask),
+            ..Carry::default()
+        });
+        assert!(
+            distance(belted, joint("pelvis")) < 0.4,
+            "on the belt: {belted:?}"
+        );
+        assert!(
+            distance(drawn, joint("hand_r")) < 0.15,
+            "in hand: {drawn:?}"
+        );
         assert!(
             equipment
-                .throwable_grip(character, three_d_animation::Mat4::IDENTITY, &pose)
-                .is_some()
+                .throwable_draws(
+                    "rogue",
+                    character,
+                    three_d_animation::Mat4::IDENTITY,
+                    &pose,
+                    Carry::default(),
+                    None
+                )
+                .is_empty()
         );
     }
 

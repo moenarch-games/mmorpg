@@ -763,6 +763,15 @@ impl UnitPresenter {
         self.0.set_kit_platforms(platforms);
     }
 
+    /// Where each caster's spell starts (#612): `[kind, id, x, y, z]` per unit in metres, its
+    /// imported `channel` point as the page posed it; the next frames' beams start there.
+    #[wasm_bindgen(js_name = setChannelOrigins)]
+    pub fn set_channel_origins(&mut self, origins: &[f64]) -> Result<(), JsError> {
+        self.0
+            .set_channel_origins(origins)
+            .map_err(|error| JsError::new(&error))
+    }
+
     /// Shows or hides the development body overlay (#39): each unit's authoritative collision
     /// body drawn translucent over its model. Presentation only.
     #[wasm_bindgen(js_name = setBodyOverlay)]

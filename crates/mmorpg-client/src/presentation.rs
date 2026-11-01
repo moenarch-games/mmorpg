@@ -578,6 +578,7 @@ impl Presentation {
                     .map(|draw| (unit.entity, draw)),
             );
         }
+        let mut channel_origins = Vec::new();
         for imported in &frame.imported {
             let ranger = imported.kind == mmorpg_presentation::units::imported::Kind::Ranger;
             // A named resident or humanoid enemy wears its preset (#418, #39).
@@ -602,18 +603,34 @@ impl Presentation {
                     imported.bow,
                     imported.animation.carry,
                 ));
-                // A drawn throwable rides in the right hand from the draw to the release (#603).
-                if let Some(throwable) = imported.animation.carry.throwable
-                    && let Some(grip) =
-                        weapon.throwable_grip(asset, placement, &imported.animation.layers)
-                {
-                    body.extend(
-                        self.units_presenter
-                            .throwable_draws(&imported.id, throwable, grip)
-                            .iter()
-                            .map(|draw| self.lowering.draw(draw)),
-                    );
-                }
+                // A throw's item hangs on the belt until the draw and rides in the right hand
+                // until the release (#603, #611).
+                body.extend(weapon.throwable_draws(
+                    &imported.id,
+                    asset,
+                    placement,
+                    &imported.animation.layers,
+                    imported.animation.carry,
+                    imported.tint,
+                ));
+            }
+            // Where the caster's spell starts: the next frames' beams leave from there (#612).
+            let apply = |m: &[f32; 16], p: [f32; 3]| -> [f32; 3] {
+                std::array::from_fn(|r| m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r])
+            };
+            if let Some(channel) = imported.animation.channel
+                && let Some(hand) = asset.joint(
+                    match channel.hand {
+                        mmorpg_presentation::units::imported::Hand::Left => "hand_l",
+                        mmorpg_presentation::units::imported::Hand::Right => "hand_r",
+                    },
+                    &imported.animation.layers,
+                )
+            {
+                #[allow(clippy::cast_possible_truncation)]
+                let point = channel.point.map(|c| c as f32);
+                let world = apply(&placement.elements, apply(&hand.elements, point));
+                channel_origins.push((imported.entity, world.map(f64::from)));
             }
             let head = asset
                 .head(&imported.animation.layers)
@@ -651,6 +668,7 @@ impl Presentation {
                 .extend(body.iter().cloned().map(|draw| (imported.entity, draw)));
             draws.extend(body);
         }
+        self.units_presenter.set_channel_origins(channel_origins);
         self.lowering.retain_used(&draws);
         for unit in &frame.units {
             if !self.labels.iter().any(|label| label.entity == unit.entity) {

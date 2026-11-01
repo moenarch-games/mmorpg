@@ -104,13 +104,15 @@ struct ImportedEntry {
     /// and the throwable in `hand_r.weapon`, `knife`, `flask`, `bomb` or null (#603).
     sheathed: [bool; 2],
     throwable: Option<&'static str>,
+    /// A throw's item on `belt.throwable` before the clip's draw, named like `throwable` (#611).
+    belted: Option<&'static str>,
     /// A crossbowman's crossbow (#607): in the left hand through the reload's hand-off, the
     /// left hand on the crank, and the bolt in `hand_r.arrow` (`hand`), the groove (`groove`) or
     /// gone (null); null for anyone else.
     crossbow: Option<CrossbowEntry>,
     /// Where the spell of the caster clip shown starts (#609): `point` metres in the `joint`
-    /// (`hand_l` or `hand_r`) glTF frame; null outside the caster clips. No spell effect
-    /// starts there yet.
+    /// (`hand_l` or `hand_r`) glTF frame; null outside the caster clips. The page hands its
+    /// posed world position back with `setChannelOrigins` (#612).
     channel: Option<ChannelEntry>,
 }
 
@@ -199,6 +201,19 @@ enum AudioEntry<'a> {
     Stop {
         entity: u64,
     },
+}
+
+/// The unit a page names by its kind code (0 player, 1 creature, 2 npc, 3 minion) and id.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn entity_of(kind: f64, id: f64) -> Result<EntityRef, String> {
+    let id = id as u32;
+    Ok(match kind as u8 {
+        0 => EntityRef::Player(id),
+        1 => EntityRef::Creature(CreatureId::new(id)),
+        2 => EntityRef::Npc(NpcId::new(id)),
+        3 => EntityRef::Minion(mmorpg_core::MinionId::new(id)),
+        _ => return Err("unknown unit kind".into()),
+    })
 }
 
 fn kind_name(kind: EntityKind) -> &'static str {
@@ -300,6 +315,26 @@ impl Units {
         );
     }
 
+    /// Where each caster's spell starts in the world (#612): `[kind, id, x, y, z]` per unit,
+    /// metres, its imported `channel` point posed this frame.
+    ///
+    /// # Errors
+    ///
+    /// For a malformed list.
+    pub fn set_channel_origins(&mut self, origins: &[f64]) -> Result<(), String> {
+        if !origins.len().is_multiple_of(5) {
+            return Err("channel origins must be five numbers each".into());
+        }
+        let origins = origins
+            .as_chunks::<5>()
+            .0
+            .iter()
+            .map(|o| Ok((entity_of(o[0], o[1])?, [o[2], o[3], o[4]])))
+            .collect::<Result<Vec<_>, String>>()?;
+        self.presenter.set_channel_origins(origins);
+        Ok(())
+    }
+
     /// Decodes and observes one received projection.
     ///
     /// # Errors
@@ -378,14 +413,7 @@ impl Units {
         };
         let mut sampled = Vec::with_capacity(units.len() / 6);
         for unit in units.as_chunks::<6>().0 {
-            let id = unit[1] as u32;
-            let entity = match unit[0] as u8 {
-                0 => EntityRef::Player(id),
-                1 => EntityRef::Creature(CreatureId::new(id)),
-                2 => EntityRef::Npc(NpcId::new(id)),
-                3 => EntityRef::Minion(mmorpg_core::MinionId::new(id)),
-                _ => return Err("unknown unit kind".into()),
-            };
+            let entity = entity_of(unit[0], unit[1])?;
             let Some(record) = snapshot.entities.iter().find(|e| e.entity() == entity) else {
                 continue;
             };
@@ -473,6 +501,7 @@ impl Units {
                     }),
                     sheathed: unit.animation.carry.sheathed,
                     throwable: unit.animation.carry.throwable.map(Throwable::name),
+                    belted: unit.animation.carry.belted.map(Throwable::name),
                     crossbow: unit.animation.carry.crossbow.map(|crossbow| CrossbowEntry {
                         left_hand: crossbow.left_hand,
                         crank: crossbow.crank,

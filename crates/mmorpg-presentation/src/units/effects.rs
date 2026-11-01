@@ -86,6 +86,18 @@ pub struct Anchor {
     pub feet: V,
     pub centre: f64,
     pub yaw: f64,
+    /// Where its spell starts, the staff's head or the palm (#612); `None` outside the caster
+    /// clips or before its client posed one.
+    pub channel: Option<V>,
+}
+
+impl Anchor {
+    /// Where a beam, drain or chain leaves or reaches the caster: its spell's channel point,
+    /// or else its chest.
+    fn spell(&self) -> V {
+        self.channel
+            .unwrap_or([self.feet[0], self.centre + 0.3, self.feet[2]])
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -902,14 +914,14 @@ impl Effects {
                 }
                 Visual::Beam => {
                     if let Some(s) = source {
-                        // As far as its farthest victim, or its full reach.
+                        // From the staff's head (#612) as far as its farthest victim, or its
+                        // full reach.
+                        let o = s.spell();
                         let length = e
                             .chain
                             .first()
                             .and_then(|v| anchors.get(v))
-                            .map_or(BEAM_METRES, |v| {
-                                (v.feet[0] - s.feet[0]).hypot(v.feet[2] - s.feet[2])
-                            });
+                            .map_or(BEAM_METRES, |v| (v.feet[0] - o[0]).hypot(v.feet[2] - o[2]));
                         let flicker = 0.85 + 0.15 * (age * 40.).sin();
                         for k in 0..10 {
                             let d = length * (f64::from(k) + 0.5) / 10.;
@@ -921,11 +933,7 @@ impl Effects {
                                     length / 10. + 0.05,
                                 ]),
                                 if k % 3 == 0 { 0xffffff } else { color },
-                                [
-                                    s.feet[0] + s.yaw.sin() * d,
-                                    s.centre + 0.3,
-                                    s.feet[2] + s.yaw.cos() * d,
-                                ],
+                                [o[0] + s.yaw.sin() * d, o[1], o[2] + s.yaw.cos() * d],
                                 qa(1, s.yaw),
                                 0.9,
                                 true,
@@ -935,7 +943,7 @@ impl Effects {
                 }
                 Visual::Chain => {
                     if let Some(s) = source {
-                        let mut from = [s.feet[0], s.centre + 0.3, s.feet[2]];
+                        let mut from = s.spell();
                         for (j, victim) in e.chain.iter().enumerate() {
                             let Some(v) = anchors.get(victim) else {
                                 continue;
@@ -998,7 +1006,7 @@ impl Effects {
                     if let (Some(s), Some(v)) = (source, target) {
                         // Motes stream from the victim back into the caster's hands.
                         let from = [v.feet[0], v.centre, v.feet[2]];
-                        let to = [s.feet[0], s.centre + 0.3, s.feet[2]];
+                        let to = s.spell();
                         for k in 0..10 {
                             let u = (f64::from(k) / 10. + age * 0.8) % 1.;
                             let sway = (u * PI * 3. + age * 6.).sin() * 0.18;
