@@ -40,6 +40,8 @@ pub enum Loadout {
     FlangedMace,
     /// The Druid's gnarled staff.
     GnarledStaff,
+    /// The Redbrand Crossbowmen's crossbow on [`CROSSBOW_SOCKET`], with a bolt (#607).
+    Crossbow,
 }
 
 impl Loadout {
@@ -70,12 +72,14 @@ impl Loadout {
             Self::CrystalStaffAndTome => "staff.crystal-and-tome",
             Self::FlangedMace => "mace.flanged",
             Self::GnarledStaff => "staff.gnarled",
+            Self::Crossbow => "crossbow",
         }
     }
 
     /// What each hand holds, by grip role (asset-tooling #285). The Ranger's bow rests on its
     /// back and comes to hand only through the bow clips, which curl their own fingers (#556),
-    /// so its hands hold nothing here.
+    /// so its hands hold nothing here. The crossbow is held in both hands, the right on the
+    /// stock's wrist and the left on the fore-stock (#607).
     #[must_use]
     pub const fn hands(self) -> Hands {
         let (left, right) = match self {
@@ -85,6 +89,7 @@ impl Loadout {
             Self::TwinDaggers => (Some(Held::Weapon), Some(Held::Weapon)),
             Self::BoneStaff | Self::GnarledStaff => (None, Some(Held::Staff)),
             Self::CrystalStaffAndTome => (Some(Held::Book), Some(Held::Staff)),
+            Self::Crossbow => (Some(Held::Crossbow), Some(Held::Crossbow)),
         };
         Hands { left, right }
     }
@@ -149,6 +154,59 @@ pub struct Carry {
     pub sheathed: [bool; 2],
     /// The throwable in [`THROWABLE_SOCKET`].
     pub throwable: Option<Throwable>,
+    /// Where a crossbowman's crossbow and bolt ride (#607); `None` for anyone else.
+    pub crossbow: Option<CrossbowCarry>,
+}
+
+/// Where the crossbow rides: the right hand's [`CROSSBOW_SOCKET`] (#607).
+pub const CROSSBOW_SOCKET: &str = "hand_r.crossbow";
+/// The joint the crossbow rides through the reload's `leftHandSeconds`, kept where it was in the
+/// world when the hand-off began (asset-tooling #419).
+pub const CROSSBOW_LEFT_JOINT: &str = "hand_l";
+/// The socket the bolt rides from the reload's `boltDrawnSeconds` to its `reloadedSeconds`.
+pub const BOLT_HAND_SOCKET: &str = "hand_r.arrow";
+/// The bundle has no bolt item: the arrow (`equipment.arrow`, 0.76 m from its nock at the origin
+/// along +Z) scaled by this stands in for one (#607) …
+pub const BOLT_SCALE: f32 = 0.46;
+/// … and lies in the groove at this rigid transform in the crossbow's grip frame (translation
+/// in metres, rotation `[x, y, z, w]`): where the reload's right hand lays it down at
+/// `reloadedSeconds` on the male figure, lifted 1.5 cm out of the stock onto it (the native
+/// client's `a_reload_hands_the_crossbow_off_where_it_was_and_lays_the_bolt_in_the_groove`
+/// checks it).
+pub const BOLT_GROOVE: ([f32; 3], [f32; 4]) = ([0.006, 0.028, 0.054], [0., 0.0118, 0.0275, 0.9996]);
+/// The left hand's grip on the crank while the reload winds it (`crankSeconds`).
+pub const CRANK_GRIP: &str = "Grip_Crank_L";
+
+/// A crossbowman's crossbow this frame (#607): through the reload's `leftHandSeconds` it rides
+/// the left hand, the right drawing the next bolt.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CrossbowCarry {
+    /// The crossbow rides [`CROSSBOW_LEFT_JOINT`] instead of [`CROSSBOW_SOCKET`].
+    pub left_hand: bool,
+    /// The left hand winds the crank ([`CRANK_GRIP`]).
+    pub crank: bool,
+    /// Where the bolt is; `None` between the shot and the draw of the next.
+    pub bolt: Option<Bolt>,
+}
+
+/// Where a crossbowman's bolt is (#607).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Bolt {
+    /// In the right hand's [`BOLT_HAND_SOCKET`], drawn from over the shoulder.
+    Hand,
+    /// Laid in the crossbow's groove ([`BOLT_GROOVE`]), loaded.
+    Groove,
+}
+
+impl Bolt {
+    /// The name both clients key it by.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Hand => "hand",
+            Self::Groove => "groove",
+        }
+    }
 }
 
 /// A hand, for its finger joints and grip pose (asset-tooling #285).
@@ -197,6 +255,8 @@ pub enum Held {
     Book,
     /// A staff's shaft.
     Staff,
+    /// The crossbow's stock: the wrist in the right hand, the fore-stock in the left (#607).
+    Crossbow,
 }
 
 impl Held {
@@ -212,6 +272,8 @@ impl Held {
             (Self::Book, Hand::Right) => "Grip_Book_R",
             (Self::Staff, Hand::Left) => "Grip_Staff_L",
             (Self::Staff, Hand::Right) => "Grip_Staff_R",
+            (Self::Crossbow, Hand::Left) => "Grip_Crossbow_L",
+            (Self::Crossbow, Hand::Right) => "Grip_Crossbow_R",
         }
     }
 }
@@ -375,7 +437,7 @@ pub enum Resident {
     Marauder,
     /// The Redbrand rank and file in the band's red.
     RedbrandBandit,
-    /// The Greyfang outriders (#286), a bow standing in for their crossbows.
+    /// The Greyfang outriders (#286), with crossbows (#607).
     RedbrandCrossbowman,
     /// The Greyfang cavern's shield-bearers (#160): plate, helm, sword and shield.
     RedbrandBrute,
@@ -446,13 +508,13 @@ impl Resident {
     }
 
     /// What the character carries: the guards, bandits and Garrick a sword, the brute a sword
-    /// and shield, a crossbowman a bow and quiver, a marauder a dagger.
+    /// and shield, a crossbowman a crossbow (#607), a marauder a dagger.
     #[must_use]
     pub const fn loadout(self) -> Option<Loadout> {
         match self {
             Self::Guard | Self::RedbrandBandit | Self::Garrick => Some(Loadout::Sword),
             Self::Marauder => Some(Loadout::Dagger),
-            Self::RedbrandCrossbowman => Some(Loadout::BowAndQuiver),
+            Self::RedbrandCrossbowman => Some(Loadout::Crossbow),
             Self::RedbrandBrute => Some(Loadout::SwordAndShield),
             Self::Marshal | Self::Innkeeper | Self::Farmer | Self::Healer | Self::Tanner => None,
         }
@@ -468,7 +530,8 @@ impl Resident {
     }
 
     /// The class whose authored strike the character plays ([`Kind::strike`]): a crossbowman
-    /// looses with the bow release; everyone else swings.
+    /// shoots like a Ranger, with the crossbow clips where the bundle has them (#607) and the
+    /// bow release otherwise; everyone else swings.
     #[must_use]
     pub const fn strike_class(self) -> Option<PlayerClass> {
         match self {
@@ -518,6 +581,92 @@ pub struct Clips {
     /// The Rogue's dagger, throw, flourish and bandage clips, for a model that has them (#603,
     /// asset-tooling #418).
     pub dagger: Option<DaggerClips>,
+    /// The upper-body bow cycle, the rapid release and the power draw, for a model that has
+    /// them (#607, asset-tooling #419).
+    pub bow: Option<BowClips>,
+    /// The crossbow clips, for a model that has them (#607, asset-tooling #419).
+    pub crossbow: Option<CrossbowClips>,
+}
+
+/// The authored ranged clips beside the full-body bow cycle (#607, asset-tooling #419), every
+/// one on the upper body only. Each one the bundle lacks falls back to what played before.
+#[derive(Clone, Copy, Debug)]
+pub struct BowClips {
+    /// The bow cycle re-authored with the hips square: it replaces the full-body cycle
+    /// whenever the cycle plays on the upper body alone, over a gait or the idle legs.
+    pub upper: CastClips,
+    /// The upper body's release ([`StrikeClips::bow`]'s twin).
+    pub release: &'static str,
+    /// One shot from the set string and back under Rapid Fire's haste: draw, loose, nock.
+    pub rapid: &'static str,
+    /// Aimed Shot's and Piercing Shot's slow draw past full draw, held at its end; it looses
+    /// with [`Self::release`].
+    pub power_draw: &'static str,
+}
+
+impl BowClips {
+    /// Whether `clip` is one of them.
+    #[must_use]
+    pub fn contains(self, clip: &str) -> bool {
+        self.upper.contains(clip) || [self.release, self.rapid, self.power_draw].contains(&clip)
+    }
+
+    /// The upper-body twin of a clip of the full-body cycle `full` or its `release`.
+    #[must_use]
+    pub fn upper_of(self, full: CastClips, release: &str, clip: &str) -> Option<&'static str> {
+        let upper = self.upper;
+        if clip == release {
+            Some(self.release)
+        } else if Some(clip) == full.aim {
+            upper.aim
+        } else if clip == full.enter {
+            Some(upper.enter)
+        } else if clip == full.hold {
+            Some(upper.hold)
+        } else if Some(clip) == full.recovery {
+            upper.recovery
+        } else if clip == full.cancel {
+            Some(upper.cancel)
+        } else {
+            None
+        }
+    }
+}
+
+/// The Redbrand Crossbowman's crossbow clips (#607, asset-tooling #419), every one on the upper
+/// body only.
+#[derive(Clone, Copy, Debug)]
+pub struct CrossbowClips {
+    /// Carried low in both hands: out of combat and on the move.
+    pub idle: &'static str,
+    /// The butt at the shoulder, loaded: standing in combat, and through Crossbow Bolt's cast.
+    pub aim: &'static str,
+    /// The shot, looses at the clip's `crossbow.releaseSeconds` …
+    pub fire: &'static str,
+    /// … and the reload after it, back to the aim.
+    pub reload: &'static str,
+}
+
+impl CrossbowClips {
+    /// Whether `clip` is one of them.
+    #[must_use]
+    pub fn contains(self, clip: &str) -> bool {
+        [self.idle, self.aim, self.fire, self.reload].contains(&clip)
+    }
+
+    /// The cycle a crossbowman's cast holds (#607): the aim through the cast, the reload after
+    /// the shot. It has no let-down of its own; a cancel holds the aim a moment.
+    #[must_use]
+    pub const fn cycle(self) -> CastClips {
+        CastClips {
+            aim: None,
+            enter: self.aim,
+            hold: self.aim,
+            recovery: Some(self.reload),
+            cancel: self.aim,
+            footwork: false,
+        }
+    }
 }
 
 /// The authored dagger, throw, flourish and bandage clips (#603, asset-tooling #418), every one
@@ -1071,6 +1220,25 @@ impl Kind {
                     throw_lob: "Throw_Lob",
                     bandage: "Bandage_Self",
                 }),
+                bow: Some(BowClips {
+                    upper: CastClips {
+                        aim: Some("Bow_Aim_Upper_Loop"),
+                        enter: "Bow_Draw_Upper",
+                        hold: "Bow_Hold_Upper_Loop",
+                        recovery: Some("Bow_Recovery_Upper"),
+                        cancel: "Bow_Cancel_Upper",
+                        footwork: false,
+                    },
+                    release: "Bow_Release_Upper",
+                    rapid: "Bow_Rapid_Release",
+                    power_draw: "Bow_Power_Draw",
+                }),
+                crossbow: Some(CrossbowClips {
+                    idle: "Crossbow_Idle_Loop",
+                    aim: "Crossbow_Aim_Loop",
+                    fire: "Crossbow_Fire",
+                    reload: "Crossbow_Reload",
+                }),
             },
             Self::Wolf => Clips {
                 idle: "Idle",
@@ -1089,6 +1257,8 @@ impl Kind {
                 reactions: None,
                 sword: None,
                 dagger: None,
+                bow: None,
+                crossbow: None,
             },
             Self::Rat => Clips {
                 idle: "Rat_Idle",
@@ -1107,6 +1277,8 @@ impl Kind {
                 reactions: None,
                 sword: None,
                 dagger: None,
+                bow: None,
+                crossbow: None,
             },
             // The farm pig has no attack clip; its jump reads as a charge.
             Self::Pig => Clips {
@@ -1126,6 +1298,8 @@ impl Kind {
                 reactions: None,
                 sword: None,
                 dagger: None,
+                bow: None,
+                crossbow: None,
             },
         }
     }
@@ -1211,13 +1385,53 @@ impl Kind {
         Some((clip, None))
     }
 
+    /// The authored ranged clip an accepted shot plays instead of the bow release (#607): a
+    /// crossbowman's every shot fires the crossbow; under Rapid Fire's haste every bow shot is
+    /// the rapid release; Aimed Shot and Piercing Shot loose with the upper-body release after
+    /// their power draw. `None` for any other shot or a model without them; the bow release
+    /// then plays.
+    #[must_use]
+    pub fn ranged_strike(
+        self,
+        loadout: Option<Loadout>,
+        ability: Option<AbilityId>,
+        hasted: bool,
+    ) -> Option<&'static str> {
+        use mmorpg_core::ability::ids;
+        let clips = self.clips();
+        if loadout == Some(Loadout::Crossbow) {
+            return clips.crossbow.map(|crossbow| crossbow.fire);
+        }
+        let bow = clips.bow?;
+        if hasted {
+            return Some(bow.rapid);
+        }
+        matches!(ability, Some(ids::AIMED_SHOT | ids::PIERCING_SHOT)).then_some(bow.release)
+    }
+
+    /// The draw the local player's wind-up of `ability` shows instead of the aim (#607): Aimed
+    /// Shot's and Piercing Shot's power draw, held at its end until the zone answers.
+    #[must_use]
+    pub fn power_draw(self, ability: AbilityId) -> Option<&'static str> {
+        use mmorpg_core::ability::ids;
+        self.clips()
+            .bow
+            .filter(|_| matches!(ability, ids::AIMED_SHOT | ids::PIERCING_SHOT))
+            .map(|bow| bow.power_draw)
+    }
+
     /// Which body a strike of `clip` drives (#582): an authored sword clip its own region, a
-    /// dagger clip (#603) the upper body, every other strike the whole body standing and the
-    /// upper body on the move.
+    /// dagger, upper-body bow or crossbow clip (#603, #607) the upper body, every other strike
+    /// the whole body standing and the upper body on the move.
     #[must_use]
     pub fn strike_region(self, clip: &str) -> Region {
         let clips = self.clips();
-        if clips.dagger.is_some_and(|dagger| dagger.contains(clip)) {
+        if clips.dagger.is_some_and(|dagger| dagger.contains(clip))
+            || clips.bow.is_some_and(|bow| bow.contains(clip))
+            || clips
+                .crossbow
+                .is_some_and(|crossbow| crossbow.contains(clip))
+        {
             return Region::Upper;
         }
         clips
@@ -1226,11 +1440,19 @@ impl Kind {
             .unwrap_or(Region::Footwork)
     }
 
-    /// The cast cycle a `class` user shows while casting or channelling (#538): a bow class
-    /// draws and holds the bow, everyone else holds a spell.
+    /// The cast cycle a `class` user carrying `loadout` shows while casting or channelling
+    /// (#538): a crossbowman holds its aim (#607), a bow class draws and holds the bow,
+    /// everyone else holds a spell.
     #[must_use]
-    pub fn cast(self, class: Option<PlayerClass>) -> Option<CastClips> {
-        let strikes = self.clips().strikes?;
+    pub fn cast(self, class: Option<PlayerClass>, loadout: Option<Loadout>) -> Option<CastClips> {
+        let clips = self.clips();
+        if let Some(crossbow) = clips
+            .crossbow
+            .filter(|_| loadout == Some(Loadout::Crossbow))
+        {
+            return Some(crossbow.cycle());
+        }
+        let strikes = clips.strikes?;
         Some(if class == Some(PlayerClass::Ranger) {
             strikes.bow_cycle
         } else {
@@ -1238,26 +1460,38 @@ impl Kind {
         })
     }
 
-    /// The cast cycle whose release `strike` is, for its wind-up and recovery (#538).
+    /// The cast cycle whose release `strike` is, for its wind-up and recovery (#538): the
+    /// upper-body release's the upper-body cycle, the crossbow's shot the reload (#607).
     #[must_use]
     pub fn cycle_of(self, strike: &str) -> Option<CastClips> {
-        let strikes = self.clips().strikes?;
+        let clips = self.clips();
+        let strikes = clips.strikes?;
         if strike == strikes.bow {
             Some(strikes.bow_cycle)
         } else if strike == strikes.spell {
             Some(strikes.spell_cycle)
+        } else if let Some(bow) = clips.bow.filter(|bow| bow.release == strike) {
+            Some(bow.upper)
         } else {
-            None
+            clips
+                .crossbow
+                .filter(|crossbow| crossbow.fire == strike)
+                .map(CrossbowClips::cycle)
         }
     }
 
-    /// The bow shot `animation` shows (#556): its upper-body target is the bow release or a
-    /// clip of the bow cycle.
+    /// The bow shot `animation` shows (#556): its upper-body target is the bow release, a clip
+    /// of the bow cycle or one of the upper-body bow clips (#607), whose `bow.drawMeters` the
+    /// nock follows alike.
     #[must_use]
     pub fn bow_shot(self, animation: &Animation) -> Option<BowShot> {
-        let strikes = self.clips().strikes?;
+        let clips = self.clips();
+        let strikes = clips.strikes?;
         let (clip, time) = animation.upper;
-        (clip == strikes.bow || strikes.bow_cycle.contains(clip)).then_some(BowShot { clip, time })
+        (clip == strikes.bow
+            || strikes.bow_cycle.contains(clip)
+            || clips.bow.is_some_and(|bow| bow.contains(clip)))
+        .then_some(BowShot { clip, time })
     }
 
     /// The clip of a `reaction`, for a model that has reactions.
@@ -1484,6 +1718,8 @@ pub struct Cues<'a> {
     pub stunned: bool,
     /// The zone projects a dodge roll (#516).
     pub rolling: bool,
+    /// The zone projects the unit in combat: a crossbowman standing in combat aims (#607).
+    pub engaged: bool,
     /// What the unit carries: each held item's grip pose closes the fingers round it
     /// (asset-tooling #285), and a dagger holder stands in the dagger stance and sheathes its
     /// daggers to throw or bandage (#603).
@@ -1634,6 +1870,17 @@ impl Track {
 #[allow(clippy::cast_possible_truncation)]
 fn walk_rate(speed: f64) -> f32 {
     (speed / 1.8).clamp(0.6, 1.6) as f32
+}
+
+/// `clip`'s upper-body twin when it is a clip of the full-body bow cycle and the model has the
+/// twin (#607), else `clip` itself.
+fn upper_twin(clips: Clips, available: &impl Fn(&str) -> bool, clip: &'static str) -> &'static str {
+    clips
+        .strikes
+        .zip(clips.bow)
+        .and_then(|(strikes, bow)| bow.upper_of(strikes.bow_cycle, strikes.bow, clip))
+        .filter(|twin| available(twin))
+        .unwrap_or(clip)
 }
 
 fn sample(play: Play, duration: &impl Fn(&str) -> f32) -> f32 {
@@ -2533,6 +2780,23 @@ impl Playback {
             && available(guard)
         {
             Some(Want::looped(guard, 1.))
+        } else if let Some(crossbow) = clips.crossbow.filter(|_| {
+            cues.loadout == Some(Loadout::Crossbow)
+                && stun.is_none()
+                && roll.is_none()
+                && !swims
+                && !traversing
+        }) {
+            // A crossbowman carries the crossbow low, standing or on the move, and aims it
+            // standing in combat (#607).
+            let stance = if standing && cues.engaged {
+                crossbow.aim
+            } else {
+                crossbow.idle
+            };
+            Some(stance)
+                .filter(|&clip| available(clip))
+                .map(|stance| Want::looped(stance, 1.))
         } else {
             // A dagger holder stands in the low dagger stance (#603) over the idle legs.
             clips
@@ -2548,6 +2812,12 @@ impl Playback {
                 })
                 .map(|stance| Want::looped(stance, 1.))
         };
+        // The bow cycle on the upper body alone plays its upper-body twin (#607): the hips stay
+        // square over whatever the legs play.
+        let upper = upper.map(|want| Want {
+            clip: upper_twin(clips, &available, want.clip),
+            ..want
+        });
         // The first clip a unit shows has nothing to blend from. Going into or out of swimming
         // depth blends a little longer, so the body eases between land and water.
         let first = self.base.current.is_none();
@@ -2628,14 +2898,21 @@ impl Playback {
         // drawn throwable's closes round it.
         let carry = self.carry(clips, cues, &duration);
         let hands = cues.loadout.map(Loadout::hands).unwrap_or_default();
+        // A reload winds the crossbow's crank with the left hand, then hands the crossbow to the
+        // left hand while the right draws a bolt (#607).
+        let crossbow = carry.crossbow.unwrap_or_default();
         for hand in Hand::BOTH {
             let throwable = carry.throwable.filter(|_| hand == Hand::Right);
             let grip = throwable
                 .map(Throwable::grip)
+                .or_else(|| (crossbow.crank && hand == Hand::Left).then_some(CRANK_GRIP))
                 .or_else(|| {
                     hands
                         .get(hand)
-                        .filter(|_| !carry.sheathed[hand.index()])
+                        .filter(|_| {
+                            !carry.sheathed[hand.index()]
+                                && !(crossbow.left_hand && hand == Hand::Right)
+                        })
                         .map(|held| held.grip(hand))
                 })
                 .filter(|&clip| !climbing && available(clip))
@@ -2666,6 +2943,12 @@ impl Playback {
     /// holds the item until its `releaseSeconds`; a bandage sheathes both. Without the clip's
     /// timing the daggers stay in hand.
     fn carry(&self, clips: Clips, cues: Cues<'_>, duration: &impl Fn(&str) -> f32) -> Carry {
+        if cues.loadout == Some(Loadout::Crossbow) {
+            return Carry {
+                crossbow: Some(self.crossbow(clips, cues, duration)),
+                ..Carry::default()
+            };
+        }
         let Some(dagger) = clips
             .dagger
             .filter(|_| cues.loadout.is_some_and(Loadout::daggers) && !cues.dead)
@@ -2679,6 +2962,7 @@ impl Playback {
             return Carry {
                 sheathed: [true; 2],
                 throwable: None,
+                crossbow: None,
             };
         }
         let item = self
@@ -2700,8 +2984,63 @@ impl Playback {
             (Some(item), Some((draw, release))) if f64::from(time) >= draw => Carry {
                 sheathed: [false, true],
                 throwable: (f64::from(time) < release).then_some(item),
+                crossbow: None,
             },
             _ => Carry::default(),
+        }
+    }
+
+    /// Where a crossbowman's crossbow and bolt ride (#607), from the upper body's clip and the
+    /// clips' `crossbow` marks: the shot looses the bolt at its release; the reload winds the
+    /// crank over `crankSeconds`, holds the crossbow in the left hand over `leftHandSeconds`,
+    /// draws the next bolt at `boltDrawnSeconds` and lays it in the groove at
+    /// `reloadedSeconds`. Otherwise the crossbow is loaded in the right hand.
+    fn crossbow(
+        &self,
+        clips: Clips,
+        cues: Cues<'_>,
+        duration: &impl Fn(&str) -> f32,
+    ) -> CrossbowCarry {
+        let loaded = CrossbowCarry {
+            bolt: Some(Bolt::Groove),
+            ..CrossbowCarry::default()
+        };
+        let (Some(crossbow), Some((clip, time))) = (clips.crossbow, self.upper.target(duration))
+        else {
+            return loaded;
+        };
+        let Some(marks) = cues
+            .motions
+            .and_then(|motions| motions.get(clip))
+            .and_then(|motion| motion.crossbow)
+        else {
+            return loaded;
+        };
+        let time = f64::from(time);
+        let within =
+            |span: Option<[f64; 2]>| span.is_some_and(|[from, to]| (from..to).contains(&time));
+        if clip == crossbow.fire {
+            CrossbowCarry {
+                bolt: marks
+                    .release
+                    .is_none_or(|release| time < release)
+                    .then_some(Bolt::Groove),
+                ..CrossbowCarry::default()
+            }
+        } else if clip == crossbow.reload {
+            let bolt = match (marks.bolt_drawn, marks.reloaded) {
+                (Some(drawn), _) if time < drawn => None,
+                (_, Some(reloaded)) if time >= reloaded => Some(Bolt::Groove),
+                (Some(_), _) => Some(Bolt::Hand),
+                (None, _) => Some(Bolt::Groove),
+            };
+            CrossbowCarry {
+                left_hand: within(marks.left_hand),
+                crank: within(marks.crank),
+                bolt,
+            }
+        } else {
+            loaded
         }
     }
 }
@@ -3150,7 +3489,7 @@ mod tests {
         assert_eq!(frame(&mut playback, 0., 2.8).lower.0, "Bow_Recovery");
         assert_eq!(frame(&mut playback, 0., 3.8).lower.0, "Idle_Loop");
         // A model without casts or reactions has none to start.
-        assert!(Kind::Wolf.cast(Some(PlayerClass::Ranger)).is_none());
+        assert!(Kind::Wolf.cast(Some(PlayerClass::Ranger), None).is_none());
         assert_eq!(Kind::Wolf.reaction(Reaction::Chest), None);
         assert_eq!(
             Kind::Ranger.cycle_of("Bow_Release").and_then(|c| c.aim),
@@ -4219,6 +4558,7 @@ mod tests {
             Carry {
                 sheathed: [false, true],
                 throwable: Some(Throwable::Knife),
+                crossbow: None,
             }
         );
         assert_eq!(grip(&drawn, Hand::Right), Some("Grip_Knife_Pinch_R"));
@@ -4271,5 +4611,251 @@ mod tests {
             Blend::default(),
         );
         assert_eq!(shown.upper.0, "Idle_Loop");
+    }
+
+    #[test]
+    fn a_bow_shot_on_the_upper_body_alone_plays_the_upper_body_cycle() {
+        let clips = Kind::Ranger.clips();
+        let frame = |playback: &mut Playback, lengths: fn(&str) -> f32, speed: f64, now: f64| {
+            playback.advance(
+                clips,
+                lengths,
+                Cues {
+                    speed,
+                    loadout: Some(Loadout::BowAndQuiver),
+                    now,
+                    dt: 0.05,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let every: fn(&str) -> f32 = |_| 1.;
+        // Standing, the release keeps the full-body cycle, pelvis turn and all.
+        let mut playback = Playback::default();
+        playback.strike("Bow_Release", 0.47, Region::Footwork, 0.);
+        playback.recover("Bow_Recovery", 1.1);
+        let standing = frame(&mut playback, every, 0., 0.05);
+        assert_eq!(
+            (standing.lower.0, standing.upper.0),
+            ("Bow_Release", "Bow_Release")
+        );
+        // Walking, the upper body swaps in the hips-square twin over the gait, in step, and
+        // recovers with the twin too.
+        let walking = frame(&mut playback, every, 1.5, 0.1);
+        assert_eq!(walking.upper.0, "Bow_Release_Upper");
+        assert!((walking.upper.1 - 0.1).abs() < 1e-4);
+        assert_eq!(walking.lower.0, "Walk_Loop");
+        assert_eq!(
+            frame(&mut playback, every, 1.5, 0.8).upper.0,
+            "Bow_Recovery_Upper"
+        );
+        assert_eq!(
+            Kind::Ranger.bow_shot(&walking).map(|shot| shot.clip),
+            Some("Bow_Release_Upper")
+        );
+        // A cast's draw and hold on the move, and the local aim even standing (it never moves
+        // the legs).
+        let mut casting = Playback::default();
+        casting.cast(Some(("Bow_Draw", 0.7)), "Bow_Hold_Loop", true, 2., 0.);
+        assert_eq!(
+            frame(&mut casting, every, 3., 0.1).upper.0,
+            "Bow_Draw_Upper"
+        );
+        assert_eq!(
+            frame(&mut casting, every, 3., 1.).upper.0,
+            "Bow_Hold_Upper_Loop"
+        );
+        let mut aiming = Playback::default();
+        aiming.prepare("Bow_Aim_Loop", 0.3, None, 0.);
+        assert_eq!(
+            frame(&mut aiming, every, 0., 0.1).upper.0,
+            "Bow_Aim_Upper_Loop"
+        );
+        // A bundle without the twins keeps the full-body clip on the upper body.
+        let old: fn(&str) -> f32 = |clip| if clip.contains("_Upper") { 0. } else { 1. };
+        let mut playback = Playback::default();
+        playback.strike("Bow_Release", 0.47, Region::Footwork, 0.);
+        frame(&mut playback, old, 0., 0.05);
+        assert_eq!(frame(&mut playback, old, 1.5, 0.1).upper.0, "Bow_Release");
+    }
+
+    #[test]
+    fn rapid_fire_power_shots_and_crossbows_pick_their_ranged_clips() {
+        use mmorpg_core::ability::ids;
+        let ranger = Kind::Ranger;
+        let bow = Some(Loadout::BowAndQuiver);
+        assert_eq!(ranger.ranged_strike(bow, None, false), None);
+        assert_eq!(
+            ranger.ranged_strike(bow, Some(ids::SERPENT_STING), false),
+            None
+        );
+        // Under Rapid Fire every shot is the rapid release, power shots too.
+        assert_eq!(
+            ranger.ranged_strike(bow, None, true),
+            Some("Bow_Rapid_Release")
+        );
+        assert_eq!(
+            ranger.ranged_strike(bow, Some(ids::AIMED_SHOT), true),
+            Some("Bow_Rapid_Release")
+        );
+        for power in [ids::AIMED_SHOT, ids::PIERCING_SHOT] {
+            assert_eq!(
+                ranger.ranged_strike(bow, Some(power), false),
+                Some("Bow_Release_Upper")
+            );
+            assert_eq!(ranger.power_draw(power), Some("Bow_Power_Draw"));
+        }
+        assert_eq!(ranger.power_draw(ids::RICOCHET_SHOT), None);
+        assert_eq!(
+            ranger
+                .cycle_of("Bow_Release_Upper")
+                .and_then(|cycle| cycle.recovery),
+            Some("Bow_Recovery_Upper")
+        );
+        assert!(ranger.cycle_of("Bow_Rapid_Release").is_none());
+        // A crossbowman fires and reloads, and holds its aim through Crossbow Bolt's cast.
+        let crossbow = Some(Loadout::Crossbow);
+        assert_eq!(
+            Resident::RedbrandCrossbowman.loadout(),
+            Some(Loadout::Crossbow)
+        );
+        assert_eq!(
+            ranger.ranged_strike(crossbow, Some(ids::CROSSBOW_BOLT), false),
+            Some("Crossbow_Fire")
+        );
+        assert_eq!(
+            ranger
+                .cycle_of("Crossbow_Fire")
+                .and_then(|cycle| cycle.recovery),
+            Some("Crossbow_Reload")
+        );
+        let cast = ranger
+            .cast(Some(PlayerClass::Ranger), crossbow)
+            .expect("a crossbow cast");
+        assert_eq!(cast.hold, "Crossbow_Aim_Loop");
+        for clip in ["Crossbow_Fire", "Bow_Rapid_Release", "Bow_Release_Upper"] {
+            assert_eq!(ranger.strike_region(clip), Region::Upper, "{clip}");
+        }
+        assert_eq!(
+            Loadout::Crossbow.hands().get(Hand::Left),
+            Some(Held::Crossbow)
+        );
+        assert_eq!(Held::Crossbow.grip(Hand::Right), "Grip_Crossbow_R");
+    }
+
+    #[test]
+    fn a_crossbowman_aims_fires_and_reloads_handing_the_crossbow_to_the_left_hand() {
+        let motions = super::super::traversal::Motions::parse(
+            r#"{"schema": "humanoid-clips-v1", "clips": [
+                {"name": "Crossbow_Fire", "crossbow": {"releaseSeconds": 0.067},
+                 "contact": {"seconds": 0.083}},
+                {"name": "Crossbow_Reload", "crossbow": {"crankSeconds": [0.32, 0.85],
+                 "spannedSeconds": 0.85, "leftHandSeconds": [0.96, 1.44],
+                 "boltDrawnSeconds": 1.15, "reloadedSeconds": 1.34}}
+            ]}"#,
+        )
+        .expect("valid descriptor");
+        let clips = Kind::Ranger.clips();
+        let lengths = |clip: &str| match clip {
+            "Crossbow_Fire" => 0.4,
+            "Crossbow_Reload" => 1.6,
+            _ => 2.,
+        };
+        let frame = |playback: &mut Playback, speed: f64, engaged: bool, now: f64| {
+            playback.advance(
+                clips,
+                lengths,
+                Cues {
+                    motions: Some(&motions),
+                    speed,
+                    engaged,
+                    loadout: Some(Loadout::Crossbow),
+                    now,
+                    dt: 0.02,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let grip = |animation: &Animation, hand| {
+            animation
+                .layers
+                .iter()
+                .filter(|layer| layer.mask == Mask::Fingers(hand) && layer.weight > 0.5)
+                .map(|layer| layer.clip)
+                .next()
+        };
+        let loaded = Some(CrossbowCarry {
+            bolt: Some(Bolt::Groove),
+            ..CrossbowCarry::default()
+        });
+        // Carried low out of combat and on the move, aimed standing in combat; loaded, both
+        // hands on the stock.
+        let idle = frame(&mut Playback::default(), 0., false, 0.);
+        assert_eq!(idle.upper.0, "Crossbow_Idle_Loop");
+        assert_eq!(idle.carry.crossbow, loaded);
+        assert_eq!(grip(&idle, Hand::Left), Some("Grip_Crossbow_L"));
+        assert_eq!(grip(&idle, Hand::Right), Some("Grip_Crossbow_R"));
+        assert_eq!(
+            frame(&mut Playback::default(), 2., true, 0.).upper.0,
+            "Crossbow_Idle_Loop"
+        );
+        assert_eq!(
+            frame(&mut Playback::default(), 0., true, 0.).upper.0,
+            "Crossbow_Aim_Loop"
+        );
+        // The shot looses the bolt, then the reload winds, hands off, draws and lays a bolt.
+        let mut playback = Playback::default();
+        frame(&mut playback, 0., true, 0.);
+        playback.strike("Crossbow_Fire", 0.4, Region::Upper, 0.02);
+        playback.recover("Crossbow_Reload", 1.6);
+        let at = |playback: &Playback, time: f64| {
+            let mut playback = playback.clone();
+            let mut now = 0.02;
+            let mut last = None;
+            while now <= 0.02 + time + 1e-9 {
+                last = Some(frame(&mut playback, 0., true, now));
+                now += 0.02;
+            }
+            last.expect("frames")
+        };
+        let aimed = at(&playback, 0.04);
+        assert_eq!(aimed.upper.0, "Crossbow_Fire");
+        assert_eq!(aimed.carry.crossbow, loaded);
+        let loosed = at(&playback, 0.2);
+        assert_eq!(loosed.carry.crossbow, Some(CrossbowCarry::default()));
+        let winding = at(&playback, 0.4 + 0.5);
+        assert_eq!(winding.upper.0, "Crossbow_Reload");
+        assert!(
+            winding
+                .carry
+                .crossbow
+                .is_some_and(|c| c.crank && !c.left_hand && c.bolt.is_none())
+        );
+        assert_eq!(grip(&winding, Hand::Left), Some(CRANK_GRIP));
+        let drawing = at(&playback, 0.4 + 1.2);
+        assert_eq!(
+            drawing.carry.crossbow,
+            Some(CrossbowCarry {
+                left_hand: true,
+                crank: false,
+                bolt: Some(Bolt::Hand)
+            })
+        );
+        assert_eq!(grip(&drawing, Hand::Right), None);
+        assert_eq!(grip(&drawing, Hand::Left), Some("Grip_Crossbow_L"));
+        let laid = at(&playback, 0.4 + 1.4);
+        assert_eq!(
+            laid.carry.crossbow,
+            Some(CrossbowCarry {
+                left_hand: true,
+                crank: false,
+                bolt: Some(Bolt::Groove)
+            })
+        );
+        let back = at(&playback, 0.4 + 1.5);
+        assert_eq!(back.carry.crossbow, loaded);
+        assert_eq!(grip(&back, Hand::Right), Some("Grip_Crossbow_R"));
     }
 }

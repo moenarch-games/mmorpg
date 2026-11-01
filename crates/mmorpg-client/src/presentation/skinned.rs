@@ -5,9 +5,10 @@
 use crate::world::{DrawMaterial, DrawSkin, Influences, SceneDraw};
 use mmorpg_presentation::units::{
     imported::{
-        BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT, BOW_STOWED_SOCKET, BowShot, Carry,
-        DAGGER_SHEATH_SOCKETS, DROP_ARMOR_OUTFIT, Figure, Joint, Kind, Layer, Loadout, Mask,
-        Outfit, THROWABLE_SOCKET, UPPER_BODY_ROOT, draw_meters, gripped,
+        BOLT_GROOVE, BOLT_HAND_SOCKET, BOLT_SCALE, BOW_DRAW_AXIS, BOW_HAND_SOCKET, BOW_NOCK_JOINT,
+        BOW_STOWED_SOCKET, Bolt, BowShot, CROSSBOW_LEFT_JOINT, CROSSBOW_SOCKET, Carry,
+        CrossbowCarry, DAGGER_SHEATH_SOCKETS, DROP_ARMOR_OUTFIT, Figure, Joint, Kind, Layer,
+        Loadout, Mask, Outfit, THROWABLE_SOCKET, UPPER_BODY_ROOT, draw_meters, gripped,
     },
     kit::{Frame, model},
     player::Hat,
@@ -1334,6 +1335,18 @@ pub(super) struct Equipment {
     pub sheaths: Vec<Option<(usize, (&'static str, three_d_animation::Mat4))>>,
     /// The [`THROWABLE_SOCKET`] a dagger holder's drawn throwable rides in (#603).
     pub throwable: Option<(&'static str, three_d_animation::Mat4)>,
+    /// A crossbowman's crossbow and bolt (#607).
+    pub crossbow: Option<CarriedCrossbow>,
+}
+
+/// A carried crossbow (#607): its item, the arrow standing in for its bolt, and where the
+/// crossbow sits on [`CROSSBOW_LEFT_JOINT`] through the reload's hand-off.
+pub(super) struct CarriedCrossbow {
+    index: usize,
+    bolt: Option<usize>,
+    /// The crossbow's grip frame in the left hand's frame where the reload's `leftHandSeconds`
+    /// begin, measured once from the reload's pose: the hand-off keeps it where it was.
+    left: OnceLock<Option<M4>>,
 }
 
 /// A carried bow (#556): its item, the [`BOW_HAND_SOCKET`] it is held at through the bow cycle,
@@ -1433,15 +1446,37 @@ impl Equipment {
         let descriptor: serde_json::Value =
             serde_json::from_slice(ranger_file(ranger_bundle::SOCKETS))
                 .expect("the sockets descriptor is JSON");
+        let bolt = |entry: &str, socket_id: &str| {
+            entry == ranger_bundle::ARROW && socket_id == BOLT_HAND_SOCKET
+        };
         let items_of: Vec<_> = items
             .iter()
             .map(|&(entry, socket_id)| {
                 let model =
                     Model::parse(ranger_file(entry), "").expect("a bundle item is valid glTF");
-                let (joint, matrix) = socket(&descriptor, socket_id);
+                let (joint, mut matrix) = socket(&descriptor, socket_id);
+                if bolt(entry, socket_id) {
+                    // The arrow stands in for the crossbow's bolt at its length (#607).
+                    matrix.elements = mul(
+                        &matrix.elements,
+                        &trs([0.; 3], [0., 0., 0., 1.], [BOLT_SCALE; 3]),
+                    );
+                }
                 (model, joint, matrix)
             })
             .collect();
+        let crossbow = items
+            .iter()
+            .position(|&(entry, socket_id)| {
+                entry == ranger_bundle::CROSSBOW && socket_id == CROSSBOW_SOCKET
+            })
+            .map(|index| CarriedCrossbow {
+                index,
+                bolt: items
+                    .iter()
+                    .position(|&(entry, socket_id)| bolt(entry, socket_id)),
+                left: OnceLock::new(),
+            });
         let bow = items
             .iter()
             .position(|&(entry, socket_id)| {
@@ -1476,7 +1511,25 @@ impl Equipment {
             bow,
             sheaths,
             throwable,
+            crossbow,
         }
+    }
+
+    /// Where the crossbow's grip frame sits in the left hand's frame through the reload's
+    /// hand-off (#607): where `character`'s right hand held it at the start of the reload's
+    /// `leftHandSeconds`. The reload keys only the upper body, so the hands' relative pose is
+    /// the clip's alone.
+    fn hand_off(&self, crossbow: &CarriedCrossbow, character: &Model) -> Option<M4> {
+        *crossbow.left.get_or_init(|| {
+            let reload = Kind::Ranger.clips().crossbow?.reload;
+            let [start, _] = ranger_motions().get(reload)?.crossbow?.left_hand?;
+            #[allow(clippy::cast_possible_truncation)]
+            let pose = [Layer::single(reload, start as f32)];
+            let left = character.joint(CROSSBOW_LEFT_JOINT, &pose)?.inverse()?;
+            let (_, joint, socket) = &self.items[crossbow.index];
+            let right = character.joint(joint, &pose)?;
+            Some(mul(&left.elements, &mul(&right.elements, &socket.elements)))
+        })
     }
 
     /// The column-major world matrix of the drawn throwable's grip frame (#603): the
@@ -1509,6 +1562,7 @@ impl Equipment {
         static CRYSTAL_AND_TOME: OnceLock<Equipment> = OnceLock::new();
         static MACE: OnceLock<Equipment> = OnceLock::new();
         static GNARLED: OnceLock<Equipment> = OnceLock::new();
+        static CROSSBOW: OnceLock<Equipment> = OnceLock::new();
         let (cell, items): (_, &[(&str, &str)]) = match loadout {
             Loadout::SwordAndShield => (
                 &SWORD_AND_SHIELD,
@@ -1544,6 +1598,14 @@ impl Equipment {
             ),
             Loadout::FlangedMace => (&MACE, &[(ranger_bundle::MACE, "hand_r.weapon")]),
             Loadout::GnarledStaff => (&GNARLED, &[(ranger_bundle::GNARLED_STAFF, "hand_r.staff")]),
+            // The crossbow and the arrow standing in for its bolt (#607).
+            Loadout::Crossbow => (
+                &CROSSBOW,
+                &[
+                    (ranger_bundle::CROSSBOW, CROSSBOW_SOCKET),
+                    (ranger_bundle::ARROW, BOLT_HAND_SOCKET),
+                ],
+            ),
         };
         cell.get_or_init(|| Self::of(items))
     }
@@ -1838,7 +1900,62 @@ impl Equipment {
     ) -> Vec<SceneDraw> {
         let turn = (!swing.is_rest()).then(|| trs([0.; 3], swing.quaternion(), [1.; 3]));
         let mut draws = Vec::new();
+        // A crossbowman's crossbow (#607): loaded in the right hand unless the carry says else.
+        let loaded = carry.crossbow.unwrap_or(CrossbowCarry {
+            bolt: Some(Bolt::Groove),
+            ..CrossbowCarry::default()
+        });
+        let (groove_at, groove_turn) = BOLT_GROOVE;
+        let groove = mul(
+            &trs(groove_at, groove_turn, [1.; 3]),
+            &trs([0.; 3], [0., 0., 0., 1.], [BOLT_SCALE; 3]),
+        );
+        let mut crossbow_at = None;
         for (index, (model, joint, matrix)) in self.items.iter().enumerate() {
+            let placed = |socket: &M4| {
+                let mut held = three_d_animation::Mat4::IDENTITY;
+                held.elements = mul(&placement.elements, socket);
+                model.draws_placed(&format!("{id}-item-{index}"), held, &[], tint)
+            };
+            if let Some(crossbow) = self.crossbow.as_ref().filter(|c| c.index == index) {
+                // Through the reload's hand-off it rides the left hand where it was (#607).
+                let left = self
+                    .hand_off(crossbow, character)
+                    .filter(|_| loaded.left_hand)
+                    .zip(character.joint(CROSSBOW_LEFT_JOINT, pose));
+                let socket = match left {
+                    Some((offset, hand)) => mul(&hand.elements, &offset),
+                    None => {
+                        let Some(at) = character.joint(joint, pose) else {
+                            continue;
+                        };
+                        mul(&at.elements, &matrix.elements)
+                    }
+                };
+                crossbow_at = Some(socket);
+                draws.extend(placed(&socket));
+                continue;
+            }
+            if self
+                .crossbow
+                .as_ref()
+                .is_some_and(|c| c.bolt == Some(index))
+            {
+                // The bolt in the right hand once drawn, in the groove once laid there, and
+                // gone between the shot and the draw (#607).
+                let socket = match (loaded.bolt, crossbow_at) {
+                    (Some(Bolt::Hand), _) => {
+                        let Some(at) = character.joint(joint, pose) else {
+                            continue;
+                        };
+                        mul(&at.elements, &matrix.elements)
+                    }
+                    (Some(Bolt::Groove), Some(crossbow)) => mul(&crossbow, &groove),
+                    _ => continue,
+                };
+                draws.extend(placed(&socket));
+                continue;
+            }
             let bow = self.bow.as_ref().filter(|bow| bow.index == index);
             let in_hand = bow.zip(shot);
             let sheath = self
@@ -2156,6 +2273,7 @@ mod rolling_ranger_tests {
         let sheathed = Carry {
             sheathed: [false, true],
             throwable: None,
+            crossbow: None,
         };
         let (held, stowed) = (right(Carry::default()), right(sheathed));
         assert!(distance(held, joint("hand_r")) < 0.15, "in hand: {held:?}");
@@ -2167,6 +2285,50 @@ mod rolling_ranger_tests {
             equipment
                 .throwable_grip(character, three_d_animation::Mat4::IDENTITY, &pose)
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn a_reload_hands_the_crossbow_off_where_it_was_and_lays_the_bolt_in_the_groove() {
+        let character = &asset(Kind::Ranger).model;
+        let equipment = Equipment::loadout(Loadout::Crossbow);
+        let crossbow = equipment.crossbow.as_ref().expect("a carried crossbow");
+        assert_eq!(crossbow.bolt, Some(1));
+        let reload = ranger_motions()
+            .get("Crossbow_Reload")
+            .and_then(|motion| motion.crossbow)
+            .expect("the reload's crossbow marks");
+        let [start, _] = reload.left_hand.expect("leftHandSeconds");
+        let reloaded = reload.reloaded.expect("reloadedSeconds");
+        let at = |time: f64| [Layer::single("Crossbow_Reload", time as f32)];
+        let position = |m: &M4| [m[12], m[13], m[14]];
+        let distance = |a: [f32; 3], b: [f32; 3]| {
+            a.iter()
+                .zip(b)
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f32>()
+                .sqrt()
+        };
+        let hand = |name: &str, time: f64| character.joint(name, &at(time)).expect(name).elements;
+        let offset = equipment.hand_off(crossbow, character).expect("a hand-off");
+        let (_, joint, socket) = &equipment.items[crossbow.index];
+        // At the hand-off the crossbow stays where the right hand held it.
+        let right = mul(&hand(joint, start), &socket.elements);
+        let left = mul(&hand(CROSSBOW_LEFT_JOINT, start), &offset);
+        assert!(distance(position(&right), position(&left)) < 1e-3);
+        // Where the right hand lays the bolt at `reloadedSeconds` is the groove, in the
+        // crossbow's grip frame.
+        let carried = mul(&hand(CROSSBOW_LEFT_JOINT, reloaded), &offset);
+        let (_, bolt_joint, bolt_socket) = &equipment.items[1];
+        let laid = mul(&hand(bolt_joint, reloaded), &bolt_socket.elements);
+        let mut inverse = three_d_animation::Mat4::IDENTITY;
+        inverse.elements = carried;
+        let measured = mul(&inverse.inverse().expect("invertible").elements, &laid);
+        let (groove, _) = BOLT_GROOVE;
+        assert!(
+            distance(position(&measured), groove) < 0.02,
+            "the bolt is laid at {:?} in the crossbow's frame",
+            position(&measured)
         );
     }
 

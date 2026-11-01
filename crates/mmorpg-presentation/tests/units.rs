@@ -419,3 +419,64 @@ fn a_twin_dagger_rogue_alternates_hands_once_per_swing() {
     assert_eq!(swing(&mut scene, 2.), "Dagger_Slash_L");
     assert_eq!(swing(&mut scene, 3.), "Dagger_Stab_R");
 }
+
+#[test]
+fn a_ranger_power_draws_aimed_shot_and_looses_rapidly_under_rapid_fire() {
+    use mmorpg_core::ability::ids;
+    let mut scene = scene();
+    scene.snapshot.viewer.class = Some(mmorpg_core::ClassChoice {
+        class: mmorpg_core::PlayerClass::Ranger,
+        sex: mmorpg_core::Sex::Male,
+    });
+    scene.presenter.model_ready(
+        Kind::Ranger,
+        [
+            ("Idle_Loop", 2.),
+            ("Bow_Aim_Loop", 2.5),
+            ("Bow_Release", 0.47),
+            ("Bow_Recovery", 1.1),
+            ("Bow_Aim_Upper_Loop", 2.5),
+            ("Bow_Release_Upper", 0.47),
+            ("Bow_Recovery_Upper", 1.1),
+            ("Bow_Rapid_Release", 0.33),
+            ("Bow_Power_Draw", 1.),
+            ("Flourish_Haste", 0.7),
+        ]
+        .map(|(clip, seconds)| (clip.to_owned(), seconds)),
+    );
+    let me = EntityRef::Player(1);
+    let shoot = |scene: &mut Scene, event: ZoneEvent, now: f64| {
+        scene.snapshot.tick += 1;
+        scene.snapshot.events = vec![event];
+        scene.presenter.push(&scene.snapshot, now);
+        viewer_upper(&frame(scene, now + 0.05)).0
+    };
+    frame(&mut scene, 0.);
+    // Aimed Shot winds up with the power draw, held drawn at its end until the zone answers …
+    scene.presenter.prepare(ids::AIMED_SHOT, 0.);
+    scene.presenter.prepared_sent(0.);
+    assert_eq!(viewer_upper(&frame(&mut scene, 0.3)).0, "Bow_Power_Draw");
+    let used = ZoneEvent::AbilityUsed {
+        source: me,
+        target: Some(scene.wolf),
+        ability: ids::AIMED_SHOT,
+    };
+    // … and looses with the upper-body release, then recovers with its twin.
+    assert_eq!(shoot(&mut scene, used, 0.4), "Bow_Release_Upper");
+    assert_eq!(viewer_upper(&frame(&mut scene, 1.)).0, "Bow_Recovery_Upper");
+    // An ordinary shot standing keeps the full-body release.
+    let attack = ZoneEvent::AttackPerformed {
+        source: me,
+        target: Some(scene.wolf),
+    };
+    assert_eq!(shoot(&mut scene, attack, 3.), "Bow_Release");
+    // Under Rapid Fire every shot is the rapid release, back to back.
+    scene.snapshot.auras = vec![mmorpg_core::AuraView {
+        ability: ids::RAPID_FIRE,
+        kind: mmorpg_core::AuraKind::Haste,
+        remaining: 300,
+        amount: 40,
+    }];
+    assert_eq!(shoot(&mut scene, attack, 5.), "Bow_Rapid_Release");
+    assert_eq!(shoot(&mut scene, attack, 5.4), "Bow_Rapid_Release");
+}

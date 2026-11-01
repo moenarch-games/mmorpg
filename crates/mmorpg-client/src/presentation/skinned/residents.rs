@@ -535,6 +535,7 @@ fn dress(figure: Figure, preset: &Value) -> ResidentLook {
             hanging: vec![false; items.len()],
             sheaths: vec![None; items.len()],
             throwable: None,
+            crossbow: None,
             items,
             bow: None,
         },

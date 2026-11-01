@@ -30,6 +30,24 @@ pub struct Motion {
     /// seconds into the clip (`drawSeconds`, `releaseSeconds`, asset-tooling #418).
     pub draw: Option<f64>,
     pub release: Option<f64>,
+    /// A crossbow clip's marks (`crossbow`, asset-tooling #419).
+    pub crossbow: Option<CrossbowMarks>,
+}
+
+/// A crossbow clip's `humanoid-clips` `crossbow` object (asset-tooling #419), in seconds into
+/// the clip: the fire's release, and the reload's winding, hand-off and bolt.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CrossbowMarks {
+    /// The bolt leaves the groove (`Crossbow_Fire`).
+    pub release: Option<f64>,
+    /// The left hand winds the crank, from and to (`crankSeconds`).
+    pub crank: Option<[f64; 2]>,
+    /// The left hand holds the crossbow alone, from and to (`leftHandSeconds`).
+    pub left_hand: Option<[f64; 2]>,
+    /// The right hand has drawn the bolt over the shoulder (`boltDrawnSeconds`) …
+    pub bolt_drawn: Option<f64>,
+    /// … and laid it in the groove (`reloadedSeconds`).
+    pub reloaded: Option<f64>,
 }
 
 /// An authored root path: one glTF translation (+Y up, +Z the facing) per frame.
@@ -121,6 +139,20 @@ impl Motions {
                     contact: clip["contact"]["seconds"].as_f64(),
                     draw: clip["drawSeconds"].as_f64(),
                     release: clip["releaseSeconds"].as_f64(),
+                    crossbow: clip["crossbow"].as_object().map(|_| {
+                        let marks = &clip["crossbow"];
+                        let span = |key: &str| {
+                            let span = marks[key].as_array().filter(|span| span.len() == 2)?;
+                            Some([span[0].as_f64()?, span[1].as_f64()?])
+                        };
+                        CrossbowMarks {
+                            release: marks["releaseSeconds"].as_f64(),
+                            crank: span("crankSeconds"),
+                            left_hand: span("leftHandSeconds"),
+                            bolt_drawn: marks["boltDrawnSeconds"].as_f64(),
+                            reloaded: marks["reloadedSeconds"].as_f64(),
+                        }
+                    }),
                 };
                 (motion != Motion::default()).then(|| (name.to_owned(), motion))
             })

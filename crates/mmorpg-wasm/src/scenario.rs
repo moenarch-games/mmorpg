@@ -91,6 +91,17 @@ pub enum Scenario {
     /// A level 8 Warden 5 m south of a Redbrand Hollow bandit, facing it: beaten below half
     /// health, it wraps a Crude Bandage round its forearm (#603).
     RedbrandBandage,
+    /// A level 6 Ranger with full focus 13 m east of a Wolfrun wolf, facing it, to review the
+    /// ranged clips (#607): shots while walking or strafing play the upper-body bow cycle over
+    /// the gait …
+    RangerMovingShots,
+    /// … Rapid Fire's back-to-back rapid releases …
+    RangerRapidFire,
+    /// … and Aimed Shot's and Piercing Shot's power draw, loosed with the upper-body release.
+    RangerPowerDraw,
+    /// A level 8 Warden 12 m north of a Greyfang Ridge Redbrand Crossbowman, facing it: it
+    /// carries its crossbow, aims, fires Crossbow Bolt and reloads (#607).
+    RedbrandCrossbowman,
 }
 
 impl Scenario {
@@ -130,6 +141,10 @@ impl Scenario {
             Self::RogueDaggers => "rogue-daggers",
             Self::RogueThrows => "rogue-throws",
             Self::RedbrandBandage => "redbrand-bandage",
+            Self::RangerMovingShots => "ranger-moving-shots",
+            Self::RangerRapidFire => "ranger-rapid-fire",
+            Self::RangerPowerDraw => "ranger-power-draw",
+            Self::RedbrandCrossbowman => "redbrand-crossbowman",
         }
     }
 
@@ -149,6 +164,7 @@ impl Scenario {
             | Self::RedbrandWhirl
             | Self::RedbrandSmash
             | Self::RedbrandBandage
+            | Self::RedbrandCrossbowman
             | Self::Grips => ClassChoice {
                 class: PlayerClass::Warden,
                 sex: Sex::Male,
@@ -158,7 +174,11 @@ impl Scenario {
                 class: PlayerClass::Rogue,
                 sex: Sex::Male,
             },
-            Self::RangerRange => ClassChoice {
+            // The ranged clips were reviewed on the male figure (asset-tooling #419).
+            Self::RangerRange
+            | Self::RangerMovingShots
+            | Self::RangerRapidFire
+            | Self::RangerPowerDraw => ClassChoice {
                 class: PlayerClass::Ranger,
                 sex: Sex::Male,
             },
@@ -207,13 +227,18 @@ impl Scenario {
             | Self::WardenCleave
             | Self::WardenStun
             | Self::WardenRespawn => 6,
-            // Adrenaline Rush and Blasting Bomb unlock at level 6.
-            Self::RogueDaggers | Self::RogueThrows => 6,
+            // Adrenaline Rush and Blasting Bomb unlock at level 6, as does Rapid Fire.
+            Self::RogueDaggers
+            | Self::RogueThrows
+            | Self::RangerMovingShots
+            | Self::RangerRapidFire
+            | Self::RangerPowerDraw => 6,
             // Lightning Beam unlocks at level 8; a Warden that high outlasts a Redbrand special.
             Self::ArcanistPack
             | Self::RedbrandWhirl
             | Self::RedbrandSmash
-            | Self::RedbrandBandage => 8,
+            | Self::RedbrandBandage
+            | Self::RedbrandCrossbowman => 8,
             Self::MantleLow | Self::MantleMid | Self::MantleHigh | Self::Climb | Self::Grips => 1,
         }
     }
@@ -241,7 +266,13 @@ impl Scenario {
             }
             // 13 m east of the same wolf, within Charge's 15 m and the throws' range; facing west
             // at it.
-            Self::WardenCharge | Self::RogueThrows => ([-4_900, -3_600], 49_152),
+            Self::WardenCharge
+            | Self::RogueThrows
+            | Self::RangerMovingShots
+            | Self::RangerRapidFire
+            | Self::RangerPowerDraw => ([-4_900, -3_600], 49_152),
+            // 12 m north of Redbrand Crossbowman 600 at (-1 350, -17 250); facing south at it.
+            Self::RedbrandCrossbowman => ([-1_350, -16_050], 32_768),
             // 12 m south of the camp's nearest bandits; facing north.
             Self::WardenStun => ([0, -6_600], 32_768),
             // 5 m south of Redbrand Bandit 401 at (1 000, -7 800); facing north at it.
@@ -321,6 +352,13 @@ impl Scenario {
         if matches!(self, Self::RogueDaggers | Self::RogueThrows) {
             // Full focus, so every Rogue ability can be tried at once (#603).
             record.resource = PlayerClass::Rogue.resource().max(self.level());
+        }
+        if matches!(
+            self,
+            Self::RangerMovingShots | Self::RangerRapidFire | Self::RangerPowerDraw
+        ) {
+            // Full focus, so every Ranger shot can be tried at once (#607).
+            record.resource = PlayerClass::Ranger.resource().max(self.level());
         }
         if self == Self::WardenRespawn {
             // One hit from the wolf kills; releasing the spirit rises at the graveyard.

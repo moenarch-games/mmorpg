@@ -28,6 +28,9 @@ const CRYSTAL_STAFF: &str = "equipment.staff.crystal";
 const GNARLED_STAFF: &str = "equipment.staff.gnarled";
 const TOME: &str = "equipment.book.tome";
 const MACE: &str = "equipment.mace.flanged";
+/// The Redbrand Crossbowmen's crossbow and the arrow standing in for its bolt (#607).
+const CROSSBOW: &str = "equipment.crossbow";
+const ARROW: &str = "equipment.arrow";
 /// The bundle outfit whose plates equipped drops wear (`imported::DROP_ARMOR_OUTFIT`).
 const DROP_ARMOR_OUTFIT: &str = "outfit.knight";
 /// The authored headwear on `head.armor` (#374).
@@ -74,6 +77,8 @@ fn main() {
         ("GNARLED_STAFF", GNARLED_STAFF),
         ("TOME", TOME),
         ("MACE", MACE),
+        ("CROSSBOW", CROSSBOW),
+        ("ARROW", ARROW),
         ("CAP", CAP),
         ("HELM", HELM),
     ] {
