@@ -46,6 +46,8 @@ fi
 entries=humanoid.ranger.male/default,equipment.sword.arming/default,equipment.dagger.blackened/default,equipment.staff.bone/default,equipment.staff.crystal/default,equipment.staff.gnarled/default,equipment.book.tome/default,equipment.mace.flanged/default,equipment.shield.heater/default,equipment.bow.long/default,equipment.quiver.back/default,equipment.cap.ranger/default,equipment.helm.ironcrest/default,armor.knight/default
 # The Redbrand Crossbowmen's crossbow and the arrow standing in for its bolt (#607).
 entries+=",equipment.crossbow/default,equipment.arrow/default"
+# The Rogue's throwing knife, venom flask and blasting bomb (asset-tooling #467, #611).
+entries+=",equipment.throwing-knife/default,equipment.venom-flask/default,equipment.blasting-bomb/default"
 for outfit in warden.skin.light ranger arcanist.skin.light necromancer.skin.grey rogue cleric.skin.light druid; do
   entries+=",humanoid.ranger.male/outfit.class.${outfit},armor.class.${outfit%%.*}/default"
 done

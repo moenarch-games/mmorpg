@@ -466,49 +466,31 @@ function poseBow(model: THREE.Object3D, shot: BowShot | null, motions: ReadonlyM
 /** The dagger and the sockets a throw or bandage moves it between (`imported::DAGGER_SHEATH_SOCKETS`, #603). */
 const DAGGER_ITEM = "equipment.dagger.blackened";
 const DAGGER_SHEATHS: Readonly<Record<string, string>> = { "hand_l.weapon": "hip_l.stowed", "hand_r.weapon": "hip_r.stowed" };
-/** Where a drawn throwable rides (`imported::THROWABLE_SOCKET`). */
+/**
+ * The Rogue's throwables (`imported::Throwable::item`, asset-tooling #467), each with its origin at its
+ * grip frame, and the sockets a throw moves its item between: `belt.throwable` until the draw
+ * (`imported::THROWABLE_BELT_SOCKET`), `hand_r.weapon` from the draw to the release (`THROWABLE_SOCKET`).
+ */
+export const THROWABLE_ITEMS: Readonly<Record<Throwable, string>> = {
+  knife: "equipment.throwing-knife", flask: "equipment.venom-flask", bomb: "equipment.blasting-bomb",
+};
 const THROWABLE_SOCKET = "hand_r.weapon";
+const THROWABLE_BELT_SOCKET = "belt.throwable";
 type Place = { joint: THREE.Object3D; matrix: THREE.Matrix4 };
-/** A dagger holder's daggers, left then right, in hand or sheathed, and its right hand for a throwable. */
+/** A dagger holder's daggers, left then right, in hand or sheathed, and a right-hand holder's throwables. */
 type CarriedDaggers = {
   daggers: [{ holder: THREE.Group; hand: Place; sheath: Place } | null, { holder: THREE.Group; hand: Place; sheath: Place } | null];
-  hand: Place | null;
-  throwables: Map<Throwable, THREE.Object3D>;
+  throwables: Map<Throwable, { holder: THREE.Group; hand: Place; belt: Place | null }>;
 };
 const daggers = new WeakMap<THREE.Object3D, CarriedDaggers>();
 
 /**
- * The drawn throwables (#603), as the shared presenter's `UnitPresenter::throwable_draws` shapes them
- * in the colours of their projectiles: the bundle has no throwable items. Each sits on its grip
- * frame, the blade along +Y.
+ * Sheathes `model`'s daggers by the presenter's carry (#603) and shows the throw's item on the belt
+ * (`belted`) or in the right hand (`throwable`, #611). A bundle without the hip sheath keeps the dagger
+ * in hand. Call after posing.
  */
-const THROWABLE_BALL_METRES = 0.045;
-function throwableMesh(throwable: Throwable): THREE.Object3D {
-  const part = (geometry: THREE.BufferGeometry, color: number, y: number, extra: THREE.MeshStandardMaterialParameters = {}) => {
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...extra }));
-    mesh.position.y = y;
-    mesh.castShadow = true;
-    return mesh;
-  };
-  const group = new THREE.Group();
-  group.name = `throwable-${throwable}`;
-  if (throwable === "knife") {
-    group.add(part(new THREE.BoxGeometry(0.022, 0.08, 0.022), 0x2a2420, -0.03));
-    group.add(part(new THREE.BoxGeometry(0.03, 0.12, 0.006), 0xc4c9cc, 0.07, { metalness: 0.6, roughness: 0.35 }));
-  } else if (throwable === "flask") {
-    group.add(part(new THREE.SphereGeometry(THROWABLE_BALL_METRES, 20, 12), 0x5fbf3a, 0, { transparent: true, opacity: 0.85 }));
-  } else {
-    group.add(part(new THREE.SphereGeometry(THROWABLE_BALL_METRES, 20, 12), 0x2b2b2e, 0));
-    group.add(part(new THREE.SphereGeometry(0.015, 10, 8), 0xffc04a, THROWABLE_BALL_METRES, { emissive: 0xffbf4d }));
-  }
-  return group;
-}
-
-/**
- * Sheathes `model`'s daggers by the presenter's carry (#603) and shows the drawn `throwable` in the
- * right hand. A bundle without the hip sheath keeps the dagger in hand. Call after posing.
- */
-function poseDaggers(model: THREE.Object3D, sheathed: readonly [boolean, boolean], throwable: Throwable | null): void {
+function poseDaggers(model: THREE.Object3D, sheathed: readonly [boolean, boolean], throwable: Throwable | null,
+  belted: Throwable | null): void {
   const carried = daggers.get(model);
   if (!carried) { return; }
   carried.daggers.forEach((dagger, hand) => {
@@ -517,14 +499,13 @@ function poseDaggers(model: THREE.Object3D, sheathed: readonly [boolean, boolean
     if (dagger.holder.parent !== place.joint) { place.joint.add(dagger.holder); }
     if (!dagger.holder.matrix.equals(place.matrix)) { dagger.holder.matrix.copy(place.matrix); }
   });
-  if (throwable && carried.hand && !carried.throwables.has(throwable)) {
-    const mesh = throwableMesh(throwable);
-    mesh.matrix.copy(carried.hand.matrix);
-    mesh.matrixAutoUpdate = false;
-    carried.hand.joint.add(mesh);
-    carried.throwables.set(throwable, mesh);
+  for (const [kind, item] of carried.throwables) {
+    const place = kind === throwable ? item.hand : kind === belted ? item.belt : null;
+    item.holder.visible = place !== null;
+    if (!place) { continue; }
+    if (item.holder.parent !== place.joint) { place.joint.add(item.holder); }
+    if (!item.holder.matrix.equals(place.matrix)) { item.holder.matrix.copy(place.matrix); }
   }
-  for (const [kind, mesh] of carried.throwables) { mesh.visible = kind === throwable; }
 }
 
 /**
@@ -834,15 +815,29 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
         // A throw or bandage sheathes the dagger at the hip (#603); the right hand then takes the throwable.
         let carried = daggers.get(model);
         if (!carried) {
-          const hand = sockets.get(THROWABLE_SOCKET);
-          const handJoint = hand && model.getObjectByName(hand.joint);
-          carried = { daggers: [null, null], hand: hand && handJoint ? { joint: handJoint, matrix: hand.matrix.clone() } : null, throwables: new Map() };
+          carried = { daggers: [null, null], throwables: new Map() };
           daggers.set(model, carried);
         }
         carried.daggers[socket === "hand_l.weapon" ? 0 : 1] = {
           holder, hand: { joint: holder.parent!, matrix: holder.matrix.clone() },
           sheath: { joint: sheathJoint, matrix: new THREE.Matrix4().multiplyMatrices(sheath.matrix, item.gripInverse) },
         };
+        const hand = sockets.get(THROWABLE_SOCKET);
+        const belt = sockets.get(THROWABLE_BELT_SOCKET);
+        const beltJoint = belt && model.getObjectByName(belt.joint);
+        if (socket === THROWABLE_SOCKET && hand) {
+          // The throw's item hangs on the belt until the draw, then rides in the hand (#611).
+          for (const [kind, key] of Object.entries(THROWABLE_ITEMS) as [Throwable, string][]) {
+            const thrown = items.get(key);
+            if (!thrown) { continue; }
+            const held = attachItem(model, cloneSkinned(thrown.scene), thrown.gripInverse, hand);
+            held.visible = false;
+            carried.throwables.set(kind, {
+              holder: held, hand: { joint: held.parent!, matrix: held.matrix.clone() },
+              belt: belt && beltJoint ? { joint: beltJoint, matrix: new THREE.Matrix4().multiplyMatrices(belt.matrix, thrown.gripInverse) } : null,
+            });
+          }
+        }
       }
       const left = key === CROSSBOW_ITEM ? model.getObjectByName(CROSSBOW_LEFT_JOINT) : undefined;
       if (left) {
@@ -880,7 +875,7 @@ async function loadFigure(loader: GLTFLoader, character: string, keys: readonly 
 
 async function loadRanger(loader: GLTFLoader, rest: string): Promise<Asset> {
   // The farmer's straw hat (#418) rides with the viewer's headwear choices.
-  const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw"])];
+  const keys = [...new Set([...[...Object.values(LOADOUT_ITEMS), ...Object.values(HEADWEAR_ITEMS)].flat().map((item) => item.key), "equipment.hat.straw", ...Object.values(THROWABLE_ITEMS)])];
   const male = await loadFigure(loader, MALE, keys, Object.values(HAIR_ENTRIES), rest);
   const { gltf, sources, sockets, motions, appearance, look, face, scene, wear } = male;
   /** The other figures, loaded with the residents (#493). */
@@ -1374,8 +1369,14 @@ export class QuaterniusUnits {
     return asset === "failed" ? null : asset.face?.features ?? null;
   }
 
-  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice }): void {
+  /**
+   * Poses every imported unit, and returns where each caster's spell starts in the world: its `channel`
+   * point on the posed hand (#612), for {@link SharedUnits.setChannelOrigins}.
+   */
+  update(units: readonly ImportedRequest[], viewer: { headwear: Headwear; hair: Hair; face: FaceChoice }):
+    { entity: EntityRef; point: [number, number, number] }[] {
     const seen = new Set<string>();
+    const origins: { entity: EntityRef; point: [number, number, number] }[] = [];
     for (const unit of units) {
       const asset = this.#assets.get(unit.kind);
       if (typeof asset !== "object") { continue; }
@@ -1396,10 +1397,17 @@ export class QuaterniusUnits {
       }
       instance ??= this.#create(unit, dress, asset);
       this.#pose(instance, asset, unit);
+      const hand = unit.channel && instance.posable.model.getObjectByName(unit.channel.joint);
+      if (unit.channel && hand) {
+        hand.updateWorldMatrix(true, false);
+        const point = new THREE.Vector3(...unit.channel.point).applyMatrix4(hand.matrixWorld);
+        origins.push({ entity: unit.entity, point: [point.x, point.y, point.z] });
+      }
     }
     for (const [id, instance] of this.#instances) {
       if (!seen.has(id)) { this.#drop(id, instance); }
     }
+    return origins;
   }
 
   #create(unit: ImportedRequest, dress: Dress, asset: Asset): Instance {
@@ -1454,7 +1462,7 @@ export class QuaterniusUnits {
     root.rotation.set(unit.pitch, unit.yaw, 0, "YXZ");
     root.scale.setScalar((unit.heightMetres / (instance.posable.bounds ?? asset).height) * (instance.posable.scale ?? 1));
     poseBow(instance.posable.model, unit.bow, asset.motions);
-    poseDaggers(instance.posable.model, unit.sheathed, unit.throwable);
+    poseDaggers(instance.posable.model, unit.sheathed, unit.throwable, unit.belted);
     poseCrossbow(instance.posable.model, unit.crossbow);
     swingHanging(instance.posable.model, unit.swing);
   }

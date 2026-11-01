@@ -31,6 +31,10 @@ const MACE: &str = "equipment.mace.flanged";
 /// The Redbrand Crossbowmen's crossbow and the arrow standing in for its bolt (#607).
 const CROSSBOW: &str = "equipment.crossbow";
 const ARROW: &str = "equipment.arrow";
+/// The Rogue's throwables (`imported::Throwable::item`, #611).
+const THROWING_KNIFE: &str = "equipment.throwing-knife";
+const VENOM_FLASK: &str = "equipment.venom-flask";
+const BLASTING_BOMB: &str = "equipment.blasting-bomb";
 /// The bundle outfit whose plates equipped drops wear (`imported::DROP_ARMOR_OUTFIT`).
 const DROP_ARMOR_OUTFIT: &str = "outfit.knight";
 /// The authored headwear on `head.armor` (#374).
@@ -79,6 +83,9 @@ fn main() {
         ("MACE", MACE),
         ("CROSSBOW", CROSSBOW),
         ("ARROW", ARROW),
+        ("THROWING_KNIFE", THROWING_KNIFE),
+        ("VENOM_FLASK", VENOM_FLASK),
+        ("BLASTING_BOMB", BLASTING_BOMB),
         ("CAP", CAP),
         ("HELM", HELM),
     ] {

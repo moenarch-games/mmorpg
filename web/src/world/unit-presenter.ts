@@ -16,6 +16,7 @@ export type UnitPresenterHandle = {
   setBlend(lowerSeconds: number, upperSeconds: number, lowerWeight: number, upperWeight: number): void;
   setBodyOverlay(shown: boolean): void;
   setKitPlatforms(platforms: Uint8Array): void;
+  setChannelOrigins(origins: Float64Array): void;
   push(projection: Uint8Array, seconds: number): void;
   reset(): void;
   prepare(ability: number, seconds: number): void;
@@ -105,16 +106,18 @@ export type ImportedRequest = {
   bow: BowShot | null;
   /**
    * A dagger holder's carry (`imported::Carry`, #603): each hand's dagger sheathed (left on
-   * `hip_l.stowed`, right on `hip_r.stowed`) and the throwable drawn into `hand_r.weapon`.
+   * `hip_l.stowed`, right on `hip_r.stowed`) and the throwable drawn into `hand_r.weapon`; before
+   * the throw's draw its item hangs on `belt.throwable` (`belted`, #611).
    */
   sheathed: readonly [boolean, boolean];
   throwable: Throwable | null;
+  belted: Throwable | null;
   /** A crossbowman's crossbow (#607); null for anyone else. */
   crossbow: CrossbowCarry | null;
   /**
    * Where the spell of the caster clip shown starts (`imported::Channel`, #609): `point` metres in
-   * the `joint`'s glTF frame, the palm or the staff's head; null outside the caster clips. The
-   * origin for a bolt, beam or drain effect.
+   * the `joint`'s glTF frame, the palm or the staff's head; null outside the caster clips. Its posed
+   * world position goes back through {@link SharedUnits.setChannelOrigins}, where beams start (#612).
    */
   channel: SpellChannel | null;
 };
@@ -155,7 +158,7 @@ type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; c
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number; pitch: number;
   height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
-  swing: readonly [number, number, number, number] | null; bow: BowShot | null; sheathed: [boolean, boolean]; throwable: Throwable | null; crossbow: CrossbowCarry | null; channel: SpellChannel | null };
+  swing: readonly [number, number, number, number] | null; bow: BowShot | null; sheathed: [boolean, boolean]; throwable: Throwable | null; belted: Throwable | null; crossbow: CrossbowCarry | null; channel: SpellChannel | null };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
@@ -211,6 +214,16 @@ export class SharedUnits {
   /** The platforms a kit draws (the fortress lifts, #591): no procedural pillar; each frame's `platforms` places them. */
   setKitPlatforms(platforms: readonly number[]): void {
     this.#handle.setKitPlatforms(Uint8Array.from(platforms));
+  }
+
+  /**
+   * Where each caster's spell starts in the world this frame, metres: its `channel` point on the posed
+   * hand (#612). The next frames' beams, drains and chains start there; a unit left out uses its chest.
+   */
+  setChannelOrigins(origins: readonly { entity: EntityRef; point: readonly [number, number, number] }[]): void {
+    const flat = new Float64Array(origins.length * 5);
+    origins.forEach(({ entity, point }, index) => { flat.set([KIND_CODE[entity.kind], entity.id, ...point], index * 5); });
+    this.#handle.setChannelOrigins(flat);
   }
 
   push(projection: Uint8Array, seconds: number): void {
@@ -274,7 +287,7 @@ export class SharedUnits {
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw, pitch: unit.pitch,
         heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, figure: unit.figure, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
-        swing: unit.swing, bow: unit.bow, sheathed: unit.sheathed, throwable: unit.throwable, crossbow: unit.crossbow, channel: unit.channel,
+        swing: unit.swing, bow: unit.bow, sheathed: unit.sheathed, throwable: unit.throwable, belted: unit.belted, crossbow: unit.crossbow, channel: unit.channel,
       })),
       platforms: layout.platforms,
     };

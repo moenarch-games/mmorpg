@@ -77,18 +77,6 @@ fn stuns(ability: AbilityId) -> bool {
         .is_some_and(|aura| aura.kind == mmorpg_core::AuraKind::Stun)
 }
 
-/// The radius of a drawn flask or bomb in the hand (#603), a little over asset-tooling #418's
-/// 4 cm `Grip_Flask_R` ball so the fingers rest on it.
-pub const THROWABLE_BALL_METRES: f64 = 0.045;
-
-/// `a × b` of two column-major 4×4 matrices.
-fn multiply(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
-    std::array::from_fn(|i| {
-        let (column, row) = (i / 4, i % 4);
-        (0..4).map(|k| a[k * 4 + row] * b[column * 4 + k]).sum()
-    })
-}
-
 /// What an imported unit carries: a resident or humanoid enemy its preset's weapons, a player
 /// its class's; nothing for anyone else.
 fn carried(
@@ -292,6 +280,9 @@ pub struct UnitPresenter {
     whiffs: u32,
     /// Platforms a client's kit draws instead of their procedural pillar (#591).
     kit_platforms: BTreeSet<mmorpg_core::PlatformId>,
+    /// Where each caster's spell starts in the world, as its client posed it last frame
+    /// ([`UnitPresenter::set_channel_origins`]).
+    channel_origins: BTreeMap<EntityRef, V>,
 }
 
 impl UnitPresenter {
@@ -323,7 +314,16 @@ impl UnitPresenter {
             hastes: BTreeMap::new(),
             whiffs: 0,
             kit_platforms: BTreeSet::new(),
+            channel_origins: BTreeMap::new(),
         }
+    }
+
+    /// Where each caster's spell starts this frame (#612): the world position, metres, of its
+    /// [`imported::Animation::channel`] point on the hand the client posed, the palm or the
+    /// staff's head. The next frames' beams, drains and chains start there; a unit missing
+    /// from `origins` falls back to its chest.
+    pub fn set_channel_origins(&mut self, origins: impl IntoIterator<Item = (EntityRef, V)>) {
+        self.channel_origins = origins.into_iter().collect();
     }
 
     /// The platforms a client's kit draws (the fortress kit's lifts, #591): their procedural
@@ -452,6 +452,7 @@ impl UnitPresenter {
                         feet: [f64::from(p[0]), f64::from(p[1] - half[1]), f64::from(p[2])],
                         centre: f64::from(p[1]),
                         yaw: f64::from(e.facing) / 65536. * std::f64::consts::TAU,
+                        channel: None,
                     },
                 )
             })
@@ -1057,6 +1058,7 @@ impl UnitPresenter {
                     feet,
                     centre: f64::from(unit.centre[1]),
                     yaw,
+                    channel: self.channel_origins.get(&entity).copied(),
                 },
             );
             // The projected velocity is in units per tick; the animators read metres per second
@@ -1490,68 +1492,6 @@ impl UnitPresenter {
                 offset(tip, [0., 0., -0.04]),
             ));
         }
-    }
-
-    /// A drawn throwable in a hand (#603), in the colours of its projectile: `held` is the
-    /// column-major world matrix of its [`imported::THROWABLE_SOCKET`] grip frame, whose +Y the
-    /// blade points along. The knife is a dark grip and a steel blade, the flask a green glass
-    /// ball, the bomb a black ball with a glowing fuse. The bundle has no throwable items, so
-    /// both clients draw these placeholders (the browser its own copy of the shapes).
-    pub fn throwable_draws(
-        &mut self,
-        id: &str,
-        throwable: imported::Throwable,
-        held: [f32; 16],
-    ) -> Vec<Draw> {
-        let at = |p: V| Frame { p, q: IQ };
-        let mut draws = match throwable {
-            imported::Throwable::Knife => vec![
-                self.resources.primitive(
-                    format!("{id}-knife-grip"),
-                    Primitive::Box([0.022, 0.08, 0.022]),
-                    0x2a2420,
-                    at([0., -0.03, 0.]),
-                ),
-                self.resources.primitive(
-                    format!("{id}-knife-blade"),
-                    Primitive::Box([0.03, 0.12, 0.006]),
-                    0xc4c9cc,
-                    at([0., 0.07, 0.]),
-                ),
-            ],
-            imported::Throwable::Flask => {
-                let mut glass = self.resources.primitive(
-                    format!("{id}-flask"),
-                    Primitive::Ball(THROWABLE_BALL_METRES),
-                    0x5fbf3a,
-                    at([0.; 3]),
-                );
-                glass.material.opacity = 0.85;
-                vec![glass]
-            }
-            imported::Throwable::Bomb => {
-                let mut spark = self.resources.primitive(
-                    format!("{id}-bomb-spark"),
-                    Primitive::Ball(0.015),
-                    0xffc04a,
-                    at([0., THROWABLE_BALL_METRES, 0.]),
-                );
-                spark.material.emissive = [1.0, 0.75, 0.3];
-                vec![
-                    self.resources.primitive(
-                        format!("{id}-bomb"),
-                        Primitive::Ball(THROWABLE_BALL_METRES),
-                        0x2b2b2e,
-                        at([0.; 3]),
-                    ),
-                    spark,
-                ]
-            }
-        };
-        for draw in &mut draws {
-            draw.model = multiply(&held, &draw.model);
-        }
-        draws
     }
 
     /// A Rogue's thrown flask or bomb (#290): a green glass flask with a cork, or a black bomb
