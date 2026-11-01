@@ -9,9 +9,8 @@
 //! (#577). While a client does not draw the bundle, the static scene draws the procedural
 //! trees, rocks and bushes ([`crate::Kit::Nature`] fallback groups).
 //!
-//! [`Lods`] picks each placement's level of detail from the bundle's `lodSelection` metadata
-//! (projected bounding-sphere diameter over viewport height) and cross-fades over
-//! [`FADE_SECONDS`] at every switch. Presentation only.
+//! The shared [`Lods`] ([`crate::lod`]) picks each placement's level of detail from the
+//! bundle's `lodSelection` metadata and cross-fades every switch. Presentation only.
 use mmorpg_core::{Grip, ROCK_PROXIES, RockShape, UNITS_PER_METRE};
 use mmorpg_scenery::{Prop, PropKind, Scenery, TerrainGrid, TreeVariant};
 
@@ -43,11 +42,7 @@ pub const ENTRIES: [&str; 8] = [
     CONIFER,
 ];
 
-/// A switch between two levels of detail cross-fades over this long.
-pub const FADE_SECONDS: f64 = 0.35;
-/// A level switches only once the screen size is this fraction past its threshold, so a
-/// placement standing at a boundary does not flicker between levels.
-pub const HYSTERESIS: f64 = 0.08;
+pub use crate::lod::{Lods, Shown};
 
 /// One placed bundle entry.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -60,6 +55,19 @@ pub struct Placement {
     pub scale: f64,
     /// Beyond its class's reach the placement is hidden, like the procedural prop.
     pub cull: Cull,
+}
+
+impl Placement {
+    /// The placement as [`Lods`] selects its levels.
+    #[must_use]
+    pub fn placed(&self) -> crate::lod::Placed<'static> {
+        crate::lod::Placed {
+            entry: self.entry,
+            model: self.model,
+            scale: self.scale,
+            reach: self.cull.reach(),
+        }
+    }
 }
 
 fn metres(units: i32) -> f64 {
@@ -211,356 +219,9 @@ pub fn descriptor_lods(json: &str) -> Result<Vec<EntryLods>, String> {
     crate::lod::descriptor_lods(&value)
 }
 
-/// One drawn level of a placement this frame.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Shown {
-    /// Index into the placements [`Lods`] was built from.
-    pub placement: usize,
-    /// Index into the entry's levels.
-    pub level: usize,
-    /// `1` settled. While cross-fading, the incoming level draws `t` in `(0, 1)`, a dithered
-    /// fraction `t` of its pixels, and the outgoing one `-t`, the complementary pixels.
-    pub fade: f32,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct State {
-    level: Option<usize>,
-    previous: Option<usize>,
-    /// Progress of the cross-fade from `previous` to `level`, 0 to 1.
-    fade: f64,
-}
-
-#[derive(Clone, Debug)]
-struct Instance {
-    lods: usize,
-    centre: [f64; 3],
-    radius: f64,
-    reach: f64,
-}
-
-/// Each placement's level of detail and cross-fade, advanced once per frame.
-#[derive(Clone, Debug)]
-pub struct Lods {
-    entries: Vec<EntryLods>,
-    instances: Vec<Instance>,
-    states: Vec<State>,
-    shown: Vec<Shown>,
-    /// The previous update's result, kept to tell whether this one changed anything.
-    before: Vec<Shown>,
-    /// The camera of the last update, and whether a cross-fade was still running then: an
-    /// update for the same camera while nothing fades changes nothing and is skipped.
-    view: Option<View>,
-    fading: bool,
-    changed: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct View {
-    eye: [f64; 3],
-    fov_y: f64,
-    bias: f64,
-    fade: bool,
-    clip_from_world: Option<[f32; 16]>,
-}
-
-impl Lods {
-    /// Levels for `placements` from the descriptor's `entries`; an entry the descriptor
-    /// lacks is never drawn.
-    #[must_use]
-    pub fn new(entries: Vec<EntryLods>, placements: &[Placement]) -> Self {
-        let instances = placements
-            .iter()
-            .map(|placement| {
-                let lods = entries
-                    .iter()
-                    .position(|entry| entry.entry == placement.entry)
-                    .unwrap_or(usize::MAX);
-                let (centre, radius) = entries.get(lods).map_or(([0.; 3], 0.), |entry| {
-                    let m = placement.model.map(f64::from);
-                    let [x, y, z] = entry.centre;
-                    (
-                        [
-                            m[0] * x + m[4] * y + m[8] * z + m[12],
-                            m[1] * x + m[5] * y + m[9] * z + m[13],
-                            m[2] * x + m[6] * y + m[10] * z + m[14],
-                        ],
-                        entry.radius * placement.scale,
-                    )
-                });
-                Instance {
-                    lods,
-                    centre,
-                    radius,
-                    reach: placement.cull.reach(),
-                }
-            })
-            .collect::<Vec<_>>();
-        let states = vec![
-            State {
-                level: None,
-                previous: None,
-                fade: 1.,
-            };
-            instances.len()
-        ];
-        Self {
-            entries,
-            instances,
-            states,
-            shown: Vec::new(),
-            before: Vec::new(),
-            view: None,
-            fading: false,
-            changed: false,
-        }
-    }
-
-    /// The entries' levels, as given.
-    #[must_use]
-    pub fn entries(&self) -> &[EntryLods] {
-        &self.entries
-    }
-
-    /// Advances every placement by `seconds` for a camera at `eye` (metres) with vertical
-    /// field of view `fov_y` (radians). `bias` multiplies every `minScreenSize` (a model-detail
-    /// setting: larger switches to coarser levels sooner); without `fade` (reduced motion)
-    /// switches are immediate. With the camera's column-major `clip_from_world` matrix,
-    /// placements wholly outside its side planes are not drawn. Returns what to draw. For the
-    /// same camera while nothing fades it returns the last result without evaluating any
-    /// placement; [`Self::changed`] tells whether the result changed.
-    pub fn update(
-        &mut self,
-        eye: [f64; 3],
-        fov_y: f64,
-        seconds: f64,
-        bias: f64,
-        fade: bool,
-        clip_from_world: Option<[f32; 16]>,
-    ) -> &[Shown] {
-        let view = View {
-            eye,
-            fov_y,
-            bias,
-            fade,
-            clip_from_world,
-        };
-        if !self.fading && self.view == Some(view) {
-            self.changed = false;
-            return &self.shown;
-        }
-        self.view = Some(view);
-        let planes = clip_from_world.map(side_planes);
-        let tan = (fov_y / 2.).tan().max(1e-6);
-        let step = if fade {
-            (seconds / FADE_SECONDS).max(0.)
-        } else {
-            1.
-        };
-        std::mem::swap(&mut self.shown, &mut self.before);
-        self.shown.clear();
-        for (index, (instance, state)) in self.instances.iter().zip(&mut self.states).enumerate() {
-            let Some(entry) = self.entries.get(instance.lods) else {
-                continue;
-            };
-            let [dx, dy, dz] = std::array::from_fn(|axis| instance.centre[axis] - eye[axis]);
-            let flat = dx.hypot(dz);
-            let target = if flat - instance.radius > instance.reach {
-                None
-            } else {
-                let distance = (flat.hypot(dy)).max(1e-3);
-                let size = instance.radius / (distance * tan);
-                let first = |margin: f64| {
-                    entry
-                        .levels
-                        .iter()
-                        .position(|(_, min)| min * bias * margin <= size)
-                        .unwrap_or(entry.levels.len() - 1)
-                };
-                Some(match state.level {
-                    None => first(1.),
-                    Some(level) => {
-                        let finer = first(1. + HYSTERESIS);
-                        let coarser = first(1. - HYSTERESIS);
-                        if finer < level {
-                            finer
-                        } else if coarser > level {
-                            coarser
-                        } else {
-                            level
-                        }
-                    }
-                })
-            };
-            if target != state.level {
-                // Hidden beyond reach, or shown from hiding, the placement pops like the
-                // procedural prop did; between two levels it cross-fades.
-                let switch = target.is_some() && state.level.is_some();
-                state.previous = if switch { state.level } else { None };
-                state.fade = if switch && fade { 0. } else { 1. };
-                state.level = target;
-            } else {
-                state.fade = (state.fade + step).min(1.);
-            }
-            let Some(level) = state.level else {
-                continue;
-            };
-            if planes.as_ref().is_some_and(|planes| {
-                planes.iter().any(|[a, b, c, d]| {
-                    let [x, y, z] = instance.centre;
-                    a * x + b * y + c * z + d < -instance.radius
-                })
-            }) {
-                continue;
-            }
-            match state.previous.filter(|_| state.fade < 1.) {
-                Some(previous) => {
-                    let t = state.fade.clamp(0.01, 0.99) as f32;
-                    self.shown.push(Shown {
-                        placement: index,
-                        level,
-                        fade: t,
-                    });
-                    self.shown.push(Shown {
-                        placement: index,
-                        level: previous,
-                        fade: -t,
-                    });
-                }
-                None => self.shown.push(Shown {
-                    placement: index,
-                    level,
-                    fade: 1.,
-                }),
-            }
-        }
-        self.fading = self.shown.iter().any(|shown| shown.fade < 1.);
-        self.changed = self.shown != self.before;
-        &self.shown
-    }
-
-    /// What the last [`Self::update`] returned.
-    #[must_use]
-    pub fn shown(&self) -> &[Shown] {
-        &self.shown
-    }
-
-    /// Whether the last [`Self::update`] changed what is drawn.
-    #[must_use]
-    pub fn changed(&self) -> bool {
-        self.changed
-    }
-}
-
-/// The left, right, bottom and top planes `[a, b, c, d]` of a clip-from-world matrix
-/// (Gribb–Hartmann), normalized so `a x + b y + c z + d` is the signed distance inside.
-fn side_planes(m: [f32; 16]) -> [[f64; 4]; 4] {
-    let m = m.map(f64::from);
-    let row = |r: usize| [m[r], m[4 + r], m[8 + r], m[12 + r]];
-    let (x, y, w) = (row(0), row(1), row(3));
-    let plane = |p: [f64; 4], sign: f64, q: [f64; 4]| {
-        let v: [f64; 4] = std::array::from_fn(|i| p[i] + sign * q[i]);
-        let length = v[0].hypot(v[1]).hypot(v[2]).max(1e-9);
-        v.map(|value| value / length)
-    };
-    [
-        plane(w, 1., x),
-        plane(w, -1., x),
-        plane(w, 1., y),
-        plane(w, -1., y),
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn tree() -> EntryLods {
-        EntryLods {
-            entry: BROADLEAF.into(),
-            centre: [0., 4., 0.],
-            radius: 5.7,
-            levels: vec![
-                ("default".into(), 0.5),
-                ("lod1".into(), 0.12),
-                ("lod2".into(), 0.),
-            ],
-        }
-    }
-
-    fn at(x: f32) -> Placement {
-        let mut model = [0.; 16];
-        model[0] = 1.;
-        model[5] = 1.;
-        model[10] = 1.;
-        model[15] = 1.;
-        model[12] = x;
-        Placement {
-            entry: BROADLEAF,
-            model,
-            scale: 1.,
-            cull: Cull::Far,
-        }
-    }
-
-    #[test]
-    fn levels_follow_the_projected_size_and_cross_fade() {
-        let fov = 60f64.to_radians();
-        let mut lods = Lods::new(vec![tree()], &[at(10.), at(50.), at(200.), at(900.)]);
-        let shown = lods.update([0., 4., 0.], fov, 0., 1., true, None).to_vec();
-        assert_eq!(
-            shown
-                .iter()
-                .map(|s| (s.placement, s.level, s.fade))
-                .collect::<Vec<_>>(),
-            [(0, 0, 1.), (1, 1, 1.), (2, 2, 1.)],
-            "near, mid and far levels; beyond the far reach hidden"
-        );
-        // The near tree is now 30 m away: it fades from the detailed to the mid level.
-        let mut lods = Lods::new(vec![tree()], &[at(10.)]);
-        lods.update([0., 4., 0.], fov, 0., 1., true, None);
-        let fading = lods
-            .update([-20., 4., 0.], fov, 0.1, 1., true, None)
-            .to_vec();
-        assert_eq!(fading.len(), 2);
-        assert_eq!((fading[0].level, fading[1].level), (1, 0));
-        assert!(fading[0].fade > 0. && fading[0].fade < 1.);
-        assert_eq!(fading[1].fade, -fading[0].fade);
-        let settled = lods
-            .update([-20., 4., 0.], fov, 1., 1., true, None)
-            .to_vec();
-        assert_eq!(settled.len(), 1);
-        assert_eq!((settled[0].level, settled[0].fade), (1, 1.));
-        // Just past the switch point, hysteresis holds the level.
-        let boundary = 5.7 / (0.12 * (fov / 2.).tan());
-        lods.update([10. - boundary * 1.02, 4., 0.], fov, 1., 1., true, None);
-        let held = lods.update([10. - boundary * 1.02, 4., 0.], fov, 1., 1., true, None);
-        assert_eq!(held[0].level, 1);
-    }
-
-    #[test]
-    fn an_unchanged_camera_changes_nothing_once_the_fades_settle() {
-        let fov = 60f64.to_radians();
-        let mut lods = Lods::new(vec![tree()], &[at(10.), at(50.)]);
-        lods.update([0., 4., 0.], fov, 0.016, 1., true, None);
-        assert!(lods.changed());
-        lods.update([0., 4., 0.], fov, 0.016, 1., true, None);
-        assert!(!lods.changed(), "same camera, nothing fading");
-        // Moving switches the near tree; its fade runs on while the camera rests.
-        lods.update([-20., 4., 0.], fov, 0.016, 1., true, None);
-        assert!(lods.changed());
-        let fading = lods
-            .update([-20., 4., 0.], fov, 0.1, 1., true, None)
-            .to_vec();
-        assert!(lods.changed() && fading.iter().any(|s| s.fade < 1.));
-        lods.update([-20., 4., 0.], fov, 1., 1., true, None);
-        assert!(lods.changed(), "the fade settles");
-        let settled = lods
-            .update([-20., 4., 0.], fov, 1., 1., true, None)
-            .to_vec();
-        assert!(!lods.changed());
-        assert!(settled.iter().all(|s| s.fade == 1.));
-    }
 
     #[test]
     fn every_tree_bush_and_unclimbable_rock_is_placed() {
