@@ -28,8 +28,10 @@ pub enum Loadout {
     BowAndQuiver,
     /// The arming sword alone: the Greyhaven guards.
     Sword,
-    /// The Rogue's blackened dagger.
+    /// One blackened dagger in the right hand: the field marauders.
     Dagger,
+    /// A blackened dagger in each hand: the Rogue ([`ROGUE_LOADOUT`], #603).
+    TwinDaggers,
     /// The Necromancer's bone staff.
     BoneStaff,
     /// The Arcanist's crystal staff in the right hand and tome in the left (asset-tooling #379).
@@ -48,7 +50,7 @@ impl Loadout {
             PlayerClass::Warden => Self::SwordAndShield,
             PlayerClass::Ranger => Self::BowAndQuiver,
             PlayerClass::Arcanist => Self::CrystalStaffAndTome,
-            PlayerClass::Rogue => Self::Dagger,
+            PlayerClass::Rogue => ROGUE_LOADOUT,
             PlayerClass::Necromancer => Self::BoneStaff,
             PlayerClass::Cleric => Self::FlangedMace,
             PlayerClass::Druid => Self::GnarledStaff,
@@ -63,6 +65,7 @@ impl Loadout {
             Self::BowAndQuiver => "bow-and-quiver",
             Self::Sword => "sword",
             Self::Dagger => "dagger",
+            Self::TwinDaggers => "dagger.twin",
             Self::BoneStaff => "staff.bone",
             Self::CrystalStaffAndTome => "staff.crystal-and-tome",
             Self::FlangedMace => "mace.flanged",
@@ -79,11 +82,73 @@ impl Loadout {
             Self::SwordAndShield => (Some(Held::Shield), Some(Held::Weapon)),
             Self::BowAndQuiver => (None, None),
             Self::Sword | Self::Dagger | Self::FlangedMace => (None, Some(Held::Weapon)),
+            Self::TwinDaggers => (Some(Held::Weapon), Some(Held::Weapon)),
             Self::BoneStaff | Self::GnarledStaff => (None, Some(Held::Staff)),
             Self::CrystalStaffAndTome => (Some(Held::Book), Some(Held::Staff)),
         };
         Hands { left, right }
     }
+
+    /// Whether the loadout fights with daggers and so plays the dagger clips (#603).
+    #[must_use]
+    pub const fn daggers(self) -> bool {
+        matches!(self, Self::Dagger | Self::TwinDaggers)
+    }
+}
+
+/// The Rogue's weapons (#603): a dagger in each hand, as asset-tooling #418 authored the
+/// Rogue's clips. Dual-wielding awaits the owner's confirmation (question on #603); set this to
+/// [`Loadout::Dagger`] for a single-dagger Rogue, whose auto-attack then only stabs.
+pub const ROGUE_LOADOUT: Loadout = Loadout::TwinDaggers;
+
+/// Where a sheathed dagger rides (asset-tooling #418), left hand then right: through a throw
+/// the right one, through a bandage both ([`Carry`]).
+pub const DAGGER_SHEATH_SOCKETS: [&str; 2] = ["hip_l.stowed", "hip_r.stowed"];
+/// The socket a drawn throwable rides in (asset-tooling #418).
+pub const THROWABLE_SOCKET: &str = "hand_r.weapon";
+
+/// A thrown weapon in the right hand (#603), drawn from the belt for a throw.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Throwable {
+    /// The Throwing Knife.
+    Knife,
+    /// The Venom Flask.
+    Flask,
+    /// The Blasting Bomb.
+    Bomb,
+}
+
+impl Throwable {
+    /// The name both clients key the throwable by.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Knife => "knife",
+            Self::Flask => "flask",
+            Self::Bomb => "bomb",
+        }
+    }
+
+    /// The right hand's grip pose round it (asset-tooling #418).
+    #[must_use]
+    pub const fn grip(self) -> &'static str {
+        match self {
+            Self::Knife => "Grip_Knife_Pinch_R",
+            Self::Flask | Self::Bomb => "Grip_Flask_R",
+        }
+    }
+}
+
+/// Where a dagger holder's daggers ride and what its right hand throws this frame (#603): a
+/// throw sheathes the right dagger from its draw to the clip's end and holds the throwable
+/// from the draw to the release; a bandage sheathes both. Everything else keeps the daggers
+/// in hand.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Carry {
+    /// Each hand's dagger sheathed on [`DAGGER_SHEATH_SOCKETS`], left then right.
+    pub sheathed: [bool; 2],
+    /// The throwable in [`THROWABLE_SOCKET`].
+    pub throwable: Option<Throwable>,
 }
 
 /// A hand, for its finger joints and grip pose (asset-tooling #285).
@@ -450,6 +515,52 @@ pub struct Clips {
     /// The Warden's sword-and-shield clips and the Redbrand specials, for a model that has them
     /// (#582, asset-tooling #447).
     pub sword: Option<SwordClips>,
+    /// The Rogue's dagger, throw, flourish and bandage clips, for a model that has them (#603,
+    /// asset-tooling #418).
+    pub dagger: Option<DaggerClips>,
+}
+
+/// The authored dagger, throw, flourish and bandage clips (#603, asset-tooling #418), every one
+/// on the upper body only. Each one the bundle lacks falls back to what played before.
+#[derive(Clone, Copy, Debug)]
+pub struct DaggerClips {
+    /// The low twin-dagger stance, looped while a dagger holder stands.
+    pub idle: &'static str,
+    /// The auto-attack: the right dagger's stab, alternating with the left dagger's slash when
+    /// both hands hold one.
+    pub stab: &'static str,
+    pub slash: &'static str,
+    /// Sinister Strike's double stab, Poisoned Blade's coat and slash, Gouge's pommel jab.
+    pub sinister: &'static str,
+    pub poison: &'static str,
+    pub gouge: &'static str,
+    /// The haste flourish: Adrenaline Rush and the Ranger's Rapid Fire.
+    pub flourish: &'static str,
+    /// The sidearm knife throw and the underarm flask or bomb lob, drawn from the belt.
+    pub throw_knife: &'static str,
+    pub throw_lob: &'static str,
+    /// Wrapping a bandage round the forearm: Crude Bandage.
+    pub bandage: &'static str,
+}
+
+impl DaggerClips {
+    /// Whether `clip` is one of them; each plays on the upper body.
+    #[must_use]
+    pub fn contains(self, clip: &str) -> bool {
+        [
+            self.idle,
+            self.stab,
+            self.slash,
+            self.sinister,
+            self.poison,
+            self.gouge,
+            self.flourish,
+            self.throw_knife,
+            self.throw_lob,
+            self.bandage,
+        ]
+        .contains(&clip)
+    }
 }
 
 /// The authored sword-and-shield clips (#582, asset-tooling #447). Each one the bundle lacks
@@ -948,6 +1059,18 @@ impl Kind {
                     whirl: "Sword_Whirl",
                     smash: "Sword_Overhead_Smash",
                 }),
+                dagger: Some(DaggerClips {
+                    idle: "Dagger_Idle_Loop",
+                    stab: "Dagger_Stab_R",
+                    slash: "Dagger_Slash_L",
+                    sinister: "Dagger_Sinister",
+                    poison: "Dagger_Poison",
+                    gouge: "Dagger_Gouge",
+                    flourish: "Flourish_Haste",
+                    throw_knife: "Throw_Knife",
+                    throw_lob: "Throw_Lob",
+                    bandage: "Bandage_Self",
+                }),
             },
             Self::Wolf => Clips {
                 idle: "Idle",
@@ -965,6 +1088,7 @@ impl Kind {
                 gaits: None,
                 reactions: None,
                 sword: None,
+                dagger: None,
             },
             Self::Rat => Clips {
                 idle: "Rat_Idle",
@@ -982,6 +1106,7 @@ impl Kind {
                 gaits: None,
                 reactions: None,
                 sword: None,
+                dagger: None,
             },
             // The farm pig has no attack clip; its jump reads as a charge.
             Self::Pig => Clips {
@@ -1000,6 +1125,7 @@ impl Kind {
                 gaits: None,
                 reactions: None,
                 sword: None,
+                dagger: None,
             },
         }
     }
@@ -1051,11 +1177,50 @@ impl Kind {
         }
     }
 
-    /// Which body a strike of `clip` drives (#582): an authored sword clip its own region, every
-    /// other strike the whole body standing and the upper body on the move.
+    /// The authored dagger clip an accepted attack or ability plays (#603), and the throwable a
+    /// throw draws: a dagger holder's auto-attack stabs, and with a dagger in each hand
+    /// alternates the stab (even `swing`s, counting from 0) with the left dagger's slash; the
+    /// Rogue's abilities, and the Ranger's Rapid Fire, play their own. `None` for anything else
+    /// or a model without them; [`Self::strike`] then decides.
+    #[must_use]
+    pub fn dagger_strike(
+        self,
+        loadout: Option<Loadout>,
+        ability: Option<AbilityId>,
+        swing: u32,
+    ) -> Option<(&'static str, Option<Throwable>)> {
+        use mmorpg_core::ability::ids;
+        let dagger = self.clips().dagger?;
+        let clip = match ability {
+            None if loadout.is_some_and(Loadout::daggers) => {
+                if loadout == Some(Loadout::TwinDaggers) && swing % 2 == 1 {
+                    dagger.slash
+                } else {
+                    dagger.stab
+                }
+            }
+            Some(ids::SINISTER_STRIKE) => dagger.sinister,
+            Some(ids::POISONED_BLADE) => dagger.poison,
+            Some(ids::GOUGE) => dagger.gouge,
+            Some(ids::ADRENALINE_RUSH | ids::RAPID_FIRE) => dagger.flourish,
+            Some(ids::THROWING_KNIFE) => return Some((dagger.throw_knife, Some(Throwable::Knife))),
+            Some(ids::VENOM_FLASK) => return Some((dagger.throw_lob, Some(Throwable::Flask))),
+            Some(ids::BLASTING_BOMB) => return Some((dagger.throw_lob, Some(Throwable::Bomb))),
+            _ => return None,
+        };
+        Some((clip, None))
+    }
+
+    /// Which body a strike of `clip` drives (#582): an authored sword clip its own region, a
+    /// dagger clip (#603) the upper body, every other strike the whole body standing and the
+    /// upper body on the move.
     #[must_use]
     pub fn strike_region(self, clip: &str) -> Region {
-        self.clips()
+        let clips = self.clips();
+        if clips.dagger.is_some_and(|dagger| dagger.contains(clip)) {
+            return Region::Upper;
+        }
+        clips
             .sword
             .and_then(|sword| sword.region(clip))
             .unwrap_or(Region::Footwork)
@@ -1290,6 +1455,8 @@ pub struct Animation {
     /// The body's cosmetic swim lean and turn about its chest (Atlas 6.6.41); upright out of
     /// swimming depth.
     pub attitude: Attitude,
+    /// Where the daggers ride and what the right hand throws (#603).
+    pub carry: Carry,
 }
 
 /// What the projection shows of one unit this frame. Every cue is zone-accepted state or the
@@ -1317,9 +1484,10 @@ pub struct Cues<'a> {
     pub stunned: bool,
     /// The zone projects a dodge roll (#516).
     pub rolling: bool,
-    /// What the unit holds in each hand: a held item's grip pose closes the fingers round it
-    /// (asset-tooling #285).
-    pub hands: Hands,
+    /// What the unit carries: each held item's grip pose closes the fingers round it
+    /// (asset-tooling #285), and a dagger holder stands in the dagger stance and sheathes its
+    /// daggers to throw or bandage (#603).
+    pub loadout: Option<Loadout>,
     /// Presentation clock and the step since the previous frame, in seconds.
     pub now: f64,
     pub dt: f64,
@@ -1498,6 +1666,8 @@ struct Strike {
     full_body: bool,
     /// A cast's strike wound up and held at this clip time until it resolves (#582).
     hold: Option<f32>,
+    /// What a throw draws from the belt (#603).
+    item: Option<Throwable>,
 }
 
 impl Strike {
@@ -1513,6 +1683,7 @@ impl Strike {
             reaction: None,
             full_body: region != Region::Upper,
             hold: None,
+            item: None,
         }
     }
 
@@ -1570,6 +1741,8 @@ struct Preparation {
     started: f64,
     /// The clip time it holds at ([`windup_seconds`]).
     hold: f32,
+    /// What a throw's wind-up draws from the belt (#603).
+    item: Option<Throwable>,
 }
 
 impl Preparation {
@@ -1617,6 +1790,8 @@ pub struct Playback {
     charging: Option<f64>,
     /// Dead last frame: rising again plays the respawn (#582).
     dead: bool,
+    /// How many auto-attacks the unit has swung: a twin-dagger holder alternates its hands (#603).
+    swings: u32,
     attitude: Attitude,
     /// Pelvis and legs: locomotion, flight and death.
     base: Track,
@@ -1639,6 +1814,25 @@ enum Flight {
 }
 
 impl Playback {
+    /// How many auto-attacks the unit has swung ([`Kind::dagger_strike`]'s `swing`).
+    #[must_use]
+    pub const fn swings(&self) -> u32 {
+        self.swings
+    }
+
+    /// The unit swung an auto-attack: the next one alternates the hand (#603).
+    pub fn swung(&mut self) {
+        self.swings = self.swings.wrapping_add(1);
+    }
+
+    /// The strike just begun is a throw of `item` (#603): from the clip's `drawSeconds` to its
+    /// `releaseSeconds` the right hand holds it, with its dagger sheathed ([`Carry`]).
+    pub fn throwing(&mut self, item: Throwable) {
+        if let Some(strike) = &mut self.strike {
+            strike.item = Some(item);
+        }
+    }
+
     /// Starts presenting an accepted strike's `clip`, `duration` seconds long, at `now`, on the
     /// body `region` drives. A strike resolves any cast shown before it; one that resolves a
     /// cast's held wind-up of the same clip (#582) swings on from the hold.
@@ -1778,12 +1972,18 @@ impl Playback {
 
     /// Starts a local wind-up of `clip` begun at `started` that holds `hold` seconds into the
     /// clip ([`windup_seconds`]), or keeps the one showing it; a different clip supersedes the
-    /// wind-up shown.
-    pub fn prepare(&mut self, clip: &'static str, hold: f32, started: f64) {
-        if self
-            .preparation
-            .is_some_and(|preparation| preparation.clip == clip)
+    /// wind-up shown. A throw's wind-up draws `item` (#603).
+    pub fn prepare(
+        &mut self,
+        clip: &'static str,
+        hold: f32,
+        item: Option<Throwable>,
+        started: f64,
+    ) {
+        if let Some(preparation) = &mut self.preparation
+            && preparation.clip == clip
         {
+            preparation.item = item;
             return;
         }
         self.serial = self.serial.wrapping_add(1);
@@ -1792,6 +1992,7 @@ impl Playback {
             serial: self.serial,
             started,
             hold,
+            item,
         });
     }
 
@@ -2332,6 +2533,16 @@ impl Playback {
             && available(guard)
         {
             Some(Want::looped(guard, 1.))
+        } else if let Some(stance) = clips.dagger.map(|dagger| dagger.idle).filter(|&clip| {
+            // A dagger holder stands in the low dagger stance (#603) over the idle legs.
+            cues.loadout.is_some_and(Loadout::daggers)
+                && standing
+                && stun.is_none()
+                && charge_run.is_none()
+                && roll.is_none()
+                && available(clip)
+        }) {
+            Some(Want::looped(stance, 1.))
         } else {
             None
         };
@@ -2411,11 +2622,20 @@ impl Playback {
         // A held item's grip closes that hand's fingers over every body clip (asset-tooling
         // #285), but not while the hands hold a face, a ladder, a rope or a ledge (#500).
         let climbing = self.held.holds() || self.mantle.is_some() || self.letting_go.is_some();
+        // A throw or a bandage moves the daggers (#603): a sheathed dagger's hand opens, a
+        // drawn throwable's closes round it.
+        let carry = self.carry(clips, cues, &duration);
+        let hands = cues.loadout.map(Loadout::hands).unwrap_or_default();
         for hand in Hand::BOTH {
-            let grip = cues
-                .hands
-                .get(hand)
-                .map(|held| held.grip(hand))
+            let throwable = carry.throwable.filter(|_| hand == Hand::Right);
+            let grip = throwable
+                .map(Throwable::grip)
+                .or_else(|| {
+                    hands
+                        .get(hand)
+                        .filter(|_| !carry.sheathed[hand.index()])
+                        .map(|held| held.grip(hand))
+                })
                 .filter(|&clip| !climbing && available(clip))
                 .map(|clip| Want::looped(clip, 0.));
             let track = &mut self.grips[hand.index()];
@@ -2435,6 +2655,51 @@ impl Playback {
             lower,
             upper,
             attitude: self.attitude,
+            carry,
+        }
+    }
+
+    /// Where a dagger holder's daggers ride and what it throws (#603), from the upper body's
+    /// clip: a throw of a drawn item sheathes the right dagger from the clip's `drawSeconds` and
+    /// holds the item until its `releaseSeconds`; a bandage sheathes both. Without the clip's
+    /// timing the daggers stay in hand.
+    fn carry(&self, clips: Clips, cues: Cues<'_>, duration: &impl Fn(&str) -> f32) -> Carry {
+        let Some(dagger) = clips
+            .dagger
+            .filter(|_| cues.loadout.is_some_and(Loadout::daggers) && !cues.dead)
+        else {
+            return Carry::default();
+        };
+        let Some((clip, time)) = self.upper.target(duration) else {
+            return Carry::default();
+        };
+        if clip == dagger.bandage {
+            return Carry {
+                sheathed: [true; 2],
+                throwable: None,
+            };
+        }
+        let item = self
+            .strike
+            .or(self.cast)
+            .filter(|strike| strike.clip == clip)
+            .map(|strike| strike.item)
+            .or_else(|| {
+                self.preparation
+                    .filter(|preparation| preparation.clip == clip)
+                    .map(|preparation| preparation.item)
+            })
+            .flatten();
+        let timing = cues
+            .motions
+            .and_then(|motions| motions.get(clip))
+            .and_then(|motion| motion.draw.zip(motion.release));
+        match (item, timing) {
+            (Some(item), Some((draw, release))) if f64::from(time) >= draw => Carry {
+                sheathed: [false, true],
+                throwable: (f64::from(time) < release).then_some(item),
+            },
+            _ => Carry::default(),
         }
     }
 }
@@ -2479,7 +2744,7 @@ mod tests {
                 "bow-and-quiver",
                 "staff.crystal-and-tome",
                 "staff.bone",
-                "dagger",
+                ROGUE_LOADOUT.name(),
                 "mace.flanged",
                 "staff.gnarled",
             ]
@@ -2716,6 +2981,7 @@ mod tests {
             lower: (clip, 0.2),
             upper: (clip, 0.2),
             attitude: Attitude::default(),
+            carry: Carry::default(),
         };
         for clip in [
             "Bow_Aim_Loop",
@@ -2750,7 +3016,7 @@ mod tests {
                 |_| 1.,
                 Cues {
                     traversal,
-                    hands: loadout.hands(),
+                    loadout: Some(loadout),
                     now,
                     dt: 0.05,
                     ..Cues::default()
@@ -3134,7 +3400,7 @@ mod tests {
         let mut playback = Playback::default();
         let mut now = 0.;
         frame(&mut playback, &mut now);
-        playback.prepare("Sword_Attack", WINDUP_HOLD_SECONDS, now);
+        playback.prepare("Sword_Attack", WINDUP_HOLD_SECONDS, None, now);
         for _ in 0..20 {
             frame(&mut playback, &mut now);
         }
@@ -3156,7 +3422,7 @@ mod tests {
         let mut refused = Playback::default();
         let mut now = 0.;
         frame(&mut refused, &mut now);
-        refused.prepare("Sword_Attack", WINDUP_HOLD_SECONDS, now);
+        refused.prepare("Sword_Attack", WINDUP_HOLD_SECONDS, None, now);
         for _ in 0..10 {
             frame(&mut refused, &mut now);
         }
@@ -3843,5 +4109,165 @@ mod tests {
             Playback::climb(clips, &missing, cues(None)).clip,
             "Walk_Loop"
         );
+    }
+
+    #[test]
+    fn dagger_holders_alternate_hands_and_play_the_rogue_ability_clips() {
+        use mmorpg_core::ability::ids;
+        let twin = Some(Loadout::TwinDaggers);
+        let strike = |loadout, ability, swing| {
+            Kind::Ranger
+                .dagger_strike(loadout, ability, swing)
+                .map(|(clip, _)| clip)
+        };
+        assert_eq!(Loadout::of_class(PlayerClass::Rogue), ROGUE_LOADOUT);
+        assert_eq!(strike(twin, None, 0), Some("Dagger_Stab_R"));
+        assert_eq!(strike(twin, None, 1), Some("Dagger_Slash_L"));
+        assert_eq!(strike(twin, None, 2), Some("Dagger_Stab_R"));
+        // One dagger only stabs; a sword holder keeps its slashes.
+        assert_eq!(
+            strike(Some(Loadout::Dagger), None, 1),
+            Some("Dagger_Stab_R")
+        );
+        assert_eq!(strike(Some(Loadout::Sword), None, 1), None);
+        for (ability, clip) in [
+            (ids::SINISTER_STRIKE, "Dagger_Sinister"),
+            (ids::POISONED_BLADE, "Dagger_Poison"),
+            (ids::GOUGE, "Dagger_Gouge"),
+            (ids::ADRENALINE_RUSH, "Flourish_Haste"),
+            (ids::THROWING_KNIFE, "Throw_Knife"),
+            (ids::VENOM_FLASK, "Throw_Lob"),
+            (ids::BLASTING_BOMB, "Throw_Lob"),
+        ] {
+            assert_eq!(strike(twin, Some(ability), 0), Some(clip));
+            assert_eq!(Kind::Ranger.strike_region(clip), Region::Upper);
+        }
+        // The Ranger's Rapid Fire flourishes empty-handed.
+        assert_eq!(
+            strike(Some(Loadout::BowAndQuiver), Some(ids::RAPID_FIRE), 0),
+            Some("Flourish_Haste")
+        );
+        assert_eq!(
+            Kind::Ranger.dagger_strike(twin, Some(ids::BLASTING_BOMB), 0),
+            Some(("Throw_Lob", Some(Throwable::Bomb)))
+        );
+        assert_eq!(Kind::Wolf.dagger_strike(twin, None, 0), None);
+    }
+
+    #[test]
+    fn a_throw_sheathes_the_dagger_and_holds_its_item_from_draw_to_release() {
+        let motions = super::super::traversal::Motions::parse(
+            r#"{"schema": "humanoid-clips-v1", "clips": [
+                {"name": "Throw_Knife", "drawSeconds": 0.09, "releaseSeconds": 0.28,
+                 "contact": {"seconds": 0.28}}
+            ]}"#,
+        )
+        .expect("valid descriptor");
+        let clips = Kind::Ranger.clips();
+        let lengths = |clip: &str| match clip {
+            "Throw_Knife" => 0.5,
+            "Bandage_Self" => 1.5,
+            _ => 1.,
+        };
+        let frame = |playback: &mut Playback, loadout, now: f64| {
+            playback.advance(
+                clips,
+                lengths,
+                Cues {
+                    motions: Some(&motions),
+                    loadout: Some(loadout),
+                    now,
+                    dt: 0.02,
+                    ..Cues::default()
+                },
+                Blend::default(),
+            )
+        };
+        let grip = |animation: &Animation, hand| {
+            animation
+                .layers
+                .iter()
+                .filter(|layer| layer.mask == Mask::Fingers(hand) && layer.weight > 0.5)
+                .map(|layer| layer.clip)
+                .next()
+        };
+        let mut playback = Playback::default();
+        let stance = frame(&mut playback, Loadout::TwinDaggers, 0.);
+        // Standing, both daggers ride in hand over the dagger stance.
+        assert_eq!(stance.upper.0, "Dagger_Idle_Loop");
+        assert_eq!(stance.carry, Carry::default());
+        assert_eq!(grip(&stance, Hand::Left), Some("Grip_Weapon_L"));
+        playback.strike("Throw_Knife", 0.5, Region::Upper, 0.02);
+        playback.throwing(Throwable::Knife);
+        let at = |playback: &mut Playback, time: f64| {
+            let mut last = None;
+            let mut now = 0.02;
+            while now <= 0.02 + time + 1e-9 {
+                last = Some(frame(playback, Loadout::TwinDaggers, now));
+                now += 0.02;
+            }
+            last.expect("frames")
+        };
+        let reaching = at(&mut playback.clone(), 0.04);
+        assert_eq!(reaching.upper.0, "Throw_Knife");
+        assert_eq!(reaching.carry, Carry::default());
+        let drawn = at(&mut playback.clone(), 0.2);
+        assert_eq!(
+            drawn.carry,
+            Carry {
+                sheathed: [false, true],
+                throwable: Some(Throwable::Knife),
+            }
+        );
+        assert_eq!(grip(&drawn, Hand::Right), Some("Grip_Knife_Pinch_R"));
+        let released = at(&mut playback.clone(), 0.4);
+        assert_eq!(released.carry.sheathed, [false, true]);
+        assert_eq!(released.carry.throwable, None);
+        // The dagger is back in hand once the clip ends.
+        let after = at(&mut playback, 0.7);
+        assert_eq!(after.carry, Carry::default());
+        // A bandage sheathes both daggers; a sword stays in hand.
+        for (loadout, sheathed) in [
+            (Loadout::TwinDaggers, [true; 2]),
+            (Loadout::Sword, [false; 2]),
+        ] {
+            let mut bandaging = Playback::default();
+            bandaging.cast(None, "Bandage_Self", false, 3., 0.);
+            let shown = frame(&mut bandaging, loadout, 0.5);
+            assert_eq!(shown.upper.0, "Bandage_Self");
+            assert_eq!(shown.carry.sheathed, sheathed);
+        }
+        // Without the throw clip's timing the dagger stays in hand.
+        let mut untimed = Playback::default();
+        untimed.strike("Throw_Lob", 0.8, Region::Upper, 0.);
+        untimed.throwing(Throwable::Flask);
+        let shown = untimed.advance(
+            clips,
+            lengths,
+            Cues {
+                loadout: Some(Loadout::TwinDaggers),
+                now: 0.4,
+                dt: 0.02,
+                ..Cues::default()
+            },
+            Blend::default(),
+        );
+        assert_eq!(shown.carry, Carry::default());
+    }
+
+    #[test]
+    fn a_bundle_without_the_dagger_clips_keeps_the_idle_arms() {
+        let mut playback = Playback::default();
+        let shown = playback.advance(
+            Kind::Ranger.clips(),
+            |clip: &str| if clip.starts_with("Dagger_") { 0. } else { 1. },
+            Cues {
+                loadout: Some(Loadout::TwinDaggers),
+                dt: 0.02,
+                ..Cues::default()
+            },
+            Blend::default(),
+        );
+        assert_eq!(shown.upper.0, "Idle_Loop");
     }
 }

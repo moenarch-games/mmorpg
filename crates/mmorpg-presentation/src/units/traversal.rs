@@ -26,6 +26,10 @@ pub struct Motion {
     /// When a strike's weapon hand meets its target, in seconds into the clip
     /// (`contact.seconds`, asset-tooling #447); a strike's wind-up holds before it (#582).
     pub contact: Option<f64>,
+    /// When a throw's hand reaches the belt and takes the throwable, and when it lets go, in
+    /// seconds into the clip (`drawSeconds`, `releaseSeconds`, asset-tooling #418).
+    pub draw: Option<f64>,
+    pub release: Option<f64>,
 }
 
 /// An authored root path: one glTF translation (+Y up, +Z the facing) per frame.
@@ -115,6 +119,8 @@ impl Motions {
                         })
                     }),
                     contact: clip["contact"]["seconds"].as_f64(),
+                    draw: clip["drawSeconds"].as_f64(),
+                    release: clip["releaseSeconds"].as_f64(),
                 };
                 (motion != Motion::default()).then(|| (name.to_owned(), motion))
             })

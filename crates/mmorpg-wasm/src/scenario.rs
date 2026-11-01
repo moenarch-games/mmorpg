@@ -82,6 +82,15 @@ pub enum Scenario {
     /// hands close round the sword and the shield, and the guard's round his sword (#503). The
     /// other classes' grips show in `?scenario=action-lab&class=<class>`.
     Grips,
+    /// A level 6 Rogue with full focus 4 m east of a Wolfrun wolf, facing it, to review the
+    /// dagger clips (#603): the stance, the alternating stab and slash, Sinister Strike,
+    /// Poisoned Blade, Gouge and Adrenaline Rush's flourish …
+    RogueDaggers,
+    /// … and 13 m from it, the Throwing Knife, Venom Flask and Blasting Bomb throws.
+    RogueThrows,
+    /// A level 8 Warden 12 m south of the Redbrand Hollow camp, facing the bandits: a bandit
+    /// beaten below half health wraps a Crude Bandage round its forearm (#603).
+    RedbrandBandage,
 }
 
 impl Scenario {
@@ -118,6 +127,9 @@ impl Scenario {
             Self::RedbrandWhirl => "redbrand-whirl",
             Self::RedbrandSmash => "redbrand-smash",
             Self::Grips => "grips",
+            Self::RogueDaggers => "rogue-daggers",
+            Self::RogueThrows => "rogue-throws",
+            Self::RedbrandBandage => "redbrand-bandage",
         }
     }
 
@@ -136,8 +148,14 @@ impl Scenario {
             | Self::WardenRespawn
             | Self::RedbrandWhirl
             | Self::RedbrandSmash
+            | Self::RedbrandBandage
             | Self::Grips => ClassChoice {
                 class: PlayerClass::Warden,
+                sex: Sex::Male,
+            },
+            // The dagger clips were reviewed on the male figure (asset-tooling #418).
+            Self::RogueDaggers | Self::RogueThrows => ClassChoice {
+                class: PlayerClass::Rogue,
                 sex: Sex::Male,
             },
             Self::RangerRange => ClassChoice {
@@ -189,8 +207,13 @@ impl Scenario {
             | Self::WardenCleave
             | Self::WardenStun
             | Self::WardenRespawn => 6,
+            // Adrenaline Rush and Blasting Bomb unlock at level 6.
+            Self::RogueDaggers | Self::RogueThrows => 6,
             // Lightning Beam unlocks at level 8; a Warden that high outlasts a Redbrand special.
-            Self::ArcanistPack | Self::RedbrandWhirl | Self::RedbrandSmash => 8,
+            Self::ArcanistPack
+            | Self::RedbrandWhirl
+            | Self::RedbrandSmash
+            | Self::RedbrandBandage => 8,
             Self::MantleLow | Self::MantleMid | Self::MantleHigh | Self::Climb | Self::Grips => 1,
         }
     }
@@ -213,13 +236,14 @@ impl Scenario {
             | Self::WardenGuards => ([-5_000, -2_800], 49_152),
             // 4 m east of Timber Wolf 104's spawn, in swing and Cleave reach once it closes;
             // facing west at it.
-            Self::WardenSlashes | Self::WardenCleave | Self::WardenRespawn => {
+            Self::WardenSlashes | Self::WardenCleave | Self::WardenRespawn | Self::RogueDaggers => {
                 ([-5_800, -3_600], 49_152)
             }
-            // 13 m east of the same wolf, within Charge's 15 m; facing west at it.
-            Self::WardenCharge => ([-4_900, -3_600], 49_152),
+            // 13 m east of the same wolf, within Charge's 15 m and the throws' range; facing west
+            // at it.
+            Self::WardenCharge | Self::RogueThrows => ([-4_900, -3_600], 49_152),
             // 12 m south of the camp's nearest bandits; facing north.
-            Self::WardenStun => ([0, -6_600], 32_768),
+            Self::WardenStun | Self::RedbrandBandage => ([0, -6_600], 32_768),
             // 5 m south of Garrick; facing north.
             Self::RedbrandWhirl => ([0, -10_000], 32_768),
             // 4 m south of the west Brute (650); facing north toward it.
@@ -291,6 +315,10 @@ impl Scenario {
         if self.class().class == PlayerClass::Warden && self.level() >= 6 {
             // Full rage, so every Warden ability can be tried at once (#582).
             record.resource = PlayerClass::Warden.resource().max(self.level());
+        }
+        if matches!(self, Self::RogueDaggers | Self::RogueThrows) {
+            // Full focus, so every Rogue ability can be tried at once (#603).
+            record.resource = PlayerClass::Rogue.resource().max(self.level());
         }
         if self == Self::WardenRespawn {
             // One hit from the wolf kills; releasing the spirit rises at the graveyard.

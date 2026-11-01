@@ -15,7 +15,7 @@ use mmorpg_presentation::{
     audio::{AudioCues, AudioOp},
     units::{
         FrameInput, SampledUnit, UnitPresenter, Viewer,
-        imported::{Kind, Loadout, Resident},
+        imported::{Kind, Loadout, Resident, Throwable},
         player::Hat,
     },
 };
@@ -100,6 +100,10 @@ struct ImportedEntry {
     /// A bow carrier's shot (#556): the bow cycle clip and time whose draw the nock follows,
     /// with the bow in the left hand; null keeps the bow stowed.
     bow: Option<BowEntry>,
+    /// A dagger holder's sheathed daggers, left then right (`hip_l.stowed`, `hip_r.stowed`),
+    /// and the throwable in `hand_r.weapon`, `knife`, `flask`, `bomb` or null (#603).
+    sheathed: [bool; 2],
+    throwable: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -445,6 +449,8 @@ impl Units {
                         clip: shot.clip,
                         time: shot.time,
                     }),
+                    sheathed: unit.animation.carry.sheathed,
+                    throwable: unit.animation.carry.throwable.map(Throwable::name),
                 }
             })
             .collect();

@@ -33,8 +33,10 @@ export type UnitPresenterHandle = {
 
 export type ImportedModelKind = "Ranger" | "Wolf" | "Rat" | "Pig";
 /** The shared presenter's `Loadout::name`s. */
-export type Loadout = "sword-and-shield" | "bow-and-quiver" | "sword" | "dagger" | "staff.bone" | "staff.crystal-and-tome"
-  | "mace.flanged" | "staff.gnarled";
+export type Loadout = "sword-and-shield" | "bow-and-quiver" | "sword" | "dagger" | "dagger.twin" | "staff.bone"
+  | "staff.crystal-and-tome" | "mace.flanged" | "staff.gnarled";
+/** A drawn throwable in the right hand (`imported::Throwable`, #603). */
+export type Throwable = "knife" | "flask" | "bomb";
 /**
  * A class starter outfit (asset-tooling #379, the shared `Outfit`): the `class.<id>` appearance
  * preset and the armour sockets whose outfit pieces the viewer's equipped drops replace.
@@ -96,6 +98,12 @@ export type ImportedRequest = {
    * follows, with the bow in the left hand (`hand_l.bow`); null keeps it on `back.bow.stowed`.
    */
   bow: BowShot | null;
+  /**
+   * A dagger holder's carry (`imported::Carry`, #603): each hand's dagger sheathed (left on
+   * `hip_l.stowed`, right on `hip_r.stowed`) and the throwable drawn into `hand_r.weapon`.
+   */
+  sheathed: readonly [boolean, boolean];
+  throwable: Throwable | null;
 };
 
 /** The bow cycle clip a unit's upper body shows and its time (`imported::BowShot`, #556). */
@@ -131,7 +139,7 @@ type GeometryEntry = { key: string; vertexOffset: number; vertexCount: number; c
 type UnitEntry = { kind: EntityKind; entityId: number; node: string; feet: [number, number, number]; centreY: number; yaw: number; label: [number, number, number]; body: [number, number] };
 type ImportedEntry = { id: string; kind: ImportedModelKind; entityKind: EntityKind; entityId: number; feet: [number, number, number]; yaw: number; pitch: number;
   height: number; clip: string; time: number; lower: [string, number]; layers: ClipLayer[]; tint: readonly [number, number, number] | null; loadout: Loadout | null; resident: string | null; figure: string | null; variety: number | null; outfit: ClassOutfit | null; headwear: boolean;
-  swing: readonly [number, number, number, number] | null; bow: BowShot | null };
+  swing: readonly [number, number, number, number] | null; bow: BowShot | null; sheathed: [boolean, boolean]; throwable: Throwable | null };
 type Layout = { draws: DrawEntry[]; geometries: GeometryEntry[]; units: UnitEntry[]; imported: ImportedEntry[]; platforms: PlatformBase[] };
 
 const KIND_CODE: Readonly<Record<EntityKind, number>> = { player: 0, creature: 1, npc: 2, minion: 3 };
@@ -250,7 +258,7 @@ export class SharedUnits {
       imported: layout.imported.map((unit) => ({
         id: unit.id, kind: unit.kind, entity: { kind: unit.entityKind, id: unit.entityId }, feet: unit.feet, yaw: unit.yaw, pitch: unit.pitch,
         heightMetres: unit.height, clip: unit.clip, time: unit.time, lower: unit.lower, layers: unit.layers, tint: unit.tint, loadout: unit.loadout, resident: unit.resident, figure: unit.figure, variety: unit.variety, outfit: unit.outfit, headwear: unit.headwear,
-        swing: unit.swing, bow: unit.bow,
+        swing: unit.swing, bow: unit.bow, sheathed: unit.sheathed, throwable: unit.throwable,
       })),
       platforms: layout.platforms,
     };

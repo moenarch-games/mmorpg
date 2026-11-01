@@ -600,7 +600,20 @@ impl Presentation {
                     imported.tint,
                     imported.swing,
                     imported.bow,
+                    imported.animation.carry,
                 ));
+                // A drawn throwable rides in the right hand from the draw to the release (#603).
+                if let Some(throwable) = imported.animation.carry.throwable
+                    && let Some(grip) =
+                        weapon.throwable_grip(asset, placement, &imported.animation.layers)
+                {
+                    body.extend(
+                        self.units_presenter
+                            .throwable_draws(&imported.id, throwable, grip)
+                            .iter()
+                            .map(|draw| self.lowering.draw(draw)),
+                    );
+                }
             }
             let head = asset
                 .head(&imported.animation.layers)

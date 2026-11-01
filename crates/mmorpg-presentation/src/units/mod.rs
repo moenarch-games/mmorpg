@@ -77,6 +77,32 @@ fn stuns(ability: AbilityId) -> bool {
         .is_some_and(|aura| aura.kind == mmorpg_core::AuraKind::Stun)
 }
 
+/// The radius of a drawn flask or bomb in the hand (#603), a little over asset-tooling #418's
+/// 4 cm `Grip_Flask_R` ball so the fingers rest on it.
+pub const THROWABLE_BALL_METRES: f64 = 0.045;
+
+/// `a × b` of two column-major 4×4 matrices.
+fn multiply(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
+    std::array::from_fn(|i| {
+        let (column, row) = (i / 4, i % 4);
+        (0..4).map(|k| a[k * 4 + row] * b[column * 4 + k]).sum()
+    })
+}
+
+/// What an imported unit carries: a resident or humanoid enemy its preset's weapons, a player
+/// its class's; nothing for anyone else.
+fn carried(
+    entity: EntityRef,
+    resident: Option<Resident>,
+    class: Option<ClassChoice>,
+) -> Option<Loadout> {
+    match resident {
+        Some(resident) => resident.loadout(),
+        None if matches!(entity, EntityRef::Player(_)) => class.map(|c| Loadout::of_class(c.class)),
+        None => None,
+    }
+}
+
 /// The local player's reversible attack preparation (Atlas 6.6.10, #415): an instant ability
 /// pressed or aimed but not yet answered by the zone. It only poses the viewer's upper body;
 /// commands, eligibility, windows and hits stay the zone's.
@@ -514,7 +540,7 @@ impl UnitPresenter {
                     self.stuns.remove(&target);
                 }
                 ZoneEvent::Interrupted { target, .. } => {
-                    if let Some((kind, class)) = self.class_of(snapshot, target)
+                    if let Some((kind, class, _)) = self.class_of(snapshot, target)
                         && let Some(cycle) = kind.cast(class)
                     {
                         let cancel = self.clip(kind, cycle.cancel);
@@ -564,7 +590,7 @@ impl UnitPresenter {
             if commits {
                 self.preparation = None;
             }
-            let Some((kind, class)) = self.class_of(snapshot, source) else {
+            let Some((kind, class, loadout)) = self.class_of(snapshot, source) else {
                 continue;
             };
             // A charge rushes rather than swings (#582).
@@ -577,10 +603,8 @@ impl UnitPresenter {
                 self.playbacks.entry(source).or_default().charge(seconds);
                 continue;
             }
-            let mut clip = kind.strike(class, ability, aim);
-            if self.duration(kind, clip) <= 0. {
-                clip = kind.clips().attack;
-            }
+            let swing = self.playbacks.get(&source).map_or(0, Playback::swings);
+            let (clip, item) = self.strike_clip(kind, class, loadout, ability, aim, swing);
             let duration = self.duration(kind, clip);
             let region = kind.strike_region(clip);
             // A bow shot recovers after its release (#538).
@@ -595,37 +619,69 @@ impl UnitPresenter {
             } else {
                 playback.strike(clip, duration, region, seconds);
             }
+            if ability.is_none() {
+                playback.swung();
+            }
+            if let Some(item) = item {
+                playback.throwing(item);
+            }
             if let Some((recovery, length)) = recovery {
                 playback.recover(recovery, length);
             }
         }
     }
 
-    /// The imported model presenting `entity` in `snapshot` and the class whose strikes and
-    /// casts it plays.
+    /// The imported model presenting `entity` in `snapshot`, the class whose strikes and casts
+    /// it plays and what it carries.
     fn class_of(
         &self,
         snapshot: &ZoneSnapshot,
         entity: EntityRef,
-    ) -> Option<(Kind, Option<mmorpg_core::PlayerClass>)> {
+    ) -> Option<(Kind, Option<mmorpg_core::PlayerClass>, Option<Loadout>)> {
         let record = snapshot.entities.iter().find(|e| e.entity() == entity)?;
         let kind = self.imported_kind(entity, record)?;
-        let class = match entity {
+        let choice = match entity {
             EntityRef::Player(id) if id == snapshot.viewer_id => snapshot.viewer.class,
             EntityRef::Player(_) => ClassChoice::from_appearance(record.appearance),
             _ => None,
         };
-        let class = class.map(|choice| choice.class).or_else(|| {
-            self.resident(entity, record)
-                .and_then(Resident::strike_class)
-        });
-        Some((kind, class))
+        let resident = self.resident(entity, record);
+        let class = choice
+            .map(|choice| choice.class)
+            .or_else(|| resident.and_then(Resident::strike_class));
+        Some((kind, class, carried(entity, resident, choice)))
     }
 
     /// `clip` and its length, when the model has it.
     fn clip(&self, kind: Kind, clip: &'static str) -> Option<(&'static str, f32)> {
         let length = self.duration(kind, clip);
         (length > 0.).then_some((clip, length))
+    }
+
+    /// The clip an accepted attack or ability plays, and what a throw draws (#603): a dagger
+    /// clip the model has ([`Kind::dagger_strike`]), else the authored strike ([`Kind::strike`]),
+    /// else the model's attack.
+    fn strike_clip(
+        &self,
+        kind: Kind,
+        class: Option<mmorpg_core::PlayerClass>,
+        loadout: Option<Loadout>,
+        ability: Option<AbilityId>,
+        aim: Option<StrikeAim>,
+        swing: u32,
+    ) -> (&'static str, Option<imported::Throwable>) {
+        if let Some(dagger) = kind
+            .dagger_strike(loadout, ability, swing)
+            .filter(|&(clip, _)| self.duration(kind, clip) > 0.)
+        {
+            return dagger;
+        }
+        let clip = kind.strike(class, ability, aim);
+        if self.duration(kind, clip) > 0. {
+            (clip, None)
+        } else {
+            (kind.clips().attack, None)
+        }
     }
 
     /// Where a wind-up of `clip` holds (#582): from its `humanoid-clips` contact once the client
@@ -690,7 +746,7 @@ impl UnitPresenter {
         reaction: Reaction,
         seconds: f64,
     ) {
-        let Some((kind, _)) = self.class_of(snapshot, entity) else {
+        let Some((kind, _, _)) = self.class_of(snapshot, entity) else {
             return;
         };
         let Some((clip, length)) = kind
@@ -706,7 +762,8 @@ impl UnitPresenter {
     }
 
     /// `entity` began a cast or channel of `ticks` (#538): it draws and holds its bow, or
-    /// raises and holds a spell, when its model has the hold.
+    /// raises and holds a spell, when its model has the hold. A Crude Bandage wraps the
+    /// forearm through the cast (#603).
     fn cast(
         &mut self,
         snapshot: &ZoneSnapshot,
@@ -715,11 +772,23 @@ impl UnitPresenter {
         ticks: u16,
         seconds: f64,
     ) {
-        let Some((kind, class)) = self.class_of(snapshot, entity) else {
+        let Some((kind, class, _)) = self.class_of(snapshot, entity) else {
             return;
         };
         #[allow(clippy::cast_possible_truncation)]
         let length = (f64::from(ticks) / f64::from(mmorpg_core::TICK_HZ)) as f32;
+        if ability == mmorpg_core::ability::ids::CRUDE_BANDAGE
+            && let Some((bandage, _)) = kind
+                .clips()
+                .dagger
+                .and_then(|dagger| self.clip(kind, dagger.bandage))
+        {
+            self.playbacks
+                .entry(entity)
+                .or_default()
+                .cast(None, bandage, false, length, seconds);
+            return;
+        }
         // A cast that resolves into an authored sword strike (the Redbrand whirl and smash,
         // #582) winds that strike up and holds it until the zone resolves it.
         let strike = kind.strike(class, Some(ability), None);
@@ -908,28 +977,6 @@ impl UnitPresenter {
                 let rolling = traversal == mmorpg_core::TraversalView::Rolling;
                 let (speed, vertical) = (loc.forward.hypot(loc.right), loc.vertical);
                 let motions = self.motions.get(&kind);
-                if viewer {
-                    let wind_up = self.preparation.map(|preparation| {
-                        let class = snapshot.viewer.class.map(|choice| choice.class);
-                        let mut clip =
-                            kind.strike(class, Some(preparation.ability), preparation.aim);
-                        if self.duration(kind, clip) <= 0. {
-                            clip = kind.clips().attack;
-                        }
-                        // A bow shot winds up aiming (#538).
-                        let aim = kind
-                            .cycle_of(clip)
-                            .and_then(|cycle| cycle.aim)
-                            .filter(|&aim| self.duration(kind, aim) > 0.);
-                        let clip = aim.unwrap_or(clip);
-                        (clip, self.windup(kind, clip), preparation.pressed)
-                    });
-                    let playback = self.playbacks.entry(entity).or_default();
-                    match wind_up {
-                        Some((clip, hold, pressed)) => playback.prepare(clip, hold, pressed),
-                        None => playback.abandon(),
-                    }
-                }
                 // The viewer's class is the zone's, so a review scenario's character carries its
                 // own class weapons and outfit whatever the page has selected (#503).
                 let class = if viewer {
@@ -937,13 +984,35 @@ impl UnitPresenter {
                 } else {
                     ClassChoice::from_appearance(unit.record.appearance)
                 };
-                let loadout = match resident {
-                    Some(resident) => resident.loadout(),
-                    None if matches!(entity, EntityRef::Player(_)) => {
-                        class.map(|c| Loadout::of_class(c.class))
+                let loadout = carried(entity, resident, class);
+                if viewer {
+                    let wind_up = self.preparation.map(|preparation| {
+                        let class = snapshot.viewer.class.map(|choice| choice.class);
+                        let swing = self.playbacks.get(&entity).map_or(0, Playback::swings);
+                        let (clip, item) = self.strike_clip(
+                            kind,
+                            class,
+                            loadout,
+                            Some(preparation.ability),
+                            preparation.aim,
+                            swing,
+                        );
+                        // A bow shot winds up aiming (#538).
+                        let aim = kind
+                            .cycle_of(clip)
+                            .and_then(|cycle| cycle.aim)
+                            .filter(|&aim| self.duration(kind, aim) > 0.);
+                        let clip = aim.unwrap_or(clip);
+                        (clip, self.windup(kind, clip), item, preparation.pressed)
+                    });
+                    let playback = self.playbacks.entry(entity).or_default();
+                    match wind_up {
+                        Some((clip, hold, item, pressed)) => {
+                            playback.prepare(clip, hold, item, pressed);
+                        }
+                        None => playback.abandon(),
                     }
-                    None => None,
-                };
+                }
                 let durations = &self.durations;
                 let animation = self.playbacks.entry(entity).or_default().advance(
                     kind.clips(),
@@ -965,7 +1034,7 @@ impl UnitPresenter {
                         guard,
                         stunned,
                         rolling,
-                        hands: loadout.map(Loadout::hands).unwrap_or_default(),
+                        loadout,
                         now: seconds,
                         dt: input.dt,
                         reduced,
@@ -1264,6 +1333,68 @@ impl UnitPresenter {
                 offset(tip, [0., 0., -0.04]),
             ));
         }
+    }
+
+    /// A drawn throwable in a hand (#603), in the colours of its projectile: `held` is the
+    /// column-major world matrix of its [`imported::THROWABLE_SOCKET`] grip frame, whose +Y the
+    /// blade points along. The knife is a dark grip and a steel blade, the flask a green glass
+    /// ball, the bomb a black ball with a glowing fuse. The bundle has no throwable items, so
+    /// both clients draw these placeholders (the browser its own copy of the shapes).
+    pub fn throwable_draws(
+        &mut self,
+        id: &str,
+        throwable: imported::Throwable,
+        held: [f32; 16],
+    ) -> Vec<Draw> {
+        let at = |p: V| Frame { p, q: IQ };
+        let mut draws = match throwable {
+            imported::Throwable::Knife => vec![
+                self.resources.primitive(
+                    format!("{id}-knife-grip"),
+                    Primitive::Box([0.022, 0.08, 0.022]),
+                    0x2a2420,
+                    at([0., -0.03, 0.]),
+                ),
+                self.resources.primitive(
+                    format!("{id}-knife-blade"),
+                    Primitive::Box([0.03, 0.12, 0.006]),
+                    0xc4c9cc,
+                    at([0., 0.07, 0.]),
+                ),
+            ],
+            imported::Throwable::Flask => {
+                let mut glass = self.resources.primitive(
+                    format!("{id}-flask"),
+                    Primitive::Ball(THROWABLE_BALL_METRES),
+                    0x5fbf3a,
+                    at([0.; 3]),
+                );
+                glass.material.opacity = 0.85;
+                vec![glass]
+            }
+            imported::Throwable::Bomb => {
+                let mut spark = self.resources.primitive(
+                    format!("{id}-bomb-spark"),
+                    Primitive::Ball(0.015),
+                    0xffc04a,
+                    at([0., THROWABLE_BALL_METRES, 0.]),
+                );
+                spark.material.emissive = [1.0, 0.75, 0.3];
+                vec![
+                    self.resources.primitive(
+                        format!("{id}-bomb"),
+                        Primitive::Ball(THROWABLE_BALL_METRES),
+                        0x2b2b2e,
+                        at([0.; 3]),
+                    ),
+                    spark,
+                ]
+            }
+        };
+        for draw in &mut draws {
+            draw.model = multiply(&held, &draw.model);
+        }
+        draws
     }
 
     /// A Rogue's thrown flask or bomb (#290): a green glass flask with a cork, or a black bomb
