@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BatchedRoots } from "./static-batches";
 import { loadStaticBundle } from "./static-bundle";
 import type { BuildingPresenterHandle } from "./scenery";
 
@@ -12,8 +13,13 @@ type Building = {
   door: number;
   doorEntry: string;
   entries: readonly string[];
+  /** The entries' roots, out of the scene: placed, swung and hidden here, drawn through `batched`. */
   roots: THREE.Object3D[];
+  /** The roots batched per material (#615); null until loaded. */
+  batched: BatchedRoots | null;
   frame: Float32Array | null;
+  /** The frame the batches last followed, 17 floats per root (matrix and shown). */
+  placed: Float32Array | null;
 };
 
 /**
@@ -30,7 +36,7 @@ export class WalkInBuildings {
   constructor(presenters: readonly BuildingPresenterHandle[]) {
     this.#buildings = presenters.map((presenter) => ({
       presenter, bundle: presenter.bundle(), door: presenter.door(), doorEntry: presenter.doorEntry(), entries: presenter.entries(),
-      roots: [], frame: null,
+      roots: [], batched: null, frame: null, placed: null,
     }));
   }
 
@@ -48,6 +54,7 @@ export class WalkInBuildings {
 
   async #load(building: Building): Promise<void> {
     building.roots = await loadStaticBundle(`${BUILDINGS}${building.bundle}/`, building.entries);
+    building.batched = new BatchedRoots(building.bundle, building.roots);
     this.#changed = true;
     place(building);
   }
@@ -65,7 +72,7 @@ export class WalkInBuildings {
   roots(): { roots: THREE.Object3D[]; changed: boolean } {
     const changed = this.#changed;
     this.#changed = false;
-    return { roots: this.#buildings.flatMap((building) => building.roots), changed };
+    return { roots: this.#buildings.flatMap((building) => building.batched ? [building.batched.root] : []), changed };
   }
 
   /** Shown roots for picking (occluders), with each door leaf's door ID. */
@@ -84,14 +91,28 @@ export class WalkInBuildings {
   }
 }
 
+/** Places, swings and shows the roots by the presenter's frame; only roots whose part of it changed are re-batched. */
 function place(building: Building): void {
   const frame = building.frame;
-  if (!frame) {
+  const batched = building.batched;
+  if (!frame || !batched) {
     return;
   }
+  const placed = building.placed?.length === frame.length ? building.placed : null;
   building.roots.forEach((root, index) => {
-    root.matrix.fromArray(frame, index * 17);
+    const start = index * 17;
+    if (placed && sameRange(placed, frame, start, start + 17)) { return; }
+    root.matrix.fromArray(frame, start);
     root.matrixWorldNeedsUpdate = true;
-    root.visible = frame[index * 17 + 16] === 1;
+    root.visible = frame[start + 16] === 1;
+    batched.sync(index);
   });
+  building.placed = Float32Array.from(frame);
+}
+
+function sameRange(a: Float32Array, b: Float32Array, start: number, end: number): boolean {
+  for (let index = start; index < end; index += 1) {
+    if (a[index] !== b[index]) { return false; }
+  }
+  return true;
 }
