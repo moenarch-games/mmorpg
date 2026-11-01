@@ -26,6 +26,12 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "artifacts" / "browser"
+# Advisory tripwire (PRINCIPLE-015), not a draw-call bound: the static scene's groups, including
+# kit fallbacks hidden while their kit draws, all drawn through per-material BatchedMeshes (#615).
+# 3,586 after the three outer regions (#495, #497, #505), nature fallbacks and terrain tiles (#620).
+STATIC_GROUPS_TRIPWIRE = 4_000
+# Advisory too: vertices stored across the static scene's unique geometries; 374,842 at the same point.
+STATIC_VERTICES_TRIPWIRE = 450_000
 ROSTER_KEY = "mmorpg.offline-roster.v1"
 # The retired offline checkpoint key; nothing may write it any more.
 CHARACTER_ENTRY_PREFIX = "mmorpg.character.v1."
@@ -374,7 +380,7 @@ class BrowserAcceptance(unittest.TestCase):
                     self.page.locator("#world").focus()
                     dialog = self.page.get_by_role("complementary", name="Quest dialog", exact=True)
                     if not dialog.is_visible():
-                        self.page.keyboard.press("t")
+                        self.page.keyboard.press("e")
                     expect(dialog).to_be_visible()
                     expect(dialog.get_by_role("heading", name=name, exact=True)).to_be_visible()
                     if identity == 1:
@@ -393,7 +399,7 @@ class BrowserAcceptance(unittest.TestCase):
                         expect(buy).to_be_disabled()
                 else:
                     self.page.locator("#world").focus()
-                    self.page.keyboard.press("t")
+                    self.page.keyboard.press("e")
                     self.frames(3)
                     # A guard has no authored quest. Talk may show a refusal/empty context,
                     # but must never silently open a nearby Marshal/Tanner's quest.
@@ -697,8 +703,8 @@ class BrowserAcceptance(unittest.TestCase):
         self.frames(12)
         stats = self.debug_stats()
         overlay_stats = json.loads(overlay.get_attribute("data-stats"))
-        self.assertGreater(overlay_stats["nodes"], overlay_stats["staticNodes"])
-        self.assertLessEqual(overlay_stats["staticNodes"], 1_500, "Static batching keeps draw calls bounded")
+        self.assertGreater(overlay_stats["nodes"], overlay_stats["visibleStaticNodes"])
+        self.assertLessEqual(overlay_stats["staticNodes"], STATIC_GROUPS_TRIPWIRE)
         self.assertGreater(overlay_stats["fps"], 0)
         (ARTIFACTS / "scene-stats.json").write_text(json.dumps({
             "note": "fps comes from headless Chromium with SwiftShader software rendering; it is not a hardware measurement",
@@ -977,9 +983,9 @@ class BrowserAcceptance(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / "outpost-grass-clearing.png"))
         stats = self.debug_stats()
         self.assertEqual(stats["self"], before)
-        self.assertEqual(stats["scene"]["props"]["grass-tuft"], 3936)
-        self.assertLessEqual(stats["scene"]["staticNodes"], 1_500)
-        self.assertLessEqual(stats["scene"]["staticVertices"], 230_000)
+        self.assertEqual(stats["scene"]["props"]["grass-tuft"], 6723, "The Vale and its three outer regions (#495, #497, #505)")
+        self.assertLessEqual(stats["scene"]["staticNodes"], STATIC_GROUPS_TRIPWIRE)
+        self.assertLessEqual(stats["scene"]["staticVertices"], STATIC_VERTICES_TRIPWIRE)
         colours = self.canvas_colours()
         self.assertGreater(colours["distinct"], 400)
         self.assertGreater(colours["covered"], 0.5)
@@ -1003,8 +1009,8 @@ class BrowserAcceptance(unittest.TestCase):
             self.page.screenshot(path=str(ARTIFACTS / f"outpost-relief-{name}.png"))
             stats = self.debug_stats()
             self.assertEqual(stats["self"], before)
-            self.assertLessEqual(stats["scene"]["staticNodes"], 1_500)
-            self.assertLessEqual(stats["scene"]["staticVertices"], 230_000)
+            self.assertLessEqual(stats["scene"]["staticNodes"], STATIC_GROUPS_TRIPWIRE)
+            self.assertLessEqual(stats["scene"]["staticVertices"], STATIC_VERTICES_TRIPWIRE)
             colours = self.canvas_colours()
             self.assertGreater(colours["distinct"], 400)
             self.assertGreater(colours["covered"], 0.5)
@@ -1369,9 +1375,9 @@ class BrowserAcceptance(unittest.TestCase):
         inn = self.page.evaluate("window.__valeDebug.inn()")
         self.assertEqual(sorted(inn["shown"]), sorted(["greyhaven.inn.shell", "greyhaven.inn.furniture", "greyhaven.inn.ceiling", "greyhaven.inn.roof", "greyhaven.inn.door"]))
         self.page.screenshot(path=str(ARTIFACTS / "inn-outside-closed.png"))
-        # Interact (T) with no NPC selected swings the door in reach.
+        # Interact (E) with no NPC selected swings the door in reach.
         self.page.locator("#world").focus()
-        self.page.keyboard.press("t")
+        self.page.keyboard.press("e")
         step()
         self.assertTrue(door_open(), "Interact opened the inn door")
         self.frames(30)
@@ -1437,7 +1443,7 @@ class BrowserAcceptance(unittest.TestCase):
         walk({0: [1, 0], 8: [1, 49152], 28: [1, 0], 60: [0, 0]}, 62)
         self.assertGreater(self.page.evaluate("window.__valeDebug.worldSource().latestProjection().entities[0].position[2]"), 480, "Outside again")
         relief = self.page.evaluate("window.__valeDebug.reliefAt(1500, 0)") / 100
-        self.page.evaluate("([y]) => window.__valeDebug.flyToPose([15.6, y + 1.3, 7.5], [14.4, y + 1.1, 3.9])", [relief])
+        self.page.evaluate("([y]) => window.__valeDebug.flyToPose([16.4, y + 1.3, 7.5], [14.4, y + 1.1, 3.9])", [relief])
         self.frames(6)
         box = self.page.locator("#world").bounding_box()
         self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, button="right")
@@ -1457,7 +1463,7 @@ class BrowserAcceptance(unittest.TestCase):
         }""")
         self.enter_world(ticking=False)
         markers = self.page.locator("#quest-markers .quest-marker")
-        self.page.keyboard.press("t")
+        self.page.keyboard.press("e")
         dialog = self.page.get_by_role("complementary", name="Quest dialog", exact=True)
         expect(dialog).to_be_visible()
         expect(self.page.locator("#quest-dialog-status")).to_contain_text("Move within 5 m of Marshal Elden Greywatch")
