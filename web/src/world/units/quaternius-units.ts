@@ -5,6 +5,7 @@ import type { ThreeSceneRenderer } from "@moritzbrantner/three-d-renderer";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { LitMaterial } from "@moritzbrantner/three-lighting";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { mergeUnitMeshes, type MergedUnit } from "./merged-unit";
 import type { EntityRef } from "../../entity-ref";
 import { characterVisualProfile } from "../../character-visuals";
 import type { CharacterClassId } from "../../character-selection";
@@ -143,6 +144,8 @@ type Instance = {
   tint: readonly [number, number, number] | null | undefined;
   head: THREE.Object3D | null;
   entity: EntityRef;
+  /** The unit's own merged meshes and joint palette (#615), freed when it is dropped. */
+  merged: MergedUnit;
 };
 
 const point = new THREE.Vector3();
@@ -553,11 +556,26 @@ function poseCrossbow(model: THREE.Object3D, crossbow: CrossbowCarry | null): vo
   if (!bolt.holder.matrix.equals(place.matrix)) { bolt.holder.matrix.copy(place.matrix); }
 }
 
+/** `model`'s holders whose visibility poses toggle: the throwables and the crossbow's bolt. */
+function toggledHolders(model: THREE.Object3D): Set<THREE.Object3D> {
+  const holders = new Set<THREE.Object3D>();
+  for (const item of daggers.get(model)?.throwables.values() ?? []) { holders.add(item.holder); }
+  const bolt = crossbows.get(model)?.bolt;
+  if (bolt) { holders.add(bolt.holder); }
+  return holders;
+}
+
 /**
  * The sockets whose items hang loose and swing (Atlas 6.6.39): the shared presenter's
  * `sway::hangs`. Held items follow the hands and worn plates the body.
  */
 const HANGING_SOCKETS: ReadonlySet<string> = new Set(["back.quiver", "back.bow.stowed", "back.stowed", "hip_l.stowed"]);
+
+/**
+ * How far (model metres) a clip can carry a skin beyond its rest bounds: a swing's reach, a crouch or a fall (#615).
+ * A unit's skins are culled per view by their rest bounding sphere grown by this.
+ */
+const SKIN_REACH_METRES = 1;
 /** Each model's hanging items: the holder, its joint and its authored socket matrix. */
 const hanging = new WeakMap<THREE.Object3D, { holder: THREE.Group; joint: THREE.Object3D; base: THREE.Matrix4 }[]>();
 const modelInverse = new THREE.Matrix4();
@@ -1418,12 +1436,18 @@ export class QuaterniusUnits {
   #create(unit: ImportedRequest, dress: Dress, asset: Asset): Instance {
     const posable = asset.instantiate(dress);
     const { model } = posable;
+    // One draw per material class rather than per mesh (#615); throwables and the bolt show and hide, so stay apart.
+    const merged = mergeUnitMeshes(model, toggledHolders(model));
     const materials: Instance["materials"] = [];
     model.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) { return; }
       object.castShadow = true;
-      // Animated bounds are not tracked; a handful of units are cheaper than stale culling.
-      object.frustumCulled = false;
+      // Culled per view (#615): a skin by its rest bounds grown by what a clip can reach beyond them; a rigid
+      // mesh rides its joint, so its own bounds follow it.
+      if (object instanceof THREE.SkinnedMesh) {
+        object.computeBoundingSphere();
+        object.boundingSphere!.radius += SKIN_REACH_METRES;
+      }
       // Each unit its own LitMaterials (#600), so its tint is its own.
       const own = (material: THREE.Material): THREE.Material => {
         const copy = LitMaterial.fromGltf(material);
@@ -1441,7 +1465,7 @@ export class QuaterniusUnits {
     root.add(model);
     const instance: Instance = {
       kind: unit.kind, dress: dressKey(dress), root, posable,
-      clip: "", time: 0, layers: [], materials, tint: undefined, head: model.getObjectByName("Head") ?? null, entity: unit.entity,
+      clip: "", time: 0, layers: [], materials, tint: undefined, head: model.getObjectByName("Head") ?? null, entity: unit.entity, merged,
     };
     this.#instances.set(unit.id, instance);
     this.#rootsChanged = true;
@@ -1475,6 +1499,8 @@ export class QuaterniusUnits {
   #drop(id: string, instance: Instance): void {
     instance.posable.dispose();
     for (const { material } of instance.materials) { material.dispose(); }
+    for (const mesh of instance.merged.meshes) { mesh.geometry.dispose(); }
+    instance.merged.skeleton.dispose();
     this.#instances.delete(id);
     this.#rootsChanged = true;
   }
