@@ -128,7 +128,7 @@ pub enum Kit {
     /// Graybox level geometry (#552), by its index in the scenery's props: the fallback for a
     /// composition kit's piece over that body (the Battle Royale fortress kit, #591).
     Graybox(usize),
-    /// The `greyhaven-nature` trees and rocks (#49, [`nature`]); the procedural trees and
+    /// The `greyhaven-nature` trees, rocks and bushes (#49, [`nature`]); the procedural trees and
     /// rocks are the fallback.
     Nature,
 }
