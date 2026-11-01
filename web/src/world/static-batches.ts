@@ -40,9 +40,12 @@ export class StaticBatches {
     this.root.name = name;
   }
 
-  /** Adds `geometry` drawn with `material` (see [`batchable`]) at `matrix`, times `color` (linear) when given. */
-  add(geometry: THREE.BufferGeometry, material: THREE.Material, matrix: THREE.Matrix4, color: THREE.Color | null = null): BatchedDraw {
-    const key = `${material.uuid}|${layout(geometry)}`;
+  /**
+   * Adds `geometry` drawn with `material` (see [`batchable`]) at `matrix`, times `color` (linear) when given. Draws of
+   * another `part` go to other batches: moving one re-uploads only its own batch's matrices.
+   */
+  add(geometry: THREE.BufferGeometry, material: THREE.Material, matrix: THREE.Matrix4, color: THREE.Color | null = null, part = ""): BatchedDraw {
+    const key = `${part}|${material.uuid}|${layout(geometry)}`;
     let group = this.#groups.get(key);
     if (!group) {
       group = { material, colored: false, pending: [] };
@@ -192,7 +195,7 @@ export class BatchedScenery {
 
   constructor(scene: Pick<SceneryScene, "batches" | "water" | "animated">) {
     const materials = new Map<string, THREE.Material>();
-    const add = (node: Pick<RendererSceneNode, "geometry" | "color" | "emissive" | "doubleSided" | "unlit">, model: ArrayLike<number> | undefined): BatchedDraw => {
+    const add = (node: Pick<RendererSceneNode, "geometry" | "color" | "emissive" | "doubleSided" | "unlit">, model: ArrayLike<number> | undefined, part: string): BatchedDraw => {
       const geometry = sceneGeometry(node.geometry as StaticBatch["node"]["geometry"]);
       const vertexColors = geometry.hasAttribute("color");
       const white = { ...node, color: "#ffffff" } as unknown as RendererSceneNode;
@@ -204,11 +207,12 @@ export class BatchedScenery {
       }
       this.#matrix.identity();
       if (model) { this.#matrix.fromArray(model); }
-      return this.#batches.add(geometry, material, this.#matrix, new THREE.Color(node.color ?? 0xffffff));
+      return this.#batches.add(geometry, material, this.#matrix, new THREE.Color(node.color ?? 0xffffff), part);
     };
-    this.#statics = scene.batches.map(({ node }) => add(node, node.modelMatrix));
+    this.#statics = scene.batches.map(({ node }) => add(node, node.modelMatrix, "static"));
     this.#water = scene.water.length;
-    this.#animated = scene.animated.flat().map((node) => add(node, undefined));
+    // Their own batches: the parts move every frame, and only their matrices re-upload.
+    this.#animated = scene.animated.flat().map((node) => add(node, undefined, "animated"));
     this.#placed = new Float32Array(this.#animated.length * 16).fill(Number.NaN);
     this.#batches.build();
   }

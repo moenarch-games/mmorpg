@@ -1177,7 +1177,9 @@ export class WorldView {
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
     // The batches draw the static groups and animated parts; the renderer only the water.
     this.#sceneryBatches?.show(frame.nodes);
-    nodes.push(...(this.#sceneryBatches?.undrawn(frame.nodes) ?? frame.nodes), ...unitNodes);
+    const rendered = this.#sceneryBatches?.undrawn(frame.nodes) ?? frame.nodes;
+    const batchedNodes = frame.nodes.length - rendered.length;
+    nodes.push(...rendered, ...unitNodes);
     this.#lastEffectNodes = presented.nodes.filter((node) => node.id.startsWith("fx-"));
     nodes.push(...this.#lastEffectNodes);
     this.#lastUnitNodes = unitNodes;
@@ -1251,7 +1253,7 @@ export class WorldView {
     this.#overlay.update({
       fps: this.#frameRate.fps,
       frameMs: this.#frameRate.frameMs,
-      nodes: nodes.length + frame.instanceBatches.length,
+      nodes: nodes.length + batchedNodes + frame.instanceBatches.length,
       staticNodes: scene.stats.staticNodes,
       visibleStaticNodes: frame.visibleBatches,
       staticVertices: scene.stats.staticVertices,
