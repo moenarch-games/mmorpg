@@ -1306,7 +1306,7 @@ function renderSelection() {
   const features = worldView.faceFeatures();
   if (faceFeatures === undefined && features !== undefined) { showFaceFeatures(features); }
   // The selection stage stands in the mid-afternoon sun, without fog or lamps.
-  lighting.apply({ hour: 15, fog: null, pointLights: null });
+  lighting.apply({ hour: 15, sky: false, fog: null, pointLights: null });
   renderer.render({ camera, nodes: real ? selectionStageNodes : [...selectionStageNodes, ...selectionCharacterNodes()] });
 }
 

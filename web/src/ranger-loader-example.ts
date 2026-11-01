@@ -12,7 +12,7 @@ const status = document.querySelector("#status");
 if (!canvas || !status) throw new Error("Ranger example elements missing");
 // Lit like the game (#600): the mid-afternoon sun, without fog or lamps.
 const lighting = new GreyhavenLighting(import.meta.env.BASE_URL);
-lighting.apply({ hour: 15, fog: null, pointLights: null });
+lighting.apply({ hour: 15, sky: false, fog: null, pointLights: null });
 const renderer = createThreeSceneRenderer(canvas, {
   antialias: false, material: presentationMaterial, draw: (target, scene, view) => lighting.draw(target, scene, view),
 });
