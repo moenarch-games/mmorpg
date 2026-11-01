@@ -472,7 +472,15 @@ impl UnitPresenter {
                 _ => None,
             })
             .collect();
+        // A swing covering several units reports one attack each; it is still one swing, so a
+        // twin-dagger holder alternates hands per swing (#603).
+        let mut swingers = BTreeSet::new();
         for event in &snapshot.events {
+            if let ZoneEvent::AttackPerformed { source, .. } = *event
+                && !swingers.insert(source)
+            {
+                continue;
+            }
             // Reactions and casts (#538) follow the zone's resolved blows and casts.
             match *event {
                 ZoneEvent::DamageTaken {

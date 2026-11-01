@@ -88,8 +88,8 @@ pub enum Scenario {
     RogueDaggers,
     /// … and 13 m from it, the Throwing Knife, Venom Flask and Blasting Bomb throws.
     RogueThrows,
-    /// A level 8 Warden 12 m south of the Redbrand Hollow camp, facing the bandits: a bandit
-    /// beaten below half health wraps a Crude Bandage round its forearm (#603).
+    /// A level 8 Warden 5 m south of a Redbrand Hollow bandit, facing it: beaten below half
+    /// health, it wraps a Crude Bandage round its forearm (#603).
     RedbrandBandage,
 }
 
@@ -243,7 +243,9 @@ impl Scenario {
             // at it.
             Self::WardenCharge | Self::RogueThrows => ([-4_900, -3_600], 49_152),
             // 12 m south of the camp's nearest bandits; facing north.
-            Self::WardenStun | Self::RedbrandBandage => ([0, -6_600], 32_768),
+            Self::WardenStun => ([0, -6_600], 32_768),
+            // 5 m south of Redbrand Bandit 401 at (1 000, -7 800); facing north at it.
+            Self::RedbrandBandage => ([1_000, -7_300], 32_768),
             // 5 m south of Garrick; facing north.
             Self::RedbrandWhirl => ([0, -10_000], 32_768),
             // 4 m south of the west Brute (650); facing north toward it.
