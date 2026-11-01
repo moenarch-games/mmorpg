@@ -2120,6 +2120,57 @@ mod rolling_ranger_tests {
     }
 
     #[test]
+    fn a_throw_sheathes_the_right_dagger_at_the_hip() {
+        let character = &asset(Kind::Ranger).model;
+        let equipment = Equipment::loadout(Loadout::TwinDaggers);
+        assert_eq!(equipment.items.len(), 2);
+        let pose = [Layer::single("Idle_Loop", 0.)];
+        let right = |carry: Carry| {
+            let draws = equipment.draws_swung(
+                "rogue",
+                character,
+                three_d_animation::Mat4::IDENTITY,
+                &pose,
+                None,
+                sway::Swing::default(),
+                None,
+                carry,
+            );
+            let draw = draws
+                .iter()
+                .find(|draw| draw.id.starts_with("rogue-item-0-"))
+                .expect("the right dagger draws");
+            [12, 13, 14].map(|i| draw.model.elements[i])
+        };
+        let joint = |name: &str| {
+            let at = character.joint(name, &pose).expect(name);
+            [12, 13, 14].map(|i| at.elements[i])
+        };
+        let distance = |a: [f32; 3], b: [f32; 3]| {
+            a.iter()
+                .zip(b)
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f32>()
+                .sqrt()
+        };
+        let sheathed = Carry {
+            sheathed: [false, true],
+            throwable: None,
+        };
+        let (held, stowed) = (right(Carry::default()), right(sheathed));
+        assert!(distance(held, joint("hand_r")) < 0.15, "in hand: {held:?}");
+        assert!(
+            distance(stowed, joint("pelvis")) < 0.4,
+            "at the hip: {stowed:?}"
+        );
+        assert!(
+            equipment
+                .throwable_grip(character, three_d_animation::Mat4::IDENTITY, &pose)
+                .is_some()
+        );
+    }
+
+    #[test]
     fn shared_ranger_clips_bind_to_character_joints() {
         let model = &asset(Kind::Ranger).model;
         let clip = &model.clips["Walk_Loop"];
