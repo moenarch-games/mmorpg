@@ -1,7 +1,6 @@
 import * as THREE from "three";
-import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { InstancedLevels } from "./instanced-levels";
-import { loadBundleGltfs, readBundleAttachment } from "./static-bundle";
+import { loadBundleGltfs, readBundleAttachment, shareMaterials } from "./static-bundle";
 
 /** The rolling `fortress-kit` bundle `scripts/fetch-bundles.sh` places in `web/public` (#591). */
 export const FORTRESS_BUNDLE = `${import.meta.env.BASE_URL}scenery/fortress.kit/`;
@@ -36,56 +35,6 @@ export type CompositionKitSource = {
 
 /** Where the unit presenter puts a platform the kit draws: its box's bottom centre, metres. */
 export type PlatformPlacement = { platform: number; base: [number, number, number] };
-
-/**
- * Every piece and level of a kit uses the same few images, but each glTF loads its own textures and materials: one
- * texture per image and one material per name (with those textures) is kept, so the GPU holds each image once and
- * the pieces draw with a handful of programs.
- */
-function shareMaterials(gltfs: readonly GLTF[]): void {
-  const textures = new Map<string, THREE.Texture>();
-  const materials = new Map<string, THREE.Material>();
-  for (const gltf of gltfs) {
-    const json = gltf.parser.json as { textures?: { source?: number; sampler?: number }[]; images?: { uri?: string }[] };
-    const texture = (value: THREE.Texture): THREE.Texture => {
-      // Bundle images are content-addressed: equal URIs are equal images.
-      const index = gltf.parser.associations.get(value)?.textures;
-      const definition = index === undefined ? undefined : json.textures?.[index];
-      const uri = definition?.source === undefined ? undefined : json.images?.[definition.source]?.uri;
-      if (uri === undefined) { return value; }
-      const key = `${uri}:${definition?.sampler ?? -1}:${value.channel}:${value.colorSpace}`;
-      const kept = textures.get(key);
-      if (kept) {
-        if (kept !== value) { value.dispose(); }
-        return kept;
-      }
-      textures.set(key, value);
-      return value;
-    };
-    gltf.scene.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) { return; }
-      const share = (material: THREE.Material): THREE.Material => {
-        const record = material as unknown as Record<string, unknown>;
-        for (const [name, value] of Object.entries(record)) {
-          if (value instanceof THREE.Texture) { record[name] = texture(value); }
-        }
-        const maps = Object.values(record).filter((value) => value instanceof THREE.Texture).map((value) => (value as THREE.Texture).uuid);
-        const standard = material as THREE.MeshStandardMaterial;
-        const factors = [standard.color?.getHexString(), standard.emissive?.getHexString(), standard.roughness, standard.metalness,
-          material.transparent, material.side, material.alphaTest, standard.vertexColors];
-        const key = `${material.type}:${material.name}:${maps.join(",")}:${factors.join(",")}`;
-        const kept = materials.get(key);
-        if (kept) {
-          if (kept !== material) { material.dispose(); }
-          return kept;
-        }
-        materials.set(key, material);
-        return material;
-      };
-      object.material = Array.isArray(object.material) ? object.material.map(share) : share(object.material);
-    });
-  }
-}
 
 /**
  * An asset-tooling composition kit (#591, the Battle Royale fortress): every piece whose bodies the shared Rust

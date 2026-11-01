@@ -35,6 +35,7 @@ import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
 import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
 import { KitModules, OUTPOST_BUNDLE, SETTLEMENT_BUNDLE, SHRINE_BUNDLE, type KitPlacement } from "./kit-modules";
+import { BatchedScenery } from "./static-batches";
 import { CompositionKit } from "./composition-kit";
 import { Ground } from "./ground";
 import { Nature } from "./nature";
@@ -385,6 +386,9 @@ export class WorldView {
   /** The projected units of the last frame, for debug readouts. */
   #lastProjectedUnits: readonly ProjectedUnit[] = [];
   #sceneryFrame: SceneryFrame | null = null;
+  /** The static scene's draw groups, batched per material (#615); the frame's nodes only show and hide them. */
+  #sceneryBatches: BatchedScenery | null = null;
+  #sceneryBatchesChanged = false;
   #presentationFingerprint: string | null = null;
   #reliefAt: ((x: number, z: number) => number) | null = null;
   #minimap: Minimap | null = null;
@@ -520,6 +524,9 @@ export class WorldView {
     this.#presentationFingerprint = scenery.presentationFingerprint;
     this.#reliefAt = world.scenery.reliefAt;
     this.#scene = buildSceneryScene(scenery, world.scenery.staticScene);
+    this.#sceneryBatches?.dispose();
+    this.#sceneryBatches = new BatchedScenery(this.#scene);
+    this.#sceneryBatchesChanged = true;
     this.#nature = new Nature(world.scenery.nature);
     void this.#nature.load();
     this.#ground = new Ground(this.#scene.ground);
@@ -741,7 +748,7 @@ export class WorldView {
     this.#models.clear();
     const { roots, changed } = this.#models.roots();
     if (changed && this.#lastCamera) {
-      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#ground?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
+      this.#renderer.renderImportedRoots({ camera: this.#lastCamera, roots: [...(this.#sceneryBatches ? [this.#sceneryBatches.root] : []), ...roots, ...(this.#inn?.roots().roots ?? []), ...(this.#shrine?.roots().roots ?? []), ...(this.#outpost?.roots().roots ?? []), ...(this.#settlement?.roots().roots ?? []), ...(this.#fortress?.roots().roots ?? []), ...(this.#ambient?.roots().roots ?? []), ...(this.#nature?.roots().roots ?? []), ...(this.#ground?.roots().roots ?? []), this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root] });
     }
   }
 
@@ -1172,7 +1179,11 @@ export class WorldView {
     this.#fortress?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = frame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);
-    nodes.push(...frame.nodes, ...unitNodes);
+    // The batches draw the static groups and animated parts; the renderer only the water.
+    this.#sceneryBatches?.show(frame.nodes);
+    const rendered = this.#sceneryBatches?.undrawn(frame.nodes) ?? frame.nodes;
+    const batchedNodes = frame.nodes.length - rendered.length;
+    nodes.push(...rendered, ...unitNodes);
     this.#lastEffectNodes = presented.nodes.filter((node) => node.id.startsWith("fx-"));
     nodes.push(...this.#lastEffectNodes);
     this.#lastUnitNodes = unitNodes;
@@ -1206,8 +1217,11 @@ export class WorldView {
     const fortress = this.#fortress?.roots() ?? { roots: [], changed: false };
     const ambient = this.#ambient?.roots() ?? { roots: [], changed: false };
     const nature = this.#nature?.roots() ?? { roots: [], changed: false };
+    const sceneryBatches = this.#sceneryBatches ? [this.#sceneryBatches.root] : [];
+    const sceneryChanged = this.#sceneryBatchesChanged;
+    this.#sceneryBatchesChanged = false;
     const ground = this.#ground?.roots() ?? { roots: [], changed: false };
-    const roots = [...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...ground.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
+    const roots = [...sceneryBatches, ...models.roots, ...inn.roots, ...shrine.roots, ...outpost.roots, ...settlement.roots, ...fortress.roots, ...ambient.roots, ...nature.roots, ...ground.roots, this.#impacts.root, this.#raidSmoke.root, this.#raidSigns.root];
     // No scene background: `Lighting` clears its own frame, and three would clear to the background again in each of its
     // passes, wiping the sky (#600). The environment's fog still fogs the unlit sprites.
     const { background: _background, ...withoutBackground } = environment;
@@ -1217,7 +1231,7 @@ export class WorldView {
       this.#preparing.push(this.#renderer.prepare(rendererFrame, { roots }));
       return;
     }
-    if (models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || ground.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
+    if (sceneryChanged || models.changed || inn.changed || shrine.changed || outpost.changed || settlement.changed || fortress.changed || ambient.changed || nature.changed || ground.changed || !this.#impacts.root.parent || !this.#raidSmoke.root.parent || !this.#raidSigns.root.parent) {
       this.#renderer.renderImportedRoots({ camera, roots });
     }
     const work = this.#renderer.render(rendererFrame);
@@ -1244,7 +1258,7 @@ export class WorldView {
     this.#overlay.update({
       fps: this.#frameRate.fps,
       frameMs: this.#frameRate.frameMs,
-      nodes: nodes.length + frame.instanceBatches.length,
+      nodes: nodes.length + batchedNodes + frame.instanceBatches.length,
       staticNodes: scene.stats.staticNodes,
       visibleStaticNodes: frame.visibleBatches,
       staticVertices: scene.stats.staticVertices,
