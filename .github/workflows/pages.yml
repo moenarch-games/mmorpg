@@ -101,12 +101,30 @@ jobs:
         run: |
           python3 -m pip install playwright==1.57.0
           python3 -m playwright install --with-deps chromium
-      - name: Run explicitly requested browser acceptance
-        if: env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true
-        run: python3 scripts/smoke-browser.py
       - name: Compare Greyhaven pose-detail presets (advisory runner timing)
         if: inputs.browser_evidence == true
         run: python3 scripts/profile-browser.py --pose-ab --seconds 2 --software --out artifacts/browser/pose-ab.json
+      # Persist the targeted comparison before the broader browser suite. The latter can take
+      # much longer or fail independently; its outcome must not erase the advisory evidence.
+      - name: Retain pose-detail comparison
+        if: always() && inputs.browser_evidence == true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pose-detail-comparison
+          path: |
+            artifacts/browser/pose-ab.json
+            artifacts/browser/pose-hub-*.png
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Check pose controls and combat in Chromium
+        if: inputs.browser_evidence == true
+        run: >-
+          python3 scripts/smoke-browser.py
+          BrowserAcceptance.test_pose_detail_selector_and_camera_reentry
+          BrowserAcceptance.test_procedural_actions_and_confirmed_impacts_through_real_wasm
+      - name: Run explicitly requested browser acceptance
+        if: env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true
+        run: python3 scripts/smoke-browser.py
       - name: Retain browser screenshots and evidence
         if: always() && (env.FULL_VALIDATION == 'true' || inputs.browser_evidence == true)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
