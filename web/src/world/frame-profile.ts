@@ -22,7 +22,7 @@ export type FrameFacts = {
   instanceBatches: number;
   /** The renderer's resource churn this frame: meshes, geometries and materials created, instance batches uploaded. */
   created: { objects: number; geometries: number; materials: number; instanceUploads: number };
-  /** Imported-model update work (including pose sampling and cosmetic transforms); never GPU time. */
+  /** Cost and reuse of imported-character presentation, not gameplay simulation or GPU time. */
   pose: { updateMs: number; sampled: number; reused: number; offscreen: number };
 };
 

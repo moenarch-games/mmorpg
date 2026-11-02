@@ -179,6 +179,11 @@ class Session:
         started = time.monotonic()
         self.page.goto(url + "?debug&profile" + (f"&activity={activity}" if activity else ""))
         expect(self.enter_button()).to_be_enabled(timeout=60_000)
+        if not self.page.evaluate("() => typeof window.__valeProfile?.take === 'function'"):
+            raise RuntimeError(
+                "Loaded web/dist lacks the ?profile frame hook. "
+                "Update to the current PR #629 and rebuild with (cd web && bun run build)."
+            )
         self.cold_selection_s = round(time.monotonic() - started, 2)
 
     def enter_button(self):
