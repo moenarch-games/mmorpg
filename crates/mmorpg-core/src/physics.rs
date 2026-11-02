@@ -408,6 +408,59 @@ pub struct StepStats {
     pub bodies: usize,
 }
 
+/// One explicitly timed world operation in the test/bench-only physics A/B seam.
+#[cfg(feature = "physics-ab")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TimedCalls {
+    /// Successful calls (not internal operations performed by `step`).
+    pub calls: u64,
+    /// Inclusive elapsed nanoseconds of those calls; diagnostic, not deterministic work.
+    pub nanos: u64,
+}
+
+#[cfg(feature = "physics-ab")]
+impl TimedCalls {
+    fn record(&mut self, start: std::time::Instant) {
+        self.calls += 1;
+        self.nanos = self
+            .nanos
+            .saturating_add(u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX));
+    }
+}
+
+/// Noncanonical instrumentation of the consumer's operations, not a physics-engine cache.
+#[cfg(feature = "physics-ab")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WorldOperationProfile {
+    pub steps: TimedCalls,
+    pub removals: TimedCalls,
+    pub replacements: TimedCalls,
+    pub platform_moves: TimedCalls,
+    /// Successful scheduled platform moves whose target differs from the current position.
+    pub platform_changes: u64,
+    pub platform_places: TimedCalls,
+    pub position_sets: TimedCalls,
+}
+
+/// Rapier narrow-phase topology observed after a tick. The character controller uses
+/// swept queries, so these pairs are not physics-engine's persistent contact cache.
+#[cfg(feature = "physics-ab")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RapierContactProfile {
+    /// Distinct body pairs retained by Rapier's narrow phase, including non-touching pairs.
+    pub pair_candidates: usize,
+    /// Those pairs with an active contact at the observation point.
+    pub active_pairs: usize,
+    /// Bodies incident to at least one retained pair.
+    pub incident_bodies: usize,
+    /// Greatest number of retained neighboring bodies for one body.
+    pub max_body_degree: usize,
+    /// Greatest number of active contact neighbors for one body.
+    pub max_active_degree: usize,
+    /// Collision callbacks delivered by Rapier's kinematic controller since world creation.
+    pub controller_collisions: u64,
+}
+
 /// Which physics backend a [`World`] runs on (physics-engine #330, test/bench only).
 #[cfg(feature = "physics-ab")]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum::VariantArray)]
@@ -491,6 +544,8 @@ pub struct World {
     /// Nanoseconds spent in this world's calls (`physics-ab` timing).
     #[cfg(feature = "physics-ab")]
     spent: std::sync::atomic::AtomicU64,
+    #[cfg(feature = "physics-ab")]
+    operations: WorldOperationProfile,
 }
 
 impl fmt::Debug for World {
@@ -511,6 +566,8 @@ impl Clone for World {
             spent: std::sync::atomic::AtomicU64::new(
                 self.spent.load(std::sync::atomic::Ordering::Relaxed),
             ),
+            #[cfg(feature = "physics-ab")]
+            operations: self.operations,
         }
     }
 }
@@ -562,6 +619,7 @@ impl World {
         Self {
             worlds,
             spent: std::sync::atomic::AtomicU64::new(0),
+            operations: WorldOperationProfile::default(),
         }
     }
 
@@ -582,17 +640,50 @@ impl World {
         self.spent.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Diagnostic operation counters; callers take a before/after difference per tick.
+    #[cfg(feature = "physics-ab")]
+    #[must_use]
+    pub const fn operation_profile(&self) -> WorldOperationProfile {
+        self.operations
+    }
+
+    /// Rapier contact topology, or `None` for the test-only engine adapter. The latter
+    /// never runs its persistent-cache step; exposing a fabricated zero would conceal
+    /// a future adapter change.
+    #[cfg(feature = "physics-ab")]
+    #[must_use]
+    pub fn rapier_contacts(&self) -> Option<RapierContactProfile> {
+        match &self.worlds {
+            Worlds::Rapier(world) => Some(world.contact_profile()),
+            Worlds::Engine(_) => None,
+        }
+    }
+
     pub fn add_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
         dispatch!(self, &mut self.worlds, world => world.add_body(body))
     }
 
     /// Replaces an existing body, for example a door leaf moving to its other box.
     pub fn replace_body(&mut self, body: RigidBody) -> Result<(), PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.replace_body(body))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.replace_body(body));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.replacements.record(start);
+        }
+        outcome
     }
 
     pub fn remove_body(&mut self, id: BodyId) -> Option<RigidBody> {
-        dispatch!(self, &mut self.worlds, world => world.remove_body(id))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.remove_body(id));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_some() {
+            self.operations.removals.record(start);
+        }
+        outcome
     }
 
     #[must_use]
@@ -607,7 +698,14 @@ impl World {
     /// Places a moving body at `position` without resolving contact: placement by the zone
     /// (respawns, evade resets, recovery), never movement.
     pub fn set_position(&mut self, id: BodyId, position: Vec3i) -> Result<(), PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.set_position(id, position))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.set_position(id, position));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.position_sets.record(start);
+        }
+        outcome
     }
 
     /// Sets a moving body's velocity, in subunits per tick ([`SUBUNITS_PER_UNIT`]).
@@ -626,13 +724,32 @@ impl World {
     /// or after the units (so it never runs into the ones it carries), carrying every unit
     /// that stands on it and is not rising: the displacement is added to that unit's move.
     pub fn move_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.move_platform(id, to))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        #[cfg(feature = "physics-ab")]
+        let changes_position = self.body(id).is_some_and(|body| body.position != exact(to));
+        let outcome = dispatch!(self, &mut self.worlds, world => world.move_platform(id, to));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.platform_moves.record(start);
+            if changes_position {
+                self.operations.platform_changes += 1;
+            }
+        }
+        outcome
     }
 
     /// Places platform `id`'s box at centre `to` at once, carrying nothing: building or
     /// restoring a zone.
     pub fn place_platform(&mut self, id: BodyId, to: Vec3i) -> Result<(), PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.place_platform(id, to))
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.place_platform(id, to));
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.platform_places.record(start);
+        }
+        outcome
     }
 
     /// Lays the authored ground as a heightfield identified as `id` (#159).
@@ -650,7 +767,14 @@ impl World {
     /// controller where its velocity leads. Landing on ground or meeting a ceiling ends its
     /// vertical velocity.
     pub fn step(&mut self) -> Result<StepStats, PhysicsError> {
-        dispatch!(self, &mut self.worlds, world => world.step())
+        #[cfg(feature = "physics-ab")]
+        let start = std::time::Instant::now();
+        let outcome = dispatch!(self, &mut self.worlds, world => world.step());
+        #[cfg(feature = "physics-ab")]
+        if outcome.is_ok() {
+            self.operations.steps.record(start);
+        }
+        outcome
     }
 
     /// Whether a moving body stands on static ground.
@@ -736,6 +860,69 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "physics-ab")]
+    #[test]
+    fn ab_diagnostics_count_successful_consumer_mutations() {
+        for backend in [Backend::Rapier, Backend::Engine] {
+            let mut world = World::with_backend(Vec3i::new(0, -SUBUNITS_PER_UNIT, 0), backend);
+            world.add_body(RigidBody::floor(BodyId(1), 0)).unwrap();
+            let fixed = BodyId(2);
+            world
+                .add_body(RigidBody::fixed(
+                    fixed,
+                    Vec3i::new(200, 100, 0),
+                    Vec3i::new(20, 100, 20),
+                ))
+                .unwrap();
+            world
+                .replace_body(RigidBody::fixed(
+                    fixed,
+                    Vec3i::new(300, 100, 0),
+                    Vec3i::new(20, 100, 20),
+                ))
+                .unwrap();
+            assert!(world.remove_body(fixed).is_some());
+            assert!(world.remove_body(fixed).is_none());
+            let platform = BodyId(3);
+            world
+                .add_body(RigidBody::platform(
+                    platform,
+                    Vec3i::new(0, -100, 0),
+                    Vec3i::new(100, 20, 100),
+                ))
+                .unwrap();
+            world
+                .move_platform(platform, Vec3i::new(0, -80, 0))
+                .unwrap();
+            world
+                .place_platform(platform, Vec3i::new(0, -80, 0))
+                .unwrap();
+            let unit = BodyId(4);
+            world
+                .add_body(RigidBody::dynamic(
+                    unit,
+                    Vec3i::new(0, 100, 0),
+                    Vec3i::ZERO,
+                    Vec3i::new(30, 90, 30),
+                ))
+                .unwrap();
+            world.set_position(unit, Vec3i::new(50, 100, 0)).unwrap();
+            world.step().unwrap();
+            let profile = world.operation_profile();
+            assert_eq!(profile.steps.calls, 1);
+            assert_eq!(profile.removals.calls, 1);
+            assert_eq!(profile.replacements.calls, 1);
+            assert_eq!(profile.platform_moves.calls, 1);
+            assert_eq!(profile.platform_changes, 1);
+            assert_eq!(profile.platform_places.calls, 1);
+            assert_eq!(profile.position_sets.calls, 1);
+            assert_eq!(
+                world.rapier_contacts().is_some(),
+                backend == Backend::Rapier
+            );
+        }
+    }
 
     /// Whole units per tick (squared) as the subunits velocities and gravity take.
     const S: i32 = SUBUNITS_PER_UNIT;

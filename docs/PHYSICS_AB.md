@@ -11,6 +11,77 @@ cargo test -p mmorpg-core --features physics-ab --test physics_ab -- --nocapture
 cargo run --release -p mmorpg-core --example physics_ab --features physics-ab      # manual timing
 ```
 
+## Consumer contact workload diagnostic (physics-engine #443)
+
+The existing manual A/B example now reports **complete 60 Hz zone ticks**, the portion spent
+in the physics wrapper, and successful public body removals/replacements, scheduled platform move
+requests (including the subset that actually changes position), platform placements and explicit
+moving-body placements. It also samples Rapier's narrow-phase
+body-pair graph *after* each tick: retained candidate pairs (including non-touching ones),
+active pairs, maximum incident degree, and collision callbacks delivered to the kinematic
+character controller. These are separate metrics. The latter are swept collisions, not cached
+contact pairs; body pairs deduplicate Rapier's multiple collider/terrain-tile contacts.
+
+```sh
+cargo run --release --locked -p mmorpg-core --example physics_ab --features physics-ab -- --only vale-idle-16 --rounds 3 --warmup 1
+cargo run --release --locked -p mmorpg-core --example physics_ab --features physics-ab -- --only vale-mill-hoist --rounds 3 --warmup 1
+cargo run --release --locked -p mmorpg-core --example physics_ab --features physics-ab -- --only vale-watch-post --rounds 3 --warmup 1
+```
+
+`--only` filters the existing deterministic named workloads (comma-separated substrings select
+several); no new fixture or production
+instrumentation is involved. Each timed sample includes the driver's commands and the complete
+`ZoneSimulation::advance_tick`, with setup and post-tick contact inspection excluded. Post-tick
+inspection can still affect later CPU cache state, and timing on a shared runner is diagnostic,
+not a regression gate. Per-run operation call counts are checked to be identical across rounds.
+The `physics-ab` Cargo feature is absent from production and WASM builds.
+
+The Physics Engine adapter uses `World::move_characters` for characters, not its persistent
+`World::step`, and rebuilds a different short-lived world for debris/props. The pinned engine
+dependency does not expose per-body persistent cache occupancy. Consequently the table marks
+Rapier contact topology as unavailable for that backend: **Rapier retained pairs are not a
+measurement of Physics Engine cached contact pairs**, and a zero must not be invented for a
+future adapter that changes its stepping pattern. Static door replacements are reported
+separately from explicit removals. Scheduled platform moves that change a collider's position
+typically become backend `set_static_position` calls during its step; those internal costs remain
+included in step time, not in the separate platform-scheduling timer.
+
+### Observed consumer workload (2026-11-02)
+
+On MMORPG `c45a546564835b94e7998bc8e4ed82ada1c4a9d0` plus this diagnostic change,
+locked Physics Engine `7af1ac43` and Rapier 0.36.1, Rust 1.99.1, native Linux x86_64
+(Intel Xeon Platinum 8573C), `--release`, **one warmup and three measured rounds** for
+each backend, alternating first backend per round:
+
+| Named Greyhaven workload | 60 Hz ticks | Max moving / all bodies | Rapier pairs (max) | Controller collisions/tick (mean) | Actual platform changes / scheduled calls | Explicit removals / replacements | Complete tick median, Rapier / Engine (µs) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `vale-idle-16` | 360 | 97 / 2,498 | 0 | 0.50 | 60 / 360 | 0 / 0 | 3,043 / 1,081 |
+| `vale-crowded-fights-64` | 360 | 145 / 2,546 | 0 | 0.80 | 60 / 360 | 2 / 0 | 5,419 / 1,657 |
+| `vale-mill-hoist` | 1,280 | 82 / 2,483 | 0 | 4.88 | 640 / 1,280 | 0 / 0 | 3,144 / 911 |
+| `vale-watch-post` | 840 | 83 / 2,484 | 0 | 3.45 | 320 / 840 | 0 / 0 | 2,903 / 870 |
+| `vale-crate-smash` | 720 | 83 / 2,484 | 0 | 2.47 | 320 / 720 | 2 / 0 | 2,966 / 1,106 |
+
+The **Rapier pair count, active pair count, and per-body degree were all zero on every
+observed tick**, even though kinematic sweeps found collisions and the games scheduled
+static movement. There is no retained *Rapier* contact graph on these real game adapters;
+the Physics Engine A/B adapter cannot supply a separate persistent-cache occupancy metric
+without changing its pinned dependency, and its character workload never invokes the
+cache-populating `World::step`. These measurements therefore do **not** demonstrate a
+game-consumer need for Physics Engine's proposed adjacency index (#443).
+
+The Rapier physics-call share of complete tick time ranged from 90.5% to 94.1% on these
+five release fixtures. Physics Engine's share ranged from 68.0% to 96.4%; the
+`vale-crate-smash` Engine p95 complete tick was 41.95 ms versus Rapier's 7.71 ms, because the
+test backend has separate short-lived dynamic debris stepping. The speed difference is not
+an index A/B comparison. This is a shared-CPU exploratory run, not a controlled performance
+contract or a runtime server trace. No static door replacements occurred in these selected
+fixtures; the existing door path remains instrumented for a future replay that exercises it.
+
+**Decision:** leave Physics Engine's scanning production path and its unmerged experimental
+[contact-adjacency PR #454](https://github.com/moritzbrantner/physics-engine/pull/454)
+unchanged. Only revisit index maintenance when a real adapter starts retaining persistent
+contacts and uses the neighbor-local operations often enough to offset maintenance cost.
+
 ## Seam
 
 - `physics::World` is an enum over the backends (`crates/mmorpg-core/src/physics.rs`). Rapier's
