@@ -62,7 +62,7 @@ python3 scripts/profile-browser.py --out artifacts/profile/report.json --trace a
 ./scripts/dev-browser-online.sh      # zone host + browser client in online mode
 ```
 
-`bun run build` and `bun run dev` first sync browser dependencies with `bun install --frozen-lockfile`. They and `bun test` compile `mmorpg-wasm` for `wasm32-unknown-unknown` (listed in `rust-toolchain.toml`) and run the `wasm-bindgen` CLI, whose version must equal the crate's exact `wasm-bindgen` pin: `cargo install wasm-bindgen-cli --version =0.2.129 --locked`. Generated bindings land in the ignored `web/src/generated/`.
+`bun run build` and `bun run dev` first sync browser dependencies with `bun install --frozen-lockfile`. They and `bun test` compile `mmorpg-wasm` for `wasm32-unknown-unknown` (listed in the stable `rust-toolchain.toml`). `web/scripts/build-wasm.ts` picks a `wasm-bindgen` CLI matching `Cargo.lock`, automatically installing a compatible version under the ignored Cargo target directory when the system CLI is missing or different; it never replaces a system CLI. Generated bindings land in the ignored `web/src/generated/`.
 
 ## Authority
 
@@ -118,6 +118,8 @@ These rules govern task scope and verification effort. The owner’s happy-path 
 - **Short PR descriptions.** At most about 15 lines: what changed, format/compatibility changes, one line naming the gate steps that ran, and anything not verified (REPO-017). Leave detailed evidence to CI and the tests.
 
 ## Shared conventions
+
+- **BUN-001 owner exception (2026-11-02):** The browser accepts the latest compatible Bun runtime instead of declaring an exact `packageManager` version in `web/package.json`. The committed Bun lockfile remains frozen during normal builds. Stable Rust is selected through `rust-toolchain.toml`; wasm-bindgen CLI compatibility is resolved from `Cargo.lock`, not through a hardcoded global installation.
 
 General engineering rules (git and merging, commits, testing, ADRs, docs, dependencies, Rust style, …) come from `coding-agent-conventions`, installed in `.conventions/`. Read the rule briefing in `.conventions/index.md` before implementing and open the linked source when a rule applies. Do not edit `.conventions/`; refresh it with `coding-tooling conventions update`. Rules below are repository-specific additions or exceptions.
 
