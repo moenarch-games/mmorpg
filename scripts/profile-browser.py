@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# /// script
+# dependencies = ["playwright"]
+# ///
 """Greyhaven gameplay frame-time and keyboard-latency profile in Chromium (#546).
 
 Drives the production bundle (`web/dist`, `?debug&profile`) through four scenarios and prints
@@ -32,9 +35,11 @@ Sources, all opt-in and read-only:
 
 `requestAnimationFrame` intervals are frame pacing, not GPU time; they are reported as such.
 
-Prerequisites: build web/ (bun run build) and Playwright for Python (see smoke-browser.py).
+Prerequisites: build web/ (bun run build), then install Playwright Chromium with
+    pipx run playwright install chromium
+(`python -m playwright install chromium` also works with a Python Playwright install).
 Run from the repository root:
-    python scripts/profile-browser.py --out artifacts/profile/report.json --trace artifacts/profile
+    pipx run scripts/profile-browser.py --out artifacts/profile/report.json --trace artifacts/profile
 Defaults: headless Chromium on the hardware GPU (ANGLE OpenGL), 1440x900 at pixel ratio 1, then a
 viewport/pixel-ratio sweep of `idle` and `overview`.
 """
