@@ -57,6 +57,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout, expect, sync_
 
 ROOT = Path(__file__).resolve().parents[1]
 GPU_ARGS = ["--enable-gpu", "--use-angle=gl", "--ignore-gpu-blocklist"]
+SOFTWARE_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
 SWEEP = [(1280, 720, 1), (1920, 1080, 1), (1920, 1080, 2), (2560, 1440, 2)]
 POSE_LEVELS = ("off", "light", "balanced", "aggressive")
 POSE_AB_ORDER = (*POSE_LEVELS, *reversed(POSE_LEVELS))
@@ -526,6 +527,7 @@ def main():
     parser.add_argument("--seconds", type=float, default=6.0)
     parser.add_argument("--channel", help="Playwright browser channel, e.g. chrome")
     parser.add_argument("--headed", action="store_true")
+    parser.add_argument("--software", action="store_true", help="use software Chromium for advisory CI runs")
     parser.add_argument("--no-sweep", action="store_true", help="skip the viewport/pixel-ratio sweep")
     parser.add_argument("--activity", choices=["battle-royale"],
                         help="profile the Battle Royale practice arena (#552) instead of Greyhaven")
@@ -547,9 +549,10 @@ def main():
               "scenarios": {}, "sweep": []}
     report["sourceRevision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=not args.headed, channel=args.channel, args=GPU_ARGS)
+        browser_args = SOFTWARE_ARGS if args.software else GPU_ARGS
+        browser = playwright.chromium.launch(headless=not args.headed, channel=args.channel, args=browser_args)
         report["browser"] = {"version": browser.version, "channel": args.channel or "playwright-chromium",
-                             "headless": not args.headed, "args": GPU_ARGS}
+                             "headless": not args.headed, "args": browser_args}
         report["activity"] = args.activity or "greyhaven"
         report["measurement"] = "advisory browser runtime timing; controlled hardware needed for a performance gate"
         session = Session(browser, url, 1440, 900, 1, args.activity)
@@ -564,7 +567,7 @@ def main():
         session.warm()
         if args.pose_ab:
             renderer = report["display"]["renderer"] or ""
-            report["rendererClass"] = "software" if re.search(r"swiftshader|llvmpipe|softpipe|software raster", renderer, re.I) else "unverified"
+            report["rendererClass"] = "software" if args.software or re.search(r"swiftshader|llvmpipe|softpipe|software raster", renderer, re.I) else "unverified"
             report["method"] = {"order": POSE_AB_ORDER, "secondsPerPass": args.seconds,
                                 "viewpoints": ["idle", "hub", "woods", "vale"],
                                 "notes": "All runs reuse one live simulation and production build; warm-up is excluded. Views are fixed, but creatures can wander. CPU model-update timing includes pose mixer, instance setup, root and equipment cosmetics. It is not solely mixer time."}
