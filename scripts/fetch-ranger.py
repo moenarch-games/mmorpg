@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import urllib.request
+from lib.ranger_assets import CLASS_NAMES, valid_male_appearance
 
 ROOT = Path(__file__).resolve().parents[1]
 URL = "https://github.com/moritzbrantner/asset-tooling/releases/download/{release}/"
@@ -12,14 +13,13 @@ URL = "https://github.com/moritzbrantner/asset-tooling/releases/download/{releas
 # (asset-tooling #375) and props (#379), the Greyhaven residents' outfit variants, armour, straw hat and beards (#418), the class
 # starter outfits' armour (#379), the Redbrand Crossbowmen's crossbow with an arrow standing in for its bolt (#607), and
 # the Rogue's throwing knife, venom flask and blasting bomb (asset-tooling #467, #611).
-CLASSES = ("warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid")
 MALE = {key: {"default"} for key in (
     "humanoid.ranger.male", "equipment.sword.arming", "equipment.shield.heater", "equipment.bow.long",
     "equipment.quiver.back", "equipment.cap.ranger", "equipment.helm.ironcrest", "equipment.dagger.blackened",
     "equipment.staff.bone", "equipment.staff.crystal", "equipment.staff.gnarled", "equipment.book.tome",
     "equipment.mace.flanged", "equipment.hat.straw", "equipment.crossbow", "equipment.arrow",
     "equipment.throwing-knife", "equipment.venom-flask", "equipment.blasting-bomb", "facial-hair.beards", "armor.knight", "armor.soldier",
-    "armor.farmer", "armor.innkeeper", "armor.monk", *(f"armor.class.{name}" for name in CLASSES))}
+    "armor.farmer", "armor.innkeeper", "armor.monk", *(f"armor.class.{name}" for name in CLASS_NAMES))}
 # The full-detail outfit variant of each resident and class preset's outfit and skin, and the
 # guards' and the varied enemies' outfits in both skins (each draws his own look,
 # asset-tooling #380; the enemy presets, #39, wear the soldier, knight and farmer outfits).
@@ -85,7 +85,18 @@ def complete(figure, ref):
         return False
     pairs = selected(figure, index)
     entries = [entry for entry in index.get("entries", []) if (entry.get("key"), entry.get("variant")) in pairs]
-    return {(entry["key"], entry["variant"]) for entry in entries} == pairs and all((dest / name).is_file() for entry in entries for name in entry["files"])
+    if {(entry["key"], entry["variant"]) for entry in entries} != pairs or not all(
+        (dest / name).is_file() for entry in entries for name in entry["files"]
+    ):
+        return False
+    if figure.release == "humanoid-ranger-male":
+        default = next((entry for entry in entries if
+                        (entry["key"], entry["variant"]) == ("humanoid.ranger.male", "default")), None)
+        appearances = ([name for name in default["files"] if name.endswith(".humanoid-appearance.json")]
+                       if default else [])
+        if len(appearances) != 1 or not valid_male_appearance(dest / appearances[0]):
+            return False
+    return True
 
 
 def acquire(figure):
