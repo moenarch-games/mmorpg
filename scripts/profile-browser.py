@@ -396,7 +396,7 @@ def view(session, name, seconds):
     return result
 
 
-def pose_ab(session, seconds, scenarios, screenshots=None):
+def pose_ab(session, seconds, scenarios, screenshots=None, checkpoint=None):
     """Paired, within-session presentation comparisons; no zone/simulation controls."""
     for name, viewpoint in (("idle", None), ("dense-hub", "hub"), ("dense-woods", "woods"), ("overview", "vale")):
         session.page.evaluate("name => name ? window.__valeDebug.flyTo(name) : window.__valeDebug.follow()", viewpoint)
@@ -405,6 +405,8 @@ def pose_ab(session, seconds, scenarios, screenshots=None):
         session.warm(0.5)
         observations = []
         scenarios[name] = observations  # Retain completed passes if a later browser action fails.
+        if checkpoint:
+            checkpoint()
         for index, level in enumerate(POSE_AB_ORDER):
             session.page.evaluate("level => window.__valeDebug.setPoseDetail(level)", level)
             actual = session.page.evaluate("window.__valeDebug.poseDetail().level")
@@ -424,6 +426,8 @@ def pose_ab(session, seconds, scenarios, screenshots=None):
                     "frameKeys": list(frames[0]) if frames else [],
                     "diagnostics": session.diagnostics(),
                 })
+                if checkpoint:
+                    checkpoint()
                 continue
             pacing = [b["raf"] - a["raf"] for a, b in zip(frames, frames[1:])]
             poses = [frame["pose"] for frame in frames]
@@ -440,6 +444,8 @@ def pose_ab(session, seconds, scenarios, screenshots=None):
                 "totalPoses": {key: sum(pose[key] for pose in poses) for key in ("sampled", "reused", "offscreen")},
                 "drawCallsPerFrame": summary["drawCallsPerFrame"], "gpuMs": summary["gpuMs"],
             })
+            if checkpoint:
+                checkpoint()
         # The level and the scene evolve; keep each raw pass rather than hiding variance in one ratio.
         scenarios[name] = observations
     session.page.evaluate("() => { window.__valeDebug.setPoseDetail('off'); window.__valeDebug.follow(); }")
@@ -572,6 +578,13 @@ def main():
     report = {"source": "scripts/profile-browser.py", "cpus": os.cpu_count(), "loadAverageAtStart": [round(x, 1) for x in os.getloadavg()],
               "scenarios": {}, "sweep": []}
     report["sourceRevision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    def checkpoint():
+        if args.out:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(json.dumps(report, indent=2))
+    if args.pose_ab:
+        report["status"] = "incomplete"
+        checkpoint()  # Even an early browser crash leaves an explicit, inspectable gap.
     with sync_playwright() as playwright:
         browser_args = SOFTWARE_ARGS if args.software else GPU_ARGS
         browser = playwright.chromium.launch(headless=not args.headed, channel=args.channel, args=browser_args)
@@ -610,10 +623,13 @@ def main():
             try:
                 # HUD visibility precedes the first drawn frame; wait for actual renderer work.
                 session.page.wait_for_function("() => !!window.__valeDebug?.stats?.()?.frame", timeout=30_000)
-                pose_ab(session, args.seconds, report["scenarios"], screenshots)
+                pose_ab(session, args.seconds, report["scenarios"], screenshots, checkpoint)
             except Exception as error:
                 report["profileError"] = str(error)
-                report["diagnostics"] = session.diagnostics()
+                try:
+                    report["diagnostics"] = session.diagnostics()
+                except Exception as diagnostic_error:
+                    report["diagnosticsError"] = str(diagnostic_error)
                 if screenshots:
                     try:
                         session.page.screenshot(path=str(screenshots / "pose-error.png"), timeout=10_000)
